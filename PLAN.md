@@ -533,10 +533,12 @@ envelope-swept resonant lowpass, a pulse through a morphing `Svf`, and a
 comb-plus-allpass space, rendered offline so it needs no audio hardware.
 
 - ✅ **U4 — `Line`/`XLine` and the self-control set** *(done 2026-07-25)* —
-  `Line` and `XLine` assemble `EnvGen`'s input layout in their stack frame
-  rather than growing a second ramp, so they inherit the whole done-action set,
-  the exact landing on the target and the shared `envshape` arithmetic a client
-  draws with. Plus S9's deferred `FreeSelf`, `PauseSelf`, `FreeSelfWhenDone`,
+  `Line` and `XLine` are scsynth's ramps in `src/dsp/line.rs` — the step
+  derived once, one addition or one multiplication per sample — carrying the
+  whole done-action set and landing exactly on the target. They first delegated
+  to `EnvGen`; that reuse cost a shape evaluation (a `powf`, for `XLine`) per
+  sample for a straight line, and was undone. The trade is scsynth's: the
+  geometry is init-rate. Plus S9's deferred `FreeSelf`, `PauseSelf`, `FreeSelfWhenDone`,
   `Done`, in `src/dsp/nodectl.rs`. Two findings shaped the result. The **done
   flag is not the done action**: `Done` exists precisely for an envelope whose
   `doneAction` is 0, so reading the action would leave it blind, and the flag is

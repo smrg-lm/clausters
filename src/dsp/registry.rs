@@ -21,12 +21,13 @@ use crate::dsp::demand::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 use crate::dsp::disk::{DiskIn, DiskOut};
-use crate::dsp::envgen::{EnvGen, Line, LineShape};
+use crate::dsp::envgen::EnvGen;
 use crate::dsp::filter::{OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
 use crate::dsp::lag::{Lag, VarLag};
+use crate::dsp::line::{Line, LineShape};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::nodectl::{SelfControl, WhenDone, WhenDoneMode};
 use crate::dsp::noise::{
@@ -423,9 +424,11 @@ const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
 /// an inlet the UGen ignores.
 const I_LF: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0)];
 const I_LF_WIDTH: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0), inp("width", 0.5)];
-/// The one-segment envelopes (U4). `done_action` is an input rather than
-/// static config because `EnvGen` already takes it as one, and a def that
-/// re-aims a ramp mid-flight can re-aim what it does at the end too.
+/// The one-segment ramps (U4). `start`, `end` and `dur` are read once, on the
+/// first sample, as scsynth reads them: the ramp's geometry is fixed at birth
+/// and modulating these does nothing. `done_action` is the exception — an
+/// input rather than static config, read every block, because it says what
+/// happens to the *node* and a def may re-aim that mid-flight.
 const I_LINE: &[UGenInput] = &[
     inp("start", 0.0),
     inp("end", 1.0),

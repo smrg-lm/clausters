@@ -1433,9 +1433,9 @@ fn delay_ugens_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// The one-segment envelopes and the node-control set (U4). Two claims: `Line`
-/// assembling `EnvGen`'s input layout on every block does it in its stack frame
-/// and not on the heap, and the `DoneQuery` path — the synth reading one UGen's
+/// The one-segment ramps and the node-control set (U4). Two claims: `Line`
+/// deriving its step on the first sample keeps that state in the UGen and
+/// touches no heap, and the `DoneQuery` path — the synth reading one UGen's
 /// done flag on behalf of another — adds no allocation to the block either. The
 /// ramp is short enough to finish and re-report inside the run, with
 /// `doneAction` 0 so the node survives to keep being measured.

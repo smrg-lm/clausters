@@ -2111,22 +2111,47 @@ time is still in seconds, a frequency still in hertz; what you give up is
 resolution, since nothing above half the control rate (375 Hz at 48 kHz / 64)
 can be represented.
 
-## `Line` is `EnvGen` with its header filled in, and the done flag is not the done action
+## `Line` is its own ramp, not `EnvGen`, and the done flag is not the done action
 
-Two decisions from U4, both about *not* growing a second mechanism.
+Two decisions from U4, one of them since reversed.
 
-**`Line`/`XLine` are the segment engine, not a second ramp.** They could have
-been forty lines of `start + t·(end − start)` each. Instead they assemble
-`EnvGen`'s input layout in their stack frame — a gate held open, one segment,
-no release node — and call it. That buys the whole `doneAction` set (including
-the relative ones, which scsynth's `Line` also accepts), the same landing exactly
-on the target, and the same shared `envshape` arithmetic a client draws a curve
-with, so a ramp the editor shows and the ramp the server plays cannot drift.
-What it costs is one indirection per block and an input array on the stack;
-the RT-safety guard covers the claim that this is not a heap allocation.
+**`Line`/`XLine` are a ramp of their own, not the segment engine.** U4 first
+built them as `EnvGen` with its header filled in — a gate held open, one
+segment, no release node — assembled in the wrapper's stack frame. The appeal
+was reuse: the whole `doneAction` set, the exact landing, and the shared
+`envshape` arithmetic a client draws a curve with, for one indirection per
+block and no second ramp to maintain.
 
-The wrapper is the `PvMag` pattern once more: one struct, a shape enum, two
-registry rows, and no `Ramp` kind on the wire.
+The cost turned out to be in the wrong place. `EnvGen` is built for a
+breakpoint envelope, so its inner loop re-reads thirteen inputs, runs the gate
+edge detection and the segment-advance loop, and evaluates a shape function —
+per sample. A `Line` needs one addition and a counter, and an `XLine` one
+multiplication; going through the segment engine made the exponential one cost
+a `powf` per sample, some fifty times scsynth's. Cheap in absolute terms, and
+exactly the sort of thing that stops being cheap at one instance per voice.
+
+So they are now scsynth's ramps (`dsp::line`): the step is derived once and the
+inner loop is one arithmetic operation. What the reuse was buying is kept
+without it — the done actions are the same enum, and the landing is committed
+by *assigning* `end` when the counter runs out rather than by arriving at it.
+Two things did change, both deliberate:
+
+- **The ramps are init-rate**, as scsynth's are. `end` and `dur` are read on
+  the first sample and never again, because the step is derived from them once.
+  Modulating them mid-flight used to warp the ramp; now it does nothing.
+  `done_action` stays per-block — it addresses the node, not the geometry.
+- **The curve is no longer the shared `envshape`.** A line and an exponential
+  are the two shapes simple enough to restate exactly (`a + t·(b − a)` and
+  `a·(b/a)^t`, here in their accumulating form), so an editor drawing one still
+  cannot drift from what the server plays. That argument does not extend to a
+  third shape: anything with real curvature belongs in `envshape` and reaches
+  the wire through `EnvGen`, not by growing this module.
+
+The zero-endpoint handling `envshape` does for the exponential shape is
+restated here too — a zero endpoint nudged to a tiny same-signed level, a sign
+change falling back to a linear step — so `XLine(0, 1, …)` is a very steep rise
+rather than the `NaN` scsynth produces. That is the one place these ramps are
+deliberately *not* scsynth.
 
 **The done flag is a separate hook from the done action.** `Done(src)` and
 `FreeSelfWhenDone(src)` ask "has that finished?", and the obvious implementation

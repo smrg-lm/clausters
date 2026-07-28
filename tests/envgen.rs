@@ -597,18 +597,18 @@ fn a_control_rate_line_takes_the_same_wall_clock_time() {
 }
 
 #[test]
-fn a_ten_second_ramp_is_still_a_closed_form_at_its_end() {
-    // Rule 4 for the ramps, and it lands somewhere slightly different from the
-    // other families: a segment does not accumulate. Its value is
-    // `shape(start, target, phase / dur_samples)` recomputed from an integer
-    // counter every sample, so there is no running sum to drift — and a ten
-    // second ramp is where that shows, because an implementation that stepped
-    // by `(end - start) / n` instead would be visibly short of its target by
-    // now.
+fn a_ten_second_ramp_does_not_drift_from_its_closed_form() {
+    // Rule 4 for the ramps. They accumulate — one addition (or one
+    // multiplication) per sample, which is what makes them cheap enough for
+    // audio rate — so the question a long ramp asks is whether the running sum
+    // stays on the closed form `start + t·(end − start)`. It does, because the
+    // accumulator is `f64`: over 480 000 samples the drift is around 1e-13,
+    // while the same loop in `f32` would be visibly short of its target by now.
     //
-    // 480 000 samples still sits under 2^24, so both the counter and the
-    // duration are exact in `f32` and the only error left is the division's.
-    // The tolerance is that: a few ulps of the range, not a fraction of it.
+    // The landing is not left to the accumulation at all: when the counter runs
+    // out the level is assigned `end`, so the hold is exact rather than close.
+    // The tolerance below is therefore a few ulps of the range, not a fraction
+    // of it.
     let secs10 = 10.0f64;
     let n = (SR * secs10 as f32) as usize;
     let blocks = n / BLOCK_SIZE;
@@ -648,6 +648,46 @@ fn a_ten_second_ramp_is_still_a_closed_form_at_its_end() {
             (*s - end as f32).abs() < 1e-6,
             "a finished XLine holds its target: {s}"
         );
+    }
+}
+
+#[test]
+fn a_ramp_reads_its_geometry_once_and_ignores_it_afterwards() {
+    // scsynth's semantics, and the price of the cheap inner loop: the step is
+    // derived on the first sample, so `end` and `dur` are init-rate. A control
+    // that moves them mid-flight moves nothing — the ramp still lands where it
+    // was aimed when it was born. (`done_action` is the one input still read
+    // every block; it addresses the node, not the ramp.)
+    let spec = json!({
+        "name": "line_mod",
+        "controls": [{"name": "end", "default": 1.0}],
+        "ugens": [
+            {"kind": "Line", "inputs": [
+                {"const": 0.0}, {"control": 0}, {"const": secs(4 * BLOCK_SIZE)},
+                {"const": 0.0}
+            ]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    });
+    let (mut engine, mut handle) = spawn(spec);
+    render(&mut engine, 1);
+    handle
+        .send(Cmd::SetControl {
+            id: 1000,
+            index: 0,
+            value: 5.0,
+        })
+        .ok()
+        .unwrap();
+    let out = render(&mut engine, 5);
+    // Blocks 1..4 of the ramp, then the hold — all on the original geometry.
+    for b in 0..3 {
+        let want = (b + 1) as f32 / 4.0;
+        let got = out[b * BLOCK_SIZE];
+        assert!((got - want).abs() < 1e-6, "block {b}: {got} != {want}");
+    }
+    for s in &out[3 * BLOCK_SIZE..] {
+        assert_eq!(*s, 1.0, "holds the end it was born with, not the new one");
     }
 }
 
