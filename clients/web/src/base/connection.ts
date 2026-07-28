@@ -42,6 +42,19 @@ export interface Connection {
      * instead.
      */
     sampleClock?(): Promise<SampleClock>;
+    /**
+     * Installs decoded samples straight into a server buffer, where the
+     * carrier *shares* memory with the server — the in-page engine takes a
+     * whole file in one call, no `/b_setn` chunking and no OSC envelope per
+     * sample. A socket has no such thing and leaves this out; `loadSample`
+     * then writes the chunks instead. `samples` are interleaved.
+     */
+    bulkLoad?(
+        bufnum: number,
+        channels: number,
+        sampleRate: number,
+        samples: Float32Array,
+    ): Promise<void>;
 }
 
 export class WsConnection implements Connection {
@@ -117,6 +130,9 @@ export async function pageConnection(): Promise<Connection> {
         close: () => {
             for (const listener of mine) engine.removeReply(listener);
             mine.clear();
+        },
+        bulkLoad: async (bufnum, channels, sampleRate, samples) => {
+            await engine.bLoad(bufnum, channels, sampleRate, samples);
         },
         // One round trip pairs the engine's counter with the context's frame
         // counter; their difference is a fixed integer (the engine advances

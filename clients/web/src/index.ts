@@ -12,6 +12,10 @@
 // the GuiDef builders — `gui.window`, `gui.knob`, …) sits on that same
 // connection seam, over the in-page host or a `--ws` one.
 //
+// The data paths (`data/`) are the reading direction of that same seam: the
+// control buses, the audio taps and the buffer samples a view feeds on,
+// streamed or fetched, plus the core's own measurements to draw them with.
+//
 // The sequencing layer sits above both: a `TempoClock` resumes generator
 // routines on musical time, and `seq` holds the events, patterns and
 // timelines that ride on it.
@@ -59,6 +63,7 @@ export { currentRoutine } from "./base/context.ts";
 export { Rng, choice, currentRng, seed, spawnRng, uniform } from "./base/rand.ts";
 export * as builtins from "./base/builtins.ts";
 export * as seq from "./seq/index.ts";
+export * as data from "./data/index.ts";
 export { loadCore } from "./base/core.ts";
 export { WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection, SampleClock } from "./base/connection.ts";

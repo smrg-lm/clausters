@@ -762,10 +762,17 @@ impl JsPyramid {
         MultiPyramid::from_bytes(data).map(JsPyramid)
     }
 
-    /// The cache's bytes, in the format every client reads.
+    /// The cache's bytes, in the format every client reads: the mono layout
+    /// for a single channel and the multichannel one above it — the choice
+    /// the Python client's door makes, so the same samples serialize to the
+    /// same bytes whichever client reduced them. Both are read back by
+    /// `fromBytes` and by the GUI host.
     #[wasm_bindgen(js_name = toBytes)]
     pub fn to_bytes(&self) -> Vec<u8> {
-        self.0.to_bytes()
+        match self.0.channel(0) {
+            Some(mono) if self.0.num_channels() == 1 => mono.to_bytes(),
+            _ => self.0.to_bytes(),
+        }
     }
 
     /// Samples per channel — the length a view of this cache spans.

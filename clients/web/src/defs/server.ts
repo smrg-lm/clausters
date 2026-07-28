@@ -47,6 +47,8 @@ import type { NodeLike } from "./node.ts";
 import { AudioBusAllocator, Bus, ControlBusAllocator, busIndex } from "./bus.ts";
 import type { BusLike } from "./bus.ts";
 import { Buffer, BufferAllocator, bufferNumber } from "./buffer.ts";
+import { DEFAULT_TAPS, TapAllocator } from "./tap.ts";
+import { fetchAudio, interleave } from "../data/samples.ts";
 import type { BufferLike } from "./buffer.ts";
 import { SynthDef } from "./synthdef.ts";
 import { FaustDef } from "./faustdef.ts";
@@ -77,6 +79,8 @@ export interface ServerSizing {
      * the space, which the allocator never hands out.
      */
     channels: number;
+    /** Audio-tap rings (`--taps`); 0 on a server with no tap region. */
+    taps: number;
 }
 
 /** The static configuration a running server reports over `/server_info`. */
@@ -215,6 +219,8 @@ export class Server {
     readonly audioBuses: AudioBusAllocator;
     readonly controlBuses: ControlBusAllocator;
     readonly buffers: BufferAllocator;
+    /** The audio-tap rings, allocated like every other finite resource. */
+    readonly taps: TapAllocator;
     /**
      * Seconds added to every timed send — the scheduling headroom. Kept here
      * so the sequencing layer (a later milestone) has one place to read it.
@@ -224,6 +230,8 @@ export class Server {
     private pending = new Set<Pending>();
     private handlers = new Set<(msg: OscMessage) => void>();
     private syncCounter = 0;
+    /** The transport's frame ceiling, read once and cached (`bulkChunk`). */
+    private maxFrame: number | null = null;
     private readonly listener: (packet: Uint8Array) => void;
 
     private constructor(connection: Connection, sizing: ServerSizing) {
@@ -233,6 +241,7 @@ export class Server {
         this.audioBuses = new AudioBusAllocator(sizing.audioBuses, sizing.channels);
         this.controlBuses = new ControlBusAllocator(sizing.controlBuses);
         this.buffers = new BufferAllocator(sizing.maxBuffers);
+        this.taps = new TapAllocator(sizing.taps);
         this.listener = (packet) => this.dispatch(packet);
         connection.addReply(this.listener);
     }
@@ -266,6 +275,7 @@ export class Server {
             maxNodes: DEFAULT_MAX_NODES,
             maxBuffers: DEFAULT_MAX_BUFFERS,
             channels: 2,
+            taps: DEFAULT_TAPS,
         };
         // A provisional server, so the query below goes through the same
         // reply dispatch every other command uses; the real sizing replaces
@@ -281,6 +291,7 @@ export class Server {
                     maxNodes: info.maxNodes,
                     maxBuffers: info.maxBuffers,
                     channels: info.channels,
+                    taps: info.taps,
                 };
             } catch (error) {
                 if (!(error instanceof ReplyTimeout)) throw error;
@@ -810,6 +821,69 @@ export class Server {
         return Number(msg.args.at(-1));
     }
 
+    /**
+     * Subscribes this client to a periodic `/c_set` snapshot of `buses`
+     * (`/c_stream`): the server sends one immediately and then one every
+     * `periodMs` (10 ms floor, at most 128 buses) with no further requests —
+     * the message-based counterpart of reading the shared-memory segment, and
+     * what a meter or a control-rate scope in the page feeds on.
+     *
+     * One subscription per client, **replaced** by each call; `periodMs <= 0`
+     * (or no buses) cancels. Resolves on the `/done` ack. Read the snapshots
+     * with `onReply`, or let `busStream` do all of it.
+     */
+    async streamBuses(
+        periodMs: number,
+        buses: readonly BusLike[],
+        timeout = 5.0,
+    ): Promise<void> {
+        const args: MsgArg[] = [["i", Math.trunc(periodMs)]];
+        for (const bus of buses) args.push(["i", busIndex(bus)]);
+        await this.command("/c_stream", args, timeout);
+    }
+
+    // ---- audio taps ----
+
+    /**
+     * Routes audio `bus` into the server's tap ring `tap` (`/tap`): from the
+     * next block on, the engine appends that bus's samples to the ring, where
+     * a GUI host reads them out of shared memory and this client streams them
+     * with `streamTaps`. `bus = -1` stops the tap. No ack, like `/n_map`;
+     * sequence with `sync` when it matters.
+     *
+     * Take `tap` from the `taps` registry rather than picking an index by
+     * hand, so two views never fight over one ring.
+     */
+    tap(tap: number, bus: BusLike | -1): void {
+        const index = typeof bus === "number" ? bus : busIndex(bus);
+        this.sendMsg("/tap", ["i", Math.trunc(tap)], ["i", Math.trunc(index)]);
+    }
+
+    /**
+     * Subscribes this client to a periodic `/tap_data` snapshot of `taps`
+     * (`/tap_stream`): every `periodMs` (10 ms floor) the server sends, per
+     * tap, the newest `frames` samples of its ring — the path an oscilloscope,
+     * a phasescope or a spectrum in the page reads.
+     *
+     * `frames` is clamped to the transport's bound and to half the ring; at
+     * most 8 taps; one subscription per client, replaced by each call,
+     * `periodMs <= 0` (or no taps) cancels. Resolves on the `/done` ack;
+     * `tapStream` wraps the whole thing.
+     */
+    async streamTaps(
+        periodMs: number,
+        frames: number,
+        taps: readonly number[],
+        timeout = 5.0,
+    ): Promise<void> {
+        const args: MsgArg[] = [
+            ["i", Math.trunc(periodMs)],
+            ["i", Math.trunc(frames)],
+        ];
+        for (const tap of taps) args.push(["i", Math.trunc(tap)]);
+        await this.command("/tap_stream", args, timeout);
+    }
+
     // ---- buffers ----
 
     /** Allocates a zeroed buffer (`/b_alloc`). */
@@ -917,6 +991,114 @@ export class Server {
         });
         const [, frames, channels, sampleRate] = msg.args;
         return new Buffer(bufnum, Number(frames), Number(channels), Number(sampleRate));
+    }
+
+    // ---- bulk samples ----
+
+    /**
+     * Reads interleaved samples out of a buffer (`/b_getn` → `/b_setn`), in
+     * chunks, as one `Float32Array`. `count` -1 reads to the end (the shape is
+     * queried first). Sample indices are flat across channels
+     * (`frame * channels + channel`), so a stereo buffer reads `L R L R …`.
+     *
+     * `chunk` (samples per round trip) defaults to the transport's own bound —
+     * the frame ceiling the server advertises, which is megabytes per reply on
+     * a stream carrier. This is the path a waveform view is built from; feed
+     * the result to `Peaks.build` and draw the columns.
+     *
+     * Reading is the only direction there is: the server has no `/b_setn`
+     * **command** (`/b_setn` is `/b_getn`'s reply), so samples reach a buffer
+     * by `/b_gen`, by `/b_allocRead` on a native server, or by `loadSample`
+     * in the page.
+     */
+    async getSamples(
+        buf: BufferLike,
+        {
+            start = 0,
+            count = -1,
+            chunk,
+            timeout = 10.0,
+        }: { start?: number; count?: number; chunk?: number; timeout?: number } = {},
+    ): Promise<Float32Array> {
+        const bufnum = bufferNumber(buf);
+        const step = chunk ?? (await this.bulkChunk(timeout));
+        let total = count;
+        if (total < 0) {
+            const shape = await this.queryBuffer(bufnum, timeout);
+            total = Math.max(0, shape.frames * shape.channels - start);
+        }
+        const out = new Float32Array(total);
+        let got = 0;
+        while (got < total) {
+            const n = Math.min(step, total - got);
+            const msg = await this.request(
+                "/b_getn",
+                [["i", bufnum], ["i", start + got], ["i", n]],
+                { expect: ["/b_setn"], timeout },
+            );
+            // /b_setn: bufnum, start, count, value...
+            const returned = Number(msg.args[2]);
+            if (returned <= 0) break; // past the end: the server has no more
+            for (let i = 0; i < returned; i++) {
+                out[got + i] = Number(msg.args[3 + i]);
+            }
+            got += returned;
+        }
+        return got === total ? out : out.subarray(0, got);
+    }
+
+    /**
+     * Samples per bulk round trip for this carrier: the frame ceiling the
+     * server advertises (`/server_info`, queried once and cached), minus
+     * headroom for the reply's OSC envelope. A server that does not answer
+     * leaves the conservative 1024 a datagram fits.
+     */
+    private async bulkChunk(timeout: number): Promise<number> {
+        if (this.maxFrame === null) {
+            try {
+                this.maxFrame = (await this.queryInfo(timeout)).maxFrame;
+            } catch (error) {
+                if (!(error instanceof ReplyTimeout)) throw error;
+                return 1024; // no reply: stay conservative, retry next call
+            }
+        }
+        return Math.max(1024, Math.floor((this.maxFrame - 256) / 4));
+    }
+
+    /**
+     * Loads an audio file at `url` into a freshly allocated buffer: the
+     * browser's `/b_allocRead`, since a page has no filesystem and the
+     * server's path means nothing to it.
+     *
+     * `fetch` + the page's own `decodeAudioData` produce the samples, which
+     * the carrier installs directly — it shares memory with the engine. The
+     * returned handle carries the decoded shape, so a view can lay out its
+     * axis before reading a sample.
+     *
+     * **In-page only.** A socket carrier would have to write the samples
+     * over the wire, and the server has no buffer-write command to write them
+     * with; over a `--ws` server, load the file server-side with
+     * `readBuffer` (`/b_allocRead`) instead.
+     */
+    async loadSample(
+        url: string,
+        { timeout = 30.0 }: { timeout?: number } = {},
+    ): Promise<Buffer> {
+        const bulkLoad = this.connection.bulkLoad;
+        if (!bulkLoad) {
+            throw new CommandError(
+                "loadSample needs a carrier that shares memory with the server " +
+                    "(the in-page engine); over a socket use readBuffer, which " +
+                    "loads the file on the server",
+            );
+        }
+        const rate = (await this.queryInfo(timeout)).nominalSampleRate;
+        const decoded = await fetchAudio(url, { sampleRate: rate });
+        const { numberOfChannels: channels, length: frames, sampleRate } = decoded;
+        const samples = interleave(decoded);
+        const buffer = await this.allocBuffer(frames, channels, { timeout });
+        await bulkLoad.call(this.connection, buffer.bufnum, channels, sampleRate, samples);
+        return new Buffer(buffer.bufnum, frames, channels, sampleRate);
     }
 
     // ---- server introspection ----

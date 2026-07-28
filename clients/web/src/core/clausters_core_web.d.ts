@@ -2,6 +2,67 @@
 /* eslint-disable */
 
 /**
+ * A built min/max peak pyramid, the JS face of
+ * [`clausters_core::peaks::MultiPyramid`] — what a navigable waveform reads
+ * so a view costs the width of the window rather than the length of the
+ * buffer. Built once from the samples, then queried per frame.
+ */
+export class Pyramid {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Builds one pyramid per channel from interleaved `samples`.
+     * `base_bucket` is the level-0 bucket size (256 is the usual choice:
+     * ~0.8% of the source in cache for a floor of 256 samples per column).
+     */
+    static build(samples: Float32Array, channels: number, base_bucket: number): Pyramid;
+    /**
+     * One column: the `[min, max]` of channel `ch` over `[s0, s1)` at
+     * `level`. `undefined` for an unknown channel or an empty level.
+     */
+    column(ch: number, level: number, s0: number, s1: number): Float32Array | undefined;
+    /**
+     * A whole pixel row in one crossing: `width` columns spanning
+     * `[s0, s1)` of channel `ch`, as interleaved `[min, max]` pairs, read at
+     * the level `s1 - s0` and `width` imply. This is the door a view calls
+     * every frame — never one column per call, and never a resolution finer
+     * than the screen. An empty array for an unknown channel or a
+     * degenerate span.
+     */
+    columns(ch: number, s0: number, s1: number, width: number): Float32Array;
+    /**
+     * Reads back a serialized cache (`toBytes`, or the file the GUI host maps
+     * and the Python client writes). `undefined` when the bytes are not one.
+     */
+    static fromBytes(data: Uint8Array): Pyramid | undefined;
+    /**
+     * The bucket size (source samples per entry) of `level`, or `undefined`.
+     */
+    levelBucket(level: number): number | undefined;
+    /**
+     * The level whose buckets match `samples_per_px` — the finest one that
+     * still aggregates about a bucket per pixel column.
+     */
+    levelFor(samples_per_px: number): number;
+    /**
+     * The cache's bytes, in the format every client reads: the mono layout
+     * for a single channel and the multichannel one above it — the choice
+     * the Python client's door makes, so the same samples serialize to the
+     * same bytes whichever client reduced them. Both are read back by
+     * `fromBytes` and by the GUI host.
+     */
+    toBytes(): Uint8Array;
+    readonly baseBucket: number;
+    readonly channels: number;
+    /**
+     * Samples per channel — the length a view of this cache spans.
+     */
+    readonly frames: number;
+    readonly numLevels: number;
+}
+
+/**
  * A registry of one finite id space, the JS face of
  * [`clausters_core::registry::Registry`].
  */
@@ -207,6 +268,13 @@ export function bundle_resolve(request: string): string;
 export function bundle_validate(request: string): void;
 
 /**
+ * JS face: the stereo **correlation** (Pearson's r) of two equal-length
+ * channels, in `[-1, 1]`. `undefined` when it is undefined — a length
+ * mismatch, an empty pair, or a constant channel.
+ */
+export function correlation(left: Float32Array, right: Float32Array): number | undefined;
+
+/**
  * JS face: scale degree → MIDI note number in the pitch space
  * `octave`/`root`, with floored octave wrapping (sclang semantics). An empty
  * `scale` yields middle C.
@@ -218,6 +286,13 @@ export function degree_to_midinote(degree: number, octave: number, root: number,
  * the top of each bus space (before clamping to a smaller configured count).
  */
 export function graph_bus_reserved(): Uint32Array;
+
+/**
+ * JS face: the **Lissajous / goniometer** projection of a stereo pair, as
+ * interleaved `[x, y]` pairs (`x` = side, `y` = mid) — one pair per input
+ * frame. An empty array when the two channels differ in length.
+ */
+export function lissajous(left: Float32Array, right: Float32Array): Float32Array;
 
 /**
  * JS face: the boot-derived node-id partition for a node table of
@@ -253,6 +328,23 @@ export function osc_encode_immediate_bundle(messages: Array<any>): Uint8Array;
 export function osc_encode_message(addr: string, args: Array<any>): Uint8Array;
 
 /**
+ * JS face: the triggered window's start inside `raw`, as `[start, locked]`
+ * (`locked` 1 = the trigger fired, 0 = free-running on the newest window).
+ */
+export function oscil_align(raw: Float32Array, display: number, level: number): Float64Array;
+
+/**
+ * JS face: the display window in samples for `window_ms` at `sample_rate`.
+ */
+export function oscil_display_frames(window_ms: number, sample_rate: number): number;
+
+/**
+ * JS face: how many raw tap samples one display window needs — the window
+ * plus the trigger's search slack. What a `/tap_stream` subscription asks for.
+ */
+export function oscil_raw_frames(display: number): number;
+
+/**
  * Beats to wait so a routine starts on the next `quant` boundary of the grid
  * (`quant <= 0` → now). The snapping rule every client shares.
  */
@@ -272,6 +364,16 @@ export function secs_to_beats(tempo: number, base_beats: number, base_seconds: n
  * Seconds → sample count at `sample_rate` (ties to even).
  */
 export function secs_to_samples(secs: number, sample_rate: number): number;
+
+/**
+ * JS face: one spectrum frame — `samples` windowed, transformed and scaled to
+ * decibels, `fft_size / 2` bins. `wintype` is the shared window code (`-1`
+ * rectangular, `0` Hann — the display default —, `1` sine, `2` Welch, `3`
+ * Hamming, `4` Blackman). An empty array when `fft_size` is not a supported
+ * power of two. The per-frame half of a spectrum view; the smoothing and
+ * peak-hold across frames belong to whoever draws.
+ */
+export function spectrum_db(samples: Float32Array, fft_size: number, wintype: number): Float32Array;
 
 /**
  * JS face: one unary builtin by name (`"midicps"`, `"cpsmidi"`, `"dbamp"`,
@@ -295,6 +397,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
     readonly __wbg_rng_free: (a: number, b: number) => void;
     readonly __wbg_sampleclockmodel_free: (a: number, b: number) => void;
@@ -306,13 +409,28 @@ export interface InitOutput {
     readonly bundle_requirements: (a: number, b: number) => [number, number, number, number];
     readonly bundle_resolve: (a: number, b: number) => [number, number, number, number];
     readonly bundle_validate: (a: number, b: number) => [number, number];
+    readonly correlation: (a: number, b: number, c: number, d: number) => number;
     readonly degree_to_midinote: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly graph_bus_reserved: () => [number, number];
+    readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_encode_bundle: (a: number, b: any) => [number, number, number, number];
     readonly osc_encode_immediate_bundle: (a: any) => [number, number, number, number];
     readonly osc_encode_message: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly oscil_align: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly oscil_raw_frames: (a: number) => number;
+    readonly pyramid_baseBucket: (a: number) => number;
+    readonly pyramid_build: (a: number, b: number, c: number, d: number) => number;
+    readonly pyramid_channels: (a: number) => number;
+    readonly pyramid_column: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly pyramid_columns: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly pyramid_frames: (a: number) => number;
+    readonly pyramid_fromBytes: (a: number, b: number) => number;
+    readonly pyramid_levelBucket: (a: number, b: number) => number;
+    readonly pyramid_levelFor: (a: number, b: number) => number;
+    readonly pyramid_numLevels: (a: number) => number;
+    readonly pyramid_toBytes: (a: number) => [number, number];
     readonly quant_delay: (a: number, b: number) => number;
     readonly registry_alloc: (a: number, b: number) => [number, number];
     readonly registry_base: (a: number) => number;
@@ -349,9 +467,11 @@ export interface InitOutput {
     readonly scheduler_remove: (a: number, b: number) => number;
     readonly secs_to_beats: (a: number, b: number, c: number, d: number) => number;
     readonly secs_to_samples: (a: number, b: number) => number;
+    readonly spectrum_db: (a: number, b: number, c: number, d: number) => [number, number];
     readonly unary: (a: number, b: number, c: number) => [number, number, number];
     readonly unix_to_ntp: (a: number) => bigint;
     readonly unix_to_sample: (a: number, b: number, c: number, d: number) => number;
+    readonly oscil_display_frames: (a: number, b: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;

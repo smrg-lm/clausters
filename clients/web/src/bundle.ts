@@ -29,6 +29,7 @@ import { pagePools } from "./base/pool.ts";
 import type { Pools } from "./base/pool.ts";
 import { server } from "./engine/server.ts";
 import { guiHost } from "./gui/page.ts";
+import { interleave } from "./data/samples.ts";
 
 /** A declared parameter, as `bundle.json` carries it. */
 export interface ParamSpec {
@@ -140,17 +141,6 @@ async function fetchJson<T>(url: string): Promise<T> {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
     return (await response.json()) as T;
-}
-
-function interleave(audioBuffer: AudioBuffer): Float32Array {
-    const channels = audioBuffer.numberOfChannels;
-    const frames = audioBuffer.length;
-    const out = new Float32Array(frames * channels);
-    for (let ch = 0; ch < channels; ch++) {
-        const data = audioBuffer.getChannelData(ch);
-        for (let f = 0; f < frames; f++) out[f * channels + ch] = data[f];
-    }
-    return out;
 }
 
 /**
