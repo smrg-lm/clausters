@@ -16,6 +16,7 @@ Unless a page says otherwise it runs on the **in-page engine** — no server pro
 |---|---|
 | [`examples/synth.html`](https://github.com/smrg-lm/clausters/blob/main/clients/web/examples/synth.html) | A def built, sent, played and retuned from TypeScript, **over either carrier** — the choice is the one line of the page that names one. Start here. |
 | [`examples/sequencing.html`](https://github.com/smrg-lm/clausters/blob/main/clients/web/examples/sequencing.html) | The sequencing layer's two halves side by side: a `Pbind` playing generatively on the engine's own sample clock, and a `Timeline` bounced from a pattern, then seeked and looped by a `Playhead`. |
+| [`examples/scope.html`](https://github.com/smrg-lm/clausters/blob/main/clients/web/examples/scope.html) | The three data paths read by the script and drawn on its own canvas: a control bus as a meter, an audio tap as a triggered oscilloscope and a spectrum, and a buffer reduced by the peak pyramid into a waveform. |
 | [`examples/gui-host.html`](https://github.com/smrg-lm/clausters/blob/main/clients/web/examples/gui-host.html) | A GUI built and driven from TypeScript: the bound and the scripted control paths side by side, a metered bus, the linked waveform and spectrogram, and one button that swaps the in-page host for a native `clausters-gui --ws` one. |
 
 ## Ported from the Python client

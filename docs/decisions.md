@@ -3095,3 +3095,41 @@ read of what `npm pack --dry-run` would actually ship. The version rule it
 enforces is the repository's — package, crate and wheel are one release, one
 SemVer — while the binary ABI counters stay separate, as they are everywhere
 else.
+
+## Signal logic moves into the core when a second process draws it
+
+The GUI host was, for a long time, the only thing that read the server's live
+data: a `meter` names a control bus, a `scope` an audio tap, and the host
+subscribes, aligns, transforms and paints on its own. So the algorithms behind
+those views lived inside the host crate — the oscilloscope's trigger alignment
+in `host/oscil.rs`, the spectrum's decibel scaling inside `host/spectrum.rs` —
+and that was the right place while it lasted. Both are pure and both were
+already shared by the host's two fronts, native and browser, so nothing about
+wasm forced a move: the browser front computes them fine.
+
+What forced it is the web client's data paths (W10), which let a **script** read
+the same bus, the same tap and the same buffer and draw its own canvas. That
+makes a page a second drawer of the same trace, and a second drawer is exactly
+the condition the shared core exists for. The alternative was worse in two ways:
+a re-implementation of the trigger in TypeScript would drift from the host's
+silently (the failure mode is not a crash but two subtly different pictures of
+one signal), and exporting the host's internals from its own wasm bundle would
+make a script that draws its own canvas download the whole GPU host — 5.3 MB
+against the core's 438 KB — and turn the host crate into a host *and* a function
+library.
+
+So `oscil` and `spectrum` are now `clausters-core` modules, the host consumes
+them from there, and the browser reaches them through `clausters-core-web`
+alongside the peak pyramid and the stereo-field measurements. The precedent was
+already in the file next door: the spectrum's FFT and Hann window had made the
+same trip earlier, for the same reason (the spectrogram and the spectrum view
+had to agree bin for bin).
+
+The rule this settles, stated as a test rather than a taste: **signal logic
+belongs to the host only while the host is the only one computing it.** The
+count of consumers is what decides placement — not whether the code is "display
+math", and not which targets it compiles to. What stays in the host is what has
+no second consumer by nature: geometry, hit-testing, chrome, and the state that
+is a *look* rather than a measurement — a spectrum's averaging across frames, a
+scope's history depth. Those are decisions about how a picture should feel, and
+two views are entitled to disagree about them.

@@ -212,6 +212,19 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   **drive a native host** manda todo eso a la ventana nativa sin cambiar una
   línea del ejemplo. Versión scriptada: `clients/web/test.sh` (Chrome headless;
   `tests/gui.html` sintetiza los gestos sobre el canvas).
+- **Las vistas dibujadas por el script (cliente web).**
+  `clients/web/build.sh`, despues `(cd clients/web && python3 -m http.server)` y
+  abrir `http://localhost:8000/examples/scope.html` → **start**: la pagina no
+  suena a proposito (el tono se queda en su bus), lo que se mira es el canvas.
+  El **meter** de arriba respira con el LFO (bus de control por `/c_stream`), el
+  **osciloscopio** muestra una onda **quieta** y dice `lock` en la esquina — si
+  se moviera, el trigger del core no estaria enganchando —, el **espectro** tiene
+  su pico donde dice el slider `tone` (moverlo: el pico se corre y la onda cambia
+  de periodo), y la **forma de onda** de abajo es el buffer reducido por la
+  piramide de picos. **freeze the trace** congela osciloscopio y espectro
+  mientras el meter sigue moviendose: son dos suscripciones distintas. Nada de
+  esto usa un widget ni el host — lo dibuja el script con canvas 2D. Version
+  scripteada: `clients/web/test.sh` (`tests/data.html`).
 - **Los ejemplos portados del cliente Python (cliente web).**
   `clients/web/build.sh`, `(cd clients/web && python3 -m http.server)` y abrir
   cada uno en `http://localhost:8000/examples/`; todos suenan por el engine

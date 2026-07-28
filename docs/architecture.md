@@ -451,9 +451,14 @@ looks for:
   reached through a local shared resource, never chunked over the wire.
 - **Value math belongs to the core, display math to the host.** Anything a
   headless client could also want — envelope shapes, peak pyramids, FFT windows,
-  scales, tempo/sample arithmetic — lives in `clausters-core` and is *shared*;
+  scales, tempo/sample arithmetic, the oscilloscope's trigger alignment, a
+  spectrum frame's decibel curve — lives in `clausters-core` and is *shared*;
   only geometry, hit-testing and chrome are gui-side. This is why the `bpf`
   editor and the server's `EnvGen` cannot drift: they evaluate the same function.
+  The trigger (`core::oscil`) and the spectrum curve (`core::spectrum`) moved
+  down from this crate the moment a second drawer appeared — a client script
+  reading a tap itself — which is the rule stated as a test: a piece of signal
+  logic belongs here only while the host is the only one computing it.
 - **Edit-back is a payload, not an address.** A view that writes data back emits
   `/gui_event <id> <tag> <flat values…>` — `"points"` for a curve, `"clip"` for a
   placement, `"wire"` for a connection. The widget tree stays the source of truth
@@ -475,9 +480,9 @@ updates this table in the same change** (step 7 of the recipe below).
 | `slider`, `knob`, `number` | `host/controls.rs` (draw + the pure drag math); the shared `Range` payload in `host/widget.rs` | the script; value changes emit `/gui_event` (or a binding forwards) |
 | `button`, `toggle`, `menu` | `host/controls.rs` | idem |
 | `meter` | `host/meters.rs`; bus plumbing in `host/live.rs` | a control bus — the shm segment (native) / `/c_stream` snapshots (browser) |
-| `scope` | signal logic (window sizing, trigger) in `host/oscil.rs`, pure; history in `host/live.rs` | a control bus's rolling history, or audio **tap** rings (shm / `/tap_data`) |
+| `scope` | signal logic (window sizing, trigger) is `clausters-core::oscil`'s; history in `host/live.rs` | a control bus's rolling history, or audio **tap** rings (shm / `/tap_data`) |
 | `phasescope` | `host/phasescope.rs` (Lissajous geometry + correlation, pure) | two audio taps |
-| `spectrum` | `host/spectrum.rs`; the FFT + Hann window are `clausters-core`'s | `channels` adjacent audio taps |
+| `spectrum` | `host/spectrum.rs` keeps the across-frame smoothing; the per-frame curve (window, FFT, decibel scaling) is `clausters-core::spectrum`'s | `channels` adjacent audio taps |
 | `nodetree` | `host/nodetree.rs` | `/g_queryTree` over the client leg + node notifications |
 | `canvas` | `host/canvas.rs` (a GPU slot: the user's WGSL over the widget area) | `/gui_set` params and/or control buses |
 | `waveform` | data + GPU renderer in `src/waveform.rs` over `src/viewport.rs`; chrome via `host/frame.rs` | `cache`/`path` (mapped or fetched), a server `buffer`, or inline `data`/`blob` — `host/{bulk,mapfile,fetch}.rs` |

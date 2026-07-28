@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters data paths over the in-page carrier</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+      canvas#views { background: #12121a; border: 1px solid #2a2a36; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>the data paths read by the <b>script</b>: a control bus and an audio
+        tap streamed off the engine in this page's AudioWorklet, and a buffer
+        read out of it — all three drawn on a canvas this script feeds, with
+        no widget and no GUI host involved.</div>
+      <button id="boot">boot + read</button>
+      <canvas id="views" width="720" height="300"></canvas>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      W10's acceptance (clients/web/test.sh, headless Chrome): ?smoke=1
+      auto-runs. A def feeds a control bus and an audio tap; the script
+      subscribes to both, reads a generated buffer with /b_getn, reduces it,
+      and draws a meter, an oscilloscope and a waveform itself. What is
+      asserted is that the figures are the ones the GUI host would draw from
+      the same sources — the columns are the min/max of the very samples read,
+      the trace is the core's own trigger alignment, the streamed bus value is
+      what /c_get answers — and that the canvas actually carries ink. The WS
+      half is tests/data-ws.test.ts.
+    -->
+    <script type="module">
+      import {
+        loadOsc, loadCore, pageConnection, server as engine,
+        Server, SynthDef, data,
+        control, out, outCtl, sine,
+      } from "../dist/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      const TONE_HZ = 400.0;
+      const TONE_AMP = 0.4;
+
+      /** The three views, drawn by this script into one canvas. */
+      function draw(ctx, { level, trace, columns }) {
+        const { width, height } = ctx.canvas;
+        ctx.clearRect(0, 0, width, height);
+
+        // A meter: the control bus as a bar.
+        ctx.fillStyle = "#44aadd";
+        ctx.fillRect(8, 8, Math.max(0, level) * (width - 16), 24);
+
+        // An oscilloscope: the triggered trace, one point per pixel column.
+        ctx.strokeStyle = "#88dd66";
+        ctx.beginPath();
+        for (let x = 0; x < width; x++) {
+          const i = Math.floor((x / width) * trace.length);
+          const y = 110 - trace[i] * 60;
+          x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // A waveform: one min/max column per pixel, from the peak pyramid.
+        ctx.strokeStyle = "#ddaa44";
+        ctx.beginPath();
+        for (let x = 0; x < columns.min.length; x++) {
+          ctx.moveTo(x, 240 - columns.max[x] * 50);
+          ctx.lineTo(x, 240 - columns.min[x] * 50);
+        }
+        ctx.stroke();
+      }
+
+      async function run() {
+        await loadOsc();
+        await loadCore();
+
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        if (raw.context.state !== "running") {
+          throw new Error(`context did not run: ${raw.context.state}`);
+        }
+        const connection = await pageConnection();
+        const server = await Server.open(connection);
+        const info = await server.queryInfo();
+        log(`engine: ${info.taps} taps of ${info.tapFrames} frames, `
+          + `${info.controlBuses} control buses`);
+        if (info.taps === 0) throw new Error("the engine has no tap region");
+
+        // What feeds the paths: a tone on an audio bus, and an LFO on a
+        // control bus. Both are ordinary defs — nothing about them knows a
+        // view is watching.
+        const audioBus = server.audioBus();
+        const ctlBus = server.controlBus();
+        await server.addSynthDef(new SynthDef("page_data_tone",
+          out(control("bus", 0.0), sine(TONE_HZ).mul(TONE_AMP))));
+        await server.addSynthDef(new SynthDef("page_data_lfo",
+          outCtl(control("bus", 0.0), sine(1.5).mul(0.5).add(0.5))));
+        server.synth("page_data_tone", { bus: audioBus.index });
+        server.synth("page_data_lfo", { bus: ctlBus.index });
+
+        // The tap: an index from the registry, never a number picked by hand.
+        const tap = server.taps.alloc();
+        server.tap(tap, audioBus);
+        await server.sync();
+        await sleep(200);   // let the ring fill a window
+
+        // ---- path 1: the control bus ----
+        const buses = await data.BusStream.open(server, [ctlBus], { periodMs: 20 });
+        await sleep(400);
+        if (buses.snapshots < 5) {
+          throw new Error(`only ${buses.snapshots} bus snapshots in 400 ms`);
+        }
+        const streamed = buses.value(ctlBus);
+        const queried = await server.getBus(ctlBus);
+        log(`bus ${ctlBus.index}: streamed ${streamed.toFixed(4)}, `
+          + `/c_get ${queried.toFixed(4)} (${buses.snapshots} snapshots)`);
+        if (!(streamed >= 0 && streamed <= 1)) {
+          throw new Error(`the LFO's value is out of range: ${streamed}`);
+        }
+
+        // ---- path 2: the audio tap ----
+        const frames = data.scopeFrames(10.0, info.nominalSampleRate);
+        const taps = await data.TapStream.open(server, [tap], {
+          frames, periodMs: 20,
+        });
+        await sleep(400);
+        const window = taps.window(tap);
+        if (!window) throw new Error("no /tap_data arrived");
+        const peak = Math.max(...window.samples.map(Math.abs));
+        if (Math.abs(peak - TONE_AMP) > 0.05) {
+          throw new Error(`the tap's amplitude is ${peak}, not ~${TONE_AMP}`);
+        }
+        const trace = data.scopeWindow(window.samples, {
+          windowMs: 10.0, sampleRate: info.nominalSampleRate,
+        });
+        if (!trace.locked) throw new Error("a steady tone did not lock the trigger");
+        log(`tap ${tap}: peak ${peak.toFixed(3)}, `
+          + `${trace.samples.length} frames locked at ${window.endPosition}`);
+
+        // The spectrum of that same window finds the tone where it is.
+        const fftSize = 1024;
+        const curve = data.spectrumDb(window.samples.subarray(0, fftSize), { fftSize });
+        let loudest = 0;
+        for (let b = 1; b < curve.length; b++) {
+          if (curve[b] > curve[loudest]) loudest = b;
+        }
+        const hz = (loudest * info.nominalSampleRate) / fftSize;
+        if (Math.abs(hz - TONE_HZ) > info.nominalSampleRate / fftSize) {
+          throw new Error(`the spectrum's peak is at ${hz} Hz, not ${TONE_HZ}`);
+        }
+        log(`spectrum: loudest bin ${loudest} = ${hz.toFixed(1)} Hz `
+          + `at ${curve[loudest].toFixed(1)} dB`);
+
+        // ---- path 3: the buffer, in bulk ----
+        const total = 8000;
+        const buffer = await server.allocBuffer(total, 1);
+        await server.genBuffer(buffer, "sine1", [["i", 7], 1.0, 0.5]);
+        const samples = await server.getSamples(buffer);
+        if (samples.length !== total) {
+          throw new Error(`read ${samples.length} of ${total} samples`);
+        }
+        const peaks = data.Peaks.build(samples, { baseBucket: 256 });
+        const width = 512;
+        const columns = peaks.columns(0, { width });
+
+        // The assertion the milestone is about: a column is the min/max of the
+        // samples under it — the same definition the GUI host reduces with,
+        // since both call one `clausters_core::peaks`. A column may reach a
+        // little past its span (it reads whole buckets); it can never be
+        // narrower than the samples it covers.
+        const step = total / width;
+        for (let i = 0; i < width; i++) {
+          let lo = Infinity, hi = -Infinity;
+          for (let s = Math.floor(i * step); s < Math.floor((i + 1) * step); s++) {
+            lo = Math.min(lo, samples[s]);
+            hi = Math.max(hi, samples[s]);
+          }
+          if (columns.min[i] > lo + 1e-6 || columns.max[i] < hi - 1e-6) {
+            throw new Error(`column ${i} does not cover its samples: `
+              + `[${columns.min[i]}, ${columns.max[i]}] vs [${lo}, ${hi}]`);
+          }
+        }
+        log(`buffer ${buffer.bufnum}: ${samples.length} samples, `
+          + `${peaks.numLevels} pyramid levels, ${width} columns verified`);
+
+        // ---- and the drawing, which is the point of all three ----
+        const canvas = document.getElementById("views");
+        const ctx = canvas.getContext("2d");
+        draw(ctx, { level: streamed, trace: trace.samples, columns });
+
+        // Ink on the canvas: the script drew, rather than merely computing.
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let inked = 0;
+        for (let i = 3; i < pixels.length; i += 4) if (pixels[i] > 0) inked++;
+        if (inked < 1000) throw new Error(`the canvas is blank (${inked} pixels)`);
+        log(`drawn: ${inked} pixels inked`);
+
+        // Everything this script took, returned.
+        await buses.stop();
+        await taps.stop();
+        server.tap(tap, -1);
+        server.taps.free(tap);
+        peaks.free();
+        server.freeBuffer(buffer);
+        server.freeBus(audioBus);
+        server.freeBus(ctlBus);
+
+        verdict(`PASS: bus ${streamed.toFixed(3)}~${queried.toFixed(3)}, `
+          + `tap peak ${peak.toFixed(3)} locked, ${hz.toFixed(0)} Hz, `
+          + `${width} columns, ${inked} pixels`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

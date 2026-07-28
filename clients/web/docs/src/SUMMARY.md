@@ -7,6 +7,7 @@
 - [Getting started](getting-started.md)
 - [The client, layer by layer](guide.md)
 - [Routines and clocks](routines-and-clocks.md)
+- [Reading the server: buses, taps and buffers](data.md)
 - [Components: an instrument in the page](components.md)
 - [Examples](examples.md)
 
@@ -15,5 +16,6 @@
 - [API reference](api/index.md)
   - [gui](api/Namespace.gui.md)
   - [seq](api/Namespace.seq.md)
+  - [data](api/Namespace.data.md)
   - [signals](api/Namespace.signals.md)
   - [builtins](api/Namespace.builtins.md)

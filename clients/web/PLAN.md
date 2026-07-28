@@ -42,6 +42,9 @@ clients/web/
       guidef.ts  handle.ts  ids.ts
     (seq/                 #   sequencing (mirrors clausters/seq) — W3
       event.ts  eventstream.ts  pattern.ts  timeline.ts)
+    data/                 #   the data paths: what a view reads off the server
+      buses.ts  taps.ts   #     the streamed sources (/c_stream, /tap_stream)
+      samples.ts  peaks.ts analysis.ts
     (responders.ts        #   OscFunc/MidiFunc dispatch (mirrors responders.py) — W8/W9)
     (session.ts           #   the Session facade — W18)
     engine/               #   browser-only: the in-page engine runtime
@@ -482,7 +485,7 @@ browser they are one API: Web MIDI is the only MIDI I/O a page has.
 
 **Acceptance:** a pattern plays to a browser MIDI output on the same beat grid it plays to the audio server, and a `MidiFunc` on an input port drives defs on the server, over either carrier.
 
-### W10 - The browser data paths: buses, bulk, and the analysis exports
+### ✅ W10 - The browser data paths: buses, bulk, and the analysis exports
 
 *Deferred out of W2.* The paths the heavy views feed on, read by the **script**
 this time. The host
@@ -494,6 +497,56 @@ works today); this is the client getting the same numbers.
 - The core's `correlation`/`lissajous` analysis exports surfaced to TS.
 
 **Acceptance:** a TS app reads a control bus and a buffer over either carrier and draws them **itself** (a canvas the script feeds, not a host-fed widget), numerically matching what the GUI host draws from the same source.
+
+**What shipped.** The three paths, and the move that makes "numerically
+matching" true by construction rather than by care.
+
+The **script reads what the host reads**. `Server` grew the commands
+(`streamBuses`, `tap` with a `taps` registry beside the bus and buffer ones,
+`streamTaps`, `getSamples` chunked by the frame ceiling the transport
+advertises) and `src/data/` the sources over them: `BusStream` decoding the
+periodic `/c_set` snapshots, `TapStream` placing each `/tap_data` window on its
+tap's own sample axis by `endPosition`, `Peaks` over the wasm pyramid whose
+`columns` reads a whole pixel row per crossing, and the measurements a view is
+drawn with. The subscriptions ride `Server.onReply`, so **W8** folds them onto
+`OscFunc` later without changing their surface.
+
+Three things are worth carrying forward:
+
+- **The signal logic moved into the core.** The oscilloscope's trigger
+  alignment and the spectrum's decibel curve lived in the GUI host crate,
+  correctly, while the host was the only thing computing them; a page drawing
+  its own trace makes a second consumer, so they became
+  `clausters_core::{oscil, spectrum}` and the host now consumes them from
+  there. The alternative — a trigger re-implemented in TypeScript — fails
+  silently, as two subtly different pictures of one signal, and exporting the
+  host's internals would make a script that draws a canvas download 5.3 MB of
+  GPU host to reach 40 lines of arithmetic. Rationale in `docs/decisions.md`.
+- **The peak cache is byte-identical across clients.** `Peaks.toBytes()` writes
+  what the Python client writes and what the GUI host maps — the mono layout
+  for one channel, the multichannel one above it — which is what the parity
+  vectors assert, one digest covering the whole format.
+- **The bulk path is read-only, and not by choice.** The server has no
+  buffer-write command: `/b_set`/`/b_setn` exist only as the *replies* to
+  `/b_get`/`/b_getn`. So samples reach a buffer through `/b_gen`,
+  `/b_allocRead`, or — in the page, where the carrier shares memory with the
+  engine — `loadSample`, which fetches and decodes with the browser's own
+  decoder and installs through the embed door. Writing from a client is noted
+  as a gap to plan in the server's `PLAN.md`; the order will be the standing
+  one, server command → the Python client → the port here.
+
+**Verified:** `./test.sh` — 137 `node --test` cases (23 new: the peak cache and
+the stereo field against `data-vectors.json` frozen from the Python client, the
+trigger and the spectrum's behaviour, the snapshot decoding and the bulk
+chunking over a fake carrier, plus four against a real `clausters --ws` server
+— a streamed bus, an LFO through it, a tap carrying a synth's samples with its
+trace locked, and a buffer read back in chunks) and six headless-Chrome
+acceptances, the new one being `tests/data.html`: a def feeds a bus and a tap,
+the script subscribes to both, reads a generated buffer, and draws a meter, a
+scope and a waveform on its own canvas — with the columns asserted to be the
+min/max of the very samples read, the trigger locked, the spectrum's peak on
+the tone, and the canvas carrying ink. Example: `examples/scope.html`, the
+three paths in one page; book chapter: "Reading the server".
 
 ### W11 - Automation: a break-point curve as a control vector
 

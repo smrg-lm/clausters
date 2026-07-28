@@ -211,6 +211,21 @@ completed items lives in the git history.)
 
 - ✅ **M30 — The introspection verbs: what a running server holds** *(done 2026-07-19)* — the retrieval surface a client palette needs, three queries in the `/server_info` mold, adding **no** node/def semantics anywhere. **`/d_query [name...]`** → one `/d_info` per def then `/done`, listing the loaded defs with `name, family` (`synth`/`faust`/`graph`) and their control surface (`name, default, rate`); a faust def appends each param's `min, max, step`, a graph def reports its surface **ports** with the inner `member, control, mul, add` targets each drives, and an unknown name comes back with an empty family rather than failing the batch. **`/b_query` with no argument** → one `/b_info` listing every allocated buffer in the existing four-arg shape. **`/u_query [kind...]`** → one `/u_info` per UGen then `/done`: arity (`-1` variadic), default/allowed rates, exec/bus/op/spectral roles, and the **named inputs with defaults**. That last field did not exist — `UGenDescriptor` carried only a count — so the descriptor grew `inputs` and all sixty rows were filled by reconciling the `docs/schemas.md` catalog table with the Python callables' signatures; the wire stays positional and no def changes behavior, the names being descriptive metadata a palette labels an inlet with (rationale, and why `ugens.py` stays hand-written behind a contrast test instead of generated, in `docs/decisions.md`). Multi-reply batches close with `/done "<command>"` so an argument-less query has an end marker, and each item is its own message because the payloads are variable-length and a whole catalog would outgrow a UDP datagram. A build without `synth` has no catalog and replies with an empty listing, not a failure — Faust has no UGens, only FaustDefs, and its box vocabulary stays client-side. Python: `Server.query_defs()` / `query_buffers()` / `query_ugens()` returning `DefInfo`/`BufferInfo`/`UgenInfo` (named in the existing `query_*` family — a bare `buffers()` would have shadowed the `BufferAllocator` attribute), the anti-drift contrast test against `ugens.py`, and `examples/introspect_server.py`. Pairs with GUI P2.
 
+- **Buffer writing from a client — to plan.** The `/b_*` family has no write
+  command: `/b_set`/`/b_setn` exist only as the **replies** to `/b_get`/
+  `/b_getn` (scsynth has them in both roles). So a client can read a buffer's
+  samples but never put samples into one — it can only ask the server to fill
+  it (`/b_gen`, `/b_allocRead`, `/b_read`) or, when it shares memory with the
+  engine, install them through the embed door (`b_load`, what the browser's
+  in-page carrier uses). Found while closing the web client's W10, whose bulk
+  path is read-only for exactly this reason, and whose `loadSample` is in-page
+  only. What a design has to settle: the install path (the NRT queue `/b_gen`
+  already uses, so a write does not touch the audio thread), the semantics
+  (scsynth's `bufnum start count values…`, repeated), how a multi-megabyte
+  edit is chunked against the frame ceiling, and whether an edited buffer
+  needs any notification. The reference client leads, so the order is server
+  command → `Server.set_samples` in Python → the port to TypeScript.
+
 ### Reviewed ideas: what was dropped and why
 
 - **Denormals** (from the memory/efficiency idea): already implemented post-M7

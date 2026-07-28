@@ -15,8 +15,8 @@ what the host reads and draw it itself:
 - **control buses**, streamed over the connection (`/c_stream` → periodic
   `/c_set` snapshots),
 - **audio taps**, streamed the same way (`/tap_stream` → `/tap_data` windows),
-- **bulk buffers**, read and written by `/b_getn`/`/b_setn` or fetched and
-  decoded by the browser, with the **peak pyramid built in wasm**,
+- **bulk buffers**, read by `/b_getn` or fetched and decoded by the browser,
+  with the **peak pyramid built in wasm** (read-only — see 2.1),
 
 plus the **analysis exports** the views are made of: correlation, Lissajous,
 the FFT magnitudes, and the oscilloscope's trigger alignment.
@@ -69,6 +69,17 @@ process lives once"), applied the moment a second process wants it.
 
 The unit tests move with the code.
 
+### 1.1b `clausters_core::spectrum` — the same move, one layer up
+
+Found while writing 1.2: the host's spectrum takes its FFT and window from the
+core already, but the **scaling a display reads** — divide by the window's
+coherent gain so a full-scale sine reads ~0 dB, floor at -120 — is computed in
+`host/spectrum.rs`. A choice made twice is a choice made differently, so the
+per-frame half becomes `clausters_core::spectrum` (`coherent_gain`,
+`magnitudes_db_into`, `REF_FLOOR`) and the host keeps only what has memory
+across frames: the exponential average and the peak hold, which are display
+smoothing.
+
 ### 1.2 `crates/clausters-core-web` — the new doors
 
 Each one a mechanical shell over the core, the shape every door in that crate
@@ -78,7 +89,7 @@ already has:
 |---|---|
 | `correlation(l, r)` → `number \| undefined` | `measure::correlation` |
 | `lissajous(l, r)` → `Float32Array` (`[x, y]` interleaved) | `measure::lissajous_into` |
-| `fft_magnitudes(samples, fft_size, wintype)` | `fft::rfft_magnitudes_into` + `window::Window` |
+| `spectrum_db(samples, fft_size, wintype)` | `spectrum::magnitudes_db_into` (1.1b) |
 | `oscil_display_frames`, `oscil_raw_frames`, `oscil_align` | `oscil` (1.1) |
 | `JsPyramid` | `peaks::MultiPyramid` |
 
@@ -115,22 +126,32 @@ this milestone is not a release.
 | `taps` (a registry) + `tap(tap, bus)` | `taps`, `tap` | `/tap` |
 | `streamTaps(periodMs, frames, ...taps)` | `stream_taps` | `/tap_stream` |
 | `getSamples(buf, {start, count, chunk})` | `get_samples` | `/b_getn` → `/b_setn` |
-| `setSamples(buf, start, samples, {chunk})` | — | `/b_setn` |
 | `loadSample(url)` | — | see below |
 
 The tap registry is the core's occupancy map like every other allocator here,
 sized from `/server_info`'s tap count, so two views never fight over one ring —
 the same posture `clausters.scope` keeps in Python.
 
-`getSamples`/`setSamples` chunk by the **transport's own bound**: the frame
-ceiling the server advertises in `/server_info` (queried once and cached),
-which is megabytes per round trip on a stream carrier. The rule is the Python
-client's `_bulk_chunk`, ported.
+`getSamples` chunks by the **transport's own bound**: the frame ceiling the
+server advertises in `/server_info` (queried once and cached), which is
+megabytes per round trip on a stream carrier. The rule is the Python client's
+`_bulk_chunk`, ported.
 
-`loadSample(url)` is one API over two carriers: `fetch` +
-`decodeAudioData` gives interleaved samples, which the in-page engine takes
-through `bLoad` (the path `bundle.ts` already walks, folded in here) and a
-socket carrier takes as `setSamples` chunks after a `/b_alloc`.
+`loadSample(url)` is `fetch` + `decodeAudioData` for interleaved samples, which
+the in-page engine takes through `bLoad` (the path `bundle.ts` already walks,
+folded in here).
+
+**Amended during implementation.** The design said a socket carrier would take
+those samples as `/b_setn` chunks; it cannot, because **the server has no
+buffer-write command** — `/b_set` and `/b_setn` exist only as the *replies* to
+`/b_get`/`/b_getn`, and the `/b_*` dispatch has no write row. The WS acceptance
+found it (a buffer written from the client read back as silence). So the bulk
+path is **read-only** in this milestone, `setSamples` is not shipped, and
+`loadSample` refuses a carrier that does not share memory with the engine,
+naming `readBuffer` as the socket alternative. Writing from a client is a
+server-track feature and is noted as a gap to plan in the server's `PLAN.md`;
+the order is the standing one — server command, then the Python client, then
+the port here.
 
 ### 2.2 `src/data/` — the sources
 
@@ -145,7 +166,7 @@ subscribe/read surface and no drawing of its own:
   `endPosition` (consecutive snapshots overlap or gap by exactly the position
   delta). Beside it `scopeWindow(...)`, the trigger-aligned trace, computed by
   the core's `oscil`.
-- `data/samples.ts` — the bulk read/write helpers and the fetch/decode pair.
+- `data/samples.ts` — the fetch/decode pair and the interleaving helpers.
 - `data/peaks.ts` — `Peaks` over `JsPyramid`: `Peaks.build(samples, {channels,
   baseBucket})` and `columns(channel, {start, end, width})` → `{min, max}`,
   ready for a canvas.
@@ -168,8 +189,9 @@ decoded messages".
   trigger alignment and FFT magnitudes. Plus, against a fake connection, the
   chunking of `getSamples`/`setSamples` and the decoding of bus and tap
   snapshots.
-- **The WS suite** — against a real `clausters --ws`: a control bus and an
-  audio tap read live, and a `setSamples` → `getSamples` round trip.
+- **The WS suite** — against a real `clausters --ws`: a control bus read live,
+  an LFO through it, an audio tap carrying a synth's samples, and a whole
+  buffer read back through the chunked path.
 - **The page acceptance** (`tests/data.html`, headless Chrome, in-page engine,
   no server process) — a synth moves a control bus and feeds a tap; the script
   subscribes, **draws it itself** on a canvas, reads a buffer with `/b_getn`,
@@ -191,8 +213,9 @@ decoded messages".
 
 ## Out of scope
 
-- **Editing back** beyond `setSamples`: an edit-back protocol for a view that
-  owns data (the `/gui_*` edit payloads) is the GUI track's, not this one.
+- **Writing samples into a buffer**: it needs a server command that does not
+  exist (above), and an edit-back protocol for a view that owns data (the
+  `/gui_*` edit payloads) is the GUI track's besides.
 - **The spectrogram's STFT cache** — the heavy offline analysis the editor-grade
   view wants. `fft_magnitudes` is the per-frame door; a cached STFT is its own
   piece of work.
