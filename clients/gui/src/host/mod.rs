@@ -717,6 +717,7 @@ impl Host {
         // member applies group-wide (linked views).
         let mut is_timeline = false;
         let mut is_clip = false;
+        let mut is_roll = false;
         if let Some(root) = self.registry.root_of(id)
             && let Some(tree) = self.window_defs.get_mut(&root)
         {
@@ -725,6 +726,7 @@ impl Host {
             if let Some(widget) = tree.find_mut(id) {
                 is_timeline = widget.is_timeline();
                 is_clip = matches!(widget.kind, widget::WidgetKind::Clip { .. });
+                is_roll = matches!(widget.kind, widget::WidgetKind::PianoRoll { .. });
                 for (k, v) in &props {
                     if !(is_timeline && timeline::is_timeline_key(k)) {
                         // The generic place props (`w`/`h`/`weight`/`x`/`y`)
@@ -748,10 +750,24 @@ impl Host {
         if is_timeline {
             self.set_timeline_props(id, &props, effects);
         }
+        // A content change moves the extent the shared axis spans, so it has to
+        // be re-registered: a moved or resized clip lengthens its lane, and a
+        // piano-roll's extent *is* its notes and OSC events. Without this a roll
+        // stays on the axis it was defined with, so everything written into an
+        // empty one lands outside the window -- the roll never shows what is
+        // painted into it. (The host's own MIDI painting already re-registers;
+        // see `gui::midi`.)
         if is_clip {
-            // A moved or resized clip changes its lane's extent, and so the
-            // shared axis (a clip pushed past the end lengthens the timeline).
             self.sync_track_totals();
+        } else if is_roll && keys.iter().any(|k| matches!(k.as_str(), "notes" | "osc")) {
+            // Keeping the window, not refitting it: a roll is *written into*, a
+            // note at a time, so a take that grows must scroll under a still
+            // axis rather than zoom it out from under the notes just drawn --
+            // the same rule a dragged clip follows, for the same reason. And
+            // once the take runs past the right edge, the axis pages forward to
+            // where it is still being written.
+            self.sync_track_totals_keeping_view();
+            self.follow_timeline_end(id, effects);
         }
         if touches_source {
             self.sync_bus_watches();

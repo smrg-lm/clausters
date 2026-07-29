@@ -172,6 +172,17 @@ The `scroll` container is **one widget with one gesture path**, and the familiar
 
 The two shapes also **bound differently, deliberately**. A constrained scroll view is a bounded document: it clamps to `[0, content - visible]`, so you cannot scroll above its first row or past its last. The free plane is conceptually unbounded — `content_w`/`content_h` only say where its contents happen to sit — so it overscrolls by half a viewport past each edge, which is what keeps every drag direction alive when the plane is sitting at its content's corner (and still little enough that the contents can never be lost off-screen).
 
+**A `pianoroll`'s axis exists before its notes.** A roll is a surface written
+*into* — drawn on, or painted from live MIDI — so its time axis is not its
+content: an empty roll navigates a grid of sixteen beats read off its own
+`tempo`/`sample_rate`, and (like a lane) it can be zoomed out past whatever it
+holds. Writing notes into it with `/gui_set notes` therefore does **not** refit
+the window onto them — the take grows under a still axis, at the zoom you left
+it at — and when the take passes the right edge the axis **pages forward** by
+whole windows, so what is on screen holds still while it fills and the writing
+continues at the left of the next one. `sel_*`, `view_*` and the wheel/Shift+drag
+gestures navigate it as on any other timeline view.
+
 A timeline view (and a lane) shows the transport two ways, and they are different
 things: `playhead_at` **anchors the line to the engine clock** (it is the clock
 value at timeline position 0, so the line *sweeps* as the audio runs), while

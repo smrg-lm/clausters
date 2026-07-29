@@ -446,6 +446,30 @@ other two remain open (unnumbered until their design converges).
   lanes resolve to one group key, it follows the lanes' window across a zoom, and
   it contributes no extent of its own.
 
+- ✅ **G32d — A roll's axis exists before its notes, and follows them**: the
+  gap the client-side MIDI painting turned up (`gui_pianoroll_midi.py`), the
+  piano-roll's version of G32b. A `pianoroll` opened *empty* registered extent
+  0, so its window was the single sample `View::full` floors to and every note
+  written into it by `/gui_set` landed outside — the roll stayed blank however
+  much was painted. Two halves, both the DAW's: the roll now navigates an
+  **empty grid** it has before it has content (`EMPTY_BEATS`, sixteen beats read
+  off its own `tempo`/`sample_rate`; a floor on the *axis*, never on the extent,
+  so nothing that measures material sees it) and the authoring headroom that
+  used to be the lane's alone; and a `/gui_set` of `notes`/`osc` re-registers
+  the extent **keeping the window** (a take grows under a still axis instead of
+  zooming it out from under the notes just drawn) and **pages the axis forward**
+  when the take passes the right edge. Tests: an empty roll spans its grid and
+  survives its first note; a take written past the edge pages one window on at
+  the same zoom.
+
+  **Open — unify the follow rules.** Three places now decide how a window
+  follows content it does not contain: this paging, G32b's edge auto-scroll
+  during a clip drag, and the notation cursor's follow. They share one
+  principle — *at constant zoom, the window goes where the writing is* — and
+  differ only in what triggers them (content arriving, a held cursor, a moving
+  playhead). Factor the principle into one place rather than letting three
+  copies drift; unnumbered until the shape is clear.
+
 - ✅ **G32b — A clip dragged to the edge pulls the view** *(done 2026-07-28)*:
   the companion gap to G22's "empty time to zoom out into". The headroom let a
   lane be zoomed *out* past its content, but a drag still mapped the cursor

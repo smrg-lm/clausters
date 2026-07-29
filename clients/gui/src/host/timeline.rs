@@ -172,35 +172,106 @@ impl Host {
 
     /// The timeline length of group `key`: the max of its members' **placed**
     /// data extents — each member's data occupies `[offset, offset + extent]`
-    /// on the shared timeline, so a clip placed late lengthens the group (>= 1,
-    /// so an empty group still navigates sanely).
+    /// on the shared timeline, so a clip placed late lengthens the group. A
+    /// group with nothing in it yet falls back to the axis it navigates empty
+    /// (see [`timeline_empty_span`]), so it is never zero.
+    ///
+    /// [`timeline_empty_span`]: Host::timeline_empty_span
     pub fn timeline_total(&self, key: GroupKey) -> usize {
-        self.timeline_members()
+        let content = self
+            .timeline_members()
             .iter()
             .filter(|m| m.key == key)
             .map(|m| m.offset.max(0.0).ceil() as usize + self.timelines.total_of(m.id))
             .max()
-            .unwrap_or(0)
-            .max(1)
+            .unwrap_or(0);
+        // Content is the axis once there *is* content; the empty span only
+        // stands in for a group that has none yet (>= 1, so it still navigates).
+        if content == 0 {
+            self.timeline_empty_span(key)
+        } else {
+            content
+        }
     }
 
-    /// How far past its content a **multitrack** group may be navigated: a lane
-    /// must be zoomable *out* into empty time, or there is nowhere to drag a clip
-    /// to — the composition would only ever grow by dropping something beyond the
-    /// visible edge. The heavy views keep their content-bound axis (there is no
-    /// signal out there to look at), so the headroom applies only to a group that
-    /// holds a lane.
+    /// How far past its content an **authoring** group may be navigated: a lane
+    /// or a roll must be zoomable *out* into empty time, or there is nowhere to
+    /// drag a clip to and nowhere to record into — the composition would only
+    /// ever grow by dropping something beyond the visible edge. The heavy views
+    /// keep their content-bound axis (there is no signal out there to look at),
+    /// so the headroom applies only to a group that holds an authoring surface.
     const NAV_HEADROOM: usize = 4;
 
-    /// The length the navigation window is clamped against — the group's content,
-    /// plus the multitrack's empty-time headroom.
+    /// The empty time a `pianoroll` group navigates over, in beats — the axis a
+    /// roll has *before* its content does. A roll is written into (drawn, or
+    /// recorded from MIDI), so its timeline is not its notes: it is a grid that
+    /// exists first and scrolls, like a DAW's lane while it records. Without it
+    /// an empty roll navigates the single sample [`View::full`] floors to, and
+    /// every note painted into it lands outside the window — the roll stays
+    /// blank however much is written. Four bars of 4/4, read off its own grid.
+    ///
+    /// It is a **floor on the axis, not on the content**: `timeline_total` stays
+    /// the honest extent of what is there, so nothing that measures the material
+    /// (a lane's clips, a hit-test) sees this number.
+    const EMPTY_BEATS: f64 = 16.0;
+
+    /// The sample rate assumed for a roll that declares none. The timeline's
+    /// unit is samples either way; this only scales the empty axis it starts on,
+    /// before there is anything drawn against it.
+    const ASSUMED_RATE: f64 = 48_000.0;
+
+    /// The length the navigation window is clamped against — the group's content
+    /// plus the authoring headroom, and never less than a roll's empty grid (so
+    /// the window a roll opened on survives its first note arriving).
     fn timeline_span(&self, key: GroupKey) -> usize {
         let total = self.timeline_total(key);
-        if self.group_has_lane(key) {
-            total.saturating_mul(Self::NAV_HEADROOM)
+        if self.group_has_lane(key) || self.roll_grid(key).is_some() {
+            total
+                .saturating_mul(Self::NAV_HEADROOM)
+                .max(self.timeline_empty_span(key))
         } else {
             total
         }
+    }
+
+    /// The empty axis group `key` navigates before it holds anything:
+    /// [`EMPTY_BEATS`] of a roll's own grid, or one sample for a group with no
+    /// roll (a view of a given signal has nothing to show out there, and a lane
+    /// spans its clips).
+    ///
+    /// [`EMPTY_BEATS`]: Host::EMPTY_BEATS
+    fn timeline_empty_span(&self, key: GroupKey) -> usize {
+        let Some((rate, tempo)) = self.roll_grid(key) else {
+            return 1;
+        };
+        let rate = if rate > 0.0 { rate } else { Self::ASSUMED_RATE };
+        let tempo = if tempo > 0.0 { tempo } else { 1.0 };
+        (rate * Self::EMPTY_BEATS / tempo).ceil() as usize
+    }
+
+    /// The `(sample_rate, tempo)` grid of the first `pianoroll` in group `key`,
+    /// if it holds one — the surface whose axis exists before its content.
+    fn roll_grid(&self, key: GroupKey) -> Option<(f64, f64)> {
+        self.window_defs.iter().find_map(|(_root, tree)| {
+            fn walk(w: &Widget, key: GroupKey, out: &mut Option<(f64, f64)>) {
+                if out.is_none()
+                    && let (Some(id), Some(editor), true) = (
+                        w.id,
+                        w.kind.editor(),
+                        matches!(w.kind, super::widget::WidgetKind::PianoRoll { .. }),
+                    )
+                    && group_key(id, editor.link) == key
+                {
+                    *out = Some((editor.sample_rate, editor.tempo));
+                }
+                for c in &w.children {
+                    walk(c, key, out);
+                }
+            }
+            let mut found = None;
+            walk(tree, key, &mut found);
+            found
+        })
     }
 
     /// Whether group `key` holds a `track` lane (a multitrack axis).
@@ -729,6 +800,40 @@ impl Host {
             }
         }
     }
+
+    /// Page widget `id`'s group forward until the end of its content is inside
+    /// the window again — the other half of writing into a still axis. Keeping
+    /// the window (`set_timeline_total_keeping_view`) is what stops a growing
+    /// take from zooming the axis out from under the notes; this is what stops
+    /// it from being written off the right edge. Whole windows at a time, at
+    /// constant zoom, so what is on screen holds still while it fills and the
+    /// take continues at the left — a DAW's page scroll while recording, not a
+    /// re-fit. A window still showing everything never moves.
+    ///
+    /// The same principle as the edge auto-scroll a held clip drag runs
+    /// (`Gestures::tick`): *at constant zoom, the window goes where the writing
+    /// is*. They differ only in the trigger — content arriving here, a standing
+    /// cursor there — and are two copies of one rule for now; unifying them is
+    /// recorded as open in `clients/gui/PLAN.md` (G32d).
+    pub(super) fn follow_timeline_end(&mut self, id: i32, effects: &mut Vec<HostEffect>) {
+        let Some(key) = self.timeline_key(id) else {
+            return;
+        };
+        let total = self.timeline_total(key) as f64;
+        let span = self.timeline_span(key);
+        let Some(state) = self.timelines.states.get_mut(&key) else {
+            return;
+        };
+        let (start, len) = (state.nav.start, state.nav.len);
+        if len <= 0.0 || total <= start + len {
+            return;
+        }
+        let pages = ((total - start - len) / len).ceil();
+        state.nav.set_start(start + pages * len, span);
+        for root in self.timeline_roots(key) {
+            effects.push(HostEffect::Redraw(root));
+        }
+    }
 }
 
 /// Whether a `/gui_set` key is one of the shared timeline keys the group model
@@ -1183,6 +1288,111 @@ mod tests {
         host.set_timeline_total_keeping_view(100, grown * 2);
         let (kept, _) = host.timeline_nav(100).unwrap();
         assert_eq!(kept.len, held, "a drag holds the zoom");
+    }
+
+    /// A roll's axis exists *before* its content: it is a surface to write into
+    /// (drawn, or recorded from MIDI), so it opens on an empty grid instead of
+    /// the one sample an empty extent would give it — and the notes painted in
+    /// afterwards scroll under that window rather than collapsing it onto the
+    /// first of them. Without this a roll opened empty never shows anything
+    /// written into it, which is what the client-side MIDI painting does.
+    #[test]
+    fn a_roll_has_an_axis_before_it_has_notes() {
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","margin":0,"children":[
+                {"id":100,"type":"pianoroll","notes":[],"min":48,"max":84,
+                 "sample_rate":48000.0,"tempo":2.0}
+            ]}"#,
+            ),
+            from(),
+        );
+        // Sixteen beats at two beats a second, 48 kHz: the grid it opens on.
+        let (nav, total) = host.timeline_nav(100).unwrap();
+        assert_eq!(total, 384_000, "an empty roll still spans its grid");
+        assert_eq!((nav.start, nav.len), (0.0, 384_000.0));
+
+        // A note painted in registers as content, and the window survives it.
+        host.handle_packet(
+            set_msg(
+                100,
+                &[(
+                    "notes",
+                    OscType::String("[1000.0, 500.0, 60.0, 100, 0]".into()),
+                )],
+            ),
+            from(),
+        );
+        let (nav, total) = host.timeline_nav(100).unwrap();
+        assert_eq!(total, 1500, "the extent is the end of the last note");
+        assert_eq!(nav.len, 384_000.0, "and the grid stays under the take");
+
+        // Past the grid, the take is the axis.
+        host.handle_packet(
+            set_msg(
+                100,
+                &[(
+                    "notes",
+                    OscType::String("[0.0, 500000.0, 60.0, 100, 0]".into()),
+                )],
+            ),
+            from(),
+        );
+        assert_eq!(host.timeline_nav(100).unwrap().1, 500_000);
+    }
+
+    /// ...and a take written past the right edge pages the axis forward, at
+    /// constant zoom: what is on screen holds still while it fills, and the
+    /// writing continues at the left of the next window. Recording off the edge
+    /// of a still axis is as blank as recording into a one-sample one.
+    #[test]
+    fn a_take_written_past_the_edge_pages_the_axis_forward() {
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","margin":0,"children":[
+                {"id":100,"type":"pianoroll","notes":[],"min":48,"max":84,
+                 "sample_rate":48000.0,"tempo":2.0}
+            ]}"#,
+            ),
+            from(),
+        );
+        let (nav, _) = host.timeline_nav(100).unwrap();
+        assert_eq!((nav.start, nav.len), (0.0, 384_000.0), "the first window");
+
+        // A note inside the window leaves it where it is.
+        host.handle_packet(
+            set_msg(
+                100,
+                &[(
+                    "notes",
+                    OscType::String("[1000.0, 500.0, 60.0, 100, 0]".into()),
+                )],
+            ),
+            from(),
+        );
+        assert_eq!(host.timeline_nav(100).unwrap().0.start, 0.0);
+
+        // One ending past it pages forward, keeping the zoom.
+        host.handle_packet(
+            set_msg(
+                100,
+                &[(
+                    "notes",
+                    OscType::String("[400000.0, 24000.0, 62.0, 100, 0]".into()),
+                )],
+            ),
+            from(),
+        );
+        let (nav, _) = host.timeline_nav(100).unwrap();
+        assert_eq!(
+            (nav.start, nav.len),
+            (384_000.0, 384_000.0),
+            "one window forward, same length"
+        );
     }
 
     /// A free-standing `timeruler` joins the lanes' group and reads their
