@@ -2,7 +2,7 @@
 
 ## Install
 
-The package is pure Python at runtime, but it reaches Rust through artifacts that **cargo** builds: two cdylibs — `libclausters_ffi` (the numeric/timing core) and `libclausters` (built with `embed,realtime` for the in-process server and offline render) — and the standalone server **binary**. The packaging **bundles** all of them inside one wheel, so an installed package is self-contained: the in-process embedded server and the offline renderer work out of the box, and the standalone server is on your `PATH` as the `clausters` command. No `target/` directory and no build step at import time.
+The package is pure Python at runtime, but it reaches Rust through artifacts that **cargo** builds: three cdylibs — `libclausters_ffi` (the numeric/timing core), `libclausters` (built with `embed,realtime` for the in-process server and offline render) and `libclausters_midi` (built with `live`, the MIDI file writers and the virtual MIDI ports) — and the standalone server **binary**. The packaging **bundles** all of them inside one wheel, so an installed package is self-contained: the in-process embedded server and the offline renderer work out of the box, and the standalone server is on your `PATH` as the `clausters` command. No `target/` directory and no build step at import time.
 
 The wheel also bundles **Faust** — `libfaust` and the `libLLVM` it JIT-compiles with — so a `FaustDef` compiles on a machine with neither installed, exactly like a `SynthDef`. Both def families are on by default in the server, and the client treats them as peers; the price is a heavy wheel (~50 MB packed, most of it LLVM, since the Faust compiler *is* LLVM). Nothing to enable and nothing to install: this is the default install.
 

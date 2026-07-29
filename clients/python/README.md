@@ -154,9 +154,11 @@ the mdBook in [`docs/`](docs/). Runnable, installed-package examples are in
 
 ## Installing (pip / wheels)
 
-The package is pure Python at runtime but reaches Rust through two cdylibs that
-**cargo** builds (`libclausters_ffi` for the numeric core, `libclausters` built
-with `embed,realtime` for the embedded server / offline render). The packaging
+The package is pure Python at runtime but reaches Rust through three cdylibs
+that **cargo** builds (`libclausters_ffi` for the numeric core, `libclausters`
+built with `embed,realtime` for the embedded server / offline render, and
+`libclausters_midi` built with `live` for the MIDI files *and* the virtual MIDI
+ports a `MidiFunc` listens on). The packaging
 **bundles** them inside the wheel, so an installed package is self-contained —
 no `target/` directory, no separate build step at import time.
 

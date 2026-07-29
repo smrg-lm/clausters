@@ -1,8 +1,12 @@
 """ctypes binding over the MIDI file core (`clausters-midi`).
 
-Loads ``libclausters_midi`` (the C ABI over the SMF writer, built with
-``cargo build -p clausters-midi``) and exposes `write_smf`: turn a list of
-``(tick, message_bytes)`` channel-voice events into Standard MIDI File bytes.
+Loads ``libclausters_midi`` (the C ABI over the SMF writer and, with the
+``live`` feature, the virtual MIDI ports) and exposes `write_smf`: turn a list
+of ``(tick, message_bytes)`` channel-voice events into Standard MIDI File bytes.
+The wheel bundles the library **built with ``live``**, so an installed package
+plays and records MIDI with nothing else present; a source checkout falls back
+to ``target/``, where a plain ``cargo build -p clausters-midi`` leaves a
+library without the ports (rebuild it with ``--features live``).
 
 Boundary rule (same as `clausters._native`): only flat data crosses — ints
 and byte buffers in, ``bytes`` out. The library is loaded lazily and version
@@ -14,26 +18,30 @@ import ctypes
 import os
 from array import array
 
+from . import _libpath
+
 MIDI_ABI_VERSION = 2
+
+# cdylib file names across platforms (Linux / macOS / Windows).
+_MIDI_NAMES = ("libclausters_midi.so", "libclausters_midi.dylib", "clausters_midi.dll")
 
 _LIB = None
 
 
 def _find_library() -> str:
+    # Precedence (see _libpath): env override, the bundled wheel copy, then the
+    # workspace target/ of a source checkout.
     candidates = [os.environ.get("CLAUSTERS_MIDI_LIB")]
-    here = os.path.dirname(os.path.abspath(__file__))
-    # clients/python/clausters/_midi.py -> repo root is three levels up.
-    root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
-    for profile in ("release", "debug"):
-        for name in ("libclausters_midi.so", "libclausters_midi.dylib", "clausters_midi.dll"):
-            candidates.append(os.path.join(root, "target", profile, name))
+    candidates += _libpath.bundled_candidates(_MIDI_NAMES)
+    candidates += _libpath.workspace_candidates(_MIDI_NAMES)
     for c in candidates:
         if c and os.path.exists(c):
             return c
     raise OSError(
-        "libclausters_midi not found: build it with "
-        "`cargo build -p clausters-midi` (add --release for the release dir) "
-        "or point CLAUSTERS_MIDI_LIB at it"
+        "libclausters_midi not found: install the wheel (it bundles the "
+        "library) or, in a source checkout, build it with "
+        "`cargo build -p clausters-midi --features live` (add --release for the "
+        "release dir) or point CLAUSTERS_MIDI_LIB at it"
     )
 
 
@@ -125,8 +133,10 @@ def write_clip(events, ppq: int) -> bytes:
 def _require_live():
     if not hasattr(lib(), "clausters_midi_output_open"):
         raise OSError(
-            "libclausters_midi was built without the `live` feature; rebuild "
-            "with `cargo build -p clausters-midi --features live`"
+            "libclausters_midi was built without the `live` feature: no virtual "
+            "MIDI ports. Rebuild it with `cargo build -p clausters-midi "
+            "--features live` (the wheel's bundled copy always has it -- "
+            "`scripts/refresh-bin.sh` restages it)"
         )
 
 

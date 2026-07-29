@@ -395,7 +395,8 @@ package over the same OSC, against a native server.
 ## Distribution
 
 - **Python (done)**: a platform-tagged **wheel** that bundles the cargo-built
-  cdylibs (`libclausters_ffi`, and `libclausters` with `embed,realtime`) inside
+  cdylibs (`libclausters_ffi`, `libclausters` with `embed,realtime` and
+  `libclausters_midi` with `live`) inside
   the package (`clausters/_libs/`), so an installed package is self-contained —
   no `target/` directory, no build step at import. The runtime stays
   stdlib-only; the loaders prefer the bundled copy, falling back to the

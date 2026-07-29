@@ -5,6 +5,11 @@ The Clausters Python package is pure Python at runtime, but reaches the Rust
 core through artifacts built by cargo, not pip:
 
 - ``clausters-ffi`` -> ``libclausters_ffi`` (the numeric core: :mod:`clausters._native`)
+- ``clausters-midi`` built with ``live`` -> ``libclausters_midi`` (the MIDI file
+  writers *and* the virtual ports behind `clausters.responders.MidiFunc`:
+  :mod:`clausters._midi`). The feature is off in the crate's defaults and on
+  here without a knob: a client that cannot open a port cannot play or record
+  MIDI at all.
 - the ``clausters`` crate built with ``embed,realtime`` -> ``libclausters``
   (the embedded server / offline render: :mod:`clausters.ipc`)
 - the ``clausters`` binary (default features) -> the **standalone server**
@@ -95,6 +100,11 @@ _CRATES = {
     # machine has no libverovio to link -- see `_ffi_features`.
     "clausters_ffi": ("clausters-ffi", "verovio"),
     "clausters": ("clausters", "embed,realtime"),  # overridable below
+    # `live` is not this crate's default -- the file writers (SMF, MIDI 2.0
+    # clip) need no system MIDI -- but the wheel always ships it, because
+    # `MidiFunc`/`MidiReceiver` open a virtual port and without the feature a
+    # client can only write MIDI files, never play or record one.
+    "clausters_midi": ("clausters-midi", "live"),
 }
 
 # The server crate's default features, mirroring the `default` list in the root
@@ -638,6 +648,8 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
         no_default = False
         if stem == "clausters_ffi":
             feat = "verovio" if with_verovio else ""
+        elif stem == "clausters_midi":
+            feat = default_feat     # always `live`; the server's knobs are not its
         elif features:
             feat = features  # an explicit list is yours to get right
         else:
