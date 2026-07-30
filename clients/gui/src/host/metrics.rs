@@ -131,9 +131,11 @@ metrics_roles! {
     handle_grip,
     /// The side of a square marker (a toggle's box).
     box_side,
-    /// The diameter of a round control (a knob) — its own role, over the
-    /// square nominal, because a disc reads smaller than a box of the same
-    /// bounding rect.
+    /// The diameter of a round control (a knob): **two lines of control**, not
+    /// a box-sized marker. A dial is read by its angle, so it needs the sweep
+    /// to be legible — and a disc reads smaller than a box of the same
+    /// bounding rect, which is why it is its own role rather than `control_h`
+    /// twice over.
     knob_d,
 
     // -- Chrome --
@@ -205,7 +207,7 @@ impl Metrics {
             handle_thick: grid(2.0 * track_thick),
             handle_grip: grid(cell * 1.25),
             box_side,
-            knob_d: grid(box_side * 1.08),
+            knob_d: grid(2.0 * control_h * 1.08),
 
             ruler_h: grid(cell * 1.25),
             // Five captions wide: the widest vertical-ruler labels are
@@ -282,10 +284,12 @@ mod tests {
         assert_eq!(m.margin, 6.0);
         assert_eq!(m.indent, 14.0);
         assert_eq!(m.control_h, 22.0);
-        // The roles a widget's natural size will resolve from: no site reads
-        // them yet, so the scale is what fixes them.
+        // The roles a widget's natural size resolves from: the scale is what
+        // fixes them, since no drawing site named them before.
         assert_eq!(m.row_h, 28.0);
-        assert_eq!(m.knob_d, 26.0);
+        // Two lines of control (plus the disc's own 8%): a dial's sweep has to
+        // be readable, which a box-sized disc is not.
+        assert_eq!(m.knob_d, 48.0);
         assert_eq!(m.track_thick, 4.0);
         assert_eq!(m.handle_thick, 8.0);
         assert_eq!(m.handle_grip, 18.0);
