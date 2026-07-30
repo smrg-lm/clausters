@@ -1,6 +1,6 @@
 ---
 name: clausters-gui
-description: How to develop the Clausters GUI track — the `clients/gui` crate (the host that owns the windows, the widgets and the GPU) and the Python leg that drives it. Covers the crate/workspace boundary and its Cargo features, the platform seam (agnostic core + native/browser shells behind small traits) and the wasm build gate, the protocol invariants that keep a widget addable by extension, the three transports, the wgpu/WGSL rendering machinery and the "never resolve finer than the screen" rule, the data paths (shm buses and taps, /c_stream, mmap/fetch bulk), and where a new compute function belongs. Consult before touching anything under clients/gui, before adding a widget, a gesture or a data path, and before deciding that some new math is display-only — even when the change looks local.
+description: How to develop the Clausters GUI track — the `clients/gui` crate (the host that owns the windows, the widgets and the GPU) and the Python leg that drives it. Covers the crate/workspace boundary and its Cargo features, the platform seam (agnostic core + native/browser shells behind small traits) and the wasm build gate, the protocol invariants that keep a widget addable by extension, the three transports, the wgpu/WGSL rendering machinery and the "never resolve finer than the screen" rule, the data paths (shm buses and taps, /c_stream, mmap/fetch bulk), the layout and sizing model (metrics roles, a widget's natural size, the logical/physical seam and its per-window scale), and where a new compute function belongs. Consult before touching anything under clients/gui, before adding a widget, a gesture or a data path, before sizing or positioning anything, and before deciding that some new math is display-only — even when the change looks local.
 ---
 
 # Developing the Clausters GUI track
@@ -88,7 +88,7 @@ The heavy views are written **once against `wgpu`/WGSL** and run natively and in
 - **Two rendering shapes, both used here.** (a) *Geometry pipelines* — the waveform rebuilds a vertex buffer per frame whose size is bounded by `render_width_px`; the flat widget chrome and the tessellated score are the same idea through `paint::Mesh`. (b) *Full-screen quad + texture sample* — the spectrogram uploads the STFT once as a 2D texture (x=frame, y=bin) and the fragment shader samples it, so the GPU's linear filtering gives free resolution-matched downsampling on zoom-out.
 - **Uniforms are free, recompute is expensive — put every display control in the shader.** Colormap, dB window and contrast, the frequency-axis mapping (linear/log/mel/bark) and the frequency zoom/pan (a *second* `viewport::View`) all change live at zero CPU cost. Only window size, hop or sample rate force a `Stft::compute`.
 - **Anchor-preserving zoom is the core navigation math**: `pivot = start + len*anchor`, scale `len`, keep `pivot` fixed, clamp. The frequency axis keeps its window in **display coordinates**, not in bins, so the cursor anchor holds in every scale — the nonlinearity lives entirely in the shader's display→bin mapping.
-- **Device pixels, not logical pixels.** `render_width_px` is physical; multiply by the HiDPI scale factor or peaks come out blurry or over-detailed.
+- **Two pixel spaces, and a heavy view lives in the physical one.** `render_width_px` is always **physical**: the resolution rule is against the screen's real pixels, so a view driven by logical widths comes out blurry or over-detailed. The *chrome's* space is a separate question and it is moving — everything the host draws is device pixels today, with logical units and a per-window `ui_scale` staged on the L track (see the sizing model below). Whatever the wire ends up declaring, a heavy view's samples-per-pixel arithmetic stays physical.
 - **WebGL2 is the compatibility floor.** The wasm bundle compiles both backends and picks at runtime, so keep new GPU work inside what WebGL2 can do — vertex/fragment pipelines, uniform buffers, filterable textures; **no compute shaders, no storage buffers**. Heavy numeric work runs on the CPU in `clausters-core`. naga translates the WGSL (including user `canvas` shaders) to GLSL ES; a non-translatable shader degrades through the existing error scope, unpainted, no panic.
 
 ### The analysis behind the views
@@ -114,6 +114,18 @@ Composing a window is a design act, and the rules are few enough to keep:
 - **Chrome is a fixed strip; the work surface fills.** A transport, toolbar or status bar takes a fixed `h`; the editor or plot beside it takes the default weight and dominates. Use `weight` to divide two work surfaces, `h`/`w` only for chrome.
 - **A view bigger than its area goes in a `scroll`** — give it the virtual content area and size the child to it; never place boxes at fixed positions that fall off a fixed window with no way to reach them.
 - The layout math is testable without a GPU (layout → rects), but the **judgement is on you**: when you touch an example, check that the main view dominates, the chrome stays thin, and nothing lands off-screen.
+
+### How big a widget is (the sizing model)
+
+**Today every widget fills the cell the layout hands it.** Nothing has a size of its own: the only sizes in the system are a container's `h`/`w`/`weight` and a scatter of per-module constants (`PAD`, `MARGIN`, `TRACK_THICK`, `HEADER_W`, …), each invented at its own site. That is why a `button` alone in a `col` is as tall as its share of the window, and why the numbers belong to no series.
+
+The L track replaces that with the model below. Design against it — but until those milestones land the rules above are what the code does, and `clients/gui/PLAN.md` is what tells you which half you are in.
+
+- **Size by role, not by literal.** The metrics table (`host/metrics.rs`) is the peer of `host/theme.rs`, with the same rule L1 fixed for color: no layout or paint site names a number, it names a role (`pad`, `gap`, `control_h`, `track_thick`, `hit_slop`, `text_scale`, …). Defaults come from one quantized modular scale over the font cell, and the table is **constant** — the scale generates the defaults, it is never arithmetic on a frame.
+- **A widget declares its natural size**, a pure function of the metrics per `WidgetKind`, `None` on an axis meaning elastic. No measurement pass and no constraint solver: the one-pass boundary L2 fixed holds unchanged.
+- **Main-axis resolution order:** explicit `w`/`h` → explicit `weight` → natural size → a share of the leftover. Explicit `weight` beating the natural size is what still lets a script stretch a button.
+- **The wire is logical; the host resolves once.** One `ui_scale` per window, written by the shell — natively from winit's `scale_factor`, in the browser from the page, because the core may not touch a platform API and `check-wasm.sh` proves it. The metrics table resolves to whole physical pixels **on scale change**, never per frame.
+- **The bitmap font wants integer scales.** Text resolves to an integer scale ≥ 1 so a glyph's own pixels stay equal to each other; a modular ratio applies to spacing and control heights, never to the font.
 
 ## Conventions
 
