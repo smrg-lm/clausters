@@ -329,7 +329,8 @@ export function scroll(
          * zoom of its own starts at the **display's scale**, so one content unit
          * is one logical pixel and the boxes come up the size they are meant to
          * look. Pass a number (or turn the wheel) and it is literal from then
-         * on.
+         * on; `set({viewZoom: 0})` clears it again — how a script says "back to
+         * the default" for a number it cannot name.
          */
         viewX?: number;
         viewY?: number;

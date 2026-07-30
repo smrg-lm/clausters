@@ -17,7 +17,8 @@ and the reset button are *named*, so the script wires each by name and never
 matches a widget id. The view state is settable back with `set` (the round trip
 that lets a script own the navigation), which the **reset button** next to the
 plane demonstrates: its press comes in as a ``/gui_event`` and the handle answers
-by putting the view back at the origin, zoom 1.
+by putting the view back at the origin and **clearing** the zoom (``view_zoom=0``),
+which returns the plane to its default scale rather than pinning it to 1.
 
 The example **launches its own GUI host** (`GuiHost.boot`) and needs no audio
 server at all: a workspace is pure layout and navigation. Needs a display and a
@@ -114,7 +115,7 @@ def main():
     with GuiHost.boot() as gui:
         win = gui.open(workspace())
         print("drag and wheel over each pane; navigation events print here")
-        print("('reset view' puts the plane back at the origin, zoom 1)")
+        print("('reset view' puts the plane back at the origin, at its default zoom)")
         print("(close the window to end, or wait ~45 s)")
 
         closed = [False]
@@ -125,7 +126,12 @@ def main():
         # gestures emit.
         def reset(value):
             if value == 1:
-                win["plane"].set(view_x=0.0, view_y=0.0, view_zoom=1.0)
+                # `view_zoom=0` **clears** the zoom instead of naming one, so
+                # the plane returns to its default -- the display's own scale.
+                # Naming `1.0` here would pin it to one physical pixel per
+                # content unit, which on a 2x screen is half the size the plane
+                # opened at.
+                win["plane"].set(view_x=0.0, view_y=0.0, view_zoom=0)
                 print("view reset to the origin, zoom 1")
 
         win["plane"].on_event(on_view("plane"))

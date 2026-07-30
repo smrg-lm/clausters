@@ -504,7 +504,8 @@ pub struct ScrollView {
     pub view_y: f64,
     /// Physical pixels per content unit (uniform on both axes), > 0 —
     /// `None` until something names one, which is not the same as `1.0`; see
-    /// [`zoom`](Self::zoom).
+    /// [`zoom`](Self::zoom). A `/gui_set view_zoom` of `0` (or of any
+    /// non-number) puts it back to `None`.
     pub view_zoom: Option<f64>,
 }
 
@@ -537,9 +538,12 @@ impl ScrollView {
             content_h: f("content_h"),
             view_x: number_f64(props, "view_x", 0.0),
             view_y: number_f64(props, "view_y", 0.0),
+            // Same rule as the setter: a positive number names the scale,
+            // anything else leaves the plane at its default.
             view_zoom: props
                 .get("view_zoom")
                 .and_then(Value::as_f64)
+                .filter(|n| n.is_finite() && *n > 0.0)
                 .map(super::scroll::clamp_zoom),
         }
     }
@@ -563,10 +567,18 @@ impl ScrollView {
             }
             "view_x" => set_f64(&mut self.view_x, v),
             "view_y" => set_f64(&mut self.view_y, v),
-            "view_zoom" => v
-                .as_f64()
-                .map(|n| self.view_zoom = Some(super::scroll::clamp_zoom(n)))
-                .is_some(),
+            // A positive number names the scale; **anything else clears it** —
+            // `0`, an empty string, a null — and the plane goes back to its
+            // default (the window's density). The wire has no other way to ask
+            // for a default it cannot name, the same shape `theme` uses for
+            // dropping an overlay.
+            "view_zoom" => {
+                self.view_zoom = v
+                    .as_f64()
+                    .filter(|n| n.is_finite() && *n > 0.0)
+                    .map(super::scroll::clamp_zoom);
+                true
+            }
             _ => false,
         }
     }
@@ -1522,6 +1534,45 @@ mod tests {
             .editor()
             .cloned()
             .unwrap()
+    }
+
+    /// A plane's zoom is nameable *and* clearable: a positive number is the
+    /// scale, and anything else — `0`, an empty string — puts it back to the
+    /// default, which is the only way the wire can ask for a default it has no
+    /// number for.
+    #[test]
+    fn a_plane_zoom_is_named_or_cleared() {
+        let m = crate::host::metrics::Metrics::default().resolved(2.0);
+        let view = |json: &str| match Widget::from_node(1, &node(json), &[]).unwrap().kind {
+            WidgetKind::Scroll { view, .. } => view,
+            other => panic!("not a scroll: {other:?}"),
+        };
+        assert_eq!(view(r#"{"type":"scroll"}"#).view_zoom, None);
+        assert_eq!(view(r#"{"type":"scroll","view_zoom":0}"#).view_zoom, None);
+        assert_eq!(
+            view(r#"{"type":"scroll","view_zoom":3}"#).view_zoom,
+            Some(3.0)
+        );
+
+        let mut kind = Widget::from_node(1, &node(r#"{"type":"scroll"}"#), &[])
+            .unwrap()
+            .kind;
+        let zoom_of = |kind: &WidgetKind| match kind {
+            WidgetKind::Scroll { view, .. } => view.zoom(&m),
+            other => panic!("not a scroll: {other:?}"),
+        };
+        let set = |kind: &mut WidgetKind, v: Value| super::apply::apply_kind(kind, "view_zoom", &v);
+        assert!(set(&mut kind, serde_json::json!(3.0)));
+        assert_eq!(zoom_of(&kind), 3.0);
+        for cleared in [serde_json::json!(0), serde_json::json!("")] {
+            assert!(set(&mut kind, serde_json::json!(3.0)));
+            assert!(set(&mut kind, cleared.clone()), "{cleared} is handled");
+            assert_eq!(
+                zoom_of(&kind),
+                m.ui_scale as f64,
+                "{cleared} restores the default"
+            );
+        }
     }
 
     #[test]

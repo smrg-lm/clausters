@@ -3393,6 +3393,13 @@ that already has one) but to start the plane at the density it is drawn on: a
 window's UI scale**, so one content unit is one *logical* pixel, and a named zoom
 (from the tree or from the wheel) is literal from then on.
 
+A default nobody can name needs a way back, which is why `/gui_set view_zoom 0`
+(or any non-number) **clears** the zoom rather than setting one: a script that
+wants "the plane as it opened" has no number to ask for — naming `1.0` pins one
+physical pixel per content unit, which on a doubled display is half the size the
+plane came up at. The shape is borrowed from `theme`, where an empty value drops
+the overlay.
+
 Fitting the zoom to the content was rejected as the default: a plane's content
 unit is a *display* unit (a box is 96 units wide because that is how wide a box
 should look), so fitting would make a box's apparent size follow **how many boxes

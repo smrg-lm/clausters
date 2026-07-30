@@ -226,7 +226,9 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
     Leaving ``view_zoom`` out is not the same as passing ``1``: a plane with no
     zoom of its own starts at the **display's scale**, so one content unit is one
     logical pixel and the boxes come up the size they are meant to look. Pass a
-    number (or turn the wheel) and it is literal from then on.
+    number (or turn the wheel) and it is literal from then on; ``set(view_zoom=0)``
+    clears it again, which is how a script says "back to the default" for a
+    number it cannot name.
     """
     extra = _drop_none(axis=axis, content_w=content_w, content_h=content_h,
                        view_x=view_x, view_y=view_y, view_zoom=view_zoom,
