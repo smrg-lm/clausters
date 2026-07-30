@@ -19,11 +19,24 @@ Those numbers are **logical pixels**: the host multiplies every declared length
 (and every ``text_size``) by the display's own scale, one scale per window,
 resolved when it changes rather than per frame. So this shell keeps its
 proportions on a HiDPI screen instead of drawing at half its apparent size --
-the eye-check is to run it once at your desktop's normal scaling and once at
-200% (the system display setting; the window re-resolves and repaints while it
-is open, and keeps the logical size it had). The one place that stays in the
-screen's own pixels is a ``scroll`` workspace's content plane, which carries a
-zoom of its own -- see ``gui_workspace.py``.
+the window below is 760x420 *logical*, which is 1140x630 real pixels on a
+desktop scaled 1.5x, with the chrome grown to match.
+
+The eye-check is to see it at two scales. The desktop's display setting is one
+way (the window re-resolves and repaints while it is open, keeping the logical
+size it had). To force one instead, on X11 -- or on Wayland through XWayland,
+since the override is an X11 feature the Wayland backend ignores::
+
+    RUST_LOG=info python .../gui_shell.py                  # your desktop's own
+    env -u WAYLAND_DISPLAY WINIT_X11_SCALE_FACTOR=2 \
+        RUST_LOG=info python .../gui_shell.py              # forced to 2x
+
+``RUST_LOG=info`` is worth having either way: the host logs the scale it opened
+each window at, which is the one thing a screenshot cannot tell you -- a desktop
+that ignored the request looks exactly like a host that ignored it.
+
+The one place that stays in the screen's own pixels is a ``scroll`` workspace's
+content plane, which carries a zoom of its own -- see ``gui_workspace.py``.
 
 Everything is live: the sidebar's controls retune a quiet server voice, the
 oscilloscope draws the server's **actual stereo output** (the two hardware output buses,

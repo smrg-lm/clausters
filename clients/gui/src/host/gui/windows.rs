@@ -62,7 +62,8 @@ impl App {
         // The window's UI scale, the one platform reading the host cannot make
         // itself: the shell writes it, the core resolves its size table once and
         // the wire's logical lengths land on this display's pixels.
-        self.host.set_ui_scale(id, window.scale_factor() as f32);
+        let ui_scale = window.scale_factor();
+        self.host.set_ui_scale(id, ui_scale as f32);
         let gpu = match pollster::block_on(Gpu::new(window)) {
             Ok(gpu) => gpu,
             Err(e) => return warn!("gui_def {id}: cannot start the GPU: {e}"),
@@ -115,7 +116,11 @@ impl App {
                 spectra: HashMap::new(),
             },
         );
-        info!("gui_def {id}: opened window \"{title}\"");
+        // The scale is in the line because it is the one thing about a window
+        // nobody can read off a screenshot: a desktop that ignores what was
+        // asked of it (an X11-only override under Wayland, say) looks exactly
+        // like a host that ignored it.
+        info!("gui_def {id}: opened window \"{title}\" at scale {ui_scale}");
         // Plots and clips that name a local file map it now (the bulk path, no
         // OSC); the samples land in the host tree the renderer reads each frame.
         if let Some(root) = self.host.window_def_mut(id) {
