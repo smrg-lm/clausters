@@ -19,6 +19,7 @@
 //! the full-area overlay. A container's [`Flow`] tunes the inner `margin`, the
 //! `gap` between children, and the `grid` column count.
 
+use super::metrics::Metrics;
 use super::scroll;
 use super::widget::{Flow, Layout, Place, Widget, WidgetKind};
 
@@ -83,15 +84,12 @@ pub struct Placed<'a> {
     pub widget: &'a Widget,
 }
 
-/// Default margin inside a container before its children, and default gap
-/// between children (a container's `margin`/`gap` props override them).
-const MARGIN: f32 = 6.0;
-const GAP: f32 = 6.0;
-
-/// Lays out `root` into `area`, returning every widget with its rectangle.
-pub fn layout(area: Rect, root: &Widget) -> Vec<Placed<'_>> {
+/// Lays out `root` into `area`, returning every widget with its rectangle. The
+/// spacing a container does not name itself comes from the host's metrics
+/// (`margin`/`gap`), so one table sizes every window.
+pub fn layout<'a>(area: Rect, root: &'a Widget, metrics: &Metrics) -> Vec<Placed<'a>> {
     let mut out = Vec::new();
-    place(area, root, None, 1.0, &mut out);
+    place(area, root, None, 1.0, metrics, &mut out);
     out
 }
 
@@ -100,6 +98,7 @@ fn place<'a>(
     widget: &'a Widget,
     clip: Option<Rect>,
     scale: f32,
+    metrics: &Metrics,
     out: &mut Vec<Placed<'a>>,
 ) {
     out.push(Placed {
@@ -112,17 +111,20 @@ fn place<'a>(
         WidgetKind::Window { layout, flow, .. } | WidgetKind::Panel { layout, flow } => {
             (layout, flow)
         }
-        WidgetKind::Scroll { .. } => return place_scrolled(area, widget, clip, scale, out),
+        WidgetKind::Scroll { .. } => {
+            return place_scrolled(area, widget, clip, scale, metrics, out);
+        }
         _ => return, // leaves have no children to place
     };
-    let inner = area.inset(flow.margin.unwrap_or(MARGIN).max(0.0));
-    for (child, rect) in
-        widget
-            .children
-            .iter()
-            .zip(child_rects(inner, widget.children.as_slice(), layout, flow))
-    {
-        place(rect, child, clip, scale, out);
+    let inner = area.inset(flow.margin.unwrap_or(metrics.margin).max(0.0));
+    for (child, rect) in widget.children.iter().zip(child_rects(
+        inner,
+        widget.children.as_slice(),
+        layout,
+        flow,
+        metrics,
+    )) {
+        place(rect, child, clip, scale, metrics, out);
     }
 }
 
@@ -140,32 +142,34 @@ fn place_scrolled<'a>(
     widget: &'a Widget,
     clip: Option<Rect>,
     scale: f32,
+    metrics: &Metrics,
     out: &mut Vec<Placed<'a>>,
 ) {
     let WidgetKind::Scroll { layout, flow, view } = widget.kind else {
         return;
     };
-    let (content_w, content_h) = scroll_content(widget, area);
+    let (content_w, content_h) = scroll_content(widget, area, metrics);
     let zoom = scroll::clamp_zoom(view.view_zoom);
     let slack = view.axis.slack();
     let vx = scroll::clamp_pan(view.view_x, area.w, zoom, content_w, slack);
     let vy = scroll::clamp_pan(view.view_y, area.h, zoom, content_h, slack);
-    let inner =
-        Rect::new(0.0, 0.0, content_w, content_h).inset(flow.margin.unwrap_or(MARGIN).max(0.0));
+    let inner = Rect::new(0.0, 0.0, content_w, content_h)
+        .inset(flow.margin.unwrap_or(metrics.margin).max(0.0));
     let clip = Some(clip.map_or(area, |c| c.intersect(area)));
-    for (child, r) in
-        widget
-            .children
-            .iter()
-            .zip(child_rects(inner, widget.children.as_slice(), layout, flow))
-    {
+    for (child, r) in widget.children.iter().zip(child_rects(
+        inner,
+        widget.children.as_slice(),
+        layout,
+        flow,
+        metrics,
+    )) {
         let rect = Rect::new(
             area.x + ((r.x as f64 - vx) * zoom) as f32,
             area.y + ((r.y as f64 - vy) * zoom) as f32,
             (r.w as f64 * zoom) as f32,
             (r.h as f64 * zoom) as f32,
         );
-        place(rect, child, clip, scale * zoom as f32, out);
+        place(rect, child, clip, scale * zoom as f32, metrics, out);
     }
 }
 
@@ -175,11 +179,11 @@ fn place_scrolled<'a>(
 /// around); else the container's own area (the workspace degenerates to a
 /// plain panel at zoom 1). Pure, so the gesture layer clamps against the same
 /// size the layout renders.
-pub fn scroll_content(widget: &Widget, area: Rect) -> (f32, f32) {
+pub fn scroll_content(widget: &Widget, area: Rect, metrics: &Metrics) -> (f32, f32) {
     let WidgetKind::Scroll { layout, flow, view } = widget.kind else {
         return (area.w, area.h);
     };
-    let margin = flow.margin.unwrap_or(MARGIN).max(0.0);
+    let margin = flow.margin.unwrap_or(metrics.margin).max(0.0);
     let extent = |pos: fn(Place) -> Option<f32>, size: fn(Place) -> Option<f32>| {
         widget
             .children
@@ -226,11 +230,17 @@ fn child_intrinsic_size(widget: &Widget) -> Option<(f32, f32)> {
 }
 
 /// The child rectangles for `children` laid out in `inner` by `layout`.
-fn child_rects(inner: Rect, children: &[Widget], layout: Layout, flow: Flow) -> Vec<Rect> {
+fn child_rects(
+    inner: Rect,
+    children: &[Widget],
+    layout: Layout,
+    flow: Flow,
+    metrics: &Metrics,
+) -> Vec<Rect> {
     if children.is_empty() {
         return Vec::new();
     }
-    let gap = flow.gap.unwrap_or(GAP).max(0.0);
+    let gap = flow.gap.unwrap_or(metrics.gap).max(0.0);
     match layout {
         Layout::Free => children.iter().map(|c| free_rect(inner, c.place)).collect(),
         Layout::Row => strip(inner, children, gap, true),
@@ -335,7 +345,7 @@ mod tests {
             r#"{"type":"window","layout":"col","children":[
             {"id":1,"type":"label","text":"a"},{"id":2,"type":"label","text":"b"}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         // [window, child a, child b]
         assert_eq!(placed.len(), 3);
         let (a, b) = (placed[1].rect, placed[2].rect);
@@ -350,7 +360,7 @@ mod tests {
             r#"{"type":"window","layout":"row","children":[
             {"id":1,"type":"label","text":"a"},{"id":2,"type":"label","text":"b"}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         let (a, b) = (placed[1].rect, placed[2].rect);
         assert!(a.x < b.x, "row places side by side");
         assert!((a.y - b.y).abs() < 1e-3, "same y in a row");
@@ -359,12 +369,13 @@ mod tests {
     #[test]
     fn single_child_fills_inset_area() {
         let w = tree(r#"{"type":"window","children":[{"id":12,"type":"waveform","data":[]}]}"#);
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         assert_eq!(placed.len(), 2);
         let r = placed[1].rect;
-        // Inset by MARGIN on each side.
-        assert!((r.x - MARGIN).abs() < 1e-3 && (r.y - MARGIN).abs() < 1e-3);
-        assert!((r.w - (600.0 - 2.0 * MARGIN)).abs() < 1e-3);
+        // Inset by the margin role on each side.
+        let margin = Metrics::default().margin;
+        assert!((r.x - margin).abs() < 1e-3 && (r.y - margin).abs() < 1e-3);
+        assert!((r.w - (600.0 - 2.0 * margin)).abs() < 1e-3);
     }
 
     #[test]
@@ -374,7 +385,7 @@ mod tests {
             {"id":1,"type":"label","text":"a"},{"id":2,"type":"label","text":"b"},
             {"id":3,"type":"label","text":"c"},{"id":4,"type":"label","text":"d"}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         let cells: Vec<Rect> = placed[1..].iter().map(|p| p.rect).collect();
         // 2x2: cell 0 and 1 share a row (same y), 0 and 2 share a column (same x).
         assert!((cells[0].y - cells[1].y).abs() < 1e-3);
@@ -390,7 +401,7 @@ mod tests {
             {"id":2,"type":"label","text":"b","weight":3},
             {"id":3,"type":"label","text":"c"}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         let (a, b, c) = (placed[1].rect, placed[2].rect, placed[3].rect);
         assert_eq!(a.w, 100.0, "fixed child takes exactly its w");
         // Leftover 500 split 3:1.
@@ -409,7 +420,7 @@ mod tests {
             {"id":12,"type":"panel"},
             {"id":13,"type":"label","text":"ready","h":20}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         let bars: Vec<Rect> = placed
             .iter()
             .filter(|p| matches!(p.widget.id, Some(11) | Some(12) | Some(13)))
@@ -430,7 +441,7 @@ mod tests {
             r#"{"type":"window","layout":"col","margin":10,"gap":2,"children":[
             {"id":1,"type":"label","text":"a"},{"id":2,"type":"label","text":"b"}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         let (a, b) = (placed[1].rect, placed[2].rect);
         assert_eq!((a.x, a.y), (10.0, 10.0), "margin insets the content");
         assert!(
@@ -447,7 +458,7 @@ mod tests {
             {"id":3,"type":"label","text":"c"},{"id":4,"type":"label","text":"d"},
             {"id":5,"type":"label","text":"e"}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         let cells: Vec<Rect> = placed[1..].iter().map(|p| p.rect).collect();
         // 4 columns: the first four share a row, the fifth starts the next.
         assert!((cells[0].y - cells[3].y).abs() < 1e-3);
@@ -463,7 +474,7 @@ mod tests {
             {"id":2,"type":"label","text":"b","w":200},
             {"id":3,"type":"label","text":"c"}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         let (a, b, c) = (placed[1].rect, placed[2].rect, placed[3].rect);
         assert_eq!((a.x, a.y, a.w, a.h), (50.0, 30.0, 120.0, 40.0));
         assert_eq!((b.x, b.w), (0.0, 200.0), "position defaults to the origin");
@@ -482,7 +493,7 @@ mod tests {
             {"id":1,"type":"label","text":"a","w":900},
             {"id":2,"type":"label","text":"b"}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         assert_eq!(
             placed[2].rect.w, 0.0,
             "no leftover: the flexible child collapses"
@@ -491,7 +502,7 @@ mod tests {
 
     /// The `scroll` container's own placed entry, and its children's.
     fn scrolled(w: &Widget) -> (Rect, Vec<(Rect, Option<Rect>)>) {
-        let placed = layout(area(), w);
+        let placed = layout(area(), w, &Metrics::default());
         let scroll = placed
             .iter()
             .find(|p| matches!(p.widget.kind, WidgetKind::Scroll { .. }))
@@ -512,11 +523,11 @@ mod tests {
               {"id":1,"type":"label","text":"a","x":0,"y":0,"w":100,"h":40},
               {"id":2,"type":"label","text":"b","x":300,"y":500,"w":120,"h":60}]}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         let scroll = &placed[1];
         // The extent is the far child's `x+w` / `y+h`, plus the margin both sides.
         assert_eq!(
-            scroll_content(scroll.widget, scroll.rect),
+            scroll_content(scroll.widget, scroll.rect, &Metrics::default()),
             (300.0 + 120.0 + 20.0, 500.0 + 60.0 + 20.0)
         );
     }
@@ -528,9 +539,9 @@ mod tests {
             {"id":9,"type":"scroll","content_w":2000,"content_h":1500,"children":[
               {"id":1,"type":"label","text":"a","x":0,"y":0,"w":10,"h":10}]}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         assert_eq!(
-            scroll_content(placed[1].widget, placed[1].rect),
+            scroll_content(placed[1].widget, placed[1].rect, &Metrics::default()),
             (2000.0, 1500.0)
         );
         // A `col` scroll has no placement extents: the content is its own area
@@ -540,9 +551,12 @@ mod tests {
             {"id":9,"type":"scroll","layout":"col","children":[
               {"id":1,"type":"label","text":"a"}]}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         let s = &placed[1];
-        assert_eq!(scroll_content(s.widget, s.rect), (s.rect.w, s.rect.h));
+        assert_eq!(
+            scroll_content(s.widget, s.rect, &Metrics::default()),
+            (s.rect.w, s.rect.h)
+        );
     }
 
     #[test]
@@ -577,7 +591,7 @@ mod tests {
                "content_w":400,"content_h":400,"children":[
                 {"id":13,"type":"label","text":"b","x":0,"y":0,"w":80,"h":40}]}]}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         let scale_of = |id: i32| {
             placed
                 .iter()
@@ -635,7 +649,7 @@ mod tests {
                "x":0,"y":0,"w":200,"h":100,"children":[
                  {"id":2,"type":"label","text":"a"},{"id":3,"type":"label","text":"b"}]}]}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         let inner: Vec<Rect> = placed
             .iter()
             .filter(|p| matches!(p.widget.id, Some(2) | Some(3)))
@@ -658,7 +672,7 @@ mod tests {
             r#"{"type":"window","children":[
             {"id":5,"type":"panel","children":[{"id":12,"type":"waveform","data":[]}]}]}"#,
         );
-        let placed = layout(area(), &w);
+        let placed = layout(area(), &w, &Metrics::default());
         // [window, panel, waveform]
         assert_eq!(placed.len(), 3);
         assert!(placed[2].widget.is_waveform());

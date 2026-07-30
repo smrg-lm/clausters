@@ -32,6 +32,7 @@ use crate::waveform::AMP_MARGIN;
 
 use super::font;
 use super::layout::Rect;
+use super::metrics::Metrics;
 use super::paint::Mesh;
 use super::theme::Theme;
 use super::widget::RulerY;
@@ -62,21 +63,34 @@ pub(crate) enum TimeUnit {
     },
 }
 
-/// The font scale the ruler strips render their labels at (device pixels per
-/// font pixel). The layout measures every candidate label at this scale, so
-/// what fits in the math is exactly what fits on screen.
-pub(crate) const RULER_SCALE: f32 = 1.5;
-/// Minimum clear device pixels between two drawn labels on the horizontal
-/// (time) axis.
-const LABEL_GAP_PX: f64 = 14.0;
-/// Minimum device pixels between any two drawn ticks (labels drop before
-/// ticks do).
-const MINOR_GAP_PX: f64 = 7.0;
+/// The ruler's own reading of the host's size roles: the `caption_scale` its
+/// labels render at — the layout measures every candidate label at that scale,
+/// so what fits in the math is exactly what fits on screen — plus the
+/// `label_gap` between two drawn labels and the `tick_gap` between any two
+/// drawn ticks (labels drop before ticks do).
+#[derive(Debug, Clone, Copy)]
+struct Gaps {
+    scale: f32,
+    label: f64,
+    tick: f64,
+    gap: f64,
+}
 
-/// Minimum device pixels between labels on a vertical axis: one line of text
-/// plus clear space — the measured-height counterpart of [`LABEL_GAP_PX`].
-fn label_gap_v() -> f64 {
-    font::height(RULER_SCALE) as f64 + 6.0
+impl Gaps {
+    fn of(metrics: &Metrics) -> Self {
+        Self {
+            scale: metrics.caption_scale,
+            label: metrics.label_gap as f64,
+            tick: metrics.tick_gap as f64,
+            gap: metrics.gap as f64,
+        }
+    }
+
+    /// Minimum device pixels between labels on a vertical axis: one line of
+    /// text plus clear space — the measured-height counterpart of `label`.
+    fn label_v(&self) -> f64 {
+        font::height(self.scale) as f64 + self.gap
+    }
 }
 
 /// Snap `x` up to the 1-2-5 progression (1, 2, 5, 10, 20, 50, ...).
@@ -95,8 +109,8 @@ fn snap_125(x: f64) -> f64 {
 /// over `width_px` device pixels, starting just below the densest step that
 /// could possibly fit and stopping once one step spans the whole axis.
 /// `min_step` floors the ladder (1.0 on integral axes like samples).
-fn decimal_steps(axis_len: f64, width_px: f64, min_step: f64) -> Vec<f64> {
-    let floor_raw = (axis_len * MINOR_GAP_PX / width_px.max(1.0))
+fn decimal_steps(axis_len: f64, width_px: f64, min_step: f64, g: Gaps) -> Vec<f64> {
+    let floor_raw = (axis_len * g.tick / width_px.max(1.0))
         .max(min_step)
         .max(f64::MIN_POSITIVE);
     let mut step = 10f64.powf(floor_raw.log10().floor());
@@ -126,9 +140,10 @@ fn fit_step(
     axis_len: f64,
     width_px: f64,
     fmt: &dyn Fn(f64, f64) -> String,
+    g: Gaps,
 ) -> f64 {
     for &step in candidates {
-        if labels_fit(step, axis_start, axis_len, width_px, fmt) {
+        if labels_fit(step, axis_start, axis_len, width_px, fmt, g) {
             return step;
         }
     }
@@ -137,14 +152,15 @@ fn fit_step(
 
 /// Whether the labels of every tick at multiples of `step` inside
 /// `[axis_start, axis_start + axis_len]`, measured at the ruler font scale
-/// and edge-clamped exactly as the renderer draws them, keep at least
-/// [`LABEL_GAP_PX`] of clear space between neighbours.
+/// and edge-clamped exactly as the renderer draws them, keep at least the
+/// `label` gap of clear space between neighbours.
 fn labels_fit(
     step: f64,
     axis_start: f64,
     axis_len: f64,
     width_px: f64,
     fmt: &dyn Fn(f64, f64) -> String,
+    g: Gaps,
 ) -> bool {
     let mut prev_end = f64::NEG_INFINITY;
     let mut k = (axis_start / step).ceil() as i64;
@@ -154,9 +170,9 @@ fn labels_fit(
             return true;
         }
         let x = (t - axis_start) / axis_len * width_px;
-        let w = font::width(&fmt(t, step), RULER_SCALE) as f64;
+        let w = font::width(&fmt(t, step), g.scale) as f64;
         let lx = (x - w * 0.5).clamp(0.0, (width_px - w).max(0.0));
-        if lx < prev_end + LABEL_GAP_PX {
+        if lx < prev_end + g.label {
             return false;
         }
         prev_end = lx + w;
@@ -177,7 +193,9 @@ pub(crate) fn time_ticks(
     width_px: f64,
     sample_rate: f64,
     unit: TimeUnit,
+    metrics: &Metrics,
 ) -> Vec<Tick> {
+    let g = Gaps::of(metrics);
     if len <= 0.0 || width_px <= 0.0 {
         return Vec::new();
     }
@@ -189,7 +207,7 @@ pub(crate) fn time_ticks(
         && sample_rate > 0.0
         && tempo > 0.0
     {
-        return beat_ticks(start, len, width_px, sample_rate, tempo, beat_at, quant);
+        return beat_ticks(start, len, width_px, sample_rate, tempo, beat_at, quant, g);
     }
     let seconds = unit == TimeUnit::Seconds && sample_rate > 0.0;
     let (axis_start, axis_len) = if seconds {
@@ -205,9 +223,9 @@ pub(crate) fn time_ticks(
         }
     };
     let min_step = if seconds { 0.0 } else { 1.0 }; // samples are integral
-    let candidates = decimal_steps(axis_len, width_px, min_step);
-    let step = fit_step(&candidates, axis_start, axis_len, width_px, &fmt);
-    emit_time_ticks(axis_start, axis_len, width_px, step, step / 5.0, &fmt)
+    let candidates = decimal_steps(axis_len, width_px, min_step, g);
+    let step = fit_step(&candidates, axis_start, axis_len, width_px, &fmt, g);
+    emit_time_ticks(axis_start, axis_len, width_px, step, step / 5.0, &fmt, g)
 }
 
 /// The `beats` form of the time ruler: the axis converted to beat positions,
@@ -223,6 +241,7 @@ fn beat_ticks(
     tempo: f64,
     beat_at: f64,
     quant: f64,
+    g: Gaps,
 ) -> Vec<Tick> {
     let b0 = beat_at + start / rate * tempo;
     let blen = len / rate * tempo;
@@ -230,16 +249,16 @@ fn beat_ticks(
         return Vec::new();
     }
     let fmt = |b: f64, step: f64| fmt_bar_beat(b, quant, step);
-    let candidates = beat_steps(blen, width_px, quant);
-    let step = fit_step(&candidates, b0, blen, width_px, &fmt);
-    emit_time_ticks(b0, blen, width_px, step, step / 2.0, &fmt)
+    let candidates = beat_steps(blen, width_px, quant, g);
+    let step = fit_step(&candidates, b0, blen, width_px, &fmt, g);
+    emit_time_ticks(b0, blen, width_px, step, step / 2.0, &fmt, g)
 }
 
 /// The ascending musical ladder for a `blen`-beat axis: binary fractions of a
 /// beat below 1, whole beats that keep bar lines on majors inside the bar,
 /// then bars and powers-of-two bars. Every rung divides the next.
-fn beat_steps(blen: f64, width_px: f64, quant: f64) -> Vec<f64> {
-    let floor_raw = (blen * MINOR_GAP_PX / width_px.max(1.0)).max(1.0 / 1024.0);
+fn beat_steps(blen: f64, width_px: f64, quant: f64, g: Gaps) -> Vec<f64> {
+    let floor_raw = (blen * g.tick / width_px.max(1.0)).max(1.0 / 1024.0);
     let mut v = 2f64.powf(floor_raw.log2().floor()).min(1.0);
     let mut out = Vec::new();
     while v < 1.0 && out.len() < 64 {
@@ -275,8 +294,9 @@ fn emit_time_ticks(
     step: f64,
     minor: f64,
     fmt: &dyn Fn(f64, f64) -> String,
+    g: Gaps,
 ) -> Vec<Tick> {
-    let draw_minors = minor / axis_len * width_px >= MINOR_GAP_PX;
+    let draw_minors = minor / axis_len * width_px >= g.tick;
     let fine = if draw_minors { minor } else { step };
     let mut out = Vec::new();
     let mut k = (axis_start / fine).ceil() as i64;
@@ -500,7 +520,9 @@ pub(crate) fn amp_ticks(
     bit_depth: u32,
     y_start: f64,
     y_len: f64,
+    metrics: &Metrics,
 ) -> Vec<Tick> {
+    let g = Gaps::of(metrics);
     if height_px <= 0.0 || y_len <= 0.0 {
         return Vec::new();
     }
@@ -528,10 +550,10 @@ pub(crate) fn amp_ticks(
             for db in DB_RUNGS.into_iter().chain([0.0]) {
                 let amp = 10f64.powf(db / 20.0);
                 let p = px_of(amp);
-                if p - last_any < MINOR_GAP_PX {
+                if p - last_any < g.tick {
                     continue;
                 }
-                let label = (p - last_label >= label_gap_v()).then(|| format!("{}", db as i64));
+                let label = (p - last_label >= g.label_v()).then(|| format!("{}", db as i64));
                 if label.is_some() {
                     last_label = p;
                 }
@@ -568,7 +590,7 @@ pub(crate) fn amp_ticks(
             let v_lo = (amp_at(y_start) * full).max(-full);
             let v_hi = (amp_at(y_start + y_len) * full).min(full);
             let px_per_value = height_px * margin / (2.0 * y_len) / full;
-            let mut step = snap_125(label_gap_v() / px_per_value).min(full);
+            let mut step = snap_125(g.label_v() / px_per_value).min(full);
             if unit == RulerY::Bits {
                 step = step.max(1.0);
             }
@@ -589,9 +611,7 @@ pub(crate) fn amp_ticks(
             // 16-bit axis stepping 10000 still labels ±32768) and their label
             // clears the nearest stepped one by at least a line of text.
             let remainder = full - (full / step).floor() * step;
-            if remainder > step * 1e-9
-                && remainder * px_per_value >= font::height(RULER_SCALE) as f64
-            {
+            if remainder > step * 1e-9 && remainder * px_per_value >= font::height(g.scale) as f64 {
                 for sign in [-1.0, 1.0] {
                     let frac = frac_of(sign);
                     if visible(frac) {
@@ -614,15 +634,16 @@ pub(crate) fn amp_ticks(
 /// `height_px`; majors are labeled with [`fmt_decimal`], minors (a fifth of
 /// the step) appear when they clear the minimum tick gap. `frac` is 0 at `lo`
 /// (the bottom), 1 at `hi`.
-pub(crate) fn value_ticks(lo: f64, hi: f64, height_px: f64) -> Vec<Tick> {
+pub(crate) fn value_ticks(lo: f64, hi: f64, height_px: f64, metrics: &Metrics) -> Vec<Tick> {
     let span = hi - lo;
     if span <= 0.0 || height_px <= 0.0 {
         return Vec::new();
     }
+    let g = Gaps::of(metrics);
     let px_per_value = height_px / span;
-    let step = snap_125(label_gap_v() / px_per_value);
+    let step = snap_125(g.label_v() / px_per_value);
     let minor = step / 5.0;
-    let draw_minors = minor * px_per_value >= MINOR_GAP_PX;
+    let draw_minors = minor * px_per_value >= g.tick;
     let fine = if draw_minors { minor } else { step };
     let mut out = Vec::new();
     let mut k = (lo / fine).ceil() as i64;
@@ -698,7 +719,9 @@ pub(crate) fn hz_ticks(
     height_px: f64,
     y_start: f64,
     y_len: f64,
+    metrics: &Metrics,
 ) -> Vec<Tick> {
+    let g = Gaps::of(metrics);
     if nyquist <= 0.0 || height_px <= 0.0 || y_len <= 0.0 {
         return Vec::new();
     }
@@ -710,7 +733,7 @@ pub(crate) fn hz_ticks(
         return Vec::new();
     }
     let mut out = Vec::new();
-    let gap_l = label_gap_v();
+    let gap_l = g.label_v();
     if scale != FreqScale::Linear && f_top / f_bot.max(1.0) >= 10.0 {
         // Decade scheme over a wide window.
         let (mut last_label, mut last_any) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
@@ -744,14 +767,14 @@ pub(crate) fn hz_ticks(
                 }
                 let p = d * height_px;
                 let major = matches!(mult, 1 | 2 | 5);
-                if major && p - last_label >= gap_l && p - last_any >= MINOR_GAP_PX {
+                if major && p - last_label >= gap_l && p - last_any >= g.tick {
                     out.push(Tick {
                         frac: d.clamp(0.0, 1.0),
                         label: Some(fmt_hz(f)),
                     });
                     last_label = p;
                     last_any = p;
-                } else if p - last_any >= MINOR_GAP_PX {
+                } else if p - last_any >= g.tick {
                     out.push(Tick {
                         frac: d.clamp(0.0, 1.0),
                         label: None,
@@ -766,7 +789,7 @@ pub(crate) fn hz_ticks(
         // measured label heights at the *actual* (possibly nonlinear) tick
         // positions — the worst local gap decides.
         let span = f_top - f_bot;
-        let candidates = decimal_steps(span, height_px, 1.0);
+        let candidates = decimal_steps(span, height_px, 1.0, g);
         let fits = |step: f64| {
             let mut prev = f64::NEG_INFINITY;
             let mut k = (f_bot / step).ceil() as i64;
@@ -803,7 +826,7 @@ pub(crate) fn hz_ticks(
             }
             let p = d * height_px;
             let major = (f / step - (f / step).round()).abs() < 1e-6;
-            if !major && p - prev_any < MINOR_GAP_PX {
+            if !major && p - prev_any < g.tick {
                 continue;
             }
             prev_any = p;
@@ -828,14 +851,16 @@ pub(crate) fn hz_ticks_h(
     scale: FreqScale,
     f_lo_norm: f64,
     width_px: f64,
+    metrics: &Metrics,
 ) -> Vec<Tick> {
     if nyquist <= 0.0 || width_px <= 0.0 {
         return Vec::new();
     }
+    let g = Gaps::of(metrics);
     let to_px = |f: f64| hz_to_display(f, nyquist, scale, f_lo_norm) * width_px;
     // A label centered at `p`, edge-clamped into the strip: its drawn span.
     let span_of = |label: &str, p: f64| {
-        let w = font::width(label, RULER_SCALE) as f64;
+        let w = font::width(label, g.scale) as f64;
         let lx = (p - w * 0.5).clamp(0.0, (width_px - w).max(0.0));
         (lx, lx + w)
     };
@@ -850,14 +875,14 @@ pub(crate) fn hz_ticks_h(
         let label = if want_label {
             let text = fmt_hz(f);
             let (lx, rx) = span_of(&text, p);
-            (lx >= prev_end + LABEL_GAP_PX).then(|| {
+            (lx >= prev_end + g.label).then(|| {
                 prev_end = rx;
                 text
             })
         } else {
             None
         };
-        if label.is_none() && p - last_any < MINOR_GAP_PX {
+        if label.is_none() && p - last_any < g.tick {
             return;
         }
         last_any = p;
@@ -890,8 +915,8 @@ pub(crate) fn hz_ticks_h(
     } else {
         // The linear axis: the smallest 1-2-5 step in hertz whose labels fit.
         let fmt = |f: f64, _s: f64| fmt_hz(f);
-        let candidates = decimal_steps(nyquist, width_px, 1.0);
-        let step = fit_step(&candidates, 0.0, nyquist, width_px, &fmt);
+        let candidates = decimal_steps(nyquist, width_px, 1.0, g);
+        let step = fit_step(&candidates, 0.0, nyquist, width_px, &fmt, g);
         let minor = step / 5.0;
         let mut k = 0i64;
         loop {
@@ -923,22 +948,25 @@ pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
 /// a mark up against the body's bottom edge (taller when labeled), the label
 /// centered under it and edge-clamped into the strip. The one drawing of the
 /// x-ruler strip — the editor frames and the plot both call it.
-pub(crate) fn draw_ticks_h(mesh: &mut Mesh, strip: Rect, ticks: &[Tick], theme: &Theme) {
+pub(crate) fn draw_ticks_h(
+    mesh: &mut Mesh,
+    strip: Rect,
+    ticks: &[Tick],
+    metrics: &Metrics,
+    theme: &Theme,
+) {
+    let scale = metrics.caption_scale;
     for tick in ticks {
         let x = strip.x + strip.w * tick.frac as f32;
         let h = if tick.label.is_some() { 6.0 } else { 3.0 };
-        mesh.rect(Rect::new(x, strip.y, 1.0, h), theme.ruler_line);
+        mesh.rect(
+            Rect::new(x, strip.y, metrics.divider_w, h),
+            theme.ruler_line,
+        );
         if let Some(label) = &tick.label {
-            let w = font::width(label, RULER_SCALE);
+            let w = font::width(label, scale);
             let lx = (x - w * 0.5).clamp(strip.x, (strip.x + strip.w - w).max(strip.x));
-            font::text(
-                mesh,
-                label,
-                lx,
-                strip.y + 7.0,
-                RULER_SCALE,
-                theme.ruler_text,
-            );
+            font::text(mesh, label, lx, strip.y + 7.0, scale, theme.ruler_text);
         }
     }
 }
@@ -948,26 +976,32 @@ pub(crate) fn draw_ticks_h(mesh: &mut Mesh, strip: Rect, ticks: &[Tick], theme: 
 /// labeled), labels right-aligned beside them and kept inside the strip
 /// starting at `strip_x`. `frac` 0 is the lane's bottom. The one drawing of
 /// the y-ruler strip, whatever the unit (amplitude, frequency, plain value).
+#[allow(clippy::too_many_arguments)] // one strip's flat draw inputs
 pub(crate) fn draw_ticks_v(
     mesh: &mut Mesh,
     body_x: f32,
     strip_x: f32,
     lane: Rect,
     ticks: &[Tick],
+    metrics: &Metrics,
     theme: &Theme,
 ) {
     if lane.h <= 4.0 {
         return;
     }
+    let scale = metrics.caption_scale;
     for tick in ticks {
         let y = lane.y + lane.h * (1.0 - tick.frac as f32);
         let w = if tick.label.is_some() { 8.0 } else { 4.0 };
-        mesh.rect(Rect::new(body_x - w, y, w, 1.0), theme.ruler_line);
+        mesh.rect(
+            Rect::new(body_x - w, y, w, metrics.divider_w),
+            theme.ruler_line,
+        );
         if let Some(label) = &tick.label {
-            let lw = font::width(label, RULER_SCALE);
+            let lw = font::width(label, scale);
             let lx = (body_x - 10.0 - lw).max(strip_x);
-            let ty = (y - 3.0).clamp(lane.y, lane.y + lane.h - font::height(RULER_SCALE));
-            font::text(mesh, label, lx, ty, RULER_SCALE, theme.ruler_text);
+            let ty = (y - 3.0).clamp(lane.y, lane.y + lane.h - font::height(scale));
+            font::text(mesh, label, lx, ty, scale, theme.ruler_text);
         }
     }
 }
@@ -1002,7 +1036,7 @@ mod tests {
             .iter()
             .filter_map(|t| {
                 let label = t.label.as_deref()?;
-                let w = font::width(label, RULER_SCALE) as f64;
+                let w = font::width(label, Metrics::default().caption_scale) as f64;
                 let x = t.frac * width_px;
                 let lx = (x - w * 0.5).clamp(0.0, (width_px - w).max(0.0));
                 Some((lx, lx + w))
@@ -1028,7 +1062,7 @@ mod tests {
             .map(|t| t.frac * height_px)
             .collect();
         ys.sort_by(f64::total_cmp);
-        let line = font::height(RULER_SCALE) as f64;
+        let line = font::height(Metrics::default().caption_scale) as f64;
         for w in ys.windows(2) {
             assert!(w[1] - w[0] >= line - 1e-9, "{ctx}: {w:?}");
         }
@@ -1048,7 +1082,14 @@ mod tests {
     fn time_ticks_pick_the_smallest_fitting_step() {
         // 10 s visible over 800 px at 48 kHz: one-second labels ("0".."10")
         // fit comfortably; half-second ones ("0.5", ...) collide.
-        let ticks = time_ticks(0.0, 480_000.0, 800.0, 48_000.0, TimeUnit::Seconds);
+        let ticks = time_ticks(
+            0.0,
+            480_000.0,
+            800.0,
+            48_000.0,
+            TimeUnit::Seconds,
+            &Metrics::default(),
+        );
         assert!(!ticks.is_empty());
         for t in &ticks {
             assert!((0.0..=1.0).contains(&t.frac));
@@ -1060,18 +1101,39 @@ mod tests {
         );
         assert_no_h_collisions(&ticks, 800.0, "10s/800px");
         // The same window on a narrow strip climbs the ladder.
-        let narrow = time_ticks(0.0, 480_000.0, 160.0, 48_000.0, TimeUnit::Seconds);
+        let narrow = time_ticks(
+            0.0,
+            480_000.0,
+            160.0,
+            48_000.0,
+            TimeUnit::Seconds,
+            &Metrics::default(),
+        );
         assert!(labels(&narrow).len() < l.len());
         assert_no_h_collisions(&narrow, 160.0, "10s/160px");
     }
 
     #[test]
     fn time_ticks_fall_back_to_sample_counts() {
-        let ticks = time_ticks(0.0, 100_000.0, 500.0, 0.0, TimeUnit::Seconds);
+        let ticks = time_ticks(
+            0.0,
+            100_000.0,
+            500.0,
+            0.0,
+            TimeUnit::Seconds,
+            &Metrics::default(),
+        );
         // No rate: labels are sample counts (compacted), on the 1-2-5 ladder.
         let l = labels(&ticks);
         assert!(l.contains(&"0") && l.contains(&"20K"), "{l:?}");
-        let explicit = time_ticks(0.0, 100_000.0, 500.0, 48_000.0, TimeUnit::Samples);
+        let explicit = time_ticks(
+            0.0,
+            100_000.0,
+            500.0,
+            48_000.0,
+            TimeUnit::Samples,
+            &Metrics::default(),
+        );
         assert_eq!(
             labels(&explicit),
             labels(&ticks),
@@ -1083,7 +1145,14 @@ mod tests {
     fn sample_steps_stay_integral() {
         // Zoomed to 30 samples over a wide strip: the step cannot go below 1,
         // so every label is a whole sample number.
-        let ticks = time_ticks(100.0, 30.0, 1200.0, 0.0, TimeUnit::Samples);
+        let ticks = time_ticks(
+            100.0,
+            30.0,
+            1200.0,
+            0.0,
+            TimeUnit::Samples,
+            &Metrics::default(),
+        );
         let l = labels(&ticks);
         assert!(l.contains(&"100") && l.contains(&"130"), "{l:?}");
         for label in &l {
@@ -1104,7 +1173,14 @@ mod tests {
     #[test]
     fn zoomed_view_offsets_and_subdivides() {
         // A 1 s window starting at 2.5 s: sub-second majors from 2.5.
-        let ticks = time_ticks(120_000.0, 48_000.0, 800.0, 48_000.0, TimeUnit::Seconds);
+        let ticks = time_ticks(
+            120_000.0,
+            48_000.0,
+            800.0,
+            48_000.0,
+            TimeUnit::Seconds,
+            &Metrics::default(),
+        );
         let l = labels(&ticks);
         assert!(l.contains(&"2.6") && l.contains(&"3.4"), "{l:?}");
         // Minors exist between majors (more ticks than labels).
@@ -1121,7 +1197,7 @@ mod tests {
             beat_at: 0.0,
             quant: 4.0,
         };
-        let ticks = time_ticks(0.0, 192_000.0, 800.0, 48_000.0, unit);
+        let ticks = time_ticks(0.0, 192_000.0, 800.0, 48_000.0, unit, &Metrics::default());
         let l = labels(&ticks);
         assert_eq!(l[0], "1:1");
         assert!(l.contains(&"1:3") && l.contains(&"2:1"), "{l:?}");
@@ -1142,7 +1218,7 @@ mod tests {
             beat_at: 0.0,
             quant: 4.0,
         };
-        let ticks = time_ticks(0.0, 192_000.0, 120.0, 48_000.0, unit);
+        let ticks = time_ticks(0.0, 192_000.0, 120.0, 48_000.0, unit, &Metrics::default());
         let l = labels(&ticks);
         assert!(!l.is_empty());
         for label in &l {
@@ -1155,7 +1231,7 @@ mod tests {
     fn beat_steps_climb_the_musical_ladder() {
         // Binary fractions below a beat, then beats, then bar multiples;
         // every rung divides the next (a 3-beat bar skips the 2-beat rung).
-        let steps = beat_steps(16.0, 800.0, 4.0);
+        let steps = beat_steps(16.0, 800.0, 4.0, Gaps::of(&Metrics::default()));
         for w in steps.windows(2) {
             let ratio = w[1] / w[0];
             assert!(
@@ -1164,7 +1240,7 @@ mod tests {
             );
         }
         assert!(steps.contains(&1.0) && steps.contains(&2.0) && steps.contains(&4.0));
-        let three = beat_steps(16.0, 800.0, 3.0);
+        let three = beat_steps(16.0, 800.0, 3.0, Gaps::of(&Metrics::default()));
         assert!(!three.contains(&2.0), "{three:?}");
         assert!(three.contains(&3.0), "{three:?}");
     }
@@ -1176,7 +1252,7 @@ mod tests {
             beat_at: 0.0,
             quant: 4.0,
         };
-        let ticks = time_ticks(0.0, 100_000.0, 500.0, 48_000.0, unit);
+        let ticks = time_ticks(0.0, 100_000.0, 500.0, 48_000.0, unit, &Metrics::default());
         assert_eq!(labels(&ticks)[0], "0");
         assert!(labels(&ticks).contains(&"20K"));
     }
@@ -1189,7 +1265,7 @@ mod tests {
             beat_at: 2.0,
             quant: 4.0,
         };
-        let ticks = time_ticks(0.0, 192_000.0, 800.0, 48_000.0, unit);
+        let ticks = time_ticks(0.0, 192_000.0, 800.0, 48_000.0, unit, &Metrics::default());
         let l = labels(&ticks);
         assert_eq!(l[0], "1:3", "{l:?}");
         assert!(l.contains(&"2:1"), "{l:?}");
@@ -1240,8 +1316,8 @@ mod tests {
 
     #[test]
     fn amp_ticks_norm_and_percent_share_the_geometry() {
-        let norm = amp_ticks(RulerY::Norm, 400.0, 16, 0.0, 1.0);
-        let pct = amp_ticks(RulerY::Percent, 400.0, 16, 0.0, 1.0);
+        let norm = amp_ticks(RulerY::Norm, 400.0, 16, 0.0, 1.0, &Metrics::default());
+        let pct = amp_ticks(RulerY::Percent, 400.0, 16, 0.0, 1.0, &Metrics::default());
         assert_eq!(norm.len(), pct.len());
         for (n, p) in norm.iter().zip(&pct) {
             assert!((n.frac - p.frac).abs() < 1e-12, "same positions");
@@ -1262,20 +1338,20 @@ mod tests {
 
     #[test]
     fn amp_ticks_bits_step_in_sample_values_and_keep_the_endpoints() {
-        let bits = amp_ticks(RulerY::Bits, 400.0, 16, 0.0, 1.0);
+        let bits = amp_ticks(RulerY::Bits, 400.0, 16, 0.0, 1.0, &Metrics::default());
         let l = labels(&bits);
         // 1-2-5 steps in integer sample values, compacted...
         assert!(l.contains(&"0") && l.contains(&"10K"), "{l:?}");
         // ...plus the full-scale endpoints the decimal step misses.
         assert!(l.contains(&"-32768") && l.contains(&"32768"), "{l:?}");
         // A different bit depth rescales the axis.
-        let eight = amp_ticks(RulerY::Bits, 400.0, 8, 0.0, 1.0);
+        let eight = amp_ticks(RulerY::Bits, 400.0, 8, 0.0, 1.0, &Metrics::default());
         assert!(labels(&eight).contains(&"-128"), "{:?}", labels(&eight));
     }
 
     #[test]
     fn amp_ticks_db_ladder_is_mirrored_and_placed_by_amplitude() {
-        let ticks = amp_ticks(RulerY::Db, 600.0, 16, 0.0, 1.0);
+        let ticks = amp_ticks(RulerY::Db, 600.0, 16, 0.0, 1.0, &Metrics::default());
         // The center line is the -inf mark.
         assert_eq!(ticks[0].frac, 0.5);
         assert_eq!(ticks[0].label.as_deref(), Some("-INF"));
@@ -1303,8 +1379,8 @@ mod tests {
         // Zoom into the top of the norm axis: the visible amplitudes span
         // roughly [0.6, 1.09]; the step refines below the full-view 0.1 and
         // every tick names an amplitude inside the window.
-        let full_view = amp_ticks(RulerY::Norm, 400.0, 16, 0.0, 1.0);
-        let zoomed = amp_ticks(RulerY::Norm, 400.0, 16, 0.8, 0.2);
+        let full_view = amp_ticks(RulerY::Norm, 400.0, 16, 0.0, 1.0, &Metrics::default());
+        let zoomed = amp_ticks(RulerY::Norm, 400.0, 16, 0.8, 0.2, &Metrics::default());
         let parse = |t: &Tick| t.label.as_deref().unwrap().parse::<f64>().unwrap();
         let step_full = parse(&full_view[1]) - parse(&full_view[0]);
         let z: Vec<f64> = zoomed.iter().map(parse).collect();
@@ -1320,8 +1396,8 @@ mod tests {
         assert_no_v_collisions(&zoomed, 400.0, "norm zoomed");
         // The dB axis zoomed into the top reveals the fine (-1, -2) rungs the
         // full view drops on a short lane.
-        let db_short = amp_ticks(RulerY::Db, 150.0, 16, 0.0, 1.0);
-        let db_zoom = amp_ticks(RulerY::Db, 150.0, 16, 0.85, 0.15);
+        let db_short = amp_ticks(RulerY::Db, 150.0, 16, 0.0, 1.0, &Metrics::default());
+        let db_zoom = amp_ticks(RulerY::Db, 150.0, 16, 0.85, 0.15, &Metrics::default());
         assert!(
             !labels(&db_short).contains(&"-1"),
             "{:?}",
@@ -1360,7 +1436,15 @@ mod tests {
         // 48 kHz => Nyquist 24 kHz, f_lo = 20/24000.
         let nyq = 24_000.0;
         let f_lo = 20.0 / nyq;
-        let ticks = hz_ticks(nyq, FreqScale::Log, f_lo, 600.0, 0.0, 1.0);
+        let ticks = hz_ticks(
+            nyq,
+            FreqScale::Log,
+            f_lo,
+            600.0,
+            0.0,
+            1.0,
+            &Metrics::default(),
+        );
         let l = labels(&ticks);
         for expected in ["100", "1K", "10K", "2K", "50"] {
             assert!(l.contains(&expected), "missing {expected} in {l:?}");
@@ -1389,6 +1473,7 @@ mod tests {
             600.0,
             0.0,
             1.0,
+            &Metrics::default(),
         );
         let l = labels(&ticks);
         assert_eq!(l.first(), Some(&"0"));
@@ -1403,7 +1488,7 @@ mod tests {
     fn mel_and_bark_ticks_sit_on_the_perceptual_mapping() {
         let nyq = 24_000.0;
         for scale in [FreqScale::Mel, FreqScale::Bark] {
-            let ticks = hz_ticks(nyq, scale, 20.0 / nyq, 600.0, 0.0, 1.0);
+            let ticks = hz_ticks(nyq, scale, 20.0 / nyq, 600.0, 0.0, 1.0, &Metrics::default());
             let l = labels(&ticks);
             assert_eq!(l.first(), Some(&"0"));
             assert!(l.contains(&"1K"), "{scale:?}: {l:?}");
@@ -1431,7 +1516,15 @@ mod tests {
         let f_lo = 20.0 / nyq;
         let d1 = hz_to_display(1_000.0, nyq, FreqScale::Log, f_lo);
         let d2 = hz_to_display(2_000.0, nyq, FreqScale::Log, f_lo);
-        let ticks = hz_ticks(nyq, FreqScale::Log, f_lo, 600.0, d1, d2 - d1);
+        let ticks = hz_ticks(
+            nyq,
+            FreqScale::Log,
+            f_lo,
+            600.0,
+            d1,
+            d2 - d1,
+            &Metrics::default(),
+        );
         let l = labels(&ticks);
         assert!(l.contains(&"1.1K") || l.contains(&"1.2K"), "{l:?}");
         // Every label names a frequency inside the window, exactly on the
@@ -1485,7 +1578,7 @@ mod tests {
                         quant: 3.0,
                     },
                 ] {
-                    let ticks = time_ticks(start, len, w, 48_000.0, unit);
+                    let ticks = time_ticks(start, len, w, 48_000.0, unit, &Metrics::default());
                     assert_no_h_collisions(&ticks, w, &format!("{unit:?} {start}+{len} @{w}px"));
                 }
             }
@@ -1495,7 +1588,7 @@ mod tests {
         for &h in &heights {
             for &(y0, ylen) in &y_windows {
                 for unit in [RulerY::Norm, RulerY::Db, RulerY::Bits, RulerY::Percent] {
-                    let ticks = amp_ticks(unit, h, 16, y0, ylen);
+                    let ticks = amp_ticks(unit, h, 16, y0, ylen, &Metrics::default());
                     assert_no_v_collisions(&ticks, h, &format!("{unit:?} y{y0}+{ylen} @{h}px"));
                 }
                 for scale in [
@@ -1504,7 +1597,15 @@ mod tests {
                     FreqScale::Mel,
                     FreqScale::Bark,
                 ] {
-                    let ticks = hz_ticks(24_000.0, scale, 20.0 / 24_000.0, h, y0, ylen);
+                    let ticks = hz_ticks(
+                        24_000.0,
+                        scale,
+                        20.0 / 24_000.0,
+                        h,
+                        y0,
+                        ylen,
+                        &Metrics::default(),
+                    );
                     assert_no_v_collisions(&ticks, h, &format!("{scale:?} y{y0}+{ylen} @{h}px"));
                     for t in &ticks {
                         assert!((0.0..=1.0).contains(&t.frac));
@@ -1518,7 +1619,7 @@ mod tests {
     fn value_ticks_fit_any_range() {
         // A non-normalized sequence range (say pwhite over [40, 4700]): round
         // 1-2-5 steps, labels inside the range, no collisions.
-        let ticks = value_ticks(40.0, 4700.0, 400.0);
+        let ticks = value_ticks(40.0, 4700.0, 400.0, &Metrics::default());
         let l = labels(&ticks);
         assert!(!l.is_empty());
         assert!(l.contains(&"1000") || l.contains(&"500"), "{l:?}");
@@ -1527,7 +1628,7 @@ mod tests {
         }
         assert_no_v_collisions(&ticks, 400.0, "value 40..4700");
         // A tiny fractional range refines below 1.
-        let fine = value_ticks(-0.02, 0.03, 400.0);
+        let fine = value_ticks(-0.02, 0.03, 400.0, &Metrics::default());
         let fl = labels(&fine);
         assert!(
             fl.contains(&"0") && fl.iter().any(|s| s.contains('.')),
@@ -1535,8 +1636,8 @@ mod tests {
         );
         assert_no_v_collisions(&fine, 400.0, "value -0.02..0.03");
         // Degenerate span: nothing.
-        assert!(value_ticks(1.0, 1.0, 400.0).is_empty());
-        assert!(value_ticks(0.0, 1.0, 0.0).is_empty());
+        assert!(value_ticks(1.0, 1.0, 400.0, &Metrics::default()).is_empty());
+        assert!(value_ticks(0.0, 1.0, 0.0, &Metrics::default()).is_empty());
     }
 
     #[test]
@@ -1557,7 +1658,7 @@ mod tests {
             FreqScale::Mel,
             FreqScale::Bark,
         ] {
-            let ticks = hz_ticks_h(nyq, scale, f_lo, 800.0);
+            let ticks = hz_ticks_h(nyq, scale, f_lo, 800.0, &Metrics::default());
             let l = labels(&ticks);
             assert!(l.contains(&"1K") || l.contains(&"2K"), "{scale:?}: {l:?}");
             // Every label sits exactly on the shared display mapping.
@@ -1576,22 +1677,75 @@ mod tests {
             }
             assert_no_h_collisions(&ticks, 800.0, &format!("{scale:?} horizontal"));
             // A narrow strip keeps fewer labels, still collision-free.
-            let narrow = hz_ticks_h(nyq, scale, f_lo, 120.0);
+            let narrow = hz_ticks_h(nyq, scale, f_lo, 120.0, &Metrics::default());
             assert!(labels(&narrow).len() <= l.len());
             assert_no_h_collisions(&narrow, 120.0, &format!("{scale:?} narrow"));
         }
-        assert!(hz_ticks_h(0.0, FreqScale::Log, 0.001, 800.0).is_empty());
+        assert!(hz_ticks_h(0.0, FreqScale::Log, 0.001, 800.0, &Metrics::default()).is_empty());
     }
 
     #[test]
     fn degenerate_inputs_yield_no_ticks() {
-        assert!(time_ticks(0.0, 0.0, 800.0, 48_000.0, TimeUnit::Seconds).is_empty());
-        assert!(time_ticks(0.0, 100.0, 0.0, 48_000.0, TimeUnit::Seconds).is_empty());
-        assert!(hz_ticks(0.0, FreqScale::Log, 0.001, 600.0, 0.0, 1.0).is_empty());
-        assert!(hz_ticks(24_000.0, FreqScale::Linear, 0.001, 0.0, 0.0, 1.0).is_empty());
-        assert!(hz_ticks(24_000.0, FreqScale::Log, 0.001, 600.0, 0.5, 0.0).is_empty());
-        assert!(amp_ticks(RulerY::Norm, 0.0, 16, 0.0, 1.0).is_empty());
-        assert!(amp_ticks(RulerY::Norm, 400.0, 16, 0.5, 0.0).is_empty());
-        assert!(amp_ticks(RulerY::Off, 400.0, 16, 0.0, 1.0).is_empty());
+        assert!(
+            time_ticks(
+                0.0,
+                0.0,
+                800.0,
+                48_000.0,
+                TimeUnit::Seconds,
+                &Metrics::default()
+            )
+            .is_empty()
+        );
+        assert!(
+            time_ticks(
+                0.0,
+                100.0,
+                0.0,
+                48_000.0,
+                TimeUnit::Seconds,
+                &Metrics::default()
+            )
+            .is_empty()
+        );
+        assert!(
+            hz_ticks(
+                0.0,
+                FreqScale::Log,
+                0.001,
+                600.0,
+                0.0,
+                1.0,
+                &Metrics::default()
+            )
+            .is_empty()
+        );
+        assert!(
+            hz_ticks(
+                24_000.0,
+                FreqScale::Linear,
+                0.001,
+                0.0,
+                0.0,
+                1.0,
+                &Metrics::default()
+            )
+            .is_empty()
+        );
+        assert!(
+            hz_ticks(
+                24_000.0,
+                FreqScale::Log,
+                0.001,
+                600.0,
+                0.5,
+                0.0,
+                &Metrics::default()
+            )
+            .is_empty()
+        );
+        assert!(amp_ticks(RulerY::Norm, 0.0, 16, 0.0, 1.0, &Metrics::default()).is_empty());
+        assert!(amp_ticks(RulerY::Norm, 400.0, 16, 0.5, 0.0, &Metrics::default()).is_empty());
+        assert!(amp_ticks(RulerY::Off, 400.0, 16, 0.0, 1.0, &Metrics::default()).is_empty());
     }
 }

@@ -14,6 +14,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clausters_core::config::Config;
+use clausters_gui::host::metrics::Metrics;
 use clausters_gui::host::store::{self, GuiStore};
 use clausters_gui::host::theme::Theme;
 use clausters_gui::host::transport::{self, DEFAULT_PORT};
@@ -260,6 +261,16 @@ fn run(args: &[String]) -> Result<(), String> {
             tracing::warn!("{w} ({path})");
         }
     }
+    // The host's sizing: the generated metrics table, overlaid by
+    // [gui.metrics] from the config (whose reserved `scale` key regenerates it
+    // at another density). Unknown roles or unusable numbers warn and fall
+    // through, exactly as the theme's do.
+    let mut metrics = Metrics::default();
+    if let Some(table) = &cfg.gui.metrics {
+        for w in metrics.overlay(table.iter().map(|(k, v)| (k.as_str(), v.as_f64()))) {
+            tracing::warn!("{w} (config [gui.metrics])");
+        }
+    }
     // The data directory: an explicit flag wins; otherwise the standalone
     // section (when booting one) then the gui section provide it; finally the
     // XDG fallback resolves a default.
@@ -298,7 +309,7 @@ fn run(args: &[String]) -> Result<(), String> {
                     dir.display()
                 )
             })?;
-            return run_standalone(&name, store, &dir, port, run_boot, theme);
+            return run_standalone(&name, store, &dir, port, run_boot, theme, metrics);
         }
         #[cfg(not(feature = "standalone"))]
         {
@@ -317,6 +328,7 @@ fn run(args: &[String]) -> Result<(), String> {
 
     let mut host = Host::new();
     host.theme = theme;
+    host.metrics = metrics;
     if let Some(store) = store {
         host = host.with_store(store);
     }
@@ -395,6 +407,7 @@ fn run_standalone(
     port: u16,
     run_boot: bool,
     theme: Theme,
+    metrics: Metrics,
 ) -> Result<(), String> {
     let (id, json) = store
         .load(name)
@@ -464,6 +477,7 @@ fn run_standalone(
         .with_server_link(ServerLink::Embed(embed))
         .with_store(store);
     host.theme = theme;
+    host.metrics = metrics;
     let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
     host.handle_packet(
         OscPacket::Message(OscMessage {

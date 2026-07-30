@@ -215,6 +215,9 @@ enum WebEvent {
     /// A theme overlay from the page: role -> "#rrggbb[aa]" pairs (the same
     /// table `[gui.theme]` and a `--theme` file carry natively).
     Theme(Vec<(String, String)>),
+    /// A metrics overlay from the page: role -> number pairs (the same table
+    /// `[gui.metrics]` carries natively, `scale` included).
+    Metrics(Vec<(String, f64)>),
 }
 
 /// A fetched-and-decoded bulk resource, ready to place. The decode (pyramid
@@ -1142,6 +1145,7 @@ impl WebApp {
             return;
         };
         let inputs = frame::FrameInputs {
+            metrics: &self.host.metrics,
             bus: Some(self.buses.as_ref() as &dyn BusSource),
             active_button: slot.gestures.active_button(),
             focused_text,
@@ -1504,6 +1508,20 @@ impl ApplicationHandler<WebEvent> for WebApp {
                         super::widget::resolve_themes(tree, &base);
                     }
                 }
+                for def in self.canvases.keys().copied().collect::<Vec<_>>() {
+                    self.draw(def);
+                }
+            }
+            WebEvent::Metrics(entries) => {
+                for w in self
+                    .host
+                    .metrics
+                    .overlay(entries.iter().map(|(k, v)| (k.as_str(), *v)))
+                {
+                    log(&w);
+                }
+                // Sizes are read per frame from the one table, so a redraw is
+                // the whole update — nothing is resolved per widget.
                 for def in self.canvases.keys().copied().collect::<Vec<_>>() {
                     self.draw(def);
                 }
@@ -2016,6 +2034,22 @@ impl GuiBridge {
                     .send_event(WebEvent::Theme(table.into_iter().collect()));
             }
             Err(e) => log(&format!("cannot parse theme JSON: {e}")),
+        }
+    }
+
+    /// Overlays the host's size metrics from a JSON object of
+    /// `{"role": number}` entries — the browser form of the native
+    /// `[gui.metrics]` config table, the reserved `scale` density key included.
+    /// A partial object is fine; unknown roles or unusable numbers are logged
+    /// and skipped.
+    pub fn metrics(&self, json: &str) {
+        match serde_json::from_str::<std::collections::BTreeMap<String, f64>>(json) {
+            Ok(table) => {
+                let _ = self
+                    .proxy
+                    .send_event(WebEvent::Metrics(table.into_iter().collect()));
+            }
+            Err(e) => log(&format!("cannot parse metrics JSON: {e}")),
         }
     }
 

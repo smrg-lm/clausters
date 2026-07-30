@@ -55,6 +55,14 @@ export class GuiBridge {
      */
     feed(packet: Uint8Array): void;
     /**
+     * Overlays the host's size metrics from a JSON object of
+     * `{"role": number}` entries — the browser form of the native
+     * `[gui.metrics]` config table, the reserved `scale` density key included.
+     * A partial object is fine; unknown roles or unusable numbers are logged
+     * and skipped.
+     */
+    metrics(json: string): void;
+    /**
      * Pops the next outbound OSC packet (`/gui_event`/`/gui_closed`/`/gui_info`)
      * for the page to decode, or `undefined` when the queue is empty.
      */
@@ -122,6 +130,7 @@ export interface InitOutput {
     readonly guibridge_def: (a: number, b: number, c: number, d: number) => void;
     readonly guibridge_detach: (a: number, b: number) => void;
     readonly guibridge_feed: (a: number, b: number, c: number) => void;
+    readonly guibridge_metrics: (a: number, b: number, c: number) => void;
     readonly guibridge_poll: (a: number) => [number, number];
     readonly guibridge_resize: (a: number, b: number, c: number, d: number) => void;
     readonly guibridge_server_reply: (a: number, b: number, c: number) => void;

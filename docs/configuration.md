@@ -106,6 +106,18 @@ host_port = 57210        # port for the host's script-facing front (UDP + TCP)
 #                        # (accent, text, field, background, selection, ...);
 #                        # an unknown role warns and is skipped, never fatal
 
+[gui.metrics]            # size-role overrides for the host's sizing (optional)
+# scale = 0.9            # the density: one multiplier regenerating the whole
+#                        # table (below 1 compact, above 1 comfortable)
+# pad = 6                # each entry is role = number, in device pixels (glyph
+# gap = 8                # scales for the text roles); the table is partial —
+# control_h = 26         # unlisted roles keep their generated default. Role
+#                        # names are the host's Metrics fields (pad, gap,
+#                        # margin, control_h, track_thick, header_w, ruler_h,
+#                        # point_radius, hit_slop, text_scale, caption_scale,
+#                        # ...); an unknown role or an unusable number warns and
+#                        # is skipped, never fatal
+
 [standalone]             # the self-contained app (GUI + embedded server)
 gui = "drone"            # the saved GuiDef to open when --standalone has no name
 boot = true              # run the GuiDef's boot messages and boot.json preset
@@ -136,7 +148,14 @@ port, alongside UDP), so its `true` is the implicit state and `false` (or
   same table goes on cascading over the wire: a GuiDef container may scope a
   further overlay to its subtree (a **theme group**, the `theme` prop) and any
   widget may re-seed its accent with the `color` prop — see [the GUI
-  protocol](gui-protocol.md). `clausters-gui --standalone` with no
+  protocol](gui-protocol.md). The `[gui.metrics]` table is the sizing
+  counterpart: the same partial-overlay semantics over the host's **size roles**
+  (spacings, control thicknesses, the chrome strips, the text scales), whose
+  defaults are generated from one quantized scale over the font cell. Its
+  reserved `scale` key is the whole density surface — one multiplier
+  regenerating the table, since a host has one density the way it has one look,
+  so there is nothing to set per widget and nothing on the wire.
+  `clausters-gui --standalone` with no
   name opens `[standalone].gui`. A `--config <path>` flag reads one specific file
   instead of the user+project chain.
 - **Python client** — the `[client]` section provides the defaults for

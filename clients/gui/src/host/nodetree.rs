@@ -20,13 +20,9 @@ use clausters_core::osc::OscType;
 use super::controls::body_rect;
 use super::font;
 use super::layout::Rect;
+use super::metrics::Metrics;
 use super::paint::Mesh;
 use super::theme::Theme;
-
-const PAD: f32 = 4.0;
-const TEXT_SCALE: f32 = 2.0;
-/// Pixels a child is indented past its parent.
-const INDENT: f32 = 14.0;
 
 /// One node of the mirrored tree: its id and whether it is a group (with its
 /// children) or a synth (with its def name and control values).
@@ -153,6 +149,7 @@ fn push_lines(entry: &NodeEntry, depth: usize, controls: bool, out: &mut Vec<Lin
 /// indented lines (clipped to the body height). `tree` is `None` before the
 /// first reply; `server` reports whether a client leg is attached at all, so an
 /// unattached host shows why it is empty instead of looking broken.
+#[allow(clippy::too_many_arguments)] // one view's draw: its model, box, look
 pub fn draw(
     mesh: &mut Mesh,
     rect: Rect,
@@ -160,42 +157,44 @@ pub fn draw(
     controls: bool,
     label: Option<&str>,
     server: bool,
+    m: &Metrics,
     theme: &Theme,
 ) {
     if let Some(text) = label {
         font::text(
             mesh,
             text,
-            rect.x + PAD,
-            rect.y + PAD,
-            TEXT_SCALE,
+            rect.x + m.pad,
+            rect.y + m.pad,
+            m.text_scale,
             theme.text,
         );
     }
-    let body = body_rect(rect, label.is_some());
+    let body = body_rect(rect, label.is_some(), m);
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
     mesh.rect(body, theme.track);
-    mesh.border(body, 1.0, theme.frame_info);
+    mesh.border(body, m.divider_w, theme.frame_info);
 
-    let line_h = font::height(TEXT_SCALE) + 3.0;
+    let line_h = font::height(m.text_scale) + 3.0;
     match tree {
         None => placeholder(
             mesh,
             body,
             if server { "querying..." } else { "no server" },
+            m,
             theme,
         ),
         Some(tree) => {
             let lines = tree.lines(controls);
-            let mut y = body.y + PAD;
+            let mut y = body.y + m.pad;
             for line in &lines {
-                if y + font::height(TEXT_SCALE) > body.y + body.h {
+                if y + font::height(m.text_scale) > body.y + body.h {
                     break; // out of vertical room; scrolling is future work
                 }
-                let x = body.x + PAD + line.depth as f32 * INDENT;
-                font::text(mesh, &line.text, x, y, TEXT_SCALE, theme.text);
+                let x = body.x + m.pad + line.depth as f32 * m.indent;
+                font::text(mesh, &line.text, x, y, m.text_scale, theme.text);
                 y += line_h;
             }
         }
@@ -203,8 +202,8 @@ pub fn draw(
 }
 
 /// A dim centered note for the empty states.
-fn placeholder(mesh: &mut Mesh, body: Rect, text: &str, theme: &Theme) {
-    font::text_centered(mesh, text, body, TEXT_SCALE, theme.text_dim);
+fn placeholder(mesh: &mut Mesh, body: Rect, text: &str, m: &Metrics, theme: &Theme) {
+    font::text_centered(mesh, text, body, m.text_scale, theme.text_dim);
 }
 
 fn next_int<'a>(it: &mut impl Iterator<Item = &'a OscType>) -> Option<i32> {
@@ -362,6 +361,7 @@ mod tests {
             true,
             Some("tree"),
             true,
+            &Metrics::default(),
             &Theme::default(),
         );
         assert!(!m.is_empty(), "a populated node tree draws geometry");

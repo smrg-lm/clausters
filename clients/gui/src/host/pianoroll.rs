@@ -24,9 +24,9 @@ use clausters_core::scale;
 
 use super::font;
 use super::layout::Rect;
+use super::metrics::Metrics;
 use super::paint::Mesh;
 use super::theme::Theme;
-use super::track::RULER_H;
 use crate::viewport::View;
 
 /// One note: its `start`/`dur` in timeline sample units (relative to the owning
@@ -77,8 +77,6 @@ pub const OSC_H: f32 = 16.0;
 /// semitone row is sub-pixel).
 const NOTE_MIN_H: f32 = 2.0;
 
-const KEY_SCALE: f32 = 1.0;
-
 /// The regions of a `pianoroll` widget rect: the keyboard gutter (left), the
 /// note grid, and the optional OSC / velocity / time-ruler strips stacked at the
 /// bottom. The renderer and the hit-test both call this, so a note occupies the
@@ -94,9 +92,9 @@ pub struct Regions {
 
 /// Split a widget rect into its piano-roll regions. `osc`/`velocity` reserve
 /// their strips only when on; `ruler_on` reserves the bottom time strip.
-pub fn regions(rect: Rect, ruler_on: bool, osc_on: bool, vel_on: bool) -> Regions {
+pub fn regions(rect: Rect, ruler_on: bool, osc_on: bool, vel_on: bool, m: &Metrics) -> Regions {
     let kw = KEYBOARD_W.min(rect.w);
-    let rh = if ruler_on { RULER_H.min(rect.h) } else { 0.0 };
+    let rh = if ruler_on { m.ruler_h.min(rect.h) } else { 0.0 };
     let vh = if vel_on { VELOCITY_H } else { 0.0 };
     let oh = if osc_on { OSC_H } else { 0.0 };
     // Reserve from the bottom up: ruler, velocity, osc, then the grid.
@@ -157,7 +155,14 @@ pub fn y_to_pitch(y: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
 
 /// The grid background: black-key rows shaded, semitone lines, and a brighter
 /// line at each octave (every C). `lo`/`hi` are the visible MIDI pitch window.
-pub fn draw_grid_background(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32, theme: &Theme) {
+pub fn draw_grid_background(
+    mesh: &mut Mesh,
+    grid: Rect,
+    lo: f32,
+    hi: f32,
+    m: &Metrics,
+    theme: &Theme,
+) {
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
     }
@@ -182,10 +187,10 @@ pub fn draw_grid_background(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32, theme
                 theme.grid_line
             };
             let ly = pitch_to_y(p as f32 - 0.5, lo, hi, grid);
-            mesh.rect(Rect::new(grid.x, ly, grid.w, 1.0), line);
+            mesh.rect(Rect::new(grid.x, ly, grid.w, m.divider_w), line);
         }
     }
-    mesh.border(grid, 1.0, theme.frame);
+    mesh.border(grid, m.divider_w, theme.frame);
 }
 
 /// Draw a set of notes over the pitch window `[lo, hi]` of `grid`, placed on
@@ -210,6 +215,7 @@ pub fn draw_notes(
     hi: f32,
     color_velocity: bool,
     selected: &[usize],
+    m: &Metrics,
     theme: &Theme,
 ) {
     if grid.w <= 0.0 || grid.h <= 0.0 {
@@ -254,7 +260,7 @@ pub fn draw_notes(
             } else {
                 theme.note_edge
             };
-            mesh.border(Rect::new(nx0, y, nx1 - nx0, h), 1.0, edge);
+            mesh.border(Rect::new(nx0, y, nx1 - nx0, h), m.divider_w, edge);
         }
     }
 }
@@ -263,12 +269,19 @@ pub fn draw_notes(
 /// for a roll drawn **without** a keyboard gutter (the multitrack `clip`'s
 /// body; the dedicated widget names its Cs on the keyboard instead). Draws
 /// only when a semitone row is tall enough to read a label.
-pub fn draw_pitch_labels(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32, theme: &Theme) {
+pub fn draw_pitch_labels(
+    mesh: &mut Mesh,
+    grid: Rect,
+    lo: f32,
+    hi: f32,
+    m: &Metrics,
+    theme: &Theme,
+) {
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
     }
     let rh = row_height(lo, hi, grid);
-    if rh < font::height(KEY_SCALE) + 2.0 {
+    if rh < font::height(m.micro_scale) + 2.0 {
         return;
     }
     let p0 = lo.floor() as i32;
@@ -281,7 +294,7 @@ pub fn draw_pitch_labels(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32, theme: &
                 &scale::note_name(p),
                 grid.x + 2.0,
                 top + 1.0,
-                KEY_SCALE,
+                m.micro_scale,
                 theme.key_label_dim,
             );
         }
@@ -290,7 +303,7 @@ pub fn draw_pitch_labels(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32, theme: &
 
 /// Draw the keyboard gutter: a white/black key per semitone row, with a note
 /// name on each C. `lo`/`hi` are the same pitch window as the grid.
-pub fn draw_keyboard(mesh: &mut Mesh, gutter: Rect, lo: f32, hi: f32, theme: &Theme) {
+pub fn draw_keyboard(mesh: &mut Mesh, gutter: Rect, lo: f32, hi: f32, m: &Metrics, theme: &Theme) {
     if gutter.w <= 0.0 || gutter.h <= 0.0 {
         return;
     }
@@ -307,18 +320,18 @@ pub fn draw_keyboard(mesh: &mut Mesh, gutter: Rect, lo: f32, hi: f32, theme: &Th
         let h = rh.max(1.0).min(gutter.h);
         mesh.rect(Rect::new(gutter.x, top, gutter.w, h), color);
         // Name every C when there is room for the label.
-        if scale::pitch_class(p) == 0 && rh >= font::height(KEY_SCALE) + 2.0 {
+        if scale::pitch_class(p) == 0 && rh >= font::height(m.micro_scale) + 2.0 {
             font::text(
                 mesh,
                 &scale::note_name(p),
                 gutter.x + 2.0,
                 top + 1.0,
-                KEY_SCALE,
+                m.micro_scale,
                 theme.key_label_dim,
             );
         }
     }
-    mesh.border(gutter, 1.0, theme.frame);
+    mesh.border(gutter, m.divider_w, theme.frame);
 }
 
 /// Draw the velocity lane: one bar per note at the note's start, its height the
@@ -329,6 +342,7 @@ pub fn draw_velocity_lane(
     nav: &View,
     offset: f64,
     notes: &[Note],
+    m: &Metrics,
     theme: &Theme,
 ) {
     if lane.w <= 0.0 || lane.h <= 0.0 {
@@ -345,7 +359,7 @@ pub fn draw_velocity_lane(
         let bh = lane.h * frac;
         mesh.rect(Rect::new(x, lane.y + lane.h - bh, 2.0, bh), theme.velocity);
     }
-    mesh.border(lane, 1.0, theme.frame);
+    mesh.border(lane, m.divider_w, theme.frame);
 }
 
 /// Draw the OSC event lane: a flag at each marker's time, with its label.
@@ -355,6 +369,7 @@ pub fn draw_osc_lane(
     nav: &View,
     offset: f64,
     marks: &[OscMark],
+    m: &Metrics,
     theme: &Theme,
 ) {
     if lane.w <= 0.0 || lane.h <= 0.0 {
@@ -362,18 +377,25 @@ pub fn draw_osc_lane(
     }
     mesh.rect(lane, theme.event_lane);
     let (x_lo, x_hi) = (lane.x, lane.x + lane.w);
-    for m in marks {
-        let x = to_x(offset + m.time, nav, lane) as f32;
+    for mark in marks {
+        let x = to_x(offset + mark.time, nav, lane) as f32;
         if x < x_lo || x > x_hi {
             continue;
         }
         mesh.rect(Rect::new(x, lane.y, 2.0, lane.h), theme.flag);
         mesh.disc(x, lane.y + 3.0, 3.0, theme.flag);
-        if let Some(t) = &m.label {
-            font::text(mesh, t, x + 4.0, lane.y + 1.0, KEY_SCALE, theme.label_dim);
+        if let Some(t) = &mark.label {
+            font::text(
+                mesh,
+                t,
+                x + 4.0,
+                lane.y + 1.0,
+                m.micro_scale,
+                theme.label_dim,
+            );
         }
     }
-    mesh.border(lane, 1.0, theme.frame);
+    mesh.border(lane, m.divider_w, theme.frame);
 }
 
 // --- Hit-testing ----------------------------------------------------------
@@ -708,12 +730,12 @@ mod tests {
     #[test]
     fn regions_reserve_only_enabled_strips() {
         let r = Rect::new(0.0, 0.0, 500.0, 400.0);
-        let full = regions(r, true, true, true);
+        let full = regions(r, true, true, true, &Metrics::default());
         assert_eq!(full.keyboard.w, KEYBOARD_W);
         assert!(full.ruler.h > 0.0 && full.osc.h == OSC_H && full.velocity.h == VELOCITY_H);
         // The grid takes what the strips leave.
         assert!((full.grid.h - (400.0 - full.ruler.h - OSC_H - VELOCITY_H)).abs() < 1e-3);
-        let bare = regions(r, false, false, false);
+        let bare = regions(r, false, false, false, &Metrics::default());
         assert_eq!(bare.ruler.h, 0.0);
         assert_eq!(bare.osc.h, 0.0);
         assert_eq!(bare.velocity.h, 0.0);
@@ -866,11 +888,25 @@ mod tests {
     fn pitch_labels_draw_only_when_the_rows_can_be_read() {
         // One octave over 240px: ~20px rows — the C label fits.
         let mut mesh = Mesh::new();
-        draw_pitch_labels(&mut mesh, grid(), 55.0, 67.0, &Theme::default());
+        draw_pitch_labels(
+            &mut mesh,
+            grid(),
+            55.0,
+            67.0,
+            &Metrics::default(),
+            &Theme::default(),
+        );
         assert!(mesh.vertex_count() > 0, "a readable C row gets its name");
         // Eight octaves over the same height: sub-3px rows — nothing draws.
         let mut mesh = Mesh::new();
-        draw_pitch_labels(&mut mesh, grid(), 12.0, 108.0, &Theme::default());
+        draw_pitch_labels(
+            &mut mesh,
+            grid(),
+            12.0,
+            108.0,
+            &Metrics::default(),
+            &Theme::default(),
+        );
         assert_eq!(mesh.vertex_count(), 0);
     }
 

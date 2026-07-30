@@ -542,7 +542,12 @@ impl Gestures {
         }
         match kind {
             WidgetKind::Slider { range: r, vertical } => {
-                let body = controls::body_rect_at(rect, r.label.is_some(), r.text_size * scale);
+                let body = controls::body_rect_at(
+                    rect,
+                    r.label.is_some(),
+                    r.text_size * scale,
+                    &host.metrics,
+                );
                 let t = slider_t(body, cx, cy, vertical);
                 interact::set_fraction(host, def_id, id, t);
                 emit_value(host, &mut out, def_id, id);
@@ -550,7 +555,12 @@ impl Gestures {
                 out.push(GestureEffect::Redraw(def_id));
             }
             WidgetKind::Knob(r) | WidgetKind::Number(r) => {
-                let body = controls::body_rect_at(rect, r.label.is_some(), r.text_size * scale);
+                let body = controls::body_rect_at(
+                    rect,
+                    r.label.is_some(),
+                    r.text_size * scale,
+                    &host.metrics,
+                );
                 let locked = grab();
                 self.drag = Some(Drag::Vertical {
                     id,
@@ -602,8 +612,9 @@ impl Gestures {
                 ref label,
                 ..
             } => {
-                let body = bpf::body(rect, label.is_some());
-                let hit_pt = bpf::hit_point(points, body, duration, min, max, exp, cx, cy);
+                let body = bpf::body(rect, label.is_some(), &host.metrics);
+                let hit_pt =
+                    bpf::hit_point(points, body, duration, min, max, exp, cx, cy, &host.metrics);
                 if ctx.ctrl {
                     // Ctrl+click on a point removes it; elsewhere it adds one
                     // at the cursor (which then drags until release).
@@ -695,7 +706,7 @@ impl Gestures {
             // press locates the transport, Shift+drag pans the shared axis.
             // It is the DAW gesture -- you scrub on the ruler.
             WidgetKind::TimeRuler { .. } => {
-                let body = frame::ruler_strip_body(rect);
+                let body = frame::ruler_strip_body(rect, &host.metrics);
                 if ctx.shift {
                     if let Some((start, _len, _total)) = nav(host, id) {
                         self.drag = Some(Drag::Pan {
@@ -717,7 +728,7 @@ impl Gestures {
                 // views use), so panning stays available where every plain drag
                 // grabs a clip.
                 if ctx.shift {
-                    let body = track::lane_body(rect, editor.ruler != Ruler::Off);
+                    let body = track::lane_body(rect, editor.ruler != Ruler::Off, &host.metrics);
                     if let Some((start, _len, _total)) = nav(host, id) {
                         self.drag = Some(Drag::Pan {
                             id,
@@ -733,7 +744,7 @@ impl Gestures {
                 // point, which is the one gesture a timeline view cannot do
                 // without. (Over a clip, the clip's own gestures win.)
                 let ruler_on = editor.ruler != Ruler::Off;
-                let body = track::lane_body(rect, ruler_on);
+                let body = track::lane_body(rect, ruler_on, &host.metrics);
                 let on_ruler = ruler_on && cy > body.y as f64 + body.h as f64;
                 let over_clip =
                     interact::clip_hit(host, def_id, ctx.fb_w, ctx.fb_h, cx, cy).is_some();
@@ -805,7 +816,7 @@ impl Gestures {
                 ref label,
                 ..
             } => {
-                let l = piano::layout(rect, min, max, overview, label.is_some());
+                let l = piano::layout(rect, min, max, overview, label.is_some(), &host.metrics);
                 // A press on the overview strip grabs the visible window: the
                 // drag pans it (relative, from the press snapshot). Gated by
                 // `pan` — a fixed-range piano ignores the strip.
@@ -910,7 +921,7 @@ impl Gestures {
             }
             WidgetKind::Waveform { ref editor, .. }
             | WidgetKind::Spectrogram { ref editor, .. } => {
-                let body = frame::timeline_body(rect, editor);
+                let body = frame::timeline_body(rect, editor, &host.metrics);
                 // A press on the y-ruler strip left of the body starts a
                 // vertical pan of the display window (the strip is the y
                 // axis' gesture surface; wheel over it zooms).
@@ -1562,7 +1573,7 @@ impl Gestures {
         )) = hit(host, ctx, cx, cy)
         {
             if pan {
-                let l = piano::layout(rect, min, max, overview, label.is_some());
+                let l = piano::layout(rect, min, max, overview, label.is_some(), &host.metrics);
                 let (nmin, nmax) = match l.overview.filter(|s| s.contains(cx, cy)) {
                     Some(strip) => {
                         let anchor = piano::overview_hit(strip, cx as f32) as f64;
@@ -1587,8 +1598,13 @@ impl Gestures {
                 ..
             } = &kind
             {
-                let r =
-                    pianoroll::regions(rect, editor.ruler != Ruler::Off, *osc_lane, *velocity_lane);
+                let r = pianoroll::regions(
+                    rect,
+                    editor.ruler != Ruler::Off,
+                    *osc_lane,
+                    *velocity_lane,
+                    &host.metrics,
+                );
                 if cx < r.grid.x as f64 {
                     let rel = ((cy - r.grid.y as f64) / r.grid.h.max(1.0) as f64).clamp(0.0, 1.0);
                     zoom_timeline_y(host, &mut out, def_id, id, factor, 1.0 - rel);
@@ -1600,10 +1616,12 @@ impl Gestures {
             // A lane's body is the strip right of its header (and above
             // its ruler); a heavy view's is its rect minus its rulers.
             let body = match kind {
-                WidgetKind::Track { .. } => track::lane_body(rect, editor.ruler != Ruler::Off),
+                WidgetKind::Track { .. } => {
+                    track::lane_body(rect, editor.ruler != Ruler::Off, &host.metrics)
+                }
                 // The free-standing ruler is all strip: no body to subtract.
-                WidgetKind::TimeRuler { .. } => frame::ruler_strip_body(rect),
-                _ => frame::timeline_body(rect, editor),
+                WidgetKind::TimeRuler { .. } => frame::ruler_strip_body(rect, &host.metrics),
+                _ => frame::timeline_body(rect, editor, &host.metrics),
             };
             if editor.ruler_y != RulerY::Off && cx < body.x as f64 {
                 // Wheel over the y-ruler strip zooms the vertical display
@@ -2711,6 +2729,7 @@ fn zoom_timeline(
 mod tests {
     use clausters_core::osc::{OscMessage, OscPacket};
 
+    use super::super::metrics::Metrics;
     use super::super::{ClientId, GUI_DEF, GUI_SET};
     use super::*;
 
@@ -3499,7 +3518,14 @@ mod tests {
                 {{"id":70,"type":"piano","min":60,"max":72,"overview":0{extra}}}]}}"#
         );
         let host = host_from(&json);
-        let l = piano::layout(Rect::new(6.0, 6.0, 700.0, 120.0), 60, 72, false, false);
+        let l = piano::layout(
+            Rect::new(6.0, 6.0, 700.0, 120.0),
+            60,
+            72,
+            false,
+            false,
+            &Metrics::default(),
+        );
         (host, l)
     }
 
@@ -3676,7 +3702,14 @@ mod tests {
         let mut host = host_from(host_json);
         let mut g = Gestures::default();
         let ctx = GestureCtx::new(1, 712, 132);
-        let l = piano::layout(Rect::new(6.0, 6.0, 700.0, 120.0), 60, 72, true, false);
+        let l = piano::layout(
+            Rect::new(6.0, 6.0, 700.0, 120.0),
+            60,
+            72,
+            true,
+            false,
+            &Metrics::default(),
+        );
         let strip = l.overview.unwrap();
         let sy = (strip.y + strip.h * 0.5) as f64;
         // Drag along the strip: the window pans with the cursor.

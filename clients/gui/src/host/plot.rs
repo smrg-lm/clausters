@@ -33,17 +33,15 @@ use crate::spectrogram::{FreqScale, Stft};
 
 use super::controls::body_rect;
 use super::font;
-use super::frame::{RULER_H, RULER_W, lane_at, lane_rect};
+use super::frame::{lane_at, lane_rect};
 use super::layout::Rect;
 use super::meters::fraction;
+use super::metrics::Metrics;
 use super::paint::Mesh;
-use super::ruler::{self, RULER_SCALE, TimeUnit};
+use super::ruler::{self, TimeUnit};
 use super::theme::{Theme, with_alpha};
 use super::widget::Ruler;
 
-const PAD: f32 = 4.0;
-const TEXT_SCALE: f32 = 2.0;
-const TRACE_W: f32 = 1.5;
 /// Sample rate assumed for the spectrum axis when the source brings none,
 /// matching the live views' fallback.
 const FALLBACK_SR: f64 = 48_000.0;
@@ -174,17 +172,17 @@ struct Geom {
     lanes: usize,
 }
 
-fn geometry(rect: Rect, p: &PlotParams) -> Geom {
-    let mut body = body_rect(rect, p.label.is_some());
-    let strip_x = (p.ruler_y && body.w > RULER_W * 2.0).then(|| {
+fn geometry(rect: Rect, p: &PlotParams, m: &Metrics) -> Geom {
+    let mut body = body_rect(rect, p.label.is_some(), m);
+    let strip_x = (p.ruler_y && body.w > m.ruler_w * 2.0).then(|| {
         let x = body.x;
-        body.x += RULER_W;
-        body.w -= RULER_W;
+        body.x += m.ruler_w;
+        body.w -= m.ruler_w;
         x
     });
-    let x_strip = (p.ruler != Ruler::Off && body.h > RULER_H * 2.0).then(|| {
-        body.h -= RULER_H;
-        Rect::new(body.x, body.y + body.h, body.w, RULER_H)
+    let x_strip = (p.ruler != Ruler::Off && body.h > m.ruler_h * 2.0).then(|| {
+        body.h -= m.ruler_h;
+        Rect::new(body.x, body.y + body.h, body.w, m.ruler_h)
     });
     let lanes = if p.overlay {
         1
@@ -239,52 +237,57 @@ fn x_unit(p: &PlotParams) -> TimeUnit {
 
 /// Draws a plot into `mesh`: the label strip, the framed field, the rulers and
 /// the view's traces (stacked per-channel lanes, or overlaid when asked).
-pub fn draw(mesh: &mut Mesh, rect: Rect, p: &PlotParams, theme: &Theme) {
+pub fn draw(mesh: &mut Mesh, rect: Rect, p: &PlotParams, m: &Metrics, theme: &Theme) {
     if let Some(text) = p.label {
         font::text(
             mesh,
             text,
-            rect.x + PAD,
-            rect.y + PAD,
-            TEXT_SCALE,
+            rect.x + m.pad,
+            rect.y + m.pad,
+            m.text_scale,
             theme.text,
         );
     }
-    let g = geometry(rect, p);
+    let g = geometry(rect, p, m);
     if g.body.w <= 0.0 || g.body.h <= 0.0 {
         return;
     }
     mesh.rect(g.body, theme.track);
-    mesh.border(g.body, 1.0, theme.frame_plot);
+    mesh.border(g.body, m.divider_w, theme.frame_plot);
     for lane in 1..g.lanes {
         let r = lane_rect(g.body, g.lanes, lane);
-        mesh.rect(Rect::new(r.x, r.y, r.w, 1.0), theme.lane_divider);
+        mesh.rect(Rect::new(r.x, r.y, r.w, m.divider_w), theme.lane_divider);
     }
     match p.view {
-        PlotView::Signal => draw_signal(mesh, &g, p, theme),
-        PlotView::Spectrum => draw_spectrum(mesh, &g, p, theme),
+        PlotView::Signal => draw_signal(mesh, &g, p, m, theme),
+        PlotView::Spectrum => draw_spectrum(mesh, &g, p, m, theme),
     }
 }
 
-fn draw_signal(mesh: &mut Mesh, g: &Geom, p: &PlotParams, theme: &Theme) {
+fn draw_signal(mesh: &mut Mesh, g: &Geom, p: &PlotParams, m: &Metrics, theme: &Theme) {
     let channels = p.channels.max(1);
     let n = frames_of(p);
     let (lo, hi) = value_range(p);
     if let Some(strip) = g.x_strip {
-        let ticks = ruler::time_ticks(0.0, n as f64, strip.w as f64, p.sample_rate, x_unit(p));
-        ruler::draw_ticks_h(mesh, strip, &ticks, theme);
+        let ticks = ruler::time_ticks(0.0, n as f64, strip.w as f64, p.sample_rate, x_unit(p), m);
+        ruler::draw_ticks_h(mesh, strip, &ticks, m, theme);
     }
     for ch in 0..channels {
         let lane = lane_rect(g.body, g.lanes, if p.overlay { 0 } else { ch });
         if ch == 0 || !p.overlay {
             if let Some(strip_x) = g.strip_x {
-                let ticks = ruler::value_ticks(lo as f64, hi as f64, lane.h as f64);
-                ruler::draw_ticks_v(mesh, g.body.x, strip_x, lane, &ticks, theme);
+                let ticks = ruler::value_ticks(lo as f64, hi as f64, lane.h as f64, m);
+                ruler::draw_ticks_v(mesh, g.body.x, strip_x, lane, &ticks, m, theme);
             }
             // A zero baseline, when 0 is within the displayed range.
             if lo < 0.0 && hi > 0.0 {
                 let y = lane.y + lane.h * (1.0 - fraction(0.0, lo, hi));
-                mesh.line([lane.x, y], [lane.x + lane.w, y], 1.0, theme.baseline);
+                mesh.line(
+                    [lane.x, y],
+                    [lane.x + lane.w, y],
+                    m.divider_w,
+                    theme.baseline,
+                );
             }
         }
         if n < 2 {
@@ -300,7 +303,7 @@ fn draw_signal(mesh: &mut Mesh, g: &Geom, p: &PlotParams, theme: &Theme) {
             let mut prev = [lane.x, y_at(at(0))];
             for i in 1..n {
                 let pt = [lane.x + i as f32 * dx, y_at(at(i))];
-                mesh.line(prev, pt, TRACE_W, color);
+                mesh.line(prev, pt, m.trace_w, color);
                 prev = pt;
             }
         } else {
@@ -320,7 +323,7 @@ fn draw_signal(mesh: &mut Mesh, g: &Geom, p: &PlotParams, theme: &Theme) {
                 mesh.line(
                     [x, y_at(vhi)],
                     [x, y_at(vlo)],
-                    TRACE_W.min(cw.max(1.0)),
+                    m.trace_w.min(cw.max(1.0)),
                     color,
                 );
             }
@@ -328,19 +331,19 @@ fn draw_signal(mesh: &mut Mesh, g: &Geom, p: &PlotParams, theme: &Theme) {
     }
 }
 
-fn draw_spectrum(mesh: &mut Mesh, g: &Geom, p: &PlotParams, theme: &Theme) {
+fn draw_spectrum(mesh: &mut Mesh, g: &Geom, p: &PlotParams, m: &Metrics, theme: &Theme) {
     let Some(spec) = p.spectrum else {
         return;
     };
     // The FFT size and active scale, named over the view (the live views'
     // corner slot); the size pads to 4 digits so the text never moves.
     let tag = format!("{:>4} {}", spec.fft_size, ruler::scale_tag(p.freq_scale));
-    super::meters::value_text(mesh, &tag, g.body, theme);
+    super::meters::value_text(mesh, &tag, g.body, m, theme);
     let nyquist = spec.nyquist.max(1.0);
     let f_lo = (F_LO_HZ / nyquist).clamp(1e-5, 0.5);
     if let Some(strip) = g.x_strip {
-        let ticks = ruler::hz_ticks_h(nyquist, p.freq_scale, f_lo, strip.w as f64);
-        ruler::draw_ticks_h(mesh, strip, &ticks, theme);
+        let ticks = ruler::hz_ticks_h(nyquist, p.freq_scale, f_lo, strip.w as f64, m);
+        ruler::draw_ticks_h(mesh, strip, &ticks, m, theme);
     }
     let (dlo, dhi) = (p.db_floor, p.db_ceil.max(p.db_floor + 1.0));
     for (ch, curve) in spec.curves.iter().enumerate() {
@@ -351,14 +354,16 @@ fn draw_spectrum(mesh: &mut Mesh, g: &Geom, p: &PlotParams, theme: &Theme) {
         if (ch == 0 || !p.overlay)
             && let Some(strip_x) = g.strip_x
         {
-            let ticks = ruler::value_ticks(dlo as f64, dhi as f64, lane.h as f64);
-            ruler::draw_ticks_v(mesh, g.body.x, strip_x, lane, &ticks, theme);
+            let ticks = ruler::value_ticks(dlo as f64, dhi as f64, lane.h as f64, m);
+            ruler::draw_ticks_v(mesh, g.body.x, strip_x, lane, &ticks, m, theme);
         }
         let color = theme.series(ch);
         let columns = lane.w.max(1.0) as usize;
         let bin_at = |c: usize| bin_at_column(c, columns, spec, p.freq_scale, f_lo);
         let y_at = |db: f32| lane.y + lane.h * (1.0 - fraction(db, dlo, dhi));
-        super::spectrum::polyline(mesh, &lane, columns, &bin_at, &y_at, curve, color, TRACE_W);
+        super::spectrum::polyline(
+            mesh, &lane, columns, &bin_at, &y_at, curve, color, m.trace_w,
+        );
     }
 }
 
@@ -390,9 +395,10 @@ pub fn draw_readout(
     rect: Rect,
     p: &PlotParams,
     cursor: (f64, f64),
+    m: &Metrics,
     theme: &Theme,
 ) {
-    let g = geometry(rect, p);
+    let g = geometry(rect, p, m);
     let (cx, cy) = cursor;
     if g.body.w <= 0.0 || g.body.h <= 0.0 || !g.body.contains(cx, cy) {
         return;
@@ -458,15 +464,15 @@ pub fn draw_readout(
             format!("{} HZ  {tag}{db:.1} DB", hz.round() as i64)
         }
     };
-    let w = font::width(&text, RULER_SCALE);
-    let x = (g.body.x + g.body.w - w - 4.0).max(g.body.x);
-    let y = g.body.y + g.body.h - font::height(RULER_SCALE) - 3.0;
+    let w = font::width(&text, m.caption_scale);
+    let x = (g.body.x + g.body.w - w - m.pad).max(g.body.x);
+    let y = g.body.y + g.body.h - font::height(m.caption_scale) - 3.0;
     font::text(
         over,
         &text,
         x,
         y.max(g.body.y),
-        RULER_SCALE,
+        m.caption_scale,
         with_alpha(theme.text, 0.9),
     );
 }
@@ -540,6 +546,7 @@ mod tests {
             &mut m,
             Rect::new(0.0, 0.0, 300.0, 150.0),
             &p,
+            &Metrics::default(),
             &Theme::default(),
         );
         assert!(!m.is_empty(), "a short signal draws a polyline");
@@ -557,6 +564,7 @@ mod tests {
             &mut m,
             Rect::new(0.0, 0.0, 100.0, 80.0),
             &p,
+            &Metrics::default(),
             &Theme::default(),
         );
         // One bar per column (<= width), each a quad (6 verts): far below the
@@ -582,6 +590,7 @@ mod tests {
             &mut m,
             Rect::new(0.0, 0.0, 100.0, 80.0),
             &p,
+            &Metrics::default(),
             &Theme::default(),
         );
         let chrome = m.vertex_count();
@@ -595,6 +604,7 @@ mod tests {
             &mut m2,
             Rect::new(0.0, 0.0, 100.0, 80.0),
             &p2,
+            &Metrics::default(),
             &Theme::default(),
         );
         assert_eq!(chrome, m2.vertex_count(), "one sample adds no trace");
@@ -610,6 +620,7 @@ mod tests {
             &mut stacked,
             Rect::new(0.0, 0.0, 200.0, 160.0),
             &params(&two, 2),
+            &Metrics::default(),
             &Theme::default(),
         );
         let mut mono = Mesh::new();
@@ -617,6 +628,7 @@ mod tests {
             &mut mono,
             Rect::new(0.0, 0.0, 200.0, 160.0),
             &params(&two, 1),
+            &Metrics::default(),
             &Theme::default(),
         );
         assert!(stacked.vertex_count() > mono.vertex_count());
@@ -628,6 +640,7 @@ mod tests {
             &mut over,
             Rect::new(0.0, 0.0, 200.0, 160.0),
             &p,
+            &Metrics::default(),
             &Theme::default(),
         );
         assert!(over.vertex_count() > 0);
@@ -704,6 +717,7 @@ mod tests {
             &mut m,
             Rect::new(0.0, 0.0, 400.0, 200.0),
             &p,
+            &Metrics::default(),
             &Theme::default(),
         );
         assert!(!m.is_empty(), "the spectrum view draws");
@@ -715,6 +729,7 @@ mod tests {
             &mut m2,
             Rect::new(0.0, 0.0, 400.0, 200.0),
             &p2,
+            &Metrics::default(),
             &Theme::default(),
         );
         assert!(m2.vertex_count() < m.vertex_count());
@@ -740,6 +755,7 @@ mod tests {
                 &mut m,
                 Rect::new(0.0, 0.0, 400.0, 200.0),
                 &p,
+                &Metrics::default(),
                 &Theme::default(),
             );
             m.positions().collect::<Vec<_>>()
@@ -759,7 +775,14 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 400.0, 200.0);
         let mut over = Mesh::new();
         // Outside the widget: nothing.
-        draw_readout(&mut over, rect, &p, (1000.0, 1000.0), &Theme::default());
+        draw_readout(
+            &mut over,
+            rect,
+            &p,
+            (1000.0, 1000.0),
+            &Metrics::default(),
+            &Theme::default(),
+        );
         assert!(over.is_empty());
         // Inside the body: hairline + dot + text.
         let g_probe = Rect::new(200.0, 100.0, 0.0, 0.0);
@@ -768,6 +791,7 @@ mod tests {
             rect,
             &p,
             (g_probe.x as f64, g_probe.y as f64),
+            &Metrics::default(),
             &Theme::default(),
         );
         assert!(!over.is_empty(), "hover inside the body draws the readout");

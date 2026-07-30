@@ -142,6 +142,15 @@ pub struct GuiConfig {
     /// (`accent`, `text`, `field`, ...); unknown names are warned about and
     /// skipped by the host, never fatal.
     pub theme: Option<BTreeMap<String, String>>,
+    /// `[gui.metrics]` — size-role overrides for the host's sizing, each entry
+    /// `role = <number>` in device pixels (glyph scales for the text roles).
+    /// A partial table, like `[gui.theme]`: unlisted roles keep their generated
+    /// default, and the role names are the GUI host's `Metrics` fields (`pad`,
+    /// `gap`, `control_h`, `text_scale`, ...). The reserved key
+    /// `scale = <number>` is the density multiplier: it regenerates the whole
+    /// table at that density before the explicit roles apply. Unknown names and
+    /// unusable numbers are warned about and skipped by the host, never fatal.
+    pub metrics: Option<BTreeMap<String, Number>>,
 }
 
 /// `[standalone]` — the self-contained app launch (GUI + embedded server).
@@ -176,6 +185,43 @@ impl PortSetting {
             PortSetting::Enabled(false) => None,
             PortSetting::Port(p) => Some(p),
         }
+    }
+}
+
+/// A configured number that may be written as an integer or a float — TOML
+/// keeps the two apart, while a size role reads either (`pad = 6` and
+/// `pad = 6.0` mean the same thing).
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(untagged)]
+pub enum Number {
+    /// An integer literal (`pad = 6`).
+    Int(i64),
+    /// A float literal (`scale = 1.25`).
+    Float(f64),
+}
+
+impl Number {
+    /// The value as an `f64`.
+    pub fn as_f64(self) -> f64 {
+        match self {
+            Number::Int(n) => n as f64,
+            Number::Float(v) => v,
+        }
+    }
+}
+
+/// Merges two partial role tables per key: the higher layer's entries win, its
+/// unlisted keys fall through to the lower one.
+fn merge_table<V>(
+    lower: Option<BTreeMap<String, V>>,
+    higher: Option<BTreeMap<String, V>>,
+) -> Option<BTreeMap<String, V>> {
+    match (lower, higher) {
+        (Some(mut lower), Some(higher)) => {
+            lower.extend(higher);
+            Some(lower)
+        }
+        (lower, higher) => higher.or(lower),
     }
 }
 
@@ -272,15 +318,11 @@ impl GuiConfig {
             shm: pick(self.shm, h.shm),
             data_dir: pick(self.data_dir, h.data_dir),
             headless: pick(self.headless, h.headless),
-            // The theme table merges per key (the overlay semantics): the
-            // higher layer's roles win, its unlisted roles fall through.
-            theme: match (self.theme, h.theme) {
-                (Some(mut lower), Some(higher)) => {
-                    lower.extend(higher);
-                    Some(lower)
-                }
-                (lower, higher) => higher.or(lower),
-            },
+            // The theme and metrics tables merge per key (the overlay
+            // semantics): the higher layer's roles win, its unlisted roles fall
+            // through.
+            theme: merge_table(self.theme, h.theme),
+            metrics: merge_table(self.metrics, h.metrics),
         }
     }
 }
@@ -438,6 +480,34 @@ mod tests {
             "lower falls through"
         );
         assert_eq!(merged.get("field").unwrap(), "#101010");
+    }
+
+    #[test]
+    fn gui_metrics_table_takes_ints_and_floats_and_merges_per_key() {
+        let user: Config = toml::from_str(
+            r#"
+            [gui.metrics]
+            pad = 6
+            gap = 8
+            "#,
+        )
+        .unwrap();
+        let project: Config = toml::from_str(
+            r#"
+            [gui.metrics]
+            scale = 1.25
+            pad = 5.5
+            "#,
+        )
+        .unwrap();
+        let merged = user.merge(project).gui.metrics.unwrap();
+        assert_eq!(merged.get("pad").unwrap().as_f64(), 5.5, "higher wins");
+        assert_eq!(
+            merged.get("gap").unwrap().as_f64(),
+            8.0,
+            "an integer entry reads as a number, and falls through"
+        );
+        assert_eq!(merged.get("scale").unwrap().as_f64(), 1.25);
     }
 
     #[test]

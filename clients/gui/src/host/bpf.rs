@@ -32,13 +32,10 @@ use serde_json::Value;
 use super::controls::body_rect;
 use super::font;
 use super::layout::Rect;
+use super::metrics::Metrics;
 use super::paint::Mesh;
 use super::theme::Theme;
 
-const PAD: f32 = 4.0;
-const TEXT_SCALE: f32 = 2.0;
-/// Breakpoint disc radius, device pixels (also the hit-test radius floor).
-const POINT_RADIUS: f32 = 4.0;
 /// The custom-curvature clamp — past this the segment is visually a step.
 const CURVE_LIMIT: f32 = 32.0;
 
@@ -168,9 +165,12 @@ pub fn hit_point(
     exp: bool,
     cx: f64,
     cy: f64,
+    m: &Metrics,
 ) -> Option<usize> {
     let dom = domain(points, duration);
-    let radius = (POINT_RADIUS * 2.0).max(6.0) as f64;
+    // The grab radius: the drawn point plus its slop, so a small target stays
+    // clickable.
+    let radius = (m.point_radius + m.hit_slop).max(6.0) as f64;
     let mut best: Option<(usize, f64)> = None;
     for (i, p) in points.iter().enumerate() {
         let x = body.x as f64 + p.time / dom * body.w as f64;
@@ -382,24 +382,25 @@ pub fn draw(
     duration: f64,
     exp: bool,
     label: Option<&str>,
+    m: &Metrics,
     theme: &Theme,
 ) {
     if let Some(text) = label {
         font::text(
             mesh,
             text,
-            rect.x + PAD,
-            rect.y + PAD,
-            TEXT_SCALE,
+            rect.x + m.pad,
+            rect.y + m.pad,
+            m.text_scale,
             theme.text,
         );
     }
-    let body = body_rect(rect, label.is_some());
+    let body = body_rect(rect, label.is_some(), m);
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
     mesh.rect(body, theme.field);
-    mesh.border(body, 1.0, theme.accent);
+    mesh.border(body, m.divider_w, theme.accent);
     if points.is_empty() {
         return;
     }
@@ -410,27 +411,27 @@ pub fn draw(
     for c in 1..=columns {
         let t = c as f64 / columns as f64 * dom;
         let p = [body.x + c as f32, y_at(value_at(points, t))];
-        mesh.line(prev, p, 1.5, theme.trace);
+        mesh.line(prev, p, m.trace_w, theme.trace);
         prev = p;
     }
     for (t, v_lo, v_hi) in discontinuities(points, duration) {
         let x = body.x + (t / dom) as f32 * body.w;
         let (y0, y1) = (y_at(v_hi), y_at(v_lo));
         mesh.rect(
-            Rect::new(x - 0.75, y0, 1.5, (y1 - y0).max(1.0)),
+            Rect::new(x - m.trace_w * 0.5, y0, m.trace_w, (y1 - y0).max(1.0)),
             theme.trace,
         );
     }
     for p in points {
         let x = body.x + (p.time / dom) as f32 * body.w;
-        mesh.disc(x, y_at(p.value), POINT_RADIUS, theme.point);
+        mesh.disc(x, y_at(p.value), m.point_radius, theme.point);
     }
 }
 
 /// The widget's body rect (the drawable/editable field) — shared by the draw
 /// and the fronts' hit-tests so a press maps exactly onto the pixels drawn.
-pub fn body(rect: Rect, label: bool) -> Rect {
-    body_rect(rect, label)
+pub fn body(rect: Rect, label: bool, m: &Metrics) -> Rect {
+    body_rect(rect, label, m)
 }
 
 #[cfg(test)]
@@ -500,11 +501,31 @@ mod tests {
         let p = pts();
         // Point 1 sits at t=0.5 of a 0..2 domain -> x=25, value 1.0 -> y=0.
         assert_eq!(
-            hit_point(&p, body100(), 0.0, 0.0, 1.0, false, 26.0, 2.0),
+            hit_point(
+                &p,
+                body100(),
+                0.0,
+                0.0,
+                1.0,
+                false,
+                26.0,
+                2.0,
+                &Metrics::default()
+            ),
             Some(1)
         );
         assert_eq!(
-            hit_point(&p, body100(), 0.0, 0.0, 1.0, false, 60.0, 50.0),
+            hit_point(
+                &p,
+                body100(),
+                0.0,
+                0.0,
+                1.0,
+                false,
+                60.0,
+                50.0,
+                &Metrics::default()
+            ),
             None
         );
         assert_eq!(hit_segment(&p, body100(), 0.0, 10.0), Some(0));
@@ -633,6 +654,7 @@ mod tests {
             0.0,
             false,
             Some("env"),
+            &Metrics::default(),
             &Theme::default(),
         );
         assert!(!mesh.is_empty());

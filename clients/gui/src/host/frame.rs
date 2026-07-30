@@ -25,6 +25,7 @@ use crate::waveform::{WaveformData, WaveformView};
 
 use super::canvas::{self, CanvasView};
 use super::layout::{self, Rect};
+use super::metrics::Metrics;
 use super::nodetree::{self, NodeTree};
 use super::paint::{Mesh, Painter};
 use super::ruler::{self, TimeUnit};
@@ -36,16 +37,6 @@ use super::{
     BusSource, bpf, controls, live, meters, patch, phasescope, piano, pianoroll, plot, spectrum,
     track,
 };
-
-const LABEL_SCALE: f32 = 2.0;
-
-// Editor chrome of the timeline views (waveform/spectrogram).
-/// Height of the time-ruler strip under a timeline view, device pixels.
-pub(crate) const RULER_H: f32 = 18.0;
-/// Width of the vertical-ruler strip beside a timeline view, device pixels
-/// (sized for the widest labels: `-32768`, `20K`, `-INF`).
-pub(crate) const RULER_W: f32 = 46.0;
-use super::ruler::RULER_SCALE;
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
 pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
@@ -136,14 +127,14 @@ pub(crate) fn deinterleave(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
 /// under it (when the x ruler is on) and the vertical-ruler strip to its left
 /// (when the y ruler is on) — each ruler gets its own space instead of
 /// overlaying the view.
-pub(crate) fn timeline_body(rect: Rect, editor: &EditorProps) -> Rect {
+pub(crate) fn timeline_body(rect: Rect, editor: &EditorProps, metrics: &Metrics) -> Rect {
     let (mut x, mut w, mut h) = (rect.x, rect.w, rect.h);
     if editor.ruler != Ruler::Off {
-        h = (h - RULER_H).max(0.0);
+        h = (h - metrics.ruler_h).max(0.0);
     }
     if editor.ruler_y != RulerY::Off {
-        x += RULER_W.min(w);
-        w = (w - RULER_W).max(0.0);
+        x += metrics.ruler_w.min(w);
+        w = (w - metrics.ruler_w).max(0.0);
     }
     Rect::new(x, rect.y, w, h)
 }
@@ -372,6 +363,10 @@ struct CanvasFrame {
 /// native front fills them from its state; the browser front passes the
 /// streamed equivalents.
 pub(crate) struct FrameInputs<'a> {
+    /// The host's size roles: every layout and paint site of this frame reads
+    /// its spacing, control and text sizes from here (see
+    /// [`super::metrics`]).
+    pub(crate) metrics: &'a Metrics,
     /// The control-bus source for `meter`/`canvas` reads (`None` reads zero).
     pub(crate) bus: Option<&'a dyn BusSource>,
     /// The server node trees the `nodetree` view draws, by group.
@@ -411,7 +406,9 @@ impl Default for FrameInputs<'_> {
         // 'static empties for the no-transport case.
         static EMPTY: std::sync::OnceLock<HashMap<i32, NodeTree>> = std::sync::OnceLock::new();
         static NO_GROUPS: std::sync::OnceLock<TimelineGroups> = std::sync::OnceLock::new();
+        static METRICS: std::sync::OnceLock<Metrics> = std::sync::OnceLock::new();
         Self {
+            metrics: METRICS.get_or_init(Metrics::default),
             bus: None,
             node_trees: EMPTY.get_or_init(HashMap::new),
             active_button: None,
@@ -502,6 +499,7 @@ fn time_unit(editor: &EditorProps) -> TimeUnit {
 /// Draws the time-ruler strip under `body` for the visible `nav` window
 /// (aligned with the body, so its ticks sit under the samples they label even
 /// when a vertical ruler indents the body).
+#[allow(clippy::too_many_arguments)] // one strip's draw: its box, axis, look
 fn draw_time_ruler(
     mesh: &mut Mesh,
     rect: Rect,
@@ -509,6 +507,7 @@ fn draw_time_ruler(
     nav: &View,
     rate: f64,
     editor: &EditorProps,
+    metrics: &Metrics,
     theme: &Theme,
 ) {
     if editor.ruler == Ruler::Off {
@@ -518,16 +517,23 @@ fn draw_time_ruler(
     if strip.h <= 2.0 || strip.w <= 0.0 {
         return;
     }
-    let ticks = ruler::time_ticks(nav.start, nav.len, strip.w as f64, rate, time_unit(editor));
-    ruler::draw_ticks_h(mesh, strip, &ticks, theme);
+    let ticks = ruler::time_ticks(
+        nav.start,
+        nav.len,
+        strip.w as f64,
+        rate,
+        time_unit(editor),
+        metrics,
+    );
+    ruler::draw_ticks_h(mesh, strip, &ticks, metrics, theme);
 }
 
 /// The pixel domain a free-standing `timeruler` labels: its own rect, indented
 /// on the left by a lane's header width so the ticks line up with the clips of
 /// the lanes it is stacked with. Zero height, so [`draw_time_ruler`] lays the
 /// strip over the widget's whole box.
-pub(super) fn ruler_strip_body(rect: Rect) -> Rect {
-    let hw = track::HEADER_W.min(rect.w);
+pub(super) fn ruler_strip_body(rect: Rect, metrics: &Metrics) -> Rect {
+    let hw = metrics.header_w.min(rect.w);
     Rect::new(rect.x + hw, rect.y, (rect.w - hw).max(0.0), 0.0)
 }
 
@@ -556,12 +562,13 @@ fn draw_pianoroll_item(
     rate: f64,
     sample_clock: f64,
     cursor: Option<(f64, f64)>,
+    m: &Metrics,
     theme: &Theme,
 ) {
     let ruler_on = item.editor.ruler != Ruler::Off;
-    let r = pianoroll::regions(item.rect, ruler_on, item.osc_lane, item.velocity_lane);
+    let r = pianoroll::regions(item.rect, ruler_on, item.osc_lane, item.velocity_lane, m);
     let (lo, hi) = pitch_window(item);
-    pianoroll::draw_grid_background(mesh, r.grid, lo, hi, theme);
+    pianoroll::draw_grid_background(mesh, r.grid, lo, hi, m, theme);
     pianoroll::draw_notes(
         mesh,
         r.grid,
@@ -573,22 +580,23 @@ fn draw_pianoroll_item(
         hi,
         true,
         &item.selected,
+        m,
         theme,
     );
-    pianoroll::draw_keyboard(mesh, r.keyboard, lo, hi, theme);
+    pianoroll::draw_keyboard(mesh, r.keyboard, lo, hi, m, theme);
     if item.osc_lane {
-        pianoroll::draw_osc_lane(mesh, r.osc, nav, 0.0, &item.osc, theme);
+        pianoroll::draw_osc_lane(mesh, r.osc, nav, 0.0, &item.osc, m, theme);
     }
     if item.velocity_lane {
-        pianoroll::draw_velocity_lane(mesh, r.velocity, nav, 0.0, &item.notes, theme);
+        pianoroll::draw_velocity_lane(mesh, r.velocity, nav, 0.0, &item.notes, m, theme);
     }
     if let Some(t) = &item.label {
         super::font::text(
             mesh,
             t,
-            r.grid.x + 4.0,
+            r.grid.x + m.pad,
             r.grid.y + 2.0,
-            RULER_SCALE,
+            m.caption_scale,
             theme.ruler_text,
         );
     }
@@ -596,7 +604,16 @@ fn draw_pianoroll_item(
         // The ruler strip sits under the grid, aligned to the grid's x-range —
         // build the "body" `draw_time_ruler` derives the strip from.
         let ruler_body = Rect::new(r.grid.x, item.rect.y, r.grid.w, r.ruler.y - item.rect.y);
-        draw_time_ruler(mesh, item.rect, ruler_body, nav, rate, &item.editor, theme);
+        draw_time_ruler(
+            mesh,
+            item.rect,
+            ruler_body,
+            nav,
+            rate,
+            &item.editor,
+            m,
+            theme,
+        );
     }
     // Selection band over the grid.
     if let Some((start, len)) = item.editor.selection() {
@@ -623,7 +640,7 @@ fn draw_pianoroll_item(
         && pos <= nav.start + nav.len
     {
         let x = sample_to_x(pos, nav, r.grid);
-        over.rect(Rect::new(x, r.grid.y, 1.5, r.grid.h), theme.playhead);
+        over.rect(Rect::new(x, r.grid.y, m.trace_w, r.grid.h), theme.playhead);
     }
     // Cursor readout: the note name (the pitch under the cursor, via the core's
     // MIDI-note spelling) and the time (per the ruler mode), in the grid's
@@ -646,13 +663,13 @@ fn draw_pianoroll_item(
             _ => ruler::readout_time(s, rate, nav.len / rate / r.grid.w.max(1.0) as f64),
         };
         let text = format!("{}  {time}", clausters_core::scale::note_name(pitch));
-        let w = super::font::width(&text, RULER_SCALE);
+        let w = super::font::width(&text, m.caption_scale);
         super::font::text(
             over,
             &text,
-            r.grid.x + r.grid.w - w - 4.0,
-            r.grid.y + r.grid.h - super::font::height(RULER_SCALE) - 2.0,
-            RULER_SCALE,
+            r.grid.x + r.grid.w - w - m.pad,
+            r.grid.y + r.grid.h - super::font::height(m.caption_scale) - 2.0,
+            m.caption_scale,
             theme.ruler_text,
         );
     }
@@ -674,7 +691,8 @@ fn draw_editor_overlay(
     nyquist_scale: Option<(f64, FreqScale, f64)>,
     theme: &Theme,
 ) {
-    mesh.border(body, 1.0, theme.view_frame);
+    let m = inputs.metrics;
+    mesh.border(body, m.divider_w, theme.view_frame);
     // Selection: a translucent band with hard edges, clipped to the body.
     if let Some((start, len)) = item.editor.selection() {
         let x0 = sample_to_x(start, nav, body).clamp(body.x, body.x + body.w);
@@ -685,11 +703,11 @@ fn draw_editor_overlay(
                 with_alpha(theme.selection, 0.18),
             );
             mesh.rect(
-                Rect::new(x0, body.y, 1.0, body.h),
+                Rect::new(x0, body.y, m.divider_w, body.h),
                 with_alpha(theme.selection, 0.75),
             );
             mesh.rect(
-                Rect::new(x1 - 1.0, body.y, 1.0, body.h),
+                Rect::new(x1 - m.divider_w, body.y, m.divider_w, body.h),
                 with_alpha(theme.selection, 0.75),
             );
         }
@@ -701,7 +719,7 @@ fn draw_editor_overlay(
         && pos <= nav.start + nav.len
     {
         let x = sample_to_x(pos, nav, body);
-        mesh.rect(Rect::new(x, body.y, 1.5, body.h), theme.playhead);
+        mesh.rect(Rect::new(x, body.y, m.trace_w, body.h), theme.playhead);
     }
     // Cursor readout: time (per the ruler mode) plus value/frequency (per the
     // vertical unit / frequency scale), in the body's bottom-right corner —
@@ -751,15 +769,15 @@ fn draw_editor_overlay(
                 format!("{time}  {value}")
             }
         };
-        let w = super::font::width(&text, RULER_SCALE);
-        let x = (body.x + body.w - w - 4.0).max(body.x);
-        let y = body.y + body.h - super::font::height(RULER_SCALE) - 3.0;
+        let w = super::font::width(&text, m.caption_scale);
+        let x = (body.x + body.w - w - m.pad).max(body.x);
+        let y = body.y + body.h - super::font::height(m.caption_scale) - 3.0;
         super::font::text(
             mesh,
             &text,
             x,
             y.max(body.y),
-            RULER_SCALE,
+            m.caption_scale,
             with_alpha(theme.text, 0.9),
         );
     }
@@ -801,6 +819,7 @@ fn collect_widgets(
     inputs: &FrameInputs,
     theme: &Theme,
 ) -> Collected {
+    let m = inputs.metrics;
     let mut timeline_items: Vec<TimelineItem> = Vec::new();
     // Meter/scope rects, copied out so their shared-memory values and the scope
     // history can be read after the host-tree borrow is released.
@@ -846,6 +865,7 @@ fn collect_widgets(
                     *text_size * p.scale,
                     *wrap,
                     *align,
+                    m,
                     th,
                 );
             }
@@ -974,6 +994,7 @@ fn collect_widgets(
                 *active_max,
                 pressed,
                 label.as_deref(),
+                m,
                 th,
             ),
             WidgetKind::Spectrum {
@@ -1170,9 +1191,9 @@ fn collect_widgets(
                         super::font::text(
                             &mut *mesh,
                             text,
-                            p.rect.x + 4.0,
-                            p.rect.y + 4.0,
-                            LABEL_SCALE,
+                            p.rect.x + m.pad,
+                            p.rect.y + m.pad,
+                            m.label_scale,
                             th.text,
                         );
                     }
@@ -1187,7 +1208,7 @@ fn collect_widgets(
                     }
                     canvas_frames.push(CanvasFrame {
                         id,
-                        body: controls::body_rect(p.rect, label.is_some()),
+                        body: controls::body_rect(p.rect, label.is_some(), m),
                         clip: p.clip,
                         shader: shader.clone(),
                         params: resolved,
@@ -1222,6 +1243,7 @@ fn collect_widgets(
                 p.widget.id == active_button,
                 p.widget.id.is_some() && p.widget.id == inputs.focused_text,
                 p.scale,
+                m,
                 th,
             ),
         }
@@ -1257,6 +1279,7 @@ fn draw_live_meshes(
     inputs: &FrameInputs,
     theme: &Theme,
 ) {
+    let m = inputs.metrics;
     // Meters and scopes read their control bus straight from shared memory each
     // frame (zero messages); the scope keeps a per-widget rolling history in this
     // window's state.
@@ -1271,6 +1294,7 @@ fn draw_live_meshes(
             value,
             frac,
             item.label.as_deref(),
+            m,
             th,
         );
     }
@@ -1290,6 +1314,7 @@ fn draw_live_meshes(
             item.min,
             item.max,
             item.label.as_deref(),
+            m,
             th,
         );
     }
@@ -1315,6 +1340,7 @@ fn draw_live_meshes(
                 ruler_y: item.ruler_y,
                 label: item.label.as_deref(),
             },
+            m,
             th,
         );
     }
@@ -1328,7 +1354,7 @@ fn draw_live_meshes(
             .get(&item.id)
             .map(|w| w.samples.as_slice())
             .unwrap_or(&[]);
-        phasescope::draw_phasescope(&mut *mesh, item.rect, inter, item.label.as_deref(), th);
+        phasescope::draw_phasescope(&mut *mesh, item.rect, inter, item.label.as_deref(), m, th);
     }
     for item in &collected.spectrum_rects {
         mesh.set_clip(item.clip);
@@ -1349,6 +1375,7 @@ fn draw_live_meshes(
                     ruler_y: item.ruler_y,
                     label: item.label.as_deref(),
                 },
+                m,
                 th,
             );
         }
@@ -1368,6 +1395,7 @@ fn draw_timeline_meshes(
     inputs: &FrameInputs,
     theme: &Theme,
 ) {
+    let m = inputs.metrics;
     // Timeline views (waveform/spectrogram): the field, time ruler and the
     // vertical-ruler strip go into the base mesh (under the GPU view); the
     // border, lane dividers, selection, playhead and cursor readout into the
@@ -1376,7 +1404,7 @@ fn draw_timeline_meshes(
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let body = timeline_body(item.rect, &item.editor);
+        let body = timeline_body(item.rect, &item.editor, m);
         mesh.rect(body, th.view_field);
         match &item.kind {
             TimelineKind::Waveform { overlay: overlaid } => {
@@ -1390,7 +1418,7 @@ fn draw_timeline_meshes(
                 } else {
                     inputs.sample_rate
                 };
-                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, th);
+                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, m, th);
                 let lanes = slot.view.num_channels();
                 // Overlaid traces share one lane (and one amplitude axis).
                 let draw_lanes = if *overlaid { 1 } else { lanes };
@@ -1404,8 +1432,9 @@ fn draw_timeline_meshes(
                             item.editor.bit_depth,
                             y0,
                             y_len,
+                            m,
                         );
-                        ruler::draw_ticks_v(&mut *mesh, body.x, item.rect.x, lane, &ticks, th);
+                        ruler::draw_ticks_v(&mut *mesh, body.x, item.rect.x, lane, &ticks, m, th);
                     }
                 }
                 for ch in 1..draw_lanes {
@@ -1432,12 +1461,15 @@ fn draw_timeline_meshes(
                 } else {
                     nyquist * 2.0
                 };
-                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, th);
+                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, m, th);
                 let lanes = slot.views.len();
                 for ch in 0..lanes {
                     let lane = lane_rect(body, lanes, ch);
                     if ch > 0 {
-                        over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), th.lane_divider);
+                        over.rect(
+                            Rect::new(lane.x, lane.y, lane.w, m.divider_w),
+                            th.lane_divider,
+                        );
                     }
                     if item.editor.ruler_y != RulerY::Off {
                         let ticks = ruler::hz_ticks(
@@ -1447,14 +1479,15 @@ fn draw_timeline_meshes(
                             lane.h as f64,
                             item.editor.y_view().0,
                             item.editor.y_view().1,
+                            m,
                         );
-                        ruler::draw_ticks_v(&mut *mesh, body.x, item.rect.x, lane, &ticks, th);
+                        ruler::draw_ticks_v(&mut *mesh, body.x, item.rect.x, lane, &ticks, m, th);
                     }
                 }
                 // The active scale, named over the view (the live views'
                 // corner slot) — log/mel/bark are not tellable apart from
                 // the tick spacing at a glance.
-                meters::value_text(&mut *over, ruler::scale_tag(*freq_scale), body, th);
+                meters::value_text(&mut *over, ruler::scale_tag(*freq_scale), body, m, th);
                 draw_editor_overlay(
                     &mut *over,
                     item,
@@ -1483,6 +1516,7 @@ fn draw_static_meshes(
     theme: &Theme,
     tree: &Widget,
 ) {
+    let m = inputs.metrics;
     // Static plots draw from their (already mapped) samples; node trees draw from
     // the model last read off the client leg. Both are pure mesh work with the
     // host-tree borrow already released.
@@ -1491,11 +1525,11 @@ fn draw_static_meshes(
         over.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         let params = item.params();
-        plot::draw(&mut *mesh, item.rect, &params, th);
+        plot::draw(&mut *mesh, item.rect, &params, m, th);
         // The hover readout (hairline + the value under the cursor) rides the
         // overlay mesh, like the editor views' chrome.
         if let Some(cursor) = inputs.cursor {
-            plot::draw_readout(&mut *over, item.rect, &params, cursor, th);
+            plot::draw_readout(&mut *over, item.rect, &params, cursor, m, th);
         }
     }
     // Envelope editors are pure mesh work: the curve evaluated per pixel
@@ -1512,6 +1546,7 @@ fn draw_static_meshes(
             item.duration,
             item.exp,
             item.label.as_deref(),
+            m,
             th,
         );
     }
@@ -1525,6 +1560,7 @@ fn draw_static_meshes(
             item.controls,
             item.label.as_deref(),
             inputs.server_attached,
+            m,
             th,
         );
     }
@@ -1550,8 +1586,8 @@ fn draw_static_meshes(
         // The strip is indented by a lane's header width, so its ticks stand
         // over the samples they label when it is stacked with the lanes -- the
         // whole point of a ruler that is not inside one.
-        let body = ruler_strip_body(item.rect);
-        draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, th);
+        let body = ruler_strip_body(item.rect, m);
+        draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, m, th);
     }
     if !collected.track_items.is_empty() {
         // The lanes navigate as a group (linked by default across a window), so
@@ -1574,9 +1610,10 @@ fn draw_static_meshes(
                 item.label.as_deref(),
                 &item.clips,
                 ruler_on,
+                m,
                 th,
             );
-            let body = track::lane_body(item.rect, ruler_on);
+            let body = track::lane_body(item.rect, ruler_on, m);
             // The lane's own time ruler, in the strip the lane body reserved —
             // the same tick math the timeline views use, over the shared axis.
             if ruler_on {
@@ -1585,7 +1622,7 @@ fn draw_static_meshes(
                 } else {
                     inputs.sample_rate
                 };
-                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, th);
+                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, m, th);
             }
             // The playhead, over the clips: the engine clock as a timeline
             // position (`playhead_at` anchors timeline sample 0 to a clock
@@ -1631,6 +1668,7 @@ fn draw_static_meshes(
             rate,
             inputs.sample_clock,
             inputs.cursor,
+            m,
             th,
         );
     }
@@ -1656,9 +1694,10 @@ pub(crate) fn render(
     inputs: &FrameInputs,
     theme: &Theme,
 ) {
+    let m = inputs.metrics;
     let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    let placed = layout::layout(area, tree);
+    let placed = layout::layout(area, tree, inputs.metrics);
     let mut mesh = Mesh::new();
     let mut over = Mesh::new();
     let collected = collect_widgets(&placed, &mut mesh, inputs, theme);
@@ -1688,7 +1727,7 @@ pub(crate) fn render(
     painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);
     overlay.upload(&gpu.device, &gpu.queue, &over, fb_w, fb_h);
     for item in &collected.timeline_items {
-        let body = timeline_body(item.rect, &item.editor);
+        let body = timeline_body(item.rect, &item.editor, m);
         match &item.kind {
             TimelineKind::Waveform { .. } => {
                 if let Some(slot) = waveforms.get_mut(&item.id) {
@@ -1777,7 +1816,7 @@ pub(crate) fn render(
         });
         painter.draw(&mut pass);
         for item in &collected.timeline_items {
-            let body = timeline_body(item.rect, &item.editor);
+            let body = timeline_body(item.rect, &item.editor, m);
             if body.w < 1.0 || body.h < 1.0 {
                 continue;
             }
@@ -1917,18 +1956,25 @@ mod tests {
     fn timeline_body_reserves_the_ruler_strips() {
         let rect = Rect::new(10.0, 10.0, 400.0, 200.0);
         // Both rulers on: the body loses the bottom strip and the left strip.
-        let body = timeline_body(rect, &editor(Ruler::Time, RulerY::Norm));
-        assert_eq!(body.h, 200.0 - RULER_H);
-        assert_eq!(body.x, 10.0 + RULER_W);
-        assert_eq!(body.w, 400.0 - RULER_W);
+        let body = timeline_body(
+            rect,
+            &editor(Ruler::Time, RulerY::Norm),
+            &Metrics::default(),
+        );
+        assert_eq!(body.h, 200.0 - Metrics::default().ruler_h);
+        assert_eq!(body.x, 10.0 + Metrics::default().ruler_w);
+        assert_eq!(body.w, 400.0 - Metrics::default().ruler_w);
         // Each ruler is independently optional.
-        let x_only = timeline_body(rect, &editor(Ruler::Time, RulerY::Off));
+        let x_only = timeline_body(rect, &editor(Ruler::Time, RulerY::Off), &Metrics::default());
         assert_eq!((x_only.x, x_only.w), (10.0, 400.0));
-        assert_eq!(x_only.h, 200.0 - RULER_H);
-        let y_only = timeline_body(rect, &editor(Ruler::Off, RulerY::Hz));
+        assert_eq!(x_only.h, 200.0 - Metrics::default().ruler_h);
+        let y_only = timeline_body(rect, &editor(Ruler::Off, RulerY::Hz), &Metrics::default());
         assert_eq!(y_only.h, 200.0);
-        assert_eq!(y_only.x, 10.0 + RULER_W);
-        assert_eq!(timeline_body(rect, &editor(Ruler::Off, RulerY::Off)), rect);
+        assert_eq!(y_only.x, 10.0 + Metrics::default().ruler_w);
+        assert_eq!(
+            timeline_body(rect, &editor(Ruler::Off, RulerY::Off), &Metrics::default()),
+            rect
+        );
     }
 
     #[test]

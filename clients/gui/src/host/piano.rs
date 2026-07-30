@@ -23,6 +23,7 @@ use clausters_core::scale;
 
 use super::font;
 use super::layout::Rect;
+use super::metrics::Metrics;
 use super::paint::Mesh;
 use super::theme::{Theme, with_alpha};
 
@@ -33,8 +34,6 @@ use super::theme::{Theme, with_alpha};
 pub const BLACK_W: f32 = 13.7 / 23.5;
 /// Black-key length as a fraction of the white-key length.
 pub const BLACK_LEN: f32 = 0.6;
-/// The overview strip height, device pixels.
-pub const OVERVIEW_H: f32 = 18.0;
 /// The full MIDI range the overview spans and pan/zoom clamp to.
 pub const MIDI_MAX: i32 = 127;
 /// The smallest visible span zoom can reach (one octave), in semitones.
@@ -65,10 +64,6 @@ pub fn black_offset(pc: usize) -> Option<f32> {
 }
 
 // --- Layout -----------------------------------------------------------------
-
-const LABEL_SCALE: f32 = 2.0;
-const KEY_LABEL_SCALE: f32 = 1.0;
-const PAD: f32 = 4.0;
 
 /// The regions and derived units of a `piano` widget rect: the optional label
 /// strip is already consumed; `keys` is the playable keyboard, `overview` the
@@ -124,9 +119,16 @@ pub fn n_white(min: i32, max: i32) -> usize {
 /// overview strip (when `overview`), and the keyboard filling the rest. The
 /// visible range is normalized so both edges are white keys (min down, max up)
 /// — the keyboard always starts and ends on a full white key.
-pub fn layout(rect: Rect, min: i32, max: i32, overview: bool, has_label: bool) -> Layout {
+pub fn layout(
+    rect: Rect,
+    min: i32,
+    max: i32,
+    overview: bool,
+    has_label: bool,
+    m: &Metrics,
+) -> Layout {
     let label_h = if has_label {
-        font::height(LABEL_SCALE) + PAD
+        font::height(m.label_scale) + m.pad
     } else {
         0.0
     };
@@ -134,8 +136,9 @@ pub fn layout(rect: Rect, min: i32, max: i32, overview: bool, has_label: bool) -
     let max = snap_white_up(max.max(min)).max(min);
     let top = rect.y + label_h;
     let inner_h = (rect.h - label_h).max(0.0);
+    // The navigation strip is a ruler-thin band over the keys.
     let ov_h = if overview {
-        OVERVIEW_H.min(inner_h)
+        m.ruler_h.min(inner_h)
     } else {
         0.0
     };
@@ -292,7 +295,7 @@ pub struct PianoDraw<'a> {
 /// Draw the keyboard: white keys with a hairline gap, black keys on top,
 /// pressed keys highlighted, keys outside the active range grayed, and a note
 /// name on each C when the white keys are wide enough to carry it.
-pub fn draw(mesh: &mut Mesh, l: &Layout, state: &PianoDraw, theme: &Theme) {
+pub fn draw(mesh: &mut Mesh, l: &Layout, state: &PianoDraw, m: &Metrics, theme: &Theme) {
     if l.keys.w <= 0.0 || l.keys.h <= 0.0 {
         return;
     }
@@ -315,13 +318,13 @@ pub fn draw(mesh: &mut Mesh, l: &Layout, state: &PianoDraw, theme: &Theme) {
         mesh.rect(Rect::new(r.x + 0.5, r.y, (r.w - 1.0).max(1.0), r.h), color);
         if scale::pitch_class(p) == 0 {
             let name = scale::note_name(p);
-            if font::width(&name, KEY_LABEL_SCALE) + 2.0 <= l.white_w {
+            if font::width(&name, m.micro_scale) + 2.0 <= l.white_w {
                 font::text(
                     mesh,
                     &name,
                     r.x + 2.0,
-                    r.y + r.h - font::height(KEY_LABEL_SCALE) - 2.0,
-                    KEY_LABEL_SCALE,
+                    r.y + r.h - font::height(m.micro_scale) - 2.0,
+                    m.micro_scale,
                     theme.key_label,
                 );
             }
@@ -341,13 +344,14 @@ pub fn draw(mesh: &mut Mesh, l: &Layout, state: &PianoDraw, theme: &Theme) {
         };
         mesh.rect(r, color);
     }
-    mesh.border(l.keys, 1.0, theme.frame);
+    mesh.border(l.keys, m.divider_w, theme.frame);
 }
 
 /// Draw the overview strip: the full MIDI range compressed, the active range
 /// lit against the gray outside, black-key positions shaded, the pressed keys
 /// marked, and the visible window as a translucent box with bright edges — the
 /// keyboard's "ruler", dragged to pan and wheeled to zoom.
+#[allow(clippy::too_many_arguments)] // one strip's draw: its range, box, look
 pub fn draw_overview(
     mesh: &mut Mesh,
     strip: Rect,
@@ -355,6 +359,7 @@ pub fn draw_overview(
     max: i32,
     active: (i32, i32),
     pressed: &[i32],
+    m: &Metrics,
     theme: &Theme,
 ) {
     if strip.w <= 0.0 || strip.h <= 0.0 {
@@ -396,8 +401,8 @@ pub fn draw_overview(
     let wx1 = overview_key_x(strip, max + 1);
     let window = Rect::new(wx0, strip.y, (wx1 - wx0).max(2.0), strip.h);
     mesh.rect(window, with_alpha(theme.accent, 0.35));
-    mesh.border(window, 1.0, theme.hilite);
-    mesh.border(strip, 1.0, theme.frame);
+    mesh.border(window, m.divider_w, theme.hilite);
+    mesh.border(strip, m.divider_w, theme.frame);
 }
 
 /// Draw the whole widget: the label strip (when labelled), the overview and
@@ -413,19 +418,20 @@ pub fn draw_widget(
     active_max: i32,
     pressed: &[i32],
     label: Option<&str>,
+    m: &Metrics,
     theme: &Theme,
 ) {
     if let Some(text) = label {
         font::text(
             mesh,
             text,
-            rect.x + PAD,
+            rect.x + m.pad,
             rect.y + 2.0,
-            LABEL_SCALE,
+            m.label_scale,
             theme.text,
         );
     }
-    let l = layout(rect, min, max, overview, label.is_some());
+    let l = layout(rect, min, max, overview, label.is_some(), m);
     if let Some(strip) = l.overview {
         draw_overview(
             mesh,
@@ -434,6 +440,7 @@ pub fn draw_widget(
             l.max,
             (active_min, active_max),
             pressed,
+            m,
             theme,
         );
     }
@@ -446,6 +453,7 @@ pub fn draw_widget(
             active_max,
             label,
         },
+        m,
         theme,
     );
 }
@@ -504,7 +512,14 @@ mod tests {
     use super::*;
 
     fn l(min: i32, max: i32) -> Layout {
-        layout(Rect::new(0.0, 0.0, 700.0, 120.0), min, max, false, false)
+        layout(
+            Rect::new(0.0, 0.0, 700.0, 120.0),
+            min,
+            max,
+            false,
+            false,
+            &Metrics::default(),
+        )
     }
 
     #[test]
@@ -586,7 +601,14 @@ mod tests {
     #[test]
     fn hit_works_from_an_arbitrary_snapped_min() {
         // A range starting mid-octave (F#3 snaps down to F3 = 53).
-        let lay = layout(Rect::new(50.0, 10.0, 400.0, 100.0), 54, 65, false, false);
+        let lay = layout(
+            Rect::new(50.0, 10.0, 400.0, 100.0),
+            54,
+            65,
+            false,
+            false,
+            &Metrics::default(),
+        );
         assert_eq!(lay.min, 53);
         let f = key_rect(&lay, 53).unwrap();
         assert_eq!(hit(&lay, f.x + 2.0, f.y + f.h - 1.0), Some(53));
@@ -708,6 +730,7 @@ mod tests {
             127,
             &[60, 61],
             Some("piano"),
+            &Metrics::default(),
             &Theme::default(),
         );
         assert!(mesh.vertex_count() > 0);
@@ -723,6 +746,7 @@ mod tests {
             67,
             &[],
             None,
+            &Metrics::default(),
             &Theme::default(),
         );
         assert!(gray.vertex_count() > 0);

@@ -19,14 +19,10 @@ use clausters_core::measure::{correlation, lissajous_point};
 use super::controls::body_rect;
 use super::font;
 use super::layout::Rect;
+use super::metrics::Metrics;
 use super::paint::Mesh;
 use super::theme::Theme;
 
-const PAD: f32 = 4.0;
-const TEXT_SCALE: f32 = 2.0;
-
-/// Height of the correlation readout strip under the goniometer field.
-const CORR_H: f32 = 22.0;
 /// The furthest a sample reaches from the origin: a full-scale mono signal sits
 /// at mid `(1+1)/√2 = √2`. The field is scaled so that extent just fits, with a
 /// little margin.
@@ -44,25 +40,27 @@ pub fn draw_phasescope(
     rect: Rect,
     interleaved: &[f32],
     label: Option<&str>,
+    m: &Metrics,
     theme: &Theme,
 ) {
     if let Some(text) = label {
         font::text(
             mesh,
             text,
-            rect.x + PAD,
-            rect.y + PAD,
-            TEXT_SCALE,
+            rect.x + m.pad,
+            rect.y + m.pad,
+            m.text_scale,
             theme.text,
         );
     }
-    let outer = body_rect(rect, label.is_some());
+    let outer = body_rect(rect, label.is_some(), m);
     if outer.w <= 0.0 || outer.h <= 0.0 {
         return;
     }
     // Split off a strip at the bottom for the correlation readout; the square
     // goniometer field takes the rest, centered.
-    let corr_h = CORR_H.min(outer.h * 0.4);
+    // The readout is one line of control: the `control_h` role.
+    let corr_h = m.control_h.min(outer.h * 0.4);
     let field_area = Rect::new(outer.x, outer.y, outer.w, (outer.h - corr_h).max(0.0));
     let side = field_area.w.min(field_area.h);
     let field = Rect::new(
@@ -72,12 +70,12 @@ pub fn draw_phasescope(
         side,
     );
     mesh.rect(field, theme.field);
-    mesh.border(field, 1.0, theme.accent);
+    mesh.border(field, m.divider_w, theme.accent);
 
     let (cx, cy) = (field.x + side * 0.5, field.y + side * 0.5);
     // Mid is vertical, side horizontal: a faint center cross reads the axes.
-    mesh.line([cx, field.y], [cx, field.y + side], 1.0, theme.grid);
-    mesh.line([field.x, cy], [field.x + side, cy], 1.0, theme.grid);
+    mesh.line([cx, field.y], [cx, field.y + side], m.divider_w, theme.grid);
+    mesh.line([field.x, cy], [field.x + side, cy], m.divider_w, theme.grid);
 
     let scale = (side * 0.5 / MAX_EXTENT) * 0.95;
     let n = interleaved.len() / 2;
@@ -107,13 +105,13 @@ pub fn draw_phasescope(
 
     // Correlation readout under the field.
     let strip = Rect::new(outer.x, field_area.y + field_area.h, outer.w, corr_h);
-    draw_correlation(mesh, strip, interleaved, theme);
+    draw_correlation(mesh, strip, interleaved, m, theme);
 }
 
 /// Draws the correlation strip: a `[-1, +1]` bar filled from center toward the
 /// measured coefficient (green toward mono/+1, red toward anti-phase/−1), with a
 /// numeric readout. A silent/DC window (undefined correlation) shows a dash.
-fn draw_correlation(mesh: &mut Mesh, strip: Rect, interleaved: &[f32], theme: &Theme) {
+fn draw_correlation(mesh: &mut Mesh, strip: Rect, interleaved: &[f32], m: &Metrics, theme: &Theme) {
     if strip.w <= 0.0 || strip.h <= 0.0 {
         return;
     }
@@ -127,11 +125,11 @@ fn draw_correlation(mesh: &mut Mesh, strip: Rect, interleaved: &[f32], theme: &T
     let r = correlation(&left, &right);
 
     // The bar track, centered vertically with a small inset.
-    let bar_h = (strip.h - 8.0).max(2.0);
+    let bar_h = (strip.h - 2.0 * m.pad).max(2.0);
     let bar = Rect::new(strip.x, strip.y + (strip.h - bar_h) * 0.5, strip.w, bar_h);
     mesh.rect(bar, theme.field);
     let cx = bar.x + bar.w * 0.5;
-    mesh.line([cx, bar.y], [cx, bar.y + bar.h], 1.0, theme.grid); // the zero tick
+    mesh.line([cx, bar.y], [cx, bar.y + bar.h], m.divider_w, theme.grid); // zero tick
     if let Some(r) = r {
         let half = bar.w * 0.5;
         let fill = half * r.abs().clamp(0.0, 1.0);
@@ -139,18 +137,18 @@ fn draw_correlation(mesh: &mut Mesh, strip: Rect, interleaved: &[f32], theme: &T
         let x = if r >= 0.0 { cx } else { cx - fill };
         mesh.rect(Rect::new(x, bar.y, fill, bar.h), color);
     }
-    mesh.border(bar, 1.0, theme.grid);
+    mesh.border(bar, m.divider_w, theme.grid);
     let text = match r {
         Some(r) => format!("r {r:+.2}"),
         None => "r  --".to_string(),
     };
-    let w = font::width(&text, TEXT_SCALE);
+    let w = font::width(&text, m.text_scale);
     font::text(
         mesh,
         &text,
         (cx - w * 0.5).max(bar.x),
-        bar.y + (bar.h - font::height(TEXT_SCALE)) * 0.5,
-        TEXT_SCALE,
+        bar.y + (bar.h - font::height(m.text_scale)) * 0.5,
+        m.text_scale,
         theme.text,
     );
 }
@@ -177,6 +175,7 @@ mod tests {
             Rect::new(0.0, 0.0, 200.0, 240.0),
             &w,
             Some("phase"),
+            &Metrics::default(),
             &Theme::default(),
         );
         assert!(!mesh.is_empty(), "a stereo window draws geometry");
@@ -190,6 +189,7 @@ mod tests {
             Rect::new(0.0, 0.0, 200.0, 240.0),
             &[],
             None,
+            &Metrics::default(),
             &Theme::default(),
         );
         // The field, cross and correlation track still draw; it does not panic
@@ -206,6 +206,7 @@ mod tests {
             Rect::new(0.0, 0.0, 120.0, 160.0),
             &[0.1, 0.2, 0.3],
             None,
+            &Metrics::default(),
             &Theme::default(),
         );
     }

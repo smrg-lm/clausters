@@ -372,6 +372,7 @@ impl App {
         };
         let cursor = self.windows.get(&def_id).map(|w| w.cursor);
         let inputs = frame::FrameInputs {
+            metrics: &self.host.metrics,
             bus: self.shm.as_deref(),
             node_trees: &self.node_trees,
             active_button,

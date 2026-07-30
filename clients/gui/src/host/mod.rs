@@ -47,6 +47,7 @@ pub mod interact;
 pub mod layout;
 pub mod live;
 pub mod meters;
+pub mod metrics;
 pub mod nodetree;
 pub mod paint;
 pub mod patch;
@@ -437,6 +438,9 @@ pub struct Host {
     /// The host's color roles — one look per host, every paint site reads it
     /// (see [`theme`]).
     pub theme: theme::Theme,
+    /// The host's size roles — one density per host, every layout and paint
+    /// site reads it (see [`metrics`]).
+    pub metrics: metrics::Metrics,
     /// The `text` field currently receiving keystrokes, as `(def_id, widget_id)`.
     /// A press on a text field focuses it; a press elsewhere (or freeing the
     /// widget) clears it. While set, key input edits that field instead of
@@ -471,6 +475,7 @@ impl Host {
             voices: HashMap::new(),
             voice_counter: 0,
             theme: theme::Theme::default(),
+            metrics: metrics::Metrics::default(),
             focused_text: None,
         }
     }

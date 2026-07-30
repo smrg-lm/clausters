@@ -24,15 +24,12 @@ use crate::spectrogram::FreqScale;
 
 use super::controls::body_rect;
 use super::font;
-use super::frame::{RULER_H, RULER_W};
 use super::layout::Rect;
 use super::meters::fraction;
+use super::metrics::Metrics;
 use super::paint::{Color, Mesh};
 use super::ruler;
 use super::theme::Theme;
-
-const PAD: f32 = 4.0;
-const TEXT_SCALE: f32 = 2.0;
 
 /// The dB reference the magnitudes are floored at internally: the core's, so
 /// the analysis agrees with the spectrogram before the display dB window is
@@ -152,39 +149,40 @@ pub(crate) fn draw_spectrum(
     rect: Rect,
     states: &[SpectrumState],
     p: &SpectrumParams,
+    m: &Metrics,
     theme: &Theme,
 ) {
     if let Some(text) = p.label {
         font::text(
             mesh,
             text,
-            rect.x + PAD,
-            rect.y + PAD,
-            TEXT_SCALE,
+            rect.x + m.pad,
+            rect.y + m.pad,
+            m.text_scale,
             theme.text,
         );
     }
-    let mut body = body_rect(rect, p.label.is_some());
-    let strip_x = (p.ruler_y && body.w > RULER_W * 2.0).then(|| {
+    let mut body = body_rect(rect, p.label.is_some(), m);
+    let strip_x = (p.ruler_y && body.w > m.ruler_w * 2.0).then(|| {
         let x = body.x;
-        body.x += RULER_W;
-        body.w -= RULER_W;
+        body.x += m.ruler_w;
+        body.w -= m.ruler_w;
         x
     });
-    let x_strip = (p.ruler && body.h > RULER_H * 2.0).then(|| {
-        body.h -= RULER_H;
-        Rect::new(body.x, body.y + body.h, body.w, RULER_H)
+    let x_strip = (p.ruler && body.h > m.ruler_h * 2.0).then(|| {
+        body.h -= m.ruler_h;
+        Rect::new(body.x, body.y + body.h, body.w, m.ruler_h)
     });
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
     mesh.rect(body, theme.field);
-    mesh.border(body, 1.0, theme.accent);
+    mesh.border(body, m.divider_w, theme.accent);
     // The FFT size and active scale, named over the view (the scope's
     // lock/free corner): log/mel/bark are not tellable apart from the tick
     // spacing at a glance. The size pads to 4 digits so the text never moves.
     let tag = format!("{:>4} {}", p.fft_size, ruler::scale_tag(p.freq_scale));
-    super::meters::value_text(mesh, &tag, body, theme);
+    super::meters::value_text(mesh, &tag, body, m, theme);
 
     let sr = if p.sample_rate > 0.0 {
         p.sample_rate as f32
@@ -195,12 +193,12 @@ pub(crate) fn draw_spectrum(
     let f_lo = F_LO_HZ.min(nyquist * 0.5).max(1.0);
     let f_lo_norm = (f_lo as f64 / nyquist as f64).clamp(1e-5, 0.5);
     if let Some(strip) = x_strip {
-        let ticks = ruler::hz_ticks_h(nyquist as f64, p.freq_scale, f_lo_norm, strip.w as f64);
-        ruler::draw_ticks_h(mesh, strip, &ticks, theme);
+        let ticks = ruler::hz_ticks_h(nyquist as f64, p.freq_scale, f_lo_norm, strip.w as f64, m);
+        ruler::draw_ticks_h(mesh, strip, &ticks, m, theme);
     }
     if let Some(strip_x) = strip_x {
-        let ticks = ruler::value_ticks(p.db_floor as f64, p.db_ceil as f64, body.h as f64);
-        ruler::draw_ticks_v(mesh, body.x, strip_x, body, &ticks, theme);
+        let ticks = ruler::value_ticks(p.db_floor as f64, p.db_ceil as f64, body.h as f64, m);
+        ruler::draw_ticks_v(mesh, body.x, strip_x, body, &ticks, m, theme);
     }
     let columns = body.w.max(1.0) as usize;
     let db_ceil = p.db_ceil.max(p.db_floor + 1.0);
@@ -236,7 +234,7 @@ pub(crate) fn draw_spectrum(
                 &y_at,
                 &state.peak_db,
                 faint,
-                1.0,
+                m.divider_w,
             );
         }
         polyline(
@@ -247,7 +245,7 @@ pub(crate) fn draw_spectrum(
             &y_at,
             &state.avg_db,
             color,
-            1.5,
+            m.trace_w,
         );
     }
 }

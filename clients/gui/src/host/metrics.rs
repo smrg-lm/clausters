@@ -1,0 +1,405 @@
+//! The metrics: every chrome size as a named **role**, in one table.
+//!
+//! The twin of [`super::theme`], one step behind it: no layout or paint site
+//! names a number, it names a role of this struct, exactly as no paint site
+//! names an RGBA. The roles are named by **function** — the spacing family
+//! ([`Metrics::pad`], `gap`, `margin`, `indent`), the control family
+//! (`control_h`, `row_h`, `track_thick`, `handle_thick`, `handle_grip`,
+//! `box_side`, `knob_d`), the chrome family (`ruler_h`, `ruler_w`, `header_w`,
+//! `divider_w`, `trace_w`, `point_radius`, `hit_slop`, `label_gap`,
+//! `tick_gap`) and the text family (`text_scale`, `label_scale`,
+//! `caption_scale`, `micro_scale`) — never by the widget that happens to read
+//! them, so one number serves every widget that means the same thing by it.
+//!
+//! **The defaults are generated, not invented.** [`Metrics::generated`] is one
+//! quantized modular scale over the font cell ([`CELL`]: `font::GLYPH_H` at
+//! `font::DEFAULT_SIZE`, 14 px — not a round decimal, because every readable
+//! widget is text plus padding and the cell is what makes a button, a number
+//! field and a menu line up unaided). Spacings and extents land on a 2-px
+//! grid, hairlines on whole pixels, text scales on half-steps of the bitmap
+//! cell. It is a **generator for the table, not arithmetic on a frame**: the
+//! resolved table is constant data every draw call reads.
+//!
+//! One `scale` multiplier — the reserved key of the `[gui.metrics]` config
+//! table — regenerates the whole table at another density, which is
+//! deliberately the *whole* density surface: a host has one density the way it
+//! has one look, so there are no size tokens on the wire and no per-widget
+//! density. It covers this table (the chrome and the control sizing); a
+//! widget's own `text_size` prop is the wire's number and stays untouched.
+//!
+//! **What the table does not hold** is a widget's own structural geometry —
+//! the patcher's box/port series, the piano roll's key gutter and velocity
+//! lane, the score's staff step, a knob's internal insets. Those interlock
+//! inside one widget rather than forming shared vocabulary, so they stay in
+//! their module; a role applies where the meaning is shared, which is what
+//! keeps the table small enough to be read.
+
+use super::font;
+
+/// The base unit of every size role: the font cell at the default text scale,
+/// in device pixels.
+pub const CELL: f32 = font::GLYPH_H as f32 * font::DEFAULT_SIZE;
+
+/// The grid the spacing and extent roles land on, device pixels. Two rather
+/// than four (which the roadmap sketched): the shipped spacing pair is 6 and
+/// every shipped chrome extent is even, so a 4-px grid would have moved them
+/// and cost this refactor its zero-visual-change guarantee.
+const GRID: f32 = 2.0;
+
+/// One character's advance at glyph scale `scale` — the unit of the roles that
+/// are sized to hold text (a lane header, a ruler's labels).
+fn advance(scale: f32) -> f32 {
+    (font::GLYPH_W + 1) as f32 * scale
+}
+
+/// Quantizes an extent onto the [`GRID`], at least one grid step.
+fn grid(v: f32) -> f32 {
+    ((v / GRID).round() * GRID).max(GRID)
+}
+
+/// Quantizes a hairline weight to whole pixels, at least one — a divider, a
+/// track edge and a glyph pixel are all one unit, and a fractional position
+/// turns a crisp line into a two-pixel grey smear.
+fn hairline(v: f32) -> f32 {
+    v.round().max(1.0)
+}
+
+/// Quantizes a glyph scale. The embedded font is a bitmap, so a scale that
+/// does not divide its cell evenly makes a glyph's own pixels unequal — ragged
+/// rather than soft. Whole numbers are the rule; the half-step is the one
+/// concession, because the ruler and clip captions ship at 1.5 and the reduced
+/// caption has no other rung between 1 and 2.
+fn glyph(v: f32) -> f32 {
+    (v * 2.0).round().max(2.0) / 2.0
+}
+
+macro_rules! metrics_roles {
+    ($( $(#[$doc:meta])* $name:ident ),+ $(,)?) => {
+        /// The host's size roles, in device pixels (the text family in glyph
+        /// scales). One instance per host; every layout and paint site reads
+        /// one role.
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        pub struct Metrics {
+            $( $(#[$doc])* pub $name: f32, )+
+        }
+
+        impl Metrics {
+            /// Every role name, in declaration order.
+            pub const NAMES: &'static [&'static str] = &[$(stringify!($name),)+];
+
+            /// Sets one role by name. `false` if no such role exists.
+            pub fn set(&mut self, name: &str, value: f32) -> bool {
+                match name {
+                    $( stringify!($name) => { self.$name = value; true } )+
+                    _ => false,
+                }
+            }
+
+            /// Reads one role by name.
+            pub fn get(&self, name: &str) -> Option<f32> {
+                match name {
+                    $( stringify!($name) => Some(self.$name), )+
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+metrics_roles! {
+    // -- Spacing --
+    /// Inside a widget, between its frame and its content.
+    pad,
+    /// Between two siblings of a container.
+    gap,
+    /// Inside a container, before its children.
+    margin,
+    /// One nesting level of an indented list (the node tree's children).
+    indent,
+
+    // -- Controls --
+    /// The height of one line of control: a cell of text and its padding —
+    /// what makes a button, a number field and a menu line up in a row.
+    control_h,
+    /// The pitch of one row in a list of controls (a control plus a gap).
+    row_h,
+    /// The thickness of a control's groove across its axis (a slider's track).
+    track_thick,
+    /// The thickness of the value riding that groove (a slider's handle).
+    handle_thick,
+    /// The length of a handle across the control's axis (its grip).
+    handle_grip,
+    /// The side of a square marker (a toggle's box).
+    box_side,
+    /// The diameter of a round control (a knob) — its own role, over the
+    /// square nominal, because a disc reads smaller than a box of the same
+    /// bounding rect.
+    knob_d,
+
+    // -- Chrome --
+    /// The height of a ruler strip along a horizontal axis.
+    ruler_h,
+    /// The width of a ruler strip beside a vertical axis (sized for its widest
+    /// labels).
+    ruler_w,
+    /// The width of a row's header column (a lane's name and controls).
+    header_w,
+    /// A hairline: a divider between lanes, a box edge.
+    divider_w,
+    /// The weight of a drawn signal trace.
+    trace_w,
+    /// The radius of a placed point (a break-point, an automation node).
+    point_radius,
+    /// The slack around a small target's geometry, so it stays clickable.
+    hit_slop,
+    /// The smallest gap between two ruler labels before the ladder steps up.
+    label_gap,
+    /// The smallest gap between two ruler ticks before the ladder steps up.
+    tick_gap,
+
+    // -- Text (glyph scales over the embedded bitmap font) --
+    /// Primary text: control labels, values, readouts.
+    text_scale,
+    /// In-view labels drawn over a surface (a lane's name tag).
+    label_scale,
+    /// Reduced text: ruler labels, a clip's caption.
+    caption_scale,
+    /// The densest legible mark (a key's octave label).
+    micro_scale,
+}
+
+impl Default for Metrics {
+    /// The table at the host's own density — the sizes the widgets always had.
+    fn default() -> Self {
+        Self::generated(1.0)
+    }
+}
+
+impl Metrics {
+    /// The table generated by the modular scale at `density` (1.0 = the host's
+    /// own density; below it compact, above it comfortable). Every role is
+    /// derived from the font cell and quantized, so a density is one
+    /// multiplier applied to one table rather than a pass over the tree.
+    pub fn generated(density: f32) -> Self {
+        let k = density.max(0.1);
+        let cell = CELL * k;
+        // Spacing: quarter and (nearly) half the cell.
+        let pad = grid(cell * 0.25);
+        let gap = grid(cell * 0.4);
+        // Text first, since the roles sized to hold text read its advance.
+        let text_scale = glyph(font::DEFAULT_SIZE * k);
+        let caption_scale = glyph(1.5 * k);
+        // Controls: a cell of text plus its padding, and the parts riding it.
+        let control_h = grid(cell + 2.0 * pad);
+        let box_side = grid(control_h * 1.1);
+        let track_thick = pad;
+        Self {
+            pad,
+            gap,
+            margin: gap,
+            indent: grid(cell),
+
+            control_h,
+            row_h: grid(control_h + gap),
+            track_thick,
+            handle_thick: grid(2.0 * track_thick),
+            handle_grip: grid(cell * 1.25),
+            box_side,
+            knob_d: grid(box_side * 1.08),
+
+            ruler_h: grid(cell * 1.25),
+            // Five captions wide: the widest vertical-ruler labels are
+            // `-32768`, `20K` and `-INF`.
+            ruler_w: grid(5.0 * advance(caption_scale)),
+            // Eight characters of header text wide.
+            header_w: grid(8.0 * advance(text_scale)),
+            divider_w: hairline(k),
+            trace_w: (1.5 * k).max(0.5),
+            point_radius: pad,
+            hit_slop: pad,
+            label_gap: grid(cell),
+            tick_gap: hairline(cell * 0.5),
+
+            text_scale,
+            label_scale: text_scale,
+            caption_scale,
+            micro_scale: glyph(k),
+        }
+    }
+
+    /// Overlays `(role, value)` pairs — the `[gui.metrics]` config table.
+    /// Unknown roles and unusable values are skipped and reported back as
+    /// warnings, so a stale style file degrades to the default sizes, never to
+    /// an error.
+    ///
+    /// The reserved key `scale` is the density multiplier: it **regenerates**
+    /// the whole table at that density before any explicit role applies,
+    /// whatever order the entries arrive in.
+    pub fn overlay<'a, I>(&mut self, entries: I) -> Vec<String>
+    where
+        I: IntoIterator<Item = (&'a str, f64)>,
+    {
+        let entries: Vec<(&str, f64)> = entries.into_iter().collect();
+        let mut warnings = Vec::new();
+        for (_, value) in entries.iter().filter(|(role, _)| *role == "scale") {
+            if usable(*value) {
+                *self = Self::generated(*value as f32);
+            } else {
+                warnings.push(format!("metrics: bad density 'scale = {value}'"));
+            }
+        }
+        for (role, value) in entries.iter().filter(|(role, _)| *role != "scale") {
+            if !usable(*value) {
+                warnings.push(format!("metrics: bad size '{value}' for role '{role}'"));
+            } else if !self.set(role, *value as f32) {
+                warnings.push(format!("metrics: unknown role '{role}'"));
+            }
+        }
+        warnings
+    }
+}
+
+/// Whether a configured number can be a size: finite and positive (a zero
+/// spacing would be legitimate, but a zero thickness or scale is a role that
+/// vanishes, and the config cannot say which role it is setting).
+fn usable(v: f64) -> bool {
+    v.is_finite() && v > 0.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The refactor's guard: the generated table is the sizes the widgets had
+    /// before any role existed. Every number here was a `const` in some
+    /// module; if one moves, the change is visible and deliberate.
+    #[test]
+    fn defaults_are_the_shipped_sizes() {
+        let m = Metrics::default();
+        assert_eq!(CELL, 14.0);
+        assert_eq!(m.pad, 4.0);
+        assert_eq!(m.gap, 6.0);
+        assert_eq!(m.margin, 6.0);
+        assert_eq!(m.indent, 14.0);
+        assert_eq!(m.control_h, 22.0);
+        // The roles a widget's natural size will resolve from: no site reads
+        // them yet, so the scale is what fixes them.
+        assert_eq!(m.row_h, 28.0);
+        assert_eq!(m.knob_d, 26.0);
+        assert_eq!(m.track_thick, 4.0);
+        assert_eq!(m.handle_thick, 8.0);
+        assert_eq!(m.handle_grip, 18.0);
+        assert_eq!(m.box_side, 24.0);
+        assert_eq!(m.ruler_h, 18.0);
+        assert_eq!(m.ruler_w, 46.0);
+        assert_eq!(m.header_w, 96.0);
+        assert_eq!(m.divider_w, 1.0);
+        assert_eq!(m.trace_w, 1.5);
+        assert_eq!(m.point_radius, 4.0);
+        assert_eq!(m.hit_slop, 4.0);
+        assert_eq!(m.label_gap, 14.0);
+        assert_eq!(m.tick_gap, 7.0);
+        assert_eq!(m.text_scale, 2.0);
+        assert_eq!(m.label_scale, 2.0);
+        assert_eq!(m.caption_scale, 1.5);
+        assert_eq!(m.micro_scale, 1.0);
+    }
+
+    #[test]
+    fn quantization_holds_at_every_density() {
+        for density in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0] {
+            let m = Metrics::generated(density);
+            for role in [
+                "pad",
+                "gap",
+                "margin",
+                "indent",
+                "control_h",
+                "row_h",
+                "track_thick",
+                "handle_thick",
+                "handle_grip",
+                "box_side",
+                "knob_d",
+                "ruler_h",
+                "ruler_w",
+                "header_w",
+            ] {
+                let v = m.get(role).unwrap();
+                assert_eq!(v % GRID, 0.0, "{role} at {density} is off the grid: {v}");
+                assert!(v >= GRID, "{role} at {density} vanished: {v}");
+            }
+            for role in ["divider_w", "tick_gap"] {
+                let v = m.get(role).unwrap();
+                assert_eq!(v.fract(), 0.0, "{role} at {density} is not whole: {v}");
+                assert!(v >= 1.0);
+            }
+            for role in ["text_scale", "label_scale", "caption_scale", "micro_scale"] {
+                let v = m.get(role).unwrap();
+                assert_eq!(
+                    (v * 2.0).fract(),
+                    0.0,
+                    "{role} at {density} is not a half-step: {v}"
+                );
+                assert!(v >= 1.0, "{role} at {density} is illegible: {v}");
+            }
+        }
+    }
+
+    #[test]
+    fn density_grows_the_table_monotonically() {
+        let (small, big) = (Metrics::generated(1.0), Metrics::generated(2.0));
+        assert!(big.control_h > small.control_h);
+        assert!(big.header_w > small.header_w);
+        assert!(big.text_scale > small.text_scale);
+        let compact = Metrics::generated(0.5);
+        assert!(compact.control_h < small.control_h);
+    }
+
+    #[test]
+    fn partial_overlay_keeps_the_rest() {
+        let mut m = Metrics::default();
+        let warnings = m.overlay([("pad", 8.0)]);
+        assert!(warnings.is_empty());
+        assert_eq!(m.pad, 8.0);
+        assert_eq!(
+            m.gap,
+            Metrics::default().gap,
+            "unlisted roles keep the default"
+        );
+    }
+
+    #[test]
+    fn scale_regenerates_before_the_roles() {
+        let mut m = Metrics::default();
+        // The role comes first in the table; the density still applies first.
+        let warnings = m.overlay([("pad", 3.0), ("scale", 2.0)]);
+        assert!(warnings.is_empty());
+        assert_eq!(m.pad, 3.0, "the explicit role wins over the density");
+        assert_eq!(m.control_h, Metrics::generated(2.0).control_h);
+    }
+
+    #[test]
+    fn overlay_warns_and_continues() {
+        let mut m = Metrics::default();
+        let warnings = m.overlay([
+            ("no_such_role", 4.0),
+            ("gap", f64::NAN),
+            ("scale", 0.0),
+            ("pad", 10.0),
+        ]);
+        assert_eq!(warnings.len(), 3);
+        assert_eq!(m.gap, Metrics::default().gap, "a bad size leaves the role");
+        assert_eq!(m.pad, 10.0, "later entries still apply");
+    }
+
+    #[test]
+    fn every_name_sets_and_gets() {
+        let mut m = Metrics::default();
+        for name in Metrics::NAMES {
+            assert!(m.get(name).is_some());
+            assert!(m.set(name, 3.0));
+        }
+        assert!(m.get("scale").is_none(), "the density is not a role");
+    }
+}
