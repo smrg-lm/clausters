@@ -40,7 +40,7 @@ pub(crate) fn hit(
     let tree = host.window_def(def_id)?;
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
     let mut found = None;
-    for p in layout::layout(area, tree, &host.metrics) {
+    for p in layout::layout(area, tree, host.metrics_for(def_id)) {
         if p.rect.contains(x, y)
             && p.clip.is_none_or(|c| c.contains(x, y))
             && let Some(id) = p.widget.id
@@ -69,7 +69,7 @@ pub(crate) fn scroll_at(
     let tree = host.window_def(def_id)?;
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
     let mut found = None;
-    for p in layout::layout(area, tree, &host.metrics) {
+    for p in layout::layout(area, tree, host.metrics_for(def_id)) {
         if p.rect.contains(x, y)
             && p.clip.is_none_or(|c| c.contains(x, y))
             && matches!(p.widget.kind, WidgetKind::Scroll { .. })
@@ -92,7 +92,7 @@ pub(crate) fn scroll_set_view(
     area: Rect,
     (vx, vy, zoom): (f64, f64, f64),
 ) -> Option<(f64, f64, f64)> {
-    let metrics = host.metrics;
+    let metrics = *host.metrics_for(def_id);
     let tree = host.window_def_mut(def_id)?;
     let content = layout::scroll_content(tree.find(id)?, area, &metrics);
     let w = tree.find_mut(id)?;
@@ -196,7 +196,7 @@ pub(crate) fn text_caret_at(
             *caret,
             cx,
             cy,
-            &host.metrics,
+            host.metrics_for(def_id),
         )),
         _ => None,
     }
@@ -519,7 +519,7 @@ pub(crate) fn clip_hit(
     let tree = host.window_def(def_id)?;
     let full = track::window_nav(tree);
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    for p in layout::layout(area, tree, &host.metrics) {
+    for p in layout::layout(area, tree, host.metrics_for(def_id)) {
         let WidgetKind::Track { editor, .. } = &p.widget.kind else {
             continue;
         };
@@ -538,7 +538,7 @@ pub(crate) fn clip_hit(
         let body = track::lane_body(
             p.rect,
             editor.ruler != super::widget::Ruler::Off,
-            &host.metrics,
+            host.metrics_for(def_id),
         );
         if !body.contains(x, y) {
             return None; // over the header or the ruler strip, not a clip
@@ -554,7 +554,17 @@ pub(crate) fn clip_hit(
                 let rect = track::clip_rect(body, x0, x1);
                 let point = track::clip_draw(c).and_then(|clip| {
                     (!clip.points.is_empty())
-                        .then(|| track::curve_hit(&clip, rect, body, &nav, x, y, &host.metrics))
+                        .then(|| {
+                            track::curve_hit(
+                                &clip,
+                                rect,
+                                body,
+                                &nav,
+                                x,
+                                y,
+                                host.metrics_for(def_id),
+                            )
+                        })
                         .flatten()
                 });
                 return Some(ClipHit {
@@ -692,7 +702,7 @@ pub(crate) fn pianoroll_hit(
 ) -> Option<PianoRollHit> {
     let tree = host.window_def(def_id)?;
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    for p in layout::layout(area, tree, &host.metrics) {
+    for p in layout::layout(area, tree, host.metrics_for(def_id)) {
         let WidgetKind::PianoRoll {
             notes,
             osc,
@@ -712,7 +722,13 @@ pub(crate) fn pianoroll_hit(
         }
         let id = p.widget.id?;
         let ruler_on = editor.ruler != super::widget::Ruler::Off;
-        let r = pianoroll::regions(p.rect, ruler_on, *osc_lane, *velocity_lane, &host.metrics);
+        let r = pianoroll::regions(
+            p.rect,
+            ruler_on,
+            *osc_lane,
+            *velocity_lane,
+            host.metrics_for(def_id),
+        );
         let nav = host
             .timeline_nav(id)
             .map(|(nav, _)| nav)
@@ -1141,12 +1157,15 @@ mod tests {
         let tree = host.window_def(1).unwrap();
         let nav = track::window_nav(tree);
         let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-        let track_rect = layout::layout(area, tree, &host.metrics)
+        let track_rect = layout::layout(area, tree, host.metrics_for(1))
             .into_iter()
             .find(|p| matches!(p.widget.kind, WidgetKind::Track { .. }))
             .unwrap()
             .rect;
-        (track::lane_body(track_rect, false, &host.metrics), nav)
+        (
+            track::lane_body(track_rect, false, host.metrics_for(1)),
+            nav,
+        )
     }
 
     #[test]
@@ -1259,13 +1278,13 @@ mod tests {
         let rect = layout::layout(
             Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32),
             tree,
-            &host.metrics,
+            host.metrics_for(1),
         )
         .into_iter()
         .find(|p| matches!(p.widget.kind, WidgetKind::PianoRoll { .. }))
         .unwrap()
         .rect;
-        let r = pianoroll::regions(rect, true, false, true, &host.metrics);
+        let r = pianoroll::regions(rect, true, false, true, host.metrics_for(1));
         let cy = pianoroll::pitch_to_y(60.0, 48.0, 72.0, r.grid) as f64;
         let cx = (r.grid.x + r.grid.w * 0.5) as f64;
 

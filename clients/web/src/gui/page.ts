@@ -74,16 +74,34 @@ export interface ClaustersGui {
 }
 
 /**
- * One element box in device pixels, floored at 1 so a hidden element never
- * asks for a zero-sized surface.
+ * One element box measured for a canvas: its size in **device pixels** (floored
+ * at 1, so a hidden element never asks for a zero-sized surface) and the
+ * `devicePixelRatio` those pixels were measured at, kept **separately**.
+ *
+ * The two are not interchangeable. A canvas' backing store is device pixels, so
+ * the surface takes `width`/`height`; the sizes a GuiDef declares are logical,
+ * so resolving them takes `scale` — and the product alone cannot be
+ * un-multiplied. Reporting both is what lets the host draw a 28-pixel strip as
+ * 28 *apparent* pixels on any display, while never reading the DOM itself.
  */
-export function devicePixelBox(element: Element): [number, number] {
-    const ratio = globalThis.devicePixelRatio || 1;
+export interface CanvasBox {
+    /** The backing-store width, in device pixels. */
+    width: number;
+    /** The backing-store height, in device pixels. */
+    height: number;
+    /** The device-pixel ratio the box was measured at (the host's UI scale). */
+    scale: number;
+}
+
+/** Measures `element` for a canvas (see {@link CanvasBox}). */
+export function canvasBox(element: Element): CanvasBox {
+    const scale = globalThis.devicePixelRatio || 1;
     const box = element.getBoundingClientRect();
-    return [
-        Math.max(1, Math.round(box.width * ratio)),
-        Math.max(1, Math.round(box.height * ratio)),
-    ];
+    return {
+        width: Math.max(1, Math.round(box.width * scale)),
+        height: Math.max(1, Math.round(box.height * scale)),
+        scale,
+    };
 }
 
 let instance: Promise<ClaustersGui> | null = null;
@@ -141,10 +159,10 @@ async function boot(): Promise<ClaustersGui> {
         fit: (defId, element, target) => {
             const surface = target ?? canvas;
             const apply = () => {
-                const [width, height] = devicePixelBox(element);
+                const { width, height, scale } = canvasBox(element);
                 surface.width = width;
                 surface.height = height;
-                bridge.resize(defId, width, height);
+                bridge.resize(defId, width, height, scale);
             };
             apply();
             const observer = new ResizeObserver(apply);

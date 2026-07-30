@@ -59,6 +59,10 @@ impl App {
             Err(e) => return warn!("gui_def {id}: cannot create window: {e}"),
         };
         let winit_id = window.id();
+        // The window's UI scale, the one platform reading the host cannot make
+        // itself: the shell writes it, the core resolves its size table once and
+        // the wire's logical lengths land on this display's pixels.
+        self.host.set_ui_scale(id, window.scale_factor() as f32);
         let gpu = match pollster::block_on(Gpu::new(window)) {
             Ok(gpu) => gpu,
             Err(e) => return warn!("gui_def {id}: cannot start the GPU: {e}"),

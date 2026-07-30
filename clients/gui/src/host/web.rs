@@ -182,11 +182,15 @@ enum WebEvent {
     },
     /// Drop this def's canvas: its surface, its GPU slots and its live state go.
     Detach(i32),
-    /// The element's box changed size (`ResizeObserver` × `devicePixelRatio`).
+    /// The element's box changed size, in device pixels, with the ratio that
+    /// produced them (an `ResizeObserver` box and `devicePixelRatio`): the page
+    /// reports both, because the product alone cannot be undone and the host
+    /// needs the ratio to resolve its logical sizes.
     Resize {
         def_id: i32,
         width: u32,
         height: u32,
+        scale: f32,
     },
     /// The element entered or left the viewport (`IntersectionObserver`).
     SetVisible { def_id: i32, visible: bool },
@@ -1145,7 +1149,7 @@ impl WebApp {
             return;
         };
         let inputs = frame::FrameInputs {
-            metrics: &self.host.metrics,
+            metrics: self.host.metrics_for(def),
             bus: Some(self.buses.as_ref() as &dyn BusSource),
             active_button: slot.gestures.active_button(),
             focused_text,
@@ -1397,7 +1401,11 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 def_id,
                 width,
                 height,
+                scale,
             } => {
+                // The page's device-pixel ratio is this canvas' UI scale: the
+                // wire's logical sizes resolve against it, once per change.
+                self.host.set_ui_scale(def_id, scale);
                 let Some(slot) = self.canvases.get_mut(&def_id) else {
                     return;
                 };
@@ -1520,8 +1528,10 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 {
                     log(&w);
                 }
-                // Sizes are read per frame from the one table, so a redraw is
-                // the whole update — nothing is resolved per widget.
+                // Every canvas re-resolves the new roles at its own scale, and
+                // sizes are then read per frame from that one table, so a
+                // redraw is the rest of the update.
+                self.host.refresh_metrics();
                 for def in self.canvases.keys().copied().collect::<Vec<_>>() {
                     self.draw(def);
                 }
@@ -1961,14 +1971,22 @@ impl GuiBridge {
         let _ = self.proxy.send_event(WebEvent::Detach(def_id));
     }
 
-    /// Sizes a canvas in **device pixels** — a component's `ResizeObserver`
-    /// box times `devicePixelRatio`. The host never reads the DOM: the element
-    /// owns its box and reports the pixels.
-    pub fn resize(&self, def_id: i32, width: u32, height: u32) {
+    /// Sizes a canvas in **device pixels**, with the **scale** those pixels were
+    /// measured at — a component's `ResizeObserver` box times
+    /// `devicePixelRatio`, and that ratio. The host never reads the DOM: the
+    /// element owns its box and reports the pixels.
+    ///
+    /// Both halves are needed and neither substitutes for the other. The
+    /// backing store is device pixels, so the surface takes the product; the
+    /// widget sizes a GuiDef declares are **logical**, so resolving them takes
+    /// the ratio — and a product cannot be un-multiplied. A page that already
+    /// scales its box by `devicePixelRatio` passes the same ratio here.
+    pub fn resize(&self, def_id: i32, width: u32, height: u32, scale: f32) {
         let _ = self.proxy.send_event(WebEvent::Resize {
             def_id,
             width,
             height,
+            scale,
         });
     }
 

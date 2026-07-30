@@ -143,8 +143,8 @@ the same color to within the 8 bits of the notation:
 ## `[gui.metrics]`
 
 The sizing counterpart, with the same partial-overlay semantics: `role = number`
-in device pixels (glyph scales for the text roles), unlisted roles keep their
-generated default, and an unknown role or an unusable number warns and is
+in **logical** pixels (glyph scales for the text roles), unlisted roles keep
+their generated default, and an unknown role or an unusable number warns and is
 skipped.
 
 One reserved key comes first:
@@ -199,6 +199,13 @@ widget's own interlocking geometry (the patcher's box and port series, the piano
 roll's key gutter, the score's staff step) stays inside that widget, and so do
 sub-pad optical nudges. A role earns its place when more than one widget means
 the same thing by it.
+
+The numbers are **logical**, the same units a GuiDef's own `w`/`h`/`x`/`y`/
+`margin`/`gap`/`text_size` carry: each window resolves the table to its display's
+physical pixels — every role scaled and re-quantized so hairlines stay hairlines
+— once when its scale changes, never per frame. Density and display scale are
+therefore two different knobs on one table: `scale` is the look you chose,
+the window's scale is the screen you are on.
 
 Two roles are worth knowing because they decide how a window falls out rather
 than how it looks: `control_h` and the text scales feed every widget's **natural

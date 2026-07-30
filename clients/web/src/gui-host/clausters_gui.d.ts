@@ -68,11 +68,18 @@ export class GuiBridge {
      */
     poll(): Uint8Array | undefined;
     /**
-     * Sizes a canvas in **device pixels** — a component's `ResizeObserver`
-     * box times `devicePixelRatio`. The host never reads the DOM: the element
-     * owns its box and reports the pixels.
+     * Sizes a canvas in **device pixels**, with the **scale** those pixels were
+     * measured at — a component's `ResizeObserver` box times
+     * `devicePixelRatio`, and that ratio. The host never reads the DOM: the
+     * element owns its box and reports the pixels.
+     *
+     * Both halves are needed and neither substitutes for the other. The
+     * backing store is device pixels, so the surface takes the product; the
+     * widget sizes a GuiDef declares are **logical**, so resolving them takes
+     * the ratio — and a product cannot be un-multiplied. A page that already
+     * scales its box by `devicePixelRatio` passes the same ratio here.
      */
-    resize(def_id: number, width: number, height: number): void;
+    resize(def_id: number, width: number, height: number, scale: number): void;
     /**
      * Feeds one reply packet from the in-page engine (a streamed `/c_set`, a
      * `/tap_data`, a `/b_info`/`/b_setn`, a `/clock.reply`) into the host —
@@ -132,7 +139,7 @@ export interface InitOutput {
     readonly guibridge_feed: (a: number, b: number, c: number) => void;
     readonly guibridge_metrics: (a: number, b: number, c: number) => void;
     readonly guibridge_poll: (a: number) => [number, number];
-    readonly guibridge_resize: (a: number, b: number, c: number, d: number) => void;
+    readonly guibridge_resize: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly guibridge_server_reply: (a: number, b: number, c: number) => void;
     readonly guibridge_set_visible: (a: number, b: number, c: number) => void;
     readonly guibridge_theme: (a: number, b: number, c: number) => void;

@@ -3334,3 +3334,53 @@ slack it absorbs, so a row of knobs still spreads instead of packing left.
 This redrew every existing GuiDef, which was accepted deliberately: the windows
 that improved are the ones where a caption or a control had been taking half the
 pane from the view beside it.
+
+## The wire is logical, the plane is physical, and the shell is the one that knows the scale
+
+The sizes a GuiDef declares — `w`/`h`/`x`/`y`, a container's `margin`/`gap`, a
+widget's `text_size` — were physical pixels, which meant a window was as small
+as the display was dense: on a doubled HiDPI screen the tree drew at half its
+apparent size while the window itself (winit's `LogicalSize`) came out at the
+size the script asked for. The wire is now **logical** and the host resolves it.
+
+**One scale per window, resolved once.** The size table (`host/metrics.rs`) that
+L6 centralized is logical too, and each window holds its own resolution of it —
+`Metrics::resolved`, every role scaled and re-quantized by its family (extents
+onto the 2-px grid, hairlines onto whole pixels, glyph scales onto half-steps).
+That runs on a **scale change**, not on a frame: layout and painting stayed the
+code they already were, reading one table through `Host::metrics_for(def_id)`, so
+the per-frame cost of HiDPI is zero — which is what matters on a page holding
+forty canvases. Snapping is part of resolving rather than a pass afterwards,
+because the chrome *is* hairlines: a divider, a track edge and a font pixel are
+one unit each, and a fractional position turns a crisp line into a two-pixel
+grey smear.
+
+**The scale is an input the shell writes, never something the core detects.** The
+platform-agnostic host may not ask a window manager or a DOM what density it is
+on — that is the seam `check-wasm.sh` enforces — so `Host::set_ui_scale` is a
+door the shells push through: natively from winit's `scale_factor`, re-armed on
+`ScaleFactorChanged` (whose `inner_size_writer` is *answered*, with the same
+logical extent the window had, so a 800x600 shell stays a 800x600 shell across
+the move); in the browser from the page's `devicePixelRatio`.
+
+That last one was a real change to the published binding, not a port. The browser
+host was told its canvas size in device pixels only — the page multiplied its
+element box by `devicePixelRatio` and handed over the product — so **the ratio
+was destroyed at the boundary** and no arithmetic recovers it. `resize` now
+carries it (`resize(defId, width, height, scale)`), and `canvasBox` reports the
+box and the ratio side by side instead of collapsing them. An incompatible change
+to the wasm-bindgen surface, taken rather than worked around, because the
+alternative is a host that cannot know what it is drawing on.
+
+**Two pixel spaces coexist, and that is the invariant to state.** Chrome is
+logical; a *navigable plane* is physical. A `scroll` workspace's content plane
+keeps its own units — its `content_w`/`content_h`, its `view_x`/`view_y` and its
+children's placements — because it carries a zoom of its own and its pan is
+written in the pixels the pointer moved, so folding a second multiplier into it
+would make a drag and a declared position disagree. The heavy views say the same
+thing for the same reason: `render_width_px` is physical and "never resolve the
+signal finer than the screen" is untouched. What follows from this, and is
+deliberate: a widget's own interlocking structural geometry (the patcher's
+box/port series, the roll's key gutter and lanes, the score's staff step) is
+module-local by L6's rule and lives in the physical space too, so a plane's
+interior does not grow with the display's density — it grows with its own zoom.

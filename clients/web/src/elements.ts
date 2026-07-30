@@ -33,7 +33,7 @@
 // its resolved def id.
 
 import { server } from "./engine/server.ts";
-import { devicePixelBox, guiHost } from "./gui/page.ts";
+import { canvasBox, guiHost } from "./gui/page.ts";
 import { openBundle, startBundle } from "./bundle.ts";
 import type { Mounted } from "./bundle.ts";
 
@@ -227,7 +227,7 @@ export class ClaustersBundle extends HTMLElement {
      * the host never reads the DOM, so the element reports the pixels.
      */
     private sizeCanvas(): void {
-        const [width, height] = devicePixelBox(this);
+        const { width, height } = canvasBox(this);
         this.canvas.width = width;
         this.canvas.height = height;
     }
@@ -241,8 +241,8 @@ export class ClaustersBundle extends HTMLElement {
         const defId = this.mounted?.defId;
         if (defId === undefined) return;
         this.resizeObserver = new ResizeObserver(() => {
-            const [width, height] = devicePixelBox(this);
-            void guiHost().then((gui) => gui.bridge.resize(defId, width, height));
+            const { width, height, scale } = canvasBox(this);
+            void guiHost().then((gui) => gui.bridge.resize(defId, width, height, scale));
         });
         this.resizeObserver.observe(this);
         this.viewObserver = new IntersectionObserver((entries) => {

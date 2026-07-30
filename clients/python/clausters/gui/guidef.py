@@ -38,7 +38,7 @@ keeps them apart in the JSON text and the host's serde parse keeps them apart on
 the wire (ids stay integers, control values stay floats).
 
 **Every widget takes the generic place props**, applied by the container's
-layout (all in device pixels, all optional, all live via ``set``):
+layout (all in **logical** pixels, all optional, all live via ``set``):
 
 - ``w``/``h`` — a fixed main-axis size in a ``row``/``col`` (``w`` in a row,
   ``h`` in a col); in ``free``, the widget's size.
@@ -57,6 +57,15 @@ control-high row rather than half the window, while views (a ``waveform``, a
 them. A widget's natural size never follows its *data*, only the host's sizing
 table and the widget's own ``text_size``/``label``, so setting a longer string
 never moves the layout.
+
+Those numbers are **logical**, not the screen's: the host multiplies every
+declared length (and ``text_size``, a glyph scale) by the display's own scale,
+one number per window, resolved when the scale changes and never per frame. So a
+``h=28`` strip looks like a 28-pixel strip everywhere, and a script never asks
+what it is running on. The one exception is a ``scroll`` workspace's content
+plane — its ``content_w``/``content_h``, its ``view_x``/``view_y`` and its
+children's place props are content units, physical pixels on the plane, because
+the plane carries a zoom of its own.
 
 Containers (``window``/``panel``/``scroll``) additionally take ``margin`` (the
 inset before their children, default 6), ``gap`` (between children, default 6)
@@ -212,7 +221,7 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
     ``y``/``w``/``h`` place it in content units. The content area sizes from
     those placement extents unless ``content_w``/``content_h`` say otherwise.
     ``view_x``/``view_y`` (content units at the widget's top-left corner) and
-    ``view_zoom`` (device pixels per content unit) are the view state: live via
+    ``view_zoom`` (physical pixels per content unit) are the view state: live via
     ``/gui_set``, and emitted as ``"view" x y zoom`` when a gesture moves them.
     """
     extra = _drop_none(axis=axis, content_w=content_w, content_h=content_h,
@@ -885,7 +894,7 @@ def timeruler(*, h: float = 20.0, ruler: str | None = None, sample_rate: float |
 
     A press on it **locates** the transport (emitting ``"locate"``, as a lane's
     ruler does), Shift+drag pans the axis and the wheel zooms it — you scrub on
-    the ruler. ``h`` is its thickness in device pixels::
+    the ruler. ``h`` is its thickness in logical pixels::
 
         panel(timeruler(link=1, ruler="beats", tempo=2.0),
               track(clip(offset=0, dur=4, data=take), link=1),

@@ -27,6 +27,15 @@
 //! density. It covers this table (the chrome and the control sizing); a
 //! widget's own `text_size` prop is the wire's number and stays untouched.
 //!
+//! **The table is logical; a window resolves it.** The roles the config
+//! declares are **logical** pixels, the same units the wire's own `w`/`h`/`x`/
+//! `y`/`margin`/`gap` carry. [`Metrics::resolved`] turns one into the physical
+//! table a window paints with, at that window's `ui_scale` — written by the
+//! shell (winit's `scale_factor` natively, the page's `devicePixelRatio` in the
+//! browser), never read by this core. It runs **once per scale change**, not
+//! per frame: layout and painting stay the code they were, and the per-frame
+//! cost of HiDPI is zero.
+//!
 //! **What the table does not hold** is a widget's own structural geometry —
 //! the patcher's box/port series, the piano roll's key gutter and velocity
 //! lane, the score's staff step, a knob's internal insets. Those interlock
@@ -37,10 +46,10 @@
 use super::font;
 
 /// The base unit of every size role: the font cell at the default text scale,
-/// in device pixels.
+/// in logical pixels.
 pub const CELL: f32 = font::GLYPH_H as f32 * font::DEFAULT_SIZE;
 
-/// The grid the spacing and extent roles land on, device pixels. Two rather
+/// The grid the spacing and extent roles land on, logical pixels. Two rather
 /// than four (which the roadmap sketched): the shipped spacing pair is 6 and
 /// every shipped chrome extent is even, so a 4-px grid would have moved them
 /// and cost this refactor its zero-visual-change guarantee.
@@ -75,12 +84,21 @@ fn glyph(v: f32) -> f32 {
 
 macro_rules! metrics_roles {
     ($( $(#[$doc:meta])* $name:ident ),+ $(,)?) => {
-        /// The host's size roles, in device pixels (the text family in glyph
-        /// scales). One instance per host; every layout and paint site reads
-        /// one role.
+        /// The host's size roles, in pixels (the text family in glyph scales)
+        /// — logical as the config declares them, physical once a window has
+        /// [`resolved`](Metrics::resolved) them. One logical instance per host
+        /// plus one resolved per window; every layout and paint site reads one
+        /// role of the resolved table.
         #[derive(Debug, Clone, Copy, PartialEq)]
         pub struct Metrics {
             $( $(#[$doc])* pub $name: f32, )+
+            /// The logical -> physical multiplier this table was resolved at:
+            /// `1.0` for the logical table the config declares, the window's
+            /// scale factor for the table a window paints with (see
+            /// [`Metrics::resolved`]). It is **not** a role — the config cannot
+            /// set it, only a shell can, and one host has as many resolved
+            /// tables as it has windows.
+            pub ui_scale: f32,
         }
 
         impl Metrics {
@@ -226,7 +244,71 @@ impl Metrics {
             label_scale: text_scale,
             caption_scale,
             micro_scale: glyph(k),
+
+            ui_scale: 1.0,
         }
+    }
+
+    /// This logical table resolved to the **physical** pixels of a window at
+    /// `ui_scale` — the one resolution HiDPI costs, run on a scale change and
+    /// never per frame.
+    ///
+    /// Every role is scaled and re-quantized by its own family (extents onto
+    /// the [`GRID`], hairlines onto whole pixels, text onto half-steps of the
+    /// bitmap cell), because the chrome *is* hairlines: a divider, a track edge
+    /// and a glyph pixel are one unit each, and a fractional position turns a
+    /// crisp line into a two-pixel grey smear.
+    ///
+    /// At `ui_scale == 1.0` this is the **identity** — the table the config
+    /// declared, number for number, quantizers included: a host on an ordinary
+    /// display paints exactly what it always did, and a role set to an odd 5 px
+    /// by hand stays 5.
+    pub fn resolved(&self, ui_scale: f32) -> Self {
+        let k = if ui_scale.is_finite() {
+            ui_scale.max(0.1)
+        } else {
+            1.0
+        };
+        if k == 1.0 {
+            return *self;
+        }
+        Self {
+            pad: grid(self.pad * k),
+            gap: grid(self.gap * k),
+            margin: grid(self.margin * k),
+            indent: grid(self.indent * k),
+
+            control_h: grid(self.control_h * k),
+            row_h: grid(self.row_h * k),
+            track_thick: grid(self.track_thick * k),
+            handle_thick: grid(self.handle_thick * k),
+            handle_grip: grid(self.handle_grip * k),
+            box_side: grid(self.box_side * k),
+            knob_d: grid(self.knob_d * k),
+
+            ruler_h: grid(self.ruler_h * k),
+            ruler_w: grid(self.ruler_w * k),
+            header_w: grid(self.header_w * k),
+            divider_w: hairline(self.divider_w * k),
+            trace_w: (self.trace_w * k).max(0.5),
+            point_radius: grid(self.point_radius * k),
+            hit_slop: grid(self.hit_slop * k),
+            label_gap: grid(self.label_gap * k),
+            tick_gap: hairline(self.tick_gap * k),
+
+            text_scale: glyph(self.text_scale * k),
+            label_scale: glyph(self.label_scale * k),
+            caption_scale: glyph(self.caption_scale * k),
+            micro_scale: glyph(self.micro_scale * k),
+
+            ui_scale: k,
+        }
+    }
+
+    /// One of the **wire's own** lengths (`w`/`h`/`x`/`y`/`margin`/`gap`) in
+    /// physical pixels, at this table's scale (see [`snap_px`]).
+    pub fn px(&self, logical: f32) -> f32 {
+        snap_px(logical, self.ui_scale)
     }
 
     /// Overlays `(role, value)` pairs — the `[gui.metrics]` config table.
@@ -259,6 +341,15 @@ impl Metrics {
         }
         warnings
     }
+}
+
+/// A **logical** length the wire declared, in physical pixels at `scale`,
+/// snapped to a whole pixel: a declared strip lands on the same grid the
+/// chrome's hairlines are drawn against, at any scale. The one door the wire's
+/// own lengths pass through (the layout reads it per placement space, so a
+/// navigable plane can keep its own units).
+pub fn snap_px(logical: f32, scale: f32) -> f32 {
+    (logical * scale).round()
 }
 
 /// Whether a configured number can be a size: finite and positive (a zero
@@ -395,6 +486,63 @@ mod tests {
         assert_eq!(warnings.len(), 3);
         assert_eq!(m.gap, Metrics::default().gap, "a bad size leaves the role");
         assert_eq!(m.pad, 10.0, "later entries still apply");
+    }
+
+    #[test]
+    fn resolving_at_scale_one_is_the_identity() {
+        // Including a role the config set to a number the generator would never
+        // pick: an ordinary display paints what the config declared.
+        let mut m = Metrics::default();
+        assert!(m.overlay([("pad", 5.0), ("text_scale", 2.0)]).is_empty());
+        assert_eq!(m.resolved(1.0), m);
+        assert_eq!(m.ui_scale, 1.0);
+    }
+
+    #[test]
+    fn resolving_scales_the_table_and_keeps_its_quantization() {
+        let m = Metrics::default().resolved(2.0);
+        assert_eq!(m.ui_scale, 2.0);
+        assert_eq!(m.pad, 8.0);
+        assert_eq!(m.control_h, 44.0);
+        assert_eq!(m.divider_w, 2.0, "a hairline is whole pixels, doubled");
+        assert_eq!(m.text_scale, 4.0);
+        assert_eq!(m.caption_scale, 3.0, "1.5 doubles onto a whole step");
+        for role in Metrics::NAMES {
+            let v = m.get(role).unwrap();
+            assert!(v.is_finite() && v > 0.0, "{role} vanished: {v}");
+        }
+    }
+
+    #[test]
+    fn a_fractional_scale_still_lands_on_the_grid() {
+        // The usual HiDPI factors, including the fractional ones a desktop
+        // scales by: every extent stays on the grid and every glyph scale on a
+        // half-step, so nothing draws a smeared hairline.
+        for scale in [1.25, 1.5, 1.75, 2.0, 3.0] {
+            let m = Metrics::default().resolved(scale);
+            for role in ["pad", "gap", "control_h", "knob_d", "header_w"] {
+                let v = m.get(role).unwrap();
+                assert_eq!(v % GRID, 0.0, "{role} at {scale} is off the grid: {v}");
+            }
+            for role in ["divider_w", "tick_gap"] {
+                assert_eq!(m.get(role).unwrap().fract(), 0.0);
+            }
+            for role in ["text_scale", "caption_scale"] {
+                let v = m.get(role).unwrap();
+                assert_eq!((v * 2.0).fract(), 0.0, "{role} at {scale}: {v}");
+                assert!(v >= 1.0);
+            }
+        }
+    }
+
+    #[test]
+    fn the_wire_s_own_lengths_scale_and_snap() {
+        let m = Metrics::default().resolved(2.0);
+        assert_eq!(m.px(48.0), 96.0);
+        assert_eq!(m.px(10.5), 21.0);
+        // A logical number that lands between pixels takes the nearer one.
+        assert_eq!(Metrics::default().resolved(1.5).px(15.0), 23.0);
+        assert_eq!(Metrics::default().px(15.0), 15.0);
     }
 
     #[test]

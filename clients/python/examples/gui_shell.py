@@ -15,6 +15,16 @@ elements a control panel uses:
 - in a ``free`` container, ``x``/``y`` (+ ``w``/``h``) place a child
   absolutely — not used here, same props, different layout.
 
+Those numbers are **logical pixels**: the host multiplies every declared length
+(and every ``text_size``) by the display's own scale, one scale per window,
+resolved when it changes rather than per frame. So this shell keeps its
+proportions on a HiDPI screen instead of drawing at half its apparent size --
+the eye-check is to run it once at your desktop's normal scaling and once at
+200% (the system display setting; the window re-resolves and repaints while it
+is open, and keeps the logical size it had). The one place that stays in the
+screen's own pixels is a ``scroll`` workspace's content plane, which carries a
+zoom of its own -- see ``gui_workspace.py``.
+
 Everything is live: the sidebar's controls retune a quiet server voice, the
 oscilloscope draws the server's **actual stereo output** (the two hardware output buses,
 buses 0/1, read by the host from shared memory — zero per-frame messages),

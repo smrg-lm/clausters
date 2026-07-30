@@ -86,7 +86,9 @@ const win = host.open(tree);
 const stop = (await guiHost()).fit(win.id, container);   // and follows it
 ```
 
-`fit` sets the canvas' backing store from the element's box in device pixels and tells the host, then keeps doing it as the box changes — so the drawing is as wide as the layout allows on a desktop and as wide as the screen on a phone, with no fixed size anywhere. A `<clausters-bundle>` component does exactly this for its own element; a script that opens a window calls it once.
+`fit` sets the canvas' backing store from the element's box in device pixels and tells the host — the pixels **and** the `devicePixelRatio` they were measured at, since the sizes a GuiDef declares are logical and the host resolves them against that ratio — then keeps doing it as the box changes. So the drawing is as wide as the layout allows on a desktop and as wide as the screen on a phone, with no fixed size anywhere, and a 28-pixel strip looks the same on a retina display as on an ordinary one. A `<clausters-bundle>` component does exactly this for its own element; a script that opens a window calls it once.
+
+A page that sizes a canvas itself does the same two things: `canvasBox(element)` measures both halves, and `bridge.resize(defId, width, height, scale)` reports them together (the product alone cannot be un-multiplied, which is why the ratio travels beside it).
 
 ## The clock and the patterns
 

@@ -438,9 +438,17 @@ pub struct Host {
     /// The host's color roles — one look per host, every paint site reads it
     /// (see [`theme`]).
     pub theme: theme::Theme,
-    /// The host's size roles — one density per host, every layout and paint
-    /// site reads it (see [`metrics`]).
+    /// The host's size roles in **logical** pixels — one density per host, the
+    /// table the config declares (see [`metrics`]). A window paints with its
+    /// own resolution of it, from [`metrics_for`](Self::metrics_for), so
+    /// changing this table once windows exist means calling
+    /// [`refresh_metrics`](Self::refresh_metrics) after it.
     pub metrics: metrics::Metrics,
+    /// The resolved (physical) metrics of each window, by def id — this table
+    /// at that window's `ui_scale`. Written when a shell reports a scale
+    /// ([`set_ui_scale`](Self::set_ui_scale)), which is the only side that may
+    /// know one: the core never reads a platform API. Absent = scale 1.
+    resolved_metrics: HashMap<i32, metrics::Metrics>,
     /// The `text` field currently receiving keystrokes, as `(def_id, widget_id)`.
     /// A press on a text field focuses it; a press elsewhere (or freeing the
     /// widget) clears it. While set, key input edits that field instead of
@@ -476,6 +484,7 @@ impl Host {
             voice_counter: 0,
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
+            resolved_metrics: HashMap::new(),
             focused_text: None,
         }
     }
@@ -534,6 +543,52 @@ impl Host {
     /// to open a pre-loaded def on resume).
     pub fn window_def_ids(&self) -> Vec<i32> {
         self.window_defs.keys().copied().collect()
+    }
+
+    /// The size table window `def_id` lays out and paints with: this host's
+    /// logical [`metrics`](Self::metrics) resolved to that window's physical
+    /// pixels. Every layout, paint and hit-test site of a window reads *this*
+    /// one, never the logical table — a document can sit on a HiDPI screen
+    /// while another sits on an ordinary one.
+    pub fn metrics_for(&self, def_id: i32) -> &metrics::Metrics {
+        self.resolved_metrics.get(&def_id).unwrap_or(&self.metrics)
+    }
+
+    /// Records window `def_id`'s **UI scale** and resolves its size table once,
+    /// returning whether anything changed (so a shell can relayout and repaint
+    /// only when it did).
+    ///
+    /// The scale is the shell's to write and the core's to obey: natively it is
+    /// winit's `scale_factor` (re-armed on `ScaleFactorChanged`), in the browser
+    /// the page's `devicePixelRatio` — a platform reading this core may not
+    /// make, which is exactly why it arrives through this door.
+    pub fn set_ui_scale(&mut self, def_id: i32, ui_scale: f32) -> bool {
+        let next = self.metrics.resolved(ui_scale);
+        if self.metrics_for(def_id) == &next {
+            return false;
+        }
+        self.resolved_metrics.insert(def_id, next);
+        true
+    }
+
+    /// Window `def_id`'s UI scale (1.0 until a shell reports one).
+    pub fn ui_scale(&self, def_id: i32) -> f32 {
+        self.metrics_for(def_id).ui_scale
+    }
+
+    /// Re-resolves every window's size table after the logical one changed (a
+    /// `[gui.metrics]` overlay, the browser's `metrics(json)`): each window
+    /// keeps its own scale and gets the new roles.
+    pub fn refresh_metrics(&mut self) {
+        let scales: Vec<(i32, f32)> = self
+            .resolved_metrics
+            .iter()
+            .map(|(id, m)| (*id, m.ui_scale))
+            .collect();
+        for (id, scale) in scales {
+            self.resolved_metrics
+                .insert(id, self.metrics.resolved(scale));
+        }
     }
 
     /// The audio-server client link, if one was attached (`--server` or the
@@ -788,6 +843,8 @@ impl Host {
         let removed = self.registry.free(id);
         self.def_json.remove(&id);
         if self.window_defs.remove(&id).is_some() {
+            // The window goes, and with it the scale a shell reported for it.
+            self.resolved_metrics.remove(&id);
             effects.push(HostEffect::CloseWindow(id));
         }
         self.sync_bus_watches();
@@ -1240,6 +1297,44 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].args[0], OscType::Int(42));
         assert_eq!(out[0].args[1], OscType::String(String::new()));
+    }
+
+    /// One host, one logical table, one resolved table per window — and the
+    /// shell is the only side that says what a window's scale is.
+    #[test]
+    fn each_window_resolves_the_table_at_its_own_scale() {
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, TREE), from());
+        host.handle_packet(def_msg(2, TREE), from());
+        assert_eq!(host.ui_scale(1), 1.0, "no shell has reported one yet");
+        assert_eq!(host.metrics_for(1), &host.metrics);
+
+        assert!(host.set_ui_scale(1, 2.0));
+        assert!(!host.set_ui_scale(1, 2.0), "the same scale changes nothing");
+        assert_eq!(host.ui_scale(1), 2.0);
+        assert_eq!(host.metrics_for(1).control_h, host.metrics.control_h * 2.0);
+        assert_eq!(
+            host.metrics_for(2),
+            &host.metrics,
+            "the other window is on its own display"
+        );
+
+        // A new logical table (a `[gui.metrics]` overlay, the browser's
+        // `metrics(json)`) reaches every window at the scale it is on.
+        host.metrics.overlay([("control_h", 30.0)]);
+        host.refresh_metrics();
+        assert_eq!(host.metrics_for(1).control_h, 60.0);
+        assert_eq!(host.metrics_for(2).control_h, 30.0);
+
+        // Freeing the window drops what the shell reported for it.
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_FREE.into(),
+                args: vec![OscType::Int(1)],
+            }),
+            from(),
+        );
+        assert_eq!(host.ui_scale(1), 1.0);
     }
 
     #[test]

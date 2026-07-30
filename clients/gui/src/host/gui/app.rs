@@ -372,7 +372,7 @@ impl App {
         };
         let cursor = self.windows.get(&def_id).map(|w| w.cursor);
         let inputs = frame::FrameInputs {
-            metrics: &self.host.metrics,
+            metrics: self.host.metrics_for(def_id),
             bus: self.shm.as_deref(),
             node_trees: &self.node_trees,
             active_button,
@@ -591,6 +591,28 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::Resized(size) => {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
                     ws.gpu.resize(size.width, size.height);
+                    ws.gpu.window.request_redraw();
+                }
+            }
+            // The window moved to a display of another density (or the desktop's
+            // scaling changed under it): re-resolve this window's size table at
+            // the new factor, and *answer* the writer with the same **logical**
+            // extent the window had — a 800x600 shell stays a 800x600 shell, in
+            // the pixels the new display measures it by. The surface resize
+            // arrives as the `Resized` that follows.
+            WindowEvent::ScaleFactorChanged {
+                scale_factor,
+                mut inner_size_writer,
+            } => {
+                let previous = self.host.ui_scale(def_id) as f64;
+                if self.host.set_ui_scale(def_id, scale_factor as f32)
+                    && let Some(ws) = self.windows.get_mut(&def_id)
+                {
+                    let logical = ws.gpu.window.inner_size().to_logical::<f64>(previous);
+                    let want = logical.to_physical(scale_factor);
+                    if let Err(e) = inner_size_writer.request_inner_size(want) {
+                        tracing::debug!("window {def_id}: keeping the size at the new scale: {e}");
+                    }
                     ws.gpu.window.request_redraw();
                 }
             }

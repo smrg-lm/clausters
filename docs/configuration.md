@@ -109,7 +109,7 @@ host_port = 57210        # port for the host's script-facing front (UDP + TCP)
 [gui.metrics]            # size-role overrides for the host's sizing (optional)
 # scale = 0.9            # the density: one multiplier regenerating the whole
 #                        # table (below 1 compact, above 1 comfortable)
-# pad = 6                # each entry is role = number, in device pixels (glyph
+# pad = 6                # each entry is role = number, in logical pixels (glyph
 # gap = 8                # scales for the text roles); the table is partial —
 # control_h = 26         # unlisted roles keep their generated default. Role
 #                        # names are the host's Metrics fields (pad, gap,
@@ -154,7 +154,9 @@ port, alongside UDP), so its `true` is the implicit state and `false` (or
   defaults are generated from one quantized scale over the font cell. Its
   reserved `scale` key is the whole density surface — one multiplier
   regenerating the table, since a host has one density the way it has one look,
-  so there is nothing to set per widget and nothing on the wire.
+  so there is nothing to set per widget and nothing on the wire. Its numbers are
+  **logical** pixels, like the wire's own: each window resolves the table to its
+  display's physical pixels once, when its scale changes.
   `clausters-gui --standalone` with no
   name opens `[standalone].gui`. A `--config <path>` flag reads one specific file
   instead of the user+project chain.

@@ -1,7 +1,7 @@
 //! The layout engine: place a typed widget tree into pixel rectangles.
 //!
 //! Pure geometry, no GPU: given the window's content area and a [`Widget`] tree,
-//! it assigns every widget a [`Rect`] in **device pixels** (top-left origin, the
+//! it assigns every widget a [`Rect`] in **physical pixels** (top-left origin, the
 //! same space `wgpu::RenderPass::set_viewport` wants), so the renderer just sets
 //! each widget's viewport and draws into its own clip space. A container splits
 //! its area among its children by its [`Layout`]: `col` stacks them vertically,
@@ -23,12 +23,23 @@
 //! container (missing size = the rest of the area); a child with none keeps
 //! the full-area overlay. A container's [`Flow`] tunes the inner `margin`, the
 //! `gap` between children, and the `grid` column count.
+//!
+//! **Two pixel spaces, and this pass knows which is which.** The window's
+//! chrome is **logical**: the wire's `w`/`h`/`x`/`y`/`margin`/`gap` are the
+//! numbers a script wrote, and they reach physical pixels through the placement
+//! [`Space`]'s scale — the window's `ui_scale`, carried by the resolved
+//! [`Metrics`] the pass is handed. Inside a `scroll` **workspace** that scale
+//! drops to 1: a navigable plane is physical, like the heavy views'
+//! `render_width_px`, because it has a zoom of its own and its pan is written
+//! in the pixels the pointer moves. So a strip declared `h: 28` is 28 logical
+//! pixels of chrome on any display, while a box placed at `x: 400` on a
+//! patcher's plane stays where the plane put it.
 
 use super::metrics::Metrics;
 use super::scroll;
 use super::widget::{Flow, Layout, Place, Widget, WidgetKind};
 
-/// A rectangle in device pixels, top-left origin.
+/// A rectangle in physical pixels, top-left origin.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
     pub x: f32,
@@ -52,7 +63,7 @@ impl Rect {
         }
     }
 
-    /// Whether `(px, py)` (device pixels) falls inside the rectangle.
+    /// Whether `(px, py)` (physical pixels) falls inside the rectangle.
     pub fn contains(&self, px: f64, py: f64) -> bool {
         let (px, py) = (px as f32, py as f32);
         px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h
@@ -71,6 +82,50 @@ impl Rect {
     }
 }
 
+/// The space a widget is placed in: how the wire's own lengths reach physical
+/// pixels, and the zoom they are seen through.
+///
+/// `unit` is the logical -> physical multiplier for the declared `w`/`h`/`x`/`y`/
+/// `margin`/`gap` — the window's `ui_scale` for the chrome, `1.0` once inside a
+/// `scroll` workspace, whose plane is physical. `zoom` is the product of the
+/// enclosing workspaces' zooms. [`Placed::scale`] is their product, so text
+/// follows both.
+#[derive(Debug, Clone, Copy)]
+struct Space {
+    unit: f32,
+    zoom: f32,
+}
+
+impl Space {
+    /// The window's own space: the wire is logical, nothing is zoomed.
+    fn window(metrics: &Metrics) -> Self {
+        Self {
+            unit: metrics.ui_scale,
+            zoom: 1.0,
+        }
+    }
+
+    /// The space inside a `scroll` workspace at `zoom`: the plane is physical
+    /// (the wire's lengths are its own content units), and the zoom composes
+    /// with any enclosing workspace's.
+    fn plane(self, zoom: f32) -> Self {
+        Self {
+            unit: 1.0,
+            zoom: self.zoom * zoom,
+        }
+    }
+
+    /// One declared length in physical pixels.
+    fn px(self, logical: f32) -> f32 {
+        super::metrics::snap_px(logical, self.unit)
+    }
+
+    /// The scale text draws at here.
+    fn scale(self) -> f32 {
+        self.unit * self.zoom
+    }
+}
+
 /// A widget and the rectangle it occupies. Emitted parent-before-child, so
 /// drawing in order paints containers under their contents. `clip` is the
 /// rectangle the widget must stay visually inside — `None` for the window
@@ -80,21 +135,26 @@ impl Rect {
 pub struct Placed<'a> {
     pub rect: Rect,
     pub clip: Option<Rect>,
-    /// The accumulated `scroll` zoom this widget is seen through (`1.0`
-    /// outside any workspace; nested workspaces compose). Text draws at
-    /// `text_size * scale`, so a zoomed box keeps its proportions; the rest
-    /// of the chrome (track/handle thickness, margins) deliberately keeps its
-    /// device-pixel metrics, the patcher posture.
+    /// The scale this widget's **text** is seen through: the window's
+    /// `ui_scale` times the accumulated `scroll` zoom (nested workspaces
+    /// compose; a workspace's plane is physical, so inside one it is the zoom
+    /// alone). Text draws at `text_size * scale`, so a logical `text_size` is
+    /// the same apparent size on any display and a zoomed box keeps its
+    /// proportions; the rest of a workspace's interior deliberately keeps its
+    /// physical-pixel metrics, the patcher posture.
     pub scale: f32,
     pub widget: &'a Widget,
 }
 
-/// Lays out `root` into `area`, returning every widget with its rectangle. The
-/// spacing a container does not name itself comes from the host's metrics
-/// (`margin`/`gap`), so one table sizes every window.
+/// Lays out `root` into `area` (physical pixels), returning every widget with
+/// its rectangle. The spacing a container does not name itself comes from the
+/// host's metrics (`margin`/`gap`), so one table sizes every window; what the
+/// wire *does* name is logical and reaches physical pixels through that table's
+/// `ui_scale` — pass the window's resolved table
+/// ([`Host::metrics_for`](super::Host::metrics_for)), not the logical one.
 pub fn layout<'a>(area: Rect, root: &'a Widget, metrics: &Metrics) -> Vec<Placed<'a>> {
     let mut out = Vec::new();
-    place(area, root, None, 1.0, metrics, &mut out);
+    place(area, root, None, Space::window(metrics), metrics, &mut out);
     out
 }
 
@@ -102,14 +162,14 @@ fn place<'a>(
     area: Rect,
     widget: &'a Widget,
     clip: Option<Rect>,
-    scale: f32,
+    space: Space,
     metrics: &Metrics,
     out: &mut Vec<Placed<'a>>,
 ) {
     out.push(Placed {
         rect: area,
         clip,
-        scale,
+        scale: space.scale(),
         widget,
     });
     let (layout, flow) = match widget.kind {
@@ -117,36 +177,47 @@ fn place<'a>(
             (layout, flow)
         }
         WidgetKind::Scroll { .. } => {
-            return place_scrolled(area, widget, clip, scale, metrics, out);
+            return place_scrolled(area, widget, clip, space, metrics, out);
         }
         _ => return, // leaves have no children to place
     };
-    let inner = area.inset(flow.margin.unwrap_or(metrics.margin).max(0.0));
+    let inner = area.inset(margin(flow, space, metrics));
     for (child, rect) in widget.children.iter().zip(child_rects(
         inner,
         widget.children.as_slice(),
         layout,
         flow,
+        space,
         metrics,
     )) {
-        place(rect, child, clip, scale, metrics, out);
+        place(rect, child, clip, space, metrics, out);
     }
+}
+
+/// A container's inner margin in physical pixels: its own declared (logical)
+/// `margin` when it names one, else the resolved role.
+fn margin(flow: Flow, space: Space, metrics: &Metrics) -> f32 {
+    flow.margin.map_or(metrics.margin, |m| space.px(m)).max(0.0)
 }
 
 /// Places a `scroll` container's children: they lay out into the **virtual
 /// content area** (content units, origin at the content's top-left) by the
 /// container's ordinary layout, then each rectangle is transformed through the
-/// view — offset by the pan, scaled by the zoom — into device pixels, and the
+/// view — offset by the pan, scaled by the zoom — into the window's pixels, and the
 /// whole subtree is clipped to the container's area. The transform applies to
 /// the direct children's rectangles; their own subtrees lay out normally
 /// inside the transformed rects (so a zoom scales the placed boxes), and the
 /// subtree's [`Placed::scale`] picks up the zoom so its **text** scales with
-/// the boxes — the rest of the chrome keeps its device-pixel metrics.
+/// the boxes — the rest of the plane keeps its physical-pixel metrics.
+///
+/// The plane itself is **physical** ([`Space::plane`]): its content extent, its
+/// pan and its children's declared positions are the units the gesture machine
+/// pans in, not the window's logical ones.
 fn place_scrolled<'a>(
     area: Rect,
     widget: &'a Widget,
     clip: Option<Rect>,
-    scale: f32,
+    space: Space,
     metrics: &Metrics,
     out: &mut Vec<Placed<'a>>,
 ) {
@@ -158,14 +229,15 @@ fn place_scrolled<'a>(
     let slack = view.axis.slack();
     let vx = scroll::clamp_pan(view.view_x, area.w, zoom, content_w, slack);
     let vy = scroll::clamp_pan(view.view_y, area.h, zoom, content_h, slack);
-    let inner = Rect::new(0.0, 0.0, content_w, content_h)
-        .inset(flow.margin.unwrap_or(metrics.margin).max(0.0));
+    let space = space.plane(zoom as f32);
+    let inner = Rect::new(0.0, 0.0, content_w, content_h).inset(margin(flow, space, metrics));
     let clip = Some(clip.map_or(area, |c| c.intersect(area)));
     for (child, r) in widget.children.iter().zip(child_rects(
         inner,
         widget.children.as_slice(),
         layout,
         flow,
+        space,
         metrics,
     )) {
         let rect = Rect::new(
@@ -174,7 +246,7 @@ fn place_scrolled<'a>(
             (r.w as f64 * zoom) as f32,
             (r.h as f64 * zoom) as f32,
         );
-        place(rect, child, clip, scale * zoom as f32, metrics, out);
+        place(rect, child, clip, space, metrics, out);
     }
 }
 
@@ -240,16 +312,20 @@ fn child_rects(
     children: &[Widget],
     layout: Layout,
     flow: Flow,
+    space: Space,
     metrics: &Metrics,
 ) -> Vec<Rect> {
     if children.is_empty() {
         return Vec::new();
     }
-    let gap = flow.gap.unwrap_or(metrics.gap).max(0.0);
+    let gap = flow.gap.map_or(metrics.gap, |g| space.px(g)).max(0.0);
     match layout {
-        Layout::Free => children.iter().map(|c| free_rect(inner, c.place)).collect(),
-        Layout::Row => strip(inner, children, gap, true, metrics),
-        Layout::Col => strip(inner, children, gap, false, metrics),
+        Layout::Free => children
+            .iter()
+            .map(|c| free_rect(inner, c.place, space))
+            .collect(),
+        Layout::Row => strip(inner, children, gap, true, space, metrics),
+        Layout::Col => strip(inner, children, gap, false, space, metrics),
         Layout::Grid => grid(inner, children.len(), gap, flow.cols),
     }
 }
@@ -257,16 +333,16 @@ fn child_rects(
 /// A `free` child's rectangle: absolute `x`/`y`/`w`/`h` inside `inner` when
 /// any is given (missing position = the container's origin, missing size = the
 /// rest of the area), the full-area overlay when none is.
-fn free_rect(inner: Rect, p: Place) -> Rect {
+fn free_rect(inner: Rect, p: Place, space: Space) -> Rect {
     if p.x.is_none() && p.y.is_none() && p.w.is_none() && p.h.is_none() {
         return inner;
     }
-    let (x, y) = (p.x.unwrap_or(0.0), p.y.unwrap_or(0.0));
+    let (x, y) = (space.px(p.x.unwrap_or(0.0)), space.px(p.y.unwrap_or(0.0)));
     Rect::new(
         inner.x + x,
         inner.y + y,
-        p.w.unwrap_or(inner.w - x).max(0.0),
-        p.h.unwrap_or(inner.h - y).max(0.0),
+        p.w.map_or(inner.w - x, |w| space.px(w)).max(0.0),
+        p.h.map_or(inner.h - y, |h| space.px(h)).max(0.0),
     )
 }
 
@@ -280,6 +356,7 @@ fn strip(
     children: &[Widget],
     gap: f32,
     horizontal: bool,
+    space: Space,
     metrics: &Metrics,
 ) -> Vec<Rect> {
     let gaps = gap * (children.len() as f32 - 1.0);
@@ -287,7 +364,7 @@ fn strip(
     let fixed_of = |c: &Widget| {
         let p = c.place;
         let explicit = if horizontal { p.w } else { p.h };
-        explicit.or_else(|| {
+        explicit.map(|s| space.px(s)).or_else(|| {
             // An explicit weight overrides the natural size — "stretch this
             // button" stays expressible.
             p.weight.is_none().then(|| {
@@ -520,6 +597,68 @@ mod tests {
             comfortable[1].rect.h > compact[1].rect.h,
             "one table sizes the strip"
         );
+    }
+
+    /// The wire is logical: the same tree on a 2x window is the same shell at
+    /// twice the size — the declared strips, the declared gap and the natural
+    /// row all double, and the work surface still takes the rest.
+    #[test]
+    fn a_scaled_window_doubles_the_declared_chrome() {
+        let json = r#"{"type":"window","layout":"col","margin":0,"gap":10,"children":[
+            {"id":11,"type":"panel","h":28},
+            {"id":12,"type":"button","label":"natural"},
+            {"id":13,"type":"panel"}]}"#;
+        let m = Metrics::default();
+        let (one, two) = (tree(json), tree(json));
+        let plain = layout(area(), &one, &m);
+        let hidpi = layout(Rect::new(0.0, 0.0, 1200.0, 800.0), &two, &m.resolved(2.0));
+        assert_eq!(plain[1].rect.h, 28.0);
+        assert_eq!(hidpi[1].rect.h, 56.0, "a declared strip is logical");
+        assert_eq!(
+            hidpi[2].rect.h,
+            plain[2].rect.h * 2.0,
+            "the natural row follows the resolved table"
+        );
+        assert_eq!(
+            hidpi[2].rect.y,
+            plain[2].rect.y * 2.0,
+            "the gap doubles too"
+        );
+        assert_eq!(
+            hidpi[3].rect.y + hidpi[3].rect.h,
+            800.0,
+            "the surface still fills the window"
+        );
+        // Text is logical as well: the placement scale carries the window's.
+        assert_eq!(plain[2].scale, 1.0);
+        assert_eq!(hidpi[2].scale, 2.0);
+    }
+
+    #[test]
+    fn a_scaled_free_placement_scales_position_and_size() {
+        let json = r#"{"type":"window","layout":"free","margin":4,"children":[
+            {"id":1,"type":"label","text":"a","x":50,"y":30,"w":120,"h":40}]}"#;
+        let w = tree(json);
+        let placed = layout(area(), &w, &Metrics::default().resolved(2.0));
+        let r = placed[1].rect;
+        assert_eq!((r.x, r.y), (8.0 + 100.0, 8.0 + 60.0), "margin and position");
+        assert_eq!((r.w, r.h), (240.0, 80.0));
+    }
+
+    /// A `scroll` workspace's plane is **physical**: it has its own zoom and
+    /// its pan is written in the pixels the pointer moves, so the window's
+    /// scale stops at its edge — the same rule the heavy views follow.
+    #[test]
+    fn a_workspace_plane_keeps_its_own_pixels() {
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":9,"type":"scroll","margin":0,"content_w":2000,"content_h":2000,
+             "children":[{"id":7,"type":"label","text":"a","x":100,"y":50,"w":80,"h":40}]}]}"#;
+        let w = tree(json);
+        let placed = layout(area(), &w, &Metrics::default().resolved(2.0));
+        let child = placed.iter().find(|p| p.widget.id == Some(7)).unwrap();
+        assert_eq!((child.rect.x, child.rect.y), (100.0, 50.0));
+        assert_eq!((child.rect.w, child.rect.h), (80.0, 40.0));
+        assert_eq!(child.scale, 1.0, "the plane's text is its own zoom alone");
     }
 
     #[test]
