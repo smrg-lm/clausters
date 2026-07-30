@@ -274,8 +274,8 @@ Decided with the user: a single global transport, and a conductor's
 play/stop/locate drives every client's playhead in lockstep. The server
 broadcasts transport *control* (`/transport_play|stop|locate`, pushed to
 `/notify` clients) and **never schedules audio** — each client rolls its own
-playhead on the shared grid. The `/transport.reply` grew `playing` and
-`position` fields, kept backward-compatible (older clients read the first three).
+playhead on the shared grid. The `/transport.reply` carries `playing` and
+`position` beside the three tempo fields it started with.
 
 ## One seeded random context per script
 
