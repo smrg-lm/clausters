@@ -22,11 +22,10 @@ rather than the immediate ``pause``/``resume``, which would collapse onto time
 ``.resume(node)`` directly instead.
 """
 
-import struct
 import sys
-import wave
 
 from clausters import Session
+from clausters.render import read_soundfile
 from clausters.base import Routine
 from clausters.defs import SynthDef, control, out, sine
 
@@ -58,24 +57,20 @@ def main():
         session.server.send_bundle(("/n_free", node.id))
 
     Routine(sequence).play(session.clock)
-    samples, frames = session.render(sample_rate=SR, channels=2)
+    stats = session.render(sample_rate=SR, channels=2, path=out_path)
 
-    # The middle beat is silent, the outer beats are not -- a quick sanity check.
-    third = frames // 3
+    # The middle beat is silent, the outer beats are not -- a quick sanity
+    # check, and it needs the samples per beat rather than the whole-render
+    # RMS the stats carry. The server wrote the file; read it back for them.
+    audio = read_soundfile(out_path)
+    third = audio.frames // 3
     rms = lambda a: (sum(s * s for s in a) / max(1, len(a))) ** 0.5
-    mono = samples[0::2]
-    print(f"rendered {frames} frames ({frames / SR:.2f} s)")
+    mono = audio.channel(0)
+    print(f"rendered {stats.frames} frames ({stats.duration:.2f} s)")
     print(f"beat RMS: {rms(mono[:third]):.3f} (on) "
           f"{rms(mono[third:2 * third]):.3f} (paused) "
           f"{rms(mono[2 * third:]):.3f} (resumed)")
 
-    with wave.open(out_path, "wb") as w:
-        w.setnchannels(2)
-        w.setsampwidth(2)
-        w.setframerate(int(SR))
-        w.writeframes(b"".join(
-            struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples
-        ))
     print(f"wrote {out_path} - listen with: pw-play {out_path}")
 
 

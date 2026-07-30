@@ -26,9 +26,7 @@ it cell by cell (Shift+Enter) or as a plain script.
 """
 
 # %%
-import struct
 import sys
-import wave
 
 from clausters import Session
 from clausters.base.stream import Routine
@@ -71,15 +69,9 @@ def score():
 
 
 session.clock.play(Routine(score))
-samples, frames = session.render(sample_rate=SR, channels=2)
 
-# %% Write the WAV.
+# %% Render it -- the server writes the WAV, we keep the stats.
 out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "automation_lane.wav")
-with wave.open(out_path, "wb") as w:
-    w.setnchannels(2)
-    w.setsampwidth(2)
-    w.setframerate(SR)
-    w.writeframes(b"".join(
-        struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples))
-peak = max((abs(s) for s in samples), default=0.0)
-print(f"rendered {frames} frames ({frames / SR:.2f} s) | peak {peak:.3f} -> {out_path}")
+stats = session.render(sample_rate=SR, channels=2, path=out_path)
+peak = max(stats.peak, default=0.0)
+print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f} -> {out_path}")

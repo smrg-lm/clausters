@@ -35,13 +35,12 @@ Read it top to bottom; each section is one idea.
 """
 
 import os
-import struct
 import sys
-import wave
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import OscNrtInterface, TempoClock
+from clausters.render import read_soundfile
 from clausters.defs import Server, SynthDef
 from clausters.defs.ugens import (
     DoneAction, Env, dbrown, decay2, drand, dseq, dseries, dshuf, dstutter,
@@ -214,7 +213,7 @@ def slots(samples, section):
     return values
 
 
-def run_bench():
+def run_bench(path=None):
     server = Server(interface=OscNrtInterface())
     rows = bench_rows()
     for sdef, _ in rows:
@@ -222,10 +221,14 @@ def run_bench():
     clock = TempoClock(tempo=1.0)
     Pbind(instrument=Pseq([s.name for s, _ in rows]), dur=BENCH).play(clock, server)
     clock.render()
-    samples, frames = server.render(sample_rate=SR, channels=1)
+    stats = server.render(sample_rate=SR, channels=1, path=path)
+    # The claims below read individual slots, not a summary, so the samples
+    # come back from the file the server just wrote.
+    samples = read_soundfile(path).samples if path else \
+        server.render(sample_rate=SR, channels=1).samples
 
     print(f"\nthe bench: {len(rows)} streams, one pulled value every "
-          f"{SLOT * 1000:.0f} ms ({frames / SR:.1f} s)\n")
+          f"{SLOT * 1000:.0f} ms ({stats.duration:.1f} s)\n")
     failures = []
     for i, (sdef, claim) in enumerate(rows):
         values = slots(samples, i)
@@ -289,7 +292,7 @@ def drift_check():
     clock = TempoClock(tempo=1.0)
     Pbind(instrument=Pseq(["drift"]), dur=1.2).play(clock, server)
     clock.render()
-    samples, _ = server.render(sample_rate=SR, channels=1)
+    samples = server.render(sample_rate=SR, channels=1).samples
 
     changes = [i for i, (a, b) in enumerate(zip(samples, samples[1:]))
                if a != b and a != 0.0 and b != 0.0]
@@ -315,11 +318,14 @@ def render_piece(path=None):
     clock = TempoClock(tempo=1.0)
     Pbind(instrument=Pseq([s.name for s in parts]), dur=SECTION).play(clock, server)
     clock.render()
-    samples, frames = server.render(sample_rate=SR, channels=2)
+    stats = server.render(sample_rate=SR, channels=2, path=path)
+    # Per-section RMS below needs the samples, not the whole-render summary.
+    samples = read_soundfile(path).samples if path else \
+        server.render(sample_rate=SR, channels=2).samples
 
-    peak = max(abs(s) for s in samples)
-    print(f"the piece: {len(parts)} sections, {frames} frames "
-          f"({frames / SR:.2f} s) | peak {peak:.3f}")
+    peak = max(stats.peak)
+    print(f"the piece: {len(parts)} sections, {stats.frames} frames "
+          f"({stats.duration:.2f} s) | peak {peak:.3f}")
     if peak == 0.0:
         sys.exit("the render is silent - something is wrong")
     if peak > 1.5:
@@ -331,17 +337,6 @@ def render_piece(path=None):
         hi = (int((k + 1) * SECTION * SR) - int(0.4 * SR)) * 2
         print(f"  {sdef.name:12} rms {rms(samples[lo:hi]):.3f}   {NOTES[sdef.name]}")
 
-    if path:
-        with wave.open(path, "wb") as w:
-            w.setnchannels(2)
-            w.setsampwidth(2)
-            w.setframerate(int(SR))
-            w.writeframes(
-                b"".join(
-                    struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767))
-                    for s in samples
-                )
-            )
         print(f"\nwrote {path} - listen with: pw-play {path}")
 
 

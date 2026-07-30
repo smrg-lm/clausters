@@ -19,9 +19,7 @@ then:
 """
 
 import os
-import struct
 import sys
-import wave
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
@@ -55,23 +53,16 @@ def main():
     clock = TempoClock(tempo=1.0)
     clock.play(Routine(lambda: play(server)))
     clock.render()
-    samples, frames = server.render(sample_rate=SR, channels=2)
+    path = sys.argv[1] if len(sys.argv) > 1 else None
+    stats = server.render(sample_rate=SR, channels=2, path=path)
 
-    peak = max(abs(s) for s in samples)
-    print(f"rendered {frames} frames ({frames / SR:.3f} s) | peak {peak:.3f}")
+    peak = max(stats.peak)
+    print(f"rendered {stats.frames} frames ({stats.duration:.3f} s) | peak {peak:.3f}")
     if peak < 0.05:
         sys.exit("unexpectedly quiet: the group /n_set did not reach the voices")
     print("one /n_set on the group drove all three voices.")
 
-    if len(sys.argv) > 1:
-        path = sys.argv[1]
-        with wave.open(path, "wb") as w:
-            w.setnchannels(2)
-            w.setsampwidth(2)
-            w.setframerate(int(SR))
-            w.writeframes(b"".join(
-                struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples
-            ))
+    if path:
         print(f"wrote {path} — listen with: pw-play {path}")
 
 

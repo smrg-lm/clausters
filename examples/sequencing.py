@@ -25,9 +25,7 @@ Run live (needs a server in another terminal):
 """
 
 import os
-import struct
 import sys
-import wave
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
@@ -57,20 +55,11 @@ def render_offline(path: str | None):
     """Play the phrase into an NRT session and render it to samples."""
     session = Session.nrt(tempo=2.0)        # 2 beats/sec
     session.play(melody())                  # schedule the pattern on its clock
-    samples, frames = session.render(sample_rate=SR, channels=2)
+    stats = session.render(sample_rate=SR, channels=2, path=path)
 
-    peak = max(abs(s) for s in samples)
-    print(f"rendered {frames} frames ({frames / SR:.2f} s) | peak {peak:.3f}")
-
-    if path:
-        with wave.open(path, "wb") as w:
-            w.setnchannels(2)
-            w.setsampwidth(2)
-            w.setframerate(int(SR))
-            w.writeframes(b"".join(
-                struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples
-            ))
-        print(f"wrote {path} - listen with: pw-play {path}")
+    peak = max(stats.peak)
+    print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
+    print(f"wrote {path} - listen with: pw-play {path}")
 
 
 def play_live():

@@ -20,7 +20,6 @@ a dependency of the binding.
 import os
 import struct
 import sys
-import wave
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 import json_client as osc  # score helpers (stdlib OSC)
@@ -42,21 +41,15 @@ def arpeggio_score() -> bytes:
 
 
 def main():
-    samples, frames = clausters.render(arpeggio_score(), sample_rate=48000.0,
-                                       channels=2)
-    peak = max(abs(s) for s in samples)
-    rms = (sum(s * s for s in samples) / len(samples)) ** 0.5
-    print(f"rendered {frames} frames ({frames / 48000:.3f} s), "
-          f"{len(samples)} samples | peak {peak:.3f} | rms {rms:.3f}")
+    path = sys.argv[1] if len(sys.argv) > 1 else None
+    stats = clausters.render(arpeggio_score(), sample_rate=48000.0,
+                             channels=2, path=path)
+    peak = max(stats.peak)
+    rms = max(stats.rms, default=0.0)
+    print(f"rendered {stats.frames} frames ({stats.duration:.3f} s), "
+          f"{stats.frames * stats.channels} samples | peak {peak:.3f} | rms {rms:.3f}")
 
-    if len(sys.argv) > 1:
-        path = sys.argv[1]
-        with wave.open(path, "wb") as w:
-            w.setnchannels(2)
-            w.setsampwidth(2)
-            w.setframerate(48000)
-            ints = array_to_int16(samples)
-            w.writeframes(ints)
+    if path:
         print(f"wrote {path} — listen with: pw-play {path}")
 
 

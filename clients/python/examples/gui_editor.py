@@ -51,13 +51,12 @@ Needs a display and a GPU adapter.
 
 # %%
 import os
-import struct
 import sys
 import tempfile
 import time
-import wave
 
 from clausters import Session
+from clausters.render import read_soundfile
 from clausters.defs import SynthDef, out, play_buf
 from clausters.gui import peaks_cache_file, samples_to_file, spectrogram, waveform, window
 from clausters.seq import Pbind, Pseq, Pwhite
@@ -76,22 +75,29 @@ def phrase() -> Pbind:
                  amp=Pwhite(0.1, 0.25))
 
 
-def render_stereo() -> list:
-    """Renders the phrase offline; returns the interleaved stereo f32 frames."""
+def render_stereo(path: str) -> list:
+    """Bounces the phrase to `path` and reads it back.
+
+    The server writes the WAV (`render(path=...)` hands the score to the
+    ``--nrt`` renderer), so the same file feeds two consumers: `/b_allocRead`
+    loads it into a buffer for the playhead to sound, and `read_soundfile`
+    brings the samples here for the waveform view -- interleaved f32, the
+    layout everything downstream already speaks.
+    """
     nrt = Session.nrt(tempo=2.0)
     nrt.play(phrase())
-    samples, frames = nrt.render(sample_rate=SR, channels=2)
-    print(f"rendered {frames} frames ({frames / SR:.2f} s) offline")
-    return list(samples)
+    stats = nrt.render(sample_rate=SR, channels=2, path=path)
+    print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) -> {path}")
+    return list(read_soundfile(path).samples)
 
-
-inter = render_stereo()
-frames = len(inter) // 2
-seconds = frames / SR
 
 _tmp = tempfile.mkdtemp(prefix="clausters_editor_")
 raw_path = os.path.join(_tmp, "phrase.f32")
 wav_path = os.path.join(_tmp, "phrase.wav")
+
+inter = render_stereo(wav_path)
+frames = len(inter) // 2
+seconds = frames / SR
 samples_to_file(inter, raw_path)
 # Not strictly needed (the host builds a sibling cache when it maps the raw
 # file), but shows the multichannel cache built client-side through the shared
@@ -115,18 +121,9 @@ gui = session.gui()
 print(f"audio server on segment {server.shm}")
 
 
-def write_wav(frames_interleaved: list, path: str):
-    """The interleaved render as a 16-bit stereo WAV, for /b_allocRead."""
-    with wave.open(path, "w") as w:
-        w.setnchannels(2)
-        w.setsampwidth(2)
-        w.setframerate(int(SR))
-        w.writeframes(b"".join(
-            struct.pack("<h", int(32767 * max(-1.0, min(1.0, s)))) for s in frames_interleaved))
-
-
-# The playhead's sound source: the render in a server buffer, looped by a synth.
-write_wav(inter, wav_path)
+# The playhead's sound source: the very file the render wrote, in a server
+# buffer, looped by a synth. Nothing converts it -- /b_allocRead reads float
+# WAV through the same decoder read_soundfile used above.
 bufnum = server.buffers.alloc()
 server.send_msg("/b_allocRead", bufnum, wav_path)
 server.add_synthdef(SynthDef(

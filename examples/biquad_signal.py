@@ -44,9 +44,7 @@ Run live (needs a server built with faust in another terminal):
 """
 
 import os
-import struct
 import sys
-import wave
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
@@ -157,12 +155,11 @@ def render_offline(path):
     server.add_faustdef(fdef)             # NRT: scores /d_faust at time 0
     clock.play(Routine(lambda: voice(server)))
     clock.render()                       # drain the queue in beat order, no sleep
-    samples, frames = server.render(sample_rate=int(RENDER_SR), channels=2)
+    stats = server.render(sample_rate=int(RENDER_SR), channels=2, path=path)
 
-    peak = max((abs(s) for s in samples), default=0.0)
-    print(f"NRT: {frames} frames, peak {peak:.3f}")
+    peak = max(stats.peak, default=0.0)
+    print(f"NRT: {stats.frames} frames, peak {peak:.3f}")
     if path:
-        _write_wav(path, samples, channels=2)
         print(f"wrote {path}")
 
 
@@ -182,16 +179,6 @@ def run_live():
     server.sync()
     print("LIVE OK")
     server.close()
-
-
-def _write_wav(path, samples, channels):
-    with wave.open(path, "wb") as w:
-        w.setnchannels(channels)
-        w.setsampwidth(2)
-        w.setframerate(int(RENDER_SR))
-        clamp = lambda s: max(-1.0, min(1.0, s))
-        w.writeframes(b"".join(
-            struct.pack("<h", int(clamp(s) * 32767)) for s in samples))
 
 
 def main(argv):

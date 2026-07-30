@@ -67,8 +67,10 @@ def main():
     print(json.dumps(sdef.spec(), indent=2))
     print("controls:", sdef.control_names())
 
-    builtin, b_frames = render_pbind("default", None)
-    custom, c_frames = render_pbind("py_default", sdef)
+    a = render_pbind("default", None)
+    b = render_pbind("py_default", sdef)
+    builtin, b_frames = a.samples, a.frames
+    custom, c_frames = b.samples, b.frames
 
     identical = b_frames == c_frames and list(custom) == list(builtin)
     peak = max(abs(s) for s in custom)

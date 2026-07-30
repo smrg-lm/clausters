@@ -16,9 +16,7 @@ Because the synthesis (native ``Sine``) and the offline render both run inside
 the bundled libraries, the result is bit-identical to the live server's.
 """
 
-import struct
 import sys
-import wave
 
 from clausters import Session
 from clausters.seq import Pbind, Pseq, Pwhite
@@ -46,18 +44,11 @@ def main():
     session = Session.nrt(tempo=2.0)
     session.seed(1)
     session.play(phrase())
-    samples, frames = session.render(sample_rate=SR, channels=2)
+    stats = session.render(sample_rate=SR, channels=2, path=out)
 
-    peak = max(abs(s) for s in samples)
-    print(f"rendered {frames} frames ({frames / SR:.2f} s) | peak {peak:.3f}")
+    peak = max(stats.peak)
+    print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
 
-    with wave.open(out, "wb") as w:
-        w.setnchannels(2)
-        w.setsampwidth(2)
-        w.setframerate(int(SR))
-        w.writeframes(b"".join(
-            struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples
-        ))
     print(f"wrote {out} - listen with: pw-play {out}")
 
 

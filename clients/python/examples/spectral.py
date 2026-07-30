@@ -24,9 +24,7 @@ core (``clausters._native.window``), so a client that pre-windows audio matches
 the server's FFT bit for bit.
 """
 
-import struct
 import sys
-import wave
 
 from clausters import Session
 from clausters.base import Routine
@@ -72,17 +70,10 @@ def main():
         session.server.send_bundle(("/n_free", lp.id))
 
     Routine(stop).play(session.clock)
-    samples, frames = session.render(sample_rate=SR, channels=2)
-    peak = max((abs(s) for s in samples), default=0.0)
-    print(f"rendered {frames} frames ({frames / SR:.2f} s) | peak {peak:.3f}")
+    stats = session.render(sample_rate=SR, channels=2, path=out_path)
+    peak = max(stats.peak, default=0.0)
+    print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
 
-    with wave.open(out_path, "wb") as w:
-        w.setnchannels(2)
-        w.setsampwidth(2)
-        w.setframerate(int(SR))
-        w.writeframes(b"".join(
-            struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples
-        ))
     print(f"wrote {out_path} - left = raw noise, right = spectral low-pass")
     print(f"listen with: pw-play {out_path}")
 

@@ -15,9 +15,7 @@ Read it top to bottom; each section is one idea.
 """
 
 import os
-import struct
 import sys
-import wave
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
@@ -105,27 +103,16 @@ def render(path=None):
     Pbind(instrument="sweep", dur=Pseq([3.0]), amp=0.12).play(clock, server)
     Pbind(instrument="fade", dur=Pseq([1.0]), delta=3.0, amp=0.15).play(clock, server)
     clock.render()
-    samples, frames = server.render(sample_rate=SR, channels=2)
+    stats = server.render(sample_rate=SR, channels=2, path=path)
 
-    peak = max(abs(s) for s in samples)
-    rms = (sum(s * s for s in samples) / len(samples)) ** 0.5
-    print(f"rendered {frames} frames ({frames / SR:.2f} s) | peak {peak:.3f} rms {rms:.4f}")
+    peak = max(stats.peak)
+    rms = max(stats.rms, default=0.0)
+    print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f} rms {rms:.4f}")
     if peak == 0.0:
         sys.exit("the render is silent — something is wrong")
     if peak > 1.5:
         sys.exit(f"the render clips hard (peak {peak:.2f})")
 
-    if path:
-        with wave.open(path, "wb") as w:
-            w.setnchannels(2)
-            w.setsampwidth(2)
-            w.setframerate(int(SR))
-            w.writeframes(
-                b"".join(
-                    struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767))
-                    for s in samples
-                )
-            )
         print(f"wrote {path} — listen with: pw-play {path}")
 
 

@@ -27,9 +27,7 @@ cross-synthesized noise. The combined chain is one def — no buffers, no buses
 between the stages; the spectral frames are synth-private scratch.
 """
 
-import struct
 import sys
-import wave
 
 from clausters import Session
 from clausters.base import Routine
@@ -88,18 +86,11 @@ def main():
         session.server.send_bundle(("/n_free", voice.id))
 
     Routine(sequence).play(session.clock)
-    samples, frames = session.render(sample_rate=SR, channels=2)
+    stats = session.render(sample_rate=SR, channels=2, path=out_path)
 
-    peak = max((abs(s) for s in samples), default=0.0)
-    print(f"rendered {frames} frames ({frames / SR:.2f} s) | peak {peak:.3f}")
+    peak = max(stats.peak, default=0.0)
+    print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
 
-    with wave.open(out_path, "wb") as w:
-        w.setnchannels(2)
-        w.setsampwidth(2)
-        w.setframerate(int(SR))
-        w.writeframes(b"".join(
-            struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples
-        ))
     print(f"wrote {out_path} - listen with: pw-play {out_path}")
 
 

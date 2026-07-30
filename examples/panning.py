@@ -33,13 +33,12 @@ Read it top to bottom; each section is one idea.
 """
 
 import os
-import struct
 import sys
-import wave
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import OscNrtInterface, TempoClock
+from clausters.render import read_soundfile
 from clausters.defs import Server, SynthDef, control
 from clausters.defs.ugens import (
     DoneAction, Env, balance2, env_gen, lf_noise1, lf_tri, lin_pan2, mid_side,
@@ -210,10 +209,14 @@ def render(path=None):
     clock = TempoClock(tempo=1.0)
     Pbind(instrument=Pseq(names), dur=SECTION, amp=0.5).play(clock, server)
     clock.render()
-    samples, frames = server.render(sample_rate=SR, channels=2)
+    stats = server.render(sample_rate=SR, channels=2, path=path)
+    # The claims below measure individual sections, not a summary, so the
+    # samples come back from the file the server just wrote.
+    samples = read_soundfile(path).samples if path else \
+        server.render(sample_rate=SR, channels=2).samples
 
-    peak = max(abs(s) for s in samples)
-    print(f"rendered {frames} frames ({frames / SR:.2f} s) | peak {peak:.3f}")
+    peak = max(stats.peak)
+    print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
     if peak == 0.0:
         sys.exit("the render is silent — something is wrong")
     if peak > 1.5:
@@ -238,17 +241,6 @@ def render(path=None):
         print(f"  {name:12} {rms(left) / scale:6.3f}   {rms(right) / scale:6.3f}   "
               f"{rms(mono) / scale:6.3f}   {CLAIMS.get(name, '')}")
 
-    if path:
-        with wave.open(path, "wb") as w:
-            w.setnchannels(2)
-            w.setsampwidth(2)
-            w.setframerate(int(SR))
-            w.writeframes(
-                b"".join(
-                    struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767))
-                    for s in samples
-                )
-            )
         print(f"\nwrote {path} — listen with: pw-play {path}")
 
 

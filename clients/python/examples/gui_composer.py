@@ -33,9 +33,7 @@ Needs a display and a GPU adapter; the install bundles the GUI binary (see
 """
 
 # %%
-import struct
 import tempfile
-import wave
 from pathlib import Path
 
 from clausters import Session
@@ -102,14 +100,8 @@ def bounce_take(path: str, beats: float = 2.0) -> str:
     ``/n_free`` that ends it.)"""
     offline = Session.nrt(tempo=TEMPO)
     offline.play(Pbind(midinote=Pseq([36], 1), dur=beats, legato=1.0, amp=0.3))
-    samples, frames = offline.render(sample_rate=SR, channels=1)
-    with wave.open(path, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(int(SR))
-        w.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767))
-                               for s in samples))
-    print(f"bounced {frames} frames of take -> {path}")
+    stats = offline.render(sample_rate=SR, channels=1, path=path)
+    print(f"bounced {stats.frames} frames of take -> {path}")
     return path
 
 

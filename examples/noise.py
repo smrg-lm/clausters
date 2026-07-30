@@ -21,13 +21,12 @@ Read it top to bottom; each section is one idea.
 """
 
 import os
-import struct
 import sys
-import wave
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import OscNrtInterface, TempoClock
+from clausters.render import read_soundfile
 from clausters.defs import Server, SynthDef, control
 from clausters.defs.ugens import (
     DoneAction, Env, brown_noise, clip_noise, crackle, decay2, dust, env_gen,
@@ -124,14 +123,19 @@ def render(path=None):
         amp=0.45,
     ).play(clock, server)
     clock.render()
-    samples, frames = server.render(sample_rate=SR, channels=2)
+    stats = server.render(sample_rate=SR, channels=2, path=path)
 
-    peak = max(abs(s) for s in samples)
-    print(f"rendered {frames} frames ({frames / SR:.2f} s) | peak {peak:.3f}")
+    peak = max(stats.peak)
+    print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
     if peak == 0.0:
         sys.exit("the render is silent — something is wrong")
     if peak > 1.5:
         sys.exit(f"the render clips hard (peak {peak:.2f})")
+
+    # The claims below measure individual sections, not a summary, so the
+    # samples come back from the file the server just wrote.
+    samples = read_soundfile(path).samples if path else \
+        server.render(sample_rate=SR, channels=2).samples
 
     # The claim, measured on what was just rendered.
     for k, name in enumerate(("white", "pink", "brown")):
@@ -141,17 +145,6 @@ def render(path=None):
         rms = (sum(s * s for s in cut) / len(cut)) ** 0.5
         print(f"  {name:6} rms {rms:.3f}")
 
-    if path:
-        with wave.open(path, "wb") as w:
-            w.setnchannels(2)
-            w.setsampwidth(2)
-            w.setframerate(int(SR))
-            w.writeframes(
-                b"".join(
-                    struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767))
-                    for s in samples
-                )
-            )
         print(f"wrote {path} — listen with: pw-play {path}")
 
 
