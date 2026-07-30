@@ -64,16 +64,31 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   sees ids.
 - **`children`** nests (containers only: `window`, `panel`, `scroll`, `track`).
 - **The place props** — every widget, whatever its type, may carry `w`, `h`,
-  `weight`, `x`, `y` (all numbers, device pixels, all live via `/gui_set`):
-  in a `row`/`col` a child with a fixed main-axis size (`w` in a row, `h` in a
-  col) takes exactly that and the rest share the leftover by `weight`
-  (default 1 — no props means the even split); in a `free` container `x`/`y`
+  `weight`, `x`, `y` (all numbers, device pixels, all live via `/gui_set`).
+  In a `row`/`col` the main axis resolves in **one order**: a fixed main-axis
+  size (`w` in a row, `h` in a col) is taken as given; else an explicit
+  `weight` takes that share of the leftover; else the widget's **natural
+  size** — how big that kind of widget wants to be, the host's own number —
+  is taken as wanted; else the child shares the leftover at weight 1. The
+  cross axis always fills. So a `col` of controls is a stack of control-high
+  rows (with the leftover empty under them, if nothing elastic is there to
+  take it), a `col` of views splits evenly as it always did, and `weight` is
+  what stretches a control past its natural size. Which widgets have one: the
+  **content** kinds do (`label` unless it wraps, `button`, `toggle`, `number`,
+  `menu`, a single-line `text`, a `slider`'s thickness across its track, a
+  `knob`'s height, a `timeruler`'s thickness), the **surface** kinds do not
+  (`panel`, `scroll`, `patch`, `track`, `plot`, `nodetree`, `canvas`, the
+  heavy views, a wrapped `label`, a multiline `text`). A natural size follows
+  the host's sizing table and the widget's own `text_size`/`label`, **never
+  its data** — a longer string or another thousand samples never move it, so
+  a `/gui_set` never relayouts the window. In a `free` container `x`/`y`
   (+ `w`/`h`) position the child absolutely, and a child with none of the four
   overlays the whole area. A container additionally takes `margin` (inset
   before its children, default 6), `gap` (between children, default 6) and
   `cols` (a fixed `grid` column count; default near-square). One pass, no
-  constraint solver: when a layout needs negotiation, the answer is explicit
-  sizes.
+  measurement and no constraint solver — a container never measures its
+  children, so chrome that must hug its content says so with `h`: when a
+  layout needs negotiation, the answer is explicit sizes.
 - **`bind`** as an inline prop registers a binding declaratively, so a saved
   GuiDef carries its own (no separate `/gui_bind` at boot).
 

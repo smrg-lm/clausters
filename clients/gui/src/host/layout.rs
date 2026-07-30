@@ -10,10 +10,15 @@
 //! solver** — a deliberate boundary: when a layout needs negotiation, the
 //! answer is explicit sizes.
 //!
-//! Along a `row`/`col` main axis a child with a fixed size ([`Place::w`] /
-//! [`Place::h`]) takes exactly that; the remaining children share the leftover
-//! by [`Place::weight`] (absent = 1), so a tree with no place props lays out
-//! exactly as it always did — an even split. The cross axis fills. In `free`,
+//! Along a `row`/`col` main axis the size resolves in **one order**: an
+//! explicit ([`Place::w`] / [`Place::h`]) size takes exactly that; else an
+//! explicit [`Place::weight`] takes that share of the leftover (the escape
+//! hatch that still stretches a button); else the widget's **natural size**
+//! ([`WidgetKind::natural_size`] — a pure function of the metrics, never of the
+//! widget's data) takes exactly what it wants; else the child shares the
+//! leftover at weight 1. So a `col` of controls is a stack of control-high rows
+//! with the leftover under them, and a `col` of surfaces still splits evenly.
+//! The cross axis fills. In `free`,
 //! a child with any of `x`/`y`/`w`/`h` positions absolutely inside the
 //! container (missing size = the rest of the area); a child with none keeps
 //! the full-area overlay. A container's [`Flow`] tunes the inner `margin`, the
@@ -243,8 +248,8 @@ fn child_rects(
     let gap = flow.gap.unwrap_or(metrics.gap).max(0.0);
     match layout {
         Layout::Free => children.iter().map(|c| free_rect(inner, c.place)).collect(),
-        Layout::Row => strip(inner, children, gap, true),
-        Layout::Col => strip(inner, children, gap, false),
+        Layout::Row => strip(inner, children, gap, true, metrics),
+        Layout::Col => strip(inner, children, gap, false, metrics),
         Layout::Grid => grid(inner, children.len(), gap, flow.cols),
     }
 }
@@ -265,21 +270,44 @@ fn free_rect(inner: Rect, p: Place) -> Rect {
     )
 }
 
-/// Cells along one axis (`horizontal` = a row, else a column): a child with a
-/// fixed main-axis size (`w` in a row, `h` in a column) takes exactly that;
-/// the rest share the leftover by `weight` (absent = 1). The cross axis fills.
-fn strip(inner: Rect, children: &[Widget], gap: f32, horizontal: bool) -> Vec<Rect> {
+/// Cells along one axis (`horizontal` = a row, else a column), resolved in the
+/// one order: an explicit main-axis size (`w` in a row, `h` in a column) is
+/// taken as given; an explicit `weight` takes that share of the leftover; a
+/// widget with a natural size on this axis takes exactly that; everything else
+/// shares the leftover at weight 1. The cross axis fills.
+fn strip(
+    inner: Rect,
+    children: &[Widget],
+    gap: f32,
+    horizontal: bool,
+    metrics: &Metrics,
+) -> Vec<Rect> {
     let gaps = gap * (children.len() as f32 - 1.0);
     let main = if horizontal { inner.w } else { inner.h };
-    let fixed_of = |p: Place| if horizontal { p.w } else { p.h };
-    let fixed: f32 = children.iter().filter_map(|c| fixed_of(c.place)).sum();
+    let fixed_of = |c: &Widget| {
+        let p = c.place;
+        let explicit = if horizontal { p.w } else { p.h };
+        explicit.or_else(|| {
+            // An explicit weight overrides the natural size — "stretch this
+            // button" stays expressible.
+            p.weight.is_none().then(|| {
+                let (nw, nh) = c.kind.natural_size(metrics);
+                if horizontal { nw } else { nh }
+            })?
+        })
+    };
+    let fixed: f32 = children
+        .iter()
+        .filter_map(fixed_of)
+        .map(|s| s.max(0.0))
+        .sum();
     let total_weight: f32 = children
         .iter()
-        .filter(|c| fixed_of(c.place).is_none())
+        .filter(|c| fixed_of(c).is_none())
         .map(|c| c.place.weight.unwrap_or(1.0).max(0.0))
         .sum();
     let leftover = (main - gaps - fixed).max(0.0);
-    let share = |c: &Widget| match fixed_of(c.place) {
+    let share = |c: &Widget| match fixed_of(c) {
         Some(px) => px.max(0.0),
         None if total_weight > 0.0 => {
             leftover * c.place.weight.unwrap_or(1.0).max(0.0) / total_weight
@@ -341,9 +369,10 @@ mod tests {
 
     #[test]
     fn col_splits_height_evenly() {
+        // Two elastic surfaces: nothing knows its own height, so they share.
         let w = tree(
             r#"{"type":"window","layout":"col","children":[
-            {"id":1,"type":"label","text":"a"},{"id":2,"type":"label","text":"b"}]}"#,
+            {"id":1,"type":"panel"},{"id":2,"type":"panel"}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
         // [window, child a, child b]
@@ -408,6 +437,89 @@ mod tests {
         assert!((b.w - 375.0).abs() < 1e-3, "weight 3 takes 3/4 of the rest");
         assert!((c.w - 125.0).abs() < 1e-3, "weight defaults to 1");
         assert_eq!(c.x + c.w, 600.0, "the row fills the area");
+    }
+
+    /// The one resolution order, branch by branch: explicit size, explicit
+    /// weight, natural size, then a share of the leftover.
+    #[test]
+    fn the_main_axis_resolves_in_one_order() {
+        let m = Metrics::default();
+        let w = tree(
+            r#"{"type":"window","layout":"col","margin":0,"gap":0,"children":[
+            {"id":1,"type":"button","label":"fixed","h":50},
+            {"id":2,"type":"button","label":"stretched","weight":2},
+            {"id":3,"type":"button","label":"natural"},
+            {"id":4,"type":"panel"}]}"#,
+        );
+        let placed = layout(area(), &w, &m);
+        let (fixed, weighted, natural, elastic) = (
+            placed[1].rect,
+            placed[2].rect,
+            placed[3].rect,
+            placed[4].rect,
+        );
+        assert_eq!(fixed.h, 50.0, "an explicit size is taken as given");
+        let control_h = WidgetKind::Button {
+            label: None,
+            text_size: crate::host::font::DEFAULT_SIZE,
+        }
+        .natural_size(&m)
+        .1
+        .unwrap();
+        assert_eq!(natural.h, control_h, "the natural size is taken as wanted");
+        // The leftover (400 - 50 - the natural row) splits 2:1 between the
+        // weighted button — its weight beats its own natural size, the escape
+        // hatch that still stretches a control — and the elastic panel.
+        let leftover = 400.0 - 50.0 - control_h;
+        assert!((weighted.h - leftover * 2.0 / 3.0).abs() < 1e-3);
+        assert!((elastic.h - leftover / 3.0).abs() < 1e-3);
+        assert!(
+            (elastic.y + elastic.h - 400.0).abs() < 1e-3,
+            "the column still fills"
+        );
+        // The cross axis fills regardless.
+        assert!(placed[1..].iter().all(|p| p.rect.w == 600.0));
+    }
+
+    #[test]
+    fn an_all_natural_strip_leaves_the_leftover_empty() {
+        // Nothing elastic to absorb it: the controls stack at their own size
+        // and the rest of the column stays empty, rather than everyone growing.
+        let w = tree(
+            r#"{"type":"window","layout":"col","margin":0,"gap":0,"children":[
+            {"id":1,"type":"button","label":"a"},{"id":2,"type":"button","label":"b"}]}"#,
+        );
+        let placed = layout(area(), &w, &Metrics::default());
+        let (a, b) = (placed[1].rect, placed[2].rect);
+        assert_eq!(a.h, b.h);
+        assert!(b.y + b.h < 400.0 * 0.5, "the column is not filled");
+    }
+
+    #[test]
+    fn a_natural_size_only_binds_its_own_axis() {
+        // A row of controls: a button knows its height, not its width, so the
+        // row's main axis (x) still splits evenly and the cross axis fills.
+        let w = tree(
+            r#"{"type":"window","layout":"row","margin":0,"gap":0,"children":[
+            {"id":1,"type":"button","label":"a"},{"id":2,"type":"button","label":"b"}]}"#,
+        );
+        let placed = layout(area(), &w, &Metrics::default());
+        let (a, b) = (placed[1].rect, placed[2].rect);
+        assert_eq!((a.w, b.w), (300.0, 300.0));
+        assert_eq!(a.h, 400.0, "the cross axis fills");
+    }
+
+    #[test]
+    fn the_density_moves_a_natural_row() {
+        let json = r#"{"type":"window","layout":"col","margin":0,"gap":0,"children":[
+            {"id":1,"type":"button","label":"a"},{"id":2,"type":"panel"}]}"#;
+        let (small, big) = (tree(json), tree(json));
+        let compact = layout(area(), &small, &Metrics::generated(0.75));
+        let comfortable = layout(area(), &big, &Metrics::generated(1.5));
+        assert!(
+            comfortable[1].rect.h > compact[1].rect.h,
+            "one table sizes the strip"
+        );
     }
 
     #[test]

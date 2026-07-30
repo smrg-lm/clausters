@@ -3044,7 +3044,9 @@ mod tests {
         );
         let mut g = Gestures::default();
         let ctx = GestureCtx::new(1, 400, 100);
-        let effects = g.press(&mut host, &ctx, 200.0, 50.0, &mut || false);
+        // The slider is natural-thick: a strip under the window's margin, not
+        // the whole pane, so the press aims inside it.
+        let effects = g.press(&mut host, &ctx, 200.0, 25.0, &mut || false);
         assert!(g.dragging());
         let after_press = slider_value(&host, 10);
         assert!(after_press > 2.5, "press near the middle raises 2.5");
@@ -3055,9 +3057,9 @@ mod tests {
         )));
         assert!(effects.contains(&GestureEffect::Redraw(1)));
         // Dragging to the far right pins the value at max.
-        g.drag_to(&mut host, &ctx, 399.0, 50.0);
+        g.drag_to(&mut host, &ctx, 399.0, 25.0);
         assert_eq!(slider_value(&host, 10), 10.0);
-        assert!(g.release(&mut host, &ctx, 399.0, 50.0).is_empty());
+        assert!(g.release(&mut host, &ctx, 399.0, 25.0).is_empty());
         assert!(!g.dragging());
     }
 
@@ -3066,13 +3068,14 @@ mod tests {
         let mut host = host_from(r#"{"type":"window","children":[{"id":20,"type":"button"}]}"#);
         let mut g = Gestures::default();
         let ctx = GestureCtx::new(1, 200, 100);
-        let effects = g.press(&mut host, &ctx, 100.0, 50.0, &mut || false);
+        // A button is one control line tall (its natural height).
+        let effects = g.press(&mut host, &ctx, 100.0, 16.0, &mut || false);
         assert_eq!(g.active_button(), Some(20));
         assert!(effects.iter().any(|e| matches!(
             e,
             GestureEffect::Emit { widget_id: 20, args, .. } if args == &[OscType::Int(1)]
         )));
-        let effects = g.release(&mut host, &ctx, 100.0, 50.0);
+        let effects = g.release(&mut host, &ctx, 100.0, 16.0);
         assert!(effects.iter().any(|e| matches!(
             e,
             GestureEffect::Emit { widget_id: 20, args, .. } if args == &[OscType::Int(0)]
@@ -3086,7 +3089,7 @@ mod tests {
             host_from(r#"{"type":"window","children":[{"id":30,"type":"toggle","value":0}]}"#);
         let mut g = Gestures::default();
         let ctx = GestureCtx::new(1, 200, 100);
-        let effects = g.press(&mut host, &ctx, 100.0, 50.0, &mut || false);
+        let effects = g.press(&mut host, &ctx, 100.0, 16.0, &mut || false);
         match &host.window_def(1).unwrap().find(30).unwrap().kind {
             WidgetKind::Toggle { value, .. } => assert!(*value),
             other => panic!("not a toggle: {other:?}"),
@@ -3107,15 +3110,17 @@ mod tests {
         );
         let mut g = Gestures::default();
         let ctx = GestureCtx::new(1, 200, 200);
-        g.press(&mut host, &ctx, 100.0, 100.0, &mut || true);
+        // A knob is as tall as its disc plus its read-out (its natural height),
+        // so it is a strip at the top of the window: the press aims inside it.
+        g.press(&mut host, &ctx, 22.0, 30.0, &mut || true);
         assert!(g.locked());
         // Locked: cursor motion is ignored (relative deltas drive it instead).
-        let effects = g.drag_to(&mut host, &ctx, 100.0, 150.0);
+        let effects = g.drag_to(&mut host, &ctx, 22.0, 80.0);
         assert!(effects.is_empty());
         let effects = g.relative_motion(&mut host, &ctx, -20.0);
         assert!(effects.contains(&GestureEffect::Redraw(1)));
         // Release asks the front to drop the pointer grab.
-        let effects = g.release(&mut host, &ctx, 100.0, 150.0);
+        let effects = g.release(&mut host, &ctx, 22.0, 80.0);
         assert!(effects.contains(&GestureEffect::ReleasePointer(1)));
     }
 
@@ -3778,6 +3783,9 @@ mod tests {
     // --- editable text field ------------------------------------------------
 
     /// A window with one editable `text` field (id 5) filling it.
+    /// A window holding one single-line field. It is **natural-sized**, so it
+    /// is a control-high strip at the top of the window rather than the whole
+    /// pane — every press below aims inside that strip.
     fn text_host() -> Host {
         host_from(r#"{"type":"window","margin":0,"children":[{"id":5,"type":"text"}]}"#)
     }
@@ -3806,7 +3814,7 @@ mod tests {
         let mut g = Gestures::default();
         let ctx = GestureCtx::new(1, 600, 400);
         // A press focuses the field (no emit yet — a click is not an edit).
-        let e = g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+        let e = g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
         assert_eq!(host.focused_text(), Some((1, 5)));
         assert!(emitted_string(&e).is_none());
         // Each character is delivered as the field's whole string, ungated.
@@ -3859,7 +3867,7 @@ mod tests {
         // Single-line: Enter is inert (no send-on-Enter).
         let mut host = text_host();
         let mut g = Gestures::default();
-        g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+        g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
         let e = g
             .text_key(&mut host, &ctx, TextKey::Enter, &mut String::new())
             .unwrap();
@@ -3884,7 +3892,7 @@ mod tests {
         let mut g = Gestures::default();
         let mut ctx = GestureCtx::new(1, 600, 400);
         let mut clip = String::new();
-        g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+        g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
         for ch in "abc".chars() {
             g.text_key(&mut host, &ctx, TextKey::Char(ch), &mut clip);
         }

@@ -3287,3 +3287,50 @@ published for every audio bus every block. Two decisions inside that:
 
 The cost is one pass over the block per audio bus per block, one relaxed store —
 no allocation, no lock, guarded like the rest by `tests/rt_safety.rs`.
+
+## A widget's own size is a function of the table, and the layout still measures nothing
+
+Until now a GuiDef declared *every* size that was not an even split: a control
+in a column got half the window unless the script wrote `h=28`, and the numbers
+in the examples were guesses that happened to look right. Giving each widget
+kind a **natural size** — how big it wants to be — removes the guessing, and the
+question is what that size is allowed to depend on.
+
+It depends on two things: the host's sizing table and the widget's own
+presentation props (`text_size`, whether it carries a label, whether it wraps).
+It deliberately does **not** depend on the widget's data. A label's width does
+not follow its string, a scope's height does not follow its sample count, a
+menu's does not follow its options. The reason is not purity: a size that reads
+the data turns `/gui_set` — the incremental update the whole protocol is built
+on, arriving many times a second — into a relayout of the window, which is both
+a per-message cost and a visible jump under a live value. A widget with more
+content than room clips or scrolls; it does not grow. That is also what keeps
+the layout **one pass with no measurement**: a container never asks its children
+how big they are, it asks each kind what it wants, which is a table lookup.
+
+Two consequences worth stating, because both look like omissions:
+
+- **An explicit `weight` beats the natural size**, and comes before it in the
+  resolution order (fixed `w`/`h` → `weight` → natural → a share of the
+  leftover). Without that, "stretch this button over the pane" would have become
+  inexpressible the day buttons learned their own height — and it is the *only*
+  thing a single-control window (a bound knob, a standalone bundle) wants.
+- **A container does not hug its content.** A row of menus does not shrink its
+  panel to their height, because that is the measurement pass this layout does
+  not have. Chrome that must be thin still says `h`. What changed is that the
+  number inside the strip is no longer a guess: the strip's children size
+  themselves, and the strip states its own extent.
+
+Which kinds have one follows the content/surface split: content whose extent the
+widget itself knows (a label's line, a button, a toggle, a number, a menu, a
+single-line field, a slider's thickness across its track, a knob's height, a
+ruler strip's) versus a surface whose extent is the caller's (a panel, a scroll,
+a patch canvas, a track, the heavy views, a plot, a node tree, a canvas). Mixed
+is ordinary rather than exceptional — a slider is intrinsic across its track and
+elastic along it — and a knob is intrinsic only in height, because its disc
+sizes itself to the shorter side of its body and centres there: extra width is
+slack it absorbs, so a row of knobs still spreads instead of packing left.
+
+This redrew every existing GuiDef, which was accepted deliberately: the windows
+that improved are the ones where a caption or a control had been taking half the
+pane from the view beside it.

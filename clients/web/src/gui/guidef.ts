@@ -65,8 +65,14 @@ export interface WidgetOptions {
     w?: number;
     h?: number;
     /**
-     * The share of the leftover a non-fixed child takes (default 1, so
-     * siblings without props split evenly).
+     * The share of the leftover a child takes in a `row`/`col`, and the way
+     * to stretch a control past the size it asks for.
+     *
+     * The main axis resolves in one order: a fixed `w`/`h`, else an explicit
+     * `weight`, else the widget's **natural size** (how big that kind of
+     * widget wants to be — a control knows, a view does not), else a share of
+     * the leftover at weight 1. The cross axis always fills. A natural size
+     * follows the host's sizing table, never the widget's data.
      */
     weight?: number;
     /**

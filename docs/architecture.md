@@ -349,11 +349,12 @@ split, and every rule below falls out of it:
 | Path | Contents |
 |---|---|
 | `src/host/mod.rs` | The protocol core: the `Host`, the command dispatch (`/gui_def`/`/gui_set`/`/gui_free`/`/gui_query`/`/gui_bind`), the `Registry`, `HostEffect` |
-| `src/host/widget.rs` | `WidgetKind` — the typed tree the renderer reads — plus its JSON parse and its `/gui_set` `apply` |
+| `src/host/widget/` | `WidgetKind` — the typed tree the renderer reads — plus its three passes: the JSON parse (`build`), the `/gui_set` mutation (`apply`) and the **natural size** (`size`), how big each kind wants to be |
 | `src/host/frame.rs` | The one frame renderer: places the tree (`layout`), builds the flat-geometry mesh and uploads the heavy GPU views. **Both fronts call it**, so the browser is pixel-faithful by construction |
 | `src/host/{gui,web}.rs` | The two fronts: native (winit/wgpu, sockets, mmap) and browser (canvas/WebGPU, WebSocket, fetch). Event *sources* and *sinks* only. **Both keep one surface per `window`-rooted def** — a desktop window, a `<canvas>` in a document — keyed by def id, with a wgpu surface, a size, a pointer, a gesture state and the scope/window/spectrum histories each |
 | `src/host/bundle.rs` | The bundle's two halves, platform-agnostic and natively tested: the browser's boot **replay** (the persisted files as ordered OSC), and the **mount** — allocate what `bundle.json` declares, resolve the template's holes through `clausters_core::bundle`, lay out what to send. `--standalone` mounts through it, so the desktop and the tab resolve one directory identically |
 | `src/host/theme.rs` | The color roles: every chrome color as a named function (`accent`, `field`, `selection`, ...) in one `Theme` per host — no paint site names an RGBA literal. Overlaid from `[gui.theme]` / `--theme` (native) or `GuiBridge.theme` (browser) |
+| `src/host/layout.rs` | The one placement pass: a tree into rectangles. On a `row`/`col` main axis it resolves explicit size → explicit `weight` → the widget's natural size → a share of the leftover; the cross axis fills. No measurement, no constraint solver |
 | `src/host/metrics.rs` | The size roles: every chrome size as a named function (`pad`, `gap`, `control_h`, `track_thick`, `ruler_h`, `text_scale`, ...) in one `Metrics` per host — no layout or paint site names a number, the twin of `theme.rs`. Its defaults are **generated** by one quantized modular scale over the font cell (constant data, never arithmetic on a frame); one `scale` multiplier is the whole density surface. Overlaid from `[gui.metrics]` (native) or `GuiBridge.metrics` (browser) |
 | `src/host/interact.rs` | Pointer logic over the typed tree — hit-test, value writes, the edit-back payloads — shared by both fronts |
 | `src/host/gestures.rs` | The one press → drag → release → wheel state machine **both fronts drive**: it mutates the `Host` through the `interact` doors and returns `GestureEffect`s (emit/redraw/release-pointer) for the front's own sinks, so every editing gesture behaves identically on either platform by construction |
@@ -472,7 +473,7 @@ Where each widget of the [catalog](gui-protocol.md#the-widget-catalog) lives —
 one row per widget: the module(s) that implement it and what feeds it. What a
 widget *does* and its props are the catalog's job; this table is the
 development-side index into the module split above. **Adding or moving a widget
-updates this table in the same change** (step 7 of the recipe below).
+updates this table in the same change** (step 8 of the recipe below).
 
 | Widget | Implementation | Fed by |
 |---|---|---|
@@ -503,26 +504,32 @@ updates this table in the same change** (step 7 of the recipe below).
 Take a hypothetical `meterbar`. The steps are always the same:
 
 1. **The typed kind** — a `WidgetKind::MeterBar { … }` variant in
-   `host/widget.rs`, its arm in the JSON parse (`Widget::build`) and, for every
-   live-updatable prop, an arm in `WidgetKind::apply` (that is `/gui_set`).
-2. **The view** — a module `host/meterbar.rs`, pure over a `Mesh`: layout, draw,
+   `host/widget/mod.rs`, its arm in the JSON parse (`Widget::build`) and, for
+   every live-updatable prop, an arm in `WidgetKind::apply` (that is
+   `/gui_set`).
+2. **Its natural size** — an arm in `host/widget/size.rs` if the widget is
+   *content* that knows its own extent, nothing at all if it is a *surface*
+   whose extent is the caller's (the default). Derive it from the metrics
+   roles, never from a fresh literal — and never from the widget's data, or a
+   `/gui_set` relayouts the window.
+3. **The view** — a module `host/meterbar.rs`, pure over a `Mesh`: layout, draw,
    and (if it is interactive) a hit-test. No GPU, no platform: that is what makes
    it unit-testable, and the tests go beside it. A *heavy* view (one that needs a
    texture or a vertex buffer) instead gets a GPU slot in `frame.rs` and follows
    the LOD rule above.
-3. **The frame** — collect the placed widget in `frame::render` and draw it. Base
+4. **The frame** — collect the placed widget in `frame::render` and draw it. Base
    mesh for the view, overlay mesh for chrome that must read on top (selection,
    playhead, wires in flight).
-4. **Interaction, if any** — the hit-test and the mutation go in
+5. **Interaction, if any** — the hit-test and the mutation go in
    `host/interact.rs` (shared, so both fronts behave the same); the *gesture*
    (which button, which drag state) belongs to the front. If the widget writes
    data back, add its flat event payload here — never a new OSC address.
-5. **The Python builder** — a function in `clients/python/clausters/gui/guidef.py`
+6. **The Python builder** — a function in `clients/python/clausters/gui/guidef.py`
    returning the node dict, with the docstring that *is* the widget's user
    reference (the API page is generated from it).
-6. **Tests and an example** — pure tests for the layout/hit-test/edit, and a
+7. **Tests and an example** — pure tests for the layout/hit-test/edit, and a
    `clients/python/examples/gui_*.py` when the widget is user-facing.
-7. **The maps** — a row in [the widget map](#the-widget-map) above and one in
+8. **The maps** — a row in [the widget map](#the-widget-map) above and one in
    the [widget catalog](gui-protocol.md#the-widget-catalog), in the same change.
 
 A **new element kind** (a new primitive of the arrangement) is the client's

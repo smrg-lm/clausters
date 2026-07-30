@@ -42,10 +42,21 @@ layout (all in device pixels, all optional, all live via ``set``):
 
 - ``w``/``h`` — a fixed main-axis size in a ``row``/``col`` (``w`` in a row,
   ``h`` in a col); in ``free``, the widget's size.
-- ``weight`` — the share of the leftover a non-fixed child takes in a
-  ``row``/``col`` (default 1, so siblings without props split evenly).
+- ``weight`` — the share of the leftover a child takes in a ``row``/``col``,
+  and the way to stretch a control past the size it asks for.
 - ``x``/``y`` — the position inside a ``free`` container; a free child with
   none of these props overlays the whole container area.
+
+A ``row``/``col`` resolves its main axis in **one order**: a fixed ``w``/``h``,
+else an explicit ``weight``, else the widget's **natural size** — how big that
+kind of widget wants to be, which the host knows — else a share of the
+leftover at weight 1. The cross axis always fills. So a control (a ``button``,
+a ``knob``, a single-line ``text``, a ``label``) stacked in a ``col`` is one
+control-high row rather than half the window, while views (a ``waveform``, a
+``panel``, a ``pianoroll``) have no natural size and split the rest between
+them. A widget's natural size never follows its *data*, only the host's sizing
+table and the widget's own ``text_size``/``label``, so setting a longer string
+never moves the layout.
 
 Containers (``window``/``panel``/``scroll``) additionally take ``margin`` (the
 inset before their children, default 6), ``gap`` (between children, default 6)

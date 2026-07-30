@@ -25,7 +25,9 @@
 //! on its own: [`build`] turns a `GuiNode` into a `WidgetKind` (construction),
 //! and [`apply`] applies a `/gui_set` key to a live one (mutation). Each is one
 //! arm per widget type; both are descendants, so they share the helpers without
-//! exposing them. Per-widget *behavior* (drawing, hit-testing, editing) is not
+//! exposing them. [`size`] is the third such pass, in the other direction: how
+//! big a kind wants to be ([`WidgetKind::natural_size`]), which the layout
+//! resolves against the tree's explicit sizes. Per-widget *behavior* (drawing, hit-testing, editing) is not
 //! here at all — it lives in each widget's own module (`bpf`, `pianoroll`,
 //! `track`, `patch`, `textedit`, …); this module owns only the typed data and
 //! its wire mapping.
@@ -49,6 +51,7 @@ use super::{bpf, piano, plot, score, textedit};
 mod apply;
 mod build;
 mod parse;
+mod size;
 
 use parse::*;
 
