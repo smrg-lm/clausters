@@ -223,6 +223,10 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
     ``view_x``/``view_y`` (content units at the widget's top-left corner) and
     ``view_zoom`` (physical pixels per content unit) are the view state: live via
     ``/gui_set``, and emitted as ``"view" x y zoom`` when a gesture moves them.
+    Leaving ``view_zoom`` out is not the same as passing ``1``: a plane with no
+    zoom of its own starts at the **display's scale**, so one content unit is one
+    logical pixel and the boxes come up the size they are meant to look. Pass a
+    number (or turn the wheel) and it is literal from then on.
     """
     extra = _drop_none(axis=axis, content_w=content_w, content_h=content_h,
                        view_x=view_x, view_y=view_y, view_zoom=view_zoom,

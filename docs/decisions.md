@@ -3384,6 +3384,30 @@ page has already fixed, and a host that recomputed it from logical times scale
 could land a pixel off it — surface and element misaligned, exactly the blur this
 milestone exists to remove.
 
+**A zoomable view's default zoom belongs to whatever its content unit is.** The
+plane's own units left one thing unanswered: on a doubled display a patcher's
+boxes came up half the apparent size of the chrome around them. The fix is not to
+scale the plane's geometry (that would put a second multiplier inside a space
+that already has one) but to start the plane at the density it is drawn on: a
+`scroll`'s `view_zoom` — physical pixels per content unit — **defaults to the
+window's UI scale**, so one content unit is one *logical* pixel, and a named zoom
+(from the tree or from the wheel) is literal from then on.
+
+Fitting the zoom to the content was rejected as the default: a plane's content
+unit is a *display* unit (a box is 96 units wide because that is how wide a box
+should look), so fitting would make a box's apparent size follow **how many boxes
+there are** and re-zoom the plane on every edit — the "size follows data" failure
+the natural sizes were built to avoid. Zoom-to-fit is a command.
+
+The rule sorts the other navigable views without a second thought, because their
+content unit is *data*: a `waveform`'s and a `spectrogram`'s is the sample, a
+`pianoroll`'s vertical is the semitone, a `score`'s is the engraved staff step.
+None of them wants the display scale anywhere near its window — a denser screen
+means the same span at finer resolution, which is exactly "never resolve the
+signal finer than the screen" read from the other side. Their defaults (the whole
+buffer, the pitch window fitted to the lane, the page fitted to the rect) are
+already fits to their content, and stay untouched.
+
 **Two pixel spaces coexist, and that is the invariant to state.** Chrome is
 logical; a *navigable plane* is physical. A `scroll` workspace's content plane
 keeps its own units — its `content_w`/`content_h`, its `view_x`/`view_y` and its

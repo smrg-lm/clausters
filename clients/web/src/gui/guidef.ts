@@ -322,8 +322,14 @@ export function scroll(
         contentH?: number;
         /**
          * The view state: the content coordinates at the widget's top-left
-         * corner, and device pixels per content unit. Live via `set`, and
+         * corner, and physical pixels per content unit. Live via `set`, and
          * emitted as `"view" x y zoom` when a gesture moves them.
+         *
+         * Omitting `viewZoom` is not the same as passing `1`: a plane with no
+         * zoom of its own starts at the **display's scale**, so one content unit
+         * is one logical pixel and the boxes come up the size they are meant to
+         * look. Pass a number (or turn the wheel) and it is literal from then
+         * on.
          */
         viewX?: number;
         viewY?: number;

@@ -106,10 +106,12 @@ pub(crate) fn scroll_set_view(
         super::scroll::clamp_pan(vy, area.h, zoom, content.1, slack),
         zoom,
     );
-    if next == (view.view_x, view.view_y, view.view_zoom) {
+    if next == (view.view_x, view.view_y, view.zoom(&metrics)) {
         return None;
     }
-    (view.view_x, view.view_y, view.view_zoom) = next;
+    // Writing the zoom makes it explicit: from here on this plane's scale is the
+    // number, not the window's density (see `ScrollView::zoom`).
+    (view.view_x, view.view_y, view.view_zoom) = (next.0, next.1, Some(next.2));
     Some(next)
 }
 

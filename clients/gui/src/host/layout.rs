@@ -29,11 +29,15 @@
 //! numbers a script wrote, and they reach physical pixels through the placement
 //! [`Space`]'s scale — the window's `ui_scale`, carried by the resolved
 //! [`Metrics`] the pass is handed. Inside a `scroll` **workspace** that scale
-//! drops to 1: a navigable plane is physical, like the heavy views'
+//! drops to 1: a navigable plane keeps its own units, like the heavy views'
 //! `render_width_px`, because it has a zoom of its own and its pan is written
 //! in the pixels the pointer moves. So a strip declared `h: 28` is 28 logical
 //! pixels of chrome on any display, while a box placed at `x: 400` on a
-//! patcher's plane stays where the plane put it.
+//! patcher's plane sits at content coordinate 400 and reaches pixels through
+//! the plane's zoom — which *defaults* to the window's scale
+//! ([`ScrollView::zoom`]), since a plane's content unit is a display unit.
+//!
+//! [`ScrollView::zoom`]: super::widget::ScrollView::zoom
 
 use super::metrics::Metrics;
 use super::scroll;
@@ -105,9 +109,10 @@ impl Space {
         }
     }
 
-    /// The space inside a `scroll` workspace at `zoom`: the plane is physical
-    /// (the wire's lengths are its own content units), and the zoom composes
-    /// with any enclosing workspace's.
+    /// The space inside a `scroll` workspace at `zoom`: the wire's lengths there
+    /// are the plane's own content units, and the zoom — the plane's, defaulting
+    /// to the window's scale — is what turns them into pixels. It composes with
+    /// any enclosing workspace's.
     fn plane(self, zoom: f32) -> Self {
         Self {
             unit: 1.0,
@@ -225,7 +230,7 @@ fn place_scrolled<'a>(
         return;
     };
     let (content_w, content_h) = scroll_content(widget, area, metrics);
-    let zoom = scroll::clamp_zoom(view.view_zoom);
+    let zoom = view.zoom(metrics);
     let slack = view.axis.slack();
     let vx = scroll::clamp_pan(view.view_x, area.w, zoom, content_w, slack);
     let vy = scroll::clamp_pan(view.view_y, area.h, zoom, content_h, slack);
@@ -645,20 +650,39 @@ mod tests {
         assert_eq!((r.w, r.h), (240.0, 80.0));
     }
 
-    /// A `scroll` workspace's plane is **physical**: it has its own zoom and
-    /// its pan is written in the pixels the pointer moves, so the window's
-    /// scale stops at its edge — the same rule the heavy views follow.
+    /// A `scroll` workspace's plane keeps its **own units**: the wire's lengths
+    /// there are content units, and what turns them into pixels is the plane's
+    /// zoom — which *defaults* to the window's scale, because a plane's content
+    /// unit is a display unit (a patcher's box is 96 units wide because that is
+    /// how wide a box should look).
     #[test]
-    fn a_workspace_plane_keeps_its_own_pixels() {
+    fn a_workspace_plane_scales_by_its_zoom_and_defaults_to_the_density() {
         let json = r#"{"type":"window","margin":0,"children":[
             {"id":9,"type":"scroll","margin":0,"content_w":2000,"content_h":2000,
              "children":[{"id":7,"type":"label","text":"a","x":100,"y":50,"w":80,"h":40}]}]}"#;
         let w = tree(json);
         let placed = layout(area(), &w, &Metrics::default().resolved(2.0));
         let child = placed.iter().find(|p| p.widget.id == Some(7)).unwrap();
+        assert_eq!((child.rect.x, child.rect.y), (200.0, 100.0));
+        assert_eq!((child.rect.w, child.rect.h), (160.0, 80.0));
+        assert_eq!(child.scale, 2.0, "the plane's text rides its zoom");
+    }
+
+    #[test]
+    fn a_named_plane_zoom_is_literal_at_any_density() {
+        // The script said one physical pixel per content unit, so that is what
+        // it gets on a doubled display too — the default is the density, a
+        // named number is the number.
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":9,"type":"scroll","margin":0,"view_zoom":1,
+             "content_w":2000,"content_h":2000,
+             "children":[{"id":7,"type":"label","text":"a","x":100,"y":50,"w":80,"h":40}]}]}"#;
+        let w = tree(json);
+        let placed = layout(area(), &w, &Metrics::default().resolved(2.0));
+        let child = placed.iter().find(|p| p.widget.id == Some(7)).unwrap();
         assert_eq!((child.rect.x, child.rect.y), (100.0, 50.0));
         assert_eq!((child.rect.w, child.rect.h), (80.0, 40.0));
-        assert_eq!(child.scale, 1.0, "the plane's text is its own zoom alone");
+        assert_eq!(child.scale, 1.0);
     }
 
     #[test]

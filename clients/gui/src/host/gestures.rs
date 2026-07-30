@@ -1190,7 +1190,7 @@ impl Gestures {
                 let Some(view) = scroll_view(host, def_id, id) else {
                     return out;
                 };
-                let zoom = scroll::clamp_zoom(view.view_zoom);
+                let zoom = view.zoom(host.metrics_for(def_id));
                 let nx = match view.axis {
                     Axis::Y => x0,
                     _ => x0 - (cx - origin_x) / zoom,
@@ -1692,7 +1692,7 @@ impl Gestures {
         if let Some((id, area)) = scroll_hit(host, ctx, cx, cy)
             && let Some(view) = scroll_view(host, def_id, id)
         {
-            let zoom = scroll::clamp_zoom(view.view_zoom);
+            let zoom = view.zoom(host.metrics_for(def_id));
             let next = if view.zoom_enabled {
                 let factor = 0.85f64.powf(-steps); // wheel up zooms in
                 scroll::zoom_at((view.view_x, view.view_y, zoom), area, (cx, cy), factor)
@@ -2943,11 +2943,12 @@ mod tests {
         let ctx = GestureCtx::new(1, 600, 400);
         let (cx, cy) = (300.0, 200.0);
         let before = view_of(&host, 20);
+        let m = Metrics::default();
         let content_under_cursor =
-            |v: ScrollView| (v.view_x + cx / v.view_zoom, v.view_y + cy / v.view_zoom);
+            |v: ScrollView| (v.view_x + cx / v.zoom(&m), v.view_y + cy / v.zoom(&m));
         let effects = g.wheel(&mut host, &ctx, cx, cy, 1.0);
         let after = view_of(&host, 20);
-        assert!(after.view_zoom > before.view_zoom, "wheel up zooms in");
+        assert!(after.zoom(&m) > before.zoom(&m), "wheel up zooms in");
         let (bx, by) = content_under_cursor(before);
         let (ax, ay) = content_under_cursor(after);
         assert!((bx - ax).abs() < 1e-6 && (by - ay).abs() < 1e-6);
@@ -3006,7 +3007,11 @@ mod tests {
         let ctx = GestureCtx::new(1, 600, 400);
         g.wheel(&mut host, &ctx, 300.0, 200.0, -1.0);
         let v = view_of(&host, 20);
-        assert_eq!(v.view_zoom, 1.0, "zoom disabled: the wheel does not scale");
+        assert_eq!(
+            v.zoom(&Metrics::default()),
+            1.0,
+            "zoom disabled: the wheel does not scale"
+        );
         assert_eq!(v.view_x, 0.0, "the x axis is not pannable");
         assert_eq!(v.view_y, scroll::WHEEL_PAN_PX, "the wheel scrolls down");
         // A drag on the plane likewise moves only y.

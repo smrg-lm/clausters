@@ -502,11 +502,32 @@ pub struct ScrollView {
     pub view_x: f64,
     /// The content coordinate at the widget's top edge.
     pub view_y: f64,
-    /// Device pixels per content unit (uniform on both axes), > 0.
-    pub view_zoom: f64,
+    /// Physical pixels per content unit (uniform on both axes), > 0 —
+    /// `None` until something names one, which is not the same as `1.0`; see
+    /// [`zoom`](Self::zoom).
+    pub view_zoom: Option<f64>,
 }
 
 impl ScrollView {
+    /// This plane's scale in physical pixels per content unit, resolved against
+    /// the window's metrics.
+    ///
+    /// The default is the window's **UI scale**, not `1.0`, because a plane's
+    /// content unit is a *display* unit: a patcher's box is 96 units wide
+    /// because that is how wide a box should look, so one content unit is one
+    /// **logical** pixel and the plane starts at the density it is drawn on.
+    /// (The alternative — fitting the zoom to the content — was rejected: it
+    /// would make a box's apparent size follow *how many boxes there are*, and
+    /// re-zoom the plane on every edit. Zoom-to-fit is a command, not a
+    /// default.)
+    ///
+    /// Naming one — in the wire, or by turning the wheel — makes it literal
+    /// from then on: this number is physical pixels, the unit the pan and the
+    /// hit math are written in.
+    pub fn zoom(&self, m: &super::metrics::Metrics) -> f64 {
+        super::scroll::clamp_zoom(self.view_zoom.unwrap_or(m.ui_scale as f64))
+    }
+
     fn parse(props: &serde_json::Map<String, Value>) -> ScrollView {
         let f = |k: &str| props.get(k).and_then(Value::as_f64).map(|v| v as f32);
         ScrollView {
@@ -516,7 +537,10 @@ impl ScrollView {
             content_h: f("content_h"),
             view_x: number_f64(props, "view_x", 0.0),
             view_y: number_f64(props, "view_y", 0.0),
-            view_zoom: super::scroll::clamp_zoom(number_f64(props, "view_zoom", 1.0)),
+            view_zoom: props
+                .get("view_zoom")
+                .and_then(Value::as_f64)
+                .map(super::scroll::clamp_zoom),
         }
     }
 
@@ -541,7 +565,7 @@ impl ScrollView {
             "view_y" => set_f64(&mut self.view_y, v),
             "view_zoom" => v
                 .as_f64()
-                .map(|n| self.view_zoom = super::scroll::clamp_zoom(n))
+                .map(|n| self.view_zoom = Some(super::scroll::clamp_zoom(n)))
                 .is_some(),
             _ => false,
         }

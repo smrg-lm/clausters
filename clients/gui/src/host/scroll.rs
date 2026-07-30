@@ -3,7 +3,8 @@
 //! A `scroll` container shows its virtual content area through a 2D window:
 //! per axis a pan offset in content units ([`ScrollView::view_x`]/`view_y`,
 //! the content coordinate at the widget's top-left edge) plus one **uniform
-//! scale** ([`ScrollView::view_zoom`], device pixels per content unit) shared
+//! scale** ([`ScrollView::zoom`], physical pixels per content unit, defaulting
+//! to the window's UI scale) shared
 //! by both axes so the plane never distorts. The zoom keeps the content point
 //! under the cursor fixed — the same pivot math as [`View::zoom`], expressed
 //! on the scale factor because the two axes share it (a per-axis [`View`]
@@ -16,7 +17,7 @@
 //! [`View::zoom`]: crate::viewport::View::zoom
 //! [`ScrollView`]: super::widget::ScrollView
 //! [`ScrollView::view_x`]: super::widget::ScrollView::view_x
-//! [`ScrollView::view_zoom`]: super::widget::ScrollView::view_zoom
+//! [`ScrollView::zoom`]: super::widget::ScrollView::zoom
 
 use super::layout::Rect;
 
