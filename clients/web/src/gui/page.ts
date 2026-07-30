@@ -52,7 +52,8 @@ export interface ClaustersGui {
      *
      * The canvas' backing store follows the element in device pixels (the
      * host never reads the DOM, so the page reports the size) and the host is
-     * told on every change. This is the same rule a `<clausters-bundle>`
+     * told on every change — of the element's box *and* of the display's scale,
+     * which move independently. This is the same rule a `<clausters-bundle>`
      * component follows; a script that opens its own window calls it once,
      * after `open`, and gets the same behaviour:
      *
@@ -91,6 +92,44 @@ export interface CanvasBox {
     height: number;
     /** The device-pixel ratio the box was measured at (the host's UI scale). */
     scale: number;
+}
+
+/**
+ * Calls `apply` whenever the page's `devicePixelRatio` changes, returning the
+ * disposer that stops watching.
+ *
+ * A `ResizeObserver` is not enough, and that is the whole reason this exists: it
+ * observes the **CSS** box, so browser zoom or a drag onto a monitor of another
+ * density changes the ratio while the box stays exactly as it was — no callback,
+ * and the host keeps resolving its sizes against a scale that is no longer true.
+ * This is the browser's answer to the desktop's `ScaleFactorChanged`.
+ *
+ * The mechanism is a media query on the *current* ratio (`(resolution: 2dppx)`),
+ * which stops matching the moment it moves; so each firing re-measures and then
+ * re-arms on the new ratio.
+ */
+export function onScaleChange(apply: () => void): () => void {
+    let query: MediaQueryList | null = null;
+    let stopped = false;
+    const fired = () => {
+        apply();
+        arm();
+    };
+    const arm = () => {
+        query?.removeEventListener("change", fired);
+        query = null;
+        if (stopped) return;
+        const ratio = globalThis.devicePixelRatio || 1;
+        // Absent in a non-browser run time (the module-graph tests): nothing to
+        // watch, and nothing to fail either.
+        query = globalThis.matchMedia?.(`(resolution: ${ratio}dppx)`) ?? null;
+        query?.addEventListener("change", fired);
+    };
+    arm();
+    return () => {
+        stopped = true;
+        arm();
+    };
 }
 
 /** Measures `element` for a canvas (see {@link CanvasBox}). */
@@ -167,7 +206,14 @@ async function boot(): Promise<ClaustersGui> {
             apply();
             const observer = new ResizeObserver(apply);
             observer.observe(element);
-            return () => observer.disconnect();
+            // Two triggers, because the box and the density move
+            // independently: a layout change, and a change of display scale
+            // that leaves the CSS box untouched.
+            const unwatch = onScaleChange(apply);
+            return () => {
+                observer.disconnect();
+                unwatch();
+            };
         },
         addEvent: (listener) => listeners.add(listener),
         removeEvent: (listener) => listeners.delete(listener),

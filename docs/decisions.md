@@ -3363,6 +3363,15 @@ door the shells push through: natively from winit's `scale_factor`, re-armed on
 logical extent the window had, so a 800x600 shell stays a 800x600 shell across
 the move); in the browser from the page's `devicePixelRatio`.
 
+The browser needs its own *re-arm* for the same reason, and it is not the one a
+page would reach for first: a `ResizeObserver` watches the **CSS** box, so
+browser zoom or a drag onto a monitor of another density moves the ratio while
+the box stays exactly as it was — no callback, and the host goes on resolving
+against a scale that is no longer true. So the page watches a media query on the
+current ratio (`(resolution: 2dppx)`) and re-arms on the new one each time it
+fires (`onScaleChange`). Two triggers, because the box and the density are two
+facts.
+
 That last one was a real change to the published binding, not a port. The browser
 host was told its canvas size in device pixels only — the page multiplied its
 element box by `devicePixelRatio` and handed over the product — so **the ratio

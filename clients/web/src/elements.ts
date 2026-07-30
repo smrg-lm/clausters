@@ -33,7 +33,7 @@
 // its resolved def id.
 
 import { server } from "./engine/server.ts";
-import { canvasBox, guiHost } from "./gui/page.ts";
+import { canvasBox, guiHost, onScaleChange } from "./gui/page.ts";
 import { openBundle, startBundle } from "./bundle.ts";
 import type { Mounted } from "./bundle.ts";
 
@@ -78,6 +78,8 @@ export class ClaustersBundle extends HTMLElement {
     private starting: Promise<void> | null = null;
     private resizeObserver: ResizeObserver | null = null;
     private viewObserver: IntersectionObserver | null = null;
+    /** Stops watching the display's scale (see `onScaleChange`). */
+    private unwatchScale: (() => void) | null = null;
 
     constructor() {
         super();
@@ -127,8 +129,10 @@ export class ClaustersBundle extends HTMLElement {
     disconnectedCallback(): void {
         this.resizeObserver?.disconnect();
         this.viewObserver?.disconnect();
+        this.unwatchScale?.();
         this.resizeObserver = null;
         this.viewObserver = null;
+        this.unwatchScale = null;
         waiting.delete(this);
     }
 
@@ -233,18 +237,22 @@ export class ClaustersBundle extends HTMLElement {
     }
 
     /**
-     * The two observers a component carries: its box drives `resize`, and its
-     * place in the viewport drives `set_visible` — a canvas nobody is looking
-     * at is skipped on the tick and drops its buses from the stream.
+     * What a component watches: its box and the display's scale both drive
+     * `resize` (they move independently — browser zoom or a monitor of another
+     * density changes the scale with the CSS box untouched), and its place in
+     * the viewport drives `set_visible` — a canvas nobody is looking at is
+     * skipped on the tick and drops its buses from the stream.
      */
     private observe(): void {
         const defId = this.mounted?.defId;
         if (defId === undefined) return;
-        this.resizeObserver = new ResizeObserver(() => {
+        const report = () => {
             const { width, height, scale } = canvasBox(this);
             void guiHost().then((gui) => gui.bridge.resize(defId, width, height, scale));
-        });
+        };
+        this.resizeObserver = new ResizeObserver(report);
         this.resizeObserver.observe(this);
+        this.unwatchScale = onScaleChange(report);
         this.viewObserver = new IntersectionObserver((entries) => {
             for (const entry of entries) {
                 void guiHost().then((gui) => gui.bridge.set_visible(defId, entry.isIntersecting));
