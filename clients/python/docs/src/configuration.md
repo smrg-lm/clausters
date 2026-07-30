@@ -1,10 +1,19 @@
 # Configuration
 
 The client reads the same TOML configuration file the server and the GUI read,
-so all three agree on one place for defaults. The full schema, the file
-locations and the precedence rules are documented once, in the server
-documentation's **Configuration** chapter; this page covers what the Python
-client takes from it.
+so all three agree on one place for defaults. This page covers what the Python
+client takes from it; the two programs a session launches have a page each,
+key by key:
+
+- [The server's configuration](configuration/server.md) — the `[server]`
+  section, its command-line flags and the offline renderer's own.
+- [The GUI host's configuration](configuration/gui.md) — the `[gui]` section
+  plus the `[gui.theme]` and `[gui.metrics]` role tables (the host's whole look
+  and sizing) and `[standalone]`.
+
+The file locations and the precedence rules are also stated in the server
+documentation's **Configuration** chapter, which covers the same file from the
+server's side.
 
 The client only **reads** the file — it never writes it. A value passed
 explicitly in code always wins over the file, which in turn wins over the
