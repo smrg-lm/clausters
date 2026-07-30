@@ -533,3 +533,61 @@ pub unsafe extern "C" fn clausters_close(handle: *mut Clausters) {
     // the box runs `Clausters::drop` (the /quit + join).
     drop(unsafe { Box::from_raw(handle) });
 }
+
+/// Reads an audio file into a malloc'd **interleaved** `f32` buffer — the
+/// same decoder `/b_allocRead` uses, so a client never needs one of its own.
+/// WAV goes through hound; FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the
+/// rest through symphonia. Integer files are scaled to `[-1, 1]`: whatever the
+/// file holds, what comes back is `f32`.
+///
+/// Reads `num_frames` frames from `file_start` (`num_frames <= 0` means "to
+/// the end"). Writes the frame count, channel count and the file's own sample
+/// rate — the decoder never resamples — into the three out pointers. On
+/// failure returns NULL and writes a message into (`err`, `err_cap`).
+///
+/// Free the result with [`clausters_free_samples`], passing
+/// `frames * channels`.
+///
+/// # Safety
+/// `path` must be a NUL-terminated UTF-8 string; the three out pointers must
+/// be writable; `err` either NULL or writable for `err_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_read_soundfile(
+    path: *const std::ffi::c_char,
+    file_start: u64,
+    num_frames: i64,
+    out_frames: *mut u64,
+    out_channels: *mut u32,
+    out_sample_rate: *mut f64,
+    err: *mut u8,
+    err_cap: usize,
+) -> *mut f32 {
+    let result = (|| {
+        if path.is_null() {
+            return Err("null path".to_string());
+        }
+        // SAFETY: caller contract.
+        let p = unsafe { std::ffi::CStr::from_ptr(path) }
+            .to_str()
+            .map_err(|e| format!("path is not UTF-8: {e}"))?;
+        crate::server::nrt::read_audio(p, file_start as usize, num_frames)
+    })();
+    match result {
+        Ok(buffer) => {
+            // SAFETY: caller contract.
+            unsafe {
+                *out_frames = buffer.frames() as u64;
+                *out_channels = buffer.channels() as u32;
+                *out_sample_rate = buffer.sample_rate();
+            }
+            let mut samples = buffer.data().to_vec().into_boxed_slice();
+            let ptr = samples.as_mut_ptr();
+            std::mem::forget(samples);
+            ptr
+        }
+        Err(e) => {
+            write_error(&e, err, err_cap);
+            std::ptr::null_mut()
+        }
+    }
+}

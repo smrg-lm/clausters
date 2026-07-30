@@ -279,7 +279,12 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
 /// through symphonia (FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF, ...). Both
 /// keep the file's own sample rate — the engine never resamples; clients
 /// compensate via `PlayBuf`'s rate.
-fn read_audio(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, String> {
+///
+/// Public because it is the server's whole answer to "read a soundfile", and
+/// a client that needs the same answer should get *this* one rather than a
+/// second decoder of its own: `/b_allocRead` and the embed FFI's
+/// `clausters_read_soundfile` are two doors onto this function.
+pub fn read_audio(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, String> {
     let is_wav = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
