@@ -543,12 +543,13 @@ impl Gestures {
         match kind {
             WidgetKind::Slider { range: r, vertical } => {
                 // The track area, not the whole body: the grab has to agree with
-                // the groove the renderer drew (`controls::slider_track`).
+                // the groove the renderer drew (`controls::slider_track`) — at
+                // the placement's own table, which is what the renderer used.
                 let body = controls::slider_track(
                     rect,
                     r.label.is_some(),
                     r.text_size * scale,
-                    host.metrics_for(def_id),
+                    &host.metrics_for(def_id).at(scale),
                 );
                 let t = slider_t(body, cx, cy, vertical);
                 interact::set_fraction(host, def_id, id, t);
@@ -561,7 +562,7 @@ impl Gestures {
                     rect,
                     r.label.is_some(),
                     r.text_size * scale,
-                    host.metrics_for(def_id),
+                    &host.metrics_for(def_id).at(scale),
                 );
                 let locked = grab();
                 self.drag = Some(Drag::Vertical {
@@ -2996,6 +2997,54 @@ mod tests {
         g.drag_to(&mut host, &ctx, 5000.0, 5000.0);
         let v = view_of(&host, 20);
         assert_eq!((v.view_x, v.view_y), (-300.0, -200.0));
+    }
+
+    /// The same anchor, on a plane whose **content follows the zoom**: a graph
+    /// sizes its plane to itself-but-never-below-the-viewport, so the visible
+    /// content shrinks as the zoom grows. Clamping the new pan against the
+    /// content of the *old* zoom slid the plane out from under the cursor —
+    /// invisible on a plane with an explicit `content_w`, which is why the test
+    /// above did not catch it.
+    #[test]
+    fn wheel_zoom_over_a_graph_sized_plane_holds_the_cursor_too() {
+        let mut host = host_from(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":20,"type":"scroll","margin":0,"children":[
+                  {"id":7,"type":"patch","boxes":[
+                    {"def":"tone","outlets":["out"]},
+                    {"def":"dac","inlets":["in"],"outlets":["out"]}],
+                   "cords":[0,0,1,0]}]}]}"#,
+        );
+        let m = Metrics::default();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        let (cx, cy) = (420.0, 260.0);
+        let area = crate::host::layout::Rect::new(0.0, 0.0, 600.0, 400.0);
+        // Where the graph itself sits on screen — the thing an eye tracks, and
+        // the thing the content extent moves when it follows the zoom.
+        let graph = |host: &Host| {
+            crate::host::layout::layout(area, host.window_def(1).unwrap(), &m)
+                .into_iter()
+                .find(|p| p.widget.id == Some(7))
+                .map(|p| (p.rect.x + p.rect.w * 0.5, p.rect.y + p.rect.h * 0.5))
+                .expect("the patch is placed")
+        };
+        let before = view_of(&host, 20);
+        let (bx, by) = graph(&host);
+        g.wheel(&mut host, &ctx, cx, cy, 1.0);
+        let after = view_of(&host, 20);
+        let factor = (after.zoom(&m) / before.zoom(&m)) as f32;
+        assert!(factor > 1.0, "wheel up zooms in");
+        let (ax, ay) = graph(&host);
+        // A zoom about the cursor maps every pixel p to cursor + (p - cursor) * f.
+        let (wx, wy) = (
+            cx as f32 + (bx - cx as f32) * factor,
+            cy as f32 + (by - cy as f32) * factor,
+        );
+        assert!(
+            (ax - wx).abs() < 0.5 && (ay - wy).abs() < 0.5,
+            "the graph slid under the cursor: expected {wx},{wy}, got {ax},{ay}"
+        );
     }
 
     #[test]

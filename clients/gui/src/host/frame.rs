@@ -819,7 +819,6 @@ fn collect_widgets(
     inputs: &FrameInputs,
     theme: &Theme,
 ) -> Collected {
-    let m = inputs.metrics;
     let mut timeline_items: Vec<TimelineItem> = Vec::new();
     // Meter/scope rects, copied out so their shared-memory values and the scope
     // history can be read after the host-tree borrow is released.
@@ -847,6 +846,11 @@ fn collect_widgets(
     for p in placed {
         // Everything a scrolled widget paints clips to its container's area.
         mesh.set_clip(p.clip);
+        // This widget's own size table: the host's, resolved at the scale it is
+        // seen through ([`layout::Placed::metrics`]). Identical to the window's
+        // outside a workspace; inside a zoomed one it carries the zoom, so a
+        // box's padding, parts and text enlarge together.
+        let m = &p.metrics;
         // The widget's resolved theme (a theme group's overlay, a `color`
         // accent), resolved at mutation points -- one reference per widget.
         let th = p.widget.theme.as_deref().unwrap_or(theme);

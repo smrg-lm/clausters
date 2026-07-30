@@ -86,48 +86,73 @@ impl Rect {
     }
 }
 
-/// The space a widget is placed in: how the wire's own lengths reach physical
-/// pixels, and the zoom they are seen through.
+/// The space a widget is placed in: how the wire's own lengths become this
+/// space's coordinates, the scale everything in it is drawn at, and the size
+/// table resolved there.
 ///
-/// `unit` is the logical -> physical multiplier for the declared `w`/`h`/`x`/`y`/
-/// `margin`/`gap` — the window's `ui_scale` for the chrome, `1.0` once inside a
-/// `scroll` workspace, whose plane is physical. `zoom` is the product of the
-/// enclosing workspaces' zooms. [`Placed::scale`] is their product, so text
-/// follows both.
+/// Three spaces exist, and every widget is in exactly one:
+///
+/// - **The window.** `unit` is the window's `ui_scale`, so a declared `h: 28` is
+///   28 logical pixels; `scale` is the same, so the metrics and the text are the
+///   window's own.
+/// - **A workspace's content plane**, used to place a `scroll`'s direct children:
+///   `unit` and `scale` are 1, because those placements are *content units* and
+///   the whole rectangle is scaled by the plane's zoom afterwards. The table
+///   there is the logical one, so a metric default (a `margin`, a `gap`) and a
+///   natural size come out in content units too.
+/// - **Inside a scrolled child**, whose rectangle is already scaled: `unit` and
+///   `scale` are the product of the zooms over it. So its own children's declared
+///   lengths, its metrics and its text all carry that zoom together — a zoomed
+///   box is an enlargement of itself, not a box with oversized text in it.
 #[derive(Debug, Clone, Copy)]
 struct Space {
+    /// A declared length, into this space's coordinates — and the scale the
+    /// space is drawn at, since the two are the same number: text draws at
+    /// `text_size * unit` and [`Space::metrics`] is resolved there.
     unit: f32,
-    zoom: f32,
+    /// The accumulated zoom of the workspaces over this space (1.0 in the
+    /// window). Carried so a nested plane composes with the one around it.
+    zooms: f32,
+    /// The size table at [`Space::unit`].
+    metrics: Metrics,
 }
 
 impl Space {
-    /// The window's own space: the wire is logical, nothing is zoomed.
+    /// The window's own space.
     fn window(metrics: &Metrics) -> Self {
         Self {
             unit: metrics.ui_scale,
-            zoom: 1.0,
+            zooms: 1.0,
+            metrics: *metrics,
         }
     }
 
-    /// The space inside a `scroll` workspace at `zoom`: the wire's lengths there
-    /// are the plane's own content units, and the zoom — the plane's, defaulting
-    /// to the window's scale — is what turns them into pixels. It composes with
-    /// any enclosing workspace's.
-    fn plane(self, zoom: f32) -> Self {
+    /// The content plane of a `scroll`, for placing its direct children:
+    /// **content units**, measured with the logical table, so what the plane's
+    /// zoom multiplies afterwards is one coherent set of numbers.
+    fn plane(self) -> Self {
         Self {
             unit: 1.0,
-            zoom: self.zoom * zoom,
+            zooms: self.zooms,
+            metrics: self.metrics.at(1.0),
         }
     }
 
-    /// One declared length in physical pixels.
-    fn px(self, logical: f32) -> f32 {
-        super::metrics::snap_px(logical, self.unit)
+    /// Inside a scrolled child, whose rectangle the plane's zoom has already
+    /// scaled: an ordinary space again, at the accumulated zoom instead of the
+    /// window's scale.
+    fn scrolled(self, zoom: f32) -> Self {
+        let zooms = self.zooms * zoom;
+        Self {
+            unit: zooms,
+            zooms,
+            metrics: self.metrics.at(zooms),
+        }
     }
 
-    /// The scale text draws at here.
-    fn scale(self) -> f32 {
-        self.unit * self.zoom
+    /// One declared length in this space's coordinates.
+    fn px(self, declared: f32) -> f32 {
+        super::metrics::snap_px(declared, self.unit)
     }
 }
 
@@ -140,14 +165,19 @@ impl Space {
 pub struct Placed<'a> {
     pub rect: Rect,
     pub clip: Option<Rect>,
-    /// The scale this widget's **text** is seen through: the window's
-    /// `ui_scale` times the accumulated `scroll` zoom (nested workspaces
-    /// compose; a workspace's plane is physical, so inside one it is the zoom
-    /// alone). Text draws at `text_size * scale`, so a logical `text_size` is
-    /// the same apparent size on any display and a zoomed box keeps its
-    /// proportions; the rest of a workspace's interior deliberately keeps its
-    /// physical-pixel metrics, the patcher posture.
+    /// The scale this widget is seen at: the window's `ui_scale` outside any
+    /// workspace, the accumulated `scroll` zoom inside one (nested workspaces
+    /// compose). Text draws at `text_size * scale` and
+    /// [`metrics`](Self::metrics) is resolved there, so a logical `text_size` is
+    /// the same apparent size on any display and a zoomed box is an
+    /// **enlargement of itself** — padding, parts and text together — rather
+    /// than a box with oversized text in it.
     pub scale: f32,
+    /// The size table this widget is drawn and hit-tested with: the host's,
+    /// resolved at [`Placed::scale`] (see [`Metrics::at`]). The same table the
+    /// layout measured it with, so a zoomed widget's parts keep their
+    /// proportions instead of growing only where text is involved.
+    pub metrics: Metrics,
     pub widget: &'a Widget,
 }
 
@@ -174,7 +204,8 @@ fn place<'a>(
     out.push(Placed {
         rect: area,
         clip,
-        scale: space.scale(),
+        scale: space.unit,
+        metrics: space.metrics,
         widget,
     });
     let (layout, flow) = match widget.kind {
@@ -186,23 +217,24 @@ fn place<'a>(
         }
         _ => return, // leaves have no children to place
     };
-    let inner = area.inset(margin(flow, space, metrics));
+    let inner = area.inset(margin(flow, space));
     for (child, rect) in widget.children.iter().zip(child_rects(
         inner,
         widget.children.as_slice(),
         layout,
         flow,
         space,
-        metrics,
     )) {
         place(rect, child, clip, space, metrics, out);
     }
 }
 
-/// A container's inner margin in physical pixels: its own declared (logical)
-/// `margin` when it names one, else the resolved role.
-fn margin(flow: Flow, space: Space, metrics: &Metrics) -> f32 {
-    flow.margin.map_or(metrics.margin, |m| space.px(m)).max(0.0)
+/// A container's inner margin in its space's coordinates: its own declared
+/// `margin` when it names one, else the space's resolved role.
+fn margin(flow: Flow, space: Space) -> f32 {
+    flow.margin
+        .map_or(space.metrics.margin, |m| space.px(m))
+        .max(0.0)
 }
 
 /// Places a `scroll` container's children: they lay out into the **virtual
@@ -210,14 +242,14 @@ fn margin(flow: Flow, space: Space, metrics: &Metrics) -> f32 {
 /// container's ordinary layout, then each rectangle is transformed through the
 /// view — offset by the pan, scaled by the zoom — into the window's pixels, and the
 /// whole subtree is clipped to the container's area. The transform applies to
-/// the direct children's rectangles; their own subtrees lay out normally
-/// inside the transformed rects (so a zoom scales the placed boxes), and the
-/// subtree's [`Placed::scale`] picks up the zoom so its **text** scales with
-/// the boxes — the rest of the plane keeps its physical-pixel metrics.
+/// the direct children's rectangles; their own subtrees then lay out in an
+/// ordinary space at the accumulated zoom ([`Space::scrolled`]), so everything
+/// inside a scrolled box — its declared lengths, its metric roles, its text —
+/// carries that one factor.
 ///
-/// The plane itself is **physical** ([`Space::plane`]): its content extent, its
-/// pan and its children's declared positions are the units the gesture machine
-/// pans in, not the window's logical ones.
+/// The plane's own coordinates are **content units** ([`Space::plane`]): its
+/// content extent, its pan and its children's declared positions are the units
+/// the gesture machine pans in, not the window's logical ones.
 fn place_scrolled<'a>(
     area: Rect,
     widget: &'a Widget,
@@ -229,21 +261,23 @@ fn place_scrolled<'a>(
     let WidgetKind::Scroll { layout, flow, view } = widget.kind else {
         return;
     };
-    let (content_w, content_h) = scroll_content(widget, area, metrics);
     let zoom = view.zoom(metrics);
+    let (content_w, content_h) = scroll_content(widget, area, metrics);
     let slack = view.axis.slack();
     let vx = scroll::clamp_pan(view.view_x, area.w, zoom, content_w, slack);
     let vy = scroll::clamp_pan(view.view_y, area.h, zoom, content_h, slack);
-    let space = space.plane(zoom as f32);
-    let inner = Rect::new(0.0, 0.0, content_w, content_h).inset(margin(flow, space, metrics));
+    // Two spaces: the children are placed in the plane's content units, and
+    // each one's subtree then lives in an ordinary space at the accumulated zoom.
+    let plane = space.plane();
+    let inner = Rect::new(0.0, 0.0, content_w, content_h).inset(margin(flow, plane));
+    let inside = space.scrolled(zoom as f32);
     let clip = Some(clip.map_or(area, |c| c.intersect(area)));
     for (child, r) in widget.children.iter().zip(child_rects(
         inner,
         widget.children.as_slice(),
         layout,
         flow,
-        space,
-        metrics,
+        plane,
     )) {
         let rect = Rect::new(
             area.x + ((r.x as f64 - vx) * zoom) as f32,
@@ -251,7 +285,7 @@ fn place_scrolled<'a>(
             (r.w as f64 * zoom) as f32,
             (r.h as f64 * zoom) as f32,
         );
-        place(rect, child, clip, space, metrics, out);
+        place(rect, child, clip, inside, metrics, out);
     }
 }
 
@@ -263,18 +297,23 @@ fn place_scrolled<'a>(
 /// renders.
 ///
 /// Every number here is a **content unit**, the viewport included: the pane's
-/// pixels divided by the plane's zoom. Comparing a content extent against a
-/// pixel width would place a plane's contents off by exactly that zoom — the
-/// bug that pushed a centred patch graph into the corner once the zoom stopped
-/// defaulting to 1.
+/// pixels divided by `zoom`. Comparing a content extent against a pixel width
+/// would place a plane's contents off by exactly that zoom — the bug that pushed
+/// a centred patch graph into the corner once the zoom stopped defaulting to 1.
+///
+/// The conversion uses the plane's **natural** scale (its default zoom, the
+/// window's density), never the zoom it is currently at — the content extent has
+/// to be *constant under zooming*. A content that shrinks as the zoom grows
+/// slides everything measured against it, so a wheel zoom stops holding the point
+/// under the cursor: the pivot math is exact, but the plane it pivots in moves.
 pub fn scroll_content(widget: &Widget, area: Rect, metrics: &Metrics) -> (f32, f32) {
     let WidgetKind::Scroll { layout, flow, view } = widget.kind else {
         return (area.w, area.h);
     };
     let margin = flow.margin.unwrap_or(metrics.margin).max(0.0);
     // The pane, in the plane's own units.
-    let zoom = view.zoom(metrics) as f32;
-    let (visible_w, visible_h) = (area.w / zoom, area.h / zoom);
+    let natural = metrics.ui_scale.max(0.01);
+    let (visible_w, visible_h) = (area.w / natural, area.h / natural);
     let extent = |pos: fn(Place) -> Option<f32>, size: fn(Place) -> Option<f32>| {
         widget
             .children
@@ -327,19 +366,18 @@ fn child_rects(
     layout: Layout,
     flow: Flow,
     space: Space,
-    metrics: &Metrics,
 ) -> Vec<Rect> {
     if children.is_empty() {
         return Vec::new();
     }
-    let gap = flow.gap.map_or(metrics.gap, |g| space.px(g)).max(0.0);
+    let gap = flow.gap.map_or(space.metrics.gap, |g| space.px(g)).max(0.0);
     match layout {
         Layout::Free => children
             .iter()
             .map(|c| free_rect(inner, c.place, space))
             .collect(),
-        Layout::Row => strip(inner, children, gap, true, space, metrics),
-        Layout::Col => strip(inner, children, gap, false, space, metrics),
+        Layout::Row => strip(inner, children, gap, true, space),
+        Layout::Col => strip(inner, children, gap, false, space),
         Layout::Grid => grid(inner, children.len(), gap, flow.cols),
     }
 }
@@ -365,14 +403,7 @@ fn free_rect(inner: Rect, p: Place, space: Space) -> Rect {
 /// taken as given; an explicit `weight` takes that share of the leftover; a
 /// widget with a natural size on this axis takes exactly that; everything else
 /// shares the leftover at weight 1. The cross axis fills.
-fn strip(
-    inner: Rect,
-    children: &[Widget],
-    gap: f32,
-    horizontal: bool,
-    space: Space,
-    metrics: &Metrics,
-) -> Vec<Rect> {
+fn strip(inner: Rect, children: &[Widget], gap: f32, horizontal: bool, space: Space) -> Vec<Rect> {
     let gaps = gap * (children.len() as f32 - 1.0);
     let main = if horizontal { inner.w } else { inner.h };
     let fixed_of = |c: &Widget| {
@@ -382,7 +413,9 @@ fn strip(
             // An explicit weight overrides the natural size — "stretch this
             // button" stays expressible.
             p.weight.is_none().then(|| {
-                let (nw, nh) = c.kind.natural_size(metrics, space.scale());
+                // Measured in this space's own coordinates, at the scale its
+                // text will draw at — one table, one scale.
+                let (nw, nh) = c.kind.natural_size(&space.metrics, space.unit);
                 if horizontal { nw } else { nh }
             })?
         })
@@ -675,6 +708,42 @@ mod tests {
         assert_eq!((child.rect.x, child.rect.y), (200.0, 100.0));
         assert_eq!((child.rect.w, child.rect.h), (160.0, 80.0));
         assert_eq!(child.scale, 2.0, "the plane's text rides its zoom");
+    }
+
+    /// A zoom is an **enlargement**: inside a scrolled box the declared lengths,
+    /// the metric roles and the text all carry the same factor. The failure this
+    /// pins is what a knob in a zoomed patcher looked like when only the text
+    /// did — proportions inside the box came apart as soon as the zoom moved.
+    #[test]
+    fn a_scrolled_box_enlarges_whole() {
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":9,"type":"scroll","margin":0,"content_w":2000,"content_h":2000,
+             "view_zoom":ZOOM,"children":[
+               {"id":10,"type":"panel","layout":"col","x":0,"y":0,"w":300,"h":220,
+                "children":[{"id":11,"type":"label","text":"node"},
+                            {"id":12,"type":"knob","label":"amount"}]}]}]}"#;
+        let m = Metrics::default();
+        let at = |zoom: f32| {
+            let w = tree(&json.replace("ZOOM", &zoom.to_string()));
+            let placed = layout(area(), &w, &m);
+            let of = |id: i32| {
+                let p = placed.iter().find(|p| p.widget.id == Some(id)).unwrap();
+                (p.rect, p.scale, p.metrics)
+            };
+            (of(10), of(11), of(12))
+        };
+        let (one, two) = (at(1.0), at(2.0));
+        for (a, b) in [(one.0, two.0), (one.1, two.1), (one.2, two.2)] {
+            let (ra, sa, ma) = a;
+            let (rb, sb, mb) = b;
+            assert_eq!(rb.w, ra.w * 2.0, "the box doubles");
+            assert_eq!(rb.h, ra.h * 2.0);
+            assert_eq!(sb, sa * 2.0, "and so does its text");
+            assert_eq!(mb.pad, ma.pad * 2.0, "and its padding");
+            assert_eq!(mb.knob_d, ma.knob_d * 2.0, "and its parts");
+        }
+        // The proportion that broke: the knob's box against the disc inside it.
+        assert_eq!(two.2.0.h / one.2.0.h, two.2.2.knob_d / one.2.2.knob_d);
     }
 
     #[test]

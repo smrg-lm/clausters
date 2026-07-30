@@ -301,8 +301,25 @@ impl Metrics {
             caption_scale: glyph(self.caption_scale * k),
             micro_scale: glyph(self.micro_scale * k),
 
-            ui_scale: k,
+            // Relative, so resolutions compose: a table already at 2 resolved by
+            // another 2 is a table at 4, which is what a zoom inside a scaled
+            // window is.
+            ui_scale: self.ui_scale * k,
         }
+    }
+
+    /// This table's own logical base, resolved at `scale` — the table a widget
+    /// seen through a zoom is sized and drawn with.
+    ///
+    /// A `scroll` workspace multiplies everything inside it by its zoom, and a
+    /// zoom is an *enlargement*: the text, the padding, a disc's diameter and the
+    /// gaps between rows all have to move together, or a zoomed box comes out as
+    /// a box with oversized text jammed into it. So a placement's scale picks the
+    /// table, exactly as a window's does — this is that same resolution, taken
+    /// relative to whatever scale this table is already at (so it is the identity
+    /// at the window's own scale).
+    pub fn at(&self, scale: f32) -> Self {
+        self.resolved(scale / self.ui_scale.max(0.01))
     }
 
     /// One of the **wire's own** lengths (`w`/`h`/`x`/`y`/`margin`/`gap`) in

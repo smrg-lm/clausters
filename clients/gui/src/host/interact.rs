@@ -93,13 +93,13 @@ pub(crate) fn scroll_set_view(
     (vx, vy, zoom): (f64, f64, f64),
 ) -> Option<(f64, f64, f64)> {
     let metrics = *host.metrics_for(def_id);
+    let zoom = super::scroll::clamp_zoom(zoom);
     let tree = host.window_def_mut(def_id)?;
     let content = layout::scroll_content(tree.find(id)?, area, &metrics);
     let w = tree.find_mut(id)?;
     let WidgetKind::Scroll { view, .. } = &mut w.kind else {
         return None;
     };
-    let zoom = super::scroll::clamp_zoom(zoom);
     let slack = view.axis.slack();
     let next = (
         super::scroll::clamp_pan(vx, area.w, zoom, content.0, slack),
@@ -198,7 +198,8 @@ pub(crate) fn text_caret_at(
             *caret,
             cx,
             cy,
-            host.metrics_for(def_id),
+            // The placement's table, the one the field was drawn with.
+            &host.metrics_for(def_id).at(scale),
         )),
         _ => None,
     }

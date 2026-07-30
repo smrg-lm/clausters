@@ -3408,7 +3408,20 @@ signal finer than the screen" read from the other side. Their defaults (the whol
 buffer, the pitch window fitted to the lane, the page fitted to the rect) are
 already fits to their content, and stay untouched.
 
-Two bugs surfaced with that default and were older than it, both from mixing the
+**A zoom is an enlargement, so a placement's scale picks its size table.** The
+default exposed a second thing the plane had never really done: only *text*
+scaled with the zoom, while every metric role (padding, a slider's track, a
+knob's diameter, the gap between rows) stayed at the window's table — the
+"patcher posture" that was tolerable when the zoom was 1 by default and reads as
+broken proportions the moment a box is drawn at another scale. So a placement
+carries the table it is drawn with (`Metrics::at`, resolved at the placement's
+scale), and the layout measures with the same one: inside a scrolled box the
+declared lengths, the roles and the text all carry one factor. The layout
+distinguishes three spaces to make that exact — the window, a plane's *content
+units*, and the inside of a scrolled child at the accumulated zoom — which is
+also what stopped a plane's default margin from being counted twice.
+
+Two more bugs surfaced with that default and were older than it, both from mixing
 two spaces inside one expression: a plane's content extent was compared against
 the pane's *pixels* (identical at zoom 1, off by the zoom at any other, which
 pushed a self-centring graph into the corner), and a widget's natural size was
@@ -3418,6 +3431,13 @@ one, and a knob, whose height is label strip + disc + read-out strip, gave the
 disc away to the text and rendered as a dot. Both are the same lesson: **an
 expression may not mix a content unit with a pixel, or a declared text size with
 the size it draws at.**
+
+A third had the same shape and cost the wheel its anchor: the content extent of a
+graph-sized plane is "the graph, but never smaller than the viewport", and once
+the viewport was converted with the *live* zoom the content shrank as the zoom
+grew — so the plane the pivot math holds a point in was itself moving, and the
+graph slid out from under the cursor. The conversion uses the plane's **natural**
+scale, which makes the extent constant under zooming.
 
 **Two pixel spaces coexist, and that is the invariant to state.** Chrome is
 logical; a *navigable plane* is physical. A `scroll` workspace's content plane
