@@ -46,6 +46,8 @@ usage:
       --format <fmt>       int16 | int24 | float (default float)
       --seed <n>           starting seed for noise UGens (default fixed, so a
                            score renders identically every run)
+      --stats              print the render's stats as one JSON line instead
+                           of the human summary (for a client driving --nrt)
       --workers <n>        DSP threads for /g_parallel groups (default 0)
       --shm <path>         shared-memory segment for local clients (RT only;
                            put it on /dev/shm — see docs/ipc.md)
@@ -107,6 +109,7 @@ fn parse_workers(value: &str) -> Result<usize, String> {
 fn nrt_main(args: &[String]) -> Result<(), String> {
     let mut cfg = RenderConfig::default();
     let mut format = "float".to_string();
+    let mut stats_json = false;
     let mut paths = Vec::new();
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -133,6 +136,7 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
                     .map_err(|e| format!("--seed: {e}"))?;
             }
             "--workers" => cfg.workers = parse_workers(&value("--workers")?)?,
+            "--stats" => stats_json = true,
             other => paths.push(other.to_string()),
         }
     }
@@ -142,6 +146,28 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
 
     let score = Score::load(score_path)?;
     let stats = render_to_wav(&score, &cfg, out_path, &format)?;
+    if stats_json {
+        // One machine-readable line, for a client driving `--nrt` as a
+        // subprocess: it gets the render's stats without reading the file it
+        // just asked the server to write.
+        let list = |v: &[f32]| {
+            v.iter()
+                .map(|x| format!("{x}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        println!(
+            "{{\"frames\":{},\"events\":{},\"channels\":{},\"sampleRate\":{},\
+             \"peak\":[{}],\"rms\":[{}]}}",
+            stats.frames,
+            stats.events,
+            cfg.channels,
+            cfg.sample_rate,
+            list(&stats.peak),
+            list(&stats.rms),
+        );
+        return Ok(());
+    }
     println!(
         "rendered {} events into {out_path}: {} frames ({:.3} s) at {} Hz, {} channel(s), {format}",
         stats.events,

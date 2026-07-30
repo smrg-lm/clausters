@@ -60,14 +60,20 @@ fn write_error(msg: &str, buf: *mut u8, cap: usize) {
 /// Renders a binary score (the `--nrt` format: length-prefixed OSC packets,
 /// timetags in seconds from the start) synchronously.
 ///
+/// `seed` starts the render's stochastic UGens (see
+/// [`crate::server::render::RenderConfig::seed`]); pass
+/// [`clausters_core::rng::SEED_STRIDE`] for the default, reproducible take.
+///
 /// On success returns a malloc'd interleaved `f32` buffer and writes the
-/// frame count to `out_frames` (total samples = frames × channels); free it
-/// with [`clausters_free_samples`]. On failure returns NULL and writes a
+/// frame count to `out_frames` (total samples = frames × channels) and the
+/// number of score events executed to `out_events`; free the buffer with
+/// [`clausters_free_samples`]. On failure returns NULL and writes a
 /// human-readable message into (`err`, `err_cap`).
 ///
 /// # Safety
-/// `score`/`score_len` must describe a readable byte range; `out_frames`
-/// must be writable; `err` either NULL or writable for `err_cap` bytes.
+/// `score`/`score_len` must describe a readable byte range; `out_frames` and
+/// `out_events` must be writable; `err` either NULL or writable for `err_cap`
+/// bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_render(
     score: *const u8,
@@ -75,7 +81,9 @@ pub unsafe extern "C" fn clausters_render(
     sample_rate: f64,
     channels: u32,
     workers: u32,
+    seed: u64,
     out_frames: *mut u64,
+    out_events: *mut u64,
     err: *mut u8,
     err_cap: usize,
 ) -> *mut f32 {
@@ -90,14 +98,17 @@ pub unsafe extern "C" fn clausters_render(
             sample_rate,
             channels: channels as usize,
             workers: workers as usize,
-            ..RenderConfig::default()
+            seed,
         };
         render_to_vec(&score, &cfg)
     });
     match result {
         Ok((samples, stats)) => {
             // SAFETY: caller contract.
-            unsafe { *out_frames = stats.frames };
+            unsafe {
+                *out_frames = stats.frames;
+                *out_events = stats.events as u64;
+            }
             let mut samples = samples.into_boxed_slice();
             let ptr = samples.as_mut_ptr();
             std::mem::forget(samples);

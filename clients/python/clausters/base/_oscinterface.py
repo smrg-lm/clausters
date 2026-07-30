@@ -383,8 +383,10 @@ class OscNrtInterface(OscInterface):
         """
         from .. import ipc
 
-        return ipc.render(self.score.bytes(), sample_rate=sample_rate,
-                          channels=channels, workers=workers)
+        samples, frames, _events = ipc.render(
+            self.score.bytes(), sample_rate=sample_rate, channels=channels,
+            workers=workers)
+        return samples, frames
 
 
 class OscEmbedInterface(OscInterface):

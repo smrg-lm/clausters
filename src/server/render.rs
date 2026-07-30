@@ -163,10 +163,20 @@ impl Default for RenderConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct RenderStats {
     pub frames: u64,
     pub events: usize,
+    /// Peak magnitude per output channel, measured as the render streams.
+    ///
+    /// The driver already walks every sample on its way to the sink, so this
+    /// costs a compare per sample and saves the caller a second pass — which
+    /// matters most for [`render_to_wav`], where the samples are gone by the
+    /// time the call returns and measuring them again would mean reading the
+    /// file back.
+    pub peak: Vec<f32>,
+    /// RMS per output channel over the whole render.
+    pub rms: Vec<f32>,
 }
 
 /// Renders a score, handing each processed chunk (interleaved, at most one
@@ -196,6 +206,13 @@ pub fn render(
         );
     }
 
+    // Measured on the way past, not in a second pass: the driver already
+    // touches every sample handing it to the sink, and for `render_to_wav`
+    // the samples are gone once the call returns.
+    let channels = cfg.channels;
+    let mut peak = vec![0.0f32; channels];
+    let mut sumsq = vec![0.0f64; channels];
+
     crate::dsp::denormals::flush_to_zero();
     let (engine, handle) = engine_pair_with_workers(sr as f32, cfg.channels, cfg.workers);
     let mut r = Renderer {
@@ -213,11 +230,23 @@ pub fn render(
         dropped: false,
     };
 
+    let mut measured = |chunk: &[f32]| -> Result<(), String> {
+        for (i, &x) in chunk.iter().enumerate() {
+            let c = i % channels;
+            let a = x.abs();
+            if a > peak[c] {
+                peak[c] = a;
+            }
+            sumsq[c] += (x as f64) * (x as f64);
+        }
+        sink(chunk)
+    };
+
     for ev in &score.events {
         let target = ((ev.time * sr).round() as u64).min(total);
         // The event lands in a future block: render up to it.
         while r.now + BLOCK_SIZE as u64 <= target {
-            r.process_block(total, &mut sink)?;
+            r.process_block(total, &mut measured)?;
         }
         let cmds = r
             .event_cmds(&ev.messages)
@@ -234,7 +263,7 @@ pub fn render(
         }
     }
     while r.now < total {
-        r.process_block(total, &mut sink)?;
+        r.process_block(total, &mut measured)?;
     }
     r.collect();
     if r.dropped {
@@ -245,6 +274,17 @@ pub fn render(
     Ok(RenderStats {
         frames: total,
         events: score.events.len(),
+        peak,
+        rms: sumsq
+            .iter()
+            .map(|&s| {
+                if total == 0 {
+                    0.0
+                } else {
+                    (s / total as f64).sqrt() as f32
+                }
+            })
+            .collect(),
     })
 }
 

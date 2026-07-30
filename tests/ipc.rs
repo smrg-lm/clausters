@@ -355,6 +355,7 @@ fn embed_render_returns_flat_samples() {
     }
 
     let mut frames = 0u64;
+    let mut events = 0u64;
     let mut err = vec![0u8; 256];
     let ptr = unsafe {
         clausters_render(
@@ -363,7 +364,9 @@ fn embed_render_returns_flat_samples() {
             48_000.0,
             1,
             0,
+            SEED_STRIDE,
             &mut frames,
+            &mut events,
             err.as_mut_ptr(),
             err.len(),
         )
@@ -374,6 +377,7 @@ fn embed_render_returns_flat_samples() {
         String::from_utf8_lossy(&err)
     );
     assert_eq!(frames, 4800, "0.1 s at 48 kHz");
+    assert!(events > 0, "the score's events are reported back");
     let samples = unsafe { std::slice::from_raw_parts(ptr, frames as usize) };
     assert!(samples.iter().any(|s| *s != 0.0), "the default def sounds");
     unsafe { clausters_free_samples(ptr, frames) };
@@ -386,7 +390,9 @@ fn embed_render_returns_flat_samples() {
             48_000.0,
             1,
             0,
+            SEED_STRIDE,
             &mut frames,
+            &mut events,
             err.as_mut_ptr(),
             err.len(),
         )

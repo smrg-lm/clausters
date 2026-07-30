@@ -1,6 +1,6 @@
 {
   "name": "clausters",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Clausters in the browser: the audio engine in an AudioWorklet, the GUI host on a canvas, web components that boot standalone bundles, and the OSC/connection seam of the TypeScript client — no server process needed.",
   "type": "module",
   "main": "./dist/index.js",

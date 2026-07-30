@@ -99,7 +99,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
     if isinstance(obj, (bytes, bytearray)):
         from .ipc import render as render_score
 
-        samples, frames = render_score(bytes(obj), sample_rate, channels, workers)
+        samples, frames, _events = render_score(bytes(obj), sample_rate, channels,
+                                                workers)
         return _deliver(samples, frames, channels, sample_rate, path)
 
     if isinstance(obj, (Ugen, Signal, Box, SynthDef, FaustDef, GraphDef)):

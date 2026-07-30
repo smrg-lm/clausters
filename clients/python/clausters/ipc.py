@@ -42,7 +42,12 @@ from .errors import (
     ServerError,
 )
 
-ABI_VERSION = 4
+ABI_VERSION = 5
+
+#: Default starting seed for a render's stochastic UGens — ``SEED_STRIDE`` in
+#: ``clausters_core::rng``. Rendering the same score with the same seed gives
+#: the same samples, in any process.
+SEED_STRIDE = 0x9E37_79B9_7F4A_7C15
 
 # embed cdylib file names across platforms (Linux / macOS / Windows).
 _EMBED_NAMES = ("libclausters.so", "libclausters.dylib", "clausters.dll")
@@ -302,8 +307,8 @@ def _load(path: str | None = None) -> ctypes.CDLL:
     render_fn.restype = ctypes.POINTER(ctypes.c_float)
     render_fn.argtypes = [
         ctypes.c_char_p, ctypes.c_size_t, ctypes.c_double, ctypes.c_uint32,
-        ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint64), ctypes.c_char_p,
-        ctypes.c_size_t,
+        ctypes.c_uint32, ctypes.c_uint64, ctypes.POINTER(ctypes.c_uint64),
+        ctypes.POINTER(ctypes.c_uint64), ctypes.c_char_p, ctypes.c_size_t,
     ]
     _require(lib, "clausters_free_samples", "embed").argtypes = [
         ctypes.POINTER(ctypes.c_float), ctypes.c_uint64]
@@ -344,21 +349,29 @@ def _bind_live(lib: ctypes.CDLL) -> LibraryFeatureError | None:
 
 
 def render(score: bytes, sample_rate: float = 48000.0, channels: int = 2,
-           workers: int = 0, lib_path: str | None = None) -> tuple[array, int]:
-    """Synchronous offline render: binary score in, ``(samples, frames)``
-    out — interleaved float32 in a stdlib ``array('f')``. The whole call
-    blocks the caller and nothing else; there is no server involved."""
+           workers: int = 0, lib_path: str | None = None,
+           seed: int = SEED_STRIDE) -> tuple[array, int, int]:
+    """Synchronous offline render: binary score in, ``(samples, frames,
+    events)`` out — the samples interleaved float32 in a stdlib ``array('f')``.
+    The whole call blocks the caller and nothing else; there is no server
+    involved.
+
+    ``seed`` starts the render's stochastic UGens; the default is the same
+    one the server uses, so an unconfigured render is reproducible.
+    """
     lib = _load(lib_path)
     frames = ctypes.c_uint64(0)
+    events = ctypes.c_uint64(0)
     err = ctypes.create_string_buffer(512)
     ptr = lib.clausters_render(score, len(score), sample_rate, channels,
-                               workers, ctypes.byref(frames), err, len(err))
+                               workers, seed, ctypes.byref(frames),
+                               ctypes.byref(events), err, len(err))
     if not ptr:
         raise RenderError(err.value.decode() or "render failed")
     total = frames.value * channels
     samples = array("f", ctypes.cast(ptr, ctypes.POINTER(ctypes.c_float * total)).contents)
     lib.clausters_free_samples(ptr, total)
-    return samples, frames.value
+    return samples, frames.value, events.value
 
 
 class Clausters:
