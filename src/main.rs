@@ -150,9 +150,12 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
         // One machine-readable line, for a client driving `--nrt` as a
         // subprocess: it gets the render's stats without reading the file it
         // just asked the server to write.
+        // Widened to f64 before printing: `{}` on an f32 gives the shortest
+        // string that round-trips *as f32*, which a JSON reader parsing into
+        // a double turns into a different number.
         let list = |v: &[f32]| {
             v.iter()
-                .map(|x| format!("{x}"))
+                .map(|x| format!("{}", *x as f64))
                 .collect::<Vec<_>>()
                 .join(",")
         };
