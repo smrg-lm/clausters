@@ -3372,14 +3372,17 @@ current ratio (`(resolution: 2dppx)`) and re-arms on the new one each time it
 fires (`onScaleChange`). Two triggers, because the box and the density are two
 facts.
 
-That last one was a real change to the published binding, not a port. The browser
-host was told its canvas size in device pixels only — the page multiplied its
-element box by `devicePixelRatio` and handed over the product — so **the ratio
-was destroyed at the boundary** and no arithmetic recovers it. `resize` now
-carries it (`resize(defId, width, height, scale)`), and `canvasBox` reports the
-box and the ratio side by side instead of collapsing them. An incompatible change
-to the wasm-bindgen surface, taken rather than worked around, because the
-alternative is a host that cannot know what it is drawing on.
+That last one reshaped the browser binding rather than porting anything. The host
+was told its canvas size in device pixels only — the page multiplied its element
+box by `devicePixelRatio` and handed over the product — so **the ratio was
+destroyed at the boundary** and no arithmetic recovers it. `resize` now carries
+it (`resize(defId, width, height, scale)`), and `canvasBox` reports the box and
+the ratio side by side instead of collapsing them. The pair does not collapse in
+the other direction either, which is why the binding takes device pixels and the
+ratio rather than the logical box: the `<canvas>` backing store is an integer the
+page has already fixed, and a host that recomputed it from logical times scale
+could land a pixel off it — surface and element misaligned, exactly the blur this
+milestone exists to remove.
 
 **Two pixel spaces coexist, and that is the invariant to state.** Chrome is
 logical; a *navigable plane* is physical. A `scroll` workspace's content plane
