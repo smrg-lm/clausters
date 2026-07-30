@@ -18,6 +18,14 @@
 //! a natural thickness across its track and is elastic along it; a ruler strip
 //! has a natural height and spans its axis.
 //!
+//! It is also a pure function of the placement's **scale** — the zoom a widget
+//! is seen through inside a `scroll` workspace, which is what its own text draws
+//! at (`text_size * scale`). A natural size that ignored it would promise a box
+//! for a 14-pixel line and then draw a 28-pixel one: the text spills into the
+//! next row, and a control that reserves strips for its label and its read-out
+//! (a knob) has nothing left for the part that matters — its disc collapses to a
+//! dot. Outside a workspace the scale is 1 and this is the identity.
+//!
 //! [`super::super::layout`] consumes this on a `row`/`col` main axis, in one
 //! resolution order: explicit `w`/`h` → explicit `weight` → natural size → a
 //! share of the leftover. The cross axis keeps filling.
@@ -60,9 +68,14 @@ fn body_inset(m: &Metrics) -> f32 {
 
 impl WidgetKind {
     /// How big this widget wants to be, per axis — `None` meaning elastic (the
-    /// layout decides). Pure over the metrics and the widget's presentation
-    /// props; see the module documentation for the content/surface split.
-    pub fn natural_size(&self, m: &Metrics) -> Natural {
+    /// layout decides). Pure over the metrics, the widget's presentation props
+    /// and the placement `scale` its text draws at (1.0 outside a workspace);
+    /// see the module documentation for the content/surface split.
+    pub fn natural_size(&self, m: &Metrics, scale: f32) -> Natural {
+        // Every text-derived extent is measured at the size the text will
+        // actually be drawn at, which is the widget's `text_size` through the
+        // placement's zoom.
+        let text = |size: &f32| *size * scale;
         match self {
             // -- Content: the widget knows its own extent --
             WidgetKind::Label {
@@ -71,23 +84,23 @@ impl WidgetKind {
                 None,
                 // A wrapped label's line count follows its string, which is
                 // data: it stays elastic and clips what does not fit.
-                (!wrap).then(|| line_box(*text_size, m)),
+                (!wrap).then(|| line_box(text(text_size), m)),
             ),
-            WidgetKind::Button { text_size, .. } => (None, Some(control_box(*text_size, m))),
+            WidgetKind::Button { text_size, .. } => (None, Some(control_box(text(text_size), m))),
             // A toggle owns its cell: the box and its label sit on one row, so
             // the box's own side is the floor its height cannot go under.
             WidgetKind::Toggle { text_size, .. } => {
-                (None, Some(control_box(*text_size, m).max(m.box_side)))
+                (None, Some(control_box(text(text_size), m).max(m.box_side)))
             }
-            WidgetKind::Number(r) => (None, Some(field_h(r, m))),
+            WidgetKind::Number(r) => (None, Some(field_h(r, m, scale))),
             WidgetKind::Menu {
                 label, text_size, ..
             } => (
                 None,
                 Some(
-                    label_strip(label.is_some(), *text_size, m)
+                    label_strip(label.is_some(), text(text_size), m)
                         + body_inset(m)
-                        + control_box(*text_size, m),
+                        + control_box(text(text_size), m),
                 ),
             ),
             WidgetKind::Text {
@@ -100,9 +113,9 @@ impl WidgetKind {
                 // A multiline field is a text *surface*: its height is the
                 // caller's, and it scrolls its rows inside it.
                 (!multiline).then(|| {
-                    label_strip(label.is_some(), *text_size, m)
+                    label_strip(label.is_some(), text(text_size), m)
                         + body_inset(m)
-                        + control_box(*text_size, m)
+                        + control_box(text(text_size), m)
                 }),
             ),
 
@@ -111,14 +124,14 @@ impl WidgetKind {
                 if *vertical {
                     (Some(slider_across(m)), None)
                 } else {
-                    (None, Some(slider_thick(range, m)))
+                    (None, Some(slider_thick(range, m, scale)))
                 }
             }
             // A knob knows its height, not its width: the disc sizes itself to
             // the shorter side of its body and centres there, so extra width is
             // slack it absorbs, while extra height would stack it under dead
             // space. Elastic across, so a row of knobs still spreads.
-            WidgetKind::Knob(r) => (None, Some(knob_h(r, m))),
+            WidgetKind::Knob(r) => (None, Some(knob_h(r, m, scale))),
             // A ruler is a strip: it spans its axis and knows its thickness.
             WidgetKind::TimeRuler { .. } => (None, Some(m.ruler_h)),
 
@@ -130,19 +143,21 @@ impl WidgetKind {
 
 /// A labelled field's height: its label strip, its body inset and one control
 /// line (the read-out row).
-fn field_h(r: &Range, m: &Metrics) -> f32 {
-    label_strip(r.label.is_some(), r.text_size, m) + body_inset(m) + control_box(r.text_size, m)
+fn field_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
+    let size = r.text_size * scale;
+    label_strip(r.label.is_some(), size, m) + body_inset(m) + control_box(size, m)
 }
 
 /// A horizontal slider's thickness: the label strip, the body inset, the
 /// handle's grip across the track and the read-out strip under it — the same
 /// reservation the drawing makes ([`controls::slider_track`]), so the groove
 /// gets the grip it asked for and the number gets its own row.
-fn slider_thick(r: &Range, m: &Metrics) -> f32 {
-    label_strip(r.label.is_some(), r.text_size, m)
+fn slider_thick(r: &Range, m: &Metrics, scale: f32) -> f32 {
+    let size = r.text_size * scale;
+    label_strip(r.label.is_some(), size, m)
         + body_inset(m)
         + m.handle_grip.max(m.handle_thick)
-        + controls::readout_h(r.text_size, m)
+        + controls::readout_h(size, m)
 }
 
 /// A vertical slider's width: the grip across the track, inset in the body.
@@ -154,16 +169,18 @@ fn slider_across(m: &Metrics) -> f32 {
 
 /// A knob's height: the label strip, the body inset, the disc and the read-out
 /// strip the drawing reserves under it.
-fn knob_h(r: &Range, m: &Metrics) -> f32 {
-    label_strip(r.label.is_some(), r.text_size, m)
+fn knob_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
+    let size = r.text_size * scale;
+    label_strip(r.label.is_some(), size, m)
         + body_inset(m)
         + m.knob_d
-        + controls::readout_h(r.text_size, m)
+        + controls::readout_h(size, m)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::controls;
     use crate::host::guidef::GuiNode;
     use crate::host::layout::Rect;
     use crate::host::widget::Widget;
@@ -186,7 +203,7 @@ mod tests {
             r#"{"type":"track"}"#,
             r#"{"type":"patch"}"#,
         ] {
-            assert_eq!(kind(json).natural_size(&m), (None, None), "{json}");
+            assert_eq!(kind(json).natural_size(&m, 1.0), (None, None), "{json}");
         }
     }
 
@@ -204,7 +221,10 @@ mod tests {
             (r#"{"type":"slider"}"#, false),
         ] {
             let k = kind(json);
-            let h = k.natural_size(&m).1.expect("a horizontal slider knows it");
+            let h = k
+                .natural_size(&m, 1.0)
+                .1
+                .expect("a horizontal slider knows it");
             let cell = Rect::new(0.0, 0.0, 200.0, h);
             let body = controls::body_rect_at(cell, labelled, size, &m);
             let track = controls::slider_track(cell, labelled, size, &m);
@@ -222,6 +242,46 @@ mod tests {
         }
     }
 
+    /// A widget seen through a workspace's zoom draws its text at
+    /// `text_size * scale`, so its natural box has to be measured there too. The
+    /// failure this pins is not subtle: a knob whose strips were measured at 1.0
+    /// and drawn at 2.0 had nothing left for its disc, which collapsed to a dot.
+    #[test]
+    fn a_natural_size_is_measured_at_the_scale_its_text_draws_at() {
+        let m = Metrics::default().resolved(2.0);
+        let size = crate::host::font::DEFAULT_SIZE;
+        for scale in [1.0, 2.0, 4.0] {
+            let drawn = size * scale;
+            let label = kind(r#"{"type":"label","text":"a"}"#)
+                .natural_size(&m, scale)
+                .1
+                .unwrap();
+            assert!(
+                label >= crate::host::font::height(drawn),
+                "at {scale} a label's box is smaller than its own line"
+            );
+
+            let cell = Rect::new(
+                0.0,
+                0.0,
+                400.0,
+                kind(r#"{"type":"knob","label":"amount"}"#)
+                    .natural_size(&m, scale)
+                    .1
+                    .unwrap(),
+            );
+            // What the knob's drawing does with that height: its body, minus the
+            // strip it reserves for the read-out, must still be the disc.
+            let body = controls::body_rect_at(cell, true, drawn, &m);
+            let disc = body.h - controls::readout_h(drawn, &m);
+            assert!(
+                (disc - m.knob_d).abs() < 1e-3,
+                "at {scale} the disc got {disc} of the {} it asked for",
+                m.knob_d
+            );
+        }
+    }
+
     #[test]
     fn content_widgets_know_their_height_and_not_their_width() {
         let m = Metrics::default();
@@ -233,7 +293,7 @@ mod tests {
             r#"{"type":"menu","options":["a","b"]}"#,
             r#"{"type":"text","value":"x"}"#,
         ] {
-            let (w, h) = kind(json).natural_size(&m);
+            let (w, h) = kind(json).natural_size(&m, 1.0);
             assert_eq!(w, None, "{json} spans its axis");
             let h = h.unwrap_or_else(|| panic!("{json} knows its height"));
             assert!(h >= m.control_h, "{json} fits a line of control: {h}");
@@ -245,11 +305,11 @@ mod tests {
         // The same widget with a longer string, more options, more samples: the
         // size is the same, so a `/gui_set` never relayouts the window.
         let m = Metrics::default();
-        let short = kind(r#"{"type":"label","text":"a"}"#).natural_size(&m);
-        let long = kind(r#"{"type":"label","text":"a much longer caption"}"#).natural_size(&m);
+        let short = kind(r#"{"type":"label","text":"a"}"#).natural_size(&m, 1.0);
+        let long = kind(r#"{"type":"label","text":"a much longer caption"}"#).natural_size(&m, 1.0);
         assert_eq!(short, long);
-        let one = kind(r#"{"type":"menu","options":["a"]}"#).natural_size(&m);
-        let many = kind(r#"{"type":"menu","options":["a","b","c","d"]}"#).natural_size(&m);
+        let one = kind(r#"{"type":"menu","options":["a"]}"#).natural_size(&m, 1.0);
+        let many = kind(r#"{"type":"menu","options":["a","b","c","d"]}"#).natural_size(&m, 1.0);
         assert_eq!(one, many);
     }
 
@@ -257,11 +317,11 @@ mod tests {
     fn a_wrapped_label_and_a_multiline_field_stay_elastic() {
         let m = Metrics::default();
         assert_eq!(
-            kind(r#"{"type":"label","text":"a b c","wrap":1}"#).natural_size(&m),
+            kind(r#"{"type":"label","text":"a b c","wrap":1}"#).natural_size(&m, 1.0),
             (None, None)
         );
         assert_eq!(
-            kind(r#"{"type":"text","value":"a","multiline":1}"#).natural_size(&m),
+            kind(r#"{"type":"text","value":"a","multiline":1}"#).natural_size(&m, 1.0),
             (None, None)
         );
     }
@@ -269,9 +329,12 @@ mod tests {
     #[test]
     fn a_label_strip_makes_a_control_taller() {
         let m = Metrics::default();
-        let bare = kind(r#"{"type":"number"}"#).natural_size(&m).1.unwrap();
+        let bare = kind(r#"{"type":"number"}"#)
+            .natural_size(&m, 1.0)
+            .1
+            .unwrap();
         let titled = kind(r#"{"type":"number","label":"cutoff"}"#)
-            .natural_size(&m)
+            .natural_size(&m, 1.0)
             .1
             .unwrap();
         assert!(
@@ -285,11 +348,11 @@ mod tests {
     fn a_bigger_text_size_makes_a_control_taller() {
         let m = Metrics::default();
         let small = kind(r#"{"type":"button","label":"go"}"#)
-            .natural_size(&m)
+            .natural_size(&m, 1.0)
             .1
             .unwrap();
         let big = kind(r#"{"type":"button","label":"go","text_size":4}"#)
-            .natural_size(&m)
+            .natural_size(&m, 1.0)
             .1
             .unwrap();
         assert!(big > small);
@@ -298,10 +361,10 @@ mod tests {
     #[test]
     fn a_slider_is_thick_across_its_axis_and_elastic_along_it() {
         let m = Metrics::default();
-        let (w, h) = kind(r#"{"type":"slider"}"#).natural_size(&m);
+        let (w, h) = kind(r#"{"type":"slider"}"#).natural_size(&m, 1.0);
         assert_eq!(w, None, "a horizontal slider spans its track");
         assert!(h.unwrap() >= m.handle_grip);
-        let (w, h) = kind(r#"{"type":"slider","vertical":1}"#).natural_size(&m);
+        let (w, h) = kind(r#"{"type":"slider","vertical":1}"#).natural_size(&m, 1.0);
         assert!(w.unwrap() >= m.handle_grip);
         assert_eq!(h, None, "a vertical slider spans its track");
     }
@@ -309,7 +372,7 @@ mod tests {
     #[test]
     fn a_knob_is_as_tall_as_its_disc_and_spreads_across() {
         let m = Metrics::default();
-        let (w, h) = kind(r#"{"type":"knob"}"#).natural_size(&m);
+        let (w, h) = kind(r#"{"type":"knob"}"#).natural_size(&m, 1.0);
         assert_eq!(w, None, "a row of knobs still spreads");
         assert!(h.unwrap() > m.knob_d, "the disc plus its read-out");
     }
@@ -318,7 +381,7 @@ mod tests {
     fn a_ruler_strip_is_as_thick_as_the_role() {
         let m = Metrics::default();
         assert_eq!(
-            kind(r#"{"type":"timeruler"}"#).natural_size(&m),
+            kind(r#"{"type":"timeruler"}"#).natural_size(&m, 1.0),
             (None, Some(m.ruler_h))
         );
     }
@@ -333,8 +396,8 @@ mod tests {
             r#"{"type":"knob","label":"amp"}"#,
             r#"{"type":"slider"}"#,
         ] {
-            let a = kind(json).natural_size(&compact);
-            let b = kind(json).natural_size(&comfortable);
+            let a = kind(json).natural_size(&compact, 1.0);
+            let b = kind(json).natural_size(&comfortable, 1.0);
             assert!(
                 b.1.unwrap() > a.1.unwrap(),
                 "{json} follows the density: {a:?} {b:?}"

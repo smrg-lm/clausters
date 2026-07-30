@@ -258,14 +258,23 @@ fn place_scrolled<'a>(
 /// A `scroll` container's virtual content size in content units: the explicit
 /// `content_w`/`content_h` when given; else, for the `free` layout, the
 /// children's placement extents (`x + w` / `y + h`, plus the margin all
-/// around); else the container's own area (the workspace degenerates to a
-/// plain panel at zoom 1). Pure, so the gesture layer clamps against the same
-/// size the layout renders.
+/// around); else the **viewport itself** (the workspace degenerates to a plain
+/// panel). Pure, so the gesture layer clamps against the same size the layout
+/// renders.
+///
+/// Every number here is a **content unit**, the viewport included: the pane's
+/// pixels divided by the plane's zoom. Comparing a content extent against a
+/// pixel width would place a plane's contents off by exactly that zoom — the
+/// bug that pushed a centred patch graph into the corner once the zoom stopped
+/// defaulting to 1.
 pub fn scroll_content(widget: &Widget, area: Rect, metrics: &Metrics) -> (f32, f32) {
     let WidgetKind::Scroll { layout, flow, view } = widget.kind else {
         return (area.w, area.h);
     };
     let margin = flow.margin.unwrap_or(metrics.margin).max(0.0);
+    // The pane, in the plane's own units.
+    let zoom = view.zoom(metrics) as f32;
+    let (visible_w, visible_h) = (area.w / zoom, area.h / zoom);
     let extent = |pos: fn(Place) -> Option<f32>, size: fn(Place) -> Option<f32>| {
         widget
             .children
@@ -284,19 +293,19 @@ pub fn scroll_content(widget: &Widget, area: Rect, metrics: &Metrics) -> (f32, f
     // the content and pans. An explicit `content_w`/`content_h` still overrides.
     if let Some((nw, nh)) = widget.children.iter().find_map(child_intrinsic_size) {
         return (
-            view.content_w.unwrap_or(nw.max(area.w)).max(1.0),
-            view.content_h.unwrap_or(nh.max(area.h)).max(1.0),
+            view.content_w.unwrap_or(nw.max(visible_w)).max(1.0),
+            view.content_h.unwrap_or(nh.max(visible_h)).max(1.0),
         );
     }
     let free = layout == Layout::Free;
     (
         view.content_w
             .or_else(|| free.then(|| extent(|p| p.x, |p| p.w)).flatten())
-            .unwrap_or(area.w)
+            .unwrap_or(visible_w)
             .max(1.0),
         view.content_h
             .or_else(|| free.then(|| extent(|p| p.y, |p| p.h)).flatten())
-            .unwrap_or(area.h)
+            .unwrap_or(visible_h)
             .max(1.0),
     )
 }
@@ -373,7 +382,7 @@ fn strip(
             // An explicit weight overrides the natural size — "stretch this
             // button" stays expressible.
             p.weight.is_none().then(|| {
-                let (nw, nh) = c.kind.natural_size(metrics);
+                let (nw, nh) = c.kind.natural_size(metrics, space.scale());
                 if horizontal { nw } else { nh }
             })?
         })
@@ -545,7 +554,7 @@ mod tests {
             label: None,
             text_size: crate::host::font::DEFAULT_SIZE,
         }
-        .natural_size(&m)
+        .natural_size(&m, 1.0)
         .1
         .unwrap();
         assert_eq!(natural.h, control_h, "the natural size is taken as wanted");
@@ -683,6 +692,31 @@ mod tests {
         assert_eq!((child.rect.x, child.rect.y), (100.0, 50.0));
         assert_eq!((child.rect.w, child.rect.h), (80.0, 40.0));
         assert_eq!(child.scale, 1.0);
+    }
+
+    /// The plane's content extent is measured in **content units**, the
+    /// viewport included. Mixing in the pane's pixels put a graph that should
+    /// centre itself into the corner instead, by exactly the zoom.
+    #[test]
+    fn a_small_graph_centres_at_any_density() {
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":9,"type":"scroll","margin":0,"children":[
+              {"id":7,"type":"patch","boxes":[{"def":"src","outlets":["out"]}]}]}]}"#;
+        let w = tree(json);
+        let area = Rect::new(0.0, 0.0, 600.0, 400.0);
+        for scale in [1.0, 2.0] {
+            let m = Metrics::default().resolved(scale);
+            let placed = layout(area, &w, &m);
+            let scroll = placed.iter().find(|p| p.widget.id == Some(9)).unwrap();
+            let content = scroll_content(scroll.widget, scroll.rect, &m);
+            // The content is never smaller than the pane *in its own units*.
+            assert_eq!(content, (area.w / scale, area.h / scale), "at {scale}");
+            // So the graph's own rect is the pane: it centres in the window
+            // rather than starting off the right edge.
+            let patch = placed.iter().find(|p| p.widget.id == Some(7)).unwrap();
+            assert_eq!(patch.rect.w, area.w, "at {scale}");
+            assert_eq!(patch.rect.h, area.h, "at {scale}");
+        }
     }
 
     #[test]

@@ -3408,6 +3408,17 @@ signal finer than the screen" read from the other side. Their defaults (the whol
 buffer, the pitch window fitted to the lane, the page fitted to the rect) are
 already fits to their content, and stay untouched.
 
+Two bugs surfaced with that default and were older than it, both from mixing the
+two spaces inside one expression: a plane's content extent was compared against
+the pane's *pixels* (identical at zoom 1, off by the zoom at any other, which
+pushed a self-centring graph into the corner), and a widget's natural size was
+measured at its `text_size` while its drawing uses `text_size * scale` — so
+inside a zoomed plane a box promised room for a 14-pixel line and drew a 28-pixel
+one, and a knob, whose height is label strip + disc + read-out strip, gave the
+disc away to the text and rendered as a dot. Both are the same lesson: **an
+expression may not mix a content unit with a pixel, or a declared text size with
+the size it draws at.**
+
 **Two pixel spaces coexist, and that is the invariant to state.** Chrome is
 logical; a *navigable plane* is physical. A `scroll` workspace's content plane
 keeps its own units — its `content_w`/`content_h`, its `view_x`/`view_y` and its
