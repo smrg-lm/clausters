@@ -16,7 +16,7 @@ environment that never touches the default one.
 ```python
 s = Session.nrt(tempo=2.0)
 s.play(Pbind(instrument="default", freq=Pseq([440, 550, 660]), dur=0.5))
-samples, frames = s.render()        # drains the clock, renders the score
+stats = s.render()                  # drains the clock, renders the score
 ```
 """
 
@@ -323,7 +323,8 @@ class Session(Environment):
             return pattern.play(self.clock, self.server, quant)
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2,
-               until: float | None = None, workers: int = 0, path=None):
+               until: float | None = None, workers: int = 0, path=None,
+               seed: int | None = None, sample_format: str = "float"):
         """Drain the clock and render the accumulated score (offline only).
 
         Advances the clock logically with no real-time waiting, so every
@@ -340,19 +341,27 @@ class Session(Environment):
             workers: DSP worker threads for the score's parallel groups
                 (``0`` renders sequentially). Bit-identical either way — the
                 workers only change how long the render takes.
-            path: also write the result there as a float32 WAV, exactly as
-                the free-standing `clausters.render` does for its own
-                ``path``.
+            path: where the audio goes. Without it the samples come back in
+                ``stats.samples``; with it the **server** writes the file and
+                ``stats.samples`` is ``None``. See `Server.render`.
+            seed: starting seed for the render's stochastic UGens; the
+                default is the server's own, so a score renders the same
+                noise every time.
+            sample_format: ``"float"``, ``"int24"`` or ``"int16"`` — only
+                meaningful with ``path``, since only the file has a format.
 
         Returns:
-            ``(samples, frames)`` -- interleaved float32 in a stdlib
-            ``array('f')`` and the frame count. Schedule a closing event (e.g.
-            freeing the root group) so the render has a defined duration.
+            A `clausters.render.RenderStats`: ``frames``, ``channels``,
+            ``sample_rate``, ``events``, per-channel ``peak`` and ``rms``,
+            ``path``, and ``samples`` when the render kept them. Schedule a
+            closing event (e.g. freeing the root group) so the render has a
+            defined duration.
         """
         with self._active():
             self.clock.render(until)
         return self.server.render(sample_rate=sample_rate, channels=channels,
-                                  workers=workers, path=path)
+                                  workers=workers, path=path, seed=seed,
+                                  sample_format=sample_format)
 
     def lock_to_server(self):
         """Lock this session's clock to its server's sample clock — the

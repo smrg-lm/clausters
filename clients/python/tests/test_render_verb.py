@@ -28,8 +28,9 @@ def test_render_bounces_a_bare_expression(tmp_path):
     from clausters.defs import sine
 
     wav = tmp_path / "expr.wav"
-    samples, frames = render(sine(440.0) * 0.2, dur=0.25, sample_rate=SR,
+    _st0 = render(sine(440.0) * 0.2, dur=0.25, sample_rate=SR,
                              channels=1, path=wav)
+    samples, frames = _st0.samples, _st0.frames
     assert abs(frames - 0.25 * SR) <= 128
     assert len(samples) == frames
     assert max(abs(x) for x in samples) > 0.1, "the expression actually sounds"
@@ -45,18 +46,20 @@ def test_render_bounces_an_event_pattern():
     _embed_or_skip()
     # Three notes, dur 0.5 at tempo 1 (beats == seconds): the last release
     # lands at 1.0 + 0.5 * 0.8 = 1.4 s.
-    samples, frames = render(
+    _st1 = render(
         Pbind(instrument="default", degree=Pseq([0, 2, 4]), dur=0.5),
         sample_rate=SR)
+    samples, frames = _st1.samples, _st1.frames
     assert abs(frames - 1.4 * SR) <= 4096
     assert len(samples) == frames * 2
 
 
 def test_render_needs_until_for_an_endless_pattern():
     _embed_or_skip()
-    samples, frames = render(
+    _st2 = render(
         Pbind(instrument="default", freq=Pwhite(200.0, 800.0), dur=0.25),
         until=2.0, sample_rate=SR)
+    samples, frames = _st2.samples, _st2.frames
     # Drained at beat 2.0: the last event starts by then, nothing beyond its
     # release survives.
     assert 2.0 * SR <= frames <= 2.5 * SR
@@ -67,7 +70,8 @@ def test_render_bounces_a_timeline():
     tl = Timeline()
     tl.add(0.0, Event(degree=0, dur=0.5))
     tl.add(1.0, Event(degree=4, dur=0.5))
-    samples, frames = render(tl, sample_rate=SR)
+    _st3 = render(tl, sample_rate=SR)
+    samples, frames = _st3.samples, _st3.frames
     assert abs(frames - 1.4 * SR) <= 4096
 
 
@@ -75,8 +79,9 @@ def test_render_bounces_an_arrangement_element():
     _embed_or_skip()
     from clausters.form import Event as FormEvent
 
-    samples, frames = render(FormEvent(Event(degree=0, dur=0.5)),
+    _st4 = render(FormEvent(Event(degree=0, dur=0.5)),
                              sample_rate=SR)
+    samples, frames = _st4.samples, _st4.frames
     assert frames > 0.3 * SR
 
 
@@ -88,7 +93,8 @@ def test_render_bounces_a_generator():
         yield 0.5
         Event(degree=4, dur=0.5).play()
 
-    samples, frames = render(gen, sample_rate=SR)
+    _st5 = render(gen, sample_rate=SR)
+    samples, frames = _st5.samples, _st5.frames
     assert abs(frames - 0.9 * SR) <= 4096   # second note at 0.5 + release 0.4
 
 

@@ -1301,24 +1301,48 @@ class Server:
     # ---- offline render (NRT interface only) ----
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2,
-               workers: int = 0, path=None):
+               workers: int = 0, path=None, seed: int | None = None,
+               sample_format: str = "float") -> "RenderStats":
         """Renders the accumulated score (the interface must be an
         `OscNrtInterface`). Schedule a closing bundle (e.g. ``/n_free 0``)
         so the render has a defined duration. ``workers`` adds DSP threads
         for the score's parallel groups — bit-identical, only faster.
 
-        With ``path``, also writes the result there as a float32 WAV — the
-        same file the free-standing `clausters.render` writes for its own
-        ``path``, so a bounce never has to hand-roll a WAV writer."""
+        Always returns a `clausters.render.RenderStats`. **``path`` chooses
+        where the audio goes, not whether there is any**:
+
+        - without it the samples come back in ``stats.samples``, interleaved;
+        - with it the **server** writes the file and ``stats.samples`` is
+          ``None``. Read it back with `clausters.render.read_soundfile`.
+
+        The file is written by the server, not here: the score goes to the
+        ``clausters --nrt`` renderer, which streams straight to disk. That is
+        why nothing has to cross into Python — a long bounce never
+        materializes millions of floats just to be written out — and why
+        ``sample_format`` (``"float"``, ``"int24"``, ``"int16"``) is
+        available at all. It also means the binary must be findable, the same
+        way `clausters.launch` finds it.
+
+        ``seed`` starts the render's stochastic UGens; the default is the
+        server's own, so the same score renders the same noise every time.
+        """
         if not isinstance(self.interface, OscNrtInterface):
             raise RuntimeError("render() needs a Server with an OscNrtInterface")
-        from ..render import _write_wav
+        from .. import ipc
+        from ..render import RenderStats, render_to_file
 
-        samples, frames = self.interface.render(
-            sample_rate=sample_rate, channels=channels, workers=workers)
-        if path is not None:
-            _write_wav(path, samples, channels, sample_rate)
-        return samples, frames
+        seed = ipc.SEED_STRIDE if seed is None else seed
+        if path is None:
+            samples, frames, events = ipc.render(
+                self.interface.score.bytes(), sample_rate=sample_rate,
+                channels=channels, workers=workers, seed=seed)
+            peak, rms = ipc.channel_stats(samples, channels)
+            return RenderStats(frames=frames, channels=channels,
+                               sample_rate=sample_rate, events=events,
+                               peak=peak, rms=rms, samples=samples)
+        return render_to_file(self.interface.score.bytes(), path,
+                               sample_rate, channels, workers, seed,
+                               sample_format)
 
     # ---- server control ----
 

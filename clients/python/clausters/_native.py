@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 13
+CORE_ABI_VERSION = 14
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -155,6 +155,11 @@ def _find_library() -> str:
 
 def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     f32p = ctypes.POINTER(ctypes.c_float)
+    lib.clausters_core_stats.argtypes = [
+        ctypes.POINTER(ctypes.c_float), ctypes.c_size_t, ctypes.c_size_t,
+        ctypes.c_size_t, ctypes.POINTER(ctypes.c_float),
+    ]
+    lib.clausters_core_stats.restype = ctypes.c_int
     lib.clausters_core_abi_version.restype = ctypes.c_uint32
     got = lib.clausters_core_abi_version()
     if got != CORE_ABI_VERSION:

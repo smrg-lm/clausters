@@ -62,7 +62,8 @@ def test_automation_drives_control_bus_matches_curve():
     clock.render()
 
     try:
-        samples, frames = render(server.interface.score.bytes())
+        _st0 = render(server.interface.score.bytes())
+        samples, frames = _st0.samples, _st0.frames
     except (OSError, RuntimeError, AttributeError) as e:
         pytest.skip(f"embed library not built/usable: {e}")
 

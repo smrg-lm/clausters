@@ -102,7 +102,8 @@ def test_graphdef_instantiates_and_sounds():
     clock.render()
 
     try:
-        samples, frames = render(server.interface.score.bytes())
+        _st0 = render(server.interface.score.bytes())
+        samples, frames = _st0.samples, _st0.frames
     except (OSError, RuntimeError, AttributeError) as e:
         pytest.skip(f"embed library not usable: {e}")
 
@@ -169,7 +170,8 @@ def test_polyphonic_graphdef_voices_render():
     clock.render()
 
     try:
-        samples, frames = render(server.interface.score.bytes())
+        _st1 = render(server.interface.score.bytes())
+        samples, frames = _st1.samples, _st1.frames
     except (OSError, RuntimeError, AttributeError) as e:
         pytest.skip(f"embed library not usable: {e}")
 

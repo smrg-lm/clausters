@@ -60,7 +60,8 @@ def test_write_then_read_buffer_round_trips(tmp_path):
 
     clock2.play(Routine(go))
     clock2.render()
-    samples, frames = render(s2.interface.score.bytes())
+    _st0 = render(s2.interface.score.bytes())
+    samples, frames = _st0.samples, _st0.frames
     peak = max(abs(x) for x in samples[: frames * 2])
     assert peak == pytest.approx(1.0, abs=0.05)
 

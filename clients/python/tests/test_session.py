@@ -36,7 +36,8 @@ def test_nrt_session_plays_and_renders():
     s.play(Pbind(instrument="default", freq=Pseq([262.0, 330.0, 392.0, 523.0]),
                  dur=0.5, amp=0.2))
     try:
-        samples, frames = s.render()
+        _st0 = s.render()
+        samples, frames = _st0.samples, _st0.frames
     except (OSError, RuntimeError, AttributeError) as e:
         pytest.skip(f"embed library not built/usable: {e}")
     assert frames > 0
@@ -68,8 +69,10 @@ def test_nrt_render_with_workers_is_bit_identical():
         return s
 
     try:
-        seq, frames = build().render(channels=2)
-        par, frames2 = build().render(channels=2, workers=2)
+        a = build().render(channels=2)
+        b = build().render(channels=2, workers=2)
+        seq, frames = a.samples, a.frames
+        par, frames2 = b.samples, b.frames
     except (OSError, RuntimeError, AttributeError) as e:
         pytest.skip(f"embed library not built/usable: {e}")
     assert frames == frames2 and frames > 0

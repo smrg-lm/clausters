@@ -96,7 +96,8 @@ def test_render_default_synth():
         osc.score_bundle(0.3, osc.message("/n_free", 0)),  # closes the render
     )
     try:
-        samples, frames = clausters.render(sc, sample_rate=48_000.0, channels=2)
+        _st0 = clausters.render(sc, sample_rate=48_000.0, channels=2)
+        samples, frames = _st0.samples, _st0.frames
     except (OSError, RuntimeError, AttributeError) as e:
         # AttributeError: a libclausters was found but lacks the embed exports
         # (built without --features embed). Build it, or set CLAUSTERS_LIB.

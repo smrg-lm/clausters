@@ -564,8 +564,10 @@ def test_custom_synthdef_renders_like_builtin_default():
     c1.render()
 
     try:
-        builtin, b_frames = render(s0.interface.score.bytes())
-        custom, c_frames = render(s1.interface.score.bytes())
+        _st0 = render(s0.interface.score.bytes())
+        builtin, b_frames = _st0.samples, _st0.frames
+        _st1 = render(s1.interface.score.bytes())
+        custom, c_frames = _st1.samples, _st1.frames
     except (OSError, RuntimeError, AttributeError) as e:
         pytest.skip(f"embed library not built/usable: {e}")
 

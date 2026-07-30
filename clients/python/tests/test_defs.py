@@ -295,7 +295,8 @@ def test_faustdef_renders_through_the_seam():
     clock.play(Routine(play))
     clock.render()
     try:
-        samples, frames = server.render(sample_rate=48_000.0, channels=2)
+        _st0 = server.render(sample_rate=48_000.0, channels=2)
+        samples, frames = _st0.samples, _st0.frames
     except (OSError, RuntimeError, AttributeError) as e:
         pytest.skip(f"embed+faust library not built/usable: {e}")
     assert frames > 0

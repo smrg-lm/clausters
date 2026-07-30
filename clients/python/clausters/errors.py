@@ -9,7 +9,7 @@ builtin it used to be raised as (``OSError``, ``RuntimeError``,
 keep working unchanged while new code can be precise:
 
     try:
-        samples, frames = clausters.render(score)
+        stats = clausters.render(score)
     except clausters.LibraryFeatureError as e:
         print(e.symbol, "needs", e.feature)   # build it with the right feature
     except clausters.ClaustersError:

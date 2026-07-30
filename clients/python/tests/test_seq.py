@@ -178,7 +178,8 @@ def test_pbind_renders_to_audio():
           dur=0.5, amp=0.2).play(clock, server)
     clock.render()
     try:
-        samples, frames = server.render(sample_rate=48_000.0, channels=2)
+        _st0 = server.render(sample_rate=48_000.0, channels=2)
+        samples, frames = _st0.samples, _st0.frames
     except (OSError, RuntimeError, AttributeError) as e:
         pytest.skip(f"embed library not built/usable: {e}")
     assert frames > 0

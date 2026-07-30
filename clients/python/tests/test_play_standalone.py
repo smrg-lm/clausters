@@ -183,7 +183,8 @@ def test_play_buffer_stock_instrument_renders_audible_output(clean_default):
     # Fill it with a constant 1.0 (the env generator, level 1 throughout).
     server.gen_buffer(buf, "env", *_env_gen_args(Env([1.0, 1.0], [1.0])))
     play(buf, server=server)
-    samples, frames = session.render(sample_rate=48_000.0, channels=1)
+    _st0 = session.render(sample_rate=48_000.0, channels=1)
+    samples, frames = _st0.samples, _st0.frames
     assert frames >= 4800
     assert max(abs(x) for x in samples) > 0.9, "the take sounds at unity"
 

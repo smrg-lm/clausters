@@ -49,8 +49,10 @@ def test_pbind_render_matches_handrolled_osc():
     clock.render()
 
     try:
-        hi, hi_frames = render(server.interface.score.bytes())
-        lo, lo_frames = render(_handrolled_score(FREQS))
+        _st0 = render(server.interface.score.bytes())
+        hi, hi_frames = _st0.samples, _st0.frames
+        _st1 = render(_handrolled_score(FREQS))
+        lo, lo_frames = _st1.samples, _st1.frames
     except (OSError, RuntimeError, AttributeError) as e:
         pytest.skip(f"embed library not built/usable: {e}")
 

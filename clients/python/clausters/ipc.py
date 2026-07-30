@@ -312,6 +312,13 @@ def _load(path: str | None = None) -> ctypes.CDLL:
     ]
     _require(lib, "clausters_free_samples", "embed").argtypes = [
         ctypes.POINTER(ctypes.c_float), ctypes.c_uint64]
+    read_fn = _require(lib, "clausters_read_soundfile", "embed")
+    read_fn.restype = ctypes.POINTER(ctypes.c_float)
+    read_fn.argtypes = [
+        ctypes.c_char_p, ctypes.c_uint64, ctypes.c_int64,
+        ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_uint32),
+        ctypes.POINTER(ctypes.c_double), ctypes.c_char_p, ctypes.c_size_t,
+    ]
 
     # `embed,realtime` surface: the live embedded server. Optional at load
     # time so `render()` works with an `embed`-only build; if it is absent the
@@ -372,6 +379,62 @@ def render(score: bytes, sample_rate: float = 48000.0, channels: int = 2,
     samples = array("f", ctypes.cast(ptr, ctypes.POINTER(ctypes.c_float * total)).contents)
     lib.clausters_free_samples(ptr, total)
     return samples, frames.value, events.value
+
+
+def read_soundfile(path, start: int = 0, frames: int = -1,
+                   lib_path: str | None = None) -> tuple[array, int, int, float]:
+    """Decode an audio file through the server's decoder: ``(samples, frames,
+    channels, sample_rate)``, the samples interleaved float32 in an
+    ``array('f')``.
+
+    WAV goes through hound, everything else (FLAC, OGG/Vorbis, MP3, MP4/AAC,
+    ALAC, AIFF, ...) through symphonia; integer files are scaled to
+    ``[-1, 1]``. The rate is the file's own — nothing resamples.
+    """
+    lib = _load(lib_path)
+    n = ctypes.c_uint64(0)
+    chans = ctypes.c_uint32(0)
+    rate = ctypes.c_double(0.0)
+    err = ctypes.create_string_buffer(512)
+    ptr = lib.clausters_read_soundfile(
+        str(path).encode(), start, frames, ctypes.byref(n), ctypes.byref(chans),
+        ctypes.byref(rate), err, len(err))
+    if not ptr:
+        raise RenderError(err.value.decode() or f"could not read {path}")
+    total = n.value * chans.value
+    samples = array("f", ctypes.cast(ptr, ctypes.POINTER(ctypes.c_float * total)).contents)
+    lib.clausters_free_samples(ptr, total)
+    return samples, n.value, chans.value, rate.value
+
+
+def channel_stats(samples, channels: int) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Per-channel ``(peak, rms)`` of an interleaved buffer, measured by the
+    shared core (`clausters_core_stats`) so the numbers match the server's.
+
+    Returns two tuples in channel order. Falls back to a Python pass if the
+    core library is not loadable, so a stats read never fails a render.
+    """
+    if channels <= 0 or not samples:
+        return (), ()
+    try:
+        from . import _native
+
+        lib = _native.lib()
+        buf = (ctypes.c_float * len(samples)).from_buffer_copy(samples)
+        out = (ctypes.c_float * 2)()
+        peak, rms = [], []
+        for c in range(channels):
+            lib.clausters_core_stats(buf, len(samples), channels, c, out)
+            peak.append(float(out[0]))
+            rms.append(float(out[1]))
+        return tuple(peak), tuple(rms)
+    except Exception:
+        peak, rms = [], []
+        for c in range(channels):
+            ch = samples[c::channels]
+            peak.append(max((abs(x) for x in ch), default=0.0))
+            rms.append((sum(x * x for x in ch) / len(ch)) ** 0.5 if ch else 0.0)
+        return tuple(peak), tuple(rms)
 
 
 class Clausters:
