@@ -65,10 +65,19 @@ export class WebServer {
 export function abi_version(): number;
 
 /**
- * JS face: `render(scoreBytes, sampleRate, channels) -> Float32Array`,
- * throwing a `JsError` with the render's message on failure.
+ * The seed the last [`render`] on this thread used — how a caller gets back
+ * to a take it liked. Separate from `render`'s return because the JS face
+ * returns a bare `Float32Array`; a stats object is the shape to grow into if
+ * the web client ever needs the frame, event and level counts too.
  */
-export function render(score: Uint8Array, sample_rate: number, channels: number): Float32Array;
+export function last_render_seed(): bigint;
+
+/**
+ * JS face: `render(scoreBytes, sampleRate, channels, seed?) -> Float32Array`,
+ * throwing a `JsError` with the render's message on failure. The seed the
+ * render used is read back with [`last_render_seed`].
+ */
+export function render(score: Uint8Array, sample_rate: number, channels: number, seed?: bigint | null): Float32Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -76,7 +85,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly clausters_abi_version: () => number;
     readonly __wbg_webserver_free: (a: number, b: number) => void;
-    readonly render: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly render: (a: number, b: number, c: number, d: number, e: number, f: bigint) => [number, number, number, number];
     readonly webserver_b_load: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly webserver_block_frames: (a: number) => number;
     readonly webserver_clock: (a: number) => number;
@@ -87,9 +96,11 @@ export interface InitOutput {
     readonly webserver_process: (a: number, b: number, c: number, d: any) => [number, number];
     readonly webserver_quit_requested: (a: number) => number;
     readonly webserver_send: (a: number, b: number, c: number) => number;
+    readonly last_render_seed: () => bigint;
     readonly abi_version: () => number;
     readonly clausters_free_samples: (a: number, b: bigint) => void;
-    readonly clausters_render: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
+    readonly clausters_read_soundfile: (a: number, b: bigint, c: bigint, d: number, e: number, f: number, g: number, h: number) => number;
+    readonly clausters_render: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __externref_table_dealloc: (a: number) => void;

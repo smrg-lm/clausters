@@ -30,29 +30,73 @@ pub fn abi_version() -> u32 {
 /// Renders a binary score (the `--nrt` format: length-prefixed OSC packets,
 /// timetags in seconds from the start) synchronously into interleaved `f32`
 /// samples (`frames * channels`). The JS side receives a `Float32Array`.
-fn render_score(score: &[u8], sample_rate: f64, channels: u32) -> Result<Vec<f32>, String> {
+///
+/// `seed` is the render's starting seed, or `None` for whatever the engine
+/// picks. **On wasm that is a fixed value**: `entropy_seed` has no source
+/// here, since `SystemTime` is not implemented on this target. The browser
+/// *does* have one, so a caller that wants a fresh take each time passes a
+/// word from `crypto.getRandomValues` — the shell forwards entropy from the
+/// edge that has it rather than inventing any, which is the same reason it
+/// owns no other logic.
+fn render_score(
+    score: &[u8],
+    sample_rate: f64,
+    channels: u32,
+    seed: Option<u64>,
+) -> Result<(Vec<f32>, u64), String> {
     let score = Score::from_bytes(score)?;
     let cfg = RenderConfig {
         sample_rate,
         channels: channels as usize,
         workers: 0,
-        ..RenderConfig::default()
+        seed,
     };
-    render_to_vec(&score, &cfg).map(|(samples, _stats)| samples)
+    render_to_vec(&score, &cfg).map(|(samples, stats)| (samples, stats.seed))
 }
 
 /// Native face of [`render`], for the in-crate tests.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn render(score: &[u8], sample_rate: f64, channels: u32) -> Result<Vec<f32>, String> {
-    render_score(score, sample_rate, channels)
+pub fn render(
+    score: &[u8],
+    sample_rate: f64,
+    channels: u32,
+    seed: Option<u64>,
+) -> Result<(Vec<f32>, u64), String> {
+    render_score(score, sample_rate, channels, seed)
 }
 
-/// JS face: `render(scoreBytes, sampleRate, channels) -> Float32Array`,
-/// throwing a `JsError` with the render's message on failure.
+/// JS face: `render(scoreBytes, sampleRate, channels, seed?) -> Float32Array`,
+/// throwing a `JsError` with the render's message on failure. The seed the
+/// render used is read back with [`last_render_seed`].
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
-pub fn render(score: &[u8], sample_rate: f64, channels: u32) -> Result<Vec<f32>, JsError> {
-    render_score(score, sample_rate, channels).map_err(|e| JsError::new(&e))
+pub fn render(
+    score: &[u8],
+    sample_rate: f64,
+    channels: u32,
+    seed: Option<u64>,
+) -> Result<Vec<f32>, JsError> {
+    render_score(score, sample_rate, channels, seed)
+        .map(|(samples, seed)| {
+            LAST_SEED.with(|s| s.set(seed));
+            samples
+        })
+        .map_err(|e| JsError::new(&e))
+}
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static LAST_SEED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The seed the last [`render`] on this thread used — how a caller gets back
+/// to a take it liked. Separate from `render`'s return because the JS face
+/// returns a bare `Float32Array`; a stats object is the shape to grow into if
+/// the web client ever needs the frame, event and level counts too.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn last_render_seed() -> u64 {
+    LAST_SEED.with(|s| s.get())
 }
 
 /// The live engine in pulled mode: a 1:1 JS face over
@@ -200,17 +244,20 @@ mod tests {
     /// default-def note comes out with signal in it.
     #[test]
     fn shell_renders_a_score() {
-        let out = super::render(&tiny_score(), 48000.0, 2).unwrap();
+        let (out, seed) = super::render(&tiny_score(), 48000.0, 2, None).unwrap();
         assert_eq!(out.len(), 2 * 48000);
         let rms = (out.iter().map(|x| x * x).sum::<f32>() / out.len() as f32).sqrt();
         assert!(rms > 0.05, "audible signal expected, rms = {rms}");
         assert!(out.iter().all(|x| x.is_finite()));
+        // Whatever the shell picked, it says which: a take is repeatable.
+        let (again, _) = super::render(&tiny_score(), 48000.0, 2, Some(seed)).unwrap();
+        assert_eq!(out, again);
     }
 
     /// A malformed score reports, not panics.
     #[test]
     fn shell_reports_bad_scores() {
-        assert!(super::render(&[1, 2, 3], 48000.0, 2).is_err());
+        assert!(super::render(&[1, 2, 3], 48000.0, 2, None).is_err());
     }
 
     /// The live face, exactly as the worklet drives it: send an `/s_new`,

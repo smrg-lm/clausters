@@ -60,19 +60,22 @@ fn write_error(msg: &str, buf: *mut u8, cap: usize) {
 /// Renders a binary score (the `--nrt` format: length-prefixed OSC packets,
 /// timetags in seconds from the start) synchronously.
 ///
-/// `seed` starts the render's stochastic UGens (see
-/// [`crate::server::render::RenderConfig::seed`]); pass
-/// [`clausters_core::rng::SEED_STRIDE`] for the default, reproducible take.
+/// `seed` starts the render's stochastic UGens: pass **NULL for a fresh take**
+/// (the default — a random process is unpredictable first), or a pointer to
+/// the seed of a take you want repeated. Either way the seed actually used
+/// comes back in `out_seed`, which is what makes the take repeatable at all.
+/// See [`crate::server::render::RenderConfig::seed`].
 ///
 /// On success returns a malloc'd interleaved `f32` buffer and writes the
-/// frame count to `out_frames` (total samples = frames × channels) and the
-/// number of score events executed to `out_events`; free the buffer with
-/// [`clausters_free_samples`]. On failure returns NULL and writes a
-/// human-readable message into (`err`, `err_cap`).
+/// frame count to `out_frames` (total samples = frames × channels), the
+/// number of score events executed to `out_events` and the render's seed to
+/// `out_seed`; free the buffer with [`clausters_free_samples`]. On failure
+/// returns NULL and writes a human-readable message into (`err`, `err_cap`).
 ///
 /// # Safety
-/// `score`/`score_len` must describe a readable byte range; `out_frames` and
-/// `out_events` must be writable; `err` either NULL or writable for `err_cap`
+/// `score`/`score_len` must describe a readable byte range; `seed` must be
+/// NULL or point to a readable `u64`; `out_frames`, `out_events` and
+/// `out_seed` must be writable; `err` either NULL or writable for `err_cap`
 /// bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_render(
@@ -81,9 +84,10 @@ pub unsafe extern "C" fn clausters_render(
     sample_rate: f64,
     channels: u32,
     workers: u32,
-    seed: u64,
+    seed: *const u64,
     out_frames: *mut u64,
     out_events: *mut u64,
+    out_seed: *mut u64,
     err: *mut u8,
     err_cap: usize,
 ) -> *mut f32 {
@@ -92,6 +96,12 @@ pub unsafe extern "C" fn clausters_render(
     } else {
         // SAFETY: caller contract.
         unsafe { std::slice::from_raw_parts(score, score_len) }
+    };
+    // SAFETY: caller contract — NULL means "draw one".
+    let seed = if seed.is_null() {
+        None
+    } else {
+        Some(unsafe { *seed })
     };
     let result = Score::from_bytes(bytes).and_then(|score| {
         let cfg = RenderConfig {
@@ -108,6 +118,7 @@ pub unsafe extern "C" fn clausters_render(
             unsafe {
                 *out_frames = stats.frames;
                 *out_events = stats.events as u64;
+                *out_seed = stats.seed;
             }
             let mut samples = samples.into_boxed_slice();
             let ptr = samples.as_mut_ptr();

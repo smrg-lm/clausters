@@ -58,9 +58,9 @@ use crate::dsp::{BLOCK_SIZE, ControlBuses, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES};
 /// "CLAU" little-endian.
 pub const MAGIC: u32 = 0x5541_4C43;
 /// Bump on **any** layout change: attaching rejects mismatches. v5 changed the
-/// embed C ABI rather than the segment: `clausters_render` took a `seed` (a
-/// render's noise is chosen by the caller, not inherited from the process) and
-/// a second out pointer for the score's event count.
+/// embed C ABI rather than the segment: `clausters_render` grew a `seed` in
+/// pointer form (NULL for a fresh take, a seed to repeat one) and out pointers
+/// for the score's event count and for the seed the render actually used.
 pub const ABI_VERSION: u32 = 5;
 /// Byte capacity of each ring (power of two).
 pub const RING_CAPACITY: usize = 64 * 1024;

@@ -17,6 +17,11 @@ use clausters::rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encode
 
 const SAMPLE_RATE: f64 = 48000.0;
 const CHANNELS: u32 = 2;
+/// Both sides of the comparison pin the same seed. The scene has no noise in
+/// it, so today this changes nothing — but a render is a fresh take by
+/// default, and a parity fixture is exactly the case that wants the opposite.
+/// `tests/parity.html` passes this same number.
+const PARITY_SEED: u64 = 0x5041_5249_5459_0001;
 
 fn msg(addr: &str, args: Vec<OscType>) -> OscPacket {
     OscPacket::Message(OscMessage {
@@ -110,8 +115,8 @@ fn score_bytes() -> Vec<u8> {
 
 fn main() {
     let score = score_bytes();
-    let samples =
-        clausters_web::render(&score, SAMPLE_RATE, CHANNELS).expect("native render succeeds");
+    let (samples, _seed) = clausters_web::render(&score, SAMPLE_RATE, CHANNELS, Some(PARITY_SEED))
+        .expect("native render succeeds");
     let subnormals = samples.iter().filter(|x| x.is_subnormal()).count();
     assert_eq!(
         subnormals, 0,

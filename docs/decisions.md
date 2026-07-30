@@ -2401,18 +2401,20 @@ to reach for it by ear. (A longer or quasi-period would not be caught by that
 test, which is the limit of what a test can say about a chaotic map, and the
 test says so.)
 
-## Noise is reproducible, and two instances are never the same stream
+## Noise is reproducible on request, and two instances are never the same stream
 
 Every generator draws from `clausters_core::rng` — the xorshift the sequencing
-layer and the client's `Pwhite` already use — and each can be built from an
-explicit seed, so a render replays exactly. That is what lets a patch with noise
-in it have a golden file at all.
+layer and the client's `Pwhite` already use — and each is built from an explicit
+seed, so a render replays exactly when it is given one. That is what lets a patch
+with noise in it have a golden file at all. Where the seed *comes from* when
+nobody says is its own decision, below ("A random process is unpredictable
+first").
 
-Each *instance* takes its seed from a shared atomic counter, so two `WhiteNoise`
-UGens in one def are two streams. This is invisible until someone writes one:
-correlated noise summed with itself is a comb filter, not more noise, and
-subtracted from itself is silence. There is a test that puts two in a graph and
-subtracts them.
+Each *instance* takes the next seed from the render's own counter, so two
+`WhiteNoise` UGens in one def are two streams. This is invisible until someone
+writes one: correlated noise summed with itself is a comb filter, not more noise,
+and subtracted from itself is silence. There is a test that puts two in a graph
+and subtracts them.
 
 What is **not** in the core is the shaping — the dice table, the random walk, the
 interpolation. So the claim "a client can reproduce the stream" holds today only
@@ -3478,6 +3480,36 @@ original reason for a counter at all; what changed is only *whose* counter it is
 The seedless constructors went with it: `WhiteNoise::new()` had no correct
 meaning once seeding was per-instance, and a default that silently correlates two
 generators is worse than no default.
+
+**Where the sequence starts: a random process is unpredictable first.** Moving
+the counter into the render left a second question, and the first answer to it
+was wrong: the sequence started from a fixed constant, so an unconfigured render
+was reproducible and `--seed` bought you a *different* take. That is the testing
+answer, not the musical one. When a piece has a random process in it, the point
+is that playing it again is another performance; reproducibility is the
+exception you ask for, by fixing the seed, and it is worth having precisely
+because it is not the default. The client had this right all along —
+`RandomContext.seed(None)` draws from `os.urandom` and every pattern is
+unpredictable until `main.seed(n)` says otherwise — so the server was the odd one
+out, and the asymmetry showed up as soon as it was named.
+
+So a render with no seed draws one (`clausters_core::rng::entropy_seed`), and a
+booted server starts its sequence there too. What makes that usable rather than
+merely honest is the other half: **whoever draws a seed reports it**.
+`RenderStats::seed`, the `--nrt` summary line, `--stats`'s JSON, `stats.seed` in
+Python — you play a score, you like the take, and the seed is how you get it
+back. An unpredictable default without a reported seed would just be a take you
+can never have again.
+
+The cost is that anything comparing two renders for bit-identity must now pin a
+seed and say so: the golden scenes, the parallel-vs-sequential test, the
+native↔wasm parity fixture. That is an improvement in what those tests *say* —
+each now declares that it wants the same take twice, instead of inheriting it.
+
+On `wasm32` there is no entropy this crate can reach (`SystemTime` is not
+implemented there), so `entropy_seed` returns the constant and the JS door takes
+a seed explicitly: the browser has `crypto.getRandomValues`, and the shell
+forwards entropy from the edge that has it rather than inventing any.
 
 **The file.** The Python client used to render into memory and write the WAV
 itself, which meant a duplicate WAV writer, a duplicate decision about sample

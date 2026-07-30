@@ -663,11 +663,11 @@ fn msg(addr: &str, args: Vec<OscType>) -> OscMessage {
 }
 
 #[test]
-fn the_same_score_renders_the_same_noise_every_time_in_one_process() {
-    // The seed sequence belongs to the render, not to the process. It used to
-    // be a process-global counter, so the *second* render in a process drew
-    // different seeds than the first and a noisy score had no golden file
-    // unless every run got its own process.
+fn a_render_is_a_fresh_take_unless_it_is_given_a_seed() {
+    // The order of the two halves is the policy: a random process is
+    // unpredictable first (playing a noisy score again is another
+    // performance), and reproducible on request. The request is a seed, and
+    // the render reports the one it used so the take is never lost.
     let events = vec![
         (
             0.0,
@@ -706,13 +706,30 @@ fn the_same_score_renders_the_same_noise_every_time_in_one_process() {
         channels: 1,
         ..RenderConfig::default()
     };
-    let (a, _) = render_to_vec(&score, &cfg).unwrap();
-    let (b, _) = render_to_vec(&score, &cfg).unwrap();
+    let (a, sa) = render_to_vec(&score, &cfg).unwrap();
+    let (b, sb) = render_to_vec(&score, &cfg).unwrap();
     assert!(a.iter().any(|s| *s != 0.0), "the render was silent");
-    assert_eq!(a, b, "two renders of one score must be sample-identical");
+    assert_ne!(
+        sa.seed, sb.seed,
+        "an unseeded render must draw a new seed each time"
+    );
+    assert_ne!(a, b, "two unseeded renders must be two different takes");
 
-    // ...and a different starting seed is a different take.
-    let other = RenderConfig { seed: 12345, ..cfg };
+    // The reported seed is what makes that usable: hand it back and the exact
+    // take returns, sample for sample.
+    let same = RenderConfig {
+        seed: Some(sa.seed),
+        ..cfg
+    };
+    let (again, s) = render_to_vec(&score, &same).unwrap();
+    assert_eq!(s.seed, sa.seed, "the stats must echo the seed asked for");
+    assert_eq!(again, a, "a seeded render must replay its take exactly");
+
+    // ...and another seed is another take.
+    let other = RenderConfig {
+        seed: Some(12345),
+        ..cfg
+    };
     let (c, _) = render_to_vec(&score, &other).unwrap();
     assert_ne!(a, c, "a different seed must give different noise");
 }

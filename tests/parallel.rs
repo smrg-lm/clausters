@@ -287,7 +287,10 @@ fn nrt_render_with_workers_is_bit_identical() {
         sample_rate: SR as f64,
         channels: 2,
         workers: 0,
-        ..RenderConfig::default()
+        // Pinned: this asserts the *schedule* is bit-identical across worker
+        // counts, and an unseeded render is a fresh take, so leaving it open
+        // would make the comparison depend on the RNG it is not testing.
+        seed: Some(1),
     };
     let (a, _) = render_to_vec(&score, &base).unwrap();
     let (b, _) = render_to_vec(&score, &RenderConfig { workers: 2, ..base }).unwrap();

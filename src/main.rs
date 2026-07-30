@@ -44,8 +44,9 @@ usage:
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
       --format <fmt>       int16 | int24 | float (default float)
-      --seed <n>           starting seed for noise UGens (default fixed, so a
-                           score renders identically every run)
+      --seed <n>           starting seed for noise UGens (default: a fresh one
+                           each run; the seed used is reported, pass it back
+                           here to replay that exact take)
       --stats              print the render's stats as one JSON line instead
                            of the human summary (for a client driving --nrt)
       --workers <n>        DSP threads for /g_parallel groups (default 0)
@@ -131,9 +132,11 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
             }
             "--format" => format = value("--format")?,
             "--seed" => {
-                cfg.seed = value("--seed")?
-                    .parse()
-                    .map_err(|e| format!("--seed: {e}"))?;
+                cfg.seed = Some(
+                    value("--seed")?
+                        .parse()
+                        .map_err(|e| format!("--seed: {e}"))?,
+                );
             }
             "--workers" => cfg.workers = parse_workers(&value("--workers")?)?,
             "--stats" => stats_json = true,
@@ -161,23 +164,28 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
         };
         println!(
             "{{\"frames\":{},\"events\":{},\"channels\":{},\"sampleRate\":{},\
-             \"peak\":[{}],\"rms\":[{}]}}",
+             \"seed\":{},\"peak\":[{}],\"rms\":[{}]}}",
             stats.frames,
             stats.events,
             cfg.channels,
             cfg.sample_rate,
+            stats.seed,
             list(&stats.peak),
             list(&stats.rms),
         );
         return Ok(());
     }
+    // The seed is on the human line too: without `--seed` this render was a
+    // fresh take, and this is the only way back to it.
     println!(
-        "rendered {} events into {out_path}: {} frames ({:.3} s) at {} Hz, {} channel(s), {format}",
+        "rendered {} events into {out_path}: {} frames ({:.3} s) at {} Hz, {} channel(s), \
+         {format}, seed {}",
         stats.events,
         stats.frames,
         stats.frames as f64 / cfg.sample_rate,
         cfg.sample_rate,
         cfg.channels,
+        stats.seed,
     );
     Ok(())
 }

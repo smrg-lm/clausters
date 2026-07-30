@@ -29,7 +29,11 @@ try {
     const score = new Uint8Array(await (await fetch("./score.bin")).arrayBuffer());
     const native = new Uint32Array(await (await fetch("./native.f32")).arrayBuffer());
     const SAMPLE_RATE = 48000, CHANNELS = 2;
-    const rendered = render(score, SAMPLE_RATE, CHANNELS);
+    // Pinned on both sides: a render is a fresh take unless told otherwise,
+    // and a fixture comparison is the case that wants the same one twice.
+    // Must match PARITY_SEED in examples/gen_parity.rs.
+    const PARITY_SEED = 0x5041524954590001n;
+    const rendered = render(score, SAMPLE_RATE, CHANNELS, PARITY_SEED);
     const bits = new Uint32Array(rendered.buffer, rendered.byteOffset, rendered.length);
     const nativeF = new Float32Array(native.buffer);
     if (bits.length !== native.length) {

@@ -16,14 +16,56 @@ pub fn splitmix64(mut x: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// The stride between successive seeds, and the value a seed sequence starts
-/// from: the odd golden-ratio constant, whose low bits change on every step.
+/// The stride between successive seeds: the odd golden-ratio constant, whose
+/// low bits change on every step.
 ///
-/// A server hands out one seed per stochastic UGen by walking this stride, so
-/// two generators in one graph never share a stream — correlated "noise" sums
-/// to a comb filter rather than to more noise. It lives here, with the
-/// generator, so a client can reproduce a server-side stream exactly.
+/// A server hands out one seed per stochastic UGen by walking this stride from
+/// wherever the sequence *starts*, so two generators in one graph never share a
+/// stream — correlated "noise" sums to a comb filter rather than to more noise.
+/// It lives here, with the generator, so a client can reproduce a server-side
+/// stream exactly. Where the walk starts is [`entropy_seed`]'s business, not
+/// this constant's.
 pub const SEED_STRIDE: u64 = 0x9E37_79B9_7F4A_7C15;
+
+/// A fresh starting seed, drawn from the platform's entropy.
+///
+/// **A random process is unpredictable first and reproducible on request.**
+/// Anything that starts a seed sequence without being told which one — a
+/// server booting, a render with no seed configured — calls this, so the same
+/// score sounds different every time it is played, the way a random process in
+/// a piece is meant to. Fixing the seed is the *caller's* deliberate act, and
+/// what it buys is the replay: `--seed`, `RenderConfig::seed`, `seed=` in the
+/// clients. The client's own random context (`clausters.base.rand`) has always
+/// worked this way; this is the server side of the same rule.
+///
+/// Whoever draws one must **report it back** (`RenderStats::seed`), or the take
+/// you just liked is unrepeatable.
+///
+/// On `wasm32` there is no entropy reachable from this crate — `SystemTime` is
+/// not implemented there — so this returns a fixed value and the JS door takes
+/// a seed explicitly, from `crypto.getRandomValues` at the edge that has it.
+pub fn entropy_seed() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use std::hash::{BuildHasher, Hasher};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        // Two independent sources, mixed: the wall clock (different on every
+        // run) and std's own OS-seeded hasher (different within the same
+        // nanosecond, and on platforms with a coarse clock).
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0);
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        h.write_u64(nanos);
+        splitmix64(nanos ^ h.finish())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        SEED_STRIDE
+    }
+}
 
 /// White noise in [-1, 1], one xorshift64 step per sample. No inputs.
 #[derive(Clone, Copy)]
@@ -160,6 +202,21 @@ mod tests {
         for _ in 0..1000 {
             assert_eq!(a.next_sample(), b.next_sample());
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn entropy_seeds_differ_between_calls() {
+        // The point of the default: two starts are two different takes.
+        let seeds: std::collections::HashSet<u64> = (0..32).map(|_| entropy_seed()).collect();
+        assert!(
+            seeds.len() > 30,
+            "entropy_seed repeats: {} distinct",
+            seeds.len()
+        );
+        // And a drawn seed still seeds a usable generator.
+        let mut n = WhiteNoise::from_seed(entropy_seed());
+        assert!((-1.0..1.0).contains(&n.next_sample()));
     }
 
     #[test]

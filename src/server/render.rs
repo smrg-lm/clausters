@@ -145,11 +145,16 @@ pub struct RenderConfig {
     /// M13 DSP workers for `/g_parallel` groups. Parallel rendering is
     /// bit-identical to sequential (disjoint stages), just faster.
     pub workers: usize,
-    /// Where this render's stochastic UGens start their seeds. The default is
-    /// [`clausters_core::rng::SEED_STRIDE`], so an unconfigured render is
-    /// still reproducible: same score, same noise, every time and in every
-    /// process. Change it to get a different take of the same score.
-    pub seed: u64,
+    /// Where this render's stochastic UGens start their seeds, or `None` to
+    /// draw one from entropy ([`clausters_core::rng::entropy_seed`]) — the
+    /// default.
+    ///
+    /// A random process is unpredictable first: an unconfigured render is a
+    /// *new take*, the way playing a piece with noise in it again gives you
+    /// another performance. Set this to replay one exactly; the seed a render
+    /// actually used comes back in [`RenderStats::seed`], so a take you liked
+    /// is never lost.
+    pub seed: Option<u64>,
 }
 
 impl Default for RenderConfig {
@@ -158,7 +163,7 @@ impl Default for RenderConfig {
             sample_rate: 48000.0,
             channels: 2,
             workers: 0,
-            seed: clausters_core::rng::SEED_STRIDE,
+            seed: None,
         }
     }
 }
@@ -177,6 +182,14 @@ pub struct RenderStats {
     pub peak: Vec<f32>,
     /// RMS per output channel over the whole render.
     pub rms: Vec<f32>,
+    /// The seed this render's stochastic UGens actually started from —
+    /// whatever [`RenderConfig::seed`] asked for, or the one drawn from
+    /// entropy when it asked for nothing.
+    ///
+    /// Reporting it is what makes an unpredictable default usable: you play a
+    /// score, you like the take, and this is how you get it back. Feed it to
+    /// `RenderConfig::seed` (`--seed`, `seed=`) and the render repeats.
+    pub seed: u64,
 }
 
 /// Renders a score, handing each processed chunk (interleaved, at most one
@@ -213,6 +226,11 @@ pub fn render(
     let mut peak = vec![0.0f32; channels];
     let mut sumsq = vec![0.0f64; channels];
 
+    // Resolved once, here, so the number that goes into the translator is the
+    // number that comes back in the stats — a take is only repeatable if the
+    // render reports the seed it actually used.
+    let seed = cfg.seed.unwrap_or_else(clausters_core::rng::entropy_seed);
+
     crate::dsp::denormals::flush_to_zero();
     let (engine, handle) = engine_pair_with_workers(sr as f32, cfg.channels, cfg.workers);
     let mut r = Renderer {
@@ -220,7 +238,7 @@ pub fn render(
         handle,
         translator: {
             let mut t = CmdTranslator::new(sr as f32);
-            t.set_seed(cfg.seed);
+            t.set_seed(seed);
             t
         },
         block: vec![0.0; BLOCK_SIZE * cfg.channels],
@@ -274,6 +292,7 @@ pub fn render(
     Ok(RenderStats {
         frames: total,
         events: score.events.len(),
+        seed,
         peak,
         rms: sumsq
             .iter()

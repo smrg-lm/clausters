@@ -124,20 +124,26 @@ clausters --nrt score.osc out.wav [--rate 48000] [--channels 2] \
 `--format` defaults to `float` — f32 is what the engine computes in and what
 buffers hold, so a float WAV loses nothing on the way out or back in.
 
-**`--seed N`** starts the render's stochastic UGens. It has a fixed default, and
-the sequence belongs to the render rather than to the process, so **the same
-score renders the same samples every time** — that is what lets a patch with
-noise in it have a golden file. Change the seed for a different take of the same
-score.
+**`--seed N`** starts the render's stochastic UGens. **Without it every run is a
+new take** — a random process is unpredictable first, so rendering a score with
+noise in it twice gives two performances, the way playing it twice would. The
+seed a render used is always reported (on the summary line, and as `seed` in
+`--stats`); pass it back here and that exact take returns, sample for sample.
+That is what lets a patch with noise in it have a golden file: the test asks for
+the seed it pinned.
+
+The seed sequence belongs to the render, not to the process, so a fixed seed
+reproduces in any process, at any worker count, in memory or through a file.
 
 **`--stats`** replaces the human summary with one JSON line:
 
 ```json
 {"frames":24000,"events":3,"channels":2,"sampleRate":48000,
- "peak":[0.5,0.2],"rms":[0.353,0.115]}
+ "seed":12157665459056928801,"peak":[0.5,0.2],"rms":[0.353,0.115]}
 ```
 
-`peak` and `rms` are per channel, measured while the render streamed. This mode
+`peak` and `rms` are per channel, measured while the render streamed; `seed` is
+the one the render actually started from, drawn or given. This mode
 exists for a client driving `--nrt` as a subprocess — it learns what the render
 did without opening the file it just asked for. The Python client's
 `render(path=...)` is exactly that: the server writes the audio, the client
