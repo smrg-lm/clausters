@@ -44,6 +44,31 @@ pub fn body_rect_at(rect: Rect, has_label: bool, text_size: f32, m: &Metrics) ->
     )
 }
 
+/// The strip a control reserves at the **bottom** of its body for its value
+/// read-out: one row of text and the gap above it. The number lives there and
+/// nowhere else, so it never lands on the thing it is reading — a knob's disc,
+/// a slider's groove and handle.
+pub fn readout_h(text_size: f32, m: &Metrics) -> f32 {
+    font::height(text_size) + m.pad
+}
+
+/// A slider's **track area**: its body minus the read-out strip
+/// ([`readout_h`]), the rect the groove and the handle live in.
+///
+/// Drawing and hit math both go through here, so a grab lands where the groove
+/// is drawn. That matters most on a *vertical* slider, whose fraction runs along
+/// the very axis the strip shortens: a body-wide hit would read the bottom of
+/// the number row as the minimum, below where the track visibly ends.
+pub fn slider_track(rect: Rect, has_label: bool, text_size: f32, m: &Metrics) -> Rect {
+    let body = body_rect_at(rect, has_label, text_size, m);
+    Rect::new(
+        body.x,
+        body.y,
+        body.w,
+        (body.h - readout_h(text_size, m)).max(0.0),
+    )
+}
+
 /// The 0..1 fraction along a horizontal track at pixel `px` (for a slider).
 pub fn slider_fraction(body: Rect, px: f64) -> f32 {
     if body.w <= 0.0 {
@@ -191,7 +216,9 @@ fn slider(
     theme: &Theme,
 ) {
     label_strip(mesh, r.label.as_deref(), rect, size, m, theme);
-    let body = body_rect_at(rect, r.label.is_some(), size, m);
+    // The groove lives in the track area, the number in the strip under it (the
+    // knob's posture): the read-out is beside what it reads, never over it.
+    let body = slider_track(rect, r.label.is_some(), size, m);
     // The track's groove, the value riding it and the handle's grip across the
     // axis: the handle is a short grip, **not** the full body span.
     let (track_thick, handle_thick) = (m.track_thick, m.handle_thick);
@@ -245,7 +272,14 @@ fn slider(
             theme.accent,
         );
     }
-    value_text(mesh, &fmt(r.value), body, size, m, theme);
+    value_text(
+        mesh,
+        &fmt(r.value),
+        Rect::new(body.x, body.y + body.h, body.w, readout_h(size, m)),
+        size,
+        m,
+        theme,
+    );
 }
 
 fn knob(mesh: &mut Mesh, r: &Range, rect: Rect, size: f32, m: &Metrics, theme: &Theme) {
@@ -254,7 +288,7 @@ fn knob(mesh: &mut Mesh, r: &Range, rect: Rect, size: f32, m: &Metrics, theme: &
     // Reserve a strip at the bottom of the body for the value read-out and size
     // the disc in the area above it, so the number stays inside the body — it
     // never overlaps the disc nor spills past the cell into the row below.
-    let text_h = font::height(size) + m.pad;
+    let text_h = readout_h(size, m);
     let disc_h = (body.h - text_h).max(0.0);
     let radius = (body.w.min(disc_h) * 0.5 - 2.0).max(2.0);
     let cx = body.x + body.w * 0.5;

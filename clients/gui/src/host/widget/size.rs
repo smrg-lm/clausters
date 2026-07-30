@@ -22,6 +22,7 @@
 //! resolution order: explicit `w`/`h` → explicit `weight` → natural size → a
 //! share of the leftover. The cross axis keeps filling.
 
+use super::super::controls;
 use super::super::font;
 use super::super::metrics::Metrics;
 use super::{Range, WidgetKind};
@@ -134,12 +135,14 @@ fn field_h(r: &Range, m: &Metrics) -> f32 {
 }
 
 /// A horizontal slider's thickness: the label strip, the body inset, the
-/// handle's grip across the track and the value read-out riding under it.
+/// handle's grip across the track and the read-out strip under it — the same
+/// reservation the drawing makes ([`controls::slider_track`]), so the groove
+/// gets the grip it asked for and the number gets its own row.
 fn slider_thick(r: &Range, m: &Metrics) -> f32 {
     label_strip(r.label.is_some(), r.text_size, m)
         + body_inset(m)
         + m.handle_grip.max(m.handle_thick)
-        + font::height(r.text_size)
+        + controls::readout_h(r.text_size, m)
 }
 
 /// A vertical slider's width: the grip across the track, inset in the body.
@@ -149,20 +152,20 @@ fn slider_across(m: &Metrics) -> f32 {
     body_inset(m) + m.handle_grip.max(m.box_side)
 }
 
-/// A knob's height: the label strip, the body inset, the disc and the value
-/// read-out strip the drawing reserves under it.
+/// A knob's height: the label strip, the body inset, the disc and the read-out
+/// strip the drawing reserves under it.
 fn knob_h(r: &Range, m: &Metrics) -> f32 {
     label_strip(r.label.is_some(), r.text_size, m)
         + body_inset(m)
         + m.knob_d
-        + font::height(r.text_size)
-        + m.pad
+        + controls::readout_h(r.text_size, m)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::host::guidef::GuiNode;
+    use crate::host::layout::Rect;
     use crate::host::widget::Widget;
 
     fn kind(json: &str) -> WidgetKind {
@@ -184,6 +187,38 @@ mod tests {
             r#"{"type":"patch"}"#,
         ] {
             assert_eq!(kind(json).natural_size(&m), (None, None), "{json}");
+        }
+    }
+
+    /// The regression a natural size made visible: a slider's read-out used to
+    /// be drawn at the bottom-right of its whole body, which was fine while the
+    /// body was as tall as the window and put the number **on the groove** once
+    /// the body was only as tall as the control asked for. The reservation is
+    /// now one thing, shared by the drawing, the hit math and this size.
+    #[test]
+    fn a_slider_keeps_its_groove_and_its_number_apart() {
+        let m = Metrics::default();
+        let size = crate::host::font::DEFAULT_SIZE;
+        for (json, labelled) in [
+            (r#"{"type":"slider","label":"amp"}"#, true),
+            (r#"{"type":"slider"}"#, false),
+        ] {
+            let k = kind(json);
+            let h = k.natural_size(&m).1.expect("a horizontal slider knows it");
+            let cell = Rect::new(0.0, 0.0, 200.0, h);
+            let body = controls::body_rect_at(cell, labelled, size, &m);
+            let track = controls::slider_track(cell, labelled, size, &m);
+            assert!(
+                track.h >= m.handle_grip,
+                "{json}: the groove lost its grip: {} < {}",
+                track.h,
+                m.handle_grip
+            );
+            assert!(
+                (track.y + track.h + controls::readout_h(size, &m) - (body.y + body.h)).abs()
+                    < 1e-3,
+                "{json}: the read-out strip is not the rest of the body"
+            );
         }
     }
 

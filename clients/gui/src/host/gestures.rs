@@ -542,7 +542,9 @@ impl Gestures {
         }
         match kind {
             WidgetKind::Slider { range: r, vertical } => {
-                let body = controls::body_rect_at(
+                // The track area, not the whole body: the grab has to agree with
+                // the groove the renderer drew (`controls::slider_track`).
+                let body = controls::slider_track(
                     rect,
                     r.label.is_some(),
                     r.text_size * scale,

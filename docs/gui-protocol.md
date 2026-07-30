@@ -75,8 +75,9 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   take it), a `col` of views splits evenly as it always did, and `weight` is
   what stretches a control past its natural size. Which widgets have one: the
   **content** kinds do (`label` unless it wraps, `button`, `toggle`, `number`,
-  `menu`, a single-line `text`, a `slider`'s thickness across its track, a
-  `knob`'s height, a `timeruler`'s thickness), the **surface** kinds do not
+  `menu`, a single-line `text`, a `slider`'s thickness across its track — its
+  groove plus the row its value reads out in, which is why the number never
+  sits on the handle — a `knob`'s height, a `timeruler`'s thickness), the **surface** kinds do not
   (`panel`, `scroll`, `patch`, `track`, `plot`, `nodetree`, `canvas`, the
   heavy views, a wrapped `label`, a multiline `text`). A natural size follows
   the host's sizing table and the widget's own `text_size`/`label`, **never
