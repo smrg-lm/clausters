@@ -20,6 +20,7 @@ mod signal;
 use std::sync::Arc;
 
 use bench::{SR, render_with_input};
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};
 use clausters::node::SynthNode;
 use clausters::synthdef::instance::UGenSynth;
@@ -372,7 +373,7 @@ fn a_modulated_delay_time_stays_finite_and_bounded() {
          "max_delay": 0.02},
         {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}]}"#;
     let def = compile(serde_json::from_str::<SynthDefSpec>(json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
+    let mut synth = UGenSynth::new(Arc::new(def), SR, SEED_STRIDE);
     let mut buses = Buses::new(ControlBuses::new(16), 8);
     let mut rng = clausters_core::rng::WhiteNoise::from_seed(99);
     let mut worst = 0.0f32;

@@ -8,6 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, engine_pair};
 use clausters::synthdef::SynthDefSpec;
@@ -31,6 +32,7 @@ fn dc_synth(level: f32) -> Box<dyn SynthNode> {
     let mut synth = Box::new(UGenSynth::new(
         Arc::new(clausters::synthdef::compile(spec).unwrap()),
         SR,
+        SEED_STRIDE,
     ));
     synth.set_control(0, level);
     synth
@@ -60,6 +62,7 @@ fn add_impulse(id: i32, freq: f32) -> Cmd {
     let synth = Box::new(UGenSynth::new(
         Arc::new(clausters::synthdef::compile(spec).unwrap()),
         SR,
+        SEED_STRIDE,
     ));
     Cmd::AddSynth {
         id,
@@ -255,6 +258,7 @@ fn scheduled_control_bus_write_lands_on_its_sample() {
     let synth = Box::new(UGenSynth::new(
         Arc::new(clausters::synthdef::compile(spec).unwrap()),
         SR,
+        SEED_STRIDE,
     ));
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle

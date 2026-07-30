@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::osc::server::{OscServer, ServerInfo};
 use clausters::rosc::{OscMessage, OscPacket, OscType, encoder};
 use clausters::server::engine::{BLOCK_SIZE, engine_pair_full};
@@ -292,7 +293,11 @@ fn segment_control_buses_feed_the_engine_directly() {
         ]
     }))
     .unwrap();
-    let synth = Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()), SR));
+    let synth = Box::new(UGenSynth::new(
+        Arc::new(compile(spec).unwrap()),
+        SR,
+        SEED_STRIDE,
+    ));
     handle
         .send(Cmd::AddSynth {
             id: 1000,

@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, engine_pair};
 use clausters::synthdef::instance::UGenSynth;
@@ -24,7 +25,11 @@ fn passthru_from(in_bus: f32) -> Box<dyn SynthNode> {
         ]
     }))
     .unwrap();
-    Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()), SR))
+    Box::new(UGenSynth::new(
+        Arc::new(compile(spec).unwrap()),
+        SR,
+        SEED_STRIDE,
+    ))
 }
 
 /// One input channel pushed through the ring reaches `In` and comes back out on

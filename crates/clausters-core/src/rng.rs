@@ -16,6 +16,15 @@ pub fn splitmix64(mut x: u64) -> u64 {
     z ^ (z >> 31)
 }
 
+/// The stride between successive seeds, and the value a seed sequence starts
+/// from: the odd golden-ratio constant, whose low bits change on every step.
+///
+/// A server hands out one seed per stochastic UGen by walking this stride, so
+/// two generators in one graph never share a stream — correlated "noise" sums
+/// to a comb filter rather than to more noise. It lives here, with the
+/// generator, so a client can reproduce a server-side stream exactly.
+pub const SEED_STRIDE: u64 = 0x9E37_79B9_7F4A_7C15;
+
 /// White noise in [-1, 1], one xorshift64 step per sample. No inputs.
 #[derive(Clone, Copy)]
 pub struct WhiteNoise {

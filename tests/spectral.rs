@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::{UGenCmd, ugen_cmd_selector};
 use clausters::node::{AddAction, ROOT_NODE_ID};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, engine_pair};
@@ -18,7 +19,11 @@ const CHANNELS: usize = 2;
 
 fn spec_synth(spec: Value) -> UGenSynth {
     let spec: SynthDefSpec = serde_json::from_value(spec).unwrap();
-    UGenSynth::new(Arc::new(clausters::synthdef::compile(spec).unwrap()), SR)
+    UGenSynth::new(
+        Arc::new(clausters::synthdef::compile(spec).unwrap()),
+        SR,
+        SEED_STRIDE,
+    )
 }
 
 fn add_synth(id: i32, synth: UGenSynth) -> Cmd {

@@ -44,6 +44,8 @@ usage:
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
       --format <fmt>       int16 | int24 | float (default float)
+      --seed <n>           starting seed for noise UGens (default fixed, so a
+                           score renders identically every run)
       --workers <n>        DSP threads for /g_parallel groups (default 0)
       --shm <path>         shared-memory segment for local clients (RT only;
                            put it on /dev/shm — see docs/ipc.md)
@@ -125,6 +127,11 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
                     .map_err(|e| format!("--channels: {e}"))?;
             }
             "--format" => format = value("--format")?,
+            "--seed" => {
+                cfg.seed = value("--seed")?
+                    .parse()
+                    .map_err(|e| format!("--seed: {e}"))?;
+            }
             "--workers" => cfg.workers = parse_workers(&value("--workers")?)?,
             other => paths.push(other.to_string()),
         }

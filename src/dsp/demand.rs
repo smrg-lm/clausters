@@ -51,7 +51,6 @@
 use clausters_core::builtins::fold;
 use clausters_core::rng;
 
-use crate::dsp::noise::next_seed;
 use crate::dsp::trig::Edge;
 use crate::dsp::{DemandInputs, DoneAction, MAX_UGEN_INPUTS, ProcessCtx, UGen};
 
@@ -253,10 +252,6 @@ pub struct Drandom {
 }
 
 impl Drandom {
-    pub fn new(kind: RandKind) -> Self {
-        Self::with_seed(kind, next_seed())
-    }
-
     pub fn with_seed(kind: RandKind, seed: u64) -> Self {
         Self {
             kind,
@@ -384,10 +379,6 @@ pub struct Dlist {
 }
 
 impl Dlist {
-    pub fn new(order: ListOrder) -> Self {
-        Self::with_seed(order, next_seed())
-    }
-
     pub fn with_seed(order: ListOrder, seed: u64) -> Self {
         let mut perm = [0u8; MAX_UGEN_INPUTS];
         for (i, p) in perm.iter_mut().enumerate() {

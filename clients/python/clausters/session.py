@@ -323,7 +323,7 @@ class Session(Environment):
             return pattern.play(self.clock, self.server, quant)
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2,
-               until: float | None = None, workers: int = 0):
+               until: float | None = None, workers: int = 0, path=None):
         """Drain the clock and render the accumulated score (offline only).
 
         Advances the clock logically with no real-time waiting, so every
@@ -340,6 +340,9 @@ class Session(Environment):
             workers: DSP worker threads for the score's parallel groups
                 (``0`` renders sequentially). Bit-identical either way — the
                 workers only change how long the render takes.
+            path: also write the result there as a float32 WAV, exactly as
+                the free-standing `clausters.render` does for its own
+                ``path``.
 
         Returns:
             ``(samples, frames)`` -- interleaved float32 in a stdlib
@@ -349,7 +352,7 @@ class Session(Environment):
         with self._active():
             self.clock.render(until)
         return self.server.render(sample_rate=sample_rate, channels=channels,
-                                  workers=workers)
+                                  workers=workers, path=path)
 
     def lock_to_server(self):
         """Lock this session's clock to its server's sample clock — the

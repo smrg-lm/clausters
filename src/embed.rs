@@ -90,6 +90,7 @@ pub unsafe extern "C" fn clausters_render(
             sample_rate,
             channels: channels as usize,
             workers: workers as usize,
+            ..RenderConfig::default()
         };
         render_to_vec(&score, &cfg)
     });

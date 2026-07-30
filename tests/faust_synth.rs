@@ -14,6 +14,8 @@ mod signal;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(feature = "synth")]
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
 use clausters::faust::synth::{FaustDef, FaustSynth};
 use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};
@@ -332,7 +334,7 @@ fn ugen_and_faust_synths_mix_on_the_same_bus() {
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
 
     // Same freq and phase, both summing into bus 0: amplitudes add.
-    let mut usynth = Box::new(UGenSynth::new(Arc::clone(&udef), SR));
+    let mut usynth = Box::new(UGenSynth::new(Arc::clone(&udef), SR, SEED_STRIDE));
     usynth.set_control(0, 440.0); // freq
     usynth.set_control(1, 0.2); // amp
     handle

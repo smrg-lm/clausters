@@ -23,12 +23,15 @@ mod signal;
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::noise::{
     BrownNoise, ClipNoise, Crackle, Dust, DustMode, GrayNoise, LfNoise, LfNoiseShape, PinkNoise,
     WhiteNoise,
 };
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx, UGen};
 use clausters::node::SynthNode;
+use clausters::rosc::{OscMessage, OscType};
+use clausters::server::render::{RenderConfig, Score, render_to_vec};
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{SynthDefSpec, compile};
 use signal::*;
@@ -62,7 +65,7 @@ fn render(ugen: &str, n: usize) -> Vec<f32> {
             {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}]}}"#
     );
     let def = compile(serde_json::from_str::<SynthDefSpec>(&json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
+    let mut synth = UGenSynth::new(Arc::new(def), SR, SEED_STRIDE);
     let mut buses = Buses::new(ControlBuses::new(16), 8);
     let mut out = Vec::with_capacity(n);
     while out.len() < n {
@@ -650,4 +653,66 @@ fn two_instances_in_one_graph_are_not_the_same_stream() {
     );
     // Identical streams would cancel exactly.
     assert!(rms(&x) > 0.5, "the two streams cancelled: rms {}", rms(&x));
+}
+
+fn msg(addr: &str, args: Vec<OscType>) -> OscMessage {
+    OscMessage {
+        addr: addr.into(),
+        args,
+    }
+}
+
+#[test]
+fn the_same_score_renders_the_same_noise_every_time_in_one_process() {
+    // The seed sequence belongs to the render, not to the process. It used to
+    // be a process-global counter, so the *second* render in a process drew
+    // different seeds than the first and a noisy score had no golden file
+    // unless every run got its own process.
+    let events = vec![
+        (
+            0.0,
+            vec![
+                msg(
+                    "/d_recv",
+                    vec![OscType::Blob(
+                        serde_json::to_vec(
+                            &serde_json::from_str::<SynthDefSpec>(
+                                r#"{"name": "n", "ugens": [
+                                     {"kind": "WhiteNoise", "inputs": []},
+                                     {"kind": "Out", "inputs": [{"const": 0.0},
+                                                                {"ugen": 0}]}]}"#,
+                            )
+                            .unwrap(),
+                        )
+                        .unwrap(),
+                    )],
+                ),
+                msg(
+                    "/s_new",
+                    vec![
+                        OscType::String("n".into()),
+                        OscType::Int(100),
+                        OscType::Int(0),
+                        OscType::Int(0),
+                    ],
+                ),
+            ],
+        ),
+        (0.05, vec![msg("/n_free", vec![OscType::Int(100)])]),
+    ];
+    let score = Score::new(events).unwrap();
+    let cfg = RenderConfig {
+        sample_rate: SR as f64,
+        channels: 1,
+        ..RenderConfig::default()
+    };
+    let (a, _) = render_to_vec(&score, &cfg).unwrap();
+    let (b, _) = render_to_vec(&score, &cfg).unwrap();
+    assert!(a.iter().any(|s| *s != 0.0), "the render was silent");
+    assert_eq!(a, b, "two renders of one score must be sample-identical");
+
+    // ...and a different starting seed is a different take.
+    let other = RenderConfig { seed: 12345, ..cfg };
+    let (c, _) = render_to_vec(&score, &other).unwrap();
+    assert_ne!(a, c, "a different seed must give different noise");
 }

@@ -55,4 +55,5 @@ pub mod synthdef;
 
 // Re-exported so integration tests and client code can build OSC packets
 // with the exact same version the server uses.
+pub use clausters_core;
 pub use rosc;

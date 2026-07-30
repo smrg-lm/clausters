@@ -151,15 +151,24 @@ impl DemandInputs for Pull<'_> {
 }
 
 impl UGenSynth {
+    /// How many seeds an instance of `def` reserves: one per UGen, whether or
+    /// not that kind draws one. Reserving by UGen count rather than by which
+    /// kinds are stochastic keeps the arithmetic independent of the registry.
+    pub fn seeds_needed(def: &SynthDef) -> u64 {
+        def.ugens.len() as u64
+    }
+
     /// Builds the instance on the network thread. `sample_rate` reaches the
     /// UGens' constructors through [`BuildCtx`], for the kinds whose
     /// *allocation* is sized in samples (a delay line); the engine's own rate
     /// arrives per block in `ProcessCtx` as before.
-    pub fn new(def: Arc<SynthDef>, sample_rate: f32) -> Self {
-        let build_ctx = BuildCtx {
-            sample_rate,
-            block_size: BLOCK_SIZE,
-        };
+    ///
+    /// `seed` starts this instance's stochastic UGens. The caller reserves
+    /// [`UGenSynth::seeds_needed`] consecutive seeds per instance, so two
+    /// synths never share a noise stream and replaying a score replays the
+    /// same noise.
+    pub fn new(def: Arc<SynthDef>, sample_rate: f32, seed: u64) -> Self {
+        let build_ctx = BuildCtx::new(sample_rate, BLOCK_SIZE, seed);
         let controls = def.control_defaults.clone();
         let maps = vec![ControlMap::UNMAPPED; controls.len()];
         let ugens: Vec<_> = def

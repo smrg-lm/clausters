@@ -9,8 +9,11 @@
 //! `/c_set`) plus the synchronous def-table commands (`/d_recv`, `/d_free`).
 //! Buffer commands parse into NRT jobs with [`parse_buffer_msg`].
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+use clausters_core::rng::SEED_STRIDE;
 
 use rosc::OscType;
 
@@ -149,6 +152,13 @@ pub struct CmdTranslator {
     /// Faust instances bake the sample rate in at `/s_new` time.
     #[cfg_attr(not(feature = "faust"), allow(dead_code))]
     sample_rate: f32,
+    /// Start of the next instance's run of stochastic-UGen seeds. It belongs
+    /// to the translator — one per server or per offline render — rather than
+    /// to the process, so a score's noise depends only on the score and on
+    /// the starting seed, never on how many synths were built earlier in the
+    /// same process. `Cell` because `make_synth` takes `&self`.
+    #[cfg_attr(not(feature = "synth"), allow(dead_code))]
+    next_seed: Cell<u64>,
     /// Loaded SynthDefs; starts with the built-in "default".
     #[cfg(feature = "synth")]
     pub synth_defs: HashMap<String, Arc<SynthDef>>,
@@ -198,6 +208,13 @@ impl CmdTranslator {
         Self::with_buses(sample_rate, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES)
     }
 
+    /// Restarts the stochastic-UGen seed sequence at `seed`. The offline
+    /// renderer calls this from [`crate::server::render::RenderConfig::seed`]
+    /// so a render's noise is chosen by the caller, not inherited.
+    pub fn set_seed(&mut self, seed: u64) {
+        self.next_seed.set(seed);
+    }
+
     /// Configured bus counts with default pool limits.
     pub fn with_buses(sample_rate: f32, audio_buses: usize, control_buses: usize) -> Self {
         Self::with_limits(sample_rate, audio_buses, control_buses, Limits::default())
@@ -228,6 +245,7 @@ impl CmdTranslator {
         };
         Self {
             sample_rate,
+            next_seed: Cell::new(SEED_STRIDE),
             #[cfg(feature = "synth")]
             synth_defs,
             node_defs: HashMap::new(),
@@ -275,7 +293,10 @@ impl CmdTranslator {
     pub fn make_synth(&self, name: &str) -> Result<(Box<dyn SynthNode>, NodeDef), String> {
         #[cfg(feature = "synth")]
         if let Some(def) = self.synth_defs.get(name) {
-            let synth = Box::new(UGenSynth::new(Arc::clone(def), self.sample_rate));
+            let seed = self.next_seed.get();
+            self.next_seed
+                .set(seed.wrapping_add(SEED_STRIDE.wrapping_mul(UGenSynth::seeds_needed(def))));
+            let synth = Box::new(UGenSynth::new(Arc::clone(def), self.sample_rate, seed));
             return Ok((synth, NodeDef::UGen(Arc::clone(def))));
         }
         #[cfg(feature = "faust")]

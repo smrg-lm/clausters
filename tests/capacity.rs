@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::Limits;
 use clausters::node::{AddAction, Group, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{
@@ -27,7 +28,7 @@ fn default_synth() -> Box<dyn SynthNode> {
     static DEF: std::sync::OnceLock<Arc<clausters::synthdef::SynthDef>> =
         std::sync::OnceLock::new();
     let def = DEF.get_or_init(|| Arc::new(compile(default_spec()).unwrap()));
-    Box::new(UGenSynth::new(Arc::clone(def), SR))
+    Box::new(UGenSynth::new(Arc::clone(def), SR, SEED_STRIDE))
 }
 
 fn add(id: i32, target: i32) -> Cmd {

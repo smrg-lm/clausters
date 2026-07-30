@@ -36,6 +36,7 @@ fn render_score(score: &[u8], sample_rate: f64, channels: u32) -> Result<Vec<f32
         sample_rate,
         channels: channels as usize,
         workers: 0,
+        ..RenderConfig::default()
     };
     render_to_vec(&score, &cfg).map(|(samples, _stats)| samples)
 }

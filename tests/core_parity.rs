@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::binop::{BinOp, BinaryOp};
 use clausters::dsp::buffer::Buffer;
 use clausters::dsp::fused::{MulAdd, Sum3, Sum4};
@@ -171,7 +172,7 @@ fn white_noise_delegation_runs() {
     let mut ctx = ctx(&buses, &buffers);
 
     let mut out = vec![0.0f32; BLOCK_SIZE];
-    WhiteNoise::new().process(&mut ctx, &[], &mut out);
+    WhiteNoise::with_seed(SEED_STRIDE).process(&mut ctx, &[], &mut out);
 
     assert!(out.iter().all(|s| (-1.0..1.0).contains(s)), "out of range");
     assert!(

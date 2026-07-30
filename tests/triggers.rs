@@ -19,6 +19,7 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};
 use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{Cmd, engine_pair};
@@ -37,7 +38,7 @@ fn render(ugens: &str, n: usize) -> Vec<f32> {
         count - 1
     );
     let def = compile(serde_json::from_str::<SynthDefSpec>(&json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
+    let mut synth = UGenSynth::new(Arc::new(def), SR, SEED_STRIDE);
     let mut buses = Buses::new(ControlBuses::new(16), 8);
     let mut out = Vec::with_capacity(n);
     while out.len() < n {
@@ -610,7 +611,7 @@ fn detect_silence_frees_the_node_through_its_done_action() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(Arc::new(def), SR)),
+            synth: Box::new(UGenSynth::new(Arc::new(def), SR, SEED_STRIDE)),
             usage: Default::default(),
         })
         .ok()
@@ -765,7 +766,7 @@ fn a_counter_is_unmoved_by_a_block_split() {
             {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 1}}]}}]}}"#
     );
     let def = compile(serde_json::from_str::<SynthDefSpec>(&json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
+    let mut synth = UGenSynth::new(Arc::new(def), SR, SEED_STRIDE);
     let mut buses = Buses::new(ControlBuses::new(16), 8);
     let mut split = Vec::with_capacity(4800);
     while split.len() < 4800 {

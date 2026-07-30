@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, engine_pair};
 use clausters::synthdef::instance::UGenSynth;
@@ -17,7 +18,11 @@ const CHANNELS: usize = 2;
 
 fn synth_from(spec_json: Value) -> Box<dyn SynthNode> {
     let spec: SynthDefSpec = serde_json::from_value(spec_json).unwrap();
-    Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()), SR))
+    Box::new(UGenSynth::new(
+        Arc::new(compile(spec).unwrap()),
+        SR,
+        SEED_STRIDE,
+    ))
 }
 
 fn add(id: i32, synth: Box<dyn SynthNode>) -> Cmd {

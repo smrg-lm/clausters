@@ -7,6 +7,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::buffer::Buffer;
 use clausters::node::{AddAction, ROOT_NODE_ID};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, engine_pair};
@@ -67,7 +68,11 @@ fn playbuf_spec(bufnum: f32, chan: f32, rate: f32, looping: f32, out_bus: f32) -
 
 fn spec_synth(spec: serde_json::Value) -> UGenSynth {
     let spec: SynthDefSpec = serde_json::from_value(spec).unwrap();
-    UGenSynth::new(Arc::new(clausters::synthdef::compile(spec).unwrap()), SR)
+    UGenSynth::new(
+        Arc::new(clausters::synthdef::compile(spec).unwrap()),
+        SR,
+        SEED_STRIDE,
+    )
 }
 
 fn add_synth(id: i32, synth: UGenSynth) -> Cmd {

@@ -3,9 +3,12 @@
 //!
 //! **Every generator here takes its randomness from `clausters_core::rng`**,
 //! the xorshift the sequencing layer and the client's `Pwhite` already use, and
-//! every one of them can be built from an explicit seed. So a render is
-//! reproducible: the same seed replays the same samples, which is what lets a
-//! noisy patch have a golden file at all. What is *not* in the core is the
+//! every one of them is built from an explicit seed — there is no seedless
+//! constructor, and no process-global counter behind one. The seed comes from
+//! the instance's [`crate::dsp::registry::BuildCtx`], which reserves a
+//! contiguous run per synth, so a render is reproducible: the same score and
+//! the same starting seed replay the same samples, which is what lets a noisy
+//! patch have a golden file at all. What is *not* in the core is the
 //! shaping — the dice table, the random walk, the interpolation — so a client
 //! that wanted to draw a pink stream itself would need that moved over first.
 //! Only `WhiteNoise`'s generator is mirrored there today.
@@ -23,23 +26,9 @@
 //! - **Impulsive and chaotic** — `Dust`/`Dust2` (random impulses at a mean
 //!   density) and `Crackle` (a chaotic map, not a random process at all).
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use clausters_core::rng;
 
 use crate::dsp::{ProcessCtx, UGen, at};
-
-/// Seeds successive instances differently without `rand` (which may allocate
-/// or lock — forbidden on the audio thread; construction happens off it, but
-/// the RNG state must live inside the UGen anyway).
-static SEED: AtomicU64 = AtomicU64::new(0x9E37_79B9_7F4A_7C15);
-
-/// The next per-instance seed. Two noise UGens in one graph must not run the
-/// same stream — correlated "noise" sums to a comb filter rather than to more
-/// noise.
-pub(crate) fn next_seed() -> u64 {
-    SEED.fetch_add(0x9E37_79B9_7F4A_7C15, Ordering::Relaxed)
-}
 
 /// White noise in [-1, 1], xorshift per sample. No inputs. The generator
 /// itself is `clausters_core::rng::WhiteNoise`, so a client can reproduce the
@@ -49,20 +38,10 @@ pub struct WhiteNoise {
 }
 
 impl WhiteNoise {
-    pub fn new() -> Self {
-        Self::with_seed(next_seed())
-    }
-
     pub fn with_seed(seed: u64) -> Self {
         Self {
             noise: rng::WhiteNoise::from_seed(seed),
         }
-    }
-}
-
-impl Default for WhiteNoise {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -101,10 +80,6 @@ pub struct PinkNoise {
 }
 
 impl PinkNoise {
-    pub fn new() -> Self {
-        Self::with_seed(next_seed())
-    }
-
     pub fn with_seed(seed: u64) -> Self {
         let mut rng = rng::Rng::from_seed(seed);
         let mut rows = [0.0f32; PINK_ROWS];
@@ -119,12 +94,6 @@ impl PinkNoise {
             total,
             counter: 0,
         }
-    }
-}
-
-impl Default for PinkNoise {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -163,21 +132,11 @@ pub struct BrownNoise {
 }
 
 impl BrownNoise {
-    pub fn new() -> Self {
-        Self::with_seed(next_seed())
-    }
-
     pub fn with_seed(seed: u64) -> Self {
         Self {
             rng: rng::Rng::from_seed(seed),
             z: 0.0,
         }
-    }
-}
-
-impl Default for BrownNoise {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -216,21 +175,11 @@ pub struct GrayNoise {
 }
 
 impl GrayNoise {
-    pub fn new() -> Self {
-        Self::with_seed(next_seed())
-    }
-
     pub fn with_seed(seed: u64) -> Self {
         Self {
             rng: rng::Rng::from_seed(seed),
             word: 0,
         }
-    }
-}
-
-impl Default for GrayNoise {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -253,20 +202,10 @@ pub struct ClipNoise {
 }
 
 impl ClipNoise {
-    pub fn new() -> Self {
-        Self::with_seed(next_seed())
-    }
-
     pub fn with_seed(seed: u64) -> Self {
         Self {
             rng: rng::Rng::from_seed(seed),
         }
-    }
-}
-
-impl Default for ClipNoise {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -322,10 +261,6 @@ pub struct LfNoise {
 }
 
 impl LfNoise {
-    pub fn new(shape: LfNoiseShape) -> Self {
-        Self::with_seed(shape, next_seed())
-    }
-
     pub fn with_seed(shape: LfNoiseShape, seed: u64) -> Self {
         Self {
             rng: rng::Rng::from_seed(seed),
@@ -432,10 +367,6 @@ pub struct Dust {
 }
 
 impl Dust {
-    pub fn new(mode: DustMode) -> Self {
-        Self::with_seed(mode, next_seed())
-    }
-
     pub fn with_seed(mode: DustMode, seed: u64) -> Self {
         Self {
             rng: rng::Rng::from_seed(seed),

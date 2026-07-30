@@ -31,6 +31,7 @@
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};
 use clausters::node::SynthNode;
 use clausters::synthdef::instance::UGenSynth;
@@ -252,7 +253,7 @@ pub fn render_def(def_json: &str, run: &Run) -> Vec<Vec<f32>> {
     let spec: SynthDefSpec = serde_json::from_str(def_json)
         .unwrap_or_else(|e| panic!("subject def is not a valid spec: {e}\n{def_json}"));
     let def = compile(spec).unwrap_or_else(|e| panic!("subject def does not compile: {e}"));
-    let mut synth = UGenSynth::new(Arc::new(def), run.sample_rate);
+    let mut synth = UGenSynth::new(Arc::new(def), run.sample_rate, SEED_STRIDE);
     let mut buses = Buses::new(ControlBuses::new(16), AUDIO_BUSES);
 
     let mut out = vec![Vec::with_capacity(run.samples); run.channels];

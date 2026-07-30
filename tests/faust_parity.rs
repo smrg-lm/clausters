@@ -16,6 +16,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
 use clausters::faust::synth::{FaustDef, FaustSynth};
 use clausters::node::{AddAction, Group, ROOT_NODE_ID, SynthNode};
@@ -50,7 +51,7 @@ fn compile_faust(name: &str, payload: CompilePayload) -> Arc<FaustDef> {
 fn ugen_synth(spec_json: &str) -> Box<dyn SynthNode> {
     let spec: SynthDefSpec = serde_json::from_str(spec_json).expect("valid spec");
     let def = Arc::new(compile(spec).expect("spec must compile"));
-    Box::new(UGenSynth::new(def, SR))
+    Box::new(UGenSynth::new(def, SR, SEED_STRIDE))
 }
 
 fn faust_synth(def: &Arc<FaustDef>, controls: &[(&str, f32)]) -> Box<dyn SynthNode> {

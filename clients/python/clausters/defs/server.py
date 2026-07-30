@@ -1301,15 +1301,24 @@ class Server:
     # ---- offline render (NRT interface only) ----
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2,
-               workers: int = 0):
+               workers: int = 0, path=None):
         """Renders the accumulated score (the interface must be an
         `OscNrtInterface`). Schedule a closing bundle (e.g. ``/n_free 0``)
         so the render has a defined duration. ``workers`` adds DSP threads
-        for the score's parallel groups — bit-identical, only faster."""
+        for the score's parallel groups — bit-identical, only faster.
+
+        With ``path``, also writes the result there as a float32 WAV — the
+        same file the free-standing `clausters.render` writes for its own
+        ``path``, so a bounce never has to hand-roll a WAV writer."""
         if not isinstance(self.interface, OscNrtInterface):
             raise RuntimeError("render() needs a Server with an OscNrtInterface")
-        return self.interface.render(sample_rate=sample_rate, channels=channels,
-                                     workers=workers)
+        from ..render import _write_wav
+
+        samples, frames = self.interface.render(
+            sample_rate=sample_rate, channels=channels, workers=workers)
+        if path is not None:
+            _write_wav(path, samples, channels, sample_rate)
+        return samples, frames
 
     # ---- server control ----
 

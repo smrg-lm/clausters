@@ -145,6 +145,11 @@ pub struct RenderConfig {
     /// M13 DSP workers for `/g_parallel` groups. Parallel rendering is
     /// bit-identical to sequential (disjoint stages), just faster.
     pub workers: usize,
+    /// Where this render's stochastic UGens start their seeds. The default is
+    /// [`clausters_core::rng::SEED_STRIDE`], so an unconfigured render is
+    /// still reproducible: same score, same noise, every time and in every
+    /// process. Change it to get a different take of the same score.
+    pub seed: u64,
 }
 
 impl Default for RenderConfig {
@@ -153,6 +158,7 @@ impl Default for RenderConfig {
             sample_rate: 48000.0,
             channels: 2,
             workers: 0,
+            seed: clausters_core::rng::SEED_STRIDE,
         }
     }
 }
@@ -195,7 +201,11 @@ pub fn render(
     let mut r = Renderer {
         engine,
         handle,
-        translator: CmdTranslator::new(sr as f32),
+        translator: {
+            let mut t = CmdTranslator::new(sr as f32);
+            t.set_seed(cfg.seed);
+            t
+        },
         block: vec![0.0; BLOCK_SIZE * cfg.channels],
         now: 0,
         channels: cfg.channels,

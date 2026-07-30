@@ -9,6 +9,7 @@ mod signal;
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
 use clausters::synthdef::instance::UGenSynth;
@@ -45,7 +46,7 @@ fn dc_def() -> Arc<SynthDef> {
 }
 
 fn add_default(id: i32, freq: f32, amp: f32) -> Cmd {
-    let mut synth = Box::new(UGenSynth::new(default_def(), SR));
+    let mut synth = Box::new(UGenSynth::new(default_def(), SR, SEED_STRIDE));
     synth.set_control(CTL_FREQ, freq);
     synth.set_control(1, amp);
     Cmd::AddSynth {
@@ -62,7 +63,7 @@ fn add_dc(id: i32) -> Cmd {
         id,
         target: ROOT_NODE_ID,
         action: AddAction::Tail,
-        synth: Box::new(UGenSynth::new(dc_def(), SR)),
+        synth: Box::new(UGenSynth::new(dc_def(), SR, SEED_STRIDE)),
         usage: Default::default(),
     }
 }

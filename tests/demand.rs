@@ -24,6 +24,7 @@
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::buffer::Buffer;
 use clausters::dsp::demand::{Drandom, RandKind};
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, DemandInputs, ProcessCtx};
@@ -105,7 +106,7 @@ fn render(json: &str, frames: usize, buffers: &[Option<Arc<Buffer>>]) -> Vec<f32
         }),
     )
     .unwrap_or_else(|e| panic!("compile: {e}\n{json}"));
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
+    let mut synth = UGenSynth::new(Arc::new(def), SR, SEED_STRIDE);
     let mut buses = Buses::new(ControlBuses::new(16), 8);
     let mut out = Vec::with_capacity(frames);
     for _ in 0..frames.div_ceil(BLOCK_SIZE) {
@@ -759,7 +760,7 @@ fn a_reset_restarts_every_stream_a_driver_pulls() {
         10.0 / SR
     );
     let def = compile(serde_json::from_str::<SynthDefSpec>(&json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
+    let mut synth = UGenSynth::new(Arc::new(def), SR, SEED_STRIDE);
     let mut buses = Buses::new(ControlBuses::new(16), 8);
     let run = |synth: &mut UGenSynth, buses: &mut Buses| {
         buses.clear_audio();
@@ -799,7 +800,7 @@ fn a_split_block_renders_the_same_samples() {
     let whole = render(&json, 4 * BLOCK_SIZE, &[]);
 
     let def = compile(serde_json::from_str::<SynthDefSpec>(&json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
+    let mut synth = UGenSynth::new(Arc::new(def), SR, SEED_STRIDE);
     let mut buses = Buses::new(ControlBuses::new(16), 8);
     let mut split = Vec::new();
     for _ in 0..4 {

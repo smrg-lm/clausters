@@ -11,6 +11,10 @@
 //! M12 dependency analysis) and [`Arity`]. A UGen names one of each; it does
 //! not invent new control flow.
 
+use std::cell::Cell;
+
+use clausters_core::rng::SEED_STRIDE;
+
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, PlayBuf};
 use crate::dsp::conv::Conv;
@@ -114,7 +118,7 @@ pub struct UGenConfig {
 /// [`UGenConfig`] alone, and it must allocate here, on the network thread,
 /// never in `process`. This is the same information `FaustSynth::new` already
 /// takes for the same reason.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct BuildCtx {
     /// The engine's sample rate in Hz, fixed for the server's run.
     pub sample_rate: f32,
@@ -122,6 +126,35 @@ pub struct BuildCtx {
     /// block into shorter runs, so this is a **capacity**, not the length any
     /// single `process` call sees — size buffers by it, never loop over it.
     pub block_size: usize,
+    /// The next seed for a stochastic UGen in this instance, handed out by
+    /// [`BuildCtx::next_seed`]. It is a `Cell` because `build` takes `&self`
+    /// and every UGen in one graph must get a *different* stream: correlated
+    /// "noise" sums to a comb filter rather than to more noise.
+    seed: Cell<u64>,
+}
+
+impl BuildCtx {
+    /// A build context whose stochastic UGens start their seeds at `seed`.
+    ///
+    /// The seed sequence belongs to the *instance*, not to the process: the
+    /// caller (`UGenSynth::new`) reserves one contiguous run of seeds per
+    /// synth, so replaying the same score replays the same noise. A
+    /// process-global counter would make a render depend on how many synths
+    /// happened to be built before it.
+    pub fn new(sample_rate: f32, block_size: usize, seed: u64) -> Self {
+        Self {
+            sample_rate,
+            block_size,
+            seed: Cell::new(seed),
+        }
+    }
+
+    /// The next seed, advancing the sequence.
+    pub fn next_seed(&self) -> u64 {
+        let s = self.seed.get();
+        self.seed.set(s.wrapping_add(SEED_STRIDE));
+        s
+    }
 }
 
 /// Input count of a UGen: a fixed number, or variable (`EnvGen`, `Dseq`).
@@ -623,7 +656,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(WhiteNoise::new()),
+        |_, ctx| Box::new(WhiteNoise::with_seed(ctx.next_seed())),
     ),
     // --- the phase family (U1): one f64 accumulator, PolyBLEP where the
     //     waveform is meant to be heard and exact corners where it is meant to
@@ -1428,7 +1461,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(PinkNoise::new()),
+        |_, ctx| Box::new(PinkNoise::with_seed(ctx.next_seed())),
     ),
     desc(
         "BrownNoise",
@@ -1439,7 +1472,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(BrownNoise::new()),
+        |_, ctx| Box::new(BrownNoise::with_seed(ctx.next_seed())),
     ),
     desc(
         "GrayNoise",
@@ -1450,7 +1483,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(GrayNoise::new()),
+        |_, ctx| Box::new(GrayNoise::with_seed(ctx.next_seed())),
     ),
     desc(
         "ClipNoise",
@@ -1461,7 +1494,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(ClipNoise::new()),
+        |_, ctx| Box::new(ClipNoise::with_seed(ctx.next_seed())),
     ),
     desc(
         "LFNoise0",
@@ -1472,7 +1505,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(LfNoise::new(LfNoiseShape::Step)),
+        |_, ctx| Box::new(LfNoise::with_seed(LfNoiseShape::Step, ctx.next_seed())),
     ),
     desc(
         "LFNoise1",
@@ -1483,7 +1516,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(LfNoise::new(LfNoiseShape::Linear)),
+        |_, ctx| Box::new(LfNoise::with_seed(LfNoiseShape::Linear, ctx.next_seed())),
     ),
     desc(
         "LFNoise2",
@@ -1494,7 +1527,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(LfNoise::new(LfNoiseShape::Quadratic)),
+        |_, ctx| Box::new(LfNoise::with_seed(LfNoiseShape::Quadratic, ctx.next_seed())),
     ),
     desc(
         "LFClipNoise",
@@ -1505,7 +1538,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(LfNoise::new(LfNoiseShape::Clip)),
+        |_, ctx| Box::new(LfNoise::with_seed(LfNoiseShape::Clip, ctx.next_seed())),
     ),
     desc(
         "Dust",
@@ -1516,7 +1549,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Dust::new(DustMode::Unipolar)),
+        |_, ctx| Box::new(Dust::with_seed(DustMode::Unipolar, ctx.next_seed())),
     ),
     desc(
         "Dust2",
@@ -1527,7 +1560,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Dust::new(DustMode::Bipolar)),
+        |_, ctx| Box::new(Dust::with_seed(DustMode::Bipolar, ctx.next_seed())),
     ),
     desc(
         "Crackle",
@@ -1975,7 +2008,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Dlist::new(ListOrder::Seq)),
+        |_, ctx| Box::new(Dlist::with_seed(ListOrder::Seq, ctx.next_seed())),
     ),
     desc(
         "Drand",
@@ -1986,7 +2019,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Dlist::new(ListOrder::Rand)),
+        |_, ctx| Box::new(Dlist::with_seed(ListOrder::Rand, ctx.next_seed())),
     ),
     desc(
         "Dxrand",
@@ -1997,7 +2030,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Dlist::new(ListOrder::Xrand)),
+        |_, ctx| Box::new(Dlist::with_seed(ListOrder::Xrand, ctx.next_seed())),
     ),
     desc(
         "Dshuf",
@@ -2008,7 +2041,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Dlist::new(ListOrder::Shuf)),
+        |_, ctx| Box::new(Dlist::with_seed(ListOrder::Shuf, ctx.next_seed())),
     ),
     desc(
         "Dseries",
@@ -2041,7 +2074,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Drandom::new(RandKind::White)),
+        |_, ctx| Box::new(Drandom::with_seed(RandKind::White, ctx.next_seed())),
     ),
     desc(
         "Diwhite",
@@ -2052,7 +2085,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Drandom::new(RandKind::IWhite)),
+        |_, ctx| Box::new(Drandom::with_seed(RandKind::IWhite, ctx.next_seed())),
     ),
     desc(
         "Dbrown",
@@ -2063,7 +2096,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Drandom::new(RandKind::Brown)),
+        |_, ctx| Box::new(Drandom::with_seed(RandKind::Brown, ctx.next_seed())),
     ),
     desc(
         "Dibrown",
@@ -2081,7 +2114,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Drandom::new(RandKind::IBrown)),
+        |_, ctx| Box::new(Drandom::with_seed(RandKind::IBrown, ctx.next_seed())),
     ),
     desc(
         "Dstutter",

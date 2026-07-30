@@ -9,6 +9,7 @@ mod signal;
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::node::{AddAction, Group, Place, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
 use clausters::synthdef::instance::UGenSynth;
@@ -45,7 +46,7 @@ fn add_synth(id: i32, freq: f32, amp: f32) -> Cmd {
 }
 
 fn add_synth_in(id: i32, freq: f32, amp: f32, target: i32, action: AddAction) -> Cmd {
-    let mut synth = Box::new(UGenSynth::new(default_def(), SR));
+    let mut synth = Box::new(UGenSynth::new(default_def(), SR, SEED_STRIDE));
     synth.set_control(0, freq);
     synth.set_control(1, amp);
     Cmd::AddSynth {
@@ -62,7 +63,7 @@ fn add_silencer(id: i32, target: i32, action: AddAction) -> Cmd {
         id,
         target,
         action,
-        synth: Box::new(UGenSynth::new(silencer_def(), SR)),
+        synth: Box::new(UGenSynth::new(silencer_def(), SR, SEED_STRIDE)),
         usage: Default::default(),
     }
 }
@@ -416,7 +417,7 @@ fn control_buses_feed_the_audio_thread() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(def, SR)),
+            synth: Box::new(UGenSynth::new(def, SR, SEED_STRIDE)),
             usage: Default::default(),
         })
         .ok()

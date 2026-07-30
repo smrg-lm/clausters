@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};
 use clausters::node::SynthNode;
 use clausters::synthdef::instance::UGenSynth;
@@ -16,7 +17,7 @@ const SR: f32 = 48_000.0;
 /// Renders `blocks` full blocks of audio bus 0.
 fn render(json: &str, blocks: usize) -> Vec<f32> {
     let def = compile(serde_json::from_str::<SynthDefSpec>(json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
+    let mut synth = UGenSynth::new(Arc::new(def), SR, SEED_STRIDE);
     let mut buses = Buses::new(ControlBuses::new(16), 8);
     let mut out = Vec::with_capacity(blocks * BLOCK_SIZE);
     for _ in 0..blocks {
@@ -40,7 +41,7 @@ fn render(json: &str, blocks: usize) -> Vec<f32> {
 /// block, so the result is directly comparable with [`render`]'s.
 fn render_split(json: &str, blocks: usize, split: usize) -> Vec<f32> {
     let def = compile(serde_json::from_str::<SynthDefSpec>(json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
+    let mut synth = UGenSynth::new(Arc::new(def), SR, SEED_STRIDE);
     let mut buses = Buses::new(ControlBuses::new(16), 8);
     let mut out = Vec::with_capacity(blocks * BLOCK_SIZE);
     for _ in 0..blocks {

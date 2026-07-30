@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::buffer::Buffer;
 use clausters::dsp::conv::layout;
 use clausters::dsp::wavetable::GenCommand;
@@ -21,7 +22,11 @@ const CHANNELS: usize = 2;
 
 fn spec_synth(spec: Value) -> UGenSynth {
     let spec: SynthDefSpec = serde_json::from_value(spec).unwrap();
-    UGenSynth::new(Arc::new(clausters::synthdef::compile(spec).unwrap()), SR)
+    UGenSynth::new(
+        Arc::new(clausters::synthdef::compile(spec).unwrap()),
+        SR,
+        SEED_STRIDE,
+    )
 }
 
 fn add_synth(id: i32, synth: UGenSynth) -> Cmd {

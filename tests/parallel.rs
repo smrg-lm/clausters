@@ -287,6 +287,7 @@ fn nrt_render_with_workers_is_bit_identical() {
         sample_rate: SR as f64,
         channels: 2,
         workers: 0,
+        ..RenderConfig::default()
     };
     let (a, _) = render_to_vec(&score, &base).unwrap();
     let (b, _) = render_to_vec(&score, &RenderConfig { workers: 2, ..base }).unwrap();
