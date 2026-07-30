@@ -65,8 +65,10 @@ pub mod ws;
 /// reimplementing it; v13 the `clausters_core_bundle_*` component-bundle pass
 /// (a manifest's requirements, one mounted instance's resolution, and the
 /// writers' pre-flight — shared so a bundle authored in any language mounts
-/// identically in a tab, on the desktop and over loopback).
-pub const CORE_ABI_VERSION: u32 = 13;
+/// identically in a tab, on the desktop and over loopback); v14
+/// `clausters_core_stats`, the peak/RMS of one channel of an interleaved
+/// buffer (what a render reports back, so no client writes the loop).
+pub const CORE_ABI_VERSION: u32 = 14;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
@@ -1050,6 +1052,37 @@ pub unsafe extern "C" fn clausters_core_bundle_validate(
         Err(e) => serde_json::json!({ "error": e.to_string() }),
     };
     write_json(serde_json::to_vec(&json).unwrap_or_default(), out, out_cap)
+}
+
+/// Peak magnitude and RMS of channel `channel` of the **interleaved** buffer
+/// `samples` (`n` `f32`s across `channels` channels), written to `out[0]` and
+/// `out[1]`. Returns 0, or -1 on a null pointer or an out-of-range channel.
+///
+/// The stride walk means a caller measures a render without deinterleaving it
+/// first, and reads the same numbers the server would.
+///
+/// # Safety
+/// `samples` must be readable for `n` `f32`s and `out` writable for 2.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_stats(
+    samples: *const f32,
+    n: usize,
+    channels: usize,
+    channel: usize,
+    out: *mut f32,
+) -> i32 {
+    if samples.is_null() || out.is_null() || channels == 0 || channel >= channels {
+        return -1;
+    }
+    // SAFETY: caller guarantees `samples` is readable for `n` and `out` for 2.
+    let s = unsafe { std::slice::from_raw_parts(samples, n) };
+    let (peak, rms) = clausters_core::measure::channel_stats(s, channels, channel);
+    // SAFETY: caller contract.
+    unsafe {
+        *out = peak;
+        *out.add(1) = rms;
+    }
+    0
 }
 
 #[cfg(test)]

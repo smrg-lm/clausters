@@ -10,6 +10,8 @@
 //!
 //! - [`correlation`] — the stereo **correlation** (Pearson's r of the two
 //!   channels), the phase-coherence number a goniometer annotates.
+//! - [`channel_stats`] — the **peak and RMS** of one channel of an interleaved
+//!   buffer, the pair a render reports back so no client writes the loop.
 //! - [`lissajous_point`] / [`lissajous_into`] — the **Lissajous / goniometer**
 //!   transform: a stereo `(L, R)` pair mapped to the 45°-rotated mid/side plane
 //!   the classic goniometer draws. It is the shape an audio engineer or
@@ -19,10 +21,12 @@
 //! `no_std`-friendly and allocation-free; each function is a single pass over
 //! the input slices.
 //!
-//! No FFI export yet: the phasescope computes these host-side (native and wasm
-//! both link this crate directly), and no non-Rust client consumes them yet.
-//! The export follows the concrete consumer, the way `peaks` grew one only when
-//! the Python client needed to build the identical cache.
+//! `correlation` and the Lissajous transform have no FFI export: the phasescope
+//! computes them host-side (native and wasm both link this crate directly), and
+//! no non-Rust client consumes them yet. The export follows the concrete
+//! consumer, the way `peaks` grew one only when the Python client needed to
+//! build the identical cache — and the way `channel_stats`, which the Python
+//! client reads off every render, has one.
 
 /// Pearson's correlation coefficient of two equal-length signals, in `[-1, 1]`.
 ///
@@ -92,6 +96,37 @@ pub fn lissajous_into(left: &[f32], right: &[f32], out: &mut [[f32; 2]]) -> bool
         *o = lissajous_point(l, r);
     }
     true
+}
+
+/// Peak magnitude and RMS of one channel of an **interleaved** buffer.
+///
+/// `samples` is the whole interleaved frame sequence, `channels` its channel
+/// count and `channel` the one to measure; the stride walk is what lets a
+/// caller measure without deinterleaving first. Returns `(peak, rms)`, both
+/// `0.0` for an empty or out-of-range request.
+///
+/// This is the measurement a render reports back: the peak answers "did it
+/// clip", the RMS answers "how loud is it", and both are one pass over data
+/// the renderer has already produced, so no caller needs its own loop.
+pub fn channel_stats(samples: &[f32], channels: usize, channel: usize) -> (f32, f32) {
+    if channels == 0 || channel >= channels || samples.is_empty() {
+        return (0.0, 0.0);
+    }
+    let mut peak = 0.0f32;
+    let mut sum = 0.0f64;
+    let mut n = 0u64;
+    for &s in samples.iter().skip(channel).step_by(channels) {
+        let a = s.abs();
+        if a > peak {
+            peak = a;
+        }
+        sum += (s as f64) * (s as f64);
+        n += 1;
+    }
+    if n == 0 {
+        return (peak, 0.0);
+    }
+    (peak, (sum / n as f64).sqrt() as f32)
 }
 
 #[cfg(test)]
@@ -182,5 +217,30 @@ mod tests {
             None,
             "a constant channel has undefined correlation"
         );
+    }
+}
+
+#[cfg(test)]
+mod stats_tests {
+    use super::channel_stats;
+
+    #[test]
+    fn peak_and_rms_walk_one_channel_of_an_interleaved_buffer() {
+        // L is a square at +-1 (peak 1, rms 1); R is constant 0.5.
+        let buf = [1.0, 0.5, -1.0, 0.5, 1.0, 0.5, -1.0, 0.5];
+        let (peak_l, rms_l) = channel_stats(&buf, 2, 0);
+        let (peak_r, rms_r) = channel_stats(&buf, 2, 1);
+        assert_eq!(peak_l, 1.0);
+        assert!((rms_l - 1.0).abs() < 1e-6, "rms {rms_l}");
+        assert_eq!(peak_r, 0.5);
+        assert!((rms_r - 0.5).abs() < 1e-6, "rms {rms_r}");
+    }
+
+    #[test]
+    fn an_impossible_request_reads_zero_rather_than_panicking() {
+        let buf = [1.0, 2.0];
+        assert_eq!(channel_stats(&buf, 2, 2), (0.0, 0.0)); // channel out of range
+        assert_eq!(channel_stats(&buf, 0, 0), (0.0, 0.0)); // no channels
+        assert_eq!(channel_stats(&[], 2, 0), (0.0, 0.0)); // no samples
     }
 }
