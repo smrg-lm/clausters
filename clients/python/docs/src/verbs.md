@@ -14,7 +14,7 @@ Server.boot()
 node = play(sine(440.0) * 0.2)       # a bare expression, sounding now
 node.free()                             # ...and gone
 plot(sine(440.0) * 0.2, dur=0.02)    # the same signal, on screen
-samples, frames = render(sine(440.0) * 0.2, dur=2.0, path="beep.wav")
+stats = render(sine(440.0) * 0.2, dur=2.0, path="beep.wav")
 ```
 
 The three verbs carry one semantic each, and the split is deliberate:
@@ -24,7 +24,7 @@ The three verbs carry one semantic each, and the split is deliberate:
 - **`render`** is the **change of state**: it evaluates a *generator* thing (a
   def, a pattern, an arrangement — an algorithm that describes sound) into a
   *generated* one (samples — random-access audio). Offline by default, into
-  `(samples, frames)` or a WAV.
+  memory or a file; either way it reports what it did.
 - **`plot`** is the visual sibling of `render`: the same materialization, drawn
   in its own window instead of returned. (Its live counterpart is
   [`scope`](api.md), which taps buses on a running server.)
@@ -67,8 +67,8 @@ ranges):
 | a `Buffer` (or buffer number) | its contents, fetched from the live server |
 | any iterable of numbers — a list, a value pattern (`Pseq`, `Pwhite`, …), a stream | the sequence, index on the x axis (endless ones cap at `n`) |
 
-**Renderables** — `render(x)` (offline paths return `(samples, frames)`,
-interleaved float32; `path=` also writes a float32 WAV):
+**Renderables** — every offline path returns a `RenderStats` (see
+[What a render gives back](#what-a-render-gives-back)):
 
 | You hand it | It does |
 |---|---|
@@ -115,3 +115,116 @@ being already generated, *is* playable. The full story is in
 - **Beats read as seconds outside a clock.** An interactive `play(event)` or
   `play(automation)` (no routine in flight) times itself on wall time at
   tempo 1.0, exactly like a bare `Event().play()`.
+
+## What a render gives back
+
+Every render — the free-standing `render`, `Session.render`, `Server.render` —
+returns one `RenderStats`. There is a single return type whatever you ask for,
+because **`path` chooses where the audio goes, not whether there is a result**:
+
+| field | what it is |
+|---|---|
+| `frames` | length in frames (one frame = one sample per channel) |
+| `channels` | how many channels were rendered |
+| `sample_rate` | the rate it was rendered at, in Hz |
+| `duration` | `frames / sample_rate`, in seconds |
+| `events` | how many score events the render executed |
+| `peak` | peak magnitude **per channel**, in channel order |
+| `rms` | RMS **per channel**, over the whole render |
+| `path` | the file it was written to, or `None` |
+| `samples` | the audio, interleaved `float32` — or `None` when it went to a file |
+
+`peak` and `rms` are measured by the renderer *as it streams*, not by a pass
+over the result afterwards, so they cost nothing extra and exist even when the
+samples never came back:
+
+```python
+stats = session.render(sample_rate=48_000.0, channels=2)
+print(f"{stats.frames} frames ({stats.duration:.2f} s), peak {max(stats.peak):.3f}")
+if max(stats.peak) > 1.0:
+    print("it clips")
+```
+
+### Where the file is written
+
+`path` does not hand the samples to Python to be written out. The score goes to
+the **server's own offline renderer** (`clausters --nrt`), which streams
+straight to disk:
+
+```python
+stats = session.render(sample_rate=48_000.0, channels=2, path="take.wav")
+stats.samples          # None - the audio is in take.wav
+stats.path             # 'take.wav'
+```
+
+Two things follow. First, a long bounce never materializes in the client: a
+sixty-second stereo render is 5.7 million floats, and not carrying them across
+is most of the reason the file path is several times faster than the in-memory
+one. Second, the file's format is the server's to choose — `sample_format` is
+`"float"` (the default), `"int24"` or `"int16"`. **Float32 is the default
+everywhere**, because f32 is what the engine computes in and what buffers hold,
+so writing and reading one loses nothing.
+
+Because the renderer is the `clausters` binary, `path=` needs that binary
+findable — the same lookup `clausters.launch` uses (the wheel bundles it).
+
+### Reading a file back
+
+The counterpart is `read_soundfile`, which decodes through **the server's
+decoder**, not a Python one:
+
+```python
+from clausters.render import read_soundfile
+
+audio = read_soundfile("take.wav")
+audio.frames, audio.channels, audio.sample_rate
+audio.samples          # interleaved float32
+```
+
+WAV goes through hound and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC and AIFF
+through symphonia — the same path `/b_allocRead` takes, so client and server
+never disagree about a file. Integer files are scaled to `[-1, 1]` on the way
+out: whatever the file holds, what you get is `float32`. Nothing resamples;
+`sample_rate` is the file's own.
+
+This is not a convenience wrapper over the standard library. Python's `wave`
+module cannot read a float32 WAV at all — the format `render` writes — so
+borrowing the server's reader is what keeps the client free of an audio
+dependency.
+
+### Interleaved, and how to split it
+
+Samples are **interleaved** everywhere: `L R L R …`, `frame * channels +
+channel`. That is not an arbitrary choice — it is the server's own buffer
+layout, the order `/b_getn` indexes and `/b_export` writes — so audio *going
+to* the server needs no conversion at all.
+
+For analysis on the client side, split it:
+
+```python
+from clausters.render import channels, interleave
+
+left, right = channels(stats.samples, stats.channels)
+stats.channel(0)                     # the same thing, one channel
+back = interleave(left, right)       # the inverse
+```
+
+Both directions are C-level strided copies on an `array` — deinterleaving a
+sixty-second stereo render takes about 13 ms, a few percent of the render
+itself — so there is no reason to keep per-channel copies around. Reach for
+`channels` when you are measuring or plotting one channel, and leave the
+interleaved buffer alone the rest of the time.
+
+### The same score renders the same audio
+
+A render's stochastic UGens are seeded from the render, not from the process,
+so **rendering one score twice gives identical samples** — in the same process,
+in a fresh one, in memory or through a file. That is what lets a noisy patch
+have a golden file.
+
+Pass `seed=` for a different take of the same score:
+
+```python
+a = session.render(channels=2)             # the default seed
+b = session.render(channels=2, seed=12345)  # same notes, different noise
+```

@@ -117,8 +117,31 @@ Both stream transports share a few **edge guards**, sized like everything else f
 The same engine renders scores to WAV without an audio device:
 
 ```sh
-clausters --nrt score.osc out.wav [--rate 48000] [--channels 2] [--format float|int16|int24]
+clausters --nrt score.osc out.wav [--rate 48000] [--channels 2] \
+    [--format float|int16|int24] [--seed N] [--stats]
 ```
+
+`--format` defaults to `float` — f32 is what the engine computes in and what
+buffers hold, so a float WAV loses nothing on the way out or back in.
+
+**`--seed N`** starts the render's stochastic UGens. It has a fixed default, and
+the sequence belongs to the render rather than to the process, so **the same
+score renders the same samples every time** — that is what lets a patch with
+noise in it have a golden file. Change the seed for a different take of the same
+score.
+
+**`--stats`** replaces the human summary with one JSON line:
+
+```json
+{"frames":24000,"events":3,"channels":2,"sampleRate":48000,
+ "peak":[0.5,0.2],"rms":[0.353,0.115]}
+```
+
+`peak` and `rms` are per channel, measured while the render streamed. This mode
+exists for a client driving `--nrt` as a subprocess — it learns what the render
+did without opening the file it just asked for. The Python client's
+`render(path=...)` is exactly that: the server writes the audio, the client
+keeps the numbers.
 
 A score is the scsynth binary format: OSC packets back to back, each preceded by its byte count as a big-endian `int32`. Timetags count **seconds from the start of the render** (the immediate tag is time 0); bundles fire sample-accurately exactly like in real time, so an offline render equals a perfectly timed live take. The render ends at the time of the **last** bundle, whose commands produce no sound — close every score with a dummy bundle (a final `/n_free`) to set the duration.
 

@@ -101,7 +101,7 @@ from clausters import Session
 session = Session.nrt(tempo=2.0)
 Playhead(timeline, session.clock, session.server).play()
 session.clock.render()                       # drain the playhead in logical time
-samples, frames = session.server.render()    # the offline render
+stats = session.server.render()              # the offline render
 ```
 
 ## Following a conductor

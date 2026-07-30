@@ -3458,3 +3458,56 @@ deliberate: a widget's own interlocking structural geometry (the patcher's
 box/port series, the roll's key gutter and lanes, the score's staff step) is
 module-local by L6's rule and lives in the physical space too, so a plane's
 interior does not grow with the display's density — it grows with its own zoom.
+
+## A render's noise belongs to the render, and its file to the server
+
+Two decisions about the offline path, both taken by asking who owns a thing
+rather than what is convenient to reach.
+
+**The seed.** Stochastic UGens drew their per-instance seed from a
+process-global counter that nothing reset. A fresh process was reproducible, so
+the golden-file tests passed and nobody noticed; but the *second* render in one
+process drew different seeds than the first, so the same score gave different
+noise. That is a strange property for an offline renderer — a bounce is supposed
+to be a function of its score — and the noise module already claimed the
+opposite in its own header. The counter now lives in `BuildCtx`, which every
+UGen factory already receives, and `CmdTranslator` reserves one contiguous run of
+seeds per synth, so the sequence is a function of the score and of
+`RenderConfig::seed`. Two synths still never share a stream, which was the
+original reason for a counter at all; what changed is only *whose* counter it is.
+The seedless constructors went with it: `WhiteNoise::new()` had no correct
+meaning once seeding was per-instance, and a default that silently correlates two
+generators is worse than no default.
+
+**The file.** The Python client used to render into memory and write the WAV
+itself, which meant a duplicate WAV writer, a duplicate decision about sample
+format, and — because the stdlib `wave` module cannot read a float32 WAV — no way
+to read back what it had just written. Meanwhile the server had both halves
+already: `render_to_wav` streams a score to disk through hound, and `read_audio`
+decodes WAV/FLAC/OGG/MP3/AAC/ALAC/AIFF for `/b_allocRead`. Neither was reachable
+from a client.
+
+The reading half became an FFI export, because a client genuinely needs the
+samples in its own process. The writing half did **not**: the client hands the
+score to `clausters --nrt`, the same renderer the CLI drives, and the server
+writes the file. That avoids widening the embed ABI for something a subprocess
+already does, and it is *faster* — a sixty-second stereo render is 5.7 million
+floats, and not marshalling them is the difference between 430 ms and 60 ms. The
+cost is that `--nrt` needed a machine-readable mode (`--stats`) so the client
+learns the frames, events, peak and RMS without reopening the file, and that the
+`clausters` binary must be findable. Both are acceptable for a client that
+already requires the server.
+
+What this fixes in the API is the shape of the return. `path` now means **where
+the audio goes, not whether there is a result**: every render returns one
+`RenderStats`, and `samples` is populated only when the audio did not go to a
+file. The alternative — samples in one case, a bare frame count in the other —
+makes every caller branch on an argument it passed itself.
+
+**Interleaved stays the currency.** It is the server's own layout (`/b_getn`
+indexes `frame * channels + channel`; `/b_export` writes the same order), so
+audio *going to* the server needs no conversion, and the one place the server
+goes planar — Faust's `soundfile` — it converts internally. Deinterleaving is a
+client-side convenience for analysis, and it stays in Python rather than the
+core precisely because `array` extended slicing is already a C-level strided
+copy: crossing the FFI to do it would copy more, not less.

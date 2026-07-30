@@ -69,23 +69,16 @@ server, never push-filled by the client — so we render two beats of a bass
 note to a WAV with an offline session, then ask the live server to read it.
 
 ```python
-import struct, tempfile, wave
+import tempfile
 from pathlib import Path
 from clausters.seq import Pbind, Pseq
 
 def bounce_take(path: str, beats: float = 2.0) -> str:
-    """Render a two-beat bass note offline and write it to a WAV."""
+    """Render a two-beat bass note offline, straight to a WAV."""
     offline = Session.nrt(tempo=TEMPO)
     offline.play(Pbind(midinote=Pseq([36], 1), dur=beats, legato=1.0, amp=0.3))
-    samples, frames = offline.render(sample_rate=SR, channels=1)
-    with wave.open(path, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(int(SR))
-        w.writeframes(b"".join(
-            struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767))
-            for s in samples))
-    print(f"bounced {frames} frames -> {path}")
+    stats = offline.render(sample_rate=SR, channels=1, path=path)
+    print(f"bounced {stats.frames} frames -> {path}")
     return path
 
 wav = bounce_take(str(Path(tempfile.mkdtemp(prefix="clausters-")) / "take.wav"))

@@ -23,15 +23,18 @@ by kind:
   only (they are forward-only; sounding them live is `clausters.play`'s job).
   An endless source needs ``until`` (the bounce would never drain).
 
-Every offline path returns ``(samples, frames)`` — interleaved float32 in a
-stdlib ``array('f')`` — and, when ``path`` is given, also writes the audio as
-a float32 WAV there.
+Every offline path returns a `RenderStats`: the frame, channel and event
+counts, per-channel peak and RMS, and the samples themselves (interleaved
+float32 in a stdlib ``array('f')``) when the render kept them. Passing
+``path`` sends the audio to a file instead — written by the server's own
+``--nrt`` renderer, so it never crosses into this process — and leaves
+``samples`` ``None``. Read one back with `read_soundfile`.
 
 ```python
 from clausters import render
 from clausters.defs import sine
 
-samples, frames = render(sine(440.0) * 0.2, dur=2.0)
+stats = render(sine(440.0) * 0.2, dur=2.0)
 render(Pbind(degree=Pseq([0, 2, 4]), dur=0.5), path="phrase.wav")
 render(my_piece, until=64.0, path="piece.wav")     # an arrangement, bounced
 ```
@@ -147,7 +150,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
            until: float | None = None, tempo: float = 1.0,
            sample_rate: float = 48_000.0, channels: int = 2,
            workers: int = 0, path=None):
-    """Render ``obj`` — offline to ``(samples, frames)``, or onto a live
+    """Render ``obj`` — offline to a `RenderStats`, or onto a live
     ``destination`` when it has one to sound on.
 
     Args:
@@ -177,11 +180,11 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         sample_rate: offline render rate, in Hz.
         channels: interleaved output channel count of the offline render.
         workers: renderer worker threads for the ``bytes`` score path.
-        path: also write the offline result there as a float32 WAV.
+        path: send the audio to this file instead of returning it; the
+            server writes it (see `render_to_file`).
 
     Returns:
-        ``(samples, frames)`` for every offline path — interleaved float32 in
-        a stdlib ``array('f')``. The delegating paths return what
+        A `RenderStats` for every offline path. The delegating paths return what
         `clausters.form.render` returns (a `Playhead`, or the instance group
         of a logical `Group`).
     """
