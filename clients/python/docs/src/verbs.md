@@ -131,6 +131,7 @@ because **`path` chooses where the audio goes, not whether there is a result**:
 | `events` | how many score events the render executed |
 | `peak` | peak magnitude **per channel**, in channel order |
 | `rms` | RMS **per channel**, over the whole render |
+| `seed` | the seed its stochastic UGens started from — pass it back to replay this take |
 | `path` | the file it was written to, or `None` |
 | `samples` | the audio, interleaved `float32` — or `None` when it went to a file |
 
@@ -215,16 +216,42 @@ itself — so there is no reason to keep per-channel copies around. Reach for
 `channels` when you are measuring or plotting one channel, and leave the
 interleaved buffer alone the rest of the time.
 
-### The same score renders the same audio
+### Every render is a new take, and you can ask for an old one
 
-A render's stochastic UGens are seeded from the render, not from the process,
-so **rendering one score twice gives identical samples** — in the same process,
-in a fresh one, in memory or through a file. That is what lets a noisy patch
-have a golden file.
-
-Pass `seed=` for a different take of the same score:
+A score with a random process in it — `white_noise`, `dust`, an `lf_noise`
+sweeping a filter — renders **differently every time**:
 
 ```python
-a = session.render(channels=2)             # the default seed
-b = session.render(channels=2, seed=12345)  # same notes, different noise
+a = session.render(channels=2)
+b = session.render(channels=2)
+a.samples == b.samples      # False: two performances of the same piece
 ```
+
+That is the point of writing a random process into a piece. Playing it again is
+another performance, and a renderer that quietly gave you the same one would be
+hiding the thing you asked for.
+
+Reproducibility is the *request*, and `stats.seed` is what makes it possible to
+make. Every render reports the seed it started from, whether you chose it or it
+drew one:
+
+```python
+take = session.render(channels=2)
+print(take.seed)                            # 12157665459056928801
+
+again = session.render(channels=2, seed=take.seed)
+again.samples == take.samples               # True, sample for sample
+```
+
+So the working habit is: render until you like what you hear, write down
+`stats.seed`, and from then on that take is a value you can pass around — into a
+golden file, into a bounce, into a piece that has to sound the same tomorrow.
+The seed sequence belongs to the render, so a fixed seed reproduces in any
+process, at any worker count, in memory or through a file.
+
+This is the same rule the client's own random context has always followed: a
+`Pwhite` draws unpredictably until `main.seed(n)` or `session.seed(n)` pins it
+(see [Routines and clocks](routines-and-clocks.md)). The two seeds are
+independent — one is the server's noise UGens, the other is the client's
+patterns — but they answer to the same idea, so a piece that has to repeat
+exactly pins both.

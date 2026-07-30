@@ -344,18 +344,19 @@ class Session(Environment):
             path: where the audio goes. Without it the samples come back in
                 ``stats.samples``; with it the **server** writes the file and
                 ``stats.samples`` is ``None``. See `Server.render`.
-            seed: starting seed for the render's stochastic UGens; the
-                default is the server's own, so a score renders the same
-                noise every time.
+            seed: starting seed for the render's stochastic UGens. ``None``
+                draws a fresh one, so a score with noise in it is a new take
+                every time; ``stats.seed`` reports the one used, and passing
+                it back replays that take.
             sample_format: ``"float"``, ``"int24"`` or ``"int16"`` — only
                 meaningful with ``path``, since only the file has a format.
 
         Returns:
             A `clausters.render.RenderStats`: ``frames``, ``channels``,
             ``sample_rate``, ``events``, per-channel ``peak`` and ``rms``,
-            ``path``, and ``samples`` when the render kept them. Schedule a
-            closing event (e.g. freeing the root group) so the render has a
-            defined duration.
+            ``seed``, ``path``, and ``samples`` when the render kept them.
+            Schedule a closing event (e.g. freeing the root group) so the
+            render has a defined duration.
         """
         with self._active():
             self.clock.render(until)

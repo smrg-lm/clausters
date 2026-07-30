@@ -299,7 +299,7 @@ def _render_def(obj, dur, controls, defs, sample_rate, channels):
     change of state (`render` delivers it, `plot` draws it)."""
     from .render import bounce_def
 
-    return bounce_def(obj, dur, controls, defs, sample_rate, channels)
+    return bounce_def(obj, dur, controls, defs, sample_rate, channels).samples
 
 
 def _render_env(env, sample_rate):

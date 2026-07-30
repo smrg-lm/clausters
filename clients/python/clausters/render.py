@@ -43,7 +43,7 @@ render(my_piece, until=64.0, path="piece.wav")     # an arrangement, bounced
 import struct
 import sys
 from array import array
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .base.main import main
 
@@ -63,6 +63,10 @@ class RenderStats:
     ``peak`` and ``rms`` are **per channel**, in channel order, measured by
     the renderer as it streamed — not by a second pass here, which for a
     file-bound render would mean reading the file back.
+
+    ``seed`` is the one this render's stochastic UGens started from. Unless
+    you asked for a seed you got a fresh one, so **this is how you get a take
+    back**: pass it as ``seed=`` and the render repeats sample for sample.
     """
 
     frames: int
@@ -72,6 +76,7 @@ class RenderStats:
     peak: tuple[float, ...] = ()
     rms: tuple[float, ...] = ()
     path: str | None = None
+    seed: int = 0
     samples: array | None = field(default=None, repr=False)
 
     @property
@@ -149,7 +154,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
            ports=None, dur: float = 1.0, controls=None, defs=(),
            until: float | None = None, tempo: float = 1.0,
            sample_rate: float = 48_000.0, channels: int = 2,
-           workers: int = 0, path=None):
+           workers: int = 0, path=None, seed: int | None = None):
     """Render ``obj`` — offline to a `RenderStats`, or onto a live
     ``destination`` when it has one to sound on.
 
@@ -182,6 +187,10 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         workers: renderer worker threads for the ``bytes`` score path.
         path: send the audio to this file instead of returning it; the
             server writes it (see `render_to_file`).
+        seed: starting seed for the render's stochastic UGens. ``None`` draws
+            a fresh one, so anything with noise in it renders a new take every
+            call; ``stats.seed`` reports the one used, and handing it back
+            here replays that take exactly.
 
     Returns:
         A `RenderStats` for every offline path. The delegating paths return what
@@ -196,14 +205,13 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
     from .seq.timeline import Playhead, Timeline
 
     if isinstance(obj, (bytes, bytearray)):
-        return render_score(bytes(obj), sample_rate, channels, workers, path)
+        return render_score(bytes(obj), sample_rate, channels, workers, path,
+                            seed)
 
     if isinstance(obj, (Ugen, Signal, Box, SynthDef, FaustDef, GraphDef)):
-        samples = bounce_def(as_def(obj), dur, controls, defs, sample_rate,
-                             channels)
-        samples = samples if isinstance(samples, array) else array("f", samples)
-        return _deliver(samples, len(samples) // channels, channels,
-                        sample_rate, path)
+        stats = bounce_def(as_def(obj), dur, controls, defs, sample_rate,
+                           channels, seed)
+        return _deliver(stats, path)
 
     if isinstance(obj, Element):
         if destination is not None:
@@ -212,7 +220,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             return render_element(obj, destination, clock, at=at, quant=quant,
                                   ports=ports)
         return _bounce(lambda session: _start_element(obj, session, at),
-                       until, tempo, sample_rate, channels, path)
+                       until, tempo, sample_rate, channels, path, seed)
 
     if isinstance(obj, Timeline):
         if destination is not None:
@@ -223,7 +231,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         return _bounce(
             lambda session: Playhead(obj, session.clock, session.server)
             .play(at=at),
-            until, tempo, sample_rate, channels, path)
+            until, tempo, sample_rate, channels, path, seed)
 
     playable = obj
     if not isinstance(playable, (Pattern, Routine, Stream)):
@@ -248,16 +256,18 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
     if isinstance(playable, Pattern):
         return _bounce(
             lambda session: playable.play(session.clock, session.server),
-            until, tempo, sample_rate, channels, path)
+            until, tempo, sample_rate, channels, path, seed)
     return _bounce(lambda session: playable.play(session.clock),
-                   until, tempo, sample_rate, channels, path)
+                   until, tempo, sample_rate, channels, path, seed)
 
 
-def bounce_def(obj, dur, controls, defs, sample_rate, channels):
+def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None):
     """Renders a def offline: an ephemeral NRT session, the ``defs`` it needs
     plus the def itself sent at score time 0, one instance with ``controls``,
-    freed at ``dur`` seconds. Returns the interleaved samples (`plot` draws
-    them; `render` delivers them)."""
+    freed at ``dur`` seconds. Returns the whole `RenderStats` — `plot` draws
+    its samples, `render` delivers it — because the take's ``seed`` is part of
+    what happened, and a def with a noise UGen in it has a different one every
+    call unless ``seed`` says otherwise."""
     from .defs.graphdef import GraphDef
     from .session import Session
 
@@ -271,12 +281,12 @@ def bounce_def(obj, dur, controls, defs, sample_rate, channels):
     else:
         node = server.synth(obj.name, controls)
     server.send_bundle_after(float(dur), ("/n_free", node.id))
-    return session.render(sample_rate=sample_rate, channels=channels).samples
+    return session.render(sample_rate=sample_rate, channels=channels, seed=seed)
 
 
 # ---- the offline bounce ----
 
-def _bounce(start, until, tempo, sample_rate, channels, path):
+def _bounce(start, until, tempo, sample_rate, channels, path, seed):
     """An ephemeral NRT session: ``start(session)`` schedules the source on
     its clock and server, the drained score renders to samples."""
     from .session import Session
@@ -285,7 +295,7 @@ def _bounce(start, until, tempo, sample_rate, channels, path):
     with session._active():
         start(session)
     return session.render(sample_rate=sample_rate, channels=channels,
-                          until=until, path=path)
+                          until=until, path=path, seed=seed)
 
 
 def _start_element(element, session, at):
@@ -298,38 +308,36 @@ def render_score(score: bytes, sample_rate: float = 48_000.0, channels: int = 2,
                  workers: int = 0, path=None, seed: int | None = None,
                  sample_format: str = "float") -> RenderStats:
     """Render a binary score. Without `path` the samples come back in the
-    stats; with it the server writes the file (see `render_to_file`)."""
+    stats; with it the server writes the file (see `render_to_file`).
+
+    ``seed`` ``None`` renders a fresh take and reports the seed it drew in
+    ``stats.seed``.
+    """
     from . import ipc
 
-    seed = ipc.SEED_STRIDE if seed is None else seed
     if path is not None:
         return render_to_file(score, path, sample_rate, channels, workers,
                               seed, sample_format)
-    samples, frames, events = ipc.render(score, sample_rate=sample_rate,
-                                         channels=channels, workers=workers,
-                                         seed=seed)
+    samples, frames, events, used = ipc.render(score, sample_rate=sample_rate,
+                                               channels=channels,
+                                               workers=workers, seed=seed)
     peak, rms = ipc.channel_stats(samples, channels)
     return RenderStats(frames=frames, channels=channels,
                        sample_rate=sample_rate, events=events, peak=peak,
-                       rms=rms, samples=samples)
+                       rms=rms, seed=used, samples=samples)
 
 
-def _deliver(samples, frames, channels, sample_rate, path):
-    """Wrap in-memory samples as stats, writing them out first when asked.
+def _deliver(stats, path):
+    """Write an in-memory bounce out when asked, and say where it went.
 
     Only the def/expression branch lands here: a `dur`-second bounce is short
     by construction and already in memory, so writing it from this side costs
     nothing. Score, pattern and routine renders take the server's writer.
     """
-    if path is not None:
-        _write_wav(path, samples, channels, sample_rate)
-    from . import ipc
-
-    peak, rms = ipc.channel_stats(samples, channels)
-    return RenderStats(frames=frames, channels=channels,
-                       sample_rate=sample_rate, events=0, peak=peak, rms=rms,
-                       path=None if path is None else str(path),
-                       samples=samples)
+    if path is None:
+        return stats
+    _write_wav(path, stats.samples, stats.channels, stats.sample_rate)
+    return replace(stats, path=str(path))
 
 
 def _write_wav(path, samples, channels, sample_rate):
@@ -355,15 +363,18 @@ def _write_wav(path, samples, channels, sample_rate):
 
 
 def render_to_file(score: bytes, path, sample_rate: float, channels: int,
-                    workers: int, seed: int, sample_format: str):
+                    workers: int, seed: int | None, sample_format: str):
     """Hand a binary score to the ``clausters --nrt`` renderer, which writes
     the file itself — the one place in the client that turns a score into a
     soundfile.
 
     The score goes out through a temporary ``.osc``, because ``--nrt`` takes
     two paths; ``--stats`` brings the render's numbers back as one JSON line,
-    so the caller learns the frames, events, peak and RMS without opening the
-    file the server just wrote.
+    so the caller learns the frames, events, peak, RMS and seed without
+    opening the file the server just wrote.
+
+    ``seed`` ``None`` leaves ``--seed`` off, so the renderer draws one — a
+    bounce is a performance like any other. It comes back in ``stats.seed``.
     """
     import json
     import os
@@ -379,8 +390,10 @@ def render_to_file(score: bytes, path, sample_rate: float, channels: int,
             f.write(score)
         argv = [_cli.server_path(), "--nrt", score_path, str(path),
                 "--rate", repr(float(sample_rate)), "--channels", str(int(channels)),
-                "--format", sample_format, "--seed", str(int(seed)),
+                "--format", sample_format,
                 "--workers", str(int(workers)), "--stats"]
+        if seed is not None:
+            argv += ["--seed", str(int(seed))]
         done = subprocess.run(argv, capture_output=True, text=True)
         if done.returncode != 0:
             raise RenderError((done.stderr or done.stdout).strip() or "render failed")
@@ -390,4 +403,4 @@ def render_to_file(score: bytes, path, sample_rate: float, channels: int,
     return RenderStats(frames=info["frames"], channels=info["channels"],
                        sample_rate=info["sampleRate"], events=info["events"],
                        peak=tuple(info["peak"]), rms=tuple(info["rms"]),
-                       path=str(path))
+                       seed=info["seed"], path=str(path))

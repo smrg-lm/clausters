@@ -44,9 +44,10 @@ from .errors import (
 
 ABI_VERSION = 5
 
-#: Default starting seed for a render's stochastic UGens — ``SEED_STRIDE`` in
-#: ``clausters_core::rng``. Rendering the same score with the same seed gives
-#: the same samples, in any process.
+#: The stride between successive stochastic-UGen seeds within one render —
+#: ``SEED_STRIDE`` in ``clausters_core::rng``. A client needs it to reproduce a
+#: server-side noise stream; it is **not** a starting seed (a render with no
+#: seed draws a fresh one, and reports it).
 SEED_STRIDE = 0x9E37_79B9_7F4A_7C15
 
 # embed cdylib file names across platforms (Linux / macOS / Windows).
@@ -306,8 +307,10 @@ def _load(path: str | None = None) -> ctypes.CDLL:
     render_fn = _require(lib, "clausters_render", "embed")
     render_fn.restype = ctypes.POINTER(ctypes.c_float)
     render_fn.argtypes = [
+        # ... workers, seed (NULL = draw one), out_frames, out_events, out_seed
         ctypes.c_char_p, ctypes.c_size_t, ctypes.c_double, ctypes.c_uint32,
-        ctypes.c_uint32, ctypes.c_uint64, ctypes.POINTER(ctypes.c_uint64),
+        ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint64),
+        ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_uint64),
         ctypes.POINTER(ctypes.c_uint64), ctypes.c_char_p, ctypes.c_size_t,
     ]
     _require(lib, "clausters_free_samples", "embed").argtypes = [
@@ -357,28 +360,33 @@ def _bind_live(lib: ctypes.CDLL) -> LibraryFeatureError | None:
 
 def render(score: bytes, sample_rate: float = 48000.0, channels: int = 2,
            workers: int = 0, lib_path: str | None = None,
-           seed: int = SEED_STRIDE) -> tuple[array, int, int]:
+           seed: int | None = None) -> tuple[array, int, int, int]:
     """Synchronous offline render: binary score in, ``(samples, frames,
-    events)`` out — the samples interleaved float32 in a stdlib ``array('f')``.
-    The whole call blocks the caller and nothing else; there is no server
-    involved.
+    events, seed)`` out — the samples interleaved float32 in a stdlib
+    ``array('f')``. The whole call blocks the caller and nothing else; there is
+    no server involved.
 
-    ``seed`` starts the render's stochastic UGens; the default is the same
-    one the server uses, so an unconfigured render is reproducible.
+    ``seed`` starts the render's stochastic UGens. ``None`` (the default) draws
+    a fresh one, so the same score is a new take every time; the seed actually
+    used is the fourth element of the result, and passing it back replays that
+    take exactly.
     """
     lib = _load(lib_path)
     frames = ctypes.c_uint64(0)
     events = ctypes.c_uint64(0)
+    used = ctypes.c_uint64(0)
     err = ctypes.create_string_buffer(512)
+    want = None if seed is None else ctypes.byref(ctypes.c_uint64(seed))
     ptr = lib.clausters_render(score, len(score), sample_rate, channels,
-                               workers, seed, ctypes.byref(frames),
-                               ctypes.byref(events), err, len(err))
+                               workers, want, ctypes.byref(frames),
+                               ctypes.byref(events), ctypes.byref(used),
+                               err, len(err))
     if not ptr:
         raise RenderError(err.value.decode() or "render failed")
     total = frames.value * channels
     samples = array("f", ctypes.cast(ptr, ctypes.POINTER(ctypes.c_float * total)).contents)
     lib.clausters_free_samples(ptr, total)
-    return samples, frames.value, events.value
+    return samples, frames.value, events.value, used.value
 
 
 def read_soundfile(path, start: int = 0, frames: int = -1,

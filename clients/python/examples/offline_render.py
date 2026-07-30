@@ -44,10 +44,15 @@ def main():
     session = Session.nrt(tempo=2.0)
     session.seed(1)
     session.play(phrase())
+    # The server's own seed is a separate one: it starts the render's stochastic
+    # UGens, and with none given the render draws a fresh one -- a score with
+    # noise in it is a new take every run. `stats.seed` is how you get a take
+    # back: pass it as `seed=` and the render repeats sample for sample.
     stats = session.render(sample_rate=SR, channels=2, path=out)
 
     peak = max(stats.peak)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
+    print(f"seed {stats.seed} - pass seed={stats.seed} to render this take again")
 
     print(f"wrote {out} - listen with: pw-play {out}")
 

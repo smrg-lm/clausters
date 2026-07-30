@@ -106,3 +106,51 @@ def test_render_rejects_a_live_destination_for_a_pattern():
 def test_render_rejects_unrenderable():
     with pytest.raises(TypeError, match="render"):
         render(3.14)
+
+
+# ---- the seed: unpredictable first, reproducible on request ----
+
+def _noisy():
+    """A def whose output is nothing but its stochastic UGen."""
+    from clausters.defs import SynthDef, out, white_noise
+
+    return SynthDef("noisy", out(0.0, white_noise() * 0.2))
+
+
+def test_a_render_is_a_new_take_every_time():
+    _embed_or_skip()
+
+    a = render(_noisy(), dur=0.05, sample_rate=SR, channels=1)
+    b = render(_noisy(), dur=0.05, sample_rate=SR, channels=1)
+    assert a.seed != b.seed, "each render must draw its own seed"
+    assert a.samples != b.samples, "an unseeded render is a fresh take"
+
+
+def test_a_reported_seed_replays_its_take():
+    _embed_or_skip()
+
+    a = render(_noisy(), dur=0.05, sample_rate=SR, channels=1)
+    again = render(_noisy(), dur=0.05, sample_rate=SR, channels=1, seed=a.seed)
+    assert again.seed == a.seed
+    assert again.samples == a.samples, "the reported seed must get the take back"
+
+
+def test_the_file_path_reports_its_seed_too(tmp_path):
+    _embed_or_skip()
+    from clausters import Session
+    from clausters.render import read_soundfile
+
+    def score(seed):
+        s = Session.nrt(tempo=1.0)
+        s.server.add_def(_noisy())
+        node = s.server.synth("noisy")
+        s.server.send_bundle_after(0.05, ("/n_free", node.id))
+        return s.render(sample_rate=SR, channels=1, path=tmp_path / f"{seed}.wav",
+                        seed=seed)
+
+    fresh = score(None)
+    assert fresh.seed != 0, "the server reports the seed it drew"
+    assert fresh.samples is None
+    # The same seed through the file writer gives the same audio back.
+    again = score(fresh.seed)
+    assert read_soundfile(again.path).samples == read_soundfile(fresh.path).samples

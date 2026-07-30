@@ -1323,23 +1323,25 @@ class Server:
         available at all. It also means the binary must be findable, the same
         way `clausters.launch` finds it.
 
-        ``seed`` starts the render's stochastic UGens; the default is the
-        server's own, so the same score renders the same noise every time.
+        ``seed`` starts the render's stochastic UGens. Left ``None`` the
+        render draws a fresh one, so a score with noise in it is a new take
+        every time — a random process is unpredictable first. The seed it used
+        comes back in ``stats.seed``; pass that back here to replay exactly
+        that take.
         """
         if not isinstance(self.interface, OscNrtInterface):
             raise RuntimeError("render() needs a Server with an OscNrtInterface")
         from .. import ipc
         from ..render import RenderStats, render_to_file
 
-        seed = ipc.SEED_STRIDE if seed is None else seed
         if path is None:
-            samples, frames, events = ipc.render(
+            samples, frames, events, used = ipc.render(
                 self.interface.score.bytes(), sample_rate=sample_rate,
                 channels=channels, workers=workers, seed=seed)
             peak, rms = ipc.channel_stats(samples, channels)
             return RenderStats(frames=frames, channels=channels,
                                sample_rate=sample_rate, events=events,
-                               peak=peak, rms=rms, samples=samples)
+                               peak=peak, rms=rms, seed=used, samples=samples)
         return render_to_file(self.interface.score.bytes(), path,
                                sample_rate, channels, workers, seed,
                                sample_format)
