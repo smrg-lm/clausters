@@ -58,23 +58,24 @@ const UNOP_OPS = new Set([
 ]);
 
 /**
- * One single-channel graph operand: a leaf node (`Ugen`/`Control`) or a
- * plain number (a constant).
+ * One channel of signal: a leaf node (`Ugen`/`Control`) or a plain number (a
+ * constant). What every single-channel input accepts, and what a
+ * `ChannelList` holds — the server only ever sees these.
  */
-export type GraphInput = GraphLeaf | number;
+export type Channel = SynthLeaf | number;
 /** What a math method accepts: a single channel, or a list of them. */
-export type OpOperand = GraphInput | ChannelList | readonly GraphInput[];
+export type OpOperand = Channel | ChannelList | readonly Channel[];
 
 /**
  * A math method's result: a list operand fans the result out, anything else
  * keeps the receiver's shape.
  */
-export type OpResult<TSelf, TOther> = TOther extends ChannelList | readonly GraphInput[]
+export type OpResult<TSelf, TOther> = TOther extends ChannelList | readonly Channel[]
     ? ChannelList
     : TSelf;
 
-const isLeaf = (x: unknown): x is GraphLeaf => x instanceof GraphLeaf;
-const isList = (x: unknown): x is ChannelList | readonly GraphInput[] =>
+const isLeaf = (x: unknown): x is SynthLeaf => x instanceof SynthLeaf;
+const isList = (x: unknown): x is ChannelList | readonly Channel[] =>
     x instanceof ChannelList || Array.isArray(x);
 
 /**
@@ -181,11 +182,11 @@ export abstract class SynthExpr<TSelf> {
 }
 
 /**
- * Shared behaviour of the graph leaves (`Ugen`, `Control`): a leaf op
- * against a scalar or another leaf yields a `Ugen`, against a list a
- * `ChannelList`.
+ * A single-channel expression: the leaves of the graph (`Ugen`, `Control`),
+ * as opposed to the `ChannelList` that holds several. A leaf op against a
+ * scalar or another leaf yields a `Ugen`, against a list a `ChannelList`.
  */
-export abstract class GraphLeaf extends SynthExpr<Ugen> {
+export abstract class SynthLeaf extends SynthExpr<Ugen> {
     protected binop<T extends OpOperand>(
         selector: string,
         other: T,
@@ -199,7 +200,7 @@ export abstract class GraphLeaf extends SynthExpr<Ugen> {
                 this,
             ) as OpResult<Ugen, T>;
         }
-        return this.composeWith(selector, other as GraphInput) as OpResult<Ugen, T>;
+        return this.composeWith(selector, other as Channel) as OpResult<Ugen, T>;
     }
 
     protected unop(selector: string): Ugen {
@@ -207,12 +208,12 @@ export abstract class GraphLeaf extends SynthExpr<Ugen> {
     }
 
     /** @internal — this leaf on the **left** of a binary op. */
-    composeWith(selector: string, other: GraphInput): Ugen {
+    composeWith(selector: string, other: Channel): Ugen {
         return leafOp(selector, this, other);
     }
 
     /** @internal — this leaf on the **right** of a binary op. */
-    rcomposeWith(selector: string, other: GraphInput): Ugen {
+    rcomposeWith(selector: string, other: Channel): Ugen {
         return leafOp(selector, other, this);
     }
 
@@ -226,7 +227,7 @@ export abstract class GraphLeaf extends SynthExpr<Ugen> {
 
     /** This node repeated (by reference) as `n` channels — see `dup`. */
     dup(n = 2): ChannelList {
-        return new ChannelList(Array.from({ length: n }, () => this as GraphInput));
+        return new ChannelList(Array.from({ length: n }, () => this as Channel));
     }
 }
 
@@ -235,7 +236,7 @@ export abstract class GraphLeaf extends SynthExpr<Ugen> {
  * their dedicated alias kinds, everything else becomes a `BinaryOpUGen`
  * carrying the operator name.
  */
-function leafOp(selector: string, left: GraphInput, right: GraphInput): Ugen {
+function leafOp(selector: string, left: Channel, right: Channel): Ugen {
     const kind = BINOP_UGEN[selector];
     if (kind !== undefined) return new Ugen(kind, [left, right]);
     if (!BINOP_OPS.has(selector)) {
@@ -258,9 +259,9 @@ function leafOp(selector: string, left: GraphInput, right: GraphInput): Ugen {
  * `static` holds any other non-signal fields (the delay lines' `max_delay`,
  * the spectral UGens' `fft_size`), merged verbatim into the serialized spec.
  */
-export class Ugen extends GraphLeaf {
+export class Ugen extends SynthLeaf {
     readonly kind: string;
-    readonly inputs: GraphInput[];
+    readonly inputs: Channel[];
     rate?: UgenRate;
     readonly op?: string;
     readonly label?: string;
@@ -268,7 +269,7 @@ export class Ugen extends GraphLeaf {
 
     constructor(
         kind: string,
-        inputs: readonly GraphInput[],
+        inputs: readonly Channel[],
         extra: {
             rate?: UgenRate;
             op?: string;
@@ -321,7 +322,7 @@ const CONTROL_RATES = new Set([
  * the `SynthDef` gathers the controls a graph references, in first-seen
  * order.
  */
-export class Control extends GraphLeaf {
+export class Control extends SynthLeaf {
     readonly name: string;
     readonly default: number;
     readonly rate?: ControlRate;
@@ -370,7 +371,7 @@ export function control(
     return new Control(name, defaultValue, options);
 }
 
-function checkChannel(m: unknown): GraphInput {
+function checkChannel(m: unknown): Channel {
     if (m instanceof ChannelList) {
         throw new TypeError(
             "nested channel lists are not supported: mix() the inner one down " +
@@ -395,7 +396,7 @@ const NUMERIC_FOLD: Record<string, (a: number, b: number) => number> = {
     div: (a, b) => a / b,
 };
 
-function channelBinop(a: GraphInput, selector: string, b: GraphInput): GraphInput {
+function channelBinop(a: Channel, selector: string, b: Channel): Channel {
     if (isLeaf(a)) return a.composeWith(selector, b);
     if (isLeaf(b)) return b.rcomposeWith(selector, a);
     const fold = NUMERIC_FOLD[selector];
@@ -409,7 +410,7 @@ function channelBinop(a: GraphInput, selector: string, b: GraphInput): GraphInpu
     return fold(a, b);
 }
 
-function channelUnop(m: GraphInput, selector: string): GraphInput {
+function channelUnop(m: Channel, selector: string): Channel {
     if (isLeaf(m)) return m.unopWith(selector);
     if (selector === "neg") return -m;
     throw new TypeError(
@@ -421,7 +422,7 @@ function channelUnop(m: GraphInput, selector: string): GraphInput {
 /**
  * An ordered list of channels — the client's multichannel container.
  *
- * Members are graph leaves (`Ugen`/`Control`) or plain numbers. The math
+ * Members are `Channel`s — a leaf (`Ugen`/`Control`) or a number. The math
  * methods map over the members and return a new `ChannelList`: a scalar
  * operand **broadcasts** to every channel, a list operand **zips**
  * channel-wise, and unequal lengths wrap the shorter one modulo.
@@ -433,9 +434,9 @@ function channelUnop(m: GraphInput, selector: string): GraphInput {
  * with `dup`, `chans`, or a literal array where one is accepted.
  */
 export class ChannelList extends SynthExpr<ChannelList> {
-    readonly items: GraphInput[];
+    readonly items: Channel[];
 
-    constructor(items: ChannelList | readonly GraphInput[]) {
+    constructor(items: ChannelList | readonly Channel[]) {
         super();
         const source = items instanceof ChannelList ? items.items : items;
         const members = [...source].map(checkChannel);
@@ -449,13 +450,13 @@ export class ChannelList extends SynthExpr<ChannelList> {
         return this.items.length;
     }
 
-    at(i: number): GraphInput {
+    at(i: number): Channel {
         const got = this.items.at(i);
         if (got === undefined) throw new RangeError(`no channel ${i}`);
         return got;
     }
 
-    [Symbol.iterator](): Iterator<GraphInput> {
+    [Symbol.iterator](): Iterator<Channel> {
         return this.items[Symbol.iterator]();
     }
 
@@ -463,16 +464,16 @@ export class ChannelList extends SynthExpr<ChannelList> {
      * Channel pairs for a binary op: broadcast a scalar, zip a list
      * (wrapping the shorter side modulo).
      */
-    private pairs(other: OpOperand): [GraphInput, GraphInput][] {
+    private pairs(other: OpOperand): [Channel, Channel][] {
         if (isList(other)) {
             const o = new ChannelList(other).items;
             const n = Math.max(this.items.length, o.length);
-            return Array.from({ length: n }, (_unused, i): [GraphInput, GraphInput] => [
+            return Array.from({ length: n }, (_unused, i): [Channel, Channel] => [
                 this.items[i % this.items.length]!,
                 o[i % o.length]!,
             ]);
         }
-        return this.items.map((m): [GraphInput, GraphInput] => [m, other]);
+        return this.items.map((m): [Channel, Channel] => [m, other]);
     }
 
     /** @internal — the leaf side of a mixed op reaches back through here. */
@@ -507,17 +508,17 @@ export class ChannelList extends SynthExpr<ChannelList> {
     }
 
     /** This list folded to one channel — see `mix`. */
-    mix(): GraphInput {
+    mix(): Channel {
         return mix(this);
     }
 }
 
 /** A `ChannelList` from the arguments (`chans(a, b)`) or from a single array. */
 export function chans(
-    ...items: readonly GraphInput[] | [ChannelList | readonly GraphInput[]]
+    ...items: readonly Channel[] | [ChannelList | readonly Channel[]]
 ): ChannelList {
     if (items.length === 1 && isList(items[0])) return new ChannelList(items[0]);
-    return new ChannelList(items as readonly GraphInput[]);
+    return new ChannelList(items as readonly Channel[]);
 }
 
 /**
@@ -531,7 +532,7 @@ export function chans(
  * reference would give `n` copies of the same noise.
  */
 export function dup(
-    x: GraphInput | (() => GraphInput),
+    x: Channel | (() => Channel),
     n = 2,
 ): ChannelList {
     if (!Number.isInteger(n) || n < 1) {
@@ -551,14 +552,14 @@ export function dup(
  * an `Add` chain, so an 8-channel mix costs 2 UGens + 1, not 7. A scalar or
  * single node passes through.
  */
-export function mix(x: OpOperand): GraphInput {
+export function mix(x: OpOperand): Channel {
     if (!isList(x)) return x;
     let items = new ChannelList(x).items;
     if (items.every((m) => !isLeaf(m))) {
         return (items as number[]).reduce((total, m) => total + m, 0);
     }
     while (items.length > 1) {
-        const folded: GraphInput[] = [];
+        const folded: Channel[] = [];
         for (let k = 0; k < items.length; k += 4) {
             const chunk = items.slice(k, k + 4);
             if (chunk.length === 4) {
@@ -582,13 +583,13 @@ export function mix(x: OpOperand): GraphInput {
 // --- oscillators and sources ---
 
 /** Sine by f64 phase accumulation, starting at phase 0. */
-export const sine = (freq: GraphInput = 440.0): Ugen => new Ugen("Sine", [freq]);
+export const sine = (freq: Channel = 440.0): Ugen => new Ugen("Sine", [freq]);
 
 /**
  * A single-sample `1.0` every `freq` Hz, `0.0` between (`freq` 0 = one
  * impulse then silence). The first sample is always an impulse.
  */
-export const impulse = (freq: GraphInput = 1.0): Ugen => new Ugen("Impulse", [freq]);
+export const impulse = (freq: Channel = 1.0): Ugen => new Ugen("Impulse", [freq]);
 
 /** Uniform white noise in ±1. */
 export const whiteNoise = (): Ugen => new Ugen("WhiteNoise", []);
@@ -606,47 +607,47 @@ export const grayNoise = (): Ugen => new Ugen("GrayNoise", []);
 export const clipNoise = (): Ugen => new Ugen("ClipNoise", []);
 
 /** Steps to a new random value `freq` times a second, holding it between. */
-export const lfNoise0 = (freq: GraphInput = 500.0): Ugen => new Ugen("LFNoise0", [freq]);
+export const lfNoise0 = (freq: Channel = 500.0): Ugen => new Ugen("LFNoise0", [freq]);
 
 /** Ramps linearly between random values at `freq` per second. */
-export const lfNoise1 = (freq: GraphInput = 500.0): Ugen => new Ugen("LFNoise1", [freq]);
+export const lfNoise1 = (freq: Channel = 500.0): Ugen => new Ugen("LFNoise1", [freq]);
 
 /** Quadratically interpolated random values at `freq` per second. */
-export const lfNoise2 = (freq: GraphInput = 500.0): Ugen => new Ugen("LFNoise2", [freq]);
+export const lfNoise2 = (freq: Channel = 500.0): Ugen => new Ugen("LFNoise2", [freq]);
 
 /** `lfNoise0`, clipped: steps between −1 and +1 only. */
-export const lfClipNoise = (freq: GraphInput = 500.0): Ugen =>
+export const lfClipNoise = (freq: Channel = 500.0): Ugen =>
     new Ugen("LFClipNoise", [freq]);
 
 /** Random impulses in 0..1 at an average `density` per second. */
-export const dust = (density: GraphInput = 1.0): Ugen => new Ugen("Dust", [density]);
+export const dust = (density: Channel = 1.0): Ugen => new Ugen("Dust", [density]);
 
 /** `dust` with bipolar impulses (−1..1). */
-export const dust2 = (density: GraphInput = 1.0): Ugen => new Ugen("Dust2", [density]);
+export const dust2 = (density: Channel = 1.0): Ugen => new Ugen("Dust2", [density]);
 
 /** A chaotic noise source (the logistic map); `chaos` in 0..2. */
-export const crackle = (chaos: GraphInput = 1.5): Ugen => new Ugen("Crackle", [chaos]);
+export const crackle = (chaos: Channel = 1.5): Ugen => new Ugen("Crackle", [chaos]);
 
 /** Band-limited sawtooth (PolyBLEP), falling from +1 to −1. */
-export const saw = (freq: GraphInput = 440.0): Ugen => new Ugen("Saw", [freq]);
+export const saw = (freq: Channel = 440.0): Ugen => new Ugen("Saw", [freq]);
 
 /** Band-limited pulse (PolyBLEP); `width` is the duty cycle in 0..1. */
-export const pulse = (freq: GraphInput = 440.0, width: GraphInput = 0.5): Ugen =>
+export const pulse = (freq: Channel = 440.0, width: Channel = 0.5): Ugen =>
     new Ugen("Pulse", [freq, width]);
 
 /** Naive (aliasing) sawtooth — cheap, meant for control rate. */
-export const lfSaw = (freq: GraphInput = 440.0, iphase: GraphInput = 0.0): Ugen =>
+export const lfSaw = (freq: Channel = 440.0, iphase: Channel = 0.0): Ugen =>
     new Ugen("LFSaw", [freq, iphase]);
 
 /** Naive (aliasing) pulse — cheap, meant for control rate. */
 export const lfPulse = (
-    freq: GraphInput = 440.0,
-    iphase: GraphInput = 0.0,
-    width: GraphInput = 0.5,
+    freq: Channel = 440.0,
+    iphase: Channel = 0.0,
+    width: Channel = 0.5,
 ): Ugen => new Ugen("LFPulse", [freq, iphase, width]);
 
 /** Naive (aliasing) triangle — cheap, meant for control rate. */
-export const lfTri = (freq: GraphInput = 440.0, iphase: GraphInput = 0.0): Ugen =>
+export const lfTri = (freq: Channel = 440.0, iphase: Channel = 0.0): Ugen =>
     new Ugen("LFTri", [freq, iphase]);
 
 /**
@@ -654,9 +655,9 @@ export const lfTri = (freq: GraphInput = 440.0, iphase: GraphInput = 0.0): Ugen 
  * triangle to a ramp down.
  */
 export const varSaw = (
-    freq: GraphInput = 440.0,
-    iphase: GraphInput = 0.0,
-    width: GraphInput = 0.5,
+    freq: Channel = 440.0,
+    iphase: Channel = 0.0,
+    width: Channel = 0.5,
 ): Ugen => new Ugen("VarSaw", [freq, iphase, width]);
 
 /**
@@ -664,17 +665,17 @@ export const varSaw = (
  * restarting at `resetPos` on each trigger — the phase source `bufRd` reads.
  */
 export const phasor = (
-    trig: GraphInput = 0.0,
-    rate: GraphInput = 1.0,
-    start: GraphInput = 0.0,
-    end: GraphInput = 1.0,
-    resetPos: GraphInput = 0.0,
+    trig: Channel = 0.0,
+    rate: Channel = 1.0,
+    start: Channel = 0.0,
+    end: Channel = 1.0,
+    resetPos: Channel = 0.0,
 ): Ugen => new Ugen("Phasor", [trig, rate, start, end, resetPos]);
 
 // --- filters ---
 
 /** Resolves the mutually exclusive `rq`/`q` pair into a wire `rq`. */
-function resonance(rq?: GraphInput, q?: GraphInput): GraphInput {
+function resonance(rq?: Channel, q?: Channel): Channel {
     if (q === undefined) return rq ?? 1.0;
     if (rq !== undefined) throw new TypeError("give either rq or q, not both");
     if (typeof q === "number") {
@@ -688,70 +689,70 @@ function resonance(rq?: GraphInput, q?: GraphInput): GraphInput {
 
 /** The resonance of the two-pole filters: `rq` (1/Q, 0 = infinite) or `q`. */
 export interface Resonance {
-    rq?: GraphInput;
-    q?: GraphInput;
+    rq?: Channel;
+    q?: Channel;
 }
 
 /** Second-order Butterworth lowpass: −3 dB at `freq`, −12 dB/octave. */
-export const lpf = (signal: GraphInput, freq: GraphInput = 440.0): Ugen =>
+export const lpf = (signal: Channel, freq: Channel = 440.0): Ugen =>
     new Ugen("LPF", [signal, freq]);
 
 /** Second-order Butterworth highpass: −3 dB at `freq`, −12 dB/octave. */
-export const hpf = (signal: GraphInput, freq: GraphInput = 440.0): Ugen =>
+export const hpf = (signal: Channel, freq: Channel = 440.0): Ugen =>
     new Ugen("HPF", [signal, freq]);
 
 /** Resonant lowpass; unity gain at DC. */
 export const rlpf = (
-    signal: GraphInput,
-    freq: GraphInput = 440.0,
+    signal: Channel,
+    freq: Channel = 440.0,
     res: Resonance = {},
 ): Ugen => new Ugen("RLPF", [signal, freq, resonance(res.rq, res.q)]);
 
 /** Resonant highpass; unity gain at Nyquist. */
 export const rhpf = (
-    signal: GraphInput,
-    freq: GraphInput = 440.0,
+    signal: Channel,
+    freq: Channel = 440.0,
     res: Resonance = {},
 ): Ugen => new Ugen("RHPF", [signal, freq, resonance(res.rq, res.q)]);
 
 /** Bandpass with **unity gain at the centre**; `rq` is its bandwidth ratio. */
 export const bpf = (
-    signal: GraphInput,
-    freq: GraphInput = 440.0,
+    signal: Channel,
+    freq: Channel = 440.0,
     res: Resonance = {},
 ): Ugen => new Ugen("BPF", [signal, freq, resonance(res.rq, res.q)]);
 
 /** Band reject (notch); unity gain in both passbands, a true null at `freq`. */
 export const brf = (
-    signal: GraphInput,
-    freq: GraphInput = 440.0,
+    signal: Channel,
+    freq: Channel = 440.0,
     res: Resonance = {},
 ): Ugen => new Ugen("BRF", [signal, freq, resonance(res.rq, res.q)]);
 
 /** Resonator with unity gain at the peak — the same structure as `bpf`. */
 export const resonz = (
-    signal: GraphInput,
-    freq: GraphInput = 440.0,
+    signal: Channel,
+    freq: Channel = 440.0,
     res: Resonance = {},
 ): Ugen => new Ugen("Resonz", [signal, freq, resonance(res.rq, res.q)]);
 
 /** One-pole filter: `coef` positive lowpasses, negative highpasses. */
-export const onePole = (signal: GraphInput, coef: GraphInput = 0.5): Ugen =>
+export const onePole = (signal: Channel, coef: Channel = 0.5): Ugen =>
     new Ugen("OnePole", [signal, coef]);
 
 /** One-zero filter: `coef` positive lowpasses, negative highpasses. */
-export const oneZero = (signal: GraphInput, coef: GraphInput = 0.5): Ugen =>
+export const oneZero = (signal: Channel, coef: Channel = 0.5): Ugen =>
     new Ugen("OneZero", [signal, coef]);
 
 /**
  * Removes the DC offset with a very low corner — what a feedback loop or an
  * asymmetric waveshaper leaves behind.
  */
-export const leakDc = (signal: GraphInput, coef: GraphInput = 0.995): Ugen =>
+export const leakDc = (signal: Channel, coef: Channel = 0.995): Ugen =>
     new Ugen("LeakDC", [signal, coef]);
 
 /** A leaky integrator: `y[n] = x[n] + coef·y[n-1]`. */
-export const integrator = (signal: GraphInput, coef: GraphInput = 0.999): Ugen =>
+export const integrator = (signal: Channel, coef: Channel = 0.999): Ugen =>
     new Ugen("Integrator", [signal, coef]);
 
 // --- delay lines ---
@@ -763,7 +764,7 @@ export const integrator = (signal: GraphInput, coef: GraphInput = 0.999): Ugen =
 
 function lineSize(
     kind: string,
-    delaytime: GraphInput,
+    delaytime: Channel,
     maxDelay?: number,
 ): Record<string, unknown> {
     if (maxDelay === undefined) {
@@ -780,8 +781,8 @@ function lineSize(
 
 /** Pure delay, no interpolation: the delay is rounded to whole samples. */
 export const delayN = (
-    signal: GraphInput,
-    delaytime: GraphInput = 0.2,
+    signal: Channel,
+    delaytime: Channel = 0.2,
     maxDelay?: number,
 ): Ugen =>
     new Ugen("DelayN", [signal, delaytime], {
@@ -790,8 +791,8 @@ export const delayN = (
 
 /** Delay with linear interpolation — the one a modulated delaytime wants. */
 export const delayL = (
-    signal: GraphInput,
-    delaytime: GraphInput = 0.2,
+    signal: Channel,
+    delaytime: Channel = 0.2,
     maxDelay?: number,
 ): Ugen =>
     new Ugen("DelayL", [signal, delaytime], {
@@ -800,8 +801,8 @@ export const delayL = (
 
 /** Delay with cubic interpolation: smoother under modulation than `delayL`. */
 export const delayC = (
-    signal: GraphInput,
-    delaytime: GraphInput = 0.2,
+    signal: Channel,
+    delaytime: Channel = 0.2,
     maxDelay?: number,
 ): Ugen =>
     new Ugen("DelayC", [signal, delaytime], {
@@ -813,9 +814,9 @@ export const delayC = (
  * fall 60 dB; negative inverts the feedback.
  */
 export const combN = (
-    signal: GraphInput,
-    delaytime: GraphInput = 0.2,
-    decaytime: GraphInput = 1.0,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
     maxDelay?: number,
 ): Ugen =>
     new Ugen("CombN", [signal, delaytime, decaytime], {
@@ -824,9 +825,9 @@ export const combN = (
 
 /** Comb filter with linear interpolation. */
 export const combL = (
-    signal: GraphInput,
-    delaytime: GraphInput = 0.2,
-    decaytime: GraphInput = 1.0,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
     maxDelay?: number,
 ): Ugen =>
     new Ugen("CombL", [signal, delaytime, decaytime], {
@@ -835,9 +836,9 @@ export const combL = (
 
 /** Comb filter with cubic interpolation. */
 export const combC = (
-    signal: GraphInput,
-    delaytime: GraphInput = 0.2,
-    decaytime: GraphInput = 1.0,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
     maxDelay?: number,
 ): Ugen =>
     new Ugen("CombC", [signal, delaytime, decaytime], {
@@ -846,9 +847,9 @@ export const combC = (
 
 /** Schroeder allpass (the reverb building block), no interpolation. */
 export const allpassN = (
-    signal: GraphInput,
-    delaytime: GraphInput = 0.2,
-    decaytime: GraphInput = 1.0,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
     maxDelay?: number,
 ): Ugen =>
     new Ugen("AllpassN", [signal, delaytime, decaytime], {
@@ -857,9 +858,9 @@ export const allpassN = (
 
 /** Schroeder allpass with linear interpolation. */
 export const allpassL = (
-    signal: GraphInput,
-    delaytime: GraphInput = 0.2,
-    decaytime: GraphInput = 1.0,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
     maxDelay?: number,
 ): Ugen =>
     new Ugen("AllpassL", [signal, delaytime, decaytime], {
@@ -868,9 +869,9 @@ export const allpassL = (
 
 /** Schroeder allpass with cubic interpolation. */
 export const allpassC = (
-    signal: GraphInput,
-    delaytime: GraphInput = 0.2,
-    decaytime: GraphInput = 1.0,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
     maxDelay?: number,
 ): Ugen =>
     new Ugen("AllpassC", [signal, delaytime, decaytime], {
@@ -890,9 +891,9 @@ export const allpassC = (
  * amplitude that has to stay put.
  */
 export const pan2 = (
-    signal: GraphInput,
-    pos: GraphInput = 0.0,
-    level: GraphInput = 1.0,
+    signal: Channel,
+    pos: Channel = 0.0,
+    level: Channel = 1.0,
 ): ChannelList =>
     chans([0.0, 1.0].map((c) => new Ugen("Pan2", [signal, pos, level, c])));
 
@@ -901,9 +902,9 @@ export const pan2 = (
  * at every position, 0.5 each at the centre.
  */
 export const linPan2 = (
-    signal: GraphInput,
-    pos: GraphInput = 0.0,
-    level: GraphInput = 1.0,
+    signal: Channel,
+    pos: Channel = 0.0,
+    level: Channel = 1.0,
 ): ChannelList =>
     chans([0.0, 1.0].map((c) => new Ugen("LinPan2", [signal, pos, level, c])));
 
@@ -913,19 +914,19 @@ export const linPan2 = (
  * sides come back 3 dB down.
  */
 export const balance2 = (
-    left: GraphInput,
-    right: GraphInput,
-    pos: GraphInput = 0.0,
-    level: GraphInput = 1.0,
+    left: Channel,
+    right: Channel,
+    pos: Channel = 0.0,
+    level: Channel = 1.0,
 ): ChannelList =>
     chans([0.0, 1.0].map((c) => new Ugen("Balance2", [left, right, pos, level, c])));
 
 /** Equal-power crossfade between two signals: −1 is all `a`, 1 is all `b`. */
 export const xfade2 = (
-    a: GraphInput,
-    b: GraphInput,
-    pan: GraphInput = 0.0,
-    level: GraphInput = 1.0,
+    a: Channel,
+    b: Channel,
+    pan: Channel = 0.0,
+    level: Channel = 1.0,
 ): Ugen => new Ugen("XFade2", [a, b, pan, level]);
 
 /**
@@ -933,16 +934,16 @@ export const xfade2 = (
  * sources.
  */
 export const linXfade2 = (
-    a: GraphInput,
-    b: GraphInput,
-    pan: GraphInput = 0.0,
-    level: GraphInput = 1.0,
+    a: Channel,
+    b: Channel,
+    pan: Channel = 0.0,
+    level: Channel = 1.0,
 ): Ugen => new Ugen("LinXFade2", [a, b, pan, level]);
 
-function sources(list: readonly GraphInput[] | [ChannelList | readonly GraphInput[]]) {
+function sources(list: readonly Channel[] | [ChannelList | readonly Channel[]]) {
     const items = list.length === 1 && isList(list[0])
         ? new ChannelList(list[0]).items
-        : (list as readonly GraphInput[]);
+        : (list as readonly Channel[]);
     if (items.length === 0) throw new TypeError("a selector needs at least one source");
     return [...items];
 }
@@ -954,8 +955,8 @@ function sources(list: readonly GraphInput[] | [ChannelList | readonly GraphInpu
  * picks what is *heard*, never what is computed.
  */
 export const select = (
-    which: GraphInput,
-    ...items: readonly GraphInput[] | [ChannelList | readonly GraphInput[]]
+    which: Channel,
+    ...items: readonly Channel[] | [ChannelList | readonly Channel[]]
 ): Ugen => new Ugen("Select", [which, ...sources(items)]);
 
 /**
@@ -963,8 +964,8 @@ export const select = (
  * equal power: `which = 0.5` is halfway between the first two.
  */
 export const selectX = (
-    which: GraphInput,
-    ...items: readonly GraphInput[] | [ChannelList | readonly GraphInput[]]
+    which: Channel,
+    ...items: readonly Channel[] | [ChannelList | readonly Channel[]]
 ): Ugen => new Ugen("SelectX", [which, ...sources(items)]);
 
 /**
@@ -973,9 +974,9 @@ export const selectX = (
  * not a UGen; unlike sclang's, it does not normalize behind your back.
  */
 export function splay(
-    signals: ChannelList | readonly GraphInput[],
+    signals: ChannelList | readonly Channel[],
     spread = 1.0,
-    level: GraphInput = 1.0,
+    level: Channel = 1.0,
     center = 0.0,
 ): ChannelList {
     const items = new ChannelList(signals).items;
@@ -998,10 +999,10 @@ export function splay(
  * Reads an audio bus (sampled per block). Named `in_` because `in` is a
  * reserved word — the wire name is still `In`.
  */
-export const in_ = (bus: GraphInput = 0.0): Ugen => new Ugen("In", [bus]);
+export const in_ = (bus: Channel = 0.0): Ugen => new Ugen("In", [bus]);
 
 /** Reads a control-bus value, constant over the block. */
-export const inCtl = (bus: GraphInput = 0.0): Ugen => new Ugen("InCtl", [bus]);
+export const inCtl = (bus: Channel = 0.0): Ugen => new Ugen("InCtl", [bus]);
 
 /**
  * One writer per channel on consecutive buses (`bus`, `bus+1`, …) — the
@@ -1010,8 +1011,8 @@ export const inCtl = (bus: GraphInput = 0.0): Ugen => new Ugen("InCtl", [bus]);
  */
 function outChannels(
     kind: string,
-    bus: GraphInput,
-    signal: ChannelList | readonly GraphInput[],
+    bus: Channel,
+    signal: ChannelList | readonly Channel[],
 ): ChannelList {
     if (typeof bus !== "number") {
         throw new TypeError(
@@ -1028,25 +1029,25 @@ function outChannels(
  * list writes its channels to consecutive buses: `out(0, dup(sig))` is a
  * stereo output.
  */
-export function out(bus: GraphInput, signal: GraphInput): Ugen;
-export function out(bus: GraphInput, signal: ChannelList | readonly GraphInput[]): ChannelList;
+export function out(bus: Channel, signal: Channel): Ugen;
+export function out(bus: Channel, signal: ChannelList | readonly Channel[]): ChannelList;
 export function out(
-    bus: GraphInput,
-    signal: GraphInput | ChannelList | readonly GraphInput[],
+    bus: Channel,
+    signal: Channel | ChannelList | readonly Channel[],
 ): Ugen | ChannelList {
     if (isList(signal)) return outChannels("Out", bus, signal);
     return new Ugen("Out", [bus, signal]);
 }
 
 /** Overwrites the audio `bus` with `signal` instead of summing. */
-export function replaceOut(bus: GraphInput, signal: GraphInput): Ugen;
+export function replaceOut(bus: Channel, signal: Channel): Ugen;
 export function replaceOut(
-    bus: GraphInput,
-    signal: ChannelList | readonly GraphInput[],
+    bus: Channel,
+    signal: ChannelList | readonly Channel[],
 ): ChannelList;
 export function replaceOut(
-    bus: GraphInput,
-    signal: GraphInput | ChannelList | readonly GraphInput[],
+    bus: Channel,
+    signal: Channel | ChannelList | readonly Channel[],
 ): Ugen | ChannelList {
     if (isList(signal)) return outChannels("ReplaceOut", bus, signal);
     return new Ugen("ReplaceOut", [bus, signal]);
@@ -1056,14 +1057,14 @@ export function replaceOut(
  * Writes `signal`'s latest per-block value to a **control** `bus` — the
  * write side of `inCtl`. Passes `signal` through as its output.
  */
-export function outCtl(bus: GraphInput, signal: GraphInput): Ugen;
+export function outCtl(bus: Channel, signal: Channel): Ugen;
 export function outCtl(
-    bus: GraphInput,
-    signal: ChannelList | readonly GraphInput[],
+    bus: Channel,
+    signal: ChannelList | readonly Channel[],
 ): ChannelList;
 export function outCtl(
-    bus: GraphInput,
-    signal: GraphInput | ChannelList | readonly GraphInput[],
+    bus: Channel,
+    signal: Channel | ChannelList | readonly Channel[],
 ): Ugen | ChannelList {
     if (isList(signal)) return outChannels("OutCtl", bus, signal);
     return new Ugen("OutCtl", [bus, signal]);
@@ -1080,9 +1081,9 @@ export function outCtl(
  * clients. Output is silence; pass it as a `SynthDef` root.
  */
 export const sendTrig = (
-    trig: GraphInput,
-    id: GraphInput = 0,
-    value: GraphInput = 0.0,
+    trig: Channel,
+    id: Channel = 0,
+    value: Channel = 0.0,
 ): Ugen => new Ugen("SendTrig", [trig, id, value]);
 
 /**
@@ -1090,8 +1091,8 @@ export const sendTrig = (
  * value…` to `/notify` clients. Output is silence; pass it as a root.
  */
 export const sendReply = (
-    trig: GraphInput,
-    values: readonly GraphInput[] = [],
+    trig: Channel,
+    values: readonly Channel[] = [],
     { cmd = "/reply", replyId = -1 }: { cmd?: string; replyId?: number } = {},
 ): Ugen => new Ugen("SendReply", [trig, replyId, ...values], { label: cmd });
 
@@ -1101,10 +1102,10 @@ export const sendReply = (
  * through the output, so `poll` can sit mid-chain.
  */
 export const poll = (
-    trig: GraphInput,
-    signal: GraphInput,
+    trig: Channel,
+    signal: Channel,
     label = "poll",
-    trigId: GraphInput = -1,
+    trigId: Channel = -1,
 ): Ugen => new Ugen("Poll", [trig, signal, trigId], { label });
 
 // --- buffer players and table oscillators ---
@@ -1114,18 +1115,18 @@ export const poll = (
  * sample (1.0 = server rate).
  */
 export const playBuf = (
-    bufnum: GraphInput,
-    chan: GraphInput = 0.0,
-    rate: GraphInput = 1.0,
-    loop: GraphInput = 0.0,
+    bufnum: Channel,
+    chan: Channel = 0.0,
+    rate: Channel = 1.0,
+    loop: Channel = 0.0,
 ): Ugen => new Ugen("PlayBuf", [bufnum, chan, rate, loop]);
 
 /** Reads a buffer at a `phase` signal in frames (linear interpolation). */
 export const bufRd = (
-    bufnum: GraphInput,
-    chan: GraphInput,
-    phase: GraphInput,
-    loop: GraphInput = 0.0,
+    bufnum: Channel,
+    chan: Channel,
+    phase: Channel,
+    loop: Channel = 0.0,
 ): Ugen => new Ugen("BufRd", [bufnum, chan, phase, loop]);
 
 /**
@@ -1133,16 +1134,16 @@ export const bufRd = (
  * **wavetable-format** buffer.
  */
 export const osc = (
-    bufnum: GraphInput,
-    freq: GraphInput = 440.0,
-    phase: GraphInput = 0.0,
+    bufnum: Channel,
+    freq: Channel = 440.0,
+    phase: Channel = 0.0,
 ): Ugen => new Ugen("Osc", [bufnum, freq, phase]);
 
 /** Non-interpolating oscillator over a **plain** (non-wavetable) buffer. */
 export const oscN = (
-    bufnum: GraphInput,
-    freq: GraphInput = 440.0,
-    phase: GraphInput = 0.0,
+    bufnum: Channel,
+    freq: Channel = 440.0,
+    phase: Channel = 0.0,
 ): Ugen => new Ugen("OscN", [bufnum, freq, phase]);
 
 /**
@@ -1150,39 +1151,39 @@ export const oscN = (
  * and `bufpos + 1` and crossfades by the fractional part.
  */
 export const vosc = (
-    bufpos: GraphInput,
-    freq: GraphInput = 440.0,
-    phase: GraphInput = 0.0,
+    bufpos: Channel,
+    freq: Channel = 440.0,
+    phase: Channel = 0.0,
 ): Ugen => new Ugen("VOsc", [bufpos, freq, phase]);
 
 /**
  * Waveshaper: maps `signal` (in ±1, clamped) through a transfer table in
  * wavetable format (typically a `cheby` `/b_gen`).
  */
-export const shaper = (bufnum: GraphInput, signal: GraphInput): Ugen =>
+export const shaper = (bufnum: Channel, signal: Channel): Ugen =>
     new Ugen("Shaper", [bufnum, signal]);
 
 /** The number of frames in a buffer, block-constant (`kr`). */
-export const bufFrames = (bufnum: GraphInput): Ugen =>
+export const bufFrames = (bufnum: Channel): Ugen =>
     new Ugen("BufFrames", [bufnum], { rate: "kr" });
 
 /** The buffer's own sample rate (Hz), block-constant (`kr`). */
-export const bufSampleRate = (bufnum: GraphInput): Ugen =>
+export const bufSampleRate = (bufnum: Channel): Ugen =>
     new Ugen("BufSampleRate", [bufnum], { rate: "kr" });
 
 /**
  * `fileSr / serverSr`, block-constant (`kr`); feed `playBuf`'s `rate` to
  * play at the file's true pitch without the client knowing either rate.
  */
-export const bufRateScale = (bufnum: GraphInput): Ugen =>
+export const bufRateScale = (bufnum: Channel): Ugen =>
     new Ugen("BufRateScale", [bufnum], { rate: "kr" });
 
 /** The buffer's channel count, block-constant (`kr`). */
-export const bufChannels = (bufnum: GraphInput): Ugen =>
+export const bufChannels = (bufnum: Channel): Ugen =>
     new Ugen("BufChannels", [bufnum], { rate: "kr" });
 
 /** The buffer's duration in seconds, block-constant (`kr`). */
-export const bufDur = (bufnum: GraphInput): Ugen =>
+export const bufDur = (bufnum: Channel): Ugen =>
     new Ugen("BufDur", [bufnum], { rate: "kr" });
 
 // --- synth-private feedback ---
@@ -1193,7 +1194,7 @@ export const bufDur = (bufnum: GraphInput): Ugen =>
  * — the `SynthDef`'s topological order does that as long as the output
  * graph reaches the `localIn` before the `localOut`.
  */
-export const localIn = (channel: GraphInput = 0.0): Ugen =>
+export const localIn = (channel: Channel = 0.0): Ugen =>
     new Ugen("LocalIn", [channel]);
 
 /**
@@ -1201,25 +1202,25 @@ export const localIn = (channel: GraphInput = 0.0): Ugen =>
  * `signal` through as its output (so it can be a SynthDef root, which keeps
  * the write in the graph).
  */
-export const localOut = (channel: GraphInput, signal: GraphInput): Ugen =>
+export const localOut = (channel: Channel, signal: Channel): Ugen =>
     new Ugen("LocalOut", [channel, signal]);
 
 // --- fused arithmetic (the forms the server optimizes) ---
 
 /** `a*b + c` in one UGen (the multiply-accumulate the server fuses). */
-export const madd = (a: GraphInput, b: GraphInput, c: GraphInput): Ugen =>
+export const madd = (a: Channel, b: Channel, c: Channel): Ugen =>
     new Ugen("MulAdd", [a, b, c]);
 
 /** `a + b + c` in one UGen. */
-export const sum3 = (a: GraphInput, b: GraphInput, c: GraphInput): Ugen =>
+export const sum3 = (a: Channel, b: Channel, c: Channel): Ugen =>
     new Ugen("Sum3", [a, b, c]);
 
 /** `a + b + c + d` in one UGen. */
 export const sum4 = (
-    a: GraphInput,
-    b: GraphInput,
-    c: GraphInput,
-    d: GraphInput,
+    a: Channel,
+    b: Channel,
+    c: Channel,
+    d: Channel,
 ): Ugen => new Ugen("Sum4", [a, b, c, d]);
 
 // --- one-pole smoothers ---
@@ -1228,14 +1229,14 @@ export const sum4 = (
  * One-pole smoother: `signal` lagged over `time` seconds (symmetric); `time`
  * 0 passes through. The same UGen the server inserts for a lagged control.
  */
-export const lag = (signal: GraphInput, time: GraphInput = 0.1): Ugen =>
+export const lag = (signal: Channel, time: Channel = 0.1): Ugen =>
     new Ugen("Lag", [signal, time]);
 
 /** One-pole smoother with separate rise (`up`) and fall (`down`) times. */
 export const varLag = (
-    signal: GraphInput,
-    up: GraphInput = 0.1,
-    down: GraphInput = 0.1,
+    signal: Channel,
+    up: Channel = 0.1,
+    down: Channel = 0.1,
 ): Ugen => new Ugen("VarLag", [signal, up, down]);
 
 // --- triggers and control ---
@@ -1247,32 +1248,32 @@ export const varLag = (
  * Holds the **level the input had at the trigger** for `dur` seconds, then
  * 0. Use `trig1` when all you want is a 1.
  */
-export const trig = (signal: GraphInput, dur: GraphInput = 0.1): Ugen =>
+export const trig = (signal: Channel, dur: Channel = 0.1): Ugen =>
     new Ugen("Trig", [signal, dur]);
 
 /** Holds 1 for `dur` seconds after each trigger, whatever level triggered it. */
-export const trig1 = (signal: GraphInput, dur: GraphInput = 0.1): Ugen =>
+export const trig1 = (signal: Channel, dur: Channel = 0.1): Ugen =>
     new Ugen("Trig1", [signal, dur]);
 
 /**
  * One sample of 1, `dur` seconds after each trigger. A trigger arriving
  * while one is already in flight is **dropped**, not queued.
  */
-export const tDelay = (signal: GraphInput, dur: GraphInput = 0.1): Ugen =>
+export const tDelay = (signal: Channel, dur: Channel = 0.1): Ugen =>
     new Ugen("TDelay", [signal, dur]);
 
 /**
  * Sample and hold: takes one sample of `signal` at each rising edge of
  * `trig` and holds it until the next one.
  */
-export const latch = (signal: GraphInput, trigger: GraphInput = 0.0): Ugen =>
+export const latch = (signal: Channel, trigger: Channel = 0.0): Ugen =>
     new Ugen("Latch", [signal, trigger]);
 
 /**
  * Passes `signal` while `trigger` is above zero and **freezes** at the last
  * value when it is not — transparent for as long as the gate is open.
  */
-export const gate = (signal: GraphInput, trigger: GraphInput = 0.0): Ugen =>
+export const gate = (signal: Channel, trigger: Channel = 0.0): Ugen =>
     new Ugen("Gate", [signal, trigger]);
 
 /**
@@ -1280,16 +1281,16 @@ export const gate = (signal: GraphInput, trigger: GraphInput = 0.0): Ugen =>
  * falls past `lo`, unchanged in between.
  */
 export const schmidt = (
-    signal: GraphInput,
-    lo: GraphInput = 0.0,
-    hi: GraphInput = 1.0,
+    signal: Channel,
+    lo: Channel = 0.0,
+    hi: Channel = 1.0,
 ): Ugen => new Ugen("Schmidt", [signal, lo, hi]);
 
 /**
  * Flips between 0 and 1 on each trigger — a divider by two of the
  * *triggers*, not of the signal.
  */
-export const toggleFf = (trigger: GraphInput = 0.0): Ugen =>
+export const toggleFf = (trigger: Channel = 0.0): Ugen =>
     new Ugen("ToggleFF", [trigger]);
 
 /**
@@ -1297,14 +1298,14 @@ export const toggleFf = (trigger: GraphInput = 0.0): Ugen =>
  * sample leaves it at 0: reset is applied second.
  */
 export const setResetFf = (
-    trigger: GraphInput = 0.0,
-    reset: GraphInput = 0.0,
+    trigger: Channel = 0.0,
+    reset: Channel = 0.0,
 ): Ugen => new Ugen("SetResetFF", [trigger, reset]);
 
 /** Counts triggers, from 1; a rising `reset` puts it back to 0. */
 export const pulseCount = (
-    trigger: GraphInput = 0.0,
-    reset: GraphInput = 0.0,
+    trigger: Channel = 0.0,
+    reset: Channel = 0.0,
 ): Ugen => new Ugen("PulseCount", [trigger, reset]);
 
 /**
@@ -1312,9 +1313,9 @@ export const pulseCount = (
  * read once — set it to `div - 1` to fire on the very first trigger.
  */
 export const pulseDivider = (
-    trigger: GraphInput = 0.0,
-    div: GraphInput = 2.0,
-    start: GraphInput = 0.0,
+    trigger: Channel = 0.0,
+    div: Channel = 2.0,
+    start: Channel = 0.0,
 ): Ugen => new Ugen("PulseDivider", [trigger, div, start]);
 
 /**
@@ -1323,16 +1324,16 @@ export const pulseDivider = (
  * which lands on `resetval + step`.
  */
 export const stepper = (
-    trigger: GraphInput = 0.0,
-    reset: GraphInput = 0.0,
-    min: GraphInput = 0.0,
-    max: GraphInput = 7.0,
-    step: GraphInput = 1.0,
-    resetval: GraphInput = 0.0,
+    trigger: Channel = 0.0,
+    reset: Channel = 0.0,
+    min: Channel = 0.0,
+    max: Channel = 7.0,
+    step: Channel = 1.0,
+    resetval: Channel = 0.0,
 ): Ugen => new Ugen("Stepper", [trigger, reset, min, max, step, resetval]);
 
 /** The time in seconds between the last two triggers, held between them. */
-export const timer = (trigger: GraphInput = 0.0): Ugen =>
+export const timer = (trigger: Channel = 0.0): Ugen =>
     new Ugen("Timer", [trigger]);
 
 /**
@@ -1340,8 +1341,8 @@ export const timer = (trigger: GraphInput = 0.0): Ugen =>
  * already running before the first one, so `sweep(0, 1)` is the node's age.
  */
 export const sweep = (
-    trigger: GraphInput = 0.0,
-    rate: GraphInput = 1.0,
+    trigger: Channel = 0.0,
+    rate: Channel = 1.0,
 ): Ugen => new Ugen("Sweep", [trigger, rate]);
 
 /**
@@ -1350,22 +1351,22 @@ export const sweep = (
  * `HPZ1`-derived definition.
  */
 export const changed = (
-    signal: GraphInput,
-    threshold: GraphInput = 0.0,
+    signal: Channel,
+    threshold: Channel = 0.0,
 ): Ugen => new Ugen("Changed", [signal, threshold]);
 
 /**
  * Turns each impulse into an exponential falling 60 dB in `decaytime`. Its
  * attack is instantaneous, which clicks — see `decay2`.
  */
-export const decay = (signal: GraphInput, decaytime: GraphInput = 1.0): Ugen =>
+export const decay = (signal: Channel, decaytime: Channel = 1.0): Ugen =>
     new Ugen("Decay", [signal, decaytime]);
 
 /** `decay` minus a second, faster decay, which rounds the attack. */
 export const decay2 = (
-    signal: GraphInput,
-    attacktime: GraphInput = 0.01,
-    decaytime: GraphInput = 1.0,
+    signal: Channel,
+    attacktime: Channel = 0.01,
+    decaytime: Channel = 1.0,
 ): Ugen => new Ugen("Decay2", [signal, attacktime, decaytime]);
 
 // --- scalar / init-rate (ir) ---
@@ -1377,7 +1378,7 @@ export const sampleRate = (): Ugen => new Ugen("SampleRate", [], { rate: "ir" })
  * One uniform random value in `[lo, hi)`, drawn once at synth init and held
  * for the node's life (`ir`); `lo`/`hi` must be constants or `ir`.
  */
-export const rand = (lo: GraphInput = 0.0, hi: GraphInput = 1.0): Ugen =>
+export const rand = (lo: Channel = 0.0, hi: Channel = 1.0): Ugen =>
     new Ugen("Rand", [lo, hi], { rate: "ir" });
 
 // --- demand rate (dr) ---
@@ -1387,7 +1388,7 @@ export const rand = (lo: GraphInput = 0.0, hi: GraphInput = 1.0): Ugen =>
 // `repeats` is how many the stream yields before it ends: **0 means
 // endlessly** (sclang writes `inf`, which a def cannot carry).
 
-function demandValues(values: ChannelList | readonly GraphInput[]): GraphInput[] {
+function demandValues(values: ChannelList | readonly Channel[]): Channel[] {
     const items = values instanceof ChannelList ? [...values.items] : [...values];
     if (items.length === 0) {
         throw new TypeError("a demand source needs at least one value");
@@ -1401,8 +1402,8 @@ function demandValues(values: ChannelList | readonly GraphInput[]): GraphInput[]
  * is *drained* rather than taken once.
  */
 export const dseq = (
-    values: ChannelList | readonly GraphInput[],
-    repeats: GraphInput = 0.0,
+    values: ChannelList | readonly Channel[],
+    repeats: Channel = 0.0,
 ): Ugen => new Ugen("Dseq", [repeats, ...demandValues(values)], { rate: "dr" });
 
 /**
@@ -1410,8 +1411,8 @@ export const dseq = (
  * the last. Unlike `dseq`, the count is of items, not passes.
  */
 export const drand = (
-    values: ChannelList | readonly GraphInput[],
-    repeats: GraphInput = 0.0,
+    values: ChannelList | readonly Channel[],
+    repeats: Channel = 0.0,
 ): Ugen => new Ugen("Drand", [repeats, ...demandValues(values)], { rate: "dr" });
 
 /**
@@ -1420,9 +1421,9 @@ export const drand = (
  * stream. Once the stream ends the last value is held.
  */
 export const demand = (
-    trigger: GraphInput,
-    reset: GraphInput,
-    source: GraphInput,
+    trigger: Channel,
+    reset: Channel,
+    source: Channel,
 ): Ugen => new Ugen("Demand", [trigger, reset, source]);
 
 // --- envelopes (EnvGen) ---
@@ -1702,10 +1703,10 @@ export function envGen(
         timeScale = 1.0,
         doneAction = DoneAction.NONE,
     }: {
-        gate?: GraphInput;
-        levelScale?: GraphInput;
-        levelBias?: GraphInput;
-        timeScale?: GraphInput;
+        gate?: Channel;
+        levelScale?: Channel;
+        levelBias?: Channel;
+        timeScale?: Channel;
         doneAction?: number;
     } = {},
 ): Ugen {
@@ -1725,9 +1726,9 @@ export function envGen(
  * exceeds `amp`, so what it measures is *uninterrupted* silence.
  */
 export const detectSilence = (
-    signal: GraphInput,
-    amp: GraphInput = 0.0001,
-    time: GraphInput = 0.1,
+    signal: Channel,
+    amp: Channel = 0.0001,
+    time: Channel = 0.1,
     doneAction: number = DoneAction.NONE,
 ): Ugen => new Ugen("DetectSilence", [signal, amp, time, Number(doneAction)]);
 
@@ -1736,9 +1737,9 @@ export const detectSilence = (
  * `envGen` with one linear segment, taking the same `DoneAction` set.
  */
 export const line = (
-    start: GraphInput = 0.0,
-    end: GraphInput = 1.0,
-    dur: GraphInput = 1.0,
+    start: Channel = 0.0,
+    end: Channel = 1.0,
+    dur: Channel = 1.0,
     doneAction: number = DoneAction.NONE,
 ): Ugen => new Ugen("Line", [start, end, dur, Number(doneAction)]);
 
@@ -1748,9 +1749,9 @@ export const line = (
  * non-zero and share a sign.
  */
 export const xLine = (
-    start: GraphInput = 0.01,
-    end: GraphInput = 1.0,
-    dur: GraphInput = 1.0,
+    start: Channel = 0.01,
+    end: Channel = 1.0,
+    dur: Channel = 1.0,
     doneAction: number = DoneAction.NONE,
 ): Ugen => new Ugen("XLine", [start, end, dur, Number(doneAction)]);
 
@@ -1758,27 +1759,27 @@ export const xLine = (
  * Frees the enclosing synth while `signal` is greater than zero, passing it
  * through unchanged — the trigger-driven counterpart of a `DoneAction`.
  */
-export const freeSelf = (signal: GraphInput): Ugen => new Ugen("FreeSelf", [signal]);
+export const freeSelf = (signal: Channel): Ugen => new Ugen("FreeSelf", [signal]);
 
 /**
  * Pauses the enclosing synth while `signal` is greater than zero, passing it
  * through. Resume with `Server.run`.
  */
-export const pauseSelf = (signal: GraphInput): Ugen => new Ugen("PauseSelf", [signal]);
+export const pauseSelf = (signal: Channel): Ugen => new Ugen("PauseSelf", [signal]);
 
 /**
  * 1 once `source` has finished, 0 before — a trigger the rest of the graph
  * can read. `source` must be a UGen that *can* finish (`envGen`, `line`,
  * `xLine`); the server rejects the def by name otherwise.
  */
-export const done = (source: GraphInput): Ugen => new Ugen("Done", [source]);
+export const done = (source: Channel): Ugen => new Ugen("Done", [source]);
 
 /**
  * Passes `source` through and frees the synth once it has finished — the
  * idiom for an envelope whose own `doneAction` is `NONE` because something
  * else in the graph still needs it.
  */
-export const freeSelfWhenDone = (source: GraphInput): Ugen =>
+export const freeSelfWhenDone = (source: Channel): Ugen =>
     new Ugen("FreeSelfWhenDone", [source]);
 
 // ---- the free binary functions (the number-on-the-left case) ----
@@ -1787,23 +1788,23 @@ export const freeSelfWhenDone = (source: GraphInput): Ugen =>
  * `a + b`, either side a node or a number — the free form of `.add()`, for
  * when the constant is on the left.
  */
-export const add = (a: OpOperand, b: OpOperand): GraphInput | ChannelList =>
+export const add = (a: OpOperand, b: OpOperand): Channel | ChannelList =>
     freeBinop("add", a, b);
 /** `a − b`; see `add`. */
-export const sub = (a: OpOperand, b: OpOperand): GraphInput | ChannelList =>
+export const sub = (a: OpOperand, b: OpOperand): Channel | ChannelList =>
     freeBinop("sub", a, b);
 /** `a × b`; see `add`. */
-export const mul = (a: OpOperand, b: OpOperand): GraphInput | ChannelList =>
+export const mul = (a: OpOperand, b: OpOperand): Channel | ChannelList =>
     freeBinop("mul", a, b);
 /** `a ÷ b`; see `add`. */
-export const div = (a: OpOperand, b: OpOperand): GraphInput | ChannelList =>
+export const div = (a: OpOperand, b: OpOperand): Channel | ChannelList =>
     freeBinop("div", a, b);
 
 function freeBinop(
     selector: string,
     a: OpOperand,
     b: OpOperand,
-): GraphInput | ChannelList {
+): Channel | ChannelList {
     if (isList(a)) return new ChannelList(a).composeWith(selector, b);
     if (isList(b)) return new ChannelList(b).rcomposeWith(selector, a);
     return channelBinop(a, selector, b);

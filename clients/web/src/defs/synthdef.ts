@@ -22,7 +22,7 @@
 // error.
 
 import { ChannelList, Control, Ugen } from "./ugens.ts";
-import type { GraphInput } from "./ugens.ts";
+import type { Channel } from "./ugens.ts";
 
 /**
  * One serialized UGen input: a reference to an earlier UGen, to a control,
@@ -139,7 +139,7 @@ export class SynthDef {
 
         for (const root of this.roots) visit(root);
 
-        const serInput = (input: GraphInput): SpecInput => {
+        const serInput = (input: Channel): SpecInput => {
             if (input instanceof Ugen) return { ugen: wire.get(input)! };
             if (input instanceof Control) return { control: ctlIndex.get(input.name)! };
             return { const: Number(input) };

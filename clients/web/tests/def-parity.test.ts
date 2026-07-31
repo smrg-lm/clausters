@@ -35,7 +35,7 @@ import {
     sine,
     whiteNoise,
 } from "../src/defs/ugens.ts";
-import type { GraphInput } from "../src/defs/ugens.ts";
+import type { Channel } from "../src/defs/ugens.ts";
 
 const here = new URL(".", import.meta.url);
 
@@ -97,7 +97,7 @@ const synthdefs: Record<string, () => SynthDef> = {
         new SynthDef("ops", out(0.0, sine(440.0).distort().max(0.1))),
 
     mix_fold: () => {
-        const voices: GraphInput[] = Array.from({ length: 7 }, (_u, n) =>
+        const voices: Channel[] = Array.from({ length: 7 }, (_u, n) =>
             sine(110.0 * (n + 1)));
         return new SynthDef("fold", out(0.0, madd(mix(voices), 0.1, 0.0)));
     },
