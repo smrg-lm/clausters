@@ -67,7 +67,7 @@ def main():
     out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "multichannel.wav")
 
     session = Session.nrt(tempo=2.0)
-    session.server.add_synthdef(unison())
+    unison().send(session.server)
 
     # Notes go out as events, not as `server.synth`. A message has no time --
     # `server.synth` sends one, so from inside a routine it lands *now* and

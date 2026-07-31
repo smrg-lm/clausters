@@ -136,7 +136,7 @@ test("a pattern played over WebSocket starts and ends its notes on time", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {
-        await server.addSynthDef(beep());
+        await beep().send(server);
         await awaitEngine(server);
         const log = noteLog(server);
 
@@ -162,7 +162,7 @@ test("the sample timebase anchors on the server's own clock", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {
-        await server.addSynthDef(beep());
+        await beep().send(server);
         await awaitEngine(server);
         const timebase = await server.sampleTimebase({ trackEvery: 0 });
         assert.ok(

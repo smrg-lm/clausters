@@ -80,7 +80,7 @@ The client seam (what the TypeScript client builds on):
 
 The client proper (`src/defs/`, mirroring the Python client's `clausters/defs/`):
 
-- `Server.open(connection)` — the only object that knows a connection. It sizes its node/bus/buffer allocators from the server's own `/server_info`, registers for the server's pushes (which is what recycles a node id once its `/n_end` arrives), and carries the commands: `addSynthDef`/`addFaustDef`/`addGraphDef`, `sync()`, `synth`/`group`/`graph`/`graphVoice`, `set`/`map`/`free`/`run`, buses, buffers and the introspection queries (`queryInfo`, `queryDefs`, `nodeQuery`, `queryTree`). **Everything that waits is a promise**: where the Python client blocks a thread on a reply, this one `await`s.
+- `Server.open(connection)` — the only object that knows a connection. It sizes its node/bus/buffer allocators from the server's own `/server_info`, registers for the server's pushes (which is what recycles a node id once its `/n_end` arrives), and carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions and the introspection queries (`queryInfo`, `queryDefs`, `nodeQuery`, `queryTree`). A command addressed to a resource belongs to that resource: `def.send(server)`, `Synth.new(server, …)`, `Group.graph(server, …)`, `node.set`/`map`/`free`/`run`, `Bus.audio(server)` and `bus.set`, `Buffer.alloc(server, …)` and `buffer.getSamples`. **Everything that waits is a promise**: where the Python client blocks a thread on a reply, this one `await`s.
 - `SynthDef` + the lowercase UGen callables (`sine`, `saw`, `rlpf`, `envGen`, `out`, `pan2`, …), and `FaustDef` + the Faust signal API (`signals`), the two def families as peers. `GraphDef` wires several of either into one named, instantiable configuration with a port surface.
 - The graph composes **by method**, TypeScript having no operator overloading: `sine(freq).mul(amp)` where the Python client writes `sine(freq) * amp`. The emitted spec JSON is identical, and `tests/def-parity.test.ts` holds that against vectors frozen from the Python builders (`tests/gen-def-vectors.py`).
 
@@ -91,16 +91,16 @@ The GUI client (`src/gui/`, mirroring the Python client's `clausters/gui/`):
 - Widgets are addressed by **name**, not by integer: `win.widget("cutoff").set({ value: 800.0 })`, `.onEvent(fn)`, `.bind("/n_set", node.id, "freq")`. A **bound** widget's value goes from the host straight to the audio server, with no round trip through the page's script. **Nothing pumps** — events arrive as callbacks, `query` resolves a promise.
 
 ```js
-import { loadOsc, pageConnection, Server, SynthDef, control, out, sine }
+import { loadOsc, pageConnection, Server, Synth, SynthDef, control, out, sine }
   from "./dist/index.js";
 
 await loadOsc();
 const server = await Server.open(await pageConnection());  // or a WsConnection
 
 const freq = control("freq", 440.0);
-await server.addSynthDef(new SynthDef("beep", out(0.0, sine(freq).mul(0.2))));
-const note = server.synth("beep", { freq: 330.0 });
-server.set(note, { freq: 220.0 });
+await new SynthDef("beep", out(0.0, sine(freq).mul(0.2))).send(server);
+const note = Synth.new(server, "beep", { freq: 330.0 });
+note.set({ freq: 220.0 });
 note.free();
 ```
 
@@ -136,7 +136,7 @@ const win = host.open(gui.window(
   gui.slider({ name: "amp", label: "amp", min: 0.0, max: 1.0, value: 0.2 }),
 ));
 win.widget("freq").bind("/n_set", note.id, "freq");   // host -> engine, no script
-win.widget("amp").onEvent((value) => server.set(note, { amp: value }));
+win.widget("amp").onEvent((value) => note.set({ amp: value }));
 ```
 
 The examples (`examples/`, served pages): `synth.html` a def built, sent, played and retuned from TypeScript over **either** carrier (the choice is the one line of the page that names one), `demo.html` the web-components demo, `standalone.html` the raw-API standalone boot, `engine.html` the audible engine harness, `gui-host.html` a GUI built and driven from TypeScript — the bound and the scripted control paths side by side, a metered bus, the linked waveform + spectrogram, and one button that swaps the in-page host for a native `--ws` one — five ports of Python client examples, each named after the one it mirrors (`multichannel.html`, `typed-controls.html`, `graph-maths.html`, `wavetables.html`, `pause-resume.html`), `graph-controls/` — a GraphDef's control surface as one component, its bundle authored with the Python client (`make_bundle.py`) — `piano/` — a playable piano keyboard whose keys the GUI host maps to server voices itself (the widget's `voice` mode), the same authored-bundle posture — and `document/`, an interactive text with both of them interleaved with the prose, which is the shape the whole component format is for. The bundle format and the underlying pieces are documented in the server book (`docs/clients.md`, `docs/using-as-a-library.md`); the scripted acceptances are the `scripts/smoke-web*.sh` set at the repo root plus `scripts/parity-web.sh`, and `./test.sh` here.

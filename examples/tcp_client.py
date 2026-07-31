@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "pyt
 
 from clausters.base import OscTcpInterface
 from clausters.defs import Server, SynthDef, control, sine, out
+from clausters.defs import Synth
 
 
 def main():
@@ -40,14 +41,14 @@ def main():
         freq = control("freq", 440.0)
         amp = control("amp", 0.2)
         sig = sine(freq) * amp
-        name = server.add_synthdef(SynthDef("tcp_beep", out(0.0, sig), out(1.0, sig)))
+        name = SynthDef("tcp_beep", out(0.0, sig), out(1.0, sig)).send(server)
         print("added synthdef:", name)
 
-        node = server.synth("tcp_beep", {"freq": 330.0})
+        node = Synth.new("tcp_beep", {"freq": 330.0}, server=server)
         server.sync()
         print("playing; synths =", server.status()[2])
         time.sleep(1.0)
-        server.free(node)
+        node.free()
         print("freed")
     finally:
         server.close()

@@ -56,7 +56,7 @@ after that line is the same code.</div>
     <script type="module">
       import {
         loadOsc, pageConnection, WsConnection, server as engine,
-        Server, SynthDef, Env, DoneAction,
+        Server, Synth, SynthDef, Env, DoneAction,
         control, envGen, out, rlpf, saw,
       } from "../dist/index.js";
 
@@ -109,7 +109,7 @@ after that line is the same code.</div>
         log(`the server reports ${server.sizing.audioBuses} audio buses, `
           + `${server.sizing.maxBuffers} buffer slots`);
 
-        await server.addSynthDef(beep);
+        await beep.send(server);
         log(`def '${beep.name}' loaded `
           + `(controls: ${beep.controlNames().join(", ")})`);
 
@@ -120,7 +120,7 @@ after that line is the same code.</div>
 
       function play() {
         note?.free();          // one note at a time, for the demo
-        note = server.synth("web_voice", {
+        note = Synth.new(server, "web_voice", {
           freq: Number($("freq").value),
           cutoff: Number($("cutoff").value),
         });
@@ -131,14 +131,14 @@ after that line is the same code.</div>
         if (!note) return;
         // Dropping the gate plays the envelope's release segments, and its
         // done action frees the node — the note ends itself.
-        server.set(note, { gate: 0.0 });
+        note.set({ gate: 0.0 });
         note = null;
       }
 
       const live = (id, name, unit) => {
         $(id).oninput = () => {
           $(`${id}v`).textContent = `${$(id).value} ${unit}`;
-          if (note) server.set(note, { [name]: Number($(id).value) });
+          if (note) note.set({ [name]: Number($(id).value) });
         };
       };
       live("freq", "freq", "Hz");

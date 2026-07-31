@@ -36,7 +36,7 @@
     <script type="module">
       import {
         loadOsc, pageConnection, server as engine,
-        Server, SynthDef, GuiHost, guiHost, gui,
+        Server, Synth, SynthDef, GuiHost, guiHost, gui,
         control, out, sine,
       } from "../dist/index.js";
 
@@ -79,9 +79,8 @@
         const server = await Server.open(await pageConnection());
         const freq = control("freq", 220.0);
         const amp = control("amp", 0.1);
-        await server.addSynthDef(
-          new SynthDef("gui_tone", out(0.0, sine(freq).mul(amp))));
-        const synth = server.synth("gui_tone", { freq: 220.0, amp: 0.1 });
+        await new SynthDef("gui_tone", out(0.0, sine(freq).mul(amp))).send(server);
+        const synth = Synth.new(server, "gui_tone", { freq: 220.0, amp: 0.1 });
         await server.sync();
         log(`playing node ${synth.id}`);
 

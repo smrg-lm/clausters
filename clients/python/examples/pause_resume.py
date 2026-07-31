@@ -18,7 +18,7 @@ the WAV has an audible gap of silence in the middle with the tone continuing
 unchanged on either side. In an NRT score the toggles must be *timetagged*, so
 they go out through ``send_bundle`` (stamped with the routine's logical beat)
 rather than the immediate ``pause``/``resume``, which would collapse onto time
-0. A live RT session would call ``session.server.pause(node)`` /
+0. A live RT session would call ``node.pause()`` /
 ``.resume(node)`` directly instead.
 """
 
@@ -28,6 +28,7 @@ from clausters import Session
 from clausters.render import read_soundfile
 from clausters.base import Routine
 from clausters.defs import SynthDef, control, out, sine
+from clausters.defs import Synth
 
 SR = 48000.0
 
@@ -45,8 +46,8 @@ def main():
     out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "pause_resume.wav")
 
     session = Session.nrt(tempo=2.0)
-    session.server.add_synthdef(drone())             # /d_recv at time 0
-    node = session.server.synth("drone", {"freq": 220.0, "amp": 0.2})
+    drone().send(session.server)             # /d_recv at time 0
+    node = Synth.new("drone", {"freq": 220.0, "amp": 0.2}, server=session.server)
 
     def sequence():
         yield 1.0                                    # a beat of tone

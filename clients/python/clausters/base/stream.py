@@ -93,8 +93,8 @@ class Routine(Stream):
     ``Server.sync``/``wait=True`` def send, any synchronous wait-for-reply)
     stalls every other routine and the whole timeline. Cede time with ``yield``
     instead. In particular, to **create a def from inside a routine** use the
-    asynchronous form -- ``server.add_faustdef(fdef, wait=False)`` (or
-    ``add_synthdef(..., wait=False)``) -- which only sends; do *not* call the
+    asynchronous form -- ``fdef.send(server, wait=False)`` (or
+    ``sdef.send(server, wait=False)``) -- which only sends; do *not* call the
     blocking ``server.sync()`` here. A non-blocking, notification-driven
     barrier you can ``yield`` (``OSCFunc``) is future work; until then, send
     the def async and ``yield`` enough time before the ``/s_new`` that depends

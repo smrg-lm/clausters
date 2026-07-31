@@ -14,6 +14,7 @@ bus controls the server adds.
 
 import json
 
+from ._wire import resolve as _resolve, send_def
 from .boxes import Box, check_wires
 from .signals import Signal
 
@@ -59,6 +60,24 @@ class FaustDef:
         if self.kind == "source":
             return self._payload
         return json.dumps(self._payload)
+
+    def send(self, server=None, *, wait: bool = True,
+             timeout: float = 10.0) -> str:
+        """Sends this def to the server via ``/d_faust`` and returns its
+        name.
+
+        ``/d_faust`` JIT-compiles **asynchronously** on the server's network
+        thread, answered later by ``/done``/``/fail``. ``wait=True``
+        (the default) blocks in RT until ``/done``/``/fail`` -- raising
+        `clausters.errors.CommandError` on the failure, or
+        `clausters.errors.ReplyTimeout` if the reply never lands. ``wait=False``
+        returns immediately (fire-and-forget), to be sequenced with the
+        server's ``sync`` before anything relies on the def (``yield`` it from
+        a routine, never block in one). In NRT the send is always *scored* at
+        time 0 -- the renderer loads the def before time advances -- so
+        ``wait`` does not apply."""
+        return send_def(_resolve(server), "/d_faust", (self.name, self.dump_def()),
+                        self.name, wait, timeout)
 
     # --- controls ---
 

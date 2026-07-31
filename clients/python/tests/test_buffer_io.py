@@ -10,7 +10,7 @@ import pytest
 from clausters import render
 from clausters.base import OscNrtInterface, TempoClock
 from clausters.base.stream import Routine
-from clausters.defs import Server
+from clausters.defs import Buffer, Server, Synth
 from clausters.defs.synthdef import SynthDef
 from clausters.defs.ugens import control, out, play_buf
 
@@ -30,9 +30,9 @@ def test_write_then_read_buffer_round_trips(tmp_path):
     # Generate a normalized sine period, write it to a WAV (both scored at 0).
     s = Server(interface=OscNrtInterface())
     clock = TempoClock(tempo=1.0)
-    buf = s.alloc_buffer(1024, 1)
-    s.gen_buffer(buf, "sine1", 7, 1.0)
-    s.write_buffer(buf, wav, sample_format="float")
+    buf = Buffer.alloc(1024, 1, server=s)
+    buf.gen("sine1", 7, 1.0)
+    buf.write(wav, sample_format="float")
 
     def close():
         yield 0.1
@@ -49,12 +49,12 @@ def test_write_then_read_buffer_round_trips(tmp_path):
     # Read it back in a fresh score and play it: the readback is audible.
     s2 = Server(interface=OscNrtInterface())
     clock2 = TempoClock(tempo=1.0)
-    b2 = s2.read_buffer(wav)
-    s2.add_synthdef(
-        SynthDef("play", out(0.0, play_buf(control("buf", 0.0, "ir"), 0.0, 1.0, 1.0))))
+    b2 = Buffer.read(wav, server=s2)
+    SynthDef("play",
+             out(0.0, play_buf(control("buf", 0.0, "ir"), 0.0, 1.0, 1.0))).send(s2)
 
     def go():
-        s2.synth("play", {"buf": b2.bufnum})
+        Synth.new("play", {"buf": b2.bufnum}, server=s2)
         yield 0.5
         s2.send_bundle(("/n_free", 0))
 
@@ -75,14 +75,32 @@ def test_query_and_get_samples_via_embed():
         pytest.skip(f"embedded server unavailable: {e}")
 
     server = session.server
-    buf = server.alloc_buffer(8, 1)
+    buf = Buffer.alloc(8, 1, server=server)
+    assert buf.server is server
     # A linear 0 -> 1 ramp across the 8 samples.
-    server.gen_buffer(buf, "env", 0.0, 1.0, 1.0, 1, 0.0)
+    buf.gen("env", 0.0, 1.0, 1.0, 1, 0.0)
 
-    info = server.query_buffer(buf)
-    assert (info.frames, info.channels) == (8, 1)
+    info = buf.query()
+    assert info is buf and (buf.frames, buf.channels) == (8, 1)
 
-    vals = list(server.get_samples(buf, 0, 8))
+    vals = list(buf.get_samples(0, 8))
     assert vals[0] == pytest.approx(0.0, abs=1e-6)
     assert vals[-1] == pytest.approx(1.0, abs=1e-6)
     assert vals[3] == pytest.approx(3 / 7, abs=1e-6)
+
+
+def test_zero_and_free_go_through_the_buffer():
+    _embed_or_skip()
+    try:
+        from clausters import Session
+        session = Session.embed()
+    except (OSError, RuntimeError) as e:
+        pytest.skip(f"embedded server unavailable: {e}")
+
+    server = session.server
+    buf = Buffer.alloc(8, 1, server=server)
+    buf.gen("env", 0.0, 1.0, 1.0, 1, 0.0)
+    buf.zero()
+    assert max(abs(v) for v in buf.get_samples(0, 8)) == 0.0
+    buf.free()
+    assert server.buffers.in_use == 0

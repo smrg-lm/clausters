@@ -51,7 +51,7 @@ than an <code>/s_new</code> per note.</div>
     <script type="module">
       import {
         loadOsc, pageConnection, server as engine,
-        Server, SynthDef, TempoClock, Routine, Env, DoneAction,
+        Server, Synth, SynthDef, TempoClock, Routine, Env, DoneAction,
         control, envGen, out, rand, sine,
       } from "../dist/index.js";
 
@@ -80,13 +80,13 @@ than an <code>/s_new</code> per note.</div>
         await (await engine({ channels: 2 })).resume();
         server = await Server.open(await pageConnection());   // or WsConnection
 
-        await server.addSynthDef(glideLead());
+        await glideLead().send(server);
         clock = new TempoClock(Number(el("tempo").value), {
           timebase: await server.sampleTimebase(),
         });
         clock.start();
 
-        lead = server.synth("web_glide_lead", { amp: 0.2, freq: mtof(48) });
+        lead = Synth.new(server, "web_glide_lead", { amp: 0.2, freq: mtof(48) });
         log(`the lead is node ${lead.id}, silent until a gate arrives`);
 
         el("start").disabled = true;
@@ -113,7 +113,7 @@ than an <code>/s_new</code> per note.</div>
       el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
       el("play").onclick = play;
       el("free").onclick = () => {
-        server.free(lead);
+        lead.free();
         log(`node ${lead.id} freed`);
         for (const id of ["play", "free"]) el(id).disabled = true;
       };

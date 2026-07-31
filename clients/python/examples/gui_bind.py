@@ -36,6 +36,7 @@ import time
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
 from clausters.gui import knob, window
+from clausters.defs import Synth
 
 # %% [markdown]
 # ## Launch the server and the GUI, and a synth to drive
@@ -56,8 +57,8 @@ def beep(name: str = "gui_bind_beep") -> SynthDef:
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
-server.add_synthdef(beep())
-synth = server.synth("gui_bind_beep", {"freq": 220.0})
+beep().send(server)
+synth = Synth.new("gui_bind_beep", {"freq": 220.0}, server=server)
 
 # %% [markdown]
 # ## A named knob, bound to the synth's freq
@@ -100,7 +101,7 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
         run(20.0)
     finally:
-        server.free(synth)
+        synth.free()
         session.close()
 else:
     print("bind up - run(10) to pump events, session.close() to end")

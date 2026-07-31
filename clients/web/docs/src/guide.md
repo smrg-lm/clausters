@@ -39,7 +39,7 @@ The engine singleton is reachable directly when a page needs the browser-specifi
 const server = await Server.open(connection);
 ```
 
-Opening it queries `/server_info` and sizes the allocators from the answer, so the client's ids match the server that is actually running. It registers for the server's pushes, which is what lets a node id be recycled once its `/n_end` arrives, and it carries the commands: `addSynthDef`/`addFaustDef`/`addGraphDef`, `sync()`, `synth`/`group`/`graph`/`graphVoice`, `set`/`map`/`free`/`run`/`pause`/`resume`, the bus and buffer calls, and the introspection queries (`queryInfo`, `queryDefs`, `nodeQuery`, `queryTree`, `dumpGraph`).
+Opening it queries `/server_info` and sizes the allocators from the answer, so the client's ids match the server that is actually running. It registers for the server's pushes, which is what lets a node id be recycled once its `/n_end` arrives, and it carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions, and the introspection queries (`queryInfo`, `queryDefs`, `nodeQuery`, `queryTree`, `dumpGraph`). A command addressed to a resource is that resource's method — `def.send(server)`, `Synth.new(server, …)`, `node.set`, `bus.watch`, `buffer.getSamples` — so the receiver is never an argument.
 
 Two def families are peers, as everywhere in Clausters:
 
@@ -52,7 +52,7 @@ const fdef = FaustDef.fromSignals("blown", signals.hslider("freq", 440, 50, 2000
 
 A def is a plain value until it is sent, and the definitions themselves mean exactly what the [server book](https://clausters.readthedocs.io/) says they mean: this client only builds the JSON.
 
-Handles are `Synth`, `Group`, `Bus` and `Buffer` — thin objects over an id from the core's allocator, freed by `server.free(node)`, `server.freeBus(bus)`, `server.freeBuffer(buf)`.
+Handles are `Synth`, `Group`, `Bus` and `Buffer` — thin objects over an id from the core's allocator, freed by `node.free()`, `bus.free()`, `buf.free()`.
 
 ## Driving the GUI host
 
@@ -118,7 +118,7 @@ Above that sit `Event` and `rest`, the value patterns (`Pseq`, `Pser`, `Prand`, 
 
 ## Three things the browser changes
 
-**Everything that waits is a promise.** Where the reference client blocks a thread on a reply, this one `await`s: `await server.sync()`, `await server.getBus(bus)`, `await server.queryTree()`. The page has a single thread and has to keep running, so "never block the clock thread" — a discipline in the Python client — is here simply the language.
+**Everything that waits is a promise.** Where the reference client blocks a thread on a reply, this one `await`s: `await server.sync()`, `await bus.get()`, `await server.queryTree()`. The page has a single thread and has to keep running, so "never block the clock thread" — a discipline in the Python client — is here simply the language.
 
 **The graph composes by method.** `sine(freq).mul(amp).add(bias)` where Python writes `sine(freq) * amp + bias`, TypeScript having no operator overloading. Because of that, parity between the clients is asserted on the **emitted spec**, never on the source text.
 

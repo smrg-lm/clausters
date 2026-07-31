@@ -6,7 +6,7 @@
 // float samples — every format the browser plays, decoded by the browser.
 //
 // These are pure functions over a URL and an `AudioBuffer`: nothing here
-// knows a server or a carrier. `Server.loadSample` is what puts the result
+// knows a server or a carrier. `Buffer.load` is what puts the result
 // into a buffer, and the reverse direction (reading a server buffer back out)
 // is `Server.getSamples` — one is `fetch`, the other `/b_getn`, and a
 // waveform view does not care which fed it.

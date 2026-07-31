@@ -2,9 +2,9 @@
 """A polyphonic GraphDef: shared part + per-voice part.
 
 A GraphDef member can be marked `voice=True`. The **shared** members are
-instantiated once at `server.graph(...)` (the always-on part: the private bus
+instantiated once at `Group.graph(...)` (the always-on part: the private bus
 and the mixer); each **voice** member is instantiated per note with
-`server.graph_voice(...)`, wired into the same shared bus. This is the model a
+`instance.voice(...)`, wired into the same shared bus. This is the model a
 MIDI binding uses too: `/midi_bind <ch> poly` spawns the shared instance and
 each note spawns a voice — drive it from a controller with
 `clausters --midi` and `aconnect`.
@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "pyt
 
 from clausters.base import OscNrtInterface, Routine, TempoClock
 from clausters.defs import GraphDef, Server, SynthDef, control, in_, out, sine
+from clausters.defs import Group
 
 SR = 48000.0
 NOTES = (220.0, 277.0, 330.0, 440.0)  # an A-major arpeggio
@@ -58,10 +59,11 @@ def poly_graph() -> GraphDef:
 def play(server):
     vtone, vgain = member_defs()
     for sdef in (vtone, vgain):
-        server.add_synthdef(sdef)
-    server.add_graphdef(poly_graph())
+        sdef.send(server)
+    poly_graph().send(server)
 
-    inst = server.graph("poly", {"gain": 0.3})          # the shared instance, once
+    # the shared instance, once
+    inst = Group.graph("poly", {"gain": 0.3}, server=server)
     for i, freq in enumerate(NOTES):
         vid = server.nodes.alloc()                      # a per-note voice id
         # Spawn a voice into the instance at this beat, then free it later

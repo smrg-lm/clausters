@@ -32,6 +32,7 @@ import time
 from clausters import Session
 from clausters.base import MidiReceiver
 from clausters.responders import MidiFunc
+from clausters.defs import Synth
 
 
 def main() -> None:
@@ -48,13 +49,14 @@ def main() -> None:
             return note_off(msg, src)
         freq = 440.0 * 2 ** ((msg["note"] - 69) / 12)
         amp = msg["velocity"] / 127 * 0.3
-        voices[msg["note"]] = server.synth("default", {"freq": freq, "amp": amp})
+        voices[msg["note"]] = Synth.new("default", {"freq": freq, "amp": amp},
+                                        server=server)
         print(f"  note on  {msg['note']} ({freq:.1f} Hz)")
 
     def note_off(msg, src):
         synth = voices.pop(msg["note"], None)
         if synth is not None:
-            server.free(synth)
+            synth.free()
             print(f"  note off {msg['note']}")
 
     MidiFunc(note_on, "note_on", recv=recv)
@@ -65,7 +67,7 @@ def main() -> None:
         time.sleep(seconds)
     finally:
         for synth in list(voices.values()):
-            server.free(synth)
+            synth.free()
         recv.stop()
         session.close()
 

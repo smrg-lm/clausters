@@ -42,6 +42,7 @@ import os
 import struct
 import sys
 import wave
+from clausters.defs import Synth
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -175,7 +176,7 @@ def slot_index(subject, slot, catalog):
 
 
 class RawDef:
-    """What `Server.add_synthdef` needs from a def: a name and its wire text.
+    """What sending a def needs from it: a name and its wire text.
     The subjects are already `SynthDefSpec` JSON, which is that text — there is
     nothing for the client-side builders to rebuild."""
 
@@ -234,8 +235,8 @@ def render_offline(items, secs, amp, sets, sweep, path):
         ch = subject.get("channels", 1)
         spec = build(subject, secs, amp, sets, sweep, catalog)
         server = Server(interface=OscNrtInterface())
-        server.add_synthdef(RawDef(spec))
-        node = server.synth(spec["name"])
+        RawDef(spec).send(server)
+        node = Synth.new(spec["name"], server=server)
         # A bare subject has no envelope and no done action, so nothing would
         # end the score: the render's duration is the closing bundle.
         server.send_bundle_after(secs, ("/n_free", node.id))
@@ -266,9 +267,9 @@ def play_live(items, secs, amp, sets, sweep):
                    for u in session.server.query_ugens()}
         for section, subject in items:
             spec = build(subject, secs, amp, sets, sweep, catalog)
-            session.server.add_synthdef(RawDef(spec))
+            RawDef(spec).send(session.server)
             print(f"  {section}/{subject['name']:14} {subject['kind']}")
-            node = session.server.synth(spec["name"])
+            node = Synth.new(spec["name"], server=session.server)
             time.sleep(secs)
             node.free()
             time.sleep(0.15)

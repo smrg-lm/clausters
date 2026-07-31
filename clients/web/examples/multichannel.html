@@ -46,7 +46,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
     <script type="module">
       import {
         loadOsc, pageConnection, server as engine,
-        Server, SynthDef, TempoClock, Routine, Env, DoneAction,
+        Server, Synth, SynthDef, TempoClock, Routine, Env, DoneAction,
         control, dup, envGen, mix, out, rand, sine,
       } from "../dist/index.js";
 
@@ -80,7 +80,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
         server = await Server.open(await pageConnection());
 
         const def = unison();
-        await server.addSynthDef(def);
+        await def.send(server);
         log(`def '${def.name}' loaded: ${VOICES} sines mixed to one, `
           + "fanned to two buses");
 
@@ -95,7 +95,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
       function play() {
         new Routine(function* () {
           for (const [midi, dur] of [[45, 3.0], [52, 3.0], [50, 4.0]]) {
-            const voice = server.synth("web_unison", {
+            const voice = Synth.new(server, "web_unison", {
               freq: mtof(midi), amp: 0.4,
             });
             log(`voice on node ${voice.id} at MIDI ${midi}`);

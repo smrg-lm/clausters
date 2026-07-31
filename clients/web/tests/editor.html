@@ -26,7 +26,7 @@
     <!--
       The acceptance behind examples/editor.html (clients/web/test.sh, headless
       Chrome): ?smoke=1 auto-runs. A decoded file reaches a server buffer
-      through `loadSample` (fetch + decodeAudioData + the carrier's bulk
+      through `Buffer.load` (fetch + decodeAudioData + the carrier's bulk
       install), the host draws it from `buffer:` — which makes it fetch the
       samples with /b_query + /b_getn over its client leg — and the transport
       is asserted **audibly** on an analyser: silent, then sounding under play,
@@ -36,7 +36,7 @@
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine,
-        Server, SynthDef, GuiHost, guiHost, gui,
+        Server, Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
         control, out, playBuf, bufRd, bufRateScale, phasor,
       } from "../dist/index.js";
 
@@ -111,7 +111,7 @@
 
         // ---- the file, into a server buffer ----
         const url = wavUrl();
-        const buffer = await server.loadSample(url);
+        const buffer = await Buffer.load(server, url);
         URL.revokeObjectURL(url);
         if (buffer.frames < 100000 || buffer.channels !== 1) {
           throw new Error(`unexpected buffer: ${JSON.stringify(buffer)}`);
@@ -120,7 +120,7 @@
           + `at ${buffer.sampleRate} Hz into buffer ${buffer.bufnum}`);
 
         // The samples really landed: read them back out of the engine.
-        const read = await server.getSamples(buffer, { start: 0, count: 2048 });
+        const read = await buffer.getSamples({ start: 0, count: 2048 });
         const loudest = Math.max(...read.map(Math.abs));
         if (loudest < 0.5) throw new Error(`the buffer is silent (${loudest})`);
         log(`read back ${read.length} samples, peak ${loudest.toFixed(3)}`);
@@ -128,9 +128,9 @@
         // ---- the player def and the window ----
         const buf = control("buf", 0.0);
         const rate = bufRateScale(buf);
-        await server.addSynthDef(new SynthDef("editor_test_player",
+        await new SynthDef("editor_test_player",
           out(0.0, playBuf(buf, 0.0, rate, 0.0).mul(0.8)),
-          out(1.0, playBuf(buf, 0.0, rate, 0.0).mul(0.8))));
+          out(1.0, playBuf(buf, 0.0, rate, 0.0).mul(0.8))).send(server);
         await server.sync();
 
         const win = host.open(gui.window(
@@ -155,14 +155,14 @@
         if (silent > 0.01) throw new Error(`not silent before play (${silent})`);
 
         const anchor = await raw.clock();
-        const voice = server.synth("editor_test_player", { buf: buffer.bufnum });
+        const voice = Synth.new(server, "editor_test_player", { buf: buffer.bufnum });
         win.widget("wave").set({ playhead_at: anchor });
         win.widget("stft").set({ playhead_at: anchor });
         const playing = await peak(200);
         if (playing < 0.1) throw new Error(`silent under play (${playing})`);
 
         // Pause is /n_run 0: the node stays in the tree, with its position.
-        server.pause(voice);
+        voice.pause();
         await sleep(80);
         const pausedPeak = await peak(150);
         if (pausedPeak > 0.01) throw new Error(`still sounding when paused (${pausedPeak})`);
@@ -171,7 +171,7 @@
           throw new Error(`the paused node left the tree: ${JSON.stringify(node)}`);
         }
 
-        server.resume(voice);
+        voice.resume();
         const resumed = await peak(200);
         if (resumed < 0.1) throw new Error(`silent after resume (${resumed})`);
 
@@ -189,11 +189,11 @@
         const rbuf = control("buf", 0.0);
         const phase = phasor(0.0, bufRateScale(rbuf), control("start", 0.0),
                              control("end", 1.0), control("start", 0.0));
-        await server.addSynthDef(new SynthDef("editor_test_region",
+        await new SynthDef("editor_test_region",
           out(0.0, bufRd(rbuf, 0.0, phase).mul(0.8)),
-          out(1.0, bufRd(rbuf, 0.0, phase).mul(0.8))));
+          out(1.0, bufRd(rbuf, 0.0, phase).mul(0.8))).send(server);
         await server.sync();
-        const region = server.synth("editor_test_region", {
+        const region = Synth.new(server, "editor_test_region", {
           buf: buffer.bufnum, start: 24000, end: 72000,
         });
         const looping = await peak(200);

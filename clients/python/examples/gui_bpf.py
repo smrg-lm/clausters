@@ -46,6 +46,7 @@ import time
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, env_gen, out, sine
 from clausters.gui import bpf, button, env_to_points, label, menu, points_to_env, window
+from clausters.defs import Synth
 
 # %% [markdown]
 # ## Launch the server and the GUI
@@ -95,8 +96,8 @@ def play(*_):
     """One note shaped by the envelope as currently drawn."""
     env = points_to_env(_points)
     sig = sine(330.0) * env_gen(env, done_action=DoneAction.FREE_SELF) * 0.4
-    server.add_synthdef(SynthDef("gui_bpf_env", out(0.0, sig), out(1.0, sig)))
-    server.synth("gui_bpf_env")
+    SynthDef("gui_bpf_env", out(0.0, sig), out(1.0, sig)).send(server)
+    Synth.new("gui_bpf_env", server=server)
     print(f"played {len(_points) // 4} breakpoints over {env.times} s segments")
 
 

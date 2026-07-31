@@ -20,6 +20,7 @@ import sys
 from clausters import Session
 from clausters.base import Routine
 from clausters.defs import SynthDef, control, out, sine
+from clausters.defs import Synth
 
 SR = 48000.0
 
@@ -45,8 +46,8 @@ def main():
     out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "graph_maths.wav")
 
     session = Session.nrt(tempo=2.0)
-    session.server.add_synthdef(maths_lead())    # freq/timbre are all in the def
-    lead = session.server.synth("maths_lead", {"note": 48.0, "amp": 0.3})
+    maths_lead().send(session.server)    # freq/timbre are all in the def
+    lead = Synth.new("maths_lead", {"note": 48.0, "amp": 0.3}, server=session.server)
 
     def sequence():
         # Set MIDI notes directly — the def turns them into Hz with .midicps().

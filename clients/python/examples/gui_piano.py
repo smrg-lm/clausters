@@ -53,6 +53,7 @@ import time
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
 from clausters.gui import label, piano, window
+from clausters.defs import Synth
 
 # %% [markdown]
 # ## Launch the server and the GUI
@@ -83,7 +84,7 @@ def voice(name: str = "gui_piano_voice") -> SynthDef:
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
-server.add_synthdef(voice())
+voice().send(server)
 
 # %% [markdown]
 # ## Open the keyboard
@@ -127,15 +128,15 @@ def note_event(pitch: int, velocity: int, state: int, channel: int) -> None:
     if state:
         # A re-press replaces the old voice (its gate closes first).
         note_event(pitch, 0, 0, channel)
-        _voices[pitch] = server.synth(
+        _voices[pitch] = Synth.new(
             "gui_piano_voice",
             {"freq": midi_to_hz(pitch), "amp": velocity / 127.0 * 0.3},
-        )
+            server=server)
         print(f"  note on  {pitch} vel {velocity} ch {channel}")
     else:
         synth = _voices.pop(pitch, None)
         if synth is not None:
-            server.set(synth, {"gate": 0.0})
+            synth.set({"gate": 0.0})
             print(f"  note off {pitch}")
 
 

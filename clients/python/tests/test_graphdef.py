@@ -9,6 +9,7 @@ import pytest
 from clausters import render
 from clausters.base import OscNrtInterface, Routine, TempoClock
 from clausters.defs import GraphDef, Server, SynthDef, control, in_, out, sine
+from clausters.defs import Group
 
 SR = 48000.0
 
@@ -90,9 +91,9 @@ def test_graphdef_instantiates_and_sounds():
 
     def play(srv):
         for sdef in _members():
-            srv.add_synthdef(sdef)
-        srv.add_graphdef(_duo())
-        inst = srv.graph("duo", {"freq": 220.0, "gain": 0.4})
+            sdef.send(srv)
+        _duo().send(srv)
+        inst = Group.graph("duo", {"freq": 220.0, "gain": 0.4}, server=srv)
         for f in (220.0, 277.0):
             srv.send_bundle(("/n_set", inst.id, "freq", f))
             yield 0.5
@@ -154,10 +155,10 @@ def test_polyphonic_graphdef_voices_render():
 
     def play(srv):
         vtone, vgain, g = _poly()
-        srv.add_synthdef(vtone)
-        srv.add_synthdef(vgain)
-        srv.add_graphdef(g)
-        inst = srv.graph("poly", {"gain": 0.3})
+        vtone.send(srv)
+        vgain.send(srv)
+        g.send(srv)
+        inst = Group.graph("poly", {"gain": 0.3}, server=srv)
         for freq in (220.0, 330.0, 440.0):
             vid = srv.nodes.alloc()
             srv.send_bundle(("/graph_voice", inst.id, vid, "freq", freq, "amp", 0.2))

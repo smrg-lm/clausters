@@ -32,6 +32,7 @@ from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
 from clausters.defs.node import AddAction
 from clausters.gui import nodetree, window
+from clausters.defs import Group, Synth
 
 # %% [markdown]
 # ## Launch the server and the GUI, and build a few nodes
@@ -43,11 +44,12 @@ session = Session.live()
 server = session.server
 gui = session.gui()
 
-server.add_synthdef(SynthDef(
-    "beep", out(0.0, sine(control("freq", 220.0)) * control("amp", 0.1))))
-group = server.group()
-sweeper = server.synth("beep", {"freq": 220.0}, target=group.id, action=AddAction.TAIL)
-server.synth("beep", {"freq": 330.0}, target=group.id, action=AddAction.TAIL)
+SynthDef(
+    "beep", out(0.0, sine(control("freq", 220.0)) * control("amp", 0.1))).send(server)
+group = Group.new(server=server)
+sweeper = Synth.new("beep", {"freq": 220.0}, target=group.id,
+                    action=AddAction.TAIL, server=server)
+Synth.new("beep", {"freq": 330.0}, target=group.id, action=AddAction.TAIL, server=server)
 
 # %% [markdown]
 # ## The view
@@ -77,12 +79,12 @@ def run(seconds: float) -> None:
     start = time.monotonic()
     while time.monotonic() - start < seconds and not _closed:
         t = time.monotonic() - start
-        server.set(sweeper, {"freq": 330.0 + 220.0 * math.sin(t)})
+        sweeper.set({"freq": 330.0 + 220.0 * math.sin(t)})
         if extra is None and int(t) % 4 == 2:
-            extra = server.synth("beep", {"freq": 550.0, "amp": 0.08},
-                                 target=group.id, action=AddAction.TAIL)
+            extra = Synth.new("beep", {"freq": 550.0, "amp": 0.08},
+                                 target=group.id, action=AddAction.TAIL, server=server)
         elif extra is not None and int(t) % 4 == 0:
-            server.free(extra)
+            extra.free()
             extra = None
         gui.pump(timeout=0.1)
 
@@ -92,7 +94,7 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
         run(30.0)
     finally:
-        server.free(group)
+        group.free()
         session.close()
 else:
     print("nodetree up - run(10) to drive the tree, session.close() to end")

@@ -29,6 +29,7 @@ becomes a `GraphDef`); instancing a bare def still needs an instrument of its ow
 and raises a clear `NotImplementedError` here.
 """
 
+from ..defs.node import Group as NodeGroup
 from .group import CONCRETE, LOGICAL, Group
 from .element import Buffer, Element, Event, Generator, Sequence, Track
 
@@ -85,10 +86,11 @@ def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
 
 def render_logical(group, server, *, ports=None):
     """Send a logical group's `GraphDef` (`Group.to_graphdef`) and instance it on
-    ``server``. Returns the instance group (`server.graph`'s handle)."""
+    ``server``. Returns the instance group (the handle from
+    `clausters.defs.Group.graph`)."""
     gdef = group.to_graphdef()
-    server.add_graphdef(gdef)
-    return server.graph(gdef.name, ports)
+    gdef.send(server)
+    return NodeGroup.graph(gdef.name, ports, server=server)
 
 
 # ---- the flatten dispatch ----

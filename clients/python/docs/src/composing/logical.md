@@ -22,8 +22,8 @@ in_bus, level = control("in", 0.0), control("level", 0.4)
 gain = SynthDef("gain", out(0.0, in_(in_bus) * level),
                         out(1.0, in_(in_bus) * level))
 
-server.add_synthdef(tone)
-server.add_synthdef(gain)
+tone.send(server)
+gain.send(server)
 ```
 
 `tone` writes a sine onto whatever bus its `out` control names; `gain` reads
@@ -67,7 +67,7 @@ A fifth and its gain stage, sounding continuously — a graph instance is a
 running configuration, not a scheduled event. It lives until you free it:
 
 ```python
-server.free(inst)                # the instance group and its private buses
+inst.free()                # the instance group and its private buses
 ```
 
 One boundary, stated plainly: a logical group is rendered **on its own**. It
@@ -120,7 +120,7 @@ else. And exactly as with a moved clip, what is *running* does not rewire
 itself; the next render sends the graph as drawn:
 
 ```python
-server.free(inst)
+inst.free()
 inst = chain.render(server)       # silent: the gain stage reads nothing
 ```
 
@@ -128,14 +128,14 @@ Wire `in` back to `mix` on screen, then:
 
 ```python
 patcher.poll()
-server.free(inst)
+inst.free()
 inst = chain.render(server)       # and it sounds again, wired as drawn
 ```
 
 Clean up the demo:
 
 ```python
-server.free(inst)
+inst.free()
 patcher.poll()                     # drain anything left
 gui.close(pwin)
 ```

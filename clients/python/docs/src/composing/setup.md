@@ -54,7 +54,7 @@ def sampler(name: str = "take") -> SynthDef:
     sig = play_buf(buf, 0.0, 1.0, 0.0) * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
-server.add_synthdef(sampler())     # blocks on /done — fine at the top level
+sampler().send(server)     # blocks on /done — fine at the top level
 ```
 
 (`add_synthdef` blocks until the server confirms the def. That is fine here,
@@ -82,11 +82,11 @@ def bounce_take(path: str, beats: float = 2.0) -> str:
     return path
 
 wav = bounce_take(str(Path(tempfile.mkdtemp(prefix="clausters-")) / "take.wav"))
-buf = server.query_buffer(server.read_buffer(wav))   # on the server, shape known
+buf = Buffer.read(wav, server=server).query()   # on the server, shape known
 print(buf.bufnum, buf.frames, buf.channels)
 ```
 
-`read_buffer` loads the file into a server buffer and returns its number;
+`Buffer.read` loads the file into a server buffer and returns its handle;
 `query_buffer` asks the server for the buffer's shape (frames, channels,
 sample rate), which the arrangement and the editor will both read. Note the offline
 session is the *same* client code as the live one — only the destination

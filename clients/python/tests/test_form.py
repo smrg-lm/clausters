@@ -6,6 +6,7 @@ placements, the thin-wrapper delegation of `play`, and group editing by handle.
 Rendering onto the server/NRT is a later phase.
 """
 
+import json
 import struct
 
 import pytest
@@ -416,17 +417,24 @@ def test_logical_member_must_be_a_generator():
 
 
 class _StubServer:
-    """Records the graphdef calls without any socket (no port clash)."""
+    """Records what a render sends, without any socket (no port clash)."""
+
+    #: no score interface, so a def send takes the RT path and waits on the
+    #: /done this stub answers with.
+    interface = None
 
     def __init__(self):
         self.sent = []
 
-    def add_graphdef(self, gdef):
-        self.sent.append(("d_graph", gdef.name))
+    def request(self, addr, *args, timeout=5.0, expect=()):
+        self.sent.append((addr, list(args)))
+        return ("/done", [addr])
 
-    def graph(self, defname, ports):
-        self.sent.append(("graph_new", defname, ports))
-        return "INSTANCE"
+    def send_msg(self, addr, *args):
+        self.sent.append((addr, list(args)))
+
+    def _node_id(self):
+        return 1000
 
 
 def test_render_routes_a_logical_group_to_graphdef():
@@ -434,5 +442,7 @@ def test_render_routes_a_logical_group_to_graphdef():
     g.add(Generator("gsrc", controls={"out": "mix"}))
     server = _StubServer()
     instance = g.render(server, ports={"gain": 0.5})
-    assert instance == "INSTANCE"
-    assert server.sent == [("d_graph", "chain"), ("graph_new", "chain", {"gain": 0.5})]
+    assert instance.id == 1000 and instance.server is server
+    sent_def, sent_new = server.sent
+    assert sent_def[0] == "/d_graph" and json.loads(sent_def[1][0])["name"] == "chain"
+    assert sent_new == ("/graph_new", ["chain", 1000, 1, 0, "gain", 0.5])

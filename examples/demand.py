@@ -217,7 +217,7 @@ def run_bench(path=None):
     server = Server(interface=OscNrtInterface())
     rows = bench_rows()
     for sdef, _ in rows:
-        server.add_synthdef(sdef)
+        sdef.send(server)
     clock = TempoClock(tempo=1.0)
     Pbind(instrument=Pseq([s.name for s, _ in rows]), dur=BENCH).play(clock, server)
     clock.render()
@@ -284,11 +284,11 @@ def check(name, values):
 def drift_check():
     server = Server(interface=OscNrtInterface())
     dur = 1.0 / 700.0
-    server.add_synthdef(SynthDef(
+    SynthDef(
         "drift",
         out(0.0, duty(dur, level=dseq([1.0, 2.0], repeats=0))),
         line(0.0, 1.0, 1.0, DoneAction.FREE_SELF),
-    ))
+    ).send(server)
     clock = TempoClock(tempo=1.0)
     Pbind(instrument=Pseq(["drift"]), dur=1.2).play(clock, server)
     clock.render()
@@ -314,7 +314,7 @@ def render_piece(path=None):
     server = Server(interface=OscNrtInterface())
     parts = [melody(), phrase(), stutter(), shuffle(), walk(), perc()]
     for sdef in parts:
-        server.add_synthdef(sdef)
+        sdef.send(server)
     clock = TempoClock(tempo=1.0)
     Pbind(instrument=Pseq([s.name for s in parts]), dur=SECTION).play(clock, server)
     clock.render()

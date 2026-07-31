@@ -3,7 +3,7 @@
 
 A command addressed to a **group** transfers the named parameters down its
 subtree to every synth that has a control with that name (recursing through
-subgroups, stopping at each synth). So one `server.set(group, {...})` reaches
+subgroups, stopping at each synth). So one `group.set({...})` reaches
 every voice in the group at once — the cheapest way to move a parameter across
 a bank of nodes without naming each one.
 
@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "pyt
 
 from clausters.base import OscNrtInterface, Routine, TempoClock
 from clausters.defs import Server
+from clausters.defs import Group, Synth
 
 SR = 48000.0
 FREQS = (220.0, 277.0, 330.0)  # an A-ish triad
@@ -32,13 +33,13 @@ FREQS = (220.0, 277.0, 330.0)  # an A-ish triad
 
 def play(server):
     # A group holding three voices, all starting silent (amp 0).
-    bank = server.group()
+    bank = Group.new(server=server)
     for freq in FREQS:
-        server.synth("default", {"freq": freq, "amp": 0.0}, target=bank.id)
+        Synth.new("default", {"freq": freq, "amp": 0.0}, target=bank.id, server=server)
 
     # One /n_set on the GROUP ramps every voice's amp at once (propagation):
     # no per-voice bookkeeping, the server fans it out to the subtree. Live you
-    # would write `server.set(bank, {"amp": amp})`; to *schedule* it on the
+    # would write `bank.set({"amp": amp})`; to *schedule* it on the
     # clock (here, an offline score) use `send_bundle`, which stamps each
     # message with the routine's logical beat.
     for amp in (0.06, 0.12, 0.18, 0.0):

@@ -152,7 +152,7 @@ def render_offline(path):
     fdef = build_def()
     server = Server(interface=OscNrtInterface())
     clock = TempoClock(tempo=TEMPO)
-    server.add_faustdef(fdef)             # NRT: scores /d_faust at time 0
+    fdef.send(server)             # NRT: scores /d_faust at time 0
     clock.play(Routine(lambda: voice(server)))
     clock.render()                       # drain the queue in beat order, no sleep
     stats = server.render(sample_rate=int(RENDER_SR), channels=2, path=path)
@@ -170,7 +170,7 @@ def run_live():
     fdef = build_def()
     server = Server(latency=LATENCY)                # 127.0.0.1:57110
     print("status:", server.status()[:5])
-    server.add_faustdef(fdef)                       # RT: blocks until /done compiles
+    fdef.send(server)                       # RT: blocks until /done compiles
     clock = TempoClock(tempo=TEMPO)
     clock.play(Routine(lambda: voice(server)))
     total_beats = len(CUTOFF_HZ) * STEP

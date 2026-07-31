@@ -96,7 +96,7 @@ def fade() -> SynthDef:
 def render(path=None):
     server = Server(interface=OscNrtInterface())
     for sdef in (zap(), sweep(), fade()):
-        server.add_synthdef(sdef)
+        sdef.send(server)
 
     clock = TempoClock(tempo=1.0)
     Pbind(instrument="zap", dur=Pseq([0.5, 0.5, 0.5, 1.5]), amp=0.2).play(clock, server)

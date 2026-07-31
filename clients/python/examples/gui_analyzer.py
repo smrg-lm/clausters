@@ -46,6 +46,7 @@ import time
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
 from clausters.gui import panel, phasescope, spectrum, window
+from clausters.defs import Synth
 
 # %% [markdown]
 # ## Launch the server and the GUI
@@ -75,8 +76,8 @@ def stereo_def(name: str = "stereo_image") -> SynthDef:
     return SynthDef(name, out(0.0, left * amp), out(1.0, right * amp))
 
 
-server.add_synthdef(stereo_def())
-synth = server.synth("stereo_image", {"freq": 220.0})
+stereo_def().send(server)
+synth = Synth.new("stereo_image", {"freq": 220.0}, server=server)
 
 # %% [markdown]
 # ## The two analysis views
@@ -114,7 +115,7 @@ def run(seconds: float) -> None:
         t = time.monotonic() - start
         theta = math.pi * (0.5 - 0.5 * math.cos(2 * math.pi * t / 6.0))
         freq = 220.0 * (2.0 ** (0.5 * math.sin(2 * math.pi * t / 11.0)))
-        server.set(synth, {"wm": math.cos(theta), "ws": math.sin(theta), "freq": freq})
+        synth.set({"wm": math.cos(theta), "ws": math.sin(theta), "freq": freq})
         deg = math.degrees(theta)
         now = ("mono" if deg < 30 else "anti-phase" if deg > 150
                else "wide" if 60 < deg < 120 else regime)

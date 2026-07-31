@@ -14,6 +14,7 @@ from clausters.defs import Server
 from clausters.defs.synthdef import SynthDef
 from clausters.defs.ugens import Env, control, in_ctl, out
 from clausters.seq.automation import Automation, _env_gen_args
+from clausters.defs import Synth
 
 
 def _embed_or_skip():
@@ -46,12 +47,12 @@ def test_automation_drives_control_bus_matches_curve():
     server = Server(interface=OscNrtInterface())
     clock = TempoClock(tempo=1.0)
     # Expose a control bus as audio on out 0, so the render captures the curve.
-    server.add_synthdef(SynthDef("readbus", out(0, in_ctl(control("bus", 0.0, "ir")))))
+    SynthDef("readbus", out(0, in_ctl(control("bus", 0.0, "ir")))).send(server)
 
     # Linear 0.2 -> 0.8 over 2 beats (= 2 s at tempo 1).
     auto = Automation.from_points([(0, 0.2, 1, 0.0), (2, 0.8, 1, 0.0)], target=None)
     auto.prepare(server)
-    server.synth("readbus", {"bus": auto.bus.index})
+    Synth.new("readbus", {"bus": auto.bus.index}, server=server)
 
     def routine():
         auto.play(server)

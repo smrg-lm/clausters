@@ -14,11 +14,11 @@
 // const src = g.add("gsrc", { out: mix, level: 1.0 });
 // g.add("gsink", { in: mix, out: "OUT" });           // `out` -> hardware
 // g.port("gain", [src.control("level")], 0.5);       // port -> the level
-// await server.addGraphDef(g);                       // /d_graph
+// await g.send(server);                       // /d_graph
 //
-// const inst = server.graph("chain", { gain: 0.8 }); // /graph_new
-// server.set(inst, { gain: 0.3 });                   // resolves on the surface
-// server.free(inst);                                 // group + private buses
+// const inst = Group.graph(server, "chain", { gain: 0.8 }); // /graph_new
+// inst.set({ gain: 0.3 });                   // resolves on the surface
+// inst.free();                                 // group + private buses
 // ```
 //
 // The reserved control name `"OUT"` wires a member's output to hardware bus
@@ -29,6 +29,9 @@
  * A reference to an internal GraphDef bus, returned by `GraphDef.bus`. Used
  * as a member control value (it serializes to the bus name).
  */
+import type { MsgArg } from "../base/osc.ts";
+import type { Server } from "./server.ts";
+
 export class GraphBusRef {
     readonly name: string;
 
@@ -218,6 +221,30 @@ export class GraphDef {
         if (Object.keys(this.surface_).length > 0) spec.surface = this.surface_;
         if (Object.keys(this.defaults_).length > 0) spec.defaults = this.defaults_;
         return spec;
+    }
+
+    /**
+     * Sends this def to the server via `/d_graph` and returns its name.
+     *
+     * Loading a GraphDef is cheap on the server (no JIT — it only validates and
+     * references the member defs), but it is still asynchronous, so the same
+     * barrier discipline applies.
+     *
+     * `wait: true` (the default) resolves on `/done` and rejects with
+     * `CommandError` on `/fail`; `wait: false` only sends, to be sequenced
+     * with the server's `sync` before anything relies on the def.
+     */
+    async send(
+        server: Server,
+        { wait = true, timeout = 10.0 }: { wait?: boolean; timeout?: number } = {},
+    ): Promise<string> {
+        const payload: MsgArg[] = [this.dumpDef()];
+        if (!wait) {
+            server.sendMsg("/d_graph", ...payload);
+            return this.name;
+        }
+        await server.command("/d_graph", payload, timeout);
+        return this.name;
     }
 
     /**

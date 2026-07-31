@@ -64,8 +64,7 @@ export interface EventProps {
  */
 export interface EventDestination {
     playEvent(event: Event): number | null;
-    free(...nodes: number[]): void;
-    set(node: number, controls: Record<string, number>): void;
+    sendMsg(addr: string, ...args: OscArg[]): void;
 }
 
 /**
@@ -216,7 +215,9 @@ export class Event {
     free(): void {
         const node = this.props.node;
         const server = this.props.server as EventDestination | undefined;
-        if (typeof node === "number" && server) server.free(node);
+        if (typeof node === "number" && server) {
+            server.sendMsg("/n_free", ["i", node]);
+        }
     }
 
     /**
@@ -227,8 +228,11 @@ export class Event {
         const node = this.props.node;
         const server = this.props.server as EventDestination | undefined;
         if (typeof node !== "number" || !server) return;
-        if (this.releasesByGate()) server.set(node, { gate: 0 });
-        else server.free(node);
+        if (this.releasesByGate()) {
+            server.sendMsg("/n_set", ["i", node], ["s", "gate"], ["f", 0]);
+        } else {
+            server.sendMsg("/n_free", ["i", node]);
+        }
     }
 }
 

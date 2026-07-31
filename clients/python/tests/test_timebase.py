@@ -18,6 +18,7 @@ from clausters.base import _osclib as osc
 from clausters.base.main import main
 from clausters.defs import Server
 from clausters.seq import Pbind, Pseq
+from clausters.defs import Synth
 
 
 def _ffi_or_skip():
@@ -202,9 +203,9 @@ def test_nrt_immediate_sends_land_at_the_start_of_the_score():
     clock = TempoClock(tempo=1.0)
 
     def routine():
-        server.synth("default", {"freq": 100.0})
+        Synth.new("default", {"freq": 100.0}, server=server)
         yield 0.5
-        server.synth("default", {"freq": 200.0})
+        Synth.new("default", {"freq": 200.0}, server=server)
         yield 1.0
 
     clock.play(Routine(routine))

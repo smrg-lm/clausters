@@ -74,10 +74,10 @@ fdef = FaustDef.from_signals("sine", S.sin(phasor * 6.2831853) * 0.2, ...)  # >1
 thread). The client mirrors scsynth:
 
 ```python
-srv.add_faustdef(fdef)                 # RT: BLOCKS until /done (or raises CommandError/ReplyTimeout)
-srv.add_faustdef(fdef, wait=False)     # fire-and-forget (does not block)
-srv.sync()                             # barrier: /sync->/synced, waits for ALL earlier async work
-srv.add_synthdef(sdef, wait=...)       # same shape for UGen defs
+fdef.send(srv)                   # RT: BLOCKS until /done (or raises CommandError/ReplyTimeout)
+fdef.send(srv, wait=False)       # fire-and-forget (does not block)
+srv.sync()                       # barrier: /sync->/synced, waits for ALL earlier async work
+sdef.send(srv, wait=...)         # same shape for UGen defs
 ```
 
 - `wait=True` (default) blocks on `/done`; `wait=False` only sends — then call
@@ -154,10 +154,15 @@ convert. Driving:
 
 ## Resources, control, errors
 
-- Allocators on `Server`: `nodes`, `audio_buses`, `control_buses`, `buffers`.
-- `srv.synth(name, {ctl: val}, target=0)`, `srv.set(node, {...})`,
-  `srv.map(node, ctl, bus, audio=False)`, `srv.free(*nodes)`,
-  `srv.alloc_buffer(frames, channels)`.
+- The id pools live on `Server`: `nodes`, `audio_buses`, `control_buses`,
+  `buffers`. Everything addressed to a resource is that resource's own method,
+  and `server=` defaults to the ambient one:
+  `Synth.new(name, {ctl: val}, target=0, server=srv)`, `node.set({...})`,
+  `node.map(ctl, bus, audio=False)`, `node.free()`,
+  `Group.new(server=srv)` / `Group.graph(name, ports, server=srv)`,
+  `Bus.control(server=srv)` and `bus.set(v)` / `bus.get()` / `bus.watch()`,
+  `Buffer.alloc(frames, channels, server=srv)` and `buf.gen(...)` /
+  `buf.query()` / `buf.get_samples()` / `buf.free()`.
 - Errors: `clausters.errors` hierarchy (all subclass `ClaustersError` *and* the
   matching builtin). Notably `LibraryFeatureError` = the cdylib was built
   without a feature; `CommandError` = a `/fail` reply; `ReplyTimeout`.

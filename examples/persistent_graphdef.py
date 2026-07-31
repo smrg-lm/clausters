@@ -56,6 +56,8 @@ from clausters.defs import (
     signals as S,
 )
 from clausters.errors import CommandError
+from clausters.defs import Group
+from clausters.defs import Buffer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.join(HERE, "..")
@@ -184,13 +186,13 @@ def patch_graphdef(bufnum: int) -> GraphDef:
 
 def play_instance(server: Server):
     """Instantiate the stored GraphDef and drive it through its surface."""
-    inst = server.graph("patch", {"freq": 220.0, "rate": 1.0})
+    inst = Group.graph("patch", {"freq": 220.0, "rate": 1.0}, server=server)
     print("  instance playing; driving the surface ports")
     for freq, rate in ((220.0, 1.0), (330.0, 0.75), (247.0, 1.5)):
-        server.set(inst, {"freq": freq, "rate": rate})
+        inst.set({"freq": freq, "rate": rate})
         print(f"    freq -> {freq:6.1f} Hz | rate -> {rate}")
         time.sleep(0.6)
-    server.free(inst)                                # frees the group + private buses
+    inst.free()                          # frees the group + private buses
 
 
 # --------------------------------------------------------------------------
@@ -205,13 +207,13 @@ def phase_create(data_dir: str):
     server = connect()
     try:
         fsine, bufplayer, mixer = member_defs()
-        server.add_faustdef(fsine)               # -> faustdefs/fsine.json (+ bitcode)
-        server.add_synthdef(bufplayer)           # -> synthdefs/bufplayer.json
-        server.add_synthdef(mixer)               # -> synthdefs/mixer.json
+        fsine.send(server)               # -> faustdefs/fsine.json (+ bitcode)
+        bufplayer.send(server)           # -> synthdefs/bufplayer.json
+        mixer.send(server)               # -> synthdefs/mixer.json
         buf = load_pluck(server, os.path.join(data_dir, "pluck.wav"))
-        server.add_graphdef(patch_graphdef(buf.bufnum))   # -> graphdefs/patch.json
+        patch_graphdef(buf.bufnum).send(server)   # -> graphdefs/patch.json
         play_instance(server)
-        server.free_buffer(buf)
+        buf.free()
     finally:
         shutdown(server, proc)
 

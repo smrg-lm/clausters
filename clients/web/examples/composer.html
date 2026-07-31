@@ -55,7 +55,7 @@ process, no socket.</div>
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine,
-        Server, GuiHost, guiHost, gui,
+        Server, Buffer, GuiHost, guiHost, gui,
       } from "../dist/index.js";
 
       const el = (id) => document.getElementById(id);
@@ -149,11 +149,11 @@ process, no socket.</div>
         // The take: the *server* fills a buffer (`/b_gen sine1`, a few
         // partials), so the lane has a real body to decimate — a clip's take
         // is reached exactly as the heavy waveform's samples are.
-        const take = await server.allocBuffer(Math.round(beats(2.0)), 1);
-        await server.genBuffer(take, "sine1", [["i", 7], 1.0, 0.5, 0.25, 0.12]);
+        const take = await Buffer.alloc(server, Math.round(beats(2.0)), 1);
+        await take.gen("sine1", [["i", 7], 1.0, 0.5, 0.25, 0.12]);
         await server.sync();
 
-        // `allocBuffer` hands back a Buffer handle; the clip prop is the
+        // `Buffer.alloc` hands back a Buffer handle; the clip prop is the
         // **number** the host fetches by.
         win = host.open(scene(take.bufnum));
         unfit?.();

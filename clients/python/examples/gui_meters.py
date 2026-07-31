@@ -39,6 +39,7 @@ import time
 import wave
 
 from clausters import Session
+from clausters.defs import Bus
 from clausters.gui import meter, panel, scope, waveform, window
 
 # %% [markdown]
@@ -78,7 +79,7 @@ wav = write_sine_wav()
 bufnum = server.buffers.alloc()
 server.send_msg("/b_allocRead", bufnum, wav)
 server.sync()
-bus = server.control_bus()
+bus = Bus.control(server=server)
 
 # %% [markdown]
 # ## The window
@@ -113,7 +114,7 @@ def run(seconds: float) -> None:
     """Animates the control bus for ``seconds``."""
     start = time.monotonic()
     while time.monotonic() - start < seconds and not _closed:
-        server.set_bus(bus, math.sin(2 * math.pi * 0.5 * (time.monotonic() - start)))
+        bus.set(math.sin(2 * math.pi * 0.5 * (time.monotonic() - start)))
         gui.pump(timeout=0.03)
 
 

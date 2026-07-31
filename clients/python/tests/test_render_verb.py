@@ -11,6 +11,7 @@ import pytest
 from clausters import Event, render
 from clausters.seq.pattern import Pbind, Pseq, Pwhite
 from clausters.seq.timeline import Timeline
+from clausters.defs import Synth
 
 SR = 48_000.0
 
@@ -184,8 +185,8 @@ def test_the_file_path_reports_its_seed_too(tmp_path):
 
     def score(seed):
         s = Session.nrt(tempo=1.0)
-        s.server.add_def(_noisy())
-        node = s.server.synth("noisy")
+        _noisy().send(s.server)
+        node = Synth.new("noisy", server=s.server)
         s.server.send_bundle_after(0.05, ("/n_free", node.id))
         return s.render(sample_rate=SR, channels=1, path=tmp_path / f"{seed}.wav",
                         seed=seed)

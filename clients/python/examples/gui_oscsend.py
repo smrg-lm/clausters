@@ -48,6 +48,7 @@ import time
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
 from clausters.gui import label, text, window
+from clausters.defs import Synth
 
 # %% [markdown]
 # ## Launch the server and the GUI
@@ -90,8 +91,8 @@ def beep() -> SynthDef:
     return SynthDef("gui_oscsend_beep", out(0.0, sig), out(1.0, sig))
 
 
-server.add_synthdef(beep())          # blocks until /done
-synth = server.synth("gui_oscsend_beep", {"freq": 220.0})
+beep().send(server)          # blocks until /done
+synth = Synth.new("gui_oscsend_beep", {"freq": 220.0}, server=server)
 
 # %% [markdown]
 # ## Open the window
@@ -158,7 +159,7 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
         run(120.0)
     finally:
-        server.free(synth)
+        synth.free()
         session.close()
     sys.exit(0)
 else:

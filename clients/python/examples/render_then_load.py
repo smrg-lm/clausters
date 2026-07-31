@@ -40,6 +40,8 @@ from clausters.defs import SynthDef, control, out
 from clausters.defs.ugens import play_buf
 from clausters.render import channels, read_soundfile
 from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.defs import Synth
+from clausters.defs import Buffer
 
 SR = 48_000.0
 
@@ -91,16 +93,16 @@ def main():
 
     # ---- 3. load it into a running server and play it ---------------------
     with Session.live(tempo=2.0, latency=0.15) as live:
-        buf = live.server.read_buffer(wav)          # /b_allocRead, by content
-        info = live.server.query_buffer(buf.bufnum)
+        buf = Buffer.read(wav, server=live.server)          # /b_allocRead, by content
+        info = buf.query()
         print(f"\nbuffer {buf.bufnum} on the server: {info.frames} frames, "
               f"{info.channels} ch, {info.sample_rate:.0f} Hz")
 
-        live.server.add_synthdef(sampler())
-        node = live.server.synth("take", {"bufnum": float(buf.bufnum)})
+        sampler().send(live.server)
+        node = Synth.new("take", {"bufnum": float(buf.bufnum)}, server=live.server)
         print("playing the take back from the buffer...")
         live.run(stats.duration + 0.5)
-        live.server.free(node.id)
+        node.id.free()
 
     print("\ndone - the bounce, the file and the playback were one artifact.")
 

@@ -32,6 +32,7 @@ import sys
 from clausters import Session
 from clausters.base import Routine
 from clausters.defs import (
+    Synth,
     SynthDef,
     control,
     fft,
@@ -71,10 +72,10 @@ def main():
     out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "spectral_cross.wav")
 
     session = Session.nrt(tempo=2.0)
-    session.server.add_synthdef(cross())
+    cross().send(session.server)
 
     def sequence():
-        voice = session.server.synth("cross")
+        voice = Synth.new("cross", server=session.server)
         # A little melody in the modulator: the noise follows it.
         for midi, dur in [(57, 2.0), (60, 2.0), (64, 2.0), (62, 2.0)]:
             freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)

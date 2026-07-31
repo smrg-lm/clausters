@@ -79,7 +79,7 @@ A routine that raises is dropped the same way, with its traceback on stderr: it 
 
 ### The one rule
 
-**A routine must never block the clock thread.** It runs *on* that thread, so a `time.sleep`, a blocking `server.sync()`, or any `wait=True` def send freezes every other routine and the whole timeline. Cede time with `yield` instead. To load a def from within a routine, send it asynchronously — `server.add_synthdef(sdef, wait=False)` — and `yield` enough time before the first note that uses it.
+**A routine must never block the clock thread.** It runs *on* that thread, so a `time.sleep`, a blocking `server.sync()`, or any `wait=True` def send freezes every other routine and the whole timeline. Cede time with `yield` instead. To load a def from within a routine, send it asynchronously — `sdef.send(server, wait=False)` — and `yield` enough time before the first note that uses it.
 
 ## The random context: one seed per session
 
@@ -123,7 +123,7 @@ with Session.nrt(tempo=2.0) as session:
 
 Everything here works unchanged offline. Build the `Server` with an `OscNrtInterface`, drive the clock with `clock.render()` instead of `run()`, and the routine's `play` calls accumulate a timed score the bundled renderer turns into samples — no server, no audio device. That swap is the client's central seam, covered in [Sessions](sessions.md) and [The client, layer by layer](guide.md).
 
-Because it is the same interface, one distinction matters as much offline as live: **a message has no time; a bundle does.** In a bundle a message would carry the *immediate* timetag, and on its own it means exactly that — so `server.synth(…)`, `server.set(…)`, `server.free(…)` are untimed wherever you call them. Reach for them for what has no place in a timeline: sending defs, allocating buffers, opening the groups a piece is built on.
+Because it is the same interface, one distinction matters as much offline as live: **a message has no time; a bundle does.** In a bundle a message would carry the *immediate* timetag, and on its own it means exactly that — so `Synth.new(…)`, `node.set(…)`, `node.free()` are untimed wherever you call them. Reach for them for what has no place in a timeline: sending defs, allocating buffers, opening the groups a piece is built on.
 
 Placing something *in time* is the other path: **`send_bundle`** stamps the beat the routine has accumulated by yielding (plus an optional `delay_beats=` lookahead), and an `Event` — so every **pattern** — does it for you. Creating a node with `send_msg` from inside a routine is therefore an error, not a thing that renders differently: live you cannot see it, because "immediately" and the logical beat are close enough to pass; offline it is the difference between a piece and a chord.
 

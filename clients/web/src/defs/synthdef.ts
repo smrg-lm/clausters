@@ -10,7 +10,7 @@
 // const amp = control("amp", 0.2);
 // const sig = sine(freq).mul(amp);
 // const def = new SynthDef("beep", out(0.0, sig), out(1.0, sig));  // stereo
-// await server.addSynthDef(def);                                   // /d_recv
+// await def.send(server);                                   // /d_recv
 // ```
 //
 // **Instance-based build (no globals).** The walk is a plain post-order
@@ -21,6 +21,8 @@
 // first-seen order; reusing the same name with a different default is an
 // error.
 
+import type { MsgArg } from "../base/osc.ts";
+import type { Server } from "./server.ts";
 import { ChannelList, Control, Ugen } from "./ugens.ts";
 import type { Channel } from "./ugens.ts";
 
@@ -167,6 +169,26 @@ export class SynthDef {
             controls: controls.map(serControl),
             ugens: ordered.map(serUgen),
         };
+    }
+
+    /**
+     * Sends this def to the server via `/d_recv` and returns its name.
+     *
+     * `wait: true` (the default) resolves on `/done` and rejects with
+     * `CommandError` on `/fail`; `wait: false` only sends, to be sequenced
+     * with the server's `sync` before anything relies on the def.
+     */
+    async send(
+        server: Server,
+        { wait = true, timeout = 10.0 }: { wait?: boolean; timeout?: number } = {},
+    ): Promise<string> {
+        const payload: MsgArg[] = [this.dumpDef()];
+        if (!wait) {
+            server.sendMsg("/d_recv", ...payload);
+            return this.name;
+        }
+        await server.command("/d_recv", payload, timeout);
+        return this.name;
     }
 
     /**

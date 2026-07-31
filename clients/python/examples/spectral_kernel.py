@@ -35,6 +35,7 @@ from clausters import Session
 from clausters.base import Routine
 from clausters.defs import SynthDef, control, fft, ifft, out, pv_kernel, white_noise
 from clausters.defs.pv_expr import bin_index, mag, nbins, param
+from clausters.defs import Synth
 
 SR = 48000.0
 
@@ -76,11 +77,11 @@ def main():
                     "spectral_kernel.wav")
 
     session = Session.nrt(tempo=1.0)
-    session.server.add_synthdef(raw())
-    session.server.add_synthdef(tilted_gate())
+    raw().send(session.server)
+    tilted_gate().send(session.server)
 
-    reference = session.server.synth("raw")
-    gated = session.server.synth("tiltgate")
+    reference = Synth.new("raw", server=session.server)
+    gated = Synth.new("tiltgate", server=session.server)
 
     def stop():
         yield 2.0

@@ -32,6 +32,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.defs import Server, ServerOptions, SynthDef, control, out, sine
+from clausters.defs import Buffer
 
 REPO = os.path.join(os.path.dirname(__file__), "..")
 BIN = os.environ.get("CLAUSTERS_BIN", os.path.join(REPO, "target", "release", "clausters"))
@@ -63,11 +64,11 @@ def main():
     try:
         # Put something in the store and the buffer pool, so the queries have
         # more than the built-ins to report.
-        server.add_synthdef(SynthDef(
+        SynthDef(
             "beep",
             out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)),
-        ))
-        buf = server.alloc_buffer(1024, channels=1)
+        ).send(server)
+        buf = Buffer.alloc(1024, channels=1, server=server)
 
         print("query_defs() — what the server holds, with each control surface:")
         for d in server.query_defs():
@@ -99,7 +100,7 @@ def main():
         print("\n  (a variadic kind names only its fixed head — EnvGen's five "
               "come before the envelope array)")
 
-        server.free_buffer(buf)
+        buf.free()
     finally:
         server.close()
         proc.terminate()

@@ -57,9 +57,10 @@ import time
 
 from clausters import Session
 from clausters.render import read_soundfile
-from clausters.defs import SynthDef, out, play_buf
+from clausters.defs import Buffer, SynthDef, out, play_buf
 from clausters.gui import peaks_cache_file, samples_to_file, spectrogram, waveform, window
 from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.defs import Buffer, Synth
 
 SR = 48_000.0
 
@@ -126,11 +127,11 @@ print(f"audio server on segment {server.shm}")
 # WAV through the same decoder read_soundfile used above.
 bufnum = server.buffers.alloc()
 server.send_msg("/b_allocRead", bufnum, wav_path)
-server.add_synthdef(SynthDef(
+SynthDef(
     "sampler",
     out(0.0, play_buf(float(bufnum), 0.0)),
     out(1.0, play_buf(float(bufnum), 1.0)),
-))
+).send(server)
 server.sync()
 
 # %% [markdown]
@@ -171,10 +172,10 @@ def play_pass():
     buffer position 0 starts sounding."""
     global _synth
     if _synth is not None:
-        server.free(_synth)
+        _synth.free()
     _, args = server.request("/clock", expect=("/clock.reply",))
     clock_samples = float(args[0])
-    _synth = server.synth("sampler")
+    _synth = Synth.new("sampler", server=server)
     win["wave"].set(playhead_at=clock_samples)
     win["spect"].set(playhead_at=clock_samples)
 
@@ -214,7 +215,7 @@ win["wave"].set(sel_start=0.0, sel_len=float(frames))  # select the whole phrase
 # %%
 def teardown():
     gui.close(win)
-    server.free_buffer(bufnum)
+    Buffer(bufnum, server=server).free()
     session.close()
     for name in os.listdir(_tmp):
         os.remove(os.path.join(_tmp, name))

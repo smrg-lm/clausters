@@ -31,6 +31,7 @@ from clausters.seq.automation import Automation
 from clausters.seq.timeline import Timeline
 
 from clausters import Server
+from clausters.defs import Buffer
 
 server = Server.boot()
 
@@ -118,7 +119,7 @@ render(Pbind(instrument="default", degree=Pseq([0, 4, 7, 12]), dur=0.25),
 # %% ...and the circle closes: the rendered file, loaded as a buffer and
 # played through the stock playbuf instrument (freed when the take ends).
 print("playing the rendered take back as a buffer")
-take = server.read_buffer(wav)
+take = Buffer.read(wav, server=server)
 play(take, controls={"amp": 0.8})
 time.sleep(2.0)
 

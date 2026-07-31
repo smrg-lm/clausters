@@ -9,7 +9,6 @@
 export { Server } from "./server.ts";
 export type {
     ControlInfo,
-    Controls,
     DefInfo,
     MsgArg,
     NodeInfo,
@@ -28,7 +27,7 @@ export {
 } from "./server.ts";
 
 export { AddAction, Group, Node, NodeIdAllocator, ROOT_NODE_ID, Synth } from "./node.ts";
-export type { NodeLike } from "./node.ts";
+export type { Controls, NodeLike, Placement } from "./node.ts";
 
 export { AudioBusAllocator, Bus, ControlBusAllocator } from "./bus.ts";
 export type { BusLike, BusRate } from "./bus.ts";

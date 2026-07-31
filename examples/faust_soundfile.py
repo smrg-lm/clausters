@@ -50,6 +50,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "pyt
 from clausters.defs import FaustDef, Server, ServerOptions
 from clausters.defs.buffer import Buffer
 from clausters.errors import CommandError
+from clausters.defs import Synth
 
 REPO = os.path.join(os.path.dirname(__file__), "..")
 BIN = os.environ.get("CLAUSTERS_BIN", os.path.join(REPO, "target", "release", "clausters"))
@@ -103,9 +104,9 @@ def write_motif_wav(path: str, sr: float, freqs, note_dur: float = 0.18) -> int:
 
 
 def _alloc_read(server: Server, bufnum: int, path: str):
-    """``/b_allocRead`` for a known index, blocking on ``/done``. (The high-level
-    :meth:`Server.alloc_buffer` only does the empty ``/b_alloc``; loading a file
-    is ``/b_allocRead`` over :meth:`Server.request`.)"""
+    """``/b_allocRead`` for a known index, blocking on ``/done``. (This example
+    reloads the *same* index mid-play, which no constructor does: `Buffer.read`
+    allocates a fresh one, so the reload goes over ``Server.request``.)"""
     addr, args = server.request("/b_allocRead", bufnum, path,
                                 timeout=5.0, expect=("/done", "/fail"))
     if addr == "/fail":
@@ -120,7 +121,7 @@ def load_buffer(server: Server, path: str, frames: int) -> Buffer:
     except CommandError:
         server.buffers.free(bufnum)
         raise
-    return Buffer(bufnum, frames, 1)
+    return Buffer(bufnum, frames, 1, server=server)
 
 
 # --------------------------------------------------------------------------
@@ -172,14 +173,15 @@ def run(server: Server, sr: float):
         # The def's soundfile label is the buffer we just allocated. Async send;
         # wait=True (default) blocks on /done (the Faust JIT compile).
         player = soundfile_player("sfplay", buf.bufnum)
-        server.add_faustdef(player)
+        player.send(server)
 
         # Voice 1 reads the ascending motif (snapshot taken now, at /s_new) and
         # loops it. Routed to "out" 0 -> hardware outputs 0/1.
-        voice1 = server.synth("sfplay", {"out": 0.0, "gain": 0.35, "speed": 1.0})
+        voice1 = Synth.new("sfplay", {"out": 0.0, "gain": 0.35, "speed": 1.0},
+                           server=server)
         print("voice 1: looping the ascending motif; sweeping speed")
         for speed in (1.0, 1.5, 0.75, 1.25):
-            server.set(voice1, {"speed": speed})
+            voice1.set({"speed": speed})
             print(f"  speed -> {speed}")
             time.sleep(0.6)
 
@@ -188,12 +190,14 @@ def run(server: Server, sr: float):
         # sees the new contents.
         _alloc_read(server, buf.bufnum, wav_down)
         print("reloaded buffer with the descending motif (voice 1 keeps the old one)")
-        voice2 = server.synth("sfplay", {"out": 0.0, "gain": 0.3, "speed": 1.0})
+        voice2 = Synth.new("sfplay", {"out": 0.0, "gain": 0.3, "speed": 1.0},
+                           server=server)
         print("voice 2: reads the new (descending) motif -- both voices play together")
         time.sleep(1.8)
 
-        server.free(voice1, voice2)
-        server.free_buffer(buf)
+        voice1.free()
+        voice2.free()
+        buf.free()
         print("freed both voices and the buffer")
 
 

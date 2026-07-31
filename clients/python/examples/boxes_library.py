@@ -28,6 +28,7 @@ from clausters import Session
 from clausters.base import Routine
 from clausters.defs import FaustDef
 from clausters.defs import boxes as box
+from clausters.defs import Synth
 
 SR = 48000.0
 
@@ -65,8 +66,8 @@ def main():
     out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "boxes_library.wav")
 
     session = Session.nrt(tempo=2.0)
-    session.server.add_faustdef(soft_voice())   # NRT: scored at time 0
-    voice = session.server.synth("soft_voice", {"freq": 220.0, "amp": 0.25})
+    soft_voice().send(session.server)   # NRT: scored at time 0
+    voice = Synth.new("soft_voice", {"freq": 220.0, "amp": 0.25}, server=session.server)
 
     def sequence():
         # The fragment sliders are ordinary controls: /n_set by label.

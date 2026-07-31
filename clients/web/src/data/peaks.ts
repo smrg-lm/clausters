@@ -28,7 +28,7 @@ export interface Columns {
  * A built peak pyramid over one interleaved sample buffer.
  *
  * ```ts
- * const samples = await server.getSamples(buffer);
+ * const samples = await buffer.getSamples();
  * const peaks = Peaks.build(samples, { channels: buffer.channels });
  * const { min, max } = peaks.columns(0, { width: canvas.width });
  * ```

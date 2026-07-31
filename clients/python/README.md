@@ -42,11 +42,11 @@ server = session.server
 
 # an instrument: a def the server compiles once and instantiates many times
 sdef = SynthDef("beep", out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)))
-server.add_synthdef(sdef)                      # /d_recv, waits for the server's /done
+sdef.send(server)                      # /d_recv, waits for the server's /done
 
-node = server.synth("beep", {"freq": 330.0})   # you hear it now
-server.set(node, {"freq": 550.0})              # change it while it sounds
-server.free(node)                              # silence
+node = Synth.new("beep", {"freq": 330.0}, server=server)   # you hear it now
+node.set({"freq": 550.0})              # change it while it sounds
+node.free()                              # silence
 ```
 
 The other def format is a peer, not a fallback — the same voice as a `FaustDef`,
@@ -57,13 +57,13 @@ from clausters.defs import signals as S, boxes as box, FaustDef
 
 freq = S.hslider("freq", 440.0, 20.0, 20000.0, 0.01)
 phase = S.rec(lambda p: (p + freq / S.sr()) % 1.0)         # one-sample feedback phasor
-server.add_faustdef(FaustDef.from_signals("fbeep", S.sin(phase * S.TAU) * 0.2))
+FaustDef.from_signals("fbeep", S.sin(phase * S.TAU) * 0.2).send(server)
 
 # or point-free with the box API, borrowing the oscillator from Faust's library:
-server.add_faustdef(FaustDef.from_box(
-    "bbeep", box.faust("os.osc")(box.hslider("freq", 440.0, 20.0, 20000.0, 0.01)) * 0.2))
+FaustDef.from_box(
+    "bbeep", box.faust("os.osc")(box.hslider("freq", 440.0, 20.0, 20000.0, 0.01)) * 0.2).send(server)
 
-server.synth("bbeep", {"freq": 220.0})
+Synth.new("bbeep", {"freq": 220.0}, server=server)
 ```
 
 Or hand a **pattern** to the session; its clock runs in its own thread, so the

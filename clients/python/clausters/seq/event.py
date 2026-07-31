@@ -17,6 +17,7 @@ global ``has_gate`` default left False.
 
 from .. import _native
 from ..base.builtins import cpsmidi, midicps
+from ..defs.node import Node
 
 #: Keys that drive timing/structure and are never sent as synth controls.
 #: ``node`` and ``server`` are the play-completed keys (see `Event.play`).
@@ -166,7 +167,7 @@ class Event(dict):
         already scheduled at play time still arrives and is harmless."""
         node, server = self.get("node"), self.get("server")
         if node is not None and server is not None:
-            server.free(node)
+            Node(node, server).free()
 
     def release(self):
         """End the played note **musically**, now: the event's own release
@@ -177,9 +178,9 @@ class Event(dict):
         if node is None or server is None:
             return
         if self.get("has_gate") or self["instrument"] == "default":
-            server.set(node, {"gate": 0.0})
+            Node(node, server).set({"gate": 0.0})
         else:
-            server.free(node)
+            Node(node, server).free()
 
 
 def rest(dur: float = 1.0) -> Event:

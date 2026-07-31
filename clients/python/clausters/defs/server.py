@@ -31,21 +31,8 @@ from .bus import (
     Bus,
     ControlBusAllocator,
 )
-from .buffer import Buffer, BufferAllocator
-from .faustdef import FaustDef
-from .node import AddAction, Group, NodeIdAllocator, ROOT_NODE_ID, Synth
-
-
-def _flatten_controls(controls) -> list:
-    """Accepts a dict or a list of (name, value) pairs (so the reserved
-    ``in``/``out`` controls, which are Python keywords, are expressible)."""
-    if controls is None:
-        return []
-    items = controls.items() if isinstance(controls, dict) else controls
-    flat = []
-    for name, value in items:
-        flat += [name, value]
-    return flat
+from .buffer import BufferAllocator
+from .node import NodeIdAllocator, ROOT_NODE_ID
 
 
 def _control_key(key):
@@ -318,7 +305,7 @@ class ServerInfo:
     tap_frames: int = 0
     #: The stream-transport frame ceiling in bytes (``--max-frame``): the
     #: largest OSC frame a TCP/WebSocket client may send or receive, what
-    #: bulk requests (`Server.get_samples` chunks) are sized from. Falls back
+    #: bulk requests (`clausters.defs.Buffer.get_samples` chunks) are sized from. Falls back
     #: to the UDP datagram cap against a server too old to report it.
     max_frame: int = 65536
 
@@ -853,88 +840,12 @@ class Server:
 
     # ---- definitions ----
 
-    def add_def(self, d, *, wait: bool = True, timeout: float = 10.0) -> str:
-        """Sends a def of any family — dispatches to `add_synthdef`,
-        `add_faustdef` or `add_graphdef` by the def's type. Same semantics:
-        ``wait=True`` (default) blocks in RT until ``/done``/``/fail``;
-        in NRT the send is scored at time 0."""
-        from .graphdef import GraphDef
-
-        if isinstance(d, GraphDef):
-            return self.add_graphdef(d, wait=wait, timeout=timeout)
-        if isinstance(d, FaustDef):
-            return self.add_faustdef(d, wait=wait, timeout=timeout)
-        return self.add_synthdef(d, wait=wait, timeout=timeout)
-
-    def add_faustdef(self, fdef: FaustDef, *, wait: bool = True,
-                     timeout: float = 10.0) -> str:
-        """Sends a `FaustDef` via ``/d_faust``.
-
-        ``/d_faust`` JIT-compiles **asynchronously** on the server's network
-        thread (answered later by ``/done``/``/fail``). In RT, ``wait=True``
-        (the default) blocks until that reply -- raising `CommandError`
-        on ``/fail`` or `ReplyTimeout` if it never lands; ``wait=False``
-        returns immediately (fire-and-forget), so use `sync` as a barrier
-        before relying on the def (e.g. ``yield`` it from a routine, never block
-        in one). In NRT it always *scores* ``/d_faust`` at time 0 -- the
-        renderer compiles it before time advances -- so ``wait`` does not
-        apply."""
-        if getattr(self.interface, "time_mode", "unix") == "score":
-            self.send_msg("/d_faust", fdef.name, fdef.dump_def())
-            return fdef.name
-        if not wait:
-            self.send_msg("/d_faust", fdef.name, fdef.dump_def())
-            return fdef.name
-        addr, args = self.request(
-            "/d_faust", fdef.name, fdef.dump_def(), timeout=timeout, expect=("/done", "/fail")
-        )
-        if addr == "/fail":
-            raise CommandError(f"/d_faust {fdef.name!r} failed: {args}")
-        return fdef.name
-
-    def add_synthdef(self, sdef, *, wait: bool = True, timeout: float = 10.0) -> str:
-        """Sends a UGen `SynthDef` via
-        ``/d_recv``. Like `add_faustdef`: ``wait=True`` (default) blocks
-        in RT until ``/done``/``/fail``; ``wait=False`` is fire-and-forget
-        (pair with `sync`). In NRT it scores ``/d_recv`` at time 0 so the
-        renderer compiles it before time advances."""
-        payload = sdef.dump_def()
-        if getattr(self.interface, "time_mode", "unix") == "score":
-            self.send_msg("/d_recv", payload)
-            return sdef.name
-        if not wait:
-            self.send_msg("/d_recv", payload)
-            return sdef.name
-        addr, args = self.request(
-            "/d_recv", payload, timeout=timeout, expect=("/done", "/fail")
-        )
-        if addr == "/fail":
-            raise CommandError(f"/d_recv {sdef.name!r} failed: {args}")
-        return sdef.name
-
-    def add_graphdef(self, gdef, *, wait: bool = True, timeout: float = 10.0) -> str:
-        """Sends a `GraphDef` via ``/d_graph``.
-        Like `add_synthdef`/`add_faustdef`: ``wait=True``
-        (default) blocks in RT until ``/done``/``/fail``; ``wait=False`` is
-        fire-and-forget (pair with `sync`). In NRT it scores ``/d_graph``
-        at time 0. Loading a GraphDef is cheap on the server (no JIT — it only
-        validates and references the member defs), but it is still asynchronous,
-        so the same barrier discipline applies."""
-        payload = gdef.dump_def()
-        if getattr(self.interface, "time_mode", "unix") == "score":
-            self.send_msg("/d_graph", payload)
-            return gdef.name
-        if not wait:
-            self.send_msg("/d_graph", payload)
-            return gdef.name
-        addr, args = self.request(
-            "/d_graph", payload, timeout=timeout, expect=("/done", "/fail")
-        )
-        if addr == "/fail":
-            raise CommandError(f"/d_graph {gdef.name!r} failed: {args}")
-        return gdef.name
-
     def free_def(self, *names: str):
+        """Removes defs from the server's def table by name (``/d_free``).
+
+        A def is not freed by itself: in use it is *overwritten* by sending
+        another under the same name. This is the table's own command, for
+        reclaiming what a session no longer names."""
         self.send_msg("/d_free", *names)
 
     # ---- nodes ----
@@ -974,102 +885,7 @@ class Server:
         recv.send(self.target, "/notify", 1)
         self._recycler = recv
 
-    def synth(self, defname, controls=None, *, target=ROOT_NODE_ID,
-              action=AddAction.TAIL) -> Synth:
-        node_id = self._node_id()
-        self.send_msg("/s_new", defname, node_id, int(action), int(target),
-                      *_flatten_controls(controls))
-        return Synth(node_id, defname, self)
-
-    def group(self, *, target=ROOT_NODE_ID, action=AddAction.TAIL) -> Group:
-        node_id = self._node_id()
-        self.send_msg("/g_new", node_id, int(action), int(target))
-        return Group(node_id, server=self)
-
-    def graph(self, defname, ports=None, *, target=ROOT_NODE_ID,
-              action=AddAction.TAIL) -> Group:
-        """Instantiates a GraphDef (``/graph_new``) as a wired group, with
-        ``ports`` (a ``{name: value}`` dict) overriding the def defaults. The
-        returned `Group` is the instance: drive it
-        through the surface with `set` (``/n_set`` resolves names against
-        the surface, not the private members) and tear it down with
-        `free` (which also reclaims its private buses)."""
-        node_id = self._node_id()
-        self.send_msg("/graph_new", defname, node_id, int(action), int(target),
-                      *_flatten_controls(ports))
-        return Group(node_id, server=self)
-
-    def graph_voice(self, instance, ports=None) -> Group:
-        """Spawns a per-voice sub-graph (``/graph_voice``) inside a running
-        GraphDef ``instance`` (a `Group` from
-        `graph`), wired to its shared private buses. ``ports`` overrides
-        the voice-port defaults. The returned group is the voice: drive it
-        through its surface with `set` and free it with `free`."""
-        inst_id = instance.id if hasattr(instance, "id") else instance
-        node_id = self._node_id()
-        self.send_msg("/graph_voice", inst_id, node_id, *_flatten_controls(ports))
-        return Group(node_id, server=self)
-
-    def set(self, node, controls):
-        self.send_msg("/n_set", node.id if hasattr(node, "id") else node,
-                      *_flatten_controls(controls))
-
-    def map(self, node, name, bus, *, audio=False):
-        index = bus.index if isinstance(bus, Bus) else bus
-        self.send_msg("/n_mapa" if audio else "/n_map",
-                      node.id if hasattr(node, "id") else node, name, index)
-
-    def u_cmd(self, node, ugen_index: int, name: str, *args):
-        """Sends a typed command to **one UGen instance** inside a synth
-        (``/u_cmd nodeID ugenIndex name args…``). The server hashes ``name`` to a
-        stable selector and routes the numeric ``args`` to that UGen on the audio
-        thread. The FFT chain uses it to swap a window live, e.g.
-        ``server.u_cmd(synth, fft_index, "window", 4)`` for a Blackman window
-        (a `clausters._native.Window` value); an unrecognized ``name`` is a
-        no-op on the server."""
-        self.send_msg("/u_cmd", node.id if hasattr(node, "id") else node,
-                      int(ugen_index), str(name), *(float(a) for a in args))
-
-    def free(self, *nodes):
-        """Frees nodes (``/n_free``). The id is **not** returned to the
-        registry here: it stays tracked until the server confirms the death
-        with ``/n_end`` — releasing at send time could re-hand an id whose
-        node is still alive on the server."""
-        for n in nodes:
-            self.send_msg("/n_free", n.id if hasattr(n, "id") else n)
-
-    def run(self, node, flag: bool = True):
-        """Pauses (``flag=False``) or resumes (``flag=True``) a node — a synth
-        or a whole group — with ``/n_run``. A paused node stays in the tree and
-        keeps its state but is skipped (silent); this is what resumes a synth
-        parked by ``DoneAction.PAUSE_SELF``."""
-        self.send_msg("/n_run", node.id if hasattr(node, "id") else node,
-                      1 if flag else 0)
-
-    def pause(self, node):
-        """Pauses a node (``/n_run … 0``). See `run`."""
-        self.run(node, False)
-
-    def resume(self, node):
-        """Resumes a paused node (``/n_run … 1``). See `run`."""
-        self.run(node, True)
-
-    # ---- buses ----
-
-    def audio_bus(self, channels: int = 1) -> Bus:
-        return self.audio_buses.alloc(channels)
-
-    def control_bus(self) -> Bus:
-        return self.control_buses.alloc(1)
-
-    def set_bus(self, bus, value):
-        index = bus.index if isinstance(bus, Bus) else bus
-        self.send_msg("/c_set", index, float(value))
-
-    def get_bus(self, bus, timeout: float = 5.0) -> float:
-        index = bus.index if isinstance(bus, Bus) else bus
-        _, args = self.request("/c_get", index, timeout=timeout, expect=("/c_set",))
-        return args[1] if len(args) >= 2 else args[-1]
+    # ---- bus and tap subscriptions (one per client, over a set) ----
 
     def stream_buses(self, period_ms: int, *buses, timeout: float = 5.0):
         """Subscribes this client to a periodic ``/c_set`` snapshot of the
@@ -1083,24 +899,6 @@ class Server:
         indices = [b.index if isinstance(b, Bus) else int(b) for b in buses]
         return self.request("/c_stream", int(period_ms), *indices,
                             timeout=timeout, expect=("/done", "/fail"))
-
-    # ---- audio taps ----
-
-    def watch(self, bus, watch: bool = True):
-        """Asks the server to make audio ``bus`` readable (``/tap``): from the
-        next block on, the engine records that bus into the shared segment,
-        where a GUI oscilloscope reads it with zero messages (or this client
-        streams it with `stream_taps`). ``watch=False`` stops.
-
-        **The bus is the only number you name.** Which of the server's finite
-        sample rings carries it is the server's own bookkeeping, published in
-        the segment for whoever reads the samples. Watches count, so two views
-        of one bus share a ring and the last one to stop frees it. No ack, like
-        ``/n_map`` (failures reply ``/fail`` -- an unknown bus, no tap region,
-        or every ring already taken); sequence with `sync` when needed.
-        """
-        index = bus.index if isinstance(bus, Bus) else int(bus)
-        self.send_msg("/tap", index, 1 if watch else 0)
 
     def stream_taps(self, period_ms: int, frames: int, *buses, timeout: float = 5.0):
         """Subscribes this client to a periodic ``/tap_data`` snapshot of the
@@ -1124,151 +922,6 @@ class Server:
                             timeout=timeout, expect=("/done", "/fail"))
 
     # ---- buffers ----
-
-    def alloc_buffer(self, frames: int, channels: int = 1, *,
-                     wait: bool = True, timeout: float = 5.0) -> Buffer:
-        """Allocates a zeroed buffer. In NRT it scores ``/b_alloc`` at time 0
-        (so the renderer installs it before time advances); in RT ``wait=True``
-        (default) blocks on ``/done``, ``wait=False`` is fire-and-forget."""
-        bufnum = self.buffers.alloc()
-        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
-            self.send_msg("/b_alloc", bufnum, frames, channels)
-            return Buffer(bufnum, frames, channels)
-        addr, args = self.request("/b_alloc", bufnum, frames, channels,
-                                  timeout=timeout, expect=("/done", "/fail"))
-        if addr == "/fail":
-            self.buffers.free(bufnum)
-            raise CommandError(f"/b_alloc {bufnum} failed: {args}")
-        return Buffer(bufnum, frames, channels)
-
-    def gen_buffer(self, buf, cmd: str, *args, wait: bool = True, timeout: float = 5.0):
-        """Fills a buffer through ``/b_gen`` (the wavetable/generator commands:
-        ``"env"``, ``"sine1"``/``"sine2"``/``"sine3"``, ``"cheby"``, ``"copy"``,
-        and ``"prepare_partconv" fft_size ir_bufnum`` — the partitioned-kernel
-        preparation the `conv` UGen reads; size the target with
-        `clausters.defs.partconv_frames`).
-        Like `alloc_buffer`: NRT scores at time 0; RT ``wait=True`` blocks on
-        ``/done``, ``wait=False`` is fire-and-forget."""
-        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
-        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
-            self.send_msg("/b_gen", bufnum, cmd, *args)
-            return
-        addr, rargs = self.request("/b_gen", bufnum, cmd, *args,
-                                   timeout=timeout, expect=("/done", "/fail"))
-        if addr == "/fail":
-            raise CommandError(f"/b_gen {bufnum} {cmd} failed: {rargs}")
-
-    def free_buffer(self, buf):
-        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
-        self.send_msg("/b_free", bufnum)
-        self.buffers.free(bufnum)
-
-    def read_buffer(self, path, *, file_start: int = 0, num_frames: int = 0,
-                    wait: bool = True, timeout: float = 5.0) -> Buffer:
-        """Allocate a buffer and read a sound file into it (``/b_allocRead``): the
-        shape and sample rate come from the file (``num_frames`` 0 = the whole
-        file, from ``file_start``). Decoding is by content (WAV, FLAC, OGG, MP3,
-        …). In NRT it scores at time 0; in RT ``wait=True`` blocks on ``/done``.
-        The returned `Buffer`'s ``frames``/``channels`` are unknown client-side
-        until `query_buffer`."""
-        bufnum = self.buffers.alloc()
-        extra = [int(file_start), int(num_frames)] if (file_start or num_frames) else []
-        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
-            self.send_msg("/b_allocRead", bufnum, str(path), *extra)
-            return Buffer(bufnum)
-        addr, args = self.request("/b_allocRead", bufnum, str(path), *extra,
-                                  timeout=timeout, expect=("/done", "/fail"))
-        if addr == "/fail":
-            self.buffers.free(bufnum)
-            raise CommandError(f"/b_allocRead {bufnum} {path!r} failed: {args}")
-        return Buffer(bufnum)
-
-    def read_into(self, buf, path, *, file_start: int = 0, num_frames: int = -1,
-                  buf_start: int = 0, wait: bool = True, timeout: float = 5.0):
-        """Read a sound file into an existing buffer (``/b_read``), keeping its
-        shape. NRT scores at time 0; RT ``wait=True`` blocks on ``/done``."""
-        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
-        args = [bufnum, str(path), int(file_start), int(num_frames), int(buf_start)]
-        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
-            self.send_msg("/b_read", *args)
-            return
-        addr, rargs = self.request("/b_read", *args, timeout=timeout,
-                                   expect=("/done", "/fail"))
-        if addr == "/fail":
-            raise CommandError(f"/b_read {bufnum} {path!r} failed: {rargs}")
-
-    def write_buffer(self, buf, path, *, sample_format: str = "int16",
-                     num_frames: int = -1, buf_start: int = 0,
-                     wait: bool = True, timeout: float = 5.0):
-        """Write a buffer to a WAV file (``/b_write``); ``sample_format`` is
-        ``"int16"``, ``"int24"`` or ``"float"``. NRT scores at time 0; RT
-        ``wait=True`` blocks on ``/done``."""
-        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
-        args = [bufnum, str(path), "wav", str(sample_format),
-                int(num_frames), int(buf_start)]
-        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
-            self.send_msg("/b_write", *args)
-            return
-        addr, rargs = self.request("/b_write", *args, timeout=timeout,
-                                   expect=("/done", "/fail"))
-        if addr == "/fail":
-            raise CommandError(f"/b_write {bufnum} {path!r} failed: {rargs}")
-
-    def zero_buffer(self, buf, *, wait: bool = True, timeout: float = 5.0):
-        """Zero a buffer (``/b_zero``). NRT scores at time 0; RT ``wait=True``
-        blocks on ``/done``."""
-        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
-        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
-            self.send_msg("/b_zero", bufnum)
-            return
-        addr, rargs = self.request("/b_zero", bufnum, timeout=timeout,
-                                   expect=("/done", "/fail"))
-        if addr == "/fail":
-            raise CommandError(f"/b_zero {bufnum} failed: {rargs}")
-
-    def query_buffer(self, buf, timeout: float = 5.0) -> Buffer:
-        """Ask the running server for a buffer's shape (``/b_query`` → ``/b_info
-        bufnum frames channels sampleRate``) and fill it into the `Buffer`
-        handle. RT only (it needs a reply)."""
-        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
-        _, args = self.request("/b_query", bufnum, timeout=timeout, expect=("/b_info",))
-        # /b_info: bufnum, frames, channels, sampleRate
-        frames, channels, sample_rate = int(args[1]), int(args[2]), float(args[3])
-        if isinstance(buf, Buffer):
-            buf.frames, buf.channels, buf.sample_rate = frames, channels, sample_rate
-            return buf
-        return Buffer(bufnum, frames, channels, sample_rate)
-
-    def get_samples(self, buf, start: int = 0, count: int = -1, *,
-                    chunk: "int | None" = None, timeout: float = 5.0):
-        """Fetch interleaved samples from a buffer (``/b_getn`` → ``/b_setn``),
-        in chunks, as a stdlib ``array('f')``. ``count`` -1 = to the end (the
-        shape is queried first). RT only (it needs replies); for display the GUI
-        host fetches buffers itself.
-
-        ``chunk`` (samples per round-trip) defaults to the transport's bound:
-        over a stream transport (TCP/WebSocket) it is sized from the frame
-        ceiling the server advertises in ``/server_info`` — megabytes per
-        reply — while over UDP each reply must fit a datagram, so it stays at
-        1024. Pass an explicit ``chunk`` to override either."""
-        from array import array
-        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
-        if chunk is None:
-            chunk = self._bulk_chunk(timeout)
-        if count < 0:
-            shape = self.query_buffer(buf, timeout=timeout)
-            total = shape.frames * shape.channels
-            count = max(0, total - start)
-        out = array("f")
-        got = 0
-        while got < count:
-            n = min(chunk, count - got)
-            _, args = self.request("/b_getn", bufnum, start + got, n,
-                                   timeout=timeout, expect=("/b_setn",))
-            # /b_setn: bufnum, start, count, value...
-            out.extend(float(v) for v in args[3:3 + int(args[2])])
-            got += n
-        return out
 
     def _bulk_chunk(self, timeout: float) -> int:
         """Samples per bulk round-trip for this interface: datagram-bounded
@@ -1334,8 +987,8 @@ class Server:
         """The async barrier (scsynth ``/sync``): sends ``/sync id`` and blocks
         until the server answers ``/synced id``, which it does only once every
         async command sent earlier -- Faust/SynthDef compiles, buffer jobs --
-        has completed. Use it after a ``wait=False`` `add_faustdef` /
-        `add_synthdef` / buffer alloc. RT only (in NRT the renderer
+        has completed. Use it after a ``wait=False`` def send or
+        buffer alloc. RT only (in NRT the renderer
         already serializes async work at time 0). Returns the id used.
 
         **Blocking — never call from a routine.** This (and any ``wait=True``)

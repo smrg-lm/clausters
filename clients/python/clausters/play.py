@@ -55,6 +55,7 @@ the uniform entry that picks the right one.
 import inspect
 
 from .base.main import main
+from .defs.node import Group, Synth
 
 
 def play(playable, *, server=None, clock=None, quant=None, controls=None):
@@ -176,10 +177,10 @@ def _play_def(d, server, controls):
     `GraphDef`, ``/s_new`` otherwise. Returns the node handle."""
     from .defs import GraphDef
 
-    server.add_def(d)
+    d.send(server)
     if isinstance(d, GraphDef):
-        return server.graph(d.name, controls)
-    return server.synth(d.name, controls)
+        return Group.graph(d.name, controls, server=server)
+    return Synth.new(d.name, controls, server=server)
 
 
 def _play_buffer(buffer, server, controls):
@@ -193,7 +194,7 @@ def _play_buffer(buffer, server, controls):
 
     if not buffer.frames and getattr(server.interface, "time_mode",
                                      "unix") != "score":
-        server.query_buffer(buffer)     # fills frames/channels/sample_rate
+        buffer.query()     # fills frames/channels/sample_rate
     if not buffer.frames:
         raise ValueError(
             "cannot play a buffer of unknown length; fill the handle's "
@@ -208,9 +209,9 @@ def _play_buffer(buffer, server, controls):
     sdef = SynthDef(f"_playbuf{channels}",
                     *[out(float(ch), play_buf(buf, float(ch), rate) * amp)
                       for ch in range(channels)])
-    server.add_def(sdef)
+    sdef.send(server)
     controls = {"buf": float(buffer.bufnum), **(controls or {})}
-    node = server.synth(sdef.name, controls)
+    node = Synth.new(sdef.name, controls, server=server)
     file_sr = buffer.sample_rate or 48_000.0
     dur = buffer.frames / file_sr / float(controls.get("rate", 1.0))
     server.send_bundle_after(dur, ("/n_free", node.id))

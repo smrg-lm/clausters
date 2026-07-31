@@ -10,9 +10,9 @@ Runs from the *installed* package, offline, like ``spectral.py``::
 The pipeline is the whole point:
 
 1. The impulse response — here a synthetic one, exponentially decaying noise
-   (~0.7 s), written to a WAV and loaded with ``read_buffer`` — lives in an
+   (~0.7 s), written to a WAV and loaded with ``Buffer.read`` — lives in an
    ordinary buffer.
-2. ``gen_buffer(kernel, "prepare_partconv", fft_size, ir.bufnum)`` partitions
+2. ``kernel.gen("prepare_partconv", fft_size, ir.bufnum)`` partitions
    it and computes every partition's spectrum **once, off the audio thread**,
    into a second buffer sized with `partconv_frames`. The audio thread never
    transforms a kernel.
@@ -36,9 +36,11 @@ from pathlib import Path
 
 from clausters import Session
 from clausters.base import Routine
+from clausters.defs import Buffer
 from clausters.defs import (
     DoneAction,
     Env,
+    Synth,
     SynthDef,
     control,
     conv,
@@ -93,17 +95,17 @@ def main():
     server = session.server
 
     # 1. The raw IR, 2. the prepared kernel (spectra, computed off-RT).
-    ir = server.read_buffer(ir_path)
+    ir = Buffer.read(ir_path, server=server)
     partitions = -(-ir_frames // (FFT_SIZE // 2))
-    kernel = server.alloc_buffer(partconv_frames(ir_frames, FFT_SIZE))
-    server.gen_buffer(kernel, "prepare_partconv", FFT_SIZE, ir.bufnum)
+    kernel = Buffer.alloc(partconv_frames(ir_frames, FFT_SIZE), server=server)
+    kernel.gen("prepare_partconv", FFT_SIZE, ir.bufnum)
 
-    server.add_synthdef(pluck(kernel.bufnum, partitions))
+    pluck(kernel.bufnum, partitions).send(server)
 
     def sequence():
         for midi, dur in [(69, 1.5), (64, 1.5), (71, 1.5), (69, 3.0)]:
             freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
-            voice = server.synth("pluck", {"freq": freq})
+            voice = Synth.new("pluck", {"freq": freq}, server=server)
             yield dur
             server.send_bundle(("/n_free", voice.id))
 

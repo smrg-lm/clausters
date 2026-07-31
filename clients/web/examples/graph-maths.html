@@ -47,7 +47,7 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
     <script type="module">
       import {
         loadOsc, pageConnection, server as engine,
-        Server, SynthDef, TempoClock, Routine,
+        Server, Synth, SynthDef, TempoClock, Routine,
         control, out, sine,
       } from "../dist/index.js";
 
@@ -80,11 +80,11 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
         await (await engine({ channels: 2 })).resume();
         server = await Server.open(await pageConnection());   // or WsConnection
 
-        await server.addSynthDef(mathsLead());
+        await mathsLead().send(server);
         clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
         clock.start();
 
-        lead = server.synth("web_maths_lead", { note: 48.0, amp: 0.3 });
+        lead = Synth.new(server, "web_maths_lead", { note: 48.0, amp: 0.3 });
         log(`the lead is node ${lead.id}, sounding a MIDI 48 already shaped`);
 
         el("start").disabled = true;
@@ -106,7 +106,7 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
       el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
       el("play").onclick = play;
       el("free").onclick = () => {
-        server.free(lead);
+        lead.free();
         log(`node ${lead.id} freed`);
         for (const id of ["play", "free"]) el(id).disabled = true;
       };

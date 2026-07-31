@@ -23,6 +23,7 @@ import test from "node:test";
 import { loadCore } from "../src/base/core.ts";
 import { decodePacket, encodeMessage, loadOsc } from "../src/base/osc.ts";
 import type { Connection } from "../src/base/connection.ts";
+import { Buffer } from "../src/defs/buffer.ts";
 import { Server } from "../src/defs/server.ts";
 import { BusStream, TapStream } from "../src/data/index.ts";
 import {
@@ -450,7 +451,8 @@ test("reading a buffer chunks by the transport's frame ceiling", async () => {
         carrier.reply("/b_setn", [bufnum, start, count, ...values]);
     });
 
-    const samples = await server.getSamples(3, { start: 0, count: total });
+    const samples = await new Buffer(3, 0, 1, 0, server)
+        .getSamples({ start: 0, count: total });
     assert.deepEqual(
         requests,
         [
@@ -474,7 +476,8 @@ test("a read past the end returns what the buffer holds", async () => {
         const values = Array.from({ length: count }, () => 0.5);
         carrier.reply("/b_setn", [bufnum, start, count, ...values]);
     });
-    const samples = await server.getSamples(1, { start: 0, count: 50, chunk: 32 });
+    const samples = await new Buffer(1, 0, 1, 0, server)
+        .getSamples({ start: 0, count: 50, chunk: 32 });
     assert.equal(samples.length, 10, "only what came back");
 });
 

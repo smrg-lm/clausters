@@ -1163,8 +1163,8 @@ def pv_kernel(chain, mag=None, phase=None, params=()) -> Ugen:
 
 def conv(source, kernel, *, fft_size=1024, partitions=16) -> Ugen:
     """Partitioned convolution: convolves ``source`` with a **prepared**
-    kernel — a buffer written by ``server.gen_buffer(dest, "prepare_partconv",
-    fft_size, ir_bufnum)`` (size ``dest`` with `partconv_frames`). The IR's
+    kernel — a buffer written by ``dest.gen("prepare_partconv", fft_size,
+    ir_bufnum)`` (size ``dest`` with `partconv_frames`). The IR's
     spectra are computed once, off the audio thread; the UGen's steady per-
     block cost is flat (the partition products are spread across the hop).
 
@@ -1183,8 +1183,8 @@ def conv(source, kernel, *, fft_size=1024, partitions=16) -> Ugen:
 def partconv_frames(ir_frames: int, fft_size: int = 1024) -> int:
     """Frames a kernel buffer needs to hold ``ir_frames`` of impulse response
     prepared at ``fft_size`` (partitions of ``fft_size / 2``, plus the two-
-    sample header) — the size to `Server.alloc_buffer` before
-    ``gen_buffer(..., "prepare_partconv", fft_size, ir_bufnum)``."""
+    sample header) — the size to `clausters.defs.Buffer.alloc` before
+    ``buf.gen("prepare_partconv", fft_size, ir_bufnum)``."""
     part = fft_size // 2
     parts = -(-int(ir_frames) // part)
     return 2 + parts * int(fft_size)
@@ -1206,7 +1206,7 @@ def buf_rd(bufnum, chan, phase, loop=0.0) -> Ugen:
 
 def osc(bufnum, freq=440.0, phase=0.0) -> Ugen:
     """Interpolating wavetable oscillator. ``bufnum`` must hold a
-    **wavetable-format** buffer (fill it with ``Server.gen_buffer`` and a
+    **wavetable-format** buffer (fill it with ``buf.gen(...)`` and a
     ``/b_gen`` command whose wavetable flag is set); ``phase`` is an offset in
     radians."""
     return Ugen("Osc", [bufnum, freq, phase])

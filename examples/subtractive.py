@@ -26,6 +26,7 @@ from clausters.defs.ugens import (
     rlpf, saw, svf, svf_morph,
 )
 from clausters.seq import Pbind, Pseq
+from clausters.defs import Synth
 
 SR = 48000.0
 
@@ -97,10 +98,10 @@ def space() -> SynthDef:
 def render(path=None):
     server = Server(interface=OscNrtInterface())
     for sdef in (voice(), morphing(), space()):
-        server.add_synthdef(sdef)
+        sdef.send(server)
     # The reverb reads bus 0 and writes back to it, so it has to run *after* the
     # voices: adding it at the tail of the root group is enough.
-    server.synth("sub_space", action=AddAction.TAIL)
+    Synth.new("sub_space", action=AddAction.TAIL, server=server)
 
     clock = TempoClock(tempo=2.0)
     degrees = [0, 3, 5, 7, 10, 12, 10, 7]

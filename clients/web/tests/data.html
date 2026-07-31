@@ -38,7 +38,7 @@
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine,
-        Server, SynthDef, data,
+        Server, Bus, Buffer, Synth, SynthDef, data,
         control, out, outCtl, sine,
       } from "../dist/index.js";
 
@@ -105,14 +105,14 @@
         // What feeds the paths: a tone on an audio bus, and an LFO on a
         // control bus. Both are ordinary defs — nothing about them knows a
         // view is watching.
-        const audioBus = server.audioBus();
-        const ctlBus = server.controlBus();
-        await server.addSynthDef(new SynthDef("page_data_tone",
-          out(control("bus", 0.0), sine(TONE_HZ).mul(TONE_AMP))));
-        await server.addSynthDef(new SynthDef("page_data_lfo",
-          outCtl(control("bus", 0.0), sine(1.5).mul(0.5).add(0.5))));
-        server.synth("page_data_tone", { bus: audioBus.index });
-        server.synth("page_data_lfo", { bus: ctlBus.index });
+        const audioBus = Bus.audio(server);
+        const ctlBus = Bus.control(server);
+        await new SynthDef("page_data_tone",
+          out(control("bus", 0.0), sine(TONE_HZ).mul(TONE_AMP))).send(server);
+        await new SynthDef("page_data_lfo",
+          outCtl(control("bus", 0.0), sine(1.5).mul(0.5).add(0.5))).send(server);
+        Synth.new(server, "page_data_tone", { bus: audioBus.index });
+        Synth.new(server, "page_data_lfo", { bus: ctlBus.index });
 
         await server.sync();
 
@@ -123,7 +123,7 @@
           throw new Error(`only ${buses.snapshots} bus snapshots in 400 ms`);
         }
         const streamed = buses.value(ctlBus);
-        const queried = await server.getBus(ctlBus);
+        const queried = await ctlBus.get();
         log(`bus ${ctlBus.index}: streamed ${streamed.toFixed(4)}, `
           + `/c_get ${queried.toFixed(4)} (${buses.snapshots} snapshots)`);
         if (!(streamed >= 0 && streamed <= 1)) {
@@ -167,9 +167,9 @@
 
         // ---- path 3: the buffer, in bulk ----
         const total = 8000;
-        const buffer = await server.allocBuffer(total, 1);
-        await server.genBuffer(buffer, "sine1", [["i", 7], 1.0, 0.5]);
-        const samples = await server.getSamples(buffer);
+        const buffer = await Buffer.alloc(server, total, 1);
+        await buffer.gen("sine1", [["i", 7], 1.0, 0.5]);
+        const samples = await buffer.getSamples();
         if (samples.length !== total) {
           throw new Error(`read ${samples.length} of ${total} samples`);
         }
@@ -213,9 +213,9 @@
         await buses.stop();
         await taps.stop();   // stopping the stream ends the recording
         peaks.free();
-        server.freeBuffer(buffer);
-        server.freeBus(audioBus);
-        server.freeBus(ctlBus);
+        buffer.free();
+        audioBus.free();
+        ctlBus.free();
 
         verdict(`PASS: bus ${streamed.toFixed(3)}~${queried.toFixed(3)}, `
           + `tap peak ${peak.toFixed(3)} locked, ${hz.toFixed(0)} Hz, `

@@ -18,6 +18,7 @@ from clausters.defs.node import Group, Synth
 from clausters.base._oscinterface import OscNrtInterface
 from clausters.seq.pattern import Pbind, Pseq
 from clausters.seq.timeline import Playhead, Timeline
+from clausters.defs import Buffer
 
 
 @pytest.fixture
@@ -252,7 +253,7 @@ def test_play_rejects_a_form_element_with_a_pointer_to_render(clean_default):
 def test_free_play_sounds_a_buffer_through_the_stock_instrument(clean_default):
     server = _nrt_server()
     main.server = server
-    buf = server.alloc_buffer(4800, 1)          # 0.1 s at 48 kHz
+    buf = Buffer.alloc(4800, 1, server=server)          # 0.1 s at 48 kHz
     node = play(buf)
     assert isinstance(node, Synth) and node.defname == "_playbuf1"
     # /b_alloc + /d_recv + /s_new at 0, /n_free when the take ends.
@@ -261,7 +262,7 @@ def test_free_play_sounds_a_buffer_through_the_stock_instrument(clean_default):
     # `rate` is a musical ratio: it scales the free time too (fresh score).
     server2 = _nrt_server()
     main.server = server2
-    buf2 = server2.alloc_buffer(4800, 1)
+    buf2 = Buffer.alloc(4800, 1, server=server2)
     play(buf2, controls={"rate": 2.0})
     times = sorted(t for t, _ in server2.interface.score.bundles)
     assert times[-1] == pytest.approx(0.05)
@@ -281,9 +282,9 @@ def test_play_buffer_stock_instrument_renders_audible_output(clean_default):
 
     session = Session.nrt(tempo=1.0)
     server = session.server
-    buf = server.alloc_buffer(4800, 1)          # 0.1 s at 48 kHz
+    buf = Buffer.alloc(4800, 1, server=server)          # 0.1 s at 48 kHz
     # Fill it with a constant 1.0 (the env generator, level 1 throughout).
-    server.gen_buffer(buf, "env", *_env_gen_args(Env([1.0, 1.0], [1.0])))
+    buf.gen("env", *_env_gen_args(Env([1.0, 1.0], [1.0])))
     play(buf, server=server)
     _st0 = session.render(sample_rate=48_000.0, channels=1)
     samples, frames = _st0.samples, _st0.frames

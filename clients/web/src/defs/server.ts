@@ -37,14 +37,7 @@ import { SampleClockModel } from "../core/clausters_core_web.js";
 import type { TempoClock } from "../base/clock.ts";
 import type { Event } from "../seq/event.ts";
 import { CommandError, ReplyTimeout } from "../errors.ts";
-import {
-    AddAction,
-    Group,
-    NodeIdAllocator,
-    ROOT_NODE_ID,
-    Synth,
-    nodeId,
-} from "./node.ts";
+import { NodeIdAllocator, ROOT_NODE_ID, nodeId } from "./node.ts";
 import type { NodeLike } from "./node.ts";
 import { AudioBusAllocator, Bus, ControlBusAllocator, busIndex } from "./bus.ts";
 import type { BusLike } from "./bus.ts";
@@ -168,7 +161,6 @@ export type { MsgArg };
  * Control values, by name. The reserved `in`/`out` bus controls are
  * expressible here like any other name.
  */
-export type Controls = Record<string, number> | readonly (readonly [string, number])[];
 
 /**
  * One `/clock` observation: the server's counter and rate, and the local time
@@ -188,19 +180,6 @@ interface Pending {
     timer: ReturnType<typeof setTimeout>;
 }
 
-/**
- * Control values flattened into the `name value name value …` tail every
- * node command takes. Accepts an object or a list of pairs.
- */
-function flattenControls(controls?: Controls): OscArg[] {
-    if (!controls) return [];
-    const entries = Array.isArray(controls)
-        ? (controls as readonly (readonly [string, number])[])
-        : Object.entries(controls as Record<string, number>);
-    const out: OscArg[] = [];
-    for (const [name, value] of entries) out.push(["s", name], ["f", value]);
-    return out;
-}
 
 export class Server {
     readonly connection: Connection;
@@ -529,7 +508,7 @@ export class Server {
      * Sends `addr` and awaits its `/done`, throwing `CommandError` on
      * `/fail`. The shape every asynchronous command answers with.
      */
-    private async command(
+    async command(
         addr: string,
         args: MsgArg[],
         timeout: number,
@@ -565,243 +544,17 @@ export class Server {
     // ---- definitions ----
 
     /**
-     * Sends a def of any family — dispatches by type. `wait` (default
-     * `true`) resolves on the server's `/done`; `wait: false` is
-     * fire-and-forget, to be paired with `sync()`.
+     * Removes defs from the server's def table by name (`/d_free`).
+     *
+     * A def is not freed by itself: in use it is *overwritten* by sending
+     * another under the same name. This is the table's own command, for
+     * reclaiming what a session no longer names.
      */
-    addDef(
-        def: SynthDef | FaustDef | GraphDef,
-        options?: { wait?: boolean; timeout?: number },
-    ): Promise<string> {
-        if (def instanceof GraphDef) return this.addGraphDef(def, options);
-        if (def instanceof FaustDef) return this.addFaustDef(def, options);
-        return this.addSynthDef(def, options);
-    }
-
-    /**
-     * Sends a UGen `SynthDef` via `/d_recv`. Compilation is asynchronous on
-     * the server, so `wait: true` (the default) resolves on `/done` and
-     * rejects with `CommandError` on `/fail`.
-     */
-    async addSynthDef(
-        def: SynthDef,
-        { wait = true, timeout = 10.0 }: { wait?: boolean; timeout?: number } = {},
-    ): Promise<string> {
-        const payload = def.dumpDef();
-        if (!wait) {
-            this.sendMsg("/d_recv", payload);
-            return def.name;
-        }
-        await this.command("/d_recv", [payload], timeout);
-        return def.name;
-    }
-
-    /**
-     * Sends a `FaustDef` via `/d_faust`, which JIT-compiles it on the
-     * server's network thread. Reaches a **native** server only: the in-page
-     * engine is the `synth,embed` build with no LLVM, and answers `/fail`.
-     */
-    async addFaustDef(
-        def: FaustDef,
-        { wait = true, timeout = 10.0 }: { wait?: boolean; timeout?: number } = {},
-    ): Promise<string> {
-        if (!wait) {
-            this.sendMsg("/d_faust", def.name, def.dumpDef());
-            return def.name;
-        }
-        await this.command("/d_faust", [def.name, def.dumpDef()], timeout);
-        return def.name;
-    }
-
-    /**
-     * Sends a `GraphDef` via `/d_graph`. Loading one is cheap on the server
-     * (no JIT — it only validates and references the member defs), but it is
-     * still asynchronous, so the same barrier discipline applies.
-     */
-    async addGraphDef(
-        def: GraphDef,
-        { wait = true, timeout = 10.0 }: { wait?: boolean; timeout?: number } = {},
-    ): Promise<string> {
-        const payload = def.dumpDef();
-        if (!wait) {
-            this.sendMsg("/d_graph", payload);
-            return def.name;
-        }
-        await this.command("/d_graph", [payload], timeout);
-        return def.name;
-    }
-
-    /** Frees defs by name (`/d_free`). */
     freeDef(...names: string[]): void {
         this.sendMsg("/d_free", ...names);
     }
 
-    // ---- nodes ----
-
-    /** Creates a synth (`/s_new`) and returns its handle. */
-    synth(
-        defname: string,
-        controls?: Controls,
-        {
-            target = ROOT_NODE_ID,
-            action = AddAction.TAIL,
-        }: { target?: NodeLike; action?: AddAction } = {},
-    ): Synth {
-        const id = this.nodes.alloc();
-        this.sendMsg(
-            "/s_new",
-            defname,
-            ["i", id],
-            ["i", action],
-            ["i", nodeId(target)],
-            ...flattenControls(controls),
-        );
-        return new Synth(id, defname, this);
-    }
-
-    /** Creates a group (`/g_new`) and returns its handle. */
-    group({
-        target = ROOT_NODE_ID,
-        action = AddAction.TAIL,
-    }: { target?: NodeLike; action?: AddAction } = {}): Group {
-        const id = this.nodes.alloc();
-        this.sendMsg("/g_new", ["i", id], ["i", action], ["i", nodeId(target)]);
-        return new Group(id, this);
-    }
-
-    /**
-     * Instantiates a GraphDef (`/graph_new`) as a wired group, with `ports`
-     * overriding the def defaults. Drive the returned group through the
-     * surface with `set` (`/n_set` resolves names against the surface, not
-     * the private members) and tear it down with `free` (which also reclaims
-     * its private buses).
-     */
-    graph(
-        defname: string,
-        ports?: Controls,
-        {
-            target = ROOT_NODE_ID,
-            action = AddAction.TAIL,
-        }: { target?: NodeLike; action?: AddAction } = {},
-    ): Group {
-        const id = this.nodes.alloc();
-        this.sendMsg(
-            "/graph_new",
-            defname,
-            ["i", id],
-            ["i", action],
-            ["i", nodeId(target)],
-            ...flattenControls(ports),
-        );
-        return new Group(id, this);
-    }
-
-    /**
-     * Spawns a per-voice sub-graph (`/graph_voice`) inside a running
-     * GraphDef `instance`, wired to its shared private buses.
-     */
-    graphVoice(instance: NodeLike, ports?: Controls): Group {
-        const id = this.nodes.alloc();
-        this.sendMsg(
-            "/graph_voice",
-            ["i", nodeId(instance)],
-            ["i", id],
-            ...flattenControls(ports),
-        );
-        return new Group(id, this);
-    }
-
-    /** Sets a node's controls (`/n_set`). */
-    set(node: NodeLike, controls: Controls): void {
-        this.sendMsg("/n_set", ["i", nodeId(node)], ...flattenControls(controls));
-    }
-
-    /** Maps a node's control to a bus (`/n_map`, or `/n_mapa` for audio). */
-    map(node: NodeLike, name: string, bus: BusLike, { audio = false } = {}): void {
-        this.sendMsg(
-            audio ? "/n_mapa" : "/n_map",
-            ["i", nodeId(node)],
-            name,
-            ["i", busIndex(bus)],
-        );
-    }
-
-    /**
-     * Sends a typed command to **one UGen instance** inside a synth
-     * (`/u_cmd nodeID ugenIndex name args…`); an unrecognized `name` is a
-     * no-op on the server.
-     */
-    uCmd(node: NodeLike, ugenIndex: number, name: string, ...args: number[]): void {
-        this.sendMsg(
-            "/u_cmd",
-            ["i", nodeId(node)],
-            ["i", Math.trunc(ugenIndex)],
-            name,
-            ...args.map((a): OscArg => ["f", a]),
-        );
-    }
-
-    /**
-     * Frees nodes (`/n_free`). The id is **not** returned to the registry
-     * here: it stays tracked until the server confirms the death with
-     * `/n_end` — releasing at send time could re-hand an id whose node is
-     * still alive on the server.
-     */
-    free(...nodes: NodeLike[]): void {
-        for (const node of nodes) this.sendMsg("/n_free", ["i", nodeId(node)]);
-    }
-
-    /**
-     * Pauses (`flag: false`) or resumes a node — a synth or a whole group —
-     * with `/n_run`. A paused node stays in the tree and keeps its state but
-     * is skipped; this is what resumes a synth parked by `PAUSE_SELF`.
-     */
-    run(node: NodeLike, flag = true): void {
-        this.sendMsg("/n_run", ["i", nodeId(node)], ["i", flag ? 1 : 0]);
-    }
-
-    /** Pauses a node (`/n_run … 0`). */
-    pause(node: NodeLike): void {
-        this.run(node, false);
-    }
-
-    /** Resumes a paused node (`/n_run … 1`). */
-    resume(node: NodeLike): void {
-        this.run(node, true);
-    }
-
-    // ---- buses ----
-
-    /** A run of `channels` contiguous audio buses. */
-    audioBus(channels = 1): Bus {
-        return this.audioBuses.alloc(channels);
-    }
-
-    /** One control bus. */
-    controlBus(): Bus {
-        return this.controlBuses.alloc(1);
-    }
-
-    /** Returns a bus's run to its allocator. */
-    freeBus(bus: Bus): void {
-        if (bus.rate === "audio") this.audioBuses.free(bus);
-        else this.controlBuses.free(bus);
-    }
-
-    /** Sets a control bus's value (`/c_set`). */
-    setBus(bus: BusLike, value: number): void {
-        this.sendMsg("/c_set", ["i", busIndex(bus)], ["f", value]);
-    }
-
-    /** Reads a control bus's value (`/c_get`). */
-    async getBus(bus: BusLike, timeout = 5.0): Promise<number> {
-        const index = busIndex(bus);
-        const msg = await this.request("/c_get", [["i", index]], {
-            expect: ["/c_set"],
-            timeout,
-        });
-        return Number(msg.args.at(-1));
-    }
+    // ---- bus and tap subscriptions (one per client, over a set) ----
 
     /**
      * Subscribes this client to a periodic `/c_set` snapshot of `buses`
@@ -822,26 +575,6 @@ export class Server {
         const args: MsgArg[] = [["i", Math.trunc(periodMs)]];
         for (const bus of buses) args.push(["i", busIndex(bus)]);
         await this.command("/c_stream", args, timeout);
-    }
-
-    // ---- watching audio buses ----
-
-    /**
-     * Asks the server to make audio `bus` readable (`/tap`): from the next
-     * block on, the engine records that bus into the shared segment, where a
-     * GUI host reads it with zero messages and this client streams it with
-     * `streamTaps`. `watch = false` stops.
-     *
-     * **The bus is the only number you name.** Which of the server's finite
-     * sample rings carries it is the server's own bookkeeping, published in
-     * the segment for whoever reads the samples. Watches count, so two views
-     * of one bus share a ring and the last one to stop frees it. No ack, like
-     * `/n_map` (failures reply `/fail` — an unknown bus, no tap region, or
-     * every ring already taken); sequence with `sync` when it matters.
-     */
-    watch(bus: BusLike, watch = true): void {
-        const index = typeof bus === "number" ? bus : busIndex(bus);
-        this.sendMsg("/tap", ["i", Math.trunc(index)], ["i", watch ? 1 : 0]);
     }
 
     /**
@@ -872,168 +605,7 @@ export class Server {
         await this.command("/tap_stream", args, timeout);
     }
 
-    // ---- buffers ----
-
-    /** Allocates a zeroed buffer (`/b_alloc`). */
-    async allocBuffer(
-        frames: number,
-        channels = 1,
-        { wait = true, timeout = 5.0 }: { wait?: boolean; timeout?: number } = {},
-    ): Promise<Buffer> {
-        const bufnum = this.buffers.alloc();
-        const args: MsgArg[] = [
-            ["i", bufnum],
-            ["i", Math.trunc(frames)],
-            ["i", Math.trunc(channels)],
-        ];
-        if (!wait) {
-            this.sendMsg("/b_alloc", ...args);
-            return new Buffer(bufnum, frames, channels);
-        }
-        try {
-            await this.command("/b_alloc", args, timeout);
-        } catch (error) {
-            this.buffers.free(bufnum);
-            throw error;
-        }
-        return new Buffer(bufnum, frames, channels);
-    }
-
-    /**
-     * Fills a buffer through `/b_gen` (the wavetable/generator commands:
-     * `"env"`, `"sine1"`/`"sine2"`/`"sine3"`, `"cheby"`, `"copy"`).
-     *
-     * `args` follow each command's own shape — the wavetable generators take
-     * an integer flag word first, then their values. They are tagged by the
-     * same rule as `sendMsg` (an integral number is an int32), so a flag
-     * word arrives as the int the server requires.
-     */
-    async genBuffer(
-        buf: BufferLike,
-        cmd: string,
-        args: MsgArg[] = [],
-        { wait = true, timeout = 5.0 }: { wait?: boolean; timeout?: number } = {},
-    ): Promise<void> {
-        const payload: MsgArg[] = [["i", bufferNumber(buf)], cmd, ...args];
-        if (!wait) {
-            this.sendMsg("/b_gen", ...payload);
-            return;
-        }
-        await this.command("/b_gen", payload, timeout);
-    }
-
-    /** Zeroes a buffer (`/b_zero`). */
-    async zeroBuffer(
-        buf: BufferLike,
-        { wait = true, timeout = 5.0 }: { wait?: boolean; timeout?: number } = {},
-    ): Promise<void> {
-        const args: MsgArg[] = [["i", bufferNumber(buf)]];
-        if (!wait) {
-            this.sendMsg("/b_zero", ...args);
-            return;
-        }
-        await this.command("/b_zero", args, timeout);
-    }
-
-    /**
-     * Loads a sound file into a freshly allocated buffer (`/b_allocRead`).
-     * The path is the **server's**, so this reaches a native server over the
-     * WebSocket carrier; the in-page engine has no filesystem (feed it
-     * decoded samples instead).
-     */
-    async readBuffer(
-        path: string,
-        {
-            fileStart = 0,
-            numFrames = 0,
-            timeout = 10.0,
-        }: { fileStart?: number; numFrames?: number; timeout?: number } = {},
-    ): Promise<Buffer> {
-        const bufnum = this.buffers.alloc();
-        try {
-            await this.command(
-                "/b_allocRead",
-                [["i", bufnum], path, ["i", fileStart], ["i", numFrames]],
-                timeout,
-            );
-        } catch (error) {
-            this.buffers.free(bufnum);
-            throw error;
-        }
-        return this.queryBuffer(bufnum, timeout);
-    }
-
-    /** Frees a buffer on the server and returns its index to the pool. */
-    freeBuffer(buf: BufferLike): void {
-        const bufnum = bufferNumber(buf);
-        this.sendMsg("/b_free", ["i", bufnum]);
-        this.buffers.free(bufnum);
-    }
-
-    /** A buffer's shape as the server reports it (`/b_query`). */
-    async queryBuffer(buf: BufferLike, timeout = 5.0): Promise<Buffer> {
-        const bufnum = bufferNumber(buf);
-        const msg = await this.request("/b_query", [["i", bufnum]], {
-            expect: ["/b_info"],
-            timeout,
-        });
-        const [, frames, channels, sampleRate] = msg.args;
-        return new Buffer(bufnum, Number(frames), Number(channels), Number(sampleRate));
-    }
-
-    // ---- bulk samples ----
-
-    /**
-     * Reads interleaved samples out of a buffer (`/b_getn` → `/b_setn`), in
-     * chunks, as one `Float32Array`. `count` -1 reads to the end (the shape is
-     * queried first). Sample indices are flat across channels
-     * (`frame * channels + channel`), so a stereo buffer reads `L R L R …`.
-     *
-     * `chunk` (samples per round trip) defaults to the transport's own bound —
-     * the frame ceiling the server advertises, which is megabytes per reply on
-     * a stream carrier. This is the path a waveform view is built from; feed
-     * the result to `Peaks.build` and draw the columns.
-     *
-     * Reading is the only direction there is: the server has no `/b_setn`
-     * **command** (`/b_setn` is `/b_getn`'s reply), so samples reach a buffer
-     * by `/b_gen`, by `/b_allocRead` on a native server, or by `loadSample`
-     * in the page.
-     */
-    async getSamples(
-        buf: BufferLike,
-        {
-            start = 0,
-            count = -1,
-            chunk,
-            timeout = 10.0,
-        }: { start?: number; count?: number; chunk?: number; timeout?: number } = {},
-    ): Promise<Float32Array> {
-        const bufnum = bufferNumber(buf);
-        const step = chunk ?? (await this.bulkChunk(timeout));
-        let total = count;
-        if (total < 0) {
-            const shape = await this.queryBuffer(bufnum, timeout);
-            total = Math.max(0, shape.frames * shape.channels - start);
-        }
-        const out = new Float32Array(total);
-        let got = 0;
-        while (got < total) {
-            const n = Math.min(step, total - got);
-            const msg = await this.request(
-                "/b_getn",
-                [["i", bufnum], ["i", start + got], ["i", n]],
-                { expect: ["/b_setn"], timeout },
-            );
-            // /b_setn: bufnum, start, count, value...
-            const returned = Number(msg.args[2]);
-            if (returned <= 0) break; // past the end: the server has no more
-            for (let i = 0; i < returned; i++) {
-                out[got + i] = Number(msg.args[3 + i]);
-            }
-            got += returned;
-        }
-        return got === total ? out : out.subarray(0, got);
-    }
+    // ---- bulk sizing ----
 
     /**
      * Samples per bulk round trip for this carrier: the frame ceiling the
@@ -1041,7 +613,7 @@ export class Server {
      * headroom for the reply's OSC envelope. A server that does not answer
      * leaves the conservative 1024 a datagram fits.
      */
-    private async bulkChunk(timeout: number): Promise<number> {
+    async bulkChunk(timeout: number): Promise<number> {
         if (this.maxFrame === null) {
             try {
                 this.maxFrame = (await this.queryInfo(timeout)).maxFrame;
@@ -1051,42 +623,6 @@ export class Server {
             }
         }
         return Math.max(1024, Math.floor((this.maxFrame - 256) / 4));
-    }
-
-    /**
-     * Loads an audio file at `url` into a freshly allocated buffer: the
-     * browser's `/b_allocRead`, since a page has no filesystem and the
-     * server's path means nothing to it.
-     *
-     * `fetch` + the page's own `decodeAudioData` produce the samples, which
-     * the carrier installs directly — it shares memory with the engine. The
-     * returned handle carries the decoded shape, so a view can lay out its
-     * axis before reading a sample.
-     *
-     * **In-page only.** A socket carrier would have to write the samples
-     * over the wire, and the server has no buffer-write command to write them
-     * with; over a `--ws` server, load the file server-side with
-     * `readBuffer` (`/b_allocRead`) instead.
-     */
-    async loadSample(
-        url: string,
-        { timeout = 30.0 }: { timeout?: number } = {},
-    ): Promise<Buffer> {
-        const bulkLoad = this.connection.bulkLoad;
-        if (!bulkLoad) {
-            throw new CommandError(
-                "loadSample needs a carrier that shares memory with the server " +
-                    "(the in-page engine); over a socket use readBuffer, which " +
-                    "loads the file on the server",
-            );
-        }
-        const rate = (await this.queryInfo(timeout)).nominalSampleRate;
-        const decoded = await fetchAudio(url, { sampleRate: rate });
-        const { numberOfChannels: channels, length: frames, sampleRate } = decoded;
-        const samples = interleave(decoded);
-        const buffer = await this.allocBuffer(frames, channels, { timeout });
-        await bulkLoad.call(this.connection, buffer.bufnum, channels, sampleRate, samples);
-        return new Buffer(buffer.bufnum, frames, channels, sampleRate);
     }
 
     // ---- server introspection ----

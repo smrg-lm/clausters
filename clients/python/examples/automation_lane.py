@@ -32,6 +32,7 @@ from clausters import Session
 from clausters.base.stream import Routine
 from clausters.defs import SynthDef, control, out, sine
 from clausters.seq import Automation
+from clausters.defs import Synth
 
 SR = 48000
 
@@ -49,10 +50,10 @@ def tone(name: str = "tone") -> SynthDef:
 # %% Build the offline session and register the instrument.
 session = Session.nrt(tempo=1.0)
 server = session.server
-server.add_synthdef(tone())
+tone().send(server)
 
 # %% A sustained voice, and an automation lane sweeping its pitch.
-voice = server.synth("tone")                       # one held voice
+voice = Synth.new("tone", server=server)           # one held voice
 gliss = Automation.from_points(
     [(0, 220.0, 2, 0.0),                            # 220 Hz ...
      (2, 880.0, 2, 0.0),                            # ... up to 880 (exponential) ...

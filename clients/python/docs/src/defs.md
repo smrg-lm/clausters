@@ -338,7 +338,7 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `pv_bin_shift(chain, stretch=1, shift=0)` / `pv_mag_shift(...)` | remap bin positions (complex bins / magnitude envelope only) |
 | | `pv_kernel(chain, mag=None, phase=None, params=())` | apply **user-written bin expressions** to every bin of each fresh frame — see [Writing your own spectral operation](#writing-your-own-spectral-operation) |
 | | `ifft(chain)` | closes a spectral chain (resynthesises audio by overlap-add) |
-| Convolution | `conv(source, kernel, *, fft_size=1024, partitions=16)` | partitioned convolution against a kernel prepared with `gen_buffer(dest, "prepare_partconv", fft_size, ir_bufnum)` (size `dest` with `partconv_frames`); latency `fft_size / 2` samples |
+| Convolution | `conv(source, kernel, *, fft_size=1024, partitions=16)` | partitioned convolution against a kernel prepared with `dest.gen("prepare_partconv", fft_size, ir_bufnum)` (size `dest` with `partconv_frames`); latency `fft_size / 2` samples |
 
 Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/s_new` time.
 
@@ -436,7 +436,7 @@ The window type is also settable **live** with `Server.u_cmd`, which addresses o
 
 ```python
 from clausters._native import Window
-server.u_cmd(synth, fft_index, "window", Window.BLACKMAN)  # swap the FFT window
+synth.u_cmd(fft_index, "window", Window.BLACKMAN)  # swap the FFT window
 ```
 
 where `fft_index` is the FFT's position in the serialized graph. The smoothing windows themselves are shared with the server through the native core — `clausters._native.window(Window.HANN, n)` returns the **same** coefficients the server's FFT applies, so a client that pre-windows audio matches the server bit for bit.
@@ -518,17 +518,18 @@ The one case where a `FaustDef` can fail is a server **someone built without the
 
 ## Sending a def
 
-Sending a def is **asynchronous**: `/d_faust` JIT-compiles on the server's network thread, answered later by `/done` or `/fail`. The `Server` mirrors scsynth:
+A def sends itself: `sdef.send(server)`, `fdef.send(server)`, `gdef.send(server)` — one method on each family, no dispatch to pick. Sending is **asynchronous**: `/d_faust` JIT-compiles on the server's network thread, answered later by `/done` or `/fail`. The barrier discipline mirrors scsynth:
 
 ```python
-server.add_faustdef(fdef)                 # RT: BLOCKS until /done (raises CommandError on /fail, ReplyTimeout on silence)
-server.add_synthdef(sdef, wait=False)     # fire-and-forget: only sends
-server.sync()                             # barrier: /sync -> /synced, waits for ALL earlier async work
-server.synth("fsine", {"freq": 330.0})    # safe now — the def is installed
+fdef.send(server)                 # RT: BLOCKS until /done (raises CommandError on /fail, ReplyTimeout on silence)
+sdef.send(server, wait=False)     # fire-and-forget: only sends
+server.sync()                     # barrier: /sync -> /synced, waits for ALL earlier async work
+Synth.new("fsine", {"freq": 330.0}, server=server)    # safe now — the def is installed
 ```
 
 - `wait=True` (the default) blocks on `/done`; `wait=False` only sends, after which `sync()` is the barrier before the `/s_new` that needs the def.
-- In **NRT** (a score interface) `add_*` always *scores* the def at time 0 — the renderer compiles it before time advances — so `wait` does not apply.
-- `server.free_def(*names)` removes defs (`/d_free`).
+- In **NRT** (a score interface) `send` always *scores* the def at time 0 — the renderer compiles it before time advances — so `wait` does not apply.
+- The server owns the def **table**: `server.free_def(*names)` removes defs by name (`/d_free`). A def is not freed by itself — in use it is overwritten by sending another under the same name.
+- `server` is optional: without it the def goes to the ambient session's server, like every other resource constructor.
 
-The same shape applies to `add_synthdef`. There is one rule that overrides the convenience of the blocking default: **inside a routine, never block the clock thread.** Send the def `wait=False` and `yield` enough beats before the dependent `/s_new`, rather than calling a blocking `add_*` or `sync()`. See [Routines and clocks](routines-and-clocks.md) for why, and [Getting started](getting-started.md) and the [Examples](examples.md) for end-to-end defs that play.
+There is one rule that overrides the convenience of the blocking default: **inside a routine, never block the clock thread.** Send the def `wait=False` and `yield` enough beats before the dependent `/s_new`, rather than calling a blocking `add_*` or `sync()`. See [Routines and clocks](routines-and-clocks.md) for why, and [Getting started](getting-started.md) and the [Examples](examples.md) for end-to-end defs that play.

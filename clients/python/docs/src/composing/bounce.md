@@ -16,9 +16,9 @@ which is exactly what the rest of this page moves by hand.
 
 ```python
 offline = Session.nrt(tempo=TEMPO)
-offline.server.add_synthdef(sampler())
-offline.server.add_synthdef(drone())
-offline.server.read_buffer(wav)          # the take, on the offline server
+sampler().send(offline.server)
+drone().send(offline.server)
+Buffer.read(wav, server=offline.server)  # the take, on the offline server
 ```
 
 The offline server needs everything the live one had: the defs, and the take
@@ -33,7 +33,7 @@ bus. The model is destination-agnostic; those numbers are not. Two of them
 matter here:
 
 - the take was the live server's first buffer, and the offline server's
-  `read_buffer` above allocated its first — the numbers line up because both
+  `Buffer.read` above allocated its first — the numbers line up because both
   allocators started fresh;
 - the sweep was `prepare`d on the *live* server, and the drone's voice
   captured the bus *index* when you built its event. Release the live

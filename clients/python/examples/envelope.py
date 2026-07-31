@@ -71,7 +71,7 @@ def main():
     out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "envelope.wav")
 
     session = Session.nrt(tempo=2.0)
-    session.server.add_synthdef(adsr_pad())  # /d_recv at time 0 in the score
+    adsr_pad().send(session.server)  # /d_recv at time 0 in the score
     session.play(phrase())
     stats = session.render(sample_rate=SR, channels=2, path=out_path)
 

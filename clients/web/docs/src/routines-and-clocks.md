@@ -58,7 +58,7 @@ There is no `run(seconds)` here, because nothing in a page may block: a script t
 
 ### The one rule
 
-**Never `await` inside a routine.** A routine is resumed by the clock and must return control synchronously; an `await` suspends it mid-beat and holds the queue behind it, which is the browser's version of the Python client's "never block the clock thread". Do the waiting *before* — `await server.addSynthDef(def)` resolves when the server has acknowledged it — and start the routine after, or `yield` enough beats before the first note that uses a def you sent without awaiting.
+**Never `await` inside a routine.** A routine is resumed by the clock and must return control synchronously; an `await` suspends it mid-beat and holds the queue behind it, which is the browser's version of the Python client's "never block the clock thread". Do the waiting *before* — `await def.send(server)` resolves when the server has acknowledged it — and start the routine after, or `yield` enough beats before the first note that uses a def you sent without awaiting.
 
 ## The two timebases
 

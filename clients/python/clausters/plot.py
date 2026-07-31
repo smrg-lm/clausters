@@ -54,6 +54,9 @@ import itertools
 import os
 import tempfile
 
+from .defs.buffer import Buffer
+from .defs.node import Synth
+
 __all__ = ["plot", "PlotWindow", "PatchWindow"]
 
 #: Inline `data` ceiling: at most this many floats ride the GuiDef JSON; more
@@ -321,8 +324,8 @@ def _render_env(env, sample_rate):
     server = session.server
     gate = control("gate", 1.0)
     sdef = SynthDef("_plot_env", out(0.0, env_gen(env, gate=gate)))
-    server.add_synthdef(sdef)
-    node = server.synth("_plot_env")
+    sdef.send(server)
+    node = Synth.new("_plot_env", server=server)
     release_node = getattr(env, "release_node", None)
     if release_node is not None:
         sustain_at = sum(times[: int(release_node)])
@@ -338,10 +341,10 @@ def _fetch_buffer(bufnum, fallback_rate):
     from .base.main import main
 
     server = main.resolve_server(None)
-    info = server.query_buffer(bufnum)
-    samples = server.get_samples(bufnum)
-    rate = info.sample_rate if info.sample_rate > 0.0 else fallback_rate
-    return samples, max(1, info.channels), rate, f"buffer {bufnum}"
+    buf = Buffer(bufnum, server=server).query()
+    samples = buf.get_samples()
+    rate = buf.sample_rate if buf.sample_rate > 0.0 else fallback_rate
+    return samples, max(1, buf.channels), rate, f"buffer {bufnum}"
 
 
 def _sequence(obj, n):

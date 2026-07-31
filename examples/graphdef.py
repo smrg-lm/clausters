@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "pyt
 
 from clausters.base import OscNrtInterface, Routine, TempoClock
 from clausters.defs import GraphDef, Server, SynthDef, control, in_, out, sine
+from clausters.defs import Group
 
 SR = 48000.0
 
@@ -65,12 +66,13 @@ def play(server):
     tone, gain = member_defs()
     duo = duo_graph()
     for sdef in (tone, gain):
-        server.add_synthdef(sdef)                   # scored at t=0 in NRT
-    server.add_graphdef(duo)                         # /d_graph (validate + store)
+        sdef.send(server)                   # scored at t=0 in NRT
+    duo.send(server)                         # /d_graph (validate + store)
 
-    inst = server.graph("duo", {"gain": 0.4})        # /graph_new -> a wired group
+    # /graph_new -> a wired group
+    inst = Group.graph("duo", {"gain": 0.4}, server=server)
     # Drive the instance through its surface. Live this is
-    # `server.set(inst, {"freq": freq})`; to schedule it on the (offline) clock
+    # `inst.set({"freq": freq})`; to schedule it on the (offline) clock
     # use `send_bundle`, stamping each /n_set with the routine's logical beat.
     # /n_set on the instance resolves "freq" against the surface (both
     # oscillators), never the private member node ids.

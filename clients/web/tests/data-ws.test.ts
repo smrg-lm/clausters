@@ -19,6 +19,9 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { WsConnection } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
 import { loadOsc } from "../src/base/osc.ts";
+import { Bus } from "../src/defs/bus.ts";
+import { Buffer } from "../src/defs/buffer.ts";
+import { Synth } from "../src/defs/node.ts";
 import { Server } from "../src/defs/server.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { control, out, outCtl, sine } from "../src/defs/ugens.ts";
@@ -61,10 +64,10 @@ async function withServer(body: (server: Server) => Promise<void>): Promise<void
 
 test("a control bus streams to the client at the period it asked for", { skip: !hasServer }, async () => {
     await withServer(async (server) => {
-        const bus = server.controlBus();
+        const bus = Bus.control(server);
         // A steady value, written by the client rather than by a synth: what
         // is under test is the stream, not what feeds the bus.
-        server.setBus(bus, 0.75);
+        bus.set(0.75);
         await server.sync();
 
         const stream = await BusStream.open(server, [bus], { periodMs: 10 });
@@ -77,25 +80,23 @@ test("a control bus streams to the client at the period it asked for", { skip: !
         );
 
         // The value the stream shows is the value `/c_get` answers with.
-        server.setBus(bus, -0.2);
+        bus.set(-0.2);
         await sleep(150);
-        assert.ok(Math.abs(stream.value(bus) - (await server.getBus(bus))) < 1e-6);
+        assert.ok(Math.abs(stream.value(bus) - (await bus.get())) < 1e-6);
 
         const before = stream.snapshots;
         await stream.stop();
         await sleep(150);
         assert.equal(stream.snapshots, before, "a cancelled stream stops arriving");
-        server.freeBus(bus);
+        bus.free();
     });
 });
 
 test("a lfo on a bus reaches the client through the stream", { skip: !hasServer }, async () => {
     await withServer(async (server) => {
-        const bus = server.controlBus();
-        await server.addDef(
-            new SynthDef("ts_data_lfo", outCtl(control("bus", 0.0), sine(2.0))),
-        );
-        server.synth("ts_data_lfo", { bus: bus.index });
+        const bus = Bus.control(server);
+        await new SynthDef("ts_data_lfo", outCtl(control("bus", 0.0), sine(2.0))).send(server);
+        Synth.new(server, "ts_data_lfo", { bus: bus.index });
         await server.sync();
 
         const stream = await BusStream.open(server, [bus], { periodMs: 10 });
@@ -116,11 +117,9 @@ test("a tap carries the samples a synth is writing", { skip: !hasServer }, async
         const info = await server.queryInfo();
         if (info.taps === 0) return; // a server built with no tap region
 
-        const bus = server.audioBus();
-        await server.addDef(
-            new SynthDef("ts_data_tone", out(control("bus", 0.0), sine(400.0).mul(0.5))),
-        );
-        server.synth("ts_data_tone", { bus: bus.index });
+        const bus = Bus.audio(server);
+        await new SynthDef("ts_data_tone", out(control("bus", 0.0), sine(400.0).mul(0.5))).send(server);
+        Synth.new(server, "ts_data_tone", { bus: bus.index });
         await server.sync();
         await sleep(200); // let the ring fill a window
 
@@ -149,7 +148,7 @@ test("a tap carries the samples a synth is writing", { skip: !hasServer }, async
         assert.ok(stream.window(bus.index)!.endPosition > first, "the axis advances");
 
         await stream.stop();
-        server.freeBus(bus);
+        bus.free();
     });
 });
 
@@ -158,23 +157,23 @@ test("a generated buffer reads back in chunks, and reduces", { skip: !hasServer 
         // The buffer is filled by the server (`/b_gen`), since a client has no
         // way to write one: the read direction is the whole of the bulk path.
         const frames = 5000;
-        const buffer = await server.allocBuffer(frames, 1);
-        await server.genBuffer(buffer, "sine1", [["i", 7], 1.0]);
+        const buffer = await Buffer.alloc(server, frames, 1);
+        await buffer.gen("sine1", [["i", 7], 1.0]);
 
-        const read = await server.getSamples(buffer);
+        const read = await buffer.getSamples();
         assert.equal(read.length, frames, "the whole buffer came back");
         const peak = Math.max(...read.map(Math.abs));
         assert.ok(peak > 0.9, `a normalized sine peaks at ~1, not ${peak}`);
 
         // A slice reads as a slice, and it is the same data as the whole.
-        const slice = await server.getSamples(buffer, { start: 1000, count: 256 });
+        const slice = await buffer.getSamples({ start: 1000, count: 256 });
         assert.equal(slice.length, 256);
         for (let i = 0; i < 256; i += 37) {
             assert.ok(Math.abs(slice[i] - read[1000 + i]) < 1e-6, `sample ${i}`);
         }
 
         // A read past the end returns what the buffer holds, not a hang.
-        const tail = await server.getSamples(buffer, { start: frames - 10, count: 100 });
+        const tail = await buffer.getSamples({ start: frames - 10, count: 100 });
         assert.equal(tail.length, 10);
 
         // And what a waveform view would draw from it spans the tone.
@@ -184,6 +183,6 @@ test("a generated buffer reads back in chunks, and reduces", { skip: !hasServer 
         assert.ok(Math.max(...max) > 0.9 && Math.min(...min) < -0.9);
         peaks.free();
 
-        server.freeBuffer(buffer);
+        buffer.free();
     });
 });

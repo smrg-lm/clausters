@@ -33,6 +33,7 @@ from clausters import Session
 from clausters.base import OscReceiver
 from clausters.base import _osclib as osc
 from clausters.responders import OscFunc
+from clausters.defs import Synth
 
 LISTEN_PORT = 57121
 
@@ -53,8 +54,8 @@ def main() -> None:
         # msg == ["/note", midinote, dur]
         midinote, dur = msg[1], msg[2]
         freq = 440.0 * 2 ** ((midinote - 69) / 12)
-        synth = server.synth("default", {"freq": freq, "amp": 0.2})
-        session.clock.sched(dur, lambda: server.free(synth))
+        synth = Synth.new("default", {"freq": freq, "amp": 0.2}, server=server)
+        session.clock.sched(dur, lambda: synth.free())
         print(f"  /note {midinote} -> freq {freq:.1f} Hz for {dur:.2f}s")
 
     def on_transport(msg, when, src):

@@ -79,7 +79,7 @@ def sampler(name: str = "take") -> SynthDef:
 # server plays it on time instead of "as soon as possible".
 session = Session.live(tempo=TEMPO, latency=0.1)
 server = session.server
-server.add_synthdef(sampler())
+sampler().send(server)
 
 # %% [markdown]
 # ## The take
@@ -106,7 +106,7 @@ def bounce_take(path: str, beats: float = 2.0) -> str:
 
 
 wav = bounce_take(str(Path(tempfile.mkdtemp(prefix="clausters-")) / "take.wav"))
-buf = server.query_buffer(server.read_buffer(wav))   # on the server, shape known
+buf = Buffer.read(wav, server=server).query()   # on the server, shape known
 
 # %% [markdown]
 # ## The material
@@ -165,7 +165,7 @@ def drone(name: str = "drone") -> SynthDef:
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
-server.add_synthdef(drone())
+drone().send(server)
 
 sweep = Automation.from_points(
     [(0.0, 200.0, 1, 0.0),      # 200 Hz ...
@@ -296,8 +296,8 @@ if __name__ == "__main__":
 #
 # ```python
 # offline = Session.nrt(tempo=TEMPO)
-# offline.server.add_synthdef(sampler())
-# offline.server.read_buffer(wav)          # the take, on the offline server
+# sampler().send(offline.server)
+# Buffer.read(wav, server=offline.server)          # the take, on the offline server
 # song.render(offline.server, offline.clock)
 # samples = offline.render()
 # ```

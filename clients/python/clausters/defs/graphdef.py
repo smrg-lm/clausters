@@ -10,23 +10,23 @@ driven through the port names, never the private member node ids (the same
 encapsulation a composite SynthDef would give).
 
 It is a thin JSON builder, like the other two def kinds: it composes a spec and
-hands it to ``server.add_graphdef`` (``/d_graph``). The server resolves the
+sends it with ``gdef.send(server)`` (``/d_graph``). The server resolves the
 member def names (SynthDef *or* FaustDef, identically), allocates the
 instance's private buses and wires them.
 
 ```python
-from clausters.defs import GraphDef
+from clausters.defs import GraphDef, Group
 
 g = GraphDef("chain")
 mix = g.bus("mix")                          # a private internal audio bus
 src = g.add("gsrc", out=mix, level=1.0)     # a member; `out` control -> the bus
 g.add("gsink", {"in": mix, "out": "OUT"})   # `in` reads `mix`, `out` -> hardware
 g.port("gain", src["level"], default=0.5)   # surface port -> the source's level
-server.add_graphdef(g)                       # /d_graph (blocks on /done in RT)
+g.send(server)                       # /d_graph (blocks on /done in RT)
 
-inst = server.graph("chain", {"gain": 0.8})  # /graph_new
-server.set(inst, {"gain": 0.3})              # resolves against the surface
-server.free(inst)                            # frees the group + its private buses
+inst = Group.graph("chain", {"gain": 0.8}, server=server)   # /graph_new
+inst.set({"gain": 0.3})                 # resolves against the surface
+inst.free()                             # frees the group + its private buses
 ```
 
 The reserved control name ``"OUT"`` wires a member's output to hardware bus 0;
@@ -34,6 +34,8 @@ any other string value of a member control is the name of an internal bus.
 """
 
 import json
+
+from ._wire import resolve as _resolve, send_def
 
 
 class GraphBusRef:
@@ -98,7 +100,7 @@ def _control_value(v):
 
 class GraphDef:
     """A named node graph. Build it with `bus`, `add` and
-    `port`, then send it with ``server.add_graphdef``."""
+    `port`, then send it with `send`."""
 
     def __init__(self, name: str):
         self.name = str(name)
@@ -124,7 +126,7 @@ class GraphDef:
         binds controls to internal *control* buses via ``/n_map``. Pass
         controls as a dict (needed for reserved names like ``in``) and/or as
         keywords. ``voice=True`` marks a **per-voice** member: instantiated once
-        per `Server.graph_voice` (or MIDI note) instead of at
+        per `clausters.defs.Group.voice` (or MIDI note) instead of at
         instantiation — the per-note part of a polyphonic instrument."""
         merged = dict(controls or {})
         merged.update(control_kw)
@@ -176,6 +178,25 @@ class GraphDef:
         ``GraphDefSpec`` (see `spec`). Useful to inspect the composition before
         sending it."""
         return json.dumps(self.spec())
+
+    def send(self, server=None, *, wait: bool = True,
+             timeout: float = 10.0) -> str:
+        """Sends this def to the server via ``/d_graph`` and returns its
+        name.
+
+        Loading a GraphDef is cheap on the server (no JIT -- it only validates
+        and references the member defs), but it is still asynchronous, so the
+        same barrier discipline applies. ``wait=True``
+        (the default) blocks in RT until ``/done``/``/fail`` -- raising
+        `clausters.errors.CommandError` on the failure, or
+        `clausters.errors.ReplyTimeout` if the reply never lands. ``wait=False``
+        returns immediately (fire-and-forget), to be sequenced with the
+        server's ``sync`` before anything relies on the def (``yield`` it from
+        a routine, never block in one). In NRT the send is always *scored* at
+        time 0 -- the renderer loads the def before time advances -- so
+        ``wait`` does not apply."""
+        return send_def(_resolve(server), "/d_graph", (self.dump_def(),),
+                        self.name, wait, timeout)
 
     def plot_def(self, defs: dict | None = None, *, label: str | None = None,
                  w: int = 1000, h: int = 700, title: str | None = None, host=None):

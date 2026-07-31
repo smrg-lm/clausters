@@ -7,6 +7,7 @@ from clausters import Session
 from clausters.base import MonotonicTimebase, TempoClock
 from clausters.defs import Server
 from clausters.seq import Pbind, Pseq
+from clausters.defs import Group, Synth
 
 
 def _embed_or_skip():
@@ -53,12 +54,12 @@ def test_nrt_render_with_workers_is_bit_identical():
     def build():
         s = Session.nrt(tempo=1.0)
         server = s.server
-        server.add_synthdef(SynthDef(
-            "par_voice", out(0.0, sine(control("freq", 330.0)) * 0.1)))
-        band = server.group()
+        SynthDef(
+            "par_voice", out(0.0, sine(control("freq", 330.0)) * 0.1)).send(server)
+        band = Group.new(server=server)
         server.send_msg("/g_parallel", band.id, 1)
-        voices = [server.synth("par_voice", {"freq": 220.0 * (i + 1)},
-                               target=band.id) for i in range(4)]
+        voices = [Synth.new("par_voice", {"freq": 220.0 * (i + 1)},
+                               target=band.id, server=server) for i in range(4)]
 
         def score():
             yield 0.5

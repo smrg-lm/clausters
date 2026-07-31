@@ -30,8 +30,9 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
-from clausters.defs import Server, ServerOptions, SynthDef, control, out, sine
+from clausters.defs import Bus, Server, ServerOptions, SynthDef, control, out, sine
 from clausters.defs.node import AddAction
+from clausters.defs import Group, Synth
 
 REPO = os.path.join(os.path.dirname(__file__), "..")
 BIN = os.environ.get("CLAUSTERS_BIN", os.path.join(REPO, "target", "release", "clausters"))
@@ -60,14 +61,16 @@ def connect(timeout: float = 8.0) -> Server:
 def build_tree(server: Server):
     """A group holding two synths; the second's freq is mapped to a control
     bus, so it shows up as a `/n_map` in the node detail."""
-    server.add_synthdef(SynthDef("beep", out(0.0, sine(control("freq", 440.0))
-                                              * control("amp", 0.2))))
-    group = server.group()
-    a = server.synth("beep", {"freq": 220.0}, target=group.id, action=AddAction.TAIL)
-    b = server.synth("beep", {"freq": 330.0}, target=group.id, action=AddAction.TAIL)
-    freq_bus = server.control_bus()
-    server.set_bus(freq_bus, 440.0)
-    server.map(b, "freq", freq_bus)     # b.freq now follows the control bus
+    SynthDef("beep", out(0.0, sine(control("freq", 440.0))
+                                              * control("amp", 0.2))).send(server)
+    group = Group.new(server=server)
+    a = Synth.new("beep", {"freq": 220.0}, target=group.id,
+                  action=AddAction.TAIL, server=server)
+    b = Synth.new("beep", {"freq": 330.0}, target=group.id,
+                  action=AddAction.TAIL, server=server)
+    freq_bus = Bus.control(server=server)
+    freq_bus.set(440.0)
+    b.map("freq", freq_bus)     # b.freq now follows the control bus
     time.sleep(0.2)                     # let the commands apply before querying
     return group, a, b
 
@@ -92,7 +95,7 @@ def main():
         server.request("/verbosity", 1, timeout=2.0, expect=("/done", "/fail"))
         print("\nset server log level to info via /verbosity (see the server's stderr)")
 
-        server.free(group)
+        group.free()
     finally:
         try:
             server.quit()

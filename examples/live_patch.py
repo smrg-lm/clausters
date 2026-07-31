@@ -48,6 +48,7 @@ import wave
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.defs import (
+    Bus,
     FaustDef,
     Server,
     ServerOptions,
@@ -60,6 +61,8 @@ from clausters.defs import (
 )
 from clausters.errors import CommandError
 from clausters.defs.node import AddAction
+from clausters.defs import Group, Synth
+from clausters.defs import Buffer
 
 REPO = os.path.join(os.path.dirname(__file__), "..")
 BIN = os.environ.get("CLAUSTERS_BIN", os.path.join(REPO, "target", "release", "clausters"))
@@ -167,50 +170,52 @@ def run(server: Server, buf):
     fsine, bufplayer, mixer = build_defs()
     # Async sends; wait=True (default) blocks on /done. The Faust def JIT-
     # compiles on the server, so this is the slow one.
-    server.add_faustdef(fsine)
-    server.add_synthdef(bufplayer)
-    server.add_synthdef(mixer)
+    fsine.send(server)
+    bufplayer.send(server)
+    mixer.send(server)
 
     # Two groups give a defined execution order: everything in `sources` runs
     # before `output`, so the mixer always reads buses the sources already wrote
     # this block.
-    sources = server.group()
-    output = server.group()              # added after `sources` -> runs later
+    sources = Group.new(server=server)
+    output = Group.new(server=server)    # added after `sources` -> runs later
 
     # Buses connecting the nodes. Sizes come from ServerOptions (the allocators
     # never hand out a bus the server lacks).
-    bus_voice = server.audio_bus()
-    bus_sample = server.audio_bus()
-    freq_bus = server.control_bus()
-    server.set_bus(freq_bus, 220.0)      # initial pitch lives on the control bus
+    bus_voice = Bus.audio(server=server)
+    bus_sample = Bus.audio(server=server)
+    freq_bus = Bus.control(server=server)
+    freq_bus.set(220.0)      # initial pitch lives on the control bus
 
     # The Faust voice writes to bus_voice; its freq is *mapped* to the control
     # bus, so retuning is a single /c_set with no per-note command.
-    voice = server.synth("fsine", {"out": bus_voice.index},
-                         target=sources.id, action=AddAction.TAIL)
-    server.map(voice, "freq", freq_bus)
+    voice = Synth.new("fsine", {"out": bus_voice.index},
+                         target=sources.id, action=AddAction.TAIL, server=server)
+    voice.map("freq", freq_bus)
 
     # The buffer player loops the pluck into bus_sample.
-    player = server.synth("bufplayer",
+    player = Synth.new("bufplayer",
                           {"bufnum": buf.bufnum, "out": bus_sample.index,
                            "rate": 1.0, "amp": 0.5},
-                          target=sources.id, action=AddAction.TAIL)
+                          target=sources.id, action=AddAction.TAIL, server=server)
 
     # The mixer reads both source buses and sends the sum to the speakers.
-    server.synth("mixer", {"inA": bus_voice.index, "inB": bus_sample.index},
-                 target=output.id, action=AddAction.TAIL)
+    Synth.new("mixer", {"inA": bus_voice.index, "inB": bus_sample.index},
+                 target=output.id, action=AddAction.TAIL, server=server)
 
     print("playing: Faust sine + looped buffer, mixed to the outputs")
     # Move the voice's pitch by writing the control bus only; sweep the buffer
     # playback rate by setting the player's control directly.
     for pitch, rate in ((220.0, 1.0), (277.0, 0.75), (330.0, 1.5), (220.0, 1.0)):
-        server.set_bus(freq_bus, pitch)
-        server.set(player, {"rate": rate})
+        freq_bus.set(pitch)
+        player.set({"rate": rate})
         print(f"  freq bus -> {pitch:6.1f} Hz | buffer rate -> {rate}")
         time.sleep(0.6)
 
-    server.free(voice, player)
-    server.free(sources, output)         # frees the groups (and their contents)
+    voice.free()
+    player.free()
+    sources.free()
+    output.free()                    # frees the groups (and their contents)
     print("freed all nodes")
 
 
@@ -231,7 +236,7 @@ def main():
             buf = alloc_read(server, wav, frames)
             print(f"loaded buffer {buf.bufnum}: {frames} frames")
             run(server, buf)
-            server.free_buffer(buf)
+            buf.free()
     finally:
         try:
             server.quit()

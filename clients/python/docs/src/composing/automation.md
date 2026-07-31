@@ -28,7 +28,7 @@ def drone(name: str = "drone") -> SynthDef:
     sig = sine(in_ctl(bus)) * shape * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
-server.add_synthdef(drone())
+drone().send(server)
 ```
 
 ## The curve: an `Automation`

@@ -110,7 +110,7 @@ clock and the server's, because they are the same clock.</div>
           ? await pageConnection()
           : await WsConnection.open(el("url").value);
         server = await Server.open(connection);
-        await server.addSynthDef(voice());
+        await voice().send(server);
         log(`connected over the ${kind === "page" ? "in-page engine" : "WebSocket"}`);
 
         // The Server anchors the timebase — it is the object that knows the

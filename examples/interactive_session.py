@@ -45,8 +45,9 @@ def _repo_root():
 REPO = _repo_root()
 sys.path.insert(0, os.path.join(REPO, "clients", "python"))
 
-from clausters.defs import Server, ServerOptions, SynthDef, control, out, sine
+from clausters.defs import Bus, Server, ServerOptions, SynthDef, control, out, sine
 from clausters.defs.node import AddAction
+from clausters.defs import Group, Synth
 
 BIN = os.environ.get("CLAUSTERS_BIN", os.path.join(REPO, "target", "release", "clausters"))
 print("server binary:", BIN, "(ok)" if os.path.exists(BIN) else "(MISSING: cargo build --release)")
@@ -117,7 +118,7 @@ show_tree("empty tree (just the root group 0)")
 
 # %%
 beep = SynthDef("beep", out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)))
-server.add_synthdef(beep)
+beep.send(server)
 print("loaded def 'beep'; status:", server.status())   # [..., num_defs, ...]
 
 # %% [markdown]
@@ -127,8 +128,8 @@ print("loaded def 'beep'; status:", server.status())   # [..., num_defs, ...]
 # `output`. They are added at the tail of the root in creation order.
 
 # %%
-sources = server.group()
-output = server.group()
+sources = Group.new(server=server)
+output = Group.new(server=server)
 print(f"sources = group {sources.id}, output = group {output.id}")
 show_tree("two empty groups under the root")
 
@@ -138,8 +139,10 @@ show_tree("two empty groups under the root")
 # Spawn two `beep` synths at the tail of `sources`. They appear nested under it.
 
 # %%
-a = server.synth("beep", {"freq": 220.0}, target=sources.id, action=AddAction.TAIL)
-b = server.synth("beep", {"freq": 330.0}, target=sources.id, action=AddAction.TAIL)
+a = Synth.new("beep", {"freq": 220.0}, target=sources.id,
+              action=AddAction.TAIL, server=server)
+b = Synth.new("beep", {"freq": 330.0}, target=sources.id,
+              action=AddAction.TAIL, server=server)
 print(f"spawned synths {a.id} and {b.id} in group {sources.id}")
 show_tree("two synths under the sources group")
 
@@ -151,9 +154,9 @@ show_tree("two synths under the sources group")
 # inferred read/write buses per node.
 
 # %%
-freq_bus = server.control_bus()
-server.set_bus(freq_bus, 440.0)
-server.map(b, "freq", freq_bus)
+freq_bus = Bus.control(server=server)
+freq_bus.set(440.0)
+b.map("freq", freq_bus)
 time.sleep(0.1)   # let the commands apply before querying
 
 print(f"mapped synth {b.id}.freq -> control bus {freq_bus.index}")
@@ -166,8 +169,8 @@ print(json.dumps(server.node_query(b), indent=2))
 # tree reflects both.
 
 # %%
-server.set(a, {"amp": 0.05})
-server.set_bus(freq_bus, 550.0)
+a.set({"amp": 0.05})
+freq_bus.set(550.0)
 time.sleep(0.1)
 show_tree("after /n_set amp and /c_set on the mapped bus")
 print("\ninferred bus graph of the sources group:")
@@ -183,7 +186,7 @@ print(server.dump_graph(sources.id), end="")
 # %%
 print("verbosity ->", server.request("/verbosity", 2, timeout=2.0, expect=("/done", "/fail")))
 print("dumpOSC   ->", server.request("/dumpOSC", 1, timeout=2.0, expect=("/done", "/fail")))
-server.set(a, {"freq": 200.0})   # now traced on the server's stderr
+a.set({"freq": 200.0})   # now traced on the server's stderr
 print("sent /n_set; check the server's stderr for the trace line")
 
 # %% [markdown]
@@ -193,7 +196,8 @@ print("sent /n_set; check the server's stderr for the trace line")
 # boot cell (section 2) starts a fresh one.
 
 # %%
-server.free(sources, output)
+sources.free()
+output.free()
 show_tree("after freeing the groups")
 server.quit()
 server.close()

@@ -25,6 +25,9 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { WsConnection } from "../src/base/connection.ts";
 import { loadOsc } from "../src/base/osc.ts";
+import { Bus } from "../src/defs/bus.ts";
+import { Buffer } from "../src/defs/buffer.ts";
+import { Group, Synth } from "../src/defs/node.ts";
 import { Server } from "../src/defs/server.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { FaustDef } from "../src/defs/faustdef.ts";
@@ -88,19 +91,19 @@ test("Server.open sizes its allocators from the running server", {
 
         // The allocators hand out of the space those sizes describe: audio
         // buses start above the hardware outputs, control buses at 0.
-        const audio = server.audioBus(2);
+        const audio = Bus.audio(server, 2);
         assert.equal(audio.index, info.channels);
         assert.equal(audio.channels, 2);
-        assert.equal(server.controlBus().index, 0);
+        assert.equal(Bus.control(server).index, 0);
 
         // A freed run is reusable — the registry invariant. Reuse is not
         // *immediate* (the scan hint rotates on, so a freshly released run is
         // not handed straight back), so what it guarantees is that the space
         // does not leak: cycling far past its width keeps succeeding.
-        server.freeBus(audio);
+        audio.free();
         assert.equal(server.audioBuses.inUse, 0);
         for (let i = 0; i < info.audioBuses; i++) {
-            server.freeBus(server.audioBus(2));
+            Bus.audio(server, 2).free();
         }
         assert.equal(server.audioBuses.inUse, 0);
     });
@@ -126,7 +129,7 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
 
         // Fire-and-forget plus the barrier: the ordering discipline the
         // asynchronous def path exists for.
-        await server.addSynthDef(def, { wait: false });
+        await def.send(server, { wait: false });
         await server.sync();
 
         const defs = await server.queryDefs(["ts_beep"]);
@@ -137,7 +140,7 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
             ["amp", "freq", "gate"],
         );
 
-        const synth = server.synth("ts_beep", { freq: 220.0, amp: 0.05 });
+        const synth = Synth.new(server, "ts_beep", { freq: 220.0, amp: 0.05 });
         await server.sync();
 
         // It is in the tree, under the root, with the controls it was given.
@@ -155,7 +158,7 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
         assert.deepEqual(tree.children?.map((c) => c.id), [synth.id]);
         assert.ok(Number((await server.status())[4]) >= 1, "the def is loaded");
 
-        server.set(synth, { freq: 330.0 });
+        synth.set({ freq: 330.0 });
         await server.sync();
         assert.equal((await server.nodeQuery(synth)).controls?.freq, 330.0);
 
@@ -187,9 +190,7 @@ test("the example's voice def compiles and its gate releases it", {
                 gate,
                 doneAction: DoneAction.FREE_SELF,
             }));
-        await server.addSynthDef(
-            new SynthDef("ts_voice", out(0.0, voice), out(1.0, voice)),
-        );
+        await new SynthDef("ts_voice", out(0.0, voice), out(1.0, voice)).send(server);
 
         // A Q of 6 reaches the wire as its reciprocal, the rq the server takes.
         const rq = new SynthDef("q", out(0.0, rlpf(saw(110.0), 800.0, { q: 4.0 })))
@@ -197,12 +198,12 @@ test("the example's voice def compiles and its gate releases it", {
             .ugens.find((u) => u.kind === "RLPF")!;
         assert.deepEqual(rq.inputs[2], { const: 0.25 });
 
-        const note = server.synth("ts_voice", { freq: 330.0 });
+        const note = Synth.new(server, "ts_voice", { freq: 330.0 });
         await server.sync();
         assert.equal((await server.nodeQuery(note)).def, "ts_voice");
 
         // Dropping the gate hands the node's life to the envelope.
-        server.set(note, { gate: 0.0 });
+        note.set({ gate: 0.0 });
         await server.sync();
         for (let i = 0; i < 40; i++) {
             if ((await server.queryTree()).children?.length === 0) break;
@@ -220,10 +221,10 @@ test("a node id returns to the registry when its /n_end arrives", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {
-        await server.addSynthDef(new SynthDef("ts_quiet", out(0.0, sine(1.0).mul(0))));
-        const first = server.synth("ts_quiet");
+        await new SynthDef("ts_quiet", out(0.0, sine(1.0).mul(0))).send(server);
+        const first = Synth.new(server, "ts_quiet");
         assert.equal(server.nodes.inUse, 1);
-        server.free(first);
+        first.free();
         // Freeing does not release the id: it stays tracked until the server
         // confirms the death with /n_end, which is what the registry listens
         // for. (Releasing at send time could re-hand an id whose node is
@@ -248,12 +249,12 @@ test("a FaustDef is JIT-compiled and played", { skip: !hasServer }, async () => 
         );
         assert.deepEqual(def.controlNames(), ["freq", "amp"]);
 
-        await server.addFaustDef(def);
+        await def.send(server);
 
         const defs = await server.queryDefs(["ts_tone"]);
         assert.equal(defs[0]!.family, "faust");
 
-        const synth = server.synth("ts_tone", { freq: 330.0 });
+        const synth = Synth.new(server, "ts_tone", { freq: 330.0 });
         await server.sync();
         assert.equal((await server.nodeQuery(synth)).def, "ts_tone");
         synth.free();
@@ -265,24 +266,20 @@ test("a GraphDef instantiates as a wired group driven through its surface", {
 }, async () => {
     await withServer(async (server) => {
         const level = control("level", 0.1);
-        await server.addSynthDef(
-            new SynthDef("ts_src", out(control("out", 0.0), sine(220.0).mul(level))),
-        );
-        await server.addSynthDef(
-            new SynthDef(
+        await new SynthDef("ts_src", out(control("out", 0.0), sine(220.0).mul(level))).send(server);
+        await new SynthDef(
                 "ts_sink",
                 out(control("out", 0.0), sine(1.0).mul(0.0)),
-            ),
-        );
+            ).send(server);
 
         const g = new GraphDef("ts_chain");
         const bus = g.bus("mix");
         const src = g.add("ts_src", { out: bus, level: 0.2 });
         g.add("ts_sink", { in: bus, out: "OUT" });
         g.port("gain", [src.control("level")], 0.5);
-        await server.addGraphDef(g);
+        await g.send(server);
 
-        const instance = server.graph("ts_chain", { gain: 0.3 });
+        const instance = Group.graph(server, "ts_chain", { gain: 0.3 });
         await server.sync();
 
         // The instance is a group holding the members the def named.
@@ -292,10 +289,10 @@ test("a GraphDef instantiates as a wired group driven through its surface", {
         assert.equal(tree.children?.length, 2);
 
         // The surface is what drives it — the private member ids never appear.
-        server.set(instance, { gain: 0.1 });
+        instance.set({ gain: 0.1 });
         await server.sync();
 
-        server.free(instance);
+        instance.free();
         await server.sync();
         assert.deepEqual((await server.queryTree()).children, []);
     });
@@ -306,11 +303,11 @@ test("a def the server rejects comes back as a CommandError", {
 }, async () => {
     await withServer(async (server) => {
         await assert.rejects(
-            server.addFaustDef(FaustDef.fromSource("ts_broken", "process = @@@;")),
+            FaustDef.fromSource("ts_broken", "process = @@@;").send(server),
             CommandError,
         );
         // The failure is per-command: the server is still usable after it.
-        await server.addSynthDef(new SynthDef("ts_after", out(0.0, sine(440.0))));
+        await new SynthDef("ts_after", out(0.0, sine(440.0))).send(server);
         assert.equal((await server.queryDefs(["ts_after"]))[0]!.family, "synth");
     });
 });
@@ -319,25 +316,25 @@ test("buffers allocate, generate and free through the pool", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {
-        const buf = await server.allocBuffer(1024, 1);
+        const buf = await Buffer.alloc(server, 1024, 1);
         assert.equal(server.buffers.inUse, 1);
 
-        const queried = await server.queryBuffer(buf);
+        const queried = await buf.query();
         assert.equal(queried.frames, 1024);
         assert.equal(queried.channels, 1);
 
         // `sine1` takes its flag word first (1 = normalize, 2 = wavetable),
         // as an int — the tagging rule sends an integral number as one.
-        await server.genBuffer(buf, "sine1", [3, 1.0, 0.5, 0.25]);
-        server.freeBuffer(buf);
+        await buf.gen("sine1", [3, 1.0, 0.5, 0.25]);
+        buf.free();
         assert.equal(server.buffers.inUse, 0);
     });
 });
 
 test("control buses carry a value both ways", { skip: !hasServer }, async () => {
     await withServer(async (server) => {
-        const bus = server.controlBus();
-        server.setBus(bus, 0.25);
-        assert.equal(await server.getBus(bus), 0.25);
+        const bus = Bus.control(server);
+        bus.set(0.25);
+        assert.equal(await bus.get(), 0.25);
     });
 });

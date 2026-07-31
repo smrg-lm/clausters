@@ -32,7 +32,7 @@
     <script type="module">
       import {
         loadOsc, pageConnection, server as engine,
-        Server, SynthDef, Env, DoneAction,
+        Server, Synth, SynthDef, Env, DoneAction,
         control, envGen, out, sine,
       } from "../dist/index.js";
 
@@ -79,7 +79,7 @@
 
         // Fire-and-forget plus the barrier: the ordering discipline that
         // makes an asynchronous def path safe.
-        await server.addSynthDef(def, { wait: false });
+        await def.send(server, { wait: false });
         await server.sync();
         const loaded = await server.queryDefs(["page_beep"]);
         if (loaded[0]?.family !== "synth") {
@@ -87,7 +87,7 @@
         }
         log(`def loaded: ${loaded[0].controls.map((c) => c.name).join(", ")}`);
 
-        const synth = server.synth("page_beep", { freq: 330.0, amp: 0.2 });
+        const synth = Synth.new(server, "page_beep", { freq: 330.0, amp: 0.2 });
         await server.sync();
 
         // Read it back out of the tree — the queryable half of the acceptance.
@@ -113,7 +113,7 @@
         if (peak < 0.01) throw new Error(`silent output (peak ${peak})`);
         log(`output peak ${peak.toFixed(3)}`);
 
-        server.set(synth, { freq: 220.0 });
+        synth.set({ freq: 220.0 });
         await server.sync();
         const moved = await server.nodeQuery(synth);
         if (moved.controls.freq !== 220) {

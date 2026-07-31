@@ -16,8 +16,8 @@ propagates it to the rest of the chain.
 
 Two synths render side by side so the effect is audible: the raw noise on the
 left, the spectrally low-passed noise on the right. A running server would also
-let you swap the FFT window live with ``server.u_cmd(synth, fft_index,
-"window", 4)`` (see the docs); here we render offline.
+let you swap the FFT window live with ``synth.u_cmd(fft_index, "window", 4)``
+(see the docs); here we render offline.
 
 The smoothing windows themselves are shared with the server through the native
 core (``clausters._native.window``), so a client that pre-windows audio matches
@@ -29,6 +29,7 @@ import sys
 from clausters import Session
 from clausters.base import Routine
 from clausters.defs import (
+    Synth,
     SynthDef,
     fft,
     ifft,
@@ -56,13 +57,13 @@ def main():
     out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "spectral.wav")
 
     session = Session.nrt(tempo=1.0)
-    session.server.add_synthdef(noisy())
-    session.server.add_synthdef(spectral_lowpass())
+    noisy().send(session.server)
+    spectral_lowpass().send(session.server)
 
     # Both play for the whole render; a routine frees them at t = 2 beats
     # (tempo 1 -> 2 s) so the offline render has a defined duration.
-    raw = session.server.synth("noisy")
-    lp = session.server.synth("spectral_lp")
+    raw = Synth.new("noisy", server=session.server)
+    lp = Synth.new("spectral_lp", server=session.server)
 
     def stop():
         yield 2.0

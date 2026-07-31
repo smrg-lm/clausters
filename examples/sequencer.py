@@ -21,7 +21,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import OscNrtInterface, Routine, TempoClock
-from clausters.defs import Server, SynthDef, control
+from clausters.defs import Server, Synth, SynthDef, control
 from clausters.defs.ugens import (
     decay2, demand, dseq, impulse, latch, lpf, out, pulse_divider, rlpf, saw,
     toggle_ff, white_noise,
@@ -93,7 +93,8 @@ def bass() -> SynthDef:
 def play(server):
     """Two synths, sent once, then four seconds of silence on this side. The
     only later message is the one that ends the render."""
-    voices = [server.synth("seq", {"amp": 0.18}), server.synth("seq_bass", {"amp": 0.22})]
+    voices = [Synth.new("seq", {"amp": 0.18}, server=server),
+              Synth.new("seq_bass", {"amp": 0.22}, server=server)]
     yield 4.0
     for v in voices:
         server.send_bundle(("/n_free", v.id))
@@ -102,7 +103,7 @@ def play(server):
 def render(path=None):
     server = Server(interface=OscNrtInterface())
     for sdef in (sequencer(), bass()):
-        server.add_synthdef(sdef)
+        sdef.send(server)
     clock = TempoClock(tempo=1.0)
     clock.play(Routine(lambda: play(server)))
     clock.render()

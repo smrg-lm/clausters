@@ -17,6 +17,8 @@
 // against the in-page engine `/d_faust` fails. That is a property of the
 // build, not of this class — nothing here names a carrier.
 
+import type { MsgArg } from "../base/osc.ts";
+import type { Server } from "./server.ts";
 import { Signal } from "./signals.ts";
 import type { SignalNode } from "./signals.ts";
 
@@ -64,6 +66,30 @@ export class FaustDef {
     }
 
     // --- serialization ---
+
+    /**
+     * Sends this def to the server via `/d_faust` and returns its name.
+     *
+     * `/d_faust` JIT-compiles on the server's network thread, and reaches a
+     * **native** server only: the in-page engine is the `synth,embed` build
+     * with no LLVM, and answers `/fail`.
+     *
+     * `wait: true` (the default) resolves on `/done` and rejects with
+     * `CommandError` on `/fail`; `wait: false` only sends, to be sequenced
+     * with the server's `sync` before anything relies on the def.
+     */
+    async send(
+        server: Server,
+        { wait = true, timeout = 10.0 }: { wait?: boolean; timeout?: number } = {},
+    ): Promise<string> {
+        const payload: MsgArg[] = [this.name, this.dumpDef()];
+        if (!wait) {
+            server.sendMsg("/d_faust", ...payload);
+            return this.name;
+        }
+        await server.command("/d_faust", payload, timeout);
+        return this.name;
+    }
 
     /**
      * The def serialized to text — the `/d_faust <name> <payload>` wire

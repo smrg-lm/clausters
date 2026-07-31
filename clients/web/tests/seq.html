@@ -59,10 +59,8 @@
 
         // A plain sine: the event's own release frees it, so /n_end is the
         // note ending exactly where the schedule put it.
-        await server.addSynthDef(
-          new SynthDef("web_seq_beep",
-            out(0.0, sine(control("freq", 440.0)).mul(0.05))),
-        );
+        await new SynthDef("web_seq_beep",
+            out(0.0, sine(control("freq", 440.0)).mul(0.05))).send(server);
 
         // The in-page engine runs in this page's AudioContext, so the
         // timebase is anchored, not tracked.

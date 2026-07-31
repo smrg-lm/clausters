@@ -284,7 +284,7 @@ def main(argv):
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
 
     counter = [0]
-    server.add_synthdef(impulse_def(IMPULSE_DEF))   # define + load the def once, up front
+    impulse_def(IMPULSE_DEF).send(server)   # define + load the def once, up front
     print(f"running for {args.seconds:.0f} s (Ctrl-C to stop early and analyze) ...")
     clock.play(Routine(impulse_routine(server, counter)))
     clock.start()

@@ -19,7 +19,9 @@ Two phases keep the clock thread unblocked — a routine must **never** block:
 """
 
 from ..base.main import main
-from ..defs.node import AddAction, ROOT_NODE_ID
+from ..defs.buffer import Buffer
+from ..defs.bus import Bus
+from ..defs.node import AddAction, Node, ROOT_NODE_ID
 from ..defs.synthdef import SynthDef
 from ..defs.ugens import (
     buf_frames,
@@ -54,7 +56,7 @@ def add_automation_def(server, *, wait: bool = True):
     """Register the automation lane def on ``server`` once (idempotent)."""
     if getattr(server, "_automation_def", False):
         return
-    server.add_synthdef(auto_lane_def(), wait=wait)
+    auto_lane_def().send(server, wait=wait)
     server._automation_def = True
 
 
@@ -131,10 +133,10 @@ class Automation:
         in NRT."""
         add_automation_def(server, wait=wait)
         if self.buf is None:
-            self.buf = server.alloc_buffer(self.frames, 1, wait=wait)
-        server.gen_buffer(self.buf, "env", *_env_gen_args(self.env), wait=wait)
+            self.buf = Buffer.alloc(self.frames, 1, wait=wait, server=server)
+        self.buf.gen("env", *_env_gen_args(self.env), wait=wait)
         if self.bus is None:
-            self.bus = server.control_bus()
+            self.bus = Bus.control(server=server)
         return self
 
     def play(self, destination):
@@ -183,13 +185,13 @@ class Automation:
         value. A no-op when nothing is playing; the end-of-curve free already
         scheduled still arrives and is harmless."""
         if self.node is not None and self._playing_on is not None:
-            self._playing_on.free(self.node)
+            Node(self.node, self._playing_on).free()
         self.node = self._playing_on = None
 
     def free(self, server):
         """Return the buffer and bus to their allocators."""
         if self.buf is not None:
-            server.free_buffer(self.buf)
+            self.buf.free()
             self.buf = None
         if self.bus is not None:
             server.control_buses.free(self.bus)

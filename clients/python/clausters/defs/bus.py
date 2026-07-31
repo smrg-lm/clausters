@@ -21,13 +21,68 @@ counts can be read back with `query_info`.
 """
 
 from .. import _native
+from ._wire import resolve as _resolve
 
 
 class Bus:
-    def __init__(self, index: int, channels: int = 1, rate: str = "audio"):
+    def __init__(self, index: int, channels: int = 1, rate: str = "audio",
+                 server=None):
         self.index = index
         self.channels = channels
         self.rate = rate  # 'audio' | 'control'
+        #: the `Server` this bus was allocated on (set by `audio` / `control`),
+        #: so its commands know where to go without being told.
+        self.server = server
+
+    @classmethod
+    def audio(cls, channels: int = 1, *, server=None) -> "Bus":
+        """A run of ``channels`` contiguous audio buses from the server's
+        pool, above the hardware outputs."""
+        srv = _resolve(server)
+        return srv.audio_buses.alloc(channels, srv)
+
+    @classmethod
+    def control(cls, channels: int = 1, *, server=None) -> "Bus":
+        """A run of ``channels`` contiguous control buses from the server's
+        pool."""
+        srv = _resolve(server)
+        return srv.control_buses.alloc(channels, srv)
+
+    def _server(self):
+        return _resolve(self.server)
+
+    def set(self, value):
+        """Write a value to this control bus (``/c_set``)."""
+        self._server().send_msg("/c_set", self.index, float(value))
+
+    def get(self, timeout: float = 5.0) -> float:
+        """Read this control bus's current value (``/c_get`` -> ``/c_set``).
+        RT only (it needs a reply)."""
+        _, args = self._server().request("/c_get", self.index, timeout=timeout,
+                                         expect=("/c_set",))
+        return args[1] if len(args) >= 2 else args[-1]
+
+    def watch(self, flag: bool = True):
+        """Asks the server to make this audio bus readable (``/tap``): from the
+        next block on, the engine records it into the shared segment, where a
+        GUI oscilloscope reads it with zero messages (or a client streams it
+        with `clausters.defs.Server.stream_taps`). ``flag=False`` stops.
+
+        **The bus is the only number you name.** Which of the server's finite
+        sample rings carries it is the server's own bookkeeping, published in
+        the segment for whoever reads the samples. Watches count, so two views
+        of one bus share a ring and the last one to stop frees it. No ack, like
+        ``/n_map`` (failures reply ``/fail`` -- an unknown bus, no tap region,
+        or every ring already taken); sequence with ``sync`` when needed.
+        """
+        self._server().send_msg("/tap", self.index, 1 if flag else 0)
+
+    def free(self):
+        """Returns this bus's run to the server's pool."""
+        server = self._server()
+        allocator = (server.audio_buses if self.rate == "audio"
+                     else server.control_buses)
+        allocator.free(self)
 
     def __repr__(self):
         return f"Bus({self.rate}, index={self.index}, channels={self.channels})"
@@ -45,13 +100,14 @@ class _Allocator:
         span = max(0, top - reserved)
         self._registry = _native.Registry(reserved, span) if span > 0 else None
 
-    def alloc(self, channels: int = 1) -> Bus:
-        """A run of ``channels`` contiguous buses. Raises when no such run is
-        free — exhaustion is an explicit failure, never an aliased index."""
+    def alloc(self, channels: int = 1, server=None) -> Bus:
+        """A run of ``channels`` contiguous buses, stamped with the ``server``
+        whose pool this is. Raises when no such run is free — exhaustion is an
+        explicit failure, never an aliased index."""
         index = self._registry.alloc(channels) if self._registry else None
         if index is None:
             raise RuntimeError(f"out of {self.rate} buses")
-        return Bus(index, channels, self.rate)
+        return Bus(index, channels, self.rate, server)
 
     def free(self, bus: Bus):
         """Returns the bus's run to the pool. A double free (or a bus this

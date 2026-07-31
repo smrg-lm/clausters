@@ -17,7 +17,8 @@ bus per connected net — its writers **sum** — and `to_graphdef` hands back a
     osc = p.add(osc_def)                  # ports derived from the SynthDef's graph
     dac = p.add(dac_def)                  # a terminal sink: an inlet, no outlet
     p.connect(osc, "out", dac, "in")      # osc -> dac -> speakers
-    server.add_graphdef(p.to_graphdef("patch")); server.graph("patch")   # sounds
+    p.to_graphdef("patch").send(server)
+    Group.graph("patch", server=server)                     # sounds
 
 The GUI is a **view** of that same model. The `patch` widget draws the boxes and
 cords and is a full **canvas**:
@@ -61,6 +62,7 @@ import sys
 from clausters import Session
 from clausters.defs import GraphPatch, SynthDef, control, in_, lag, out, sine
 from clausters.gui import button, panel, patch, scroll, window
+from clausters.defs import Group
 
 TEMPO = 2.0
 SILENT = 64  # a spare audio bus (0..127) nothing reads: the "unconnected" default.
@@ -107,7 +109,7 @@ session = Session.live(tempo=TEMPO, latency=0.1)
 server = session.server
 defs = {"osc": osc(), "filt": filt(), "trem": trem(), "dac": dac()}
 for sdef in defs.values():
-    server.add_synthdef(sdef)
+    sdef.send(server)
 
 
 # %% [markdown]
@@ -162,10 +164,10 @@ def render() -> None:
     except ValueError as exc:              # a malformed cord from the pass
         print(f"  cannot compile: {exc}")
         return
-    server.add_graphdef(gdef)
+    gdef.send(server)
     if instance is not None:
         instance.free()
-    instance = server.graph("patch")
+    instance = Group.graph("patch", server=server)
     print("  rendered — the patch is sounding")
 
 

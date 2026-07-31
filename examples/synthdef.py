@@ -76,7 +76,7 @@ def render_pbind(instrument: str, sdef: SynthDef | None):
     `/d_recv` first so the offline renderer compiles it before time advances."""
     server = Server(interface=OscNrtInterface())
     if sdef is not None:
-        server.add_synthdef(sdef)      # scored at t=0 in NRT
+        sdef.send(server)      # scored at t=0 in NRT
     clock = TempoClock(tempo=1.0)
     # `has_gate` releases each note with `gate 0` instead of freeing the node
     # outright, which is what the player does for `default` on its own — the

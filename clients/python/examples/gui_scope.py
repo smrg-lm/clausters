@@ -35,6 +35,7 @@ import time
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
 from clausters.gui import panel, scope, window
+from clausters.defs import Synth
 
 # %% [markdown]
 # ## Launch the server and the GUI, and a tone on the output bus
@@ -46,9 +47,9 @@ session = Session.live()
 server = session.server
 gui = session.gui()
 
-server.add_synthdef(SynthDef(
-    "tone", out(0.0, sine(control("freq", 220.0)) * control("amp", 0.2))))
-synth = server.synth("tone", {"freq": 220.0})
+SynthDef(
+    "tone", out(0.0, sine(control("freq", 220.0)) * control("amp", 0.2))).send(server)
+synth = Synth.new("tone", {"freq": 220.0}, server=server)
 
 # %% [markdown]
 # ## Two scopes on the same bus: triggered vs free-running
@@ -82,7 +83,7 @@ def run(seconds: float) -> None:
     start = time.monotonic()
     while time.monotonic() - start < seconds and not _closed:
         phase = (time.monotonic() - start) / 8.0
-        server.set(synth, {"freq": 330.0 + 110.0 * math.sin(2 * math.pi * phase)})
+        synth.set({"freq": 330.0 + 110.0 * math.sin(2 * math.pi * phase)})
         gui.pump(timeout=0.03)
 
 
@@ -91,7 +92,7 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
         run(20.0)
     finally:
-        server.free(synth)
+        synth.free()
         session.close()
 else:
     print("scope up - run(10) to sweep the tone, session.close() to end")

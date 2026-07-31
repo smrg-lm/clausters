@@ -10,9 +10,12 @@ from clausters.defs import (
     AddAction,
     AudioBusAllocator,
     BufferAllocator,
+    Bus,
     FaustDef,
+    Group,
     NodeIdAllocator,
     Server,
+    Synth,
 )
 from clausters.defs import signals as S
 
@@ -133,6 +136,29 @@ def test_audio_bus_allocator_reserves_outputs_and_graph_top():
         a2.alloc(1)
 
 
+def test_bus_commands_go_through_the_bus():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    bus = Bus.control(server=srv)
+    assert bus.server is srv and bus.rate == "control"
+    bus.set(0.25)
+    assert iface.sent[-1] == ("/c_set", [bus.index, 0.25])
+    iface.queue_reply("/c_set", bus.index, 0.25)
+    assert bus.get() == 0.25
+    bus.free()
+    assert srv.control_buses.in_use == 0
+
+
+def test_bus_watch_taps_the_bus():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    bus = Bus.audio(2, server=srv)
+    bus.watch()
+    assert iface.sent[-1] == ("/tap", [bus.index, 1])
+    bus.watch(False)
+    assert iface.sent[-1] == ("/tap", [bus.index, 0])
+
+
 def test_bus_allocator_refuses_double_free():
     a = AudioBusAllocator(size=128, reserved=2)
     b = a.alloc(2)
@@ -183,29 +209,51 @@ class _FakeInterface:
         pass
 
 
-def test_server_builds_s_new_correctly():
+def test_synth_new_builds_s_new_correctly():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    synth = srv.synth("foo", {"freq": 440.0}, target=0, action=AddAction.TAIL)
-    assert synth.id == 1000 and synth.defname == "foo"
+    synth = Synth.new("foo", {"freq": 440.0}, target=0, action=AddAction.TAIL,
+                      server=srv)
+    assert synth.id == 1000 and synth.defname == "foo" and synth.server is srv
     assert iface.sent[-1] == ("/s_new", ["foo", 1000, 1, 0, "freq", 440.0])
 
 
-def test_server_add_faustdef_waits_for_done_and_raises_on_fail():
+def test_node_commands_go_through_the_node():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    node = Synth.new("foo", server=srv)
+    node.set({"freq": 220.0})
+    assert iface.sent[-1] == ("/n_set", [node.id, "freq", 220.0])
+    node.free()
+    assert iface.sent[-1] == ("/n_free", [node.id])
+
+
+def test_group_new_and_graph_build_their_own_message():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    group = Group.new(server=srv)
+    assert iface.sent[-1] == ("/g_new", [group.id, 1, 0])
+    inst = Group.graph("chain", {"gain": 0.8}, server=srv)
+    assert iface.sent[-1] == ("/graph_new", ["chain", inst.id, 1, 0, "gain", 0.8])
+    voice = inst.voice({"freq": 440.0})
+    assert iface.sent[-1] == ("/graph_voice", [inst.id, voice.id, "freq", 440.0])
+
+
+def test_faustdef_send_waits_for_done_and_raises_on_fail():
     iface = _FakeInterface()
     srv = Server(interface=iface)
     fdef = FaustDef.from_source("ok", "process = _;")
 
     iface.queue_reply("/done", "/d_faust", "ok")
-    assert srv.add_faustdef(fdef) == "ok"
+    assert fdef.send(srv) == "ok"
     assert iface.sent[-1][0] == "/d_faust"
 
     iface.queue_reply("/fail", "/d_faust", "boom")
     with pytest.raises(RuntimeError):
-        srv.add_faustdef(fdef)
+        fdef.send(srv)
 
     # wait=False is fire-and-forget: sends /d_faust without expecting a reply.
-    assert srv.add_faustdef(fdef, wait=False) == "ok"
+    assert fdef.send(srv, wait=False) == "ok"
     assert iface.sent[-1][0] == "/d_faust"
 
 
@@ -218,14 +266,14 @@ def test_server_sync_round_trips_synced_id():
     assert iface.sent[-1][1] == [1]
 
 
-def test_server_map_and_set_layout():
+def test_node_map_and_set_layout():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    node = srv.synth("foo")
-    srv.set(node, {"in": 4.0, "out": 0.0})        # reserved controls via dict
+    node = Synth.new("foo", server=srv)
+    node.set({"in": 4.0, "out": 0.0})             # reserved controls via dict
     assert iface.sent[-1] == ("/n_set", [1000, "in", 4.0, "out", 0.0])
-    bus = srv.audio_bus(1)
-    srv.map(node, "in", bus, audio=True)
+    bus = Bus.audio(1, server=srv)
+    node.map("in", bus, audio=True)
     assert iface.sent[-1] == ("/n_mapa", [1000, "in", bus.index])
 
 
@@ -235,7 +283,7 @@ def test_server_stream_buses_subscribes_and_cancels():
     iface = _FakeInterface()
     srv = Server(interface=iface)
     iface.queue_reply("/done", "/c_stream")
-    addr, args = srv.stream_buses(33, 10, srv.control_bus())
+    addr, args = srv.stream_buses(33, 10, Bus.control(server=srv))
     assert addr == "/done" and args[0] == "/c_stream"
     assert iface.sent[-1] == ("/c_stream", [33, 10, 0])
     # period <= 0 (or no buses) cancels the subscription.
@@ -244,16 +292,16 @@ def test_server_stream_buses_subscribes_and_cancels():
     assert iface.sent[-1] == ("/c_stream", [0])
 
 
-def test_server_run_pause_resume_emit_n_run():
+def test_node_run_pause_resume_emit_n_run():
     # S4: /n_run pauses (flag 0) / resumes (flag 1) a node.
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    node = srv.synth("foo")
-    srv.pause(node)
+    node = Synth.new("foo", server=srv)
+    node.pause()
     assert iface.sent[-1] == ("/n_run", [1000, 0])
-    srv.resume(node)
+    node.resume()
     assert iface.sent[-1] == ("/n_run", [1000, 1])
-    srv.run(1234, False)                          # a bare id, a whole group
+    Group(1234, srv).run(False)                   # a handle for a reported id
     assert iface.sent[-1] == ("/n_run", [1234, 0])
 
 

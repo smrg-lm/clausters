@@ -78,7 +78,7 @@
     <script type="module">
       import {
         loadOsc, pageConnection, server as engine,
-        Server, SynthDef, GuiHost, guiHost, gui,
+        Server, Bus, Synth, SynthDef, GuiHost, guiHost, gui,
         control, out, saw, lpf,
       } from "../dist/index.js";
 
@@ -104,14 +104,13 @@
           const freq = control("freq", 220.0);
           const amp = control("amp", 0.2);
           const cutoff = control("cutoff", 2000.0);
-          await server.addSynthDef(new SynthDef(
-            "gui_tone", out(0.0, lpf(saw(freq), cutoff).mul(amp))));
+          await new SynthDef(
+            "gui_tone", out(0.0, lpf(saw(freq), cutoff).mul(amp))).send(server);
         }
         return server;
       }
 
-      const playing = () => (voice ??= server.synth(
-        "gui_tone", { freq: 220.0, amp: 0.2 }));
+      const playing = () => (voice ??= Synth.new(server, "gui_tone", { freq: 220.0, amp: 0.2 }));
 
       // The GUI side. `GuiHost.page()` drives the wasm host on this page's
       // canvas; `GuiHost.connect(url)` would drive a native one, and nothing
@@ -194,11 +193,11 @@
         w.widget("freq").bind("/n_set", voice.id, "freq");
         // The scripted controls: the event comes here, and this code decides.
         w.widget("cutoff").onEvent((value) => {
-          if (voice) server.set(voice, { cutoff: value });
+          if (voice) voice.set({ cutoff: value });
           say(`cutoff ${value.toFixed(0)} Hz (through the script)`);
         });
         w.widget("amp").onEvent((value) => {
-          if (voice) server.set(voice, { amp: value });
+          if (voice) voice.set({ amp: value });
         });
         w.widget("play").onEvent((down) => { if (down) playing(); });
         w.widget("stop").onEvent((down) => {
@@ -209,7 +208,7 @@
 
       document.getElementById("meters").onclick = async () => {
         await audio();
-        const bus = server.controlBus();
+        const bus = Bus.control(server);
         const w = open(meters(bus.index));
         w.widget("level").bind("/c_set", bus.index);
         say(`meters: the knob writes bus ${bus.index}; the host streams it back`);

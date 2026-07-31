@@ -57,7 +57,7 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine,
-        Server, SynthDef, data,
+        Server, Bus, Buffer, Synth, SynthDef, data,
         control, out, outCtl, sine,
       } from "../dist/index.js";
 
@@ -165,21 +165,21 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
         // What is being watched: a tone on an audio bus, an LFO on a control
         // bus. The tone is *not* routed to the hardware out — this example is
         // about looking, so it stays on its own bus and the page is silent.
-        const audioBus = server.audioBus();
-        const ctlBus = server.controlBus();
-        await server.addSynthDef(tone());
-        await server.addSynthDef(lfo());
-        const voice = server.synth("scope_tone", { bus: audioBus.index });
-        server.synth("scope_lfo", { bus: ctlBus.index });
+        const audioBus = Bus.audio(server);
+        const ctlBus = Bus.control(server);
+        await tone().send(server);
+        await lfo().send(server);
+        const voice = Synth.new(server, "scope_tone", { bus: audioBus.index });
+        Synth.new(server, "scope_lfo", { bus: ctlBus.index });
 
         await server.sync();
 
         // A buffer to draw: filled by the server, read back in bulk, reduced
         // once. The pyramid outlives the samples — after `build` the raw
         // array is not needed again.
-        const buffer = await server.allocBuffer(BUFFER_FRAMES, 1);
-        await server.genBuffer(buffer, "sine1", [["i", 7], 1.0, 0.6, 0.3]);
-        const samples = await server.getSamples(buffer);
+        const buffer = await Buffer.alloc(server, BUFFER_FRAMES, 1);
+        await buffer.gen("sine1", [["i", 7], 1.0, 0.6, 0.3]);
+        const samples = await buffer.getSamples();
         const peaks = data.Peaks.build(samples, { baseBucket: 256 });
         log(`buffer ${buffer.bufnum}: ${samples.length} samples, `
           + `${peaks.numLevels} pyramid levels`);
@@ -234,7 +234,7 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
         };
         el("freq").disabled = false;
         el("freq").oninput = (e) =>
-          server.set(voice, { freq: Number(e.target.value) });
+          voice.set({ freq: Number(e.target.value) });
 
         // Nothing is freed here on purpose: the page keeps drawing until it is
         // closed. A view that comes and goes stops its streams (`await

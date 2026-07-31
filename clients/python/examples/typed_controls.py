@@ -29,6 +29,7 @@ from clausters.base import Routine
 from clausters.defs import (
     DoneAction,
     Env,
+    Synth,
     SynthDef,
     control,
     env_gen,
@@ -61,9 +62,9 @@ def main():
     out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "typed_controls.wav")
 
     session = Session.nrt(tempo=2.0)
-    session.server.add_synthdef(glide_lead())        # /d_recv at time 0
+    glide_lead().send(session.server)        # /d_recv at time 0
 
-    lead = session.server.synth("glide_lead", {"amp": 0.2, "freq": mtof(48)})
+    lead = Synth.new("glide_lead", {"amp": 0.2, "freq": mtof(48)}, server=session.server)
 
     def sequence():
         # A little melody; consecutive notes glide, each one re-plucked. In an

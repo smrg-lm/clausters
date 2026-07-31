@@ -17,7 +17,7 @@ canvas.
 Everything here lives in the `data` namespace:
 
 ```js
-import { data } from "clausters";
+import { Bus, data } from "clausters";
 ```
 
 ## Control buses
@@ -25,8 +25,8 @@ import { data } from "clausters";
 One subscription, one snapshot per period, decoded for you:
 
 ```js
-const level = server.controlBus();
-// ... something writes it: a synth's `outCtl`, a knob bound to it, `setBus`
+const level = Bus.control(server);
+// ... something writes it: a synth's `outCtl`, a knob bound to it, `bus.set`
 
 const buses = await data.BusStream.open(server, [level], { periodMs: 33 });
 buses.onSnapshot((values) => drawMeter(values[0]));    // ~30 times a second
@@ -124,8 +124,8 @@ A buffer's samples come back in chunks sized to the carrier — over a WebSocket
 chunk is megabytes, so a buffer of any ordinary size is one or two round trips:
 
 ```js
-const samples = await server.getSamples(buffer);            // the whole thing
-const slice = await server.getSamples(buffer, { start: 0, count: 1024 });
+const samples = await buffer.getSamples();            // the whole thing
+const slice = await buffer.getSamples({ start: 0, count: 1024 });
 ```
 
 The samples are interleaved (`frame * channels + channel`), so a stereo buffer
@@ -133,13 +133,13 @@ reads `L R L R …`; `data.deinterleave(samples, buffer.channels)` splits it.
 
 **Reading is the only direction.** The server has no buffer-write command
 (`/b_setn` is `/b_getn`'s reply, not a command), so samples get *into* a buffer
-another way: `server.genBuffer` (the server computes them), `server.readBuffer`
+another way: `buffer.gen` (the server computes them), `Buffer.read`
 (a native server reads a file), or — in the page, where the carrier shares
-memory with the engine — `server.loadSample(url)`, which fetches and decodes
+memory with the engine — `Buffer.load(server, url)`, which fetches and decodes
 with the browser's own decoder:
 
 ```js
-const buffer = await server.loadSample("./kick.wav");   // in-page carrier only
+const buffer = await Buffer.load(server, "./kick.wav");   // in-page carrier only
 ```
 
 ### The peak pyramid

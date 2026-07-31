@@ -21,14 +21,16 @@ looping inside the callback.
 
 ```python
 from clausters.responders import OscFunc, MidiFunc
+from clausters.defs import Synth
 
 # Relay an incoming /play to the server as a /s_new.
-OscFunc(lambda msg, t, src: server.synth("default", {"freq": msg[1]}), "/play")
+OscFunc(lambda msg, t, src: Synth.new("default", {"freq": msg[1]}, server=server), "/play")
 
 # Drive the server from a MIDI keyboard: note on -> /s_new, note off -> free.
 notes = {}
 def on(m, src):
-    notes[m["note"]] = server.synth("default", {"freq": 440 * 2 ** ((m["note"] - 69) / 12)})
+    freq = 440 * 2 ** ((m["note"] - 69) / 12)
+    notes[m["note"]] = Synth.new("default", {"freq": freq}, server=server)
 MidiFunc(on, "note_on")
 ```
 """

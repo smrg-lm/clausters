@@ -13,7 +13,7 @@ freq = control("freq", 440.0)
 amp = control("amp", 0.2)
 sig = sine(freq) * amp
 sdef = SynthDef("beep", out(0.0, sig), out(1.0, sig))   # stereo
-server.add_synthdef(sdef)                                # /d_recv
+sdef.send(server)                                # /d_recv
 ```
 
 **Instance-based build (no globals).** The walk is a plain post-order traversal
@@ -27,6 +27,7 @@ context is touched, so defs build concurrently.
 
 import json
 
+from ._wire import resolve as _resolve, send_def
 from .ugens import ChannelList, Control, Ugen
 
 
@@ -138,6 +139,23 @@ class SynthDef:
         ``SynthDefSpec`` (see `spec`). Useful to inspect the built graph before
         sending it."""
         return json.dumps(self.spec())
+
+    def send(self, server=None, *, wait: bool = True,
+             timeout: float = 10.0) -> str:
+        """Sends this def to the server via ``/d_recv`` and returns its
+        name.
+
+        ``wait=True``
+        (the default) blocks in RT until ``/done``/``/fail`` -- raising
+        `clausters.errors.CommandError` on the failure, or
+        `clausters.errors.ReplyTimeout` if the reply never lands. ``wait=False``
+        returns immediately (fire-and-forget), to be sequenced with the
+        server's ``sync`` before anything relies on the def (``yield`` it from
+        a routine, never block in one). In NRT the send is always *scored* at
+        time 0 -- the renderer loads the def before time advances -- so
+        ``wait`` does not apply."""
+        return send_def(_resolve(server), "/d_recv", (self.dump_def(),),
+                        self.name, wait, timeout)
 
     def control_names(self) -> list[str]:
         """The control names this def declares, in spec order (parallels

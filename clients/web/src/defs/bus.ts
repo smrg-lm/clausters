@@ -16,9 +16,15 @@
 // The allocators carry no default size of their own: how many buses exist is
 // a property of the server, not of this module. The `Server` sizes them from
 // its options, and the live counts can be read back with `queryInfo`.
+//
+// A bus holds the server it was allocated on and owns the commands addressed
+// to it: `set`, `get`, `watch` and its own release. The subscriptions over a
+// *set* of buses (`/c_stream`, `/tap_stream`) stay on the server, which is
+// whose they are — one per client.
 
 import { AllocationError } from "../errors.ts";
 import { Registry, graphBusReserved } from "../base/core.ts";
+import type { Server } from "./server.ts";
 
 export type BusRate = "audio" | "control";
 
@@ -26,11 +32,76 @@ export class Bus {
     readonly index: number;
     readonly channels: number;
     readonly rate: BusRate;
+    /**
+     * The server this bus was allocated on (set by `Bus.audio` / `Bus.control`),
+     * so its commands know where to go without being told.
+     */
+    readonly server?: Server;
 
-    constructor(index: number, channels = 1, rate: BusRate = "audio") {
+    constructor(index: number, channels = 1, rate: BusRate = "audio", server?: Server) {
         this.index = index;
         this.channels = channels;
         this.rate = rate;
+        this.server = server;
+    }
+
+    /** A run of `channels` contiguous audio buses from the server's pool. */
+    static audio(server: Server, channels = 1): Bus {
+        return server.audioBuses.alloc(channels, server);
+    }
+
+    /** A run of `channels` contiguous control buses from the server's pool. */
+    static control(server: Server, channels = 1): Bus {
+        return server.controlBuses.alloc(channels, server);
+    }
+
+    /** This bus's server, or a clear failure when the handle carries none. */
+    private srv(): Server {
+        if (!this.server) {
+            throw new Error(
+                `bus ${this.index} has no server: build the handle with one, ` +
+                    `e.g. new Bus(${this.index}, ${this.channels}, "${this.rate}", server)`,
+            );
+        }
+        return this.server;
+    }
+
+    /** Sets this control bus's value (`/c_set`). */
+    set(value: number): void {
+        this.srv().sendMsg("/c_set", ["i", this.index], ["f", value]);
+    }
+
+    /** Reads this control bus's value (`/c_get`). */
+    async get(timeout = 5.0): Promise<number> {
+        const msg = await this.srv().request("/c_get", [["i", this.index]], {
+            expect: ["/c_set"],
+            timeout,
+        });
+        return Number(msg.args.at(-1));
+    }
+
+    /**
+     * Asks the server to make this audio bus readable (`/tap`): from the next
+     * block on, the engine records it into the shared segment, where a GUI
+     * host reads it with zero messages and this client streams it with
+     * `Server.streamTaps`. `flag = false` stops.
+     *
+     * **The bus is the only number you name.** Which of the server's finite
+     * sample rings carries it is the server's own bookkeeping, published in
+     * the segment for whoever reads the samples. Watches count, so two views
+     * of one bus share a ring and the last one to stop frees it. No ack, like
+     * `/n_map` (failures reply `/fail` — an unknown bus, no tap region, or
+     * every ring already taken); sequence with `sync` when it matters.
+     */
+    watch(flag = true): void {
+        this.srv().sendMsg("/tap", ["i", Math.trunc(this.index)], ["i", flag ? 1 : 0]);
+    }
+
+    /** Returns this bus's run to the server's pool. */
+    free(): void {
+        const server = this.srv();
+        if (this.rate === "audio") server.audioBuses.free(this);
+        else server.controlBuses.free(this);
     }
 }
 
@@ -66,12 +137,12 @@ class Allocator {
      * A run of `channels` contiguous buses. Throws when no such run is free
      * — exhaustion is an explicit failure, never an aliased index.
      */
-    alloc(channels = 1): Bus {
+    alloc(channels = 1, server?: Server): Bus {
         const index = this.registry?.alloc(channels);
         if (index === undefined) {
             throw new AllocationError(`out of ${this.rate} buses`);
         }
-        return new Bus(index, channels, this.rate);
+        return new Bus(index, channels, this.rate, server);
     }
 
     /**

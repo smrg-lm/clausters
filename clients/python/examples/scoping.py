@@ -28,6 +28,7 @@ import time
 
 from clausters import Server, scope
 from clausters.defs import SynthDef, control, lag, out, sine
+from clausters.defs import Synth
 
 #: Seconds each visual step stays on screen.
 PAUSE = 4.0
@@ -48,9 +49,9 @@ right = left * (1.0 - spread) + sine(freq * 1.02) * spread
 drone = SynthDef("scoping_drone",
                  out(0.0, left * amp),
                  out(1.0, right * amp))
-server.add_synthdef(drone)
+drone.send(server)
 server.sync()
-node = server.synth("scoping_drone")
+node = Synth.new("scoping_drone", server=server)
 
 # %% 1/3 — the oscilloscope (view="signal"): both channels, phase-locked.
 print("1/3 signal: outs 0/1 as two lanes; 'lock' + the trigger line at 0")
@@ -72,10 +73,10 @@ print("2/3 phase: mono reads as a vertical line (correlation ~ +1)")
 win = scope(0, view="phase")
 time.sleep(PAUSE)
 print("    spread -> 1 (/n_set): the field opens, the correlation drops")
-server.set(node, {"spread": 1.0})
+node.set({"spread": 1.0})
 time.sleep(PAUSE)
 print("    spread -> 0 (round trip), and the window closes")
-server.set(node, {"spread": 0.0})
+node.set({"spread": 0.0})
 time.sleep(PAUSE)
 win.close()
 
@@ -83,7 +84,7 @@ win.close()
 # the four frequency scales in turn. The corner read-out names the FFT size
 # and the active scale (e.g. "2048 LOG").
 print("3/3 spectrum: outs 0/1, the 220 Hz peak — the corner reads '2048 LOG'")
-server.set(node, {"spread": 1.0})   # detune R so the two curves differ
+node.set({"spread": 1.0})   # detune R so the two curves differ
 win = scope(0, view="spectrum", channels=2)
 time.sleep(PAUSE)
 for scale in ("lin", "mel", "bark"):
@@ -96,8 +97,8 @@ time.sleep(PAUSE)
 win.close()
 
 # %% Teardown: fade to silence before freeing, so the cut is inaudible too.
-server.set(node, {"amp": 0.0})
+node.set({"amp": 0.0})
 time.sleep(0.3)
-server.free(node)
+node.free()
 server.close()
 print("done — three scopes appeared, retuned live and closed; taps all freed")

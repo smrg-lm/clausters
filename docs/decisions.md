@@ -2010,7 +2010,7 @@ shape: the arithmetic is small, but its being in one place is the point.
 
 Context (the client's GUI ergonomics): a high-level client should not make the
 user pick and thread integer widget ids — the audio-server side never does (a
-script writes `server.synth("beep", freq=440)`, and the client's
+script writes `Synth.new("beep", {"freq": 440})`, and the client's
 `NodeIdAllocator` names the node). The GUI's id handling grew crudely in the
 opposite direction: two disjoint monotonic counters (the host client from 1000,
 the multitrack editor from 10 000, partitioned only by convention), neither

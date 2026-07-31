@@ -43,6 +43,7 @@ You can narrow what matches with `src=(host, port)` (respond only to one sender)
 
 ```python
 from clausters.base import OscReceiver
+from clausters.defs import Synth
 from clausters.responders import OscFunc, oscfunc
 
 recv = OscReceiver(port=57121).start()
@@ -50,7 +51,7 @@ recv = OscReceiver(port=57121).start()
 # Relay an incoming /note <midinote> <dur> to the server as a synth.
 def play(msg, time, src):
     freq = 440.0 * 2 ** ((msg[1] - 69) / 12)
-    server.synth("default", {"freq": freq})
+    Synth.new("default", {"freq": freq}, server=server)
 
 OscFunc(play, "/note", recv=recv)
 
@@ -68,6 +69,7 @@ A `MidiReceiver` decodes raw channel-voice bytes into a dict with a `type` and t
 
 ```python
 from clausters.base import MidiReceiver
+from clausters.defs import Synth
 from clausters.responders import MidiFunc
 
 recv = MidiReceiver(port="clausters-in").start()
@@ -77,12 +79,13 @@ def note_on(m, src):
     if m["velocity"] == 0:
         return note_off(m, src)
     freq = 440.0 * 2 ** ((m["note"] - 69) / 12)
-    voices[m["note"]] = server.synth("default", {"freq": freq, "amp": m["velocity"] / 127 * 0.3})
+    amp = m["velocity"] / 127 * 0.3
+    voices[m["note"]] = Synth.new("default", {"freq": freq, "amp": amp}, server=server)
 
 def note_off(m, src):
     synth = voices.pop(m["note"], None)
     if synth is not None:
-        server.free(synth)
+        synth.free()
 
 MidiFunc(note_on, "note_on", recv=recv)
 MidiFunc(note_off, "note_off", recv=recv)

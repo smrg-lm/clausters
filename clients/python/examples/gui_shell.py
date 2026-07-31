@@ -64,6 +64,7 @@ import time
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
 from clausters.gui import button, knob, label, menu, panel, scope, slider, window
+from clausters.defs import Synth
 
 # %% [markdown]
 # ## Launch the server and the GUI
@@ -92,7 +93,7 @@ def voice(name: str = "gui_shell_voice") -> SynthDef:
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
-server.add_synthdef(voice())
+voice().send(server)
 
 # %% [markdown]
 # ## The shell
@@ -139,14 +140,14 @@ def set_status(text: str) -> None:
 def start(value):
     global _voice
     if value == 1 and _voice is None:   # 1 = press
-        _voice = server.synth("gui_shell_voice", {"freq": _freq, "amp": _amp})
+        _voice = Synth.new("gui_shell_voice", {"freq": _freq, "amp": _amp}, server=server)
         set_status("playing")
 
 
 def stop(value):
     global _voice
     if value == 1 and _voice is not None:
-        server.set(_voice, {"gate": 0.0})
+        _voice.set({"gate": 0.0})
         _voice = None
         set_status("stopped")
 
@@ -155,7 +156,7 @@ def on_freq(value):
     global _freq
     _freq = float(value)
     if _voice is not None:
-        server.set(_voice, {"freq": _freq})
+        _voice.set({"freq": _freq})
     set_status(f"freq {_freq:.1f} Hz")
 
 
@@ -163,7 +164,7 @@ def on_amp(value):
     global _amp
     _amp = float(value)
     if _voice is not None:
-        server.set(_voice, {"amp": _amp})
+        _voice.set({"amp": _amp})
     set_status(f"amp {_amp:.3f}")
 
 
@@ -187,7 +188,7 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
         run(30.0)
     finally:
         if _voice is not None:
-            server.set(_voice, {"gate": 0.0})
+            _voice.set({"gate": 0.0})
         session.close()
 else:
     print("shell up - run(10) to dispatch events, session.close() to end")

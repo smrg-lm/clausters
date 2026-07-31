@@ -529,7 +529,7 @@ Three things are worth carrying forward:
   buffer-write command: `/b_set`/`/b_setn` exist only as the *replies* to
   `/b_get`/`/b_getn`. So samples reach a buffer through `/b_gen`,
   `/b_allocRead`, or — in the page, where the carrier shares memory with the
-  engine — `loadSample`, which fetches and decodes with the browser's own
+  engine — `Buffer.load`, which fetches and decodes with the browser's own
   decoder and installs through the embed door. Writing from a client is noted
   as **M31** in the server's `PLAN.md`; the order will be the standing one,
   server command → the Python client → the port here.

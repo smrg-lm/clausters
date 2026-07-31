@@ -31,7 +31,7 @@
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine,
-        Server, SynthDef, GuiHost, gui, data, decodePacket,
+        Server, Bus, Synth, SynthDef, GuiHost, gui, data, decodePacket,
         control, outCtl, sine,
       } from "../dist/index.js";
 
@@ -81,12 +81,12 @@
         const connection = await pageConnection();
         const server = await Server.open(connection);
 
-        const scriptBus = server.controlBus();
-        const hostBus = server.controlBus();
-        await server.addSynthDef(new SynthDef("probe_lfo",
-          outCtl(control("bus", 0.0), sine(2.0).mul(0.5).add(0.5))));
-        server.synth("probe_lfo", { bus: scriptBus.index });
-        server.synth("probe_lfo", { bus: hostBus.index });
+        const scriptBus = Bus.control(server);
+        const hostBus = Bus.control(server);
+        await new SynthDef("probe_lfo",
+          outCtl(control("bus", 0.0), sine(2.0).mul(0.5).add(0.5))).send(server);
+        Synth.new(server, "probe_lfo", { bus: scriptBus.index });
+        Synth.new(server, "probe_lfo", { bus: hostBus.index });
         await server.sync();
 
         // Phase 1: only the script is subscribed.

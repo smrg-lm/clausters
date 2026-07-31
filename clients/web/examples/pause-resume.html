@@ -22,7 +22,7 @@
       <div id="note">The web port of the Python client's
 <code>pause_resume.py</code>: <b>a paused node is not a freed one</b>.
 
-<code>server.pause(node)</code> / <code>server.resume(node)</code> are the
+<code>node.pause()</code> / <code>node.resume()</code> are the
 <code>/n_run</code> command. A paused node stays in the tree and keeps its
 state — silent and free of CPU — and resumes <i>exactly</i> where it left off,
 which is what makes the <code>PAUSE_SELF</code> done action non-terminal: a
@@ -47,7 +47,7 @@ paused: it is still there.</div>
     <script type="module">
       import {
         loadOsc, pageConnection, server as engine,
-        Server, SynthDef, control, out, sine,
+        Server, Synth, SynthDef, control, out, sine,
       } from "../dist/index.js";
 
       const el = (id) => document.getElementById(id);
@@ -69,8 +69,8 @@ paused: it is still there.</div>
         await (await engine({ channels: 2 })).resume();
         server = await Server.open(await pageConnection());   // or WsConnection
 
-        await server.addSynthDef(drone());
-        node = server.synth("web_drone", { freq: 220.0, amp: 0.2 });
+        await drone().send(server);
+        node = Synth.new(server, "web_drone", { freq: 220.0, amp: 0.2 });
         log(`the drone is node ${node.id}, sounding`);
 
         el("start").disabled = true;
@@ -79,13 +79,13 @@ paused: it is still there.</div>
 
       el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
       el("pause").onclick = () => {
-        server.pause(node);
+        node.pause();
         log("paused: silent, skipped during processing, still in the tree");
         el("pause").disabled = true;
         el("resume").disabled = false;
       };
       el("resume").onclick = () => {
-        server.resume(node);
+        node.resume();
         log("resumed: the tone continues from where it stopped");
         el("resume").disabled = true;
         el("pause").disabled = false;
@@ -97,7 +97,7 @@ paused: it is still there.</div>
         log(`node tree: ${JSON.stringify(tree)}`);
       };
       el("free").onclick = () => {
-        server.free(node);
+        node.free();
         log(`node ${node.id} freed — this one does not come back`);
         for (const id of ["pause", "resume", "tree", "free"]) {
           el(id).disabled = true;

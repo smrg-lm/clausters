@@ -22,14 +22,14 @@ levels, one directed-cord grammar apart by what a box *is* and what the patch is
 A box has typed **inlets** and **outlets**; a **cord** runs an outlet to an
 inlet, and cords of different rates never connect.
 
-    from clausters.defs import GraphPatch
+    from clausters.defs import GraphPatch, Group
 
     p = GraphPatch()
     tone = p.add(tone_def)               # ports derived from the SynthDef's graph
     dac = p.add(dac_def)                 # a terminal sink: an inlet, no outlet
     p.connect(tone, "out", dac, "in")    # tone -> dac -> speakers
-    server.add_graphdef(p.to_graphdef("chain"))
-    server.graph("chain")                # sounds
+    p.to_graphdef("chain").send(server)
+    Group.graph("chain", server=server)  # sounds
 
 Pass a `clausters.defs.SynthDef` to `add` and its typed ports are read off the
 def itself — a control feeding an ``In`` is an inlet, one feeding an ``Out`` an

@@ -213,8 +213,7 @@ export class Timeline {
                 timeline.add(currentRoutine()?.logicalBeat ?? 0, event);
                 return null;
             },
-            free() {},
-            set() {},
+            sendMsg() {},
         };
         const timebase = new ManualTimebase(0);
         const ticker = manualTicker();

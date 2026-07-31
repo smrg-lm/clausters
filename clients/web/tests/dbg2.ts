@@ -24,9 +24,7 @@ for (let i = 0; i < 50 && !conn; i++) {
 }
 const server = await Server.open(conn!);
 server.onReply((m) => console.log("reply:", m.addr, m.args.slice(0, 8)));
-await server.addSynthDef(
-    new SynthDef("dbg", out(0.0, sine(control("freq", 440.0)).mul(0.05))),
-);
+await new SynthDef("dbg", out(0.0, sine(control("freq", 440.0)).mul(0.05))).send(server);
 
 const sent: number[] = [];
 const raw = conn!.send.bind(conn!);

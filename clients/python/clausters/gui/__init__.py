@@ -33,7 +33,7 @@ playhead line together, whatever the view is — a lane, a piano-roll, an engrav
 page. A ``waveform`` can also name a server buffer, a
 ``meter``/``scope`` reads a control bus from the audio server's shared-memory
 segment, and the audio-rate views read its audio taps (route a bus into a tap
-with ``Server.tap``). A widget can also be *bound*
+with ``Bus.watch``). A widget can also be *bound*
 (`clausters.gui.host.GuiHost.bind`) so its value flows straight to the audio
 server, bypassing this script. A ``canvas`` runs a script-supplied WGSL shader
 driven by OSC params and control buses. The stereo-field measurements the

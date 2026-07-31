@@ -29,9 +29,11 @@ import sys
 
 from clausters import Session
 from clausters.base import Routine
+from clausters.defs import Buffer
 from clausters.defs import (
     DoneAction,
     Env,
+    Synth,
     SynthDef,
     control,
     env_gen,
@@ -81,25 +83,25 @@ def main():
     # Three buffers, scored at time 0. 2048 frames hold a 1024-point table.
     # vosc reads pos and pos+1, so the two wavetables must be adjacent and
     # equally sized; the allocator hands out 0, 1, 2 in order.
-    sine_buf = server.alloc_buffer(2048, 1)
-    server.gen_buffer(sine_buf, "sine1", WT, 1.0)
-    saw_buf = server.alloc_buffer(2048, 1)
-    server.gen_buffer(saw_buf, "sine1", WT, *(1.0 / k for k in range(1, 9)))
-    cheby_buf = server.alloc_buffer(2048, 1)
-    server.gen_buffer(cheby_buf, "cheby", WT, 1.0, 0.0, 0.6, 0.0, 0.3)
+    sine_buf = Buffer.alloc(2048, 1, server=server)
+    sine_buf.gen("sine1", WT, 1.0)
+    saw_buf = Buffer.alloc(2048, 1, server=server)
+    saw_buf.gen("sine1", WT, *(1.0 / k for k in range(1, 9)))
+    cheby_buf = Buffer.alloc(2048, 1, server=server)
+    cheby_buf.gen("cheby", WT, 1.0, 0.0, 0.6, 0.0, 0.3)
 
-    server.add_synthdef(morph())
-    server.add_synthdef(shaped())
+    morph().send(server)
+    shaped().send(server)
 
     def sequence():
         # Timetagged bundles, as in every NRT routine: the beat stamps them.
-        voice = server.synth("wt_morph", {"freq": 110.0, "pos": 0.0})
+        voice = Synth.new("wt_morph", {"freq": 110.0, "pos": 0.0}, server=server)
         yield 1.0
         server.send_bundle(("/n_set", voice.id, "pos", 1.0))  # glide to saw
         yield 3.0
         server.send_bundle(("/n_set", voice.id, "gate", 0.0))
         yield 0.5
-        answer = server.synth("wt_shaped", {"freq": 165.0, "drive": 0.1})
+        answer = Synth.new("wt_shaped", {"freq": 165.0, "drive": 0.1}, server=server)
         server.send_bundle(("/n_set", answer.id, "drive", 0.9))  # harmonics in
         yield 2.0
         server.send_bundle(("/n_set", answer.id, "gate", 0.0))

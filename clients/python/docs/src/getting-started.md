@@ -84,15 +84,15 @@ An instrument is a **def** — a named graph the server compiles once and instan
 from clausters.defs import SynthDef, control, sine, out
 
 sdef = SynthDef("beep", out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)))
-server.add_synthdef(sdef)             # sends /d_recv and waits for the server's /done
+sdef.send(server)             # sends /d_recv and waits for the server's /done
 ```
 
 Now play it. `synth` starts a node — it sounds until you free it — and `set` changes its controls while it sounds:
 
 ```python
-node = server.synth("beep", {"freq": 330.0})   # you hear it now
-server.set(node, {"freq": 550.0})              # ...and now it is higher
-server.free(node)                              # silence
+node = Synth.new("beep", {"freq": 330.0}, server=server)   # you hear it now
+node.set({"freq": 550.0})              # ...and now it is higher
+node.free()                              # silence
 ```
 
 The **other def format is a peer, not a fallback**: the same instrument as a `FaustDef`, which the server JIT-compiles. Write it as a signal graph, as a box graph reusing the Faust libraries, or as Faust source — three ways of saying the same thing. Nothing to install: the package bundles Faust (see [What the server must support](defs.md#what-the-server-must-support)).
@@ -102,14 +102,14 @@ from clausters.defs import signals as S, boxes as box, FaustDef
 
 freq = S.hslider("freq", 440.0, 20.0, 20000.0, 0.01)
 phase = S.rec(lambda p: (p + freq / S.sr()) % 1.0)          # a one-sample feedback phasor
-server.add_faustdef(FaustDef.from_signals("fbeep", S.sin(phase * S.TAU) * 0.2))
+FaustDef.from_signals("fbeep", S.sin(phase * S.TAU) * 0.2).send(server)
 
 # the same voice, point-free, borrowing the oscillator from Faust's library:
-server.add_faustdef(FaustDef.from_box(
-    "bbeep", box.faust("os.osc")(box.hslider("freq", 440.0, 20.0, 20000.0, 0.01)) * 0.2))
+FaustDef.from_box(
+    "bbeep", box.faust("os.osc")(box.hslider("freq", 440.0, 20.0, 20000.0, 0.01)) * 0.2).send(server)
 
-node = server.synth("bbeep", {"freq": 220.0})
-server.free(node)
+node = Synth.new("bbeep", {"freq": 220.0}, server=server)
+node.free()
 ```
 
 Both defs are now installed on the server and play the same way — a `Synth` is a `Synth`, whichever family compiled it.
@@ -130,7 +130,7 @@ session.stop()       # ...and stop it whenever
 `Pbind` (like `Event`) constructs exactly as a `dict` does: the keyword form
 above is a shorthand, and a plain mapping —
 `Pbind({"instrument": "beep", "dur": 0.25})` — works the same, matching how
-`server.synth` takes its controls.
+`Synth.new` takes its controls.
 
 When you are done, close the session. Everything it started — the server it booted, a GUI it opened — stops with it:
 

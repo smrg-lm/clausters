@@ -203,7 +203,7 @@ def render(path=None):
         held("wide", stereo_width(pair[0], pair[1], 2.0)),
         held("narrow", stereo_width(pair[0], pair[1], 0.0)),
     ):
-        server.add_synthdef(sdef)
+        sdef.send(server)
 
     names = ["sweep", "bank", "width", "midside", "morph", "ring", *CLAIMS]
     clock = TempoClock(tempo=1.0)

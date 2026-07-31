@@ -35,6 +35,7 @@ import sys
 import time
 
 from clausters import Session
+from clausters.defs import Bus
 from clausters.gui import canvas, window
 
 SHADER = """
@@ -61,7 +62,7 @@ fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> {
 session = Session.live()
 server = session.server
 gui = session.gui()
-bus = server.control_bus()  # the bus the shader's green channel follows
+bus = Bus.control(server=server)  # the bus the shader's green channel follows
 
 # %% [markdown]
 # ## The canvas
@@ -91,7 +92,7 @@ def run(seconds: float) -> None:
     while time.monotonic() - start < seconds and not _closed:
         t = time.monotonic() - start
         win["shader"].set(param0=0.5 + 0.5 * math.sin(t * 0.7))
-        server.set_bus(bus, 0.5 + 0.5 * math.cos(t * 1.3))
+        bus.set(0.5 + 0.5 * math.cos(t * 1.3))
         gui.pump(timeout=0.03)
 
 

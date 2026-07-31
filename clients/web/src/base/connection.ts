@@ -46,7 +46,7 @@ export interface Connection {
      * Installs decoded samples straight into a server buffer, where the
      * carrier *shares* memory with the server — the in-page engine takes a
      * whole file in one call, no `/b_setn` chunking and no OSC envelope per
-     * sample. A socket has no such thing and leaves this out; `loadSample`
+     * sample. A socket has no such thing and leaves this out; `Buffer.load`
      * then writes the chunks instead. `samples` are interleaved.
      */
     bulkLoad?(

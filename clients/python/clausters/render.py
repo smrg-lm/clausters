@@ -50,6 +50,7 @@ from array import array
 from dataclasses import dataclass, field
 
 from .base.main import main
+from .defs.node import Group, Synth
 
 __all__ = ["render", "bounce_def", "RenderStats", "read_soundfile",
            "render_to_file", "channels", "interleave"]
@@ -311,12 +312,12 @@ def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,
     session = Session.nrt(tempo=1.0)  # beats == seconds
     server = session.server
     for d in defs:
-        server.add_def(d)
-    server.add_def(obj)
+        d.send(server)
+    obj.send(server)
     if isinstance(obj, GraphDef):
-        node = server.graph(obj.name, controls)
+        node = Group.graph(obj.name, controls, server=server)
     else:
-        node = server.synth(obj.name, controls)
+        node = Synth.new(obj.name, controls, server=server)
     server.send_bundle_after(float(dur), ("/n_free", node.id))
     return session.render(sample_rate=sample_rate, channels=channels, seed=seed,
                           path=path)
