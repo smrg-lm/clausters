@@ -32,7 +32,16 @@ import wave
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import OscNrtInterface, TempoClock
-from clausters.defs import Server, SynthDef, control, sine, out
+from clausters.defs import (
+    DoneAction,
+    Env,
+    Server,
+    SynthDef,
+    control,
+    env_gen,
+    out,
+    sine,
+)
 from clausters.seq import Pbind, Pseq
 
 FREQS = [262.0, 330.0, 392.0, 523.0]
@@ -40,12 +49,23 @@ SR = 48000.0
 
 
 def py_default(name="py_default") -> SynthDef:
-    """`Sine(freq) * amp` to buses 0 and 1 — the client-side twin of the
-    server's built-in `default`. `freq`/`amp` are named controls (the
-    `/s_new`/`/n_set` parameters a `Pbind` drives)."""
+    """`Sine(freq) * EnvGen(gate) * amp` to buses 0 and 1 — the client-side twin
+    of the server's built-in `default`. `freq`/`amp`/`gate` are named controls
+    (the `/s_new`/`/n_set` parameters a `Pbind` drives).
+
+    The envelope is the built-in's own: a gated ASR on equal-power sine ramps
+    (0.01 s attack, sustain at 1.0 while the gate is held, 0.3 s release) with
+    `done_action = FREE_SELF`, so the note ramps in and out without a click and
+    frees itself once the release finishes."""
     freq = control("freq", 440.0)
     amp = control("amp", 0.2)
-    sig = sine(freq) * amp          # `*` composes a Mul UGen
+    gate = control("gate", 1.0)
+    env = env_gen(
+        Env.asr(attack=0.01, sustain=1.0, release=0.3, curve="sin"),
+        gate=gate,
+        done_action=DoneAction.FREE_SELF,
+    )
+    sig = sine(freq) * env * amp     # `*` composes a Mul UGen
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
@@ -56,7 +76,11 @@ def render_pbind(instrument: str, sdef: SynthDef | None):
     if sdef is not None:
         server.add_synthdef(sdef)      # scored at t=0 in NRT
     clock = TempoClock(tempo=1.0)
-    Pbind(instrument=instrument, freq=Pseq(FREQS), dur=0.5, amp=0.2).play(clock, server)
+    # `has_gate` releases each note with `gate 0` instead of freeing the node
+    # outright, which is what the player does for `default` on its own — the
+    # twin needs it stated so both renders end their notes the same way.
+    Pbind(instrument=instrument, has_gate=True,
+          freq=Pseq(FREQS), dur=0.5, amp=0.2).play(clock, server)
     clock.render()                     # drain the clock logically
     return server.render(sample_rate=SR, channels=2)
 
