@@ -96,6 +96,53 @@ Porting then = rebind the same core (ctypes/N-API/wasm), not reimplement it.
 Full rationale in `clients/python/PLAN.md` ("Build strategy"). Always factor
 new work with this modularity in mind.
 
+### The packages move together
+
+Four packages share every surface worth changing — the **server** (root crate +
+`crates/`), the **Python client**, the **web client**, the **GUI host** — and
+each wire has an end in two or more of them. So a change is not finished when
+its own package builds: **it closes with a pass over the packages it touches**,
+in the same commit. Porting is not a task to schedule later.
+
+The wires and where their ends live:
+
+- An **OSC command** (`src/osc`) — its reference in `docs/schemas.md`, its
+  builder in `clients/python/clausters`, its builder in `clients/web/src`.
+- A **`/gui_*` widget or prop** — the host in `clients/gui/src`, the reference
+  in `docs/gui-protocol.md`, the builders in both clients' `gui` modules.
+- A **client API** — the Python client is the reference and the web client
+  ports it. If the surface does not exist in TS yet, say so in the commit and
+  leave `clients/web/PLAN.md` naming the shape the port must follow, so the two
+  do not re-derive it differently.
+- A **shared-core function** (`clausters-core`) — every client binds the same
+  one; new numeric or timing logic belongs there rather than in a client.
+
+**What is actually checked, and what is not.** The compiled Rust is safe:
+cargo refuses to build a caller of a signature that moved. Everything else is
+on trust, so that is where drift accumulates:
+
+- **Nothing runs any example.** Not the root `examples/` (mostly Python
+  driving the server), not `clients/python/examples/` (including the GUI ones),
+  not `clients/web/examples/`. CI runs none of them, and a Python signature
+  change breaks them at a call site no build ever reaches. They are the manual
+  test surface, so run the ones the change touches, by hand.
+- **The web package is typechecked against nothing else.** Its Python (the
+  parity generators `clients/web/tests/gen-*-vectors.py`, the bundle authors
+  `clients/web/examples/*/make_bundle.py`) imports the Python client; its pages
+  (`clients/web/tests/*.html`, `examples/**`) are plain modules no
+  type-checker reads. `./build.sh && ./test.sh` from `clients/web` is the only
+  thing that proves the package works — and `dist/` is git-ignored, so build
+  before testing, always. Re-run the generators and commit whatever vectors
+  move.
+- **CI does not lint everything.** It skips the def-family feature matrix and
+  never builds the docs, so rustdoc's lints are watched by nothing:
+  `.claude/skills/feature-matrix/check.sh`.
+- **The staged artifacts go stale silently** — the binaries bundled in the
+  Python package (`scripts/refresh-bin.sh`) and the web package's `dist/`.
+- **The books drift last and loudest.** A concept renamed in one client is
+  renamed in all three books, and a command's reference page changes with the
+  command.
+
 ## Language conventions
 
 - Everything under `src/`, `tests/` and `examples/` (code, comments, strings,
