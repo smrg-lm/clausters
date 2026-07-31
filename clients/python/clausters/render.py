@@ -187,7 +187,10 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         tempo: the offline bounce's clock tempo, in beats per second (beats
             of ``obj`` map to ``beat / tempo`` seconds).
         sample_rate: offline render rate, in Hz.
-        channels: interleaved output channel count of the offline render.
+        channels: interleaved output channel count of the offline render —
+            the outputs the offline server has, not a property of what is
+            being rendered. A bare expression wider than that is writing onto
+            internal buses that reach no file, and raises.
         workers: renderer worker threads for the ``bytes`` score path.
         path: send the audio to this file instead of returning it; the
             server writes it (see `render_to_file`).
@@ -202,7 +205,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         of a logical `Group`).
     """
     from .base.stream import Routine, Stream
-    from .defs import Box, FaustDef, GraphDef, Signal, SynthDef, Ugen
+    from .defs import Expr, FaustDef, GraphDef, SynthDef
     from .defs.asdef import as_def
     from .form.element import Element
     from .seq.pattern import Pattern
@@ -212,7 +215,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         return render_score(bytes(obj), sample_rate, channels, workers, path,
                             seed)
 
-    if isinstance(obj, (Ugen, Signal, Box, SynthDef, FaustDef, GraphDef)):
+    if isinstance(obj, (Expr, SynthDef, FaustDef, GraphDef)):
+        _check_expr_width(obj, channels)
         return bounce_def(as_def(obj), dur, controls, defs, sample_rate,
                           channels, seed, path)
 
@@ -247,7 +251,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         else:
             raise TypeError(
                 f"don't know how to render {type(obj).__name__}; expected a "
-                "score (bytes), a def or bare expression (Ugen/Signal/Box), "
+                "score (bytes), a def or bare expression "
+                "(Ugen/ChannelList/Signal/Box), "
                 "an arrangement Element, a Timeline, an event Pattern, or a "
                 "Routine/Stream/generator"
             )
@@ -262,6 +267,29 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             until, tempo, sample_rate, channels, path, seed)
     return _bounce(lambda session: playable.play(session.clock),
                    until, tempo, sample_rate, channels, path, seed)
+
+
+def _check_expr_width(obj, channels):
+    """Refuses a bare expression laid past the render's outputs.
+
+    ``channels`` is the offline server's output count — how many channels the
+    render *has* — not a property of the graph, so it is not derived from one
+    (`clausters.defs.expr_channels` explains the split between the verbs).
+    An expression `clausters.defs.as_def` lays on more buses than that writes
+    the surplus onto internal buses, which reach no file: silently half a take.
+    Only the buses the coercion itself assigned are checked — an explicit
+    ``out(8, sig)`` is the caller's own routing.
+    """
+    from .defs.asdef import expr_channels
+
+    width = expr_channels(obj)
+    if width is not None and width > channels:
+        raise ValueError(
+            f"this expression writes {width} channels but the render has "
+            f"{channels} output channels, so channels {channels}..{width - 1} "
+            f"would land on internal buses and reach no file; pass "
+            f"channels={width} (or mix() the expression down)"
+        )
 
 
 def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,

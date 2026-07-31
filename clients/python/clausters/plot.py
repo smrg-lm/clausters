@@ -11,12 +11,13 @@ involved unless the object itself needs one). It dispatches by kind:
   session: the def is sent, instanced with ``controls``, freed at ``dur``) and
   its output plotted, every channel in its own lane. The way to eyeball what a
   def actually produces without a server or an audio device.
-- a bare **expression** — a `clausters.defs.Ugen` graph, a Faust
-  `clausters.defs.Signal` or `clausters.defs.Box` — takes the same offline
-  path through the ephemeral-def coercion `play` uses
-  (`clausters.defs.asdef.as_def`), so ``plot(sine(440) * 0.5)`` shows the
-  signal directly. It plots as wide as it writes: one lane, unless a `Box`
-  brings its own arity or ``channels`` says otherwise.
+- a bare **expression** — a `clausters.defs.Ugen` graph, a
+  `clausters.defs.ChannelList` of them, a Faust `clausters.defs.Signal` or
+  `clausters.defs.Box` — takes the same offline path through the
+  ephemeral-def coercion `play` uses (`clausters.defs.asdef.as_def`), so
+  ``plot(sine(440) * 0.5)`` shows the signal directly. It plots as wide as it
+  writes: one lane, unless a channel list or a `Box` brings its own width, or
+  ``channels`` says otherwise.
 - an `clausters.defs.Env` is rendered through the server's own ``EnvGen`` (a
   one-node NRT render, gate-released at its sustain point when it has one), so
   the drawn curve is exactly what the engine plays — not a client-side
@@ -117,8 +118,9 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
 
     Args:
         obj: what to plot — a def (`SynthDef`/`FaustDef`/`GraphDef`, rendered
-            offline) or a bare expression (`Ugen`/`Signal`/`Box`, coerced to
-            an ephemeral def first), an `Env` or `Automation` (rendered
+            offline) or a bare expression (`Ugen`/`ChannelList`/`Signal`/
+            `Box`, coerced to an ephemeral def first), an `Env` or
+            `Automation` (rendered
             through ``EnvGen``), a `Buffer` or buffer number (fetched from
             the ambient live server), or an iterable of numbers / of
             per-channel number lists (materialized).
@@ -131,8 +133,10 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
         n: materialization cap for endless sequences (`Pwhite` and friends).
         sample_rate: the offline render's rate; also places a fetched buffer's
             time axis when the server reports none.
-        channels: output channel count of a def render (default 2). Ignored
-            for the other kinds (a buffer brings its own; sequences infer it).
+        channels: how many channels to show. ``None`` derives it — a bare
+            expression is as wide as it writes (`clausters.defs.expr_channels`),
+            an already-built def defaults to 2. Ignored for the other kinds (a
+            buffer brings its own; sequences infer it).
         view: ``"signal"`` (default) or ``"spectrum"``.
         overlay: draw channels as overlaid color traces instead of lanes.
         min: value-axis sides of the signal view; ``None`` auto-fits that side
@@ -261,14 +265,13 @@ def _open_patch_view(model, *, label=None, w: int = 1000, h: int = 700,
 def _materialize(obj, *, dur, controls, defs, n, sample_rate, channels):
     """Resolves ``obj`` to ``(samples, channels, sample_rate, label)`` —
     interleaved floats; ``sample_rate`` 0 marks an index (sequence) axis."""
-    from .defs.asdef import as_def
-    from .defs.boxes import Box
+    from .defs.asdef import as_def, expr_channels
     from .defs.buffer import Buffer
+    from .defs.expr import Expr
     from .defs.faustdef import FaustDef
     from .defs.graphdef import GraphDef
-    from .defs.signals import Signal
     from .defs.synthdef import SynthDef
-    from .defs.ugens import Env, Ugen
+    from .defs.ugens import Env
     from .seq.automation import Automation
 
     if isinstance(obj, Env):
@@ -276,12 +279,15 @@ def _materialize(obj, *, dur, controls, defs, n, sample_rate, channels):
     if isinstance(obj, Automation):
         samples, chans, rate, _ = _render_env(obj.env, sample_rate)
         return samples, chans, rate, obj.name
-    if isinstance(obj, (Ugen, Signal, Box)):
-        # A bare expression: the same ephemeral-def coercion play uses. It is
-        # as wide as it writes — one channel unless asked otherwise (a Box
-        # brings its own arity).
+    if isinstance(obj, Expr):
+        # A bare expression: the same ephemeral-def coercion play uses. Plot
+        # configures its render for what is being looked at, so the expression
+        # is as wide as it writes — `expr_channels` is the one place that
+        # knows (a channel list's non-sinks, a Box's own arity, else one). An
+        # expression that routes itself entirely (only sinks) says 0, and
+        # there is nothing to infer: fall back to a stereo look.
         if channels is None:
-            channels = (obj.num_outputs or 2) if isinstance(obj, Box) else 1
+            channels = expr_channels(obj) or 2
         samples = _render_def(as_def(obj), dur, controls, defs, sample_rate,
                               channels)
         return samples, channels, sample_rate, "expr"

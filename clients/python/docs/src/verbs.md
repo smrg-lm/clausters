@@ -41,7 +41,7 @@ function is the uniform entry that picks the right one.
 | an `Event`, or a plain **dict** of event keys | one note, now (timetagged at the logical beat inside a routine) | the **completed event** — the derived keys (`freq`, `sustain`, …) plus `node`/`server` written in; `.free()` cuts it, `.release()` ends it musically (gate 0 when it releases by gate) |
 | an event pattern (`Pbind`) | schedules it on a clock | the `EventStreamPlayer` — `.stop()` |
 | a `Routine` / `Stream`, or a bare **generator** | schedules it on a clock | the routine |
-| a **bare expression** — a `Ugen` graph, a Faust `Signal` or `Box` | wraps it in an ephemeral def (adding the `out` if it lacks one), sends and instances it; it sounds until you free it | the `Synth` — `.free()` |
+| a **bare expression** — a `Ugen` graph, a `ChannelList` of them, a Faust `Signal` or `Box` | wraps it in an ephemeral def (adding the `out` if it lacks one; a channel list lands on buses 0, 1, …), sends and instances it; it sounds until you free it | the `Synth` — `.free()` |
 | a def — `SynthDef` / `FaustDef` / `GraphDef` | sends and instances it, with optional `controls` | the `Synth` (or instance `Group`) — `.free()` |
 | a `Timeline` | drives it through a playhead on the ambient clock | the `Playhead` — `.stop()` (and `locate`/`loop`) |
 | a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth` — `.free()` cuts the take early |
@@ -86,6 +86,15 @@ bare expression into an ephemeral def via `clausters.defs.as_def`), then
 dispatches on the `.play()` the kinds already carry. `plot` and `render` share
 the same expression coercion and the same def-to-samples change of state, so
 `plot(x)` shows exactly what `render(x)` returns and `play(x)` sounds.
+
+They part company on one word. `play` and `plot` are **conveniences** — free to
+infer what you meant, so `plot` sizes its render from the expression and a
+stereo pair shows two lanes without being told. `render` is part of the **NRT
+interface**: its `channels` is how many outputs the offline server *has*, a
+fact about the render and not about the graph, so it derives nothing. An
+expression wider than that would write its surplus onto internal buses that
+reach no file, so it raises and names the fix (`render(dup(sig, 4),
+channels=4)`) instead of quietly returning half the take.
 
 Ambient resolution is uniform: `server=None` takes the running session's
 server, else the booted default (`Server.boot()`); `clock=None` takes the

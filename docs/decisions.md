@@ -1012,10 +1012,68 @@ and `sine([440, 443])` does not expand.
   buffer reader) will need a wire extension, and its client-side return type
   is then naturally a `ChannelList` — the container is forward-compatible
   with that without re-design.
+- **The container carries two roles, told apart by what its members are.**
+  Before an output it is a *multichannel signal*; after one it is a *bundle of
+  def roots* (`out(bus, chans)` returns a `ChannelList` of `Out`s, which
+  `SynthDef` flattens into its varargs roots). The coercion tells them apart
+  per member rather than by type, which is the wart the forward-compatibility
+  note above did not anticipate: it addressed the multi-output UGen and not
+  this. It is contained rather than removed — a member that is a sink passes
+  through as a root, the rest are the channels, so the two pure cases and the
+  mixed one all have one rule — and separating the roles into distinct types
+  stays open.
 - Per-argument expansion is deferred, not rejected: every constructor funnels
   through `Ugen(kind, inputs)`, so one hook there can add full expansion
   later, desugaring to the same container. The rules above are written down
   in the composition docs as the spec a later client ports.
+
+## A def root is what delivers data out of the graph
+
+The client wraps a bare expression in `out(0, …)` to make it a def, and skips
+the wrapping when the expression already is where it is going. Naming that set
+after *side effects* — the obvious reading — is wrong, and the counter-example
+is load-bearing: `FreeSelf`, `PauseSelf`, `FreeSelfWhenDone` and `Done` all have
+side effects and all **pass their input through**, so `out(0,
+free_self_when_done(env * sig))` is the idiom and treating them as roots would
+make the def silent. `DetectSilence` is the same shape from the other side: its
+done action is a side effect, but its output is a 0/1 signal for the rest of the
+graph.
+
+**Decision:** the criterion is **delivery** — a root is a UGen that puts data
+*outside* the graph: audio or control on a bus (`Out`, `ReplaceOut`, `OutCtl`,
+`LocalOut`), audio in a file (`DiskOut`), OSC or a console line at a client
+(`SendTrig`, `SendReply`, `Poll`). Managing the enclosing synth is not
+delivering, and neither is feeding the graph.
+
+**Consequence:** `DiskOut` joins the set even though it passes its input
+through, so `play(disk_out(path, sig))` records without sounding; recording
+*and* hearing is the explicit `out(0, disk_out(path, sig))`. The exception was
+declined deliberately — one sentence that always holds beats a shorter set with
+a footnote.
+
+## `channels` means something different to each verb, and that is the design
+
+`play`, `plot` and `render` share one expression coercion, which invites making
+them share one reading of "how many channels". They must not. `play` and `plot`
+are **conveniences** — the interactive front door — and may infer: `plot` sizes
+its render from the expression, so a stereo pair shows two lanes unasked.
+`render` is part of the **NRT interface**, where `channels` is how many outputs
+the offline server *has* — a fact about the machine being configured, not a
+property of the graph handed to it.
+
+**Decision:** `render` never derives `channels` from what it renders. What it
+does instead is **check**: an expression the coercion laid on more buses than
+the render has outputs is writing its surplus onto internal buses that reach no
+file, so it raises and names the fix. Only the buses the coercion itself
+assigned are checked — an explicit `out(8, sig)` is the caller's own routing and
+is left alone.
+
+**Why not derive.** Deriving would make `render` guess the shape of its own
+output from its input, which is exactly the coupling an NRT interface should not
+have: the same expression rendered for a stereo file and for an 8-channel one is
+the *same expression*, and only the render differs. Guessing also hides the real
+mistake — asking for four channels of a two-channel render is a mistake worth a
+message, not a number to silently adjust.
 
 ## The PV set is curated and parameterized, never a per-op catalog
 

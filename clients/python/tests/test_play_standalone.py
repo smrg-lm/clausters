@@ -8,7 +8,11 @@ import pytest
 
 from clausters import Event, play, main, default_session
 from clausters.defs import (
-    FaustDef, Server, SynthDef, as_def, boxes, out, send_trig, signals, sine,
+    FaustDef, Server, SynthDef, as_def, boxes, chans, control, disk_out,
+    expr_channels, out, send_trig, signals, sine,
+)
+from clausters.defs.ugens import (
+    detect_silence, free_self, free_self_when_done, line, pause_self,
 )
 from clausters.defs.node import Group, Synth
 from clausters.base._oscinterface import OscNrtInterface
@@ -317,6 +321,77 @@ def test_as_def_coerces_faust_expressions():
 def test_as_def_rejects_non_expressions():
     with pytest.raises(TypeError):
         as_def(3.14)
+
+
+# ---- the channel list is an expression like any other ----
+
+def test_as_def_lays_a_channel_list_on_consecutive_buses():
+    sdef = as_def(sine(440.0).dup())
+    buses = [o.inputs[0] for o in sdef.outputs]
+    assert [o.kind for o in sdef.outputs] == ["Out", "Out"]
+    assert buses == [0.0, 1.0]
+    # dup is by reference: one Sine serialized, fanned out to both channels.
+    assert [u["kind"] for u in sdef.spec()["ugens"]] == ["Sine", "Out", "Out"]
+
+
+def test_as_def_keeps_a_list_of_sinks_as_roots():
+    sdef = as_def(chans(out(4.0, sine(1.0)), out(9.0, sine(2.0))))
+    assert [o.inputs[0] for o in sdef.outputs] == [4.0, 9.0]
+
+
+def test_a_sink_in_a_mixed_list_does_not_push_the_audio_off_bus_zero():
+    # A sink already knows where its data goes, so it consumes no channel:
+    # the members that are not sinks are the channels, from bus 0 up.
+    sdef = as_def(chans(send_trig(sine(1.0)), sine(440.0), sine(660.0)))
+    assert [o.kind for o in sdef.outputs] == ["SendTrig", "Out", "Out"]
+    assert [o.inputs[0] for o in sdef.outputs[1:]] == [0.0, 1.0]
+
+
+def test_playing_a_channel_list_sends_and_instances_it(clean_default):
+    server = _nrt_server()
+    main.server = server
+    node = play(sine(440.0).dup())
+    assert isinstance(node, Synth)
+    assert "/d_recv" in _addrs(server) and "/s_new" in _addrs(server)
+
+
+def test_a_control_is_a_graph_leaf_not_something_to_play(clean_default):
+    # It reaches as_def (it is a SynthExpr) and is rejected there, by name --
+    # one place decides what is coercible.
+    main.server = _nrt_server()
+    with pytest.raises(TypeError, match="Control"):
+        play(control("freq"))
+
+
+# ---- a sink is what delivers data out of the graph ----
+
+def test_disk_out_is_a_sink_so_it_is_not_wrapped():
+    sdef = as_def(disk_out("/tmp/rec.wav", sine(440.0)))
+    assert sdef.outputs[0].kind == "DiskOut"
+    # Recording *and* hearing stays available, explicitly.
+    assert as_def(out(0.0, disk_out("/tmp/rec.wav", sine(440.0)))) \
+        .outputs[0].kind == "Out"
+
+
+def test_graph_management_ugens_are_not_sinks_and_stay_wrapped():
+    # They pass their input through, so out(0, free_self_when_done(...)) is
+    # the idiom -- wrapping them is right, side effect or not.
+    for expr in (free_self(sine(1.0)),
+                 pause_self(sine(1.0)),
+                 free_self_when_done(line(1.0, 0.0, 1.0)),
+                 detect_silence(sine(440.0))):
+        assert as_def(expr).outputs[0].kind == "Out"
+
+
+# ---- how wide an expression is ----
+
+def test_expr_channels_counts_the_buses_as_def_would_lay():
+    assert expr_channels(sine(440.0)) == 1
+    assert expr_channels(sine(440.0).dup(4)) == 4
+    assert expr_channels(chans(send_trig(sine(1.0)), sine(1.0))) == 1
+    # A sink routes itself: nothing here to infer.
+    assert expr_channels(send_trig(sine(1.0))) == 0
+    assert expr_channels(SynthDef("d", out(0.0, sine(1.0)))) is None
 
 
 def test_free_play_pattern_resolves_server_and_clock(clean_default):

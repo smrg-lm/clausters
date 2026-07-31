@@ -49,7 +49,7 @@ choose the input/output buses; they are added by the server, not declared
 here.
 """
 
-from ..base.absobject import AbstractObject
+from .expr import FaustExpr
 
 # AbstractObject selector -> box schema op name. The box schema has no
 # lsh/rsh/rem; Python `%` maps to Faust's `fmod`.
@@ -77,7 +77,7 @@ def _sum_arity(values):
     return total
 
 
-class Box(AbstractObject):
+class Box(FaustExpr):
     """One node of a Faust box expression. Wrap a number to make a constant;
     compose with operators, the module functions, or by calling the box.
 

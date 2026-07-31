@@ -24,11 +24,12 @@ and the server resources:
 from . import boxes
 from . import signals
 from . import ugens
-from .asdef import as_def
+from .asdef import as_def, expr_channels
 from .boxes import Box
 from .bus import AudioBusAllocator, Bus, ControlBusAllocator
 from .clocksync import SampleClockModel, UdpSampleClock
 from .buffer import Buffer, BufferAllocator
+from .expr import Expr, FaustExpr, SynthExpr
 from .faustdef import FaustDef
 from .graphdef import GraphDef
 from .patch import DefPatch, GraphPatch, synthdef_ports
@@ -131,6 +132,10 @@ __all__ = [
     "signals",
     "ugens",
     "as_def",
+    "expr_channels",
+    "Expr",
+    "SynthExpr",
+    "FaustExpr",
     "Box",
     "Signal",
     "FaustDef",

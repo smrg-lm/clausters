@@ -56,6 +56,34 @@ def test_render_bounces_a_bare_expression(tmp_path):
     assert read_soundfile(wav).samples == kept.samples
 
 
+def test_render_refuses_an_expression_wider_than_its_outputs():
+    # `channels` is the render's own output count, not a property of the
+    # graph, so it is never derived -- but an expression laid past it writes
+    # onto internal buses that reach no file, and that is misuse, not a
+    # truncation to absorb silently.
+    _embed_or_skip()
+    from clausters.defs import chans, out, sine
+
+    with pytest.raises(ValueError, match="channels=4"):
+        render(sine(440.0).dup(4), dur=0.05, sample_rate=SR, channels=2)
+    # Explicit routing is the caller's own business: only the buses the
+    # coercion itself assigned are checked.
+    render(chans(out(8.0, sine(440.0))), dur=0.05, sample_rate=SR, channels=2)
+
+
+def test_render_bounces_a_channel_list_on_its_own_channels():
+    _embed_or_skip()
+    from clausters.defs import chans, sine
+
+    stats = render(chans(sine(440.0) * 0.2, sine(660.0) * 0.2),
+                   dur=0.1, sample_rate=SR, channels=2)
+    assert stats.channels == 2
+    left, right = stats.channel(0), stats.channel(1)
+    assert max(abs(x) for x in left) > 0.1
+    assert max(abs(x) for x in right) > 0.1
+    assert left != right, "the two channels carry different signals"
+
+
 def test_render_bounces_an_event_pattern():
     _embed_or_skip()
     # Three notes, dur 0.5 at tempo 1 (beats == seconds): the last release

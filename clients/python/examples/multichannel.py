@@ -19,16 +19,24 @@ The point of interest is the two `dup` semantics and the fold:
   (`Sum4`/`Sum3`, not an `Add` chain), back to one signal.
 - ``out(0, dup(sig))`` is the reference dup at its best: the mixed signal
   fanned to buses 0 and 1 — stereo out, one graph.
+
+And the container is an **expression** like any other, so it needs no def of
+its own to be heard or rendered: ``render(chans(a, b), channels=2)`` bounces it
+and ``play(sine(440).dup())`` sounds it in stereo on a live server. The channels
+land on buses 0, 1, … in order, which is why the render must have at least as
+many outputs as the expression writes — asking for fewer raises rather than
+dropping half the take.
 """
 
 import sys
 
-from clausters import Session
+from clausters import Session, render
 from clausters.base import Routine
 from clausters.defs import (
     DoneAction,
     Env,
     SynthDef,
+    chans,
     control,
     dup,
     env_gen,
@@ -76,6 +84,13 @@ def main():
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
 
     print(f"wrote {out_path} - listen with: pw-play {out_path}")
+
+    # No def, no session: a channel list is an expression, so the verbs take
+    # it directly. Two different signals, one per channel.
+    pair = render(chans(sine(220.0) * 0.2, sine(330.0) * 0.2),
+                  dur=0.5, sample_rate=SR, channels=2)
+    print(f"bare channel list: {pair.channels} channels, "
+          f"peak {max(pair.peak, default=0.0):.3f}")
 
 
 if __name__ == "__main__":

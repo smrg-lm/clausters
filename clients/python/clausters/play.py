@@ -10,14 +10,15 @@ Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
   `clausters.seq.eventstream.EventStreamPlayer` on a clock;
 - a `clausters.base.stream.Routine` / `clausters.base.stream.Stream` — or a
   bare **generator** (object or function) -> scheduled on a clock;
-- a bare **expression** (a `clausters.defs.Ugen` graph, a Faust
-  `clausters.defs.Signal` or `clausters.defs.Box`) or a **def**
+- a bare **expression** (a `clausters.defs.Ugen` graph, a
+  `clausters.defs.ChannelList` of them, a Faust `clausters.defs.Signal` or
+  `clausters.defs.Box`) or a **def**
   (`clausters.defs.SynthDef` / `clausters.defs.FaustDef` /
   `clausters.defs.GraphDef`) -> sent and instanced on the server; an
   expression is first wrapped in an ephemeral def
   (`clausters.defs.asdef.as_def` adds the ``out`` when it lacks one), so
-  ``play(sine(440))`` just sounds. Returns the node handle — it plays
-  until you free it;
+  ``play(sine(440))`` just sounds and ``play(sine(440).dup())`` sounds in
+  stereo. Returns the node handle — it plays until you free it;
 - a `clausters.seq.timeline.Timeline` -> a `clausters.seq.timeline.Playhead`
   over the ambient clock and server;
 - a `clausters.defs.Buffer` -> sounded through the stock playbuf instrument
@@ -64,8 +65,9 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
             keys; an event `clausters.seq.pattern.Pattern`; a
             `clausters.base.stream.Routine` / `clausters.base.stream.Stream`
             or a bare generator (object or function); a bare expression
-            (`clausters.defs.Ugen`, `clausters.defs.Signal`,
-            `clausters.defs.Box`) or a def (`clausters.defs.SynthDef` /
+            (`clausters.defs.Ugen`, `clausters.defs.ChannelList`,
+            `clausters.defs.Signal`, `clausters.defs.Box`) or a def
+            (`clausters.defs.SynthDef` /
             `clausters.defs.FaustDef` / `clausters.defs.GraphDef`); a
             `clausters.seq.timeline.Timeline`; a `clausters.defs.Buffer`
             (sounded through the stock playbuf instrument); an
@@ -101,7 +103,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
     from .seq.pattern import Pattern
     from .seq.timeline import Playhead, Timeline
     from .base.stream import Stream, Routine
-    from .defs import Box, Buffer, FaustDef, GraphDef, Signal, SynthDef, Ugen
+    from .defs import Buffer, Expr, FaustDef, GraphDef, SynthDef
     from .defs.asdef import as_def
 
     if isinstance(playable, Event):
@@ -117,7 +119,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         return routine.play(clock, quant)
     if isinstance(playable, Pattern):
         return playable.play(clock, main.resolve_server(server), quant)
-    if isinstance(playable, (Ugen, Signal, Box, SynthDef, FaustDef, GraphDef)):
+    if isinstance(playable, (Expr, SynthDef, FaustDef, GraphDef)):
         return _play_def(as_def(playable), main.resolve_server(server), controls)
     if isinstance(playable, Timeline):
         clock = clock or main.resolve_clock() or main.get_default_clock()
@@ -150,7 +152,8 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
     raise TypeError(
         f"don't know how to play {type(playable).__name__}; expected an Event "
         "or event dict, an event Pattern (Pbind), a Routine/Stream or "
-        "generator, a def or bare expression (Ugen/Signal/Box), a Timeline, "
+        "generator, a def or bare expression (Ugen/ChannelList/Signal/Box), "
+        "a Timeline, "
         "a Buffer, an Automation, or anything with play(destination). An "
         "arrangement Element is rendered, not played — see "
         "clausters.form.render."

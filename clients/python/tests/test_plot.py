@@ -191,6 +191,23 @@ def test_plot_renders_a_bare_ugen_expression():
     assert abs(frames - 0.25 * SR) <= 128, f"~0.25 s rendered, got {frames}"
 
 
+def test_plot_derives_its_width_from_a_channel_list():
+    # Plot configures its render for what is being looked at, so a stereo
+    # pair shows two lanes without being told.
+    _embed_or_skip()
+    from clausters.defs import chans, sine
+
+    host = FakeHost()
+    plot(chans(sine(440.0) * 0.5, sine(660.0) * 0.5), dur=0.1,
+         sample_rate=SR, host=host)
+    assert _plot_widget(host.opened[0])["channels"] == 2
+
+    # An explicit count still wins.
+    host = FakeHost()
+    plot(sine(440.0).dup(3), dur=0.1, sample_rate=SR, channels=1, host=host)
+    assert _plot_widget(host.opened[0]).get("channels", 1) == 1
+
+
 def test_plot_renders_an_automation_curve():
     _embed_or_skip()
     from clausters.defs import Env

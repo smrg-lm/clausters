@@ -8,7 +8,7 @@ consumes (``{"signals": [ <node>, … ]}``, one node per output — see the
 server's ``faust::signals``). The same lowercase pattern will return UGen-graph
 nodes for SynthDefs later.
 
-A `Signal` is an `AbstractObject`, so
+A `Signal` is a `clausters.defs.expr.FaustExpr`, so
 ``hslider("freq", …).sin() * 0.2`` and ``sin(x) * 0.2`` both compose the graph.
 Plain numbers are constants (Faust ``int``/``real``); explicit feedback uses
 ``recursion``/``self_`` (one sample of delay), and ``input(n)`` reads audio
@@ -18,7 +18,7 @@ Reserved controls ``in`` and ``out`` (set with ``/s_new … "in" b "out" b``)
 choose the input/output buses; they are added by the server, not declared here.
 """
 
-from ..base.absobject import AbstractObject
+from .expr import FaustExpr
 
 # AbstractObject selector -> Faust Signal API op name.
 _BINARY = {
@@ -35,7 +35,7 @@ _UNARY = {
 }
 
 
-class Signal(AbstractObject):
+class Signal(FaustExpr):
     """One node of a Faust signal graph (one output). Wrap a number to make a
     constant; compose with operators or the module functions."""
 

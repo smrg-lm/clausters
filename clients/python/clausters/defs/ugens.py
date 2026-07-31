@@ -52,6 +52,7 @@ Reserved controls ``in`` and ``out`` (the input/output buses, set with
 
 from ..base import builtins as _builtins
 from ..base.absobject import AbstractObject
+from .expr import SynthExpr
 
 #: The four arithmetic selectors keep their dedicated alias kinds, so existing
 #: defs and their serialized graphs are unchanged.
@@ -79,7 +80,7 @@ _UNOP_OPS = frozenset({
 })
 
 
-class _Node(AbstractObject):
+class _Node(SynthExpr):
     """Shared operator dispatch for graph leaves (`Ugen`, `Control`): `+ - * /`
     compose the dedicated alias kinds; every other operator and math method
     (`%`, `min`, comparisons, `.sin()`, `.midicps()`, …) composes a generic
@@ -229,7 +230,7 @@ def _channel_binop(a, selector, b):
     return _builtins.BINARY[selector](a, b)
 
 
-class ChannelList(AbstractObject):
+class ChannelList(SynthExpr):
     """An ordered list of channels — the client's multichannel container.
 
     Members are graph leaves (`Ugen`/`Control`) or plain numbers. Operators
@@ -947,7 +948,7 @@ def _out_channels(kind, bus, signal):
     )
 
 
-def out_ctl(bus, signal) -> "Ugen | ChannelList":
+def out_ctl(bus, signal) -> SynthExpr:
     """Writes ``signal``'s latest per-block value to a **control** ``bus`` — the
     write side of `in_ctl`, so a node reading that bus (via ``/n_map`` or
     `in_ctl`) tracks it. Passes ``signal`` through as its output. A channel
@@ -957,7 +958,7 @@ def out_ctl(bus, signal) -> "Ugen | ChannelList":
     return Ugen("OutCtl", [bus, signal])
 
 
-def out(bus, signal) -> "Ugen | ChannelList":
+def out(bus, signal) -> SynthExpr:
     """Sums ``signal`` into the audio ``bus`` (output happens only here). A
     channel list writes its channels to consecutive buses: ``out(0,
     dup(sig))`` is a stereo output."""
@@ -966,7 +967,7 @@ def out(bus, signal) -> "Ugen | ChannelList":
     return Ugen("Out", [bus, signal])
 
 
-def replace_out(bus, signal) -> "Ugen | ChannelList":
+def replace_out(bus, signal) -> SynthExpr:
     """Overwrites the audio ``bus`` with ``signal`` instead of summing. A
     channel list overwrites consecutive buses."""
     if isinstance(signal, (ChannelList, list, tuple)):
@@ -1247,7 +1248,12 @@ def disk_in(path, chan=0.0, loop=False) -> Ugen:
 def disk_out(path, signal, format="int16") -> Ugen:
     """Streams ``signal`` to a mono WAV at ``path`` (``format`` is ``"int16"``,
     ``"int24"`` or ``"float"``) and passes ``signal`` through as its output.
-    Record stereo with two `disk_out`\\ s."""
+    Record stereo with two `disk_out`\\ s.
+
+    It delivers audio out of the graph, so it is a valid def root on its own:
+    ``play(disk_out(path, sig))`` records **without sounding**. To record and
+    hear the same take, route it yourself — ``out(0, disk_out(path, sig))``,
+    which is what the pass-through output is for."""
     return Ugen("DiskOut", [signal], static={"path": str(path), "format": str(format)})
 
 
