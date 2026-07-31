@@ -822,7 +822,7 @@ peer checks on attach/load, refusing to connect on a mismatch.
 **Why.** A binary boundary needs a check that an *already-compiled* peer can make
 at runtime, before it trusts a single byte of layout — SemVer strings cannot do
 that job, and the two boundaries evolve on independent cadences (the core FFI is
-already at v9 while the embed/IPC ABI is at v3). A monotonic integer per
+at v14 while the embed/IPC ABI is at v5). A monotonic integer per
 boundary is exactly the scsynth plugin-ABI lesson: every binary seam is
 versioned and verified where it is crossed. SemVer is left to govern the
 *package* — what `cargo`/`pip` resolves — where it belongs.
@@ -831,8 +831,20 @@ The one **linkage** rule keeps them from drifting into contradiction: a release
 that bumps either counter must also bump SemVer's breaking tier (the minor while
 the major is `0`, per standard pre-1.0 SemVer where the minor acts as the major;
 the major once at `1.0`). The reverse is not required — a minor can ship purely
-additive source-API work without touching either counter. The mechanical
-release rules live in `CLAUDE.md` ("Versioning"); this entry is the *why*.
+additive source-API work without touching either counter.
+
+That a counter measures **distance, not history** follows from the same
+reasoning, and decides a case that comes up during development: when a boundary
+changes twice before the first change has shipped, the second amends the first
+bump rather than adding another. The number exists for a compiled peer asking
+"can I attach to this?", and that peer only ever knew the last published value;
+counting the intermediate states would tell it about releases that never
+existed, and burn a version on each. It is the same argument that keeps the
+counter off SemVer — the seam is described by where it *is*, not by how it got
+there.
+
+The mechanical release rules live in `CLAUDE.md` ("Versioning"); this entry is
+the *why*.
 
 ## Client defaults for the wheel: sample clock (live only) and an enveloped default synth
 

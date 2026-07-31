@@ -251,6 +251,12 @@ package, never the wire.
    reverse does not hold — a minor bump can ship without touching either counter.
 4. **At `1.0.0`** the semantics become the standard post-1.0 ones (major breaks,
    minor adds, patch fixes); the ABI counters keep their role unchanged.
+5. **A counter moves once per release, not once per commit.** If the same
+   boundary changes again before that number has shipped (no tag yet), **amend**
+   the existing bump and its comment instead of bumping past it — a counter
+   states the distance from the last *published* boundary, not the history of
+   how the release got there. The same holds for the SemVer tier rule 3 drags
+   along: one breaking tier per release, however many breaking changes it took.
 
 Rationale (why the decouple) is in `docs/decisions.md`.
 
