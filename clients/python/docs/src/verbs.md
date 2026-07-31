@@ -169,6 +169,16 @@ so writing and reading one loses nothing.
 Because the renderer is the `clausters` binary, `path=` needs that binary
 findable — the same lookup `clausters.launch` uses (the wheel bundles it).
 
+This holds for **every** kind of render, a bare expression included:
+
+```python
+render(sine(440.0) * 0.2, dur=2.0, path="beep.wav").samples   # None, like the rest
+```
+
+There is no second writer in the client for the short bounces — one writer
+means one answer about the format, and reading a file back never depends on
+which verb wrote it.
+
 ### Reading a file back
 
 The counterpart is `read_soundfile`, which decodes through **the server's

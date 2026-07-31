@@ -27,19 +27,33 @@ def test_render_bounces_a_bare_expression(tmp_path):
     _embed_or_skip()
     from clausters.defs import sine
 
+    from clausters.render import read_soundfile
+
+    # In memory: the samples ride in the stats.
+    kept = render(sine(440.0) * 0.2, dur=0.25, sample_rate=SR, channels=1)
+    assert abs(kept.frames - 0.25 * SR) <= 128
+    assert len(kept.samples) == kept.frames
+    assert max(abs(x) for x in kept.samples) > 0.1, "the expression actually sounds"
+
+    # With a path: the audio goes to the file instead, exactly as it does for
+    # every other kind of render. Same seed, so it is the same take.
     wav = tmp_path / "expr.wav"
-    _st0 = render(sine(440.0) * 0.2, dur=0.25, sample_rate=SR,
-                             channels=1, path=wav)
-    samples, frames = _st0.samples, _st0.frames
-    assert abs(frames - 0.25 * SR) <= 128
-    assert len(samples) == frames
-    assert max(abs(x) for x in samples) > 0.1, "the expression actually sounds"
-    # The WAV is IEEE-float (format 3) carrying exactly the same frames.
+    filed = render(sine(440.0) * 0.2, dur=0.25, sample_rate=SR, channels=1,
+                   path=wav, seed=kept.seed)
+    assert filed.samples is None, "a path sends the audio to the file"
+    assert filed.path == str(wav)
+    assert filed.frames == kept.frames
+    # A 32-bit float WAV, written by the server's writer like every other
+    # render's file: hound tags it WAVE_FORMAT_EXTENSIBLE (0xFFFE, whose
+    # subformat GUID opens with IEEE_FLOAT) rather than a bare format 3.
     raw = wav.read_bytes()
     assert raw[:4] == b"RIFF" and raw[8:12] == b"WAVE"
     fmt, chans, rate = struct.unpack("<HHI", raw[20:28])
-    assert (fmt, chans, rate) == (3, 1, int(SR))
-    assert raw[-frames * 4:] == samples.tobytes()
+    bits = struct.unpack("<H", raw[34:36])[0]
+    assert fmt in (3, 0xFFFE)
+    assert (chans, rate, bits) == (1, int(SR), 32)
+    # And it holds the take the in-memory render produced, sample for sample.
+    assert read_soundfile(wav).samples == kept.samples
 
 
 def test_render_bounces_an_event_pattern():

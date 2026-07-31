@@ -28,7 +28,13 @@ counts, per-channel peak and RMS, and the samples themselves (interleaved
 float32 in a stdlib ``array('f')``) when the render kept them. Passing
 ``path`` sends the audio to a file instead — written by the server's own
 ``--nrt`` renderer, so it never crosses into this process — and leaves
-``samples`` ``None``. Read one back with `read_soundfile`.
+``samples`` ``None``. That holds for every kind of render, a bare expression
+included: there is no second writer on this side. Read one back with
+`read_soundfile`.
+
+A render with no ``seed`` draws a fresh one, so anything with a stochastic
+UGen in it is a new take every call; ``stats.seed`` reports the one used, and
+handing it back replays that take exactly.
 
 ```python
 from clausters import render
@@ -40,10 +46,8 @@ render(my_piece, until=64.0, path="piece.wav")     # an arrangement, bounced
 ```
 """
 
-import struct
-import sys
 from array import array
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from .base.main import main
 
@@ -209,9 +213,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
                             seed)
 
     if isinstance(obj, (Ugen, Signal, Box, SynthDef, FaustDef, GraphDef)):
-        stats = bounce_def(as_def(obj), dur, controls, defs, sample_rate,
-                           channels, seed)
-        return _deliver(stats, path)
+        return bounce_def(as_def(obj), dur, controls, defs, sample_rate,
+                          channels, seed, path)
 
     if isinstance(obj, Element):
         if destination is not None:
@@ -261,13 +264,19 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
                    until, tempo, sample_rate, channels, path, seed)
 
 
-def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None):
+def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,
+               path=None):
     """Renders a def offline: an ephemeral NRT session, the ``defs`` it needs
     plus the def itself sent at score time 0, one instance with ``controls``,
     freed at ``dur`` seconds. Returns the whole `RenderStats` — `plot` draws
-    its samples, `render` delivers it — because the take's ``seed`` is part of
-    what happened, and a def with a noise UGen in it has a different one every
-    call unless ``seed`` says otherwise."""
+    its samples, `render` returns it as is — because the take's ``seed`` is
+    part of what happened, and a def with a noise UGen in it has a different
+    one every call unless ``seed`` says otherwise.
+
+    ``path`` goes to the session, which is to say to the server's own writer:
+    this branch has no writer of its own, so a def bounce lands in a file the
+    same way every other render does, and its ``samples`` come back ``None``
+    like every other render's."""
     from .defs.graphdef import GraphDef
     from .session import Session
 
@@ -281,7 +290,8 @@ def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None):
     else:
         node = server.synth(obj.name, controls)
     server.send_bundle_after(float(dur), ("/n_free", node.id))
-    return session.render(sample_rate=sample_rate, channels=channels, seed=seed)
+    return session.render(sample_rate=sample_rate, channels=channels, seed=seed,
+                          path=path)
 
 
 # ---- the offline bounce ----
@@ -325,41 +335,6 @@ def render_score(score: bytes, sample_rate: float = 48_000.0, channels: int = 2,
     return RenderStats(frames=frames, channels=channels,
                        sample_rate=sample_rate, events=events, peak=peak,
                        rms=rms, seed=used, samples=samples)
-
-
-def _deliver(stats, path):
-    """Write an in-memory bounce out when asked, and say where it went.
-
-    Only the def/expression branch lands here: a `dur`-second bounce is short
-    by construction and already in memory, so writing it from this side costs
-    nothing. Score, pattern and routine renders take the server's writer.
-    """
-    if path is None:
-        return stats
-    _write_wav(path, stats.samples, stats.channels, stats.sample_rate)
-    return replace(stats, path=str(path))
-
-
-def _write_wav(path, samples, channels, sample_rate):
-    """Writes interleaved float32 samples as a WAV (IEEE-float format, with
-    the fact chunk non-PCM WAV requires)."""
-    buf = samples if isinstance(samples, array) else array("f", samples)
-    if sys.byteorder == "big":
-        buf = array("f", buf)
-        buf.byteswap()
-    data = buf.tobytes()
-    frames = len(data) // (4 * max(1, channels))
-    byte_rate = int(sample_rate) * channels * 4
-    header = (
-        b"RIFF" + struct.pack("<I", 4 + 24 + 12 + 8 + len(data)) + b"WAVE"
-        + b"fmt " + struct.pack("<IHHIIHH", 16, 3, channels,
-                                int(sample_rate), byte_rate, channels * 4, 32)
-        + b"fact" + struct.pack("<II", 4, frames)
-        + b"data" + struct.pack("<I", len(data))
-    )
-    with open(path, "wb") as f:
-        f.write(header)
-        f.write(data)
 
 
 def render_to_file(score: bytes, path, sample_rate: float, channels: int,
