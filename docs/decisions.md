@@ -1051,6 +1051,43 @@ through, so `play(disk_out(path, sig))` records without sounding; recording
 declined deliberately — one sentence that always holds beats a shorter set with
 a footnote.
 
+## A def name identifies one def, and a generated name says so
+
+Def names are a **single namespace across the three kinds**, and a generated
+name carries a unique id plus a `tmp_` prefix that keeps it off disk. The bug
+that forced the question: the Python client named ephemeral defs `_expr_<n>`
+from a per-process counter, shared by both def families, and the server
+persists every def it receives. A second session reused `_expr_2`, the store
+still held a *mono* SynthDef under that name from the first, the server
+resolved the name against the SynthDef table before the Faust one — and a
+stereo FaustDef reported writing one bus. Nothing was corrupt; three
+individually reasonable decisions composed into a silent wrong answer.
+
+**Decision:**
+
+- **One namespace.** Sending a def under a name another kind holds replaces
+  it, last one wins, deleting the loser's persisted files. Rejecting the
+  send was considered and dropped: replacement is already the rule *within* a
+  kind, and a client re-sending a name means it, whatever kind it used before.
+- **Generated names are `tmp_<kind>_<id>`** with a random id — unique across
+  processes and runs (a counter restarts at 0, and the store outlives the
+  process), and distinct per kind.
+- **`tmp_` means never persisted.** A name generated for one expression means
+  nothing to a later session. Whatever such a def must still write — only the
+  Faust record and its bitcode — goes under the OS temp directory.
+
+**Why a name prefix rather than a wire flag.** Persistence is a property of
+the *def*, and the name already travels with it everywhere: no per-command
+argument, no ABI move, and a log line or a `/d_query` listing says which defs
+are throwaway without consulting anything. The cost is that a user def named
+`tmp_...` is ephemeral too — which is the documented meaning of the prefix
+rather than a leak, the same way a leading underscore means private in Python.
+
+**What the failure taught.** A generated name is an identifier with a lifetime,
+not a formatting detail: the counter's flaw was invisible until it met a store
+that outlives the process, and then presented as a DSP bug. Uniqueness in a
+namespace that persists must be global, not per-process.
+
 ## `channels` means something different to each verb, and that is the design
 
 `play`, `plot` and `render` share one expression coercion, which invites making

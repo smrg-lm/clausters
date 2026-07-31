@@ -37,7 +37,7 @@ use crate::osc::ClientId;
 use crate::osc::translate::{
     CmdTranslator, control_key, float_value, int_arg, parse_b_gen, parse_buffer_msg,
 };
-use crate::server::defstore::DefStore;
+use crate::server::defstore::{self, DefKind, DefStore};
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
 use crate::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtRunner};
 
@@ -840,14 +840,25 @@ impl OscServer {
             Err(e) => return self.fail(from, "/d_faust", e),
         };
         let payload = CompilePayload::classify(def);
+        self.claim_def_name(&name, DefKind::Faust);
         // A live /d_faust always compiles fresh from the given def and, with
-        // persistence on, (re)writes the cache (restore = None).
-        let cache = self.store.as_ref().map(|s| {
-            Box::new(CacheJob {
-                dir: s.faustdefs_dir().to_path_buf(),
-                restore: None,
+        // persistence on, (re)writes the cache (restore = None). An ephemeral
+        // def never reaches the store: its bitcode speed-cache goes to the OS
+        // temp directory instead, so replaying the same expression still skips
+        // the recompile without leaving a record behind.
+        let cache = if defstore::is_ephemeral(&name) {
+            let dir = defstore::ephemeral_dir();
+            std::fs::create_dir_all(&dir)
+                .is_ok()
+                .then(|| Box::new(CacheJob { dir, restore: None }))
+        } else {
+            self.store.as_ref().map(|s| {
+                Box::new(CacheJob {
+                    dir: s.faustdefs_dir().to_path_buf(),
+                    restore: None,
+                })
             })
-        });
+        };
         let request = CompileRequest {
             name,
             payload,
@@ -1480,10 +1491,42 @@ impl OscServer {
         }
     }
 
+    /// Gives `name` to `kind`, freeing it in the other two def kinds — in
+    /// memory and on disk.
+    ///
+    /// A name identifies **one** def: sending a def under a name another kind
+    /// holds replaces it, last one wins. Without this the two entries coexist
+    /// and lookup order decides which answers, which is silently wrong
+    /// everywhere the name is resolved — instancing, `/d_query`, and the bus
+    /// usage the parallel scheduler reads.
+    ///
+    /// For a Faust def this runs at **submit** time, before the compile
+    /// finishes, so a compile that then fails still leaves the name free. That
+    /// is the honest reading of the request: the client said this name is a
+    /// Faust def now.
+    fn claim_def_name(&mut self, name: &str, kind: DefKind) {
+        #[cfg(feature = "synth")]
+        if kind != DefKind::Synth {
+            self.translator.synth_defs.remove(name);
+        }
+        #[cfg(feature = "faust")]
+        if kind != DefKind::Faust {
+            self.translator.faust_defs.remove(name);
+        }
+        if kind != DefKind::Graph {
+            self.translator.graph_defs.remove(name);
+        }
+        if let Some(store) = &self.store {
+            store.remove_other_kinds(name, kind);
+        }
+    }
+
     fn handle_d_recv(&mut self, msg: &OscMessage, from: ClientId) {
         match self.translator.d_recv(&msg.args) {
             Ok(name) => {
+                self.claim_def_name(&name, DefKind::Synth);
                 if let Some(store) = &self.store
+                    && !defstore::is_ephemeral(&name)
                     && let Some(spec) = synthdef_spec_bytes(&msg.args)
                     && let Err(e) = store.save_synthdef(&name, spec)
                 {
@@ -1500,7 +1543,9 @@ impl OscServer {
     fn handle_d_graph(&mut self, msg: &OscMessage, from: ClientId) {
         match self.translator.d_graph(&msg.args) {
             Ok(name) => {
+                self.claim_def_name(&name, DefKind::Graph);
                 if let Some(store) = &self.store
+                    && !defstore::is_ephemeral(&name)
                     && let Some(spec) = synthdef_spec_bytes(&msg.args)
                     && let Err(e) = store.save_graphdef(&name, spec)
                 {

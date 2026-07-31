@@ -19,9 +19,45 @@
 //! both cases: it is what gets recompiled on a libfaust upgrade or a corrupt
 //! cache. Writes are atomic (temp file + rename) so an interrupted startup
 //! never leaves a half-written record.
+//!
+//! **A name identifies one def, across all three kinds.** Sending a def frees
+//! the name in the other two — last one wins — so a stale record of another
+//! kind can never shadow what a client just sent (see
+//! [`DefStore::remove_other_kinds`]).
+//!
+//! **Ephemeral defs are not persisted.** A name starting with [`TMP_PREFIX`]
+//! marks a def the client built to hold an expression that has no name of its
+//! own (`clausters.defs.as_def`), and those must not accumulate in a store
+//! that outlives the process: see [`is_ephemeral`].
 
 use std::io;
 use std::path::{Path, PathBuf};
+
+/// Name prefix marking a def as **ephemeral**: built to carry an expression
+/// rather than named by anyone, so it has no business outliving the process
+/// that sent it. See [`is_ephemeral`].
+pub const TMP_PREFIX: &str = "tmp_";
+
+/// Whether `name` marks an ephemeral def — one the server keeps in memory and
+/// never writes to the persistent store.
+///
+/// The convention is the name itself rather than a wire flag, so it needs no
+/// per-command argument and reads as what it is in a log line or a `/d_query`
+/// listing. The cost is that a *user* def named `tmp_...` is ephemeral too;
+/// that is the documented meaning of the prefix, not an accident.
+pub fn is_ephemeral(name: &str) -> bool {
+    name.starts_with(TMP_PREFIX)
+}
+
+/// Where an ephemeral def's unavoidable artifacts go: a subdirectory of the
+/// OS temp directory, never the data directory. Only the Faust pair lands
+/// here — the record and its bitcode — since a `/d_recv` or `/d_graph` has no
+/// compiled artifact to keep; a replayed expression then still skips the
+/// recompile while the persistent store stays clean, and the OS reclaims the
+/// directory on its own schedule.
+pub fn ephemeral_dir() -> PathBuf {
+    std::env::temp_dir().join("clausters-tmpdefs")
+}
 
 /// Env var overriding the data directory (highest priority after an explicit
 /// CLI path).
@@ -49,6 +85,15 @@ pub fn resolve_data_dir(cli_override: Option<&str>) -> Option<PathBuf> {
         .ok()
         .filter(|h| !h.is_empty())
         .map(|home| PathBuf::from(home).join(".local/share/clausters"))
+}
+
+/// Which kind of def a name currently holds — the argument to
+/// [`DefStore::remove_other_kinds`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DefKind {
+    Synth,
+    Faust,
+    Graph,
 }
 
 /// The on-disk def directories and config files, created on open.
@@ -135,6 +180,26 @@ impl DefStore {
     /// Removes a persisted GraphDef (no error if absent).
     pub fn remove_graphdef(&self, name: &str) {
         let _ = std::fs::remove_file(self.graphdef_path(name));
+    }
+
+    /// Frees `name` in every def kind **except** `keep`, on disk.
+    ///
+    /// A name identifies one def, so a def arriving under a name another kind
+    /// holds replaces it rather than sitting beside it. Without this the two
+    /// records both survive a restart and the reload order decides which one
+    /// answers — which is how a stale mono SynthDef came to shadow a stereo
+    /// FaustDef of the same name and report the wrong bus usage.
+    pub fn remove_other_kinds(&self, name: &str, keep: DefKind) {
+        if keep != DefKind::Synth {
+            self.remove_synthdef(name);
+        }
+        if keep != DefKind::Graph {
+            self.remove_graphdef(name);
+        }
+        #[cfg(feature = "faust")]
+        if keep != DefKind::Faust {
+            crate::faust::cache::remove(&self.faustdefs_dir, name);
+        }
     }
 
     /// Reads every persisted GraphDef spec (raw JSON bytes) for the startup

@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use clausters::server::defstore::{DefStore, resolve_data_dir, sanitize_name};
+use clausters::server::defstore::{DefKind, DefStore, resolve_data_dir, sanitize_name};
 
 /// A unique temp directory per test, removed on drop.
 struct TempDir(PathBuf);
@@ -127,6 +127,53 @@ fn boot_preset_loads_when_present() {
     assert_eq!(boot.len(), 1);
     assert_eq!(boot[0].graph, "reverb");
     assert_eq!(boot[0].ports.get("mix"), Some(&0.3));
+}
+
+#[test]
+fn the_tmp_prefix_marks_a_def_ephemeral() {
+    use clausters::server::defstore::is_ephemeral;
+
+    // What `clausters.defs.as_def` generates for an expression nobody named.
+    assert!(is_ephemeral("tmp_synthdef_9f2a1c40be71"));
+    assert!(is_ephemeral("tmp_faustdef_9f2a1c40be71"));
+    // Anything a user would name is not.
+    assert!(!is_ephemeral("bass"));
+    assert!(!is_ephemeral("my_tmp_def"));
+}
+
+#[test]
+fn an_ephemeral_defs_artifacts_stay_out_of_the_data_dir() {
+    use clausters::server::defstore::ephemeral_dir;
+
+    // Whatever an ephemeral def must write goes under the OS temp directory,
+    // never the store that outlives the process.
+    let tmp = ephemeral_dir();
+    assert!(tmp.starts_with(std::env::temp_dir()));
+    let dir = TempDir::new("ephemeral");
+    assert!(!tmp.starts_with(dir.path()));
+}
+
+#[test]
+fn a_name_belongs_to_one_kind_and_the_last_def_wins() {
+    let dir = TempDir::new("crosskind");
+    let store = DefStore::open(dir.path()).unwrap();
+
+    // A SynthDef and a GraphDef claim the same name, in that order.
+    store
+        .save_synthdef("clash", br#"{"name":"clash","ugens":[]}"#)
+        .unwrap();
+    store
+        .save_graphdef("clash", br#"{"name":"clash","members":[]}"#)
+        .unwrap();
+    // Both on disk is exactly the state that lets a reload answer with the
+    // wrong one, so claiming the name for the graph frees it everywhere else.
+    store.remove_other_kinds("clash", DefKind::Graph);
+
+    assert!(
+        store.load_synthdef_specs().is_empty(),
+        "the SynthDef lost the name"
+    );
+    assert_eq!(store.load_graphdef_specs().len(), 1, "the GraphDef kept it");
 }
 
 #[cfg(feature = "faust")]
