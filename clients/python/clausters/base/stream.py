@@ -120,9 +120,24 @@ class Routine(Stream):
         self.rng = rand.spawn_rng()
 
     @classmethod
-    def run(cls, func):
-        """Decorator/constructor sugar: ``@Routine.run`` over a genfunc."""
-        return cls(func)
+    def run(cls, func, clock=None, quant=None):
+        """Wrap ``func`` in a `Routine` and `play` it at once; returns the
+        routine, already scheduled.
+
+        Sugar for ``Routine(func).play(clock, quant)``, and sclang's
+        ``Routine.run``. Both arguments resolve exactly as in `play`, so with
+        neither the routine lands on the ambient clock -- no `clausters.Session`
+        and no booted server needed. Reads as a decorator over the definition,
+        which is its point: the name is left bound to the routine itself, not to
+        the function, so it can still be unscheduled
+        (``main.default_clock.unsched(melody)``).
+
+            @Routine.run
+            def melody():
+                ...
+                yield 0.5
+        """
+        return cls(func).play(clock, quant)
 
     def reset(self):
         """Discard the running generator and return to the ``init`` state, so

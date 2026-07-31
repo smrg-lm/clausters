@@ -113,6 +113,23 @@ def test_routine_play_runs_on_an_existing_default_clock(clean_default):
     assert beats == [0.0, 1.0]
 
 
+def test_routine_run_plays_as_a_decorator(clean_default):
+    """``@Routine.run`` leaves the name bound to a routine already scheduled --
+    it plays, as in sclang; it is not a constructor alias."""
+    beats = []
+    clock = main.get_default_clock(start=False)
+
+    @Routine.run
+    def melody():
+        beats.append(main.current_tt._logical_beat)
+        yield 0.5
+        beats.append(main.current_tt._logical_beat)
+
+    assert isinstance(melody, Routine)
+    clock.render()
+    assert beats == [0.0, 0.5]
+
+
 def test_free_play_accepts_an_event_dict(clean_default):
     server = _nrt_server()
     main.server = server

@@ -57,6 +57,18 @@ Routine(melody).play()      # no clock, no Session, no booted server
 
 A routine needs a clock, not an engine: the example above sends notes, so it needs a server too, but a routine that only prints, draws or reads MIDI runs with no server at all. Reach the clock afterwards as `main.default_clock` (or `main.get_default_clock()`) to change its tempo or stop it.
 
+`Routine.run` is the same thing said over the definition — it wraps and plays in one step, so the name ends up bound to the routine, not to the function:
+
+```python
+@Routine.run
+def melody():
+    for note in [60, 62, 64, 67]:
+        Event(midinote=note, dur=0.5).play()
+        yield 0.5
+
+main.default_clock.unsched(melody)   # ...and this is how it stops
+```
+
 ### The one rule
 
 **A routine must never block the clock thread.** It runs *on* that thread, so a `time.sleep`, a blocking `server.sync()`, or any `wait=True` def send freezes every other routine and the whole timeline. Cede time with `yield` instead. To load a def from within a routine, send it asynchronously — `server.add_synthdef(sdef, wait=False)` — and `yield` enough time before the first note that uses it.
