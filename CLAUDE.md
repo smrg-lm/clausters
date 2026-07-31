@@ -54,8 +54,9 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   - **Docstrings and published docs are plain Markdown**: **no Sphinx/RST
     directives** in docstrings (no `:role:` cross-refs, no `:param:` field lists
     — use backticks / Google-style sections), and **no milestone labels
-    (`Mx`/`Cx`/`Fx`) in any published doc or docstring** — those live only in
-    the `PLAN.md` roadmaps.
+    (`Mx`/`Cx`/`Fx`/`Ux`/`Sx`/`Gx`) in any published doc, docstring, example or
+    comment** — a label is a roadmap coordinate and means nothing to a reader;
+    they live only in the `PLAN.md` roadmaps.
 - **Closing a milestone always includes, whenever applicable**: code plus tests,
   a clear commit message, the `PLAN.md` roadmap checkbox updated, the developer
   documentation (`docs/architecture.md`, module docs) and the user documentation
@@ -69,6 +70,15 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   `clients/python/examples/` for the client and the GUI), so an example that
   exercises the new behavior *is* the manual test, and keeping it runnable is
   part of closing the work.
+- **An example documents itself, and the documentation never enumerates the
+  examples.** The examples travel with the *repository*, not with the wheel or
+  the npm package, so a catalog of them inside a book serves a reader who does
+  not have them and rots for the one who does. Each example's module docstring
+  (or a page's header comment) says what it shows, what it needs and how to run
+  it; the books' `examples.md` pages say only where the directories are, how to
+  run each family, and at most name one or two entry points. A topic page may
+  still point at *one* example that shows what it is explaining — that is a
+  cross-reference, not a catalog.
 - Project skills live in `.claude/skills/` (realtime-audio, scsynth-osc,
   ugen-dsp, audio-testing, faust-embedding, faust-language, clausters-python,
   clausters-gui, documentation).

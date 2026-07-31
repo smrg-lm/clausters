@@ -1,58 +1,48 @@
 # Examples
 
-Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Most of the Python ones drive the server through the `clausters` client package, which they import from the source checkout with a `sys.path` shim (no install needed); the ones marked *stdlib only* below build the OSC bytes themselves and need nothing but Python. Whether one needs a server running (`cargo run --release`) or renders offline is said per script.
+The runnable demos live in the **repository**, not in any published package: a
+wheel or an npm install carries the library, not the examples. They come with a
+checkout:
 
-## Rust examples (`cargo run --example <name>`)
-
-| example | what it shows | run |
-|---|---|---|
-| `osc_ping` | Minimal OSC client for manual testing: subcommands `status`, `beep`, `vibrato`, `map` (the `/n_map`/`/n_mapa` demo), `quit`. | `cargo run --example osc_ping -- beep` |
-| `bench` | Graph-throughput benchmark (offline): how many copies of a graph fit in real time at 48 kHz, plus the parallel-group speedup and what fusing `MulAdd`/`Sum4` saves over the operators written longhand. With the `faust` feature (default), an apples-to-apples UGen-vs-Faust section runs the *same* DSP (the parity-test sine) through both engines to isolate per-synth audio-loop overhead. | `cargo run --release --example bench` |
-| `stress` | Single-core stress test against a **running** server (the real-time complement to `bench`, which is offline): ramps nodes of an `n`-sinusoid def while watching the server's own CPU meter and late-block counter in `/status.reply`, and reports the last stable count before the peak load crosses `--limit` or a block runs late. Two axes: `--sines` (DSP weight per node) and the ramp step (per-node engine overhead). The client is portable and works against any build; the default *server* build runs real-time-scheduled (`rtprio`), so the numbers measure DSP throughput — against a server built without that feature they measure scheduling jitter instead (see BUILD.md). | `cargo run --release --example stress -- --sines 10` |
-| `render_golden` | Regenerates the golden reference WAVs in `tests/golden/` from the shared scenes — run it and **listen** before committing. | `cargo run --example render_golden` |
-
-## Python clients (`examples/`)
-
-| script | what it shows |
+| where | what runs there |
 |---|---|
-| `sequencing.py` | The high-level [`clausters` client](clients.md): pattern sequencing with `Session` + `Pbind` + value patterns, and the one seam that runs the *same* phrase offline (NRT render) or live (UDP) by swapping the session. The flagship intro to the client library. |
-| `synthdef.py` | Builds a UGen `SynthDef` from Python (lowercase callables → graph → `/d_recv`), instance-based with no global build context, and proves it renders **byte-identically** to the server's built-in `default` def. |
-| `tcp_client.py` | The same `Server` facade over **TCP** (`OscTcpInterface`, length-prefixed OSC; the server listens by default) instead of UDP. |
-| `midi_file.py` | Renders an event pattern to a **Standard MIDI File** (`.mid`, or `--clip` for a 16-bit-velocity MIDI 2.0 clip): the *same* `Pbind`/`TempoClock` targets a `MidiServer` destination instead of the OSC `Server` (double dispatch), rendering each note as MIDI on/off and writing the file through the `clausters-midi` crate. No server, no audio. |
-| `midi_live.py` | Plays the same pattern **live** out a virtual OS MIDI port (`MidiRtInterface`, `clausters-midi --features live`): note-ons at the beat, note-offs scheduled — route it to a synth or the server's own `--midi` input with `aconnect`. |
-| `json_client.py` | *Stdlib only.* Generates defs as JSON and drives the server over OSC. Subcommands: `status`, `ugen`, `faust` (box API), `signal` (Faust Signal API: a `recursion`/`self` sine + a one-pole lowpass on noise), `wavetable`, `buffer`, `bundle`, `feedback` (a LocalIn/LocalOut resonant comb), `score` (writes an NRT score to `/tmp/clausters_score.osc`). |
-| `auto_order.py` | *Stdlib only.* [Auto-sorted groups](auto-order.md): builds a source → fx → master chain reversed on purpose and repairs it with one `/g_sortMode`. |
-| `group_set.py` | scsynth **group semantics**: three voices share a group and one `/n_set` on the group ramps all of them at once (the parameter propagates down the subtree). |
-| `graphdef.py` | A **GraphDef** ([node-graph program](schemas.md#graphdef-d_graph-graph_new--node-graph-programs)): a two-oscillator voice wired through a private internal bus, built with the `GraphDef` builder and driven through its **named surface** — one `freq` port mapping to both oscillators (the second scaled to a fifth), which a bare group `/n_set` cannot do. |
-| `graphdef_poly.py` | A **polyphonic** GraphDef: a shared mixer (instantiated once with `server.graph`) plus a per-voice oscillator marked `voice=True`, spawned per note with `server.graph_voice` — the same shared/per-voice model a `/midi_bind` to a GraphDef uses. |
-| `sample_clock.py` | *Stdlib only.* [The sample clock](sample-clock.md) as master timebase: models `sample(t)` from `/clock` anchors and schedules with `/sched`. |
-| `shm_client.py` | The shared-memory transport (`--shm`): the same OSC with no sockets anywhere. |
-| `clock_recorder.py` | The shared-memory sample clock made checkable: reads `ShmClient.clock` directly (no round trip), schedules a pristine `Impulse` **exactly every N samples** with `/sched`, records the real output (`pw-record`) and reports the impulse spacing/jitter/drift. Duration is free (`--seconds`), seconds to hours. |
-| `embed_render.py` | Synchronous offline render through the embed C ABI (`ctypes`), no server process. |
+| `examples/` | the Rust demos and the Python scripts that drive a server from a source checkout (a `sys.path` shim finds the client; a few build their OSC bytes with nothing but the standard library) |
+| `clients/python/examples/` | the installed-package scripts, including the `gui_*` family that drives the GUI host |
+| `clients/web/examples/` | the browser pages |
+| `examples/*.sh` | the shell demos (they need `oscsend`) |
 
-The table above is a selection, not the full directory: `examples/` also holds the audible tours of the UGen families (`subtractive.py`, `noise.py`, `ramps.py`, `sequencer.py`, `demand.py`, `panning.py`, `biquad_signal.py`, `audition.py`), the introspection helpers (`introspect_server.py`, `introspect_tree.py`, `interactive_session.py`), the live-patching and persistence demos (`live_patch.py`, `persistent_graphdef.py`, `faust_soundfile.py`), the WebSocket ping (`ws_ping.py`) and the impulse-clock measurement rig (`impulse_clock_test.py`). Each one's docstring says what it shows and how to run it.
+**Each example documents itself.** Its module docstring — or, for a page, the
+comment at the top — says what it shows, what it needs (a running server, a
+display, or nothing at all) and how to run it. That is the catalog: the
+directory listing plus each file's first paragraph, which cannot drift from the
+code the way a second list here would.
 
-The scripts marked *stdlib only* hand-roll their OSC encoding/decoding, so they double as a compact reference for the wire format.
+How to run each family:
 
-## Installed-package examples (`clients/python/examples/`)
+```sh
+cargo run --release --example bench          # Rust: cargo run --example <name>
+python3 examples/sequencing.py               # root Python: from a checkout, no install
 
-These import `clausters` from the **installed package** (no `sys.path` shim, no `target/`), so they show the wheel workflow: `pip install ./clients/python` then run from anywhere. See the [client README](clients.md#distribution).
+pip install ./clients/python                 # installed-package scripts:
+python clients/python/examples/hello_note.py #   ...run from anywhere
 
-| script | what it shows |
-|---|---|
-| `hello_note.py` | The shortest path to sound: `Server.boot()` then `play(Event(...))` — no `Session`, no clock wiring. |
-| `offline_render.py` | Fully self-contained: a `Session.nrt` `Pbind` rendered to a WAV through the **bundled** embed renderer — no server, no audio device, no source checkout. |
-| `live_udp.py` | The same pattern live over UDP to a running server (`Session.live`), proving the offline/live seam from an installed package. |
+cd clients/web && npm install && ./build.sh  # web pages: build, then serve
+python3 -m http.server                       #   http://localhost:8000/examples/...
+```
 
-That directory is the client's own catalog and holds far more than these three — the def families, the sequencing and transport demos, and the whole `gui_*` family that drives the GUI host. It is described from the client's side: `clients/python/examples/README.md` and the [Python client book](https://clausters.readthedocs.io/).
+Most of the Python demos render **offline** and need no audio hardware and no
+server; the ones that drive a live server say so and expect `cargo run
+--release` (or the installed `clausters` command) in another terminal.
 
-## Shell
-
-| script | what it shows |
-|---|---|
-| `persistence.sh` | [Def persistence](schemas.md#persisting-defs-across-restarts): `/d_faust` a def with `--data-dir`, quit, then restart and instantiate it **without re-sending** — it reloaded from disk (with its bitcode cache). Needs `oscsend` (the `faust` feature is on by default). |
-| `midi_standalone.sh` | [MIDI-standalone](schemas.md#midi-standalone-bindings--boot-preset): set up a SynthDef + a GraphDef + a `/midi_bind` once, quit, then restart with `--midi` and the binding is **back with no OSC** — play it from a controller via `aconnect`. Needs `oscsend`. |
+The examples are also this project's **manual test surface**: new audible or
+visual behavior is checked by running one, so an example that exercises a
+feature is part of shipping it.
 
 ## Python binding (`clients/python/clausters/ipc.py`)
 
-The reusable local-transport library (standard library + `ctypes`): a shared-memory client and the embed façade with a synchronous `request()` call. It is the `clausters.ipc` module of the high-level Python client package (`clients/python/clausters/`), and its `Clausters`/`ShmClient`/`render` are re-exported from the top-level `clausters` package. See [Local transports & embedding](ipc.md) for the API.
+The reusable local-transport library (standard library + `ctypes`): a
+shared-memory client and the embed façade with a synchronous `request()` call.
+It is the `clausters.ipc` module of the high-level Python client package
+(`clients/python/clausters/`), and its `Clausters`/`ShmClient`/`render` are
+re-exported from the top-level `clausters` package. See [Local transports &
+embedding](ipc.md) for the API.
