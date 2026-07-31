@@ -1,6 +1,6 @@
 ---
 name: feature-matrix
-description: Run the fmt + clippy + rustdoc checks CI does not cover — the def-family feature matrix (synth/faust/neither), the workspace, the GUI host and the doc build's own lints (broken intra-doc links). Consult before committing any change to feature-gated code or to doc comments, or whenever clippy or rustdoc needs to be verified clean across the whole matrix.
+description: Run the fmt + clippy + rustdoc checks CI does not cover — the def-family feature matrix (synth/faust/neither), the workspace, the GUI host and the doc build's own lints (broken intra-doc links). Consult before committing any change to feature-gated code or to doc comments, or whenever clippy or rustdoc needs to be verified clean across the whole matrix. Also consult when tests that launch the server start timing out for no reason (the web client's suite, an E2E, an example) — testing the matrix leaves a crippled `target/debug/clausters` behind, and this explains the symptom and the one-line fix.
 ---
 
 # The feature matrix CI does not run
@@ -133,4 +133,45 @@ the one that catches a link to something that does not exist at all, stays on.
   (`cargo test --workspace --features embed`); `midi-jack` needs
   `libjack-jackd2-dev` and is left to the machines that have it.
 - **Tests.** This is a lint gate, not a test run. `cargo test --workspace` is a
-  separate step in the commit workflow.
+  separate step in the commit workflow. If you run the tests across the matrix
+  too, read the next section first.
+
+## Testing the matrix leaves a crippled `target/debug/clausters`
+
+`cargo test --no-default-features [--features synth|faust]` is worth running when
+the change touches feature-gated code — the lint gate says nothing about
+behavior. But every one of those runs **rebuilds the `clausters` binary into the
+same path**, `target/debug/clausters`, with the features that run asked for. The
+last one wins, and it stays there.
+
+A build without `realtime` has no audio backend and refuses to serve:
+
+```
+ERROR built without the `realtime` feature: no audio backend (try --nrt)
+```
+
+Nothing in the Rust test run notices, because those suites are deviceless by
+design. What notices is **everything else that launches that binary**, and it
+notices as a timeout rather than as an error:
+
+- `clients/web/tests/*.test.ts` — several spawn `../../../target/debug/clausters`
+  with `--ws` and wait for the endpoint. Sixteen of the 138 fail with
+  `server WS endpoint never came up`, five seconds each.
+- Any E2E in one Bash invocation (`./target/debug/clausters & …`), and the root
+  `examples/` that expect a live server.
+
+So the failures look like a regression in code that was never touched, in a
+language that was never touched. **Finish with a plain `cargo build`** — default
+features — before running anything that starts a server, and re-run the suite
+that failed. That is the whole fix; there is nothing to debug.
+
+`cargo clippy` does **not** have this effect: it type-checks and emits metadata
+without linking the binary, so the file's mtime does not move. Only `cargo test`
+and `cargo build` (and `cargo run`) write it. Which means the script in this
+skill is safe to run at any point — the hazard is the by-hand test sweep beside
+it, not the gate.
+
+The Python client has its own version of this trap, one layer up, and CLAUDE.md
+covers it: the package prefers the binaries **bundled** in
+`clients/python/clausters/_bin`, `_libs` over the workspace `target/`, so those
+go stale on any rebuild — `scripts/refresh-bin.sh` re-stages them.
