@@ -337,7 +337,7 @@ class Playhead:
         owns_recv = recv is None
         if recv is None:
             recv = OscReceiver().start()
-        recv.send(server.target.addr(), "/notify", 1)
+        recv.send(server.target, "/notify", 1)
 
         def on_transport(msg, time, src):
             # msg == ["/transport.reply", origin, tempo, defined, playing, position]

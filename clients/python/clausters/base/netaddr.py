@@ -5,24 +5,18 @@ it does not send -- the **destination** does both
 (`clausters.base.destination`), because sending needs an interface and a policy
 for turning logical time into wire time, and neither of those is an address.
 The same ``NetAddr`` therefore works in RT or NRT, behind any destination.
+
+It *is* a tuple, so it goes straight to the socket calls that take one, and the
+names are there for the code that reads a host or a port on its own.
+
+It carries **no defaults**: which host and port to reach is the caller's, and a
+default here would be one particular destination's address (the server's)
+frozen into the type that stands for all of them.
 """
 
+from typing import NamedTuple
 
-class NetAddr:
-    def __init__(self, host: str = "127.0.0.1", port: int = 57110):
-        self.host = host
-        self.port = port
 
-    def addr(self) -> tuple[str, int]:
-        return (self.host, self.port)
-
-    def __eq__(self, other):
-        if not isinstance(other, NetAddr):
-            return NotImplemented
-        return (self.host, self.port) == (other.host, other.port)
-
-    def __hash__(self):
-        return hash((self.host, self.port))
-
-    def __repr__(self):
-        return f"NetAddr({self.host!r}, {self.port})"
+class NetAddr(NamedTuple):
+    host: str
+    port: int

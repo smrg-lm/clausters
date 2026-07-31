@@ -627,7 +627,7 @@ class Server:
         something that behaves differently offline. Use it for what has no place
         in a timeline: sending defs, allocating buffers, opening the groups a
         piece is built on."""
-        self.interface.send_msg(self.target.addr(), addr, *args)
+        self.interface.send_msg(self.target, addr, *args)
 
     def send_bundle(self, *messages, delay_beats: float = 0.0, clock=None, at=None):
         """Emit a timetagged bundle of ``(addr, *args)`` messages at ``at``
@@ -648,7 +648,7 @@ class Server:
 
         if getattr(self.interface, "time_mode", "unix") == "score":
             # NRT: seconds from render start (logical, timebase-independent).
-            self.interface.send_bundle(self.target.addr(), when.secs(), *messages)
+            self.interface.send_bundle(self.target, when.secs(), *messages)
             return
 
         timebase = getattr(when.clock, "timebase", None)
@@ -662,7 +662,7 @@ class Server:
         else:
             # Wall clock: an NTP-timetagged bundle.
             self.interface.send_bundle(
-                self.target.addr(), when.instant() + self.latency, *messages
+                self.target, when.instant() + self.latency, *messages
             )
 
     def play_event(self, event):
@@ -971,7 +971,7 @@ class Server:
 
         recv = OscReceiver().start()
         recv.add(on_node_end)
-        recv.send(self.target.addr(), "/notify", 1)
+        recv.send(self.target, "/notify", 1)
         self._recycler = recv
 
     def synth(self, defname, controls=None, *, target=ROOT_NODE_ID,

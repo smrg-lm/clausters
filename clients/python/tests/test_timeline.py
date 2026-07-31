@@ -13,7 +13,7 @@ import socket
 import time
 import types
 
-from clausters.base import OscReceiver, TempoClock
+from clausters.base import NetAddr, OscReceiver, TempoClock
 from clausters.base import _osclib as osc
 from clausters.base.main import main
 from clausters.seq import (
@@ -235,7 +235,7 @@ def test_playhead_follows_transport_broadcast():
     # A fake server: follow_transport only needs target.addr() (where /notify
     # goes -- a discard port here) and transport_state() for the initial apply.
     server = types.SimpleNamespace(
-        target=types.SimpleNamespace(addr=lambda: ("127.0.0.1", 57199)),
+        target=NetAddr("127.0.0.1", 57199),
         transport_state=lambda: None,
     )
     try:

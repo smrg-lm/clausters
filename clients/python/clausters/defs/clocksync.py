@@ -111,7 +111,7 @@ class UdpSampleClock:
     """
 
     def __init__(self, server, window: int = 64, timeout: float = 2.0):
-        self.target = server.target.addr()
+        self.target = server.target
         self._iface = OscUdpInterface().start()
         self.model = SampleClockModel(window=window)
         self._timeout = timeout

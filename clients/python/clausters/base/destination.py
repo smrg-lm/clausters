@@ -54,7 +54,7 @@ class OscDestination:
 
     def send_msg(self, addr: str, *args) -> None:
         """Send one message. **A message has no time** — it means "now"."""
-        self.interface.send_msg(self.target.addr(), addr, *args)
+        self.interface.send_msg(self.target, addr, *args)
 
     def send_bundle(self, *messages, at: "Moment | None" = None,
                     delay_beats: float = 0.0) -> None:
@@ -67,7 +67,7 @@ class OscDestination:
         seconds.
         """
         when = (at if at is not None else Moment.current()).at(delay_beats)
-        self.interface.send_bundle(self.target.addr(), when.instant(), *messages)
+        self.interface.send_bundle(self.target, when.instant(), *messages)
 
     def close(self) -> None:
         """Close the interface, if this destination opened it."""
