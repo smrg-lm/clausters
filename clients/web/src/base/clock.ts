@@ -23,7 +23,7 @@
 
 import { Scheduler } from "../core/clausters_core_web.js";
 import { setCurrentRoutine } from "./context.ts";
-import { Stream, StopStream } from "./stream.ts";
+import { Routine, Stream, StopStream } from "./stream.ts";
 import {
     MonotonicTimebase,
     bar,
@@ -487,7 +487,14 @@ export class TempoClock {
         try {
             delta = isStream ? item.next(this) : item();
         } catch (error) {
-            if (!(error instanceof StopStream)) throw error;
+            if (error instanceof StopStream) return;
+            // A raising routine loses its place in the schedule -- and only its
+            // own place. The driver must survive it: it wakes every other
+            // routine, and an error thrown from here would leave `pump` without
+            // arming the next wake, a clock that reports itself running and
+            // never fires again. Report it and drop this one.
+            if (item instanceof Routine) item.state = "done";
+            console.error("routine dropped after throwing:", error);
             return;
         } finally {
             setCurrentRoutine(previous);

@@ -109,8 +109,8 @@ export type RoutineFunc = (
 ) => Generator<number | undefined, unknown, unknown>;
 
 /**
- * The state a routine is in. `paused` is reserved for a routine held out of
- * the queue without being finished.
+ * The state a routine is in. `paused` is a routine held out of the queue
+ * without being finished — `pause` puts it there, `play` resumes it.
  */
 export type RoutineState = "init" | "running" | "done" | "paused";
 
@@ -152,8 +152,8 @@ export class Routine extends Stream {
      */
     next(inval?: unknown): unknown {
         if (this.state === "done") throw new StopStream();
+        this.state = "running"; // also what resumes a paused routine
         if (this.gen === null) {
-            this.state = "running";
             this.gen = this.func(inval);
             const first = this.gen.next();
             if (first.done) {
@@ -176,7 +176,32 @@ export class Routine extends Stream {
      */
     play(clock?: TempoClock, quant?: number): this {
         const target = clock ?? resolveClock();
+        this.clock = target; // known from scheduling, not only from waking
         target.play(this, quant);
+        return this;
+    }
+
+    /**
+     * Takes this routine off its clock, keeping its position; returns itself.
+     * The generator is untouched, so a later `play` resumes it at the very
+     * `yield` it was paused on — the counterpart of `reset`, which throws that
+     * position away. Pausing a routine that is not scheduled does nothing.
+     */
+    pause(): this {
+        this.clock?.unsched(this);
+        if (this.state === "running") this.state = "paused";
+        return this;
+    }
+
+    /**
+     * Takes this routine off its clock *and* rewinds it; returns itself.
+     * `pause` followed by `reset`: a later `play` starts the generator function
+     * afresh, from the top. This is a routine's own transport, not
+     * `TempoClock.stop`, which halts the *clock* and every routine on it.
+     */
+    stop(): this {
+        this.pause();
+        this.reset();
         return this;
     }
 }

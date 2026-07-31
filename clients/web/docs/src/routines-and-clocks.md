@@ -50,6 +50,10 @@ A few things worth knowing:
 - `clock.setTempo(bps)` changes tempo **pinning the current instant**: the beat the clock is on keeps mapping to the second it already mapped to, and the new tempo governs from there — so nothing already scheduled jumps.
 - The clock never talks to a server, and the server is not told about the clock: `play` reads the logical beat off the routine being resumed. One clock can drive routines against two servers, and one server can be played by two clocks.
 
+A routine has its own transport, and it is not the clock's — `clock.stop()` halts the clock and every routine on it, while these touch only this routine: `routine.pause()` takes it off the clock **keeping its place**, so a later `routine.play(clock)` resumes at the very `yield` it stopped on; `routine.stop()` takes it off **and rewinds**, so the next `play` starts the generator afresh; `routine.reset()` rewinds without unscheduling.
+
+A routine that throws is dropped the same way, with the error on the console: it loses its place in the schedule and nothing else does. The clock keeps driving the other routines — an error escaping the driver would leave it armed for no next wake, running and firing nothing.
+
 There is no `run(seconds)` here, because nothing in a page may block: a script that waited would freeze the same thread the clock, the engine's messages and the whole document run on. The clock runs until you stop it, and the piece ends when its routines do.
 
 ### The one rule

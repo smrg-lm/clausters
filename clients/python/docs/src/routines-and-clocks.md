@@ -65,9 +65,17 @@ def melody():
     for note in [60, 62, 64, 67]:
         Event(midinote=note, dur=0.5).play()
         yield 0.5
-
-main.default_clock.unsched(melody)   # ...and this is how it stops
 ```
+
+### Pausing, stopping, rewinding
+
+A routine has its own transport, and it is not the clock's — `clock.stop()` halts the clock and every routine on it, while these three touch only this routine:
+
+- `melody.pause()` takes it off the clock **keeping its place**. The generator is untouched, so `melody.play()` resumes at the very `yield` it was paused on.
+- `melody.stop()` takes it off the clock **and rewinds** it, so the next `play()` starts the function from the top.
+- `melody.reset()` rewinds without unscheduling — what `stop` calls after pausing.
+
+A routine that raises is dropped the same way, with its traceback on stderr: it loses its place in the schedule and nothing else does. The clock keeps running, and the other routines on it never learn about it.
 
 ### The one rule
 

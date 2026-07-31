@@ -222,3 +222,60 @@ test("stop holds the beat and start resumes from it", () => {
     run(1);
     assert.equal(woke, 3);
 });
+
+test("pause keeps a routine's place; stop rewinds it", () => {
+    const { clock, run } = harness();
+    const seen: number[] = [];
+    const routine = new Routine(function* () {
+        for (let i = 0; i < 4; i++) {
+            seen.push(i);
+            yield 1;
+        }
+    });
+    clock.start().play(routine);
+    run(1.5);
+    assert.deepEqual(seen, [0, 1]);
+
+    routine.pause();
+    run(5);
+    assert.deepEqual(seen, [0, 1], "a paused routine is resumed by nobody");
+    assert.equal(routine.state, "paused");
+
+    routine.play(clock); // resumes at the yield it was paused on
+    run(2.5);
+    assert.deepEqual(seen, [0, 1, 2, 3]);
+
+    seen.length = 0;
+    routine.stop();
+    assert.equal(routine.state, "init", "stop rewinds: the next play starts over");
+    routine.play(clock);
+    run(4);
+    assert.deepEqual(seen, [0, 1, 2, 3]);
+});
+
+test("a routine that throws is dropped, and the clock keeps driving the rest", () => {
+    const { clock, run } = harness();
+    const survivor: number[] = [];
+    const bad = new Routine(function* () {
+        yield 1;
+        throw new Error("the routine's problem, not the clock's");
+    });
+    const good = new Routine(function* () {
+        for (let i = 0; i < 3; i++) {
+            survivor.push(i);
+            yield 1;
+        }
+    });
+    clock.start();
+    clock.play(bad);
+    clock.play(good);
+    const errors = console.error;
+    console.error = () => {};
+    try {
+        run(3.5);
+    } finally {
+        console.error = errors;
+    }
+    assert.deepEqual(survivor, [0, 1, 2], "the other routine ran to its end");
+    assert.equal(bad.state, "done", "...and the raising one lost its place");
+});

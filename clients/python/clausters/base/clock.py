@@ -26,6 +26,7 @@ the seam — and it lives on the Server, not here.
 
 import threading
 import time
+import traceback
 
 from .. import _native
 from .stream import Stream, StopStream
@@ -371,14 +372,23 @@ class TempoClock:
             item._logical_beat = beat  # ...and its exact logical time (yield-driven)
         try:
             if isinstance(item, Stream):
-                try:
-                    delta = item.next(self)
-                except StopStream:
-                    return
+                delta = item.next(self)
             elif callable(item):
                 delta = item()
             else:
                 return
+        except StopStream:
+            return
+        except Exception:
+            # A raising routine loses its place in the schedule -- and only its
+            # own place. The clock thread must survive it: it drives every other
+            # routine, and a dead thread would leave a clock that still reports
+            # itself running while waking nobody. Report it the way a thread
+            # dying used to (the traceback on stderr) and drop this one.
+            if isinstance(item, Stream):
+                item.state = "done"
+            traceback.print_exc()
+            return
         finally:
             main.current_tt = prev
         if isinstance(delta, (int, float)):

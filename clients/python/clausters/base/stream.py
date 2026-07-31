@@ -108,8 +108,10 @@ class Routine(Stream):
         self._gen = None
         self._started = False
         self.state = "init"  # init | running | done | paused
-        #: the clock currently driving this routine (set by the clock on wake),
-        #: so a Server can read the logical time. None when not playing.
+        #: the clock driving this routine -- set by `play` when it schedules it
+        #: and again by the clock on each wake, so a Server can read the logical
+        #: time and `pause`/`stop` know where to unschedule from. None until it
+        #: has been played.
         self.clock = None
         #: the exact logical beat at which the clock last resumed this routine
         #: (yield-accumulated, not wall-clock); the Server emits timetags from it.
@@ -129,8 +131,7 @@ class Routine(Stream):
         neither the routine lands on the ambient clock -- no `clausters.Session`
         and no booted server needed. Reads as a decorator over the definition,
         which is its point: the name is left bound to the routine itself, not to
-        the function, so it can still be unscheduled
-        (``main.default_clock.unsched(melody)``).
+        the function, so it can still be paused and stopped (``melody.stop()``).
 
             @Routine.run
             def melody():
@@ -152,10 +153,10 @@ class Routine(Stream):
         The clock calls this on each wake; you rarely call it directly."""
         if self.state == "done":
             raise StopStream
+        self.state = "running"      # also what resumes a paused routine
         try:
             if not self._started:
                 self._started = True
-                self.state = "running"
                 self._gen = _make_gen(self.func, inval)
                 return self._gen.send(None)
             return self._gen.send(inval)
@@ -182,7 +183,32 @@ class Routine(Stream):
         from .main import main
 
         clock = clock or main.resolve_clock() or main.get_default_clock()
+        self.clock = clock          # known from scheduling, not only from waking
         clock.play(self, quant)
+        return self
+
+    def pause(self):
+        """Take this routine off its clock, keeping its position; returns
+        ``self``. The generator is untouched, so a later `play` resumes it at the
+        very ``yield`` it was paused on -- the counterpart of `reset`, which
+        throws that position away. Pausing a routine that is not scheduled does
+        nothing."""
+        if self.clock is not None:
+            self.clock.unsched(self)
+        if self.state == "running":
+            self.state = "paused"
+        return self
+
+    def stop(self):
+        """Take this routine off its clock **and** rewind it; returns ``self``.
+        `pause` followed by `reset`: a later `play` starts the generator function
+        afresh, from the top.
+
+        Note this is a routine's own transport, not `TempoClock.stop` -- that one
+        halts the *clock*, holding the beat it reached for every routine on it.
+        """
+        self.pause()
+        self.reset()
         return self
 
     # Called by the clock when it is this routine's turn.

@@ -130,6 +130,60 @@ def test_routine_run_plays_as_a_decorator(clean_default):
     assert beats == [0.0, 0.5]
 
 
+def test_routine_pause_keeps_its_place_and_stop_rewinds(clean_default):
+    seen = []
+
+    def gen():
+        for i in range(4):
+            seen.append(i)
+            yield 1.0
+
+    clock = main.get_default_clock(start=False)
+
+    r = Routine(gen).play()
+    clock.render(until_beat=1.0)          # two wakes: 0 and 1
+    assert seen == [0, 1] and r.state == "running"
+
+    r.pause()
+    clock.render()                        # nothing left in the queue
+    assert seen == [0, 1] and r.state == "paused"
+
+    r.play()                              # resumes at the yield it stopped on
+    clock.render()
+    assert seen == [0, 1, 2, 3]
+
+    seen.clear()
+    r.stop()                              # rewound: the next play starts over
+    assert r.state == "init"
+    r.play()
+    clock.render()
+    assert seen == [0, 1, 2, 3]
+
+
+def test_a_raising_routine_does_not_take_the_clock_down(clean_default, capsys):
+    """The clock drives every other routine: one that raises loses its place in
+    the schedule and nothing else."""
+    survivor = []
+
+    def boom():
+        yield 1.0
+        raise ValueError("the routine's problem, not the clock's")
+
+    def other():
+        for _ in range(3):
+            survivor.append(1)
+            yield 1.0
+
+    clock = main.get_default_clock(start=False)
+    bad = Routine(boom).play()
+    Routine(other).play()
+    clock.render()
+
+    assert survivor == [1, 1, 1]          # the clock kept driving the other one
+    assert bad.state == "done"            # ...and dropped the raising one
+    assert "ValueError" in capsys.readouterr().err
+
+
 def test_free_play_accepts_an_event_dict(clean_default):
     server = _nrt_server()
     main.server = server
