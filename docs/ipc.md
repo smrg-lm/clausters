@@ -76,7 +76,8 @@ reply = c.request(osc_bytes)            # sync command round trip
 with Clausters(workers=2) as s:         # in-process server
     s.send(osc_bytes); print(s.clock)
 
-samples, frames = render(score_bytes)   # sync offline render
+# sync offline render: samples, frames, events, and the seed it drew
+samples, frames, events, seed = render(score_bytes)
 ```
 
 Demos: `examples/shm_client.py` (attach, watch the clock, fade a synth by writing a control bus in shared memory) and `examples/embed_render.py` (render a score synchronously and write a WAV). Pure-Python caveat: the ring cursors rely on aligned 32-bit accesses being effectively atomic (true on x86-64/aarch64); the Rust sides use real atomics.

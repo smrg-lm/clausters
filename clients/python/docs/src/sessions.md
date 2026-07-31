@@ -44,8 +44,8 @@ session.play(Pbind(
     dur=0.25,
     amp=Pwhite(0.1, 0.2),
 ))
-samples, frames = session.render(sample_rate=48000.0, channels=2)
-print(f"{frames} frames; peak {max(abs(s) for s in samples):.3f}")
+take = session.render(sample_rate=48000.0, channels=2)
+print(f"{take.frames} frames; peak {max(take.peak):.3f}; seed {take.seed}")
 ```
 
 Randomness (`Pwhite`, `Prand`, `clausters.uniform`/`choice`/…) always draws
@@ -116,7 +116,7 @@ Once you have a session, a small set of methods drives it. Some are offline-only
 | Call | Kind | What it does |
 | --- | --- | --- |
 | `play(pattern, quant=None)` | all | Plays an event pattern (e.g. a `Pbind`) on this session's clock and server. Returns the `EventStreamPlayer`. `quant` is the beat grid to start on; `None` starts immediately. |
-| `render(sample_rate, channels)` | offline | Drains the clock logically (no waiting), then renders the score. Returns `(samples, frames)` — interleaved float32 in a stdlib `array('f')`, and the frame count. |
+| `render(sample_rate, channels, path=None, seed=None)` | offline | Drains the clock logically (no waiting), then renders the score. Returns a [`RenderStats`](verbs.md#what-a-render-gives-back): frame/channel/event counts, per-channel `peak` and `rms`, the `seed` it used, and `samples` (interleaved float32 in a stdlib `array('f')`) unless `path` sent the audio to a file. |
 | `run(seconds)` | real-time | Starts the clock, advances it in real time for `seconds`, then stops. Returns `self`. (`live` and `embed`.) |
 | `start()` / `stop()` | real-time | Start or stop the real-time clock yourself when `run` (which does both) is not enough. Both return `self`. |
 | `close()` | all | Closes the underlying `Server` and its interface (for `embed`, shuts the in-process server down). |
@@ -157,7 +157,7 @@ def phrase():
 # Offline: capture it to samples.
 offline = Session.nrt(tempo=2.0)
 offline.play(phrase())
-samples, frames = offline.render()
+take = offline.render()
 
 # Live: hear the very same phrase.
 with Session.live(tempo=2.0, latency=0.1) as live:
@@ -179,7 +179,7 @@ live.play(phrase())
 plot.play(phrase())
 
 live.run(2.0)                       # heard in real time
-samples, frames = plot.render()     # captured offline, no audio device
+take = plot.render()                # captured offline, no audio device
 live.close()
 ```
 

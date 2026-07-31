@@ -48,6 +48,10 @@ def main():
     rms = max(stats.rms, default=0.0)
     print(f"rendered {stats.frames} frames ({stats.duration:.3f} s), "
           f"{stats.frames * stats.channels} samples | peak {peak:.3f} | rms {rms:.3f}")
+    # No seed was given, so the renderer drew one and this is the way back to
+    # this take: pass seed=... to render it again note for note and hiss for
+    # hiss.
+    print(f"seed {stats.seed}")
 
     if path:
         print(f"wrote {path} — listen with: pw-play {path}")

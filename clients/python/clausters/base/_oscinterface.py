@@ -374,19 +374,41 @@ class OscNrtInterface(OscInterface):
         self.score.add(when, _osclib.score_bundle(when, *packets))
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2,
-               workers: int = 0):
-        """Renders the accumulated score through the embed transport.
+               workers: int = 0, path=None, seed: int | None = None,
+               sample_format: str = "float"):
+        """Renders the accumulated score, and reports what that did.
+
+        This is where a score becomes audio — `clausters.defs.Server.render`
+        and `clausters.Session.render` are the surfaces, this is the one
+        implementation, because the score is this interface's own.
 
         Schedule a closing bundle (e.g. ``/n_free 0``) at the end so the render
         has a defined duration — scsynth semantics (its commands do not sound).
         ``workers`` adds DSP threads for the score's parallel groups.
+
+        Returns a `clausters.render.RenderStats` either way. ``path`` chooses
+        **where the audio goes, not whether there is a result**: without it the
+        samples ride in ``stats.samples`` (through the embed transport); with
+        it the server's own ``--nrt`` renderer writes the file and
+        ``stats.samples`` is ``None``.
+
+        ``seed`` starts the render's stochastic UGens; ``None`` draws a fresh
+        one, so a score with noise in it is a new take every time. The seed
+        used comes back in ``stats.seed`` — hand it back to replay that take.
         """
         from .. import ipc
+        from ..render import RenderStats, render_to_file
 
-        samples, frames, _events = ipc.render(
+        if path is not None:
+            return render_to_file(self.score.bytes(), path, sample_rate,
+                                  channels, workers, seed, sample_format)
+        samples, frames, events, used = ipc.render(
             self.score.bytes(), sample_rate=sample_rate, channels=channels,
-            workers=workers)
-        return samples, frames
+            workers=workers, seed=seed)
+        peak, rms = ipc.channel_stats(samples, channels)
+        return RenderStats(frames=frames, channels=channels,
+                           sample_rate=sample_rate, events=events, peak=peak,
+                           rms=rms, seed=used, samples=samples)
 
 
 class OscEmbedInterface(OscInterface):

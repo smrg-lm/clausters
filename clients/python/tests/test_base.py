@@ -303,3 +303,33 @@ if __name__ == "__main__":
                 print(f"{'skip' if skip else 'FAIL'} {name}: {e}")
                 if not skip:
                     traceback.print_exc()
+
+
+def test_the_score_interface_renders_and_reports_the_take():
+    """The interface owns the score, so it owns the render: `Server.render`
+    only forwards to it. Rendering through it directly is the same contract —
+    a `RenderStats`, carrying the seed the render drew. (That the seed replays
+    a *noisy* take is test_render_verb's job; this scene has no noise in it.)"""
+    _ffi_or_skip()
+    from clausters.render import RenderStats
+
+    def scored():
+        # Straight onto the interface: no clock in play, the times *are* the
+        # score's seconds.
+        nrt = OscNrtInterface()
+        nrt.send_bundle(None, 0.0,
+                        ("/s_new", "default", 1000, 1, 0, "freq", 440.0, "amp", 0.2))
+        nrt.send_bundle(None, 0.05, ("/n_free", 1000))
+        return nrt
+
+    try:
+        take = scored().render(sample_rate=48_000.0, channels=1)
+    except (OSError, RuntimeError, AttributeError) as e:
+        pytest.skip(f"embed library not built/usable: {e}")
+    assert isinstance(take, RenderStats)
+    assert take.frames > 0 and take.samples is not None
+    assert take.seed != 0, "the render reports the seed it drew"
+    assert scored().render(sample_rate=48_000.0, channels=1).seed != take.seed
+
+    again = scored().render(sample_rate=48_000.0, channels=1, seed=take.seed)
+    assert again.seed == take.seed, "a given seed is the one reported back"

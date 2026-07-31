@@ -1331,20 +1331,9 @@ class Server:
         """
         if not isinstance(self.interface, OscNrtInterface):
             raise RuntimeError("render() needs a Server with an OscNrtInterface")
-        from .. import ipc
-        from ..render import RenderStats, render_to_file
-
-        if path is None:
-            samples, frames, events, used = ipc.render(
-                self.interface.score.bytes(), sample_rate=sample_rate,
-                channels=channels, workers=workers, seed=seed)
-            peak, rms = ipc.channel_stats(samples, channels)
-            return RenderStats(frames=frames, channels=channels,
-                               sample_rate=sample_rate, events=events,
-                               peak=peak, rms=rms, seed=used, samples=samples)
-        return render_to_file(self.interface.score.bytes(), path,
-                               sample_rate, channels, workers, seed,
-                               sample_format)
+        return self.interface.render(sample_rate=sample_rate, channels=channels,
+                                     workers=workers, path=path, seed=seed,
+                                     sample_format=sample_format)
 
     # ---- server control ----
 
