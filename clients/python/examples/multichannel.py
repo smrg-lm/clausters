@@ -30,7 +30,7 @@ dropping half the take.
 
 import sys
 
-from clausters import Session, render
+from clausters import Event, Session, render
 from clausters.base import Routine
 from clausters.defs import (
     DoneAction,
@@ -69,13 +69,19 @@ def main():
     session = Session.nrt(tempo=2.0)
     session.server.add_synthdef(unison())
 
+    # Notes go out as events, not as `server.synth`. A message has no time --
+    # `server.synth` sends one, so from inside a routine it lands *now* and
+    # every voice would start at 0 no matter what the yields say. An event
+    # rides the bundle path: `/s_new` at the routine's exact logical beat and
+    # the gate release a `sustain` later, which is what makes this a sequence
+    # rather than a chord. `has_gate` releases by closing the gate, which is
+    # what this def's `env_gen` waits for.
     def sequence():
         for midi, dur in [(45, 3.0), (52, 3.0), (50, 4.0)]:
             freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
-            voice = session.server.synth("unison", {"freq": freq, "amp": 0.4})
-            yield dur - 0.5
-            session.server.send_bundle(("/n_set", voice.id, "gate", 0.0))
-            yield 0.5
+            Event(instrument="unison", freq=freq, amp=0.4,
+                  dur=dur, sustain=dur - 0.5, has_gate=True).play(session.server)
+            yield dur
 
     Routine(sequence).play(session.clock)
     stats = session.render(sample_rate=SR, channels=2, path=out_path)
