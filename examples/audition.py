@@ -231,7 +231,7 @@ def render_offline(items, secs, amp, sets, sweep, path):
         # A bare subject has no envelope and no done action, so nothing would
         # end the score: the render's duration is the closing bundle.
         server.send_bundle_after(secs, ("/n_free", node.id))
-        samples, _ = server.render(sample_rate=SR, channels=ch)
+        samples = server.render(sample_rate=SR, channels=ch).samples
         report(f"{milestone}/{subject['name']}", samples, ch, secs)
         out.extend(spread(samples, ch, width))
         out.extend([0.0] * int(0.15 * SR) * width)   # a gap to hear the seam

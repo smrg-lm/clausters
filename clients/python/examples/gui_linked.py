@@ -51,7 +51,8 @@ SR = 48_000.0
 nrt = Session.nrt(tempo=2.0)
 nrt.play(Pbind(degree=Pseq([0, 4, 7, 11, 7, 4], repeats=4), dur=0.25,
                amp=Pwhite(0.1, 0.25)))
-inter, frames = nrt.render(sample_rate=SR, channels=2)
+take = nrt.render(sample_rate=SR, channels=2)
+inter, frames = take.samples, take.frames
 print(f"rendered {frames} frames ({frames / SR:.2f} s) offline")
 
 _tmp = tempfile.mkdtemp(prefix="clausters_linked_")

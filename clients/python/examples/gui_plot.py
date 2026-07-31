@@ -49,7 +49,8 @@ def phrase() -> Pbind:
 
 nrt = Session.nrt(tempo=2.0)
 nrt.play(phrase())
-samples, frames = nrt.render(sample_rate=SR, channels=2)
+take = nrt.render(sample_rate=SR, channels=2)
+samples, frames = take.samples, take.frames
 print(f"rendered {frames} frames ({frames / SR:.2f} s) offline, no server")
 
 fd, path = tempfile.mkstemp(prefix="clausters_plot_", suffix=".f32")

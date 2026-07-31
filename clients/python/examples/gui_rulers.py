@@ -60,7 +60,8 @@ QUANT = 4.0  # beats per bar
 nrt = Session.nrt(tempo=TEMPO)
 nrt.play(Pbind(degree=Pseq([0, 2, 4, 7], repeats=8), dur=0.5,
                amp=Pwhite(0.3, 0.7)))
-inter, frames = nrt.render(sample_rate=SR, channels=2)
+take = nrt.render(sample_rate=SR, channels=2)
+inter, frames = take.samples, take.frames
 print(f"rendered {frames} frames ({frames / SR:.2f} s, "
       f"{frames / SR * TEMPO:.1f} beats) offline")
 
