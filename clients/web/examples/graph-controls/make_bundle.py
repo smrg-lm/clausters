@@ -149,9 +149,9 @@ def build() -> Bundle:
     trem_name = b.synthdef(tremolo())
     graph_name = b.graphdef(graph(voice_name, trem_name))
 
-    def port_knob(id, port, lo, hi, value):
-        return knob(id, label=port, min=lo, max=hi, value=value,
-                    bind=["/n_set", node, port])
+    def port_knob(widget_id, port, lo, hi, value):
+        return knob(label=port, min=lo, max=hi, value=value,
+                    bind=["/n_set", node, port], id=widget_id)
 
     b.gui(window(
         # The header row: the note, and this instance's own play/stop. A page
@@ -162,27 +162,25 @@ def build() -> Bundle:
         # instrument costs nothing rather than merely going quiet. `weight`
         # splits the row 3:1.
         panel(
-            2,
-            label(3, "every knob sets a surface port of the running GraphDef",
-                  weight=3),
-            toggle(4, label="play", value=True, bind=["/n_run", node], weight=1),
-            layout="row", h=30,
+            label("every knob sets a surface port of the running GraphDef",
+                  weight=3, id=3),
+            toggle(label="play", value=True, bind=["/n_run", node], weight=1,
+                   id=4),
+            layout="row", h=30, id=2,
         ),
         panel(
-            5,
             port_knob(6, "freq", 60.0, 700.0, freq),
             port_knob(7, "ratio", 0.5, 8.0, 2.0),
             port_knob(8, "bright", 0.0, 1.0, 0.4),
             port_knob(9, "rate", 0.2, 12.0, 4.0),
             port_knob(10, "depth", 0.0, 1.0, 0.5),
             port_knob(11, "amp", 0.0, 0.5, amp),
-            layout="row",
+            layout="row", id=5,
         ),
         panel(
-            12,
-            meter(13, lfo, min=0.0, max=1.0, label="lfo"),
-            scope(14, lfo, min=0.0, max=1.0, label="lfo"),
-            layout="row",
+            meter(lfo, rate="control", min=0.0, max=1.0, label="lfo", id=13),
+            scope(lfo, rate="control", min=0.0, max=1.0, label="lfo", id=14),
+            layout="row", id=12,
         ),
         title="FM + tremolo (a GraphDef's surface)", w=680, h=400,
         layout="col",

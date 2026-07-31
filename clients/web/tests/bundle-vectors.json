@@ -60,6 +60,7 @@
      "type": "meter",
      "id": 3,
      "bus": "@lfo",
+     "rate": "control",
      "label": "env"
     }
    ],
@@ -145,6 +146,7 @@
        "bus": 300,
        "id": 1002,
        "label": "env",
+       "rate": "control",
        "type": "meter"
       }
      ],
@@ -210,6 +212,7 @@
        "bus": 301,
        "id": 1005,
        "label": "env",
+       "rate": "control",
        "type": "meter"
       }
      ],
@@ -278,6 +281,7 @@
        "bus": 302,
        "id": 1008,
        "label": "env",
+       "rate": "control",
        "type": "meter"
       }
      ],

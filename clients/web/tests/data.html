@@ -114,11 +114,7 @@
         server.synth("page_data_tone", { bus: audioBus.index });
         server.synth("page_data_lfo", { bus: ctlBus.index });
 
-        // The tap: an index from the registry, never a number picked by hand.
-        const tap = server.taps.alloc();
-        server.tap(tap, audioBus);
         await server.sync();
-        await sleep(200);   // let the ring fill a window
 
         // ---- path 1: the control bus ----
         const buses = await data.BusStream.open(server, [ctlBus], { periodMs: 20 });
@@ -135,12 +131,14 @@
         }
 
         // ---- path 2: the audio tap ----
+        // Opening the stream is what starts the recording: the bus is the
+        // only number named here, and no ring index is ever seen.
         const frames = data.scopeFrames(10.0, info.nominalSampleRate);
-        const taps = await data.TapStream.open(server, [tap], {
+        const taps = await data.TapStream.open(server, [audioBus.index], {
           frames, periodMs: 20,
         });
         await sleep(400);
-        const window = taps.window(tap);
+        const window = taps.window(audioBus.index);
         if (!window) throw new Error("no /tap_data arrived");
         const peak = Math.max(...window.samples.map(Math.abs));
         if (Math.abs(peak - TONE_AMP) > 0.05) {
@@ -150,7 +148,7 @@
           windowMs: 10.0, sampleRate: info.nominalSampleRate,
         });
         if (!trace.locked) throw new Error("a steady tone did not lock the trigger");
-        log(`tap ${tap}: peak ${peak.toFixed(3)}, `
+        log(`bus ${audioBus.index}: peak ${peak.toFixed(3)}, `
           + `${trace.samples.length} frames locked at ${window.endPosition}`);
 
         // The spectrum of that same window finds the tone where it is.
@@ -213,9 +211,7 @@
 
         // Everything this script took, returned.
         await buses.stop();
-        await taps.stop();
-        server.tap(tap, -1);
-        server.taps.free(tap);
+        await taps.stop();   // stopping the stream ends the recording
         peaks.free();
         server.freeBuffer(buffer);
         server.freeBus(audioBus);

@@ -124,13 +124,14 @@ def build() -> Bundle:
     voice_name = b.synthdef(voice())
 
     b.gui(window(
-        label(2, "click/drag plays; drag the strip to pan, wheel to zoom"),
+        label("click/drag plays; drag the strip to pan, wheel to zoom", id=2),
         # `voice` names the def the host spawns per held key; `voice_args`
         # rides along with every /s_new, which is how this instance's own bus
         # reaches its voices.
-        piano(3, min=48, max=84, active_min=21, active_max=108,
-              voice=voice_name, voice_args=[("env_bus", env)], label="keys"),
-        meter(4, env, min=0.0, max=1.0, label="env"),
+        piano(min=48, max=84, active_min=21, active_max=108,
+              voice=voice_name, voice_args=[("env_bus", env)], label="keys",
+              id=3),
+        meter(env, rate="control", min=0.0, max=1.0, label="env", id=4),
         title=title, w=820, h=300, layout="col",
     ))
     return b
