@@ -155,16 +155,18 @@ class Routine(Stream):
         """Schedule this routine to start on ``clock``; returns ``self``.
 
         Args:
-            clock: the `TempoClock` to run on; when ``None`` it falls back to
-                ``main.default_clock`` and raises if that is unset.
+            clock: the `TempoClock` to run on. ``None`` resolves against the
+                ambient context like every other play: the clock of the routine
+                running on this thread, else the active session's, else the
+                default session's — created and started on first use. So
+                ``Routine(f).play()`` runs with no `clausters.Session` and no
+                booted server; a routine needs a clock, not an engine.
             quant: start quantization, forwarded to the clock (see
                 `TempoClock.play`; not yet implemented).
         """
         from .main import main
 
-        clock = clock or main.default_clock
-        if clock is None:
-            raise RuntimeError("no clock to play on (set main.default_clock)")
+        clock = clock or main.resolve_clock() or main.get_default_clock()
         clock.play(self, quant)
         return self
 

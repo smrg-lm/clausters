@@ -6,7 +6,7 @@ releasing on wall time.
 
 import pytest
 
-from clausters import Event, play, main, default_session
+from clausters import Event, Routine, play, main, default_session
 from clausters.defs import (
     FaustDef, Server, SynthDef, as_def, boxes, chans, control, disk_out,
     expr_channels, out, send_trig, signals, sine,
@@ -84,6 +84,33 @@ def test_get_default_clock_belongs_to_default_session(clean_default):
     clock = main.get_default_clock(start=False)
     assert clock.session is main
     assert main.get_default_clock(start=False) is clock   # created once
+
+
+def test_routine_play_resolves_the_default_clock(clean_default):
+    """A bare ``Routine(f).play()`` needs no session, no server and no clock of
+    its own: it lands on the default session's, created and started on demand."""
+    r = Routine(lambda: (yield 1.0))
+    try:
+        assert r.play() is r
+        assert main.default_clock is not None and main.default_clock._running
+    finally:
+        if main.default_clock is not None:
+            main.default_clock.stop()
+
+
+def test_routine_play_runs_on_an_existing_default_clock(clean_default):
+    beats = []
+
+    def gen():
+        beats.append(main.current_tt._logical_beat)
+        yield 1.0
+        beats.append(main.current_tt._logical_beat)
+
+    clock = main.get_default_clock(start=False)   # already there: not started
+    Routine(gen).play()
+    assert not clock._running
+    clock.render()
+    assert beats == [0.0, 1.0]
 
 
 def test_free_play_accepts_an_event_dict(clean_default):

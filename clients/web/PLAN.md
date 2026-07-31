@@ -702,7 +702,9 @@ it leans on verbs this client does not have yet.
 - `session.ts`: the browser counterpart of `clausters.Session` — one handle bundling a `Server`, a `TempoClock` and its timebase, so a page stops wiring the three by hand. On this page the singletons already give the *shared* half (one engine, one host, one namespace); what a `Session` adds is the ergonomics and the ability to hold more than one at a time (a page against the in-page engine beside one against a remote `--ws` server).
 - The Python client's ambient verbs are the reason not to do it early: `play` is here already as `Event.play`/`Pattern.play`, but `plot` wants the script-side data paths (**W10**) and `render` an offline drive (**W13**). A facade shipped before them would name verbs it cannot keep.
 
-**Acceptance:** the getting-started example rewritten through a `Session` is shorter and does the same thing; two sessions over different carriers coexist in one page, each with its own clock.
+- The **default session** comes with it, and with it the ambient clock. `Routine.play()` here (`src/base/stream.ts`) resolves only the routine currently being resumed and throws outside one, while the Python client resolves *running routine -> active session -> default session's clock, created and started on first use*, so `Routine(f).play()` needs no session, no clock and no server. Port the whole ladder, not the last rung: the default session is what the other two rungs resolve against, and it is also where a default `Server` would be adopted first-wins (`Server.boot()`'s role there). Lazily, never at import — a page that only renders or only draws must not start a clock by loading the module.
+
+**Acceptance:** the getting-started example rewritten through a `Session` is shorter and does the same thing; two sessions over different carriers coexist in one page, each with its own clock; a bare `Routine(f).play()` runs with nothing else set up.
 
 ## Future directions
 

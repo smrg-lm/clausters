@@ -21,9 +21,7 @@ The Server stamps every event from the routine's **logical** time, not from "now
 An `Event` is a dict of note parameters that knows how to play itself: `Event(...).play(server)` creates a synth at the routine's current logical beat and schedules its release after the note's sustain. Build it with keywords or from a plain dict — an `Event` *is* a dict — and play it from inside a routine, yielding the gap to the next note:
 
 ```python
-from clausters.base import TempoClock, Routine
-from clausters.seq import Event
-from clausters.defs import Server
+from clausters import Event, Routine, Server, TempoClock
 
 server = Server("127.0.0.1", 57110, latency=0.1)   # a running server, on UDP
 clock = TempoClock(tempo=2.0)                       # 2 beats per second
@@ -46,6 +44,18 @@ A few things worth knowing:
 - `clock.set_tempo(bps)` changes tempo **pinning the current instant**: the beat the clock is on keeps mapping to the second it already mapped to, and the new tempo governs from there — so nothing already scheduled jumps.
 - A routine optionally receives the clock as its argument (`def melody(clock):`) if it needs it, but for playing events you rarely do — the Server finds the logical beat itself.
 - This clock paces against wall-clock OSC time, the default. To make the same routine drift-free and sample-accurate, or to phase-align several clients, lock it to the server — see [Timing models](timing-models.md).
+
+### The clock you did not name
+
+Naming a clock is for when you want to set its tempo, run it for a fixed span or share it between routines. You never *have* to:
+
+```python
+Routine(melody).play()      # no clock, no Session, no booted server
+```
+
+`play()` with no clock resolves the same way everything else does — the clock of the routine you are already inside, else the session active on this thread, else the default session's clock, **created at tempo 1.0 and started right there** if this is the first thing to need one. Nothing starts a clock thread until something asks to be scheduled, so importing the package or rendering offline costs nothing.
+
+A routine needs a clock, not an engine: the example above sends notes, so it needs a server too, but a routine that only prints, draws or reads MIDI runs with no server at all. Reach the clock afterwards as `main.default_clock` (or `main.get_default_clock()`) to change its tempo or stop it.
 
 ### The one rule
 

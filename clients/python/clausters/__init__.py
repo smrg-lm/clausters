@@ -58,8 +58,10 @@ from .errors import (
     SegmentError,
     ServerError,
 )
+from .base.clock import TempoClock
 from .base.main import default_session, main
 from .base.rand import choice, next_below, next_f64, uniform
+from .base.stream import Routine
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .seq.event import Event, rest
 from .defs import Server
@@ -83,6 +85,8 @@ __all__ = [
     "ShmClient",
     "Session",
     "Server",
+    "TempoClock",
+    "Routine",
     "Event",
     "rest",
     "play",
