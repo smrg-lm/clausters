@@ -7,9 +7,11 @@ callables in `clausters.defs.ugens` and let `SynthDef` serialize the graph.
 
 The build is **instance-based** — the graph is just the tree of composed
 objects, with no thread-global "current SynthDef" the way sclang has — so
-several defs can be built side by side. Arithmetic operators map to the
-server's `Add`/`Sub`/`Mul`/`Div` UGens (the only math UGens it has; reach for a
-Faust def for anything else).
+several defs can be built side by side. The four arithmetic operators map to
+the server's dedicated `Add`/`Sub`/`Mul`/`Div` UGens; everything beyond them
+(`%`, `min`/`max`, the comparisons, `.midicps()`, `.distort()` …) composes its
+generic `BinaryOpUGen`/`UnaryOpUGen` — see
+`clients/python/examples/graph_maths.py`.
 
 To prove the graph emits exactly what the server expects, this renders a
 `Pbind` twice — once on the server's built-in `default` def, once on a

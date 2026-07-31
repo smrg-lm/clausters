@@ -59,7 +59,8 @@ def render_offline(path: str | None):
 
     peak = max(stats.peak)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
-    print(f"wrote {path} - listen with: pw-play {path}")
+    if path:
+        print(f"wrote {path} - listen with: pw-play {path}")
 
 
 def play_live():

@@ -145,6 +145,7 @@ def render(path=None):
         rms = (sum(s * s for s in cut) / len(cut)) ** 0.5
         print(f"  {name:6} rms {rms:.3f}")
 
+    if path:
         print(f"wrote {path} — listen with: pw-play {path}")
 
 

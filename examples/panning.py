@@ -241,6 +241,7 @@ def render(path=None):
         print(f"  {name:12} {rms(left) / scale:6.3f}   {rms(right) / scale:6.3f}   "
               f"{rms(mono) / scale:6.3f}   {CLAIMS.get(name, '')}")
 
+    if path:
         print(f"\nwrote {path} — listen with: pw-play {path}")
 
 

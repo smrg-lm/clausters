@@ -1,6 +1,6 @@
 # Examples
 
-Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Unless noted, the Python ones need the server running first (`cargo run --release`) and use the standard library only.
+Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Most of the Python ones drive the server through the `clausters` client package, which they import from the source checkout with a `sys.path` shim (no install needed); the ones marked *stdlib only* below build the OSC bytes themselves and need nothing but Python. Whether one needs a server running (`cargo run --release`) or renders offline is said per script.
 
 ## Rust examples (`cargo run --example <name>`)
 
@@ -20,17 +20,19 @@ Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Unle
 | `tcp_client.py` | The same `Server` facade over **TCP** (`OscTcpInterface`, length-prefixed OSC; the server listens by default) instead of UDP. |
 | `midi_file.py` | Renders an event pattern to a **Standard MIDI File** (`.mid`, or `--clip` for a 16-bit-velocity MIDI 2.0 clip): the *same* `Pbind`/`TempoClock` targets a `MidiServer` destination instead of the OSC `Server` (double dispatch), rendering each note as MIDI on/off and writing the file through the `clausters-midi` crate. No server, no audio. |
 | `midi_live.py` | Plays the same pattern **live** out a virtual OS MIDI port (`MidiRtInterface`, `clausters-midi --features live`): note-ons at the beat, note-offs scheduled — route it to a synth or the server's own `--midi` input with `aconnect`. |
-| `json_client.py` | Generates defs as JSON and drives the server over OSC. Subcommands: `status`, `ugen`, `faust` (box API), `signal` (Faust Signal API: a `recursion`/`self` sine + a one-pole lowpass on noise), `wavetable`, `buffer`, `bundle`, `feedback` (a LocalIn/LocalOut resonant comb), `score` (writes an NRT score to `/tmp/clausters_score.osc`). |
-| `auto_order.py` | [Auto-sorted groups](auto-order.md): builds a source → fx → master chain reversed on purpose and repairs it with one `/g_sortMode`. |
+| `json_client.py` | *Stdlib only.* Generates defs as JSON and drives the server over OSC. Subcommands: `status`, `ugen`, `faust` (box API), `signal` (Faust Signal API: a `recursion`/`self` sine + a one-pole lowpass on noise), `wavetable`, `buffer`, `bundle`, `feedback` (a LocalIn/LocalOut resonant comb), `score` (writes an NRT score to `/tmp/clausters_score.osc`). |
+| `auto_order.py` | *Stdlib only.* [Auto-sorted groups](auto-order.md): builds a source → fx → master chain reversed on purpose and repairs it with one `/g_sortMode`. |
 | `group_set.py` | scsynth **group semantics**: three voices share a group and one `/n_set` on the group ramps all of them at once (the parameter propagates down the subtree). |
 | `graphdef.py` | A **GraphDef** ([node-graph program](schemas.md#graphdef-d_graph-graph_new--node-graph-programs)): a two-oscillator voice wired through a private internal bus, built with the `GraphDef` builder and driven through its **named surface** — one `freq` port mapping to both oscillators (the second scaled to a fifth), which a bare group `/n_set` cannot do. |
 | `graphdef_poly.py` | A **polyphonic** GraphDef: a shared mixer (instantiated once with `server.graph`) plus a per-voice oscillator marked `voice=True`, spawned per note with `server.graph_voice` — the same shared/per-voice model a `/midi_bind` to a GraphDef uses. |
-| `sample_clock.py` | [The sample clock](sample-clock.md) as master timebase: models `sample(t)` from `/clock` anchors and schedules with `/sched`. |
+| `sample_clock.py` | *Stdlib only.* [The sample clock](sample-clock.md) as master timebase: models `sample(t)` from `/clock` anchors and schedules with `/sched`. |
 | `shm_client.py` | The shared-memory transport (`--shm`): the same OSC with no sockets anywhere. |
 | `clock_recorder.py` | The shared-memory sample clock made checkable: reads `ShmClient.clock` directly (no round trip), schedules a pristine `Impulse` **exactly every N samples** with `/sched`, records the real output (`pw-record`) and reports the impulse spacing/jitter/drift. Duration is free (`--seconds`), seconds to hours. |
 | `embed_render.py` | Synchronous offline render through the embed C ABI (`ctypes`), no server process. |
 
-The OSC encoding/decoding in these scripts is hand-rolled (stdlib only); they double as a compact reference for the wire format.
+The table above is a selection, not the full directory: `examples/` also holds the audible tours of the UGen families (`subtractive.py`, `noise.py`, `ramps.py`, `sequencer.py`, `demand.py`, `panning.py`, `biquad_signal.py`, `audition.py`), the introspection helpers (`introspect_server.py`, `introspect_tree.py`, `interactive_session.py`), the live-patching and persistence demos (`live_patch.py`, `persistent_graphdef.py`, `faust_soundfile.py`), the WebSocket ping (`ws_ping.py`) and the impulse-clock measurement rig (`impulse_clock_test.py`). Each one's docstring says what it shows and how to run it.
+
+The scripts marked *stdlib only* hand-roll their OSC encoding/decoding, so they double as a compact reference for the wire format.
 
 ## Installed-package examples (`clients/python/examples/`)
 
@@ -38,8 +40,11 @@ These import `clausters` from the **installed package** (no `sys.path` shim, no 
 
 | script | what it shows |
 |---|---|
+| `hello_note.py` | The shortest path to sound: `Server.boot()` then `play(Event(...))` — no `Session`, no clock wiring. |
 | `offline_render.py` | Fully self-contained: a `Session.nrt` `Pbind` rendered to a WAV through the **bundled** embed renderer — no server, no audio device, no source checkout. |
 | `live_udp.py` | The same pattern live over UDP to a running server (`Session.live`), proving the offline/live seam from an installed package. |
+
+That directory is the client's own catalog and holds far more than these three — the def families, the sequencing and transport demos, and the whole `gui_*` family that drives the GUI host. It is described from the client's side: `clients/python/examples/README.md` and the [Python client book](https://clausters.readthedocs.io/).
 
 ## Shell
 
