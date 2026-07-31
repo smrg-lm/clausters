@@ -78,12 +78,18 @@ const isList = (x: unknown): x is ChannelList | readonly GraphInput[] =>
     x instanceof ChannelList || Array.isArray(x);
 
 /**
- * Shared math surface for every graph value (`Ugen`, `Control`,
- * `ChannelList`). `add`/`sub`/`mul`/`div` compose the dedicated alias kinds;
- * everything else composes a generic `BinaryOpUGen`/`UnaryOpUGen` carrying
- * the operator name.
+ * An expression of the **UGen graph**: a `Ugen`, a `Control` or a
+ * `ChannelList` of them — something that composes a graph rather than a
+ * value, and what `SynthDef` serializes. The Faust families compose their own
+ * graphs (`signals`, and the box algebra once it lands), so they are peers of
+ * this branch, not members of it; the name avoids `Graph*` because `GraphDef`
+ * already means a configuration of member nodes wired by buses.
+ *
+ * It also carries the shared math surface: `add`/`sub`/`mul`/`div` compose
+ * the dedicated alias kinds, everything else a generic
+ * `BinaryOpUGen`/`UnaryOpUGen` carrying the operator name.
  */
-abstract class GraphOps<TSelf> {
+export abstract class SynthExpr<TSelf> {
     protected abstract binop<T extends OpOperand>(
         selector: string,
         other: T,
@@ -179,7 +185,7 @@ abstract class GraphOps<TSelf> {
  * against a scalar or another leaf yields a `Ugen`, against a list a
  * `ChannelList`.
  */
-export abstract class GraphLeaf extends GraphOps<Ugen> {
+export abstract class GraphLeaf extends SynthExpr<Ugen> {
     protected binop<T extends OpOperand>(
         selector: string,
         other: T,
@@ -426,7 +432,7 @@ function channelUnop(m: GraphInput, selector: string): GraphInput {
  * single-channel input is an error: index it or `mix` it down. Build one
  * with `dup`, `chans`, or a literal array where one is accepted.
  */
-export class ChannelList extends GraphOps<ChannelList> {
+export class ChannelList extends SynthExpr<ChannelList> {
     readonly items: GraphInput[];
 
     constructor(items: ChannelList | readonly GraphInput[]) {
