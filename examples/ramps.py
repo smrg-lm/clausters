@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ramps, and the three ways a synth ends (U4).
+"""Ramps, and the three ways a synth ends.
 
 A voice has to stop. `env_gen` can free the node itself, but that is not always
 where the decision belongs — sometimes the thing that ends the note is a ramp

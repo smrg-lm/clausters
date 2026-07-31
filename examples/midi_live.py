@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Play an event pattern **live** out a virtual MIDI port (M17 client sub-part 2).
+"""Play an event pattern **live** out a virtual MIDI port.
 
 The same `Pbind` that renders to a `.mid` can instead drive a live MIDI output
 port: `MidiServer(interface=MidiRtInterface(...))`. Each note goes out the port

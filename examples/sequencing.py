@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The high-level client: pattern sequencing with one seam for NRT and live (C9).
+"""The high-level client: pattern sequencing with one seam for NRT and live.
 
 A guided tour of the Python client's sequencing layer — the part a musician
 actually touches. The idea ported from sc3: a `Pbind` combines per-key value

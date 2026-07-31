@@ -29,17 +29,17 @@ then run one or more demos (default: status):
 `feedback` plays a resonant comb built with LocalIn/LocalOut: the graph's
          one-block feedback delay makes a one-channel loop ring at
          sampleRate/64 (≈ 750 Hz at 48 kHz).
-`demand`  a demand-rate step sequencer (S1): an Impulse-driven `Demand` pulls
+`demand`  a demand-rate step sequencer: an Impulse-driven `Demand` pulls
          note frequencies from a `Dseq` (`"rate": "dr"`) into a Sine.
 `signal` builds Faust defs with the **Signal API** (`{"signals": […]}`): a
          sine from an explicit `recursion`/`self` phasor, and a one-pole
          lowpass on noise — explicit sample-accurate feedback (needs the
          faust feature).
-`commands` exercises the S6 command-set completion: control-range setters
+`commands` exercises the command-set completion: control-range setters
          (`/n_setn`), value queries (`/s_getn`), tree reordering (`/g_head`),
          control-bus ranges (`/c_setn`/`/c_getn`), a server command (`/cmd`)
          and `/clearSched` — no Faust needed.
-`replies` the S9 side-effect UGens: an **output-less** def (no `Out` at all)
+`replies` the side-effect UGens: an **output-less** def (no `Out` at all)
          whose `SendTrig`/`SendReply` fire on a trigger control; a `/notify`
          client receives the `/tr` and custom-address replies.
 """
@@ -241,7 +241,7 @@ def stdlib_def() -> str:
 
 
 def wavetable_def() -> str:
-    """F5: a wavetable oscillator whose table is *computed in Python* — the
+    """A wavetable oscillator whose table is *computed in Python* — the
     first four harmonics of a saw — and shipped inside a `waveform` box. No
     Faust source formatting, no server-side files."""
     n = 256
@@ -393,7 +393,7 @@ def demo_buffer(client: Client):
 
 
 def demo_bgen(client: Client):
-    """Table oscillators (S5): fill server buffers with `/b_gen` and read them
+    """Table oscillators: fill server buffers with `/b_gen` and read them
     with `Osc` (wavetable) and `Shaper` (cheby waveshaping). No Faust needed —
     this is the UGen-world counterpart of the `wavetable` demo above."""
     # 1. A wavetable: buffer 20 = a 1024-point table (2048 samples), built from
@@ -477,7 +477,7 @@ def demo_disk(client: Client):
     os.remove(path)
 
 
-# ---- timed bundles (M6) ----
+# ---- timed bundles ----
 
 
 def demo_bundle(client: Client):
@@ -587,7 +587,7 @@ def demo_feedback(client: Client):
 
 
 def demo_demand(client: Client):
-    """A demand-rate melody (S1). A `Dseq` holds a list of note frequencies and
+    """A demand-rate melody. A `Dseq` holds a list of note frequencies and
     yields the next one only when *pulled*; a `Demand` driver pulls it on each
     tick of a 4 Hz `Impulse`, holding the frequency between ticks. That held
     (control-like) signal drives a `Sine`, so the sine hops through the
@@ -617,7 +617,7 @@ def demo_demand(client: Client):
 
 
 def demo_fft(client: Client):
-    """S8 frequency-domain chain: FFT -> PV_* -> IFFT. A noisy source is
+    """A frequency-domain chain: FFT -> PV_* -> IFFT. A noisy source is
     windowed and transformed by `FFT`, a `PV_BrickWall` low-passes it in the
     spectral domain (zeroing the top bins), and `IFFT` resynthesises audio by
     overlap-add. No buffer is allocated — the spectral frame is synth-private
@@ -682,7 +682,7 @@ def demo_score():
 
 
 def demo_commands(client: Client):
-    """S6 OSC command-set completion: control ranges, value queries, tree
+    """OSC command-set completion: control ranges, value queries, tree
     reordering, control-bus ranges, a server command, and /clearSched."""
     print("commands demo: /g_new 1 with three quiet synths")
     client.send("/g_new", 1, 1, 0)
@@ -720,7 +720,7 @@ def demo_commands(client: Client):
 
 
 def demo_replies(client: Client):
-    """S9 side-effect UGens: an output-less def (no Out) that replies over OSC.
+    """Side-effect UGens: an output-less def (no Out) that replies over OSC.
     SendTrig and SendReply fire on a trigger control; a /notify client receives
     the /tr and custom-address messages the audio thread emits."""
     client.send("/notify", 1)
@@ -750,7 +750,7 @@ def demo_replies(client: Client):
 
 
 def demo_serverinfo(client: Client):
-    """S7 boot-time configuration: discover the server's pool sizes and I/O
+    """Boot-time configuration: discover the server's pool sizes and I/O
     channels with /server_info, then, if the server was started with --inputs,
     pass live device input straight to the output through an In -> Out synth."""
     client.send("/server_info")

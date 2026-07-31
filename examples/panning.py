@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Placing sound in the stereo field, and the three things that surprise people
-about it (U7).
+about it.
 
 Panning looks like one idea and is really three. **Where** a source sits is
 `pan2` (or `pan_az` on a ring of speakers). **How wide** the whole image is has

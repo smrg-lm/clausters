@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sample-clock client (M8): the server's sample counter as master timebase.
+"""Sample-clock client: the server's sample counter as master timebase.
 
 The OS clock and the DAC crystal drift apart (tens of ppm — milliseconds per
 minute), so NTP-timetagged bundles re-anchor every event against two clocks

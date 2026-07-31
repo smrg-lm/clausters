@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synchronous offline render through the embed C ABI (M14).
+"""Synchronous offline render through the embed C ABI.
 
 The "scientific workflow" call: hand a binary score to the library, block
 until it is rendered, get the samples back as flat float32 — no server, no

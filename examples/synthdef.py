@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a UGen SynthDef from Python and render it offline (client C5).
+"""Build a UGen SynthDef from Python and render it offline.
 
 The UGen-graph counterpart of `examples/json_client.py`'s Faust defs: instead
 of formatting the `SynthDefSpec` JSON by hand, compose it with the lowercase

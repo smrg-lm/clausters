@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared-memory client demo (M14): no sockets anywhere.
+"""Shared-memory client demo: no sockets anywhere.
 
 Start the server with a segment first:
 

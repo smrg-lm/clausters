@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Subtractive synthesis with no Faust in sight (U1-U3).
+"""Subtractive synthesis with no Faust in sight.
 
 Everything here is a UGen graph: a band-limited oscillator, a resonant filter
 swept by an envelope, and a delay network. That matters because it means the

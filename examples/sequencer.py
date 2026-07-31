@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A sequencer that lives inside one synth (U5).
+"""A sequencer that lives inside one synth.
 
 Every other example here drives the server from the client: a pattern computes
 an event, the clock sends it, the server plays it. This one sends **one synth,

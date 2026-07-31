@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A polyphonic GraphDef: shared part + per-voice part (M18).
+"""A polyphonic GraphDef: shared part + per-voice part.
 
 A GraphDef member can be marked `voice=True`. The **shared** members are
 instantiated once at `server.graph(...)` (the always-on part: the private bus

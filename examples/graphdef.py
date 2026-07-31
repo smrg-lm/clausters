@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GraphDef: a node-graph "program" with a named parameter surface (M18).
+"""GraphDef: a node-graph "program" with a named parameter surface.
 
 Where a SynthDef is one node, a `GraphDef` is a whole wired patch the server
 stores and instantiates as a unit. It exposes a **named parameter surface** —

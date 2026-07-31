@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pausing and resuming a node with ``/n_run`` (S4) -- pause is not terminal.
+"""Pausing and resuming a node with ``/n_run`` -- pause is not terminal.
 
 Runs from the *installed* package, offline, like ``offline_render.py``::
 

@@ -8,7 +8,7 @@ client-side counterpart of driving the server directly — the server can be
 played by OSC it receives itself, or by a client that listens to OSC from
 elsewhere and forwards `/s_new`.
 
-It also shows the **transport push** (the M22 shared grid reacting live): the
+It also shows the **transport push** (the shared grid reacting live): the
 receiver registers `/notify` on its own socket, so when any client sets the
 server's `/transport`, the server pushes the new grid back and an
 `OscFunc('/transport.reply')` re-aligns this client — no polling.

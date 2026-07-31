@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Maths on a UGen graph (S3): the full operator set, not just ``+ - * /``.
+"""Maths on a UGen graph: the full operator set, not just ``+ - * /``.
 
 Runs from the *installed* package, offline, like ``offline_render.py``::
 

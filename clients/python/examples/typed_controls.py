@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Typed controls (S2): a `tr` trigger, a lagged control and an `ir` scalar.
+"""Typed controls: a `tr` trigger, a lagged control and an `ir` scalar.
 
 Runs from the *installed* package, offline, like ``offline_render.py``::
 

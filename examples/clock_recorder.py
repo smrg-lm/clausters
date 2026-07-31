@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared-memory sample clock, made audible and *checkable* (M8 + M14).
+"""Shared-memory sample clock, made audible and *checkable*.
 
 This demo turns the server's sample clock — read straight out of shared
 memory, with no round trip — into something you can verify with your ears

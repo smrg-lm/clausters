@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The UGen bench: hear the row that is under test.
 
-Every UGen of the U track has asserts — a measured alias SNR, an analytic
+Every UGen on the bench has asserts — a measured alias SNR, an analytic
 transfer function, a decay envelope that matches its formula. What none of that
 tells you is whether the thing *sounds* like what it claims to be. This plays
 it.
@@ -15,10 +15,10 @@ want to argue with is a number you can go and listen to.
     python3 examples/audition.py                     # what is on the bench
     python3 examples/audition.py saw                 # play it
     python3 examples/audition.py saw --secs 4 --set freq=55
-    python3 examples/audition.py U2                  # a milestone, in order
+    python3 examples/audition.py <section>           # a whole section, in order
     python3 examples/audition.py rlpf --sweep freq 100 8000
     python3 examples/audition.py saw --wav /tmp/saw.wav      # offline, no device
-    python3 examples/audition.py U6 --wav /tmp/noise.wav
+    python3 examples/audition.py <section> --wav /tmp/noise.wav
 
 `--wav` renders **offline**, so it needs no audio hardware and no running
 server; without it the script boots a server and plays through the sound card.
@@ -54,7 +54,14 @@ SR = 48000.0
 # ---- 1. the table ------------------------------------------------------------
 #
 # The file is shared with the Rust bench, and its `_doc` key is the prose that
-# describes it. Everything else is a milestone.
+# describes it. Every other key is a section of the bench, and running the
+# script with no argument prints them with their rows.
+#
+# Pending: those sections are still the batches the rows were written in, not
+# families of UGen, so a new row lands in whichever batch added it. What this
+# bench wants is to follow the *registry* -- every implemented UGen audible
+# here with no table to edit -- which needs a source this file does not have
+# yet.
 
 def load_table():
     with open(SUBJECTS, encoding="utf-8") as f:
@@ -63,17 +70,18 @@ def load_table():
 
 
 def resolve(table, target):
-    """A target is a milestone (`U3`), a subject handle (`combc`) or `all`."""
+    """A target is a section of the table, a subject handle (`combc`) or
+    `all`."""
     if target == "all":
         return [(m, s) for m, rows in sorted(table.items()) for s in rows]
     if target in table:
         return [(target, s) for s in table[target]]
-    for milestone, rows in sorted(table.items()):
+    for section, rows in sorted(table.items()):
         for s in rows:
             if s["name"] == target:
-                return [(milestone, s)]
+                return [(section, s)]
     known = sorted(s["name"] for rows in table.values() for s in rows)
-    sys.exit(f"no subject or milestone {target!r}\non the bench: {', '.join(known)}")
+    sys.exit(f"no subject or section {target!r}\non the bench: {', '.join(known)}")
 
 
 # ---- 2. the source ------------------------------------------------------------
@@ -222,7 +230,7 @@ def render_offline(items, secs, amp, sets, sweep, path):
     # four channels too.
     width = max(s.get("channels", 1) for _, s in items)
     out = []
-    for milestone, subject in items:
+    for section, subject in items:
         ch = subject.get("channels", 1)
         spec = build(subject, secs, amp, sets, sweep, catalog)
         server = Server(interface=OscNrtInterface())
@@ -232,7 +240,7 @@ def render_offline(items, secs, amp, sets, sweep, path):
         # end the score: the render's duration is the closing bundle.
         server.send_bundle_after(secs, ("/n_free", node.id))
         samples = server.render(sample_rate=SR, channels=ch).samples
-        report(f"{milestone}/{subject['name']}", samples, ch, secs)
+        report(f"{section}/{subject['name']}", samples, ch, secs)
         out.extend(spread(samples, ch, width))
         out.extend([0.0] * int(0.15 * SR) * width)   # a gap to hear the seam
 
@@ -256,10 +264,10 @@ def play_live(items, secs, amp, sets, sweep):
     try:
         catalog = {u.name: [i.name for i in u.inputs]
                    for u in session.server.query_ugens()}
-        for milestone, subject in items:
+        for section, subject in items:
             spec = build(subject, secs, amp, sets, sweep, catalog)
             session.server.add_synthdef(RawDef(spec))
-            print(f"  {milestone}/{subject['name']:14} {subject['kind']}")
+            print(f"  {section}/{subject['name']:14} {subject['kind']}")
             node = session.server.synth(spec["name"])
             time.sleep(secs)
             node.free()
@@ -276,7 +284,7 @@ def main(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="With no target, lists what is on the bench.")
     p.add_argument("target", nargs="?",
-                   help="a subject handle (saw), a milestone (U2), or all")
+                   help="a subject handle (saw), a section of the table, or all")
     p.add_argument("--secs", type=float, default=2.0,
                    help="seconds per subject (default 2)")
     p.add_argument("--amp", type=float, default=0.2,
@@ -292,9 +300,9 @@ def main(argv=None):
     table = load_table()
     if not args.target:
         print(f"{sum(len(v) for v in table.values())} subjects on the bench:\n")
-        for milestone, rows in sorted(table.items()):
+        for section, rows in sorted(table.items()):
             names = " ".join(s["name"] for s in rows)
-            print(f"  {milestone}  {names}")
+            print(f"  {section}  {names}")
         print("\nplay one:  python3 examples/audition.py <name>")
         return 0
 

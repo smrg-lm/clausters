@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sequencing inside the def: the demand family (U8).
+"""Sequencing inside the def: the demand family.
 
 A `d*` builder is not a signal. It is a **stream**: it has no samples, only a
 next value, and between two pulls it does nothing at all. What turns a stream

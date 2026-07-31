@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Auto-sorted groups (M12): the server orders nodes by bus connections.
+"""Auto-sorted groups: the server orders nodes by bus connections.
 
 In scsynth, execution order is the client's burden: a node that reads an
 audio bus must be placed *after* the nodes writing it, or you get silence

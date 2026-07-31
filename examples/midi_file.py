@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render an event pattern to a Standard MIDI File (M17 client sub-part 1).
+"""Render an event pattern to a Standard MIDI File.
 
 The same `Pbind` you would play live or render to audio can target a **MIDI
 destination** instead: `MidiServer` is the double-dispatch counterpart of the

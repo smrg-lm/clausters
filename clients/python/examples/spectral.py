@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frequency-domain processing (S8): an FFT -> PV_* -> IFFT chain.
+"""Frequency-domain processing: an FFT -> PV_* -> IFFT chain.
 
 Runs from the *installed* package, offline, like ``typed_controls.py``::
 

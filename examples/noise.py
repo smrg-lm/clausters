@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The noise sources, and the two things about them that surprise people (U6).
+"""The noise sources, and the two things about them that surprise people.
 
 Three shapes with the same name in every synthesis textbook — white, pink,
 brown — plus the ones that are noise in a different sense: a random value held
