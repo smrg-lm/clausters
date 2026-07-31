@@ -69,6 +69,17 @@ const asEntries = (messages: readonly BundleMessage[]): unknown[] =>
     messages.map((m) => [m.addr, m.args]);
 
 /**
+ * One message of a timed bundle: an address and its arguments, tagged by the
+ * same rule `sendMsg` uses (an explicit `[tag, value]` pair where the guess
+ * would be wrong).
+ */
+export type TimedMessage = [string, ...MsgArg[]];
+
+/** The bundle form the codec takes. */
+export const toBundle = (messages: readonly TimedMessage[]): BundleMessage[] =>
+    messages.map(([addr, ...args]) => ({ addr, args: args.map(oscArg) }));
+
+/**
  * Encodes a bundle stamped at `unixSecs` — the wall clock the server reads as
  * an NTP timetag, which is how a message gets a *time*. A message on its own
  * has none: it means "now".

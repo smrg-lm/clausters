@@ -1,10 +1,10 @@
 """Network address of a server (port of ``sc3/base/netaddr.py``).
 
-A plain target: host and port. It does not own a socket — the destination
-interface (`clausters.base._oscinterface`) does the sending — so the same
-``NetAddr`` works in RT or NRT. The clock carries the interface and the target
-together; the convenience ``send_*`` methods route a one-off through a given
-interface.
+A plain target: host and port, and nothing else. It does not own a socket and
+it does not send -- the **destination** does both
+(`clausters.base.destination`), because sending needs an interface and a policy
+for turning logical time into wire time, and neither of those is an address.
+The same ``NetAddr`` therefore works in RT or NRT, behind any destination.
 """
 
 
@@ -16,11 +16,13 @@ class NetAddr:
     def addr(self) -> tuple[str, int]:
         return (self.host, self.port)
 
-    def send_msg(self, interface, addr, *args):
-        interface.send_msg(self.addr(), addr, *args)
+    def __eq__(self, other):
+        if not isinstance(other, NetAddr):
+            return NotImplemented
+        return (self.host, self.port) == (other.host, other.port)
 
-    def send_bundle(self, interface, when, *messages):
-        interface.send_bundle(self.addr(), when, *messages)
+    def __hash__(self):
+        return hash((self.host, self.port))
 
     def __repr__(self):
         return f"NetAddr({self.host!r}, {self.port})"

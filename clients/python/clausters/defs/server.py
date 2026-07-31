@@ -22,6 +22,7 @@ from ..config import client_config, server_config
 from ..base import _osclib
 from ..errors import CommandError, ReplyTimeout
 from ..base.main import main
+from ..base.moment import Moment
 from ..base.netaddr import NetAddr
 from ..base._oscinterface import OscNrtInterface, OscTcpInterface, OscUdpInterface, OscWsInterface
 from ..base.timebase import SampleClockTimebase
@@ -628,44 +629,41 @@ class Server:
         piece is built on."""
         self.interface.send_msg(self.target.addr(), addr, *args)
 
-    def send_bundle(self, *messages, delay_beats: float = 0.0, clock=None):
-        """Emit a timetagged bundle of ``(addr, *args)`` messages at the running
-        routine's **exact logical beat** (+ optional lookahead). Call it from a
-        routine playing on a clock (found via ``main.current_tt``) or pass
-        ``clock=``. The timetag comes from the yield-accumulated beat, not from
-        wall-clock now, so inter-event timing is exact; the interface decides
-        the wire time (wall clock for RT, seconds-from-start for NRT)."""
-        tt = main.current_tt
-        if clock is None:
-            clock = getattr(tt, "clock", None)
-            if clock is None:
-                raise RuntimeError(
-                    "send_bundle needs a clock: call it from a routine playing "
-                    "on a TempoClock, or pass clock=..."
-                )
-        base = getattr(tt, "_logical_beat", None)
-        if base is None:
-            base = clock.beats()
-        beat = base + delay_beats
-        secs = clock.beats2secs(beat)
+    def send_bundle(self, *messages, delay_beats: float = 0.0, clock=None, at=None):
+        """Emit a timetagged bundle of ``(addr, *args)`` messages at ``at``
+        (default: the ambient `Moment`) plus ``delay_beats``, plus this
+        server's `latency`.
+
+        Inside a routine the moment is the routine's **exact logical beat** —
+        the yield-accumulated one, not wall-clock now — so inter-event timing
+        stays exact. Outside any routine it is wall-clock now, and the delay
+        reads as seconds.
+
+        What this adds to a plain OSC bundle is what belongs to *this* server:
+        its `latency`, scheduling by absolute sample when the clock is anchored
+        to the server's own, and accumulating into a score offline. For any
+        other application, `clausters.base.OscDestination` sends standard
+        bundles with the same logical timing."""
+        when = (at if at is not None else Moment.current(clock)).at(delay_beats)
 
         if getattr(self.interface, "time_mode", "unix") == "score":
             # NRT: seconds from render start (logical, timebase-independent).
-            self.interface.send_bundle(self.target.addr(), secs, *messages)
+            self.interface.send_bundle(self.target.addr(), when.secs(), *messages)
             return
 
-        timebase = getattr(clock, "timebase", None)
+        timebase = getattr(when.clock, "timebase", None)
         if isinstance(timebase, SampleClockTimebase):
             # Anchored to the server's sample clock: schedule by absolute sample,
             # drift-free and sample-accurate, via /sched. The seconds->sample
             # rounding is the core's (shared with the server).
-            origin = clock.pacing_origin or 0.0      # seconds in the sample timebase
-            sample = timebase.sample_at(origin + secs + self.latency)
+            origin = when.clock.pacing_origin or 0.0  # seconds in the sample timebase
+            sample = timebase.sample_at(origin + when.secs() + self.latency)
             self._send_sched(sample, messages)
         else:
             # Wall clock: an NTP-timetagged bundle.
-            wall = (clock.start_time if clock.start_time is not None else time.time())
-            self.interface.send_bundle(self.target.addr(), wall + secs + self.latency, *messages)
+            self.interface.send_bundle(
+                self.target.addr(), when.instant() + self.latency, *messages
+            )
 
     def play_event(self, event):
         """Play a note `Event` as OSC: `/s_new`
@@ -677,13 +675,12 @@ class Server:
         instrument is the built-in ``"default"`` (which carries a gated,
         self-freeing envelope); otherwise it is a direct ``/n_free``.
 
-        Two timing regimes, chosen by context. **Inside a routine** (a clock is
-        in flight) both go out as timetagged bundles at the routine's exact
-        logical beat, so a sequence stays sample-tight. **Outside any clock** (a
-        bare ``Event().play()``) the ``/s_new`` fires immediately and
-        untimetagged, and the release is a bundle at wall-clock now + the sustain
-        in seconds (tempo 1.0: beats == seconds) — so a single note sounds now
-        and frees itself without a `TempoClock`."""
+        One timing path, whatever the context. Both messages go out as
+        timetagged bundles at the ambient `Moment`: inside a routine that is
+        its exact logical beat, so a sequence stays sample-tight; outside any
+        clock it is wall-clock now, and the sustain reads as seconds
+        (tempo 1.0) — so a bare ``Event().play()`` sounds now and frees itself
+        without a `TempoClock`."""
         if event.get("type") == "rest":
             return None
         node_id = self._node_id()
@@ -696,28 +693,17 @@ class Server:
         gate_release = event.get("has_gate") or event["instrument"] == "default"
         release = (("/n_set", node_id, "gate", 0.0) if gate_release
                    else ("/n_free", node_id))
-        sustain = event.sustain()
-        if getattr(main.current_tt, "clock", None) is None:
-            # No clock in context: immediate note, self-releasing on wall time.
-            self.send_msg(*s_new)
-            self.send_bundle_after(sustain, release)
-            return node_id
         self.send_bundle(s_new)
-        self.send_bundle(release, delay_beats=sustain)
+        self.send_bundle(release, delay_beats=event.sustain())
         return node_id
 
     def send_bundle_after(self, delay_secs: float, *messages):
         """Emit a timetagged bundle of ``(addr, *args)`` messages at wall-clock
-        now + ``delay_secs`` (+ `latency`), with **no clock** — the clockless
-        counterpart of `send_bundle`, used for the release of an immediate
-        `play_event`. In score (NRT) mode the delay is seconds from render
-        start."""
-        if getattr(self.interface, "time_mode", "unix") == "score":
-            self.interface.send_bundle(self.target.addr(), delay_secs, *messages)
-            return
-        self.interface.send_bundle(
-            self.target.addr(), time.time() + delay_secs + self.latency, *messages
-        )
+        now + ``delay_secs`` (+ `latency`), ignoring whatever clock is in
+        flight — the **clockless** entry point to `send_bundle`, for a delay
+        that is a duration in seconds rather than a position in the music. In
+        score (NRT) mode the delay is seconds from the render start."""
+        self.send_bundle(*messages, at=Moment(None, delay_secs))
 
     def _send_sched(self, sample: int, messages):
         inner = _osclib.immediate_bundle(*[_osclib.message(*m) for m in messages])

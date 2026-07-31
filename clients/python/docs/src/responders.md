@@ -2,6 +2,8 @@
 
 Everything so far has the client *sending* — building OSC or MIDI and pushing it to the server. Responders add the other direction: the client **receives** OSC and MIDI from any application, matches each message, and dispatches it to a callback. That callback can do anything, including emit OSC or MIDI onward — so the client becomes a hub: a MIDI keyboard or a controller app on one side, the Clausters server (or another program) on the other.
 
+Sending *to* another application is the counterpart, and it is not a responder: it is a destination, covered in [Routines and clocks](routines-and-clocks.md#sending-to-another-application).
+
 The two responder classes mirror SuperCollider's `OSCFunc` and `MIDIFunc`:
 
 - **`OscFunc(func, path)`** fires `func` on incoming OSC messages whose address matches `path`.

@@ -3650,3 +3650,50 @@ goes planar — Faust's `soundfile` — it converts internally. Deinterleaving i
 client-side convenience for analysis, and it stays in Python rather than the
 core precisely because `array` extended slicing is already a C-level strided
 copy: crossing the FFI to do it would copy more, not less.
+
+## A moment is a value, and the destination is what stamps it
+
+Sending OSC to an application that is not our server used to be impossible in
+any timed sense. The client could *receive* from anywhere (`OscReceiver` +
+`OscFunc`), but every path that turned a routine's logical beat into a timetag
+was written inside `Server.send_bundle`, wired to that server's own target and
+interface. A second destination would have had to copy the arithmetic.
+
+sc3 solves this in the *interface*: `NetAddr.send_bundle(time, ...)` passes a
+delta, and each interface resolves it against `main.current_tt._seconds`, with
+an NRT subclass overriding `_get_timetag`. That placement buys something real —
+nested sub-bundles all resolve against a single captured "now" — and it is why
+any `NetAddr` in sclang is timed without knowing what a clock is.
+
+We did not copy it, for two reasons. It rests on `main` being a process-wide
+singleton that owns the interface, the main time thread and one physical time
+axis in seconds; here `Session` owns the server and the clock, `current_tt` is
+thread-local scope rather than configuration, and beats are per clock with
+per-clock origins — so an interface cannot know which axis a send belongs to
+without asking an ambient global we deliberately do not have. And the argument
+that justifies the placement, nested bundles, is not something we encode: the
+codec takes a flat list.
+
+So the concepts were split by owner instead. `Moment` — a clock and an exact
+beat on it — is the value that answers "what time is it *for this event*", and
+it is the routine that carries one, because the routine is what the clock
+stamped. A `Destination` owns the target, the carrier and the policy that turns
+a moment into wire time. The interfaces keep receiving an absolute instant, so
+none of their signatures moved, in either client.
+
+What that leaves in `Server` is exactly what belongs to a server *we control*:
+its `latency`, `/sched` at an absolute sample, `/sync`, and the offline score.
+None of those is standard OSC, and none of them is an external application's
+business — least of all latency, which is the headroom our audio pipeline needs,
+not a fact about someone else's program. An external destination therefore adds
+nothing to the timetag; a program that needs to run ahead asks for it as an
+explicit delay.
+
+Two things fell out that were not the goal. The clockless case stopped being a
+second code path: with no clock a moment is wall-clock now and beats read as
+seconds, so `Event().play()` outside a routine goes through the same call as one
+inside it, and `send_bundle` with no clock is defined rather than an error.
+And `NetAddr` lost its `send_*` methods: it is right as an address — which is
+what the name means everywhere outside sclang — and wrong as an emitter, since
+emitting needs an interface and a timing policy that an address has no business
+holding.

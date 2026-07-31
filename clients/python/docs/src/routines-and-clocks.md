@@ -97,6 +97,28 @@ Because it is the same interface, one distinction matters as much offline as liv
 
 Placing something *in time* is the other path: **`send_bundle`** stamps the beat the routine has accumulated by yielding (plus an optional `delay_beats=` lookahead), and an `Event` — so every **pattern** — does it for you. Creating a node with `send_msg` from inside a routine is therefore an error, not a thing that renders differently: live you cannot see it, because "immediately" and the logical beat are close enough to pass; offline it is the difference between a piece and a chord.
 
+## Sending to another application
+
+The same logical beat is available to anything else that speaks OSC. A destination is where OSC goes, and `session.destination(host, port)` opens one onto another application:
+
+```python
+lights = session.destination("127.0.0.1", 7000)
+
+def cue(clock):
+    for colour in ("red", "amber", "green"):
+        Event(instrument="default", freq=330).play()
+        lights.send_bundle(("/lamp", colour, 1.0))
+        yield 1.0
+```
+
+The note and the lamp carry the *same* timetag, because both read the same `Moment` — the beat the routine has accumulated, not what time it happens to be when each line runs.
+
+What a destination sends is standard OSC and nothing more: a message, or a bundle with an NTP timetag. It does not add the server's `latency` — that is a property of our audio pipeline, and what another application needs is its own business, asked for as an explicit `delay_beats=`. Nor does it send our own commands (sample-exact `/sched`, `/sync`) or take part in an offline render, since nothing is listening there.
+
+Outside any routine there is no clock, and the moment is wall-clock now with delays read as seconds — so the same call works in a script with no `TempoClock` at all.
+
+For the other direction — reacting to OSC another application sends *you* — see [Receiving OSC and MIDI](responders.md).
+
 ## See also
 
 - [Timing models](timing-models.md) — the ways a clock keeps time (wall-clock, sample-locked, shared transport) and how to observe each.

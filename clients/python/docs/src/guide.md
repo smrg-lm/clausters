@@ -9,6 +9,8 @@ The package is three layers plus a thin convenience wrapper. The split is delibe
 - `stream` — `Routine`/`Stream`, the `yield` coroutine layer. A routine must never block the clock thread.
 - `clock` — `TempoClock`, **timing only**: it schedules and paces, it does not talk to the server.
 - `timebase` — monotonic, or anchored to the server's sample clock (`/sched`) for drift-free timing.
+- `moment` — `Moment`, when something is happening: a clock and an exact beat on it. The one answer to "what time is it *for this event*", which is what a destination stamps onto the wire.
+- `destination` — where OSC goes: the `Server` for our own, `OscDestination` for any other application.
 - `netaddr`, `main` — addressing and a thread-local execution context. No global state that would block running RT and NRT in one script.
 
 See [Routines and clocks](routines-and-clocks.md) for driving these directly — writing a routine by hand — and [Timing models](timing-models.md) for the clock's timing modes (wall-clock, sample-locked, shared transport) and how to observe each.

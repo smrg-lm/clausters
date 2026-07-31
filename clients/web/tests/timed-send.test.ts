@@ -63,6 +63,10 @@ function timetagOf(packet: Uint8Array): bigint {
 const isBundle = (packet: Uint8Array): boolean =>
     new TextDecoder().decode(packet.subarray(0, 8)) === "#bundle\0";
 
+/** An NTP timetag back to Unix seconds, for the assertions that only bound it. */
+const ntpToUnix = (ntp: bigint): number =>
+    Number(ntp >> 32n) - 2_208_988_800 + Number(ntp & 0xffffffffn) / 2 ** 32;
+
 /** A clock on manual seams, driven by a caller-supplied timebase. */
 function harness(timebase: Timebase & { advance(secs: number): void }, tempo = 1.0) {
     const ticker = manualTicker();
@@ -231,17 +235,25 @@ test("the built-in default instrument is released by its gate", async () => {
 test("a note played with no clock sounds now and frees itself on wall time", async () => {
     const connection = recorder();
     const server = await openServer(connection);
+    const before = Date.now() / 1000;
     const event = new Event({ instrument: "sine", freq: 440, dur: 2, legato: 1 }).play(
         server,
     );
 
+    // One path in or out of a routine: both go out timed, at the clockless
+    // moment (now) and now + the sustain read as seconds.
     assert.equal(connection.packets.length, 2);
-    assert.equal(isBundle(connection.packets[0]!), false, "the note itself is immediate");
+    assert.equal(isBundle(connection.packets[0]!), true, "the note is timed at now");
     assert.equal(isBundle(connection.packets[1]!), true, "the release is timed");
     const [sNew] = decodePacket(connection.packets[0]!);
     assert.equal(sNew!.addr, "/s_new");
     assert.equal(event.get("node"), Number(sNew!.args[1]));
     assert.equal(event.get("sustain"), 2);
+
+    const started = ntpToUnix(timetagOf(connection.packets[0]!));
+    const freed = ntpToUnix(timetagOf(connection.packets[1]!));
+    assert.ok(Math.abs(started - (before + server.latency)) < 0.5, "sounds now");
+    assert.ok(Math.abs(freed - started - 2) < 0.01, "frees itself a sustain later");
     server.close();
 });
 
@@ -301,12 +313,19 @@ test("a clock resumed after a stop stamps for now, not for the old axis", async 
     server.close();
 });
 
-test("sending a bundle with no clock anywhere is an error, not a silent now", async () => {
+test("sending a bundle with no clock anywhere is wall-clock now", async () => {
     const connection = recorder();
     const server = await openServer(connection);
-    assert.throws(
-        () => server.sendBundle([["/n_free", ["i", 1000]]]),
-        /needs a clock/,
-    );
+    const before = Date.now() / 1000;
+    server.sendBundle([["/n_free", ["i", 1000]]]);
+
+    // No clock is not an error: the clockless moment is now, and a delay on
+    // it reads as seconds (tempo 1.0).
+    const at = ntpToUnix(timetagOf(connection.packets[0]!));
+    assert.ok(Math.abs(at - (before + server.latency)) < 0.5);
+
+    server.sendBundle([["/n_free", ["i", 1001]]], { delayBeats: 3 });
+    const later = ntpToUnix(timetagOf(connection.packets[1]!));
+    assert.ok(Math.abs(later - at - 3) < 0.01);
     server.close();
 });

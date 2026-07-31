@@ -96,6 +96,28 @@ Everything random — `Pwhite`, `Prand`, and the module functions `uniform(lo, h
 
 Each routine gets its **own** generator when it is created, derived from the context that created it. Same root seed plus same creation order gives the same music, and because each routine draws from its own stream, concurrent routines stay reproducible however their wakes interleave. `seed(n)`, called before you build and play, makes a whole page reproducible; there are deliberately no per-pattern seeds. To isolate some material, play it in its own routine, which is its own derived stream by construction.
 
+## Sending to another application
+
+The same logical beat is available to anything else that speaks OSC. A **destination** is where OSC goes: `Server` is the one we control, `OscDestination` is any other application.
+
+```js
+const lights = new clausters.OscDestination(new clausters.WsConnection("ws://localhost:7000"));
+
+clock.play(new clausters.Routine(function* () {
+    while (true) {
+        new seq.Event({ instrument: "default", freq: 330 }).play(server);
+        lights.sendBundle([["/lamp", "amber", 1.0]]);
+        yield 1.0;
+    }
+}));
+```
+
+The note and the lamp carry the *same* timetag, because both read the same `Moment` — the beat the routine has accumulated, not what time it happens to be when each line runs.
+
+What a destination sends is standard OSC and nothing more: a message, or a bundle with an NTP timetag. It does not add the server's `latency` — that is a property of our audio pipeline, and what another application needs is its own business, asked for as an explicit `delayBeats`. Nor does it send our own commands (`/sched`, `/sync`).
+
+The page cannot open a UDP socket, so a destination here rides a `Connection` exactly as the server does: for an external application, its WebSocket bridge. The Python client, which can, defaults to UDP — the difference is the carrier, never the timing.
+
 ## See also
 
 - [The client, layer by layer](guide.md) — where routines, clocks and the server sit in the whole client.

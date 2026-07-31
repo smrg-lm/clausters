@@ -22,7 +22,7 @@ stats = s.render()                  # drains the clock, renders the score
 
 from contextlib import contextmanager
 
-from .base import OscEmbedInterface, OscNrtInterface, TempoClock
+from .base import OscDestination, OscEmbedInterface, OscNrtInterface, TempoClock
 from .base.environment import Environment
 from .base.main import main
 from .defs import Server
@@ -83,6 +83,9 @@ class Session(Environment):
         #: and is stopped with the session. The server owns any process it
         #: booted (see `Server.boot` / `live`), stopped via ``server.close``.
         self._gui = None
+        #: external OSC destinations opened by `destination`, closed with the
+        #: session.
+        self._destinations = []
 
     # ---- factories (the "defaults", explicit) ----
 
@@ -413,6 +416,19 @@ class Session(Environment):
         self.clock.stop()
         return self
 
+    def destination(self, host: str = "127.0.0.1", port: int = 57120) -> OscDestination:
+        """An external OSC application as a destination, living as long as this
+        session (`close` closes it).
+
+        What it sends is standard OSC — a message, or a bundle timetagged at
+        the ambient `Moment`, so a sequence sent to another application keeps
+        the same logical timing as one sent to the server. What it does not
+        send is anything of ours: no `Server.latency`, no sample-accurate
+        ``/sched``, no offline score."""
+        dest = OscDestination(host, port)
+        self._destinations.append(dest)
+        return dest
+
     def close(self):
         """Close the underlying `Server` and release the clock's master-clock
         tracker (from `lock_to_server`), if any. Also stops the GUI host (`gui`)
@@ -422,6 +438,9 @@ class Session(Environment):
         if self._gui is not None:
             self._gui.stop()   # stops its clausters-gui process too
             self._gui = None
+        for dest in self._destinations:
+            dest.close()
+        self._destinations.clear()
         self.clock.close()
         self.server.close()    # stops a launched server process too
 

@@ -25,10 +25,12 @@ import {
     encodeImmediateBundle,
     encodeMessage,
     oscArg,
+    toBundle,
 } from "../base/osc.ts";
-import type { BundleMessage, MsgArg, OscArg, OscMessage } from "../base/osc.ts";
+import type { MsgArg, OscArg, OscMessage, TimedMessage } from "../base/osc.ts";
+export type { TimedMessage } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
-import { currentRoutine } from "../base/context.ts";
+import { Moment } from "../base/moment.ts";
 import { MonotonicTimebase, SampleTimebase } from "../base/timebase.ts";
 import type { Timebase } from "../base/timebase.ts";
 import { SampleClockModel } from "../core/clausters_core_web.js";
@@ -185,17 +187,6 @@ interface Pending {
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
 }
-
-/**
- * One message of a timed bundle: an address and its arguments, tagged by the
- * same rule `sendMsg` uses (an explicit `[tag, value]` pair where the guess
- * would be wrong).
- */
-export type TimedMessage = [string, ...MsgArg[]];
-
-/** The bundle form the codec takes. */
-const toBundle = (messages: readonly TimedMessage[]): BundleMessage[] =>
-    messages.map(([addr, ...args]) => ({ addr, args: args.map(oscArg) }));
 
 /**
  * Control values flattened into the `name value name value …` tail every
@@ -380,49 +371,52 @@ export class Server {
     // `latency` is the headroom that absorbs that lateness.
 
     /**
-     * Emits a bundle of messages at the running routine's **exact logical
-     * beat** (plus `delayBeats`, plus `latency`).
+     * Emits a bundle of messages at `at` (default: the ambient `Moment`) plus
+     * `delayBeats`, plus this server's `latency`.
      *
-     * Call it from a routine playing on a clock — the clock is found through
-     * the routine being resumed — or pass `clock` explicitly. Under a
-     * monotonic timebase the bundle carries a wall-clock timetag; under a
-     * `SampleTimebase` it goes out as `/sched` at an absolute sample, which
-     * is drift-free and exact to the sample.
+     * Inside a routine the moment is the routine's **exact logical beat** —
+     * the yield-accumulated one, never wall-clock — so a sequence stays tight
+     * however late the wake-up was. Outside any routine it is wall-clock now,
+     * and the delay reads as seconds.
+     *
+     * What this adds to a plain OSC bundle is what belongs to *this* server:
+     * its `latency`, and scheduling by absolute sample (`/sched`) when the
+     * clock is anchored to the server's own — drift-free and exact to the
+     * sample. For any other application, `OscDestination` sends standard
+     * bundles with the same logical timing.
      */
     sendBundle(
         messages: readonly TimedMessage[],
-        { delayBeats = 0, clock }: { delayBeats?: number; clock?: TempoClock } = {},
+        { delayBeats = 0, clock, at }: {
+            delayBeats?: number;
+            clock?: TempoClock;
+            at?: Moment;
+        } = {},
     ): void {
-        const routine = currentRoutine();
-        const on = clock ?? routine?.clock;
-        if (!on) {
-            throw new Error(
-                "sendBundle needs a clock: call it from a routine playing on a " +
-                    "TempoClock, or pass { clock }",
-            );
-        }
-        const base = routine?.clock === on ? routine.logicalBeat : on.beats();
-        const secs = on.beats2secs(base + delayBeats);
-        const timebase = on.timebase;
+        const when = (at ?? Moment.current(clock)).at(delayBeats);
+        const timebase = when.clock?.timebase;
         if (timebase instanceof SampleTimebase) {
             // Anchored to the server's sample clock: schedule by absolute
             // sample. The seconds->sample rounding is the core's, shared with
             // the server.
-            const origin = on.pacingOrigin ?? 0;
-            this.sendSched(timebase.sampleAt(origin + secs + this.latency), messages);
+            const origin = when.clock!.pacingOrigin ?? 0;
+            this.sendSched(
+                timebase.sampleAt(origin + when.secs() + this.latency),
+                messages,
+            );
             return;
         }
-        const wall = on.startTime ?? Date.now() / 1000;
-        this.sendTimetagged(wall + secs + this.latency, messages);
+        this.sendTimetagged(when.instant() + this.latency, messages);
     }
 
     /**
-     * Emits a bundle at wall-clock now + `delaySecs` (+ `latency`), with **no
-     * clock** — the clockless counterpart of `sendBundle`, which is how a
-     * note played outside any routine still frees itself.
+     * Emits a bundle at wall-clock now + `delaySecs` (+ `latency`), ignoring
+     * whatever clock is in flight — the **clockless** entry point to
+     * `sendBundle`, for a delay that is a duration in seconds rather than a
+     * position in the music.
      */
     sendBundleAfter(delaySecs: number, messages: readonly TimedMessage[]): void {
-        this.sendTimetagged(Date.now() / 1000 + delaySecs + this.latency, messages);
+        this.sendBundle(messages, { at: new Moment(null, delaySecs) });
     }
 
     private sendTimetagged(unixSecs: number, messages: readonly TimedMessage[]): void {
@@ -446,12 +440,12 @@ export class Server {
      * side of the event's double dispatch. Returns the synth's node id, or
      * `null` for a rest.
      *
-     * Two timing regimes, chosen by context. **Inside a routine** both go out
-     * as timed bundles at the routine's exact logical beat, so a sequence
-     * stays sample-tight. **Outside any clock** the `/s_new` fires
-     * immediately and the release is a bundle at wall-clock now plus the
-     * sustain in seconds — so a single `new Event().play(server)` sounds now
-     * and frees itself with no clock at all.
+     * One timing path, whatever the context. Both messages go out as timed
+     * bundles at the ambient `Moment`: inside a routine that is its exact
+     * logical beat, so a sequence stays sample-tight; outside any clock it is
+     * wall-clock now, and the sustain reads as seconds — so a single
+     * `new Event().play(server)` sounds now and frees itself with no clock at
+     * all.
      */
     playEvent(event: Event): number | null {
         if (event.get("type") === "rest") return null;
@@ -467,17 +461,8 @@ export class Server {
         const release: TimedMessage = event.releasesByGate()
             ? ["/n_set", ["i", node], "gate", ["f", 0]]
             : ["/n_free", ["i", node]];
-        const sustain = event.sustain();
-        const clock = currentRoutine()?.clock;
-        if (!clock) {
-            // No clock in context: an immediate note, self-releasing on wall
-            // time (tempo 1.0 — beats are seconds).
-            this.sendMsg(...sNew);
-            this.sendBundleAfter(sustain, [release]);
-            return node;
-        }
         this.sendBundle([sNew]);
-        this.sendBundle([release], { delayBeats: sustain });
+        this.sendBundle([release], { delayBeats: event.sustain() });
         return node;
     }
 

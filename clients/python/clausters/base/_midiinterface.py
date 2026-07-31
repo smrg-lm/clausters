@@ -18,7 +18,7 @@ in `MidiReceiver` at the bottom, the MIDI counterpart of
 
 import threading
 
-from .main import main
+from .moment import Moment
 
 
 # Channel-voice status nibbles -> (message type name, data-field names). A
@@ -124,12 +124,10 @@ class MidiRtInterface:
         self.port = port
 
     def emit(self, beat, message):
-        tt = main.current_tt
-        now = getattr(tt, "_logical_beat", None)
-        clock = getattr(tt, "clock", None)
-        if now is not None and clock is not None and beat > now + 1e-9:
+        now = Moment.current()
+        if now.clock is not None and beat > now.beat + 1e-9:
             msg = bytes(message)
-            clock.sched_abs(beat, lambda: self._send(msg))
+            now.clock.sched_abs(beat, lambda: self._send(msg))
         else:
             self._send(message)
 
@@ -170,7 +168,7 @@ class MidiServer:
     def play_event(self, event):
         if event.get("type") == "rest":
             return None
-        beat = getattr(main.current_tt, "_logical_beat", 0.0) or 0.0
+        beat = Moment.current().beat
         note = int(round(event.midinote())) & 0x7F
         amp = max(0.0, min(1.0, float(event.get("amp", 0.0))))
         velocity = int(round(amp * 127)) & 0x7F
@@ -183,7 +181,7 @@ class MidiServer:
         """Emit a raw MIDI message at the running routine's logical beat — the
         MIDI counterpart of ``Server.send_bundle`` for a raw OSC message, used by
         `clausters.seq.timeline.MidiEvent`."""
-        beat = getattr(main.current_tt, "_logical_beat", 0.0) or 0.0
+        beat = Moment.current().beat
         self.interface.emit(beat, bytes(message))
         return None
 

@@ -26,7 +26,7 @@ without changing this.
 
 import bisect
 
-from ..base.main import main
+from ..base.moment import Moment
 from ..base.stream import Routine
 
 
@@ -186,7 +186,7 @@ class _Recorder:
     def play_event(self, event):
         from .event import Event
 
-        beat = getattr(main.current_tt, "_logical_beat", 0.0) or 0.0
+        beat = Moment.current().beat
         self.timeline.add(beat, Event(event))
         return None
 

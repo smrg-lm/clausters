@@ -16,7 +16,11 @@ The base layer:
   process-wide execution registry.
 - `rand` — the random context: one seedable source (``main.seed`` +
   per-routine derived generators) behind every random value in the library.
-- `netaddr` — `NetAddr`.
+- `netaddr` — `NetAddr`, a target's host and port.
+- `moment` — `Moment`, when something is happening (a clock and an exact
+  beat on it).
+- `destination` — `Destination` and `OscDestination`: where OSC goes, and how
+  a `Moment` becomes wire time.
 - `_oscinterface` / `_midiinterface`
   — the RT/NRT destination interfaces.
 - `_osclib` — minimal OSC wire encoding.
@@ -24,8 +28,10 @@ The base layer:
 
 from .absobject import AbstractObject
 from .clock import TempoClock
+from .destination import Destination, OscDestination
 from .environment import Environment, RandomContext
 from .main import Main, main
+from .moment import Moment
 from .netaddr import NetAddr
 from .rand import choice, current_rng, next_below, next_f64, spawn_rng, uniform
 from .stream import FunctionStream, Routine, Stream, StopStream, YieldAndReset
@@ -59,7 +65,10 @@ __all__ = [
     "RandomContext",
     "Main",
     "main",
+    "Moment",
     "NetAddr",
+    "Destination",
+    "OscDestination",
     "Stream",
     "Routine",
     "FunctionStream",
