@@ -30,7 +30,14 @@ const MAGIC: u32 = 0x5541_4C43;
 /// The segment ABI version this reader understands (mirrors
 /// `server::ipc::ABI_VERSION`). Bumped in lockstep with the server; a mismatch
 /// is rejected on [`SharedSegment::open`].
-const SUPPORTED_ABI_VERSION: u32 = 4;
+///
+/// That one counter governs **two** boundaries — the segment layout and the
+/// embed C ABI — so it moves for changes this reader cannot see: v5 came from
+/// `clausters_render` growing arguments, with the layout untouched. Following
+/// it is still the rule (there is no separate segment counter to follow), so a
+/// bump lands here as a number change and nothing else whenever the layout
+/// stayed put.
+const SUPPORTED_ABI_VERSION: u32 = 5;
 
 // Byte offsets of the fields we read inside the `#[repr(C)]` Header.
 const OFF_ABI: usize = 4;
