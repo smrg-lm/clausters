@@ -137,7 +137,7 @@
 
         // A drag on the knob: it is bound, so the value goes to the engine and
         // *not* to this script. The knob's band is y 44..154.
-        const before = (await server.queryNode(synth)).controls.freq;
+        const before = (await synth.info()).controls.freq;
         const seen = events.length;
         pointer(canvas, "pointerdown", 240, 100, 1);
         await sleep(50);
@@ -148,7 +148,7 @@
         let after = before;
         for (let i = 0; i < 40 && after === before; i++) {
           await sleep(50);
-          after = (await server.queryNode(synth)).controls.freq;
+          after = (await synth.info()).controls.freq;
         }
         if (after === before) {
           throw new Error(`the bound knob never reached the engine (freq ${after})`);
@@ -172,7 +172,7 @@
         let touched = beforeTouch;
         for (let i = 0; i < 40 && touched === beforeTouch; i++) {
           await sleep(50);
-          touched = (await server.queryNode(synth)).controls.freq;
+          touched = (await synth.info()).controls.freq;
         }
         if (touched === beforeTouch) {
           throw new Error(`a touch drag never reached the engine (freq ${touched})`);

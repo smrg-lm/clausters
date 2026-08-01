@@ -106,7 +106,7 @@ def bounce_take(path: str, beats: float = 2.0) -> str:
 
 
 wav = bounce_take(str(Path(tempfile.mkdtemp(prefix="clausters-")) / "take.wav"))
-buf = Buffer.read(wav, server=server).query()   # on the server, shape known
+buf = Buffer.read(wav, server=server)          # on the server, shape known
 
 # %% [markdown]
 # ## The material

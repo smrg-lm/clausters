@@ -15,6 +15,7 @@ from array import array
 
 from .. import _native
 from ..errors import CommandError
+from .info import BufferInfo, parse_buffer_list
 from ._wire import resolve as _resolve
 
 NUM_BUFFERS = 4096
@@ -23,13 +24,34 @@ NUM_BUFFERS = 4096
 class Buffer:
     def __init__(self, bufnum: int, frames: int = 0, channels: int = 1,
                  sample_rate: float = 0.0, server=None):
-        self.bufnum = bufnum
-        self.frames = frames
-        self.channels = channels
-        self.sample_rate = sample_rate
+        #: what the server holds under this slot, as last read from it — a
+        #: buffer's shape only changes by a command of yours, so unlike a
+        #: node's record this one can be kept. `info` refreshes it; `frames`,
+        #: `channels` and `sample_rate` read it.
+        self._info = BufferInfo(bufnum=bufnum, frames=frames, channels=channels,
+                                sample_rate=sample_rate)
         #: the `Server` this buffer lives on (set by `alloc` / `read`), so its
         #: commands know where to go without being told.
         self.server = server
+
+    @property
+    def bufnum(self) -> int:
+        """The slot this buffer occupies in the server's pool."""
+        return self._info.bufnum
+
+    @property
+    def frames(self) -> int:
+        """Frames per channel, 0 while unknown (see `info`)."""
+        return self._info.frames
+
+    @property
+    def channels(self) -> int:
+        return self._info.channels
+
+    @property
+    def sample_rate(self) -> float:
+        """The server's rate for this buffer, 0.0 while unknown (see `info`)."""
+        return self._info.sample_rate
 
     # ---- constructors ----
 
@@ -59,8 +81,11 @@ class Buffer:
         shape and sample rate come from the file (``num_frames`` 0 = the whole
         file, from ``file_start``). Decoding is by content (WAV, FLAC, OGG, MP3,
         …). In NRT it scores at time 0; in RT ``wait=True`` blocks on ``/done``.
-        The returned buffer's ``frames``/``channels`` are unknown client-side
-        until `query`."""
+
+        The shape is the **file's**, so the client cannot know it in advance:
+        waiting reads it back (one `info` round trip) and the returned buffer
+        carries it. Not waiting — and NRT, which has no reply — leaves
+        ``frames``/``channels`` at 0 until you call `info` yourself."""
         srv = _resolve(server)
         bufnum = srv.buffers.alloc()
         buf = cls(bufnum, server=srv)
@@ -73,6 +98,7 @@ class Buffer:
         if addr == "/fail":
             srv.buffers.free(bufnum)
             raise CommandError(f"/b_allocRead {bufnum} {path!r} failed: {args}")
+        buf.info(timeout=timeout)
         return buf
 
     # ---- the commands addressed to this buffer ----
@@ -137,16 +163,20 @@ class Buffer:
         if addr == "/fail":
             raise CommandError(f"/b_zero {self.bufnum} failed: {rargs}")
 
-    def query(self, timeout: float = 5.0) -> "Buffer":
-        """Ask the running server for this buffer's shape (``/b_query`` →
-        ``/b_info bufnum frames channels sampleRate``) and fill it into the
-        handle, which is returned. RT only (it needs a reply)."""
+    def info(self, timeout: float = 5.0) -> BufferInfo:
+        """Ask the running server what it holds in this slot (``/b_query`` →
+        ``/b_info bufnum frames channels sampleRate``), keep the record on the
+        handle and return it.
+
+        Unlike a node's, a buffer's record is worth keeping: its shape changes
+        only by a command of yours, so what this reads stays true until you
+        change it. A slot with nothing in it (never allocated, or freed) comes
+        back with ``exists`` false rather than raising. RT only (it needs a
+        reply)."""
         _, args = self._server().request("/b_query", self.bufnum,
                                          timeout=timeout, expect=("/b_info",))
-        # /b_info: bufnum, frames, channels, sampleRate
-        self.frames, self.channels = int(args[1]), int(args[2])
-        self.sample_rate = float(args[3])
-        return self
+        self._info = parse_buffer_list(args)[0]
+        return self._info
 
     def get_samples(self, start: int = 0, count: int = -1, *,
                     chunk: "int | None" = None, timeout: float = 5.0):
@@ -164,7 +194,7 @@ class Buffer:
         if chunk is None:
             chunk = srv._bulk_chunk(timeout)
         if count < 0:
-            shape = self.query(timeout=timeout)
+            shape = self.info(timeout=timeout)
             total = shape.frames * shape.channels
             count = max(0, total - start)
         out = array("f")

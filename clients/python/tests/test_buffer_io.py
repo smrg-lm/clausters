@@ -80,8 +80,9 @@ def test_query_and_get_samples_via_embed():
     # A linear 0 -> 1 ramp across the 8 samples.
     buf.gen("env", 0.0, 1.0, 1.0, 1, 0.0)
 
-    info = buf.query()
-    assert info is buf and (buf.frames, buf.channels) == (8, 1)
+    info = buf.info()
+    assert (info.frames, info.channels) == (8, 1) and info.exists
+    assert (buf.frames, buf.channels) == (8, 1)   # the handle keeps the record
 
     vals = list(buf.get_samples(0, 8))
     assert vals[0] == pytest.approx(0.0, abs=1e-6)

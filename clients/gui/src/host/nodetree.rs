@@ -9,10 +9,12 @@
 //! path the meters and scopes use, no dedicated pipeline.
 //!
 //! The reply is scsynth's depth-first encoding (mirrored by the server's
-//! `CmdTranslator::query_tree`): `flag`, the queried group id and its child
-//! count, then per node its id and child count (`-1` marks a synth), a synth's
-//! def name and — with `flag` — its control count followed by `(name|index,
-//! value)` pairs, a group's children inline. Parsing tolerates a short or
+//! `CmdTranslator::query_tree`): a **detail level**, the queried group id and
+//! its child count, then per node its id and child count (`-1` marks a synth),
+//! a synth's def name and — from detail 1 — its control count followed by
+//! `(name|index, value)` pairs, a group's children inline. Detail 2 appends
+//! what a full node info carries (maps, inferred bus lists), which this view
+//! does not draw and skips; the host asks for 1. Parsing tolerates a short or
 //! malformed reply by returning `None` rather than panicking.
 
 use clausters_core::osc::OscType;
@@ -63,10 +65,10 @@ impl NodeTree {
     /// reply is short or malformed (a corrupt reply must not panic the host).
     pub fn parse(args: &[OscType]) -> Option<NodeTree> {
         let mut it = args.iter();
-        let with_controls = next_int(&mut it)? != 0;
+        let detail = next_int(&mut it)?;
         let group = next_int(&mut it)?;
         let count = next_int(&mut it)?.max(0) as usize;
-        let root = parse_children(&mut it, count, with_controls)?;
+        let root = parse_children(&mut it, count, detail)?;
         Some(NodeTree { group, root })
     }
 
@@ -87,17 +89,17 @@ impl NodeTree {
 fn parse_children<'a>(
     it: &mut impl Iterator<Item = &'a OscType>,
     count: usize,
-    with_controls: bool,
+    detail: i32,
 ) -> Option<Vec<NodeEntry>> {
     let mut out = Vec::with_capacity(count);
     for _ in 0..count {
         let id = next_int(it)?;
         let child_count = next_int(it)?;
         let body = if child_count < 0 {
-            // A synth: def name, then (with the flag) its controls.
+            // A synth: def name, then its controls from detail 1.
             let def_name = next_string(it)?;
             let mut controls = Vec::new();
-            if with_controls {
+            if detail >= 1 {
                 let n = next_int(it)?.max(0) as usize;
                 for _ in 0..n {
                     let name = next_control_name(it)?;
@@ -105,9 +107,19 @@ fn parse_children<'a>(
                     controls.push((name, value));
                 }
             }
+            if detail >= 2 {
+                // The full-record tail this view does not draw: the maps as
+                // (control, bus, audio) triples, then reads/writes.
+                let n = next_int(it)?.max(0) as usize;
+                for _ in 0..n * 3 {
+                    next_int(it)?;
+                }
+                next_string(it)?;
+                next_string(it)?;
+            }
             NodeBody::Synth { def_name, controls }
         } else {
-            NodeBody::Group(parse_children(it, child_count as usize, with_controls)?)
+            NodeBody::Group(parse_children(it, child_count as usize, detail)?)
         };
         out.push(NodeEntry { id, body });
     }

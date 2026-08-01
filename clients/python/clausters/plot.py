@@ -341,7 +341,8 @@ def _fetch_buffer(bufnum, fallback_rate):
     from .base.main import main
 
     server = main.resolve_server(None)
-    buf = Buffer(bufnum, server=server).query()
+    buf = Buffer(bufnum, server=server)
+    buf.info()
     samples = buf.get_samples()
     rate = buf.sample_rate if buf.sample_rate > 0.0 else fallback_rate
     return samples, max(1, buf.channels), rate, f"buffer {bufnum}"

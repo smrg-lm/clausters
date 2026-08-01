@@ -1598,13 +1598,14 @@ impl OscServer {
         }
     }
 
-    /// M12: the node tree as seen by the network-side mirror, in scsynth's
-    /// `/g_queryTree.reply` format. Args: [groupID = 0, flag = 0]; flag 1
-    /// includes control names and values.
+    /// The node tree as seen by the network-side mirror, in scsynth's
+    /// `/g_queryTree.reply` format. Args: [groupID = 0, detail = 0]; detail 1
+    /// includes control names and values (scsynth's flag), detail 2 also the
+    /// maps and inferred bus lists, which makes each entry a full node info.
     fn handle_g_query_tree(&mut self, msg: &OscMessage, from: ClientId) {
         let group = int_arg(&msg.args, 0).unwrap_or(0);
-        let flag = int_arg(&msg.args, 1).unwrap_or(0);
-        match self.translator.query_tree(group, flag != 0) {
+        let detail = int_arg(&msg.args, 1).unwrap_or(0).clamp(0, 2);
+        match self.translator.query_tree(group, detail) {
             Ok(args) => self.reply(from, "/g_queryTree.reply", args),
             Err(e) => self.fail(from, "/g_queryTree", e),
         }
@@ -1612,16 +1613,16 @@ impl OscServer {
 
     /// Per-node detail: replies `/n_info` for each queried node ID (scsynth's
     /// `/n_query`, extended with the def name, controls, maps and inferred
-    /// bus usage — see [`CmdTranslator::node_info`]).
+    /// bus usage — see [`CmdTranslator::node_info`]). An id the server does
+    /// not hold answers with an absent record, not `/fail`: only a malformed
+    /// request is a protocol error.
     fn handle_n_query(&mut self, msg: &OscMessage, from: ClientId) {
         for arg in &msg.args {
             let OscType::Int(id) = arg else {
                 return self.fail(from, "/n_query", "expected int node ids");
             };
-            match self.translator.node_info(*id) {
-                Ok(args) => self.reply(from, "/n_info", args),
-                Err(e) => self.fail(from, "/n_query", e),
-            }
+            let args = self.translator.node_info(*id);
+            self.reply(from, "/n_info", args);
         }
     }
 
@@ -2484,8 +2485,14 @@ impl OscServer {
                 return self.fail(from, "/b_query", "expected int buffer indices");
             };
             let info = self.mirror_buffer(*index);
+            // An unallocated slot answers with `frames = -1`: absence is a
+            // state reported in the record, like `/n_query`'s `isGroup = -1`
+            // and `/d_query`'s empty family, so one dead index does not abort
+            // the batch.
             args.push(OscType::Int(*index));
-            args.push(OscType::Int(info.as_ref().map_or(0, |b| b.frames() as i32)));
+            args.push(OscType::Int(
+                info.as_ref().map_or(-1, |b| b.frames() as i32),
+            ));
             args.push(OscType::Int(
                 info.as_ref().map_or(0, |b| b.channels() as i32),
             ));

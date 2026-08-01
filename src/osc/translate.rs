@@ -2156,11 +2156,13 @@ impl CmdTranslator {
         args
     }
 
-    /// `/g_queryTree.reply` arguments, scsynth-compatible: `flag`, the
-    /// queried group and its child count, then depth-first per node: ID and
-    /// child count (`-1` for synths), the def name for synths, and — with
-    /// `flag` — the control count and (name, value) pairs.
-    pub fn query_tree(&self, group: i32, with_controls: bool) -> Result<Vec<OscType>, String> {
+    /// `/g_queryTree.reply` arguments: `detail`, the queried group and its
+    /// child count, then depth-first per node: ID and child count (`-1` for
+    /// synths), the def name for synths, and per `detail` level the same
+    /// payload `/n_info` carries — 1 adds the control count and (name, value)
+    /// pairs (scsynth's `flag`), 2 adds the maps and the inferred bus lists,
+    /// which is what makes every entry a full node info.
+    pub fn query_tree(&self, group: i32, detail: i32) -> Result<Vec<OscType>, String> {
         let Some(children) = self.mirror.children(group) else {
             return Err(match self.mirror.get(group) {
                 Some(_) => format!("node {group} is not a group"),
@@ -2168,39 +2170,63 @@ impl CmdTranslator {
             });
         };
         let mut args = vec![
-            OscType::Int(with_controls as i32),
+            OscType::Int(detail),
             OscType::Int(group),
             OscType::Int(children.len() as i32),
         ];
-        self.query_children(group, with_controls, &mut args);
+        self.query_children(group, detail, &mut args);
         Ok(args)
     }
 
-    fn query_children(&self, group: i32, with_controls: bool, args: &mut Vec<OscType>) {
+    fn query_children(&self, group: i32, detail: i32, args: &mut Vec<OscType>) {
         let children = self.mirror.children(group).unwrap_or(&[]).to_vec();
         for child in children {
             args.push(OscType::Int(child));
             if let Some(grandchildren) = self.mirror.children(child) {
                 args.push(OscType::Int(grandchildren.len() as i32));
-                self.query_children(child, with_controls, args);
-            } else if let Some((def_name, controls)) = self.mirror.synth_info(child) {
+                self.query_children(child, detail, args);
+            } else if let Some((def_name, _)) = self.mirror.synth_info(child) {
                 args.push(OscType::Int(-1));
                 args.push(OscType::String(def_name.into()));
-                if with_controls {
-                    args.push(OscType::Int(controls.len() as i32));
-                    let def = self.node_defs.get(&child);
-                    for (i, value) in controls.iter().enumerate() {
-                        let name = def.and_then(|d| d.control_name(i)).unwrap_or("");
-                        if name.is_empty() {
-                            args.push(OscType::Int(i as i32));
-                        } else {
-                            args.push(OscType::String(name.into()));
-                        }
-                        args.push(OscType::Float(*value));
-                    }
+                if detail >= 1 {
+                    self.synth_payload(child, detail >= 2, args);
                 }
             }
         }
+    }
+
+    /// The per-synth payload shared by `/n_info` and a detailed
+    /// `/g_queryTree.reply`: the control count and its (name|index, value)
+    /// pairs and, with `full`, the map count and its (controlIndex, bus,
+    /// audio) triples plus the inferred `reads`/`writes` bus lists.
+    fn synth_payload(&self, id: i32, full: bool, args: &mut Vec<OscType>) {
+        let Some(MirrorBody::Synth { controls, maps, .. }) = self.mirror.get(id).map(|n| &n.body)
+        else {
+            return;
+        };
+        args.push(OscType::Int(controls.len() as i32));
+        let def = self.node_defs.get(&id);
+        for (i, value) in controls.iter().enumerate() {
+            let name = def.and_then(|d| d.control_name(i)).unwrap_or("");
+            if name.is_empty() {
+                args.push(OscType::Int(i as i32));
+            } else {
+                args.push(OscType::String(name.into()));
+            }
+            args.push(OscType::Float(*value));
+        }
+        if !full {
+            return;
+        }
+        args.push(OscType::Int(maps.len() as i32));
+        for (ctl, bus, audio) in maps {
+            args.push(OscType::Int(*ctl as i32));
+            args.push(OscType::Int(*bus));
+            args.push(OscType::Int(*audio as i32));
+        }
+        let usage = self.mirror.usage_of(id);
+        args.push(OscType::String(bus_list(usage.reads)));
+        args.push(OscType::String(bus_list(usage.writes)));
     }
 
     /// `/n_info` arguments for `/n_query`: per-node detail beyond the tree
@@ -2209,10 +2235,21 @@ impl CmdTranslator {
     /// for a **synth** `defName`, `numControls` + (name|index, value) pairs,
     /// `numMaps` + (controlIndex, bus, audio) triples, and the inferred
     /// `reads`/`writes` bus lists as two strings (same format as
-    /// `/g_dumpGraph`). Siblings are `-1` when absent.
-    pub fn node_info(&self, id: i32) -> Result<Vec<OscType>, String> {
+    /// `/g_dumpGraph`). Siblings are `-1` when absent, and a node the server
+    /// does not hold answers `nodeID, -1, -1, -1, -1` — `isGroup = -1` is how
+    /// the record says the node is gone.
+    pub fn node_info(&self, id: i32) -> Vec<OscType> {
         let Some(node) = self.mirror.get(id) else {
-            return Err(format!("node {id} not found"));
+            // A node that is not there is a *state*, not a protocol error:
+            // `isGroup = -1` says so in the record itself, so one dead id
+            // does not abort a multi-id query (the `/d_query` convention).
+            return vec![
+                OscType::Int(id),
+                OscType::Int(-1),
+                OscType::Int(-1),
+                OscType::Int(-1),
+                OscType::Int(-1),
+            ];
         };
         let parent = self.mirror.parent(id).unwrap_or(-1);
         let (prev, next) = self.siblings(id, parent);
@@ -2228,37 +2265,13 @@ impl CmdTranslator {
                 args.push(OscType::Int(children.first().copied().unwrap_or(-1)));
                 args.push(OscType::Int(children.last().copied().unwrap_or(-1)));
             }
-            MirrorBody::Synth {
-                def_name,
-                controls,
-                maps,
-                ..
-            } => {
+            MirrorBody::Synth { def_name, .. } => {
                 args.push(OscType::Int(0));
                 args.push(OscType::String(def_name.clone()));
-                args.push(OscType::Int(controls.len() as i32));
-                let def = self.node_defs.get(&id);
-                for (i, value) in controls.iter().enumerate() {
-                    let name = def.and_then(|d| d.control_name(i)).unwrap_or("");
-                    if name.is_empty() {
-                        args.push(OscType::Int(i as i32));
-                    } else {
-                        args.push(OscType::String(name.into()));
-                    }
-                    args.push(OscType::Float(*value));
-                }
-                args.push(OscType::Int(maps.len() as i32));
-                for (ctl, bus, audio) in maps {
-                    args.push(OscType::Int(*ctl as i32));
-                    args.push(OscType::Int(*bus));
-                    args.push(OscType::Int(*audio as i32));
-                }
-                let usage = self.mirror.usage_of(id);
-                args.push(OscType::String(bus_list(usage.reads)));
-                args.push(OscType::String(bus_list(usage.writes)));
+                self.synth_payload(id, true, &mut args);
             }
         }
-        Ok(args)
+        args
     }
 
     /// Previous and next sibling of `id` within `parent`'s children (`-1` if

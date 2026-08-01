@@ -7,20 +7,18 @@
 // object that knows a connection.
 
 export { Server } from "./server.ts";
+export type { MsgArg, ServerInfo, ServerSizing, TimedMessage } from "./server.ts";
+export { Tree } from "./info.ts";
 export type {
     BufferInfo,
     ControlInfo,
     DefInfo,
-    MsgArg,
     NodeInfo,
+    NodeMap,
     PortTargetInfo,
-    ServerInfo,
-    ServerSizing,
-    TimedMessage,
-    TreeNode,
     UgenInfo,
     UgenInput,
-} from "./server.ts";
+} from "./info.ts";
 export {
     DEFAULT_AUDIO_BUSES,
     DEFAULT_CONTROL_BUSES,

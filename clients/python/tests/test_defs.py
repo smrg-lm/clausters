@@ -14,6 +14,7 @@ from clausters.defs import (
     FaustDef,
     Group,
     NodeIdAllocator,
+    NodeMap,
     Server,
     Synth,
 )
@@ -370,37 +371,65 @@ if __name__ == "__main__":
 # ---- node-tree reply parsers (server-free) ----
 
 def test_parse_query_tree():
-    from clausters.defs.server import _parse_query_tree
-    # flag=1; root 0 -> group 1000 -> synth 1001 (beep, freq/amp)
-    args = [1, 0, 1, 1000, 1, 1001, -1, "beep", 2, "freq", 330.0, "amp", 0.2]
-    tree = _parse_query_tree(args)
-    assert tree == {
-        "id": 0,
-        "children": [{
-            "id": 1000,
-            "children": [{
-                "id": 1001, "def": "beep",
-                "controls": {"freq": 330.0, "amp": pytest.approx(0.2)},
-            }],
-        }],
-    }
+    from clausters.defs.info import parse_query_tree
+    # detail=2; root 0 -> group 1000 -> synth 1001 (beep, freq mapped to c5)
+    args = [2, 0, 1, 1000, 1, 1001, -1, "beep", 2, "freq", 330.0, "amp", 0.2,
+            1, 0, 5, 0, "-", "0"]
+    tree = parse_query_tree(args)
+    assert tree.id == 0 and tree.info.is_group and tree.info.head == 1000
+    group = tree.children[0]
+    assert group.info.is_group and group.info.parent == 0
+    assert (group.info.head, group.info.tail) == (1001, 1001)
+
+    # Every entry is a full NodeInfo: what the tree adds is the nesting, and
+    # the siblings and head/tail follow from it.
+    synth = group.children[0].info
+    assert synth.id == 1001 and synth.defname == "beep" and synth.parent == 1000
+    assert synth.controls == {"freq": 330.0, "amp": pytest.approx(0.2)}
+    assert synth.maps == [NodeMap(control=0, bus=5, audio=False)]
+    assert (synth.reads, synth.writes) == ("-", "0")
+    assert [i.id for i in tree.walk()] == [0, 1000, 1001]
+    assert tree.find(1001).info is synth
+
+    # repr identifies, str draws.
+    assert repr(tree) == "Tree(0 group, 1 children)"
+    assert str(tree).splitlines() == [
+        "group 0",
+        "  group 1000",
+        "    1001 beep  freq<-c5 amp=0.2",
+    ]
 
 
-def test_parse_n_info_synth_and_group():
-    from clausters.defs.server import _parse_n_info
+def test_parse_query_tree_siblings_and_empty_group():
+    from clausters.defs.info import parse_query_tree
+    # detail=0: no controls on the wire, three children of the root.
+    args = [0, 0, 3, 1001, -1, "a", 1002, -1, "b", 100, 0]
+    tree = parse_query_tree(args)
+    a, b, empty = (t.info for t in tree.children)
+    assert (a.prev, a.next) == (-1, 1002)
+    assert (b.prev, b.next) == (1001, 100)
+    assert empty.is_group and (empty.head, empty.tail) == (-1, -1)
+    assert str(tree).splitlines()[-1] == "  group 100 (empty)"
+
+
+def test_parse_n_info_synth_group_and_absent():
+    from clausters.defs.info import parse_n_info
     synth = [1001, 1000, -1, -1, 0, "beep", 1, "freq", 330.0, 1, 0, 5, 0, "-", "0"]
-    info = _parse_n_info(synth)
-    assert info["id"] == 1001 and info["parent"] == 1000 and not info["is_group"]
-    assert info["def"] == "beep" and info["controls"] == {"freq": pytest.approx(330.0)}
-    assert info["maps"] == [{"control": 0, "bus": 5, "audio": False}]
-    assert info["reads"] == "-" and info["writes"] == "0"
+    info = parse_n_info(synth)
+    assert info.id == 1001 and info.parent == 1000 and not info.is_group
+    assert info.exists
+    assert info.defname == "beep" and info.controls == {"freq": pytest.approx(330.0)}
+    assert info.maps == [NodeMap(control=0, bus=5, audio=False)]
+    assert info.reads == "-" and info.writes == "0"
 
     group = [1000, 0, -1, -1, 1, 1001, 1001]
-    g = _parse_n_info(group)
-    assert g["is_group"] and g["head"] == 1001 and g["tail"] == 1001
+    g = parse_n_info(group)
+    assert g.is_group and g.head == 1001 and g.tail == 1001 and g.exists
 
+    # isGroup = -1: the node is not there. A state, not an exception.
+    gone = parse_n_info([4242, -1, -1, -1, -1])
+    assert gone.id == 4242 and not gone.exists
 
-# ---- server introspection (/d_query, /b_query, /u_query) ----
 
 def test_defs_query_collects_until_done():
     iface = _FakeInterface()
@@ -433,7 +462,7 @@ def test_defs_query_passes_names_and_flags_unknown():
 
 
 def test_parse_def_info_faust_ranges_and_graph_targets():
-    from clausters.defs.server import _parse_def_info
+    from clausters.defs.info import parse_def_info as _parse_def_info
 
     # A faust param appends (min, max, step) after the shared triple...
     faust = _parse_def_info(["f", "faust", 1, "amp", 0.2, "kr", 0.0, 1.0, 0.001])

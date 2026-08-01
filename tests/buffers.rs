@@ -848,14 +848,16 @@ mod osc {
         let infos = recv_until("/b_info");
         assert_eq!(infos.args[1], OscType::Int(50), "shape survives /b_zero");
 
-        // /b_free empties the slot: /b_query reports zeros.
+        // /b_free empties the slot: /b_query answers an absent record, which
+        // is `frames = -1` (the shape of a buffer that is not there, told in
+        // the record rather than as a /fail).
         send("/n_free", vec![OscType::Int(1000)]);
         send("/b_free", vec![OscType::Int(0)]);
         let done = recv_until("/done");
         assert_eq!(done.args[0], OscType::String("/b_free".into()));
         send("/b_query", vec![OscType::Int(0)]);
         let infos = recv_until("/b_info");
-        assert_eq!(infos.args[1], OscType::Int(0));
+        assert_eq!(infos.args[1], OscType::Int(-1), "absent buffer");
         // ...and the freed slot drops out of the listing form entirely.
         send("/b_query", vec![]);
         assert!(

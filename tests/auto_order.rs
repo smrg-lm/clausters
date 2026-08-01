@@ -423,6 +423,81 @@ fn query_tree_reports_structure_and_controls() {
 }
 
 #[test]
+fn query_tree_detail_two_carries_a_full_node_info_per_entry() {
+    // Detail 2 appends what `/n_info` carries beyond the controls — the maps
+    // and the inferred bus lists — so a client can build one record per node
+    // out of the tree alone, with no follow-up `/n_query`.
+    let server = Server::spawn();
+    server.send(
+        "/g_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("default".into()),
+            OscType::Int(1001),
+            OscType::Int(1),
+            OscType::Int(100),
+        ],
+    );
+    server.wait_for_order(100, &[1001]);
+    server.send("/c_set", vec![OscType::Int(3), OscType::Float(440.0)]);
+    server.send(
+        "/n_map",
+        vec![
+            OscType::Int(1001),
+            OscType::String("freq".into()),
+            OscType::Int(3),
+        ],
+    );
+
+    // The same node, both ways: the tree entry must end exactly as /n_info's
+    // synth body does.
+    server.send("/n_query", vec![OscType::Int(1001)]);
+    let info = server.recv_until("/n_info").args;
+    server.send("/g_queryTree", vec![OscType::Int(100), OscType::Int(2)]);
+    let tree = server.recv_until("/g_queryTree.reply").args;
+
+    assert_eq!(tree[0], OscType::Int(2), "the detail level is echoed");
+    // /n_info: id, parent, prev, next, isGroup, defName, then the payload.
+    // The tree entry: id, -1 (synth marker), defName, then the same payload.
+    assert_eq!(tree[3], OscType::Int(1001));
+    assert_eq!(tree[4], OscType::Int(-1));
+    assert_eq!(tree[5], OscType::String("default".into()));
+    assert_eq!(&tree[6..], &info[6..], "same payload as /n_info");
+    // And that payload really carries the map, as (control, bus, audio) after
+    // the three controls: freq is control 0, mapped to control bus 3.
+    let maps = &info[info.len() - 5..info.len() - 2];
+    assert_eq!(
+        maps,
+        &[OscType::Int(0), OscType::Int(3), OscType::Int(0)],
+        "the /n_map binding is in the record: {info:?}"
+    );
+    server.quit();
+}
+
+#[test]
+fn n_query_reports_an_absent_node_rather_than_failing() {
+    // A node the server does not hold is a state, not a protocol error: the
+    // record says so with isGroup = -1, so a batch of ids survives a dead one.
+    let server = Server::spawn();
+    server.send("/n_query", vec![OscType::Int(4242)]);
+    let info = server.recv_until("/n_info").args;
+    assert_eq!(
+        info,
+        vec![
+            OscType::Int(4242),
+            OscType::Int(-1),
+            OscType::Int(-1),
+            OscType::Int(-1),
+            OscType::Int(-1),
+        ]
+    );
+    server.quit();
+}
+
+#[test]
 fn dynamic_bus_indexes_are_reported_and_act_as_barriers() {
     let server = Server::spawn();
     // The In bus index comes from a signal: not statically analyzable.

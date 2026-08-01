@@ -32,81 +32,21 @@ from .bus import (
     ControlBusAllocator,
 )
 from .buffer import BufferAllocator
+from .info import (
+    BufferInfo,
+    ControlInfo,
+    DefInfo,
+    NodeInfo,
+    NodeMap,
+    Tree,
+    UgenInfo,
+    UgenInput,
+    parse_buffer_list,
+    parse_def_info,
+    parse_query_tree,
+    parse_ugen_info,
+)
 from .node import NodeIdAllocator, ROOT_NODE_ID
-
-
-def _control_key(key):
-    """A control identifier in a reply is a name string, or an int index when
-    the server could not resolve a name."""
-    return key if isinstance(key, str) else int(key)
-
-
-def _parse_tree_nodes(args, i, count, flag):
-    """Recursively parse `count` nodes of a ``/g_queryTree.reply`` starting at
-    index `i`; returns (nodes, next_index). A synth has child-count -1."""
-    out = []
-    for _ in range(count):
-        node_id, child_count = int(args[i]), int(args[i + 1])
-        i += 2
-        if child_count == -1:
-            node = {"id": node_id, "def": str(args[i])}
-            i += 1
-            if flag:
-                ncon = int(args[i])
-                i += 1
-                controls = {}
-                for _ in range(ncon):
-                    controls[_control_key(args[i])] = float(args[i + 1])
-                    i += 2
-                node["controls"] = controls
-            out.append(node)
-        else:
-            children, i = _parse_tree_nodes(args, i, child_count, flag)
-            out.append({"id": node_id, "children": children})
-    return out, i
-
-
-def _parse_query_tree(args) -> dict:
-    """``/g_queryTree.reply`` -> a nested ``{"id", "children"|"def"+"controls"}``
-    tree. A standalone function so it can be unit-tested without a server."""
-    flag = int(args[0])
-    root_id = int(args[1])
-    count = int(args[2])
-    children, _ = _parse_tree_nodes(args, 3, count, flag)
-    return {"id": root_id, "children": children}
-
-
-def _parse_n_info(args) -> dict:
-    """``/n_info`` -> a per-node dict (see ``CmdTranslator::node_info``)."""
-    info = {
-        "id": int(args[0]),
-        "parent": int(args[1]),
-        "prev": int(args[2]),
-        "next": int(args[3]),
-        "is_group": bool(int(args[4])),
-    }
-    if info["is_group"]:
-        info["head"], info["tail"] = int(args[5]), int(args[6])
-        return info
-    i = 5
-    info["def"] = str(args[i])
-    i += 1
-    ncon = int(args[i])
-    i += 1
-    controls = {}
-    for _ in range(ncon):
-        controls[_control_key(args[i])] = float(args[i + 1])
-        i += 2
-    info["controls"] = controls
-    nmaps = int(args[i])
-    i += 1
-    maps = []
-    for _ in range(nmaps):
-        maps.append({"control": int(args[i]), "bus": int(args[i + 1]), "audio": bool(args[i + 2])})
-        i += 3
-    info["maps"] = maps
-    info["reads"], info["writes"] = str(args[i]), str(args[i + 1])
-    return info
 
 
 # Server defaults, mirroring the Rust server's `DEFAULT_AUDIO_BUSES` /
@@ -308,156 +248,6 @@ class ServerInfo:
     #: bulk requests (`clausters.defs.Buffer.get_samples` chunks) are sized from. Falls back
     #: to the UDP datagram cap against a server too old to report it.
     max_frame: int = 65536
-
-
-@dataclass
-class ControlInfo:
-    """One entry of a def's control surface, as `Server.defs` reports it.
-
-    ``rate`` is the control type the def declared: ``"kr"`` (a plain control),
-    ``"tr"`` (a one-block trigger) or ``"ir"`` (a scalar frozen at init) — a
-    different vocabulary from the calculation rates `UgenInfo` reports, which
-    also include ``"ar"`` and ``"dr"``. Neither of those can be a control: an
-    audio-rate value is mapped in from a bus, and a demand value is pulled by a
-    driver rather than set. A
-    FaustDef's params also carry ``min``/``max``/``step``; they are ``None`` for
-    the other families, which declare no range. On a GraphDef this describes a
-    surface **port**, and ``targets`` lists the ``(member, control, mul, add)``
-    it drives inside — the scaling included, so a patch can draw the port's
-    real connections."""
-
-    name: str
-    default: float
-    rate: str = "kr"
-    min: "float | None" = None
-    max: "float | None" = None
-    step: "float | None" = None
-    targets: tuple = ()
-
-
-@dataclass
-class DefInfo:
-    """A loaded def as `Server.defs` reports it: its name, its ``family``
-    (``"synth"``, ``"faust"`` or ``"graph"``) and its control surface.
-
-    A def the server does not hold comes back with an empty ``family`` and no
-    controls, rather than raising — one unknown name never fails a batch."""
-
-    name: str
-    family: str
-    controls: "list[ControlInfo]"
-
-    @property
-    def exists(self) -> bool:
-        """Whether the server actually holds this def."""
-        return bool(self.family)
-
-
-@dataclass
-class BufferInfo:
-    """An allocated buffer as `Server.buffers` reports it."""
-
-    bufnum: int
-    frames: int
-    channels: int
-    sample_rate: float
-
-
-@dataclass
-class UgenInput:
-    """One named input slot of a UGen, in **wire order**.
-
-    The wire is positional — a def lists input values, it never names them — so
-    this is what a palette labels an inlet with, and ``default`` is what to
-    offer when the user leaves the slot alone."""
-
-    name: str
-    default: float
-
-
-@dataclass
-class UgenInfo:
-    """A UGen kind as `Server.ugens` reports it, straight from the server's
-    catalog.
-
-    ``arity`` is the input count, or ``-1`` for a variadic kind — whose
-    ``inputs`` then name only the fixed head (``EnvGen``'s five before the
-    envelope array). ``rates`` are the rates the kind may be instantiated at
-    and ``default_rate`` the one a def gets by omitting ``rate``. ``exec``,
-    ``bus``, ``op_family`` and ``spectral`` expose the compiler's own
-    classification; the ones that do not apply are empty strings."""
-
-    name: str
-    arity: int
-    default_rate: str
-    rates: "tuple[str, ...]"
-    exec: str
-    bus: str
-    needs_path: bool
-    op_family: str
-    spectral: str
-    inputs: "list[UgenInput]"
-
-    @property
-    def variadic(self) -> bool:
-        return self.arity < 0
-
-
-def _parse_def_info(args) -> DefInfo:
-    """One ``/d_info`` reply: ``name, family, numControls`` then per control
-    ``name, default, rate`` — plus ``min, max, step`` for a faust param, or
-    ``numTargets`` and the target tuples for a graph port."""
-    name, family, count = str(args[0]), str(args[1]), int(args[2])
-    controls, i = [], 3
-    for _ in range(count):
-        c = ControlInfo(name=str(args[i]), default=float(args[i + 1]),
-                        rate=str(args[i + 2]))
-        i += 3
-        if family == "faust":
-            c.min, c.max, c.step = (float(args[i]), float(args[i + 1]),
-                                    float(args[i + 2]))
-            i += 3
-        elif family == "graph":
-            n_targets = int(args[i])
-            i += 1
-            targets = []
-            for _ in range(n_targets):
-                targets.append((int(args[i]), str(args[i + 1]),
-                                float(args[i + 2]), float(args[i + 3])))
-                i += 4
-            c.targets = tuple(targets)
-        controls.append(c)
-    return DefInfo(name=name, family=family, controls=controls)
-
-
-def _parse_ugen_info(args) -> UgenInfo:
-    """One ``/u_info`` reply: ten fixed fields then ``(name, default)`` per
-    named input."""
-    count = int(args[9])
-    inputs = [UgenInput(name=str(args[10 + 2 * k]), default=float(args[11 + 2 * k]))
-              for k in range(count)]
-    rates = str(args[3])
-    return UgenInfo(
-        name=str(args[0]),
-        arity=int(args[1]),
-        default_rate=str(args[2]),
-        rates=tuple(r for r in rates.split(",") if r),
-        exec=str(args[4]),
-        bus=str(args[5]),
-        needs_path=bool(int(args[6])),
-        op_family=str(args[7]),
-        spectral=str(args[8]),
-        inputs=inputs,
-    )
-
-
-def _parse_buffer_list(args) -> "list[BufferInfo]":
-    """A ``/b_info`` reply, four args per buffer."""
-    return [
-        BufferInfo(bufnum=int(args[i]), frames=int(args[i + 1]),
-                   channels=int(args[i + 2]), sample_rate=float(args[i + 3]))
-        for i in range(0, len(args) - 3, 4)
-    ]
 
 
 class Server:
@@ -746,14 +536,14 @@ class Server:
         never call it from a routine."""
         rows = self._request_batch("/d_query", *[str(n) for n in names],
                                    reply="/d_info", timeout=timeout)
-        return [_parse_def_info(r) for r in rows]
+        return [parse_def_info(r) for r in rows]
 
     def query_buffers(self, timeout: float = 5.0) -> "list[BufferInfo]":
         """Every **allocated** buffer with its shape (an argument-less
         ``/b_query``). Like `query_defs`, this reports what the server holds rather
         than what this client allocated. Blocking, RT only."""
         _, args = self.request("/b_query", timeout=timeout, expect=("/b_info",))
-        return _parse_buffer_list(args)
+        return parse_buffer_list(args)
 
     def query_ugens(self, *kinds, timeout: float = 5.0) -> "list[UgenInfo]":
         """The server's UGen catalog (``/u_query``): every kind with its named
@@ -766,7 +556,7 @@ class Server:
         Blocking, RT only."""
         rows = self._request_batch("/u_query", *[str(k) for k in kinds],
                                    reply="/u_info", timeout=timeout)
-        return [_parse_ugen_info(r) for r in rows]
+        return [parse_ugen_info(r) for r in rows]
 
     def query_info(self, timeout: float = 5.0) -> ServerInfo:
         """Asks the running server for its static configuration (RT only): bus
@@ -801,31 +591,19 @@ class Server:
 
     # ---- node tree introspection (RT only) ----
 
-    def query_tree(self, group=ROOT_NODE_ID, *, controls: bool = True,
-                   timeout: float = 5.0) -> dict:
-        """The node tree from `group` down (scsynth ``/g_queryTree``), as a
-        nested dict: a group is ``{"id", "children": [...]}``, a synth is
-        ``{"id", "def", "controls": {name: value}}`` (controls only when
-        ``controls=True``). This is the **structured** way to read the tree —
-        never scrape the server's logs."""
+    def query_tree(self, group=ROOT_NODE_ID, timeout: float = 5.0) -> Tree:
+        """The node tree from `group` down (``/g_queryTree``) as a `Tree`:
+        every entry is the same `NodeInfo` that `clausters.defs.Node.info`
+        returns, so reading a subtree needs no follow-up query. This is the
+        **structured** way to read the tree — never scrape the server's logs.
+
+        ``print(tree)`` draws it indented. Blocking, RT only."""
         gid = group.id if hasattr(group, "id") else group
-        addr, args = self.request("/g_queryTree", int(gid), 1 if controls else 0,
+        addr, args = self.request("/g_queryTree", int(gid), 2,
                                   timeout=timeout, expect=("/g_queryTree.reply", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/g_queryTree failed: {args}")
-        return _parse_query_tree(args)
-
-    def query_node(self, node, timeout: float = 5.0) -> dict:
-        """Per-node detail (``/n_query`` -> ``/n_info``): ``id``, ``parent``,
-        ``prev``/``next`` siblings, ``is_group``; for a group ``head``/``tail``;
-        for a synth ``def``, ``controls``, ``maps`` (``/n_map`` bindings) and the
-        inferred ``reads``/``writes`` bus lists."""
-        nid = node.id if hasattr(node, "id") else node
-        addr, args = self.request("/n_query", int(nid),
-                                  timeout=timeout, expect=("/n_info", "/fail"))
-        if addr == "/fail":
-            raise CommandError(f"/n_query failed: {args}")
-        return _parse_n_info(args)
+        return parse_query_tree(args)
 
     def dump_graph(self, group=ROOT_NODE_ID, timeout: float = 5.0) -> str:
         """The inferred bus graph of `group` as a human-readable string

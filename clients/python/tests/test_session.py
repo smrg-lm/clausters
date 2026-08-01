@@ -133,7 +133,7 @@ def test_embed_session_drives_in_process_server():
         c0 = embed.clock
         s.run(0.6)
         assert embed.clock > c0                     # engine ran in-process
-        assert isinstance(s.server.query_tree(), dict)  # another reply path
+        assert s.server.query_tree().id == 0        # another reply path
     finally:
         s.close()
 

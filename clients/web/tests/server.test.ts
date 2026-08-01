@@ -144,9 +144,9 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
         await server.sync();
 
         // It is in the tree, under the root, with the controls it was given.
-        const info = await server.queryNode(synth);
+        const info = await synth.info();
         assert.equal(info.isGroup, false);
-        assert.equal(info.def, "ts_beep");
+        assert.equal(info.defname, "ts_beep");
         assert.equal(info.parent, 0);
         assert.equal(info.controls?.freq, 220.0);
 
@@ -160,7 +160,7 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
 
         synth.set({ freq: 330.0 });
         await server.sync();
-        assert.equal((await server.queryNode(synth)).controls?.freq, 330.0);
+        assert.equal((await synth.info()).controls?.freq, 330.0);
 
         synth.free();
         await server.sync();
@@ -200,7 +200,7 @@ test("the example's voice def compiles and its gate releases it", {
 
         const note = Synth.new(server, "ts_voice", { freq: 330.0 });
         await server.sync();
-        assert.equal((await server.queryNode(note)).def, "ts_voice");
+        assert.equal((await note.info()).defname, "ts_voice");
 
         // Dropping the gate hands the node's life to the envelope.
         note.set({ gate: 0.0 });
@@ -256,7 +256,7 @@ test("a FaustDef is JIT-compiled and played", { skip: !hasServer }, async () => 
 
         const synth = Synth.new(server, "ts_tone", { freq: 330.0 });
         await server.sync();
-        assert.equal((await server.queryNode(synth)).def, "ts_tone");
+        assert.equal((await synth.info()).defname, "ts_tone");
         synth.free();
     });
 });
@@ -283,7 +283,7 @@ test("a GraphDef instantiates as a wired group driven through its surface", {
         await server.sync();
 
         // The instance is a group holding the members the def named.
-        const info = await server.queryNode(instance);
+        const info = await instance.info();
         assert.equal(info.isGroup, true);
         const tree = await server.queryTree(instance);
         assert.equal(tree.children?.length, 2);
@@ -340,7 +340,7 @@ test("buffers allocate, generate and free through the pool", {
         const buf = await Buffer.alloc(server, 1024, 1);
         assert.equal(server.buffers.inUse, 1);
 
-        const queried = await buf.query();
+        const queried = await buf.info();
         assert.equal(queried.frames, 1024);
         assert.equal(queried.channels, 1);
 

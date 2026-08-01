@@ -19,6 +19,8 @@ import { AllocationError } from "../errors.ts";
 import { Registry, nodeIdPartition } from "../base/core.ts";
 import { busIndex } from "./bus.ts";
 import type { BusLike } from "./bus.ts";
+import { parseNodeInfo } from "./info.ts";
+import type { NodeInfo } from "./info.ts";
 import type { OscArg } from "../base/osc.ts";
 import type { Server } from "./server.ts";
 
@@ -103,6 +105,27 @@ export class Node {
             name,
             ["i", busIndex(bus)],
         );
+    }
+
+    /**
+     * This node as the server holds it **right now** (`/n_query` → `/n_info`):
+     * where it sits in the tree, and for a synth its def, its controls, its
+     * `/n_map` bindings and the buses it reads and writes.
+     *
+     * A photograph, not a state: a running envelope or a mapped control moves
+     * under the record's feet, so nothing caches it. A node that is gone —
+     * freed, or ended by a `doneAction` — comes back with `exists` false
+     * rather than throwing.
+     */
+    async info(timeout = 5.0): Promise<NodeInfo> {
+        const server = this.srv();
+        const reply = server.awaitReply(
+            (msg) => msg.addr === "/n_info" && Number(msg.args[0]) === this.id,
+            timeout,
+            `/n_info for node ${this.id}`,
+        );
+        server.sendMsg("/n_query", ["i", this.id]);
+        return parseNodeInfo((await reply).args);
     }
 
     /**

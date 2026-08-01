@@ -194,7 +194,7 @@ def _play_buffer(buffer, server, controls):
 
     if not buffer.frames and getattr(server.interface, "time_mode",
                                      "unix") != "score":
-        buffer.query()     # fills frames/channels/sample_rate
+        buffer.info()      # fills frames/channels/sample_rate
     if not buffer.frames:
         raise ValueError(
             "cannot play a buffer of unknown length; fill the handle's "

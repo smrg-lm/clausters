@@ -91,15 +91,15 @@
         await server.sync();
 
         // Read it back out of the tree — the queryable half of the acceptance.
-        const info = await server.queryNode(synth);
-        if (info.def !== "page_beep" || info.controls.freq !== 330) {
+        const info = await synth.info();
+        if (info.defname !== "page_beep" || info.controls.freq !== 330) {
           throw new Error(`unexpected node: ${JSON.stringify(info)}`);
         }
         const tree = await server.queryTree();
         if (!tree.children.some((c) => c.id === synth.id)) {
           throw new Error(`node ${synth.id} is not in the tree`);
         }
-        log(`playing node ${synth.id} (${info.def}) under group ${info.parent}`);
+        log(`playing node ${synth.id} (${info.defname}) under group ${info.parent}`);
 
         // And the audible half: the analyser has to see the engine's output
         // move once the synth is in. The envelope takes a moment to open.
@@ -115,7 +115,7 @@
 
         synth.set({ freq: 220.0 });
         await server.sync();
-        const moved = await server.queryNode(synth);
+        const moved = await synth.info();
         if (moved.controls.freq !== 220) {
           throw new Error(`/n_set did not take: ${JSON.stringify(moved.controls)}`);
         }

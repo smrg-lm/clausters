@@ -11,6 +11,7 @@ and own the commands addressed to it: `Synth.new` / `Group.new` /
 from enum import IntEnum
 
 from .. import _native
+from .info import NodeInfo, parse_n_info
 from ._wire import resolve as _resolve
 
 ROOT_NODE_ID = 0
@@ -59,6 +60,19 @@ class Node:
         index = bus.index if hasattr(bus, "index") else bus
         self._server().send_msg("/n_mapa" if audio else "/n_map",
                                 self.id, name, index)
+
+    def info(self, timeout: float = 5.0) -> NodeInfo:
+        """This node as the server holds it **right now** (``/n_query`` ->
+        ``/n_info``): where it sits in the tree, and for a synth its def, its
+        controls, its ``/n_map`` bindings and the buses it reads and writes.
+
+        A photograph, not a state: a running envelope or a mapped control moves
+        under the record's feet, so nothing caches it. A node that is gone —
+        freed, or ended by a ``done_action`` — comes back with ``exists``
+        false rather than raising. Blocking, RT only."""
+        _, args = self._server().request("/n_query", self.id, timeout=timeout,
+                                         expect=("/n_info",))
+        return parse_n_info(args)
 
     def u_cmd(self, ugen_index: int, name: str, *args):
         """Sends a typed command to **one UGen instance** inside this synth

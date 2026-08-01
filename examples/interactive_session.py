@@ -23,7 +23,6 @@ hardware is assumed (a live RT server).
 # ## 1. Import the library
 
 # %%
-import json
 import os
 import subprocess
 import sys
@@ -89,23 +88,15 @@ print(f"booted: {info.audio_buses} audio / {info.control_buses} control buses "
 # %% [markdown]
 # ## 3. A helper to log the server state
 #
-# `server.query_tree()` returns the tree as a nested dict; this prints it
-# indented. We call `show_tree()` after each change to watch the tree grow.
+# `server.query_tree()` returns the tree as data — a `NodeInfo` per entry —
+# and printing it draws it indented. We call `show_tree()` after each change
+# to watch the tree grow.
 
 # %%
 def show_tree(label=""):
-    def walk(node, depth):
-        pad = "  " * depth
-        if "def" in node:
-            ctl = ", ".join(f"{k}={v:g}" for k, v in node.get("controls", {}).items())
-            print(f"{pad}- {node['id']} synth {node['def']}  [{ctl}]")
-        else:
-            print(f"{pad}o {node['id']} group")
-            for child in node["children"]:
-                walk(child, depth + 1)
     if label:
         print(f"--- {label} ---")
-    walk(server.query_tree(), 0)
+    print(server.query_tree())
 
 
 show_tree("empty tree (just the root group 0)")
@@ -150,8 +141,8 @@ show_tree("two synths under the sources group")
 # ## 7. Assign buses
 #
 # Allocate a **control bus** and map synth `b`'s `freq` to it: now one `/c_set`
-# retunes it with no per-node command. `query_node` shows the map and the
-# inferred read/write buses per node.
+# retunes it with no per-node command. `b.info()` shows the map and the
+# inferred read/write buses of that node.
 
 # %%
 freq_bus = Bus.control(server=server)
@@ -160,7 +151,7 @@ b.map("freq", freq_bus)
 time.sleep(0.1)   # let the commands apply before querying
 
 print(f"mapped synth {b.id}.freq -> control bus {freq_bus.index}")
-print(json.dumps(server.query_node(b), indent=2))
+print(b.info())
 
 # %% [markdown]
 # ## 8. Change parameters live, and read them back

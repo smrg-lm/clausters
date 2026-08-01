@@ -304,7 +304,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       el("tone").onclick = async () => {
         const buf = await Buffer.alloc(server, 96000, 1);
         await buf.gen("sine1", [["i", 7], 1.0, 0.5, 0.25, 0.12]);
-        await openBuffer(await buf.query());
+        await openBuffer(await buf.info());
       };
 
       el("start").onclick = () => {

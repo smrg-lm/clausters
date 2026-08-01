@@ -6,9 +6,13 @@ inferred bus usage — is available to a client as **structured replies**, never
 by scraping the server's console. This builds a small tree and reads it back
 three ways:
 
-  * ``server.query_tree()``  -> the whole tree as a nested dict (``/g_queryTree``);
-  * ``server.query_node(n)`` -> one node in full detail (``/n_query`` ->
-    ``/n_info``): parent, siblings, def, controls, maps, reads/writes buses;
+  * ``server.query_tree()`` -> the whole tree (``/g_queryTree``), asked of the
+    server because it is about *every* node it holds. Every entry is the same
+    record one node reports about itself, so nothing needs a second query;
+  * ``node.info()`` -> that record for one node (``/n_query`` -> ``/n_info``),
+    asked of the node because it is about *itself*: parent, siblings, def,
+    controls, maps, reads/writes buses. A node that is gone answers
+    ``exists = False`` rather than raising;
   * ``server.dump_graph(g)`` -> the inferred bus graph as readable text
     (``/g_dumpGraph``), a debugging aid.
 
@@ -22,7 +26,6 @@ shown at the end. No Faust needed; a plain server build works.
 Point it at a prebuilt binary with ``CLAUSTERS_BIN=/path/to/clausters``.
 """
 
-import json
 import os
 import subprocess
 import sys
@@ -81,11 +84,22 @@ def main():
     try:
         group, _a, b = build_tree(server)
 
-        print("query_tree() — the whole tree as structured data:")
-        print(json.dumps(server.query_tree(), indent=2))
+        tree = server.query_tree()
+        print("query_tree() — printing a tree draws it:")
+        print(tree)
 
-        print(f"\nquery_node({b.id}) — the mapped synth in full detail:")
-        print(json.dumps(server.query_node(b), indent=2))
+        print("\n...and it is data, not text: every entry is a NodeInfo, so a")
+        print("walk finds the mapped synth without asking the server again:")
+        for info in tree.walk():
+            if info.maps:
+                print(f"  {info.id} {info.defname} maps {info.maps} "
+                      f"(reads {info.reads}, writes {info.writes})")
+
+        print(f"\nb.info() — the same record, asked of the node itself:")
+        print(f"  {b.info()}")
+
+        gone = Synth(4242, "beep", server=server)
+        print(f"  a node that was never there: exists={gone.info().exists}")
 
         print(f"\ndump_graph({group.id}) — inferred bus graph (debug text):")
         print(server.dump_graph(group.id), end="")

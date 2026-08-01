@@ -166,8 +166,8 @@
         await sleep(80);
         const pausedPeak = await peak(150);
         if (pausedPeak > 0.01) throw new Error(`still sounding when paused (${pausedPeak})`);
-        const node = await server.queryNode(voice);
-        if (node.def !== "editor_test_player") {
+        const node = await voice.info();
+        if (node.defname !== "editor_test_player") {
           throw new Error(`the paused node left the tree: ${JSON.stringify(node)}`);
         }
 

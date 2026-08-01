@@ -37,6 +37,14 @@ import { SampleClockModel } from "../core/clausters_core_web.js";
 import type { TempoClock } from "../base/clock.ts";
 import type { Event } from "../seq/event.ts";
 import { CommandError, ReplyTimeout } from "../errors.ts";
+import {
+    Tree,
+    parseBufferList,
+    parseDefInfo,
+    parseQueryTree,
+    parseUgenInfo,
+} from "./info.ts";
+import type { BufferInfo, DefInfo, UgenInfo } from "./info.ts";
 import { NodeIdAllocator, ROOT_NODE_ID, nodeId } from "./node.ts";
 import type { NodeLike } from "./node.ts";
 import { AudioBusAllocator, Bus, ControlBusAllocator, busIndex } from "./bus.ts";
@@ -91,106 +99,6 @@ export interface ServerInfo extends ServerSizing {
     tapFrames: number;
     /** The stream-transport frame ceiling in bytes. */
     maxFrame: number;
-}
-
-/** One entry of a def's control surface, as `queryDefs` reports it. */
-export interface ControlInfo {
-    name: string;
-    default: number;
-    /** The control type the def declared: `"kr"`, `"tr"` or `"ir"`. */
-    rate: string;
-    /** A Faust parameter's declared range (its UI widget's). */
-    min?: number;
-    max?: number;
-    step?: number;
-    /** A graph def's port: the member controls it drives. */
-    targets?: PortTargetInfo[];
-}
-
-/** What the server holds under a def name. */
-export interface DefInfo {
-    name: string;
-    /** `"synth"`, `"faust"` or `"graph"` — empty when the name is unknown. */
-    family: string;
-    controls: ControlInfo[];
-}
-
-/** An allocated buffer, as `queryBuffers` reports it. */
-export interface BufferInfo {
-    bufnum: number;
-    frames: number;
-    channels: number;
-    sampleRate: number;
-}
-
-/**
- * One named input slot of a UGen, in **wire order**.
- *
- * The wire is positional — a def lists input values, it never names them —
- * so this is what a palette labels an inlet with, and `default` is what to
- * offer when the user leaves the slot alone.
- */
-export interface UgenInput {
-    name: string;
-    default: number;
-}
-
-/**
- * A UGen kind as `queryUgens` reports it, straight from the server's catalog.
- *
- * `arity` is the input count, or `-1` for a variadic kind — whose `inputs`
- * then name only the fixed head (`EnvGen`'s five before the envelope array).
- * `rates` are the rates the kind may be instantiated at and `defaultRate`
- * the one a def gets by omitting `rate`. `exec`, `bus`, `opFamily` and
- * `spectral` expose the compiler's own classification; the ones that do not
- * apply are empty strings.
- */
-export interface UgenInfo {
-    name: string;
-    arity: number;
-    defaultRate: string;
-    rates: string[];
-    exec: string;
-    bus: string;
-    needsPath: boolean;
-    opFamily: string;
-    spectral: string;
-    inputs: UgenInput[];
-}
-
-/**
- * A node as `/n_query` reports it: a group carries `head`/`tail`, a synth
- * its `def` and control values.
- */
-export interface NodeInfo {
-    id: number;
-    parent: number;
-    previous: number;
-    next: number;
-    isGroup: boolean;
-    head?: number;
-    tail?: number;
-    def?: string;
-    controls?: Record<string, number>;
-}
-
-/** One inner target of a graph def's surface port, as `/d_info` reports it. */
-export interface PortTargetInfo {
-    member: number;
-    control: string;
-    mul: number;
-    add: number;
-}
-
-/**
- * A node-tree entry: a group carries `children`, a synth a `def` and its
- * control values.
- */
-export interface TreeNode {
-    id: number;
-    children?: TreeNode[];
-    def?: string;
-    controls?: Record<string, number | string>;
 }
 
 /**
@@ -763,37 +671,17 @@ export class Server {
     }
 
     /**
-     * One node's place in the tree (`/n_query`). A group reports its
-     * `head`/`tail`; a synth its `def` and control values.
+     * The node tree from `group` down (`/g_queryTree`) as a `Tree`: every
+     * entry is the same `NodeInfo` that `Node.info` returns, so reading a
+     * subtree needs no follow-up query. `String(tree)` draws it indented.
      */
-    async queryNode(node: NodeLike, timeout = 5.0): Promise<NodeInfo> {
-        const id = nodeId(node);
-        const reply = this.awaitReply(
-            (msg) => msg.addr === "/n_info" && Number(msg.args[0]) === id,
-            timeout,
-            `/n_info for node ${id}`,
-        );
-        this.sendMsg("/n_query", ["i", id]);
-        return parseNodeInfo((await reply).args);
-    }
-
-    /**
-     * The node tree from `group` down (`/g_queryTree`): a group is
-     * `{id, children}`, a synth `{id, def, controls}`.
-     */
-    async queryTree(
-        group: NodeLike = ROOT_NODE_ID,
-        { controls = true, timeout = 5.0 }: { controls?: boolean; timeout?: number } = {},
-    ): Promise<TreeNode> {
+    async queryTree(group: NodeLike = ROOT_NODE_ID, timeout = 5.0): Promise<Tree> {
         const msg = await this.request(
             "/g_queryTree",
-            [["i", nodeId(group)], ["i", controls ? 1 : 0]],
+            [["i", nodeId(group)], ["i", 2]],
             { expect: ["/g_queryTree.reply"], timeout },
         );
-        const a = msg.args;
-        const withControls = Number(a[0]) === 1;
-        const [children] = parseTreeNodes(a, 3, Number(a[2]), withControls);
-        return { id: Number(a[1]), children };
+        return parseQueryTree(msg.args);
     }
 
     /**
@@ -982,160 +870,4 @@ export class Server {
         this.pending.clear();
         this.handlers.clear();
     }
-}
-
-/** Any decoded OSC argument — what a reply parser walks. */
-type ReplyArgs = readonly (number | string | boolean | null | Uint8Array)[];
-
-/**
- * A control identifier in a reply is a name string, or an int index when the
- * server could not resolve a name.
- */
-const controlKey = (key: ReplyArgs[number]): string =>
-    typeof key === "string" ? key : String(Number(key));
-
-/**
- * Recursively parses `count` nodes of a `/g_queryTree.reply` starting at
- * `i`; returns the nodes and the next index. A synth has child-count −1.
- */
-function parseTreeNodes(
-    args: ReplyArgs,
-    i: number,
-    count: number,
-    withControls: boolean,
-): [TreeNode[], number] {
-    const out: TreeNode[] = [];
-    for (let n = 0; n < count; n++) {
-        const id = Number(args[i++]);
-        const children = Number(args[i++]);
-        if (children === -1) {
-            const node: TreeNode = { id, def: String(args[i++]) };
-            if (withControls) {
-                const numControls = Number(args[i++]);
-                const controls: Record<string, number | string> = {};
-                for (let c = 0; c < numControls; c++) {
-                    controls[controlKey(args[i++])] = Number(args[i++]);
-                }
-                node.controls = controls;
-            }
-            out.push(node);
-        } else {
-            const [kids, next] = parseTreeNodes(args, i, children, withControls);
-            i = next;
-            out.push({ id, children: kids });
-        }
-    }
-    return [out, i];
-}
-
-/**
- * An `/n_info` reply: the four fixed neighbours and the group flag, then
- * either the group's head/tail or the synth's def and controls.
- */
-function parseNodeInfo(args: ReplyArgs): NodeInfo {
-    const isGroup = Number(args[4]) === 1;
-    const info: NodeInfo = {
-        id: Number(args[0]),
-        parent: Number(args[1]),
-        previous: Number(args[2]),
-        next: Number(args[3]),
-        isGroup,
-    };
-    if (isGroup) {
-        info.head = Number(args[5]);
-        info.tail = Number(args[6]);
-        return info;
-    }
-    let i = 5;
-    info.def = String(args[i++]);
-    const count = Number(args[i++]);
-    const controls: Record<string, number> = {};
-    for (let c = 0; c < count; c++) {
-        controls[controlKey(args[i++])] = Number(args[i++]);
-    }
-    info.controls = controls;
-    return info;
-}
-
-/**
- * One `/d_info` reply: `name, family, numControls` then per control `name,
- * default, rate` — plus `min, max, step` for a Faust parameter, or
- * `numTargets` and the target tuples for a graph port.
- */
-function parseDefInfo(args: ReplyArgs): DefInfo {
-    const name = String(args[0]);
-    const family = String(args[1]);
-    const count = Number(args[2]);
-    const controls: ControlInfo[] = [];
-    let i = 3;
-    for (let c = 0; c < count; c++) {
-        const info: ControlInfo = {
-            name: String(args[i]),
-            default: Number(args[i + 1]),
-            rate: String(args[i + 2]),
-        };
-        i += 3;
-        if (family === "faust") {
-            info.min = Number(args[i]);
-            info.max = Number(args[i + 1]);
-            info.step = Number(args[i + 2]);
-            i += 3;
-        } else if (family === "graph") {
-            const numTargets = Number(args[i++]);
-            const targets: PortTargetInfo[] = [];
-            for (let t = 0; t < numTargets; t++) {
-                targets.push({
-                    member: Number(args[i]),
-                    control: String(args[i + 1]),
-                    mul: Number(args[i + 2]),
-                    add: Number(args[i + 3]),
-                });
-                i += 4;
-            }
-            info.targets = targets;
-        }
-        controls.push(info);
-    }
-    return { name, family, controls };
-}
-
-/** A `/b_info` reply, four args per buffer. */
-function parseBufferList(args: ReplyArgs): BufferInfo[] {
-    const out: BufferInfo[] = [];
-    for (let i = 0; i + 3 < args.length; i += 4) {
-        out.push({
-            bufnum: Number(args[i]),
-            frames: Number(args[i + 1]),
-            channels: Number(args[i + 2]),
-            sampleRate: Number(args[i + 3]),
-        });
-    }
-    return out;
-}
-
-/**
- * One `/u_info` reply: ten fixed fields then `(name, default)` per named
- * input.
- */
-function parseUgenInfo(args: ReplyArgs): UgenInfo {
-    const count = Number(args[9]);
-    const inputs: UgenInput[] = [];
-    for (let k = 0; k < count; k++) {
-        inputs.push({
-            name: String(args[10 + 2 * k]),
-            default: Number(args[11 + 2 * k]),
-        });
-    }
-    return {
-        name: String(args[0]),
-        arity: Number(args[1]),
-        defaultRate: String(args[2]),
-        rates: String(args[3]).split(",").filter((r) => r),
-        exec: String(args[4]),
-        bus: String(args[5]),
-        needsPath: Number(args[6]) !== 0,
-        opFamily: String(args[7]),
-        spectral: String(args[8]),
-        inputs,
-    };
 }

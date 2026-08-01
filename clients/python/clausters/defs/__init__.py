@@ -34,16 +34,17 @@ from .faustdef import FaustDef
 from .graphdef import GraphDef
 from .patch import DefPatch, GraphPatch, synthdef_ports
 from .node import AddAction, Group, NodeIdAllocator, ROOT_NODE_ID, Synth
-from .server import (
+from .info import (
     BufferInfo,
     ControlInfo,
     DefInfo,
-    Server,
-    ServerInfo,
-    ServerOptions,
+    NodeInfo,
+    NodeMap,
+    Tree,
     UgenInfo,
     UgenInput,
 )
+from .server import Server, ServerInfo, ServerOptions
 from .signals import Signal
 from .synthdef import SynthDef
 from . import pv_expr
@@ -238,6 +239,9 @@ __all__ = [
     "DefInfo",
     "ControlInfo",
     "BufferInfo",
+    "NodeInfo",
+    "NodeMap",
+    "Tree",
     "UgenInfo",
     "UgenInput",
     "UdpSampleClock",

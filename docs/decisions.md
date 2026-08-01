@@ -3697,3 +3697,52 @@ And `NetAddr` lost its `send_*` methods: it is right as an address — which is
 what the name means everywhere outside sclang — and wrong as an emitter, since
 emitting needs an interface and a timing policy that an address has no business
 holding.
+
+## Who is asked decides the shape: a catalog, a record, and absence as a state
+
+Introspection had grown one method at a time and ended up with three different
+shapes for the same idea. `Server.query_defs`/`query_buffers`/`query_ugens`
+returned records; `Server.query_tree` returned a nested dict of ad-hoc keys;
+`Server.node_query` — a `<noun>_query` among `query_<noun>`s — returned another
+dict; and `Buffer.query` returned neither, filling the *handle* in place (the
+web client, whose fields are readonly, returned a filled copy instead: one
+call, two semantics). A `BufferInfo` existed but only the plural produced one.
+
+Two questions were being conflated. *What do you hold?* is asked of the
+**server**, is about every instance of a type, and answers with a structure of
+records. *What are you?* is asked of the **instance**, and answers with one
+record — the same one. That maps onto the rule the rest of the API already
+follows: a command addressed to a resource is that resource's method. So
+`node.info()` and `buffer.info()` replaced the server-side singulars, the
+plurals stayed exactly where they were (they are a different question, not a
+convenience), and every record became an `Info` dataclass carrying no server
+and no commands — data that can be serialized, sent to a view, or kept.
+
+*Kept* is where the resources stop being alike, and the difference is the
+server's, not the API's. A buffer's shape changes only when a command of yours
+changes it, so the handle keeps its `BufferInfo` and reads `frames`/`channels`/
+`sample_rate` off it. A node's controls move on their own — an envelope runs, a
+mapped control follows its bus, a `done_action` frees it — so `NodeInfo` is a
+photograph and nothing caches it. Same interface, opposite lifetime, stated
+rather than implied.
+
+The tree then had no reason to invent a shape: it is the node catalog, so its
+entries are `NodeInfo`s and what it adds is the nesting. That needed the wire
+to carry as much per tree entry as `/n_info` does, which is why scsynth's
+`/g_queryTree` *flag* widened into a **detail level** — 0 and 1 remain what
+scsynth sends, 2 appends the maps and inferred bus lists. The client asks for 2
+and derives the rest from the structure it already received: a node's parent,
+its siblings, a group's head and tail. One reply, no follow-up query per node.
+The tree is data first and drawing second, which in Python is exactly the
+`repr`/`str` split (the web client's equivalent is the object versus its
+`toString()`).
+
+Finally, absence. Three commands had three answers for "it is not there":
+`/d_query` reported an empty family, `/b_query` zeros (indistinguishable from a
+real buffer), `/n_query` a `/fail`. A resource that is gone is a **state of the
+resource**, not a protocol error — and a batch query must survive one dead id,
+which is why `/d_query` never failed in the first place. So every singular query
+now answers with a record whose `exists` is false, marked on the wire by a
+sentinel in a field that has no valid negative value: `isGroup = -1`,
+`frames = -1`, the empty family. `/fail` is left for what it should always have
+meant — a malformed request.

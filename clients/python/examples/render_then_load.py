@@ -94,7 +94,7 @@ def main():
     # ---- 3. load it into a running server and play it ---------------------
     with Session.live(tempo=2.0, latency=0.15) as live:
         buf = Buffer.read(wav, server=live.server)          # /b_allocRead, by content
-        info = buf.query()
+        info = buf.info()
         print(f"\nbuffer {buf.bufnum} on the server: {info.frames} frames, "
               f"{info.channels} ch, {info.sample_rate:.0f} Hz")
 
@@ -102,7 +102,7 @@ def main():
         node = Synth.new("take", {"bufnum": float(buf.bufnum)}, server=live.server)
         print("playing the take back from the buffer...")
         live.run(stats.duration + 0.5)
-        node.id.free()
+        node.free()
 
     print("\ndone - the bounce, the file and the playback were one artifact.")
 

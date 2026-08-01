@@ -4,10 +4,11 @@
 // indices allocated by the client (like scsynth). A `Buffer` holds an index
 // and the server it lives on, and owns the `/b_*` commands addressed to it:
 // `Buffer.alloc`, `Buffer.read` and `Buffer.load` create one, and `gen`,
-// `zero`, `query`, `getSamples` and `free` drive it.
+// `zero`, `info`, `getSamples` and `free` drive it.
 //
-// A handle is immutable, so `query` returns a **filled copy** where the Python
-// client fills the handle in place: there is nothing to write to here.
+// The handle keeps the `BufferInfo` the server last reported and reads its
+// shape off it: a buffer only changes when a command of yours changes it, so
+// unlike a node's record this one stays true (`clausters/defs/info.py`).
 //
 // The allocator is a registry (the core's occupancy map): a freed slot is
 // always reusable, a double free is refused loudly, exhaustion throws instead
@@ -17,15 +18,20 @@ import { AllocationError, CommandError } from "../errors.ts";
 import { Registry } from "../base/core.ts";
 import { fetchAudio, interleave } from "../data/samples.ts";
 import type { MsgArg } from "../base/osc.ts";
+import { parseBufferList } from "./info.ts";
+import type { BufferInfo } from "./info.ts";
 import type { Server } from "./server.ts";
 
 export const NUM_BUFFERS = 4096;
 
 export class Buffer {
-    readonly bufnum: number;
-    readonly frames: number;
-    readonly channels: number;
-    readonly sampleRate: number;
+    /**
+     * What the server holds under this slot, as last read from it — a
+     * buffer's shape only changes by a command of yours, so unlike a node's
+     * record this one can be kept. `info` refreshes it; `frames`, `channels`
+     * and `sampleRate` read it.
+     */
+    private record: BufferInfo;
     /**
      * The server this buffer lives on (set by `alloc`, `read` and `load`), so
      * its commands know where to go without being told.
@@ -39,11 +45,27 @@ export class Buffer {
         sampleRate = 0.0,
         server?: Server,
     ) {
-        this.bufnum = bufnum;
-        this.frames = frames;
-        this.channels = channels;
-        this.sampleRate = sampleRate;
+        this.record = { bufnum, frames, channels, sampleRate, exists: true };
         this.server = server;
+    }
+
+    /** The slot this buffer occupies in the server's pool. */
+    get bufnum(): number {
+        return this.record.bufnum;
+    }
+
+    /** Frames per channel, 0 while unknown (see `info`). */
+    get frames(): number {
+        return this.record.frames;
+    }
+
+    get channels(): number {
+        return this.record.channels;
+    }
+
+    /** The server's rate for this buffer, 0 while unknown (see `info`). */
+    get sampleRate(): number {
+        return this.record.sampleRate;
     }
 
     // ---- constructors ----
@@ -100,7 +122,11 @@ export class Buffer {
             server.buffers.free(bufnum);
             throw error;
         }
-        return new Buffer(bufnum, 0, 1, 0.0, server).query(timeout);
+        // The shape is the file's, so the client cannot know it in advance:
+        // read it back, and the returned handle carries it.
+        const buffer = new Buffer(bufnum, 0, 1, 0.0, server);
+        await buffer.info(timeout);
+        return buffer;
     }
 
     /**
@@ -184,24 +210,22 @@ export class Buffer {
     }
 
     /**
-     * This buffer's shape as the server reports it (`/b_query`), as a filled
-     * copy of the handle — the fields are readonly, so nothing is written in
-     * place.
+     * Asks the running server what it holds in this slot (`/b_query` →
+     * `/b_info bufnum frames channels sampleRate`), keeps the record on the
+     * handle and returns it.
+     *
+     * Unlike a node's, a buffer's record is worth keeping: its shape changes
+     * only by a command of yours, so what this reads stays true until you
+     * change it. A slot with nothing in it (never allocated, or freed) comes
+     * back with `exists` false rather than throwing.
      */
-    async query(timeout = 5.0): Promise<Buffer> {
-        const server = this.srv();
-        const msg = await server.request("/b_query", [["i", this.bufnum]], {
+    async info(timeout = 5.0): Promise<BufferInfo> {
+        const msg = await this.srv().request("/b_query", [["i", this.bufnum]], {
             expect: ["/b_info"],
             timeout,
         });
-        const [, frames, channels, sampleRate] = msg.args;
-        return new Buffer(
-            this.bufnum,
-            Number(frames),
-            Number(channels),
-            Number(sampleRate),
-            server,
-        );
+        this.record = parseBufferList(msg.args)[0]!;
+        return this.record;
     }
 
     /**
@@ -230,7 +254,7 @@ export class Buffer {
         const step = chunk ?? (await server.bulkChunk(timeout));
         let total = count;
         if (total < 0) {
-            const shape = await this.query(timeout);
+            const shape = await this.info(timeout);
             total = Math.max(0, shape.frames * shape.channels - start);
         }
         const out = new Float32Array(total);
