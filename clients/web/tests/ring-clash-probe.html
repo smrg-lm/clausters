@@ -30,10 +30,10 @@
     <pre id="log"></pre>
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine,
-        Server, Bus, Synth, SynthDef, GuiHost, gui, data, decodePacket,
-        control, outCtl, sine,
+        loadOsc, loadCore, pageConnection, server as engine, Server,
+        Bus, Synth, SynthDef, GuiHost, gui, data, decodePacket,
       } from "../dist/index.js";
+      import { control, outCtl, sine } from "../dist/defs/index.js";
 
       const log = (line) => {
         document.getElementById("log").textContent += line + "\n";

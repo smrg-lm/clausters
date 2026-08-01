@@ -97,7 +97,7 @@ with Session.embed(tempo=2.0, latency=0.1) as session:
     session.run(3.5)
 ```
 
-It takes the same `latency` and `timebase` as `live()`, plus `workers` (engine threads for parallel node processing) and an optional `server=` to reuse an existing `clausters.Clausters` handle instead of opening a fresh one. Because the server lives in this process, you can read its sample clock and control buses directly through `session.server.interface.server` (the `Clausters` handle), with no OSC round trip.
+It takes the same `latency` and `timebase` as `live()`, plus `workers` (engine threads for parallel node processing) and an optional `server=` to reuse an existing `clausters.ipc.Clausters` handle instead of opening a fresh one. You do not normally build that handle: `embedded()` opens and owns it, and hands it back as `session.server.interface.server`. Because the server lives in this process, that property reads its sample clock (`.clock`, `.sample_rate`) and control buses (`.ctl_get` / `.ctl_set`) directly, with no OSC round trip.
 
 There is deliberately **no separate "spawn" factory**: launching a server is not a different kind of session, just `live()`'s default behavior, so the option lives on `live` rather than multiplying constructors. See [Launching the server and the GUI](#launching-the-server-and-the-gui) below for the details and the object-level `Server.boot` / `GuiHost.boot`.
 
@@ -230,10 +230,10 @@ This is exactly what `Session.live`/`gui` use internally — the session just bu
 
 ### The raw processes
 
-One level lower, `clausters.launch` exposes the processes themselves — `ServerProcess` and `GuiProcess` — for when you want to own them directly (e.g. a custom `Server`/`GuiHost` wiring). Both are context managers, both register the same exit hooks, and `default_shm_path()` picks a segment (`None` on platforms where shared memory does not apply); `server_is_up()` is the probe `live` uses to decide boot-or-attach.
+One level lower, `clausters.launch` exposes the processes themselves — `ServerProcess` and `GuiProcess` — for when you want to own them directly (e.g. a custom `Server`/`GuiHost` wiring). They are named through their module, not re-exported at the top level: the ordinary way to reach one is to let `live()` or `Server.boot` own it and read its choices back off the `Server` (`server.shm` is the segment it picked). Both are context managers, both register the same exit hooks, and `default_shm_path()` is what `shm="auto"` resolves to (`None` on platforms where shared memory does not apply); `server_is_up()` is the probe `live` uses to decide boot-or-attach.
 
 ```python
-from clausters import ServerProcess, GuiProcess
+from clausters.launch import ServerProcess, GuiProcess
 from clausters.gui import GuiHost
 
 with ServerProcess() as server_proc:            # clausters --shm <auto>

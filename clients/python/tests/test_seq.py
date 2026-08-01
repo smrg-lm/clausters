@@ -55,7 +55,8 @@ def test_random_patterns_replay_under_the_root_seed():
 
 def test_rand_functions_draw_from_the_same_context():
     _embed_or_skip()
-    from clausters import choice, next_below, next_f64, uniform
+    from clausters import choice, uniform
+    from clausters.base.rand import next_below, next_f64
     from clausters.base.main import main
 
     main.seed(3)

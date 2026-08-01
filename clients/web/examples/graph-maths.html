@@ -46,10 +46,10 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
 
     <script type="module">
       import {
-        loadOsc, pageConnection, server as engine,
-        Server, Synth, SynthDef, TempoClock, Routine,
-        control, out, sine,
+        loadOsc, pageConnection, server as engine, Server, Synth,
+        SynthDef, TempoClock, Routine,
       } from "../dist/index.js";
+      import { control, out, sine } from "../dist/defs/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };

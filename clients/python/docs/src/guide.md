@@ -26,8 +26,8 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
   session end to end, sessions reproduce independently, and the generator lives
   in the shared native core, so the same seed replays the same music in every
   Clausters client language. The context is also exposed directly as
-  `clausters.next_f64()` / `uniform(lo, hi)` / `next_below(n)` /
-  `choice(items)`.
+  `clausters.uniform(lo, hi)` / `choice(items)`, with the raw draws
+  (`next_f64()`, `next_below(n)`) under `clausters.base.rand`.
 - `EventStreamPlayer` — `Pbind(...).play(clock, server)` runs live or builds an NRT score depending on which interface the `Server` holds, with yield-exact timing (monotonic pacing, wall-clock timetags).
 
 ## `clausters.defs` — the server side
@@ -40,7 +40,9 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
 - **Introspection** — `Server.query_tree()` and `node.info()` read what is *playing* (the server is asked about every node it holds, a node about itself; every entry of the tree is the same record, and `print(tree)` draws it); `Server.query_defs()`, `query_buffers()` and `query_ugens()` read what the server **holds**: the loaded defs with their control surface, the allocated buffers, and the UGen catalog with named inputs and defaults. Worth asking rather than assuming — the def store persists across restarts, so a server can hold defs this client never sent. All blocking, so never from a routine.
 - `Server` — **owns the communication interface and emits through it.** Swapping its interface retargets a routine from a live RT server to an NRT score without touching the clock or the routine. Interfaces include `OscUdpInterface`, `OscTcpInterface` (length-prefixed OSC; start the server with `--tcp`), and `OscWsInterface` (OSC over WebSocket, the browser-reachable transport; start the server with `--ws`), all drop-in.
 
-The names that make up this layer's core — `Server`, `Synth`, `Group`, `AddAction`, `SynthDef`, `FaustDef`, `Bus`, `Buffer` — are re-exported at the top level, so `from clausters import Server, Group, SynthDef, Bus` reads like the sequencing and timing imports beside it. The UGen and signal callables are not: they are a vocabulary of hundreds of names, and they stay under `clausters.defs`.
+The names that make up this layer's core — `Server`, `ServerOptions`, `Synth`, `Group`, `AddAction`, `SynthDef`, `FaustDef`, `GraphDef`, `Bus`, `Buffer` — are re-exported at the top level, so `from clausters import Server, Group, SynthDef, Bus` reads like the sequencing and timing imports beside it. The UGen and signal callables are not: they are a vocabulary of hundreds of names, and they stay under `clausters.defs`.
+
+That is the whole rule for the top level, and it holds for every layer: **what you name while writing a piece is flat, what is enumerative is named through its module.** So `seq.Pbind` and `gui.knob`, like `defs.sine` — and, for the same reason from the other side, the transports and process launchers (`ipc.Clausters`, `ipc.ShmClient`, `launch.ServerProcess`, `launch.GuiProcess`) stay under theirs: you reach those as a property or an argument of the layer above, never by instantiating them. The layer modules themselves *are* re-exported, so `from clausters import *` gives you `defs`, `seq`, `gui`, `form`, `base`, `ipc`, `launch` and `errors` to reach through.
 
 See [Defining instruments: FaustDef and SynthDef](defs.md) for the full def-building vocabulary — every `signals` / `ugens` callable, how the two def kinds differ, and how a def is sent behind the `/server_sync` barrier.
 

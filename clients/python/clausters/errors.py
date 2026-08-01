@@ -6,11 +6,15 @@ derives from `ClaustersError`, and each leaf *also* derives from the
 builtin it used to be raised as (``OSError``, ``RuntimeError``,
 ``BufferError``, ``TimeoutError``, ``ValueError``) — so existing
 ``except OSError:`` / ``except RuntimeError:`` code (and the test-suite skips)
-keep working unchanged while new code can be precise:
+keep working unchanged while new code can be precise. `ClaustersError` — the
+one you catch when you do not care which — is re-exported at the top level;
+the leaves are named through this module:
+
+    from clausters import errors
 
     try:
         stats = clausters.render(score)
-    except clausters.LibraryFeatureError as e:
+    except errors.LibraryFeatureError as e:
         print(e.symbol, "needs", e.feature)   # build it with the right feature
     except clausters.ClaustersError:
         ...                                    # any other library failure

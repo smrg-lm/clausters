@@ -4,13 +4,24 @@ A high-level client for the Clausters audio server, ported selectively from
 SuperCollider's class library (sc3). It covers both of the server's def
 formats as peers: FaustDefs and UGen-graph SynthDefs.
 
+What the top level holds is what you name while writing a piece: the free
+verbs (``play``, ``render``, ``plot``, ``scope``), the three hosts (`Session`,
+`Server`, `GuiHost`), the server's resources, the three def formats, the
+timing types, and the layer modules themselves. Everything enumerative — the
+UGen and signal callables, the value patterns, the GUI widgets — is named
+through its module (``defs.sine``, ``seq.Pbind``, ``gui.knob``): there are too
+many of them for a flat namespace to stay readable. The transports and the
+process launchers are named through theirs (`clausters.ipc`,
+`clausters.launch`), because you reach them as a return value or an argument
+of the layer above, not by instantiating them.
+
 The layers:
 
 - `clausters.ipc` — the low-level local transports (embedded server, shared
-  memory, offline render). Its public names are re-exported here; the
-  top-level ``render`` is now the dispatching verb (`clausters.render`),
-  whose ``bytes`` branch is exactly the historical `clausters.ipc.render`,
-  so ``from clausters import Clausters, ShmClient, render`` keeps working.
+  memory, offline render), reached through `Session.embedded` and
+  ``Server.shm`` rather than built by hand. The top-level ``render`` is the
+  dispatching verb (`clausters.render`), whose ``bytes`` branch is exactly
+  `clausters.ipc.render`.
 - `clausters._native` — the ctypes binding over the shared native core
   (``clausters-ffi``): builtins, seeded white noise and clock/sample math, all
   matching the server by construction.
@@ -18,18 +29,21 @@ The layers:
   stream, clock, netaddr, the OSC/MIDI destination interfaces and the OSC wire
   encoder.
 - `clausters.seq` — the sequencing layer: events, value patterns and ``Pbind``,
-  the event-stream player, and static timelines with a playhead.
+  the event-stream player, and static timelines with a playhead. `Event`,
+  `rest`, `Timeline` and `Playhead` are re-exported here; the ``P*`` patterns
+  are not, and stay under `clausters.seq`.
 - `clausters.defs` — the definition layer and server resources: the
   ``signals``/`FaustDef` pair, the UGen-graph ``ugens``/`SynthDef` pair, the
   node/bus/buffer handles and the `Server`. Its core names — `Server`,
-  `Synth`, `Group`, `AddAction`, `SynthDef`, `FaustDef`, `Bus`, `Buffer` —
-  are re-exported here; the UGen and signal callables are not, and stay
-  under `clausters.defs`.
+  `ServerOptions`, `Synth`, `Group`, `AddAction`, `SynthDef`, `FaustDef`,
+  `GraphDef`, `Bus`, `Buffer` — are re-exported here; the UGen and signal
+  callables are not, and stay under `clausters.defs`.
 - `clausters.form` — the **arrangement**: a recursive algebra of elements
   over the sequencing/def layers, for composing at any granularity.
 - `clausters.responders` — `OscFunc`/`MidiFunc`, callbacks on incoming OSC
   replies and live MIDI.
-- `clausters.gui` — GuiDef building for the Clausters GUI host.
+- `clausters.gui` — the `GuiHost` and GuiDef building for the Clausters GUI
+  host. The host is re-exported here; the widget callables are not.
 - `clausters.play` — the free-standing `play`, one verb for every playable,
   resolved against the ambient session.
 - `clausters.render` — the free-standing `render`, one verb for the change
@@ -41,105 +55,93 @@ The layers:
   a live bus through the server's audio taps (`scope`).
 - `clausters.session` — `Session`, an explicit isolated environment; and the
   default session (`default_session`) it falls back to.
-- `clausters.launch` — launching and owning the server and GUI processes
-  (`Session.live` / `Session.gui`, and `Server.boot` / `GuiHost.boot`, drive
-  these under the hood).
+- `clausters.launch` — launching and owning the server and GUI processes.
+  You drive these through `Session.live` / `Session.gui` and `Server.boot` /
+  ``GuiHost.boot``, which own the processes and read their choices back
+  (``Server.shm`` is the segment ``shm="auto"`` picked).
 - `clausters.config` — the shared TOML configuration, read-only.
 """
 
 from . import _native
-from .errors import (
-    AbiMismatchError,
-    ClaustersError,
-    CommandError,
-    CommandRingFull,
-    LibraryError,
-    LibraryFeatureError,
-    LibraryNotFoundError,
-    RenderError,
-    ReplyTimeout,
-    SegmentError,
-    ServerError,
-)
+from . import base, defs, errors, form, gui, ipc, launch, seq
+from .errors import ClaustersError
 from .base.clock import TempoClock
 from .base.main import default_session, main
-from .base.rand import choice, next_below, next_f64, uniform
+from .base.rand import choice, uniform
 from .base.stream import Routine
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .seq.event import Event, rest
+from .seq.timeline import Playhead, Timeline
 from .defs import (
     AddAction,
     Buffer,
     Bus,
     FaustDef,
+    GraphDef,
     Group,
     Server,
+    ServerOptions,
     Synth,
     SynthDef,
 )
+from .gui import GuiHost
 from .play import play
-from .plot import PlotWindow, plot
-from .render import render
-from .scope import ScopeWindow, scope
+from .plot import plot
+from .render import read_soundfile, render
+from .scope import scope
 from .session import Session
-from .launch import GuiProcess, ServerProcess, default_shm_path
-from .ipc import (
-    ABI_VERSION,
-    SEGMENT_SIZE,
-    Clausters,
-    ShmClient,
-)
 
 __all__ = [
-    "ABI_VERSION",
-    "SEGMENT_SIZE",
-    "Clausters",
-    "ShmClient",
+    # the layers, for the names too many to spell out flat: the UGen and
+    # signal callables (defs), the value patterns (seq), the widgets (gui) —
+    # and the transports and process launchers (ipc, launch), which you reach
+    # through Session and Server rather than by instantiating them.
+    "base",
+    "defs",
+    "errors",
+    "form",
+    "gui",
+    "ipc",
+    "launch",
+    "seq",
+    # the hosts
     "Session",
     "Server",
+    "ServerOptions",
+    "GuiHost",
+    "default_session",
+    "main",
     # the server's resources: nodes, definitions, buses, buffers
     "Synth",
     "Group",
     "AddAction",
     "SynthDef",
     "FaustDef",
+    "GraphDef",
     "Bus",
     "Buffer",
+    # time
     "TempoClock",
     "Routine",
     "Event",
     "rest",
+    "Timeline",
+    "Playhead",
+    # the free verbs
     "play",
+    "render",
     "plot",
-    "PlotWindow",
     "scope",
-    "ScopeWindow",
-    "default_session",
-    "ServerProcess",
-    "GuiProcess",
-    "default_shm_path",
-    "main",
-    # the random context (one seedable source: main.seed(n) + these draws)
-    "next_f64",
-    "uniform",
-    "next_below",
-    "choice",
+    "read_soundfile",
+    # incoming OSC and MIDI
     "OscFunc",
     "MidiFunc",
     "oscfunc",
     "midifunc",
-    "render",
-    "_native",
-    # error types
+    # the random context (one seedable source: main.seed(n) + these draws;
+    # the raw ones, next_f64 and next_below, stay in `base.rand`)
+    "uniform",
+    "choice",
+    # the root of every error this package raises; the leaves are in `errors`
     "ClaustersError",
-    "LibraryError",
-    "LibraryNotFoundError",
-    "LibraryFeatureError",
-    "AbiMismatchError",
-    "RenderError",
-    "ServerError",
-    "CommandError",
-    "SegmentError",
-    "CommandRingFull",
-    "ReplyTimeout",
 ]

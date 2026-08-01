@@ -20,6 +20,14 @@
 // routines on musical time, and `seq` holds the events, patterns and
 // timelines that ride on it.
 //
+// What this module exports flat is what you name while writing a piece: the
+// hosts (`Server`, `GuiHost`), the server's resources, the three def formats,
+// the timing types and the verbs. Everything enumerative — the UGen and signal
+// callables, the value patterns, the GUI builders — is named through its
+// namespace (`defs.sine`, `seq.Pbind`, `gui.knob`), the same criterion the
+// Python client applies: there are too many of them for a flat namespace to
+// stay readable.
+//
 // Importing this module registers the `<clausters-bundle>` and
 // `<clausters-power>` custom elements as a side effect; the singletons stay
 // lazy until first used.
@@ -66,14 +74,18 @@ export type { Destination } from "./base/destination.ts";
 export { Rng, choice, currentRng, seed, spawnRng, uniform } from "./base/rand.ts";
 export * as builtins from "./base/builtins.ts";
 export * as seq from "./seq/index.ts";
+export { Playhead, Timeline } from "./seq/timeline.ts";
 export * as data from "./data/index.ts";
 export { loadCore } from "./base/core.ts";
 export { WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection, SampleClock } from "./base/connection.ts";
-export * from "./defs/index.ts";
-export {
-    AllocationError,
-    ClaustersError,
-    CommandError,
-    ReplyTimeout,
-} from "./errors.ts";
+export * as defs from "./defs/index.ts";
+export { Server } from "./defs/server.ts";
+export { AddAction, Group, Synth } from "./defs/node.ts";
+export { Bus } from "./defs/bus.ts";
+export { Buffer } from "./defs/buffer.ts";
+export { SynthDef } from "./defs/synthdef.ts";
+export { FaustDef } from "./defs/faustdef.ts";
+export { GraphDef } from "./defs/graphdef.ts";
+export * as errors from "./errors.ts";
+export { ClaustersError } from "./errors.ts";

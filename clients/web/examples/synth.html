@@ -55,10 +55,10 @@ after that line is the same code.</div>
 
     <script type="module">
       import {
-        loadOsc, pageConnection, WsConnection, server as engine,
-        Server, Synth, SynthDef, Env, DoneAction,
-        control, envGen, out, rlpf, saw,
+        loadOsc, pageConnection, WsConnection, server as engine, Server,
+        Synth, SynthDef,
       } from "../dist/index.js";
+      import { DoneAction, Env, control, envGen, out, rlpf, saw } from "../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };

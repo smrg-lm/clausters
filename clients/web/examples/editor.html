@@ -67,10 +67,10 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine,
-        Server, Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
-        control, out, playBuf, bufRd, bufRateScale, phasor,
+        loadOsc, loadCore, pageConnection, server as engine, Server,
+        Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
       } from "../dist/index.js";
+      import { bufRateScale, bufRd, control, out, phasor, playBuf } from "../dist/defs/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };

@@ -35,10 +35,10 @@
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, server as engine,
-        Server, Synth, SynthDef, GuiHost, guiHost, gui,
-        control, out, sine,
+        loadOsc, pageConnection, server as engine, Server, Synth,
+        SynthDef, GuiHost, guiHost, gui,
       } from "../dist/index.js";
+      import { control, out, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {

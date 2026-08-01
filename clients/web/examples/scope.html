@@ -56,10 +56,10 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
 
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine,
-        Server, Bus, Buffer, Synth, SynthDef, data,
-        control, out, outCtl, sine,
+        loadOsc, loadCore, pageConnection, server as engine, Server,
+        Bus, Buffer, Synth, SynthDef, data,
       } from "../dist/index.js";
+      import { control, out, outCtl, sine } from "../dist/defs/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };

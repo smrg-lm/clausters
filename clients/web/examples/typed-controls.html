@@ -50,10 +50,10 @@ than an <code>/synth_new</code> per note.</div>
 
     <script type="module">
       import {
-        loadOsc, pageConnection, server as engine,
-        Server, Synth, SynthDef, TempoClock, Routine, Env, DoneAction,
-        control, envGen, out, rand, sine,
+        loadOsc, pageConnection, server as engine, Server, Synth,
+        SynthDef, TempoClock, Routine,
       } from "../dist/index.js";
+      import { DoneAction, Env, control, envGen, out, rand, sine } from "../dist/defs/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };

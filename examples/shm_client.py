@@ -24,7 +24,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 import json_client as osc  # OSC encode/decode helpers (stdlib)
-from clausters import ShmClient
+from clausters.ipc import ShmClient
 
 SEGMENT = "/dev/shm/clausters"
 

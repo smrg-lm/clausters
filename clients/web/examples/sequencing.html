@@ -72,9 +72,10 @@ clock and the server's, because they are the same clock.</div>
 
     <script type="module">
       import {
-        DoneAction, Env, Server, SynthDef, TempoClock, WsConnection, control,
-        envGen, loadOsc, out, pageConnection, rlpf, saw, seq,
+        Server, SynthDef, TempoClock, WsConnection, loadOsc,
+        pageConnection, seq,
       } from "../dist/index.js";
+      import { DoneAction, Env, control, envGen, out, rlpf, saw } from "../dist/defs/index.js";
 
       const log = (line) => {
         document.getElementById("log").textContent += line + "\n";

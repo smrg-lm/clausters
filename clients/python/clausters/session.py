@@ -239,7 +239,7 @@ class Session(Environment):
                 with no tracker, socket or timeout at all. Pass
                 ``timebase=MonotonicTimebase()`` (or set ``[client].clock =
                 "monotonic"``) to keep wall-clock OSC timetags.
-            server: an existing `clausters.Clausters` handle to reuse; when
+            server: an existing `clausters.ipc.Clausters` handle to reuse; when
                 omitted the session opens and owns a fresh embedded server and
                 closes it on `close`.
 

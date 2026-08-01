@@ -84,8 +84,8 @@ A routine that raises is dropped the same way, with its traceback on stderr: it 
 ## The random context: one seed per session
 
 Everything random — `Pwhite`, `Prand`, and the module functions
-`clausters.next_f64()` / `uniform(lo, hi)` / `next_below(n)` / `choice(items)`
-— draws from **one seedable context**, the sclang model. The context is the
+`clausters.uniform(lo, hi)` / `choice(items)` (with the raw draws `next_f64()`
+and `next_below(n)` under `clausters.base.rand`) — draws from **one seedable context**, the sclang model. The context is the
 **session**: each has its own root, so each reproduces independently.
 
 - `session.seed(n)` seeds *that* session's root. Called before you build and

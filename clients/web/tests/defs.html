@@ -31,10 +31,10 @@
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, server as engine,
-        Server, Synth, SynthDef, Env, DoneAction,
-        control, envGen, out, sine,
+        loadOsc, pageConnection, server as engine, Server, Synth,
+        SynthDef,
       } from "../dist/index.js";
+      import { DoneAction, Env, control, envGen, out, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {

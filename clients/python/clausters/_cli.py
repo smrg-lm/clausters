@@ -8,7 +8,8 @@ behave exactly like the cargo-built binary.
 
 This is the **separate** server — a real process you can point UDP/TCP clients,
 ``ShmClient`` or several machines at. The **in-process embedded** server needs
-no command at all: import it (`clausters.Clausters`, or `Session.embed`).
+no command at all: `Session.embedded` opens one (`clausters.ipc.Clausters`
+is the handle it owns).
 
 Lookup precedence mirrors `clausters._libpath`: an explicit ``CLAUSTERS_BIN``
 override, the binary bundled in the wheel, then a source checkout's workspace

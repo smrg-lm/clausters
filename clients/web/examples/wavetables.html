@@ -59,10 +59,10 @@ band-limited recipe instead of a clipped edge.</div>
 
     <script type="module">
       import {
-        loadOsc, pageConnection, server as engine,
-        Server, Buffer, Synth, SynthDef, Env, DoneAction,
-        control, envGen, out, shaper, sine, vosc,
+        loadOsc, pageConnection, server as engine, Server, Buffer,
+        Synth, SynthDef,
       } from "../dist/index.js";
+      import { DoneAction, Env, control, envGen, out, shaper, sine, vosc } from "../dist/defs/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };

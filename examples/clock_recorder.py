@@ -58,7 +58,7 @@ from array import array
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 import json_client as osc  # stdlib-only OSC encode/decode helpers
-from clausters import ShmClient
+from clausters.ipc import ShmClient
 
 DEF_NAME = "clkimpulse"
 NODE_BASE = 4000

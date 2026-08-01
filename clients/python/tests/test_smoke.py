@@ -21,11 +21,35 @@ def _native_or_skip():
     return _native
 
 
-def test_package_reexports_ipc():
-    assert hasattr(clausters, "render")
-    assert hasattr(clausters, "ShmClient")
-    assert hasattr(clausters, "Clausters")
+def test_package_reexports_what_a_piece_names():
+    # The top level holds the verbs, the hosts, the server's resources, the def
+    # formats and the timing types -- plus the layer modules themselves.
+    for name in ("play", "render", "plot", "scope",
+                 "Session", "Server", "GuiHost",
+                 "Synth", "Group", "Bus", "Buffer",
+                 "SynthDef", "FaustDef", "GraphDef",
+                 "TempoClock", "Routine", "Event", "Timeline", "Playhead",
+                 "base", "defs", "seq", "form", "gui", "ipc", "launch", "errors"):
+        assert name in clausters.__all__, name
+        assert hasattr(clausters, name), name
     assert clausters._native is _native
+
+
+def test_enumerative_and_plumbing_names_stay_in_their_module():
+    # Too many to spell out flat: the UGen callables, the value patterns, the
+    # widgets. Reached through the layer above, not instantiated: the
+    # transports and the process launchers.
+    for name in ("sine", "Pbind", "knob",
+                 "Clausters", "ShmClient", "ServerProcess", "GuiProcess",
+                 "default_shm_path", "CommandError"):
+        assert name not in clausters.__all__, name
+    assert clausters.defs.sine and clausters.seq.Pbind and clausters.gui.knob
+    assert clausters.ipc.Clausters and clausters.ipc.ShmClient
+    assert clausters.launch.ServerProcess and clausters.launch.GuiProcess
+    assert clausters.errors.CommandError
+    # ClaustersError is the one error at the top level: the root you catch when
+    # you do not care which leaf it was.
+    assert clausters.ClaustersError in clausters.errors.CommandError.__mro__
 
 
 def test_builtins_scalar_and_list():

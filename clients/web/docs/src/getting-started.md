@@ -10,7 +10,7 @@ npm install clausters
 
 That is the whole install: the tarball carries the emitted modules, their type declarations and the three wasm bundles (the engine, the GUI host, the shared core), so nothing is compiled and nothing is fetched at run time.
 
-The pages below are served straight off the file system with no build step, so they import `./dist/index.js` by path. Through a bundler the same imports are written `from "clausters"`; nothing else in them changes.
+The pages below are served straight off the file system with no build step, so they import `./dist/index.js` by path. Through a bundler the same imports are written `from "clausters"`; nothing else in them changes. A layer imported by path — `./dist/defs/index.js`, and likewise `seq/`, `gui/`, `data/` — is `from "clausters/defs"` there.
 
 ### From a checkout instead
 
@@ -44,9 +44,11 @@ Save this beside `dist/` and open it:
 <button id="go">play</button>
 <script type="module">
   import {
-    loadOsc, pageConnection, server as engine,
-    Server, Synth, SynthDef, Env, DoneAction, control, envGen, out, saw,
+    loadOsc, pageConnection, server as engine, Server, Synth, SynthDef,
   } from "./dist/index.js";
+  // The UGen callables are a vocabulary of over a hundred names, so they are
+  // named through the def layer rather than the package's flat surface.
+  import { Env, DoneAction, control, envGen, out, saw } from "./dist/defs/index.js";
 
   // The def is a value: no connection in sight, and nothing has started.
   const freq = control("freq", 220.0);

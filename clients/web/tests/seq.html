@@ -36,9 +36,10 @@
     -->
     <script type="module">
       import {
-        SampleTimebase, Server, SynthDef, TempoClock, control, loadOsc, out,
-        pageConnection, seq, sine,
+        SampleTimebase, Server, SynthDef, TempoClock, loadOsc,
+        pageConnection, seq,
       } from "../dist/index.js";
+      import { control, out, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {

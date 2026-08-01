@@ -77,10 +77,10 @@
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, server as engine,
-        Server, Bus, Synth, SynthDef, GuiHost, guiHost, gui,
-        control, out, saw, lpf,
+        loadOsc, pageConnection, server as engine, Server, Bus, Synth,
+        SynthDef, GuiHost, guiHost, gui,
       } from "../dist/index.js";
+      import { control, lpf, out, saw } from "../dist/defs/index.js";
 
       const note = document.getElementById("note");
       const say = (text) => { note.textContent = text; };

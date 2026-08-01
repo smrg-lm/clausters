@@ -10,6 +10,26 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./defs": {
+      "types": "./dist/defs/index.d.ts",
+      "default": "./dist/defs/index.js"
+    },
+    "./seq": {
+      "types": "./dist/seq/index.d.ts",
+      "default": "./dist/seq/index.js"
+    },
+    "./gui": {
+      "types": "./dist/gui/index.d.ts",
+      "default": "./dist/gui/index.js"
+    },
+    "./data": {
+      "types": "./dist/data/index.d.ts",
+      "default": "./dist/data/index.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "default": "./dist/errors.js"
+    },
     "./runtime": {
       "types": "./dist/runtime.d.ts",
       "default": "./dist/runtime.js"

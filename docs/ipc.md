@@ -63,10 +63,11 @@ Correlation is by serialization: one request in flight per client, like scsynth 
 
 ## Python binding
 
-`clients/python/clausters/ipc.py` (re-exported from the `clausters` package), stdlib only:
+`clients/python/clausters/ipc.py`, stdlib only. The transports are named through their module: the `clausters` package re-exports `clausters.ipc` itself, not the two handles, because a script reaches them through `Session.embedded` and `Server.shm` rather than by building one.
 
 ```python
-from clausters import ShmClient, Clausters, render
+from clausters import render
+from clausters.ipc import Clausters, ShmClient
 
 c = ShmClient("/dev/shm/clausters")     # two-process
 print(c.clock, c.sample_rate)           # data plane reads

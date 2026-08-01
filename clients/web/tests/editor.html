@@ -35,10 +35,10 @@
     -->
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine,
-        Server, Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
-        control, out, playBuf, bufRd, bufRateScale, phasor,
+        loadOsc, loadCore, pageConnection, server as engine, Server,
+        Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
       } from "../dist/index.js";
+      import { bufRateScale, bufRd, control, out, phasor, playBuf } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
