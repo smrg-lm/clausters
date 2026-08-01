@@ -21,7 +21,10 @@ The layers:
   the event-stream player, and static timelines with a playhead.
 - `clausters.defs` — the definition layer and server resources: the
   ``signals``/`FaustDef` pair, the UGen-graph ``ugens``/`SynthDef` pair, the
-  node/bus/buffer handles and the `Server`.
+  node/bus/buffer handles and the `Server`. Its core names — `Server`,
+  `Synth`, `Group`, `AddAction`, `SynthDef`, `FaustDef`, `Bus`, `Buffer` —
+  are re-exported here; the UGen and signal callables are not, and stay
+  under `clausters.defs`.
 - `clausters.form` — the **arrangement**: a recursive algebra of elements
   over the sequencing/def layers, for composing at any granularity.
 - `clausters.responders` — `OscFunc`/`MidiFunc`, callbacks on incoming OSC
@@ -64,7 +67,16 @@ from .base.rand import choice, next_below, next_f64, uniform
 from .base.stream import Routine
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .seq.event import Event, rest
-from .defs import Server
+from .defs import (
+    AddAction,
+    Buffer,
+    Bus,
+    FaustDef,
+    Group,
+    Server,
+    Synth,
+    SynthDef,
+)
 from .play import play
 from .plot import PlotWindow, plot
 from .render import render
@@ -85,6 +97,14 @@ __all__ = [
     "ShmClient",
     "Session",
     "Server",
+    # the server's resources: nodes, definitions, buses, buffers
+    "Synth",
+    "Group",
+    "AddAction",
+    "SynthDef",
+    "FaustDef",
+    "Bus",
+    "Buffer",
     "TempoClock",
     "Routine",
     "Event",
