@@ -74,7 +74,28 @@ Three rules hold across *all* of the above (repeat them to yourself):
    process", upstream symbols cited verbatim).
 
 The books cross-link each other by their ReadTheDocs URLs — all three are
-published, so a new page links the other two rather than describing them.
+published, so a new page links the other two rather than describing them. Each
+carries a `.readthedocs.yaml` driving the build with `build.commands`, since RTD
+has no native mdBook builder.
+
+### Installing the two API-reference generators
+
+Both go in **user space**, no sudo:
+
+- **pydoc-markdown** (Python reference) — `uv tool install --python 3.12
+  pydoc-markdown`. Pin 3.12: its deps lag the newest CPython, and 3.12 is also
+  Read the Docs' version. Then `clients/python/docs/build.sh` regenerates
+  `api.md` and rebuilds the book. (`uvx pydoc-markdown`, or `pip install` on a
+  non-PEP-668 env, also work — see `clients/python/README.md`.)
+- **TypeDoc** (TypeScript reference) — `npm install -g typedoc@0.28
+  typedoc-plugin-markdown@4 typescript@5.9` (npm's prefix is under `~/.local`;
+  symlink the `typedoc` bin into `~/.local/bin` like node's). It parses with
+  **its own TypeScript 5.9** while the package compiles with the v7 in
+  `node_modules`, and it runs with warnings as errors. The output file names in
+  `clients/web/typedoc.json` are the contract with `src/SUMMARY.md`.
+
+The web package is published to npm as `clausters` by the release tag —
+`clients/web/BUILD.md`, "Publishing".
 
 ## 1. User documentation — Diataxis (Tutorial / Explanation / Reference)
 

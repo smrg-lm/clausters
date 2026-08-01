@@ -11,46 +11,12 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   is no separate per-milestone log. Non-obvious decisions and upstream-bug
   findings are curated in `docs/decisions.md` (ADR spirit); the frozen historical
   journal is `docs/history/build-log.md`, no longer maintained.
-- English documentation is **three mdBooks, one per platform**, all Markdown and
-  ReadTheDocs-deployable (each has a `.readthedocs.yaml` driving the build with
-  `build.commands` — RTD has no native mdBook builder). Keep all three current.
-  - **Server / workspace** — mdBook in `docs/` (`docs/SUMMARY.md` the table of
-    contents, the repo-root `book.toml` the config, `README.md` the front door;
-    build with `mdbook build .`, output `book/` git-ignored). Reuses the
-    existing `docs/*.md` in place. Key chapters: developer docs (threads, memory
-    lifecycle, invariants, how to add a UGen) in `docs/architecture.md`;
-    user-facing wire formats and OSC reference in `docs/schemas.md`; library/
-    embedding use in `docs/using-as-a-library.md` and `docs/ipc.md`; the
-    cross-language map in `docs/clients.md`. Crate API reference is the rustdoc
-    (`cargo doc`).
-  - **Python client** — mdBook in `clients/python/docs/` (its own `book.toml`
-    and `src/`; `clients/python/docs/build.sh` builds it). The API-reference
-    page `src/api.md` is **generated from the package docstrings by
-    pydoc-markdown** (configured by the versioned
-    `clients/python/pydoc-markdown.yml`; the generated `src/api.md` and the
-    built `book/` are both git-ignored). Install the generator in **user
-    space** (no sudo) with
-    `uv tool install --python 3.12 pydoc-markdown` — pin 3.12 because its deps
-    lag the newest CPython, and that is also Read the Docs' version; then
-    `clients/python/docs/build.sh` regenerates `api.md` and rebuilds the book
-    (`uvx pydoc-markdown`, or `pip install` on a non-PEP-668 env, also work —
-    see `clients/python/README.md`).
-  - **Web client** — mdBook in `clients/web/docs/` (its own `book.toml` and
-    `src/`; `clients/web/docs/build.sh` builds it). The API-reference pages
-    `src/api/` are **generated from the sources' TSDoc comments by TypeDoc**
-    (configured by the versioned `clients/web/typedoc.json`, whose output file
-    names are the contract with `src/SUMMARY.md`; the generated `src/api/` and
-    the built `book/` are both git-ignored). Install the generator in **user
-    space** with `npm install -g typedoc@0.28 typedoc-plugin-markdown@4
-    typescript@5.9` (npm's prefix is under `~/.local`; symlink the `typedoc`
-    bin into `~/.local/bin` like node's) — it parses with **its own TypeScript
-    5.9** while the package compiles with the v7 in `node_modules`, and it runs
-    with warnings as errors. Doc comments in `clients/web/src` are TSDoc
-    (`/** */`), never Rust-style `///`, which TypeScript tooling does not read.
-    This book is on Read the Docs like the other two
-    (`clients/web/.readthedocs.yaml`), and the package is published to npm as
-    `clausters` by the release tag — `clients/web/BUILD.md`, "Publishing".
-  - The books cross-link by their RTD URLs.
+- English documentation is **three mdBooks, one per platform** — server/
+  workspace, Python client, web client — all Markdown and ReadTheDocs-deployed.
+  Keep all three current. Where each book lives, how it builds, and how its API
+  reference is generated (rustdoc, pydoc-markdown, TypeDoc) are in the
+  `documentation` skill; doc comments in `clients/web/src` are TSDoc (`/** */`),
+  never Rust-style `///`, which TypeScript tooling does not read.
   - **Docstrings and published docs are plain Markdown**: **no Sphinx/RST
     directives** in docstrings (no `:role:` cross-refs, no `:param:` field lists
     — use backticks / Google-style sections), and **no milestone labels
@@ -79,9 +45,6 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   run each family, and at most name one or two entry points. A topic page may
   still point at *one* example that shows what it is explaining — that is a
   cross-reference, not a catalog.
-- Project skills live in `.claude/skills/` (realtime-audio, scsynth-osc,
-  ugen-dsp, audio-testing, faust-embedding, faust-language, clausters-python,
-  clausters-gui, documentation).
 
 ## Cross-client build strategy
 
@@ -254,22 +217,8 @@ def-family feature matrix — a warning that only appears under
 and it never builds the **docs** at all, so rustdoc's own lints (a `[`link`]`
 to an item that was renamed, moved or made private) are caught nowhere but
 here. Run the matrix locally when the change touches feature-gated code or doc
-comments (`.claude/skills/feature-matrix/check.sh` runs all of it in one go):
-
-```sh
-cargo fmt --check
-cargo clippy --all-targets                                  # default features
-cargo clippy --all-targets --no-default-features            # neither family
-cargo clippy --all-targets --no-default-features --features synth
-cargo clippy --all-targets --no-default-features --features faust
-cargo clippy --workspace --all-targets                      # core, ffi, midi
-(cd clients/gui && cargo clippy --all-targets)              # the GUI host
-RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --workspace  # the doc build,
-RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --workspace --no-default-features
-#   ... and the same two def-family variants as clippy above
-(cd clients/gui && RUSTDOCFLAGS='-D warnings' \
-    cargo doc --no-deps --document-private-items)
-```
+comments: `.claude/skills/feature-matrix/check.sh` runs all of it in one go, and
+the `feature-matrix` skill lists every command it covers.
 
 The doc build walks the def families for the same reason clippy does, which
 settles how a doc comment names something across a feature seam: **in
@@ -277,45 +226,14 @@ backticks, not as a link** (`dsp::denormals` naming `server::backend`,
 `server::defstore` naming `faust::cache::FaustRecord`) — a link there resolves
 only in the build where the target is compiled in.
 
-## Versioning: SemVer of the package vs. the binary ABI counters
+## Versioning
 
-Three version numbers exist and answer **different** questions — keep them
-distinct:
-
-- **The package SemVer** — `version` in `Cargo.toml` (and the Python wheel). The
-  *source/package* contract: what `cargo`/`pip` resolves and installs.
-- **The embed / IPC ABI** — `ABI_VERSION` in `src/server/ipc.rs`, exposed by
-  `clausters_abi_version()`. The shm segment layout + the embed C ABI.
-- **The core FFI ABI** — `CORE_ABI_VERSION` in `crates/clausters-ffi`, exposed by
-  `clausters_core_abi_version()`. The language-agnostic C surface (ctypes/N-API/
-  wasm).
-
-The two integer counters — not SemVer — are the **source of truth for binary
-compatibility**: they are monotonic, bumped only when their own boundary changes
-incompatibly, and checked **at runtime** on attach/load. SemVer governs the
-package, never the wire.
-
-**Release rules:**
-
-1. **Pre-1.0 (while the major is `0`)**, the **minor** is the breaking tier —
-   this is standard SemVer, the minor acts as the major. *Any* incompatible
-   change (source API **or** binary boundary) bumps the minor; purely additive or
-   corrective changes bump the patch.
-2. Bump `ABI_VERSION` / `CORE_ABI_VERSION` **only** when that specific boundary
-   changes incompatibly — independently of SemVer.
-3. **Linkage (one-way):** if a release bumps either ABI counter, that release
-   **must** bump the breaking tier of SemVer (minor pre-1.0, major post-1.0). The
-   reverse does not hold — a minor bump can ship without touching either counter.
-4. **At `1.0.0`** the semantics become the standard post-1.0 ones (major breaks,
-   minor adds, patch fixes); the ABI counters keep their role unchanged.
-5. **A counter moves once per release, not once per commit.** If the same
-   boundary changes again before that number has shipped (no tag yet), **amend**
-   the existing bump and its comment instead of bumping past it — a counter
-   states the distance from the last *published* boundary, not the history of
-   how the release got there. The same holds for the SemVer tier rule 3 drags
-   along: one breaking tier per release, however many breaking changes it took.
-
-Rationale (why the decouple) is in `docs/decisions.md`.
+Three version numbers answer different questions and must stay distinct: the
+package SemVer (`Cargo.toml`, the wheel), and the two binary ABI counters
+`ABI_VERSION` (embed/IPC) and `CORE_ABI_VERSION` (core FFI), which are the source
+of truth for binary compatibility. The release rules — the pre-1.0 breaking tier,
+when each counter moves, the one-way linkage between them — are in the
+`release-versioning` skill; the rationale is in `docs/decisions.md`.
 
 ## Testing via the Python launcher: refresh the bundled binaries first
 
