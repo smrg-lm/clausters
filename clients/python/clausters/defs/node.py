@@ -310,15 +310,15 @@ class Group(Node):
              out(0, in_(control("bus", 0.0)) * control("amp", 0.5))).send(s)
 
     mix = Bus.audio(server=s)
-    g = Group(server=s)                                   # the sources, first
-    fx = Group(target=g, action=AddAction.AFTER, server=s)  # what reads them
+    src = Group(server=s)                                    # runs first
+    fx = Group(target=src, action=AddAction.AFTER, server=s)  # reads what it wrote
 
     for freq in (220.0, 277.0, 330.0):
-        Synth("voice", {"freq": freq, "bus": mix.index}, target=g, server=s)
+        Synth("voice", {"freq": freq, "bus": mix.index}, target=src, server=s)
     Synth("wash", {"bus": mix.index}, target=fx, server=s)
 
-    g.set({"freq": 110.0})   # every voice at once; the wash has no freq
-    g.free()                 # the three voices, one command
+    src.set({"freq": 110.0})   # every voice at once; the wash has no freq
+    src.free()                 # the three voices, one command
     fx.free()
     ```
     """
@@ -330,8 +330,8 @@ class Group(Node):
         `from_id`.
 
         ```python
-        g = Group(server=s)                                    # runs first
-        fx = Group(target=g, action=AddAction.AFTER, server=s)
+        src = Group(server=s)                                    # runs first
+        fx = Group(target=src, action=AddAction.AFTER, server=s)
         ```
 
         Args:
