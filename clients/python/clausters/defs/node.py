@@ -3,9 +3,13 @@
 The server's node tree (`node`): the root group is id 0; clients allocate
 positive ids. Add actions match the server: head/tail of a group, before/after
 a node, or replace. `Synth` and `Group` hold an id and the server it lives on,
-and own the commands addressed to it: `Synth.new` / `Group.new` /
-`Group.graph` create one, and `Node.set`, `Node.map`, `Node.run` and
-`Node.free` drive it. The id pool itself belongs to the `Server`.
+and own the commands addressed to it: **building one creates it** —
+``Synth("beep")`` allocates an id and sends ``/synth_new``, ``Group()`` sends
+``/group_new``, `Group.graph` instantiates a GraphDef — and `Node.set`,
+`Node.map`, `Node.run` and `Node.free` drive it. To name a node that already
+exists, from an id a responder or a query reported, use `Synth.from_id` /
+`Group.from_id`, which send nothing. The id pool itself belongs to the
+`Server`.
 """
 
 from enum import IntEnum
@@ -25,6 +29,12 @@ class AddAction(IntEnum):
     REPLACE = 4
 
 
+def _target_id(target) -> int:
+    """A target is a `Node` or its raw id, so ``target=group`` and
+    ``target=group.id`` are the same thing (the web client's ``nodeId``)."""
+    return int(target.id if isinstance(target, Node) else target)
+
+
 def _flatten_controls(controls) -> list:
     """Accepts a dict or a list of (name, value) pairs (so the reserved
     ``in``/``out`` controls, which are Python keywords, are expressible)."""
@@ -40,8 +50,8 @@ def _flatten_controls(controls) -> list:
 class Node:
     def __init__(self, node_id: int, server=None):
         self.id = node_id
-        #: the `Server` that created this handle (set by `Synth.new` and
-        #: friends), so its commands know where to go without being told.
+        #: the `Server` this node lives on (set when it was created), so its
+        #: commands know where to go without being told.
         self.server = server
 
     def _server(self):
@@ -115,32 +125,49 @@ class Node:
 
 
 class Synth(Node):
-    def __init__(self, node_id: int, defname: str, server=None):
-        super().__init__(node_id, server)
+    def __init__(self, defname, controls=None, *, target=ROOT_NODE_ID,
+                 action=AddAction.TAIL, server=None):
+        """Starts a synth from a def already loaded on the server, by name
+        (``/synth_new``), with ``controls`` (a ``{name: value}`` dict, or pairs)
+        overriding the def defaults. Building one *is* starting it: the id
+        comes from the server's `NodeIdAllocator` and the command goes out
+        here. To name a synth that already exists, use `from_id`."""
+        srv = _resolve(server)
+        node_id = srv._node_id()
+        srv.send_msg("/synth_new", defname, node_id, int(action), _target_id(target),
+                     *_flatten_controls(controls))
+        super().__init__(node_id, srv)
         self.defname = defname
 
     @classmethod
-    def new(cls, defname, controls=None, *, target=ROOT_NODE_ID,
-            action=AddAction.TAIL, server=None) -> "Synth":
-        """Starts a synth from a def already loaded on the server, by name
-        (``/synth_new``), with ``controls`` (a ``{name: value}`` dict, or pairs)
-        overriding the def defaults."""
-        srv = _resolve(server)
-        node_id = srv._node_id()
-        srv.send_msg("/synth_new", defname, node_id, int(action), int(target),
-                     *_flatten_controls(controls))
-        return cls(node_id, defname, srv)
+    def from_id(cls, node_id: int, defname: str, server=None) -> "Synth":
+        """A handle on a synth that is **already** on the server, named by the
+        id something else reported (a responder, a node-tree query, the GUI).
+        Sends nothing."""
+        synth = cls.__new__(cls)
+        Node.__init__(synth, node_id, server)
+        synth.defname = defname
+        return synth
 
 
 class Group(Node):
-    @classmethod
-    def new(cls, *, target=ROOT_NODE_ID, action=AddAction.TAIL,
-            server=None) -> "Group":
-        """An empty group in the node tree (``/group_new``)."""
+    def __init__(self, *, target=ROOT_NODE_ID, action=AddAction.TAIL,
+                 server=None):
+        """An empty group in the node tree (``/group_new``). Building one *is*
+        creating it, as with `Synth`; to name a group that already exists, use
+        `from_id`."""
         srv = _resolve(server)
         node_id = srv._node_id()
-        srv.send_msg("/group_new", node_id, int(action), int(target))
-        return cls(node_id, srv)
+        srv.send_msg("/group_new", node_id, int(action), _target_id(target))
+        super().__init__(node_id, srv)
+
+    @classmethod
+    def from_id(cls, node_id: int, server=None) -> "Group":
+        """A handle on a group that is **already** on the server, named by the
+        id something else reported. Sends nothing."""
+        group = cls.__new__(cls)
+        Node.__init__(group, node_id, server)
+        return group
 
     @classmethod
     def graph(cls, defname, ports=None, *, target=ROOT_NODE_ID,
@@ -154,9 +181,9 @@ class Group(Node):
         buses)."""
         srv = _resolve(server)
         node_id = srv._node_id()
-        srv.send_msg("/graph_new", defname, node_id, int(action), int(target),
+        srv.send_msg("/graph_new", defname, node_id, int(action), _target_id(target),
                      *_flatten_controls(ports))
-        return cls(node_id, srv)
+        return cls.from_id(node_id, srv)
 
     def voice(self, ports=None) -> "Group":
         """Spawns a per-voice sub-graph (``/graph_newVoice``) inside this running
@@ -167,7 +194,7 @@ class Group(Node):
         srv = self._server()
         node_id = srv._node_id()
         srv.send_msg("/graph_newVoice", self.id, node_id, *_flatten_controls(ports))
-        return Group(node_id, srv)
+        return Group.from_id(node_id, srv)
 
 
 class NodeIdAllocator:

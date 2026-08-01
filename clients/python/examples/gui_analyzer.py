@@ -77,7 +77,7 @@ def stereo_def(name: str = "stereo_image") -> SynthDef:
 
 
 stereo_def().send(server)
-synth = Synth.new("stereo_image", {"freq": 220.0}, server=server)
+synth = Synth("stereo_image", {"freq": 220.0}, server=server)
 
 # %% [markdown]
 # ## The two analysis views

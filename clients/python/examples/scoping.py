@@ -51,7 +51,7 @@ drone = SynthDef("scoping_drone",
                  out(1.0, right * amp))
 drone.send(server)
 server.sync()
-node = Synth.new("scoping_drone", server=server)
+node = Synth("scoping_drone", server=server)
 
 # %% 1/3 — the oscilloscope (view="signal"): both channels, phase-locked.
 print("1/3 signal: outs 0/1 as two lanes; 'lock' + the trigger line at 0")

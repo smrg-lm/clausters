@@ -203,9 +203,9 @@ def test_nrt_immediate_sends_land_at_the_start_of_the_score():
     clock = TempoClock(tempo=1.0)
 
     def routine():
-        Synth.new("default", {"freq": 100.0}, server=server)
+        Synth("default", {"freq": 100.0}, server=server)
         yield 0.5
-        Synth.new("default", {"freq": 200.0}, server=server)
+        Synth("default", {"freq": 200.0}, server=server)
         yield 1.0
 
     clock.play(Routine(routine))

@@ -101,7 +101,7 @@ def render(path=None):
         sdef.send(server)
     # The reverb reads bus 0 and writes back to it, so it has to run *after* the
     # voices: adding it at the tail of the root group is enough.
-    Synth.new("sub_space", action=AddAction.TAIL, server=server)
+    Synth("sub_space", action=AddAction.TAIL, server=server)
 
     clock = TempoClock(tempo=2.0)
     degrees = [0, 3, 5, 7, 10, 12, 10, 7]

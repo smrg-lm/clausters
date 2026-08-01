@@ -180,7 +180,7 @@ def _play_def(d, server, controls):
     d.send(server)
     if isinstance(d, GraphDef):
         return Group.graph(d.name, controls, server=server)
-    return Synth.new(d.name, controls, server=server)
+    return Synth(d.name, controls, server=server)
 
 
 def _play_buffer(buffer, server, controls):
@@ -211,7 +211,7 @@ def _play_buffer(buffer, server, controls):
                       for ch in range(channels)])
     sdef.send(server)
     controls = {"buf": float(buffer.bufnum), **(controls or {})}
-    node = Synth.new(sdef.name, controls, server=server)
+    node = Synth(sdef.name, controls, server=server)
     file_sr = buffer.sample_rate or 48_000.0
     dur = buffer.frames / file_sr / float(controls.get("rate", 1.0))
     server.send_bundle_after(dur, ("/node_free", node.id))

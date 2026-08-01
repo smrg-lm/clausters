@@ -90,7 +90,7 @@ sdef.send(server)             # sends /def_send synth and waits for the server's
 Now play it. `synth` starts a node — it sounds until you free it — and `set` changes its controls while it sounds:
 
 ```python
-node = Synth.new("beep", {"freq": 330.0}, server=server)   # you hear it now
+node = Synth("beep", {"freq": 330.0}, server=server)   # you hear it now
 node.set({"freq": 550.0})              # ...and now it is higher
 node.free()                              # silence
 ```
@@ -108,7 +108,7 @@ FaustDef.from_signals("fbeep", S.sin(phase * S.TAU) * 0.2).send(server)
 FaustDef.from_box(
     "bbeep", box.faust("os.osc")(box.hslider("freq", 440.0, 20.0, 20000.0, 0.01)) * 0.2).send(server)
 
-node = Synth.new("bbeep", {"freq": 220.0}, server=server)
+node = Synth("bbeep", {"freq": 220.0}, server=server)
 node.free()
 ```
 
@@ -130,7 +130,7 @@ session.stop()       # ...and stop it whenever
 `Pbind` (like `Event`) constructs exactly as a `dict` does: the keyword form
 above is a shorthand, and a plain mapping —
 `Pbind({"instrument": "beep", "dur": 0.25})` — works the same, matching how
-`Synth.new` takes its controls.
+`Synth` takes its controls.
 
 When you are done, close the session. Everything it started — the server it booted, a GUI it opened — stops with it:
 

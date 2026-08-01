@@ -157,9 +157,9 @@ convert. Driving:
 - The id pools live on `Server`: `nodes`, `audio_buses`, `control_buses`,
   `buffers`. Everything addressed to a resource is that resource's own method,
   and `server=` defaults to the ambient one:
-  `Synth.new(name, {ctl: val}, target=0, server=srv)`, `node.set({...})`,
+  `Synth(name, {ctl: val}, target=0, server=srv)`, `node.set({...})`,
   `node.map(ctl, bus, audio=False)`, `node.free()`,
-  `Group.new(server=srv)` / `Group.graph(name, ports, server=srv)`,
+  `Group(server=srv)` / `Group.graph(name, ports, server=srv)`,
   `Bus.control(server=srv)` and `bus.set(v)` / `bus.get()` / `bus.watch()`,
   `Buffer.alloc(frames, channels, server=srv)` and `buf.gen(...)` /
   `buf.query()` / `buf.get_samples()` / `buf.free()`.

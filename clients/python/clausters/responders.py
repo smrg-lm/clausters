@@ -24,13 +24,13 @@ from clausters.responders import OscFunc, MidiFunc
 from clausters.defs import Synth
 
 # Relay an incoming /play to the server as a /synth_new.
-OscFunc(lambda msg, t, src: Synth.new("default", {"freq": msg[1]}, server=server), "/play")
+OscFunc(lambda msg, t, src: Synth("default", {"freq": msg[1]}, server=server), "/play")
 
 # Drive the server from a MIDI keyboard: note on -> /synth_new, note off -> free.
 notes = {}
 def on(m, src):
     freq = 440 * 2 ** ((m["note"] - 69) / 12)
-    notes[m["note"]] = Synth.new("default", {"freq": freq}, server=server)
+    notes[m["note"]] = Synth("default", {"freq": freq}, server=server)
 MidiFunc(on, "note_on")
 ```
 """

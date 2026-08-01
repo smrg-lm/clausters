@@ -325,7 +325,7 @@ def _render_env(env, sample_rate):
     gate = control("gate", 1.0)
     sdef = SynthDef("_plot_env", out(0.0, env_gen(env, gate=gate)))
     sdef.send(server)
-    node = Synth.new("_plot_env", server=server)
+    node = Synth("_plot_env", server=server)
     release_node = getattr(env, "release_node", None)
     if release_node is not None:
         sustain_at = sum(times[: int(release_node)])

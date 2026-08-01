@@ -62,8 +62,8 @@ def main():
 
     # Both play for the whole render; a routine frees them at t = 2 beats
     # (tempo 1 -> 2 s) so the offline render has a defined duration.
-    raw = Synth.new("noisy", server=session.server)
-    lp = Synth.new("spectral_lp", server=session.server)
+    raw = Synth("noisy", server=session.server)
+    lp = Synth("spectral_lp", server=session.server)
 
     def stop():
         yield 2.0

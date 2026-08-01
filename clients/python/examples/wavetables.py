@@ -95,13 +95,13 @@ def main():
 
     def sequence():
         # Timetagged bundles, as in every NRT routine: the beat stamps them.
-        voice = Synth.new("wt_morph", {"freq": 110.0, "pos": 0.0}, server=server)
+        voice = Synth("wt_morph", {"freq": 110.0, "pos": 0.0}, server=server)
         yield 1.0
         server.send_bundle(("/node_set", voice.id, "pos", 1.0))  # glide to saw
         yield 3.0
         server.send_bundle(("/node_set", voice.id, "gate", 0.0))
         yield 0.5
-        answer = Synth.new("wt_shaped", {"freq": 165.0, "drive": 0.1}, server=server)
+        answer = Synth("wt_shaped", {"freq": 165.0, "drive": 0.1}, server=server)
         server.send_bundle(("/node_set", answer.id, "drive", 0.9))  # harmonics in
         yield 2.0
         server.send_bundle(("/node_set", answer.id, "gate", 0.0))

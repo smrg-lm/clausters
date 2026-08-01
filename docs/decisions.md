@@ -2010,7 +2010,7 @@ shape: the arithmetic is small, but its being in one place is the point.
 
 Context (the client's GUI ergonomics): a high-level client should not make the
 user pick and thread integer widget ids — the audio-server side never does (a
-script writes `Synth.new("beep", {"freq": 440})`, and the client's
+script writes `Synth("beep", {"freq": 440})`, and the client's
 `NodeIdAllocator` names the node). The GUI's id handling grew crudely in the
 opposite direction: two disjoint monotonic counters (the host client from 1000,
 the multitrack editor from 10 000, partitioned only by convention), neither
@@ -3792,3 +3792,44 @@ reason — the old name was carrying a datum:
 
 Pre-1.0, nothing here is frozen; the counterpart obligation is that the four
 packages move together, which this change did in one commit.
+
+## `new` is the constructor, and the alternates get names
+
+The Python client's node handles were built with class methods —
+`Synth.new("beep", {"freq": 440})`, `Group.new()` — while `__init__` was left
+holding the *other* meaning, wrapping an id that already exists:
+`Synth(1003, "beep")`. That split was never decided. It is a literal
+transliteration of sclang, where `*new` **is** the constructor because the
+language has no distinguished initializer, so every constructor is a class
+method by that name. Python has `__init__`, and the port kept a shape that only
+made sense in the language it came from.
+
+It did not even earn the `__init__` it displaced. Nothing outside the classes
+themselves ever built a handle from an id that way: the code that names a node
+reported by a responder, a query or the GUI uses the base class,
+`Node(id, server)`. So the positional wrapping constructor was serving only the
+factories that had taken its place.
+
+So: **building a resource creates it.** `Synth("beep", {"freq": 440},
+target=group)` allocates an id and sends `/synth_new`; `Group()` sends
+`/group_new`. Naming one that already exists is the alternate, and alternates
+get names — `Synth.from_id` / `Group.from_id`, which send nothing. The rest of
+the named constructors were always alternates and stay: `Group.graph` (a
+different command), `Bus.audio` / `Bus.control` (they pick the rate),
+`Buffer.alloc` / `Buffer.read` (they block on `/done`), `Server.boot`,
+`FaustDef.from_signals` / `from_source` / `from_box`.
+
+`Bus` and `Buffer` keep a constructor that *names* rather than creates —
+`Bus(4, channels=2)`, `Buffer(bufnum)` — and that is not an inconsistency. A bus
+and a buffer are slots in a pool of fixed size, so an index is a meaningful
+thing to write down: bus 4 is a hardware output on every server. A node id is
+not; it comes from the client's `NodeIdAllocator` and means nothing to a reader.
+`Bus(4)` says something, `Synth(1003, "beep")` never did.
+
+The web client keeps `Synth.new(server, …)` for now, and the divergence is
+deliberate: it has no ambient session, so the server is that method's first
+positional argument, and as a constructor it would read `new Synth(server,
+"beep", …)` — the server first there, the def name first in Python. The two
+signatures converge only once a session resolves the server, so the port is
+recorded against the milestone that adds one (`clients/web/PLAN.md`, W18)
+rather than shipped as a second, differently-shaped constructor.

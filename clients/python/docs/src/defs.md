@@ -524,7 +524,7 @@ A def sends itself: `sdef.send(server)`, `fdef.send(server)`, `gdef.send(server)
 fdef.send(server)                 # RT: BLOCKS until /done (raises CommandError on /fail, ReplyTimeout on silence)
 sdef.send(server, wait=False)     # fire-and-forget: only sends
 server.sync()                     # barrier: /server_sync -> /server_sync.reply, waits for ALL earlier async work
-Synth.new("fsine", {"freq": 330.0}, server=server)    # safe now — the def is installed
+Synth("fsine", {"freq": 330.0}, server=server)    # safe now — the def is installed
 ```
 
 - `wait=True` (the default) blocks on `/done`; `wait=False` only sends, after which `sync()` is the barrier before the `/synth_new` that needs the def.

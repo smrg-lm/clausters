@@ -54,7 +54,7 @@ def test_write_then_read_buffer_round_trips(tmp_path):
              out(0.0, play_buf(control("buf", 0.0, "ir"), 0.0, 1.0, 1.0))).send(s2)
 
     def go():
-        Synth.new("play", {"buf": b2.bufnum}, server=s2)
+        Synth("play", {"buf": b2.bufnum}, server=s2)
         yield 0.5
         s2.send_bundle(("/node_free", 0))
 

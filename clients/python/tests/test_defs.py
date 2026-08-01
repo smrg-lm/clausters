@@ -213,7 +213,7 @@ class _FakeInterface:
 def test_synth_new_builds_s_new_correctly():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    synth = Synth.new("foo", {"freq": 440.0}, target=0, action=AddAction.TAIL,
+    synth = Synth("foo", {"freq": 440.0}, target=0, action=AddAction.TAIL,
                       server=srv)
     assert synth.id == 1000 and synth.defname == "foo" and synth.server is srv
     assert iface.sent[-1] == ("/synth_new", ["foo", 1000, 1, 0, "freq", 440.0])
@@ -222,7 +222,7 @@ def test_synth_new_builds_s_new_correctly():
 def test_node_commands_go_through_the_node():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    node = Synth.new("foo", server=srv)
+    node = Synth("foo", server=srv)
     node.set({"freq": 220.0})
     assert iface.sent[-1] == ("/node_set", [node.id, "freq", 220.0])
     node.free()
@@ -232,7 +232,7 @@ def test_node_commands_go_through_the_node():
 def test_group_new_and_graph_build_their_own_message():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    group = Group.new(server=srv)
+    group = Group(server=srv)
     assert iface.sent[-1] == ("/group_new", [group.id, 1, 0])
     inst = Group.graph("chain", {"gain": 0.8}, server=srv)
     assert iface.sent[-1] == ("/graph_new", ["chain", inst.id, 1, 0, "gain", 0.8])
@@ -270,7 +270,7 @@ def test_server_sync_round_trips_synced_id():
 def test_node_map_and_set_layout():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    node = Synth.new("foo", server=srv)
+    node = Synth("foo", server=srv)
     node.set({"in": 4.0, "out": 0.0})             # reserved controls via dict
     assert iface.sent[-1] == ("/node_set", [1000, "in", 4.0, "out", 0.0])
     bus = Bus.audio(1, server=srv)
@@ -297,13 +297,43 @@ def test_node_run_pause_resume_emit_n_run():
     # S4: /node_run pauses (flag 0) / resumes (flag 1) a node.
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    node = Synth.new("foo", server=srv)
+    node = Synth("foo", server=srv)
     node.pause()
     assert iface.sent[-1] == ("/node_run", [1000, 0])
     node.resume()
     assert iface.sent[-1] == ("/node_run", [1000, 1])
-    Group(1234, srv).run(False)                   # a handle for a reported id
+    Group.from_id(1234, srv).run(False)                   # a handle for a reported id
     assert iface.sent[-1] == ("/node_run", [1234, 0])
+
+
+def test_building_a_node_creates_it_and_from_id_only_names_one():
+    # Building a Synth or a Group *is* creating it: the id comes from the
+    # allocator and the command goes out. from_id names one that already
+    # exists, and sends nothing.
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    group = Group(server=srv)
+    assert iface.sent[-1] == ("/group_new", [group.id, 1, 0])
+    synth = Synth("blip", {"freq": 440}, target=group, server=srv)
+    assert iface.sent[-1] == ("/synth_new", ["blip", synth.id, 1, group.id, "freq", 440.0])
+
+    before = len(iface.sent)
+    handle = Synth.from_id(4242, "blip", srv)
+    assert (handle.id, handle.defname, handle.server) == (4242, "blip", srv)
+    assert Group.from_id(99, srv).id == 99
+    assert len(iface.sent) == before
+
+
+def test_a_target_is_a_node_or_its_id():
+    # target=group and target=group.id are the same thing.
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    group = Group(server=srv)
+    Synth("blip", target=group, server=srv)
+    by_object = iface.sent[-1]
+    Synth("blip", target=group.id, server=srv)
+    by_id = iface.sent[-1]
+    assert by_object[1][2:] == by_id[1][2:]
 
 
 def test_done_action_full_set():

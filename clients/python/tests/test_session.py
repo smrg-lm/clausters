@@ -56,9 +56,9 @@ def test_nrt_render_with_workers_is_bit_identical():
         server = s.server
         SynthDef(
             "par_voice", out(0.0, sine(control("freq", 330.0)) * 0.1)).send(server)
-        band = Group.new(server=server)
+        band = Group(server=server)
         server.send_msg("/group_parallel", band.id, 1)
-        voices = [Synth.new("par_voice", {"freq": 220.0 * (i + 1)},
+        voices = [Synth("par_voice", {"freq": 220.0 * (i + 1)},
                                target=band.id, server=server) for i in range(4)]
 
         def score():

@@ -44,7 +44,7 @@ server = session.server
 sdef = SynthDef("beep", out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)))
 sdef.send(server)                      # /def_send synth, waits for the server's /done
 
-node = Synth.new("beep", {"freq": 330.0}, server=server)   # you hear it now
+node = Synth("beep", {"freq": 330.0}, server=server)   # you hear it now
 node.set({"freq": 550.0})              # change it while it sounds
 node.free()                              # silence
 ```
@@ -63,7 +63,7 @@ FaustDef.from_signals("fbeep", S.sin(phase * S.TAU) * 0.2).send(server)
 FaustDef.from_box(
     "bbeep", box.faust("os.osc")(box.hslider("freq", 440.0, 20.0, 20000.0, 0.01)) * 0.2).send(server)
 
-Synth.new("bbeep", {"freq": 220.0}, server=server)
+Synth("bbeep", {"freq": 220.0}, server=server)
 ```
 
 Or hand a **pattern** to the session; its clock runs in its own thread, so the

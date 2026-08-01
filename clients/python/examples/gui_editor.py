@@ -175,7 +175,7 @@ def play_pass():
         _synth.free()
     _, args = server.request("/clock_query", expect=("/clock_query.reply",))
     clock_samples = float(args[0])
-    _synth = Synth.new("sampler", server=server)
+    _synth = Synth("sampler", server=server)
     win["wave"].set(playhead_at=clock_samples)
     win["spect"].set(playhead_at=clock_samples)
 

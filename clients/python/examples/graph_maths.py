@@ -47,7 +47,7 @@ def main():
 
     session = Session.nrt(tempo=2.0)
     maths_lead().send(session.server)    # freq/timbre are all in the def
-    lead = Synth.new("maths_lead", {"note": 48.0, "amp": 0.3}, server=session.server)
+    lead = Synth("maths_lead", {"note": 48.0, "amp": 0.3}, server=session.server)
 
     def sequence():
         # Set MIDI notes directly — the def turns them into Hz with .midicps().

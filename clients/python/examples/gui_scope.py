@@ -49,7 +49,7 @@ gui = session.gui()
 
 SynthDef(
     "tone", out(0.0, sine(control("freq", 220.0)) * control("amp", 0.2))).send(server)
-synth = Synth.new("tone", {"freq": 220.0}, server=server)
+synth = Synth("tone", {"freq": 220.0}, server=server)
 
 # %% [markdown]
 # ## Two scopes on the same bus: triggered vs free-running

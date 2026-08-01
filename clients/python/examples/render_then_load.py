@@ -99,7 +99,7 @@ def main():
               f"{info.channels} ch, {info.sample_rate:.0f} Hz")
 
         sampler().send(live.server)
-        node = Synth.new("take", {"bufnum": float(buf.bufnum)}, server=live.server)
+        node = Synth("take", {"bufnum": float(buf.bufnum)}, server=live.server)
         print("playing the take back from the buffer...")
         live.run(stats.duration + 0.5)
         node.free()

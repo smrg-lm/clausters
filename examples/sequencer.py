@@ -93,8 +93,8 @@ def bass() -> SynthDef:
 def play(server):
     """Two synths, sent once, then four seconds of silence on this side. The
     only later message is the one that ends the render."""
-    voices = [Synth.new("seq", {"amp": 0.18}, server=server),
-              Synth.new("seq_bass", {"amp": 0.22}, server=server)]
+    voices = [Synth("seq", {"amp": 0.18}, server=server),
+              Synth("seq_bass", {"amp": 0.22}, server=server)]
     yield 4.0
     for v in voices:
         server.send_bundle(("/node_free", v.id))

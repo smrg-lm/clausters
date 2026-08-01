@@ -177,7 +177,7 @@ def run(server: Server, sr: float):
 
         # Voice 1 reads the ascending motif (snapshot taken now, at /synth_new) and
         # loops it. Routed to "out" 0 -> hardware outputs 0/1.
-        voice1 = Synth.new("sfplay", {"out": 0.0, "gain": 0.35, "speed": 1.0},
+        voice1 = Synth("sfplay", {"out": 0.0, "gain": 0.35, "speed": 1.0},
                            server=server)
         print("voice 1: looping the ascending motif; sweeping speed")
         for speed in (1.0, 1.5, 0.75, 1.25):
@@ -190,7 +190,7 @@ def run(server: Server, sr: float):
         # sees the new contents.
         _alloc_read(server, buf.bufnum, wav_down)
         print("reloaded buffer with the descending motif (voice 1 keeps the old one)")
-        voice2 = Synth.new("sfplay", {"out": 0.0, "gain": 0.3, "speed": 1.0},
+        voice2 = Synth("sfplay", {"out": 0.0, "gain": 0.3, "speed": 1.0},
                            server=server)
         print("voice 2: reads the new (descending) motif -- both voices play together")
         time.sleep(1.8)

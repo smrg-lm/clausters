@@ -44,7 +44,7 @@ def main():
         name = SynthDef("tcp_beep", out(0.0, sig), out(1.0, sig)).send(server)
         print("added synthdef:", name)
 
-        node = Synth.new("tcp_beep", {"freq": 330.0}, server=server)
+        node = Synth("tcp_beep", {"freq": 330.0}, server=server)
         server.sync()
         print("playing; synths =", server.status()[2])
         time.sleep(1.0)

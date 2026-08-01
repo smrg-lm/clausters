@@ -128,7 +128,7 @@ def note_event(pitch: int, velocity: int, state: int, channel: int) -> None:
     if state:
         # A re-press replaces the old voice (its gate closes first).
         note_event(pitch, 0, 0, channel)
-        _voices[pitch] = Synth.new(
+        _voices[pitch] = Synth(
             "gui_piano_voice",
             {"freq": midi_to_hz(pitch), "amp": velocity / 127.0 * 0.3},
             server=server)

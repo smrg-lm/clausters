@@ -75,7 +75,7 @@ def main():
     cross().send(session.server)
 
     def sequence():
-        voice = Synth.new("cross", server=session.server)
+        voice = Synth("cross", server=session.server)
         # A little melody in the modulator: the noise follows it.
         for midi, dur in [(57, 2.0), (60, 2.0), (64, 2.0), (62, 2.0)]:
             freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)

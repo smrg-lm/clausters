@@ -33,9 +33,9 @@ FREQS = (220.0, 277.0, 330.0)  # an A-ish triad
 
 def play(server):
     # A group holding three voices, all starting silent (amp 0).
-    bank = Group.new(server=server)
+    bank = Group(server=server)
     for freq in FREQS:
-        Synth.new("default", {"freq": freq, "amp": 0.0}, target=bank.id, server=server)
+        Synth("default", {"freq": freq, "amp": 0.0}, target=bank.id, server=server)
 
     # One /node_set on the GROUP ramps every voice's amp at once (propagation):
     # no per-voice bookkeeping, the server fans it out to the subtree. Live you

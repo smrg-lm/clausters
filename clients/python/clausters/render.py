@@ -317,7 +317,7 @@ def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,
     if isinstance(obj, GraphDef):
         node = Group.graph(obj.name, controls, server=server)
     else:
-        node = Synth.new(obj.name, controls, server=server)
+        node = Synth(obj.name, controls, server=server)
     server.send_bundle_after(float(dur), ("/node_free", node.id))
     return session.render(sample_rate=sample_rate, channels=channels, seed=seed,
                           path=path)

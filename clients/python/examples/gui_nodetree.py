@@ -46,10 +46,10 @@ gui = session.gui()
 
 SynthDef(
     "beep", out(0.0, sine(control("freq", 220.0)) * control("amp", 0.1))).send(server)
-group = Group.new(server=server)
-sweeper = Synth.new("beep", {"freq": 220.0}, target=group.id,
+group = Group(server=server)
+sweeper = Synth("beep", {"freq": 220.0}, target=group.id,
                     action=AddAction.TAIL, server=server)
-Synth.new("beep", {"freq": 330.0}, target=group.id, action=AddAction.TAIL, server=server)
+Synth("beep", {"freq": 330.0}, target=group.id, action=AddAction.TAIL, server=server)
 
 # %% [markdown]
 # ## The view
@@ -81,7 +81,7 @@ def run(seconds: float) -> None:
         t = time.monotonic() - start
         sweeper.set({"freq": 330.0 + 220.0 * math.sin(t)})
         if extra is None and int(t) % 4 == 2:
-            extra = Synth.new("beep", {"freq": 550.0, "amp": 0.08},
+            extra = Synth("beep", {"freq": 550.0, "amp": 0.08},
                                  target=group.id, action=AddAction.TAIL, server=server)
         elif extra is not None and int(t) % 4 == 0:
             extra.free()

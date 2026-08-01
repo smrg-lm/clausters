@@ -105,7 +105,7 @@ def main():
     def sequence():
         for midi, dur in [(69, 1.5), (64, 1.5), (71, 1.5), (69, 3.0)]:
             freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
-            voice = Synth.new("pluck", {"freq": freq}, server=server)
+            voice = Synth("pluck", {"freq": freq}, server=server)
             yield dur
             server.send_bundle(("/node_free", voice.id))
 

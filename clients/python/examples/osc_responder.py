@@ -54,7 +54,7 @@ def main() -> None:
         # msg == ["/note", midinote, dur]
         midinote, dur = msg[1], msg[2]
         freq = 440.0 * 2 ** ((midinote - 69) / 12)
-        synth = Synth.new("default", {"freq": freq, "amp": 0.2}, server=server)
+        synth = Synth("default", {"freq": freq, "amp": 0.2}, server=server)
         session.clock.sched(dur, lambda: synth.free())
         print(f"  /note {midinote} -> freq {freq:.1f} Hz for {dur:.2f}s")
 

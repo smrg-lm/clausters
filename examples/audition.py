@@ -236,7 +236,7 @@ def render_offline(items, secs, amp, sets, sweep, path):
         spec = build(subject, secs, amp, sets, sweep, catalog)
         server = Server(interface=OscNrtInterface())
         RawDef(spec).send(server)
-        node = Synth.new(spec["name"], server=server)
+        node = Synth(spec["name"], server=server)
         # A bare subject has no envelope and no done action, so nothing would
         # end the score: the render's duration is the closing bundle.
         server.send_bundle_after(secs, ("/node_free", node.id))
@@ -269,7 +269,7 @@ def play_live(items, secs, amp, sets, sweep):
             spec = build(subject, secs, amp, sets, sweep, catalog)
             RawDef(spec).send(session.server)
             print(f"  {section}/{subject['name']:14} {subject['kind']}")
-            node = Synth.new(spec["name"], server=session.server)
+            node = Synth(spec["name"], server=session.server)
             time.sleep(secs)
             node.free()
             time.sleep(0.15)

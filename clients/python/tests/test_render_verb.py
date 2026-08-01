@@ -186,7 +186,7 @@ def test_the_file_path_reports_its_seed_too(tmp_path):
     def score(seed):
         s = Session.nrt(tempo=1.0)
         _noisy().send(s.server)
-        node = Synth.new("noisy", server=s.server)
+        node = Synth("noisy", server=s.server)
         s.server.send_bundle_after(0.05, ("/node_free", node.id))
         return s.render(sample_rate=SR, channels=1, path=tmp_path / f"{seed}.wav",
                         seed=seed)

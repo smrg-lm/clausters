@@ -1,7 +1,7 @@
 """The wire a resource handle talks over: which server, and the one shape a
 def send has.
 
-A handle built by a constructor (`Bus.audio`, `Buffer.alloc`, `Synth.new`)
+A handle built by a constructor (`Synth`, `Group`, `Bus.audio`, `Buffer.alloc`)
 carries the server it was created on; one built from a reported id (a
 responder, the GUI, the arrangement) may carry none, and falls back to the
 ambient server — the same rule `clausters.play` follows. The import is lazy

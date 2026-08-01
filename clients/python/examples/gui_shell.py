@@ -140,7 +140,7 @@ def set_status(text: str) -> None:
 def start(value):
     global _voice
     if value == 1 and _voice is None:   # 1 = press
-        _voice = Synth.new("gui_shell_voice", {"freq": _freq, "amp": _amp}, server=server)
+        _voice = Synth("gui_shell_voice", {"freq": _freq, "amp": _amp}, server=server)
         set_status("playing")
 
 

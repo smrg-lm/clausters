@@ -52,7 +52,7 @@ def test_automation_drives_control_bus_matches_curve():
     # Linear 0.2 -> 0.8 over 2 beats (= 2 s at tempo 1).
     auto = Automation.from_points([(0, 0.2, 1, 0.0), (2, 0.8, 1, 0.0)], target=None)
     auto.prepare(server)
-    Synth.new("readbus", {"bus": auto.bus.index}, server=server)
+    Synth("readbus", {"bus": auto.bus.index}, server=server)
 
     def routine():
         auto.play(server)

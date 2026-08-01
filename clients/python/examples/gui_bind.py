@@ -58,7 +58,7 @@ def beep(name: str = "gui_bind_beep") -> SynthDef:
 
 
 beep().send(server)
-synth = Synth.new("gui_bind_beep", {"freq": 220.0}, server=server)
+synth = Synth("gui_bind_beep", {"freq": 220.0}, server=server)
 
 # %% [markdown]
 # ## A named knob, bound to the synth's freq

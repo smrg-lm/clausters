@@ -66,10 +66,10 @@ def build_tree(server: Server):
     bus, so it shows up as a `/node_map` in the node detail."""
     SynthDef("beep", out(0.0, sine(control("freq", 440.0))
                                               * control("amp", 0.2))).send(server)
-    group = Group.new(server=server)
-    a = Synth.new("beep", {"freq": 220.0}, target=group.id,
+    group = Group(server=server)
+    a = Synth("beep", {"freq": 220.0}, target=group.id,
                   action=AddAction.TAIL, server=server)
-    b = Synth.new("beep", {"freq": 330.0}, target=group.id,
+    b = Synth("beep", {"freq": 330.0}, target=group.id,
                   action=AddAction.TAIL, server=server)
     freq_bus = Bus.control(server=server)
     freq_bus.set(440.0)
@@ -98,7 +98,7 @@ def main():
         print(f"\nb.info() — the same record, asked of the node itself:")
         print(f"  {b.info()}")
 
-        gone = Synth(4242, "beep", server=server)
+        gone = Synth.from_id(4242, "beep", server=server)
         print(f"  a node that was never there: exists={gone.info().exists}")
 
         print(f"\ndump_graph({group.id}) — inferred bus graph (debug text):")

@@ -64,7 +64,7 @@ def main():
     session = Session.nrt(tempo=2.0)
     glide_lead().send(session.server)        # /def_send synth at time 0
 
-    lead = Synth.new("glide_lead", {"amp": 0.2, "freq": mtof(48)}, server=session.server)
+    lead = Synth("glide_lead", {"amp": 0.2, "freq": mtof(48)}, server=session.server)
 
     def sequence():
         # A little melody; consecutive notes glide, each one re-plucked. In an

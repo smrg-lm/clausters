@@ -47,7 +47,7 @@ def main():
 
     session = Session.nrt(tempo=2.0)
     drone().send(session.server)             # /def_send synth at time 0
-    node = Synth.new("drone", {"freq": 220.0, "amp": 0.2}, server=session.server)
+    node = Synth("drone", {"freq": 220.0, "amp": 0.2}, server=session.server)
 
     def sequence():
         yield 1.0                                    # a beat of tone

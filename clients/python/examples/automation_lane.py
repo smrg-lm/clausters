@@ -53,7 +53,7 @@ server = session.server
 tone().send(server)
 
 # %% A sustained voice, and an automation lane sweeping its pitch.
-voice = Synth.new("tone", server=server)           # one held voice
+voice = Synth("tone", server=server)           # one held voice
 gliss = Automation.from_points(
     [(0, 220.0, 2, 0.0),                            # 220 Hz ...
      (2, 880.0, 2, 0.0),                            # ... up to 880 (exponential) ...

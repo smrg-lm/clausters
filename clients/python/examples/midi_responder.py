@@ -49,7 +49,7 @@ def main() -> None:
             return note_off(msg, src)
         freq = 440.0 * 2 ** ((msg["note"] - 69) / 12)
         amp = msg["velocity"] / 127 * 0.3
-        voices[msg["note"]] = Synth.new("default", {"freq": freq, "amp": amp},
+        voices[msg["note"]] = Synth("default", {"freq": freq, "amp": amp},
                                         server=server)
         print(f"  note on  {msg['note']} ({freq:.1f} Hz)")
 

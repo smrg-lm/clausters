@@ -119,8 +119,8 @@ print("loaded def 'beep'; status:", server.status())   # [..., num_defs, ...]
 # `output`. They are added at the tail of the root in creation order.
 
 # %%
-sources = Group.new(server=server)
-output = Group.new(server=server)
+sources = Group(server=server)
+output = Group(server=server)
 print(f"sources = group {sources.id}, output = group {output.id}")
 show_tree("two empty groups under the root")
 
@@ -130,9 +130,9 @@ show_tree("two empty groups under the root")
 # Spawn two `beep` synths at the tail of `sources`. They appear nested under it.
 
 # %%
-a = Synth.new("beep", {"freq": 220.0}, target=sources.id,
+a = Synth("beep", {"freq": 220.0}, target=sources.id,
               action=AddAction.TAIL, server=server)
-b = Synth.new("beep", {"freq": 330.0}, target=sources.id,
+b = Synth("beep", {"freq": 330.0}, target=sources.id,
               action=AddAction.TAIL, server=server)
 print(f"spawned synths {a.id} and {b.id} in group {sources.id}")
 show_tree("two synths under the sources group")

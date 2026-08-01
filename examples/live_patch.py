@@ -177,8 +177,8 @@ def run(server: Server, buf):
     # Two groups give a defined execution order: everything in `sources` runs
     # before `output`, so the mixer always reads buses the sources already wrote
     # this block.
-    sources = Group.new(server=server)
-    output = Group.new(server=server)    # added after `sources` -> runs later
+    sources = Group(server=server)
+    output = Group(server=server)    # added after `sources` -> runs later
 
     # Buses connecting the nodes. Sizes come from ServerOptions (the allocators
     # never hand out a bus the server lacks).
@@ -189,18 +189,18 @@ def run(server: Server, buf):
 
     # The Faust voice writes to bus_voice; its freq is *mapped* to the control
     # bus, so retuning is a single /bus_set with no per-note command.
-    voice = Synth.new("fsine", {"out": bus_voice.index},
+    voice = Synth("fsine", {"out": bus_voice.index},
                          target=sources.id, action=AddAction.TAIL, server=server)
     voice.map("freq", freq_bus)
 
     # The buffer player loops the pluck into bus_sample.
-    player = Synth.new("bufplayer",
+    player = Synth("bufplayer",
                           {"bufnum": buf.bufnum, "out": bus_sample.index,
                            "rate": 1.0, "amp": 0.5},
                           target=sources.id, action=AddAction.TAIL, server=server)
 
     # The mixer reads both source buses and sends the sum to the speakers.
-    Synth.new("mixer", {"inA": bus_voice.index, "inB": bus_sample.index},
+    Synth("mixer", {"inA": bus_voice.index, "inB": bus_sample.index},
                  target=output.id, action=AddAction.TAIL, server=server)
 
     print("playing: Faust sine + looped buffer, mixed to the outputs")

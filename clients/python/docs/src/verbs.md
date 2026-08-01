@@ -118,7 +118,7 @@ being already generated, *is* playable. The full story is in
 - **`play(def)` blocks until the server confirms** (the `/done` of the def
   send). Fine interactively; inside a routine, send the def asynchronously
   first (`d.send(server, wait=False)`) and instance it with
-  `Synth.new` — a routine must never block the clock thread.
+  `Synth` — a routine must never block the clock thread.
 - **`play(buffer)` needs the buffer's length.** On a live server it queries an
   unfilled handle; offline (NRT) the handle must carry `frames` up front.
 - **Beats read as seconds outside a clock.** An interactive `play(event)` or

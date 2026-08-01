@@ -80,8 +80,8 @@ def main():
     raw().send(session.server)
     tilted_gate().send(session.server)
 
-    reference = Synth.new("raw", server=session.server)
-    gated = Synth.new("tiltgate", server=session.server)
+    reference = Synth("raw", server=session.server)
+    gated = Synth("tiltgate", server=session.server)
 
     def stop():
         yield 2.0

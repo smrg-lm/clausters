@@ -67,7 +67,7 @@ def main():
 
     session = Session.nrt(tempo=2.0)
     soft_voice().send(session.server)   # NRT: scored at time 0
-    voice = Synth.new("soft_voice", {"freq": 220.0, "amp": 0.25}, server=session.server)
+    voice = Synth("soft_voice", {"freq": 220.0, "amp": 0.25}, server=session.server)
 
     def sequence():
         # The fragment sliders are ordinary controls: /node_set by label.

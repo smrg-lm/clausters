@@ -51,7 +51,7 @@ recv = OscReceiver(port=57121).start()
 # Relay an incoming /note <midinote> <dur> to the server as a synth.
 def play(msg, time, src):
     freq = 440.0 * 2 ** ((msg[1] - 69) / 12)
-    Synth.new("default", {"freq": freq}, server=server)
+    Synth("default", {"freq": freq}, server=server)
 
 OscFunc(play, "/note", recv=recv)
 
@@ -80,7 +80,7 @@ def note_on(m, src):
         return note_off(m, src)
     freq = 440.0 * 2 ** ((m["note"] - 69) / 12)
     amp = m["velocity"] / 127 * 0.3
-    voices[m["note"]] = Synth.new("default", {"freq": freq, "amp": amp}, server=server)
+    voices[m["note"]] = Synth("default", {"freq": freq, "amp": amp}, server=server)
 
 def note_off(m, src):
     synth = voices.pop(m["note"], None)

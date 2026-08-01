@@ -92,7 +92,7 @@ def beep() -> SynthDef:
 
 
 beep().send(server)          # blocks until /done
-synth = Synth.new("gui_oscsend_beep", {"freq": 220.0}, server=server)
+synth = Synth("gui_oscsend_beep", {"freq": 220.0}, server=server)
 
 # %% [markdown]
 # ## Open the window

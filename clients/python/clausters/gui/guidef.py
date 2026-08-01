@@ -1077,7 +1077,7 @@ def piano(*, min: int | None = None, max: int | None = None, active_min: int | N
     Mapping to server instruments, two ways:
 
     - **Programmed (events)** — leave the widget unbound and map ``"note"``
-      events to voices in the script: ``state 1`` spawns a synth (`clausters.defs.Synth.new`
+      events to voices in the script: ``state 1`` spawns a synth (`clausters.defs.Synth`
       with ``freq``/``amp`` from pitch/velocity), ``state 0`` sends its
       ``gate=0``. Fully programmable, like driving any GuiDef.
     - **Host voices** — set ``voice`` to a SynthDef name and the *host* manages
