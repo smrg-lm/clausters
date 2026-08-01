@@ -1,6 +1,7 @@
 //! UDP OSC server implementing the M5 subset of the scsynth protocol:
 //! `/server_status`, `/server_quit`, `/server_notify`, `/server_dumpOsc`, `/server_verbosity`, `/synth_new` (add actions 0-4),
-//! `/node_free`, `/node_set`, `/node_before`, `/node_after`, `/group_new`, `/group_freeAll`,
+//! `/node_free`, `/node_set`, `/node_before`, `/node_after`, `/group_new`, `/group_name`,
+//! `/group_query`, `/group_freeAll`,
 //! `/group_deepFree`, `/bus_set`, `/bus_get`, `/def_send synth`, `/def_free`; the buffer
 //! commands `/buffer_alloc`, `/buffer_allocRead`, `/buffer_read`, `/buffer_write`, `/buffer_zero`,
 //! `/buffer_free` (all async via the NRT thread, replying `/done cmd bufnum`),
@@ -967,14 +968,25 @@ impl OscServer {
             if ev.kind == NodeEventKind::End {
                 self.translator.release_node_id(ev.id);
             }
-            // scsynth shape: id, parent, previous, next, isGroup. We don't
-            // track sibling IDs on this side, so previous/next are -1.
+            // id, parent, previous, next, isGroup, name. We don't track
+            // sibling IDs on this side, so previous/next are -1. The name is
+            // the group's `/group_name` (empty for a synth or an unnamed
+            // group): a client watching the tree learns *which* channel came
+            // up or went away without a follow-up query — and for a death
+            // there is no query left to make, which is why the mirror keeps
+            // the label one beat longer than the entry.
+            let name = match (ev.is_group, ev.kind) {
+                (false, _) => String::new(),
+                (true, NodeEventKind::Go) => self.translator.group_name(ev.id).to_string(),
+                (true, NodeEventKind::End) => self.translator.take_group_epitaph(ev.id),
+            };
             let args = vec![
                 OscType::Int(ev.id),
                 OscType::Int(ev.parent_id),
                 OscType::Int(-1),
                 OscType::Int(-1),
                 OscType::Int(ev.is_group as i32),
+                OscType::String(name),
             ];
             for client in &self.clients {
                 self.reply(*client, addr, args.clone());
@@ -1118,6 +1130,7 @@ impl OscServer {
             | "/group_tail"
             | "/group_sortMode"
             | "/group_parallel"
+            | "/group_name"
             | "/graph_new"
             | "/graph_newVoice" => self.handle_via_translate(&msg, from),
             "/node_trace" => self.handle_node_trace(&msg, from),
@@ -1127,6 +1140,7 @@ impl OscServer {
                 self.persist_bindings();
             }
             "/group_queryTree" => self.handle_group_query_tree(&msg, from),
+            "/group_query" => self.handle_group_query(&msg, from),
             "/node_query" => self.handle_node_query(&msg, from),
             "/group_dumpGraph" => self.handle_group_dump_graph(&msg, from),
             "/bus_set" => self.handle_bus_set(&msg, from),
@@ -1704,6 +1718,24 @@ impl OscServer {
             };
             let args = self.translator.node_info(*id);
             self.reply(from, "/node_query.reply", args);
+        }
+    }
+
+    /// `/group_query path...`: resolves each path to the node it names,
+    /// replying `/group_query.reply <path> <nodeID>` — the one place a path is
+    /// interpreted. A path nothing answers to resolves to `-1` (absence is a
+    /// state, as in `/node_query`), so one dead path does not abort the rest.
+    fn handle_group_query(&mut self, msg: &OscMessage, from: ClientId) {
+        for arg in &msg.args {
+            let OscType::String(path) = arg else {
+                return self.fail(from, "/group_query", "expected string paths");
+            };
+            let id = self.translator.resolve_path(path);
+            self.reply(
+                from,
+                "/group_query.reply",
+                vec![OscType::String(path.clone()), OscType::Int(id)],
+            );
         }
     }
 

@@ -3833,3 +3833,77 @@ positional argument, and as a constructor it would read `new Synth(server,
 signatures converge only once a session resolves the server, so the port is
 recorded against the milestone that adds one (`clients/web/PLAN.md`, W18)
 rather than shipped as a second, differently-shaped constructor.
+
+## A group's name is a label, and the id is still the identity
+
+*(2026-08-01, M33)*
+
+A group needed to be callable something. The node tree gives a group everything
+a DAW channel has — a handle for many nodes, a place in the order, a lifetime —
+except a way of saying which one it is: `1002` is the number the client's
+allocator happened to hand out, and a console built out of groups reads as a
+list of integers. So groups got names.
+
+The shape of that decision is what matters, and it is the same one in three
+places: **the name never replaces the id**.
+
+- **On the wire**, no command takes a path where a node id goes. `/group_new`
+  takes the label with the creation — a group is born knowing what it is, which
+  is when the client knows too — `/group_name` renames one by id,
+  `/group_query` resolves a path *to* an id, and every other command is
+  untouched. A label carried by `/group_new` is judged **before** the group
+  exists — a refused name refuses the creation, because a half-applied command
+  that silently downgrades "a group called `mixer`" to "some group" leaves the
+  client's model of the tree wrong in a way only a query would reveal. The alternative — accepting a string wherever a
+  target int is accepted — would have rewritten the parsing of some twenty-five
+  commands, paid a resolution cost on every message, and given a scheduled
+  bundle two defensible answers about *when* the path resolves (at translation,
+  or when the bundle fires). Resolving once and commanding by id has none of
+  those problems, and it is what a client does anyway: it caches the handle.
+- **In a path**, a group answers to its name *and* to its id, and an unnamed
+  group contributes its id as the segment. That is what keeps every group
+  reachable — naming is opt-in, and a subtree with an unnamed group in the
+  middle stays addressable — and it is the reason a name may not be **all
+  digits**: a numeric name would speak for another group's id segment. (A
+  leading digit is fine; `8bit` is a name.)
+- **In the reports**, an unnamed group reports an *empty* name, never its id.
+  The id-as-segment is a path-composition rule, not a default name.
+
+**A death has to be able to name what died**, and that is the one place the
+"names live in the mirror" rule needed care: the mirror drops a node when its
+command is *translated*, while `/node_end` only goes out once the engine
+confirms the death. So a departing group's label is kept as an **epitaph** — a
+bounded queue in the mirror, claimed by the notification — for exactly that gap.
+Bounded rather than exact because a mirror removal does not always produce an
+event (the node may already have been gone engine-side), and an unclaimed
+epitaph is worth less than an unbounded map.
+
+**Where it lives is the whole performance story.** The name is a field of
+`MirrorBody::Group` in the network-side `TreeMirror` and exists nowhere else:
+`node::Group` grew no field, `/group_name` queues no `Cmd`, and the engine has
+no notion of a name. So the audio thread cannot pay for this feature — not a
+byte per group slot, not a branch in `process_block` — and that is a structural
+guarantee rather than a measurement. It follows the same reasoning as the
+auto-sort analysis: anything a client needs to *say* about the tree belongs to
+the mirror, and only what the engine must *do* crosses the FIFO. Paths are
+composed on the walk and never stored, which is why renaming a group re-paths
+its whole subtree in one command.
+
+**The reply shapes follow the feature, not scsynth.** `/group_queryTree.reply`
+was scsynth-compatible field for field, and a group name has to go somewhere: it
+goes where a synth's def name goes, after the child count, so every node reads
+`id, count, name` uniformly. `/node_query.reply` puts it after `headID, tailID`,
+and the node notifications carry it as a last argument for *every* node event,
+empty where there is no name. That uniformity was chosen over the two
+alternatives on purpose — a separate names-only query would make a client cross
+two replies by id to draw one tree, and hiding the name behind a `detail` level
+would leave a shape nobody can parse without knowing which level they asked for.
+
+Reading these as a compatibility cost would be a mistake, and the reasoning is
+the one already recorded under *One naming rule beats compatibility with a name
+nobody types twice*: the compatibility being given up was never real. Nothing
+but our own clients speaks this protocol — sclang cannot drive Clausters and the
+command names are not scsynth's — so a shape is chosen for consistency, and the
+four packages move together in the same commit. A back-compatibility patch for
+a reader that does not exist is a wart that outlives the reason for it: the
+clients parse the field as always present, because it always is.

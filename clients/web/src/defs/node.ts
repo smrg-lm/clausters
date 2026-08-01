@@ -21,7 +21,7 @@ import { busIndex } from "./bus.ts";
 import type { BusLike } from "./bus.ts";
 import { parseNodeInfo } from "./info.ts";
 import type { NodeInfo } from "./info.ts";
-import type { OscArg } from "../base/osc.ts";
+import type { MsgArg, OscArg } from "../base/osc.ts";
 import type { Server } from "./server.ts";
 
 export const ROOT_NODE_ID = 0;
@@ -64,6 +64,9 @@ export function flattenControls(controls?: Controls): OscArg[] {
 
 /** Where a new node goes, for every constructor here. */
 export type Placement = { target?: NodeLike; action?: AddAction };
+
+/** A `Placement` plus the optional label a new group is created with. */
+export type GroupOptions = Placement & { name?: string };
 
 export class Node {
     readonly id: number;
@@ -207,14 +210,45 @@ export class Synth extends Node {
 }
 
 export class Group extends Node {
-    /** An empty group in the node tree (`/group_new`). */
+    /**
+     * An empty group in the node tree (`/group_new`), optionally labelled —
+     * see {@link Group.rename} for what a name is.
+     *
+     * The label travels with the creation, in one message: a group is born
+     * knowing what it is. `rename` is for changing it afterwards. A name the
+     * server refuses (see {@link Group.rename} for the rules) refuses the
+     * **creation**: no group appears, rather than an anonymous one you did not
+     * ask for.
+     */
     static new(
         server: Server,
-        { target = ROOT_NODE_ID, action = AddAction.TAIL }: Placement = {},
+        { name, target = ROOT_NODE_ID, action = AddAction.TAIL }: GroupOptions = {},
     ): Group {
         const id = server.nodes.alloc();
-        server.sendMsg("/group_new", ["i", id], ["i", action], ["i", nodeId(target)]);
+        const args: MsgArg[] = [["i", id], ["i", action], ["i", nodeId(target)]];
+        if (name) args.push(name);
+        server.sendMsg("/group_new", ...args);
         return new Group(id, server);
+    }
+
+    /**
+     * Relabels this group (`/group_name`), or clears the label with `""`.
+     *
+     * A name does not replace the id: every command still addresses the group
+     * by id, and this one is no exception. What it adds is a way to *say* which
+     * group you mean — the label comes back in every node report ({@link
+     * Node.info}, `Server.queryTree`) and names one segment of the group's
+     * path, which `Server.groupAt` resolves. That is what makes a mixer's
+     * channels, its busses and its master addressable by what they are instead
+     * of by the ids they happened to get.
+     *
+     * The server rejects a name already taken by a sibling, one that is all
+     * digits (an unnamed group answers to its id in a path, so a numeric name
+     * would be ambiguous) and one containing `/` (the server composes the path,
+     * the client does not).
+     */
+    rename(name: string): void {
+        this.srv().sendMsg("/group_name", ["i", this.id], name);
     }
 
     /**

@@ -54,6 +54,8 @@ A def is a plain value until it is sent, and the definitions themselves mean exa
 
 Handles are `Synth`, `Group`, `Bus` and `Buffer` — thin objects over an id from the core's allocator, freed by `node.free()`, `bus.free()`, `buf.free()`.
 
+A `Group` is **born named** — `Group.new(server, { name: "mixer" })`, and `group.rename(...)` afterwards — a referenceable label on top of the node id: the id stays the identity every command uses, and the name is how you *refer* to the group instead of to a number, comes back in every node record, and makes the tree navigable by path (`server.groupAt("/mixer/drums")`). That is what lets a mixer's channels, its sends and its master be built out of groups and still be sayable.
+
 ## Driving the GUI host
 
 `GuiHost` is the same seam again — a connection and a name:

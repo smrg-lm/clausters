@@ -46,7 +46,7 @@ from .info import (
     parse_query_tree,
     parse_ugen_info,
 )
-from .node import NodeIdAllocator, ROOT_NODE_ID
+from .node import Group, NodeIdAllocator, ROOT_NODE_ID
 
 
 # Server defaults, mirroring the Rust server's `DEFAULT_AUDIO_BUSES` /
@@ -621,6 +621,23 @@ class Server:
         if addr == "/fail":
             raise CommandError(f"/group_queryTree failed: {args}")
         return parse_query_tree(args)
+
+    def group_at(self, path: str, timeout: float = 5.0):
+        """The group a path names (``/group_query``), as a
+        `clausters.defs.Group` handle — or ``None`` when nothing answers to it.
+
+        A path is the group names from the root down, ``/mixer/drums``; a group
+        with no name contributes its id instead (``/1000/drums``), so every
+        group is reachable whether it was labelled or not. Resolve once and keep
+        the handle: the id is the identity, the path is how you found it, and a
+        group that is renamed or freed leaves the handle pointing at the id it
+        resolved to. Blocking, RT only."""
+        addr, args = self.request("/group_query", str(path),
+                                  timeout=timeout, expect=("/group_query.reply", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/group_query failed: {args}")
+        node_id = int(args[1])
+        return Group.from_id(node_id, self) if node_id >= 0 else None
 
     def dump_graph(self, group=ROOT_NODE_ID, timeout: float = 5.0) -> str:
         """The inferred bus graph of `group` as a human-readable string

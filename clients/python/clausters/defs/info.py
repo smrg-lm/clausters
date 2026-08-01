@@ -192,8 +192,9 @@ class NodeInfo:
     mapped control follows its bus, a ``done_action`` frees the node. It is a
     photograph, which is why no handle keeps one.
 
-    A **group** carries ``head``/``tail`` (``-1`` when empty) and its children
-    are the `Tree`'s business; a **synth** carries ``defname``, its
+    A **group** carries ``head``/``tail`` (``-1`` when empty), its ``name``
+    (``""`` when it has none) and its children are the `Tree`'s business; a
+    **synth** carries ``defname``, its
     ``controls`` by name, its ``maps`` and the ``reads``/``writes`` bus lists
     the server infers (``"-"`` when none). A node that is gone comes back with
     ``exists`` false and nothing else filled in."""
@@ -206,6 +207,7 @@ class NodeInfo:
     exists: bool = True
     head: int = -1
     tail: int = -1
+    name: str = ""
     defname: str = ""
     controls: dict = field(default_factory=dict)
     maps: "list[NodeMap]" = field(default_factory=list)
@@ -216,7 +218,9 @@ class NodeInfo:
         if not self.exists:
             return f"{self.id} (gone)"
         if self.is_group:
-            return f"group {self.id}" + (" (empty)" if self.head < 0 else "")
+            named = f' "{self.name}"' if self.name else ""
+            return (f"group {self.id}{named}"
+                    + (" (empty)" if self.head < 0 else ""))
         mapped = {m.control: m for m in self.maps}
         parts = []
         for i, (name, value) in enumerate(self.controls.items()):
@@ -277,7 +281,8 @@ class Tree:
         pad = "  " * depth
         info = self.info
         if info.is_group:
-            head = f"{pad}group {info.id}"
+            named = f' "{info.name}"' if info.name else ""
+            head = f"{pad}group {info.id}{named}"
             if not self.children:
                 head += " (empty)"
             out = [head]
@@ -381,7 +386,8 @@ def parse_n_info(args) -> NodeInfo:
         return NodeInfo(id=id_, exists=False)
     if kind == 1:
         return NodeInfo(id=id_, parent=parent, prev=prev, next=next_,
-                        is_group=True, head=int(args[5]), tail=int(args[6]))
+                        is_group=True, head=int(args[5]), tail=int(args[6]),
+                        name=str(args[7]))
     info = NodeInfo(id=id_, parent=parent, prev=prev, next=next_,
                     defname=str(args[5]))
     info.controls, i = _parse_controls(args, 6)
@@ -393,6 +399,8 @@ def parse_n_info(args) -> NodeInfo:
 def _parse_tree_nodes(args, i, count, detail, parent):
     """Recursively parse `count` entries of a ``/group_queryTree.reply`` starting
     at index `i`; returns (subtrees, next_index). A synth has child-count -1.
+    Every entry is ``id, childCount, name`` — the group's `/group_name` or the
+    synth's def name.
 
     The wire gives the nesting; the siblings and a group's head/tail follow
     from it, so each entry comes out as complete as `Node.info` would."""
@@ -411,8 +419,10 @@ def _parse_tree_nodes(args, i, count, detail, parent):
                 i += 2
             out.append(Tree(info=info))
         else:
+            name = str(args[i])
+            i += 1
             children, i = _parse_tree_nodes(args, i, child_count, detail, node_id)
-            info = NodeInfo(id=node_id, parent=parent, is_group=True,
+            info = NodeInfo(id=node_id, parent=parent, is_group=True, name=name,
                             head=children[0].info.id if children else -1,
                             tail=children[-1].info.id if children else -1)
             out.append(Tree(info=info, children=children))
@@ -428,8 +438,9 @@ def parse_query_tree(args) -> Tree:
     detail = int(args[0])
     root_id = int(args[1])
     count = int(args[2])
-    children, _ = _parse_tree_nodes(args, 3, count, detail, root_id)
-    root = NodeInfo(id=root_id, is_group=True,
+    root_name = str(args[3])
+    children, _ = _parse_tree_nodes(args, 4, count, detail, root_id)
+    root = NodeInfo(id=root_id, is_group=True, name=root_name,
                     head=children[0].info.id if children else -1,
                     tail=children[-1].info.id if children else -1)
     return Tree(info=root, children=children)

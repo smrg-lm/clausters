@@ -316,6 +316,23 @@ impl CmdTranslator {
         Err(format!("SynthDef not found: {name}"))
     }
 
+    /// A group's `/group_name`, `""` when it has none (and for a synth). What
+    /// `/node_start` names the newborn with.
+    pub fn group_name(&self, id: i32) -> &str {
+        self.mirror.name_of(id)
+    }
+
+    /// The name of a group that has just died, claimed for its `/node_end`.
+    /// The mirror drops a node when its command is translated, so by the time
+    /// the engine confirms the death the entry is gone and only the epitaph
+    /// is left.
+    pub fn take_group_epitaph(&mut self, id: i32) -> String {
+        self.mirror
+            .take_epitaph(id)
+            .map(String::from)
+            .unwrap_or_default()
+    }
+
     /// Drops the mirror entries of a node the engine freed or rejected.
     pub fn forget_node(&mut self, id: i32) {
         self.node_defs.remove(&id);
@@ -1173,16 +1190,9 @@ impl CmdTranslator {
             action,
             group: self.new_group(),
         });
-        let _ = self.mirror.insert(
-            group_id,
-            MirrorBody::Group {
-                children: Vec::new(),
-                auto: true,
-                parallel: false,
-            },
-            *target,
-            action,
-        );
+        let _ = self
+            .mirror
+            .insert(group_id, MirrorBody::group(true), *target, action);
         let shared_nodes =
             self.build_members(&def, &shared, built, member_ids, group_id, &bus_index, cmds);
         self.resort_from(Some(group_id), cmds);
@@ -1257,11 +1267,7 @@ impl CmdTranslator {
         });
         let _ = self.mirror.insert(
             voice_id,
-            MirrorBody::Group {
-                children: Vec::new(),
-                auto: true,
-                parallel: false,
-            },
+            MirrorBody::group(true),
             *instance,
             AddAction::Head,
         );
@@ -1574,15 +1580,43 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
+            // `/group_new (id, addAction, targetID [, name])...` — a group is
+            // born named, in one message, because that is when a client knows
+            // what it is building; `/group_name` is left for renaming. The
+            // name is optional per group, so the arguments are read with a
+            // cursor rather than in fixed chunks: a string right after a
+            // triple is that group's label.
             "/group_new" => {
-                for triple in msg.args.chunks(3) {
-                    let [OscType::Int(id), OscType::Int(action), OscType::Int(target)] = triple
+                let mut i = 0;
+                while i < msg.args.len() {
+                    let Some(
+                        [
+                            OscType::Int(id),
+                            OscType::Int(action),
+                            OscType::Int(target),
+                            ..,
+                        ],
+                    ) = msg.args.get(i..i + 3)
                     else {
                         return Err("expected int (id, addAction, targetID) triples".into());
+                    };
+                    i += 3;
+                    let name = match msg.args.get(i) {
+                        Some(OscType::String(name)) => {
+                            i += 1;
+                            Some(name.clone())
+                        }
+                        _ => None,
                     };
                     let action = AddAction::from_i32(*action).ok_or("add action must be 0-4")?;
                     if *id <= 0 {
                         return Err("group ID must be positive".into());
+                    }
+                    // The label is judged **before** the group exists: a
+                    // refused name refuses the creation, rather than leaving
+                    // the client with an anonymous group it never asked for.
+                    if let Some(name) = &name {
+                        self.mirror.check_new_name(*target, action, name)?;
                     }
                     cmds.push(Cmd::AddGroup {
                         id: *id,
@@ -1590,13 +1624,12 @@ impl CmdTranslator {
                         action,
                         group: self.new_group(),
                     });
-                    let body = MirrorBody::Group {
-                        children: Vec::new(),
-                        auto: false,
-                        parallel: false,
-                    };
+                    let body = MirrorBody::group(false);
                     // An empty group has no bus usage: no re-sort needed.
                     let _ = self.mirror.insert(*id, body, *target, action);
+                    if let Some(name) = name {
+                        self.mirror.set_name(*id, &name)?;
+                    }
                 }
                 Ok(())
             }
@@ -1613,6 +1646,22 @@ impl CmdTranslator {
                         self.mirror.deep_free(*id);
                         self.free_graph_node(*id);
                     }
+                }
+                Ok(())
+            }
+            // `/group_name groupID name` — labels a group so a client can
+            // address it by path (`/group_query`) and read it back in every
+            // node report. An empty name clears the label. Network-thread
+            // only: the engine never hears about it, so no `Cmd` is queued.
+            "/group_name" => {
+                if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
+                    return Err("expected (groupID, name) pairs".into());
+                }
+                for pair in msg.args.chunks(2) {
+                    let [OscType::Int(group), OscType::String(name)] = pair else {
+                        return Err("expected (int groupID, string name) pairs".into());
+                    };
+                    self.mirror.set_name(*group, name)?;
                 }
                 Ok(())
             }
@@ -2156,12 +2205,16 @@ impl CmdTranslator {
         args
     }
 
-    /// `/group_queryTree.reply` arguments: `detail`, the queried group and its
-    /// child count, then depth-first per node: ID and child count (`-1` for
-    /// synths), the def name for synths, and per `detail` level the same
+    /// `/group_queryTree.reply` arguments: `detail`, the queried group, its
+    /// child count and its name, then depth-first per node: ID and child count
+    /// (`-1` for synths) followed by a name — the group's own (empty when it
+    /// has none) or the synth's def name — and per `detail` level the same
     /// payload `/node_query.reply` carries — 1 adds the control count and (name, value)
     /// pairs (scsynth's `flag`), 2 adds the maps and the inferred bus lists,
     /// which is what makes every entry a full node info.
+    ///
+    /// Every node reads `ID, count, name` — one shape for both kinds, rather
+    /// than a name only where it is new.
     pub fn query_tree(&self, group: i32, detail: i32) -> Result<Vec<OscType>, String> {
         let Some(children) = self.mirror.children(group) else {
             return Err(match self.mirror.get(group) {
@@ -2173,9 +2226,17 @@ impl CmdTranslator {
             OscType::Int(detail),
             OscType::Int(group),
             OscType::Int(children.len() as i32),
+            OscType::String(self.mirror.name_of(group).into()),
         ];
         self.query_children(group, detail, &mut args);
         Ok(args)
+    }
+
+    /// `/group_query`: the node a path names, or `-1` when nothing answers to
+    /// it. Absence is a state, not a protocol error (the `/node_query`
+    /// convention), so an unresolved path replies rather than failing.
+    pub fn resolve_path(&self, path: &str) -> i32 {
+        self.mirror.resolve_path(path).unwrap_or(-1)
     }
 
     fn query_children(&self, group: i32, detail: i32, args: &mut Vec<OscType>) {
@@ -2184,6 +2245,7 @@ impl CmdTranslator {
             args.push(OscType::Int(child));
             if let Some(grandchildren) = self.mirror.children(child) {
                 args.push(OscType::Int(grandchildren.len() as i32));
+                args.push(OscType::String(self.mirror.name_of(child).into()));
                 self.query_children(child, detail, args);
             } else if let Some((def_name, _)) = self.mirror.synth_info(child) {
                 args.push(OscType::Int(-1));
@@ -2235,7 +2297,8 @@ impl CmdTranslator {
     /// for a **synth** `defName`, `numControls` + (name|index, value) pairs,
     /// `numMaps` + (controlIndex, bus, audio) triples, and the inferred
     /// `reads`/`writes` bus lists as two strings (same format as
-    /// `/group_dumpGraph`). Siblings are `-1` when absent, and a node the server
+    /// `/group_dumpGraph`). A group's `/group_name` follows its `tailID`,
+    /// empty when it has none. Siblings are `-1` when absent, and a node the server
     /// does not hold answers `nodeID, -1, -1, -1, -1` — `isGroup = -1` is how
     /// the record says the node is gone.
     pub fn node_info(&self, id: i32) -> Vec<OscType> {
@@ -2260,10 +2323,11 @@ impl CmdTranslator {
             OscType::Int(next),
         ];
         match &node.body {
-            MirrorBody::Group { children, .. } => {
+            MirrorBody::Group { children, name, .. } => {
                 args.push(OscType::Int(1));
                 args.push(OscType::Int(children.first().copied().unwrap_or(-1)));
                 args.push(OscType::Int(children.last().copied().unwrap_or(-1)));
+                args.push(OscType::String(name.as_deref().unwrap_or("").into()));
             }
             MirrorBody::Synth { def_name, .. } => {
                 args.push(OscType::Int(0));
@@ -2288,6 +2352,15 @@ impl CmdTranslator {
         (prev, next)
     }
 
+    /// A group's `/group_name` as ` "mixer"`, or nothing when it has none —
+    /// the introspection dumps' way of showing the label next to the ID.
+    fn quoted_name(&self, id: i32) -> String {
+        match self.mirror.name_of(id) {
+            "" => String::new(),
+            name => format!(" \"{name}\""),
+        }
+    }
+
     /// `/group_dumpGraph`: a human-readable view of the inferred bus graph of
     /// one group — what each child reads/writes and the current order.
     pub fn dump_graph(&self, group: i32) -> Result<String, String> {
@@ -2307,13 +2380,18 @@ impl CmdTranslator {
         } else {
             ""
         };
-        let mut out = format!("group {group} ({auto}{parallel})\n");
+        let mut out = format!(
+            "group {group}{} ({auto}{parallel})\n",
+            self.quoted_name(group)
+        );
         for &child in children {
             let usage = self.mirror.usage_of(child);
             let kind = match self.mirror.synth_info(child) {
                 Some((def_name, _)) => def_name.to_string(),
-                None if self.mirror.is_auto_group(child) => "group (auto)".into(),
-                None => "group".into(),
+                None if self.mirror.is_auto_group(child) => {
+                    format!("group{} (auto)", self.quoted_name(child))
+                }
+                None => format!("group{}", self.quoted_name(child)),
             };
             let dynamic = if usage.dynamic { "  dynamic" } else { "" };
             out.push_str(&format!(

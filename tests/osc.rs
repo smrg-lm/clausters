@@ -2436,3 +2436,122 @@ fn u_query_lists_the_whole_catalog() {
     assert!(names.contains(&&OscType::String("FFT".into())));
     server.quit();
 }
+
+#[test]
+fn a_group_is_born_named_and_its_death_says_which_one_died() {
+    // The name travels with `/group_new`, and both node notifications carry
+    // it: a client watching the tree learns which channel came up or went
+    // away without a follow-up query — and for a death there is none to make.
+    let mut server = TestServer::spawn();
+    server.send("/server_notify", vec![OscType::Int(1)]);
+    server.recv_until("/done");
+
+    server.send(
+        "/group_new",
+        vec![
+            OscType::Int(100),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::String("mixer".into()),
+            // A second group in the same message, unnamed: the cursor reads
+            // the optional label without losing the triples after it.
+            OscType::Int(101),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    let go = server.tick_until("/node_start");
+    assert_eq!(go.args[0], OscType::Int(100));
+    assert_eq!(go.args[4], OscType::Int(1)); // is a group
+    assert_eq!(go.args[5], OscType::String("mixer".into()));
+
+    let go = server.tick_until("/node_start");
+    assert_eq!(go.args[0], OscType::Int(101));
+    assert_eq!(go.args[5], OscType::String("".into()));
+
+    server.send("/group_query", vec![OscType::String("/mixer".into())]);
+    assert_eq!(
+        server.recv_until("/group_query.reply").args[1],
+        OscType::Int(100)
+    );
+
+    server.send("/node_free", vec![OscType::Int(100)]);
+    let end = server.tick_until("/node_end");
+    assert_eq!(end.args[0], OscType::Int(100));
+    assert_eq!(end.args[5], OscType::String("mixer".into()));
+
+    // And the name is free again the moment the group is gone.
+    server.send(
+        "/group_new",
+        vec![
+            OscType::Int(102),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::String("mixer".into()),
+        ],
+    );
+    server.send("/group_query", vec![OscType::String("/mixer".into())]);
+    assert_eq!(
+        server.recv_until("/group_query.reply").args[1],
+        OscType::Int(102)
+    );
+    server.quit();
+}
+
+#[test]
+fn a_group_with_a_refused_name_is_not_created() {
+    // The name is judged before the group exists, so a refused label refuses
+    // the whole creation: a client that asked for a named group is never left
+    // holding an anonymous one it did not ask for.
+    let server = TestServer::spawn();
+    server.send(
+        "/group_new",
+        vec![
+            OscType::Int(100),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::String("mixer".into()),
+        ],
+    );
+    server.send(
+        "/group_new",
+        vec![
+            OscType::Int(101),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::String("mixer".into()), // taken by a sibling
+        ],
+    );
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/group_new".into())
+    );
+    server.send(
+        "/group_new",
+        vec![
+            OscType::Int(102),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::String("100".into()), // all digits
+        ],
+    );
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/group_new".into())
+    );
+
+    // Neither node is there — `isGroup = -1` is how the record says so — and
+    // the name still belongs to the group that took it first.
+    for id in [101, 102] {
+        server.send("/node_query", vec![OscType::Int(id)]);
+        let info = server.recv_until("/node_query.reply").args;
+        assert_eq!(info[0], OscType::Int(id));
+        assert_eq!(info[4], OscType::Int(-1), "node {id} should not exist");
+    }
+    server.send("/group_query", vec![OscType::String("/mixer".into())]);
+    assert_eq!(
+        server.recv_until("/group_query.reply").args[1],
+        OscType::Int(100)
+    );
+    server.quit();
+}

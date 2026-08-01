@@ -10,9 +10,10 @@ import test from "node:test";
 import { Tree, parseBufferList, parseNodeInfo, parseQueryTree } from "../src/defs/info.ts";
 
 test("a queried tree carries a full node record per entry", () => {
-    // detail=2; root 0 -> group 1000 -> synth 1001 (beep, freq mapped to c5)
-    const args = [2, 0, 1, 1000, 1, 1001, -1, "beep", 2, "freq", 330.0, "amp", 0.2,
-        1, 0, 5, 0, "-", "0"];
+    // detail=2; root 0 -> group 1000 "voices" -> synth 1001 (beep, freq
+    // mapped to c5). Every entry is id, childCount, name.
+    const args = [2, 0, 1, "", 1000, 1, "voices", 1001, -1, "beep", 2,
+        "freq", 330.0, "amp", 0.2, 1, 0, 5, 0, "-", "0"];
     const tree = parseQueryTree(args);
     assert.equal(tree.id, 0);
     assert.ok(tree.info.isGroup);
@@ -38,16 +39,17 @@ test("a queried tree carries a full node record per entry", () => {
     // The object is the data; its string draws it — the split the Python
     // client spells `repr` vs `str`.
     assert.ok(tree instanceof Tree);
+    assert.equal(group.info.name, "voices");
     assert.deepEqual(String(tree).split("\n"), [
         "group 0",
-        "  group 1000",
+        '  group 1000 "voices"',
         "    1001 beep  freq<-c5 amp=0.2",
     ]);
 });
 
 test("siblings and an empty group come out of the nesting", () => {
     // detail=0: no controls on the wire, three children of the root.
-    const tree = parseQueryTree([0, 0, 3, 1001, -1, "a", 1002, -1, "b", 100, 0]);
+    const tree = parseQueryTree([0, 0, 3, "", 1001, -1, "a", 1002, -1, "b", 100, 0, ""]);
     const [a, b, empty] = tree.children.map((t) => t.info);
     assert.deepEqual([a!.prev, a!.next], [-1, 1002]);
     assert.deepEqual([b!.prev, b!.next], [1001, 100]);
@@ -61,6 +63,11 @@ test("a resource that is not there is a record, not a throw", () => {
     const gone = parseNodeInfo([4242, -1, -1, -1, -1]);
     assert.equal(gone.id, 4242);
     assert.equal(gone.exists, false);
+
+    // A group carries its /group_name after the scsynth fields.
+    const group = parseNodeInfo([1000, 0, -1, -1, 1, 1001, 1001, "voices"]);
+    assert.ok(group.isGroup);
+    assert.equal(group.name, "voices");
 
     const [buffer] = parseBufferList([7, -1, 0, 0.0]);
     assert.equal(buffer!.bufnum, 7);

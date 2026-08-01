@@ -35,7 +35,13 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
 - `ugens` — lowercase callables producing `Ugen`/`Control`, and `SynthDef` (sent with `/def_send synth`): the server's UGens wired into a graph.
 - `FaustDef` (sent with `/def_send faust`), its peer: DSP the server JIT-compiles, built from `signals` (Faust's Signal API as lowercase callables), from `boxes` (its Box API — point-free, with `boxes.faust` opening the Faust libraries), or from Faust source. The three forms are equals; so are the two def families.
 - Both families are built **instance-based, with no global build context**, and both instantiate as ordinary nodes in the same tree.
-- `Node`/`Bus`/`Buffer` handles and their allocators.
+- `Node`/`Bus`/`Buffer` handles and their allocators. A `Group` is **born named** —
+  `Group("mixer")`, and `group.rename(...)` afterwards — a referenceable label
+  on top of the node id: the id stays the identity every command uses, and the
+  name is how you *refer* to the group instead of to a number, comes back in
+  every node record, and makes the tree navigable by path
+  (`Server.group_at("/mixer/drums")`). That is what lets a mixer's channels, its
+  sends and its master be built out of groups and still be sayable.
 - `clocksync` — models the server's sample clock over UDP (`Server.sample_clock()`) for drift-free `/sched_at` timing without shared memory.
 - **Introspection** — `Server.query_tree()` and `node.info()` read what is *playing* (the server is asked about every node it holds, a node about itself; every entry of the tree is the same record, and `print(tree)` draws it); `Server.query_defs()`, `query_buffers()` and `query_ugens()` read what the server **holds**: the loaded defs with their control surface, the allocated buffers, and the UGen catalog with named inputs and defaults. Worth asking rather than assuming — the def store persists across restarts, so a server can hold defs this client never sent. All blocking, so never from a routine.
 - `Server` — **owns the communication interface and emits through it.** Swapping its interface retargets a routine from a live RT server to an NRT score without touching the clock or the routine. Interfaces include `OscUdpInterface`, `OscTcpInterface` (length-prefixed OSC; start the server with `--tcp`), and `OscWsInterface` (OSC over WebSocket, the browser-reachable transport; start the server with `--ws`), all drop-in.

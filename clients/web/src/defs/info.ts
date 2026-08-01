@@ -141,6 +141,8 @@ export interface NodeInfo {
     exists: boolean;
     head: number;
     tail: number;
+    /** A group's `/group_name`, `""` when it has none. Never a synth's. */
+    name: string;
     defname: string;
     controls: Record<string, number>;
     maps: NodeMap[];
@@ -203,7 +205,8 @@ export class Tree {
         const pad = "  ".repeat(depth);
         const info = this.info;
         if (info.isGroup) {
-            const head = `${pad}group ${info.id}${this.children.length ? "" : " (empty)"}`;
+            const named = info.name ? ` "${info.name}"` : "";
+            const head = `${pad}group ${info.id}${named}${this.children.length ? "" : " (empty)"}`;
             return [head, ...this.children.flatMap((c) => c.lines(depth + 1))];
         }
         const mapped = new Map(info.maps.map((m) => [m.control, m]));
@@ -231,6 +234,7 @@ function emptyNode(id: number): NodeInfo {
         exists: true,
         head: -1,
         tail: -1,
+        name: "",
         defname: "",
         controls: {},
         maps: [],
@@ -281,6 +285,7 @@ export function parseNodeInfo(args: ReplyArgs): NodeInfo {
         info.isGroup = true;
         info.head = Number(args[5]);
         info.tail = Number(args[6]);
+        info.name = String(args[7]);
         return info;
     }
     info.defname = String(args[5]);
@@ -295,6 +300,8 @@ export function parseNodeInfo(args: ReplyArgs): NodeInfo {
 /**
  * Recursively parses `count` entries of a `/group_queryTree.reply` starting at
  * `i`; returns the subtrees and the next index. A synth has child-count −1.
+ * Every entry is `id, childCount, name` — the group's `/group_name` or the
+ * synth's def name.
  *
  * The wire gives the nesting; the siblings and a group's head/tail follow from
  * it, so each entry comes out as complete as `Node.info` would.
@@ -322,11 +329,13 @@ function parseTreeNodes(
             }
             out.push(new Tree(info));
         } else {
+            const name = String(args[i++]);
             const [kids, next] = parseTreeNodes(args, i, childCount, detail, id);
             i = next;
             const info = emptyNode(id);
             info.parent = parent;
             info.isGroup = true;
+            info.name = name;
             info.head = kids.length ? kids[0]!.info.id : -1;
             info.tail = kids.length ? kids[kids.length - 1]!.info.id : -1;
             out.push(new Tree(info, kids));
@@ -343,9 +352,10 @@ function parseTreeNodes(
 export function parseQueryTree(args: ReplyArgs): Tree {
     const detail = Number(args[0]);
     const rootId = Number(args[1]);
-    const [children] = parseTreeNodes(args, 3, Number(args[2]), detail, rootId);
+    const [children] = parseTreeNodes(args, 4, Number(args[2]), detail, rootId);
     const root = emptyNode(rootId);
     root.isGroup = true;
+    root.name = String(args[3]);
     root.head = children.length ? children[0]!.info.id : -1;
     root.tail = children.length ? children[children.length - 1]!.info.id : -1;
     return new Tree(root, children);

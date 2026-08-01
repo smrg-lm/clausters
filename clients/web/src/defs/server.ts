@@ -45,7 +45,7 @@ import {
     parseUgenInfo,
 } from "./info.ts";
 import type { BufferInfo, DefInfo, UgenInfo } from "./info.ts";
-import { NodeIdAllocator, ROOT_NODE_ID, nodeId } from "./node.ts";
+import { Group, NodeIdAllocator, ROOT_NODE_ID, nodeId } from "./node.ts";
 import type { NodeLike } from "./node.ts";
 import { AudioBusAllocator, Bus, ControlBusAllocator, busIndex } from "./bus.ts";
 import type { BusLike } from "./bus.ts";
@@ -682,6 +682,29 @@ export class Server {
             { expect: ["/group_queryTree.reply"], timeout },
         );
         return parseQueryTree(msg.args);
+    }
+
+    /**
+     * The group a path names (`/group_query`), or `undefined` when nothing
+     * answers to it.
+     *
+     * A path is the group names from the root down, `/mixer/drums`; a group
+     * with no name contributes its id instead (`/1000/drums`), so every group
+     * is reachable whether it was labelled or not. Resolve once and keep the
+     * handle: the id is the identity, the path is how you found it, and a group
+     * that is renamed or freed leaves the handle pointing at the id it resolved
+     * to.
+     */
+    async groupAt(path: string, timeout = 5.0): Promise<Group | undefined> {
+        const msg = await this.request("/group_query", [path], {
+            expect: ["/group_query.reply", "/fail"],
+            timeout,
+        });
+        if (msg.addr === "/fail") {
+            throw new CommandError(`/group_query failed: ${msg.args.join(" ")}`);
+        }
+        const id = Number(msg.args[1]);
+        return id >= 0 ? new Group(id, this) : undefined;
     }
 
     /**

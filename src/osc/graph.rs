@@ -158,6 +158,13 @@ pub enum MirrorBody {
         auto: bool,
         /// `/group_parallel` (M13): mirrored for `/group_dumpGraph` introspection.
         parallel: bool,
+        /// `/group_name`: an optional label on top of the node ID, unique among
+        /// the group's siblings. It never replaces the ID — every command still
+        /// addresses the group by ID — but it names one segment of the group's
+        /// path, which is what `/group_query` resolves. Lives here, on the
+        /// network thread, and nowhere else: the engine's `NodeTree` has no
+        /// notion of a name, so naming costs the audio thread nothing.
+        name: Option<Box<str>>,
     },
     Synth {
         def_name: String,
@@ -174,6 +181,19 @@ pub enum MirrorBody {
     },
 }
 
+impl MirrorBody {
+    /// An empty, unnamed group body; `auto` marks the ones the translator
+    /// builds for a graph instance, which sort themselves.
+    pub fn group(auto: bool) -> Self {
+        Self::Group {
+            children: Vec::new(),
+            auto,
+            parallel: false,
+            name: None,
+        }
+    }
+}
+
 pub struct MirrorNode {
     pub parent: i32,
     pub body: MirrorBody,
@@ -185,7 +205,20 @@ pub struct MirrorNode {
 /// ([`remove`](TreeMirror::remove) is idempotent for that reason).
 pub struct TreeMirror {
     nodes: HashMap<i32, MirrorNode>,
+    /// The names of groups that have left the tree but whose `/node_end` has
+    /// not gone out yet. The mirror drops a node when its command is
+    /// *translated*, while the notification only leaves once the engine
+    /// confirms the death, so a label has to outlive its entry by exactly that
+    /// gap for the death notice to be able to name what died. Bounded: an
+    /// epitaph nothing ever claims (the node was already gone engine-side, so
+    /// no event follows) is pushed out by the ones after it.
+    epitaphs: std::collections::VecDeque<(i32, Box<str>)>,
 }
+
+/// How many unclaimed epitaphs the mirror keeps. Comfortably more than the
+/// deaths that can be in flight between the network thread and one engine
+/// block, and small enough that the linear scan claiming one is free.
+const MAX_EPITAPHS: usize = 256;
 
 impl Default for TreeMirror {
     fn default() -> Self {
@@ -200,14 +233,29 @@ impl TreeMirror {
             ROOT_NODE_ID,
             MirrorNode {
                 parent: ROOT_NODE_ID,
-                body: MirrorBody::Group {
-                    children: Vec::new(),
-                    auto: false,
-                    parallel: false,
-                },
+                body: MirrorBody::group(false),
             },
         );
-        Self { nodes }
+        Self {
+            nodes,
+            epitaphs: std::collections::VecDeque::new(),
+        }
+    }
+
+    /// Remembers a departing group's name for its `/node_end`.
+    fn bury(&mut self, id: i32, name: Box<str>) {
+        if self.epitaphs.len() >= MAX_EPITAPHS {
+            self.epitaphs.pop_front();
+        }
+        self.epitaphs.push_back((id, name));
+    }
+
+    /// Claims the name of a group that has left the tree, for the death
+    /// notification. `None` for a synth, an unnamed group, or a death whose
+    /// epitaph was already claimed or pushed out.
+    pub fn take_epitaph(&mut self, id: i32) -> Option<Box<str>> {
+        let at = self.epitaphs.iter().rposition(|(other, _)| *other == id)?;
+        self.epitaphs.remove(at).map(|(_, name)| name)
     }
 
     pub fn get(&self, id: i32) -> Option<&MirrorNode> {
@@ -256,6 +304,132 @@ impl TreeMirror {
             Some(MirrorBody::Synth { .. }) => Err(format!("node {group} is not a group")),
             None => Err(format!("group {group} not found")),
         }
+    }
+
+    /// A group's name, or `""` when it has none (and for a synth or an unknown
+    /// node). The empty string is how every reply says "unnamed": a group with
+    /// no name reports no name, never its ID — the ID stands in for the name
+    /// only when composing a path, so that no group falls out of addressing.
+    pub fn name_of(&self, id: i32) -> &str {
+        match self.nodes.get(&id).map(|n| &n.body) {
+            Some(MirrorBody::Group { name, .. }) => name.as_deref().unwrap_or(""),
+            _ => "",
+        }
+    }
+
+    /// The rules a label obeys, in one place so `/group_name` and a
+    /// `/group_new` that carries a name enforce exactly the same ones: unique
+    /// among the segments of the group's siblings under `parent`, never all
+    /// digits (that would collide with the ID segment of another group) and
+    /// never carrying a `/` (the server composes paths, the client does not).
+    /// `group` is the node being named, skipped in the sibling scan; `None`
+    /// for a group that does not exist yet.
+    fn check_name(&self, parent: i32, group: Option<i32>, name: &str) -> Result<(), String> {
+        if name.contains('/') {
+            return Err("a group name cannot contain '/'".into());
+        }
+        if name.bytes().all(|b| b.is_ascii_digit()) {
+            return Err("a group name cannot be all digits".into());
+        }
+        let taken = self
+            .children(parent)
+            .unwrap_or(&[])
+            .iter()
+            .any(|&sib| Some(sib) != group && self.segment_matches(sib, name));
+        if taken {
+            return Err(format!("name '{name}' is already taken in that group"));
+        }
+        Ok(())
+    }
+
+    /// Validates the label a `/group_new` carries **before** the group is
+    /// created, against the group it would land in. A name the server refuses
+    /// refuses the whole creation: a client that asked for a named group would
+    /// otherwise be left with an anonymous one it never asked for, and would
+    /// have to query the tree to find out.
+    pub fn check_new_name(&self, target: i32, action: AddAction, name: &str) -> Result<(), String> {
+        // Where the group would land, by the same rule `insert` applies. An
+        // unresolvable target is left to `insert` and to the engine, which
+        // reject it on their own terms; only the name is judged here.
+        let parent = match action {
+            AddAction::Head | AddAction::Tail => target,
+            _ if target == ROOT_NODE_ID => return self.check_name(ROOT_NODE_ID, None, name),
+            _ => match self.nodes.get(&target) {
+                Some(node) => node.parent,
+                None => return self.check_name(ROOT_NODE_ID, None, name),
+            },
+        };
+        self.check_name(parent, None, name)
+    }
+
+    /// `/group_name`: labels a group, or clears the label when `name` is empty.
+    /// Validated here, on the network thread, before anything is queued.
+    pub fn set_name(&mut self, group: i32, name: &str) -> Result<(), String> {
+        match self.nodes.get(&group).map(|n| &n.body) {
+            Some(MirrorBody::Group { .. }) => {}
+            Some(MirrorBody::Synth { .. }) => return Err(format!("node {group} is not a group")),
+            None => return Err(format!("group {group} not found")),
+        }
+        if !name.is_empty() {
+            let parent = self.nodes[&group].parent;
+            self.check_name(parent, Some(group), name)?;
+        }
+        if let Some(MirrorBody::Group { name: slot, .. }) =
+            self.nodes.get_mut(&group).map(|n| &mut n.body)
+        {
+            *slot = (!name.is_empty()).then(|| name.into());
+        }
+        Ok(())
+    }
+
+    /// Whether `node` answers to the path segment `seg`. Every node answers to
+    /// its decimal ID — the ID is the identity and a name never takes its
+    /// place — and a named group answers to its name as well. Which is why a
+    /// name may not be all digits: it would speak for another node's ID.
+    fn segment_matches(&self, node: i32, seg: &str) -> bool {
+        if seg.parse::<i32>() == Ok(node) {
+            return true;
+        }
+        matches!(
+            self.nodes.get(&node).map(|n| &n.body),
+            Some(MirrorBody::Group { name: Some(name), .. }) if &**name == seg
+        )
+    }
+
+    /// The path of a node from the root: `/mixer/reverb`, with an unnamed
+    /// group contributing its ID (`/1000/reverb`). The root itself is `/`.
+    /// Composed on the walk, never stored, so renaming a group rewrites the
+    /// path of its whole subtree at once.
+    pub fn path_of(&self, id: i32) -> Option<String> {
+        if !self.nodes.contains_key(&id) {
+            return None;
+        }
+        let mut segments = Vec::new();
+        let mut node = id;
+        while node != ROOT_NODE_ID {
+            match self.nodes.get(&node).map(|n| &n.body) {
+                Some(MirrorBody::Group {
+                    name: Some(name), ..
+                }) => segments.push(name.to_string()),
+                _ => segments.push(node.to_string()),
+            }
+            node = self.nodes[&node].parent;
+        }
+        segments.reverse();
+        Some(format!("/{}", segments.join("/")))
+    }
+
+    /// `/group_query`: the node a path names, or `None` when no node answers to
+    /// it. `/` is the root group; a leading slash is optional.
+    pub fn resolve_path(&self, path: &str) -> Option<i32> {
+        let mut node = ROOT_NODE_ID;
+        for seg in path.split('/').filter(|s| !s.is_empty()) {
+            node = *self
+                .children(node)?
+                .iter()
+                .find(|&&child| self.segment_matches(child, seg))?;
+        }
+        Some(node)
     }
 
     pub fn is_parallel_group(&self, id: i32) -> bool {
@@ -340,7 +514,10 @@ impl TreeMirror {
         let Some(node) = self.nodes.remove(&id) else {
             return;
         };
-        if let MirrorBody::Group { children, .. } = node.body {
+        if let MirrorBody::Group { children, name, .. } = node.body {
+            if let Some(name) = name {
+                self.bury(id, name);
+            }
             for child in children {
                 self.remove_subtree(child);
             }
@@ -354,8 +531,11 @@ impl TreeMirror {
 
     fn remove_subtree(&mut self, id: i32) {
         if let Some(node) = self.nodes.remove(&id)
-            && let MirrorBody::Group { children, .. } = node.body
+            && let MirrorBody::Group { children, name, .. } = node.body
         {
+            if let Some(name) = name {
+                self.bury(id, name);
+            }
             for child in children {
                 self.remove_subtree(child);
             }
@@ -558,5 +738,143 @@ impl TreeMirror {
             }
         }
         usage
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `/group_new id action target` on the mirror, unnamed.
+    fn group(mirror: &mut TreeMirror, id: i32, target: i32) {
+        mirror
+            .insert(id, MirrorBody::group(false), target, AddAction::Tail)
+            .unwrap();
+    }
+
+    #[test]
+    fn an_unnamed_group_answers_to_its_id_in_a_path() {
+        let mut m = TreeMirror::new();
+        group(&mut m, 1000, ROOT_NODE_ID);
+        group(&mut m, 1001, 1000);
+        m.set_name(1001, "reverb").unwrap();
+        assert_eq!(m.path_of(ROOT_NODE_ID).unwrap(), "/");
+        assert_eq!(m.path_of(1000).unwrap(), "/1000");
+        assert_eq!(m.path_of(1001).unwrap(), "/1000/reverb");
+        assert_eq!(m.resolve_path("/1000/reverb"), Some(1001));
+        // The id keeps working as a segment even for a named group: it is the
+        // identity, and the name is the label on top of it.
+        assert_eq!(m.resolve_path("/1000/1001"), Some(1001));
+        assert_eq!(m.resolve_path("/1000/chorus"), None);
+    }
+
+    #[test]
+    fn renaming_a_group_rewrites_the_paths_below_it() {
+        let mut m = TreeMirror::new();
+        group(&mut m, 1000, ROOT_NODE_ID);
+        group(&mut m, 1001, 1000);
+        m.set_name(1000, "mixer").unwrap();
+        m.set_name(1001, "drums").unwrap();
+        assert_eq!(m.path_of(1001).unwrap(), "/mixer/drums");
+        m.set_name(1000, "board").unwrap();
+        assert_eq!(m.path_of(1001).unwrap(), "/board/drums");
+        assert_eq!(m.resolve_path("/board/drums"), Some(1001));
+        assert_eq!(m.resolve_path("/mixer/drums"), None);
+    }
+
+    #[test]
+    fn a_name_is_unique_among_siblings_only() {
+        let mut m = TreeMirror::new();
+        group(&mut m, 1000, ROOT_NODE_ID);
+        group(&mut m, 1001, ROOT_NODE_ID);
+        group(&mut m, 1002, 1000);
+        group(&mut m, 1003, 1001);
+        m.set_name(1000, "g1").unwrap();
+        m.set_name(1001, "g2").unwrap();
+        // The same name under two different parents: g1/mixer and g2/mixer.
+        m.set_name(1002, "mixer").unwrap();
+        m.set_name(1003, "mixer").unwrap();
+        assert_eq!(m.path_of(1002).unwrap(), "/g1/mixer");
+        assert_eq!(m.path_of(1003).unwrap(), "/g2/mixer");
+        // But twice under the same one is refused.
+        assert!(m.set_name(1001, "g1").is_err());
+        assert_eq!(m.name_of(1001), "g2", "a refused name changes nothing");
+    }
+
+    #[test]
+    fn a_new_group_s_name_is_judged_before_it_exists() {
+        let mut m = TreeMirror::new();
+        group(&mut m, 1000, ROOT_NODE_ID);
+        m.set_name(1000, "mixer").unwrap();
+        // Judged against the group it would land in: as a child of the root
+        // the name is taken, as a child of 1000 it is free.
+        assert!(
+            m.check_new_name(ROOT_NODE_ID, AddAction::Tail, "mixer")
+                .is_err()
+        );
+        assert!(m.check_new_name(1000, AddAction::Tail, "mixer").is_ok());
+        // A sibling placement is judged against the target's parent.
+        assert!(m.check_new_name(1000, AddAction::After, "mixer").is_err());
+        assert!(
+            m.check_new_name(ROOT_NODE_ID, AddAction::Tail, "1000")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_name_is_neither_a_number_nor_a_path() {
+        let mut m = TreeMirror::new();
+        group(&mut m, 1000, ROOT_NODE_ID);
+        // All digits would be ambiguous with another group's id segment.
+        assert!(m.set_name(1000, "1001").is_err());
+        assert!(m.set_name(1000, "a/b").is_err());
+        assert!(m.set_name(1000, "8bit").is_ok(), "digits inside are fine");
+    }
+
+    #[test]
+    fn clearing_a_name_frees_it_for_another_group() {
+        let mut m = TreeMirror::new();
+        group(&mut m, 1000, ROOT_NODE_ID);
+        group(&mut m, 1001, ROOT_NODE_ID);
+        m.set_name(1000, "mixer").unwrap();
+        assert!(m.set_name(1001, "mixer").is_err());
+        m.set_name(1000, "").unwrap();
+        assert_eq!(m.name_of(1000), "");
+        assert_eq!(m.path_of(1000).unwrap(), "/1000");
+        m.set_name(1001, "mixer").unwrap();
+        assert_eq!(m.resolve_path("/mixer"), Some(1001));
+    }
+
+    #[test]
+    fn a_freed_group_takes_its_name_with_it() {
+        let mut m = TreeMirror::new();
+        group(&mut m, 1000, ROOT_NODE_ID);
+        m.set_name(1000, "mixer").unwrap();
+        m.remove(1000);
+        assert_eq!(m.resolve_path("/mixer"), None);
+        group(&mut m, 1001, ROOT_NODE_ID);
+        m.set_name(1001, "mixer").unwrap();
+        assert_eq!(m.resolve_path("/mixer"), Some(1001));
+    }
+
+    #[test]
+    fn only_a_group_takes_a_name() {
+        let mut m = TreeMirror::new();
+        m.insert(
+            1000,
+            MirrorBody::Synth {
+                def_name: "default".into(),
+                controls: Vec::new(),
+                usage: BusUsage::default(),
+                bus_controls: Vec::new(),
+                maps: Vec::new(),
+            },
+            ROOT_NODE_ID,
+            AddAction::Tail,
+        )
+        .unwrap();
+        assert!(m.set_name(1000, "voice").is_err());
+        assert!(m.set_name(4242, "nowhere").is_err());
+        assert_eq!(m.name_of(1000), "");
     }
 }

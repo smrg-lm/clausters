@@ -384,18 +384,26 @@ class Group(Node):
     ```
     """
 
-    def __init__(self, *, target=ROOT_NODE_ID, action=AddAction.TAIL,
-                 server=None):
-        """An empty group in the node tree (``/group_new``). Building one *is*
-        creating it, as with `Synth`; to name a group that already exists, use
-        `from_id`.
+    def __init__(self, name=None, *, target=ROOT_NODE_ID,
+                 action=AddAction.TAIL, server=None):
+        """An empty group in the node tree (``/group_new``), optionally
+        labelled. Building one *is* creating it, as with `Synth`; to name a
+        group that already exists, use `from_id`.
+
+        The label travels with the creation, in one message: a group is born
+        knowing what it is. `rename` is for changing it afterwards. A name the
+        server refuses (see `rename` for the rules) refuses the **creation**:
+        no group appears, rather than an anonymous one you did not ask for.
 
         ```python
         src = Group(server=s)                                    # runs first
-        fx = Group(target=src, action=AddAction.AFTER, server=s)
+        fx = Group("reverb", target=src, action=AddAction.AFTER, server=s)
         ```
 
         Args:
+            name: the group's label, unique among its siblings — see `rename`
+                for what a name is and what it is not. ``None`` leaves the
+                group unnamed.
             target: the node this group is placed relative to — a `Node` or a
                 bare id. Defaults to the root group.
             action: where relative to ``target``, an `AddAction`. Defaults to
@@ -405,8 +413,29 @@ class Group(Node):
         """
         srv = _resolve(server)
         node_id = srv._node_id()
-        srv.send_msg("/group_new", node_id, int(action), _target_id(target))
+        args = [node_id, int(action), _target_id(target)]
+        if name:
+            args.append(str(name))
+        srv.send_msg("/group_new", *args)
         super().__init__(node_id, srv)
+
+    def rename(self, name: str):
+        """Relabels this group (``/group_name``), or clears the label with ``""``.
+
+        A name does not replace the id: every command still addresses the group
+        by id, and this one is no exception. What it adds is a way to *say*
+        which group you mean — the label comes back in every node report
+        (`Node.info`, `clausters.defs.Server.query_tree`), and it names one
+        segment of the group's path, which `clausters.defs.Server.group_at`
+        resolves. That is what makes a mixer's channels, its busses and its
+        master addressable by what they are instead of by the ids they happened
+        to get.
+
+        The server rejects a name already taken by a sibling, one that is all
+        digits (an unnamed group answers to its id in a path, so a numeric name
+        would be ambiguous) and one containing ``/`` (the server composes the
+        path, the client does not)."""
+        self._server().send_msg("/group_name", self.id, str(name))
 
     @classmethod
     def from_id(cls, node_id: int, server=None) -> "Group":

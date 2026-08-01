@@ -93,8 +93,9 @@ impl Server {
         self.send("/group_queryTree", vec![OscType::Int(group)]);
         let reply = self.recv_until("/group_queryTree.reply");
         let mut order = Vec::new();
-        // args: flag, groupID, numChildren, then per synth: id, -1, defname.
-        let mut i = 3;
+        // args: flag, groupID, numChildren, groupName, then per synth:
+        // id, -1, defname.
+        let mut i = 4;
         while i < reply.args.len() {
             let OscType::Int(id) = reply.args[i] else {
                 break;
@@ -410,11 +411,12 @@ fn query_tree_reports_structure_and_controls() {
     server.send("/group_queryTree", vec![OscType::Int(100), OscType::Int(1)]);
     let reply = server.recv_until("/group_queryTree.reply");
     let expected: Vec<OscType> = vec![
-        OscType::Int(1),    // flag
-        OscType::Int(100),  // queried group
-        OscType::Int(1),    // its child count
-        OscType::Int(1001), // the synth
-        OscType::Int(-1),   // synth marker
+        OscType::Int(1),            // flag
+        OscType::Int(100),          // queried group
+        OscType::Int(1),            // its child count
+        OscType::String("".into()), // the group is unnamed
+        OscType::Int(1001),         // the synth
+        OscType::Int(-1),           // synth marker
         OscType::String("default".into()),
         OscType::Int(3), // control count
         OscType::String("freq".into()),
@@ -468,10 +470,10 @@ fn query_tree_detail_two_carries_a_full_node_info_per_entry() {
     assert_eq!(tree[0], OscType::Int(2), "the detail level is echoed");
     // /node_query.reply: id, parent, prev, next, isGroup, defName, then the payload.
     // The tree entry: id, -1 (synth marker), defName, then the same payload.
-    assert_eq!(tree[3], OscType::Int(1001));
-    assert_eq!(tree[4], OscType::Int(-1));
-    assert_eq!(tree[5], OscType::String("default".into()));
-    assert_eq!(&tree[6..], &info[6..], "same payload as /node_query.reply");
+    assert_eq!(tree[4], OscType::Int(1001));
+    assert_eq!(tree[5], OscType::Int(-1));
+    assert_eq!(tree[6], OscType::String("default".into()));
+    assert_eq!(&tree[7..], &info[6..], "same payload as /node_query.reply");
     // And that payload really carries the map, as (control, bus, audio) after
     // the three controls: freq is control 0, mapped to control bus 3.
     let maps = &info[info.len() - 5..info.len() - 2];
@@ -802,5 +804,110 @@ fn n_query_reports_node_detail() {
     assert_eq!(g[5], OscType::Int(1000)); // head
     assert_eq!(g[6], OscType::Int(1001)); // tail
 
+    server.quit();
+}
+
+#[test]
+fn a_named_group_is_reported_and_resolved_by_path() {
+    // The name is a label on top of the id, so it must come back in every
+    // report the server makes about the node — and be resolvable to the id,
+    // which is what the client actually commands with.
+    let server = Server::spawn();
+    server.send(
+        "/group_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send(
+        "/group_new",
+        vec![OscType::Int(101), OscType::Int(1), OscType::Int(100)],
+    );
+    server.send(
+        "/group_name",
+        vec![
+            OscType::Int(100),
+            OscType::String("mixer".into()),
+            OscType::Int(101),
+            OscType::String("drums".into()),
+        ],
+    );
+
+    // Resolved by path -> the id.
+    server.send("/group_query", vec![OscType::String("/mixer/drums".into())]);
+    let reply = server.recv_until("/group_query.reply");
+    assert_eq!(reply.args[0], OscType::String("/mixer/drums".into()));
+    assert_eq!(reply.args[1], OscType::Int(101));
+
+    // A path nothing answers to is a state, not a failure.
+    server.send("/group_query", vec![OscType::String("/mixer/bass".into())]);
+    assert_eq!(
+        server.recv_until("/group_query.reply").args[1],
+        OscType::Int(-1)
+    );
+
+    // `/node_query.reply`: the name is appended after the scsynth fields.
+    server.send("/node_query", vec![OscType::Int(100)]);
+    let info = server.recv_until("/node_query.reply").args;
+    assert_eq!(info[4], OscType::Int(1)); // is a group
+    assert_eq!(info[7], OscType::String("mixer".into()));
+
+    // `/group_queryTree.reply`: every node is id, childCount, name.
+    server.send("/group_queryTree", vec![OscType::Int(100), OscType::Int(0)]);
+    let tree = server.recv_until("/group_queryTree.reply").args;
+    assert_eq!(tree[1], OscType::Int(100));
+    assert_eq!(tree[3], OscType::String("mixer".into()));
+    assert_eq!(tree[4], OscType::Int(101));
+    assert_eq!(tree[6], OscType::String("drums".into()));
+
+    // `/group_dumpGraph`: the label shows next to the id.
+    server.send("/group_dumpGraph", vec![OscType::Int(100)]);
+    let dump = server.recv_until("/group_dumpGraph.reply").args;
+    let OscType::String(text) = &dump[1] else {
+        panic!("expected a string dump");
+    };
+    assert!(text.contains("group 100 \"mixer\""), "{text}");
+    assert!(text.contains("101 group \"drums\""), "{text}");
+
+    server.quit();
+}
+
+#[test]
+fn a_rejected_group_name_fails_and_changes_nothing() {
+    let server = Server::spawn();
+    server.send(
+        "/group_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send(
+        "/group_new",
+        vec![OscType::Int(101), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send(
+        "/group_name",
+        vec![OscType::Int(100), OscType::String("mixer".into())],
+    );
+    // Taken by a sibling.
+    server.send(
+        "/group_name",
+        vec![OscType::Int(101), OscType::String("mixer".into())],
+    );
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/group_name".into())
+    );
+    // All digits: it would speak for another node's id.
+    server.send(
+        "/group_name",
+        vec![OscType::Int(101), OscType::String("100".into())],
+    );
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/group_name".into())
+    );
+    // The path still resolves to the group that got there first.
+    server.send("/group_query", vec![OscType::String("/mixer".into())]);
+    assert_eq!(
+        server.recv_until("/group_query.reply").args[1],
+        OscType::Int(100)
+    );
     server.quit();
 }

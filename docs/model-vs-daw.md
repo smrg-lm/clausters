@@ -23,6 +23,17 @@ The tree's strength is that **order is orthogonal to routing**. The signal graph
 
 That same orthogonality is the model's main cost. In a DAW "this runs after that" is *visible* in the routing. In the node tree, order and routing are two independent things the user must keep consistent by hand: a synth placed at the wrong point of the tree produces silence or a one-block delay, with no error. This is the central ergonomic defect of the model, and the one auto-sorted groups address (see below).
 
+A DAW's channel has one more thing a bare node has not: it is **called
+something**. A channel is addressed by what it is — the drum bus, the reverb
+send, the master — while a node is addressed by a number the client happened to
+allocate. Clausters closes that gap with **group names** (`/group_name`): a
+referenceable label on top of the ID, unique among siblings, that makes the tree
+navigable by path (`/mixer/drums`, resolved with `/group_query`). The ID stays
+the identity — nothing addresses a group by name — but a mixer's channels, its
+sends and its master become sayable, which is what a channel strip, a console
+group or a DAW send needs to be built out of groups at all. See
+[`schemas.md`](schemas.md#naming-a-group-group_name-group_query).
+
 ### Execution order, feedback and cycles
 
 A DAW resolves order by analysing the routing graph, and hides cycles behind an implicit buffer delay on return sends. In the node tree, order is the tree, and feedback is made explicit with buses and a read-before-write across nodes, which introduces **one control block (64 samples) of delay** — the same as a return send, but visible.
