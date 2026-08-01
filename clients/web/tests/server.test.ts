@@ -312,6 +312,27 @@ test("a def the server rejects comes back as a CommandError", {
     });
 });
 
+test("the UGen catalog names its inputs and its rates", {
+    skip: !hasServer,
+}, async () => {
+    await withServer(async (server) => {
+        const all = await server.queryUgens();
+        assert.ok(all.length > 0, "a build with the synth feature has UGens");
+
+        // Asking for kinds by name details exactly those.
+        const [sine] = await server.queryUgens(["Sine"]);
+        assert.equal(sine!.name, "Sine");
+        assert.ok(sine!.rates.includes("ar"));
+        assert.equal(sine!.inputs[0]!.name, "freq");
+        assert.equal(sine!.inputs.length, sine!.arity);
+
+        // A variadic kind reports -1 and names only its fixed head.
+        const [env] = await server.queryUgens(["EnvGen"]);
+        assert.equal(env!.arity, -1);
+        assert.ok(env!.inputs.length > 0);
+    });
+});
+
 test("buffers allocate, generate and free through the pool", {
     skip: !hasServer,
 }, async () => {
@@ -322,6 +343,14 @@ test("buffers allocate, generate and free through the pool", {
         const queried = await buf.query();
         assert.equal(queried.frames, 1024);
         assert.equal(queried.channels, 1);
+
+        // The server's own list of what is allocated, which is where a
+        // buffer this client never allocated would show up too.
+        const listed = await server.queryBuffers();
+        const mine = listed.find((b) => b.bufnum === buf.bufnum);
+        assert.ok(mine, "the allocated buffer is in /b_query's list");
+        assert.equal(mine.frames, 1024);
+        assert.equal(mine.channels, 1);
 
         // `sine1` takes its flag word first (1 = normalize, 2 = wavetable),
         // as an int — the tagging rule sends an integral number as one.

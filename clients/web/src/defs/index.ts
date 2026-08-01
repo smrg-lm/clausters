@@ -8,6 +8,7 @@
 
 export { Server } from "./server.ts";
 export type {
+    BufferInfo,
     ControlInfo,
     DefInfo,
     MsgArg,
@@ -17,6 +18,8 @@ export type {
     ServerSizing,
     TimedMessage,
     TreeNode,
+    UgenInfo,
+    UgenInput,
 } from "./server.ts";
 export {
     DEFAULT_AUDIO_BUSES,

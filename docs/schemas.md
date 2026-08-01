@@ -776,7 +776,7 @@ The node tree is delivered to clients as **structured replies** — never scrape
 - **`/n_query <nodeID>...`** → one `/n_info` per node — per-node detail beyond the tree shape. Layout: `nodeID, parentID, prevID, nextID, isGroup`; then for a **group** `headID, tailID` (`-1` if empty); for a **synth** `defName`, control count + (name|index, value) pairs, map count + (controlIndex, bus, audio) triples (the `/n_map`/`/n_mapa` bindings), and the inferred `reads`/`writes` bus lists as two strings (`"0,16"`, or `"-"` when none). Siblings are `-1` when absent.
 - **`/g_dumpGraph <groupID>`** → `/g_dumpGraph.reply [groupID, text]` — a human-readable rendering of the inferred bus graph (what each child reads/writes and the current order). A debugging aid; for machine use prefer `/g_queryTree`/`/n_query`.
 
-The Python client wraps these as `Server.query_tree()` (nested dict), `Server.query_node()` (per-node dict) and `Server.dump_graph()` (string).
+The Python client wraps these as `Server.query_tree()` (nested dict), `Server.query_node()` (per-node dict) and `Server.dump_graph()` (string); the web client as `queryTree()`, `queryNode()` and `dumpGraph()`.
 
 ## Def, buffer and UGen introspection
 
@@ -799,7 +799,7 @@ Each of the two multi-reply queries sends **one reply message per item** — the
   - The input **names are descriptive**: the wire stays positional and no input is ever addressed by name. They are what a palette labels an inlet with, and `default` what to offer when the user leaves a slot alone — the server applies no default of its own, a def that omits an input is simply short and fails on arity.
   - An unknown kind comes back with an empty rate set and no inputs. A server built **without the `synth` feature** has no UGen catalog at all and replies with an empty listing (not a failure) — its defs would all be FaustDefs, and the Faust box vocabulary is Faust's own, held client-side rather than published here.
 
-The Python client wraps these as `Server.query_defs()`, `Server.query_buffers()` and `Server.query_ugens()`, returning `DefInfo`/`BufferInfo`/`UgenInfo` records. `examples/introspect_server.py` walks all three.
+The Python client wraps these as `Server.query_defs()`, `Server.query_buffers()` and `Server.query_ugens()`, returning `DefInfo`/`BufferInfo`/`UgenInfo` records — the web client as `queryDefs()`, `queryBuffers()` and `queryUgens()`, returning the same records in camelCase. `examples/introspect_server.py` walks all three.
 
 ## Server logging and verbosity
 

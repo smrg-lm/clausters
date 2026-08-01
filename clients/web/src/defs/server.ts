@@ -115,6 +115,49 @@ export interface DefInfo {
     controls: ControlInfo[];
 }
 
+/** An allocated buffer, as `queryBuffers` reports it. */
+export interface BufferInfo {
+    bufnum: number;
+    frames: number;
+    channels: number;
+    sampleRate: number;
+}
+
+/**
+ * One named input slot of a UGen, in **wire order**.
+ *
+ * The wire is positional — a def lists input values, it never names them —
+ * so this is what a palette labels an inlet with, and `default` is what to
+ * offer when the user leaves the slot alone.
+ */
+export interface UgenInput {
+    name: string;
+    default: number;
+}
+
+/**
+ * A UGen kind as `queryUgens` reports it, straight from the server's catalog.
+ *
+ * `arity` is the input count, or `-1` for a variadic kind — whose `inputs`
+ * then name only the fixed head (`EnvGen`'s five before the envelope array).
+ * `rates` are the rates the kind may be instantiated at and `defaultRate`
+ * the one a def gets by omitting `rate`. `exec`, `bus`, `opFamily` and
+ * `spectral` expose the compiler's own classification; the ones that do not
+ * apply are empty strings.
+ */
+export interface UgenInfo {
+    name: string;
+    arity: number;
+    defaultRate: string;
+    rates: string[];
+    exec: string;
+    bus: string;
+    needsPath: boolean;
+    opFamily: string;
+    spectral: string;
+    inputs: UgenInput[];
+}
+
 /**
  * A node as `/n_query` reports it: a group carries `head`/`tail`, a synth
  * its `def` and control values.
@@ -689,6 +732,37 @@ export class Server {
     }
 
     /**
+     * Every **allocated** buffer with its shape (an argument-less
+     * `/b_query`). Like `queryDefs`, this reports what the server holds
+     * rather than what this client allocated.
+     */
+    async queryBuffers(timeout = 5.0): Promise<BufferInfo[]> {
+        const msg = await this.request("/b_query", [], {
+            expect: ["/b_info"],
+            timeout,
+        });
+        return parseBufferList(msg.args);
+    }
+
+    /**
+     * The server's UGen catalog (`/u_query`, answered by one `/u_info` per
+     * kind): every kind with its named inputs, defaults and rate rules, or
+     * just `kinds` if given.
+     *
+     * This is the catalog **this** server was built with, which is why it is
+     * worth asking instead of assuming: a build without the `synth` feature
+     * has no UGens at all and returns an empty list (its defs would all be
+     * FaustDefs, whose box vocabulary is Faust's own and lives client-side).
+     */
+    async queryUgens(kinds: string[] = [], timeout = 5.0): Promise<UgenInfo[]> {
+        const replies = await this.requestBatch("/u_query", kinds, {
+            reply: "/u_info",
+            timeout,
+        });
+        return replies.map((msg) => parseUgenInfo(msg.args));
+    }
+
+    /**
      * One node's place in the tree (`/n_query`). A group reports its
      * `head`/`tail`; a synth its `def` and control values.
      */
@@ -1023,4 +1097,45 @@ function parseDefInfo(args: ReplyArgs): DefInfo {
         controls.push(info);
     }
     return { name, family, controls };
+}
+
+/** A `/b_info` reply, four args per buffer. */
+function parseBufferList(args: ReplyArgs): BufferInfo[] {
+    const out: BufferInfo[] = [];
+    for (let i = 0; i + 3 < args.length; i += 4) {
+        out.push({
+            bufnum: Number(args[i]),
+            frames: Number(args[i + 1]),
+            channels: Number(args[i + 2]),
+            sampleRate: Number(args[i + 3]),
+        });
+    }
+    return out;
+}
+
+/**
+ * One `/u_info` reply: ten fixed fields then `(name, default)` per named
+ * input.
+ */
+function parseUgenInfo(args: ReplyArgs): UgenInfo {
+    const count = Number(args[9]);
+    const inputs: UgenInput[] = [];
+    for (let k = 0; k < count; k++) {
+        inputs.push({
+            name: String(args[10 + 2 * k]),
+            default: Number(args[11 + 2 * k]),
+        });
+    }
+    return {
+        name: String(args[0]),
+        arity: Number(args[1]),
+        defaultRate: String(args[2]),
+        rates: String(args[3]).split(",").filter((r) => r),
+        exec: String(args[4]),
+        bus: String(args[5]),
+        needsPath: Number(args[6]) !== 0,
+        opFamily: String(args[7]),
+        spectral: String(args[8]),
+        inputs,
+    };
 }
