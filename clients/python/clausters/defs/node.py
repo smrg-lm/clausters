@@ -198,20 +198,27 @@ class Synth(Node):
     A note that ends itself, and a drone that does not:
 
     ```python
-    from clausters import Server, Synth, SynthDef
-    from clausters.defs import DoneAction, Env, control, env_gen, out, sine
+    from clausters import FaustDef, Server, Synth, SynthDef
+    from clausters.defs import (DoneAction, Env, boxes as box, control,
+                                env_gen, out, sine)
 
     s = Server.boot()
+
+    # a UGen graph
     SynthDef("note",
              out(0, sine(control("freq", 440.0)) * 0.2
                     * env_gen(Env.perc(),
                               done_action=DoneAction.FREE_SELF))).send(s)
-    d = SynthDef("drone", out(0, sine(control("freq", 60.0)) * 0.1))
+
+    # the other family: Faust DSP the server JIT-compiles, here point-free
+    # over its standard library
+    d = FaustDef.from_box(
+        "drone", box.faust("os.osc")(box.hslider("freq", 60.0, 20.0, 2000.0, 0.01)) * 0.1)
     d.send(s)
 
     Synth("note", {"freq": 660.0}, server=s)   # sounds, then frees itself
-    n = Synth("drone", server=s)               # stays until told
-    n.set({"freq": 55.0})
+    n = Synth("drone", server=s)               # same call, other family
+    n.set({"freq": 55.0})                      # and the same control surface
     n.free()
     ```
 
