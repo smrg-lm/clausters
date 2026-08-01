@@ -7,7 +7,7 @@ by scraping the server's console. This builds a small tree and reads it back
 three ways:
 
   * ``server.query_tree()``  -> the whole tree as a nested dict (``/g_queryTree``);
-  * ``server.node_query(n)`` -> one node in full detail (``/n_query`` ->
+  * ``server.query_node(n)`` -> one node in full detail (``/n_query`` ->
     ``/n_info``): parent, siblings, def, controls, maps, reads/writes buses;
   * ``server.dump_graph(g)`` -> the inferred bus graph as readable text
     (``/g_dumpGraph``), a debugging aid.
@@ -84,8 +84,8 @@ def main():
         print("query_tree() — the whole tree as structured data:")
         print(json.dumps(server.query_tree(), indent=2))
 
-        print(f"\nnode_query({b.id}) — the mapped synth in full detail:")
-        print(json.dumps(server.node_query(b), indent=2))
+        print(f"\nquery_node({b.id}) — the mapped synth in full detail:")
+        print(json.dumps(server.query_node(b), indent=2))
 
         print(f"\ndump_graph({group.id}) — inferred bus graph (debug text):")
         print(server.dump_graph(group.id), end="")

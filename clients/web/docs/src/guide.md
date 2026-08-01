@@ -39,7 +39,7 @@ The engine singleton is reachable directly when a page needs the browser-specifi
 const server = await Server.open(connection);
 ```
 
-Opening it queries `/server_info` and sizes the allocators from the answer, so the client's ids match the server that is actually running. It registers for the server's pushes, which is what lets a node id be recycled once its `/n_end` arrives, and it carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions, and the introspection queries (`queryInfo`, `queryDefs`, `nodeQuery`, `queryTree`, `dumpGraph`). A command addressed to a resource is that resource's method — `def.send(server)`, `Synth.new(server, …)`, `node.set`, `bus.watch`, `buffer.getSamples` — so the receiver is never an argument.
+Opening it queries `/server_info` and sizes the allocators from the answer, so the client's ids match the server that is actually running. It registers for the server's pushes, which is what lets a node id be recycled once its `/n_end` arrives, and it carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions, and the introspection queries (`queryInfo`, `queryDefs`, `queryNode`, `queryTree`, `dumpGraph`). A command addressed to a resource is that resource's method — `def.send(server)`, `Synth.new(server, …)`, `node.set`, `bus.watch`, `buffer.getSamples` — so the receiver is never an argument.
 
 Two def families are peers, as everywhere in Clausters:
 

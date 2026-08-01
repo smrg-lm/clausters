@@ -91,7 +91,7 @@
         await server.sync();
 
         // Read it back out of the tree — the queryable half of the acceptance.
-        const info = await server.nodeQuery(synth);
+        const info = await server.queryNode(synth);
         if (info.def !== "page_beep" || info.controls.freq !== 330) {
           throw new Error(`unexpected node: ${JSON.stringify(info)}`);
         }
@@ -115,7 +115,7 @@
 
         synth.set({ freq: 220.0 });
         await server.sync();
-        const moved = await server.nodeQuery(synth);
+        const moved = await server.queryNode(synth);
         if (moved.controls.freq !== 220) {
           throw new Error(`/n_set did not take: ${JSON.stringify(moved.controls)}`);
         }

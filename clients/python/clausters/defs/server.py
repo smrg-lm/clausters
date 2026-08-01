@@ -815,7 +815,7 @@ class Server:
             raise CommandError(f"/g_queryTree failed: {args}")
         return _parse_query_tree(args)
 
-    def node_query(self, node, timeout: float = 5.0) -> dict:
+    def query_node(self, node, timeout: float = 5.0) -> dict:
         """Per-node detail (``/n_query`` -> ``/n_info``): ``id``, ``parent``,
         ``prev``/``next`` siblings, ``is_group``; for a group ``head``/``tail``;
         for a synth ``def``, ``controls``, ``maps`` (``/n_map`` bindings) and the

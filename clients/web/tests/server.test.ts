@@ -144,7 +144,7 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
         await server.sync();
 
         // It is in the tree, under the root, with the controls it was given.
-        const info = await server.nodeQuery(synth);
+        const info = await server.queryNode(synth);
         assert.equal(info.isGroup, false);
         assert.equal(info.def, "ts_beep");
         assert.equal(info.parent, 0);
@@ -160,7 +160,7 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
 
         synth.set({ freq: 330.0 });
         await server.sync();
-        assert.equal((await server.nodeQuery(synth)).controls?.freq, 330.0);
+        assert.equal((await server.queryNode(synth)).controls?.freq, 330.0);
 
         synth.free();
         await server.sync();
@@ -200,7 +200,7 @@ test("the example's voice def compiles and its gate releases it", {
 
         const note = Synth.new(server, "ts_voice", { freq: 330.0 });
         await server.sync();
-        assert.equal((await server.nodeQuery(note)).def, "ts_voice");
+        assert.equal((await server.queryNode(note)).def, "ts_voice");
 
         // Dropping the gate hands the node's life to the envelope.
         note.set({ gate: 0.0 });
@@ -256,7 +256,7 @@ test("a FaustDef is JIT-compiled and played", { skip: !hasServer }, async () => 
 
         const synth = Synth.new(server, "ts_tone", { freq: 330.0 });
         await server.sync();
-        assert.equal((await server.nodeQuery(synth)).def, "ts_tone");
+        assert.equal((await server.queryNode(synth)).def, "ts_tone");
         synth.free();
     });
 });
@@ -283,7 +283,7 @@ test("a GraphDef instantiates as a wired group driven through its surface", {
         await server.sync();
 
         // The instance is a group holding the members the def named.
-        const info = await server.nodeQuery(instance);
+        const info = await server.queryNode(instance);
         assert.equal(info.isGroup, true);
         const tree = await server.queryTree(instance);
         assert.equal(tree.children?.length, 2);

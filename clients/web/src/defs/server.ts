@@ -692,7 +692,7 @@ export class Server {
      * One node's place in the tree (`/n_query`). A group reports its
      * `head`/`tail`; a synth its `def` and control values.
      */
-    async nodeQuery(node: NodeLike, timeout = 5.0): Promise<NodeInfo> {
+    async queryNode(node: NodeLike, timeout = 5.0): Promise<NodeInfo> {
         const id = nodeId(node);
         const reply = this.awaitReply(
             (msg) => msg.addr === "/n_info" && Number(msg.args[0]) === id,

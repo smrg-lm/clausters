@@ -776,7 +776,7 @@ The node tree is delivered to clients as **structured replies** — never scrape
 - **`/n_query <nodeID>...`** → one `/n_info` per node — per-node detail beyond the tree shape. Layout: `nodeID, parentID, prevID, nextID, isGroup`; then for a **group** `headID, tailID` (`-1` if empty); for a **synth** `defName`, control count + (name|index, value) pairs, map count + (controlIndex, bus, audio) triples (the `/n_map`/`/n_mapa` bindings), and the inferred `reads`/`writes` bus lists as two strings (`"0,16"`, or `"-"` when none). Siblings are `-1` when absent.
 - **`/g_dumpGraph <groupID>`** → `/g_dumpGraph.reply [groupID, text]` — a human-readable rendering of the inferred bus graph (what each child reads/writes and the current order). A debugging aid; for machine use prefer `/g_queryTree`/`/n_query`.
 
-The Python client wraps these as `Server.query_tree()` (nested dict), `Server.node_query()` (per-node dict) and `Server.dump_graph()` (string).
+The Python client wraps these as `Server.query_tree()` (nested dict), `Server.query_node()` (per-node dict) and `Server.dump_graph()` (string).
 
 ## Def, buffer and UGen introspection
 

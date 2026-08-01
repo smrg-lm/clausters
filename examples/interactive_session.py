@@ -150,7 +150,7 @@ show_tree("two synths under the sources group")
 # ## 7. Assign buses
 #
 # Allocate a **control bus** and map synth `b`'s `freq` to it: now one `/c_set`
-# retunes it with no per-node command. `node_query` shows the map and the
+# retunes it with no per-node command. `query_node` shows the map and the
 # inferred read/write buses per node.
 
 # %%
@@ -160,7 +160,7 @@ b.map("freq", freq_bus)
 time.sleep(0.1)   # let the commands apply before querying
 
 print(f"mapped synth {b.id}.freq -> control bus {freq_bus.index}")
-print(json.dumps(server.node_query(b), indent=2))
+print(json.dumps(server.query_node(b), indent=2))
 
 # %% [markdown]
 # ## 8. Change parameters live, and read them back
