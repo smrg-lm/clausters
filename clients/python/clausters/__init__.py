@@ -79,6 +79,7 @@ from .defs import (
     FaustDef,
     GraphDef,
     Group,
+    Node,
     Server,
     ServerOptions,
     Synth,
@@ -112,6 +113,7 @@ __all__ = [
     "default_session",
     "main",
     # the server's resources: nodes, definitions, buses, buffers
+    "Node",
     "Synth",
     "Group",
     "AddAction",

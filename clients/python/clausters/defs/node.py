@@ -6,8 +6,9 @@ a node, or replace. `Synth` and `Group` hold an id and the server it lives on,
 and own the commands addressed to it: **building one creates it** —
 ``Synth("beep")`` allocates an id and sends ``/synth_new``, ``Group()`` sends
 ``/group_new``, `Group.graph` instantiates a GraphDef — and `Node.set`,
-`Node.map`, `Node.run` and `Node.free` drive it. To name a node that already
-exists, from an id a responder or a query reported, use `Synth.from_id` /
+`Node.map`, `Node.run` and `Node.free` drive it, which is where `Node`, their
+base, documents what every node can do. To name a node that already exists,
+from an id a responder or a query reported, use `Synth.from_id` /
 `Group.from_id`, which send nothing. The id pool itself belongs to the
 `Server`.
 """

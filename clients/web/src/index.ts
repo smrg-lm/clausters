@@ -81,7 +81,7 @@ export { WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";
 export { Server } from "./defs/server.ts";
-export { AddAction, Group, Synth } from "./defs/node.ts";
+export { AddAction, Group, Node, Synth } from "./defs/node.ts";
 export { Bus } from "./defs/bus.ts";
 export { Buffer } from "./defs/buffer.ts";
 export { SynthDef } from "./defs/synthdef.ts";

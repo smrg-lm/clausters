@@ -26,7 +26,7 @@ def test_package_reexports_what_a_piece_names():
     # formats and the timing types -- plus the layer modules themselves.
     for name in ("play", "render", "plot", "scope",
                  "Session", "Server", "GuiHost",
-                 "Synth", "Group", "Bus", "Buffer",
+                 "Node", "Synth", "Group", "Bus", "Buffer",
                  "SynthDef", "FaustDef", "GraphDef",
                  "TempoClock", "Routine", "Event", "Timeline", "Playhead",
                  "base", "defs", "seq", "form", "gui", "ipc", "launch", "errors"):

@@ -33,7 +33,7 @@ from .expr import Expr, FaustExpr, SynthExpr
 from .faustdef import FaustDef
 from .graphdef import GraphDef
 from .patch import DefPatch, GraphPatch, synthdef_ports
-from .node import AddAction, Group, NodeIdAllocator, ROOT_NODE_ID, Synth
+from .node import AddAction, Group, Node, NodeIdAllocator, ROOT_NODE_ID, Synth
 from .info import (
     BufferInfo,
     ControlInfo,
@@ -145,6 +145,7 @@ __all__ = [
     "GraphPatch",
     "DefPatch",
     "synthdef_ports",
+    "Node",
     "Ugen",
     "Control",
     "ChannelList",
