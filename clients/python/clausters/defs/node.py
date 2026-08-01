@@ -48,7 +48,57 @@ def _flatten_controls(controls) -> list:
 
 
 class Node:
+    """One entry in the server's node tree, and the commands addressed to it.
+
+    A node is an integer id on a particular server, and that is all a client
+    holds: the sound, the state and the position in the tree live over there.
+    What this class adds is that the id knows where to go — `set`, `map`,
+    `run`, `free` and `info` each send one command to the right server without
+    being told which.
+
+    The tree has two kinds of node and each has its own class: a `Synth` (a
+    running def, making sound) and a `Group` (a container, and the thing you
+    aim other nodes at). Build one of those; `Node` is what they share, and
+    what you get back when something reports a bare id.
+
+    Order is meaning here. The server processes the tree front to back, so a
+    node's neighbours decide what it can hear: a reverb placed after the voices
+    reads what they wrote, the same reverb placed before them reads last
+    block's silence. That is what the `AddAction` on every constructor controls.
+
+    The three structural pieces together — a def to play, a group to hold the
+    voices, and the synths themselves:
+
+    ```python
+    from clausters import Group, Server, Synth, SynthDef
+    from clausters.defs import control, out, sine
+
+    s = Server.boot()
+    d = SynthDef("beep", out(0, sine(control("freq", 440.0)) * 0.2))
+    d.send(s)
+
+    g = Group(server=s)                 # one place to hold the voices
+    n = Synth("beep", {"freq": 220.0}, target=g, server=s)
+    Synth("beep", {"freq": 330.0}, target=g, server=s)
+
+    n.set({"freq": 440.0})              # one voice
+    g.set({"freq": 110.0})              # every voice in the group
+    g.free()                            # and its members with it
+    ```
+
+    Attributes:
+        id: the node's id on the server. Allocated by the client (the
+            `Server`'s `NodeIdAllocator`), so it is known the moment the
+            command is sent, with no reply to wait for.
+        server: the `Server` this node lives on, or `None` for a handle built
+            from an id someone else reported — that one falls back to the
+            ambient server, like `clausters.play`.
+    """
+
     def __init__(self, node_id: int, server=None):
+        """A handle on the node with this id. `Synth` and `Group` build one by
+        *creating* the node; this is the bare form, for an id that arrived from
+        somewhere else and whose kind is not known."""
         self.id = node_id
         #: the `Server` this node lives on (set when it was created), so its
         #: commands know where to go without being told.
@@ -125,13 +175,86 @@ class Node:
 
 
 class Synth(Node):
+    """One running instance of a def — a voice, sounding now.
+
+    A def is a recipe and a synth is one performance of it: several synths of
+    the same def run at once, each with its own controls and its own envelope.
+    **Both def families instantiate the same way**, because the server names a
+    def rather than a kind — a `SynthDef` (a UGen graph) and a `FaustDef`
+    (JIT-compiled DSP) are peers, and a synth of either is the same node in the
+    same tree, driven by the same `Node.set`. The def has to be installed
+    first, so send it before naming it here.
+
+    A synth's controls are its surface. Set them by name with `Node.set`, or
+    hand one over to a `Bus` with `Node.map` so it follows whatever that bus
+    carries — that is how one modulator drives many voices with the client out
+    of the loop.
+
+    How it ends is usually not your call. A def with an envelope frees its own
+    synth when the envelope finishes (`clausters.defs.DoneAction.FREE_SELF`),
+    which is what makes a note a note; `Node.free` is for the ones with no end
+    of their own — a drone, a live effect, a take being cut short.
+
+    A note that ends itself, and a drone that does not:
+
+    ```python
+    from clausters import Server, Synth, SynthDef
+    from clausters.defs import DoneAction, Env, control, env_gen, out, sine
+
+    s = Server.boot()
+    SynthDef("note",
+             out(0, sine(control("freq", 440.0)) * 0.2
+                    * env_gen(Env.perc(),
+                              done_action=DoneAction.FREE_SELF))).send(s)
+    d = SynthDef("drone", out(0, sine(control("freq", 60.0)) * 0.1))
+    d.send(s)
+
+    Synth("note", {"freq": 660.0}, server=s)   # sounds, then frees itself
+    n = Synth("drone", server=s)               # stays until told
+    n.set({"freq": 55.0})
+    n.free()
+    ```
+
+    Attributes:
+        defname: the name of the def this synth is running.
+        id: see `Node`.
+        server: see `Node`.
+    """
+
     def __init__(self, defname, controls=None, *, target=ROOT_NODE_ID,
                  action=AddAction.TAIL, server=None):
         """Starts a synth from a def already loaded on the server, by name
-        (``/synth_new``), with ``controls`` (a ``{name: value}`` dict, or pairs)
-        overriding the def defaults. Building one *is* starting it: the id
-        comes from the server's `NodeIdAllocator` and the command goes out
-        here. To name a synth that already exists, use `from_id`."""
+        (``/synth_new``). Building one *is* starting it: the id comes from the
+        server's `NodeIdAllocator` and the command goes out here, so the synth
+        is sounding by the time this returns.
+
+        ```python
+        g = Group(server=s)
+        n = Synth("beep", {"freq": 440.0}, target=g, server=s)
+        ```
+
+        An unknown def name raises nothing here: the command is fire-and-forget,
+        the server answers ``/fail`` on its own channel, and the handle you get
+        back carries an id no node was ever created for — `Node.info` reports
+        ``exists`` false for it.
+
+        Args:
+            defname: the name of a def already installed on the server, of
+                either family. Sending a def is asynchronous, but
+                ``d.send(s)`` waits for the server's ``/done`` by default, so
+                the def is there by the time you name it.
+            controls: the controls to override the def's defaults with — a
+                dict of names to values, or a list of ``(name, value)`` pairs.
+                Pairs are how you reach the reserved ``in`` and ``out``
+                controls, which are Python keywords.
+            target: the node this one is placed relative to — a `Group`, a
+                `Node`, or a bare id. Defaults to the root group.
+            action: where relative to ``target``, an `AddAction`. Defaults to
+                the tail, i.e. after everything already in the target group,
+                so a new voice is heard by whatever comes later.
+            server: the `Server` to start it on; ``None`` takes the ambient
+                one (the running session, else the default session).
+        """
         srv = _resolve(server)
         node_id = srv._node_id()
         srv.send_msg("/synth_new", defname, node_id, int(action), _target_id(target),
@@ -151,11 +274,74 @@ class Synth(Node):
 
 
 class Group(Node):
+    """A node that holds other nodes: an order, a handle and a boundary.
+
+    A group makes no sound of its own. What it gives you is the three things a
+    piece needs once it has more than one voice:
+
+    - **A handle for many.** A group *is* a `Node`, so every command on `Node`
+      applies to everything inside it at once — `Node.set` reaches all the
+      members that have that control, `Node.run` pauses them together, and
+      `Node.free` frees the group and its contents in one command. That is one
+      message instead of one per voice.
+    - **A place in the order.** The server processes the tree front to back,
+      so a group is where you say *when* a stage runs: sources in one group,
+      the effect that reads them in another after it. Aim a node at a group
+      with ``target=``, and place it inside with an `AddAction`.
+    - **A lifetime.** Freeing the group ends everything it holds, which is how
+      a section, a take or a voice with several nodes is cut as a unit.
+
+    The root group (id ``0``, `ROOT_NODE_ID`) is always there and is what a
+    node with no ``target`` is added to. Two constructors build a group that is
+    *not* empty: `graph` instantiates a GraphDef — a named configuration of
+    several defs already wired to each other — and `voice` spawns one more
+    voice inside a running instance of one.
+
+    Sources and an effect, ordered by their groups rather than by luck:
+
+    ```python
+    from clausters import AddAction, Bus, Group, Server, Synth, SynthDef
+    from clausters.defs import control, in_, out, sine
+
+    s = Server.boot()
+    SynthDef("voice",
+             out(control("bus", 0.0), sine(control("freq", 440.0)) * 0.2)).send(s)
+    SynthDef("wash",
+             out(0, in_(control("bus", 0.0)) * control("amp", 0.5))).send(s)
+
+    mix = Bus.audio(server=s)
+    g = Group(server=s)                                   # the sources, first
+    fx = Group(target=g, action=AddAction.AFTER, server=s)  # what reads them
+
+    for freq in (220.0, 277.0, 330.0):
+        Synth("voice", {"freq": freq, "bus": mix.index}, target=g, server=s)
+    Synth("wash", {"bus": mix.index}, target=fx, server=s)
+
+    g.set({"freq": 110.0})   # every voice at once; the wash has no freq
+    g.free()                 # the three voices, one command
+    fx.free()
+    ```
+    """
+
     def __init__(self, *, target=ROOT_NODE_ID, action=AddAction.TAIL,
                  server=None):
         """An empty group in the node tree (``/group_new``). Building one *is*
         creating it, as with `Synth`; to name a group that already exists, use
-        `from_id`."""
+        `from_id`.
+
+        ```python
+        g = Group(server=s)                                    # runs first
+        fx = Group(target=g, action=AddAction.AFTER, server=s)
+        ```
+
+        Args:
+            target: the node this group is placed relative to — a `Node` or a
+                bare id. Defaults to the root group.
+            action: where relative to ``target``, an `AddAction`. Defaults to
+                the tail, so a new group runs after everything already there.
+            server: the `Server` to create it on; ``None`` takes the ambient
+                one.
+        """
         srv = _resolve(server)
         node_id = srv._node_id()
         srv.send_msg("/group_new", node_id, int(action), _target_id(target))
