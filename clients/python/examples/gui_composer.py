@@ -201,13 +201,18 @@ song = Group([
 # a window handle (like `GuiHost.open`), so the script resolves each button with
 # ``win["play"]`` and never picks an id; their events are the script's too
 # (`Editor.apply` ignores them).
+#
+# The transport is **chrome**, so it takes a fixed `h` and the lanes take the rest:
+# a container's size on the main axis is `h`/`w` or a `weight`, and a strip left
+# elastic would claim a lane's share of the window. The buttons inside it need no
+# size of their own — a button knows how tall it wants to be.
 
 # %%
 transport = panel(button(name="play", label="play"),
                   button(name="pause", label="pause"),
                   button(name="stop", label="stop"),
                   button(name="rewind", label="rewind"),
-                  layout="row", height=0.25)
+                  layout="row", h=34.0)
 
 gui = session.gui()
 editor = Editor(song, sample_rate=SR, tempo=TEMPO, quant=QUANT,
