@@ -25,8 +25,78 @@ from ._wire import resolve as _resolve
 
 
 class Bus:
+    """A patch point: where one node writes and another reads.
+
+    Nodes never connect to each other. They read and write **numbered slots**
+    on the server, and a bus is a run of those slots plus which kind they are.
+    That indirection is what lets a `Synth` be replaced, a whole `Group` be
+    freed, or a def be re-sent without anything downstream noticing: the
+    reader is aimed at a number, not at a node.
+
+    Two rates, and they are different things:
+
+    - **Audio** — a block of samples per channel every block, the signal
+      itself. Buses ``0..outputs`` are the hardware outputs, which is why
+      ``out(0, …)`` is what you hear; `audio` allocates above them. Read one
+      with the ``in_`` UGen, write one with ``out``.
+    - **Control** — one float, updated per block: a parameter, not a signal. A
+      slow envelope, a knob, an LFO. Cheap enough to have thousands. Read one
+      with ``in_ctl``, and this is the rate `Node.map` binds a control to, so
+      one writer drives many synths with the client out of the loop.
+
+    Both are a finite boot-time resource sized by `ServerOptions`, so a bus is
+    allocated and `free`d like memory. The `set` / `get` pair works on control
+    buses only — that is the client writing a parameter directly — while
+    `watch` opens an audio bus for reading, which is how a scope or a meter
+    sees a signal without a message per frame.
+
+    One control bus driving three voices at once, which is what `Node.map` is
+    for:
+
+    ```python
+    from clausters import Bus, Group, Server, Synth, SynthDef
+    from clausters.defs import control, out, sine
+
+    s = Server.boot()
+    d = SynthDef("voice",
+                 out(0, sine(control("freq", 440.0)) * control("amp", 0.1)))
+    d.send(s)
+
+    amp = Bus.control(server=s)              # one float the voices follow
+    g = Group(server=s)
+    for freq in (220.0, 277.0, 330.0):
+        n = Synth("voice", {"freq": freq}, target=g, server=s)
+        n.map("amp", amp)                    # that control now tracks the bus
+
+    amp.set(0.3)                             # one write, three voices
+    print(amp.get())                         # read back (f32: 0.30000001…)
+
+    g.free()
+    amp.free()                               # the slot returns to the pool
+    ```
+
+    Attributes:
+        index: the first slot of the run. This is the number that goes on the
+            wire and into a def's ``bus`` control — nodes are aimed at it.
+        channels: how many contiguous slots the run covers.
+        rate: ``"audio"`` or ``"control"``.
+        server: the `Server` this bus was allocated on; `None` falls back to
+            the ambient one.
+    """
+
     def __init__(self, index: int, channels: int = 1, rate: str = "audio",
                  server=None):
+        """Names an existing run of buses by index — bus 0 is the first
+        hardware output on every server, so a fixed index is a meaningful thing
+        to write down. To take a **free** run out of the server's pool instead,
+        use `audio` or `control`, which is what a piece normally wants.
+
+        Args:
+            index: the run's first slot.
+            channels: how many contiguous slots it covers.
+            rate: ``"audio"`` or ``"control"``.
+            server: the `Server` it lives on; `None` takes the ambient one.
+        """
         self.index = index
         self.channels = channels
         self.rate = rate  # 'audio' | 'control'

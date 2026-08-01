@@ -32,15 +32,72 @@ from .ugens import ChannelList, Control, Ugen
 
 
 class SynthDef:
-    """A named UGen graph. Pass the graph's **root** UGens — normally the
-    outputs (``out(...)`` / ``replace_out(...)``, and any ``local_out(...)`` to
-    keep feedback writes in the graph), but a root can equally be a side-effect
-    UGen with no audio output (``send_trig(...)`` / ``send_reply(...)`` /
-    ``poll(...)``): a def may consist only of those and no ``out`` at all. Every
-    root must be a UGen; a def needs at least one (the server rejects an empty
-    graph). A def with no output UGen is simply silent on the server."""
+    """A graph of the server's own UGens: a named instrument, wired in Python.
+
+    A def is a recipe; `Synth` plays it. `SynthDef` is one of the two families
+    that write that recipe, and it is a **peer** of `FaustDef`, not the default
+    one: a synth of either is the same node in the same tree, driven by the
+    same `Node.set`. What differs is who computes the sound. A `SynthDef` names
+    the DSP units the server already ships — `clausters.defs.ugens`, the
+    lowercase callables — and the server wires them at run time, so there is
+    nothing to compile and the vocabulary is the server's. A `FaustDef` ships a
+    program instead, and gets the Faust language in exchange for a JIT compile.
+
+    **You build it by writing the signal, not by wiring it.** A UGen callable
+    returns a value, and values compose with ordinary Python operators, so the
+    graph is the expression:
+
+    ```python
+    from clausters import Server, Synth, SynthDef
+    from clausters.defs import Env, DoneAction, control, env_gen, out, sine
+
+    s = Server.boot()
+
+    freq = control("freq", 440.0)               # a named control: /node_set reaches it
+    env = env_gen(Env.perc(), done_action=DoneAction.FREE_SELF)
+    d = SynthDef("beep", out(0, sine(freq) * 0.2 * env))
+    d.send(s)                                   # waits for the server's /done
+
+    print(d.control_names())                    # ['freq']
+    Synth("beep", {"freq": 660.0}, server=s)    # sounds, then frees itself
+    ```
+
+    **The arguments are the graph's roots**, not its output. Usually those are
+    the outputs — ``out``, ``replace_out``, and any ``local_out`` that closes a
+    feedback path inside the graph — but a root can equally be a UGen with no
+    audio output at all: ``send_trig``, ``send_reply`` and ``poll`` are roots
+    because nothing reads them. A def may be nothing but those, which is how
+    you write an analyzer that reports and makes no sound. What a def cannot be
+    is empty: the server rejects a graph with no roots.
+
+    Everything reachable from a root is walked in post-order, so the wire's
+    UGen list is topologically sorted and a sub-graph used twice is emitted
+    once. Nothing global is touched during the build, so defs can be built
+    concurrently — the graph is only the expression you passed.
+
+    Sending is asynchronous on the server, and `send` waits for the ``/done``
+    by default; offline it is scored at time 0 instead. Either way the def is
+    installed when the call returns, which is what makes the `Synth` on the
+    next line safe.
+
+    Attributes:
+        name: the def's name on the server — what `Synth` looks up.
+    """
 
     def __init__(self, name: str, *roots: Ugen):
+        """Builds the graph reachable from ``roots``.
+
+        Args:
+            name: the name the server files it under, and `Synth` names.
+            *roots: the graph's root UGens — the outputs, plus any
+                side-effect UGen nothing reads. A multichannel root (an
+                ``out`` over a `clausters.defs.ChannelList`) counts as one
+                root per channel.
+
+        Raises:
+            ValueError: no roots at all.
+            TypeError: a root that is not a `clausters.defs.Ugen`.
+        """
         flat: list[Ugen] = []
         for o in roots:
             # A multichannel root (out(bus, dup(sig)) returns a ChannelList of

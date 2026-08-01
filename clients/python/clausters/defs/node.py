@@ -23,6 +23,59 @@ ROOT_NODE_ID = 0
 
 
 class AddAction(IntEnum):
+    """Where a new node goes, relative to the ``target`` it is added against.
+
+    This is not bookkeeping — it is **signal order**. The server processes the
+    tree front to back within a block, so a node only hears what was written
+    *earlier in the same pass*. Put an effect after its sources and it reads
+    this block; put it before them and it reads last block's, one block late.
+    A piece with the right defs in the wrong order is a piece that sounds
+    wrong, and nothing reports it.
+
+    ```python
+    from clausters import AddAction, Bus, Group, Server, Synth, SynthDef
+    from clausters.defs import control, in_, out, sine
+
+    s = Server.boot()
+    SynthDef("voice",
+             out(control("bus", 0.0), sine(control("freq", 440.0)) * 0.1)).send(s)
+    SynthDef("wash", out(0, in_(control("bus", 0.0)) * 0.5)).send(s)
+
+    bus = Bus.audio(server=s)
+    g = Group(server=s)
+
+    lead = Synth("voice", {"bus": bus.index}, target=g, server=s)  # TAIL: last in g
+    Synth("voice", {"bus": bus.index, "freq": 110.0},              # HEAD: before it
+          target=g, action=AddAction.HEAD, server=s)
+    Synth("wash", {"bus": bus.index},                              # AFTER: reads
+          target=lead, action=AddAction.AFTER, server=s)           # what lead wrote
+    ```
+
+    A ``target`` is any node, not only a group: `BEFORE`, `AFTER` and
+    `REPLACE` take a `Synth` as readily as a `Group`. `HEAD` and `TAIL` are
+    the two that need a group, and aiming one at a synth is **refused
+    silently** — the server drops the node and logs it, the client sees no
+    error and gets back a handle to an id that was never created.
+
+    `HEAD` and `TAIL` place a node *inside* a group; `BEFORE` and `AFTER` place
+    it *beside* another node, which is how one node is aimed at another's
+    output:
+
+    Attributes:
+        HEAD: first inside ``target``, which must be a group. Before
+            everything already in it.
+        TAIL: last inside ``target``, which must be a group — the default,
+            because a new voice usually wants to be heard by whatever the
+            group already feeds.
+        BEFORE: immediately before ``target``, as its sibling. Runs first, so
+            ``target`` can read what it writes this block.
+        AFTER: immediately after ``target``, as its sibling. Reads what
+            ``target`` wrote this block — the usual placement for an effect.
+        REPLACE: takes ``target``'s exact place in the order, and frees it.
+            The way to swap a running node without the gap a free-then-create
+            would leave.
+    """
+
     HEAD = 0
     TAIL = 1
     BEFORE = 2

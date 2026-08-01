@@ -22,8 +22,81 @@ NUM_BUFFERS = 4096
 
 
 class Buffer:
+    """A block of samples the server holds, and a synth reads or writes.
+
+    Where a `Bus` is a patch point that forgets everything each block, a
+    buffer **stays**: it is memory on the server, addressed by a slot number,
+    that outlives every node touching it. That makes it the one place a piece
+    keeps something with random access — a sound file to play back or granulate,
+    a wavetable an oscillator scans, a delay line, an impulse response, a
+    recording being written while it plays.
+
+    A buffer is not itself audible. Something has to read it: the ``play_buf``
+    UGen for straight playback, ``buf_rd`` for reading at an index you compute
+    (a phasor, a granulator's random offsets), ``vosc``/``shaper`` for
+    wavetables, ``disk_in``/``disk_out`` to stream past what fits in memory. So
+    a buffer usually reaches your ears the same way anything else does — through
+    a `Synth` whose def names its ``bufnum``.
+
+    **Allocation is asynchronous, and that is the thing to get right.** The
+    server does the work on a worker thread and answers ``/done``, so
+    `alloc` and `read` block for that reply by default; sequenced offline (NRT)
+    they are scored at time 0 instead, so the renderer has the samples before
+    time advances. Either way the buffer is ready when the call returns. Pass
+    ``wait=False`` only when you are going to sequence the barrier yourself
+    with `Server.sync` — and never block inside a routine.
+
+    The shape (`frames`, `channels`, `sample_rate`) is cached, because unlike a
+    node's state a buffer only changes shape when you change it. `info`
+    refreshes it from the server.
+
+    A sound file read in, played back, and its samples pulled to the client:
+
+    ```python
+    from clausters import Buffer, Server, Synth, SynthDef
+    from clausters.defs import control, out, play_buf
+
+    s = Server.boot()
+    d = SynthDef("player",
+                 out(0, play_buf(control("bufnum", 0.0), 0.0,
+                                 control("rate", 1.0)) * 0.5))
+    d.send(s)
+
+    b = Buffer.read("sample.wav", server=s)      # blocks until /done
+    print(b.frames, b.channels, b.sample_rate)   # the shape, already known
+
+    n = Synth("player", {"bufnum": b.bufnum}, server=s)
+
+    head = b.get_samples(0, 64)                  # the first 64 frames, client-side
+    n.free()
+    b.free()                                     # the slot returns to the pool
+    ```
+
+    Attributes:
+        bufnum: the slot in the server's pool. This is the number a def names,
+            so it is what travels into a synth's ``bufnum`` control.
+        frames: frames per channel, 0 while unknown.
+        channels: channels per frame.
+        sample_rate: the server's rate for these samples, 0.0 while unknown.
+        server: the `Server` this buffer lives on; `None` falls back to the
+            ambient one.
+    """
+
     def __init__(self, bufnum: int, frames: int = 0, channels: int = 1,
                  sample_rate: float = 0.0, server=None):
+        """Names an existing slot by number, for a buffer the server already
+        holds — one another client allocated, or one `Server.query_buffers`
+        reported. Sends nothing, and knows nothing about the shape until you
+        ask (`info`). To get a **new** buffer, use `alloc` (empty) or `read`
+        (from a sound file), which is what a piece normally wants.
+
+        Args:
+            bufnum: the slot number.
+            frames: frames per channel, if already known.
+            channels: channels per frame.
+            sample_rate: the samples' rate, if already known.
+            server: the `Server` it lives on; `None` takes the ambient one.
+        """
         #: what the server holds under this slot, as last read from it — a
         #: buffer's shape only changes by a command of yours, so unlike a
         #: node's record this one can be kept. `info` refreshes it; `frames`,
