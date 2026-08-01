@@ -336,6 +336,29 @@ def test_a_target_is_a_node_or_its_id():
     assert by_object[1][2:] == by_id[1][2:]
 
 
+def test_records_print_readably_and_agree_with_their_container():
+    # str is the readable line, repr stays the dataclass form -- and a Tree
+    # draws a synth by printing its own NodeInfo, so the two cannot drift.
+    from clausters.defs import BufferInfo, ControlInfo, DefInfo, NodeInfo, NodeMap, Tree
+
+    node = NodeInfo(id=7, defname="beep", controls={"freq": 440.0, "amp": 0.2},
+                    maps=[NodeMap(control=1, bus=3)])
+    assert str(node) == "7 beep  freq=440 amp<-c3"
+    assert str(Tree(NodeInfo(id=0, is_group=True, head=7), [Tree(node)])) == (
+        "group 0\n  7 beep  freq=440 amp<-c3")
+    assert "NodeInfo(" in repr(node)
+
+    assert str(NodeInfo(id=9, is_group=True)) == "group 9 (empty)"
+    assert str(NodeInfo(id=9, exists=False)) == "9 (gone)"
+    assert str(BufferInfo(bufnum=2, frames=100, channels=1,
+                          sample_rate=48000.0)) == "buffer 2: 100 frames x 1 ch @ 48000 Hz"
+    assert str(BufferInfo(bufnum=2, frames=0, channels=0, sample_rate=0.0,
+                          exists=False)) == "buffer 2 (empty)"
+    assert str(DefInfo("beep", "synth", [ControlInfo("freq", 440.0)])) == (
+        "beep (synth): freq=440 kr")
+    assert str(DefInfo("nope", "", [], exists=False)) == "nope (not loaded)"
+
+
 def test_done_action_full_set():
     # S4: the client mirrors scsynth's full 0-15 done-action enum.
     from clausters.defs import DoneAction

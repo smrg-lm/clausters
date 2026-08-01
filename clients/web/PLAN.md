@@ -708,6 +708,21 @@ it leans on verbs this client does not have yet.
 
 **Acceptance:** the getting-started example rewritten through a `Session` is shorter and does the same thing; two sessions over different carriers coexist in one page, each with its own clock; a bare `Routine(f).play()` runs with nothing else set up; `new Synth("blip", …)` creates against the session's server, and `Synth.fromId` is the only way to wrap a reported id.
 
+## Parity gaps carried from the Python client
+
+- **The introspection records print as data, not as lines.** `Tree` here has a
+  `toString()` that draws the tree, and the Python client now gives the same
+  treatment to every other record: `NodeInfo`, `BufferInfo`, `DefInfo`,
+  `ControlInfo`, `UgenInfo`, `UgenInput`, `NodeMap` and `ServerInfo` each print
+  one readable line (`buffer 0: 1024 frames x 2 ch @ 48000 Hz`,
+  `beep (synth): freq=440 kr`, `1001 beep  freq=440 amp<-c3`), and `Tree` draws
+  a synth by printing its own `NodeInfo` so the two cannot disagree. Here the
+  records are **interfaces, not classes**, so they cannot carry a method: the
+  port is a set of free formatters in `defs/info.ts` — `formatNodeInfo(info)`
+  and friends, or one `describe(record)` — with `Tree.lines` calling the node
+  one, keeping the same single-source property. Do it when the def layer is
+  next opened; the strings above are the reference output.
+
 ## Future directions
 
 - **Node target.** Already true in the harness, not yet a supported target: the `node --test` suites drive a real `clausters --ws` server and a real `clausters-gui --ws` host, so `WsConnection` runs under node's global `WebSocket` (`src/base/connection.ts` says so) and the wasm core loads there (`loadCore(bytes)`, node's `fetch` not reading `file://`). What remains is making it a *product*: a load path that finds the core's `.wasm` without the test's manual read, a documented entry point for headless scripting/CI the way `clients/python` runs without a display, and the boundary written down — the def, sequencing and GUI-driver layers port, the in-page engine (AudioWorklet) and the page host (canvas) do not.

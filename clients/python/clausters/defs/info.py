@@ -18,6 +18,12 @@ them: `Server` builds them from the catalog replies, and `Node`/`Buffer` from
 their own. A bus has no record at all — the server does not model one (its
 index and width are the client allocator's invention), which is why there is
 no ``BusInfo``.
+
+**Printing is two-faced**, as usual in Python, and every record here follows
+it: ``repr`` is the dataclass form, which names every field and is what an
+expression echoes; ``str`` is the readable line `print` shows. A record's
+``str`` is what its container prints too — a `Tree` draws a synth by printing
+its `NodeInfo`, so the two can never disagree.
 """
 
 from dataclasses import dataclass, field
@@ -53,6 +59,16 @@ class ControlInfo:
     step: "float | None" = None
     targets: tuple = ()
 
+    def __str__(self) -> str:
+        out = f"{self.name}={self.default:g} {self.rate}"
+        if self.min is not None:
+            out += f" [{self.min:g}..{self.max:g} step {self.step:g}]"
+        for member, control, mul, add in self.targets:
+            out += f" -> {member}.{control}"
+            if (mul, add) != (1.0, 0.0):
+                out += f"*{mul:g}+{add:g}"
+        return out
+
 
 @dataclass
 class DefInfo:
@@ -67,6 +83,12 @@ class DefInfo:
     family: str
     controls: "list[ControlInfo]"
     exists: bool = True
+
+    def __str__(self) -> str:
+        if not self.exists:
+            return f"{self.name} (not loaded)"
+        surface = ", ".join(str(c) for c in self.controls) or "no controls"
+        return f"{self.name} ({self.family}): {surface}"
 
 
 @dataclass
@@ -83,6 +105,13 @@ class BufferInfo:
     sample_rate: float
     exists: bool = True
 
+    def __str__(self) -> str:
+        if not self.exists:
+            return f"buffer {self.bufnum} (empty)"
+        shape = f"{self.frames} frames x {self.channels} ch"
+        rate = f" @ {self.sample_rate:g} Hz" if self.sample_rate else ""
+        return f"buffer {self.bufnum}: {shape}{rate}"
+
 
 @dataclass
 class UgenInput:
@@ -94,6 +123,9 @@ class UgenInput:
 
     name: str
     default: float
+
+    def __str__(self) -> str:
+        return f"{self.name}={self.default:g}"
 
 
 @dataclass
@@ -125,6 +157,20 @@ class UgenInfo:
     def variadic(self) -> bool:
         return self.arity < 0
 
+    def __str__(self) -> str:
+        arity = ("variadic" if self.variadic
+                 else f"{self.arity} input" + ("s" if self.arity != 1 else ""))
+        slots = ", ".join(str(i) for i in self.inputs)
+        # `normal` is the exec class of most kinds and the other three tags are
+        # empty on most; only what sets a kind apart is worth a line.
+        tags = " ".join(t for t in (self.exec, self.bus, self.op_family,
+                                    self.spectral) if t and t != "normal")
+        out = f"{self.name} {'/'.join(self.rates)} ({arity}"
+        if slots:
+            out += f": {slots}"
+        out += ")"
+        return out + (f"  {tags}" if tags else "")
+
 
 @dataclass
 class NodeMap:
@@ -133,6 +179,9 @@ class NodeMap:
     control: int
     bus: int
     audio: bool = False
+
+    def __str__(self) -> str:
+        return f"#{self.control}<-{'a' if self.audio else 'c'}{self.bus}"
 
 
 @dataclass
@@ -162,6 +211,20 @@ class NodeInfo:
     maps: "list[NodeMap]" = field(default_factory=list)
     reads: str = "-"
     writes: str = "-"
+
+    def __str__(self) -> str:
+        if not self.exists:
+            return f"{self.id} (gone)"
+        if self.is_group:
+            return f"group {self.id}" + (" (empty)" if self.head < 0 else "")
+        mapped = {m.control: m for m in self.maps}
+        parts = []
+        for i, (name, value) in enumerate(self.controls.items()):
+            m = mapped.get(i)
+            parts.append(f"{name}<-{'a' if m.audio else 'c'}{m.bus}" if m
+                         else f"{name}={value:g}")
+        line = f"{self.id} {self.defname}"
+        return line + ("  " + " ".join(parts) if parts else "")
 
 
 @dataclass
@@ -221,18 +284,7 @@ class Tree:
             for child in self.children:
                 out.extend(child._lines(depth + 1))
             return out
-        mapped = {m.control: m for m in info.maps}
-        parts = []
-        for i, (name, value) in enumerate(info.controls.items()):
-            m = mapped.get(i)
-            if m is None:
-                parts.append(f"{name}={value:g}")
-            else:
-                parts.append(f"{name}<-{'a' if m.audio else 'c'}{m.bus}")
-        line = f"{pad}{info.id} {info.defname}"
-        if parts:
-            line += "  " + " ".join(parts)
-        return [line]
+        return [pad + str(info)]
 
 
 def parse_def_info(args) -> DefInfo:

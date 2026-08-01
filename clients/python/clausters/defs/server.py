@@ -249,6 +249,23 @@ class ServerInfo:
     #: to the UDP datagram cap against a server too old to report it.
     max_frame: int = 65536
 
+    def __str__(self) -> str:
+        drift = ("" if self.actual_sample_rate == self.nominal_sample_rate
+                 else f" (nominal {self.nominal_sample_rate:g})")
+        taps = (f"{self.taps} x {self.tap_frames} frames" if self.taps
+                else "none (no segment)")
+        return "\n".join([
+            f"server {self.actual_sample_rate:g} Hz{drift}, "
+            f"{self.block_size}-sample blocks, "
+            f"{self.channels} out / {self.input_channels} in",
+            f"  buses   {self.audio_buses} audio, {self.control_buses} control",
+            f"  limits  {self.max_nodes} nodes, {self.max_buffers} buffers, "
+            f"{self.max_graph_children} graph children, "
+            f"{self.max_ugen_inputs} ugen inputs",
+            f"  taps    {taps}",
+            f"  frame   {self.max_frame} bytes max",
+        ])
+
 
 class Server:
     def __init__(self, host: "str | None" = None, port: "int | None" = None, interface=None,
