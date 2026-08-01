@@ -309,13 +309,13 @@ class Group(Node):
     SynthDef("wash",
              out(0, in_(control("bus", 0.0)) * control("amp", 0.5))).send(s)
 
-    mix = Bus.audio(server=s)
-    src = Group(server=s)                                    # runs first
+    bus = Bus.audio(server=s)                                 # where they meet
+    src = Group(server=s)                                     # runs first
     fx = Group(target=src, action=AddAction.AFTER, server=s)  # reads what it wrote
 
     for freq in (220.0, 277.0, 330.0):
-        Synth("voice", {"freq": freq, "bus": mix.index}, target=src, server=s)
-    Synth("wash", {"bus": mix.index}, target=fx, server=s)
+        Synth("voice", {"freq": freq, "bus": bus.index}, target=src, server=s)
+    Synth("wash", {"bus": bus.index}, target=fx, server=s)
 
     src.set({"freq": 110.0})   # every voice at once; the wash has no freq
     src.free()                 # the three voices, one command
