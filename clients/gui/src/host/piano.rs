@@ -1,7 +1,7 @@
 //! The virtual piano keyboard's graphic primitives: a playable keyboard laid
 //! out with **real piano proportions** (relative units, so it resizes freely),
 //! an overview strip spanning the full MIDI range for zoom/pan navigation, and
-//! the voice-mode `/s_new`/`/n_set` message builders — all pure over a
+//! the voice-mode `/synth_new`/`/node_set` message builders — all pure over a
 //! [`Mesh`] (the flat-geometry [`super::paint`] painter) so everything is
 //! unit-testable without a window.
 //!
@@ -460,7 +460,7 @@ pub fn draw_widget(
 
 // --- Voice mode (host-managed server voices) --------------------------------
 
-/// The `/s_new` a host-managed voice press sends: the voice def by name, an
+/// The `/synth_new` a host-managed voice press sends: the voice def by name, an
 /// explicit node id (so the release can gate it), head of the default group,
 /// with the conventional controls — `freq` from the equal-tempered MIDI map,
 /// `amp` from the velocity, `gate` open — followed by the widget's extra
@@ -489,16 +489,16 @@ pub fn voice_on_msg(
         args.push(OscType::Float(*v));
     }
     OscMessage {
-        addr: "/s_new".into(),
+        addr: "/synth_new".into(),
         args,
     }
 }
 
-/// The `/n_set <node> gate 0` a voice release sends — the envelope closes and
+/// The `/node_set <node> gate 0` a voice release sends — the envelope closes and
 /// the node frees itself (`FREE_SELF` done action in the voice def).
 pub fn voice_off_msg(node: i32) -> OscMessage {
     OscMessage {
-        addr: "/n_set".into(),
+        addr: "/node_set".into(),
         args: vec![
             OscType::Int(node),
             OscType::String("gate".into()),
@@ -686,7 +686,7 @@ mod tests {
     fn voice_messages_have_the_conventional_shape() {
         let extra = vec![("pan".to_string(), 0.5f32)];
         let on = voice_on_msg("piano_voice", 0x1000_0000, 69, 127, &extra);
-        assert_eq!(on.addr, "/s_new");
+        assert_eq!(on.addr, "/synth_new");
         assert_eq!(
             &on.args[..4],
             &[
@@ -706,7 +706,7 @@ mod tests {
         assert_eq!(on.args[10], OscType::String("pan".into()));
         assert_eq!(on.args[11], OscType::Float(0.5));
         let off = voice_off_msg(42);
-        assert_eq!(off.addr, "/n_set");
+        assert_eq!(off.addr, "/node_set");
         assert_eq!(
             off.args,
             vec![

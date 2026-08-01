@@ -72,7 +72,7 @@ def main():
     # Notes go out as events, not as `server.synth`. A message has no time --
     # `server.synth` sends one, so from inside a routine it lands *now* and
     # every voice would start at 0 no matter what the yields say. An event
-    # rides the bundle path: `/s_new` at the routine's exact logical beat and
+    # rides the bundle path: `/synth_new` at the routine's exact logical beat and
     # the gate release a `sustain` later, which is what makes this a sequence
     # rather than a chord. `has_gate` releases by closing the gate, which is
     # what this def's `env_gen` waits for.

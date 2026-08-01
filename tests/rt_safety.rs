@@ -282,7 +282,7 @@ fn buffer_swaps_do_not_allocate_on_the_audio_thread() {
 /// The S5 table oscillators and waveshaper (`Osc`/`VOsc`/`Shaper`) read the
 /// wavetable pool on the audio thread the same way `PlayBuf` does — pointer
 /// lookups and interpolation, never an allocation. The buffers themselves are
-/// generated on the NRT thread (`/b_gen`), so the audio thread only reads.
+/// generated on the NRT thread (`/buffer_gen`), so the audio thread only reads.
 #[test]
 fn table_oscillators_do_not_allocate_on_the_audio_thread() {
     use clausters::dsp::buffer::Buffer;
@@ -610,7 +610,7 @@ fn demand_family_does_not_allocate_on_the_audio_thread() {
 }
 
 /// Typed controls (S2): the trigger reset, the compile-inserted `Lag`, the
-/// scalar `/n_set` reject and ordinary sets must all stay allocation-free on
+/// scalar `/node_set` reject and ordinary sets must all stay allocation-free on
 /// the audio thread. The def mixes a `tr`, a lagged `kr` and an `ir` control.
 #[test]
 fn typed_controls_do_not_allocate_on_the_audio_thread() {
@@ -894,7 +894,7 @@ fn envgen_free_self_does_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 16);
 }
 
-/// S4: the relative done actions (sibling resolution + free/pause) and `/n_run`
+/// S4: the relative done actions (sibling resolution + free/pause) and `/node_run`
 /// (pause/resume toggle) run on the audio thread — during the done drain and
 /// the command apply — and must not allocate. The scene fires a
 /// `freeSelfAndNext` inside a group and toggles the group's run flag.
@@ -1035,7 +1035,7 @@ fn parallel_dispatch_does_not_allocate() {
 
 /// OSC command-set completion (S6): the new commands that reach the audio
 /// thread must stay allocation-free. `Cmd::MoveNode` with `Place::Head`/`Tail`
-/// (`/g_head`/`/g_tail`/`/n_order`), a `/u_cmd` payload routed to a UGen
+/// (`/group_head`/`/group_tail`/`/node_order`), a `/node_ugenCmd` payload routed to a UGen
 /// instance, and `Cmd::ClearSched` draining the timed-bundle queue to the
 /// garbage FIFO all run inside `process_block` — none may allocate.
 #[test]
@@ -1084,7 +1084,7 @@ fn command_set_completion_does_not_allocate_on_the_audio_thread() {
         .ok()
         .unwrap();
 
-    // Move to head/tail, route a /u_cmd to UGen 0 (default handler ignores it),
+    // Move to head/tail, route a /node_ugenCmd to UGen 0 (default handler ignores it),
     // and flush the schedule queue — all applied at the top of a block.
     handle
         .send(Cmd::MoveNode {
@@ -1222,7 +1222,7 @@ fn reply_ugens_do_not_allocate_on_the_audio_thread() {
     });
 }
 
-/// Audio taps (the `/tap` oscilloscope path): recording live buses into the
+/// Audio taps (the `/bus_tap` oscilloscope path): recording live buses into the
 /// segment's tap rings every block must not allocate either — the write is
 /// one memcpy plus one atomic store per tap.
 #[test]

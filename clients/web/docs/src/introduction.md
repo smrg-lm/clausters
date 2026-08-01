@@ -6,6 +6,8 @@ It is the sibling of the [Python client](https://clausters-python.readthedocs.io
 
 This is the **package documentation**. The server itself — the OSC protocol, the two def formats, the node-tree model, the `/gui_*` widget protocol and the bundle format — is documented in the **[Clausters server book](https://clausters.readthedocs.io/)**, and the shared client model (defs, clocks, events, patterns) in the **[Python client book](https://clausters-python.readthedocs.io/)**. This site links to both rather than repeating them. Three books, one per platform.
 
+One rule from that book is worth carrying here, because it is what makes the addresses this package builds readable: every server command is **`/<resource>_<action>`** — the resource in full (`node`, `synth`, `group`, `bus`, `buffer`, `def`, `ugen`, `server`, …), the action in camelCase, a reply as `<command>.reply`, a range as `Range`.
+
 ## Two carriers, one client
 
 A page reaches a server in one of two ways, and **only one line of a program names which**:

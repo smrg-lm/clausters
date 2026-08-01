@@ -26,7 +26,7 @@ import type { Server } from "./server.ts";
 
 export const ROOT_NODE_ID = 0;
 
-/** Where `/s_new`/`/g_new` places the new node relative to its target. */
+/** Where `/synth_new`/`/group_new` places the new node relative to its target. */
 export const AddAction = {
     HEAD: 0,
     TAIL: 1,
@@ -90,17 +90,17 @@ export class Node {
     }
 
     /**
-     * Sets controls by name (`/n_set`). On a GraphDef instance the names
+     * Sets controls by name (`/node_set`). On a GraphDef instance the names
      * resolve against the graph's surface, not its private members.
      */
     set(controls: Controls): void {
-        this.srv().sendMsg("/n_set", ["i", this.id], ...flattenControls(controls));
+        this.srv().sendMsg("/node_set", ["i", this.id], ...flattenControls(controls));
     }
 
-    /** Maps a control to a bus (`/n_map`, or `/n_mapa` for an audio bus). */
+    /** Maps a control to a bus (`/node_map`, or `/node_mapAudio` for an audio bus). */
     map(name: string, bus: BusLike, { audio = false } = {}): void {
         this.srv().sendMsg(
-            audio ? "/n_mapa" : "/n_map",
+            audio ? "/node_mapAudio" : "/node_map",
             ["i", this.id],
             name,
             ["i", busIndex(bus)],
@@ -108,9 +108,9 @@ export class Node {
     }
 
     /**
-     * This node as the server holds it **right now** (`/n_query` → `/n_info`):
+     * This node as the server holds it **right now** (`/node_query` → `/node_query.reply`):
      * where it sits in the tree, and for a synth its def, its controls, its
-     * `/n_map` bindings and the buses it reads and writes.
+     * `/node_map` bindings and the buses it reads and writes.
      *
      * A photograph, not a state: a running envelope or a mapped control moves
      * under the record's feet, so nothing caches it. A node that is gone —
@@ -120,22 +120,22 @@ export class Node {
     async info(timeout = 5.0): Promise<NodeInfo> {
         const server = this.srv();
         const reply = server.awaitReply(
-            (msg) => msg.addr === "/n_info" && Number(msg.args[0]) === this.id,
+            (msg) => msg.addr === "/node_query.reply" && Number(msg.args[0]) === this.id,
             timeout,
-            `/n_info for node ${this.id}`,
+            `/node_query.reply for node ${this.id}`,
         );
-        server.sendMsg("/n_query", ["i", this.id]);
+        server.sendMsg("/node_query", ["i", this.id]);
         return parseNodeInfo((await reply).args);
     }
 
     /**
      * Sends a typed command to **one UGen instance** inside this synth
-     * (`/u_cmd nodeID ugenIndex name args…`); an unrecognized `name` is a
+     * (`/node_ugenCmd nodeID ugenIndex name args…`); an unrecognized `name` is a
      * no-op on the server.
      */
     uCmd(ugenIndex: number, name: string, ...args: number[]): void {
         this.srv().sendMsg(
-            "/u_cmd",
+            "/node_ugenCmd",
             ["i", this.id],
             ["i", Math.trunc(ugenIndex)],
             name,
@@ -144,32 +144,32 @@ export class Node {
     }
 
     /**
-     * Frees this node now (`/n_free`) — the way to cut something whose life
+     * Frees this node now (`/node_free`) — the way to cut something whose life
      * is long; a GraphDef instance too, private buses included.
      *
      * The id is **not** returned to the registry here: it stays tracked until
-     * the server confirms the death with `/n_end` — releasing at send time
+     * the server confirms the death with `/node_end` — releasing at send time
      * could re-hand an id whose node is still alive on the server.
      */
     free(): void {
-        this.srv().sendMsg("/n_free", ["i", this.id]);
+        this.srv().sendMsg("/node_free", ["i", this.id]);
     }
 
     /**
      * Pauses (`flag: false`) or resumes this node — a synth or a whole group —
-     * with `/n_run`. A paused node stays in the tree and keeps its state but
+     * with `/node_run`. A paused node stays in the tree and keeps its state but
      * is skipped; this is what resumes a synth parked by `PAUSE_SELF`.
      */
     run(flag = true): void {
-        this.srv().sendMsg("/n_run", ["i", this.id], ["i", flag ? 1 : 0]);
+        this.srv().sendMsg("/node_run", ["i", this.id], ["i", flag ? 1 : 0]);
     }
 
-    /** Pauses this node (`/n_run … 0`). */
+    /** Pauses this node (`/node_run … 0`). */
     pause(): void {
         this.run(false);
     }
 
-    /** Resumes this node (`/n_run … 1`). */
+    /** Resumes this node (`/node_run … 1`). */
     resume(): void {
         this.run(true);
     }
@@ -185,7 +185,7 @@ export class Synth extends Node {
 
     /**
      * Starts a synth from a def already loaded on the server, by name
-     * (`/s_new`), with `controls` overriding the def defaults.
+     * (`/synth_new`), with `controls` overriding the def defaults.
      */
     static new(
         server: Server,
@@ -195,7 +195,7 @@ export class Synth extends Node {
     ): Synth {
         const id = server.nodes.alloc();
         server.sendMsg(
-            "/s_new",
+            "/synth_new",
             defname,
             ["i", id],
             ["i", action],
@@ -207,13 +207,13 @@ export class Synth extends Node {
 }
 
 export class Group extends Node {
-    /** An empty group in the node tree (`/g_new`). */
+    /** An empty group in the node tree (`/group_new`). */
     static new(
         server: Server,
         { target = ROOT_NODE_ID, action = AddAction.TAIL }: Placement = {},
     ): Group {
         const id = server.nodes.alloc();
-        server.sendMsg("/g_new", ["i", id], ["i", action], ["i", nodeId(target)]);
+        server.sendMsg("/group_new", ["i", id], ["i", action], ["i", nodeId(target)]);
         return new Group(id, server);
     }
 
@@ -221,7 +221,7 @@ export class Group extends Node {
      * Instantiates a GraphDef already loaded on the server, by name
      * (`/graph_new`), as a wired group, with `ports` overriding the def
      * defaults. Drive the returned group through the surface with `set`
-     * (`/n_set` resolves names against the surface, not the private members)
+     * (`/node_set` resolves names against the surface, not the private members)
      * and tear it down with `free` (which also reclaims its private buses).
      */
     static graph(
@@ -243,14 +243,14 @@ export class Group extends Node {
     }
 
     /**
-     * Spawns a per-voice sub-graph (`/graph_voice`) inside this running
+     * Spawns a per-voice sub-graph (`/graph_newVoice`) inside this running
      * GraphDef instance, wired to its shared private buses.
      */
     voice(ports?: Controls): Group {
         const server = this.srv();
         const id = server.nodes.alloc();
         server.sendMsg(
-            "/graph_voice",
+            "/graph_newVoice",
             ["i", this.id],
             ["i", id],
             ...flattenControls(ports),
@@ -265,7 +265,7 @@ export class Group extends Node {
  * Node ids name slots of a finite boot-time resource (the server's node
  * table), so the allocator is an occupancy map, not a counter: every id
  * handed out stays tracked until the server reports the node's death
- * (`/n_end`, fed in through `free`), which makes it allocatable again — the
+ * (`/node_end`, fed in through `free`), which makes it allocatable again — the
  * space never exhausts while nodes keep dying.
  *
  * It carries no range of its own: the client range is a property of the
@@ -294,14 +294,14 @@ export class NodeIdAllocator {
         if (id === undefined) {
             throw new AllocationError(
                 "out of node ids: the client range is fully in flight " +
-                    "(nodes are recycled when their /n_end arrives)",
+                    "(nodes are recycled when their /node_end arrives)",
             );
         }
         return id;
     }
 
     /**
-     * Returns `id` to the pool — called when its `/n_end` arrives. Ids
+     * Returns `id` to the pool — called when its `/node_end` arrives. Ids
      * outside the client range (another owner's) and ids not currently
      * allocated are ignored: every node death on the server is reported, not
      * only those of nodes this client created.

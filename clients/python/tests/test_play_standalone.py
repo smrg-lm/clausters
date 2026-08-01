@@ -55,7 +55,7 @@ def test_event_play_resolves_ambient_server(clean_default):
     main.server = server               # stands in for a free-standing boot
     node_id = Event(degree=0).play()   # no destination: resolves the default
     assert node_id is not None
-    # /s_new immediate at t=0, release scheduled at t=sustain (dur*legato=0.8).
+    # /synth_new immediate at t=0, release scheduled at t=sustain (dur*legato=0.8).
     times = sorted(t for t, _ in server.interface.score.bundles)
     assert times == pytest.approx([0.0, 0.8])
 
@@ -190,7 +190,7 @@ def test_free_play_accepts_an_event_dict(clean_default):
     main.server = server
     node_id = play({"degree": 2, "dur": 0.5})
     assert node_id is not None
-    assert len(server.interface.score.bundles) == 2   # /s_new + release
+    assert len(server.interface.score.bundles) == 2   # /synth_new + release
 
 
 def test_free_play_accepts_a_generator(clean_default):
@@ -217,7 +217,7 @@ def test_free_play_sounds_a_bare_ugen_expression(clean_default):
     main.server = server
     node = play(sine(440.0) * 0.1)
     assert isinstance(node, Synth)
-    # the ephemeral def (/d_recv at 0) plus its /s_new
+    # the ephemeral def (/def_send synth at 0) plus its /synth_new
     assert len(server.interface.score.bundles) == 2
 
 
@@ -256,7 +256,7 @@ def test_free_play_sounds_a_buffer_through_the_stock_instrument(clean_default):
     buf = Buffer.alloc(4800, 1, server=server)          # 0.1 s at 48 kHz
     node = play(buf)
     assert isinstance(node, Synth) and node.defname == "_playbuf1"
-    # /b_alloc + /d_recv + /s_new at 0, /n_free when the take ends.
+    # /buffer_alloc + /def_send synth + /synth_new at 0, /node_free when the take ends.
     times = sorted(t for t, _ in server.interface.score.bundles)
     assert times[-1] == pytest.approx(0.1)
     # `rate` is a musical ratio: it scales the free time too (fresh score).
@@ -342,7 +342,7 @@ def test_node_handles_free_themselves(clean_default):
     node = play(sine(440.0) * 0.1)       # a Synth handle, server attached
     assert node.server is server
     node.free()
-    assert _addrs(server)[-1] == "/n_free"
+    assert _addrs(server)[-1] == "/node_free"
 
 
 def test_event_play_returns_the_completed_event(clean_default):
@@ -356,7 +356,7 @@ def test_event_play_returns_the_completed_event(clean_default):
     assert e["freq"] == pytest.approx(midicps(60.0))
     assert e["sustain"] == pytest.approx(8.0 * 0.8)
     e.free()                                # cut it now, sustain be damned
-    assert _addrs(server)[-1] == "/n_free"
+    assert _addrs(server)[-1] == "/node_free"
 
 
 def test_event_release_closes_the_gate_or_frees(clean_default):
@@ -364,10 +364,10 @@ def test_event_release_closes_the_gate_or_frees(clean_default):
     main.server = server
     gated = play(Event(instrument="default", degree=0, dur=8.0))
     gated.release()                         # the default releases by gate
-    assert _addrs(server)[-1] == "/n_set"
+    assert _addrs(server)[-1] == "/node_set"
     plain = play(Event(instrument="beep", degree=0, dur=8.0))
     plain.release()                         # a gate-less def just frees
-    assert _addrs(server)[-1] == "/n_free"
+    assert _addrs(server)[-1] == "/node_free"
     # An unplayed event (or a rest) is a no-op, not an error.
     Event(degree=0).free()
     rest_ev = play(Event(type="rest"))
@@ -386,7 +386,7 @@ def test_automation_stops_early(clean_default):
     assert auto.node is not None
     auto.stop()                             # a minute of sweep, cut now
     assert auto.node is None
-    assert _addrs(server)[-1] == "/n_free"
+    assert _addrs(server)[-1] == "/node_free"
     auto.stop()                             # idempotent
 
 
@@ -451,7 +451,7 @@ def test_playing_a_channel_list_sends_and_instances_it(clean_default):
     main.server = server
     node = play(sine(440.0).dup())
     assert isinstance(node, Synth)
-    assert "/d_recv" in _addrs(server) and "/s_new" in _addrs(server)
+    assert "/def_send" in _addrs(server) and "/synth_new" in _addrs(server)
 
 
 def test_a_control_is_a_graph_leaf_not_something_to_play(clean_default):
@@ -500,6 +500,6 @@ def test_free_play_pattern_resolves_server_and_clock(clean_default):
     player = play(Pbind(instrument="default", degree=Pseq([0, 2, 4]), dur=0.5),
                   clock=main.get_default_clock(start=False))
     main.default_clock.render()
-    # three notes, each an /s_new + release bundle
+    # three notes, each an /synth_new + release bundle
     assert len(server.interface.score.bundles) == 6
     player.stop()

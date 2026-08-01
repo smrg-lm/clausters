@@ -62,7 +62,7 @@ impl BlockAdapter {
 }
 
 /// Opens the default output device and starts the engine on its callback,
-/// with `workers` M13 DSP threads for `/g_parallel` groups (0 = sequential),
+/// with `workers` M13 DSP threads for `/group_parallel` groups (0 = sequential),
 /// the boot-time pool `limits`, and, optionally, an M14 IPC segment (shared
 /// clock + control buses).
 ///
@@ -111,7 +111,7 @@ pub fn start(
     // transparently), so we do not gate on `supported_output_configs`, which
     // under-reports there. Hosts that reject the rate (CoreAudio, WASAPI, plain
     // ALSA) make `build_*_stream` fail, and we fall back to the device's own
-    // rate — the gap then shows up as `nominal != actual` in `/status.reply`.
+    // rate — the gap then shows up as `nominal != actual` in `/server_status.reply`.
     let rates = match requested_sample_rate {
         Some(hz) if hz != device_rate => [Some(hz), Some(device_rate)],
         _ => [Some(device_rate), None],

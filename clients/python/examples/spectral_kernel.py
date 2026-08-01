@@ -14,14 +14,14 @@ it as an *expression* and `pv_kernel` interprets it on every bin of each
 fresh frame. The symbolic terms (``mag``, ``phase``, ``bin_index``, ``nbins``,
 ``binfreq``, ``param(i)``) compose with ordinary Python operators — the same
 maths vocabulary the rest of the client uses — and serialize to a tiny
-postfix program the server validates at ``/d_recv`` and runs allocation-free.
+postfix program the server validates at ``/def_send synth`` and runs allocation-free.
 
 This example renders a **tilted spectral gate**, an operation in no catalog:
 the gate threshold rises with frequency, so the noise floor is swept away
 progressively harder toward the highs, leaving a dark, sparse residue. The
 left channel is the raw source; the right is the gated one. The threshold is
 an ordinary control (``param(0)``), so a running server could sweep it live
-with ``/n_set`` — a kernel stays fully modulatable.
+with ``/node_set`` — a kernel stays fully modulatable.
 
 What an expression can NOT do — state across frames (freeze), moving energy
 between bins (shift), reading another chain (combiners) — stays with the
@@ -63,7 +63,7 @@ def tilted_gate(name: str = "tiltgate") -> SynthDef:
     noise. A threshold well below the magnitude spread would gate almost
     nothing (the output then only *sounds* like decorrelated noise, because
     the chain also delays by one window). Sweep it live with
-    `/n_set thresh ...` on a running server to hear the gate open and close.
+    `/node_set thresh ...` on a running server to hear the gate open and close.
     """
     chain = fft(white_noise() * 0.25, fft_size=1024)
     tilt = param(0) * (1 + 4 * bin_index / nbins)  # rising threshold
@@ -85,8 +85,8 @@ def main():
 
     def stop():
         yield 2.0
-        session.server.send_bundle(("/n_free", reference.id))
-        session.server.send_bundle(("/n_free", gated.id))
+        session.server.send_bundle(("/node_free", reference.id))
+        session.server.send_bundle(("/node_free", gated.id))
 
     Routine(stop).play(session.clock)
     stats = session.render(sample_rate=SR, channels=2, path=out_path)

@@ -5,10 +5,10 @@ The low-latency interactive path: a knob *bound* to a running synth's control
 (`clausters.gui.host.GuiHost.bind`) sends its value **straight to the audio
 server** on every turn, with no round-trip through this Python process. An
 unbound knob would instead emit a ``/gui_event`` back here; binding swaps that
-for a direct ``/n_set`` to the server.
+for a direct ``/node_set`` to the server.
 
 The point of the binding is that it lives **in the GUI host, not in this
-script**: ``/gui_bind`` registers ``knob "freq" -> /n_set <node> freq`` inside
+script**: ``/gui_bind`` registers ``knob "freq" -> /node_set <node> freq`` inside
 the host, and the host forwards every change to the audio server on its own. So
 while the host runs, the knob drives the pitch with nothing going through Python
 -- turn it and nothing prints here. (A binding baked into a *saved standalone*
@@ -52,7 +52,7 @@ gui = session.gui()
 
 def beep(name: str = "gui_bind_beep") -> SynthDef:
     """A quiet stereo sine whose frequency is the `freq` control (default
-    220 Hz) -- the binding target `/n_set <node> freq <value>` drives."""
+    220 Hz) -- the binding target `/node_set <node> freq <value>` drives."""
     sig = sine(freq=control("freq", 220.0)) * 0.2
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
@@ -74,7 +74,7 @@ win = gui.open(window(
     knob(name="freq", label="freq", min=110.0, max=880.0, value=220.0,
          weight=1.0),
     title="Bound knob -> synth freq", w=420, h=260, layout="col"))
-win["freq"].bind("/n_set", synth.id, "freq")
+win["freq"].bind("/node_set", synth.id, "freq")
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 print(f"knob bound to synth {synth.id} freq; turn it -- the pitch follows "
       "directly and nothing prints here (no script round-trip)")

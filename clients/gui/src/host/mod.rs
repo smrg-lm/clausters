@@ -336,7 +336,7 @@ pub trait BusSource: Send + Sync {
     /// last), returning `false` when this source has none for it — the
     /// default. Where those samples physically live is this source's business:
     /// the shared-memory segment looks the bus up in the server's directory
-    /// and reads that ring lock-free, the browser reads its `/tap_data` store.
+    /// and reads that ring lock-free, the browser reads its `/bus_tapStream.reply` store.
     /// Above here, a bus is the only thing anyone names.
     fn read_bus(&self, _bus: i32, _out: &mut [f32]) -> bool {
         false
@@ -357,7 +357,7 @@ pub trait BusSource: Send + Sync {
 
     /// The engine's sample clock (samples processed since boot) when this
     /// source carries it (`0.0` otherwise). Drives the timeline playhead with
-    /// zero messages natively; the browser polls `/clock` instead.
+    /// zero messages natively; the browser polls `/clock_query` instead.
     fn sample_clock(&self) -> f64 {
         0.0
     }
@@ -404,7 +404,7 @@ pub struct Host {
     /// The audio buses the host has asked the audio server to record, so the
     /// sample views can read them. Kept as a set and re-diffed whenever the
     /// documents change: the host is the one that turns "this scope watches
-    /// bus 4" into the server's `/tap`, which is why no client -- and no
+    /// bus 4" into the server's `/bus_tap`, which is why no client -- and no
     /// widget -- ever names a recording ring.
     watched_buses: Vec<i32>,
     /// The audio-server client leg (the third topology leg). Present when the
@@ -430,8 +430,8 @@ pub struct Host {
     timelines: timeline::TimelineGroups,
     /// The live host-managed piano voices, per widget id: one `(pitch, node)`
     /// entry per held key of a `piano` in voice mode. The press sends the
-    /// `/s_new`, the release the `gate 0`; the def frees the node itself, so
-    /// no `/n_end` tracking is needed.
+    /// `/synth_new`, the release the `gate 0`; the def frees the node itself, so
+    /// no `/node_end` tracking is needed.
     voices: HashMap<i32, Vec<(i32, i32)>>,
     /// The next voice node-id offset over [`VOICE_ID_BASE`] (wrapping).
     voice_counter: i32,
@@ -714,7 +714,7 @@ impl Host {
         // bind without a separate `/gui_bind`.
         self.register_inline_bindings(&node);
         // A GuiDef with a `name` persists to the store the way a named SynthDef
-        // does on `/d_recv` — no separate save command.
+        // does on `/def_send synth` — no separate save command.
         if let Some(name) = node.props.get("name").and_then(Value::as_str)
             && let Some(store) = self.store.as_ref()
         {
@@ -976,7 +976,7 @@ impl Host {
 
     /// Starts a host-managed voice for a held piano key, when widget
     /// `widget_id` is a `piano` in voice mode (`voice` set): allocates an
-    /// explicit node id, sends the `/s_new` and records the `(pitch, node)`
+    /// explicit node id, sends the `/synth_new` and records the `(pitch, node)`
     /// pair so the release can gate it. A re-press of an already-sounding
     /// pitch releases the old voice first. Bookkeeping happens even with no
     /// server attached, so the logic is testable without a transport.
@@ -1055,7 +1055,7 @@ impl Host {
     /// Sends one message out the audio-server leg, if one is attached.
     /// Re-diffs the audio buses the open documents read against the ones the
     /// server is recording, and asks it to start or stop the difference
-    /// (`/tap bus 1` / `/tap bus 0`). Watches are counted server-side, so two
+    /// (`/bus_tap bus 1` / `/bus_tap bus 0`). Watches are counted server-side, so two
     /// views of one bus cost one recording and the last to go frees it.
     ///
     /// Called after anything that can change what is drawn: a def, a free, a
@@ -1087,7 +1087,7 @@ impl Host {
     }
 
     /// Registers a [`Binding`] for every widget that declares an inline `bind`
-    /// array in the GuiDef (`{"id":…,"type":…,"bind":["/n_set",node,"freq"]}`).
+    /// array in the GuiDef (`{"id":…,"type":…,"bind":["/node_set",node,"freq"]}`).
     fn register_inline_bindings(&mut self, node: &GuiNode) {
         if let Some(id) = node.id
             && let Some(Value::Array(items)) = node.props.get("bind")
@@ -1107,12 +1107,12 @@ impl Host {
 
 /// Collects the trailing OSC blob arguments of a `/gui_def` (the bulk data, e.g.
 /// waveform samples) into a list a `Widget` can index by `"blob"`.
-/// `/tap bus watch`: what the host sends the audio server to start or stop
+/// `/bus_tap bus watch`: what the host sends the audio server to start or stop
 /// recording an audio bus. The bus is the whole address — the server picks and
 /// publishes where the samples land.
 fn watch_msg(bus: i32, watch: bool) -> OscMessage {
     OscMessage {
-        addr: "/tap".into(),
+        addr: "/bus_tap".into(),
         args: vec![OscType::Int(bus), OscType::Int(if watch { 1 } else { 0 })],
     }
 }
@@ -1158,7 +1158,7 @@ fn string_arg(args: &[OscType], i: usize) -> Option<&str> {
 }
 
 /// The i-th argument as JSON bytes: a string or a blob (both accepted, as
-/// `/d_recv` accepts a SynthDef either way).
+/// `/def_send synth` accepts a SynthDef either way).
 fn json_arg(args: &[OscType], i: usize) -> Option<&[u8]> {
     match args.get(i) {
         Some(OscType::String(s)) => Some(s.as_bytes()),
@@ -1491,7 +1491,7 @@ mod tests {
                 10,
                 vec![
                     OscType::String("server".into()),
-                    OscType::String("/n_set".into()),
+                    OscType::String("/node_set".into()),
                     OscType::Int(1000),
                     OscType::String("cutoff".into()),
                 ],
@@ -1508,7 +1508,7 @@ mod tests {
             OscPacket::Message(m) => m,
             other => panic!("expected a message, got {other:?}"),
         };
-        assert_eq!(msg.addr, "/n_set");
+        assert_eq!(msg.addr, "/node_set");
         assert_eq!(
             msg.args,
             vec![
@@ -1533,7 +1533,7 @@ mod tests {
                 10,
                 vec![
                     OscType::String("server".into()),
-                    OscType::String("/c_set".into()),
+                    OscType::String("/bus_set".into()),
                     OscType::Int(7),
                 ],
             ),
@@ -1562,7 +1562,7 @@ mod tests {
                 10,
                 vec![
                     OscType::String("server".into()),
-                    OscType::String("/n_set".into()),
+                    OscType::String("/node_set".into()),
                     OscType::Int(1000),
                     OscType::String("cutoff".into()),
                 ],

@@ -4,7 +4,7 @@
 The server hosts a shared transport with a DAW-style rolling state (play / stop /
 position). A *conductor* (any client) calls `transport_play` / `transport_stop` /
 `transport_locate` on the server; the server broadcasts the new state to every
-`/notify` client, and each client's `Playhead.follow_transport` rolls, halts or
+`/server_notify` client, and each client's `Playhead.follow_transport` rolls, halts or
 seeks to match. The server only broadcasts transport *control* -- it never
 schedules audio; each client rolls its own playhead on the shared grid.
 

@@ -62,7 +62,7 @@ server book's clients chapter for the format.
 
 The page surface:
 
-- `server()` — the lazy **per-page engine singleton**: `send(bytes)` / `addReply(listener)` raw OSC, `clock()`, `bLoad(...)` (the browser's `/b_allocRead`), `resume()`/`suspend()`. Every component and script on the page gets the same engine, so they meet in one node/bus/buffer namespace.
+- `server()` — the lazy **per-page engine singleton**: `send(bytes)` / `addReply(listener)` raw OSC, `clock()`, `bLoad(...)` (the browser's `/buffer_allocRead`), `resume()`/`suspend()`. Every component and script on the page gets the same engine, so they meet in one node/bus/buffer namespace.
 - `guiHost()` — the per-page GUI-host singleton, wired to the engine over the in-page server leg (`GuiBridge.connect_page`). It draws **one canvas per `window`-rooted def**: `attach(defId, canvas)` gives a def its surface, and the host is told its size and its visibility, never the DOM.
 - `openBundle(...)` / `startBundle(...)` — the two phases of a mount by hand (allocate + resolve + draw, then the engine half on a gesture); `bootBundle(...)` does both for a script that already has one.
 - `<clausters-bundle>` / `<clausters-power>` — the elements; the power button is the standard autoplay-policy affordance.
@@ -75,12 +75,12 @@ element, and `tests/runtime-graph.test.ts` holds the line between them.
 
 The client seam (what the TypeScript client builds on):
 
-- `loadOsc()` / `encodeMessage(addr, args)` / `decodePacket(bytes)` — the OSC codec through `clausters-core` compiled to wasm (the `dist/core/` bundle), byte-identical to the server and the Python client by construction; `tests/osc-vectors.json` (generated from the Python client's codec) holds the parity. Arguments are tagged pairs — `encodeMessage("/s_new", [["s","sine"], ["i",1000], ["f",440]])` — so the int/float distinction stays explicit.
+- `loadOsc()` / `encodeMessage(addr, args)` / `decodePacket(bytes)` — the OSC codec through `clausters-core` compiled to wasm (the `dist/core/` bundle), byte-identical to the server and the Python client by construction; `tests/osc-vectors.json` (generated from the Python client's codec) holds the parity. Arguments are tagged pairs — `encodeMessage("/synth_new", [["s","sine"], ["i",1000], ["f",440]])` — so the int/float distinction stays explicit.
 - `Connection` — one duplex-OSC interface, two carriers: `WsConnection.open(url)` (a browser/node `WebSocket` to a `clausters --ws` server, default port 57120) and `pageConnection()` (the in-page engine, no process, no socket). Everything above the seam never names a transport.
 
 The client proper (`src/defs/`, mirroring the Python client's `clausters/defs/`):
 
-- `Server.open(connection)` — the only object that knows a connection. It sizes its node/bus/buffer allocators from the server's own `/server_info`, registers for the server's pushes (which is what recycles a node id once its `/n_end` arrives), and carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions and the introspection queries about what it holds (`queryInfo`, `queryDefs`, `queryBuffers`, `queryUgens`, `queryTree`). A command addressed to a resource belongs to that resource, a question about one included: `def.send(server)`, `Synth.new(server, …)`, `Group.graph(server, …)`, `node.set`/`map`/`free`/`run`/`info`, `Bus.audio(server)` and `bus.set`, `Buffer.alloc(server, …)`, `buffer.info` and `buffer.getSamples`. **Everything that waits is a promise**: where the Python client blocks a thread on a reply, this one `await`s.
+- `Server.open(connection)` — the only object that knows a connection. It sizes its node/bus/buffer allocators from the server's own `/server_query`, registers for the server's pushes (which is what recycles a node id once its `/node_end` arrives), and carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions and the introspection queries about what it holds (`queryInfo`, `queryDefs`, `queryBuffers`, `queryUgens`, `queryTree`). A command addressed to a resource belongs to that resource, a question about one included: `def.send(server)`, `Synth.new(server, …)`, `Group.graph(server, …)`, `node.set`/`map`/`free`/`run`/`info`, `Bus.audio(server)` and `bus.set`, `Buffer.alloc(server, …)`, `buffer.info` and `buffer.getSamples`. **Everything that waits is a promise**: where the Python client blocks a thread on a reply, this one `await`s.
 - `SynthDef` + the lowercase UGen callables (`sine`, `saw`, `rlpf`, `envGen`, `out`, `pan2`, …), and `FaustDef` + the Faust signal API (`signals`), the two def families as peers. `GraphDef` wires several of either into one named, instantiable configuration with a port surface.
 - The graph composes **by method**, TypeScript having no operator overloading: `sine(freq).mul(amp)` where the Python client writes `sine(freq) * amp`. The emitted spec JSON is identical, and `tests/def-parity.test.ts` holds that against vectors frozen from the Python builders (`tests/gen-def-vectors.py`).
 
@@ -88,7 +88,7 @@ The GUI client (`src/gui/`, mirroring the Python client's `clausters/gui/`):
 
 - `GuiHost` — the object that drives a GUI host, on the same connection seam: `GuiHost.page()` for the wasm host on this page's canvas (through the `guiHost()` singleton's binding bridge) and `GuiHost.connect(url)` for a native `clausters-gui --ws` host. It carries `open`/`define` (a whole tree in one `/gui_def`, with the ids assigned into it in place), `set`, `free`, `bind`/`unbind`, `query` and `load`.
 - The GuiDef builders in the `gui` namespace (`gui.window`, `gui.knob`, `gui.waveform`, `gui.track`, …) — the whole widget catalogue, emitting the same JSON document the Python builders do (`tests/gui-parity.test.ts` holds that against vectors frozen from them). The options are camelCase where the wire's props are snake_case (`textSize` → `text_size`).
-- Widgets are addressed by **name**, not by integer: `win.widget("cutoff").set({ value: 800.0 })`, `.onEvent(fn)`, `.bind("/n_set", node.id, "freq")`. A **bound** widget's value goes from the host straight to the audio server, with no round trip through the page's script. **Nothing pumps** — events arrive as callbacks, `query` resolves a promise.
+- Widgets are addressed by **name**, not by integer: `win.widget("cutoff").set({ value: 800.0 })`, `.onEvent(fn)`, `.bind("/node_set", node.id, "freq")`. A **bound** widget's value goes from the host straight to the audio server, with no round trip through the page's script. **Nothing pumps** — events arrive as callbacks, `query` resolves a promise.
 
 ```js
 import { loadOsc, pageConnection, Server, Synth, SynthDef, control, out, sine }
@@ -109,8 +109,8 @@ The sequencing layer (`src/base/clock.ts` + `src/seq/`, mirroring the Python cli
 - `TempoClock` — musical time and the driver that resumes routines on it. The queue and every conversion (beats to seconds, seconds to samples, the bar grid, the timetag) are `clausters-core`'s, reached through the wasm door, so a beat resolves to the same instant here, in the Python client and in the server. The **logical beat advances only by the routines' yields**, so a late wake-up never shifts the music.
 - A **routine** is a generator: `function* () { … yield 0.25 … }` yields a delay in beats. Never `await` inside one — the page has a single thread, and the exactness lives in the timetag, not in the wake-up.
 - The **wake-up** sits behind a `Ticker`: a shared worker in the browser (the page's own timers are throttled to about a second in a background tab), `setTimeout` elsewhere. Tests fill the same seam by hand, along with the timebase, and so drive the real driver deterministically.
-- `server.sampleTimebase()` — the **Server** anchors the sample clock, because the Server is what knows the carrier: in-page it pairs the engine's counter with the AudioContext's in one round trip (the same clock, so the offset is exact and there is no drift); over a socket it feeds `/clock` anchors into the core's sample-clock model. Hand the result to a clock; the clock never talks to a server.
-- Emission is the **bundle path**: `server.sendBundle(...)` stamps at the running routine's exact logical beat — a wall-clock timetag under the monotonic timebase, `/sched` at an absolute sample under a sample one — and `Event.play(server)` is a note's `/s_new` plus the release that follows it.
+- `server.sampleTimebase()` — the **Server** anchors the sample clock, because the Server is what knows the carrier: in-page it pairs the engine's counter with the AudioContext's in one round trip (the same clock, so the offset is exact and there is no drift); over a socket it feeds `/clock_query` anchors into the core's sample-clock model. Hand the result to a clock; the clock never talks to a server.
+- Emission is the **bundle path**: `server.sendBundle(...)` stamps at the running routine's exact logical beat — a wall-clock timetag under the monotonic timebase, `/sched_at` at an absolute sample under a sample one — and `Event.play(server)` is a note's `/synth_new` plus the release that follows it.
 - `seq` — `Event`/`rest`, the value patterns (`Pseq`, `Pser`, `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`) and `Pbind`, plus the seekable counterpart: `Timeline` (a static, editable, beat-sorted list, `Timeline.fromPattern` to bounce one) and `Playhead` (play/stop/locate/loop). Random values come from the context stream a routine derives at creation, so `seed(n)` replays a whole piece.
 
 ```js
@@ -135,7 +135,7 @@ const win = host.open(gui.window(
   gui.knob({ name: "freq", label: "freq", min: 50.0, max: 2000.0, value: 220.0 }),
   gui.slider({ name: "amp", label: "amp", min: 0.0, max: 1.0, value: 0.2 }),
 ));
-win.widget("freq").bind("/n_set", note.id, "freq");   // host -> engine, no script
+win.widget("freq").bind("/node_set", note.id, "freq");   // host -> engine, no script
 win.widget("amp").onEvent((value) => note.set({ amp: value }));
 ```
 

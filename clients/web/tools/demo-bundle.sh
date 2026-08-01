@@ -3,7 +3,7 @@
 # formats — the exact files `clausters-gui --standalone` reads, plus the
 # generated bundle.json manifest: a SynthDef spec whose drone also writes a
 # 0.5 Hz LFO to control bus 0 (OutCtl), and a GuiDef whose meter/scope read
-# that bus and whose boot /s_new brings the drone up. Shared by the
+# that bus and whose boot /synth_new brings the drone up. Shared by the
 # standalone and web-components smokes, and by the manual demo pages
 # (examples/demo.html, examples/standalone.html).
 set -euo pipefail
@@ -26,10 +26,10 @@ EOF
 cat > "$BUNDLE/defs/guidefs/webdrone.json" << 'EOF'
 {"id":1,"gui":{"type":"window","title":"Web standalone drone","w":480,"h":360,
  "layout":"col","name":"webdrone",
- "boot":[["/s_new","web_drone",1000,0,0]],
+ "boot":[["/synth_new","web_drone",1000,0,0]],
  "children":[
   {"id":10,"type":"knob","label":"freq","min":80.0,"max":600.0,"value":220.0,
-   "bind":["/n_set",1000,"freq"]},
+   "bind":["/node_set",1000,"freq"]},
   {"id":11,"type":"meter","bus":0,"min":-1.0,"max":1.0,"label":"lfo"},
   {"id":12,"type":"scope","bus":0,"min":-1.0,"max":1.0,"label":"lfo"}
  ]}}

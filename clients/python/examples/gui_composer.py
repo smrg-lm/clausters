@@ -97,7 +97,7 @@ BEAT = SR / TEMPO
 def bounce_take(path: str, beats: float = 2.0) -> str:
     """Render a two-beat bass note offline and write it to a WAV — the take a
     composition loads from disk. (The event closes the score: it schedules the
-    ``/n_free`` that ends it.)"""
+    ``/node_free`` that ends it.)"""
     offline = Session.nrt(tempo=TEMPO)
     offline.play(Pbind(midinote=Pseq([36], 1), dur=beats, legato=1.0, amp=0.3))
     stats = offline.render(sample_rate=SR, channels=1, path=path)
@@ -136,7 +136,7 @@ bass = Sequence(Pbind(midinote=Pseq([48, 48, 55, 53], 2),  # a Function (generat
 #
 # The voice it drives is **in the composition**, not held by the script: an event
 # with a length, placed beside the curve. It reads the automation's control bus
-# straight (`in_ctl`), so nothing has to be `/n_map`-ed to a node that outlives its
+# straight (`in_ctl`), so nothing has to be `/node_map`-ed to a node that outlives its
 # clip — the voice starts when the playhead reaches the clip and ends with it. Seek
 # past the clip and there is simply no voice; a synth still humming over empty
 # timeline is not a drone, it is a leak.

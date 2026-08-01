@@ -382,7 +382,7 @@ pub(crate) struct FrameInputs<'a> {
     /// timeline rulers when a widget names no rate of its own (0.0 → unknown).
     pub(crate) sample_rate: f64,
     /// The engine's sample clock (samples since boot; the shm header natively,
-    /// the polled `/clock` in the browser). Drives the playhead: a timeline
+    /// the polled `/clock_query` in the browser). Drives the playhead: a timeline
     /// view with `playhead_at >= 0` draws its line at
     /// `sample_clock - playhead_at`.
     pub(crate) sample_clock: f64,

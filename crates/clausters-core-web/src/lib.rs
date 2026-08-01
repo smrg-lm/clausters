@@ -214,7 +214,7 @@ impl JsRegistry {
     }
 
     /// Whether `id` falls inside this registry's space (allocated or not) —
-    /// the filter for foreign `/n_end` ids.
+    /// the filter for foreign `/node_end` ids.
     pub fn contains(&self, id: f64) -> bool {
         self.0.contains(id as i64)
     }
@@ -348,7 +348,7 @@ pub fn unix_to_ntp(unix_secs: f64) -> u64 {
     osc::timetag_bits(osc::unix_to_ntp(unix_secs))
 }
 
-/// A Unix timestamp → the server's absolute sample, through a `/clock` anchor
+/// A Unix timestamp → the server's absolute sample, through a `/clock_query` anchor
 /// (`anchor_unix`, `anchor_sample`) and the measured `rate`.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -452,7 +452,7 @@ pub fn osc_encode_bundle(unix_secs: f64, messages: js_sys::Array) -> Result<Vec<
 }
 
 /// JS face: a bundle with the *immediate* timetag → `Uint8Array`. What rides
-/// inside `/sched`, whose own absolute sample carries the time.
+/// inside `/sched_at`, whose own absolute sample carries the time.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn osc_encode_immediate_bundle(messages: js_sys::Array) -> Result<Vec<u8>, JsError> {
@@ -540,7 +540,7 @@ pub fn degree_to_midinote(degree: f64, octave: f64, root: f64, scale: &[f32]) ->
 // ---- the sample-clock model ----
 //
 // How a client paced by its own monotonic clock still schedules on a remote
-// server's sample axis: `/clock` replies are fed in as anchors, and the model
+// server's sample axis: `/clock_query` replies are fed in as anchors, and the model
 // regresses local time against the sample counter. The in-page carrier needs
 // none of this (the engine shares the page's audio clock); this is the door
 // the WebSocket carrier's tracker drives.
@@ -561,7 +561,7 @@ impl JsSampleClockModel {
         JsSampleClockModel(SampleClockModel::new(nominal_rate, window))
     }
 
-    /// Records one `/clock` observation: the local time it was taken at, the
+    /// Records one `/clock_query` observation: the local time it was taken at, the
     /// server's counter, and the rate the server reported (0 keeps the
     /// current one).
     #[wasm_bindgen(js_name = addAnchor)]
@@ -717,7 +717,7 @@ pub fn oscil_display_frames(window_ms: f32, sample_rate: f64) -> usize {
 }
 
 /// JS face: how many raw tap samples one display window needs — the window
-/// plus the trigger's search slack. What a `/tap_stream` subscription asks for.
+/// plus the trigger's search slack. What a `/bus_tapStream` subscription asks for.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn oscil_raw_frames(display: usize) -> usize {
@@ -853,7 +853,7 @@ mod tests {
     #[test]
     fn encode_matches_the_wire_layout() {
         let bytes = encode_message(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String("default".into()),
                 OscType::Int(1000),
@@ -862,10 +862,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(bytes.len() % 4, 0);
-        assert!(bytes.starts_with(b"/s_new\0\0,sif\0\0\0\0"));
+        assert!(bytes.starts_with(b"/synth_new\0\0,sif\0\0\0\0"));
         let msgs = decode_messages(&bytes).unwrap();
         assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].addr, "/s_new");
+        assert_eq!(msgs[0].addr, "/synth_new");
         assert_eq!(msgs[0].args[1], OscType::Int(1000));
     }
 

@@ -3,7 +3,7 @@
 //
 // The user-facing way to build a `FaustDef`. Each function here returns a
 // `Signal`; composing signals with their math methods builds the JSON
-// **signal tree** the server's `/d_faust` consumes (`{"signals": [ <node>, …
+// **signal tree** the server's `/def_send faust` consumes (`{"signals": [ <node>, …
 // ]}`, one node per output).
 //
 // As in `./ugens.ts`, composition is by **method** rather than by operator —
@@ -12,7 +12,7 @@
 // (Faust `int`/`real`); explicit feedback uses `recursion`/`self_` (one
 // sample of delay), and `input(n)` reads audio input `n`.
 //
-// Reserved controls `in` and `out` (set with `/s_new … "in" b "out" b`)
+// Reserved controls `in` and `out` (set with `/synth_new … "in" b "out" b`)
 // choose the input/output buses; they are added by the server, not declared
 // here.
 

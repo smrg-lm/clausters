@@ -3,7 +3,7 @@
 //! Meters, scopes and `canvas` bus parameters read control buses every
 //! animation frame. Natively the values come from the shared-memory segment
 //! ([`super::shm`], zero messages); in the browser they arrive as periodic
-//! `/c_set` snapshots from the server's `/c_stream` subscription (the network
+//! `/bus_set` snapshots from the server's `/bus_stream` subscription (the network
 //! counterpart of the segment). Everything around that difference — which
 //! buses a tree reads, how a scope's rolling history advances, how a window
 //! decides it is animated — is platform-independent and lives here, so both
@@ -20,7 +20,7 @@ use super::widget::{Widget, WidgetKind};
 /// Most recent control-bus samples a `scope` keeps and plots.
 pub(crate) const SCOPE_HISTORY: usize = 512;
 
-/// The `/c_stream` period the browser front subscribes with: the same ~30 fps
+/// The `/bus_stream` period the browser front subscribes with: the same ~30 fps
 /// the animation tick runs at, so every frame paints a fresh snapshot.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) const STREAM_PERIOD_MS: i32 = 33;
@@ -104,7 +104,7 @@ pub(crate) fn collect_tap_scopes(widget: &Widget, out: &mut Vec<TapScope>) {
 
 /// The distinct, sorted tap indices a tree reads live each frame — every
 /// audio-rate scope, spectrum and phasescope (two taps each). The browser front
-/// subscribes exactly this set with `/tap_stream`.
+/// subscribes exactly this set with `/bus_tapStream`.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) fn collect_live_taps(widget: &Widget, out: &mut Vec<i32>) {
     let mut taps = Vec::new();
@@ -135,7 +135,7 @@ pub(crate) fn tree_has_live_widget(widget: &Widget) -> bool {
 
 /// Whether a widget tree contains a view with an active playhead (a timeline
 /// view or a `score`).
-/// The browser front polls the server clock (`/clock`) each tick only then;
+/// The browser front polls the server clock (`/clock_query`) each tick only then;
 /// the native front reads the shm header, which needs no message at all.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) fn tree_has_playhead(widget: &Widget) -> bool {
@@ -145,7 +145,7 @@ pub(crate) fn tree_has_playhead(widget: &Widget) -> bool {
 /// Refreshes the aligned display window of every audio-rate scope in `tree`,
 /// once per animation tick. `read_raw` fills a raw window of one tap's
 /// samples (newest at the end) from wherever the platform gets them — the shm
-/// segment natively, the `/tap_data` store in the browser — returning `false`
+/// segment natively, the `/bus_tapStream.reply` store in the browser — returning `false`
 /// when no data is available yet. The trigger is searched in the **first**
 /// channel and the found alignment applied to every channel, so the channels
 /// keep their true relative phase; the stored [`TapWindow`] per widget id is
@@ -235,7 +235,7 @@ pub(crate) fn collect_phase_scopes(widget: &Widget, out: &mut Vec<PhaseScope>) {
 /// Refreshes each phasescope's interleaved `[l, r, l, r, …]` window (the same
 /// `windows` map the oscilloscope uses — the widget ids do not collide) from the
 /// two taps' newest samples, once per tick. `read_raw` fills a channel's newest
-/// window (the shm rings natively, the `/tap_data` store in the browser); a
+/// window (the shm rings natively, the `/bus_tapStream.reply` store in the browser); a
 /// `hold` scope keeps its last window, and a channel with no data yet is
 /// skipped. Unlike the oscilloscope there is no trigger — the goniometer shows
 /// the freshest pairs directly.
@@ -342,7 +342,7 @@ pub(crate) fn update_spectra(
 
 /// The largest raw tap window any of a tree's tap consumers needs — an
 /// oscilloscope's `window_ms` (with the trigger slack), a phasescope's window,
-/// or a spectrum's FFT size — so the browser's `/tap_stream` subscription is
+/// or a spectrum's FFT size — so the browser's `/bus_tapStream` subscription is
 /// sized to feed all three. Zero when the tree reads no taps.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) fn tap_stream_frames(tree: &Widget, sample_rate: f64) -> usize {
@@ -398,7 +398,7 @@ pub(crate) fn advance_scope_histories(
 
 /// The distinct, sorted control buses a tree reads live each frame: every
 /// `meter`/`scope` bus plus a `canvas`'s non-negative `buses` entries. The
-/// browser front subscribes exactly this set with `/c_stream`.
+/// browser front subscribes exactly this set with `/bus_stream`.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) fn collect_live_buses(widget: &Widget, out: &mut Vec<i32>) {
     let mut push = |bus: i32| {
@@ -430,9 +430,9 @@ pub(crate) fn collect_live_buses(widget: &Widget, out: &mut Vec<i32>) {
 /// acts on it so far.)
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct LiveDemand {
-    /// The `/c_stream` set: distinct, sorted.
+    /// The `/bus_stream` set: distinct, sorted.
     pub buses: Vec<i32>,
-    /// The `/tap_stream` set: distinct, sorted.
+    /// The `/bus_tapStream` set: distinct, sorted.
     pub taps: Vec<i32>,
     /// The window every tap consumer needs, in frames — the largest any of them
     /// asks for, since one subscription serves them all.
@@ -468,7 +468,7 @@ pub(crate) fn demand<'a>(
     out
 }
 
-/// A [`BusSource`] filled from `/c_stream`'s periodic `/c_set` snapshots — the
+/// A [`BusSource`] filled from `/bus_stream`'s periodic `/bus_set` snapshots — the
 /// message-based counterpart of the shared-memory segment, for the browser.
 /// Unsubscribed or never-streamed buses read `0.0`, exactly like unmapped or
 /// out-of-range buses natively. The `Mutex` only satisfies the trait's
@@ -496,7 +496,7 @@ impl BusSource for StreamedBuses {
     }
 }
 
-/// The `/tap_data` store — the message-based counterpart of the shared-memory
+/// The `/bus_tapStream.reply` store — the message-based counterpart of the shared-memory
 /// tap rings, for the browser. Keeps the newest streamed raw window per tap;
 /// the tick reads it through [`update_tap_windows`] exactly as the native
 /// front reads the segment. The `Mutex` is uncontended on the single-threaded

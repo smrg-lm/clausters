@@ -52,7 +52,7 @@ def cases():
                 g.button(id=7, label="ping"),
                 g.toggle(id=8, label="gate", value=True),
                 g.menu(["sine", "saw", "pulse"], id=9, index=1, label="wave"),
-                g.text(id=10, value="/n_set 1000 freq 440", multiline=False),
+                g.text(id=10, value="/node_set 1000 freq 440", multiline=False),
                 id=6, layout="row", h=40,
             ),
             title="panel", w=480, h=420, layout="col", margin=8.0,

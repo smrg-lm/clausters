@@ -155,7 +155,7 @@ on trust, so that is where drift accumulates:
 - **Prose uses the API's own verbs for API actions.** When the protocol or
   API has a verb for an action, the documentation (books, docstrings,
   comments) names the action with *that* verb: a node or widget is **freed**
-  (`/n_free`, `/gui_free`, `node.free()`) — never "destroyed", "deleted" or
+  (`/node_free`, `/gui_free`, `node.free()`) — never "destroyed", "deleted" or
   "killed"; a def is **sent** and **loaded**; a server is **booted**; an
   element is **rendered** (never "realized" — see the arrangement vocabulary
   below). Everyday synonyms make the prose drift from the surface the reader
@@ -355,8 +355,8 @@ hardening stay in one place.
 ## The def-family features: `synth` and `faust`, both default
 
 The two def families are independent Cargo features, and **both are on by
-default**: `synth` (SynthDef/UGen graphs, `/d_recv`) and `faust` (FaustDefs,
-`/d_faust`). They are **peers** — never treat one as the fallback of the other,
+default**: `synth` (SynthDef/UGen graphs, `/def_send synth`) and `faust` (FaustDefs,
+`/def_send faust`). They are **peers** — never treat one as the fallback of the other,
 in code or in docs. They combine freely; a custom build can ship either alone
 (see `BUILD.md` for the matrix). The node tree only sees `dyn SynthNode`, which
 keeps the families symmetrical — feature-gate new work accordingly.

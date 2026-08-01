@@ -10,7 +10,7 @@
 // **A routine must never block, and must never `await`.** It runs on the
 // page's one thread: blocking it stalls every other routine, the timeline and
 // the rendering. Cede time by yielding instead. In particular, to send a def
-// from inside a routine use the non-waiting form (`def.send(server, // { wait: false })`) and yield enough time before the `/s_new` that depends on
+// from inside a routine use the non-waiting form (`def.send(server, // { wait: false })`) and yield enough time before the `/synth_new` that depends on
 // it — never `await server.sync()`. That is also why the driver takes
 // `function*` and not `async function*`: the ambient "what is running right
 // now" (`base/context.ts`) is only sound while a wake runs to completion.

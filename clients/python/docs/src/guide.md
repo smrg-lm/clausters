@@ -8,7 +8,7 @@ The package is three layers plus a thin convenience wrapper. The split is delibe
 - `absobject` — operator overloading, the base for composing values and signals.
 - `stream` — `Routine`/`Stream`, the `yield` coroutine layer. A routine must never block the clock thread.
 - `clock` — `TempoClock`, **timing only**: it schedules and paces, it does not talk to the server.
-- `timebase` — monotonic, or anchored to the server's sample clock (`/sched`) for drift-free timing.
+- `timebase` — monotonic, or anchored to the server's sample clock (`/sched_at`) for drift-free timing.
 - `moment` — `Moment`, when something is happening: a clock and an exact beat on it. The one answer to "what time is it *for this event*", which is what a destination stamps onto the wire.
 - `destination` — where OSC goes: the `Server` for our own, `OscDestination` for any other application.
 - `netaddr`, `main` — addressing and a thread-local execution context. No global state that would block running RT and NRT in one script.
@@ -32,15 +32,15 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
 
 ## `clausters.defs` — the server side
 
-- `ugens` — lowercase callables producing `Ugen`/`Control`, and `SynthDef` (sent with `/d_recv`): the server's UGens wired into a graph.
-- `FaustDef` (sent with `/d_faust`), its peer: DSP the server JIT-compiles, built from `signals` (Faust's Signal API as lowercase callables), from `boxes` (its Box API — point-free, with `boxes.faust` opening the Faust libraries), or from Faust source. The three forms are equals; so are the two def families.
+- `ugens` — lowercase callables producing `Ugen`/`Control`, and `SynthDef` (sent with `/def_send synth`): the server's UGens wired into a graph.
+- `FaustDef` (sent with `/def_send faust`), its peer: DSP the server JIT-compiles, built from `signals` (Faust's Signal API as lowercase callables), from `boxes` (its Box API — point-free, with `boxes.faust` opening the Faust libraries), or from Faust source. The three forms are equals; so are the two def families.
 - Both families are built **instance-based, with no global build context**, and both instantiate as ordinary nodes in the same tree.
 - `Node`/`Bus`/`Buffer` handles and their allocators.
-- `clocksync` — models the server's sample clock over UDP (`Server.sample_clock()`) for drift-free `/sched` timing without shared memory.
+- `clocksync` — models the server's sample clock over UDP (`Server.sample_clock()`) for drift-free `/sched_at` timing without shared memory.
 - **Introspection** — `Server.query_tree()` and `node.info()` read what is *playing* (the server is asked about every node it holds, a node about itself; every entry of the tree is the same record, and `print(tree)` draws it); `Server.query_defs()`, `query_buffers()` and `query_ugens()` read what the server **holds**: the loaded defs with their control surface, the allocated buffers, and the UGen catalog with named inputs and defaults. Worth asking rather than assuming — the def store persists across restarts, so a server can hold defs this client never sent. All blocking, so never from a routine.
 - `Server` — **owns the communication interface and emits through it.** Swapping its interface retargets a routine from a live RT server to an NRT score without touching the clock or the routine. Interfaces include `OscUdpInterface`, `OscTcpInterface` (length-prefixed OSC; start the server with `--tcp`), and `OscWsInterface` (OSC over WebSocket, the browser-reachable transport; start the server with `--ws`), all drop-in.
 
-See [Defining instruments: FaustDef and SynthDef](defs.md) for the full def-building vocabulary — every `signals` / `ugens` callable, how the two def kinds differ, and how a def is sent behind the `/sync` barrier.
+See [Defining instruments: FaustDef and SynthDef](defs.md) for the full def-building vocabulary — every `signals` / `ugens` callable, how the two def kinds differ, and how a def is sent behind the `/server_sync` barrier.
 
 ## `clausters.Session` — ergonomic defaults, no globals
 
@@ -57,3 +57,10 @@ Everything above the `Server` (clock, routines, patterns, defs) is written once.
 ## Where the server contract lives
 
 The wire formats this client emits — the OSC command set, the SynthDef JSON and Faust def formats, the node-tree and bus/buffer semantics, and the C ABI behind the native core — are specified in the **[Clausters server book](https://clausters.readthedocs.io/)**, not here. When in doubt about what a byte means on the wire, that is the source of truth; this client is one consumer of it.
+
+Every command in that set is spelled by one rule — **`/<resource>_<action>`**,
+the resource in full (`node`, `synth`, `group`, `bus`, `buffer`, `def`, `ugen`,
+`server`, …), the action in camelCase, a reply as `<command>.reply`, a range as
+`Range` — so the addresses this client builds can be read without a lookup. The
+rule and its three corollaries open the server's OSC reference.
+

@@ -1,4 +1,4 @@
-//! M13: parallel processing of `/g_parallel` groups. The central claim
+//! M13: parallel processing of `/group_parallel` groups. The central claim
 //! under test: parallel execution is **bit-identical** to sequential
 //! execution — stages only batch children with pairwise disjoint bus
 //! usage, so worker interleaving can never change a sample.
@@ -31,7 +31,7 @@ fn s_new(name: &str, id: i32, target: i32, ctls: &[(&str, f32)]) -> OscMessage {
         args.push(OscType::String((*k).into()));
         args.push(OscType::Float(*v));
     }
-    msg("/s_new", args)
+    msg("/synth_new", args)
 }
 
 /// A source summing `Sine(freq)·0.2` into a constant bus.
@@ -44,7 +44,13 @@ fn src_def(name: &str, bus: f32, freq: f32) -> OscMessage {
             {"kind": "Out", "inputs": [{"const": bus}, {"ugen": 1}]}
         ]
     });
-    msg("/d_recv", vec![OscType::Blob(def.to_string().into_bytes())])
+    msg(
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(def.to_string().into_bytes()),
+        ],
+    )
 }
 
 /// An insert fx: halves `bus` in place (read + ReplaceOut).
@@ -57,7 +63,13 @@ fn fx_def(name: &str, bus: f32) -> OscMessage {
             {"kind": "ReplaceOut", "inputs": [{"const": bus}, {"ugen": 1}]}
         ]
     });
-    msg("/d_recv", vec![OscType::Blob(def.to_string().into_bytes())])
+    msg(
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(def.to_string().into_bytes()),
+        ],
+    )
 }
 
 /// The torture graph, sent identically to every engine under test:
@@ -88,8 +100,11 @@ fn torture_graph() -> Vec<OscMessage> {
         ]
     });
     m.push(msg(
-        "/d_recv",
-        vec![OscType::Blob(mix.to_string().into_bytes())],
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(mix.to_string().into_bytes()),
+        ],
     ));
     // Second master: nested-group buses into out 0 too (conflicting write).
     let mix2 = json!({
@@ -102,8 +117,11 @@ fn torture_graph() -> Vec<OscMessage> {
         ]
     });
     m.push(msg(
-        "/d_recv",
-        vec![OscType::Blob(mix2.to_string().into_bytes())],
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(mix2.to_string().into_bytes()),
+        ],
     ));
     // Dynamic: the In bus index is a signal — must run alone, untouched.
     let dynread = json!({
@@ -115,10 +133,13 @@ fn torture_graph() -> Vec<OscMessage> {
         ]
     });
     m.push(msg(
-        "/d_recv",
-        vec![OscType::Blob(dynread.to_string().into_bytes())],
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(dynread.to_string().into_bytes()),
+        ],
     ));
-    // A source whose output bus is a control (re-analyzed on /n_set later).
+    // A source whose output bus is a control (re-analyzed on /node_set later).
     let srcvar = json!({
         "name": "srcvar",
         "controls": [{"name": "bus", "default": 19.0}],
@@ -129,15 +150,21 @@ fn torture_graph() -> Vec<OscMessage> {
         ]
     });
     m.push(msg(
-        "/d_recv",
-        vec![OscType::Blob(srcvar.to_string().into_bytes())],
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(srcvar.to_string().into_bytes()),
+        ],
     ));
 
     m.push(msg(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     ));
-    m.push(msg("/g_parallel", vec![OscType::Int(100), OscType::Int(1)]));
+    m.push(msg(
+        "/group_parallel",
+        vec![OscType::Int(100), OscType::Int(1)],
+    ));
     // Dependency-correct insertion order (M12 could do this; here it is
     // explicit so the test only exercises M13).
     m.push(s_new("src16", 1001, 100, &[]));
@@ -146,7 +173,7 @@ fn torture_graph() -> Vec<OscMessage> {
     m.push(s_new("srcvar", 1004, 100, &[]));
     // Nested group with two more disjoint sources: one unit for the stage.
     m.push(msg(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(200), OscType::Int(1), OscType::Int(100)],
     ));
     m.push(s_new("src20", 2001, 200, &[]));
@@ -182,8 +209,9 @@ impl Rig {
 
     fn send(&mut self, messages: &[OscMessage]) {
         for m in messages {
-            if m.addr == "/d_recv" {
-                self.translator.d_recv(&m.args).unwrap();
+            if m.addr == "/def_send" {
+                // `/def_send <family> <payload…>`: these are all synth defs.
+                self.translator.d_recv(&m.args[1..]).unwrap();
                 continue;
             }
             let mut cmds = Vec::new();
@@ -220,7 +248,7 @@ fn parallel_output_is_bit_identical_to_sequential() {
     // masks update via Cmd::SetUsage and the partition adapts — still
     // bit-identical.
     let retune = vec![msg(
-        "/n_set",
+        "/node_set",
         vec![
             OscType::Int(1004),
             OscType::String("bus".into()),
@@ -253,7 +281,7 @@ fn g_parallel_rejects_missing_or_non_groups() {
     let mut cmds = Vec::new();
     let err = translator
         .translate(
-            &msg("/g_parallel", vec![OscType::Int(999), OscType::Int(1)]),
+            &msg("/group_parallel", vec![OscType::Int(999), OscType::Int(1)]),
             &mut cmds,
         )
         .unwrap_err();
@@ -264,7 +292,7 @@ fn g_parallel_rejects_missing_or_non_groups() {
         .unwrap();
     let err = translator
         .translate(
-            &msg("/g_parallel", vec![OscType::Int(1001), OscType::Int(1)]),
+            &msg("/group_parallel", vec![OscType::Int(1001), OscType::Int(1)]),
             &mut cmds,
         )
         .unwrap_err();
@@ -280,7 +308,7 @@ fn nrt_render_with_workers_is_bit_identical() {
     let graph = torture_graph();
     let events = vec![
         (0.0, graph),
-        (0.25, vec![msg("/n_free", vec![OscType::Int(100)])]),
+        (0.25, vec![msg("/node_free", vec![OscType::Int(100)])]),
     ];
     let score = Score::new(events).unwrap();
     let base = RenderConfig {

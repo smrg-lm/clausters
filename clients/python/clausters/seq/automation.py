@@ -2,19 +2,19 @@
 
 An `Automation` places a break-point curve on the timeline that drives one or
 more ``(node, control)`` targets. It is rendered as a **control vector**: the
-curve is discretized on the server into a control buffer (``/b_gen "env"``,
+curve is discretized on the server into a control buffer (``/buffer_gen "env"``,
 evaluated through the same envelope-shape math the ``EnvGen`` UGen plays), and a
 small control synth reads that buffer onto a control bus which the targets
-follow via ``/n_map``. The stored curve is an `Env` (the same object the ``bpf``
+follow via ``/node_map``. The stored curve is an `Env` (the same object the ``bpf``
 editor round-trips through `env_to_points`/`points_to_env`).
 
 Two phases keep the clock thread unblocked — a routine must **never** block:
 
 - `Automation.prepare` allocates and fills the buffer and allocates the bus.
   Blocking is fine here (it runs at setup, off the clock thread); in NRT it
-  scores the ``/b_alloc``/``/b_gen`` at time 0.
+  scores the ``/buffer_alloc``/``/buffer_gen`` at time 0.
 - `Automation.play` — the Timeline-item hook — only *schedules* the lane synth,
-  the ``/n_map``\\ s and the ``/n_free`` (all non-blocking). In NRT, where every
+  the ``/node_map``\\ s and the ``/node_free`` (all non-blocking). In NRT, where every
   command is scored in order, `play` self-prepares.
 """
 
@@ -71,7 +71,7 @@ def _norm_targets(target):
 
 
 def _env_gen_args(env):
-    """The flat ``/b_gen "env"`` argument list: ``level0`` then a
+    """The flat ``/buffer_gen "env"`` argument list: ``level0`` then a
     ``(level, time, shape, curve)`` quad per segment (times relative — only
     their proportions matter, playback maps them onto real time)."""
     args = [float(env.levels[0])]
@@ -141,7 +141,7 @@ class Automation:
 
     def play(self, destination):
         """Timeline-item hook and interactive trigger: schedule the lane synth,
-        ``/n_map`` the targets, and free the synth after the curve's duration.
+        ``/node_map`` the targets, and free the synth after the curve's duration.
         Non-blocking. Self-prepares only in NRT (where it is scored).
 
         Two timing regimes, chosen by context like an `Event`'s. **Inside a
@@ -162,21 +162,21 @@ class Automation:
 
         node = destination.nodes.alloc()
         self.node, self._playing_on = node, destination
-        s_new = ("/s_new", LANE_DEF, node, int(AddAction.HEAD), int(ROOT_NODE_ID),
+        s_new = ("/synth_new", LANE_DEF, node, int(AddAction.HEAD), int(ROOT_NODE_ID),
                  "buf", self.buf.bufnum, "bus", self.bus.index, "dur", dur_secs)
-        maps = [("/n_map", tnode.id if hasattr(tnode, "id") else int(tnode),
+        maps = [("/node_map", tnode.id if hasattr(tnode, "id") else int(tnode),
                  ctl, self.bus.index) for tnode, ctl in self.targets]
         if clock is None:
             # No clock in context: immediate lane, self-freeing on wall time.
             destination.send_msg(*s_new)
             for m in maps:
                 destination.send_msg(*m)
-            destination.send_bundle_after(dur_secs, ("/n_free", node))
+            destination.send_bundle_after(dur_secs, ("/node_free", node))
             return node
         destination.send_bundle(s_new)
         for m in maps:
             destination.send_bundle(m)
-        destination.send_bundle(("/n_free", node), delay_beats=dur_beats)
+        destination.send_bundle(("/node_free", node), delay_beats=dur_beats)
         return node
 
     def stop(self):

@@ -316,7 +316,7 @@ pub enum LfShape {
 /// `VarSaw`. Inputs: 0 frequency in Hz, 1 initial phase, and — only for the
 /// shapes that have a duty cycle — 2 width. A shape without one declares two
 /// inputs rather than three: a UGen that advertises an input it ignores lies to
-/// `/u_query`, and a client palette would draw an inlet that does nothing.
+/// `/ugen_query`, and a client palette would draw an inlet that does nothing.
 ///
 /// **Initial phase is in cycles, `[0, 1)`** — a deliberate deviation from
 /// scsynth, whose `iphase` is in `[0, 2)` for the `LF*` family because its

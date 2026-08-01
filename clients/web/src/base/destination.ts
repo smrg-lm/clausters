@@ -21,7 +21,7 @@ import type { MsgArg, TimedMessage } from "./osc.ts";
  *
  * Note what is *not* here: `playEvent`. Rendering an `Event` is a double
  * dispatch onto destinations that understand the server's node commands; an
- * external application does not know what `/s_new` is.
+ * external application does not know what `/synth_new` is.
  */
 export interface Destination {
     /** Sends one message, untimetagged. */
@@ -39,7 +39,7 @@ export interface Destination {
  * Standard OSC only: a message, or a bundle carrying an NTP timetag. No
  * latency — that is a property of *our* audio pipeline, and what another
  * application needs is its own business, asked for as an explicit delay. No
- * `/sched` (our command).
+ * `/sched_at` (our command).
  *
  * The `Connection` is borrowed, never closed here: whoever opened the carrier
  * owns it.

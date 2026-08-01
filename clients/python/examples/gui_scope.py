@@ -10,7 +10,7 @@ A script only names the bus. Behind it, the GUI host asks the server to record
 that bus into the shared-memory segment and reads the newest window straight
 out of it each frame -- zero per-frame OSC -- and stops the recording when no
 open view is drawing it. (A browser host cannot map the segment; it subscribes
-``/tap_stream`` instead. ``Server.stream_taps`` exposes that path to Python
+``/bus_tapStream`` instead. ``Server.stream_taps`` exposes that path to Python
 too, for headless capture of a live signal.)
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and

@@ -159,7 +159,7 @@ def build(subject, secs, amp, sets, sweep, catalog):
 
 def slot_index(subject, slot, catalog):
     """An input by name (`freq`) or by position (`0`). Names come from the
-    server's own `/u_query`, so a typo is an error here rather than a value
+    server's own `/ugen_query`, so a typo is an error here rather than a value
     quietly landing in the wrong slot."""
     if slot.isdigit():
         return int(slot)
@@ -239,7 +239,7 @@ def render_offline(items, secs, amp, sets, sweep, path):
         node = Synth.new(spec["name"], server=server)
         # A bare subject has no envelope and no done action, so nothing would
         # end the score: the render's duration is the closing bundle.
-        server.send_bundle_after(secs, ("/n_free", node.id))
+        server.send_bundle_after(secs, ("/node_free", node.id))
         samples = server.render(sample_rate=SR, channels=ch).samples
         report(f"{section}/{subject['name']}", samples, ch, secs)
         out.extend(spread(samples, ch, width))

@@ -54,11 +54,11 @@ def reference() -> Bundle:
     b.synthdef(voice())
     b.gui(window(
         knob(label="freq", value=freq, min=60.0, max=700.0,
-             bind=["/n_set", node, "freq"], id=2),
+             bind=["/node_set", node, "freq"], id=2),
         meter(lfo, rate="control", label="env", id=3),
         title=title, layout="col", w=320, h=200,
     ))
-    b.boot(["/s_new", "fm-voice.voice", node, 0, 0, "freq", freq, "env_bus", lfo])
+    b.boot(["/synth_new", "fm-voice.voice", node, 0, 0, "freq", freq, "env_bus", lfo])
     b.preset("bright", freq=660.0, title="bright voice")
     return b
 

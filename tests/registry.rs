@@ -1,5 +1,5 @@
 //! The finite-resource registries on the server side: the auto node-id range
-//! (`/s_new -1`, GraphDef members) and the MIDI voice range are occupancy
+//! (`/synth_new -1`, GraphDef members) and the MIDI voice range are occupancy
 //! maps scaled from `--max-nodes`, recycled as nodes die — never counters.
 //! Exhaustion is an explicit command error; a failed instantiation hands back
 //! every id and bus it took.
@@ -34,7 +34,7 @@ fn s_new_auto(t: &mut CmdTranslator) -> Result<i32, String> {
     let mut cmds = Vec::new();
     t.translate(
         &msg(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String("default".into()),
                 OscType::Int(-1),

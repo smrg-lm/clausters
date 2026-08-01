@@ -5,7 +5,7 @@ description: How to write DSP in the Faust language and transpose it between Fau
 
 # Writing Faust and transposing it to the clausters APIs
 
-One def, three source forms, all landing on the same `/d_faust` + LLVM JIT:
+One def, three source forms, all landing on the same `/def_send faust` + LLVM JIT:
 
 | form | payload | when |
 |---|---|---|
@@ -28,7 +28,7 @@ Local definitions with `with { … }`; difference equations with
 z⁻¹). Iterations `par(i,N,e)` / `seq(i,N,e)` / `sum(i,N,e)` / `prod(i,N,e)`
 unroll at compile time; pattern matching rewrites (`dup(1,x) = x; dup(n,x) =
 x, dup(n-1,x);`). UI primitives are the **controls** in clausters: `hslider`,
-`vslider`, `nentry`, `button`, `checkbox` — the label becomes the `/n_set`
+`vslider`, `nentry`, `button`, `checkbox` — the label becomes the `/node_set`
 control name (`in`/`out` are reserved: the server adds them for bus routing).
 
 ## Sample-level feedback (`~`) — the core idiom
@@ -113,7 +113,7 @@ excitations `pm.impulseExcitation(gate)`, `pm.pluckString`, `pm.strikeModel`,
 `pm.violinModel`, `pm.clarinetModel`, `pm.djembeModel`, `pm.marimbaBarModel`.
 
 A gate/trigger control drives the excitation — in clausters, a `button("gate")`
-set via `/s_new … "gate" 1` or `/n_set` (and released back to 0), exactly like
+set via `/synth_new … "gate" 1` or `/node_set` (and released back to 0), exactly like
 a UGen-def `tr` control. Hand-rolled Karplus-Strong, to see the feedback
 skeleton (a waveguide *is* `~` around a delay + damping filter):
 
@@ -126,7 +126,7 @@ process = exc : (+ : de.fdelay(4096, ma.SR/freq - 0.5)) ~ (fi.lowpass(1, 6000) *
 ```
 
 Faust's `soundfile("<bufnum>", n)` binds a **server buffer** by numeric label
-(snapshot at `/s_new`; outputs `[length, sampleRate, ch0…]`) — the bridge for
+(snapshot at `/synth_new`; outputs `[length, sampleRate, ch0…]`) — the bridge for
 sampled excitations and modal IRs; see `docs/schemas.md` "Soundfiles read
 server buffers".
 
@@ -136,5 +136,5 @@ server buffers".
 - D. Sanfilippo, *Three ways to implement recursive circuits in Faust*: https://www.dariosanfilippo.com/posts/2020/11/28/faust_recursive_circuits.html
 - `pm.lib` reference: https://faustlibraries.grame.fr/libs/physmodels/ (source: https://github.com/grame-cncm/faustlibraries/blob/master/physmodels.lib)
 - J. O. Smith, *Physical Audio Signal Processing* (waveguide theory behind pm.lib): https://www.dsprelated.com/freebooks/pasp/Virtual_Musical_Instruments.html
-- Faust-STK (nonlinear physical models in Faust, all source-compatible with `/d_faust`): https://ccrma.stanford.edu/~rmichon/publications/doc/DAFx11-Faust-STK.pdf
+- Faust-STK (nonlinear physical models in Faust, all source-compatible with `/def_send faust`): https://ccrma.stanford.edu/~rmichon/publications/doc/DAFx11-Faust-STK.pdf
 - Worked reverb/feedback algorithms: https://github.com/LucaSpanedda/Digital_Reverberation_in_Faust

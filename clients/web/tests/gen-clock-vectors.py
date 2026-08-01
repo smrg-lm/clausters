@@ -72,7 +72,7 @@ BINARY = ["add", "sub", "mul", "div", "pow", "min", "max", "round", "trunc",
           "wrap2", "fold2", "clip2", "absdif", "thresh", "hypot"]
 BINARY_INPUTS = [(3.0, 2.0), (-1.5, 0.25), (440.0, 1.5), (0.7, 0.3)]
 
-# The unix timestamps stamped into bundle timetags, and the /clock anchors a
+# The unix timestamps stamped into bundle timetags, and the /clock_query anchors a
 # sample-locked client schedules through.
 UNIX_TIMES = [0.0, 1.0, 1234567890.5, 1753500000.125]
 ANCHORS = [

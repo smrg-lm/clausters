@@ -128,7 +128,7 @@ class UgenInfo:
 
 @dataclass
 class NodeMap:
-    """One live ``/n_map``/``/n_mapa`` binding: the control follows the bus."""
+    """One live ``/node_map``/``/node_mapAudio`` binding: the control follows the bus."""
 
     control: int
     bus: int
@@ -236,7 +236,7 @@ class Tree:
 
 
 def parse_def_info(args) -> DefInfo:
-    """One ``/d_info`` reply: ``name, family, numControls`` then per control
+    """One ``/def_query.reply`` reply: ``name, family, numControls`` then per control
     ``name, default, rate`` — plus ``min, max, step`` for a faust param, or
     ``numTargets`` and the target tuples for a graph port."""
     name, family, count = str(args[0]), str(args[1]), int(args[2])
@@ -264,7 +264,7 @@ def parse_def_info(args) -> DefInfo:
 
 
 def parse_ugen_info(args) -> UgenInfo:
-    """One ``/u_info`` reply: ten fixed fields then ``(name, default)`` per
+    """One ``/ugen_query.reply`` reply: ten fixed fields then ``(name, default)`` per
     named input."""
     count = int(args[9])
     inputs = [UgenInput(name=str(args[10 + 2 * k]), default=float(args[11 + 2 * k]))
@@ -285,7 +285,7 @@ def parse_ugen_info(args) -> UgenInfo:
 
 
 def parse_buffer_list(args) -> "list[BufferInfo]":
-    """A ``/b_info`` reply, four args per buffer. ``frames`` -1 marks a slot
+    """A ``/buffer_query.reply`` reply, four args per buffer. ``frames`` -1 marks a slot
     with nothing in it (the argument-less listing form never reports one)."""
     out = []
     for i in range(0, len(args) - 3, 4):
@@ -321,7 +321,7 @@ def _parse_maps(args, i):
 
 
 def parse_n_info(args) -> NodeInfo:
-    """``/n_info`` -> one `NodeInfo` (see ``CmdTranslator::node_info``).
+    """``/node_query.reply`` -> one `NodeInfo` (see ``CmdTranslator::node_info``).
     ``is_group`` -1 is how the server says the node is not there."""
     id_, parent = int(args[0]), int(args[1])
     prev, next_, kind = int(args[2]), int(args[3]), int(args[4])
@@ -339,7 +339,7 @@ def parse_n_info(args) -> NodeInfo:
 
 
 def _parse_tree_nodes(args, i, count, detail, parent):
-    """Recursively parse `count` entries of a ``/g_queryTree.reply`` starting
+    """Recursively parse `count` entries of a ``/group_queryTree.reply`` starting
     at index `i`; returns (subtrees, next_index). A synth has child-count -1.
 
     The wire gives the nesting; the siblings and a group's head/tail follow
@@ -371,7 +371,7 @@ def _parse_tree_nodes(args, i, count, detail, parent):
 
 
 def parse_query_tree(args) -> Tree:
-    """``/g_queryTree.reply`` -> a `Tree` of `NodeInfo`. A standalone function
+    """``/group_queryTree.reply`` -> a `Tree` of `NodeInfo`. A standalone function
     so it can be unit-tested without a server."""
     detail = int(args[0])
     root_id = int(args[1])

@@ -18,13 +18,13 @@
         boots the engine and speaks OSC through the <code>Connection</code>
         interface — the same interface <code>WsConnection</code> gives a native
         server. No bundle, no GUI: just the protocol surface.</div>
-      <button id="boot">boot + /status</button>
+      <button id="boot">boot + /server_status</button>
       <pre id="log"></pre>
     </main>
 
     <!--
       The page-carrier acceptance (clients/web/test.sh, headless Chrome):
-      ?smoke=1 auto-runs, asserts a /status round trip through the carrier
+      ?smoke=1 auto-runs, asserts a /server_status round trip through the carrier
       and that close() detaches without stopping the shared engine (a second
       connection still gets replies). Verdict beaconed as a fetch, read from
       the HTTP access log.
@@ -44,16 +44,16 @@
           .catch(() => {});
       };
 
-      // One /status round trip over `connection`, resolving the synth count.
+      // One /server_status round trip over `connection`, resolving the synth count.
       const status = (connection, timeoutMs = 10000) =>
         new Promise((resolve, reject) => {
           const timer = setTimeout(() => {
             connection.removeReply(onReply);
-            reject(new Error("no /status.reply"));
+            reject(new Error("no /server_status.reply"));
           }, timeoutMs);
           const onReply = (bytes) => {
             for (const { addr, args } of decodePacket(bytes)) {
-              if (addr === "/status.reply") {
+              if (addr === "/server_status.reply") {
                 clearTimeout(timer);
                 connection.removeReply(onReply);
                 resolve(args[2]);
@@ -61,18 +61,18 @@
             }
           };
           connection.addReply(onReply);
-          connection.send(encodeMessage("/status"));
+          connection.send(encodeMessage("/server_status"));
         });
 
       async function run() {
         await loadOsc();
         const first = await pageConnection();
         const synths = await status(first);
-        log(`first connection: /status.reply, ${synths} synth(s)`);
+        log(`first connection: /server_status.reply, ${synths} synth(s)`);
         first.close(); // detaches its listeners, engine keeps running
         const second = await pageConnection();
         await status(second);
-        log("second connection after close(): /status.reply again");
+        log("second connection after close(): /server_status.reply again");
         verdict(`PASS: page carrier round trip, ${synths} synth(s), ` +
           `close() left the engine up`);
       }

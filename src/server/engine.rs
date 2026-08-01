@@ -5,7 +5,7 @@
 //! exclusively through lock-free SPSC ring buffers: commands flow in fully
 //! pre-built (the audio thread only plugs them in), freed memory flows back
 //! out as [`Garbage`] to be dropped on the network side, and node lifecycle
-//! events flow out as [`NodeEvent`]s for `/n_go`/`/n_end` notifications.
+//! events flow out as [`NodeEvent`]s for `/node_start`/`/node_end` notifications.
 //!
 //! Timed bundles (M6) arrive as [`Cmd::Schedule`] carrying an absolute
 //! target in samples; the engine keeps them in a pre-allocated queue sorted
@@ -35,7 +35,7 @@ const GARBAGE_FIFO_CAPACITY: usize = 1024;
 /// Local holding list for when the garbage FIFO is full.
 const PENDING_GARBAGE_CAPACITY: usize = 64;
 /// Floor for the node-event FIFO; scaled to `2 * max_nodes` at boot. Events
-/// stay best-effort, but the id registries recycle off `/n_end` (S10), so the
+/// stay best-effort, but the id registries recycle off `/node_end` (S10), so the
 /// capacity must cover at least one full-tree turnover per drain — a dropped
 /// end event is a client-side id that never comes back.
 const EVENT_FIFO_CAPACITY: usize = 2048;
@@ -69,21 +69,21 @@ pub enum Cmd {
     FreeNode {
         id: i32,
     },
-    /// `/g_freeAll`: free all children of a group; the group stays.
+    /// `/group_freeAll`: free all children of a group; the group stays.
     FreeAllInGroup {
         id: i32,
     },
-    /// `/g_deepFree`: free all synths in a group and its subgroups.
+    /// `/group_deepFree`: free all synths in a group and its subgroups.
     DeepFreeGroup {
         id: i32,
     },
-    /// `/n_run`: pause (`run = false`) or resume (`true`) a node — a synth or a
+    /// `/node_run`: pause (`run = false`) or resume (`true`) a node — a synth or a
     /// whole group. Makes `DoneAction::PauseSelf` non-terminal.
     RunNode {
         id: i32,
         run: bool,
     },
-    /// `/n_before` / `/n_after`.
+    /// `/node_before` / `/node_after`.
     MoveNode {
         id: i32,
         target: i32,
@@ -94,7 +94,7 @@ pub enum Cmd {
         index: u32,
         value: f32,
     },
-    /// `/n_map` (`audio = false`) / `/n_mapa` (`audio = true`): binds a
+    /// `/node_map` (`audio = false`) / `/node_mapAudio` (`audio = true`): binds a
     /// control to a bus the synth reads at the start of every block, or
     /// `bus = -1` to unbind. RT-safe: it only flips an entry in the synth's
     /// pre-allocated mapping table.
@@ -111,14 +111,14 @@ pub enum Cmd {
         index: usize,
         buffer: Option<Arc<Buffer>>,
     },
-    /// `/c_set` inside a timed bundle: the immediate form writes the shared
+    /// `/bus_set` inside a timed bundle: the immediate form writes the shared
     /// atomics from the network thread, but a scheduled write must land at
     /// its exact sample, so it travels to the audio thread like any command.
     SetControlBus {
         index: usize,
         value: f32,
     },
-    /// `/tap`: routes audio bus `bus` into audio-tap ring `tap` of the IPC
+    /// `/bus_tap`: routes audio bus `bus` into audio-tap ring `tap` of the IPC
     /// segment (the engine appends that bus's block to the ring at the end of
     /// every block); `bus = -1` stops the tap. RT-safe: it only flips an entry
     /// in the engine's pre-allocated tap table.
@@ -126,13 +126,13 @@ pub enum Cmd {
         tap: usize,
         bus: i32,
     },
-    /// `/n_set` on a control used as a bus index: ships the re-analyzed
+    /// `/node_set` on a control used as a bus index: ships the re-analyzed
     /// masks so the parallel scheduler stays in sync (M13).
     SetUsage {
         id: i32,
         usage: BusUsage,
     },
-    /// `/g_parallel`: children of this group run in dependency stages on
+    /// `/group_parallel`: children of this group run in dependency stages on
     /// the worker pool (M13).
     SetGroupParallel {
         id: i32,
@@ -146,11 +146,11 @@ pub enum Cmd {
         time: u64,
         cmds: Vec<Cmd>,
     },
-    /// `/clearSched`: drop every pending timed bundle. Each drained bundle's
+    /// `/sched_clear`: drop every pending timed bundle. Each drained bundle's
     /// `Vec<Cmd>` (with its boxed synths) leaves through the garbage FIFO as
     /// [`Garbage::SpentBundle`], so nothing is freed on the audio thread.
     ClearSched,
-    /// `/u_cmd`: a typed command addressed to one UGen instance inside a synth.
+    /// `/node_ugenCmd`: a typed command addressed to one UGen instance inside a synth.
     /// The payload is inline (no heap), so applying it allocates nothing.
     UGenCommand {
         id: i32,
@@ -195,7 +195,7 @@ struct ScheduledBundle {
     cmds: Vec<Cmd>,
 }
 
-/// Node lifecycle event for `/n_go`/`/n_end` notifications. POD; delivery is
+/// Node lifecycle event for `/node_start`/`/node_end` notifications. POD; delivery is
 /// best-effort (dropped silently if the FIFO is full).
 #[derive(Clone, Copy, Debug)]
 pub struct NodeEvent {
@@ -212,7 +212,7 @@ pub enum NodeEventKind {
 }
 
 /// Counts published by the audio thread (relaxed stores) and read by the
-/// network thread for `/status.reply`.
+/// network thread for `/server_status.reply`.
 pub struct Counters {
     pub synths: AtomicU32,
     pub ugens: AtomicU32,
@@ -238,7 +238,7 @@ impl Counters {
     }
 
     /// Returns the peak per-block load since the previous call and resets it,
-    /// so every `/status` poll reports the peak of its own window.
+    /// so every `/server_status` poll reports the peak of its own window.
     pub fn take_peak_cpu(&self) -> f32 {
         f32::from_bits(self.peak_cpu.swap(0, Ordering::Relaxed))
     }
@@ -344,7 +344,7 @@ pub struct Engine {
     /// (one extra Release store per block); the Arc pins the mapping.
     ipc: Option<Arc<Segment>>,
     /// Which audio bus each segment tap ring records (`-1` = off), indexed by
-    /// tap. Pre-allocated to the segment's tap count; `/tap` flips entries.
+    /// tap. Pre-allocated to the segment's tap count; `/bus_tap` flips entries.
     tap_buses: Vec<i32>,
     cmd_rx: Consumer<Cmd>,
     garbage_tx: Producer<Garbage>,
@@ -369,7 +369,7 @@ pub struct EngineHandle {
     /// Live hardware input channels (S7); `0` when no input stream is open.
     /// Set by the backend once it has negotiated the input device.
     pub input_channels: usize,
-    /// Boot-time pool capacities, surfaced in `/server_info.reply` so a client
+    /// Boot-time pool capacities, surfaced in `/server_query.reply` so a client
     /// can discover the server's limits instead of hardcoding them.
     pub limits: Limits,
     cmd_tx: Producer<Cmd>,
@@ -380,7 +380,7 @@ pub struct EngineHandle {
     sample_clock: Arc<AtomicU64>,
     counters: Arc<Counters>,
     /// The IPC segment when one exists — the network thread reads the audio
-    /// taps from here (`/tap_stream`) without an engine round-trip.
+    /// taps from here (`/bus_tapStream`) without an engine round-trip.
     segment: Option<Arc<Segment>>,
 }
 
@@ -395,7 +395,7 @@ pub const DEFAULT_AUDIO_BUSES: usize = NUM_AUDIO_BUSES;
 pub const DEFAULT_CONTROL_BUSES: usize = NUM_CONTROL_BUSES;
 
 /// Like [`engine_pair`], plus an M13 worker pool of `workers` DSP threads
-/// for parallel groups (`/g_parallel`). `workers == 0` is fully sequential
+/// for parallel groups (`/group_parallel`). `workers == 0` is fully sequential
 /// — identical behavior and output either way (stages are bit-identical to
 /// sequential execution by construction).
 pub fn engine_pair_with_workers(
@@ -559,7 +559,7 @@ impl Engine {
         // target: `clock_gettime(CLOCK_MONOTONIC)` through the vDSO — no
         // allocation, no lock, no kernel trap. On wasm32 `Instant::now`
         // panics (no monotonic clock in the bare target), so the meter is
-        // compiled out and `/status` CPU fields read 0 there.
+        // compiled out and `/server_status` CPU fields read 0 there.
         #[cfg(not(target_arch = "wasm32"))]
         let meter_start = std::time::Instant::now();
         self.drain_commands();
@@ -764,7 +764,7 @@ impl Engine {
                 }
                 Cmd::SetUsage { id, usage } => self.tree.set_usage(id, usage),
                 Cmd::SetGroupParallel { id, parallel } => {
-                    // Unknown or non-group IDs are ignored, like /n_set.
+                    // Unknown or non-group IDs are ignored, like /node_set.
                     let _ = self.tree.set_parallel(id, parallel);
                 }
                 Cmd::AddGroup {
@@ -940,14 +940,14 @@ impl EngineHandle {
         n
     }
 
-    /// Control buses are shared atomics: `/c_set`/`/c_get` are served right
+    /// Control buses are shared atomics: `/bus_set`/`/bus_get` are served right
     /// here on the network thread, no command round-trip.
     pub fn control_buses(&self) -> &ControlBuses {
         &self.control_buses
     }
 
     /// The IPC segment when one exists. The audio taps are read from here
-    /// (`/tap_stream` snapshots), like the control buses: shared memory, no
+    /// (`/bus_tapStream` snapshots), like the control buses: shared memory, no
     /// engine round-trip.
     pub fn segment(&self) -> Option<&Arc<Segment>> {
         self.segment.as_ref()

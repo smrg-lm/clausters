@@ -166,7 +166,7 @@ class Bundle:
 
     def synthdef(self, sdef) -> str:
         """Adds a SynthDef (or a FaustDef), prefixing its name with the
-        bundle's, and returns the prefixed name — what an ``/s_new`` in the
+        bundle's, and returns the prefixed name — what an ``/synth_new`` in the
         boot list spawns."""
         return self._add_def(sdef, self._synthdefs)
 
@@ -192,7 +192,7 @@ class Bundle:
         ids and values go::
 
             b.boot(["/graph_new", "fm-voice.graph", graph, 0, 0],
-                   ["/n_set", graph, "freq", freq])
+                   ["/node_set", graph, "freq", freq])
 
         They run once per instance, after its defs are in. A parameter that
         nothing draws reaches the synthesis this way; one a widget carries
@@ -264,7 +264,7 @@ class Bundle:
         """Writes the bundle to ``directory`` and returns the path.
 
         Validates first. Emits the def payloads verbatim (each its own
-        ``/d_recv``/``/d_graph`` spec), the GuiDef record, the presets, the
+        ``/def_send`` spec), the GuiDef record, the presets, the
         manifest, and the five-line ES module that registers the tag.
 
         ``tag`` is the custom element's name, defaulting to the bundle's.

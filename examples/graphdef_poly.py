@@ -68,15 +68,15 @@ def play(server):
         vid = server.nodes.alloc()                      # a per-note voice id
         # Spawn a voice into the instance at this beat, then free it later
         # (overlapping: each rings for 0.6 beats while notes step every 0.3).
-        server.send_bundle(("/graph_voice", inst.id, vid, "freq", freq, "amp", 0.2))
-        server.send_bundle(("/n_free", vid), delay_beats=0.6)
+        server.send_bundle(("/graph_newVoice", inst.id, vid, "freq", freq, "amp", 0.2))
+        server.send_bundle(("/node_free", vid), delay_beats=0.6)
         yield 0.3
     yield 0.6
-    server.send_bundle(("/n_free", inst.id))            # tear the instance down
+    server.send_bundle(("/node_free", inst.id))            # tear the instance down
 
 
 def main():
-    print("GraphDef JSON the server validates (/d_graph):")
+    print("GraphDef JSON the server validates (/def_send graph):")
     print(json.dumps(poly_graph().spec(), indent=2))
 
     server = Server(interface=OscNrtInterface())

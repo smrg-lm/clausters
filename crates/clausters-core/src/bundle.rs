@@ -248,7 +248,7 @@ pub struct Resolved {
     /// int/float distinction JSON already carries.
     pub boot: Vec<Vec<Value>>,
     /// The merged parameter values that produced the tree, typed as declared.
-    /// Returned because a caller often needs them again (a `/n_set` it sends
+    /// Returned because a caller often needs them again (a `/node_set` it sends
     /// itself, a value it displays).
     pub params: BTreeMap<String, Value>,
 }
@@ -512,7 +512,7 @@ pub fn validate(manifest: &Manifest, template: &Template) -> Result<(), Error> {
 
 /// Refuses a placeholder in a def payload — the invariant that keeps def
 /// payloads shareable between two mounted instances. A writer calls this on
-/// every `/d_recv` and `/d_graph` spec before emitting it.
+/// every `/def_send synth` and `/def_send graph` spec before emitting it.
 pub fn check_def_payload(payload: &Value) -> Result<(), Error> {
     match payload {
         Value::String(s) => match placeholder(s) {
@@ -558,7 +558,7 @@ pub struct ResolveRequest {
 pub struct ValidateRequest {
     pub manifest: Manifest,
     pub template: Template,
-    /// The `/d_recv` and `/d_graph` payloads, each parsed. Checked by
+    /// The `/def_send synth` and `/def_send graph` payloads, each parsed. Checked by
     /// [`check_def_payload`].
     #[serde(default)]
     pub defs: Vec<Value>,
@@ -900,12 +900,12 @@ mod tests {
                 "type": "window",
                 "title": "$title",
                 "boot": [["/graph_new", "fm-voice.graph", "@graph", 0, 0],
-                         ["/n_set", "@graph", "freq", "$freq"]],
+                         ["/node_set", "@graph", "freq", "$freq"]],
                 "children": [
                     { "id": 2, "type": "meter", "bus": "@lfo" },
                     { "id": 3, "type": "panel", "children": [
                         { "id": 4, "type": "knob", "value": "$freq",
-                          "bind": ["/n_set", "@graph", "freq"] }
+                          "bind": ["/node_set", "@graph", "freq"] }
                     ]}
                 ]
             }
@@ -1027,7 +1027,7 @@ mod tests {
         let knob = &children[1]["children"][0];
         assert_eq!(knob["id"], json!(103));
         assert_eq!(knob["value"], json!(220.0));
-        assert_eq!(knob["bind"], json!(["/n_set", 1500, "freq"]));
+        assert_eq!(knob["bind"], json!(["/node_set", 1500, "freq"]));
 
         assert_eq!(
             out.boot,
@@ -1039,7 +1039,7 @@ mod tests {
                     json!(0),
                     json!(0)
                 ],
-                vec![json!("/n_set"), json!(1500), json!("freq"), json!(220.0)],
+                vec![json!("/node_set"), json!(1500), json!("freq"), json!(220.0)],
             ]
         );
     }

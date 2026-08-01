@@ -42,7 +42,7 @@ export interface NodeIdPartition {
     clientBase: number;
     /** Client id-space size (node-table capacity with in-flight margin). */
     clientCapacity: number;
-    /** First id of the server's auto range (`/s_new -1`, GraphDef members). */
+    /** First id of the server's auto range (`/synth_new -1`, GraphDef members). */
     autoBase: number;
     autoCapacity: number;
     /** First id of the server's MIDI-voice range. */

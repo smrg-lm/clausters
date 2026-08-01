@@ -2,14 +2,14 @@
 
 An instrument is a **def** — a named processing graph the server compiles once and then instantiates many times as nodes. The client builds two kinds, both living in `clausters.defs`, and they are **peers**: neither is the "real" one, and a piece routinely uses both.
 
-- **`FaustDef`** — a Faust definition, sent with `/d_faust` and JIT-compiled by the server into a node. Its graph is the full Faust language, so it reaches **below the unit**: per-sample recursion, tables, foreign constants, and the whole Faust library ecosystem. Build it three ways — the **Signal API** (`signals`), the **Box API** (`boxes`), or **Faust source** — all equal citizens (see [Building one](#building-one)). Like the SynthDef family, it works out of the box: the wheel bundles Faust (see [What the server must support](#what-the-server-must-support)).
-- **`SynthDef`** — a UGen graph, sent with `/d_recv`. It wires the server's UGens (oscillator, noise, impulse, bus I/O, buffer playback, feedback, FFT chains) and the full unary/binary **maths** — the arithmetic operators plus `%`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` … — which compose the generic operator UGens (see [Maths on a UGen graph](#maths-on-a-ugen-graph)). The graph is an **assembly of ready-made units**: it composes what the server already implements, needs no JIT, and works on **any** server build, since the SynthDef family is on by default.
+- **`FaustDef`** — a Faust definition, sent with `/def_send faust` and JIT-compiled by the server into a node. Its graph is the full Faust language, so it reaches **below the unit**: per-sample recursion, tables, foreign constants, and the whole Faust library ecosystem. Build it three ways — the **Signal API** (`signals`), the **Box API** (`boxes`), or **Faust source** — all equal citizens (see [Building one](#building-one)). Like the SynthDef family, it works out of the box: the wheel bundles Faust (see [What the server must support](#what-the-server-must-support)).
+- **`SynthDef`** — a UGen graph, sent with `/def_send synth`. It wires the server's UGens (oscillator, noise, impulse, bus I/O, buffer playback, feedback, FFT chains) and the full unary/binary **maths** — the arithmetic operators plus `%`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` … — which compose the generic operator UGens (see [Maths on a UGen graph](#maths-on-a-ugen-graph)). The graph is an **assembly of ready-made units**: it composes what the server already implements, needs no JIT, and works on **any** server build, since the SynthDef family is on by default.
 
 Rule of thumb, not a hierarchy: reach for a `SynthDef` when the units you need already exist (and always for routing, buses and buffer playback); reach for a `FaustDef` when you want DSP the unit set does not cover, or want to write the DSP itself. Both run as ordinary nodes in the same tree and address each other through buses.
 
-Both are built the same way: **lowercase callables** that compose with ordinary Python operators into a JSON tree. Both are **instance-based** — there is no thread-global "current graph" as in sclang, so the tree *is* the composed objects and several defs build concurrently. And both are sent **asynchronously**, behind the `/sync` barrier (see [Sending a def](#sending-a-def)).
+Both are built the same way: **lowercase callables** that compose with ordinary Python operators into a JSON tree. Both are **instance-based** — there is no thread-global "current graph" as in sclang, so the tree *is* the composed objects and several defs build concurrently. And both are sent **asynchronously**, behind the `/server_sync` barrier (see [Sending a def](#sending-a-def)).
 
-This page is the conceptual map and the catalog of what each callable does. The exact wire format — the JSON node shapes, the UGen registry, the `/d_faust` / `/d_recv` signatures and their `/done` / `/fail` replies — is specified in the **[Clausters server book](https://clausters.readthedocs.io/)** (the schemas / OSC reference chapter); this client is one consumer of it. The generated [API reference](api.md) carries the per-symbol signatures.
+This page is the conceptual map and the catalog of what each callable does. The exact wire format — the JSON node shapes, the UGen registry, the `/def_send faust` / `/def_send synth` signatures and their `/done` / `/fail` replies — is specified in the **[Clausters server book](https://clausters.readthedocs.io/)** (the schemas / OSC reference chapter); this client is one consumer of it. The generated [API reference](api.md) carries the per-symbol signatures.
 
 ## The shared shape
 
@@ -28,7 +28,7 @@ A plain number that meets a node becomes a **constant** in the graph. The operat
 
 ### Building one
 
-Three constructors, one per payload the server's `/d_faust` accepts. They are **three ways of writing Faust, not a main road and two detours** — the server compiles all three into the same kind of node, and the same def can be expressed in any of them:
+Three constructors, one per payload the server's `/def_send faust` accepts. They are **three ways of writing Faust, not a main road and two detours** — the server compiles all three into the same kind of node, and the same def can be expressed in any of them:
 
 | Constructor | Payload | Use it for |
 | --- | --- | --- |
@@ -114,7 +114,7 @@ Use `sr()` — never a baked-in `SR` constant — wherever the maths depends on 
 
 **Integer vs real constants — `2` is not `2.0`.** Faust distinguishes an *integer* constant from a *real* one, and so does this graph. JSON has only one "number" type, so it is tempting to assume `2` and `2.0` are interchangeable, but they are **not**: the distinction rides on the literal's form, which survives the whole way through. The client takes the constant straight from your Python value (it does not coerce it), so a Python `int` serializes as `2` and a `float` as `2.0`; the server then reads an integral token as an **integer** constant and a token with a decimal point as a **real** one — a `2.0` is stored as a float and is *not* folded back to an integer. This matters wherever the operation is integer-typed — the bitwise and shift ops (`& | ^ << >>`), `rem`, `as_int()`, table indices — while ordinary `+ - * /` promote an int constant to real and so are unaffected. When it matters, write the literal the way you want it read: `2` for an integer, `2.0` for a real. (A `SynthDef` offers no such choice — it coerces every constant to `float`, since UGens compute only in f32.)
 
-**Controls.** A control callable's **label becomes the control name** — the parameter you later set with `/s_new` / `/n_set`:
+**Controls.** A control callable's **label becomes the control name** — the parameter you later set with `/synth_new` / `/node_set`:
 
 | Callable | Control kind |
 | --- | --- |
@@ -194,7 +194,7 @@ process = os.osc(freq) * 0.2              return box.faust(src)(f) * 0.2
 
 ### Controls and reserved ports
 
-`fdef.control_names()` lists the control names the def declares, in tree order — the UI labels, deduplicated. On top of those, every Faust synth also accepts the two **reserved** bus-selecting controls the server adds (`fdef.reserved == ("out", "in")`): set them at `/s_new` time (`"in" bus "out" bus`) to choose the input and output buses. They are not declared in the graph.
+`fdef.control_names()` lists the control names the def declares, in tree order — the UI labels, deduplicated. On top of those, every Faust synth also accepts the two **reserved** bus-selecting controls the server adds (`fdef.reserved == ("out", "in")`): set them at `/synth_new` time (`"in" bus "out" bus`) to choose the input and output buses. They are not declared in the graph.
 
 `fdef.dump_def()` returns the wire payload (JSON for a signal/box tree, the string itself for a source).
 
@@ -222,12 +222,12 @@ A control can carry a **type** (and, for a smoothed control, a lag time), mirror
 | Argument | Meaning |
 | --- | --- |
 | `control(name, default)` | a plain `kr` control: one value per block, read every block (the default) |
-| `control(name, default, rate="tr")` | a **trigger**: a `/n_set` holds for one block, then the server resets it to `0` — each set re-fires an `env_gen` gate, a sample-and-hold, a `Trig` |
-| `control(name, default, rate="ir")` | a **scalar**: read once at synth init and frozen; a later `/n_set` is ignored. As an `ir` value it may feed an `ir` input (`rand`, buffer-info UGens) |
+| `control(name, default, rate="tr")` | a **trigger**: a `/node_set` holds for one block, then the server resets it to `0` — each set re-fires an `env_gen` gate, a sample-and-hold, a `Trig` |
+| `control(name, default, rate="ir")` | a **scalar**: read once at synth init and frozen; a later `/node_set` is ignored. As an `ir` value it may feed an `ir` input (`rand`, buffer-info UGens) |
 | `control(name, default, lag=t)` | a lagged `kr` control: changes are smoothed by an implicit one-pole `Lag` over `t` seconds (the server inserts the UGen) |
 | `control(name, default, lag=up, lag_down=down)` | separate rise (`up`) and fall (`down`) smoothing times (`VarLag`) |
 
-An unknown `rate`, or a `lag_down` without a `lag`, raises a `ValueError` at build. Audio-rate controls are not a control *type* here — read an audio signal off a bus with `in_` / `in_ctl` and map it with `/n_mapa`.
+An unknown `rate`, or a `lag_down` without a `lag`, raises a `ValueError` at build. Audio-rate controls are not a control *type* here — read an audio signal off a bus with `in_` / `in_ctl` and map it with `/node_mapAudio`.
 
 Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (control), `ar` (audio), `dr` (demand). It defaults per kind (signal UGens are `ar`, `rand` / `sample_rate` are `ir`, the demand sources are `dr`); set it explicitly with `Ugen.at_rate`, e.g. `sine(5.0).at_rate("kr")` for a control-rate LFO. The full rate model and its coercion rules live in the [Clausters server book](https://clausters.readthedocs.io/) (schemas / OSC reference).
 
@@ -297,7 +297,7 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | Buffer info | `buf_sample_rate(bufnum)` / `buf_frames(bufnum)` | the buffer's own sample rate (Hz) / frame count, block-constant (`kr`) |
 | | `buf_rate_scale(bufnum)` | `file_sr / server_sr` — feed `play_buf`'s `rate` to play at the file's true pitch |
 | | `buf_channels(bufnum)` / `buf_dur(bufnum)` | channel count / duration in seconds, block-constant (`kr`) |
-| Tables | `osc(bufnum, freq=440.0, phase=0.0)` | interpolating wavetable oscillator over a **wavetable-format** buffer (`/b_gen`); `phase` in radians |
+| Tables | `osc(bufnum, freq=440.0, phase=0.0)` | interpolating wavetable oscillator over a **wavetable-format** buffer (`/buffer_gen`); `phase` in radians |
 | | `oscn(bufnum, freq=440.0, phase=0.0)` | non-interpolating oscillator over a **plain** buffer; rawer/cheaper |
 | | `vosc(bufpos, freq=440.0, phase=0.0)` | `osc` with the buffer number as a signal: crossfades tables `bufpos`/`bufpos+1`, so sweeping it morphs a contiguous bank |
 | | `shaper(bufnum, signal)` | waveshaper: maps `signal` (±1) through a `cheby` transfer table |
@@ -324,9 +324,9 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `tduty(dur, reset=0.0, level=1.0, done_action=0, gap_first=0.0)` | `duty` emitting each level on its own sample and silence in between — a trigger stream with amplitudes |
 | Fused | `madd(a, b, c)` | `a*b + c` in one UGen (the multiply-accumulate the server fuses) |
 | | `sum3(a, b, c)` / `sum4(a, b, c, d)` | three / four-operand sums in one UGen |
-| Side-effect | `send_trig(trig, id, value)` | on each trigger, sends `/tr nodeID id value`; output is silence |
+| Side-effect | `send_trig(trig, id, value)` | on each trigger, sends `/node_trigger nodeID id value`; output is silence |
 | | `send_reply(trig, *values, cmd="/reply", reply_id=-1)` | sends a custom OSC message with an arbitrary value list |
-| | `poll(trig, signal, label="poll", trig_id=-1)` | posts `signal` to the server console (and a `/tr` when `trig_id >= 0`); passes `signal` through |
+| | `poll(trig, signal, label="poll", trig_id=-1)` | posts `signal` to the server console (and a `/node_trigger` when `trig_id >= 0`); passes `signal` through |
 | Spectral | `fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0)` | opens a spectral chain (windows and transforms `source` per hop) |
 | | `pv_mag_above(chain, threshold)` / `pv_mag_below(chain, threshold)` | pass bins above / below a magnitude threshold |
 | | `pv_mag_clip(chain, threshold)` | limit each bin's magnitude to the threshold (phases kept) |
@@ -340,7 +340,7 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `ifft(chain)` | closes a spectral chain (resynthesises audio by overlap-add) |
 | Convolution | `conv(source, kernel, *, fft_size=1024, partitions=16)` | partitioned convolution against a kernel prepared with `dest.gen("prepare_partconv", fft_size, ir_bufnum)` (size `dest` with `partconv_frames`); latency `fft_size / 2` samples |
 
-Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/s_new` time.
+Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/synth_new` time.
 
 The **side-effect** UGens exist for a reply or a console post rather than audio, so a def may consist of them alone with **no `out`** — pass them as `SynthDef` roots (see [Building one](#building-one)). What makes one a root is that it **delivers data out of the graph** — audio or control to a bus, audio to a file (`disk_out`), OSC or a console line to a client — not that it has a side effect. `free_self`, `pause_self`, `free_self_when_done` and `done` act on the enclosing synth and pass their input *through*, so they still want an `out` around them (`out(0, free_self_when_done(env * sig))` is the idiom); `detect_silence` writes 0/1 for the rest of the graph and takes its done action, which is inward too. `disk_out` is the one that surprises: it delivers audio to a file, so `play(disk_out(path, sig))` records **without sounding** — route it yourself to do both. The **spectral** UGens form a frequency-domain chain — see [The frequency-domain chain](#the-frequency-domain-chain) below.
 
@@ -462,7 +462,7 @@ sdef = SynthDef("tiltgate", out(0.0, ifft(gated)))
 
 **Calibrate thresholds to the FFT's magnitude scale.** A bin's `mag` is a raw transform magnitude, **not** a 0..1 value: it scales with the input level, the window and the `fft_size` (for the source above — noise at amplitude 0.25 through a 1024-point Hann — magnitudes spread over roughly 0.5..5, median ≈ 2.3). A threshold far below that spread gates almost nothing, and the chain's one-window latency alone will make the output *sound* vaguely different (decorrelated) while the spectrum is essentially untouched — a classic miscalibration trap. Probe the scale first (render and inspect, or `poll` a reference), or express the threshold relative to a known reference level.
 
-Each expression maps **one bin's values** — its magnitude, its phase (radians), its index, the bin count, its center frequency, and the `params` signals sampled once per hop — to that bin's new magnitude (`mag=`) or phase (`phase=`). An omitted expression is the identity, and an identity phase keeps each bin's phase *exactly*: a pure magnitude map takes the same cheap scaling path as the built-in `pv_*` filters (a kernel reimplementing `pv_mag_above` renders sample-identically to it — that equivalence is a server test). The client serializes the expression to a small postfix program; the server validates it at `/d_recv` (unknown terms, malformed expressions and out-of-range `param` indices fail the def with `/fail`, never at render time) and interprets it per bin, per frame — pure `f32`, allocation-free, bit-identical between real-time and offline rendering.
+Each expression maps **one bin's values** — its magnitude, its phase (radians), its index, the bin count, its center frequency, and the `params` signals sampled once per hop — to that bin's new magnitude (`mag=`) or phase (`phase=`). An omitted expression is the identity, and an identity phase keeps each bin's phase *exactly*: a pure magnitude map takes the same cheap scaling path as the built-in `pv_*` filters (a kernel reimplementing `pv_mag_above` renders sample-identically to it — that equivalence is a server test). The client serializes the expression to a small postfix program; the server validates it at `/def_send synth` (unknown terms, malformed expressions and out-of-range `param` indices fail the def with `/fail`, never at render time) and interprets it per bin, per frame — pure `f32`, allocation-free, bit-identical between real-time and offline rendering.
 
 **What fits, and what does not.** An expression is a **pure per-bin map**, and that boundary is the design:
 
@@ -476,12 +476,12 @@ Expressions are capped at 256 tokens, and `params` accepts any signal — a cont
 The graph is serialized by a plain post-order walk of the output UGens, so a UGen is always emitted after its inputs (the `ugens` list is topologically ordered) and a shared sub-graph is emitted once (deduplicated by object identity).
 
 - `sdef.spec()` — the `{"name", "controls", "ugens"}` dict the server compiles.
-- `sdef.dump_def()` — that spec as JSON text, the `/d_recv` payload.
+- `sdef.dump_def()` — that spec as JSON text, the `/def_send synth` payload.
 - `sdef.control_names()` — the control names in spec order (parallels `FaustDef.control_names()`).
 
 ## Inspecting the built graph
 
-Before sending a def you can look at exactly what you composed: both `FaustDef` and `SynthDef` expose `dump_def()`, the JSON string that goes on the wire (the `/d_faust` / `/d_recv` argument). Printing it shows the resulting graph — handy to confirm a tree built the way you intended.
+Before sending a def you can look at exactly what you composed: both `FaustDef` and `SynthDef` expose `dump_def()`, the JSON string that goes on the wire (the `/def_send faust` / `/def_send synth` argument). Printing it shows the resulting graph — handy to confirm a tree built the way you intended.
 
 ```python
 import json
@@ -497,7 +497,7 @@ print(json.dumps(json.loads(fdef.dump_def()), indent=2)) # FaustDef signal/box t
 
 | | FaustDef | SynthDef |
 | --- | --- | --- |
-| Sent with | `/d_faust` | `/d_recv` |
+| Sent with | `/def_send faust` | `/def_send synth` |
 | Built from | `clausters.defs.signals` / `clausters.defs.boxes` / Faust source | `clausters.defs.ugens` |
 | Compiled | JIT on the server (libfaust/LLVM) | assembled from the server's UGen registry |
 | Maths | full (trig, `exp`/`log`, comparisons, tables) | full (the same operator set, as generic op UGens) |
@@ -508,28 +508,28 @@ print(json.dumps(json.loads(fdef.dump_def()), indent=2)) # FaustDef signal/box t
 
 Neither is the fallback of the other. The units a `SynthDef` wires are the fastest way to say "an oscillator into a bus", they need no compiler on the server, and they are the only way to reach the server-side machinery that has no Faust equivalent (buffer playback, bus I/O, `send_reply`/`poll`, the FFT chain). A `FaustDef` is how you write DSP that is *not* in the unit set — a filter you derived, a physical model, an algorithm — either from Python (`signals` / `boxes`) or in Faust itself, with its libraries at hand.
 
-The common pattern is to combine them: a FaustDef for the voice, a SynthDef to route it, play back buffers or analyse the result. Both run as ordinary nodes in the same tree, on the same buses, and are controlled by the same `/n_set`.
+The common pattern is to combine them: a FaustDef for the voice, a SynthDef to route it, play back buffers or analyse the result. Both run as ordinary nodes in the same tree, on the same buses, and are controlled by the same `/node_set`.
 
 ## What the server must support
 
 Both def families are **on by default** on the server (`synth` and `faust` are Cargo features, and both are in the default set), and everything the wheel ships is built that way: the standalone `clausters` binary, the in-process embedded server and the offline renderer all take a `SynthDef` *and* a `FaustDef`. The package even bundles libfaust and the libLLVM it JITs with, so Faust works on a machine with neither installed — nothing to enable, nothing to build.
 
-The one case where a `FaustDef` can fail is a server **someone built without the feature** (`--no-default-features`, e.g. a minimal SynthDef-only build). It answers `/d_faust` with a `/fail` — "server built without faust support" — which the client raises as a `CommandError`. If that happens against a server you did not build, that is what to check.
+The one case where a `FaustDef` can fail is a server **someone built without the feature** (`--no-default-features`, e.g. a minimal SynthDef-only build). It answers `/def_send faust` with a `/fail` — "server built without faust support" — which the client raises as a `CommandError`. If that happens against a server you did not build, that is what to check.
 
 ## Sending a def
 
-A def sends itself: `sdef.send(server)`, `fdef.send(server)`, `gdef.send(server)` — one method on each family, no dispatch to pick. Sending is **asynchronous**: `/d_faust` JIT-compiles on the server's network thread, answered later by `/done` or `/fail`. The barrier discipline mirrors scsynth:
+A def sends itself: `sdef.send(server)`, `fdef.send(server)`, `gdef.send(server)` — one method on each family, no dispatch to pick. Sending is **asynchronous**: `/def_send faust` JIT-compiles on the server's network thread, answered later by `/done` or `/fail`. The barrier discipline mirrors scsynth:
 
 ```python
 fdef.send(server)                 # RT: BLOCKS until /done (raises CommandError on /fail, ReplyTimeout on silence)
 sdef.send(server, wait=False)     # fire-and-forget: only sends
-server.sync()                     # barrier: /sync -> /synced, waits for ALL earlier async work
+server.sync()                     # barrier: /server_sync -> /server_sync.reply, waits for ALL earlier async work
 Synth.new("fsine", {"freq": 330.0}, server=server)    # safe now — the def is installed
 ```
 
-- `wait=True` (the default) blocks on `/done`; `wait=False` only sends, after which `sync()` is the barrier before the `/s_new` that needs the def.
+- `wait=True` (the default) blocks on `/done`; `wait=False` only sends, after which `sync()` is the barrier before the `/synth_new` that needs the def.
 - In **NRT** (a score interface) `send` always *scores* the def at time 0 — the renderer compiles it before time advances — so `wait` does not apply.
-- The server owns the def **table**: `server.free_def(*names)` removes defs by name (`/d_free`). A def is not freed by itself — in use it is overwritten by sending another under the same name.
+- The server owns the def **table**: `server.free_def(*names)` removes defs by name (`/def_free`). A def is not freed by itself — in use it is overwritten by sending another under the same name.
 - `server` is optional: without it the def goes to the ambient session's server, like every other resource constructor.
 
-There is one rule that overrides the convenience of the blocking default: **inside a routine, never block the clock thread.** Send the def `wait=False` and `yield` enough beats before the dependent `/s_new`, rather than calling a blocking `add_*` or `sync()`. See [Routines and clocks](routines-and-clocks.md) for why, and [Getting started](getting-started.md) and the [Examples](examples.md) for end-to-end defs that play.
+There is one rule that overrides the convenience of the blocking default: **inside a routine, never block the clock thread.** Send the def `wait=False` and `yield` enough beats before the dependent `/synth_new`, rather than calling a blocking `add_*` or `sync()`. See [Routines and clocks](routines-and-clocks.md) for why, and [Getting started](getting-started.md) and the [Examples](examples.md) for end-to-end defs that play.

@@ -27,7 +27,7 @@ this example shows both paths:
   ordinary client code.
 - **Host voices (the standalone path, one line)** — pass
   ``voice="gui_piano_voice"`` to the builder and the *host* manages the same
-  ``/s_new`` / ``gate 0`` pair per held key with no script in the loop; a saved
+  ``/synth_new`` / ``gate 0`` pair per held key with no script in the loop; a saved
   GuiDef bundle then plays with no language client at all (that is what the
   web example ``clients/web/examples/piano`` does).
 

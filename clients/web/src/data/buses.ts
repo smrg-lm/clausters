@@ -3,8 +3,8 @@
 // A meter, a control-rate scope, a number read-out: they all watch a handful
 // of control buses and repaint. Natively the GUI host reads those buses out of
 // the server's shared memory with no messages at all; a page cannot map that
-// segment, so the server offers the message-based counterpart — `/c_stream`,
-// one subscription per client, a periodic `/c_set` snapshot of the listed
+// segment, so the server offers the message-based counterpart — `/bus_stream`,
+// one subscription per client, a periodic `/bus_set` snapshot of the listed
 // buses. This is that subscription with its decoding attached.
 //
 // The whole object is a *latest value* store, not a history: a snapshot
@@ -116,9 +116,9 @@ export class BusStream {
         this.listeners.clear();
     }
 
-    /** One `/c_set bus value …` snapshot into `values`. */
+    /** One `/bus_stream.reply bus value …` snapshot into `values`. */
     private take(msg: OscMessage): void {
-        if (msg.addr !== "/c_set") return;
+        if (msg.addr !== "/bus_stream.reply") return;
         let touched = false;
         for (let i = 0; i + 1 < msg.args.length; i += 2) {
             const slot = this.slot.get(Number(msg.args[i]));

@@ -21,7 +21,7 @@ use crate::faust::ffi;
 use crate::faust::signals;
 use crate::faust::synth::FaustDef;
 
-/// What `/d_faust` carries: one of the three def formats.
+/// What `/def_send faust` carries: one of the three def formats.
 pub enum CompilePayload {
     /// Raw Faust source code (F1), compiled with
     /// `createCDSPFactoryFromString`.
@@ -36,7 +36,7 @@ pub enum CompilePayload {
 }
 
 impl CompilePayload {
-    /// Classifies a `/d_faust` def string: raw Faust source unless it starts
+    /// Classifies a `/def_send faust` def string: raw Faust source unless it starts
     /// with `{`, then a signal tree if the JSON object has a top-level
     /// `"signals"` key, otherwise a box tree. The sniff is unambiguous —
     /// Faust source never starts with `{`, and a box def's root is a single
@@ -64,7 +64,7 @@ pub struct CacheJob {
     pub dir: PathBuf,
     /// On a startup reload, the record to restore: the thread tries its
     /// bitcode first and recompiles only on a miss. `None` for a live
-    /// `/d_faust`, which always compiles fresh and then (re)writes the cache.
+    /// `/def_send faust`, which always compiles fresh and then (re)writes the cache.
     pub restore: Option<FaustRecord>,
 }
 
@@ -264,7 +264,7 @@ impl Drop for LibContext {
 /// f32, matching our buses), `-ftz 2` plus the stdlib include path
 /// (`FaustArgs::defaults`) and maximum LLVM optimization; afterwards a
 /// throwaway instance is probed for the def's parameters and I/O arity
-/// (F3), so `/s_new`/`/n_set` can resolve control names without touching
+/// (F3), so `/synth_new`/`/node_set` can resolve control names without touching
 /// libfaust again.
 ///
 /// Runs with the FPU in normal precision: the NRT renderer calls this from

@@ -95,9 +95,9 @@ def test_graphdef_instantiates_and_sounds():
         _duo().send(srv)
         inst = Group.graph("duo", {"freq": 220.0, "gain": 0.4}, server=srv)
         for f in (220.0, 277.0):
-            srv.send_bundle(("/n_set", inst.id, "freq", f))
+            srv.send_bundle(("/node_set", inst.id, "freq", f))
             yield 0.5
-        srv.send_bundle(("/n_free", inst.id))
+        srv.send_bundle(("/node_free", inst.id))
 
     clock.play(Routine(lambda: play(server)))
     clock.render()
@@ -161,11 +161,11 @@ def test_polyphonic_graphdef_voices_render():
         inst = Group.graph("poly", {"gain": 0.3}, server=srv)
         for freq in (220.0, 330.0, 440.0):
             vid = srv.nodes.alloc()
-            srv.send_bundle(("/graph_voice", inst.id, vid, "freq", freq, "amp", 0.2))
-            srv.send_bundle(("/n_free", vid), delay_beats=0.5)
+            srv.send_bundle(("/graph_newVoice", inst.id, vid, "freq", freq, "amp", 0.2))
+            srv.send_bundle(("/node_free", vid), delay_beats=0.5)
             yield 0.3
         yield 0.5
-        srv.send_bundle(("/n_free", inst.id))
+        srv.send_bundle(("/node_free", inst.id))
 
     clock.play(Routine(lambda: play(server)))
     clock.render()

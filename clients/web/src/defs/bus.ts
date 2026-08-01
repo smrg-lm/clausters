@@ -19,7 +19,7 @@
 //
 // A bus holds the server it was allocated on and owns the commands addressed
 // to it: `set`, `get`, `watch` and its own release. The subscriptions over a
-// *set* of buses (`/c_stream`, `/tap_stream`) stay on the server, which is
+// *set* of buses (`/bus_stream`, `/bus_tapStream`) stay on the server, which is
 // whose they are — one per client.
 
 import { AllocationError } from "../errors.ts";
@@ -66,22 +66,22 @@ export class Bus {
         return this.server;
     }
 
-    /** Sets this control bus's value (`/c_set`). */
+    /** Sets this control bus's value (`/bus_set`). */
     set(value: number): void {
-        this.srv().sendMsg("/c_set", ["i", this.index], ["f", value]);
+        this.srv().sendMsg("/bus_set", ["i", this.index], ["f", value]);
     }
 
-    /** Reads this control bus's value (`/c_get`). */
+    /** Reads this control bus's value (`/bus_get`). */
     async get(timeout = 5.0): Promise<number> {
-        const msg = await this.srv().request("/c_get", [["i", this.index]], {
-            expect: ["/c_set"],
+        const msg = await this.srv().request("/bus_get", [["i", this.index]], {
+            expect: ["/bus_get.reply"],
             timeout,
         });
         return Number(msg.args.at(-1));
     }
 
     /**
-     * Asks the server to make this audio bus readable (`/tap`): from the next
+     * Asks the server to make this audio bus readable (`/bus_tap`): from the next
      * block on, the engine records it into the shared segment, where a GUI
      * host reads it with zero messages and this client streams it with
      * `Server.streamTaps`. `flag = false` stops.
@@ -90,11 +90,11 @@ export class Bus {
      * sample rings carries it is the server's own bookkeeping, published in
      * the segment for whoever reads the samples. Watches count, so two views
      * of one bus share a ring and the last one to stop frees it. No ack, like
-     * `/n_map` (failures reply `/fail` — an unknown bus, no tap region, or
+     * `/node_map` (failures reply `/fail` — an unknown bus, no tap region, or
      * every ring already taken); sequence with `sync` when it matters.
      */
     watch(flag = true): void {
-        this.srv().sendMsg("/tap", ["i", Math.trunc(this.index)], ["i", flag ? 1 : 0]);
+        this.srv().sendMsg("/bus_tap", ["i", Math.trunc(this.index)], ["i", flag ? 1 : 0]);
     }
 
     /** Returns this bus's run to the server's pool. */

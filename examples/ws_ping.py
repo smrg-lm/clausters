@@ -18,7 +18,7 @@ goes out as one WebSocket *binary* message and replies arrive the same way over
 the one connection — the WebSocket frame *is* the packet boundary, so there is no
 length prefix (unlike TCP). The same server, the same OSC: only the carrier
 changed, which is what lets a browser-hosted client speak to it. A browser doing
-the same `/status` round trip is in `ws_ping.html` (it uses the browser's native
+the same `/server_status` round trip is in `ws_ping.html` (it uses the browser's native
 `WebSocket`, not this library).
 """
 

@@ -1,10 +1,10 @@
-// FaustDef: a named Faust definition ready for `/d_faust` (mirrors
+// FaustDef: a named Faust definition ready for `/def_send faust` (mirrors
 // `clausters/defs/faustdef.py`).
 //
 // Wraps a graph built with `./signals.ts` (the **signal tree** form), a raw
 // **box tree** (the form the Python client's box API emits — machine-built
 // here, so it is accepted as JSON rather than rebuilt), or a Faust **source**
-// string: the three payloads the server's `/d_faust` accepts, on equal
+// string: the three payloads the server's `/def_send faust` accepts, on equal
 // footing (it sniffs which by the first byte). They are three ways of writing
 // Faust, not a main road and two detours.
 //
@@ -14,7 +14,7 @@
 //
 // The in-page engine is the `synth,embed` build with no LLVM JIT, so a
 // FaustDef reaches a **native** server only (over the WebSocket carrier);
-// against the in-page engine `/d_faust` fails. That is a property of the
+// against the in-page engine `/def_send faust` fails. That is a property of the
 // build, not of this class — nothing here names a carrier.
 
 import type { MsgArg } from "../base/osc.ts";
@@ -28,7 +28,7 @@ export type FaustDefKind = "signals" | "box" | "source";
 const CONTROL_OPS = new Set(["hslider", "vslider", "nentry", "button", "checkbox"]);
 
 export class FaustDef {
-    /** The def name (also what `/d_faust` replies with on success). */
+    /** The def name (also what `/def_send faust` replies with on success). */
     readonly name: string;
     readonly kind: FaustDefKind;
     private readonly payload: unknown;
@@ -68,9 +68,9 @@ export class FaustDef {
     // --- serialization ---
 
     /**
-     * Sends this def to the server via `/d_faust` and returns its name.
+     * Sends this def to the server via `/def_send faust` and returns its name.
      *
-     * `/d_faust` JIT-compiles on the server's network thread, and reaches a
+     * `/def_send faust` JIT-compiles on the server's network thread, and reaches a
      * **native** server only: the in-page engine is the `synth,embed` build
      * with no LLVM, and answers `/fail`.
      *
@@ -84,15 +84,15 @@ export class FaustDef {
     ): Promise<string> {
         const payload: MsgArg[] = [this.name, this.dumpDef()];
         if (!wait) {
-            server.sendMsg("/d_faust", ...payload);
+            server.sendMsg("/def_send", "faust", ...payload);
             return this.name;
         }
-        await server.command("/d_faust", payload, timeout);
+        await server.command("/def_send", ["faust", ...payload], timeout);
         return this.name;
     }
 
     /**
-     * The def serialized to text — the `/d_faust <name> <payload>` wire
+     * The def serialized to text — the `/def_send faust <name> <payload>` wire
      * payload: a JSON signal/box tree, or the Faust source string verbatim.
      */
     dumpDef(): string {

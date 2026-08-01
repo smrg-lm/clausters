@@ -2,7 +2,7 @@
 //!
 //! A GuiDef is the GUI analogue of a `SynthDef`/`GraphDef`. The whole
 //! window/widget tree rides as JSON in a single `/gui_def` argument (a string
-//! or a blob), exactly as a `SynthDef` rides `/d_recv`, so JSON is the payload
+//! or a blob), exactly as a `SynthDef` rides `/def_send synth`, so JSON is the payload
 //! and OSC is the framing. serde's number handling keeps integer ids `i64` and
 //! continuous values `f64` distinct across the wire — the "flat primitives at
 //! the boundary" rule the rest of the project relies on.
@@ -21,7 +21,7 @@ use serde_json::{Map, Value};
 /// One node of a GuiDef tree.
 ///
 /// The root node's `id` is supplied out of band by the `/gui_def <id> …`
-/// argument (mirroring how a `SynthDef`'s name is the `/d_recv` argument, not a
+/// argument (mirroring how a `SynthDef`'s name is the `/def_send synth` argument, not a
 /// field inside the graph), so it is optional here; every child carries its own
 /// client-allocated `id` in the JSON. Everything that is not `id`/`type`/
 /// `children` is captured verbatim into [`props`](Self::props), preserving the
@@ -47,7 +47,7 @@ pub struct GuiNode {
 
 impl GuiNode {
     /// Parses a GuiDef tree from the `/gui_def` JSON argument (a UTF-8 string or
-    /// a raw blob — both are accepted, like `/d_recv`).
+    /// a raw blob — both are accepted, like `/def_send synth`).
     pub fn parse(bytes: &[u8]) -> Result<GuiNode, serde_json::Error> {
         serde_json::from_slice(bytes)
     }

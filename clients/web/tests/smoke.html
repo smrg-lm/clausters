@@ -2,9 +2,9 @@
 <!-- The B2 acceptance smoke, scripted by scripts/smoke-web.sh under headless
      Chrome (--autoplay-policy=no-user-gesture-required stands in for the
      gesture). Asserts, against the engine live in the AudioWorklet:
-       1. a /status round trip over the MessagePort,
+       1. a /server_status round trip over the MessagePort,
        2. the engine sample clock advancing (the worklet is really pulled),
-       3. an /s_new default sine measurably present at an AnalyserNode.
+       3. an /synth_new default sine measurably present at an AnalyserNode.
      The verdict lands in the DOM/title (parity.html style) and is also
      beaconed as a fetch of /smoke-verdict-…, so the runner can read it from
      the HTTP server's access log in real time. -->
@@ -57,9 +57,9 @@ try {
         throw new Error(`context did not run: ${server.context.state}`);
     }
 
-    // 1. /status round trip.
-    server.send(encodeMessage("/status"));
-    const status = await awaitReply("/status.reply", 10000);
+    // 1. /server_status round trip.
+    server.send(encodeMessage("/server_status"));
+    const status = await awaitReply("/server_status.reply", 10000);
 
     // 2. Clock advance: two round trips through the audio thread; retry
     //    until the second reads later (paced by real messages, capped).
@@ -69,7 +69,7 @@ try {
     if (c1 <= c0) throw new Error(`clock stuck at ${c0}`);
 
     // 3. The sine is present at the analyser.
-    server.send(encodeMessage("/s_new", [
+    server.send(encodeMessage("/synth_new", [
         ["s", "default"], ["i", 1000], ["i", 0], ["i", 0],
         ["s", "freq"], ["f", 440], ["s", "amp"], ["f", 0.2],
     ]));
@@ -82,7 +82,7 @@ try {
     }
     if (rms < 0.01) throw new Error(`no signal at the analyser (rms ${rms})`);
 
-    verdict(`PASS: /status ${JSON.stringify(status.args)}; ` +
+    verdict(`PASS: /server_status ${JSON.stringify(status.args)}; ` +
         `clock ${c0} -> ${c1}; sine rms ${rms.toFixed(3)}`);
 } catch (e) {
     verdict(`FAIL: ${e}`);

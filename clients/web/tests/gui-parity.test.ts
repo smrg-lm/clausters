@@ -105,7 +105,7 @@ const trees: Record<string, () => GuiNode> = {
                 button({ id: 7, label: "ping" }),
                 toggle({ id: 8, label: "gate", value: true }),
                 menu(["sine", "saw", "pulse"], { id: 9, index: 1, label: "wave" }),
-                text({ id: 10, value: "/n_set 1000 freq 440", multiline: false }),
+                text({ id: 10, value: "/node_set 1000 freq 440", multiline: false }),
             ),
         ),
 

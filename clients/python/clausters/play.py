@@ -174,7 +174,7 @@ def _as_routine(playable):
 
 def _play_def(d, server, controls):
     """Sends ``d`` (any family) and instances it: ``/graph_new`` for a
-    `GraphDef`, ``/s_new`` otherwise. Returns the node handle."""
+    `GraphDef`, ``/synth_new`` otherwise. Returns the node handle."""
     from .defs import GraphDef
 
     d.send(server)
@@ -214,5 +214,5 @@ def _play_buffer(buffer, server, controls):
     node = Synth.new(sdef.name, controls, server=server)
     file_sr = buffer.sample_rate or 48_000.0
     dur = buffer.frames / file_sr / float(controls.get("rate", 1.0))
-    server.send_bundle_after(dur, ("/n_free", node.id))
+    server.send_bundle_after(dur, ("/node_free", node.id))
     return node

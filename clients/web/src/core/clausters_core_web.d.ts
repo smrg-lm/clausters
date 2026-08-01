@@ -80,7 +80,7 @@ export class Registry {
     clear(): void;
     /**
      * Whether `id` falls inside this registry's space (allocated or not) —
-     * the filter for foreign `/n_end` ids.
+     * the filter for foreign `/node_end` ids.
      */
     contains(id: number): boolean;
     /**
@@ -155,7 +155,7 @@ export class SampleClockModel {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Records one `/clock` observation: the local time it was taken at, the
+     * Records one `/clock_query` observation: the local time it was taken at, the
      * server's counter, and the rate the server reported (0 keeps the
      * current one).
      */
@@ -316,7 +316,7 @@ export function osc_encode_bundle(unix_secs: number, messages: Array<any>): Uint
 
 /**
  * JS face: a bundle with the *immediate* timetag → `Uint8Array`. What rides
- * inside `/sched`, whose own absolute sample carries the time.
+ * inside `/sched_at`, whose own absolute sample carries the time.
  */
 export function osc_encode_immediate_bundle(messages: Array<any>): Uint8Array;
 
@@ -340,7 +340,7 @@ export function oscil_display_frames(window_ms: number, sample_rate: number): nu
 
 /**
  * JS face: how many raw tap samples one display window needs — the window
- * plus the trigger's search slack. What a `/tap_stream` subscription asks for.
+ * plus the trigger's search slack. What a `/bus_tapStream` subscription asks for.
  */
 export function oscil_raw_frames(display: number): number;
 
@@ -388,7 +388,7 @@ export function unary(op: string, x: number): number;
 export function unix_to_ntp(unix_secs: number): bigint;
 
 /**
- * A Unix timestamp → the server's absolute sample, through a `/clock` anchor
+ * A Unix timestamp → the server's absolute sample, through a `/clock_query` anchor
  * (`anchor_unix`, `anchor_sample`) and the measured `rate`.
  */
 export function unix_to_sample(unix_secs: number, anchor_unix: number, anchor_sample: number, rate: number): number;

@@ -11,7 +11,7 @@
 //   without bound over a live session — which matters because a view that
 //   redraws re-allocates its whole widget range each time.
 // - **The client drives the recycle.** A node id returns to the pool when the
-//   server reports the node's death (`/n_end`); a widget id has no such
+//   server reports the node's death (`/node_end`); a widget id has no such
 //   side-channel, so it returns when the client frees the widget (`GuiHost`'s
 //   `free`/`close`, and a redraw re-defining a window, which frees the old
 //   subtree first).

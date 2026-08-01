@@ -105,7 +105,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
             // Every argument is tagged: a JS number is a double with no
             // int/float distinction, and a control value has to be a float.
             server.sendBundle([
-              ["/n_set", ["i", voice.id], "gate", ["f", 0.0]],
+              ["/node_set", ["i", voice.id], "gate", ["f", 0.0]],
             ]);
             yield 0.5;
           }

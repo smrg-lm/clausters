@@ -1,6 +1,6 @@
 ---
 name: scsynth-osc
-description: Reference for the scsynth (SuperCollider Server) OSC protocol and its model semantics — node tree, groups, add actions, buses, buffers, SynthDefs, replies and timetagged bundles. Consult when implementing any /x_y server command or the node tree logic.
+description: Reference for the scsynth (SuperCollider Server) OSC protocol and its model semantics — node tree, groups, add actions, buses, buffers, SynthDefs, replies and timetagged bundles. Consult when implementing any server command or the node tree logic. Clausters keeps this model but not these command names — the mapping is at the top of the skill.
 ---
 
 # scsynth OSC protocol and server model
@@ -8,6 +8,26 @@ description: Reference for the scsynth (SuperCollider Server) OSC protocol and i
 scsynth listens for OSC over UDP (default 57110) and TCP. This skill summarizes
 the semantics our server replicates. Full reference: SuperCollider "Server Command
 Reference".
+
+> **The names below are scsynth's, not ours.** Clausters keeps this *model*
+> — node tree, add actions, bus and buffer pools, the async barrier — and
+> renamed every command to one rule, `/<resource>_<action>` (see
+> `docs/schemas.md`, "How a command is named"). Read this skill for semantics
+> and translate the address before writing any code:
+>
+> | scsynth | Clausters | | scsynth | Clausters |
+> |---|---|---|---|---|
+> | `/s_new` | `/synth_new` | | `/b_alloc` | `/buffer_alloc` |
+> | `/n_set` | `/node_set` | | `/b_query` → `/b_info` | `/buffer_query` → `/buffer_query.reply` |
+> | `/n_setn` | `/node_setRange` | | `/d_recv` | `/def_send synth` |
+> | `/n_mapa` | `/node_mapAudio` | | `/d_free` | `/def_free` |
+> | `/n_query` → `/n_info` | `/node_query` → `/node_query.reply` | | `/status` | `/server_status` |
+> | `/g_new` | `/group_new` | | `/notify` | `/server_notify` |
+> | `/g_queryTree` | `/group_queryTree` | | `/sync` → `/synced` | `/server_sync` → `/server_sync.reply` |
+> | `/c_set` | `/bus_set` | | `/quit` | `/server_quit` |
+> | `/c_getn` | `/bus_getRange` | | `/u_cmd` | `/node_ugenCmd` |
+>
+> The whole set, with the rule that generates it, is `docs/schemas.md`.
 
 ## Model
 
@@ -98,15 +118,15 @@ Reference".
 ## Errors
 
 Reply `/fail s s` with the command and the reason, e.g.
-`/fail /s_new "wrong argument type"` or duplicate node ID. Don't kill the server
+`/fail /synth_new "wrong argument type"` or duplicate node ID. Don't kill the server
 on malformed commands.
 
 ## Manual testing
 
 ```bash
 # with oscsend (liblo-tools package)
-oscsend localhost 57110 /status
-oscsend localhost 57110 /s_new siii default -1 0 0
-oscsend localhost 57110 /n_set isf 1000 freq 220.0
-# or from sclang: Server("mine", NetAddr("127.0.0.1", 57110))
+# (Clausters names, not scsynth's — see the mapping above)
+oscsend localhost 57110 /server_status
+oscsend localhost 57110 /synth_new siii default -1 0 0
+oscsend localhost 57110 /node_set isf 1000 freq 220.0
 ```

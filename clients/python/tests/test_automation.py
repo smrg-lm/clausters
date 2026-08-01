@@ -1,8 +1,8 @@
 """Automation (the control-vector lane): the break-point curve is discretized
-into a control buffer on the server (``/b_gen "env"``) and played onto a control
+into a control buffer on the server (``/buffer_gen "env"``) and played onto a control
 bus by the lane synth (``OutCtl``). A ``readbus`` synth exposes that control bus
 as audio, so the rendered signal *is* the curve — proving the whole path
-(``/b_gen "env"`` + ``OutCtl`` + the lane) end to end through the offline render.
+(``/buffer_gen "env"`` + ``OutCtl`` + the lane) end to end through the offline render.
 """
 
 import pytest
@@ -57,7 +57,7 @@ def test_automation_drives_control_bus_matches_curve():
     def routine():
         auto.play(server)
         yield 2.1
-        server.send_bundle(("/n_free", 0))  # close the score
+        server.send_bundle(("/node_free", 0))  # close the score
 
     clock.play(Routine(routine))
     clock.render()

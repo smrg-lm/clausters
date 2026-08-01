@@ -42,20 +42,20 @@ The project is a workspace with several coordinated parts:
   callback; commands arrive pre-built over lock-free FIFOs and freed memory
   leaves through a garbage FIFO. Guarded by `assert_no_alloc` tests.
 - **Sample-accurate scheduling** — NTP-timetagged bundles split the audio block
-  at the event's exact frame, plus a direct **sample clock** (`/clock`,
-  `/sched`) as a drift-free client timebase.
+  at the event's exact frame, plus a direct **sample clock** (`/clock_query`,
+  `/sched_at`) as a drift-free client timebase.
 - **Offline (NRT) rendering** to WAV, bit-identical to a live take, no audio
   device needed.
-- **Auto-sorted groups** (`/g_sortMode`) — execution order inferred from the
-  buses each def reads and writes — and **parallel groups** (`/g_parallel` +
+- **Auto-sorted groups** (`/group_sortMode`) — execution order inferred from the
+  buses each def reads and writes — and **parallel groups** (`/group_parallel` +
   `--workers`), bit-identical to the sequential result.
 - Flush-to-zero denormal handling on every processing thread.
 
 **Synthesis**
 
 - **Two def formats, loaded hot over OSC**: **FaustDefs** (Faust source, or a
-  JSON signal/box tree, JIT-compiled with the LLVM backend; `/d_faust`) and a
-  flat **SynthDef JSON** UGen graph (`/d_recv`). They are peers, and both
+  JSON signal/box tree, JIT-compiled with the LLVM backend; `/def_send faust`) and a
+  flat **SynthDef JSON** UGen graph (`/def_send synth`). They are peers, and both
   families are **on by default** (the `faust` and `synth` Cargo features — a
   default build therefore needs libfaust with the LLVM backend). They are
   independent, so a custom deployment can still build a single-family server
@@ -63,7 +63,7 @@ The project is a workspace with several coordinated parts:
 - A growing UGen library with **first-class calculation rates** (`ar`/`kr`/
   `ir`), typed controls (triggers, lag/varlag, scalars), operator UGens,
   **envelopes with the full scsynth done-action set**, **wavetable oscillators**
-  with server-side table generation (`/b_gen`), and a **spectral chain**
+  with server-side table generation (`/buffer_gen`), and a **spectral chain**
   (FFT/IFFT and `PV_*` phase-vocoder filters).
 - **Buffers**: multi-format sound-file reading, buffer-info UGens, and
   streaming disk I/O (`DiskIn`/`DiskOut`).
@@ -75,7 +75,7 @@ The project is a workspace with several coordinated parts:
 - The **complete scsynth OSC command set** (node tree, buses, buffers,
   notifications), conceptually compatible with existing scsynth clients except
   for the def formats.
-- **Control/bus mapping** (`/n_map`, `/n_mapa`) so any control or Faust
+- **Control/bus mapping** (`/node_map`, `/node_mapAudio`) so any control or Faust
   parameter tracks a bus, live, every block.
 - **Standard MIDI**: `--midi` opens a virtual input port; bind channels to defs
   (`/midi_bind`, `/midi_map`) so notes, velocity, aftertouch, pitch-bend and CC
@@ -102,9 +102,9 @@ cargo run --release
 # In another terminal: play the built-in sine, retune it, free it
 cargo run --example osc_ping -- beep
 # …or by hand with oscsend (liblo):
-oscsend localhost 57110 /s_new siii default 1000 1 0
-oscsend localhost 57110 /n_set  isf  1000 freq 330
-oscsend localhost 57110 /n_free i    1000
+oscsend localhost 57110 /synth_new siii default 1000 1 0
+oscsend localhost 57110 /node_set  isf  1000 freq 330
+oscsend localhost 57110 /node_free i    1000
 ```
 
 Render a score offline, no audio device needed:

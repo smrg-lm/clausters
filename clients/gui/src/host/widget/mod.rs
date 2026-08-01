@@ -816,7 +816,7 @@ pub enum WidgetKind {
         label: Option<String>,
     },
     /// A live text view of the audio server's node tree rooted at `group`,
-    /// queried over the client leg (`/g_queryTree`) and refreshed on node
+    /// queried over the client leg (`/group_queryTree`) and refreshed on node
     /// lifecycle notifications and a low-rate poll. `controls` shows each
     /// synth's control name/value pairs. A read-only client-of-the-server view.
     NodeTree {
@@ -1023,7 +1023,7 @@ pub enum WidgetKind {
     /// release; dragging across keys glissandos), with `velocity` fixed by
     /// prop or mapped from the press height (front of the key = louder).
     /// With `voice` set, the **host** additionally manages one server voice
-    /// per held key: `/s_new <voice> … freq amp gate 1 <voice_args…>` on
+    /// per held key: `/synth_new <voice> … freq amp gate 1 <voice_args…>` on
     /// press, `gate 0` on release (the def frees itself).
     Piano {
         min: i32,
@@ -1038,7 +1038,7 @@ pub enum WidgetKind {
         channel: i32,
         /// Host-voice mode: the server def one voice per held key plays.
         voice: Option<String>,
-        /// Extra `/s_new` control pairs appended after `freq`/`amp`/`gate`.
+        /// Extra `/synth_new` control pairs appended after `freq`/`amp`/`gate`.
         voice_args: Vec<(String, f32)>,
         /// The held keys — native view state, never parsed from the wire: the
         /// press/glissando/release gestures build it, the drawing reads it.
@@ -1410,7 +1410,7 @@ impl WidgetKind {
     /// Appends every audio bus whose **samples** this widget reads each frame —
     /// `channels` adjacent buses for an audio-rate `scope` or a `spectrum`, two
     /// (left and right) for a `phasescope`. This is the set the host asks the
-    /// server to record (`/tap`) and the set it animates for, so all three
+    /// server to record (`/bus_tap`) and the set it animates for, so all three
     /// sample consumers are covered uniformly. A meter is deliberately absent:
     /// its level costs no recording.
     pub fn audio_buses_read(&self, out: &mut Vec<i32>) {

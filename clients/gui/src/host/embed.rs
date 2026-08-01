@@ -21,7 +21,7 @@ use std::path::Path;
 use clausters::embed::Clausters;
 
 /// A live in-process server. Send it OSC, poll its replies; dropping it shuts
-/// the server down (the `Clausters` `Drop` sends `/quit` and joins the thread).
+/// the server down (the `Clausters` `Drop` sends `/server_quit` and joins the thread).
 pub struct EmbedServer {
     inner: Clausters,
 }

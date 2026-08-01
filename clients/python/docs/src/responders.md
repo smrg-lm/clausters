@@ -91,7 +91,7 @@ MidiFunc(note_on, "note_on", recv=recv)
 MidiFunc(note_off, "note_off", recv=recv)
 ```
 
-That virtual input port is a loose cable until you wire a MIDI source into it (`pw-link`, qpwgraph, or `aconnect`). This is the client-side mirror of the server's own direct MIDI input: a Clausters server can be played by MIDI it receives itself, *or* by a client that listens to MIDI and forwards `/s_new`. Both coexist.
+That virtual input port is a loose cable until you wire a MIDI source into it (`pw-link`, qpwgraph, or `aconnect`). This is the client-side mirror of the server's own direct MIDI input: a Clausters server can be played by MIDI it receives itself, *or* by a client that listens to MIDI and forwards `/synth_new`. Both coexist.
 
 ## Threading: the golden rule
 
@@ -112,23 +112,23 @@ OscFunc(start_phrase, "/go", recv=recv)
 
 ## Reacting to the shared transport
 
-Setting the server's shared transport (`/transport`, the beat grid several clients phase-align on — see [Timing models](timing-models.md)) **pushes** the new grid to every client registered with `/notify`. A responder on `/transport.reply` re-aligns this client the moment a conductor changes the tempo or origin, with no polling. Register `/notify` from the receiver's own socket so the push lands where the responder listens:
+Setting the server's shared transport (`/transport_set`, the beat grid several clients phase-align on — see [Timing models](timing-models.md)) **pushes** the new grid to every client registered with `/server_notify`. A responder on `/transport_query.reply` re-aligns this client the moment a conductor changes the tempo or origin, with no polling. Register `/server_notify` from the receiver's own socket so the push lands where the responder listens:
 
 ```python
 recv = OscReceiver(port=57121).start()
-recv.send(server.target.addr(), "/notify", 1)   # subscribe on this socket
+recv.send(server.target.addr(), "/server_notify", 1)   # subscribe on this socket
 
 def on_transport(msg, time, src):
     origin, tempo, defined = msg[1], msg[2], msg[3]
     if defined:
         clock.join_transport(server)             # adopt the new grid
 
-OscFunc(on_transport, "/transport.reply", recv=recv)
+OscFunc(on_transport, "/transport_query.reply", recv=recv)
 ```
 
 ## Examples
 
-- **`osc_responder.py`** — the client as an OSC hub: relay incoming `/note` to the server, and re-align on a `/transport.reply` push. Runs against a live server, self-feeding a few messages to demonstrate.
+- **`osc_responder.py`** — the client as an OSC hub: relay incoming `/note` to the server, and re-align on a `/transport_query.reply` push. Runs against a live server, self-feeding a few messages to demonstrate.
 - **`midi_responder.py`** — a `MidiFunc` turning a MIDI keyboard into synths on the server.
 
 See [Examples](examples.md).

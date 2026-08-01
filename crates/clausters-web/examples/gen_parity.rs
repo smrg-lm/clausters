@@ -65,7 +65,7 @@ fn score_bytes() -> Vec<u8> {
         bundle_at(
             0.0,
             vec![msg(
-                "/s_new",
+                "/synth_new",
                 vec![
                     s("default"),
                     i(1000),
@@ -85,7 +85,7 @@ fn score_bytes() -> Vec<u8> {
             0.11,
             vec![
                 msg(
-                    "/s_new",
+                    "/synth_new",
                     vec![
                         s("default"),
                         i(1001),
@@ -97,18 +97,18 @@ fn score_bytes() -> Vec<u8> {
                         f(0.2),
                     ],
                 ),
-                msg("/n_set", vec![i(1000), s("freq"), f(220.0)]),
+                msg("/node_set", vec![i(1000), s("freq"), f(220.0)]),
             ],
         ),
     );
     push_packet(
         &mut score,
-        bundle_at(0.3, vec![msg("/n_free", vec![i(1000)])]),
+        bundle_at(0.3, vec![msg("/node_free", vec![i(1000)])]),
     );
     // Final bundle sets the render length.
     push_packet(
         &mut score,
-        bundle_at(0.5, vec![msg("/n_free", vec![i(1001)])]),
+        bundle_at(0.5, vec![msg("/node_free", vec![i(1001)])]),
     );
     score
 }

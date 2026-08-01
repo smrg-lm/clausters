@@ -5,7 +5,7 @@ The UGen-graph counterpart of `clausters.defs.signals`: each function here
 is a small **lowercase** callable that returns a `Ugen` node (one
 output); composing nodes with Python operators or these functions builds the
 graph a `SynthDef` serializes into the JSON
-``SynthDefSpec`` the server's ``/d_recv`` consumes (``{"controls": […],
+``SynthDefSpec`` the server's ``/def_send synth`` consumes (``{"controls": […],
 "ugens": […]}`` — see the server's ``synthdef`` module).
 
 **Instance-based, no global build context.** Unlike sclang — where ``SynthDef``
@@ -47,7 +47,7 @@ Envelopes are the `Env` breakpoint builder plus the `env_gen` callable, which
 serialize to the ``EnvGen`` UGen's flat input list.
 
 Reserved controls ``in`` and ``out`` (the input/output buses, set with
-``/s_new … "in" b "out" b``) are added by the server, not declared here.
+``/synth_new … "in" b "out" b``) are added by the server, not declared here.
 """
 
 from ..base import builtins as _builtins
@@ -159,13 +159,13 @@ _CONTROL_RATES = {"kr", "control", "tr", "trigger", "ir", "scalar"}
 
 
 class Control(_Node):
-    """A named control (a ``/s_new``/``/n_set`` parameter) with a default and an
+    """A named control (a ``/synth_new``/``/node_set`` parameter) with a default and an
     optional **type** and **lag** (S2), mirroring the server's control types:
 
-    - ``rate="tr"`` — a **trigger**: a ``/n_set`` holds for one block, then the
+    - ``rate="tr"`` — a **trigger**: a ``/node_set`` holds for one block, then the
       server resets it to 0 (drives an `env_gen` gate, a sample-and-hold).
     - ``rate="ir"`` — a **scalar**: read once at init and frozen; a later
-      ``/n_set`` is ignored. As ``ir`` it may feed an ``ir`` input (`rand`,
+      ``/node_set`` is ignored. As ``ir`` it may feed an ``ir`` input (`rand`,
       buffer-info UGens).
     - ``lag`` (seconds) — smooth a ``kr`` control's changes with an implicit
       one-pole (a `lag`/`var_lag` UGen the server inserts); ``lag_down`` gives a
@@ -198,7 +198,7 @@ class Control(_Node):
 
 
 def control(name, default=0.0, rate=None, lag=None, lag_down=None) -> Control:
-    """A named control (``/s_new``/``/n_set`` parameter). ``rate`` is its type
+    """A named control (``/synth_new``/``/node_set`` parameter). ``rate`` is its type
     (``"tr"`` trigger, ``"ir"`` scalar, or the default ``kr``); ``lag`` (with an
     optional ``lag_down``) smooths a ``kr`` control. See `Control`."""
     return Control(name, default, rate=rate, lag=lag, lag_down=lag_down)
@@ -950,7 +950,7 @@ def _out_channels(kind, bus, signal):
 
 def out_ctl(bus, signal) -> SynthExpr:
     """Writes ``signal``'s latest per-block value to a **control** ``bus`` — the
-    write side of `in_ctl`, so a node reading that bus (via ``/n_map`` or
+    write side of `in_ctl`, so a node reading that bus (via ``/node_map`` or
     `in_ctl`) tracks it. Passes ``signal`` through as its output. A channel
     list writes its channels to consecutive buses."""
     if isinstance(signal, (ChannelList, list, tuple)):
@@ -983,14 +983,14 @@ def replace_out(bus, signal) -> SynthExpr:
 
 
 def send_trig(trig, id=0, value=0.0) -> Ugen:
-    """On each trigger of ``trig``, sends ``/tr nodeID id value`` to ``/notify``
+    """On each trigger of ``trig``, sends ``/node_trigger nodeID id value`` to ``/server_notify``
     clients. Output is silence; pass it as a `SynthDef` root."""
     return Ugen("SendTrig", [trig, id, value])
 
 
 def send_reply(trig, *values, cmd="/reply", reply_id=-1) -> Ugen:
     """On each trigger of ``trig``, sends the OSC message ``cmd nodeID reply_id
-    value…`` to ``/notify`` clients (``cmd`` defaults to ``/reply``). ``values``
+    value…`` to ``/server_notify`` clients (``cmd`` defaults to ``/reply``). ``values``
     is the arbitrary-arity payload. Output is silence; pass it as a `SynthDef`
     root."""
     return Ugen("SendReply", [trig, reply_id, *values], label=cmd)
@@ -998,7 +998,7 @@ def send_reply(trig, *values, cmd="/reply", reply_id=-1) -> Ugen:
 
 def poll(trig, signal, label="poll", trig_id=-1) -> Ugen:
     """On each trigger of ``trig``, posts ``label: value`` (the ``signal``
-    value) to the server console and, when ``trig_id >= 0``, also sends ``/tr
+    value) to the server console and, when ``trig_id >= 0``, also sends ``/node_trigger
     nodeID trig_id value``. ``signal`` passes through the output, so ``poll``
     can sit mid-chain."""
     return Ugen("Poll", [trig, signal, trig_id], label=label)
@@ -1137,7 +1137,7 @@ def pv_kernel(chain, mag=None, phase=None, params=()) -> Ugen:
     no reading other bins. Gates, tilts, masks and magnitude algebra belong
     here; freeze/smear (cross-frame state) and shift (bin remaps) stay with
     the dedicated ``pv_*`` filters. The server validates the program at
-    ``/d_recv`` (stack discipline, parameter arity, unknown words) and
+    ``/def_send synth`` (stack discipline, parameter arity, unknown words) and
     rejects a bad def with ``/fail``.
 
     Note that ``mag`` is a raw transform magnitude — it scales with the input
@@ -1201,13 +1201,13 @@ def buf_rd(bufnum, chan, phase, loop=0.0) -> Ugen:
     return Ugen("BufRd", [bufnum, chan, phase, loop])
 
 
-# ---- table oscillators & waveshaper (read `/b_gen` tables) ----
+# ---- table oscillators & waveshaper (read `/buffer_gen` tables) ----
 
 
 def osc(bufnum, freq=440.0, phase=0.0) -> Ugen:
     """Interpolating wavetable oscillator. ``bufnum`` must hold a
     **wavetable-format** buffer (fill it with ``buf.gen(...)`` and a
-    ``/b_gen`` command whose wavetable flag is set); ``phase`` is an offset in
+    ``/buffer_gen`` command whose wavetable flag is set); ``phase`` is an offset in
     radians."""
     return Ugen("Osc", [bufnum, freq, phase])
 
@@ -1228,7 +1228,7 @@ def vosc(bufpos, freq=440.0, phase=0.0) -> Ugen:
 
 def shaper(bufnum, signal) -> Ugen:
     """Waveshaper: maps ``signal`` (in +-1, clamped) through a transfer table
-    in wavetable format (typically a ``cheby`` `/b_gen`); the table's first
+    in wavetable format (typically a ``cheby`` `/buffer_gen`); the table's first
     point is ``signal = -1``, its last ``signal = +1``."""
     return Ugen("Shaper", [bufnum, signal])
 
@@ -1606,7 +1606,7 @@ class DoneAction:
     """The action `env_gen` takes when its envelope finishes — scsynth's full
     done-action set (0-15). Pass one as ``done_action``. The relative actions
     (3-13, 15) act on the synth's neighbours in its group; a paused node is
-    resumed with `Server.run` (``/n_run``)."""
+    resumed with `Server.run` (``/node_run``)."""
 
     #: Do nothing; the envelope just holds its final level.
     NONE = 0
@@ -1909,13 +1909,13 @@ def points_to_env(points, *, time_at: float = 0.0, **env_kwargs):
 #
 # The level-2 Def-view labels a UGen box's inlets from the client's own
 # vocabulary: the parameter names of the callable that builds the kind. That
-# callable *is* the client's mirror of the server registry (the /u_query
+# callable *is* the client's mirror of the server registry (the /ugen_query
 # contrast test keeps the two in line, see `tests/test_session.py`), so reusing
 # it here means the patcher and the builder never disagree on an input's name.
 
 #: Kinds whose builder's positional parameters do **not** line up with the wire
 #: input order (variadic runs, static fields sitting between inputs) — the
-#: divergences the /u_query contrast test declares. For these the names would
+#: divergences the /ugen_query contrast test declares. For these the names would
 #: mislabel the inlets, so the Def-view falls back to positional labels.
 _INPUT_NAMES_MISALIGNED = frozenset(
     {"EnvGen", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}

@@ -65,7 +65,7 @@ def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
     `Session.render`), sample-identical; returns the `Playhead`.
 
     A **logical** `Group` is translated to a `clausters.defs.GraphDef`, sent
-    (``/d_graph``) and instanced (``/graph_new``, with ``ports`` overriding the
+    (``/def_send graph``) and instanced (``/graph_new``, with ``ports`` overriding the
     surface defaults) on the `Server` ``destination``; returns the instance
     group. The seam is the destination, not the element.
     """

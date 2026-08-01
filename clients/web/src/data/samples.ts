@@ -1,14 +1,14 @@
 // Bulk samples: fetching audio the page decodes, and interleaving it.
 //
 // The browser's counterpart of the server's file reading. A page has no
-// filesystem, so `/b_allocRead`'s path means nothing to it; what it has is
+// filesystem, so `/buffer_allocRead`'s path means nothing to it; what it has is
 // `fetch` and `decodeAudioData`, which between them turn a URL into decoded
 // float samples — every format the browser plays, decoded by the browser.
 //
 // These are pure functions over a URL and an `AudioBuffer`: nothing here
 // knows a server or a carrier. `Buffer.load` is what puts the result
 // into a buffer, and the reverse direction (reading a server buffer back out)
-// is `Server.getSamples` — one is `fetch`, the other `/b_getn`, and a
+// is `Server.getSamples` — one is `fetch`, the other `/buffer_getRange`, and a
 // waveform view does not care which fed it.
 
 /**

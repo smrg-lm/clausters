@@ -9,7 +9,7 @@ script consumes that stream, parses each line into an OSC address plus typed
 arguments, and sends it to the audio server.
 
 Because the send is ungated, editing the message is *live*: this example seeds a
-running synth's ``/n_set <id> freq 220`` and, as you edit the number, the pitch
+running synth's ``/node_set <id> freq 220`` and, as you edit the number, the pitch
 follows what you type digit by digit -- the string field behaving just like a
 numeric control. A half-typed or unknown message is simply ignored by the server
 (this is a demo of the entry widget, not a validating console), so type freely.
@@ -83,7 +83,7 @@ def parse_osc(line: str):
 # %% [markdown]
 # ## The synth the field drives
 # A quiet stereo sine on the ``freq`` control -- the target the typed
-# ``/n_set <id> freq <value>`` retunes as you type.
+# ``/node_set <id> freq <value>`` retunes as you type.
 
 # %%
 def beep() -> SynthDef:
@@ -102,7 +102,7 @@ synth = Synth.new("gui_oscsend_beep", {"freq": 220.0}, server=server)
 # %%
 win = gui.open(window(
     label("type an OSC message; it is sent to the server as you type", h=28.0),
-    text(name="field", value=f"/n_set {synth.id} freq 220", h=40.0),
+    text(name="field", value=f"/node_set {synth.id} freq 220", h=40.0),
     label("a multiline scratch pad (Enter = newline); not sent", h=28.0),
     text(name="scratch", multiline=True, value="line one\nline two"),
     title="OSC message field", w=560, h=360, layout="col"))

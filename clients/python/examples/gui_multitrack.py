@@ -137,7 +137,7 @@ win.on_closed(lambda: globals().__setitem__("_closed", True))
 # %%
 def roll():
     """Anchor every lane's playhead at the current engine clock."""
-    _, args = server.request("/clock", expect=("/clock.reply",))
+    _, args = server.request("/clock_query", expect=("/clock_query.reply",))
     now = float(args[0])
     for lane in LANES:
         win[lane].set(playhead_at=now)

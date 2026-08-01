@@ -6,7 +6,7 @@ to **play itself** against a `Server`. The default
 clock's job: an event emits at the running routine's exact logical beat (via
 ``server.send_bundle``), and the player advances by the event's `delta`.
 
-By default a note **frees** its synth after ``sustain`` (``/n_free``) rather
+By default a note **frees** its synth after ``sustain`` (``/node_free``) rather
 than closing a gate — unless ``has_gate`` is set, in which case it sends
 ``gate 0`` (for defs whose `env_gen` envelope has a release node and a
 ``doneAction`` that frees the synth once the release finishes). The built-in
@@ -132,7 +132,7 @@ class Event(dict):
 
     def play(self, destination=None):
         """Play this event on ``destination`` (double dispatch): the OSC
-        `Server` turns it into `/s_new` + release,
+        `Server` turns it into `/synth_new` + release,
         a MIDI destination into note on/off — without the clock or routine
         knowing which.
 
@@ -161,7 +161,7 @@ class Event(dict):
         return self
 
     def free(self):
-        """Cut the played note **now** (``/n_free``), without waiting for its
+        """Cut the played note **now** (``/node_free``), without waiting for its
         sustain — for interrupting an extreme duration. A no-op when the event
         has not sounded (a rest, a MIDI play, or never played). The release
         already scheduled at play time still arrives and is harmless."""
@@ -172,7 +172,7 @@ class Event(dict):
     def release(self):
         """End the played note **musically**, now: the event's own release
         gesture — ``gate 0`` when it releases by gate (``has_gate``, or the
-        built-in ``"default"`` instrument's envelope), a plain ``/n_free``
+        built-in ``"default"`` instrument's envelope), a plain ``/node_free``
         otherwise. Same no-op rule as `free`."""
         node, server = self.get("node"), self.get("server")
         if node is None or server is None:

@@ -69,7 +69,7 @@ impl UGen for InCtl {
 
 /// Input 0: control bus index, input 1: signal. Writes the signal's latest
 /// value to a **control** bus — the write-side counterpart of `InCtl`, so a node
-/// reading that bus (via `/n_map` or `InCtl`) tracks it. A control bus holds one
+/// reading that bus (via `/node_map` or `InCtl`) tracks it. A control bus holds one
 /// value per block, so the block's last sample is committed. The signal is also
 /// passed through as the output, so it can still feed other UGens.
 pub struct OutCtl;

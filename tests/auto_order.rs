@@ -1,5 +1,5 @@
-//! M12: auto-sorted groups — bus-connection analysis, `/g_sortMode`,
-//! `/g_queryTree`, `/g_dumpGraph`. Real UDP round-trips against a manually
+//! M12: auto-sorted groups — bus-connection analysis, `/group_sortMode`,
+//! `/group_queryTree`, `/group_dumpGraph`. Real UDP round-trips against a manually
 //! ticked engine (no audio device), like `tests/osc.rs`.
 
 #![cfg(feature = "synth")]
@@ -75,17 +75,23 @@ impl Server {
     }
 
     fn d_recv(&self, def: &serde_json::Value) {
-        self.send("/d_recv", vec![OscType::Blob(def.to_string().into_bytes())]);
+        self.send(
+            "/def_send",
+            vec![
+                OscType::String("synth".into()),
+                OscType::Blob(def.to_string().into_bytes()),
+            ],
+        );
         assert_eq!(
             self.recv_until("/done").args[0],
-            OscType::String("/d_recv".into())
+            OscType::String("/def_send".into())
         );
     }
 
     /// Top-level child IDs of a flat group (synth children only).
     fn order_of(&self, group: i32) -> Vec<i32> {
-        self.send("/g_queryTree", vec![OscType::Int(group)]);
-        let reply = self.recv_until("/g_queryTree.reply");
+        self.send("/group_queryTree", vec![OscType::Int(group)]);
+        let reply = self.recv_until("/group_queryTree.reply");
         let mut order = Vec::new();
         // args: flag, groupID, numChildren, then per synth: id, -1, defname.
         let mut i = 3;
@@ -125,7 +131,7 @@ impl Server {
     }
 
     fn quit(mut self) {
-        self.send("/quit", vec![]);
+        self.send("/server_quit", vec![]);
         self.recv_until("/done");
         // Drain whatever the commands left behind so the engine half drops.
         self.render(2);
@@ -180,15 +186,15 @@ fn auto_group_reorders_a_reversed_chain() {
     server.d_recv(&master_def());
 
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
-    server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
-    // Deliberately reversed: master, then fx, then source — each /s_new
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    // Deliberately reversed: master, then fx, then source — each /synth_new
     // triggers a re-sort, so the final order must be src → fx → master.
     for (name, id) in [("master", 1001), ("fx", 1002), ("src", 1003)] {
         server.send(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String(name.into()),
                 OscType::Int(id),
@@ -214,18 +220,18 @@ fn auto_group_reorders_a_reversed_chain() {
 fn n_mapa_adds_a_read_edge_and_resorts() {
     // `src` writes bus 16; `default` reads no bus statically, so an auto group
     // leaves the two in insertion order. Mapping default's freq to bus 16 with
-    // /n_mapa makes it read that bus — a writer-before-reader edge that must
+    // /node_mapAudio makes it read that bus — a writer-before-reader edge that must
     // re-sort src ahead of it (M11 feeding the M12/M13 analysis).
     let server = Server::spawn();
     server.d_recv(&src_def());
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
-    server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
     // Reader first, writer second: nothing connects them yet.
     server.send(
-        "/s_new",
+        "/synth_new",
         vec![
             OscType::String("default".into()),
             OscType::Int(1001),
@@ -234,7 +240,7 @@ fn n_mapa_adds_a_read_edge_and_resorts() {
         ],
     );
     server.send(
-        "/s_new",
+        "/synth_new",
         vec![
             OscType::String("src".into()),
             OscType::Int(1002),
@@ -244,9 +250,9 @@ fn n_mapa_adds_a_read_edge_and_resorts() {
     );
     server.wait_for_order(100, &[1001, 1002]);
 
-    // /n_mapa freq -> bus 16: now 1001 reads what 1002 writes.
+    // /node_mapAudio freq -> bus 16: now 1001 reads what 1002 writes.
     server.send(
-        "/n_mapa",
+        "/node_mapAudio",
         vec![OscType::Int(1001), OscType::Int(0), OscType::Int(16)],
     );
     server.wait_for_order(100, &[1002, 1001]);
@@ -255,7 +261,7 @@ fn n_mapa_adds_a_read_edge_and_resorts() {
     // unconstrained pair keeps its current order rather than snapping back —
     // re-sorting must not deadlock or shuffle it.
     server.send(
-        "/n_mapa",
+        "/node_mapAudio",
         vec![OscType::Int(1001), OscType::Int(0), OscType::Int(-1)],
     );
     server.wait_for_order(100, &[1002, 1001]);
@@ -269,12 +275,12 @@ fn manual_group_keeps_the_reversed_chain_silent() {
     server.d_recv(&fx_def());
     server.d_recv(&master_def());
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
     for (name, id) in [("master", 1001), ("fx", 1002), ("src", 1003)] {
         server.send(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String(name.into()),
                 OscType::Int(id),
@@ -298,12 +304,12 @@ fn g_sort_mode_sorts_existing_children_and_can_be_disabled() {
     server.d_recv(&src_def());
     server.d_recv(&master_def());
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
     for (name, id) in [("master", 1001), ("src", 1002)] {
         server.send(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String(name.into()),
                 OscType::Int(id),
@@ -316,7 +322,7 @@ fn g_sort_mode_sorts_existing_children_and_can_be_disabled() {
     assert!(server.render(20).iter().all(|s| *s == 0.0));
 
     // Enabling sorts what is already there…
-    server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
     server.wait_for_order(100, &[1002, 1001]);
     let out = server.render(50);
     assert!(
@@ -325,8 +331,8 @@ fn g_sort_mode_sorts_existing_children_and_can_be_disabled() {
     );
 
     // …and disabling re-enables manual moves.
-    server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(0)]);
-    server.send("/n_before", vec![OscType::Int(1001), OscType::Int(1002)]);
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(0)]);
+    server.send("/node_before", vec![OscType::Int(1001), OscType::Int(1002)]);
     server.wait_for_order(100, &[1001, 1002]);
     server.quit();
 }
@@ -335,13 +341,13 @@ fn g_sort_mode_sorts_existing_children_and_can_be_disabled() {
 fn manual_moves_fail_inside_auto_groups() {
     let server = Server::spawn();
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
-    server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
     for id in [1001, 1002] {
         server.send(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String("default".into()),
                 OscType::Int(id),
@@ -350,22 +356,22 @@ fn manual_moves_fail_inside_auto_groups() {
             ],
         );
     }
-    server.send("/n_before", vec![OscType::Int(1002), OscType::Int(1001)]);
+    server.send("/node_before", vec![OscType::Int(1002), OscType::Int(1001)]);
     let reply = server.recv_until("/fail");
-    assert_eq!(reply.args[0], OscType::String("/n_before".into()));
+    assert_eq!(reply.args[0], OscType::String("/node_before".into()));
     server.quit();
 }
 
 #[test]
 fn g_sort_mode_rejects_missing_or_non_groups() {
     let server = Server::spawn();
-    server.send("/g_sortMode", vec![OscType::Int(999), OscType::Int(1)]);
+    server.send("/group_sortMode", vec![OscType::Int(999), OscType::Int(1)]);
     assert_eq!(
         server.recv_until("/fail").args[0],
-        OscType::String("/g_sortMode".into())
+        OscType::String("/group_sortMode".into())
     );
     server.send(
-        "/s_new",
+        "/synth_new",
         vec![
             OscType::String("default".into()),
             OscType::Int(1001),
@@ -373,10 +379,10 @@ fn g_sort_mode_rejects_missing_or_non_groups() {
             OscType::Int(0),
         ],
     );
-    server.send("/g_sortMode", vec![OscType::Int(1001), OscType::Int(1)]);
+    server.send("/group_sortMode", vec![OscType::Int(1001), OscType::Int(1)]);
     assert_eq!(
         server.recv_until("/fail").args[0],
-        OscType::String("/g_sortMode".into())
+        OscType::String("/group_sortMode".into())
     );
     server.quit();
 }
@@ -385,11 +391,11 @@ fn g_sort_mode_rejects_missing_or_non_groups() {
 fn query_tree_reports_structure_and_controls() {
     let server = Server::spawn();
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
     server.send(
-        "/s_new",
+        "/synth_new",
         vec![
             OscType::String("default".into()),
             OscType::Int(1001),
@@ -401,8 +407,8 @@ fn query_tree_reports_structure_and_controls() {
     );
     // Poll until the mirror has it, then check the full flag-1 layout.
     server.wait_for_order(100, &[1001]);
-    server.send("/g_queryTree", vec![OscType::Int(100), OscType::Int(1)]);
-    let reply = server.recv_until("/g_queryTree.reply");
+    server.send("/group_queryTree", vec![OscType::Int(100), OscType::Int(1)]);
+    let reply = server.recv_until("/group_queryTree.reply");
     let expected: Vec<OscType> = vec![
         OscType::Int(1),    // flag
         OscType::Int(100),  // queried group
@@ -412,7 +418,7 @@ fn query_tree_reports_structure_and_controls() {
         OscType::String("default".into()),
         OscType::Int(3), // control count
         OscType::String("freq".into()),
-        OscType::Float(220.0), // /s_new override, mirrored
+        OscType::Float(220.0), // /synth_new override, mirrored
         OscType::String("amp".into()),
         OscType::Float(0.2), // default
         OscType::String("gate".into()),
@@ -424,16 +430,16 @@ fn query_tree_reports_structure_and_controls() {
 
 #[test]
 fn query_tree_detail_two_carries_a_full_node_info_per_entry() {
-    // Detail 2 appends what `/n_info` carries beyond the controls — the maps
+    // Detail 2 appends what `/node_query.reply` carries beyond the controls — the maps
     // and the inferred bus lists — so a client can build one record per node
-    // out of the tree alone, with no follow-up `/n_query`.
+    // out of the tree alone, with no follow-up `/node_query`.
     let server = Server::spawn();
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
     server.send(
-        "/s_new",
+        "/synth_new",
         vec![
             OscType::String("default".into()),
             OscType::Int(1001),
@@ -442,9 +448,9 @@ fn query_tree_detail_two_carries_a_full_node_info_per_entry() {
         ],
     );
     server.wait_for_order(100, &[1001]);
-    server.send("/c_set", vec![OscType::Int(3), OscType::Float(440.0)]);
+    server.send("/bus_set", vec![OscType::Int(3), OscType::Float(440.0)]);
     server.send(
-        "/n_map",
+        "/node_map",
         vec![
             OscType::Int(1001),
             OscType::String("freq".into()),
@@ -452,27 +458,27 @@ fn query_tree_detail_two_carries_a_full_node_info_per_entry() {
         ],
     );
 
-    // The same node, both ways: the tree entry must end exactly as /n_info's
+    // The same node, both ways: the tree entry must end exactly as /node_query.reply's
     // synth body does.
-    server.send("/n_query", vec![OscType::Int(1001)]);
-    let info = server.recv_until("/n_info").args;
-    server.send("/g_queryTree", vec![OscType::Int(100), OscType::Int(2)]);
-    let tree = server.recv_until("/g_queryTree.reply").args;
+    server.send("/node_query", vec![OscType::Int(1001)]);
+    let info = server.recv_until("/node_query.reply").args;
+    server.send("/group_queryTree", vec![OscType::Int(100), OscType::Int(2)]);
+    let tree = server.recv_until("/group_queryTree.reply").args;
 
     assert_eq!(tree[0], OscType::Int(2), "the detail level is echoed");
-    // /n_info: id, parent, prev, next, isGroup, defName, then the payload.
+    // /node_query.reply: id, parent, prev, next, isGroup, defName, then the payload.
     // The tree entry: id, -1 (synth marker), defName, then the same payload.
     assert_eq!(tree[3], OscType::Int(1001));
     assert_eq!(tree[4], OscType::Int(-1));
     assert_eq!(tree[5], OscType::String("default".into()));
-    assert_eq!(&tree[6..], &info[6..], "same payload as /n_info");
+    assert_eq!(&tree[6..], &info[6..], "same payload as /node_query.reply");
     // And that payload really carries the map, as (control, bus, audio) after
     // the three controls: freq is control 0, mapped to control bus 3.
     let maps = &info[info.len() - 5..info.len() - 2];
     assert_eq!(
         maps,
         &[OscType::Int(0), OscType::Int(3), OscType::Int(0)],
-        "the /n_map binding is in the record: {info:?}"
+        "the /node_map binding is in the record: {info:?}"
     );
     server.quit();
 }
@@ -482,8 +488,8 @@ fn n_query_reports_an_absent_node_rather_than_failing() {
     // A node the server does not hold is a state, not a protocol error: the
     // record says so with isGroup = -1, so a batch of ids survives a dead one.
     let server = Server::spawn();
-    server.send("/n_query", vec![OscType::Int(4242)]);
-    let info = server.recv_until("/n_info").args;
+    server.send("/node_query", vec![OscType::Int(4242)]);
+    let info = server.recv_until("/node_query.reply").args;
     assert_eq!(
         info,
         vec![
@@ -512,15 +518,15 @@ fn dynamic_bus_indexes_are_reported_and_act_as_barriers() {
     server.d_recv(&src_def());
     server.d_recv(&master_def());
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
-    server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
     // master, then the barrier, then src: src→master would normally re-sort,
     // but nothing may cross the dynamic node, so the order must hold.
     for (name, id) in [("master", 1001), ("dynread", 1002), ("src", 1003)] {
         server.send(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String(name.into()),
                 OscType::Int(id),
@@ -531,8 +537,8 @@ fn dynamic_bus_indexes_are_reported_and_act_as_barriers() {
     }
     server.wait_for_order(100, &[1001, 1002, 1003]);
 
-    server.send("/g_dumpGraph", vec![OscType::Int(100)]);
-    let reply = server.recv_until("/g_dumpGraph.reply");
+    server.send("/group_dumpGraph", vec![OscType::Int(100)]);
+    let reply = server.recv_until("/group_dumpGraph.reply");
     let OscType::String(dump) = &reply.args[1] else {
         panic!("expected a string dump");
     };
@@ -559,13 +565,13 @@ fn feedback_cycles_keep_insertion_order() {
     }
     server.d_recv(&src_def());
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
-    server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
     for (name, id) in [("xa", 1001), ("xb", 1002), ("src", 1003)] {
         server.send(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String(name.into()),
                 OscType::Int(id),
@@ -594,13 +600,13 @@ fn n_set_on_a_bus_control_resorts() {
     }));
     server.d_recv(&master_def());
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
-    server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
     for (name, id) in [("master", 1001), ("srcvar", 1002)] {
         server.send(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String(name.into()),
                 OscType::Int(id),
@@ -615,7 +621,7 @@ fn n_set_on_a_bus_control_resorts() {
 
     // Retargeting the source onto the master's bus re-analyzes and re-sorts.
     server.send(
-        "/n_set",
+        "/node_set",
         vec![
             OscType::Int(1002),
             OscType::String("bus".into()),
@@ -645,21 +651,27 @@ fn nrt_scores_support_g_sort_mode() {
             0.0,
             vec![
                 msg(
-                    "/d_recv",
-                    vec![OscType::Blob(src_def().to_string().into_bytes())],
+                    "/def_send",
+                    vec![
+                        OscType::String("synth".into()),
+                        OscType::Blob(src_def().to_string().into_bytes()),
+                    ],
                 ),
                 msg(
-                    "/d_recv",
-                    vec![OscType::Blob(master_def().to_string().into_bytes())],
+                    "/def_send",
+                    vec![
+                        OscType::String("synth".into()),
+                        OscType::Blob(master_def().to_string().into_bytes()),
+                    ],
                 ),
                 msg(
-                    "/g_new",
+                    "/group_new",
                     vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
                 ),
-                msg("/g_sortMode", vec![OscType::Int(100), OscType::Int(1)]),
+                msg("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]),
                 // Reversed on purpose, again.
                 msg(
-                    "/s_new",
+                    "/synth_new",
                     vec![
                         OscType::String("master".into()),
                         OscType::Int(1001),
@@ -668,7 +680,7 @@ fn nrt_scores_support_g_sort_mode() {
                     ],
                 ),
                 msg(
-                    "/s_new",
+                    "/synth_new",
                     vec![
                         OscType::String("src".into()),
                         OscType::Int(1002),
@@ -678,7 +690,7 @@ fn nrt_scores_support_g_sort_mode() {
                 ),
             ],
         ),
-        (0.1, vec![msg("/n_free", vec![OscType::Int(1001)])]),
+        (0.1, vec![msg("/node_free", vec![OscType::Int(1001)])]),
     ];
     let score = Score::new(events).unwrap();
     let cfg = RenderConfig {
@@ -702,24 +714,25 @@ fn faust_synths_sort_by_their_reserved_buses() {
     let mut server = Server::spawn();
     server.d_recv(&master_def());
     server.send(
-        "/d_faust",
+        "/def_send",
         vec![
+            OscType::String("faust".into()),
             OscType::String("fsrc".into()),
             OscType::String("import(\"stdfaust.lib\"); process = os.osc(330) * 0.2;".into()),
         ],
     );
     assert_eq!(
         server.recv_until("/done").args[0],
-        OscType::String("/d_faust".into())
+        OscType::String("/def_send".into())
     );
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
-    server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
     // master first, then the Faust source writing bus 16: must sort first.
     server.send(
-        "/s_new",
+        "/synth_new",
         vec![
             OscType::String("master".into()),
             OscType::Int(1001),
@@ -728,7 +741,7 @@ fn faust_synths_sort_by_their_reserved_buses() {
         ],
     );
     server.send(
-        "/s_new",
+        "/synth_new",
         vec![
             OscType::String("fsrc".into()),
             OscType::Int(1002),
@@ -749,19 +762,19 @@ fn faust_synths_sort_by_their_reserved_buses() {
 
 #[test]
 fn n_query_reports_node_detail() {
-    // `/n_query` -> `/n_info`: per-node detail (parent, siblings, def, inferred
-    // bus usage) and the group head/tail, beyond what `/g_queryTree` carries.
+    // `/node_query` -> `/node_query.reply`: per-node detail (parent, siblings, def, inferred
+    // bus usage) and the group head/tail, beyond what `/group_queryTree` carries.
     let server = Server::spawn();
     server.d_recv(&src_def());
     server.d_recv(&fx_def());
     let group = 100;
     server.send(
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(group), OscType::Int(1), OscType::Int(0)],
     );
     for (name, id) in [("src", 1000), ("fx", 1001)] {
         server.send(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String(name.into()),
                 OscType::Int(id),
@@ -771,8 +784,8 @@ fn n_query_reports_node_detail() {
         );
     }
 
-    server.send("/n_query", vec![OscType::Int(1001)]);
-    let info = server.recv_until("/n_info").args;
+    server.send("/node_query", vec![OscType::Int(1001)]);
+    let info = server.recv_until("/node_query.reply").args;
     assert_eq!(info[0], OscType::Int(1001)); // id
     assert_eq!(info[1], OscType::Int(group)); // parent
     assert_eq!(info[2], OscType::Int(1000)); // prev sibling (src)
@@ -783,8 +796,8 @@ fn n_query_reports_node_detail() {
     assert_eq!(info[info.len() - 2], OscType::String("16".into())); // reads
     assert_eq!(info[info.len() - 1], OscType::String("16".into())); // writes
 
-    server.send("/n_query", vec![OscType::Int(group)]);
-    let g = server.recv_until("/n_info").args;
+    server.send("/node_query", vec![OscType::Int(group)]);
+    let g = server.recv_until("/node_query.reply").args;
     assert_eq!(g[4], OscType::Int(1)); // is a group
     assert_eq!(g[5], OscType::Int(1000)); // head
     assert_eq!(g[6], OscType::Int(1001)); // tail

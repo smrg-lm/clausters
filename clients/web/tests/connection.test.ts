@@ -1,5 +1,5 @@
 // The WS carrier end to end: a real `clausters --ws` server, one node
-// process, one /status round trip through `WsConnection` (node's global
+// process, one /server_status round trip through `WsConnection` (node's global
 // `WebSocket` speaks the same standard API as the browser's).
 //
 // Needs the debug server built (`cargo build` at the workspace root); the
@@ -26,7 +26,7 @@ await loadOsc(
     await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)),
 );
 
-test("WsConnection: /status round trip", { skip: !hasServer }, async () => {
+test("WsConnection: /server_status round trip", { skip: !hasServer }, async () => {
     const server = spawn(
         serverBin,
         ["--ws", String(wsPort), "--no-tcp", "--no-persist"],
@@ -46,15 +46,15 @@ test("WsConnection: /status round trip", { skip: !hasServer }, async () => {
         const reply = new Promise<number>((resolve) => {
             connection.addReply((bytes) => {
                 for (const { addr, args } of decodePacket(bytes)) {
-                    if (addr === "/status.reply") resolve(args[2] as number);
+                    if (addr === "/server_status.reply") resolve(args[2] as number);
                 }
             });
         });
-        connection.send(encodeMessage("/status"));
+        connection.send(encodeMessage("/server_status"));
         const synths = await Promise.race([
             reply,
             sleep(5000).then(() => {
-                throw new Error("no /status.reply within 5s");
+                throw new Error("no /server_status.reply within 5s");
             }),
         ]);
         assert.equal(synths, 0, "a fresh server reports zero synths");

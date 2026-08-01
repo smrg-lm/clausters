@@ -117,7 +117,7 @@
         await server.sync();
         const moved = await synth.info();
         if (moved.controls.freq !== 220) {
-          throw new Error(`/n_set did not take: ${JSON.stringify(moved.controls)}`);
+          throw new Error(`/node_set did not take: ${JSON.stringify(moved.controls)}`);
         }
 
         synth.free();

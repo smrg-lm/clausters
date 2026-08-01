@@ -8,7 +8,7 @@ through the port names, never the private member node ids.
 
 This builds a two-oscillator voice: two `tone` members write a detuned pair
 into one private internal bus, and a `gain` member reads that bus and sends it
-to the speakers. The surface shows what a bare scsynth group `/n_set` cannot:
+to the speakers. The surface shows what a bare scsynth group `/node_set` cannot:
 
   * one port driving **several** inner targets, and
   * **per-target scaling** — the single `freq` port plays a perfect fifth by
@@ -67,24 +67,24 @@ def play(server):
     duo = duo_graph()
     for sdef in (tone, gain):
         sdef.send(server)                   # scored at t=0 in NRT
-    duo.send(server)                         # /d_graph (validate + store)
+    duo.send(server)                         # /def_send graph (validate + store)
 
     # /graph_new -> a wired group
     inst = Group.graph("duo", {"gain": 0.4}, server=server)
     # Drive the instance through its surface. Live this is
     # `inst.set({"freq": freq})`; to schedule it on the (offline) clock
-    # use `send_bundle`, stamping each /n_set with the routine's logical beat.
-    # /n_set on the instance resolves "freq" against the surface (both
+    # use `send_bundle`, stamping each /node_set with the routine's logical beat.
+    # /node_set on the instance resolves "freq" against the surface (both
     # oscillators), never the private member node ids.
     for freq in (220.0, 247.0, 196.0, 220.0):
-        server.send_bundle(("/n_set", inst.id, "freq", freq))
+        server.send_bundle(("/node_set", inst.id, "freq", freq))
         yield 0.5
-    server.send_bundle(("/n_free", inst.id))         # frees the group + private buses
+    server.send_bundle(("/node_free", inst.id))         # frees the group + private buses
 
 
 def main():
     duo = duo_graph()
-    print("GraphDef JSON the server validates (/d_graph):")
+    print("GraphDef JSON the server validates (/def_send graph):")
     print(json.dumps(duo.spec(), indent=2))
 
     server = Server(interface=OscNrtInterface())

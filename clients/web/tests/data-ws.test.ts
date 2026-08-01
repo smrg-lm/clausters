@@ -79,7 +79,7 @@ test("a control bus streams to the client at the period it asked for", { skip: !
             `streamed ${stream.value(bus)}`,
         );
 
-        // The value the stream shows is the value `/c_get` answers with.
+        // The value the stream shows is the value `/bus_get` answers with.
         bus.set(-0.2);
         await sleep(150);
         assert.ok(Math.abs(stream.value(bus) - (await bus.get())) < 1e-6);
@@ -128,7 +128,7 @@ test("a tap carries the samples a synth is writing", { skip: !hasServer }, async
         const stream = await TapStream.open(server, [bus.index], { frames, periodMs: 20 });
         await sleep(300);
         const window = stream.window(bus.index);
-        assert.ok(window, "no /tap_data arrived");
+        assert.ok(window, "no /bus_tapStream.reply arrived");
         assert.ok(window.samples.length > 0);
         assert.ok(window.endPosition > 0, "the window carries its stream position");
 
@@ -154,7 +154,7 @@ test("a tap carries the samples a synth is writing", { skip: !hasServer }, async
 
 test("a generated buffer reads back in chunks, and reduces", { skip: !hasServer }, async () => {
     await withServer(async (server) => {
-        // The buffer is filled by the server (`/b_gen`), since a client has no
+        // The buffer is filled by the server (`/buffer_gen`), since a client has no
         // way to write one: the read direction is the whole of the bulk path.
         const frames = 5000;
         const buffer = await Buffer.alloc(server, frames, 1);

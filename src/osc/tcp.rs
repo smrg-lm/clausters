@@ -62,7 +62,7 @@ pub struct TcpHub {
     conns: HashMap<u64, TcpStream>,
     /// Connection ids whose `Disconnected` went by since the last
     /// [`take_disconnects`](Self::take_disconnects), so the command loop can
-    /// drop per-client state (bus streams, `/notify` registrations).
+    /// drop per-client state (bus streams, `/server_notify` registrations).
     disconnects: Vec<u64>,
     local_addr: SocketAddr,
 }

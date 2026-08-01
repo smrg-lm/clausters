@@ -87,7 +87,7 @@ pub(super) fn parse_osc(
 }
 
 /// Parse a `piano`'s `voice_args` — a flat `[name, value, name, value, …]`
-/// list of extra `/s_new` control pairs (the `bind`-prefix posture: names are
+/// list of extra `/synth_new` control pairs (the `bind`-prefix posture: names are
 /// strings, values numbers). A trailing partial pair is dropped.
 pub(super) fn parse_voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String, f32)> {
     let Some(Value::Array(items)) = props.get("voice_args") else {

@@ -1,4 +1,4 @@
-"""SynthDef: a named UGen graph ready for ``/d_recv`` (port of the ``SynthDef``
+"""SynthDef: a named UGen graph ready for ``/def_send synth`` (port of the ``SynthDef``
 side of ``sc3/synth``, adapted to Clausters' JSON ``SynthDefSpec``).
 
 The UGen-graph counterpart of `FaustDef`: it
@@ -13,7 +13,7 @@ freq = control("freq", 440.0)
 amp = control("amp", 0.2)
 sig = sine(freq) * amp
 sdef = SynthDef("beep", out(0.0, sig), out(1.0, sig))   # stereo
-sdef.send(server)                                # /d_recv
+sdef.send(server)                                # /def_send synth
 ```
 
 **Instance-based build (no globals).** The walk is a plain post-order traversal
@@ -61,7 +61,7 @@ class SynthDef:
         self.outputs = flat
 
     def spec(self) -> dict:
-        """The ``SynthDefSpec`` dict the server's ``/d_recv`` compiles."""
+        """The ``SynthDefSpec`` dict the server's ``/def_send synth`` compiles."""
         ordered: list[Ugen] = []      # UGens in topological order
         wire: dict[int, int] = {}     # id(ugen) -> its index in `ordered`
         controls: list[Control] = []  # controls in first-seen order
@@ -135,14 +135,14 @@ class SynthDef:
         }
 
     def dump_def(self) -> str:
-        """The def serialized to text -- the ``/d_recv`` wire payload, the JSON
+        """The def serialized to text -- the ``/def_send synth`` wire payload, the JSON
         ``SynthDefSpec`` (see `spec`). Useful to inspect the built graph before
         sending it."""
         return json.dumps(self.spec())
 
     def send(self, server=None, *, wait: bool = True,
              timeout: float = 10.0) -> str:
-        """Sends this def to the server via ``/d_recv`` and returns its
+        """Sends this def to the server via ``/def_send synth`` and returns its
         name.
 
         ``wait=True``
@@ -154,7 +154,7 @@ class SynthDef:
         a routine, never block in one). In NRT the send is always *scored* at
         time 0 -- the renderer loads the def before time advances -- so
         ``wait`` does not apply."""
-        return send_def(_resolve(server), "/d_recv", (self.dump_def(),),
+        return send_def(_resolve(server), "synth", (self.dump_def(),),
                         self.name, wait, timeout)
 
     def control_names(self) -> list[str]:

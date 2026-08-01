@@ -23,11 +23,11 @@
 <code>pause_resume.py</code>: <b>a paused node is not a freed one</b>.
 
 <code>node.pause()</code> / <code>node.resume()</code> are the
-<code>/n_run</code> command. A paused node stays in the tree and keeps its
+<code>/node_run</code> command. A paused node stays in the tree and keeps its
 state — silent and free of CPU — and resumes <i>exactly</i> where it left off,
 which is what makes the <code>PAUSE_SELF</code> done action non-terminal: a
 synth parked by its own envelope can be brought back with a
-<code>/n_run 1</code>.
+<code>/node_run 1</code>.
 
 The drone below has no envelope, so it runs until it is paused or freed, and
 its phase is what you hear survive the gap. Query the node tree while it is

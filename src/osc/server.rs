@@ -1,18 +1,18 @@
 //! UDP OSC server implementing the M5 subset of the scsynth protocol:
-//! `/status`, `/quit`, `/notify`, `/dumpOSC`, `/verbosity`, `/s_new` (add actions 0-4),
-//! `/n_free`, `/n_set`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`,
-//! `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`, `/d_free`; the buffer
-//! commands `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`, `/b_zero`,
-//! `/b_free` (all async via the NRT thread, replying `/done cmd bufnum`),
-//! `/b_query` (synchronous `/b_info`), the synchronous reads `/b_get`
-//! (`/b_set`) and `/b_getn` (`/b_setn`), and `/b_export` (dump raw samples to a
-//! local file for the shared-resource bulk path); `/n_go` and
-//! `/n_end` notifications go to `/notify` clients. With the `faust` feature,
-//! `/d_faust name def` compiles a def — JSON box graph (F2) or raw Faust
+//! `/server_status`, `/server_quit`, `/server_notify`, `/server_dumpOsc`, `/server_verbosity`, `/synth_new` (add actions 0-4),
+//! `/node_free`, `/node_set`, `/node_before`, `/node_after`, `/group_new`, `/group_freeAll`,
+//! `/group_deepFree`, `/bus_set`, `/bus_get`, `/def_send synth`, `/def_free`; the buffer
+//! commands `/buffer_alloc`, `/buffer_allocRead`, `/buffer_read`, `/buffer_write`, `/buffer_zero`,
+//! `/buffer_free` (all async via the NRT thread, replying `/done cmd bufnum`),
+//! `/buffer_query` (synchronous `/buffer_query.reply`), the synchronous reads `/buffer_get`
+//! (`/buffer_get.reply`) and `/buffer_getRange` (`/buffer_getRange.reply`), and `/buffer_export` (dump raw samples to a
+//! local file for the shared-resource bulk path); `/node_start` and
+//! `/node_end` notifications go to `/server_notify` clients. With the `faust` feature,
+//! `/def_send faust name def` compiles a def — JSON box graph (F2) or raw Faust
 //! source (F1) — on the dedicated compiler thread and replies
-//! `/done`/`/fail` asynchronously; `/s_new` instantiates Faust defs like any
+//! `/done`/`/fail` asynchronously; `/synth_new` instantiates Faust defs like any
 //! other (F3), with the def's UI parameters plus the reserved `out`/`in` bus
-//! controls as `/n_set` names.
+//! controls as `/node_set` names.
 //!
 //! This runs on the network thread: allocating and doing I/O here is fine.
 //! It owns the [`EngineHandle`] and the SynthDef table: defs are compiled and
@@ -35,7 +35,7 @@ use crate::dsp::ReplyKind;
 use crate::faust::compiler::{CacheJob, CompilePayload, CompileRequest, CompilerThread};
 use crate::osc::ClientId;
 use crate::osc::translate::{
-    CmdTranslator, control_key, float_value, int_arg, parse_b_gen, parse_buffer_msg,
+    CmdTranslator, control_key, float_value, int_arg, parse_buffer_gen, parse_buffer_msg,
 };
 use crate::server::defstore::{self, DefKind, DefStore};
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
@@ -50,27 +50,27 @@ const RECV_BUF_SIZE: usize = 65536;
 /// How long `recv_from` blocks before we take a garbage-collection pass.
 const GC_INTERVAL: Duration = Duration::from_millis(100);
 
-/// Fastest `/c_stream` period a client can ask for (faster requests are
+/// Fastest `/bus_stream` period a client can ask for (faster requests are
 /// clamped, not failed): ~3x the interactive 30 Hz a GUI meter needs, and a
 /// bound on how much reply traffic one client can subscribe to.
 const MIN_STREAM_PERIOD: Duration = Duration::from_millis(10);
 
-/// Most bus indices one `/c_stream` subscription may list: 128 (index, value)
+/// Most bus indices one `/bus_stream` subscription may list: 128 (index, value)
 /// pairs fit comfortably in a single frame on every transport.
 const MAX_STREAM_BUSES: usize = 128;
 
-/// Most tap indices one `/tap_stream` subscription may list — one `/tap_data`
+/// Most tap indices one `/bus_tapStream` subscription may list — one `/bus_tapStream.reply`
 /// blob goes out per tap per period, so this bounds the reply traffic.
 const MAX_STREAM_TAPS: usize = 8;
 
-/// Largest `/tap_stream` window in samples for a **datagram-bounded** client
+/// Largest `/bus_tapStream` window in samples for a **datagram-bounded** client
 /// (UDP, and the 64 KiB IPC reply ring): a 32 KB blob (8192 × `f32`) leaves
 /// room for the OSC envelope. A stream client (TCP/WebSocket) is bounded by
 /// the configurable frame ceiling instead (M25). Every window is also clamped
 /// to half the tap ring, the `tap_read_latest` tear-free bound.
 const MAX_TAP_WINDOW: usize = 8192;
 
-/// Information reported in `/status.reply` that does not come from the
+/// Information reported in `/server_status.reply` that does not come from the
 /// engine counters.
 pub struct ServerInfo {
     pub nominal_sample_rate: f64,
@@ -92,18 +92,18 @@ pub struct OscServer {
     /// Def tables, node→def mirror and message→command translation, shared
     /// with the NRT renderer (see [`crate::osc::translate`]).
     /// Owns the network-side buffer mirror (`translator.buffers`), updated
-    /// when NRT results are installed: serves `/b_query` and gives `/b_read`,
-    /// `/b_write` and `/b_zero` the current contents/shape, and a Faust
+    /// when NRT results are installed: serves `/buffer_query` and gives `/buffer_read`,
+    /// `/buffer_write` and `/buffer_zero` the current contents/shape, and a Faust
     /// instance its `soundfile` data.
     translator: CmdTranslator,
     nrt: NrtRunner,
-    /// Clients registered via `/notify 1`; the client ID is index + 1.
+    /// Clients registered via `/server_notify 1`; the client ID is index + 1.
     clients: Vec<ClientId>,
-    /// Active `/c_stream` subscriptions, at most one per client: the network
+    /// Active `/bus_stream` subscriptions, at most one per client: the network
     /// counterpart of the shared-memory control-bus segment, for clients (a
     /// browser) that cannot map it. Pumped by the run loop.
     streams: Vec<BusStream>,
-    /// Active `/tap_stream` subscriptions, at most one per client: the same
+    /// Active `/bus_tapStream` subscriptions, at most one per client: the same
     /// network counterpart for the audio-tap rings. Pumped by the run loop.
     tap_streams: Vec<TapStream>,
     /// Which audio bus each tap ring is recording (`-1` = free), and how many
@@ -134,32 +134,32 @@ pub struct OscServer {
     #[cfg(feature = "midi")]
     midi: Option<crate::midi::live::MidiHub>,
     /// On-disk def persistence, when a data directory is configured. Defs
-    /// loaded from it on startup; `/d_recv`/`/d_faust` write to it,
-    /// `/d_free` deletes from it.
+    /// loaded from it on startup; `/def_send` write to it,
+    /// `/def_free` deletes from it.
     store: Option<DefStore>,
     /// The compiler thread is owned here and dies with the server.
     #[cfg(feature = "faust")]
     faust_compiler: CompilerThread,
-    /// `/sync` barrier bookkeeping. Each async pipeline (NRT buffers, Faust
+    /// `/server_sync` barrier bookkeeping. Each async pipeline (NRT buffers, Faust
     /// compiles) completes FIFO on its own thread, so a monotonic
-    /// submitted/drained counter per pipeline is enough: a `/sync` records the
-    /// current submitted counts as its targets and is answered with `/synced`
-    /// once both drained counts have caught up. See [`Self::handle_sync`].
+    /// submitted/drained counter per pipeline is enough: a `/server_sync` records the
+    /// current submitted counts as its targets and is answered with `/server_sync.reply`
+    /// once both drained counts have caught up. See [`Self::handle_server_sync`].
     nrt_submitted: u64,
     nrt_drained: u64,
     faust_submitted: u64,
     faust_drained: u64,
     pending_syncs: Vec<PendingSync>,
-    /// The shared beat grid (`/transport`), once a client defines one.
+    /// The shared beat grid (`/transport_set`), once a client defines one.
     transport: Option<Transport>,
-    /// `/error` mode: post command failures to the server console. The `/fail`
+    /// `/server_errorMode` mode: post command failures to the server console. The `/fail`
     /// OSC reply is always sent; this only gates the console logging. On by
     /// default (matches scsynth's default error-posting).
     post_errors: bool,
     /// Frame ceiling for the stream transports (TCP/WebSocket), in bytes
     /// (`--max-frame`, default [`crate::osc::DEFAULT_MAX_FRAME`]). Bounds what
-    /// the hubs accept and what transport-aware replies (the `/tap_stream`
-    /// window) may grow to; advertised in `/server_info.reply` so clients size
+    /// the hubs accept and what transport-aware replies (the `/bus_tapStream`
+    /// window) may grow to; advertised in `/server_query.reply` so clients size
     /// their requests from it. UDP keeps the datagram cap regardless.
     max_frame: usize,
     /// Ceiling for concurrent stream clients, TCP + WebSocket combined
@@ -186,8 +186,8 @@ struct Transport {
     position: f64,
 }
 
-/// One client's `/c_stream` subscription: which control buses it watches and
-/// when its next `/c_set` snapshot is due.
+/// One client's `/bus_stream` subscription: which control buses it watches and
+/// when its next `/bus_set` snapshot is due.
 struct BusStream {
     client: ClientId,
     period: Duration,
@@ -196,21 +196,21 @@ struct BusStream {
     next_due: f64,
 }
 
-/// One client's `/tap_stream` subscription: which audio taps it watches, the
-/// window size of each `/tap_data` snapshot, and when the next one is due.
+/// One client's `/bus_tapStream` subscription: which audio taps it watches, the
+/// window size of each `/bus_tapStream.reply` snapshot, and when the next one is due.
 struct TapStream {
     client: ClientId,
     period: Duration,
     /// Snapshot window in samples (≤ [`MAX_TAP_WINDOW`], ≤ half the tap ring).
     frames: usize,
     /// The audio buses this subscription watches. It holds a watch on each for
-    /// its lifetime, so a streaming client never issues `/tap` itself.
+    /// its lifetime, so a streaming client never issues `/bus_tap` itself.
     buses: Vec<i32>,
     /// In [`OscServer::mono_secs`] seconds (wall or sample time).
     next_due: f64,
 }
 
-/// A `/sync` waiting for the async pipelines to drain up to its targets.
+/// A `/server_sync` waiting for the async pipelines to drain up to its targets.
 struct PendingSync {
     client: ClientId,
     id: i32,
@@ -355,7 +355,7 @@ impl OscServer {
         }
     }
 
-    /// Unix seconds for NTP timetag conversion (`/clock.reply`, bundle
+    /// Unix seconds for NTP timetag conversion (`/clock_query.reply`, bundle
     /// scheduling): the system wall clock natively; in the headless mode the
     /// sample axis anchored at `unix_epoch`, so the advertised clock anchor
     /// and incoming timetags stay mutually consistent.
@@ -375,7 +375,7 @@ impl OscServer {
     /// stream snapshots, collect garbage and async results. The headless
     /// counterpart of one [`Self::run`] turn — call it before each
     /// `process_block` (or at any convenient cadence). Returns `true` once a
-    /// `/quit` has arrived.
+    /// `/server_quit` has arrived.
     pub fn step(&mut self) -> bool {
         if let Flow::Quit = self.drain_ring() {
             return true;
@@ -605,7 +605,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// Blocks serving requests until a `/quit` arrives. Requires the UDP
+    /// Blocks serving requests until a `/server_quit` arrives. Requires the UDP
     /// front ([`Self::bind`]); a headless server is driven by [`Self::step`].
     pub fn run(&mut self) -> io::Result<()> {
         self.udp()?;
@@ -772,7 +772,7 @@ impl OscServer {
     /// M17: translates every queued live-MIDI message into engine commands and
     /// ships them. Each message is self-contained (one note/control event), so
     /// it is realized like the immediate OSC forms: `translate_midi` (which
-    /// reuses the `/s_new`/`/n_set`/`/n_free` path and keeps the tree mirror in
+    /// reuses the `/synth_new`/`/node_set`/`/node_free` path and keeps the tree mirror in
     /// sync), then ship the batch. MIDI never quits the server.
     #[cfg(feature = "midi")]
     fn drain_midi(&mut self) {
@@ -814,14 +814,15 @@ impl OscServer {
                             client,
                             "/done",
                             vec![
-                                OscType::String("/d_faust".into()),
+                                OscType::String("/def_send".into()),
+                                OscType::String("faust".into()),
                                 OscType::String(result.name),
                             ],
                         );
                     }
                 }
                 Err(error) => match result.client {
-                    Some(client) => self.fail(client, "/d_faust", error),
+                    Some(client) => self.fail(client, "/def_send", error),
                     None => warn!("persisted Faust def '{}' failed: {error}", result.name),
                 },
             }
@@ -829,19 +830,19 @@ impl OscServer {
         self.resolve_syncs();
     }
 
-    /// `/d_faust name def`: queue an async Faust compilation. The def format
-    /// is sniffed by [`CompilePayload::classify`]: raw Faust source (F1), a
-    /// JSON box graph (F2, `faust::boxes`), or a JSON signal tree
+    /// `/def_send faust <name> <def>`: queue an async Faust compilation. The def
+    /// format is sniffed by [`CompilePayload::classify`]: raw Faust source (F1),
+    /// a JSON box graph (F2, `faust::boxes`), or a JSON signal tree
     /// (`faust::signals`, root `{"signals": …}`).
     #[cfg(feature = "faust")]
-    fn handle_d_faust(&mut self, msg: &OscMessage, from: ClientId) {
-        let (name, def) = match crate::osc::translate::parse_d_faust(&msg.args) {
+    fn handle_def_send_faust(&mut self, args: &[OscType], from: ClientId) {
+        let (name, def) = match crate::osc::translate::parse_def_send_faust(args) {
             Ok(pair) => pair,
-            Err(e) => return self.fail(from, "/d_faust", e),
+            Err(e) => return self.fail(from, "/def_send", e),
         };
         let payload = CompilePayload::classify(def);
         self.claim_def_name(&name, DefKind::Faust);
-        // A live /d_faust always compiles fresh from the given def and, with
+        // A live faust /def_send always compiles fresh from the given def and, with
         // persistence on, (re)writes the cache (restore = None). An ephemeral
         // def never reaches the store: its bitcode speed-cache goes to the OS
         // temp directory instead, so replaying the same expression still skips
@@ -866,26 +867,26 @@ impl OscServer {
             cache,
         };
         if self.faust_compiler.submit(request).is_err() {
-            self.fail(from, "/d_faust", "compiler thread is down");
+            self.fail(from, "/def_send", "compiler thread is down");
         } else {
             self.faust_submitted += 1;
         }
     }
 
     #[cfg(not(feature = "faust"))]
-    fn handle_d_faust(&mut self, _msg: &OscMessage, from: ClientId) {
-        self.fail(from, "/d_faust", "server built without faust support");
+    fn handle_def_send_faust(&mut self, _args: &[OscType], from: ClientId) {
+        self.fail(from, "/def_send", "server built without faust support");
     }
 
-    /// `/sync id`: the async barrier (scsynth semantics). Records the current
-    /// submitted counts as targets and is answered with `/synced id` once both
+    /// `/server_sync id`: the async barrier (scsynth semantics). Records the current
+    /// submitted counts as targets and is answered with `/server_sync.reply id` once both
     /// async pipelines (NRT buffers, Faust compiles) have drained up to them —
-    /// i.e. every async command received before this `/sync` has finished.
+    /// i.e. every async command received before this `/server_sync` has finished.
     /// Each pipeline completes FIFO, so the counters are a sufficient barrier.
-    fn handle_sync(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_server_sync(&mut self, msg: &OscMessage, from: ClientId) {
         let id = match msg.args.first() {
             Some(OscType::Int(id)) => *id,
-            _ => return self.fail(from, "/sync", "expected an int id"),
+            _ => return self.fail(from, "/server_sync", "expected an int id"),
         };
         self.pending_syncs.push(PendingSync {
             client: from,
@@ -896,8 +897,8 @@ impl OscServer {
         self.resolve_syncs(); // answer at once if nothing is outstanding
     }
 
-    /// Answers every pending `/sync` whose target counts have been reached.
-    /// Called after each async drain (and from [`Self::handle_sync`]).
+    /// Answers every pending `/server_sync` whose target counts have been reached.
+    /// Called after each async drain (and from [`Self::handle_server_sync`]).
     fn resolve_syncs(&mut self) {
         if self.pending_syncs.is_empty() {
             return;
@@ -912,12 +913,12 @@ impl OscServer {
             !done
         });
         for (client, id) in ready {
-            self.reply(client, "/synced", vec![OscType::Int(id)]);
+            self.reply(client, "/server_sync.reply", vec![OscType::Int(id)]);
         }
     }
 
     /// Drops what the audio thread discarded, keeps the def mirror in sync
-    /// and forwards node lifecycle events to `/notify` clients.
+    /// and forwards node lifecycle events to `/server_notify` clients.
     fn collect_garbage(&mut self) {
         while let Some(g) = self.handle.pop_garbage() {
             match g {
@@ -936,14 +937,14 @@ impl OscServer {
                     // Don't touch the mirror: on a duplicate-ID rejection the
                     // original node is still alive under this ID. The rejected
                     // id never became a node — return it to its registry, and
-                    // tell the `/notify` clients (the rejection is async, so
+                    // tell the `/server_notify` clients (the rejection is async, so
                     // there is no requester to reply to): a client registry
                     // reconciles its in-flight id off this `/fail`, since no
-                    // `/n_end` will ever come for it.
+                    // `/node_end` will ever come for it.
                     self.translator.release_node_id(id);
                     warn!("engine rejected node {id} (duplicate ID, bad target or full table)");
                     let args = vec![
-                        OscType::String("/s_new".into()),
+                        OscType::String("/synth_new".into()),
                         OscType::String(format!(
                             "engine rejected node {id}: duplicate ID, bad target or full table"
                         )),
@@ -957,12 +958,12 @@ impl OscServer {
         }
         while let Some(ev) = self.handle.pop_event() {
             let addr = match ev.kind {
-                NodeEventKind::Go => "/n_go",
-                NodeEventKind::End => "/n_end",
+                NodeEventKind::Go => "/node_start",
+                NodeEventKind::End => "/node_end",
             };
             // A death returns the id to whichever server-owned range it came
             // from (auto, MIDI); client-range ids recycle client-side off the
-            // same `/n_end` broadcast below.
+            // same `/node_end` broadcast below.
             if ev.kind == NodeEventKind::End {
                 self.translator.release_node_id(ev.id);
             }
@@ -979,9 +980,9 @@ impl OscServer {
                 self.reply(*client, addr, args.clone());
             }
         }
-        // Side-effect replies (S9): `SendTrig`/`SendReply` reply to `/notify`
+        // Side-effect replies (S9): `SendTrig`/`SendReply` reply to `/server_notify`
         // clients; `Poll` posts to the server console and, when its trigid is
-        // set, also sends `/tr`.
+        // set, also sends `/node_trigger`.
         while let Some(msg) = self.handle.pop_reply() {
             match msg.kind {
                 ReplyKind::Trig => {
@@ -1008,7 +1009,7 @@ impl OscServer {
         }
     }
 
-    /// Sends `/tr nodeID triggerID value` to every `/notify` client (the shape
+    /// Sends `/node_trigger nodeID triggerID value` to every `/server_notify` client (the shape
     /// `SendTrig` and a `Poll` with a trigid produce).
     fn notify_trigger(&self, node_id: i32, trig_id: i32, value: f32) {
         let args = vec![
@@ -1017,7 +1018,7 @@ impl OscServer {
             OscType::Float(value),
         ];
         for client in &self.clients {
-            self.reply(*client, "/tr", args.clone());
+            self.reply(*client, "/node_trigger", args.clone());
         }
     }
 
@@ -1091,73 +1092,88 @@ impl OscServer {
     fn handle_message(&mut self, msg: OscMessage, from: ClientId) -> Flow {
         tracing::trace!(target: crate::logging::OSC_TARGET, "{} {:?}", msg.addr, msg.args);
         match msg.addr.as_str() {
-            "/status" => self.send_status(from),
-            "/server_info" => self.send_server_info(from),
-            "/notify" => self.handle_notify(&msg, from),
+            "/server_status" => self.send_server_status(from),
+            "/server_query" => self.send_server_query(from),
+            "/server_notify" => self.handle_server_notify(&msg, from),
             // The translator covers the whole schedulable subset (and keeps
             // the M12 tree mirror in sync), so the immediate forms share one
             // path: translate, then ship every command.
-            "/s_new" | "/g_new" | "/g_freeAll" | "/g_deepFree" | "/n_free" | "/n_run"
-            | "/n_set" | "/n_setn" | "/n_fill" | "/n_map" | "/n_mapa" | "/n_mapn" | "/n_mapan"
-            | "/n_before" | "/n_after" | "/n_order" | "/g_head" | "/g_tail" | "/g_sortMode"
-            | "/g_parallel" | "/graph_new" | "/graph_voice" => {
-                self.handle_via_translate(&msg, from)
-            }
-            "/n_trace" => self.handle_n_trace(&msg, from),
+            "/synth_new"
+            | "/group_new"
+            | "/group_freeAll"
+            | "/group_deepFree"
+            | "/node_free"
+            | "/node_run"
+            | "/node_set"
+            | "/node_setRange"
+            | "/node_fill"
+            | "/node_map"
+            | "/node_mapAudio"
+            | "/node_mapRange"
+            | "/node_mapAudioRange"
+            | "/node_before"
+            | "/node_after"
+            | "/node_order"
+            | "/group_head"
+            | "/group_tail"
+            | "/group_sortMode"
+            | "/group_parallel"
+            | "/graph_new"
+            | "/graph_newVoice" => self.handle_via_translate(&msg, from),
+            "/node_trace" => self.handle_node_trace(&msg, from),
             // MIDI binding mutations also persist the binding set (M19).
             "/midi_bind" | "/midi_unbind" | "/midi_map" => {
                 self.handle_via_translate(&msg, from);
                 self.persist_bindings();
             }
-            "/g_queryTree" => self.handle_g_query_tree(&msg, from),
-            "/n_query" => self.handle_n_query(&msg, from),
-            "/g_dumpGraph" => self.handle_g_dump_graph(&msg, from),
-            "/c_set" => self.handle_c_set(&msg, from),
-            "/c_get" => self.handle_c_get(&msg, from),
-            "/c_setn" => self.handle_c_setn(&msg, from),
-            "/c_getn" => self.handle_c_getn(&msg, from),
-            "/c_fill" => self.handle_c_fill(&msg, from),
-            "/c_stream" => self.handle_c_stream(&msg, from),
-            "/tap" => self.handle_tap(&msg, from),
-            "/tap_stream" => self.handle_tap_stream(&msg, from),
-            "/s_get" => self.handle_s_get(&msg, from, false),
-            "/s_getn" => self.handle_s_get(&msg, from, true),
-            "/s_noid" => self.handle_s_noid(&msg, from),
-            "/b_close" => self.handle_b_close(&msg, from),
-            "/d_load" => self.handle_d_load(&msg, from),
-            "/d_loadDir" => self.handle_d_load_dir(&msg, from),
-            "/clearSched" => self.handle_clear_sched(from),
-            "/error" => self.handle_error(&msg, from),
-            "/cmd" => self.handle_cmd(&msg, from),
-            "/u_cmd" => self.handle_via_translate(&msg, from),
-            "/clock" => self.handle_clock(from),
-            "/sched" => self.handle_sched(&msg, from),
-            "/b_alloc" => self.handle_b_cmd(&msg, from, "/b_alloc"),
-            "/b_allocRead" => self.handle_b_cmd(&msg, from, "/b_allocRead"),
-            "/b_read" => self.handle_b_cmd(&msg, from, "/b_read"),
-            "/b_write" => self.handle_b_cmd(&msg, from, "/b_write"),
-            "/b_zero" => self.handle_b_cmd(&msg, from, "/b_zero"),
-            "/b_gen" => self.handle_b_gen(&msg, from),
-            "/b_free" => self.handle_b_cmd(&msg, from, "/b_free"),
-            "/b_query" => self.handle_b_query(&msg, from),
-            "/d_query" => self.handle_d_query(&msg, from),
-            "/u_query" => self.handle_u_query(&msg, from),
-            "/b_get" => self.handle_b_get(&msg, from),
-            "/b_getn" => self.handle_b_getn(&msg, from),
-            "/b_export" => self.handle_b_export(&msg, from),
-            "/sync" => self.handle_sync(&msg, from),
-            "/d_recv" => self.handle_d_recv(&msg, from),
-            "/d_faust" => self.handle_d_faust(&msg, from),
-            "/d_graph" => self.handle_d_graph(&msg, from),
-            "/d_free" => self.handle_d_free(&msg, from),
-            "/dumpOSC" => self.handle_dump_osc(&msg, from),
-            "/verbosity" => self.handle_verbosity(&msg, from),
-            "/transport" => self.handle_transport(&msg, from),
+            "/group_queryTree" => self.handle_group_query_tree(&msg, from),
+            "/node_query" => self.handle_node_query(&msg, from),
+            "/group_dumpGraph" => self.handle_group_dump_graph(&msg, from),
+            "/bus_set" => self.handle_bus_set(&msg, from),
+            "/bus_get" => self.handle_bus_get(&msg, from),
+            "/bus_setRange" => self.handle_bus_set_range(&msg, from),
+            "/bus_getRange" => self.handle_bus_get_range(&msg, from),
+            "/bus_fill" => self.handle_bus_fill(&msg, from),
+            "/bus_stream" => self.handle_bus_stream(&msg, from),
+            "/bus_tap" => self.handle_bus_tap(&msg, from),
+            "/bus_tapStream" => self.handle_bus_tap_stream(&msg, from),
+            "/synth_get" => self.handle_synth_get(&msg, from, false),
+            "/synth_getRange" => self.handle_synth_get(&msg, from, true),
+            "/synth_forgetId" => self.handle_synth_forget_id(&msg, from),
+            "/buffer_close" => self.handle_buffer_close(&msg, from),
+            "/def_load" => self.handle_def_load(&msg, from),
+            "/def_loadDir" => self.handle_def_load_dir(&msg, from),
+            "/sched_clear" => self.handle_sched_clear(from),
+            "/server_errorMode" => self.handle_server_error_mode(&msg, from),
+            "/server_cmd" => self.handle_server_cmd(&msg, from),
+            "/node_ugenCmd" => self.handle_via_translate(&msg, from),
+            "/clock_query" => self.handle_clock_query(from),
+            "/sched_at" => self.handle_sched_at(&msg, from),
+            "/buffer_alloc" => self.handle_buffer_cmd(&msg, from, "/buffer_alloc"),
+            "/buffer_allocRead" => self.handle_buffer_cmd(&msg, from, "/buffer_allocRead"),
+            "/buffer_read" => self.handle_buffer_cmd(&msg, from, "/buffer_read"),
+            "/buffer_write" => self.handle_buffer_cmd(&msg, from, "/buffer_write"),
+            "/buffer_zero" => self.handle_buffer_cmd(&msg, from, "/buffer_zero"),
+            "/buffer_gen" => self.handle_buffer_gen(&msg, from),
+            "/buffer_free" => self.handle_buffer_cmd(&msg, from, "/buffer_free"),
+            "/buffer_query" => self.handle_buffer_query(&msg, from),
+            "/def_query" => self.handle_def_query(&msg, from),
+            "/ugen_query" => self.handle_ugen_query(&msg, from),
+            "/buffer_get" => self.handle_buffer_get(&msg, from),
+            "/buffer_getRange" => self.handle_buffer_get_range(&msg, from),
+            "/buffer_export" => self.handle_buffer_export(&msg, from),
+            "/server_sync" => self.handle_server_sync(&msg, from),
+            "/def_send" => self.handle_def_send(&msg, from),
+            "/def_free" => self.handle_def_free(&msg, from),
+            "/server_dumpOsc" => self.handle_server_dump_osc(&msg, from),
+            "/server_verbosity" => self.handle_server_verbosity(&msg, from),
+            "/transport_query" => self.handle_transport_query(from),
+            "/transport_set" => self.handle_transport(&msg, from),
             "/transport_play" => self.handle_transport_play(&msg, from),
             "/transport_stop" => self.handle_transport_stop(from),
             "/transport_locate" => self.handle_transport_locate(&msg, from),
-            "/quit" => {
-                self.reply(from, "/done", vec![OscType::String("/quit".into())]);
+            "/server_quit" => {
+                self.reply(from, "/done", vec![OscType::String("/server_quit".into())]);
                 return Flow::Quit;
             }
             other => self.fail(from, other, "unknown command"),
@@ -1165,36 +1181,44 @@ impl OscServer {
         Flow::Continue
     }
 
-    /// `/dumpOSC flag`: toggles the OSC-traffic log overlay (the `clausters::osc`
+    /// `/server_dumpOsc flag`: toggles the OSC-traffic log overlay (the `clausters::osc`
     /// trace target). Unlike scsynth's console dump, this routes through the
-    /// logging system the client also controls with `/verbosity`; output is on
+    /// logging system the client also controls with `/server_verbosity`; output is on
     /// the server's stderr. Replies `/done`.
-    fn handle_dump_osc(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_server_dump_osc(&mut self, msg: &OscMessage, from: ClientId) {
         let on = matches!(msg.args.first(), Some(OscType::Int(n)) if *n != 0);
         match crate::logging::set_osc_dump(on) {
-            Ok(()) => self.reply(from, "/done", vec![OscType::String("/dumpOSC".into())]),
-            Err(e) => self.fail(from, "/dumpOSC", e),
+            Ok(()) => self.reply(
+                from,
+                "/done",
+                vec![OscType::String("/server_dumpOsc".into())],
+            ),
+            Err(e) => self.fail(from, "/server_dumpOsc", e),
         }
     }
 
-    /// `/verbosity level`: the client retunes the server's log level live.
+    /// `/server_verbosity level`: the client retunes the server's log level live.
     /// `level` is an int (`-1` errors, `0` warn, `1` info, `2` debug, `3+`
     /// trace) or a string `EnvFilter` directive (e.g. `"clausters::osc=trace"`).
     /// Replies `/done`. (Uncommon, but it lets a client steer server logs
     /// without restarting; the initial level comes from `-v`/`RUST_LOG`.)
-    fn handle_verbosity(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_server_verbosity(&mut self, msg: &OscMessage, from: ClientId) {
         let result = match msg.args.first() {
             Some(OscType::Int(n)) => crate::logging::set_verbosity(*n as i8),
             Some(OscType::String(s)) => crate::logging::set_base(s),
             _ => Err("expected an int level or a string filter directive".to_string()),
         };
         match result {
-            Ok(()) => self.reply(from, "/done", vec![OscType::String("/verbosity".into())]),
-            Err(e) => self.fail(from, "/verbosity", e),
+            Ok(()) => self.reply(
+                from,
+                "/done",
+                vec![OscType::String("/server_verbosity".into())],
+            ),
+            Err(e) => self.fail(from, "/server_verbosity", e),
         }
     }
 
-    fn send_status(&mut self, to: ClientId) {
+    fn send_server_status(&mut self, to: ClientId) {
         let counters = self.handle.counters();
         let num_defs = self.translator.def_count();
         // avg/peak CPU are the engine's per-block load as a *percentage* of
@@ -1214,20 +1238,20 @@ impl OscServer {
             OscType::Double(self.info.actual_sample_rate),
             OscType::Int(counters.late_blocks() as i32),
         ];
-        self.reply(to, "/status.reply", args);
+        self.reply(to, "/server_status.reply", args);
     }
 
     /// Reports the server's static configuration so a client can size its own
     /// bus/allocator state from the server instead of hardcoding it:
-    /// `/server_info.reply [audio_buses, control_buses, output_channels,
+    /// `/server_query.reply [audio_buses, control_buses, output_channels,
     /// block_size, nominal_sr, actual_sr, input_channels, max_nodes,
     /// max_buffers, max_graph_children, max_ugen_inputs, taps, tap_frames,
     /// max_frame]`. The first six fields are stable; the boot-time capacities
     /// (S7), the tap region shape and the stream-transport frame ceiling
-    /// (M25 — what a client should size bulk requests like `/b_getn` chunks
+    /// (M25 — what a client should size bulk requests like `/buffer_getRange` chunks
     /// from) are appended so older clients that read only the six keep
     /// working.
-    fn send_server_info(&mut self, to: ClientId) {
+    fn send_server_query(&mut self, to: ClientId) {
         let limits = self.handle.limits;
         let (taps, tap_frames) = self
             .handle
@@ -1249,20 +1273,20 @@ impl OscServer {
             OscType::Int(tap_frames as i32),
             OscType::Int(self.max_frame.min(i32::MAX as usize) as i32),
         ];
-        self.reply(to, "/server_info.reply", args);
+        self.reply(to, "/server_query.reply", args);
     }
 
-    /// M8: the sample-clock query. Replies `/clock.reply` with the engine's
+    /// M8: the sample-clock query. Replies `/clock_query.reply` with the engine's
     /// sample counter (int64 `h`), the actual sample rate (double `d`) and the
     /// server's OSC/NTP time captured with the counter (timetag `t`). The
     /// `(osc_time, sample)` pair is the master-clock **anchor**: a client maps
     /// its logical OSC time `T` to this server's sample axis with
-    /// `S0 + (T − T0)·rate` and schedules with [`/sched`] (`Self::handle_sched`)
+    /// `S0 + (T − T0)·rate` and schedules with [`/sched_at`] (`Self::handle_sched_at`)
     /// directly in samples — see `docs/sample-clock.md`. Clients that only want
     /// the older two-field form ignore the trailing timetag. The counter counts
     /// *processed* samples: it runs a device buffer ahead of the speakers and
     /// pauses on xruns.
-    fn handle_clock(&mut self, from: ClientId) {
+    fn handle_clock_query(&mut self, from: ClientId) {
         // Read the counter and the wall clock back-to-back so the published
         // anchor pairs the same instant (the sub-microsecond gap is negligible).
         let sample = self.handle.current_samples();
@@ -1271,10 +1295,10 @@ impl OscServer {
             OscType::Double(self.info.actual_sample_rate),
             OscType::Time(self.now_ntp()),
         ];
-        self.reply(from, "/clock.reply", args);
+        self.reply(from, "/clock_query.reply", args);
     }
 
-    /// The `/transport.reply` payload: the grid plus the rolling state,
+    /// The `/transport_query.reply` payload: the grid plus the rolling state,
     /// `(origin_sample:int64, tempo:double, defined:int32, playing:int32,
     /// position:double)`. The first three fields are the original M22 grid reply
     /// (older clients read just those); `playing`/`position` are appended.
@@ -1292,42 +1316,44 @@ impl OscServer {
         ]
     }
 
-    /// Pushes the current transport state to every `/notify` client, so a
-    /// responder on `/transport.reply` re-aligns or rolls its playhead live when
+    /// Pushes the current transport state to every `/server_notify` client, so a
+    /// responder on `/transport_query.reply` re-aligns or rolls its playhead live when
     /// the conductor changes the grid, plays, stops or locates — no polling.
     fn broadcast_transport(&self) {
         let push = self.transport_reply_args();
         for client in &self.clients {
-            self.reply(*client, "/transport.reply", push.clone());
+            self.reply(*client, "/transport_query.reply", push.clone());
         }
     }
 
-    /// `/transport` — the shared beat grid for phase-aligning several clients on
-    /// the master sample clock. **No args queries** it; replies
-    /// `/transport.reply (origin_sample:int64, tempo:double, defined:int32,
-    /// playing:int32, position:double)`, all zeros (and `defined` 0) when none is
-    /// set. Two args `(origin_sample:int64, tempo:double)` **set** the grid (last
-    /// writer wins), stopped at position 0, and reply `/done`. The grid is `beat
-    /// b -> sample origin_sample + b·rate/tempo`; a client joins by reading it
-    /// and quantizing its start onto it. The server only stores/broadcasts it —
-    /// in-memory (resets on restart), never scheduling audio from it.
+    /// `/transport_query` — reads the shared beat grid plus the rolling state.
+    /// Replies `/transport_query.reply (origin_sample:int64, tempo:double,
+    /// defined:int32, playing:int32, position:double)`, all zeros (and `defined`
+    /// 0) when no grid is set.
+    fn handle_transport_query(&mut self, from: ClientId) {
+        let args = self.transport_reply_args();
+        self.reply(from, "/transport_query.reply", args);
+    }
+
+    /// `/transport_set <origin_sample:int64> <tempo:double>` — sets the shared
+    /// beat grid for phase-aligning several clients on the master sample clock
+    /// (last writer wins), stopped at position 0, and replies `/done`. The grid
+    /// is `beat b -> sample origin_sample + b·rate/tempo`; a client joins by
+    /// reading it with [`Self::handle_transport_query`] and quantizing its start
+    /// onto it. The server only stores/broadcasts it — in-memory (resets on
+    /// restart), never scheduling audio from it.
     ///
     /// The rolling state (play/stop/locate) rides on top: see
     /// [`Self::handle_transport_play`]. Any change is **pushed** to every
-    /// `/notify` client (the C13 responder path).
+    /// `/server_notify` client (the C13 responder path).
     fn handle_transport(&mut self, msg: &OscMessage, from: ClientId) {
-        if msg.args.is_empty() {
-            let args = self.transport_reply_args();
-            self.reply(from, "/transport.reply", args);
-            return;
-        }
         let origin = match msg.args.first() {
             Some(OscType::Long(v)) => *v,
             Some(OscType::Int(v)) => *v as i64,
             _ => {
                 return self.fail(
                     from,
-                    "/transport",
+                    "/transport_set",
                     "expected (int64 originSample, double tempo)",
                 );
             }
@@ -1338,7 +1364,7 @@ impl OscServer {
             _ => {
                 return self.fail(
                     from,
-                    "/transport",
+                    "/transport_set",
                     "expected (int64 originSample, double tempo)",
                 );
             }
@@ -1346,7 +1372,7 @@ impl OscServer {
         if origin < 0 || tempo.is_nan() || tempo <= 0.0 {
             return self.fail(
                 from,
-                "/transport",
+                "/transport_set",
                 "originSample must be >= 0 and tempo > 0",
             );
         }
@@ -1357,7 +1383,11 @@ impl OscServer {
             playing: false,
             position: 0.0,
         });
-        self.reply(from, "/done", vec![OscType::String("/transport".into())]);
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/transport_set".into())],
+        );
         self.broadcast_transport();
     }
 
@@ -1365,7 +1395,7 @@ impl OscServer {
     /// `position` argument, playback starts from that song-position beat;
     /// without one, from where it last stopped/located. Every client's playhead
     /// obeys the broadcast (starting from `position`, quantized to the shared
-    /// grid). Needs a grid defined first (`/transport`).
+    /// grid). Needs a grid defined first (`/transport_set`).
     fn handle_transport_play(&mut self, msg: &OscMessage, from: ClientId) {
         let Some(mut t) = self.transport else {
             return self.fail(from, "/transport_play", "no transport defined");
@@ -1424,32 +1454,42 @@ impl OscServer {
         self.broadcast_transport();
     }
 
-    /// M8: `/sched <int64 target> <blob packet>` — a timed bundle whose time
+    /// M8: `/sched_at <int64 target> <blob packet>` — a timed bundle whose time
     /// is an absolute position on the **sample clock** instead of an NTP
     /// timetag (the OSC timetag format is NTP by spec, so sample targets get
     /// a container message rather than a reinterpreted tag; both front-ends
     /// feed the same engine queue and coexist freely). The blob is a complete
     /// OSC packet; all its leaf messages execute atomically at the target
     /// sample — nested bundle timetags inside the blob are **ignored**, one
-    /// `/sched` is one instant. Past targets run at the start of the next
+    /// `/sched_at` is one instant. Past targets run at the start of the next
     /// block, like late NTP bundles.
-    fn handle_sched(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_sched_at(&mut self, msg: &OscMessage, from: ClientId) {
         let target = match msg.args.first() {
             Some(OscType::Long(t)) => *t,
             // Tolerated for hand-written clients; real targets outgrow i32
             // in under 13 hours at 48 kHz.
             Some(OscType::Int(t)) => *t as i64,
-            _ => return self.fail(from, "/sched", "expected (int64 sampleTarget, blob packet)"),
+            _ => {
+                return self.fail(
+                    from,
+                    "/sched_at",
+                    "expected (int64 sampleTarget, blob packet)",
+                );
+            }
         };
         if target < 0 {
-            return self.fail(from, "/sched", "sample target must be >= 0");
+            return self.fail(from, "/sched_at", "sample target must be >= 0");
         }
         let Some(OscType::Blob(blob)) = msg.args.get(1) else {
-            return self.fail(from, "/sched", "expected (int64 sampleTarget, blob packet)");
+            return self.fail(
+                from,
+                "/sched_at",
+                "expected (int64 sampleTarget, blob packet)",
+            );
         };
         let packet = match crate::osc::decode_packet(blob) {
             Ok(packet) => packet,
-            Err(e) => return self.fail(from, "/sched", format!("bad packet blob: {e}")),
+            Err(e) => return self.fail(from, "/sched_at", format!("bad packet blob: {e}")),
         };
         let mut cmds = Vec::new();
         self.sched_leaves(&packet, target, &mut cmds, from);
@@ -1462,11 +1502,11 @@ impl OscServer {
                 })
                 .is_err()
         {
-            self.fail(from, "/sched", "command FIFO full");
+            self.fail(from, "/sched_at", "command FIFO full");
         }
     }
 
-    /// Translates every leaf message of a `/sched` blob, like
+    /// Translates every leaf message of a `/sched_at` blob, like
     /// [`Self::schedule_bundle`] does for NTP bundles: bad messages reply
     /// `/fail` individually, the rest still fire.
     fn sched_leaves(
@@ -1497,7 +1537,7 @@ impl OscServer {
     /// A name identifies **one** def: sending a def under a name another kind
     /// holds replaces it, last one wins. Without this the two entries coexist
     /// and lookup order decides which answers, which is silently wrong
-    /// everywhere the name is resolved — instancing, `/d_query`, and the bus
+    /// everywhere the name is resolved — instancing, `/def_query`, and the bus
     /// usage the parallel scheduler reads.
     ///
     /// For a Faust def this runs at **submit** time, before the compile
@@ -1521,45 +1561,86 @@ impl OscServer {
         }
     }
 
-    fn handle_d_recv(&mut self, msg: &OscMessage, from: ClientId) {
-        match self.translator.d_recv(&msg.args) {
+    /// `/def_send <family> <payload…>` — sends a def of any family: `"synth"`
+    /// (one `SynthDefSpec` JSON blob), `"faust"` (a name and a def payload) or
+    /// `"graph"` (one `GraphDefSpec` JSON blob). The family is a wire argument
+    /// rather than three commands because it is already a datum of a def — it
+    /// is what [`Self::handle_def_query`] reports back under the same name and
+    /// the same three spellings.
+    ///
+    /// The ack echoes both: `/done "/def_send" <family>` (a faust compile,
+    /// which finishes asynchronously, appends the def name).
+    fn handle_def_send(&mut self, msg: &OscMessage, from: ClientId) {
+        let Some(OscType::String(family)) = msg.args.first() else {
+            return self.fail(
+                from,
+                "/def_send",
+                "expected a family string (\"synth\", \"faust\" or \"graph\")",
+            );
+        };
+        let family = family.clone();
+        let rest = &msg.args[1..];
+        match family.as_str() {
+            "synth" => self.handle_def_send_synth(rest, from),
+            "faust" => self.handle_def_send_faust(rest, from),
+            "graph" => self.handle_def_send_graph(rest, from),
+            other => self.fail(from, "/def_send", format!("unknown def family '{other}'")),
+        }
+    }
+
+    fn handle_def_send_synth(&mut self, args: &[OscType], from: ClientId) {
+        match self.translator.d_recv(args) {
             Ok(name) => {
                 self.claim_def_name(&name, DefKind::Synth);
                 if let Some(store) = &self.store
                     && !defstore::is_ephemeral(&name)
-                    && let Some(spec) = synthdef_spec_bytes(&msg.args)
+                    && let Some(spec) = synthdef_spec_bytes(args)
                     && let Err(e) = store.save_synthdef(&name, spec)
                 {
                     error!("could not persist SynthDef '{name}': {e}");
                 }
-                self.reply(from, "/done", vec![OscType::String("/d_recv".into())]);
+                self.reply(
+                    from,
+                    "/done",
+                    vec![
+                        OscType::String("/def_send".into()),
+                        OscType::String("synth".into()),
+                    ],
+                );
             }
-            Err(e) => self.fail(from, "/d_recv", e),
+            Err(e) => self.fail(from, "/def_send", e),
         }
     }
 
-    /// `/d_graph <json>` (M18): load a GraphDef (validate + store), persist its
+    /// `/def_send graph <json>` (M18): load a GraphDef (validate + store), persist its
     /// spec verbatim, and reply `/done`. Cheap — no JIT, just validation.
-    fn handle_d_graph(&mut self, msg: &OscMessage, from: ClientId) {
-        match self.translator.d_graph(&msg.args) {
+    fn handle_def_send_graph(&mut self, args: &[OscType], from: ClientId) {
+        match self.translator.d_graph(args) {
             Ok(name) => {
                 self.claim_def_name(&name, DefKind::Graph);
                 if let Some(store) = &self.store
                     && !defstore::is_ephemeral(&name)
-                    && let Some(spec) = synthdef_spec_bytes(&msg.args)
+                    && let Some(spec) = synthdef_spec_bytes(args)
                     && let Err(e) = store.save_graphdef(&name, spec)
                 {
                     error!("could not persist GraphDef '{name}': {e}");
                 }
-                self.reply(from, "/done", vec![OscType::String("/d_graph".into())]);
+                self.reply(
+                    from,
+                    "/done",
+                    vec![
+                        OscType::String("/def_send".into()),
+                        OscType::String("graph".into()),
+                    ],
+                );
             }
-            Err(e) => self.fail(from, "/d_graph", e),
+            Err(e) => self.fail(from, "/def_send", e),
         }
     }
 
-    fn handle_d_free(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_def_free(&mut self, msg: &OscMessage, from: ClientId) {
         if let Err(e) = self.translator.d_free(&msg.args) {
-            return self.fail(from, "/d_free", e);
+            return self.fail(from, "/def_free", e);
         }
         if let Some(store) = &self.store {
             for arg in &msg.args {
@@ -1599,78 +1680,78 @@ impl OscServer {
     }
 
     /// The node tree as seen by the network-side mirror, in scsynth's
-    /// `/g_queryTree.reply` format. Args: [groupID = 0, detail = 0]; detail 1
+    /// `/group_queryTree.reply` format. Args: [groupID = 0, detail = 0]; detail 1
     /// includes control names and values (scsynth's flag), detail 2 also the
     /// maps and inferred bus lists, which makes each entry a full node info.
-    fn handle_g_query_tree(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_group_query_tree(&mut self, msg: &OscMessage, from: ClientId) {
         let group = int_arg(&msg.args, 0).unwrap_or(0);
         let detail = int_arg(&msg.args, 1).unwrap_or(0).clamp(0, 2);
         match self.translator.query_tree(group, detail) {
-            Ok(args) => self.reply(from, "/g_queryTree.reply", args),
-            Err(e) => self.fail(from, "/g_queryTree", e),
+            Ok(args) => self.reply(from, "/group_queryTree.reply", args),
+            Err(e) => self.fail(from, "/group_queryTree", e),
         }
     }
 
-    /// Per-node detail: replies `/n_info` for each queried node ID (scsynth's
-    /// `/n_query`, extended with the def name, controls, maps and inferred
+    /// Per-node detail: replies `/node_query.reply` for each queried node ID (scsynth's
+    /// `/node_query`, extended with the def name, controls, maps and inferred
     /// bus usage — see [`CmdTranslator::node_info`]). An id the server does
     /// not hold answers with an absent record, not `/fail`: only a malformed
     /// request is a protocol error.
-    fn handle_n_query(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_node_query(&mut self, msg: &OscMessage, from: ClientId) {
         for arg in &msg.args {
             let OscType::Int(id) = arg else {
-                return self.fail(from, "/n_query", "expected int node ids");
+                return self.fail(from, "/node_query", "expected int node ids");
             };
             let args = self.translator.node_info(*id);
-            self.reply(from, "/n_info", args);
+            self.reply(from, "/node_query.reply", args);
         }
     }
 
     /// M12 debug: the inferred bus graph of one group as a string reply.
-    fn handle_g_dump_graph(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_group_dump_graph(&mut self, msg: &OscMessage, from: ClientId) {
         let group = int_arg(&msg.args, 0).unwrap_or(0);
         match self.translator.dump_graph(group) {
             Ok(dump) => self.reply(
                 from,
-                "/g_dumpGraph.reply",
+                "/group_dumpGraph.reply",
                 vec![OscType::Int(group), OscType::String(dump)],
             ),
-            Err(e) => self.fail(from, "/g_dumpGraph", e),
+            Err(e) => self.fail(from, "/group_dumpGraph", e),
         }
     }
 
-    /// `/c_stream periodMs busIndex...`: subscribes this client to a periodic
-    /// `/c_set` snapshot of the listed control buses — the network counterpart
+    /// `/bus_stream periodMs busIndex...`: subscribes this client to a periodic
+    /// `/bus_set` snapshot of the listed control buses — the network counterpart
     /// of reading the shared-memory segment, for clients that cannot map it (a
     /// browser GUI host's meters/scopes over WebSocket). One subscription per
     /// client, replaced on every call; `periodMs <= 0` or an empty list
-    /// cancels. Acks `/done "/c_stream"`, then sends the first snapshot
+    /// cancels. Acks `/done "/bus_stream"`, then sends the first snapshot
     /// immediately and the rest from the run loop. Not schedulable in timed
     /// bundles. Subscriptions die with their TCP/WS connection; UDP and ring
-    /// clients cancel explicitly (same posture as `/notify`).
-    fn handle_c_stream(&mut self, msg: &OscMessage, from: ClientId) {
+    /// clients cancel explicitly (same posture as `/server_notify`).
+    fn handle_bus_stream(&mut self, msg: &OscMessage, from: ClientId) {
         let Some(OscType::Int(period_ms)) = msg.args.first() else {
-            return self.fail(from, "/c_stream", "expected int periodMs");
+            return self.fail(from, "/bus_stream", "expected int periodMs");
         };
         let mut buses = Vec::with_capacity(msg.args.len().saturating_sub(1));
         for arg in &msg.args[1..] {
             let OscType::Int(index) = arg else {
-                return self.fail(from, "/c_stream", "expected int bus indices");
+                return self.fail(from, "/bus_stream", "expected int bus indices");
             };
             if *index < 0 {
-                return self.fail(from, "/c_stream", "bus index must be non-negative");
+                return self.fail(from, "/bus_stream", "bus index must be non-negative");
             }
             buses.push(*index);
         }
         if buses.len() > MAX_STREAM_BUSES {
             return self.fail(
                 from,
-                "/c_stream",
+                "/bus_stream",
                 format!("at most {MAX_STREAM_BUSES} bus indices per subscription"),
             );
         }
         self.streams.retain(|s| s.client != from);
-        self.reply(from, "/done", vec![OscType::String("/c_stream".into())]);
+        self.reply(from, "/done", vec![OscType::String("/bus_stream".into())]);
         if *period_ms > 0 && !buses.is_empty() {
             let period = Duration::from_millis(*period_ms as u64).max(MIN_STREAM_PERIOD);
             self.streams.push(BusStream {
@@ -1681,12 +1762,12 @@ impl OscServer {
             });
             // The immediate snapshot: the client paints without waiting a period.
             let args = self.stream_args(self.streams.len() - 1);
-            self.reply(from, "/c_set", args);
+            self.reply(from, "/bus_stream.reply", args);
         }
         self.retune_timeout();
     }
 
-    /// Sends every due stream its `/c_set` snapshot. Called once per run-loop
+    /// Sends every due stream its `/bus_stream.reply` snapshot. Called once per run-loop
     /// iteration; the socket timeout is tuned so an idle loop still ticks at
     /// the fastest subscribed period (see [`Self::retune_timeout`]). Reading a
     /// control bus is one relaxed atomic load — no engine round-trip.
@@ -1701,7 +1782,7 @@ impl OscServer {
             }
             let client = self.streams[i].client;
             let args = self.stream_args(i);
-            self.reply(client, "/c_set", args);
+            self.reply(client, "/bus_stream.reply", args);
             // Rebase on `now` (no catch-up bursts after a stall).
             let period = self.streams[i].period;
             self.streams[i].next_due = now + period.as_secs_f64();
@@ -1771,31 +1852,35 @@ impl OscServer {
         }
     }
 
-    /// `/tap bus watch`: asks the server to make audio bus `bus` readable —
+    /// `/bus_tap bus watch`: asks the server to make audio bus `bus` readable —
     /// `watch = 1` starts, `0` stops. **The bus is the only number a client
     /// names**: which of the segment's rings carries it is the server's own
     /// bookkeeping, published in the segment's bus directory for whoever reads
     /// the samples (a GUI host's oscilloscope, with zero messages per frame).
     /// Watches count, so two views of one bus share a ring and the last one to
-    /// stop frees it. No ack (the same posture as `/n_map`: it only flips
-    /// routing state); sequence with `/sync` when needed. Fails without a tap
+    /// stop frees it. No ack (the same posture as `/node_map`: it only flips
+    /// routing state); sequence with `/server_sync` when needed. Fails without a tap
     /// region (server started with `--taps 0`) or when every ring is taken.
-    fn handle_tap(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_bus_tap(&mut self, msg: &OscMessage, from: ClientId) {
         let (Some(OscType::Int(bus)), Some(OscType::Int(watch))) =
             (msg.args.first(), msg.args.get(1))
         else {
-            return self.fail(from, "/tap", "expected int bus, int watch");
+            return self.fail(from, "/bus_tap", "expected int bus, int watch");
         };
         // Both directions answer the same way about an impossible request, so
         // a client learns it cannot watch anything from the first call.
         if self.handle.segment().is_none() {
-            return self.fail(from, "/tap", "no tap region (server started with --taps 0)");
+            return self.fail(
+                from,
+                "/bus_tap",
+                "no tap region (server started with --taps 0)",
+            );
         }
         let audio_buses = self.handle.audio_buses;
         if *bus < 0 || *bus as usize >= audio_buses {
             return self.fail(
                 from,
-                "/tap",
+                "/bus_tap",
                 format!("bus must be in range 0..{audio_buses}"),
             );
         }
@@ -1803,32 +1888,32 @@ impl OscServer {
             return self.release_bus(*bus);
         }
         if let Err(why) = self.watch_bus(*bus) {
-            self.fail(from, "/tap", why);
+            self.fail(from, "/bus_tap", why);
         }
     }
 
-    /// `/tap_stream periodMs frames bus...`: subscribes this client to a
-    /// periodic `/tap_data` snapshot — the newest `frames` samples of each
+    /// `/bus_tapStream periodMs frames bus...`: subscribes this client to a
+    /// periodic `/bus_tapStream.reply` snapshot — the newest `frames` samples of each
     /// listed **audio bus** — the network counterpart of reading the segment's
     /// tap rings, for clients (a browser oscilloscope) that cannot map it. The
     /// subscription *is* the watch: it starts recording each bus it lists and
     /// stops when it is replaced, cancelled or its connection dies, so a
-    /// streaming client never issues `/tap` at all. One subscription per
+    /// streaming client never issues `/bus_tap` at all. One subscription per
     /// client, replaced on every call; `periodMs <= 0` or an empty bus list
-    /// cancels. Acks `/done "/tap_stream"`, then sends the first snapshot
+    /// cancels. Acks `/done "/bus_tapStream"`, then sends the first snapshot
     /// immediately and the rest from the run loop. Not schedulable in timed
     /// bundles. Subscriptions die with their TCP/WS connection, like
-    /// `/c_stream`.
-    fn handle_tap_stream(&mut self, msg: &OscMessage, from: ClientId) {
+    /// `/bus_stream`.
+    fn handle_bus_tap_stream(&mut self, msg: &OscMessage, from: ClientId) {
         let (Some(OscType::Int(period_ms)), Some(OscType::Int(frames))) =
             (msg.args.first(), msg.args.get(1))
         else {
-            return self.fail(from, "/tap_stream", "expected int periodMs, int frames");
+            return self.fail(from, "/bus_tapStream", "expected int periodMs, int frames");
         };
         let Some(segment) = self.handle.segment() else {
             return self.fail(
                 from,
-                "/tap_stream",
+                "/bus_tapStream",
                 "no tap region (server started with --taps 0)",
             );
         };
@@ -1836,12 +1921,12 @@ impl OscServer {
         let mut buses = Vec::with_capacity(msg.args.len().saturating_sub(2));
         for arg in &msg.args[2..] {
             let OscType::Int(bus) = arg else {
-                return self.fail(from, "/tap_stream", "expected int bus indices");
+                return self.fail(from, "/bus_tapStream", "expected int bus indices");
             };
             if *bus < 0 || *bus as usize >= audio_buses {
                 return self.fail(
                     from,
-                    "/tap_stream",
+                    "/bus_tapStream",
                     format!("bus out of range 0..{audio_buses}"),
                 );
             }
@@ -1850,7 +1935,7 @@ impl OscServer {
         if buses.len() > MAX_STREAM_TAPS {
             return self.fail(
                 from,
-                "/tap_stream",
+                "/bus_tapStream",
                 format!("at most {MAX_STREAM_TAPS} buses per subscription"),
             );
         }
@@ -1876,11 +1961,15 @@ impl OscServer {
                 for taken in wanted.iter().take_while(|b| *b != bus) {
                     self.release_bus(*taken);
                 }
-                return self.fail(from, "/tap_stream", why);
+                return self.fail(from, "/bus_tapStream", why);
             }
         }
         self.drop_tap_streams(|s| s.client == from);
-        self.reply(from, "/done", vec![OscType::String("/tap_stream".into())]);
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/bus_tapStream".into())],
+        );
         if !wanted.is_empty() {
             let period = Duration::from_millis(*period_ms as u64).max(MIN_STREAM_PERIOD);
             self.tap_streams.push(TapStream {
@@ -1915,7 +2004,7 @@ impl OscServer {
         }
     }
 
-    /// Sends every due tap stream its `/tap_data` snapshots. Called once per
+    /// Sends every due tap stream its `/bus_tapStream.reply` snapshots. Called once per
     /// run-loop iteration, like [`Self::pump_streams`]. Reading a tap ring is
     /// a lock-free shared-memory copy — no engine round-trip.
     fn pump_tap_streams(&mut self) {
@@ -1934,7 +2023,7 @@ impl OscServer {
         }
     }
 
-    /// One `/tap_data tap endPosition blob` per tap of stream `i` that has a
+    /// One `/bus_tapStream.reply tap endPosition blob` per tap of stream `i` that has a
     /// full window: `endPosition` is the tap's stream position (total samples
     /// written) at the window's end — consecutive snapshots overlap or gap by
     /// exactly the position delta — and the blob is the window's raw
@@ -1962,7 +2051,7 @@ impl OscServer {
             }
             self.reply(
                 client,
-                "/tap_data",
+                "/bus_tapStream.reply",
                 vec![
                     OscType::Int(bus),
                     OscType::Long(end as i64),
@@ -1997,10 +2086,10 @@ impl OscServer {
         }
     }
 
-    /// Forgets per-client state (bus streams, `/notify` registrations) for
+    /// Forgets per-client state (bus streams, `/server_notify` registrations) for
     /// TCP/WS connections that closed since the last pass. UDP and ring
     /// clients have no disconnect signal; their state goes on explicit
-    /// cancel/`/notify 0` or `/quit`, as in scsynth.
+    /// cancel/`/server_notify 0` or `/server_quit`, as in scsynth.
     fn prune_disconnected(&mut self) {
         let mut gone: Vec<ClientId> = Vec::new();
         if let Some(hub) = &mut self.tcp {
@@ -2020,60 +2109,60 @@ impl OscServer {
     }
 
     /// Control buses are shared atomics: set directly, no engine round-trip.
-    fn handle_c_set(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_bus_set(&mut self, msg: &OscMessage, from: ClientId) {
         if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
-            return self.fail(from, "/c_set", "expected (busIndex, value) pairs");
+            return self.fail(from, "/bus_set", "expected (busIndex, value) pairs");
         }
         for pair in msg.args.chunks(2) {
             let (OscType::Int(index), Some(value)) = (&pair[0], float_value(&pair[1])) else {
-                return self.fail(from, "/c_set", "expected int bus index and number value");
+                return self.fail(from, "/bus_set", "expected int bus index and number value");
             };
             if *index < 0 {
-                return self.fail(from, "/c_set", "bus index must be non-negative");
+                return self.fail(from, "/bus_set", "bus index must be non-negative");
             }
             self.handle.control_buses().set(*index as usize, value);
         }
     }
 
-    /// Replies with a `/c_set` message carrying (busIndex, value) pairs.
-    fn handle_c_get(&mut self, msg: &OscMessage, from: ClientId) {
+    /// Replies with a `/bus_get.reply` message carrying (busIndex, value) pairs.
+    fn handle_bus_get(&mut self, msg: &OscMessage, from: ClientId) {
         let mut args = Vec::with_capacity(msg.args.len() * 2);
         for arg in &msg.args {
             let OscType::Int(index) = arg else {
-                return self.fail(from, "/c_get", "expected int bus indices");
+                return self.fail(from, "/bus_get", "expected int bus indices");
             };
             if *index < 0 {
-                return self.fail(from, "/c_get", "bus index must be non-negative");
+                return self.fail(from, "/bus_get", "bus index must be non-negative");
             }
             args.push(OscType::Int(*index));
             args.push(OscType::Float(
                 self.handle.control_buses().get(*index as usize),
             ));
         }
-        self.reply(from, "/c_set", args);
+        self.reply(from, "/bus_get.reply", args);
     }
 
-    /// `/c_setn busIndex numBuses val...`: sets a consecutive range of control
+    /// `/bus_setRange busIndex numBuses val...`: sets a consecutive range of control
     /// buses (one or more groups). Immediate form writes the shared atomics.
-    fn handle_c_setn(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_bus_set_range(&mut self, msg: &OscMessage, from: ClientId) {
         let mut rest = msg.args.as_slice();
         while !rest.is_empty() {
             let [OscType::Int(base), OscType::Int(count), tail @ ..] = rest else {
                 return self.fail(
                     from,
-                    "/c_setn",
+                    "/bus_setRange",
                     "expected (busIndex, numBuses, values...) groups",
                 );
             };
             let (Ok(base), Ok(count)) = (usize::try_from(*base), usize::try_from(*count)) else {
-                return self.fail(from, "/c_setn", "bus index and numBuses must be >= 0");
+                return self.fail(from, "/bus_setRange", "bus index and numBuses must be >= 0");
             };
             if tail.len() < count {
-                return self.fail(from, "/c_setn", "fewer values than numBuses");
+                return self.fail(from, "/bus_setRange", "fewer values than numBuses");
             }
             for (offset, value) in tail[..count].iter().enumerate() {
                 let Some(value) = float_value(value) else {
-                    return self.fail(from, "/c_setn", "expected number values");
+                    return self.fail(from, "/bus_setRange", "expected number values");
                 };
                 self.handle.control_buses().set(base + offset, value);
             }
@@ -2081,19 +2170,19 @@ impl OscServer {
         }
     }
 
-    /// `/c_getn busIndex numBuses ...`: replies `/c_setn` with each requested
+    /// `/bus_getRange busIndex numBuses ...`: replies `/bus_setRange` with each requested
     /// range expanded to `(busIndex, numBuses, val0, val1, ...)`.
-    fn handle_c_getn(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_bus_get_range(&mut self, msg: &OscMessage, from: ClientId) {
         if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
-            return self.fail(from, "/c_getn", "expected (busIndex, numBuses) pairs");
+            return self.fail(from, "/bus_getRange", "expected (busIndex, numBuses) pairs");
         }
         let mut args = Vec::new();
         for pair in msg.args.chunks(2) {
             let [OscType::Int(base), OscType::Int(count)] = pair else {
-                return self.fail(from, "/c_getn", "expected int busIndex and numBuses");
+                return self.fail(from, "/bus_getRange", "expected int busIndex and numBuses");
             };
             let (Ok(base), Ok(count)) = (usize::try_from(*base), usize::try_from(*count)) else {
-                return self.fail(from, "/c_getn", "bus index and numBuses must be >= 0");
+                return self.fail(from, "/bus_getRange", "bus index and numBuses must be >= 0");
             };
             args.push(OscType::Int(base as i32));
             args.push(OscType::Int(count as i32));
@@ -2103,28 +2192,28 @@ impl OscServer {
                 ));
             }
         }
-        self.reply(from, "/c_setn", args);
+        self.reply(from, "/bus_getRange.reply", args);
     }
 
-    /// `/c_fill busIndex numBuses value ...`: fills a consecutive range of
+    /// `/bus_fill busIndex numBuses value ...`: fills a consecutive range of
     /// control buses with one value (groups of three).
-    fn handle_c_fill(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_bus_fill(&mut self, msg: &OscMessage, from: ClientId) {
         if msg.args.is_empty() || !msg.args.len().is_multiple_of(3) {
             return self.fail(
                 from,
-                "/c_fill",
+                "/bus_fill",
                 "expected (busIndex, numBuses, value) triples",
             );
         }
         for group in msg.args.chunks(3) {
             let [OscType::Int(base), OscType::Int(count), val] = group else {
-                return self.fail(from, "/c_fill", "expected int busIndex and numBuses");
+                return self.fail(from, "/bus_fill", "expected int busIndex and numBuses");
             };
             let (Ok(base), Ok(count)) = (usize::try_from(*base), usize::try_from(*count)) else {
-                return self.fail(from, "/c_fill", "bus index and numBuses must be >= 0");
+                return self.fail(from, "/bus_fill", "bus index and numBuses must be >= 0");
             };
             let Some(value) = float_value(val) else {
-                return self.fail(from, "/c_fill", "expected number value");
+                return self.fail(from, "/bus_fill", "expected number value");
             };
             for offset in 0..count {
                 self.handle.control_buses().set(base + offset, value);
@@ -2132,12 +2221,16 @@ impl OscServer {
         }
     }
 
-    /// `/s_get nodeID control...` / `/s_getn nodeID control numControls...`:
+    /// `/synth_get nodeID control...` / `/synth_getRange nodeID control numControls...`:
     /// reads a synth's current control values from the mirror and replies
-    /// `/n_set nodeID control value ...` (`/s_getn` echoes each range's
-    /// `(control, numControls, val...)`), the query counterpart of `/n_set`.
-    fn handle_s_get(&mut self, msg: &OscMessage, from: ClientId, ranged: bool) {
-        let addr = if ranged { "/s_getn" } else { "/s_get" };
+    /// `/node_set nodeID control value ...` (`/synth_getRange` echoes each range's
+    /// `(control, numControls, val...)`), the query counterpart of `/node_set`.
+    fn handle_synth_get(&mut self, msg: &OscMessage, from: ClientId, ranged: bool) {
+        let addr = if ranged {
+            "/synth_getRange"
+        } else {
+            "/synth_get"
+        };
         let Some(OscType::Int(id)) = msg.args.first() else {
             return self.fail(from, addr, "expected: nodeID, then controls");
         };
@@ -2187,61 +2280,67 @@ impl OscServer {
                 }
             }
         }
-        self.reply(from, "/n_set", args);
+        self.reply(from, "/node_set", args);
     }
 
-    /// `/s_noid nodeID...`: in scsynth this releases the integer node IDs so the
+    /// `/synth_forgetId nodeID...`: in scsynth this releases the integer node IDs so the
     /// server may reuse them. Clausters allocates IDs per client (auto IDs are
     /// server-assigned, negative-free), never reclaims an in-use ID, and never
     /// reuses a freed one under a live node, so there is nothing to release; we
     /// validate the IDs name live synths and acknowledge. Deliberate deviation
     /// (the plan's "compatibility of model, not literal copy").
-    fn handle_s_noid(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_synth_forget_id(&mut self, msg: &OscMessage, from: ClientId) {
         if msg.args.is_empty() {
-            return self.fail(from, "/s_noid", "expected node IDs");
+            return self.fail(from, "/synth_forgetId", "expected node IDs");
         }
         for arg in &msg.args {
             let OscType::Int(id) = arg else {
-                return self.fail(from, "/s_noid", "expected int node IDs");
+                return self.fail(from, "/synth_forgetId", "expected int node IDs");
             };
             if !self.translator.node_defs.contains_key(id) {
-                return self.fail(from, "/s_noid", format!("synth {id} not found"));
+                return self.fail(from, "/synth_forgetId", format!("synth {id} not found"));
             }
         }
-        self.reply(from, "/done", vec![OscType::String("/s_noid".into())]);
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/synth_forgetId".into())],
+        );
     }
 
-    /// `/n_trace nodeID...`: debug-traces a node by logging its current control
+    /// `/node_trace nodeID...`: debug-traces a node by logging its current control
     /// values (from the mirror) to the server console — the introspection
     /// counterpart of scsynth's per-block node trace. Network-thread only, no
     /// reply (matches scsynth).
-    fn handle_n_trace(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_node_trace(&mut self, msg: &OscMessage, from: ClientId) {
         for arg in &msg.args {
             let OscType::Int(id) = arg else {
-                return self.fail(from, "/n_trace", "expected int node IDs");
+                return self.fail(from, "/node_trace", "expected int node IDs");
             };
             match self.translator.mirror.synth_info(*id) {
                 Some((name, controls)) => {
-                    info!(target: crate::logging::OSC_TARGET, "/n_trace node {id} synth {name:?} controls {controls:?}");
+                    info!(target: crate::logging::OSC_TARGET, "/node_trace node {id} synth {name:?} controls {controls:?}");
                 }
                 None if self.translator.mirror.get(*id).is_some() => {
                     let children = self.translator.mirror.children(*id).unwrap_or(&[]);
-                    info!(target: crate::logging::OSC_TARGET, "/n_trace node {id} group children {children:?}");
+                    info!(target: crate::logging::OSC_TARGET, "/node_trace node {id} group children {children:?}");
                 }
-                None => info!(target: crate::logging::OSC_TARGET, "/n_trace node {id} not found"),
+                None => {
+                    info!(target: crate::logging::OSC_TARGET, "/node_trace node {id} not found")
+                }
             }
         }
     }
 
-    /// `/b_close bufnum`: closes a soundfile a streaming buffer left open
+    /// `/buffer_close bufnum`: closes a soundfile a streaming buffer left open
     /// (scsynth pairs this with `DiskIn`/`DiskOut`). Clausters has no streaming
-    /// buffers yet — every `/b_read`/`/b_write` reads or writes the whole file
+    /// buffers yet — every `/buffer_read`/`/buffer_write` reads or writes the whole file
     /// and closes it — so there is never an open handle: this validates the
     /// buffer is live and acknowledges, forward-compatible with the future
     /// streaming UGens.
-    fn handle_b_close(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_buffer_close(&mut self, msg: &OscMessage, from: ClientId) {
         let Some(OscType::Int(index)) = msg.args.first() else {
-            return self.fail(from, "/b_close", "expected int buffer index");
+            return self.fail(from, "/buffer_close", "expected int buffer index");
         };
         let live = usize::try_from(*index)
             .ok()
@@ -2251,50 +2350,57 @@ impl OscServer {
             self.reply(
                 from,
                 "/done",
-                vec![OscType::String("/b_close".into()), OscType::Int(*index)],
+                vec![
+                    OscType::String("/buffer_close".into()),
+                    OscType::Int(*index),
+                ],
             );
         } else {
-            self.fail(from, "/b_close", format!("buffer {index} not allocated"));
+            self.fail(
+                from,
+                "/buffer_close",
+                format!("buffer {index} not allocated"),
+            );
         }
     }
 
-    /// `/d_load path`: loads a SynthDef from a JSON spec file on disk (the
-    /// Clausters def format — the same body `/d_recv` carries), on demand,
-    /// complementing the boot-time reload. GraphDefs load through `/d_graph`.
-    fn handle_d_load(&mut self, msg: &OscMessage, from: ClientId) {
+    /// `/def_load path`: loads a SynthDef from a JSON spec file on disk (the
+    /// Clausters def format — the same body `/def_send synth` carries), on demand,
+    /// complementing the boot-time reload. GraphDefs load through `/def_send graph`.
+    fn handle_def_load(&mut self, msg: &OscMessage, from: ClientId) {
         let Some(OscType::String(path)) = msg.args.first() else {
-            return self.fail(from, "/d_load", "expected string path");
+            return self.fail(from, "/def_load", "expected string path");
         };
         match self.load_synthdef_file(std::path::Path::new(path)) {
-            Ok(()) => self.reply(from, "/done", vec![OscType::String("/d_load".into())]),
-            Err(e) => self.fail(from, "/d_load", e),
+            Ok(()) => self.reply(from, "/done", vec![OscType::String("/def_load".into())]),
+            Err(e) => self.fail(from, "/def_load", e),
         }
     }
 
-    /// `/d_loadDir dir`: loads every `*.json` SynthDef spec in a directory. A
+    /// `/def_loadDir dir`: loads every `*.json` SynthDef spec in a directory. A
     /// single unreadable/invalid file fails the whole command (like scsynth
     /// aborting on a bad def), naming the offending file.
-    fn handle_d_load_dir(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_def_load_dir(&mut self, msg: &OscMessage, from: ClientId) {
         let Some(OscType::String(dir)) = msg.args.first() else {
-            return self.fail(from, "/d_loadDir", "expected string directory");
+            return self.fail(from, "/def_loadDir", "expected string directory");
         };
         let entries = match std::fs::read_dir(dir) {
             Ok(entries) => entries,
-            Err(e) => return self.fail(from, "/d_loadDir", format!("{dir}: {e}")),
+            Err(e) => return self.fail(from, "/def_loadDir", format!("{dir}: {e}")),
         };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "json")
                 && let Err(e) = self.load_synthdef_file(&path)
             {
-                return self.fail(from, "/d_loadDir", e);
+                return self.fail(from, "/def_loadDir", e);
             }
         }
-        self.reply(from, "/done", vec![OscType::String("/d_loadDir".into())]);
+        self.reply(from, "/done", vec![OscType::String("/def_loadDir".into())]);
     }
 
-    /// Reads one SynthDef spec file, compiles it through the `/d_recv` path and
-    /// persists it under its name. Shared by `/d_load` and `/d_loadDir`.
+    /// Reads one SynthDef spec file, compiles it through the `/def_send synth` path and
+    /// persists it under its name. Shared by `/def_load` and `/def_loadDir`.
     fn load_synthdef_file(&mut self, path: &std::path::Path) -> Result<(), String> {
         let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let args = [OscType::Blob(bytes.clone())];
@@ -2310,51 +2416,59 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/clearSched`: flushes every pending timed bundle from the engine's
+    /// `/sched_clear`: flushes every pending timed bundle from the engine's
     /// schedule queue. The bundles' heap (boxed synths and the `Vec` shells)
     /// leaves through the garbage FIFO, so nothing is dropped on the audio
     /// thread. Replies `/done`.
-    fn handle_clear_sched(&mut self, from: ClientId) {
+    fn handle_sched_clear(&mut self, from: ClientId) {
         if self.handle.send(Cmd::ClearSched).is_err() {
-            return self.fail(from, "/clearSched", "command FIFO full");
+            return self.fail(from, "/sched_clear", "command FIFO full");
         }
-        self.reply(from, "/done", vec![OscType::String("/clearSched".into())]);
+        self.reply(from, "/done", vec![OscType::String("/sched_clear".into())]);
     }
 
-    /// `/error mode`: sets the error-posting mode. `1` posts command errors to
+    /// `/server_errorMode mode`: sets the error-posting mode. `1` posts command errors to
     /// the server console (the default), `0` silences them. The `/fail` OSC
     /// reply is always sent regardless — clients rely on it; only the
     /// server-side console logging is gated. scsynth's bundle-local `-1`/`-2`
     /// are not separately supported (deliberate deviation): the persistent
     /// `0`/`1` toggle is the model that fits our logging.
-    fn handle_error(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_server_error_mode(&mut self, msg: &OscMessage, from: ClientId) {
         match msg.args.first() {
             Some(OscType::Int(mode)) => {
                 self.post_errors = *mode != 0;
             }
-            _ => self.fail(from, "/error", "expected int mode (0 = off, 1 = on)"),
+            _ => self.fail(
+                from,
+                "/server_errorMode",
+                "expected int mode (0 = off, 1 = on)",
+            ),
         }
     }
 
-    /// `/cmd name args...`: a server-wide, typed command — the discoverable
-    /// replacement for scsynth's untyped `/cmd`. `name` selects a handler from
+    /// `/server_cmd name args...`: a server-wide, typed command — the discoverable
+    /// replacement for scsynth's untyped `/server_cmd`. `name` selects a handler from
     /// the built-in registry; unknown names `/fail` with the offending name.
     /// The mechanism exists for future server commands; the built-in `ping`
-    /// (replies `/done /cmd ping`) proves the surface.
-    fn handle_cmd(&mut self, msg: &OscMessage, from: ClientId) {
+    /// (replies `/done /server_cmd ping`) proves the surface.
+    fn handle_server_cmd(&mut self, msg: &OscMessage, from: ClientId) {
         let Some(OscType::String(name)) = msg.args.first() else {
-            return self.fail(from, "/cmd", "expected string command name");
+            return self.fail(from, "/server_cmd", "expected string command name");
         };
         match name.as_str() {
             "ping" => self.reply(
                 from,
                 "/done",
                 vec![
-                    OscType::String("/cmd".into()),
+                    OscType::String("/server_cmd".into()),
                     OscType::String("ping".into()),
                 ],
             ),
-            other => self.fail(from, "/cmd", format!("unknown server command {other:?}")),
+            other => self.fail(
+                from,
+                "/server_cmd",
+                format!("unknown server command {other:?}"),
+            ),
         }
     }
 
@@ -2363,7 +2477,7 @@ impl OscServer {
     /// Installs a host-built buffer at `index`: the network-side mirror and
     /// the engine swap, exactly the `NrtAction::Install` path minus the OSC
     /// reply. The embed `b_load` door (B1): a headless host hands the server
-    /// samples it decoded itself (the browser's `/b_allocRead` replacement,
+    /// samples it decoded itself (the browser's `/buffer_allocRead` replacement,
     /// where there is no filesystem).
     pub fn install_buffer(
         &mut self,
@@ -2425,11 +2539,11 @@ impl OscServer {
         self.resolve_syncs();
     }
 
-    /// Any of the async `/b_*` commands: parsing is shared with the NRT
-    /// renderer; the job runs on the NRT thread. `/b_free` also travels
+    /// Any of the async `/buffer_*` commands: parsing is shared with the NRT
+    /// renderer; the job runs on the NRT thread. `/buffer_free` also travels
     /// through the queue so it cannot overtake a pending alloc/read on the
     /// same index.
-    fn handle_b_cmd(&mut self, msg: &OscMessage, from: ClientId, cmd: &'static str) {
+    fn handle_buffer_cmd(&mut self, msg: &OscMessage, from: ClientId, cmd: &'static str) {
         let (index, job) = match parse_buffer_msg(
             cmd,
             &msg.args,
@@ -2442,15 +2556,15 @@ impl OscServer {
         self.submit_nrt(cmd, index, from, job);
     }
 
-    /// `/b_gen bufnum cmd ...`: fills a buffer through the wavetable/generator
-    /// path (see [`parse_b_gen`]). Async on the NRT queue, in submission order
-    /// with the other `/b_*` commands, replying `/done`/`/fail` like them.
-    fn handle_b_gen(&mut self, msg: &OscMessage, from: ClientId) {
-        let (index, job) = match parse_b_gen(&msg.args, &self.translator.buffers) {
+    /// `/buffer_gen bufnum cmd ...`: fills a buffer through the wavetable/generator
+    /// path (see [`parse_buffer_gen`]). Async on the NRT queue, in submission order
+    /// with the other `/buffer_*` commands, replying `/done`/`/fail` like them.
+    fn handle_buffer_gen(&mut self, msg: &OscMessage, from: ClientId) {
+        let (index, job) = match parse_buffer_gen(&msg.args, &self.translator.buffers) {
             Ok(parsed) => parsed,
-            Err(e) => return self.fail(from, "/b_gen", e),
+            Err(e) => return self.fail(from, "/buffer_gen", e),
         };
-        self.submit_nrt("/b_gen", index, from, job);
+        self.submit_nrt("/buffer_gen", index, from, job);
     }
 
     /// Queues a built NRT job, failing back to the client if the thread is gone.
@@ -2468,26 +2582,26 @@ impl OscServer {
         }
     }
 
-    /// `/b_query bufnum...` → `/b_info` with (bufnum, frames, channels,
+    /// `/buffer_query bufnum...` → `/buffer_query.reply` with (bufnum, frames, channels,
     /// sampleRate) per buffer; zeros for unallocated indices. Synchronous,
     /// answered from the mirror (= state as of the last completed command).
-    fn handle_b_query(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_buffer_query(&mut self, msg: &OscMessage, from: ClientId) {
         // No argument lists every allocated buffer (M30): the patcher shows
         // real buffers as objects, and a client that never allocated them (the
         // pool outlives a session) has no other way to learn they exist.
         if msg.args.is_empty() {
             let args = self.translator.buffer_list();
-            return self.reply(from, "/b_info", args);
+            return self.reply(from, "/buffer_query.reply", args);
         }
         let mut args = Vec::with_capacity(msg.args.len() * 4);
         for arg in &msg.args {
             let OscType::Int(index) = arg else {
-                return self.fail(from, "/b_query", "expected int buffer indices");
+                return self.fail(from, "/buffer_query", "expected int buffer indices");
             };
             let info = self.mirror_buffer(*index);
             // An unallocated slot answers with `frames = -1`: absence is a
-            // state reported in the record, like `/n_query`'s `isGroup = -1`
-            // and `/d_query`'s empty family, so one dead index does not abort
+            // state reported in the record, like `/node_query`'s `isGroup = -1`
+            // and `/def_query`'s empty family, so one dead index does not abort
             // the batch.
             args.push(OscType::Int(*index));
             args.push(OscType::Int(
@@ -2500,32 +2614,32 @@ impl OscServer {
                 info.as_ref().map_or(0.0, |b| b.sample_rate() as f32),
             ));
         }
-        self.reply(from, "/b_info", args);
+        self.reply(from, "/buffer_query.reply", args);
     }
 
-    /// `/d_query [name...]` → one `/d_info` per def, then `/done "/d_query"`
+    /// `/def_query [name...]` → one `/def_query.reply` per def, then `/done "/def_query"`
     /// (M30). No argument lists every loaded def. The reply is one message per
     /// def because the control surface is variable-length: an aggregate would
     /// nest, and a large catalog would outgrow a UDP datagram.
     ///
     /// Retrieval only — the def store persists across sessions, so this is how
     /// a client learns what a running server actually holds.
-    fn handle_d_query(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_def_query(&mut self, msg: &OscMessage, from: ClientId) {
         let mut names = Vec::with_capacity(msg.args.len());
         for arg in &msg.args {
             let OscType::String(name) = arg else {
-                return self.fail(from, "/d_query", "expected string def names");
+                return self.fail(from, "/def_query", "expected string def names");
             };
             names.push(name.clone());
         }
         let requested = (!names.is_empty()).then_some(names.as_slice());
         for args in self.translator.def_info(requested) {
-            self.reply(from, "/d_info", args);
+            self.reply(from, "/def_query.reply", args);
         }
-        self.reply(from, "/done", vec![OscType::String("/d_query".into())]);
+        self.reply(from, "/done", vec![OscType::String("/def_query".into())]);
     }
 
-    /// `/u_query [kind...]` → one `/u_info` per UGen, then `/done "/u_query"`
+    /// `/ugen_query [kind...]` → one `/ugen_query.reply` per UGen, then `/done "/ugen_query"`
     /// (M30): the catalog straight from the `dsp::registry` descriptors, so a
     /// palette derives from the server's truth instead of a client-side copy.
     /// An unknown kind replies with an empty rate set and no inputs.
@@ -2535,37 +2649,41 @@ impl OscServer {
     ///
     /// Built without the `synth` feature there is no UGen catalog at all, and
     /// the honest reply is an **empty** listing rather than a `/fail` — the
-    /// same way `/d_query` on such a build simply lists no synth defs.
-    fn handle_u_query(&mut self, msg: &OscMessage, from: ClientId) {
+    /// same way `/def_query` on such a build simply lists no synth defs.
+    fn handle_ugen_query(&mut self, msg: &OscMessage, from: ClientId) {
         let mut names = Vec::with_capacity(msg.args.len());
         for arg in &msg.args {
             let OscType::String(name) = arg else {
-                return self.fail(from, "/u_query", "expected string UGen kinds");
+                return self.fail(from, "/ugen_query", "expected string UGen kinds");
             };
             names.push(name.clone());
         }
         #[cfg(feature = "synth")]
         for args in ugen_infos(&names) {
-            self.reply(from, "/u_info", args);
+            self.reply(from, "/ugen_query.reply", args);
         }
-        self.reply(from, "/done", vec![OscType::String("/u_query".into())]);
+        self.reply(from, "/done", vec![OscType::String("/ugen_query".into())]);
     }
 
-    /// `/b_get bufnum index...` → `/b_set bufnum index value...`: read single
+    /// `/buffer_get bufnum index...` → `/buffer_get.reply bufnum index value...`: read single
     /// samples (flat, interleaved) from the buffer mirror. Out-of-range indices
     /// (and any index into an unallocated buffer) read as `0.0`, mirroring how
     /// `Buffer::sample` and the audio-rate UGens treat them. Synchronous, like
-    /// `/b_query`.
-    fn handle_b_get(&mut self, msg: &OscMessage, from: ClientId) {
+    /// `/buffer_query`.
+    fn handle_buffer_get(&mut self, msg: &OscMessage, from: ClientId) {
         let Some((OscType::Int(bufnum), indices)) = msg.args.split_first() else {
-            return self.fail(from, "/b_get", "expected bufnum then int sample indices");
+            return self.fail(
+                from,
+                "/buffer_get",
+                "expected bufnum then int sample indices",
+            );
         };
         let buffer = self.mirror_buffer(*bufnum);
         let data = buffer.as_deref().map(|b| b.data()).unwrap_or(&[]);
         let mut args = vec![OscType::Int(*bufnum)];
         for arg in indices {
             let OscType::Int(index) = arg else {
-                return self.fail(from, "/b_get", "expected int sample indices");
+                return self.fail(from, "/buffer_get", "expected int sample indices");
             };
             let value = usize::try_from(*index)
                 .ok()
@@ -2575,31 +2693,35 @@ impl OscServer {
             args.push(OscType::Int(*index));
             args.push(OscType::Float(value));
         }
-        self.reply(from, "/b_set", args);
+        self.reply(from, "/buffer_get.reply", args);
     }
 
-    /// `/b_getn bufnum [start count]...` → `/b_setn bufnum start count value...`:
+    /// `/buffer_getRange bufnum [start count]...` → `/buffer_getRange.reply bufnum start count value...`:
     /// read ranges of samples (flat, interleaved) from the buffer mirror — the
-    /// client-side counterpart of `/b_setn`, and how a GUI client pulls a buffer
+    /// client-side counterpart of `/buffer_getRange.reply`, and how a GUI client pulls a buffer
     /// to display it. `count` is clamped to what the buffer holds from `start`,
     /// so a request past the end returns only the available samples (none for an
     /// unallocated buffer). Large buffers are read in client-chosen chunks,
     /// sized to the client's transport: a stream client (TCP/WS) may ask for
-    /// up to the `/server_info` frame ceiling per reply, a UDP client must
+    /// up to the `/server_query` frame ceiling per reply, a UDP client must
     /// stay under the datagram cap. The shm bulk path is future work.
-    fn handle_b_getn(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_buffer_get_range(&mut self, msg: &OscMessage, from: ClientId) {
         let Some((OscType::Int(bufnum), pairs)) = msg.args.split_first() else {
-            return self.fail(from, "/b_getn", "expected bufnum then (start, count) pairs");
+            return self.fail(
+                from,
+                "/buffer_getRange",
+                "expected bufnum then (start, count) pairs",
+            );
         };
         if pairs.len() % 2 != 0 {
-            return self.fail(from, "/b_getn", "expected (start, count) pairs");
+            return self.fail(from, "/buffer_getRange", "expected (start, count) pairs");
         }
         let buffer = self.mirror_buffer(*bufnum);
         let data = buffer.as_deref().map(|b| b.data()).unwrap_or(&[]);
         let mut args = vec![OscType::Int(*bufnum)];
         for pair in pairs.chunks_exact(2) {
             let (OscType::Int(start), OscType::Int(count)) = (&pair[0], &pair[1]) else {
-                return self.fail(from, "/b_getn", "expected int start and count");
+                return self.fail(from, "/buffer_getRange", "expected int start and count");
             };
             let start = (*start).max(0) as usize;
             let count = (*count).max(0) as usize;
@@ -2609,26 +2731,26 @@ impl OscServer {
             args.push(OscType::Int(slice.len() as i32));
             args.extend(slice.iter().map(|s| OscType::Float(*s)));
         }
-        self.reply(from, "/b_setn", args);
+        self.reply(from, "/buffer_getRange.reply", args);
     }
 
-    /// `/b_export bufnum path` → `/done /b_export bufnum`: write the buffer's raw
+    /// `/buffer_export bufnum path` → `/done /buffer_export bufnum`: write the buffer's raw
     /// samples (flat, interleaved, little-endian `f32`) to `path` as a **local
     /// shared resource**, so a same-machine client (the GUI host) can map and read
     /// a multi-megabyte buffer with no per-sample OSC traffic — the bulk-data path,
-    /// the efficient counterpart of `/b_getn`'s chunked over-the-wire reads. The
-    /// reader pairs it with the buffer's channel count (from `/b_query`) to
+    /// the efficient counterpart of `/buffer_getRange`'s chunked over-the-wire reads. The
+    /// reader pairs it with the buffer's channel count (from `/buffer_query`) to
     /// de-interleave. Synchronous on the network thread (not the audio thread),
-    /// like `/b_get`/`/b_getn`; replies `/fail` on a missing buffer or a write
+    /// like `/buffer_get`/`/buffer_getRange`; replies `/fail` on a missing buffer or a write
     /// error.
-    fn handle_b_export(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_buffer_export(&mut self, msg: &OscMessage, from: ClientId) {
         let (Some(OscType::Int(bufnum)), Some(OscType::String(path))) =
             (msg.args.first(), msg.args.get(1))
         else {
-            return self.fail(from, "/b_export", "expected bufnum then a path string");
+            return self.fail(from, "/buffer_export", "expected bufnum then a path string");
         };
         let Some(buffer) = self.mirror_buffer(*bufnum) else {
-            return self.fail(from, "/b_export", "no such buffer");
+            return self.fail(from, "/buffer_export", "no such buffer");
         };
         let mut bytes = Vec::with_capacity(buffer.data().len() * 4);
         for &s in buffer.data() {
@@ -2638,9 +2760,12 @@ impl OscServer {
             Ok(()) => self.reply(
                 from,
                 "/done",
-                vec![OscType::String("/b_export".into()), OscType::Int(*bufnum)],
+                vec![
+                    OscType::String("/buffer_export".into()),
+                    OscType::Int(*bufnum),
+                ],
             ),
-            Err(e) => self.fail(from, "/b_export", format!("write {path}: {e}")),
+            Err(e) => self.fail(from, "/buffer_export", format!("write {path}: {e}")),
         }
     }
 
@@ -2651,7 +2776,7 @@ impl OscServer {
             .and_then(|b| b.as_ref().map(Arc::clone))
     }
 
-    fn handle_notify(&mut self, msg: &OscMessage, from: ClientId) {
+    fn handle_server_notify(&mut self, msg: &OscMessage, from: ClientId) {
         match msg.args.first() {
             Some(OscType::Int(1)) => {
                 let id = match self.clients.iter().position(|c| *c == from) {
@@ -2664,20 +2789,27 @@ impl OscServer {
                 self.reply(
                     from,
                     "/done",
-                    vec![OscType::String("/notify".into()), OscType::Int(id as i32)],
+                    vec![
+                        OscType::String("/server_notify".into()),
+                        OscType::Int(id as i32),
+                    ],
                 );
             }
             Some(OscType::Int(0)) => {
                 self.clients.retain(|c| *c != from);
-                self.reply(from, "/done", vec![OscType::String("/notify".into())]);
+                self.reply(
+                    from,
+                    "/done",
+                    vec![OscType::String("/server_notify".into())],
+                );
             }
-            _ => self.fail(from, "/notify", "expected int argument 0 or 1"),
+            _ => self.fail(from, "/server_notify", "expected int argument 0 or 1"),
         }
     }
 
     fn fail(&self, to: ClientId, cmd: &str, why: impl Into<String>) {
         let why = why.into();
-        // The console post is gated by `/error`; the OSC `/fail` reply always
+        // The console post is gated by `/server_errorMode`; the OSC `/fail` reply always
         // goes out (clients rely on it).
         if self.post_errors {
             warn!(target: crate::logging::OSC_TARGET, "FAILURE {cmd}: {why}");
@@ -2739,13 +2871,13 @@ impl OscServer {
     }
 }
 
-/// The raw `SynthDefSpec` JSON of a `/d_recv` message (blob or string form),
+/// The raw `SynthDefSpec` JSON of a `/def_send synth` message (blob or string form),
 /// for persisting it verbatim. Mirrors the argument parsing in
 /// [`CmdTranslator::d_recv`].
-/// The `/u_info` argument vectors for a `/u_query` (M30): the whole catalog
+/// The `/ugen_query.reply` argument vectors for a `/ugen_query` (M30): the whole catalog
 /// when `names` is empty, otherwise one per requested kind — an unknown one
 /// coming back with an empty rate set and no inputs, so a batch never fails
-/// wholesale (the `/b_query` convention).
+/// wholesale (the `/buffer_query` convention).
 #[cfg(feature = "synth")]
 fn ugen_infos(names: &[String]) -> Vec<Vec<OscType>> {
     if names.is_empty() {
@@ -2771,7 +2903,7 @@ fn ugen_infos(names: &[String]) -> Vec<Vec<OscType>> {
         .collect()
 }
 
-/// One `/u_info` argument vector from a catalog descriptor (M30).
+/// One `/ugen_query.reply` argument vector from a catalog descriptor (M30).
 ///
 /// Layout: `name, arity, defaultRate, rates, exec, bus, needsPath, opFamily,
 /// spectral, numInputs` then per input `name, default`. `arity` is `-1` for a
@@ -2851,7 +2983,7 @@ const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
 /// The current wall-clock instant as an OSC/NTP timetag (seconds since 1900 in
 /// a 32-bit count, plus a 32-bit binary fraction) — the inverse of the NTP→Unix
 /// math in [`timetag_delta_secs`]. Published alongside the sample counter in
-/// `/clock.reply` so a client gets the anchor `(osc_time, sample)` it needs to
+/// `/clock_query.reply` so a client gets the anchor `(osc_time, sample)` it needs to
 /// place its logical OSC time on this server's sample axis.
 fn unix_to_ntp(unix: f64) -> OscTime {
     let ntp = unix + NTP_UNIX_OFFSET;

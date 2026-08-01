@@ -8,16 +8,16 @@ and the server resources:
 - `boxes` — the same pattern over Faust's Box API: point-free composition
   plus the `boxes.faust` escape hatch that turns any Faust expression
   (the stdlib included) into a composable `Box`.
-- `faustdef` — `FaustDef`: build the ``/d_faust``
+- `faustdef` — `FaustDef`: build the ``/def_send faust``
   payload (signal tree, source, or box tree) and list its controls.
 - `node` / `bus` /
   `buffer` — `Synth`/`Group`/`Bus`/
   `Buffer` and their client-side allocators.
 - `server` — `Server`: the live OSC round-trip
-  (definitions, nodes, buses, buffers, ``/done``/``/fail``, ``/notify``).
+  (definitions, nodes, buses, buffers, ``/done``/``/fail``, ``/server_notify``).
 - `ugens` / `synthdef` — the UGen
   graph (lowercase callables → `Ugen`/`Control`) and
-  `SynthDef` (``/d_recv``), the UGen-graph counterpart of the Faust
+  `SynthDef` (``/def_send synth``), the UGen-graph counterpart of the Faust
   `signals` / `FaustDef` pair.
 """
 

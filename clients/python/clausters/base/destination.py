@@ -22,7 +22,7 @@ class Destination(Protocol):
     Note what is *not* here: ``play_event``. Rendering an `Event` is a
     double dispatch onto destinations that understand the server's node
     commands (`clausters.defs.Server`, a MIDI destination, a timeline); an
-    external application does not know what ``/s_new`` is.
+    external application does not know what ``/synth_new`` is.
     """
 
     def send_msg(self, addr: str, *args) -> None:
@@ -41,7 +41,7 @@ class OscDestination:
     Standard OSC only: a message, or a bundle carrying an NTP timetag. No
     latency -- that is a property of *our* audio pipeline, and what another
     application needs is its own business, asked for as an explicit delay. No
-    ``/sched`` (our command), no score (only our render reads one).
+    ``/sched_at`` (our command), no score (only our render reads one).
 
     The interface is created and closed by the destination unless one is
     passed, in which case it is borrowed and left alone.

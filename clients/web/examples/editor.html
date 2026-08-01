@@ -41,7 +41,7 @@ comes back to this script as a <code>/gui_event</code>.
 The transport is part of the same window: <b>play</b> starts a
 <code>PlayBuf</code> and anchors the host's <b>playhead</b> to the engine's
 sample clock — the line is then drawn from Rust every frame, at the display's
-rate and with no message per frame; <b>pause</b> is <code>/n_run 0</code>, which
+rate and with no message per frame; <b>pause</b> is <code>/node_run 0</code>, which
 freezes the node with its buffer position intact, and parks the line where it
 stopped; <b>stop</b> frees it. <b>play selection</b> reads the selected region
 instead, with a <code>Phasor</code> looping between its bounds, and the line
@@ -299,7 +299,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         }
       };
 
-      // No file at hand: the *server* fills a buffer instead (`/b_gen sine1`,
+      // No file at hand: the *server* fills a buffer instead (`/buffer_gen sine1`,
       // a few partials), so the page has something to look at and play.
       el("tone").onclick = async () => {
         const buf = await Buffer.alloc(server, 96000, 1);

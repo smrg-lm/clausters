@@ -33,19 +33,19 @@ fn ring_roundtrip_and_wraparound() {
     let mut buf = vec![0u8; 65536];
     for round in 0..200 {
         for i in 0..32 {
-            let msg = encode("/n_set", vec![OscType::Int(round * 32 + i)]);
+            let msg = encode("/node_set", vec![OscType::Int(round * 32 + i)]);
             assert!(client.push(&msg), "push must succeed while drained");
         }
         for i in 0..32 {
             let len = server.try_pop(&mut buf).expect("packet must be there");
-            let expected = encode("/n_set", vec![OscType::Int(round * 32 + i)]);
+            let expected = encode("/node_set", vec![OscType::Int(round * 32 + i)]);
             assert_eq!(&buf[..len], &expected[..], "FIFO order preserved");
         }
         assert!(server.try_pop(&mut buf).is_none(), "ring drained");
     }
 
     // Backpressure: an unbounded burst eventually reports full, loses nothing.
-    let msg = encode("/status", vec![]);
+    let msg = encode("/server_status", vec![]);
     let mut pushed = 0;
     while client.push(&msg) {
         pushed += 1;
@@ -69,7 +69,7 @@ fn corrupted_ring_contents_resync_instead_of_wedging() {
     let mut small = vec![0u8; 256];
     assert!(server.try_pop(&mut small).is_none(), "oversized = dropped");
     // The ring keeps working afterwards.
-    assert!(client.push(&encode("/status", vec![])));
+    assert!(client.push(&encode("/server_status", vec![])));
     assert!(server.try_pop(&mut small).is_some());
 }
 
@@ -232,12 +232,12 @@ fn server_speaks_osc_over_the_ring() {
         panic!("no reply through the ring");
     };
 
-    let status = request(&encode("/status", vec![]));
-    assert_eq!(status.addr, "/status.reply");
+    let status = request(&encode("/server_status", vec![]));
+    assert_eq!(status.addr, "/server_status.reply");
 
     // A synth via the ring must reach the engine and make sound.
     assert!(client.push(&encode(
-        "/s_new",
+        "/synth_new",
         vec![
             OscType::String("default".into()),
             OscType::Int(1000),
@@ -252,7 +252,7 @@ fn server_speaks_osc_over_the_ring() {
         engine.process_block(&mut out);
         heard |= out.iter().any(|s| *s != 0.0);
     }
-    assert!(heard, "the ring /s_new must be audible");
+    assert!(heard, "the ring /synth_new must be audible");
 
     // The clock mirror in the segment is block-accurate.
     let clock = segment.clock().load(Ordering::Acquire);
@@ -261,7 +261,7 @@ fn server_speaks_osc_over_the_ring() {
     let bad = request(&encode("/zzz", vec![]));
     assert_eq!(bad.addr, "/fail", "errors route back through the ring");
 
-    assert!(client.push(&encode("/quit", vec![])));
+    assert!(client.push(&encode("/server_quit", vec![])));
     thread.join().unwrap().unwrap();
 }
 
@@ -318,7 +318,7 @@ fn segment_control_buses_feed_the_engine_directly() {
     engine.process_block(&mut out);
     assert_eq!(out[0], 0.625, "InCtl must read the segment atomic");
 
-    // And the handle's /c_get path sees external writes too (same memory).
+    // And the handle's /bus_get path sees external writes too (same memory).
     assert_eq!(handle.control_buses().get(7), 0.625);
 }
 
@@ -329,9 +329,9 @@ fn segment_control_buses_feed_the_engine_directly() {
 fn embed_render_returns_flat_samples() {
     use clausters::embed::{clausters_free_samples, clausters_render};
 
-    // A minimal score: /s_new default at t = 0, /n_free at t = 0.1.
+    // A minimal score: /synth_new default at t = 0, /node_free at t = 0.1.
     let s_new = encode(
-        "/s_new",
+        "/synth_new",
         vec![
             OscType::String("default".into()),
             OscType::Int(1000),
@@ -339,7 +339,7 @@ fn embed_render_returns_flat_samples() {
             OscType::Int(0),
         ],
     );
-    let n_free = encode("/n_free", vec![OscType::Int(1000)]);
+    let n_free = encode("/node_free", vec![OscType::Int(1000)]);
     let bundle = |secs: f64, inner: &[u8]| -> Vec<u8> {
         let mut b = b"#bundle\0".to_vec();
         b.extend_from_slice(&(secs as u32).to_be_bytes());

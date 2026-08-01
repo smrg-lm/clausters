@@ -57,7 +57,7 @@ print("server binary:", BIN, "(ok)" if os.path.exists(BIN) else "(MISSING: cargo
 # `ServerOptions` is the single source of truth: it both **launches** a matching
 # server (`options.args()` -> the CLI flags) and **sizes the client's
 # allocators**. We boot it as a subprocess and wait until it answers
-# `/server_info`. Re-running this cell restarts the server cleanly.
+# `/server_query`. Re-running this cell restarts the server cleanly.
 
 # %%
 # Tear down a previous run if this cell is re-executed in the same session.
@@ -140,7 +140,7 @@ show_tree("two synths under the sources group")
 # %% [markdown]
 # ## 7. Assign buses
 #
-# Allocate a **control bus** and map synth `b`'s `freq` to it: now one `/c_set`
+# Allocate a **control bus** and map synth `b`'s `freq` to it: now one `/bus_set`
 # retunes it with no per-node command. `b.info()` shows the map and the
 # inferred read/write buses of that node.
 
@@ -156,14 +156,14 @@ print(b.info())
 # %% [markdown]
 # ## 8. Change parameters live, and read them back
 #
-# Set `a`'s `amp` with `/n_set`, and retune `b` by writing its control bus. The
+# Set `a`'s `amp` with `/node_set`, and retune `b` by writing its control bus. The
 # tree reflects both.
 
 # %%
 a.set({"amp": 0.05})
 freq_bus.set(550.0)
 time.sleep(0.1)
-show_tree("after /n_set amp and /c_set on the mapped bus")
+show_tree("after /node_set amp and /bus_set on the mapped bus")
 print("\ninferred bus graph of the sources group:")
 print(server.dump_graph(sources.id), end="")
 
@@ -171,14 +171,14 @@ print(server.dump_graph(sources.id), end="")
 # ## 9. Steer the server's logs from the client
 #
 # Logs are a separate channel (the server's **stderr**). The client can retune
-# the level live with `/verbosity`, and toggle the OSC-traffic dump with
-# `/dumpOSC`. Output lands wherever the server process writes.
+# the level live with `/server_verbosity`, and toggle the OSC-traffic dump with
+# `/server_dumpOsc`. Output lands wherever the server process writes.
 
 # %%
-print("verbosity ->", server.request("/verbosity", 2, timeout=2.0, expect=("/done", "/fail")))
-print("dumpOSC   ->", server.request("/dumpOSC", 1, timeout=2.0, expect=("/done", "/fail")))
+print("verbosity ->", server.request("/server_verbosity", 2, timeout=2.0, expect=("/done", "/fail")))
+print("dumpOSC   ->", server.request("/server_dumpOsc", 1, timeout=2.0, expect=("/done", "/fail")))
 a.set({"freq": 200.0})   # now traced on the server's stderr
-print("sent /n_set; check the server's stderr for the trace line")
+print("sent /node_set; check the server's stderr for the trace line")
 
 # %% [markdown]
 # ## 10. Tear down

@@ -1,6 +1,6 @@
-"""Buffer I/O wrappers over the server's ``/b_*`` commands: writing a buffer to
+"""Buffer I/O wrappers over the server's ``/buffer_*`` commands: writing a buffer to
 a sound file and reading it back (offline, NRT), and the synchronous shape/data
-queries (``/b_query``, ``/b_getn``) against an in-process embedded server.
+queries (``/buffer_query``, ``/buffer_getRange``) against an in-process embedded server.
 """
 
 import os
@@ -36,7 +36,7 @@ def test_write_then_read_buffer_round_trips(tmp_path):
 
     def close():
         yield 0.1
-        s.send_bundle(("/n_free", 0))
+        s.send_bundle(("/node_free", 0))
 
     clock.play(Routine(close))
     clock.render()
@@ -56,7 +56,7 @@ def test_write_then_read_buffer_round_trips(tmp_path):
     def go():
         Synth.new("play", {"buf": b2.bufnum}, server=s2)
         yield 0.5
-        s2.send_bundle(("/n_free", 0))
+        s2.send_bundle(("/node_free", 0))
 
     clock2.play(Routine(go))
     clock2.render()

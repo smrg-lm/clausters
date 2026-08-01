@@ -2,7 +2,7 @@
 //!
 //! The client side of timing: turn a wall-clock instant into an NTP timetag,
 //! wrap messages in a timestamped bundle, and convert an instant to the
-//! server's sample counter given an anchor (the `/clock` reply or the shm
+//! server's sample counter given an anchor (the `/clock_query` reply or the shm
 //! data-plane sample clock). Unlike the rest of the crate this allocates and
 //! depends on `rosc`, so it is for the network/client side, not the audio
 //! thread.
@@ -61,7 +61,7 @@ pub fn ntp_to_unix(t: OscTime) -> f64 {
 /// The server's sample counter at Unix instant `unix_secs`, given an anchor
 /// (`anchor_sample` was the counter at `anchor_unix`) and the sample rate.
 /// This is the conversion a client uses to schedule by absolute sample with
-/// `/sched`, removing wall-clock/crystal drift once the anchor is modelled.
+/// `/sched_at`, removing wall-clock/crystal drift once the anchor is modelled.
 pub fn unix_to_sample(
     unix_secs: f64,
     anchor_unix: f64,
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn bundle_encodes_and_decodes() {
-        let msg = message("/n_set", vec![OscType::Int(1000), OscType::Float(440.0)]);
+        let msg = message("/node_set", vec![OscType::Int(1000), OscType::Float(440.0)]);
         let b = bundle(unix_to_ntp(1_700_000_000.0), vec![msg]);
         let bytes = encode(&OscPacket::Bundle(b)).unwrap();
         // Decodes back through the single shared door.

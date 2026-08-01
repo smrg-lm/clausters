@@ -11,7 +11,7 @@
 //!
 //! - [`SelfControl`] (`FreeSelf`, `PauseSelf`) watches a **signal** and reports
 //!   its action while that signal is positive. It does not latch: a paused node
-//!   resumed by `/n_run 1` re-pauses only if its input is still up, which is
+//!   resumed by `/node_run 1` re-pauses only if its input is still up, which is
 //!   what makes `PauseSelf` usable as a gate rather than a one-way door.
 //! - [`WhenDone`] (`FreeSelfWhenDone`, `Done`) watches **another UGen's done
 //!   flag**, which is not a signal at all and cannot be read off a wire. The
@@ -26,7 +26,7 @@ use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 /// The action is reported for the block just processed and **not latched**.
 /// For `FreeSelf` that is indistinguishable (the node is gone at the end of
 /// the block either way), but for `PauseSelf` it is the whole behaviour: a
-/// latched one would re-pause the instant `/n_run 1` resumed it, forever.
+/// latched one would re-pause the instant `/node_run 1` resumed it, forever.
 pub struct SelfControl {
     action: DoneAction,
     active: bool,

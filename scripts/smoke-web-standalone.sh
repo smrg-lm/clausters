@@ -2,7 +2,7 @@
 # The standalone-in-a-tab acceptance: a native-format bundle (the exact files
 # `clausters-gui --standalone` reads) boots entirely in a browser tab — the
 # engine in an AudioWorklet, the GUI host on a canvas, no server process —
-# with its meter live over /c_stream. clients/web/examples/standalone.html
+# with its meter live over /bus_stream. clients/web/examples/standalone.html
 # (?smoke=1) does the asserting; the verdict is beaconed as a fetch of
 # /smoke-verdict-… and read from the HTTP access log (real-time audio: no
 # --virtual-time-budget, same posture as scripts/smoke-web.sh).

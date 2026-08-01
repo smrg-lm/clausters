@@ -103,8 +103,8 @@ def channels(samples, count: int) -> tuple[array, ...]:
     """Split interleaved `samples` into `count` per-channel arrays.
 
     Interleaved is the currency everywhere in Clausters — it is the server's
-    own buffer layout (`/b_getn` indexes ``frame * channels + channel``, and
-    `/b_export` writes the same order), so audio *going to* the server needs
+    own buffer layout (`/buffer_getRange` indexes ``frame * channels + channel``, and
+    `/buffer_export` writes the same order), so audio *going to* the server needs
     no conversion. Deinterleaving is for analysis on this side, and it is
     cheap: extended slicing on an `array` is a C-level strided copy, a few
     percent of what the render itself costs. `interleave` is the inverse.
@@ -132,7 +132,7 @@ def read_soundfile(path, start: int = 0, frames: int = -1) -> RenderStats:
     WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the rest — whatever
     the file holds, the samples come back interleaved `float32`, scaled to
     ``[-1, 1]``, at the file's own sample rate (nothing here resamples). This
-    is the same decoder ``/b_allocRead`` uses, which is why the client needs
+    is the same decoder ``/buffer_allocRead`` uses, which is why the client needs
     no audio library of its own: the stdlib `wave` module cannot even read
     the float32 WAV that `render` writes.
 
@@ -318,7 +318,7 @@ def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,
         node = Group.graph(obj.name, controls, server=server)
     else:
         node = Synth.new(obj.name, controls, server=server)
-    server.send_bundle_after(float(dur), ("/n_free", node.id))
+    server.send_bundle_after(float(dur), ("/node_free", node.id))
     return session.render(sample_rate=sample_rate, channels=channels, seed=seed,
                           path=path)
 

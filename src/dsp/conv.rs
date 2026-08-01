@@ -4,7 +4,7 @@
 //! The scheme is uniformly partitioned **overlap-save** convolution with a
 //! frequency-domain delay line (FDL). The impulse response is split into `P`
 //! partitions of `L` samples; each partition is zero-padded to `N = 2L` and
-//! transformed **once, on the NRT thread**, by the `/b_gen prepare_partconv`
+//! transformed **once, on the NRT thread**, by the `/buffer_gen prepare_partconv`
 //! routine, which writes the spectra into an ordinary immutable pool buffer
 //! (see [`layout`]). The audio thread never transforms a kernel: per hop of
 //! `L` input samples it forward-transforms its own input window, multiplies-
@@ -51,7 +51,7 @@ pub const DEFAULT_PARTITIONS: usize = 16;
 /// boot/build-time pool (256 × 4096 floats ≈ 4 MiB at the largest window).
 pub const MAX_PARTITIONS: usize = 256;
 
-/// The prepared-kernel buffer layout written by `/b_gen prepare_partconv` and
+/// The prepared-kernel buffer layout written by `/buffer_gen prepare_partconv` and
 /// read by `Conv`: `data[0] = L` (partition length), `data[1] = P`
 /// (partition count), then `P` frames of `N = 2L` floats — each partition
 /// zero-padded to `N` and packed by
@@ -77,7 +77,7 @@ mod ugen {
     use clausters_core::fft;
 
     /// Uniformly partitioned overlap-save convolver. Inputs: `[in, kernel]` — the
-    /// audio signal and the buffer index of a **prepared** kernel (`/b_gen
+    /// audio signal and the buffer index of a **prepared** kernel (`/buffer_gen
     /// prepare_partconv`). Static config: `fft_size` (the transform size `N`; the
     /// partition is `L = N/2`) and `partitions` (the FDL capacity — the longest
     /// kernel this instance accepts). A kernel whose own `L` differs from the

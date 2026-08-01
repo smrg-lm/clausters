@@ -5,7 +5,7 @@
 #
 # Persistence is on by default; this script points it at a throwaway directory
 # with --data-dir. The two server sessions run in sequence (the first exits on
-# /quit before the second starts) so they share that directory across a real
+# /server_quit before the second starts) so they share that directory across a real
 # restart. Needs the `faust` feature and `oscsend` (liblo-tools).
 #
 #   cargo build --release --features faust
@@ -35,9 +35,9 @@ echo "=== session 1: define 'psine' and quit (it gets persisted) ==="
 "$SERVER" --data-dir "$DATA_DIR" &
 PID=$!
 sleep 1.0
-oscsend localhost $PORT /d_faust ss psine "$SINE"
+oscsend localhost $PORT /def_send sss faust psine "$SINE"
 sleep 0.5                       # let the async compile + persist finish
-oscsend localhost $PORT /quit
+oscsend localhost $PORT /server_quit
 wait $PID
 
 echo
@@ -49,13 +49,13 @@ echo "=== session 2: restart WITHOUT re-sending the def — it reloads itself ==
 "$SERVER" --data-dir "$DATA_DIR" &
 PID=$!
 sleep 1.0                        # the def reloads in the background; give it a moment
-oscsend localhost $PORT /s_new siii psine 3001 1 0   # instantiate the reloaded def
+oscsend localhost $PORT /synth_new siii psine 3001 1 0   # instantiate the reloaded def
 echo "you should hear 440 Hz — the def survived the restart"
 sleep 1.5
-oscsend localhost $PORT /n_free i 3001
-oscsend localhost $PORT /quit
+oscsend localhost $PORT /node_free i 3001
+oscsend localhost $PORT /server_quit
 wait $PID
 
 echo
 echo "done. (delete a .bc or bump libfaust and it recompiles from the .json;"
-echo " '/d_free psine' would remove both files.)"
+echo " '/def_free psine' would remove both files.)"

@@ -67,8 +67,8 @@ def main():
 
     def stop():
         yield 2.0
-        session.server.send_bundle(("/n_free", raw.id))
-        session.server.send_bundle(("/n_free", lp.id))
+        session.server.send_bundle(("/node_free", raw.id))
+        session.server.send_bundle(("/node_free", lp.id))
 
     Routine(stop).play(session.clock)
     stats = session.render(sample_rate=SR, channels=2, path=out_path)

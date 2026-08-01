@@ -27,12 +27,12 @@ adding a widget are in [Architecture](architecture.md).
 | `/gui_set id key value …` | Update one live widget's properties. Types are preserved (an OSC int stays an int). A value that is logically an array (a curve's break-points, a patch's wires) rides as its **JSON string**, since an OSC key/value is a scalar. |
 | `/gui_free id` | Free a widget and its subtree. Freeing a `window`-rooted def closes its window. |
 | `/gui_query id` | Ask for a widget's state. Replies `/gui_info id type key value …`; an **empty type** (`""`) means no such widget — the host answers either way, as the audio server replies even on a miss. |
-| `/gui_bind id "server" address prefix…` | Forward this widget's value **straight to the audio server**, bypassing the script: on every change the host sends `address` with the fixed `prefix` arguments followed by the value (e.g. `"/n_set" 1001 "freq"` makes the widget send `/n_set 1001 freq <value>`). A bound widget stops emitting `/gui_event`. |
+| `/gui_bind id "server" address prefix…` | Forward this widget's value **straight to the audio server**, bypassing the script: on every change the host sends `address` with the fixed `prefix` arguments followed by the value (e.g. `"/node_set" 1001 "freq"` makes the widget send `/node_set 1001 freq <value>`). A bound widget stops emitting `/gui_event`. |
 | `/gui_bind id` | (no target) Remove the binding; the widget emits events again. |
 | `/gui_load name` | Instantiate a **persisted** GuiDef by name (the host replays it as its saved `/gui_def`). Needs a data directory. |
 
 There is no save command: a GuiDef whose root carries a `name` prop is
-**persisted on `/gui_def`**, the way a named def is persisted on `/d_recv`. That
+**persisted on `/gui_def`**, the way a named def is persisted on `/def_send synth`. That
 is what lets a host boot a whole interface with no script attached (the
 standalone path).
 
@@ -158,7 +158,7 @@ script actually names these. The catalog itself:
 | `spectrogram` | The editor-grade spectrogram, the same chrome | the data, `window_size`, `hop`, `freq_scale`, `db_floor`/`db_ceil`, `colormap` |
 | `bpf` | A drawable break-point envelope, played by the server's own shape math | `points`, `min`, `max`, `duration`, `exp` |
 | `pianoroll` | The editor-grade piano-roll: a keyboard, a MIDI-note grid, a velocity lane and an OSC-event lane; the same chrome and navigation as the heavy views | `notes` (`start dur pitch velocity channel` quintuples), `osc` (`time label` pairs), `min`/`max` (pitch window), `snap`, `velocity`, `osc_lane`, `midi_in` (live MIDI painting: the native host opens its virtual input port and paints incoming notes — at the running playhead, or step-entry on the `snap` grid), `ruler`, `sel_*`, `playhead_at`, `playhead_loop_*`, `y_start`/`y_len`, `link` |
-| `piano` | The playable virtual keyboard, laid out with real piano proportions; its overview strip pans/zooms the visible MIDI range, and it plays server voices itself when `voice` is set (an `/s_new` per key press, a `gate 0` per release) | `min`/`max` (visible range; min snaps to a white key), `active_min`/`active_max` (keys outside draw grayed and are inert), `pan` (0 freezes all range navigation), `overview`, `velocity` (fixed; unset = from the press height), `channel`, `voice`/`voice_args` (host-managed voices), `label` |
+| `piano` | The playable virtual keyboard, laid out with real piano proportions; its overview strip pans/zooms the visible MIDI range, and it plays server voices itself when `voice` is set (an `/synth_new` per key press, a `gate 0` per release) | `min`/`max` (visible range; min snaps to a white key), `active_min`/`active_max` (keys outside draw grayed and are inert), `pan` (0 freezes all range navigation), `overview`, `velocity` (fixed; unset = from the press height), `channel`, `voice`/`voice_args` (host-managed voices), `label` |
 | `plot` | A static plot of a signal: multichannel lanes, x/y rulers, a hover readout, and **views** (`signal`, `spectrum`; the set is extensible) — measurement without navigation | `data`/`blob`/`path`, `channels`, `view`, `overlay`, `sample_rate`, `min`/`max` (omit a side to auto-fit it; the string `"auto"` releases it live), `ruler` (`samples`/`time`/`off`), `ruler_y` (`off` to hide), and for `view: "spectrum"`: `fft_size`, `db_floor`/`db_ceil`, `freq_scale` (`log`/`linear`/`mel`/`bark`) |
 | `timeruler` | A **free-standing time ruler**: the shared axis as a strip the *document* places — a DAW's ruler above its tracks. A lane's own `ruler` is reserved out of that lane's height, so ruling a stack meant picking one lane to carry it and to pay for it; this owns its box instead. Joins the group named by `link` and labels its window; its ticks are indented by a lane's header width so they stand over the samples they name. A press **locates**, Shift+drag pans, the wheel zooms | `ruler` (the unit), `sample_rate`, `tempo`/`beat_at`/`quant`, `link`, `h` (its thickness), `theme` |
 | `track` | A multitrack **lane**, holding `clip` children on the window's shared time axis | `label`, `height`, `snap`, `ruler`, `tempo`, `sample_rate`, `playhead_at`, `playhead`, `playhead_loop_*`, `link`, `theme` |
@@ -173,7 +173,7 @@ hardware output) at **`rate`** (`"audio"`, the default, or `"control"`), over
 `channels` **adjacent** buses where it takes several. A bus is a bus: the rate
 says how its values are obtained, not what kind of thing it is. Nothing on the
 wire names a recording ring — when a view needs an audio bus's samples, the
-**host** asks the audio server to record it (`/tap`, see
+**host** asks the audio server to record it (`/bus_tap`, see
 [`schemas.md`](schemas.md)) and stops when no open view draws it, and the
 server publishes in its segment where those samples landed. A `meter` needs no
 recording at all: it reads the per-bus level the engine publishes every block.

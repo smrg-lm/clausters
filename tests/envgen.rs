@@ -6,7 +6,7 @@
 //!
 //! These drive a whole `Engine` rather than a bare synth, because half of what
 //! is under test here is a *done action*: freeing a node, pausing it, resuming
-//! it with `/n_run`. That is engine behavior, not signal.
+//! it with `/node_run`. That is engine behavior, not signal.
 //!
 //! Rule 5, the block split, is not here: it is the same test for every row and
 //! runs from the shared table (`tests/subjects.rs`), which covers the two ramps.
@@ -194,8 +194,8 @@ fn gate_sustains_at_the_release_node_then_releases() {
 
 #[test]
 fn gate_already_closed_at_the_first_block_releases_and_frees() {
-    // The stuck-voice race: a note-on (/s_new, gate 1) and its note-off
-    // (/n_set gate 0) applied in the same command drain, before the node's
+    // The stuck-voice race: a note-on (/synth_new, gate 1) and its note-off
+    // (/node_set gate 0) applied in the same command drain, before the node's
     // first block. The envelope never sees a gate edge — it must count the
     // gate found closed at birth as a release, play the release segment out
     // silently and let the done action free the node, instead of playing the
@@ -413,7 +413,7 @@ fn done_action_free_group_frees_the_enclosing_group() {
     );
 }
 
-// ---- S4: /n_run resume + the relative done actions through the real chain ----
+// ---- S4: /node_run resume + the relative done actions through the real chain ----
 
 /// A plain synth that sums a constant `dc` into bus 0 every block (no envelope,
 /// no done action) — a marker to hear whether a node ran.
@@ -426,7 +426,7 @@ fn dc_spec(dc: f64) -> Value {
 
 #[test]
 fn n_run_resumes_a_paused_synth() {
-    // pauseSelf (doneAction 1) parks the synth; /n_run 1 (RunNode run=true)
+    // pauseSelf (doneAction 1) parks the synth; /node_run 1 (RunNode run=true)
     // clears the pause so it runs again — PauseSelf is no longer terminal.
     let (mut engine, mut handle) = spawn(envgen_spec(
         0.0,
@@ -492,7 +492,7 @@ fn done_action_free_self_and_next_frees_two_nodes() {
 
 #[test]
 fn n_run_pauses_and_resumes_a_whole_group() {
-    // /n_run on a group pauses its entire subtree (skipped, silent) and resumes
+    // /node_run on a group pauses its entire subtree (skipped, silent) and resumes
     // it. A DC synth inside the group is the marker.
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle
@@ -765,7 +765,7 @@ fn free_self_passes_its_input_through_until_it_goes_positive() {
 fn pause_self_does_not_latch_so_n_run_really_resumes() {
     // The property the implementation is shaped around: the action is reported
     // for the block just processed, never remembered. A latched one would
-    // re-pause the instant /n_run 1 resumed the node, making the command
+    // re-pause the instant /node_run 1 resumed the node, making the command
     // useless and PauseSelf a one-way door.
     let (mut engine, mut handle) = spawn(nodectl_spec("PauseSelf"));
     set(&mut handle, 1.0);

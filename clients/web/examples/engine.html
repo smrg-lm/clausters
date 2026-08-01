@@ -5,7 +5,7 @@
      Run: build with ./build.sh, then
        python3 -m http.server   and open /examples/engine.html
      Press Power (the autoplay gesture), then Sine: a 440 Hz default-def tone
-     from the wasm engine. Status round-trips /status over the MessagePort.
+     from the wasm engine. Status round-trips /server_status over the MessagePort.
 
      The scripted counterpart is tests/smoke.html + scripts/smoke-web.sh. -->
 <html lang="en">
@@ -26,7 +26,7 @@
 <p>
     <button id="power" disabled>Power</button>
     <button id="sine" disabled>Sine</button>
-    <button id="status" disabled>/status</button>
+    <button id="status" disabled>/server_status</button>
     <span id="clock"></span>
 </p>
 <pre id="log">loading…</pre>
@@ -47,7 +47,7 @@ server.onReply = (bytes) => {
     }
 };
 server.onError = (m) => log(`!! worklet error: ${m}`);
-server.onQuit = () => log("!! /quit — engine stopped");
+server.onQuit = () => log("!! /server_quit — engine stopped");
 log(`engine loaded (context ${server.context.sampleRate} Hz, state ${server.context.state})`);
 
 let powered = false;
@@ -64,21 +64,21 @@ const SINE_ID = 1000;
 $("sine").onclick = () => {
     sineOn = !sineOn;
     if (sineOn) {
-        server.send(encodeMessage("/s_new", [
+        server.send(encodeMessage("/synth_new", [
             ["s", "default"], ["i", SINE_ID], ["i", 0], ["i", 0],
             ["s", "freq"], ["f", 440], ["s", "amp"], ["f", 0.2],
         ]));
-        log(`-> /s_new default ${SINE_ID} (440 Hz)`);
+        log(`-> /synth_new default ${SINE_ID} (440 Hz)`);
     } else {
-        server.send(encodeMessage("/n_free", [["i", SINE_ID]]));
-        log(`-> /n_free ${SINE_ID}`);
+        server.send(encodeMessage("/node_free", [["i", SINE_ID]]));
+        log(`-> /node_free ${SINE_ID}`);
     }
     $("sine").textContent = sineOn ? "Sine off" : "Sine";
 };
 
 $("status").onclick = () => {
-    server.send(encodeMessage("/status"));
-    log("-> /status");
+    server.send(encodeMessage("/server_status"));
+    log("-> /server_status");
 };
 
 setInterval(async () => {

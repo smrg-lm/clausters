@@ -2,7 +2,7 @@
 //
 // A fake carrier captures the packets and they are decoded, so "exact timing"
 // becomes a hard assertion rather than a claim: the timetag of every bundle
-// under a monotonic timebase, and the absolute `/sched` sample under a sample
+// under a monotonic timebase, and the absolute `/sched_at` sample under a sample
 // timebase. Both are computed from the routine's *logical* beat, which is the
 // property the whole layer exists for.
 
@@ -29,7 +29,7 @@ await loadCore(
 
 /**
  * A carrier that only records. Nothing replies, so the Server is opened with
- * explicit sizing and no `/notify`.
+ * explicit sizing and no `/server_notify`.
  */
 function recorder(): Connection & { packets: Uint8Array[] } {
     const packets: Uint8Array[] = [];
@@ -116,7 +116,7 @@ test("a bundle is stamped at the routine's logical beat, plus the latency", asyn
     const { clock, run } = harness(seconds, 2.0);
     const routine = new Routine(function* () {
         for (let i = 0; i < 3; i++) {
-            server.sendBundle([["/n_set", ["i", 1000], "freq", ["f", 440 + i]]]);
+            server.sendBundle([["/node_set", ["i", 1000], "freq", ["f", 440 + i]]]);
             yield 0.5;
         }
     });
@@ -130,21 +130,21 @@ test("a bundle is stamped at the routine's logical beat, plus the latency", asyn
         const expected = start + i * 0.25 + server.latency;
         assert.equal(timetagOf(packet), unixToNtp(expected), `bundle ${i}`);
         const [msg] = decodePacket(packet);
-        assert.equal(msg!.addr, "/n_set");
+        assert.equal(msg!.addr, "/node_set");
         assert.deepEqual(msg!.args, [1000, "freq", 440 + i]);
     });
     server.close();
     void timebase;
 });
 
-test("under a sample timebase the emission is /sched at an absolute sample", async () => {
+test("under a sample timebase the emission is /sched_at at an absolute sample", async () => {
     const connection = recorder();
     const server = await openServer(connection);
     const timebase = manualSampleTimebase();
     const { clock, run } = harness(timebase, 2.0);
     const routine = new Routine(function* () {
         for (let i = 0; i < 3; i++) {
-            server.sendBundle([["/n_set", ["i", 1000], "freq", ["f", 440]]]);
+            server.sendBundle([["/node_set", ["i", 1000], "freq", ["f", 440]]]);
             yield 0.5;
         }
     });
@@ -155,17 +155,17 @@ test("under a sample timebase the emission is /sched at an absolute sample", asy
     const origin = clock.pacingOrigin!;
     connection.packets.forEach((packet, i) => {
         const [sched] = decodePacket(packet);
-        assert.equal(sched!.addr, "/sched");
+        assert.equal(sched!.addr, "/sched_at");
         const expected = secsToSamples(origin + i * 0.25 + server.latency, 48000);
         assert.equal(sched!.args[0], expected, `sched ${i}`);
         // The inner packet is an immediate bundle carrying the messages.
         const inner = decodePacket(sched!.args[1] as Uint8Array);
-        assert.equal(inner[0]!.addr, "/n_set");
+        assert.equal(inner[0]!.addr, "/node_set");
     });
     server.close();
 });
 
-test("a note played in a routine emits its /s_new and its release, both timed", async () => {
+test("a note played in a routine emits its /synth_new and its release, both timed", async () => {
     const connection = recorder();
     const server = await openServer(connection);
     const seconds = {
@@ -189,12 +189,12 @@ test("a note played in a routine emits its /s_new and its release, both timed", 
     assert.equal(connection.packets.length, 2);
     const [start, release] = connection.packets;
     const [sNew] = decodePacket(start!);
-    assert.equal(sNew!.addr, "/s_new");
+    assert.equal(sNew!.addr, "/synth_new");
     assert.equal(sNew!.args[0], "sine");
     const node = Number(sNew!.args[1]);
 
     const [free] = decodePacket(release!);
-    assert.equal(free!.addr, "/n_free", "no gate on a custom def: freed directly");
+    assert.equal(free!.addr, "/node_free", "no gate on a custom def: freed directly");
     assert.equal(free!.args[0], node);
 
     // The release is exactly `sustain` beats (dur * legato) after the note.
@@ -226,7 +226,7 @@ test("the built-in default instrument is released by its gate", async () => {
     );
     run(2);
     const [gate] = decodePacket(connection.packets[1]!);
-    assert.equal(gate!.addr, "/n_set");
+    assert.equal(gate!.addr, "/node_set");
     assert.equal(gate!.args[1], "gate");
     assert.equal(gate!.args[2], 0);
     server.close();
@@ -246,7 +246,7 @@ test("a note played with no clock sounds now and frees itself on wall time", asy
     assert.equal(isBundle(connection.packets[0]!), true, "the note is timed at now");
     assert.equal(isBundle(connection.packets[1]!), true, "the release is timed");
     const [sNew] = decodePacket(connection.packets[0]!);
-    assert.equal(sNew!.addr, "/s_new");
+    assert.equal(sNew!.addr, "/synth_new");
     assert.equal(event.get("node"), Number(sNew!.args[1]));
     assert.equal(event.get("sustain"), 2);
 
@@ -268,7 +268,7 @@ test("an event completes its own keys, and stays actionable afterwards", async (
     connection.packets.length = 0;
     event.free();
     const [freed] = decodePacket(connection.packets[0]!);
-    assert.equal(freed!.addr, "/n_free");
+    assert.equal(freed!.addr, "/node_free");
     assert.equal(freed!.args[0], event.get("node"));
     server.close();
 });
@@ -302,13 +302,13 @@ test("a clock resumed after a stop stamps for now, not for the old axis", async 
     // with the beat, so the emission is not eight seconds stale.
     clock.play(
         new Routine(function* () {
-            server.sendBundle([["/n_free", ["i", 1000]]]);
+            server.sendBundle([["/node_free", ["i", 1000]]]);
             yield 1;
         }),
     );
     run(0.1); // the first wake lands on the spot, at the resumed beat
     const [sched] = decodePacket(connection.packets[0]!);
-    assert.equal(sched!.addr, "/sched");
+    assert.equal(sched!.addr, "/sched_at");
     assert.equal(sched!.args[0], secsToSamples(10 + server.latency, 48000));
     server.close();
 });
@@ -317,14 +317,14 @@ test("sending a bundle with no clock anywhere is wall-clock now", async () => {
     const connection = recorder();
     const server = await openServer(connection);
     const before = Date.now() / 1000;
-    server.sendBundle([["/n_free", ["i", 1000]]]);
+    server.sendBundle([["/node_free", ["i", 1000]]]);
 
     // No clock is not an error: the clockless moment is now, and a delay on
     // it reads as seconds (tempo 1.0).
     const at = ntpToUnix(timetagOf(connection.packets[0]!));
     assert.ok(Math.abs(at - (before + server.latency)) < 0.5);
 
-    server.sendBundle([["/n_free", ["i", 1001]]], { delayBeats: 3 });
+    server.sendBundle([["/node_free", ["i", 1001]]], { delayBeats: 3 });
     const later = ntpToUnix(timetagOf(connection.packets[1]!));
     assert.ok(Math.abs(later - at - 3) < 0.01);
     server.close();

@@ -8,7 +8,7 @@ what runs afterwards is the persisted bundle — the same one everywhere — wit
 each control knob wired **straight to the synthesis** through the GraphDef's
 named surface:
 
-    knob turn -> /n_set <graph node> "<port>" <value>   (the widget's `bind`)
+    knob turn -> /node_set <graph node> "<port>" <value>   (the widget's `bind`)
               -> the graph's surface port fans out to its member controls
 
 The instrument is an FM voice feeding a tremolo through a private graph bus:
@@ -65,8 +65,8 @@ Then the **same** bundle runs on every leg, no script attached to any of them:
 The layout it writes::
 
     bundle/defs/synthdefs/fm-trem.voice.json    the members (SynthDef specs,
-    bundle/defs/synthdefs/fm-trem.trem.json      the /d_recv payloads)
-    bundle/defs/graphdefs/fm-trem.graph.json    the GraphDef (the /d_graph
+    bundle/defs/synthdefs/fm-trem.trem.json      the /def_send synth payloads)
+    bundle/defs/graphdefs/fm-trem.graph.json    the GraphDef (the /def_send graph
                                                  payload: buses, members,
                                                  the surface)
     bundle/defs/guidefs/fm-trem.json            the GuiDef record — a template
@@ -151,20 +151,20 @@ def build() -> Bundle:
 
     def port_knob(widget_id, port, lo, hi, value):
         return knob(label=port, min=lo, max=hi, value=value,
-                    bind=["/n_set", node, port], id=widget_id)
+                    bind=["/node_set", node, port], id=widget_id)
 
     b.gui(window(
         # The header row: the note, and this instance's own play/stop. A page
         # holding several instruments has them all sounding at once otherwise,
         # and each needs to be silenced on its own — which is what the toggle
-        # is for, bound to `/n_run` on *this* instance's graph node. Pausing a
+        # is for, bound to `/node_run` on *this* instance's graph node. Pausing a
         # group skips its whole subtree on the audio thread, so a stopped
         # instrument costs nothing rather than merely going quiet. `weight`
         # splits the row 3:1.
         panel(
             label("every knob sets a surface port of the running GraphDef",
                   weight=3, id=3),
-            toggle(label="play", value=True, bind=["/n_run", node], weight=1,
+            toggle(label="play", value=True, bind=["/node_run", node], weight=1,
                    id=4),
             layout="row", h=30, id=2,
         ),
@@ -188,7 +188,7 @@ def build() -> Bundle:
     # One message brings the instance up: its own node id, its own LFO bus and
     # its tag's parameters, as initial port values.
     #
-    # The bus rides *in* the `/graph_new` rather than in an `/n_set` after it,
+    # The bus rides *in* the `/graph_new` rather than in an `/node_set` after it,
     # because a def latches its output bus when the synth starts — a later
     # value would arrive after the member had already chosen where to write.
     b.boot([

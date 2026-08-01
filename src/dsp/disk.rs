@@ -7,7 +7,7 @@
 //! background I/O thread and a single-producer/single-consumer lock-free ring
 //! ([`rtrb`]) shared with the audio thread.
 //!
-//! - **Build** (`/s_new`, on the network thread): open the file and spawn the
+//! - **Build** (`/synth_new`, on the network thread): open the file and spawn the
 //!   I/O thread. Allocating here is fine.
 //! - **`process`** (audio thread): only pop/push the ring — no allocation,
 //!   no locking, no I/O. A ring underrun (disk too slow) plays silence;

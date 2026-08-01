@@ -1,4 +1,4 @@
-//! M11: `/n_map` and `/n_mapa` — buses as a live source of node parameters.
+//! M11: `/node_map` and `/node_mapAudio` — buses as a live source of node parameters.
 //! Engine-level, no audio device: commands go in through the FIFO, audio comes
 //! out of `process_block`, and a zero-crossing estimate does the listening.
 
@@ -30,7 +30,7 @@ fn default_def() -> Arc<SynthDef> {
 }
 
 /// Writes its `level` control (default 660) into an audio bus every block —
-/// a DC source to drive `/n_mapa` from.
+/// a DC source to drive `/node_mapAudio` from.
 fn dc_def() -> Arc<SynthDef> {
     let json = format!(
         r#"{{
@@ -110,7 +110,7 @@ fn n_map_tracks_a_control_bus_live() {
         .ok()
         .unwrap();
 
-    // The mapped control follows the bus, every block, with no further /n_set.
+    // The mapped control follows the bus, every block, with no further /node_set.
     handle
         .send(Cmd::SetControlBus {
             index: SCRATCH_BUS,
@@ -158,7 +158,7 @@ fn unmap_holds_the_last_value() {
         .unwrap();
     assert_freq(&mut engine, 330.0);
 
-    // …and a plain /n_set still works afterwards.
+    // …and a plain /node_set still works afterwards.
     handle
         .send(Cmd::SetControl {
             id: 1000,

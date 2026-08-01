@@ -7,12 +7,12 @@ script at run time**: the Python client only *authors* the files (it talks to
 nothing); what runs afterwards is the persisted bundle, and the *host* manages
 one server voice per held key:
 
-    key press   -> /s_new piano.voice <id> 0 0 freq <hz> amp <vel/127> gate 1
-    key release -> /n_set <id> gate 0        (the envelope releases and the
+    key press   -> /synth_new piano.voice <id> 0 0 freq <hz> amp <vel/127> gate 1
+    key release -> /node_set <id> gate 0        (the envelope releases and the
                                               def frees the node itself)
 
 so the keyboard plays the wasm engine in the tab with zero page JS — the same
-posture as ``examples/graph-controls``, whose knobs bind ``/n_set``s. The other
+posture as ``examples/graph-controls``, whose knobs bind ``/node_set``s. The other
 mapping path (the widget unbound, the script programming voices from the
 ``"note"`` events) is the Python example ``clients/python/examples/gui_piano.py``.
 
@@ -66,7 +66,7 @@ Then the **same** bundle runs on every leg, no script attached to any of them:
 The layout it writes (the native persisted formats plus the manifest, which
 both the browser and the desktop read)::
 
-    bundle/defs/synthdefs/piano.voice.json    the voice (the /d_recv payload)
+    bundle/defs/synthdefs/piano.voice.json    the voice (the /def_send synth payload)
     bundle/defs/guidefs/piano.json            the GuiDef record — a template
     bundle/bundle.json                        the manifest
     bundle/index.js                           the generated ES module
@@ -126,7 +126,7 @@ def build() -> Bundle:
     b.gui(window(
         label("click/drag plays; drag the strip to pan, wheel to zoom", id=2),
         # `voice` names the def the host spawns per held key; `voice_args`
-        # rides along with every /s_new, which is how this instance's own bus
+        # rides along with every /synth_new, which is how this instance's own bus
         # reaches its voices.
         piano(min=48, max=84, active_min=21, active_max=108,
               voice=voice_name, voice_args=[("env_bus", env)], label="keys",

@@ -209,7 +209,7 @@ unsafe extern "C" {
     pub fn CboxSelect3Aux(selector: FaustBox, b1: FaustBox, b2: FaustBox, b3: FaustBox)
     -> FaustBox;
 
-    // UI elements: named parameters, the future `/n_set` controls (F3).
+    // UI elements: named parameters, the future `/node_set` controls (F3).
     pub fn CboxHSlider(
         label: *const c_char,
         init: FaustBox,

@@ -63,9 +63,9 @@ Environment knobs (also honoured by ``setup.py``):
 - ``CLAUSTERS_SKIP_FAUST``       build without the `faust` def family instead of
                                  stopping when libfaust is missing (and without
                                  it even when installed). A SynthDef-only server:
-                                 every ``/d_faust`` fails.
+                                 every ``/def_send faust`` fails.
 - ``CLAUSTERS_SKIP_SYNTH``       the peer knob, for a deliberately Faust-only
-                                 build: no ``/d_recv``, no UGen graphs. It has no
+                                 build: no ``/def_send synth``, no UGen graphs. It has no
                                  library to miss, so there is nothing to probe —
                                  it is a preference, not a fallback.
 - ``CLAUSTERS_SKIP_VEROVIO``     build without the notation layer; the `score`
@@ -436,7 +436,7 @@ def _links_faust() -> bool:
     """Whether the server artifacts are built with the `faust` def family."""
     return _links("libfaust", _faust_prefix(), "FAUST_PREFIX",
                   "third_party/build-faust.sh", "CLAUSTERS_SKIP_FAUST",
-                  "a SynthDef-only server: every /d_faust fails")
+                  "a SynthDef-only server: every /def_send faust fails")
 
 
 def _dropped_families(with_faust: bool) -> set[str]:
@@ -449,7 +449,7 @@ def _dropped_families(with_faust: bool) -> set[str]:
     dropped = set()
     if not with_faust:
         dropped.add("faust")
-    if _skipping("CLAUSTERS_SKIP_SYNTH", "no /d_recv, no UGen graphs"):
+    if _skipping("CLAUSTERS_SKIP_SYNTH", "no /def_send synth, no UGen graphs"):
         dropped.add("synth")
     return dropped
 
@@ -641,7 +641,7 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
     dropped = _dropped_families(with_faust)
     if {"synth", "faust"} <= dropped:
         print("clausters: both def families skipped -- the server keeps its "
-              "engine core (groups, buses, buffers) but every /s_new fails")
+              "engine core (groups, buses, buffers) but every /synth_new fails")
 
     features = os.environ.get("CLAUSTERS_CARGO_FEATURES")
     for stem, (crate, default_feat) in _CRATES.items():

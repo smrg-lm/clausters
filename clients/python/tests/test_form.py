@@ -273,7 +273,7 @@ def _inner_addr(raw: bytes) -> str:
 
 def test_render_matches_handbuilt_timeline_nrt():
     """A concrete group rendered through the arrangement produces the same score
-    (the same /s_new start beats) as the equivalent flat timeline played by a
+    (the same /synth_new start beats) as the equivalent flat timeline played by a
     Playhead by hand — proving the flatten is correct and the change of state
     deterministic. NRT only (OscNrtInterface), so no socket and no port clash."""
     _embed_or_skip()
@@ -290,7 +290,7 @@ def test_render_matches_handbuilt_timeline_nrt():
         return sorted(
             when
             for when, raw in server.interface.score.bundles
-            if _inner_addr(raw) == "/s_new"
+            if _inner_addr(raw) == "/synth_new"
         )
 
     def by_model(server, clock):
@@ -444,5 +444,6 @@ def test_render_routes_a_logical_group_to_graphdef():
     instance = g.render(server, ports={"gain": 0.5})
     assert instance.id == 1000 and instance.server is server
     sent_def, sent_new = server.sent
-    assert sent_def[0] == "/d_graph" and json.loads(sent_def[1][0])["name"] == "chain"
+    assert sent_def[0] == "/def_send" and sent_def[1][0] == "graph"
+    assert json.loads(sent_def[1][1])["name"] == "chain"
     assert sent_new == ("/graph_new", ["chain", 1000, 1, 0, "gain", 0.5])

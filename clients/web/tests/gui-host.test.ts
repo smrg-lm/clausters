@@ -105,7 +105,7 @@ test("GuiHost: a built panel defines, queries and frees on a native host", {
 
         // Binding and unbinding a widget leaves it addressable (the value
         // path itself needs a gesture — that is `tests/gui.html`).
-        freq.bind("/n_set", 1000, "freq");
+        freq.bind("/node_set", 1000, "freq");
         freq.unbind();
         assert.equal((await freq.query()).type, "knob");
 

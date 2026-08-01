@@ -54,10 +54,10 @@ draws as lanes of clips. ([Grouping](grouping.md))
 **control bus** — a server bus carrying control-rate values. What an automation
 renders onto: a small internal synth reads the
 [control vector](#control-vector) onto the bus, and targets follow it (via
-`/n_map`, or by reading the bus directly). ([Automation](automation.md))
+`/node_map`, or by reading the bus directly). ([Automation](automation.md))
 
 **control vector** — an automation curve discretized into a server control
-buffer (`/b_gen "env"`, the same envelope math `EnvGen` plays — what is drawn
+buffer (`/buffer_gen "env"`, the same envelope math `EnvGen` plays — what is drawn
 is what is heard). ([Automation](automation.md))
 
 **cursor** — the *static* transport line: where a located, stopped transport
@@ -124,7 +124,7 @@ wired through buses, rendered as a [GraphDef](#graphdef)).
 ([Grouping](grouping.md), [The logical side](logical.md))
 
 **GraphDef** — the server's named configuration of member nodes wired by
-buses, sent with `/d_graph` and instanced with `/graph_new`. What a logical
+buses, sent with `/def_send graph` and instanced with `/graph_new`. What a logical
 group renders to: `Group.to_graphdef()` maps one onto it, 1:1.
 ([The logical side](logical.md))
 

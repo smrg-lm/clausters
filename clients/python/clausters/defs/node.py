@@ -50,64 +50,64 @@ class Node:
         return _resolve(self.server)
 
     def set(self, controls):
-        """Set controls by name (``/n_set``). On a GraphDef instance the names
+        """Set controls by name (``/node_set``). On a GraphDef instance the names
         resolve against the graph's surface, not its private members."""
-        self._server().send_msg("/n_set", self.id, *_flatten_controls(controls))
+        self._server().send_msg("/node_set", self.id, *_flatten_controls(controls))
 
     def map(self, name, bus, *, audio=False):
-        """Map a control to a bus (``/n_map``, or ``/n_mapa`` for an audio
+        """Map a control to a bus (``/node_map``, or ``/node_mapAudio`` for an audio
         bus), so the control follows whatever the bus carries."""
         index = bus.index if hasattr(bus, "index") else bus
-        self._server().send_msg("/n_mapa" if audio else "/n_map",
+        self._server().send_msg("/node_mapAudio" if audio else "/node_map",
                                 self.id, name, index)
 
     def info(self, timeout: float = 5.0) -> NodeInfo:
-        """This node as the server holds it **right now** (``/n_query`` ->
-        ``/n_info``): where it sits in the tree, and for a synth its def, its
-        controls, its ``/n_map`` bindings and the buses it reads and writes.
+        """This node as the server holds it **right now** (``/node_query`` ->
+        ``/node_query.reply``): where it sits in the tree, and for a synth its def, its
+        controls, its ``/node_map`` bindings and the buses it reads and writes.
 
         A photograph, not a state: a running envelope or a mapped control moves
         under the record's feet, so nothing caches it. A node that is gone —
         freed, or ended by a ``done_action`` — comes back with ``exists``
         false rather than raising. Blocking, RT only."""
-        _, args = self._server().request("/n_query", self.id, timeout=timeout,
-                                         expect=("/n_info",))
+        _, args = self._server().request("/node_query", self.id, timeout=timeout,
+                                         expect=("/node_query.reply",))
         return parse_n_info(args)
 
     def u_cmd(self, ugen_index: int, name: str, *args):
         """Sends a typed command to **one UGen instance** inside this synth
-        (``/u_cmd nodeID ugenIndex name args…``). The server hashes ``name`` to a
+        (``/node_ugenCmd nodeID ugenIndex name args…``). The server hashes ``name`` to a
         stable selector and routes the numeric ``args`` to that UGen on the audio
         thread. The FFT chain uses it to swap a window live, e.g.
         ``synth.u_cmd(fft_index, "window", 4)`` for a Blackman window
         (a `clausters._native.Window` value); an unrecognized ``name`` is a
         no-op on the server."""
-        self._server().send_msg("/u_cmd", self.id, int(ugen_index), str(name),
+        self._server().send_msg("/node_ugenCmd", self.id, int(ugen_index), str(name),
                                 *(float(a) for a in args))
 
     def free(self):
-        """Free this node now (``/n_free``) — the way to cut something whose
+        """Free this node now (``/node_free``) — the way to cut something whose
         life is long (a `play`'d expression, a slow take). Frees a GraphDef
         instance too, private buses included.
 
         The id is **not** returned to the registry here: it stays tracked until
-        the server confirms the death with ``/n_end`` — releasing at send time
+        the server confirms the death with ``/node_end`` — releasing at send time
         could re-hand an id whose node is still alive on the server."""
-        self._server().send_msg("/n_free", self.id)
+        self._server().send_msg("/node_free", self.id)
 
     def run(self, flag: bool = True):
         """Pauses (``flag=False``) or resumes (``flag=True``) this node — a
-        synth or a whole group — with ``/n_run``. A paused node stays in the
+        synth or a whole group — with ``/node_run``. A paused node stays in the
         tree and keeps its state but is skipped (silent); this is what resumes
         a synth parked by ``DoneAction.PAUSE_SELF``."""
-        self._server().send_msg("/n_run", self.id, 1 if flag else 0)
+        self._server().send_msg("/node_run", self.id, 1 if flag else 0)
 
     def pause(self):
-        """Pauses this node (``/n_run … 0``). See `run`."""
+        """Pauses this node (``/node_run … 0``). See `run`."""
         self.run(False)
 
     def resume(self):
-        """Resumes this node (``/n_run … 1``). See `run`."""
+        """Resumes this node (``/node_run … 1``). See `run`."""
         self.run(True)
 
     def __repr__(self):
@@ -123,11 +123,11 @@ class Synth(Node):
     def new(cls, defname, controls=None, *, target=ROOT_NODE_ID,
             action=AddAction.TAIL, server=None) -> "Synth":
         """Starts a synth from a def already loaded on the server, by name
-        (``/s_new``), with ``controls`` (a ``{name: value}`` dict, or pairs)
+        (``/synth_new``), with ``controls`` (a ``{name: value}`` dict, or pairs)
         overriding the def defaults."""
         srv = _resolve(server)
         node_id = srv._node_id()
-        srv.send_msg("/s_new", defname, node_id, int(action), int(target),
+        srv.send_msg("/synth_new", defname, node_id, int(action), int(target),
                      *_flatten_controls(controls))
         return cls(node_id, defname, srv)
 
@@ -136,10 +136,10 @@ class Group(Node):
     @classmethod
     def new(cls, *, target=ROOT_NODE_ID, action=AddAction.TAIL,
             server=None) -> "Group":
-        """An empty group in the node tree (``/g_new``)."""
+        """An empty group in the node tree (``/group_new``)."""
         srv = _resolve(server)
         node_id = srv._node_id()
-        srv.send_msg("/g_new", node_id, int(action), int(target))
+        srv.send_msg("/group_new", node_id, int(action), int(target))
         return cls(node_id, srv)
 
     @classmethod
@@ -149,7 +149,7 @@ class Group(Node):
         (``/graph_new``), as a wired group, with ``ports`` (a
         ``{name: value}`` dict) overriding the def defaults. The returned
         `Group` is the instance: drive it through the surface with `set`
-        (``/n_set`` resolves names against the surface, not the private
+        (``/node_set`` resolves names against the surface, not the private
         members) and tear it down with `free` (which also reclaims its private
         buses)."""
         srv = _resolve(server)
@@ -159,14 +159,14 @@ class Group(Node):
         return cls(node_id, srv)
 
     def voice(self, ports=None) -> "Group":
-        """Spawns a per-voice sub-graph (``/graph_voice``) inside this running
+        """Spawns a per-voice sub-graph (``/graph_newVoice``) inside this running
         GraphDef instance (a group from `graph`), wired to its shared private
         buses. ``ports`` overrides the voice-port defaults. The returned group
         is the voice: drive it through its surface with `set` and free it with
         `free`."""
         srv = self._server()
         node_id = srv._node_id()
-        srv.send_msg("/graph_voice", self.id, node_id, *_flatten_controls(ports))
+        srv.send_msg("/graph_newVoice", self.id, node_id, *_flatten_controls(ports))
         return Group(node_id, srv)
 
 
@@ -176,9 +176,9 @@ class NodeIdAllocator:
     Node ids name slots of a finite boot-time resource (the server's node
     table), so the allocator is an occupancy map, not a counter: every id
     handed out stays tracked until the server reports the node's death
-    (``/n_end``, fed in through `free`), which makes it allocatable again —
+    (``/node_end``, fed in through `free`), which makes it allocatable again —
     the space never exhausts while nodes keep dying. ``capacity=None`` builds
-    the unbounded NRT/score variant (an offline score has no live ``/n_end``
+    the unbounded NRT/score variant (an offline score has no live ``/node_end``
     stream to recycle from).
 
     It carries no range of its own: the client range of the node-id space is
@@ -196,11 +196,11 @@ class NodeIdAllocator:
         if node_id is None:
             raise RuntimeError(
                 "out of node ids: the client range is fully in flight "
-                "(nodes are recycled when their /n_end arrives)")
+                "(nodes are recycled when their /node_end arrives)")
         return node_id
 
     def free(self, node_id: int):
-        """Returns ``node_id`` to the pool — called when its ``/n_end``
+        """Returns ``node_id`` to the pool — called when its ``/node_end``
         arrives. Ids outside the client range (another owner's) and ids not
         currently allocated are ignored: every node death on the server is
         reported, not only those of nodes this client created."""

@@ -66,7 +66,7 @@ def default_shm_path() -> "str | None":
 
 def server_is_up(host: str = "127.0.0.1", port: int = DEFAULT_PORT,
                  timeout: float = 0.3) -> bool:
-    """Whether an audio server already answers ``/status`` at ``host:port``.
+    """Whether an audio server already answers ``/server_status`` at ``host:port``.
 
     A quick UDP probe used to decide *boot-or-attach*: `Session.live` (and
     `clausters.defs.Server.boot`) attach to a running server if one replies, and
@@ -74,7 +74,7 @@ def server_is_up(host: str = "127.0.0.1", port: int = DEFAULT_PORT,
     server is already up."""
     osc = OscUdpInterface().start()
     try:
-        osc.send_msg((host, port), "/status")
+        osc.send_msg((host, port), "/server_status")
         return osc.recv(timeout) is not None
     finally:
         osc.close()
@@ -239,7 +239,7 @@ class ServerProcess(_Process):
 
     Spawns the standalone server binary (the wheel bundles it; a source checkout
     builds it) with a shared-memory segment chosen for you, and waits until it
-    answers ``/status`` on its UDP port. `close` (or interpreter exit) stops it.
+    answers ``/server_status`` on its UDP port. `close` (or interpreter exit) stops it.
 
     Args:
         options: a `clausters.defs.ServerOptions` whose `args` size the server
@@ -287,20 +287,20 @@ class ServerProcess(_Process):
         return argv
 
     def _wait_ready(self, deadline: float):
-        """Poll ``/status`` until the server replies (its OSC front is bound and
+        """Poll ``/server_status`` until the server replies (its OSC front is bound and
         the engine is running)."""
         osc = OscUdpInterface().start()
         try:
             while time.monotonic() < deadline:
                 self._died_early()
-                osc.send_msg((self.host, self.port), "/status")
+                osc.send_msg((self.host, self.port), "/server_status")
                 if osc.recv(0.1) is not None:
                     return
                 time.sleep(0.05)
         finally:
             osc.close()
         raise ServerError(
-            f"{self.kind} did not answer /status within {self.ready_timeout:.0f}s")
+            f"{self.kind} did not answer /server_status within {self.ready_timeout:.0f}s")
 
 
 class GuiProcess(_Process):

@@ -802,7 +802,7 @@ class Registry:
     ids allocatable again, exhaustion is an explicit ``None`` (never a wrapped
     counter), and a bad release reports instead of corrupting the map. The
     handle is internally locked, so the clock thread can allocate while the
-    reply thread releases on ``/n_end``. ``capacity=None`` builds the
+    reply thread releases on ``/node_end``. ``capacity=None`` builds the
     **unbounded** registry (NRT/score rendering: allocation never fails).
     Free with `close` (``__del__`` is the backstop)."""
 
@@ -831,7 +831,7 @@ class Registry:
 
     def contains(self, id_: int) -> bool:
         """Whether ``id_`` falls in this registry's space — the filter for
-        foreign ``/n_end`` ids."""
+        foreign ``/node_end`` ids."""
         return bool(self._lib.clausters_registry_contains(self._handle, int(id_)))
 
     @property

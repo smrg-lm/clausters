@@ -2,7 +2,7 @@
 //! purpose is an OSC reply or a console post, not audio on a bus. Each detects
 //! a **trigger** (a signal crossing from `<= 0` up to `> 0`) and buffers one
 //! [`ReplyMsg`] per crossing; the synth drains the buffer after the block (see
-//! `synthdef::instance`), and the network thread turns each message into `/tr`,
+//! `synthdef::instance`), and the network thread turns each message into `/node_trigger`,
 //! a custom-address reply, or a console line (see `osc::server`). A SynthDef may
 //! contain only these UGens and no `Out` at all — the server already permits
 //! output-less defs.
@@ -51,7 +51,7 @@ impl ReplyBuffer {
     }
 }
 
-/// `SendTrig(in, id, value)` — sends `/tr nodeID id value` on each trigger of
+/// `SendTrig(in, id, value)` — sends `/node_trigger nodeID id value` on each trigger of
 /// `in`. Output is silence (it exists for the side effect, not a signal).
 pub struct SendTrig {
     prev: Edge,
@@ -154,7 +154,7 @@ impl UGen for SendReply {
 
 /// `Poll(trig, in, trigid)` — on each trigger of `trig`, posts `label: value`
 /// (the `in` value) to the server console and, when `trigid >= 0`, also sends a
-/// `/tr nodeID trigid value` reply. `in` passes through the output unchanged, so
+/// `/node_trigger nodeID trigid value` reply. `in` passes through the output unchanged, so
 /// `Poll` can sit mid-chain like scsynth.
 pub struct Poll {
     label: String,

@@ -44,7 +44,7 @@ naturally wherever an index goes:
 
 ```python
 meter(bus=lfo, label="lfo")              # the widget watches "@lfo"
-b.boot(["/n_set", graph, "rate", 4.0])   # the message names "@graph"
+b.boot(["/node_set", graph, "rate", 4.0])   # the message names "@graph"
 ```
 
 When a page mounts the bundle it allocates one id per symbol and fills the

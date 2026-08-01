@@ -15,7 +15,7 @@ So the web client is one more consumer of the exact same wires the Python client
 - **Maximum reuse; the browser only adds its I/O.** What is value or time transformation is shared, not re-implemented: OSC assembly/decode, TempoClock arithmetic, the numeric builtins and the analysis kernels (peaks/FFT) come from **`clausters-core` compiled to wasm** (via wasm-bindgen), so the client is **numerically equivalent to the Python client and to the server by construction**. The GuiDef/`/gui_*` protocol and the def specs are the same JSON the Python builders emit. New TS code is confined to: the language-side control flow (generators/async routines), the browser carriers (`WebSocket`, Web MIDI, Web Audio clock, `fetch`), and the ergonomic builder/typed API.
 - **The seam is the same as `clients/python/PLAN.md`.** The Rust core owns builtins, TempoClock (queue + arithmetic) and OSC bundle/timetag assembly + sample-clock conversion; the coroutine driver (`function*`/async in TS, sc3-style routines) stays in the language; no Rust callbacks into JS - the loop asks the wasm queue "what's next and when?", sleeps on the browser clock, resumes the routine. "Only flat data crosses" the wasm boundary (typed arrays / numbers / strings in and out, no callbacks).
 - **Client/server separation, as in the Python client.** Timing/sequencing/GuiDef authoring is transport-agnostic; only a `Server`/`GuiHost` object knows the connection. The `TempoClock` must not talk to the server (the same rule corrected in the Python client's C4).
-- **Browser realities are first-class, not afterthoughts.** WebSocket is the only *network* transport (no UDP, no shared memory, no mmap); since the server's B track, the browser also has a second, process-free carrier — the **in-page engine** (the server compiled to wasm in an AudioWorklet, reached through the B4 package's `server()` singleton) — and the client stays carrier-agnostic above a small connection seam. Bulk data arrives by `fetch`/`/b_getn`; meters/scopes read control buses over the wire; the sample-clock timebase uses the Web Audio clock (`AudioContext.currentTime`). These are the same "async fallbacks" the server/gui plans reserved for the browser.
+- **Browser realities are first-class, not afterthoughts.** WebSocket is the only *network* transport (no UDP, no shared memory, no mmap); since the server's B track, the browser also has a second, process-free carrier — the **in-page engine** (the server compiled to wasm in an AudioWorklet, reached through the B4 package's `server()` singleton) — and the client stays carrier-agnostic above a small connection seam. Bulk data arrives by `fetch`/`/buffer_getRange`; meters/scopes read control buses over the wire; the sample-clock timebase uses the Web Audio clock (`AudioContext.currentTime`). These are the same "async fallbacks" the server/gui plans reserved for the browser.
 
 ## Target architecture
 
@@ -43,7 +43,7 @@ clients/web/
     (seq/                 #   sequencing (mirrors clausters/seq) — W3
       event.ts  eventstream.ts  pattern.ts  timeline.ts)
     data/                 #   the data paths: what a view reads off the server
-      buses.ts  taps.ts   #     the streamed sources (/c_stream, /tap_stream)
+      buses.ts  taps.ts   #     the streamed sources (/bus_stream, /bus_tapStream)
       samples.ts  peaks.ts analysis.ts
     (responders.ts        #   OscFunc/MidiFunc dispatch (mirrors responders.py) — W8/W9)
     (session.ts           #   the Session facade — W18)
@@ -101,7 +101,7 @@ The smallest round trip, and the toolchain. **Rewritten 2026-07-18**: the origin
 - **`base/osc.ts`** over that core, with encode/decode **parity vectors** shared with the Python client, in `node --test`.
 - **`base/connection.ts`** — the carrier seam, two implementations behind one interface: `WsConnection` (a browser `WebSocket` to a `--ws` server — the remote/native-server carrier, the TS sibling of `examples/ws_ping`) and `pageConnection()` (the in-page engine, wrapping the B4 `server()` singleton's `send`/`addReply`). Everything W1+ builds sits above this seam and never names a carrier.
 
-**Acceptance:** dual — a `/status` round trip through the *same* connection interface over **both** carriers (in-page under headless Chrome with no server process; WebSocket against a native `--ws` server), the parity vectors green under `node --test`, and the package type-checking clean (`tsc`).
+**Acceptance:** dual — a `/server_status` round trip through the *same* connection interface over **both** carriers (in-page under headless Chrome with no server process; WebSocket against a native `--ws` server), the parity vectors green under `node --test`, and the package type-checking clean (`tsc`).
 
 ### ✅ W1 - Server client + the def model
 
@@ -113,13 +113,13 @@ Python change into two.)*
 
 Drive the audio server.
 
-- `defs/server.ts`: the `Server` object - send `/d_recv`/`/d_graph`/`/d_faust` specs, `/s_new`, `/n_set`/`/n_free`, groups, the `/sync` barrier, buses and buffers; receive replies through `responders` (W8 hardens this).
+- `defs/server.ts`: the `Server` object - send `/def_send`/`/def_send faust` specs, `/synth_new`, `/node_set`/`/node_free`, groups, the `/server_sync` barrier, buses and buffers; receive replies through `responders` (W8 hardens this).
 - The def builders (`signals`/`ugens`/`synthdef`/`faustdef`/`graphdef`): start by sending the **same spec JSON the Python builders emit** (reused verbatim), then grow the typed TS builder API for parity, with the Python builders (both def families) as the reference.
 
-**Acceptance:** from a browser page, define a def and play it (`/s_new` then `/n_set`), with `/sync` ordering and an audible/queryable result, **over either carrier** through the same `Server` (the W0 seam: nothing above it names a transport) — a synth def against the in-page engine with no server process, and both families against a `--ws` server (the Faust half is WS-only by nature: the wasm engine is the `synth,embed` build, no LLVM JIT).
+**Acceptance:** from a browser page, define a def and play it (`/synth_new` then `/node_set`), with `/server_sync` ordering and an audible/queryable result, **over either carrier** through the same `Server` (the W0 seam: nothing above it names a transport) — a synth def against the in-page engine with no server process, and both families against a `--ws` server (the Faust half is WS-only by nature: the wasm engine is the `synth,embed` build, no LLVM JIT).
 
 **What shipped.** The whole `src/defs/` tree, mirroring `clausters/defs/`
-module for module: `server.ts` (reply dispatch, the `/sync` barrier, the three
+module for module: `server.ts` (reply dispatch, the `/server_sync` barrier, the three
 def commands, nodes/groups/graph instances, buses, buffers, the introspection
 queries), `node.ts`/`bus.ts`/`buffer.ts` (the handles and their allocators),
 `ugens.ts` + `synthdef.ts` (the UGen graph and its spec walk), `signals.ts` +
@@ -135,7 +135,7 @@ queries), `node.ts`/`bus.ts`/`buffer.ts` (the handles and their allocators),
   the wasm sibling of the C door `clausters-ffi` opens for Python — so node
   ids, buses and buffers are allocated by the same occupancy map the server
   and the Python client use, not by a second implementation. `Server.open`
-  sizes them from `/server_info`, so the client matches the server that is
+  sizes them from `/server_query`, so the client matches the server that is
   actually running.
 - **The graph composes by method** (`sine(freq).mul(amp)`), TypeScript having
   no operator overloading, and parity is therefore asserted on the **emitted
@@ -206,13 +206,13 @@ unbound slider's move comes back as a `/gui_event` while the bound knob drives
 the engine in the same tab (asserted by reading the node's control back), and
 closing the window frees the subtree. Example: `examples/gui-host.html`, now
 the product client rather than the B-track harness — the bound and the scripted
-control paths side by side, a `/c_stream`-fed meter/scope loop, the linked
+control paths side by side, a `/bus_stream`-fed meter/scope loop, the linked
 waveform + spectrogram, and one button that swaps the in-page host for a native
 one.
 
 Not in scope here, by the plan's own division, and now **W10**: the browser
-data paths the heavy views feed on (`/c_stream` decoding client-side,
-`fetch`/`/b_getn` bulk, the wasm peak pyramid) and the
+data paths the heavy views feed on (`/bus_stream` decoding client-side,
+`fetch`/`/buffer_getRange` bulk, the wasm peak pyramid) and the
 `correlation`/`lissajous` analysis exports — the host already reads those paths
 itself, so a GuiDef that names a bus, a tap or a URL works today.
 
@@ -250,7 +250,7 @@ are worth carrying forward:
 - **The Server anchors the timebase; the clock never talks to a server.**
   `server.sampleTimebase()` resolves by carrier: in-page it pairs the engine's
   counter with the AudioContext's frame counter in one worklet round trip
-  (exact - they are the same clock), over a socket it feeds `/clock` anchors
+  (exact - they are the same clock), over a socket it feeds `/clock_query` anchors
   into the core's model. This is the inversion of the Python client's
   `clock.lock_to(server)`, which contradicts that client's own C5 rule.
 - **Two Python-client bugs surfaced while porting**, and were fixed in *both*
@@ -262,12 +262,12 @@ are worth carrying forward:
   and the wall-clock one, moving them together on resume, which is what keeps
   the first timetag after a restart honest (that third one was only in the TS
   clock, and the port is what exposed it).
-- **`/g_queryTree` is not an observation of a schedule.** The reply comes from
+- **`/group_queryTree` is not an observation of a schedule.** The reply comes from
   the network-side mirror, which applies each message as it is translated, and
-  a note's `/s_new` and its release are sent in the same instant (only their
+  a note's `/synth_new` and its release are sent in the same instant (only their
   timetags differ) - so the mirror shows a scheduled note born and freed at
   once while the engine still has it sounding. The end-to-end suites read
-  `/n_go`/`/n_end` instead.
+  `/node_start`/`/node_end` instead.
 
 **Verified:** `./test.sh` - 102 `node --test` cases (the clock/RNG/builtin
 parity vectors frozen from the Python client, the driver on manual seams, the
@@ -281,7 +281,7 @@ half and the seekable half side by side.
 Not in scope, by the plan's own division, each now its own milestone:
 `automation` (**W11** — a break-point control curve; it pulls in buffers, `Env`
 and a control def), `MidiEvent` and MIDI destinations (**W9**), the shared
-`/transport` grid (**W12**), and an NRT/score drive (**W13** — the client has
+`/transport_set` grid (**W12**), and an NRT/score drive (**W13** — the client has
 no score interface, and `Timeline.fromPattern` bounces by driving the ordinary
 clock through its manual seams).
 
@@ -304,7 +304,7 @@ is the server's client and **no TypeScript client is loaded at run time**. The
 builders run earlier, in the authoring script, and what the page fetches is
 data.
 
-- **The host, from one canvas to N** (`clients/gui/src/host/web.rs`): `window`/`render`/`current_def` are singular today ("the browser shows one at a time"); they become a map keyed by def id — a wgpu surface, a size, a gesture state and a visibility flag each. The native front already keeps one surface per `window`-rooted GuiDef, so the model is ported, not invented. Two reversals ride along: the **element supplies the canvas** (winit's `with_canvas`, instead of `guiHost()` hunting for the one winit appended to `<body>`), and its size comes from the element (`ResizeObserver` + `devicePixelRatio`). A canvas out of the viewport is skipped on the tick and drops its buses from the `/c_stream`/`/tap_stream` sets — a document can hold fifty canvases with three in view, and the browser's own compositing skip does not stop *our* host from computing or the server from streaming.
+- **The host, from one canvas to N** (`clients/gui/src/host/web.rs`): `window`/`render`/`current_def` are singular today ("the browser shows one at a time"); they become a map keyed by def id — a wgpu surface, a size, a gesture state and a visibility flag each. The native front already keeps one surface per `window`-rooted GuiDef, so the model is ported, not invented. Two reversals ride along: the **element supplies the canvas** (winit's `with_canvas`, instead of `guiHost()` hunting for the one winit appended to `<body>`), and its size comes from the element (`ResizeObserver` + `devicePixelRatio`). A canvas out of the viewport is skipped on the tick and drops its buses from the `/bus_stream`/`/bus_tapStream` sets — a document can hold fifty canvases with three in view, and the browser's own compositing skip does not stop *our* host from computing or the server from streaming.
 - **The bundle grows a contract** (`clausters_core::bundle`, opened to the browser by `clausters-core-web` and to Python by `clausters-ffi`): `bundle.json` gains a symbol table, declared `params` and presets, and becomes a file **both** legs read (absent, the native host keeps listing the directory as today). The GuiDef record becomes a *template* with two kinds of hole — `@symbol`, an id the page allocates, and `$param`, a value the tag supplies — while widget ids stay local `1..N` and are offset by an allocated base. **Holes live only in the GuiDef record**, so def payloads are byte-identical between instances and are sent once; the authoring rule that follows is that a bus or a node reaches a def **as a control**, never as a baked constant (which is exactly why today's `piano_voice`, with its `out_ctl(0.0, env)`, cannot be mounted twice). Resolution is two pure functions — `requirements(manifest)` then `resolve(template, allocation, params)` — with the caller allocating in between, so nothing is added to the `/gui_*` protocol and no state to the host.
 - **The component** (`src/elements.ts`, `src/runtime.ts`): a custom element owning its canvas, with the declared parameters as attributes and `preset` beside them, mounted in two phases — the GuiDef opens and draws on connect, and the engine half (defs, buffers, boot) goes out on the first page gesture, since the AudioContext is page-wide and N power buttons would be wrong. Failures stay per component. A new **slim run-time entry**, `dist/runtime.js`, carries the engine, the host, the codec and the mount and *not* the builders — today's `examples/piano/index.html` imports the whole package facade to use none of it.
 - **The authoring API** (`clausters.bundle`, Python first, Node after): a writer over the existing builders that holds the symbol table, so the author names things instead of numbering them, declares `params` and presets, validates through the core before emitting — an unmountable bundle is unwritable — and generates the five-line ES module that registers the tag.
@@ -323,7 +323,7 @@ event routes through. With it, two reversals: the **element supplies the
 canvas** (`attach(def_id, canvas)`, winit's `with_canvas`) instead of the page
 grabbing whichever one winit appended to `<body>`, and the **size comes from the
 element** (`ResizeObserver` × `devicePixelRatio`), so the host never reads the
-DOM. `set_visible` is the one that pays: the `/c_stream`/`/tap_stream` sets and
+DOM. `set_visible` is the one that pays: the `/bus_stream`/`/bus_tapStream` sets and
 the animation tick are all derived from the *visible* canvases
 (`host::live::demand`, natively tested), so a component scrolled out of the
 viewport stops costing a computed frame, wire traffic and server CPU.
@@ -468,9 +468,9 @@ client's input path and its role as a general OSC hub (sclang's `OSCFunc`),
 mirroring the half of `responders.py` that does not involve MIDI.
 
 - `responders.ts`: pattern-matched dispatch over the connection's reply stream — either carrier exposes it through the W0 seam (`addReply`), so nothing here names a transport — with handlers scheduled on a clock rather than run from the socket callback, the browser counterpart of the Python client's "never block the clock thread".
-- The reply handling W1 grew ad hoc inside `Server` (the dispatch table and the `/sync` barrier) folds onto this one door, so everything arriving comes in the same way.
+- The reply handling W1 grew ad hoc inside `Server` (the dispatch table and the `/server_sync` barrier) folds onto this one door, so everything arriving comes in the same way.
 
-**Acceptance:** a TS app registers and unregisters `OscFunc` handlers that fire on server notifications (`/n_go`/`/n_end`, `/done`, `/tr`) over either carrier, and the W1/W3 end-to-end suites stay green through the new door.
+**Acceptance:** a TS app registers and unregisters `OscFunc` handlers that fire on server notifications (`/node_start`/`/node_end`, `/done`, `/node_trigger`) over either carrier, and the W1/W3 end-to-end suites stay green through the new door.
 
 ### W9 - MIDI: `MidiFunc` in, `MidiEvent` and MIDI destinations out
 
@@ -478,7 +478,7 @@ mirroring the half of `responders.py` that does not involve MIDI.
 sequencing layer. Both directions of MIDI in one milestone, since in the
 browser they are one API: Web MIDI is the only MIDI I/O a page has.
 
-- `MidiFunc` over `navigator.requestMIDIAccess`, mirroring `responders.py`/`base/_midiinterface` — note/cc/program dispatch, port selection, handlers scheduled on a clock; convenience responders turn notes into `/s_new`, as C13 does.
+- `MidiFunc` over `navigator.requestMIDIAccess`, mirroring `responders.py`/`base/_midiinterface` — note/cc/program dispatch, port selection, handlers scheduled on a clock; convenience responders turn notes into `/synth_new`, as C13 does.
 - `MidiEvent` and MIDI as a **destination** of the sequencing layer: an event stream plays to a MIDI output exactly the way it plays to a `Server`, over the `play(destination)` seam W3 established, mapping `Event` → channel-voice messages the way `clausters-midi` already defines them for C11.
 - Timing stays **best-effort by design**, as C18 settled for the Python client — but the browser gives it back cheaply: `MIDIOutput.send(data, timestamp)` takes a `performance.now()` deadline, so the driver hands over the deadline it has already computed instead of sleeping to it.
 
@@ -491,8 +491,8 @@ this time. The host
 already reads them itself (that is why a GuiDef naming a bus, a tap or a URL
 works today); this is the client getting the same numbers.
 
-- Control buses over the connection: `/c_stream periodMs bus...` subscribed from the client and its periodic `/c_set` snapshots decoded in a responder (W8's door) — the message-based counterpart of the native host's shared memory (G14). The server side exists on both carriers already: one subscription per client, replaced per call, `periodMs <= 0` cancels, 10 ms floor, ≤128 buses (`docs/schemas.md`), and B3 left `/c_stream`/`/tap_stream`/`/b_getn`/`/clock` streaming over the in-page leg too.
-- Bulk buffers by `fetch`/`/b_getn` (G15), with the **peak pyramid built in wasm** from the fetched samples, so a waveform draws at screen resolution without a second implementation of the reduction; plus the fetch + `decodeAudioData` → `bLoad` sample path B3 left in `bundle.ts`, folded into the client's buffer API.
+- Control buses over the connection: `/bus_stream periodMs bus...` subscribed from the client and its periodic `/bus_set` snapshots decoded in a responder (W8's door) — the message-based counterpart of the native host's shared memory (G14). The server side exists on both carriers already: one subscription per client, replaced per call, `periodMs <= 0` cancels, 10 ms floor, ≤128 buses (`docs/schemas.md`), and B3 left `/bus_stream`/`/bus_tapStream`/`/buffer_getRange`/`/clock_query` streaming over the in-page leg too.
+- Bulk buffers by `fetch`/`/buffer_getRange` (G15), with the **peak pyramid built in wasm** from the fetched samples, so a waveform draws at screen resolution without a second implementation of the reduction; plus the fetch + `decodeAudioData` → `bLoad` sample path B3 left in `bundle.ts`, folded into the client's buffer API.
 - The core's `correlation`/`lissajous` analysis exports surfaced to TS.
 
 **Acceptance:** a TS app reads a control bus and a buffer over either carrier and draws them **itself** (a canvas the script feeds, not a host-fed widget), numerically matching what the GUI host draws from the same source.
@@ -504,7 +504,7 @@ The **script reads what the host reads**. `Server` grew the commands
 (`streamBuses`, `tap` with a `taps` registry beside the bus and buffer ones,
 `streamTaps`, `getSamples` chunked by the frame ceiling the transport
 advertises) and `src/data/` the sources over them: `BusStream` decoding the
-periodic `/c_set` snapshots, `TapStream` placing each `/tap_data` window on its
+periodic `/bus_set` snapshots, `TapStream` placing each `/bus_tapStream.reply` window on its
 tap's own sample axis by `endPosition`, `Peaks` over the wasm pyramid whose
 `columns` reads a whole pixel row per crossing, and the measurements a view is
 drawn with. The subscriptions ride `Server.onReply`, so **W8** folds them onto
@@ -526,16 +526,16 @@ Three things are worth carrying forward:
   for one channel, the multichannel one above it — which is what the parity
   vectors assert, one digest covering the whole format.
 - **The bulk path is read-only, and not by choice.** The server has no
-  buffer-write command: `/b_set`/`/b_setn` exist only as the *replies* to
-  `/b_get`/`/b_getn`. So samples reach a buffer through `/b_gen`,
-  `/b_allocRead`, or — in the page, where the carrier shares memory with the
+  buffer-write command: reading a buffer has `/buffer_get`/`/buffer_getRange`,
+  and nothing writes one back. So samples reach a buffer through `/buffer_gen`,
+  `/buffer_allocRead`, or — in the page, where the carrier shares memory with the
   engine — `Buffer.load`, which fetches and decodes with the browser's own
   decoder and installs through the embed door. Writing from a client is noted
   as **M31** in the server's `PLAN.md`; the order will be the standing one,
   server command → the Python client → the port here.
 - **On one page, the host and the script are one client.** Everything reaching
   the in-page engine goes through one shared-memory ring, which the server sees
-  as a single `ClientId::Ring`, and `/c_stream`/`/tap_stream` are one
+  as a single `ClientId::Ring`, and `/bus_stream`/`/bus_tapStream` are one
   subscription per client — so a host `meter` and a script `BusStream` take the
   stream from each other, and the host (which only re-subscribes when its own
   widget set changes) stays frozen afterwards. Found by probing after the
@@ -559,24 +559,24 @@ three paths in one page drawn by the script; and `examples/editor.html`, the
 port of the Python client's `gui_editor.py` — a decoded file in a server
 buffer, drawn by the **host** as a linked waveform and spectrogram, with a
 transport whose playhead is anchored to the engine clock and whose pause is
-`/n_run`. Book chapter: "Reading the server".
+`/node_run`. Book chapter: "Reading the server".
 
 ### W11 - Automation: a break-point curve as a control vector
 
 *Deferred out of W3*, because it is the one sequencing piece that is not pure
 timing: the TS side of C23 pulls in buffers, `Env` and a control def.
 
-- `seq/automation.ts`: a break-point curve discretized into a control buffer on the server (`/b_gen "env"`, the server's own `envshape`) and read back onto a control bus by a lane synth (`OutCtl`), prepared without blocking the driver, then played and freed like any other element.
+- `seq/automation.ts`: a break-point curve discretized into a control buffer on the server (`/buffer_gen "env"`, the server's own `envshape`) and read back onto a control bus by a lane synth (`OutCtl`), prepared without blocking the driver, then played and freed like any other element.
 - The `bpf` builder already in W2's GuiDef catalogue becomes its editor, so the curve is authored, heard and edited over the same loop the multitrack editor uses.
 
 **Acceptance:** a curve authored in TS drives a synth's control over either carrier with the same values the Python client produces for the same break points, and dragging it in the browser GUI's `bpf` widget moves the sounding value.
 
-### W12 - The shared `/transport` grid
+### W12 - The shared `/transport_set` grid
 
 *Deferred out of W3.* Phase alignment across clients — the TS counterpart of
 C15 and of C16's `follow_transport`.
 
-- `quant` honored when a routine starts (snap to a beat boundary), and joining the server's `/transport` grid so pages started at different moments share one bar line.
+- `quant` honored when a routine starts (snap to a beat boundary), and joining the server's `/transport_set` grid so pages started at different moments share one bar line.
 - Following the `/transport_play|stop|locate` broadcasts, so a page's playhead rolls in lockstep with every other client: the server broadcasts control, never audio.
 - W3's rule is not bent: the clock still never talks to a server. The `Server` feeds the grid inward, the way `sampleTimebase()` already anchors the timebase.
 
@@ -605,7 +605,7 @@ directions.
 - **Up**: `/gui_closed` travelling back from the host to the element that mounted the def — the event exists on the wire and in the `GuiHost` driver (W2), but a component has no handler for it; a host-closed window must reach its element rather than leave a live tag over a freed def.
 - The reverse of W4's two-phase mount is deliberately **not** symmetric: a re-connected element mounts again from the same bundle (defs already sent, a fresh allocation), so the resolver is re-run, not cached.
 
-**Acceptance:** a page that mounts and removes the same component a hundred times holds a flat id/bus/node occupancy (read from the pools and from `/g_queryTree`); a removed component stops sounding and stops streaming; a `/gui_closed` from a native `--ws` host reaches its element; and the surviving components on the page are untouched throughout.
+**Acceptance:** a page that mounts and removes the same component a hundred times holds a flat id/bus/node occupancy (read from the pools and from `/group_queryTree`); a removed component stops sounding and stops streaming; a `/gui_closed` from a native `--ws` host reaches its element; and the surviving components on the page are untouched throughout.
 
 ### W15 - The TypeScript bundle writer
 
@@ -709,5 +709,5 @@ it leans on verbs this client does not have yet.
 ## Future directions
 
 - **Node target.** Already true in the harness, not yet a supported target: the `node --test` suites drive a real `clausters --ws` server and a real `clausters-gui --ws` host, so `WsConnection` runs under node's global `WebSocket` (`src/base/connection.ts` says so) and the wasm core loads there (`loadCore(bytes)`, node's `fetch` not reading `file://`). What remains is making it a *product*: a load path that finds the core's `.wasm` without the test's manual read, a documented entry point for headless scripting/CI the way `clients/python` runs without a display, and the boundary written down — the def, sequencing and GUI-driver layers port, the in-page engine (AudioWorklet) and the page host (canvas) do not.
-- **Type-safe GuiDef/def schemas.** Generate TS types for the widget/def vocabularies from a single source shared with the server, so an invalid GuiDef is a compile error, not a runtime warning. Two things have since appeared that change the shape of the answer rather than the want: the frozen parity vectors (`tests/gen-*-vectors.py`) already catch a drifted *builder* at test time, and M30's `/d_query`/`/u_query` make the server's own catalogue readable at run time — so the open question is narrower, which source generates the types and when, not whether one exists.
+- **Type-safe GuiDef/def schemas.** Generate TS types for the widget/def vocabularies from a single source shared with the server, so an invalid GuiDef is a compile error, not a runtime warning. Two things have since appeared that change the shape of the answer rather than the want: the frozen parity vectors (`tests/gen-*-vectors.py`) already catch a drifted *builder* at test time, and M30's `/def_query`/`/ugen_query` make the server's own catalogue readable at run time — so the open question is narrower, which source generates the types and when, not whether one exists.
 - **A remote-server standalone page.** The in-tab standalone (a bundle booting against the embedded wasm engine) **shipped with the B track** and grew up in W4 (the bundle contract, the resolver, the pools, the components); what remains is the same mount against a **remote `--ws` server** — a one-file instrument front for a server running elsewhere. The old note called this cheap "once W1/W2 exist"; they exist, and W4 is what actually decides the work: `openBundle`/`startBundle` reach the page's `guiHost()` and `engine` singletons directly, so the step is giving the mount a **destination seam** (a `Server` + `GuiHost` pair, both already carrier-agnostic since W1/W2) in place of those singletons. The boot replay itself stays carrier-agnostic above the W0 seam, as it always was.

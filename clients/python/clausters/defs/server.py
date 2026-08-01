@@ -218,7 +218,7 @@ class ServerOptions:
 
 @dataclass
 class ServerInfo:
-    """The static configuration a running server reports over ``/server_info``
+    """The static configuration a running server reports over ``/server_query``
     (read-only; the result of `Server.query_info`).
 
     The first six fields are the stable original set; the rest are the
@@ -303,7 +303,7 @@ class Server:
         # sized from the options so client and server agree by construction.
         # The node-id range comes from the shared partition formula
         # (`--max-nodes` scales every range); in score (NRT) mode it is
-        # unbounded — an offline render has no live `/n_end` stream to recycle
+        # unbounded — an offline render has no live `/node_end` stream to recycle
         # from, and no real-time bound on ids over the score's length.
         part = _native.node_id_partition(self.options.max_nodes)
         score = getattr(self.interface, "time_mode", "unix") == "score"
@@ -312,10 +312,10 @@ class Server:
         self.audio_buses = AudioBusAllocator(size=self.options.audio_buses)
         self.control_buses = ControlBusAllocator(size=self.options.control_buses)
         self.buffers = BufferAllocator(size=self.options.max_buffers)
-        #: the `/n_end` side-channel that returns node ids to the registry
-        #: (an `OscReceiver` + `/notify`), started lazily by `_ensure_recycler`.
+        #: the `/node_end` side-channel that returns node ids to the registry
+        #: (an `OscReceiver` + `/server_notify`), started lazily by `_ensure_recycler`.
         self._recycler = None
-        self._sync_counter = 0      # ids for /sync -> /synced round-trips
+        self._sync_counter = 0      # ids for /server_sync -> /server_sync.reply round-trips
         #: the server's stream-frame ceiling, queried lazily by `_bulk_chunk`.
         self._max_frame: "int | None" = None
         #: the server *process* this handle started and owns (`boot`), if any;
@@ -431,7 +431,7 @@ class Server:
         timebase = getattr(when.clock, "timebase", None)
         if isinstance(timebase, SampleClockTimebase):
             # Anchored to the server's sample clock: schedule by absolute sample,
-            # drift-free and sample-accurate, via /sched. The seconds->sample
+            # drift-free and sample-accurate, via /sched_at. The seconds->sample
             # rounding is the core's (shared with the server).
             origin = when.clock.pacing_origin or 0.0  # seconds in the sample timebase
             sample = timebase.sample_at(origin + when.secs() + self.latency)
@@ -443,14 +443,14 @@ class Server:
             )
 
     def play_event(self, event):
-        """Play a note `Event` as OSC: `/s_new`
-        then `/n_free` (or `gate 0`) after the sustain. The OSC side of the
+        """Play a note `Event` as OSC: `/synth_new`
+        then `/node_free` (or `gate 0`) after the sustain. The OSC side of the
         double dispatch — a MIDI destination renders the same event as note
         on/off. Returns the synth node id (or None for a rest).
 
         Release is by ``gate 0`` when the event sets ``has_gate`` **or** the
         instrument is the built-in ``"default"`` (which carries a gated,
-        self-freeing envelope); otherwise it is a direct ``/n_free``.
+        self-freeing envelope); otherwise it is a direct ``/node_free``.
 
         One timing path, whatever the context. Both messages go out as
         timetagged bundles at the ambient `Moment`: inside a routine that is
@@ -461,15 +461,15 @@ class Server:
         if event.get("type") == "rest":
             return None
         node_id = self._node_id()
-        s_new = ("/s_new", event["instrument"], node_id, int(event["add_action"]),
+        s_new = ("/synth_new", event["instrument"], node_id, int(event["add_action"]),
                  int(event["target"]), *event._control_args())
         # The built-in "default" instrument carries a gated envelope that frees
         # itself on release, so it is released by closing its gate even though
         # the global `has_gate` default is False (which keeps gate-less custom
         # defs freed directly). Any def can opt in per event with `has_gate`.
         gate_release = event.get("has_gate") or event["instrument"] == "default"
-        release = (("/n_set", node_id, "gate", 0.0) if gate_release
-                   else ("/n_free", node_id))
+        release = (("/node_set", node_id, "gate", 0.0) if gate_release
+                   else ("/node_free", node_id))
         self.send_bundle(s_new)
         self.send_bundle(release, delay_beats=event.sustain())
         return node_id
@@ -484,7 +484,7 @@ class Server:
 
     def _send_sched(self, sample: int, messages):
         inner = _osclib.immediate_bundle(*[_osclib.message(*m) for m in messages])
-        self.send_msg("/sched", _osclib.Int64(sample), inner)
+        self.send_msg("/sched_at", _osclib.Int64(sample), inner)
 
     def request(self, addr, *args, timeout: float = 5.0, expect=None):
         """Sends a message and returns the first matching reply ``(addr, args)``
@@ -527,26 +527,26 @@ class Server:
 
     def query_defs(self, *names, timeout: float = 5.0) -> "list[DefInfo]":
         """The defs the server holds, each with its control surface
-        (``/d_query``). With `names`, details exactly those — an unknown one
+        (``/def_query``). With `names`, details exactly those — an unknown one
         comes back with an empty ``family`` (see `DefInfo.exists`) rather than
         raising; with no argument, every loaded def of every family.
 
         The def store persists across restarts, so a server may well hold defs
         this client never sent: this is how you find out. Blocking, RT only —
         never call it from a routine."""
-        rows = self._request_batch("/d_query", *[str(n) for n in names],
-                                   reply="/d_info", timeout=timeout)
+        rows = self._request_batch("/def_query", *[str(n) for n in names],
+                                   reply="/def_query.reply", timeout=timeout)
         return [parse_def_info(r) for r in rows]
 
     def query_buffers(self, timeout: float = 5.0) -> "list[BufferInfo]":
         """Every **allocated** buffer with its shape (an argument-less
-        ``/b_query``). Like `query_defs`, this reports what the server holds rather
+        ``/buffer_query``). Like `query_defs`, this reports what the server holds rather
         than what this client allocated. Blocking, RT only."""
-        _, args = self.request("/b_query", timeout=timeout, expect=("/b_info",))
+        _, args = self.request("/buffer_query", timeout=timeout, expect=("/buffer_query.reply",))
         return parse_buffer_list(args)
 
     def query_ugens(self, *kinds, timeout: float = 5.0) -> "list[UgenInfo]":
-        """The server's UGen catalog (``/u_query``): every kind with its named
+        """The server's UGen catalog (``/ugen_query``): every kind with its named
         inputs, defaults and rate rules, or just `kinds` if given.
 
         This is the catalog **this** server was built with, which is why it is
@@ -554,8 +554,8 @@ class Server:
         has no UGens at all and returns an empty list (its defs would all be
         FaustDefs, whose box vocabulary is Faust's own and lives client-side).
         Blocking, RT only."""
-        rows = self._request_batch("/u_query", *[str(k) for k in kinds],
-                                   reply="/u_info", timeout=timeout)
+        rows = self._request_batch("/ugen_query", *[str(k) for k in kinds],
+                                   reply="/ugen_query.reply", timeout=timeout)
         return [parse_ugen_info(r) for r in rows]
 
     def query_info(self, timeout: float = 5.0) -> ServerInfo:
@@ -566,7 +566,7 @@ class Server:
         appended capacity fields degrade to the defaults against a server too
         old to report them."""
         _, args = self.request(
-            "/server_info", timeout=timeout, expect=("/server_info.reply",)
+            "/server_query", timeout=timeout, expect=("/server_query.reply",)
         )
 
         def at(i, cast, default):
@@ -592,52 +592,52 @@ class Server:
     # ---- node tree introspection (RT only) ----
 
     def query_tree(self, group=ROOT_NODE_ID, timeout: float = 5.0) -> Tree:
-        """The node tree from `group` down (``/g_queryTree``) as a `Tree`:
+        """The node tree from `group` down (``/group_queryTree``) as a `Tree`:
         every entry is the same `NodeInfo` that `clausters.defs.Node.info`
         returns, so reading a subtree needs no follow-up query. This is the
         **structured** way to read the tree — never scrape the server's logs.
 
         ``print(tree)`` draws it indented. Blocking, RT only."""
         gid = group.id if hasattr(group, "id") else group
-        addr, args = self.request("/g_queryTree", int(gid), 2,
-                                  timeout=timeout, expect=("/g_queryTree.reply", "/fail"))
+        addr, args = self.request("/group_queryTree", int(gid), 2,
+                                  timeout=timeout, expect=("/group_queryTree.reply", "/fail"))
         if addr == "/fail":
-            raise CommandError(f"/g_queryTree failed: {args}")
+            raise CommandError(f"/group_queryTree failed: {args}")
         return parse_query_tree(args)
 
     def dump_graph(self, group=ROOT_NODE_ID, timeout: float = 5.0) -> str:
         """The inferred bus graph of `group` as a human-readable string
-        (``/g_dumpGraph``): what each child reads/writes and the current order.
+        (``/group_dumpGraph``): what each child reads/writes and the current order.
         A debugging aid; for machine use prefer `query_tree`."""
         gid = group.id if hasattr(group, "id") else group
-        addr, args = self.request("/g_dumpGraph", int(gid),
-                                  timeout=timeout, expect=("/g_dumpGraph.reply", "/fail"))
+        addr, args = self.request("/group_dumpGraph", int(gid),
+                                  timeout=timeout, expect=("/group_dumpGraph.reply", "/fail"))
         if addr == "/fail":
-            raise CommandError(f"/g_dumpGraph failed: {args}")
+            raise CommandError(f"/group_dumpGraph failed: {args}")
         return str(args[1])
 
     # ---- definitions ----
 
     def free_def(self, *names: str):
-        """Removes defs from the server's def table by name (``/d_free``).
+        """Removes defs from the server's def table by name (``/def_free``).
 
         A def is not freed by itself: in use it is *overwritten* by sending
         another under the same name. This is the table's own command, for
         reclaiming what a session no longer names."""
-        self.send_msg("/d_free", *names)
+        self.send_msg("/def_free", *names)
 
     # ---- nodes ----
 
     def _node_id(self) -> int:
         """A free node id from the registry, with the recycling side-channel
-        up: every id stays tracked until its ``/n_end`` returns it to the
+        up: every id stays tracked until its ``/node_end`` returns it to the
         pool, so the client range never exhausts while nodes keep dying."""
         self._ensure_recycler()
         return self.nodes.alloc()
 
     def _ensure_recycler(self):
-        """Starts the ``/n_end`` listener once per server handle: a dedicated
-        `OscReceiver` registered with ``/notify 1`` **from its own socket**, so
+        """Starts the ``/node_end`` listener once per server handle: a dedicated
+        `OscReceiver` registered with ``/server_notify 1`` **from its own socket**, so
         the server's node-lifecycle pushes land here whatever transport the
         command path uses (UDP, TCP, WS — notify registration is per source).
         Ids outside the client range (the server's auto/MIDI ranges, other
@@ -650,39 +650,39 @@ class Server:
         from ..base._oscinterface import OscReceiver
 
         def on_node_end(addr, args, when, src):
-            if addr == "/n_end" and args:
+            if addr == "/node_end" and args:
                 self.nodes.free(int(args[0]))
             elif addr == "/fail" and len(args) >= 3 and isinstance(args[2], int):
                 # An engine rejection (duplicate id / full table) is async:
-                # the node never existed, so no /n_end will come — reconcile
+                # the node never existed, so no /node_end will come — reconcile
                 # the in-flight id here instead of losing it.
                 self.nodes.free(int(args[2]))
 
         recv = OscReceiver().start()
         recv.add(on_node_end)
-        recv.send(self.target, "/notify", 1)
+        recv.send(self.target, "/server_notify", 1)
         self._recycler = recv
 
     # ---- bus and tap subscriptions (one per client, over a set) ----
 
     def stream_buses(self, period_ms: int, *buses, timeout: float = 5.0):
-        """Subscribes this client to a periodic ``/c_set`` snapshot of the
-        given control buses (``/c_stream``): the server sends one snapshot
+        """Subscribes this client to a periodic ``/bus_set`` snapshot of the
+        given control buses (``/bus_stream``): the server sends one snapshot
         immediately and then one every ``period_ms`` (floor 10 ms, at most 128
         buses) with no further requests -- the network counterpart of reading
         the shared-memory segment, e.g. for meters over WebSocket. One
         subscription per client, replaced on each call; ``period_ms <= 0`` (or
         no buses) cancels it. Receive the snapshots with an `OscFunc` on
-        ``/c_set``. Blocks on the ``/done`` ack."""
+        ``/bus_set``. Blocks on the ``/done`` ack."""
         indices = [b.index if isinstance(b, Bus) else int(b) for b in buses]
-        return self.request("/c_stream", int(period_ms), *indices,
+        return self.request("/bus_stream", int(period_ms), *indices,
                             timeout=timeout, expect=("/done", "/fail"))
 
     def stream_taps(self, period_ms: int, frames: int, *buses, timeout: float = 5.0):
-        """Subscribes this client to a periodic ``/tap_data`` snapshot of the
-        given audio **buses** (``/tap_stream``): every ``period_ms`` (floor
+        """Subscribes this client to a periodic ``/bus_tapStream.reply`` snapshot of the
+        given audio **buses** (``/bus_tapStream``): every ``period_ms`` (floor
         10 ms) the server sends, per bus, its **newest** ``frames`` samples as
-        ``/tap_data bus endPosition blob`` -- the bus, its stream position
+        ``/bus_tapStream.reply bus endPosition blob`` -- the bus, its stream position
         (total samples recorded) at the window's end, and the window as raw
         little-endian ``float32``. The network counterpart of reading the
         samples out of shared memory, e.g. for a browser oscilloscope or
@@ -694,8 +694,8 @@ class Server:
         to 8192 and to half the server's ring; at most 8 buses per
         subscription; one subscription per client, replaced on each call;
         ``period_ms <= 0`` (or no buses) cancels. Receive the snapshots with an
-        `OscFunc` on ``/tap_data``. Blocks on the ``/done`` ack."""
-        return self.request("/tap_stream", int(period_ms), int(frames),
+        `OscFunc` on ``/bus_tapStream.reply``. Blocks on the ``/done`` ack."""
+        return self.request("/bus_tapStream", int(period_ms), int(frames),
                             *[b.index if isinstance(b, Bus) else int(b) for b in buses],
                             timeout=timeout, expect=("/done", "/fail"))
 
@@ -704,7 +704,7 @@ class Server:
     def _bulk_chunk(self, timeout: float) -> int:
         """Samples per bulk round-trip for this interface: datagram-bounded
         transports keep the classic 1024; a stream transport uses the frame
-        ceiling from ``/server_info`` (queried once and cached), minus headroom
+        ceiling from ``/server_query`` (queried once and cached), minus headroom
         for the reply's OSC envelope."""
         if not isinstance(self.interface, (OscTcpInterface, OscWsInterface)):
             return 1024
@@ -721,7 +721,7 @@ class Server:
                workers: int = 0, path=None, seed: int | None = None,
                sample_format: str = "float") -> "RenderStats":
         """Renders the accumulated score (the interface must be an
-        `OscNrtInterface`). Schedule a closing bundle (e.g. ``/n_free 0``)
+        `OscNrtInterface`). Schedule a closing bundle (e.g. ``/node_free 0``)
         so the render has a defined duration. ``workers`` adds DSP threads
         for the score's parallel groups — bit-identical, only faster.
 
@@ -755,15 +755,15 @@ class Server:
     # ---- server control ----
 
     def notify(self, flag: bool = True, timeout: float = 5.0):
-        return self.request("/notify", 1 if flag else 0, timeout=timeout, expect=("/done",))
+        return self.request("/server_notify", 1 if flag else 0, timeout=timeout, expect=("/done",))
 
     def status(self, timeout: float = 5.0):
-        _, args = self.request("/status", timeout=timeout, expect=("/status.reply",))
+        _, args = self.request("/server_status", timeout=timeout, expect=("/server_status.reply",))
         return args
 
     def sync(self, timeout: float = 5.0) -> int:
-        """The async barrier (scsynth ``/sync``): sends ``/sync id`` and blocks
-        until the server answers ``/synced id``, which it does only once every
+        """The async barrier (scsynth ``/server_sync``): sends ``/server_sync id`` and blocks
+        until the server answers ``/server_sync.reply id``, which it does only once every
         async command sent earlier -- Faust/SynthDef compiles, buffer jobs --
         has completed. Use it after a ``wait=False`` def send or
         buffer alloc. RT only (in NRT the renderer
@@ -777,18 +777,18 @@ class Server:
         ``yield`` from a routine is future work (``OSCFunc``)."""
         self._sync_counter += 1
         sync_id = self._sync_counter
-        self.request("/sync", sync_id, timeout=timeout, expect=("/synced",))
+        self.request("/server_sync", sync_id, timeout=timeout, expect=("/server_sync.reply",))
         return sync_id
 
     def quit(self):
-        self.send_msg("/quit")
+        self.send_msg("/server_quit")
 
     def sample_clock(self, window: int = 64, timeout: float = 2.0):
         """A sample-clock reader for this server: an `EmbedSampleClock` when the
         server is in-process (the embed interface exposes the counter directly —
         no socket, no round trips), otherwise a `UdpSampleClock` tracking it
         over UDP. Pass its ``.timebase()`` to a ``TempoClock`` to anchor timing
-        to the server and schedule by ``/sched``."""
+        to the server and schedule by ``/sched_at``."""
         from ..base._oscinterface import OscEmbedInterface
         from .clocksync import EmbedSampleClock, UdpSampleClock
 
@@ -797,24 +797,24 @@ class Server:
         return UdpSampleClock(self, window=window, timeout=timeout)
 
     def transport(self, timeout: float = 5.0):
-        """The server's shared transport grid (``/transport``) as
+        """The server's shared transport grid (``/transport_query``) as
         ``(origin_sample, tempo)``, or ``None`` if none is set. The grid lets
         several clients phase-align on the master clock; join it from a clock
         with `clausters.base.clock.TempoClock.join_transport`. RT only."""
-        _, args = self.request("/transport", timeout=timeout, expect=("/transport.reply",))
+        _, args = self.request("/transport_query", timeout=timeout, expect=("/transport_query.reply",))
         origin, tempo, defined = int(args[0]), float(args[1]), int(args[2])
         return (origin, tempo) if defined else None
 
     def set_transport(self, origin_sample: int, tempo: float, timeout: float = 5.0):
-        """Define the server's shared transport grid (``/transport``): beat 0 at
+        """Define the server's shared transport grid (``/transport_set``): beat 0 at
         ``origin_sample`` on the sample clock, advancing at ``tempo`` beats per
         second. One client (the conductor) sets it; the others
         `join_transport`. Last writer wins. Defining the grid resets the rolling
         state to stopped at position 0."""
-        addr, args = self.request("/transport", _osclib.Int64(int(origin_sample)), float(tempo),
+        addr, args = self.request("/transport_set", _osclib.Int64(int(origin_sample)), float(tempo),
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
-            raise CommandError(f"/transport failed: {args}")
+            raise CommandError(f"/transport_set failed: {args}")
         return self
 
     def transport_state(self, timeout: float = 5.0):
@@ -824,7 +824,7 @@ class Server:
         (where play starts, or where a stopped transport sits). A
         `clausters.seq.timeline.Playhead` follows this with `follow_transport`.
         RT only."""
-        _, args = self.request("/transport", timeout=timeout, expect=("/transport.reply",))
+        _, args = self.request("/transport_query", timeout=timeout, expect=("/transport_query.reply",))
         if not int(args[2]):
             return None
         return {
@@ -838,7 +838,7 @@ class Server:
         """Start the shared transport rolling (``/transport_play``). With
         ``position`` playback starts from that song-position beat; without it,
         from where it last stopped or located. The server broadcasts the change
-        to every `/notify` client, so all playheads following the transport roll
+        to every `/server_notify` client, so all playheads following the transport roll
         together. Needs a grid defined (`set_transport`)."""
         extra = [float(position)] if position is not None else []
         addr, args = self.request("/transport_play", *extra,
@@ -849,7 +849,7 @@ class Server:
 
     def transport_stop(self, timeout: float = 5.0):
         """Stop the shared transport (``/transport_stop``); every following
-        playhead halts. Broadcast to `/notify` clients."""
+        playhead halts. Broadcast to `/server_notify` clients."""
         addr, args = self.request("/transport_stop", timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_stop failed: {args}")
@@ -858,7 +858,7 @@ class Server:
     def transport_locate(self, position: float, timeout: float = 5.0):
         """Set the shared transport's song position (``/transport_locate``) —
         where play starts, or where it seeks to while playing. Every following
-        playhead locates to it. Broadcast to `/notify` clients."""
+        playhead locates to it. Broadcast to `/server_notify` clients."""
         addr, args = self.request("/transport_locate", float(position),
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
@@ -866,7 +866,7 @@ class Server:
         return self
 
     def close(self):
-        """Close the communication interface (and the ``/n_end`` recycling
+        """Close the communication interface (and the ``/node_end`` recycling
         listener) and, if this handle `boot`-ed a server process, stop it
         too."""
         if self._recycler is not None:

@@ -5,9 +5,9 @@ things worth reading, and each has its own path:
 
 | What | Path | For |
 |---|---|---|
-| a **control bus** | `/c_stream` → periodic snapshots | meters, read-outs, slow traces |
-| an **audio bus** | `/tap_stream` → windows of samples | oscilloscopes, phasescopes, spectra |
-| a **buffer** | `/b_getn` in chunks, or `fetch` | waveforms, audio-editor views |
+| a **control bus** | `/bus_stream` → periodic snapshots | meters, read-outs, slow traces |
+| an **audio bus** | `/bus_tapStream` → windows of samples | oscilloscopes, phasescopes, spectra |
+| a **buffer** | `/buffer_getRange` in chunks, or `fetch` | waveforms, audio-editor views |
 
 The GUI host already reads all three on its own — that is why a GuiDef naming a
 bus or a URL draws with no script at all. This chapter describes the same
@@ -49,7 +49,7 @@ needs in one stream.
 > other*, and the host does not recover until one of its widgets changes. Until
 > ring clients get their own identities (a gap recorded in the server's
 > roadmap), pick one reader per page: either the host draws the live views, or
-> the script does. The same holds for `TapStream` and `/tap_stream`. Over a
+> the script does. The same holds for `TapStream` and `/bus_tapStream`. Over a
 > WebSocket there is no such conflict — a native host and a script are
 > different clients.
 
@@ -131,8 +131,8 @@ const slice = await buffer.getSamples({ start: 0, count: 1024 });
 The samples are interleaved (`frame * channels + channel`), so a stereo buffer
 reads `L R L R …`; `data.deinterleave(samples, buffer.channels)` splits it.
 
-**Reading is the only direction.** The server has no buffer-write command
-(`/b_setn` is `/b_getn`'s reply, not a command), so samples get *into* a buffer
+**Reading is the only direction.** The server has no buffer-write command at
+all — `/buffer_getRange` reads, and nothing writes back — so samples get *into* a buffer
 another way: `buffer.gen` (the server computes them), `Buffer.read`
 (a native server reads a file), or — in the page, where the carrier shares
 memory with the engine — `Buffer.load(server, url)`, which fetches and decodes

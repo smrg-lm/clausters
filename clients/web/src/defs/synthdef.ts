@@ -1,4 +1,4 @@
-// SynthDef: a named UGen graph ready for `/d_recv` (mirrors
+// SynthDef: a named UGen graph ready for `/def_send synth` (mirrors
 // `clausters/defs/synthdef.py`, emitting the same JSON `SynthDefSpec`).
 //
 // The UGen-graph counterpart of `FaustDef`: it wraps one or more root `Ugen`
@@ -10,7 +10,7 @@
 // const amp = control("amp", 0.2);
 // const sig = sine(freq).mul(amp);
 // const def = new SynthDef("beep", out(0.0, sig), out(1.0, sig));  // stereo
-// await def.send(server);                                   // /d_recv
+// await def.send(server);                                   // /def_send synth
 // ```
 //
 // **Instance-based build (no globals).** The walk is a plain post-order
@@ -52,7 +52,7 @@ export interface UgenSpec {
     [field: string]: unknown;
 }
 
-/** The `SynthDefSpec` the server's `/d_recv` compiles. */
+/** The `SynthDefSpec` the server's `/def_send synth` compiles. */
 export interface SynthDefSpec {
     name: string;
     controls: ControlSpec[];
@@ -103,7 +103,7 @@ export class SynthDef {
         this.roots = flat;
     }
 
-    /** The `SynthDefSpec` object the server's `/d_recv` compiles. */
+    /** The `SynthDefSpec` object the server's `/def_send synth` compiles. */
     spec(): SynthDefSpec {
         const ordered: Ugen[] = []; // UGens in topological order
         const wire = new Map<Ugen, number>(); // ugen -> its index in `ordered`
@@ -172,7 +172,7 @@ export class SynthDef {
     }
 
     /**
-     * Sends this def to the server via `/d_recv` and returns its name.
+     * Sends this def to the server via `/def_send synth` and returns its name.
      *
      * `wait: true` (the default) resolves on `/done` and rejects with
      * `CommandError` on `/fail`; `wait: false` only sends, to be sequenced
@@ -184,15 +184,15 @@ export class SynthDef {
     ): Promise<string> {
         const payload: MsgArg[] = [this.dumpDef()];
         if (!wait) {
-            server.sendMsg("/d_recv", ...payload);
+            server.sendMsg("/def_send", "synth", ...payload);
             return this.name;
         }
-        await server.command("/d_recv", payload, timeout);
+        await server.command("/def_send", ["synth", ...payload], timeout);
         return this.name;
     }
 
     /**
-     * The def serialized to text — the `/d_recv` wire payload. Useful to
+     * The def serialized to text — the `/def_send synth` wire payload. Useful to
      * inspect the built graph before sending it.
      */
     dumpDef(): string {

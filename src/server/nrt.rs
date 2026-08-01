@@ -1,6 +1,6 @@
 //! NRT (non-real-time) thread: disk I/O and buffer building (M5).
 //!
-//! Every `/b_*` command that touches sample memory runs here, off both the
+//! Every `/buffer_*` command that touches sample memory runs here, off both the
 //! audio and the network threads: allocation, file reading (WAV via hound,
 //! other formats via symphonia), WAV writing (hound) and zeroing. The
 //! network thread submits [`NrtRequest`]s and drains
@@ -9,11 +9,11 @@
 //! same pattern as the Faust compiler thread.
 //!
 //! One queue means buffer commands complete **in submission order** (a
-//! `/b_free` right after a `/b_alloc` cannot overtake it), which is why even
-//! `/b_free` — no I/O at all — travels through here.
+//! `/buffer_free` right after a `/buffer_alloc` cannot overtake it), which is why even
+//! `/buffer_free` — no I/O at all — travels through here.
 //!
-//! Buffers are immutable (see [`crate::dsp::buffer`]), so `/b_read` into an
-//! existing buffer and `/b_zero` build a *replacement* from the current
+//! Buffers are immutable (see [`crate::dsp::buffer`]), so `/buffer_read` into an
+//! existing buffer and `/buffer_zero` build a *replacement* from the current
 //! contents instead of mutating shared memory.
 
 use crate::osc::ClientId;
@@ -25,21 +25,21 @@ use std::time::Duration;
 use crate::dsp::buffer::Buffer;
 
 pub enum NrtJob {
-    /// `/b_alloc` (and `/b_zero`, which knows the shape from the mirror):
+    /// `/buffer_alloc` (and `/buffer_zero`, which knows the shape from the mirror):
     /// a fresh zeroed buffer.
     Alloc {
         frames: usize,
         channels: usize,
         sample_rate: f64,
     },
-    /// `/b_allocRead`: shape, sample rate and contents come from the file.
+    /// `/buffer_allocRead`: shape, sample rate and contents come from the file.
     /// `num_frames <= 0` reads to the end.
     AllocRead {
         path: String,
         file_start: usize,
         num_frames: i64,
     },
-    /// `/b_read`: overlay file data onto a copy of the current contents,
+    /// `/buffer_read`: overlay file data onto a copy of the current contents,
     /// starting at `buf_start`, keeping the buffer's shape.
     Read {
         path: String,
@@ -48,7 +48,7 @@ pub enum NrtJob {
         buf_start: usize,
         current: Arc<Buffer>,
     },
-    /// `/b_write`: WAV out; `sample_format` is `int16`, `int24` or `float`.
+    /// `/buffer_write`: WAV out; `sample_format` is `int16`, `int24` or `float`.
     /// `num_frames <= 0` writes from `buf_start` to the end.
     Write {
         path: String,
@@ -57,20 +57,20 @@ pub enum NrtJob {
         num_frames: i64,
         buffer: Arc<Buffer>,
     },
-    /// `/b_gen`: fill/generate into a same-shape replacement of the current
+    /// `/buffer_gen`: fill/generate into a same-shape replacement of the current
     /// buffer (wavetable generators, waveshaping tables, buffer copies). Pure
     /// computation — no I/O — but ordered through this queue like the rest so a
-    /// `/b_gen` cannot overtake a pending `/b_alloc` on the same buffer.
+    /// `/buffer_gen` cannot overtake a pending `/buffer_alloc` on the same buffer.
     Gen {
         current: Arc<Buffer>,
         cmd: crate::dsp::wavetable::GenCommand,
     },
-    /// `/b_free`: ordered behind the other jobs (see module docs).
+    /// `/buffer_free`: ordered behind the other jobs (see module docs).
     Free,
 }
 
 pub struct NrtRequest {
-    /// Command name for the `/done`/`/fail` reply (e.g. `"/b_alloc"`).
+    /// Command name for the `/done`/`/fail` reply (e.g. `"/buffer_alloc"`).
     pub cmd: &'static str,
     pub index: i32,
     /// Who asked: the async reply goes back to this client.
@@ -83,7 +83,7 @@ pub struct NrtRequest {
 pub enum NrtAction {
     Install(Arc<Buffer>),
     Clear,
-    /// Nothing to install (`/b_write`): just reply `/done`.
+    /// Nothing to install (`/buffer_write`): just reply `/done`.
     None,
 }
 
@@ -282,7 +282,7 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
 ///
 /// Public because it is the server's whole answer to "read a soundfile", and
 /// a client that needs the same answer should get *this* one rather than a
-/// second decoder of its own: `/b_allocRead` and the embed FFI's
+/// second decoder of its own: `/buffer_allocRead` and the embed FFI's
 /// `clausters_read_soundfile` are two doors onto this function.
 pub fn read_audio(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, String> {
     let is_wav = std::path::Path::new(path)

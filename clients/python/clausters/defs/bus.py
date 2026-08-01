@@ -52,18 +52,18 @@ class Bus:
         return _resolve(self.server)
 
     def set(self, value):
-        """Write a value to this control bus (``/c_set``)."""
-        self._server().send_msg("/c_set", self.index, float(value))
+        """Write a value to this control bus (``/bus_set``)."""
+        self._server().send_msg("/bus_set", self.index, float(value))
 
     def get(self, timeout: float = 5.0) -> float:
-        """Read this control bus's current value (``/c_get`` -> ``/c_set``).
+        """Read this control bus's current value (``/bus_get`` -> ``/bus_get.reply``).
         RT only (it needs a reply)."""
-        _, args = self._server().request("/c_get", self.index, timeout=timeout,
-                                         expect=("/c_set",))
+        _, args = self._server().request("/bus_get", self.index, timeout=timeout,
+                                         expect=("/bus_get.reply",))
         return args[1] if len(args) >= 2 else args[-1]
 
     def watch(self, flag: bool = True):
-        """Asks the server to make this audio bus readable (``/tap``): from the
+        """Asks the server to make this audio bus readable (``/bus_tap``): from the
         next block on, the engine records it into the shared segment, where a
         GUI oscilloscope reads it with zero messages (or a client streams it
         with `clausters.defs.Server.stream_taps`). ``flag=False`` stops.
@@ -72,10 +72,10 @@ class Bus:
         sample rings carries it is the server's own bookkeeping, published in
         the segment for whoever reads the samples. Watches count, so two views
         of one bus share a ring and the last one to stop frees it. No ack, like
-        ``/n_map`` (failures reply ``/fail`` -- an unknown bus, no tap region,
+        ``/node_map`` (failures reply ``/fail`` -- an unknown bus, no tap region,
         or every ring already taken); sequence with ``sync`` when needed.
         """
-        self._server().send_msg("/tap", self.index, 1 if flag else 0)
+        self._server().send_msg("/bus_tap", self.index, 1 if flag else 0)
 
     def free(self):
         """Returns this bus's run to the server's pool."""

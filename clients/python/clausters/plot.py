@@ -329,8 +329,8 @@ def _render_env(env, sample_rate):
     release_node = getattr(env, "release_node", None)
     if release_node is not None:
         sustain_at = sum(times[: int(release_node)])
-        server.send_bundle_after(sustain_at, ("/n_set", node.id, "gate", 0.0))
-    server.send_bundle_after(total, ("/n_free", node.id))
+        server.send_bundle_after(sustain_at, ("/node_set", node.id, "gate", 0.0))
+    server.send_bundle_after(total, ("/node_free", node.id))
     samples = session.render(sample_rate=sample_rate, channels=1).samples
     return samples, 1, sample_rate, "env"
 

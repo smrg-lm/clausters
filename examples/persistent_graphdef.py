@@ -119,7 +119,7 @@ def shutdown(server: Server, proc: subprocess.Popen):
 
 
 def load_pluck(server: Server, path: str, freq: float = 330.0, dur: float = 0.7):
-    """Write a decaying-sine pluck WAV and load it with ``/b_allocRead``.
+    """Write a decaying-sine pluck WAV and load it with ``/buffer_allocRead``.
     Returns the :class:`Buffer`. A fresh client's allocator starts at 0, so the
     bufnum the GraphDef bakes in (0) matches in both phases."""
     from clausters.defs.buffer import Buffer
@@ -138,11 +138,11 @@ def load_pluck(server: Server, path: str, freq: float = 330.0, dur: float = 0.7)
         w.writeframes(bytes(frames))
 
     bufnum = server.buffers.alloc()
-    addr, args = server.request("/b_allocRead", bufnum, path,
+    addr, args = server.request("/buffer_allocRead", bufnum, path,
                                 timeout=5.0, expect=("/done", "/fail"))
     if addr == "/fail":
         server.buffers.free(bufnum)
-        raise CommandError(f"/b_allocRead failed: {args}")
+        raise CommandError(f"/buffer_allocRead failed: {args}")
     return Buffer(bufnum, n, 1)
 
 

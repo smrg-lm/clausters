@@ -3,9 +3,9 @@
 
 A ``nodetree`` widget shows the audio server's tree -- its groups, synths, def
 names and control values -- and keeps it current: the GUI host mirrors the tree
-over its **client leg** (``/g_queryTree``), refreshing the moment a node is
-created or freed (``/n_go``/``/n_end`` notifications) and on a low-rate poll that
-catches ``/n_set`` control changes. Nothing in this script pushes the tree to the
+over its **client leg** (``/group_queryTree``), refreshing the moment a node is
+created or freed (``/node_start``/``/node_end`` notifications) and on a low-rate poll that
+catches ``/node_set`` control changes. Nothing in this script pushes the tree to the
 GUI; the host reads it from the server itself (so its client leg must point at
 the server -- which `Session.gui` wires up).
 
@@ -65,8 +65,8 @@ print("the window mirrors the server's node tree; watch freq sweep and "
 
 # %% [markdown]
 # ## Drive it
-# Sweep one synth's `freq` (an `/n_set` per tick, shown by the host's poll) and
-# let a third synth appear and disappear (the host catches the `/n_go`/`/n_end`).
+# Sweep one synth's `freq` (an `/node_set` per tick, shown by the host's poll) and
+# let a third synth appear and disappear (the host catches the `/node_start`/`/node_end`).
 # None of this is pushed to the GUI -- it reads the tree from the server.
 
 # %%

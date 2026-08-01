@@ -4,7 +4,7 @@
 //! Unlike `examples/bench` (offline throughput: how fast `process_block`
 //! spins with nobody pacing it), this drives the production path — cpal
 //! callback, real-time scheduling, the OSC front door — and watches the
-//! server's own CPU meter (`/status.reply`): average and peak per-block load
+//! server's own CPU meter (`/server_status.reply`): average and peak per-block load
 //! as a percentage of the block budget, plus the late-block counter (blocks
 //! that exceeded their budget — the engine-side xrun proxy).
 //!
@@ -27,7 +27,7 @@
 //! - `--sines n`: sinusoids summed **inside one def** (per-node DSP weight);
 //! - the ramp: nodes added `--step` at a time (per-node engine overhead).
 //!
-//! Each step settles, then polls `/status`; the ramp stops when the peak
+//! Each step settles, then polls `/server_status`; the ramp stops when the peak
 //! load crosses `--limit` (%), a block runs late, or `/fail` reports a full
 //! node table. The last row printed before the stop is the stable capacity.
 //! Cross-check xruns externally with `pw-top` (the ERR column) while it runs.
@@ -135,35 +135,37 @@ fn stress_def_json(sines: usize, amp: f32) -> String {
     )
 }
 
-/// One `/status` poll: (avg %, peak %, late blocks since boot). Skips
+/// One `/server_status` poll: (avg %, peak %, late blocks since boot). Skips
 /// unrelated packets; counts stray `/fail`s through `fails`.
 fn poll_status(
     socket: &UdpSocket,
     addr: &str,
     fails: &mut usize,
 ) -> Result<(f32, f32, i32), Box<dyn std::error::Error>> {
-    send(socket, addr, "/status", vec![])?;
+    send(socket, addr, "/server_status", vec![])?;
     loop {
         match recv(socket, fails)? {
-            Some(msg) if msg.addr == "/status.reply" => {
+            Some(msg) if msg.addr == "/server_status.reply" => {
                 let avg = match msg.args.get(5) {
                     Some(OscType::Float(v)) => *v,
-                    _ => return Err("malformed /status.reply (avg)".into()),
+                    _ => return Err("malformed /server_status.reply (avg)".into()),
                 };
                 let peak = match msg.args.get(6) {
                     Some(OscType::Float(v)) => *v,
-                    _ => return Err("malformed /status.reply (peak)".into()),
+                    _ => return Err("malformed /server_status.reply (peak)".into()),
                 };
                 let late = match msg.args.get(9) {
                     Some(OscType::Int(v)) => *v,
                     _ => {
-                        return Err("no late-block counter in /status.reply (older server?)".into());
+                        return Err(
+                            "no late-block counter in /server_status.reply (older server?)".into(),
+                        );
                     }
                 };
                 return Ok((avg, peak, late));
             }
             Some(_) => continue,
-            None => return Err("no /status.reply (is the server running?)".into()),
+            None => return Err("no /server_status.reply (is the server running?)".into()),
         }
     }
 }
@@ -229,7 +231,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut fails = 0usize;
 
     // Reachability first, so "no server" and "bad def" read differently: a
-    // /status round-trip also confirms the server is new enough to report
+    // /server_status round-trip also confirms the server is new enough to report
     // the CPU meter (poll_status errors out on the older field set).
     poll_status(&socket, addr, &mut fails)
         .map_err(|e| format!("{e} — expected a running server on {addr} (cargo run --release)"))?;
@@ -239,8 +241,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     send(
         &socket,
         addr,
-        "/d_recv",
-        vec![OscType::Blob(json.into_bytes())],
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(json.into_bytes()),
+        ],
     )?;
     expect(&socket, "/done", &mut fails)?;
 
@@ -259,7 +264,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stable = 0usize;
     let stop_reason;
     loop {
-        // One ramp step: /s_new × step, frequencies spread deterministically.
+        // One ramp step: /synth_new × step, frequencies spread deterministically.
         // Throttled in small batches: hundreds of adds landing on one block
         // boundary make *that* block run late (250 tree inserts inside one
         // 1.33 ms budget) — an artifact of the ramp, not steady-state load.
@@ -271,7 +276,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             send(
                 &socket,
                 addr,
-                "/s_new",
+                "/synth_new",
                 vec![
                     OscType::String("stress".into()),
                     OscType::Int(next_id),
@@ -336,6 +341,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "last stable: {stable} node(s) = {} sinusoid(s)",
         stable * opts.sines
     );
-    send(&socket, addr, "/g_freeAll", vec![OscType::Int(0)])?;
+    send(&socket, addr, "/group_freeAll", vec![OscType::Int(0)])?;
     Ok(())
 }

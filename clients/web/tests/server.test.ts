@@ -1,6 +1,6 @@
 // The `Server` end to end against a real `clausters --ws` server.
 //
-// The WS half of W1's acceptance: define a def and play it, with `/sync`
+// The WS half of W1's acceptance: define a def and play it, with `/server_sync`
 // ordering and a queryable result — both families, since a native server is
 // the only one that has the Faust JIT (the in-page engine is the
 // `synth,embed` build). Nothing here names the carrier: the same `Server`
@@ -150,7 +150,7 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
         assert.equal(info.parent, 0);
         assert.equal(info.controls?.freq, 220.0);
 
-        // The tree agrees, and so does the def count in /status — the live
+        // The tree agrees, and so does the def count in /server_status — the live
         // node/UGen counters are the audio thread's own, published a poll
         // window behind, so the tree is what a just-sent command is read
         // back from.
@@ -217,7 +217,7 @@ test("the example's voice def compiles and its gate releases it", {
     });
 });
 
-test("a node id returns to the registry when its /n_end arrives", {
+test("a node id returns to the registry when its /node_end arrives", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {
@@ -226,12 +226,12 @@ test("a node id returns to the registry when its /n_end arrives", {
         assert.equal(server.nodes.inUse, 1);
         first.free();
         // Freeing does not release the id: it stays tracked until the server
-        // confirms the death with /n_end, which is what the registry listens
+        // confirms the death with /node_end, which is what the registry listens
         // for. (Releasing at send time could re-hand an id whose node is
         // still alive on the server.)
         await server.sync();
         for (let i = 0; i < 40 && server.nodes.inUse > 0; i++) await sleep(25);
-        assert.equal(server.nodes.inUse, 0, "the /n_end recycled the id");
+        assert.equal(server.nodes.inUse, 0, "the /node_end recycled the id");
     });
 });
 
@@ -348,7 +348,7 @@ test("buffers allocate, generate and free through the pool", {
         // buffer this client never allocated would show up too.
         const listed = await server.queryBuffers();
         const mine = listed.find((b) => b.bufnum === buf.bufnum);
-        assert.ok(mine, "the allocated buffer is in /b_query's list");
+        assert.ok(mine, "the allocated buffer is in /buffer_query's list");
         assert.equal(mine.frames, 1024);
         assert.equal(mine.channels, 1);
 

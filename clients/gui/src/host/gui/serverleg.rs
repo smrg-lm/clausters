@@ -1,6 +1,6 @@
 //! The audio-server client leg, main-thread side: routing the server's replies
-//! (`/b_info`/`/b_setn` into the buffer-fetch machine, `/g_queryTree.reply`
-//! into the node-tree store), the `/notify` registration and the node-tree
+//! (`/buffer_query.reply`/`/buffer_getRange.reply` into the buffer-fetch machine, `/group_queryTree.reply`
+//! into the node-tree store), the `/server_notify` registration and the node-tree
 //! re-query, and placing a finished buffer download into its waiting views.
 
 use std::sync::Arc;
@@ -20,7 +20,7 @@ use super::app::App;
 impl App {
     /// Registers timeline widgets (waveform/spectrogram) that reference a
     /// server buffer and queries the audio server for each distinct buffer's
-    /// shape (the fetch proceeds on the `/b_info` reply). `refs` is
+    /// shape (the fetch proceeds on the `/buffer_query.reply` reply). `refs` is
     /// `(widget_id, bufnum)`.
     pub(super) fn start_buffer_fetches(&mut self, def_id: i32, refs: Vec<(i32, i32)>) {
         for (widget_id, bufnum) in refs {
@@ -30,8 +30,8 @@ impl App {
         }
     }
 
-    /// Sends one fetch-machine message over the client leg (`/b_query`,
-    /// `/b_getn`), warning instead of failing when no server is attached.
+    /// Sends one fetch-machine message over the client leg (`/buffer_query`,
+    /// `/buffer_getRange`), warning instead of failing when no server is attached.
     fn send_to_server(&self, msg: OscMessage) {
         let Some(server) = self.host.server() else {
             return warn!(
@@ -95,7 +95,7 @@ impl App {
             return; // bundles are not used on the reply path yet
         };
         match msg.addr.as_str() {
-            "/b_info" => {
+            "/buffer_query.reply" => {
                 // (bufnum, frames, channels, sampleRate) per buffer.
                 for group in msg.args.chunks(4) {
                     if let [
@@ -115,25 +115,25 @@ impl App {
                     }
                 }
             }
-            "/b_setn" => {
+            "/buffer_getRange.reply" => {
                 let step = self.fetches.on_data(&msg.args);
                 self.apply_fetch_step(step);
             }
-            "/g_queryTree.reply" => self.on_query_tree_reply(&msg.args),
+            "/group_queryTree.reply" => self.on_query_tree_reply(&msg.args),
             // A node was created or freed (on any client): refresh the tree
             // promptly instead of waiting for the next poll.
-            "/n_go" | "/n_end" => self.next_query = Instant::now(),
+            "/node_start" | "/node_end" => self.next_query = Instant::now(),
             "/fail" => warn!("audio server replied /fail: {:?}", msg.args),
             _ => {}
         }
     }
 
-    /// `/g_queryTree.reply`: parse the server's node tree, store it by group and
+    /// `/group_queryTree.reply`: parse the server's node tree, store it by group and
     /// repaint the windows showing it (only when it actually changed, so an
     /// idle tree polled at a few Hz does not repaint needlessly).
     fn on_query_tree_reply(&mut self, args: &[OscType]) {
         let Some(tree) = NodeTree::parse(args) else {
-            return warn!("malformed /g_queryTree.reply ({} args)", args.len());
+            return warn!("malformed /group_queryTree.reply ({} args)", args.len());
         };
         let group = tree.group;
         if self.node_trees.get(&group) == Some(&tree) {
@@ -175,7 +175,7 @@ impl App {
         groups.contains(&group)
     }
 
-    /// Registers for node lifecycle notifications (`/notify 1`) once, so a
+    /// Registers for node lifecycle notifications (`/server_notify 1`) once, so a
     /// `nodetree` refreshes as soon as nodes appear or disappear.
     pub(super) fn ensure_notify(&mut self) {
         if self.notified {
@@ -183,7 +183,7 @@ impl App {
         }
         if let Some(server) = self.host.server() {
             if let Err(e) = server.send(OscMessage {
-                addr: "/notify".into(),
+                addr: "/server_notify".into(),
                 args: vec![OscType::Int(1)],
             }) {
                 return warn!("failed to register for node notifications: {e}");
@@ -192,14 +192,14 @@ impl App {
         }
     }
 
-    /// Sends a `/g_queryTree <group> 1` for every group an open `nodetree` shows.
+    /// Sends a `/group_queryTree <group> 1` for every group an open `nodetree` shows.
     pub(super) fn requery_node_trees(&self) {
         let Some(server) = self.host.server() else {
             return;
         };
         for group in self.node_tree_groups() {
             if let Err(e) = server.send(OscMessage {
-                addr: "/g_queryTree".into(),
+                addr: "/group_queryTree".into(),
                 args: vec![OscType::Int(group), OscType::Int(1)],
             }) {
                 warn!("failed to query node tree for group {group}: {e}");
@@ -209,7 +209,7 @@ impl App {
 
     /// A buffer finished downloading (interleaved, every channel kept): look
     /// up each waiting widget and build its view — a multichannel waveform, or
-    /// one STFT lane per channel for a spectrogram. The buffer's `/b_info`
+    /// one STFT lane per channel for a spectrogram. The buffer's `/buffer_query.reply`
     /// sample rate also fills a widget's unknown `sample_rate`, so its ruler
     /// and readout label real time.
     fn finalize_buffer(

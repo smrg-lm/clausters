@@ -195,7 +195,7 @@ class Transport:
         if getattr(getattr(server, "interface", None), "time_mode", "unix") == "score":
             return False  # NRT: there is no engine clock to anchor to
         try:
-            _addr, args = server.request("/clock", expect=("/clock.reply",))
+            _addr, args = server.request("/clock_query", expect=("/clock_query.reply",))
         except ReplyTimeout:
             return False  # a live server that did not answer: no line, and it shows
         if not args:

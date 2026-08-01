@@ -4,7 +4,7 @@
 // Each function here is a small **lowercase** callable returning a `Ugen` node
 // (one output); composing nodes with these functions and the nodes' math
 // methods builds the graph a `SynthDef` serializes into the JSON
-// `SynthDefSpec` the server's `/d_recv` consumes — the same JSON the Python
+// `SynthDefSpec` the server's `/def_send synth` consumes — the same JSON the Python
 // builders emit, which the parity vectors in `tests/` hold.
 //
 // **Composition is by method, not by operator.** TypeScript has no operator
@@ -27,7 +27,7 @@
 // input is a type error, and a `TypeError` at serialization.
 //
 // Reserved controls `in` and `out` (the input/output buses, set with
-// `/s_new … "in" b "out" b`) are added by the server, not declared here.
+// `/synth_new … "in" b "out" b`) are added by the server, not declared here.
 
 // The four arithmetic selectors keep their dedicated alias kinds, so the
 // emitted graphs match the Python client's byte for byte.
@@ -307,13 +307,13 @@ const CONTROL_RATES = new Set([
 ]);
 
 /**
- * A named control (a `/s_new`/`/n_set` parameter) with a default and an
+ * A named control (a `/synth_new`/`/node_set` parameter) with a default and an
  * optional **type** and **lag**, mirroring the server's control types:
  *
- * - `rate: "tr"` — a **trigger**: an `/n_set` holds for one block, then the
+ * - `rate: "tr"` — a **trigger**: an `/node_set` holds for one block, then the
  *   server resets it to 0 (drives an `envGen` gate, a sample-and-hold).
  * - `rate: "ir"` — a **scalar**: read once at init and frozen; a later
- *   `/n_set` is ignored. As `ir` it may feed an `ir` input (`rand`, the
+ *   `/node_set` is ignored. As `ir` it may feed an `ir` input (`rand`, the
  *   buffer-info UGens).
  * - `lag` (seconds) — smooth a `kr` control's changes with an implicit
  *   one-pole the server inserts; `lagDown` gives a separate downward time.
@@ -359,7 +359,7 @@ export class Control extends SynthLeaf {
 }
 
 /**
- * A named control (`/s_new`/`/n_set` parameter). `rate` is its type (`"tr"`
+ * A named control (`/synth_new`/`/node_set` parameter). `rate` is its type (`"tr"`
  * trigger, `"ir"` scalar, or the default `kr`); `lag` (with an optional
  * `lagDown`) smooths a `kr` control. See `Control`.
  */
@@ -1077,7 +1077,7 @@ export function outCtl(
 // roots of the `SynthDef` (nothing else would reach them).
 
 /**
- * On each trigger of `trig`, sends `/tr nodeID id value` to `/notify`
+ * On each trigger of `trig`, sends `/node_trigger nodeID id value` to `/server_notify`
  * clients. Output is silence; pass it as a `SynthDef` root.
  */
 export const sendTrig = (
@@ -1088,7 +1088,7 @@ export const sendTrig = (
 
 /**
  * On each trigger of `trig`, sends the OSC message `cmd nodeID replyId
- * value…` to `/notify` clients. Output is silence; pass it as a root.
+ * value…` to `/server_notify` clients. Output is silence; pass it as a root.
  */
 export const sendReply = (
     trig: Channel,
@@ -1098,7 +1098,7 @@ export const sendReply = (
 
 /**
  * On each trigger of `trig`, posts `label: value` to the server console and,
- * when `trigId >= 0`, also sends `/tr nodeID trigId value`. `signal` passes
+ * when `trigId >= 0`, also sends `/node_trigger nodeID trigId value`. `signal` passes
  * through the output, so `poll` can sit mid-chain.
  */
 export const poll = (
@@ -1158,7 +1158,7 @@ export const vosc = (
 
 /**
  * Waveshaper: maps `signal` (in ±1, clamped) through a transfer table in
- * wavetable format (typically a `cheby` `/b_gen`).
+ * wavetable format (typically a `cheby` `/buffer_gen`).
  */
 export const shaper = (bufnum: Channel, signal: Channel): Ugen =>
     new Ugen("Shaper", [bufnum, signal]);
@@ -1431,7 +1431,7 @@ export const demand = (
 /**
  * The action `envGen` takes when its envelope finishes — scsynth's full
  * done-action set (0–15). The relative actions act on the synth's neighbours
- * in its group; a paused node is resumed with `Server.run` (`/n_run`).
+ * in its group; a paused node is resumed with `Server.run` (`/node_run`).
  */
 export const DoneAction = {
     /** Do nothing; the envelope just holds its final level. */

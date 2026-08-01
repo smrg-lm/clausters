@@ -74,7 +74,7 @@ out[i] = (self.state as i32 as f32) * (1.0 / 2147483648.0);
 y = x + b * (y - x);
 ```
 
-`Lag` is this applied to a control signal. Essential so `/n_set freq` doesn't
+`Lag` is this applied to a control signal. Essential so `/node_set freq` doesn't
 click.
 
 ### Biquad (RBJ-cookbook-style LPF/HPF)
@@ -122,7 +122,7 @@ linear and exponential. State: current segment, samples remaining, current value
 - Minimum linear interpolation: `s = a + frac * (b - a)`; cubic (4-point) as an
   upgrade. Handle the end boundary (loop wrap or zeros + done flag).
 - The UGen stores the buffer index and resolves the contents per block from the
-  pool — the buffer may be replaced by `/b_read` between blocks (via
+  pool — the buffer may be replaced by `/buffer_read` between blocks (via
   `basedrop::Shared`, see [[realtime-audio]]).
 
 ## Operators and Out/In

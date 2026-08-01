@@ -60,7 +60,7 @@ group onto a `GraphDef`. Render it — for a logical group that means
 *send and instance*, not flatten and play:
 
 ```python
-inst = chain.render(server)     # /d_graph, then /graph_new — it sounds now
+inst = chain.render(server)     # /def_send graph, then /graph_new — it sounds now
 ```
 
 A fifth and its gain stage, sounding continuously — a graph instance is a

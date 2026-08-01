@@ -264,10 +264,10 @@ export class GuiHost {
      * `/gui_bind <id> "server" <address> <prefix…>` — forward this widget's
      * value **straight to the audio server**, bypassing this script.
      *
-     * On every change the host sends `address` (an OSC path like `/n_set` or
-     * `/c_set`) with the fixed `prefix` arguments followed by the widget's
-     * value — `bind(id, "/n_set", node.id, "freq")` makes the widget send
-     * `/n_set <node> freq <value>` itself, so the control responds with no
+     * On every change the host sends `address` (an OSC path like `/node_set` or
+     * `/bus_set`) with the fixed `prefix` arguments followed by the widget's
+     * value — `bind(id, "/node_set", node.id, "freq")` makes the widget send
+     * `/node_set <node> freq <value>` itself, so the control responds with no
      * round trip through the page's script (the low-latency path). A bound
      * widget stops emitting `/gui_event`; `unbind` restores it. The host must
      * have a server leg for the value to arrive — in the browser that is the

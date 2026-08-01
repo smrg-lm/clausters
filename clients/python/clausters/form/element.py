@@ -232,7 +232,7 @@ class Generator(Element):
             internal-bus name (a ``str`` matching a `Group` bus), or ``"OUT"``
             (hardware). Used by `Group.to_graphdef`.
         maps: control-bus bindings for a logical-graph member
-            (``/n_map``), as a ``{control: bus_name}`` dict.
+            (``/node_map``), as a ``{control: bus_name}`` dict.
     """
 
     def __init__(self, generator, onset=None, duration=None, *, controls=None, maps=None):

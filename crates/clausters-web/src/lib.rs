@@ -155,7 +155,7 @@ impl WebServer {
         self.inner.clock() as f64
     }
 
-    /// Whether a `/quit` arrived; the page decides what closing means.
+    /// Whether a `/server_quit` arrived; the page decides what closing means.
     pub fn quit_requested(&self) -> bool {
         self.inner.quit_requested()
     }
@@ -171,7 +171,7 @@ impl WebServer {
     }
 
     /// Installs host-decoded samples as buffer `index` (the browser's
-    /// `/b_allocRead` replacement: fetch + `decodeAudioData`, then this).
+    /// `/buffer_allocRead` replacement: fetch + `decodeAudioData`, then this).
     pub fn b_load(
         &mut self,
         index: u32,
@@ -205,7 +205,7 @@ fn err(e: String) -> JsErrorish {
 mod tests {
     use clausters::rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
 
-    /// One length-prefixed `/s_new` + end bundle in the binary score format.
+    /// One length-prefixed `/synth_new` + end bundle in the binary score format.
     fn tiny_score() -> Vec<u8> {
         let packet = |secs: u32, msgs: Vec<OscMessage>| {
             let bundle = OscPacket::Bundle(OscBundle {
@@ -218,7 +218,7 @@ mod tests {
             encoder::encode(&bundle).unwrap()
         };
         let s_new = OscMessage {
-            addr: "/s_new".into(),
+            addr: "/synth_new".into(),
             args: vec![
                 OscType::String("default".into()),
                 OscType::Int(1000),
@@ -229,7 +229,7 @@ mod tests {
             ],
         };
         let n_free = OscMessage {
-            addr: "/n_free".into(),
+            addr: "/node_free".into(),
             args: vec![OscType::Int(1000)],
         };
         let mut score = Vec::new();
@@ -260,13 +260,13 @@ mod tests {
         assert!(super::render(&[1, 2, 3], 48000.0, 2, None).is_err());
     }
 
-    /// The live face, exactly as the worklet drives it: send an `/s_new`,
+    /// The live face, exactly as the worklet drives it: send an `/synth_new`,
     /// pull a second of quanta, hear the tone, drain the `/done`s.
     #[test]
     fn web_server_pulls_a_tone() {
         let mut server = super::WebServer::new(48000.0, 2, 0.0).unwrap();
         let s_new = OscMessage {
-            addr: "/s_new".into(),
+            addr: "/synth_new".into(),
             args: vec![
                 OscType::String("default".into()),
                 OscType::Int(1000),
@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(server.clock(), 48000.0, "one second of quanta");
         let rms = (energy / (375.0 * quantum.len() as f32)).sqrt();
         assert!(rms > 0.05, "audible tone expected, rms = {rms}");
-        assert!(server.poll().is_none(), "/s_new is fire-and-forget");
+        assert!(server.poll().is_none(), "/synth_new is fire-and-forget");
         assert!(!server.quit_requested());
     }
 }

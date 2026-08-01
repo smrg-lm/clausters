@@ -1,6 +1,6 @@
 """Follow-up to C5: the pacing timebase is selectable — the OS monotonic clock
 (default, NTP-timetagged bundles) or the server's sample clock (events emitted
-by absolute sample via ``/sched``). Robust tests for **both** options.
+by absolute sample via ``/sched_at``). Robust tests for **both** options.
 """
 
 import struct
@@ -76,16 +76,16 @@ def test_monotonic_rt_emits_ntp_bundle():
     server = Server(interface=_FakeIface(), latency=0.0)
     _running_routine(clock, 1.0)
     try:
-        server.send_bundle(("/s_new", "x", 1, 1, 0))
+        server.send_bundle(("/synth_new", "x", 1, 1, 0))
     finally:
         main.current_tt = None
     kind, when, addrs = server.interface.sent[-1]
-    assert kind == "#bundle"                      # not /sched
+    assert kind == "#bundle"                      # not /sched_at
     assert when == 1000.0 + 1.0                   # unix_start + beats2secs(1.0)
-    assert addrs == ["/s_new"]
+    assert addrs == ["/synth_new"]
 
 
-# ---- sample-clock timebase: pacing + /sched ----
+# ---- sample-clock timebase: pacing + /sched_at ----
 
 def test_sample_clock_paces_against_the_counter():
     _ffi_or_skip()
@@ -109,11 +109,11 @@ def test_sample_clock_emits_sched_with_exact_sample():
     server = Server(interface=_FakeIface(), latency=0.0)
     _running_routine(clock, 1.0)                  # event at logical beat 1.0 (= 1.0 s)
     try:
-        server.send_bundle(("/s_new", "default", 1000, 1, 0))
+        server.send_bundle(("/synth_new", "default", 1000, 1, 0))
     finally:
         main.current_tt = None
     addr, args = server.interface.sent[-1]
-    assert addr == "/sched"
+    assert addr == "/sched_at"
     assert args[0] == 96_000 + 48_000             # origin + 1.0 s of samples
     assert isinstance(args[1], (bytes, bytearray)) and args[1][:8] == b"#bundle\x00"
 
@@ -145,11 +145,11 @@ def test_a_resumed_clock_keeps_its_beat_axis():
         server = Server(interface=_FakeIface(), latency=0.0)
         _running_routine(clock, 2.0)             # the routine is at beat 2
         try:
-            server.send_bundle(("/s_new", "default", 1000, 1, 0))
+            server.send_bundle(("/synth_new", "default", 1000, 1, 0))
         finally:
             main.current_tt = None
         addr, args = server.interface.sent[-1]
-        assert addr == "/sched"
+        assert addr == "/sched_at"
         assert args[0] == 480_000, "scheduled for now, not for the pre-stop axis"
     finally:
         clock.stop()
@@ -164,7 +164,7 @@ def test_latency_shifts_the_scheduled_sample():
     server = Server(interface=_FakeIface(), latency=0.25)   # 0.25 s lookahead
     _running_routine(clock, 0.0)
     try:
-        server.send_bundle(("/s_new", "default", 1, 1, 0))
+        server.send_bundle(("/synth_new", "default", 1, 1, 0))
     finally:
         main.current_tt = None
     _, args = server.interface.sent[-1]
@@ -183,7 +183,7 @@ def test_nrt_render_is_timebase_independent():
               dur=0.5).play(clock, server)
         clock.render()
         return sorted(w for w, raw in server.interface.score.bundles
-                      if _inner_addr(raw) == "/s_new")
+                      if _inner_addr(raw) == "/synth_new")
 
     mono = starts_for(MonotonicTimebase())
     samp = starts_for(SampleClockTimebase(lambda: 0, 48_000.0))
@@ -211,7 +211,7 @@ def test_nrt_immediate_sends_land_at_the_start_of_the_score():
     clock.play(Routine(routine))
     clock.render()
     starts = sorted(w for w, raw in server.interface.score.bundles
-                    if _inner_addr(raw) == "/s_new")
+                    if _inner_addr(raw) == "/synth_new")
     assert starts == [0.0, 0.0]
 
 
@@ -223,13 +223,13 @@ def test_nrt_send_bundle_carries_the_routines_logical_beat():
 
     def routine():
         for _ in range(3):
-            server.send_bundle(("/s_new", "default", -1, 0, 0))
+            server.send_bundle(("/synth_new", "default", -1, 0, 0))
             yield 0.5
 
     clock.play(Routine(routine))
     clock.render()
     starts = sorted(w for w, raw in server.interface.score.bundles
-                    if _inner_addr(raw) == "/s_new")
+                    if _inner_addr(raw) == "/synth_new")
     assert starts == [0.0, 0.5, 1.0]
 
 

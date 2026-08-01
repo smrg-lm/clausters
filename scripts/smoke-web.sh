@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The worklet acceptance smoke: the engine live in an AudioWorklet under
-# headless Chrome — /status round trip over the MessagePort, engine clock
-# advance, and an /s_new sine measured at an AnalyserNode
+# headless Chrome — /server_status round trip over the MessagePort, engine clock
+# advance, and an /synth_new sine measured at an AnalyserNode
 # (clients/web/tests/smoke.html does the asserting).
 #
 # Audio pacing is real time (no --virtual-time-budget: it races timers ahead

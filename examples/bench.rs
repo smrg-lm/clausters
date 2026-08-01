@@ -66,11 +66,11 @@ fn main() {
     }
     // M13: parallel groups. Independent chains on disjoint buses become one
     // stage that fans out across the worker pool; the speedup column is the
-    // whole point of /g_parallel.
+    // whole point of /group_parallel.
     let chains = 8usize;
     let voices = 125usize;
     println!(
-        "\nparallel group (/g_parallel): {chains} subgroups x {voices} sines, disjoint buses:"
+        "\nparallel group (/group_parallel): {chains} subgroups x {voices} sines, disjoint buses:"
     );
     let max_workers = std::thread::available_parallelism()
         .map(|n| n.get().saturating_sub(1))
@@ -896,7 +896,7 @@ fn bench_chain(
 }
 
 /// One parallel group with `chains` subgroups, each holding `voices` sines
-/// summing into that chain's private bus — the layout where /g_parallel
+/// summing into that chain's private bus — the layout where /group_parallel
 /// shines: every subgroup is an independent unit of one big stage.
 fn bench_parallel(workers: usize, chains: usize, voices: usize) -> f64 {
     use clausters::dsp::BusUsage;

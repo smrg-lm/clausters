@@ -27,7 +27,7 @@
 <code>freq</code> carries a <code>lag</code> of 0.12 s, so a new note
 <b>glides</b> to pitch instead of jumping — a portamento lead.
 <code>gate</code> is a trigger (<code>rate: "tr"</code>): a
-<code>/n_set gate 1</code> holds for one block and the server resets it, so
+<code>/node_set gate 1</code> holds for one block and the server resets it, so
 every set <b>re-plucks</b> the percussive envelope; a plain control gate would
 stay at 1 and never trigger again. <code>detune</code> is drawn once with
 <code>rand</code> — an <code>ir</code> scalar, frozen for the synth's life, so
@@ -35,7 +35,7 @@ each new lead is a little different.
 
 The lag and the trigger only make sense on a synth that <b>outlives its
 notes</b>, which is what one persistent node driven by a routine gives, rather
-than an <code>/s_new</code> per note.</div>
+than an <code>/synth_new</code> per note.</div>
 
       <div class="row">
         <button id="start">start</button>
@@ -101,7 +101,7 @@ than an <code>/s_new</code> per note.</div>
             // freq and gate in one timed bundle: the pitch starts gliding and
             // the pluck fires on the same instant.
             server.sendBundle([
-              ["/n_set", ["i", lead.id],
+              ["/node_set", ["i", lead.id],
                 "freq", ["f", mtof(midi)], "gate", ["f", 1.0]],
             ]);
             yield 0.5;

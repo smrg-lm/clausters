@@ -5,7 +5,7 @@ This example reproduces `filters.lib`'s `fi.tf2` / `TF2` -- a second-order
 direct-form-II biquad -- using *only* the lowercase callables of
 `clausters.defs.signals`, which map one-to-one to the bound Faust Signal API.
 No `.dsp` text is ever written: the whole DSP is assembled as a Python
-expression that becomes the JSON signal tree `/d_faust` compiles.
+expression that becomes the JSON signal tree `/def_send faust` compiles.
 
 The transfer function realized is the standard monic biquad
 
@@ -125,8 +125,8 @@ def build_def(name=FDEF_NAME):
 def voice(server):
     """The sequence as a `Routine` body (a generator). For each cutoff value we
     build a note `Event` and call `event.play(server)`: the Event emits the
-    bundles for us -- `/s_new` of our synth with these controls, then a
-    scheduled `/n_free` after its sustain -- so we never hand-write a bundle.
+    bundles for us -- `/synth_new` of our synth with these controls, then a
+    scheduled `/node_free` after its sustain -- so we never hand-write a bundle.
     `yield event.delta()` hands control back to the `TempoClock`, which resumes
     us at the next note's exact logical beat (timing is the clock's job, never a
     `time.sleep`). `legato=1.0` makes each note fill its `dur`, so the stepping
@@ -141,7 +141,7 @@ def voice(server):
             dur=STEP,
             legato=1.0,
         )
-        event.play(server)          # Event sends the /s_new (+ scheduled /n_free)
+        event.play(server)          # Event sends the /synth_new (+ scheduled /node_free)
         yield event.delta()         # advance the clock by dur * stretch
 
 
@@ -152,7 +152,7 @@ def render_offline(path):
     fdef = build_def()
     server = Server(interface=OscNrtInterface())
     clock = TempoClock(tempo=TEMPO)
-    fdef.send(server)             # NRT: scores /d_faust at time 0
+    fdef.send(server)             # NRT: scores /def_send faust at time 0
     clock.play(Routine(lambda: voice(server)))
     clock.render()                       # drain the queue in beat order, no sleep
     stats = server.render(sample_rate=int(RENDER_SR), channels=2, path=path)

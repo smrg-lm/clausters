@@ -16,7 +16,7 @@
 // same pool), because a widget id names a node of the one host's one widget
 // namespace: a page that mounts components *and* opens windows from script
 // must not hand the same id to both. Node ids, buses and buffers are a
-// `Server`'s to size from `/server_info`, so a page doing both should hand its
+// `Server`'s to size from `/server_query`, so a page doing both should hand its
 // client's allocators to the mount rather than let the two pools overlap; the
 // mount takes them as an argument for exactly that.
 

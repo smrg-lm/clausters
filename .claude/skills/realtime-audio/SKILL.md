@@ -142,4 +142,4 @@ DC offset, 1e-18, inside filters — is not needed here.)
   with the test feature enabled.
 - Measure callback time (with `Instant`, which on Linux is a VDSO
   `clock_gettime`, acceptable) and publish peak/average CPU through the FIFO —
-  this feeds `/status.reply` just like in scsynth.
+  this feeds `/server_status.reply` just like in scsynth.

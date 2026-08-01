@@ -105,9 +105,9 @@ fn playbuf_matches_golden() {
     let (out, stats) = render_to_vec(&scenes::playbuf(&source), &scenes::config()).unwrap();
     assert_eq!(stats.frames, 12000, "0.25 s at 48 kHz");
 
-    // Silent before the synth starts and after /b_zero swaps in a zeroed
+    // Silent before the synth starts and after /buffer_zero swaps in a zeroed
     // buffer; in between, a 220 Hz sine at 0.5·0.4 then 0.5·0.15.
-    assert!(rms(&out[0..2401]) < 1e-6, "silence before /s_new");
+    assert!(rms(&out[0..2401]) < 1e-6, "silence before /synth_new");
     let estimated = freq(&out[2500..5900], scenes::SAMPLE_RATE);
     assert!(
         (estimated - 220.0).abs() < 220.0 * 0.03,
@@ -121,9 +121,9 @@ fn playbuf_matches_golden() {
     );
     assert!(
         loud / soft > 2.0,
-        "the scheduled /c_set must drop the level: {loud} vs {soft}"
+        "the scheduled /bus_set must drop the level: {loud} vs {soft}"
     );
-    assert!(rms(&out[9001..12000]) < 1e-6, "silence after /b_zero");
+    assert!(rms(&out[9001..12000]) < 1e-6, "silence after /buffer_zero");
 
     assert_matches_golden("playbuf.wav", &out);
     let _ = std::fs::remove_file(&source);
@@ -148,12 +148,18 @@ fn render_is_sample_accurate_mid_block() {
     let score = Score::new([
         (
             0.0,
-            vec![msg("/d_recv", vec![OscType::String(DC_DEF.into())])],
+            vec![msg(
+                "/def_send",
+                vec![
+                    OscType::String("synth".into()),
+                    OscType::String(DC_DEF.into()),
+                ],
+            )],
         ),
         (
             100.0 / 48000.0,
             vec![msg(
-                "/s_new",
+                "/synth_new",
                 vec![
                     OscType::String("dc".into()),
                     OscType::Int(1),
@@ -162,7 +168,10 @@ fn render_is_sample_accurate_mid_block() {
                 ],
             )],
         ),
-        (200.0 / 48000.0, vec![msg("/n_free", vec![OscType::Int(1)])]),
+        (
+            200.0 / 48000.0,
+            vec![msg("/node_free", vec![OscType::Int(1)])],
+        ),
     ])
     .unwrap();
     let cfg = RenderConfig {
@@ -193,11 +202,17 @@ fn score_file_round_trips_through_disk() {
     };
     let mut bytes = Vec::new();
     let bundles = [
-        (0.0, msg("/d_recv", vec![OscType::Blob(def)])),
+        (
+            0.0,
+            msg(
+                "/def_send",
+                vec![OscType::String("synth".into()), OscType::Blob(def)],
+            ),
+        ),
         (
             100.0 / 48000.0,
             msg(
-                "/s_new",
+                "/synth_new",
                 vec![
                     OscType::String("dc".into()),
                     OscType::Int(1),
@@ -206,7 +221,7 @@ fn score_file_round_trips_through_disk() {
                 ],
             ),
         ),
-        (200.0 / 48000.0, msg("/n_free", vec![OscType::Int(1)])),
+        (200.0 / 48000.0, msg("/node_free", vec![OscType::Int(1)])),
     ];
     for (time, message) in bundles {
         let packet = OscPacket::Bundle(OscBundle {
@@ -234,7 +249,7 @@ fn score_file_round_trips_through_disk() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// `/d_faust` in a score compiles synchronously on the render thread.
+/// `/def_send faust` in a score compiles synchronously on the render thread.
 #[cfg(feature = "faust")]
 #[test]
 fn faust_def_renders_in_nrt() {
@@ -242,8 +257,9 @@ fn faust_def_renders_in_nrt() {
         (
             0.0,
             vec![msg(
-                "/d_faust",
+                "/def_send",
                 vec![
+                    OscType::String("faust".into()),
                     OscType::String("fdc".into()),
                     OscType::String("process = 0.8;".into()),
                 ],
@@ -252,7 +268,7 @@ fn faust_def_renders_in_nrt() {
         (
             100.0 / 48000.0,
             vec![msg(
-                "/s_new",
+                "/synth_new",
                 vec![
                     OscType::String("fdc".into()),
                     OscType::Int(1),
@@ -261,7 +277,10 @@ fn faust_def_renders_in_nrt() {
                 ],
             )],
         ),
-        (200.0 / 48000.0, vec![msg("/n_free", vec![OscType::Int(1)])]),
+        (
+            200.0 / 48000.0,
+            vec![msg("/node_free", vec![OscType::Int(1)])],
+        ),
     ])
     .unwrap();
     let cfg = RenderConfig {
@@ -282,7 +301,7 @@ fn faust_def_renders_in_nrt() {
 /// engine's. Before that wiring, an offline soundfile got the empty placeholder
 /// (length 1024) and was silent. The def here outputs the soundfile *length*,
 /// which is the buffer's frame count (300) when wired and 1024 when not, so a
-/// zeroed `/b_alloc` buffer is enough — no sample data needed.
+/// zeroed `/buffer_alloc` buffer is enough — no sample data needed.
 #[cfg(feature = "faust")]
 #[test]
 fn soundfile_reads_a_score_buffer_in_nrt() {
@@ -291,12 +310,13 @@ fn soundfile_reads_a_score_buffer_in_nrt() {
             0.0,
             vec![
                 msg(
-                    "/b_alloc",
+                    "/buffer_alloc",
                     vec![OscType::Int(0), OscType::Int(300), OscType::Int(1)],
                 ),
                 msg(
-                    "/d_faust",
+                    "/def_send",
                     vec![
+                        OscType::String("faust".into()),
                         OscType::String("sflen".into()),
                         OscType::String(
                             r#"process = (0, 0) : soundfile("0", 1) : (_, !, !);"#.into(),
@@ -308,7 +328,7 @@ fn soundfile_reads_a_score_buffer_in_nrt() {
         (
             100.0 / 48000.0,
             vec![msg(
-                "/s_new",
+                "/synth_new",
                 vec![
                     OscType::String("sflen".into()),
                     OscType::Int(1),
@@ -317,7 +337,10 @@ fn soundfile_reads_a_score_buffer_in_nrt() {
                 ],
             )],
         ),
-        (200.0 / 48000.0, vec![msg("/n_free", vec![OscType::Int(1)])]),
+        (
+            200.0 / 48000.0,
+            vec![msg("/node_free", vec![OscType::Int(1)])],
+        ),
     ])
     .unwrap();
     let cfg = RenderConfig {
@@ -348,8 +371,9 @@ fn faust_tail_flushes_to_zero_instead_of_denormals() {
             0.0,
             vec![
                 msg(
-                    "/d_faust",
+                    "/def_send",
                     vec![
+                        OscType::String("faust".into()),
                         OscType::String("tail".into()),
                         // 1-1' is an impulse; pole(0.9) decays it forever.
                         OscType::String(
@@ -358,7 +382,7 @@ fn faust_tail_flushes_to_zero_instead_of_denormals() {
                     ],
                 ),
                 msg(
-                    "/s_new",
+                    "/synth_new",
                     vec![
                         OscType::String("tail".into()),
                         OscType::Int(1),
@@ -370,7 +394,7 @@ fn faust_tail_flushes_to_zero_instead_of_denormals() {
         ),
         (
             1100.0 / 48000.0,
-            vec![msg("/n_free", vec![OscType::Int(1)])],
+            vec![msg("/node_free", vec![OscType::Int(1)])],
         ),
     ])
     .unwrap();
@@ -393,7 +417,7 @@ fn faust_tail_flushes_to_zero_instead_of_denormals() {
 
 #[test]
 fn zero_length_score_is_an_error() {
-    let score = Score::new([(0.0, vec![msg("/n_free", vec![OscType::Int(1)])])]).unwrap();
+    let score = Score::new([(0.0, vec![msg("/node_free", vec![OscType::Int(1)])])]).unwrap();
     let err = render_to_vec(&score, &RenderConfig::default()).unwrap_err();
     assert!(err.contains("empty render"), "got: {err}");
 }
@@ -401,12 +425,12 @@ fn zero_length_score_is_an_error() {
 #[test]
 fn unsupported_command_in_score_is_an_error() {
     let score = Score::new([
-        (0.0, vec![msg("/status", vec![])]),
-        (1.0, vec![msg("/n_free", vec![OscType::Int(1)])]),
+        (0.0, vec![msg("/server_status", vec![])]),
+        (1.0, vec![msg("/node_free", vec![OscType::Int(1)])]),
     ])
     .unwrap();
     let err = render_to_vec(&score, &RenderConfig::default()).unwrap_err();
-    assert!(err.contains("/status"), "got: {err}");
+    assert!(err.contains("/server_status"), "got: {err}");
 }
 
 #[test]
@@ -415,15 +439,15 @@ fn render_reports_failing_buffer_jobs() {
         (
             0.0,
             vec![msg(
-                "/b_allocRead",
+                "/buffer_allocRead",
                 vec![OscType::Int(0), OscType::String("/nonexistent.wav".into())],
             )],
         ),
-        (1.0, vec![msg("/n_free", vec![OscType::Int(1)])]),
+        (1.0, vec![msg("/node_free", vec![OscType::Int(1)])]),
     ])
     .unwrap();
     let err = render_to_vec(&score, &RenderConfig::default()).unwrap_err();
-    assert!(err.contains("/b_allocRead"), "got: {err}");
+    assert!(err.contains("/buffer_allocRead"), "got: {err}");
 }
 
 #[test]

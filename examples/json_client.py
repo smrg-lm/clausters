@@ -11,17 +11,17 @@ then run one or more demos (default: status):
 
     python3 examples/json_client.py status ugen faust quit
 
-`ugen`   defines an amplitude-modulated noise synth via /d_recv and plays it.
-`faust`  builds two Faust defs as JSON box trees via /d_faust (needs the
+`ugen`   defines an amplitude-modulated noise synth via /def_send synth and plays it.
+`faust`  builds two Faust defs as JSON box trees via /def_send faust (needs the
          feature): a sine from primitives and one importing the Faust stdlib.
 `soundfile` loads a WAV into a buffer and plays it from inside a Faust def
          via `soundfile("<bufnum>", n)` (needs the feature).
 `wavetable` computes a 256-point table in Python and plays it through
          `waveform` + `rdtable` (needs the faust feature).
-`bgen`   fills server buffers with `/b_gen` (sine1 wavetable, cheby transfer)
+`bgen`   fills server buffers with `/buffer_gen` (sine1 wavetable, cheby transfer)
          and plays them through the `Osc` and `Shaper` UGens — no Faust needed.
-`buffer` writes a WAV, loads it with /b_allocRead, plays it with PlayBuf at
-         the file's pitch (rate from /b_info and /status), then frees it.
+`buffer` writes a WAV, loads it with /buffer_allocRead, plays it with PlayBuf at
+         the file's pitch (rate from /buffer_query.reply and /server_status), then frees it.
 `disk`   records a sine straight to a WAV with DiskOut, then streams it back
          from disk with DiskIn (real-time disk I/O, no buffer load).
 `bundle` schedules a melody in advance with NTP-timetagged bundles: the
@@ -36,12 +36,12 @@ then run one or more demos (default: status):
          lowpass on noise — explicit sample-accurate feedback (needs the
          faust feature).
 `commands` exercises the command-set completion: control-range setters
-         (`/n_setn`), value queries (`/s_getn`), tree reordering (`/g_head`),
-         control-bus ranges (`/c_setn`/`/c_getn`), a server command (`/cmd`)
-         and `/clearSched` — no Faust needed.
+         (`/node_setRange`), value queries (`/synth_getRange`), tree reordering (`/group_head`),
+         control-bus ranges (`/bus_setRange`/`/bus_getRange`), a server command (`/server_cmd`)
+         and `/sched_clear` — no Faust needed.
 `replies` the side-effect UGens: an **output-less** def (no `Out` at all)
-         whose `SendTrig`/`SendReply` fire on a trigger control; a `/notify`
-         client receives the `/tr` and custom-address replies.
+         whose `SendTrig`/`SendReply` fire on a trigger control; a `/server_notify`
+         client receives the `/node_trigger` and custom-address replies.
 """
 
 import json
@@ -67,7 +67,7 @@ def _string(s: str) -> bytes:
 
 
 class Int64:
-    """Marker for an OSC int64 (`h`) argument — `/sched` sample targets."""
+    """Marker for an OSC int64 (`h`) argument — `/sched_at` sample targets."""
 
     def __init__(self, value: int):
         self.value = int(value)
@@ -162,11 +162,11 @@ class Client:
         return addr, args
 
 
-# ---- /d_recv: SynthDef JSON generation ----
+# ---- /def_send synth: SynthDef JSON generation ----
 
 
 class SynthDefBuilder:
-    """Builds the /d_recv wire format; see docs/schemas.md for the spec."""
+    """Builds the /def_send synth wire format; see docs/schemas.md for the spec."""
 
     def __init__(self, name: str):
         self.name, self.controls, self.ugens = name, [], []
@@ -196,19 +196,19 @@ def demo_ugen(client: Client):
     d.add("Out", 0, signal)
     d.add("Out", 1, signal)
 
-    print("ugen demo: /d_recv amnoise")
-    client.send("/d_recv", d.blob())
+    print("ugen demo: /def_send synth amnoise")
+    client.send("/def_send", "synth", d.blob())
     client.reply()
-    print("  /s_new amnoise 3000 (rate 6)")
-    client.send("/s_new", "amnoise", 3000, 1, 0, "rate", 6.0)
+    print("  /synth_new amnoise 3000 (rate 6)")
+    client.send("/synth_new", "amnoise", 3000, 1, 0, "rate", 6.0)
     time.sleep(1.5)
-    print("  /n_set 3000 rate 1.5")
-    client.send("/n_set", 3000, "rate", 1.5)
+    print("  /node_set 3000 rate 1.5")
+    client.send("/node_set", 3000, "rate", 1.5)
     time.sleep(1.5)
-    client.send("/n_free", 3000)
+    client.send("/node_free", 3000)
 
 
-# ---- /d_faust: JSON → Faust Box API generation ----
+# ---- /def_send faust: JSON → Faust Box API generation ----
 
 
 def box(op: str, *inputs) -> dict:
@@ -258,55 +258,55 @@ def wavetable_def() -> str:
 
 
 def demo_wavetable(client: Client):
-    print("wavetable demo: /d_faust jwavetable (table computed client-side)")
-    client.send("/d_faust", "jwavetable", wavetable_def())
+    print("wavetable demo: /def_send faust jwavetable (table computed client-side)")
+    client.send("/def_send", "faust", "jwavetable", wavetable_def())
     addr, _ = client.reply()  # compilation is async: /done or /fail
     if addr == "/fail":
         print("  (is the server running with --features faust?)")
         return
-    print("  /s_new jwavetable 3003 (freq 220)")
-    client.send("/s_new", "jwavetable", 3003, 1, 0)
+    print("  /synth_new jwavetable 3003 (freq 220)")
+    client.send("/synth_new", "jwavetable", 3003, 1, 0)
     time.sleep(1.5)
-    print("  /n_set 3003 freq 330")
-    client.send("/n_set", 3003, "freq", 330.0)
+    print("  /node_set 3003 freq 330")
+    client.send("/node_set", 3003, "freq", 330.0)
     time.sleep(1.5)
-    client.send("/n_free", 3003)
+    client.send("/node_free", 3003)
 
 
 def demo_faust(client: Client):
     for name, payload in [("jsine", sine_def()), ("jstdlib", stdlib_def())]:
-        print(f"faust demo: /d_faust {name}")
-        client.send("/d_faust", name, payload)
+        print(f"faust demo: /def_send faust {name}")
+        client.send("/def_send", "faust", name, payload)
         addr, args = client.reply()  # compilation is async: /done or /fail
         if addr == "/fail":
             print("  (is the server running with --features faust?)")
             return
 
-    print("  /s_new jsine 3001 (freq 330)")
-    client.send("/s_new", "jsine", 3001, 1, 0, "freq", 330.0)
+    print("  /synth_new jsine 3001 (freq 330)")
+    client.send("/synth_new", "jsine", 3001, 1, 0, "freq", 330.0)
     time.sleep(1.0)
-    print("  /n_set 3001 freq 550")
-    client.send("/n_set", 3001, "freq", 550.0)
+    print("  /node_set 3001 freq 550")
+    client.send("/node_set", 3001, "freq", 550.0)
     time.sleep(1.0)
-    print("  /s_new jstdlib 3002 (mixes with jsine)")
-    client.send("/s_new", "jstdlib", 3002, 1, 0)
+    print("  /synth_new jstdlib 3002 (mixes with jsine)")
+    client.send("/synth_new", "jstdlib", 3002, 1, 0)
     time.sleep(1.5)
-    client.send("/n_free", 3001)
-    client.send("/n_free", 3002)
+    client.send("/node_free", 3001)
+    client.send("/node_free", 3002)
 
 
 def demo_soundfile(client: Client):
     """A Faust def reads a server buffer through `soundfile("<bufnum>", n)`:
     load a WAV into buffer 5, then play it looping from inside the Faust DSP.
     Needs the faust feature."""
-    client.send("/status")
+    client.send("/server_status")
     _, status = client.reply()
     server_sr = int(status[7])
 
     # Write the test tone at the server rate (soundfile does not resample).
     path = os.path.join("/tmp", f"clausters_sf_{os.getpid()}.wav")
     write_test_wav(path, freq=220.0, seconds=1.0, sample_rate=server_sr)
-    client.send("/b_allocRead", 5, path)
+    client.send("/buffer_allocRead", 5, path)
     addr, _ = client.reply()
     if addr == "/fail":
         return
@@ -320,25 +320,25 @@ def demo_soundfile(client: Client):
         "idx = int(counter) % max(1, int(len));\n"
         "process = (sf(0, idx) : (!, !, _)) * 0.5;\n"
     )
-    print("soundfile demo: /d_faust sfplay (reads buffer 5 via soundfile)")
-    client.send("/d_faust", "sfplay", src)
+    print("soundfile demo: /def_send faust sfplay (reads buffer 5 via soundfile)")
+    client.send("/def_send", "faust", "sfplay", src)
     addr, _ = client.reply()
     if addr == "/fail":
         print("  (is the server running with --features faust?)")
-        client.send("/b_free", 5)
+        client.send("/buffer_free", 5)
         os.remove(path)
         return
 
-    print("  /s_new sfplay 3008 (loops the buffer from inside Faust)")
-    client.send("/s_new", "sfplay", 3008, 1, 0)
+    print("  /synth_new sfplay 3008 (loops the buffer from inside Faust)")
+    client.send("/synth_new", "sfplay", 3008, 1, 0)
     time.sleep(2.5)
-    client.send("/n_free", 3008)
-    client.send("/b_free", 5)
+    client.send("/node_free", 3008)
+    client.send("/buffer_free", 5)
     client.reply()
     os.remove(path)
 
 
-# ---- /b_*: buffers and PlayBuf ----
+# ---- /buffer_*: buffers and PlayBuf ----
 
 
 def write_test_wav(path: str, freq: float, seconds: float, sample_rate: int):
@@ -359,15 +359,15 @@ def demo_buffer(client: Client):
     path = os.path.join("/tmp", f"clausters_demo_{os.getpid()}.wav")
     write_test_wav(path, freq=330.0, seconds=1.0, sample_rate=22050)
 
-    print(f"buffer demo: /b_allocRead 10 {path}")
-    client.send("/b_allocRead", 10, path)
-    addr, _ = client.reply()  # async: /done /b_allocRead 10
+    print(f"buffer demo: /buffer_allocRead 10 {path}")
+    client.send("/buffer_allocRead", 10, path)
+    addr, _ = client.reply()  # async: /done /buffer_allocRead 10
     if addr == "/fail":
         return
-    client.send("/b_query", 10)
-    _, info = client.reply()  # /b_info: bufnum, frames, channels, sampleRate
+    client.send("/buffer_query", 10)
+    _, info = client.reply()  # /buffer_query.reply: bufnum, frames, channels, sampleRate
     file_sr = info[3]
-    client.send("/status")
+    client.send("/server_status")
     _, status = client.reply()
     server_sr = status[7]
 
@@ -376,69 +376,69 @@ def demo_buffer(client: Client):
     d = SynthDefBuilder("bplayer")
     rate = d.control("rate", 1.0)
     d.add("Out", 0, d.add("PlayBuf", 10, 0, rate, 1))
-    client.send("/d_recv", d.blob())
+    client.send("/def_send", "synth", d.blob())
     client.reply()
 
     pitch_true = file_sr / server_sr
-    print(f"  /s_new bplayer 3003 (rate {pitch_true:.3f}: the file's pitch)")
-    client.send("/s_new", "bplayer", 3003, 1, 0, "rate", pitch_true)
+    print(f"  /synth_new bplayer 3003 (rate {pitch_true:.3f}: the file's pitch)")
+    client.send("/synth_new", "bplayer", 3003, 1, 0, "rate", pitch_true)
     time.sleep(2.0)
-    print("  /n_set 3003 rate ×1.5 (a fifth up)")
-    client.send("/n_set", 3003, "rate", pitch_true * 1.5)
+    print("  /node_set 3003 rate ×1.5 (a fifth up)")
+    client.send("/node_set", 3003, "rate", pitch_true * 1.5)
     time.sleep(2.0)
-    client.send("/n_free", 3003)
-    client.send("/b_free", 10)
-    client.reply()  # /done /b_free 10
+    client.send("/node_free", 3003)
+    client.send("/buffer_free", 10)
+    client.reply()  # /done /buffer_free 10
     os.remove(path)
 
 
 def demo_bgen(client: Client):
-    """Table oscillators: fill server buffers with `/b_gen` and read them
+    """Table oscillators: fill server buffers with `/buffer_gen` and read them
     with `Osc` (wavetable) and `Shaper` (cheby waveshaping). No Faust needed —
     this is the UGen-world counterpart of the `wavetable` demo above."""
     # 1. A wavetable: buffer 20 = a 1024-point table (2048 samples), built from
     #    the first few harmonics with sine1 (flags 7 = normalize+wavetable+clear).
-    print("bgen demo: /b_alloc 20 then /b_gen sine1")
-    client.send("/b_alloc", 20, 2048)
-    if client.reply()[0] == "/fail":  # async: /done /b_alloc 20
+    print("bgen demo: /buffer_alloc 20 then /buffer_gen sine1")
+    client.send("/buffer_alloc", 20, 2048)
+    if client.reply()[0] == "/fail":  # async: /done /buffer_alloc 20
         return
-    client.send("/b_gen", 20, "sine1", 1 + 2 + 4, 1.0, 0.5, 0.3, 0.25)
-    client.reply()  # /done /b_gen 20
+    client.send("/buffer_gen", 20, "sine1", 1 + 2 + 4, 1.0, 0.5, 0.3, 0.25)
+    client.reply()  # /done /buffer_gen 20
 
     osc = SynthDefBuilder("wtosc")
     freq = osc.control("freq", 220.0)
     osc.add("Out", 0, osc.add("Mul", osc.add("Osc", 20, freq, 0.0), 0.2))
-    client.send("/d_recv", osc.blob())
+    client.send("/def_send", "synth", osc.blob())
     client.reply()
-    print("  /s_new wtosc 3050 (a bright harmonic tone)")
-    client.send("/s_new", "wtosc", 3050, 1, 0)
+    print("  /synth_new wtosc 3050 (a bright harmonic tone)")
+    client.send("/synth_new", "wtosc", 3050, 1, 0)
     time.sleep(1.5)
-    client.send("/n_set", 3050, "freq", 330.0)
+    client.send("/node_set", 3050, "freq", 330.0)
     time.sleep(1.0)
-    client.send("/n_free", 3050)
+    client.send("/node_free", 3050)
 
     # 2. A cheby transfer table for Shaper: buffer 21. Coefficients weight the
     #    Chebyshev polynomials (here mostly T_3), so a clean sine comes out as a
     #    richer waveshaped timbre; drive it with a swelling amplitude.
-    client.send("/b_alloc", 21, 2048)
+    client.send("/buffer_alloc", 21, 2048)
     client.reply()
-    client.send("/b_gen", 21, "cheby", 1 + 2 + 4, 1.0, 0.0, 1.0, 0.0, 0.5)
+    client.send("/buffer_gen", 21, "cheby", 1 + 2 + 4, 1.0, 0.0, 1.0, 0.0, 0.5)
     client.reply()
     shp = SynthDefBuilder("wtshaper")
     drive = shp.control("drive", 0.9)
     tone = shp.add("Mul", shp.add("Sine", 220.0), drive)
     shp.add("Out", 0, shp.add("Mul", shp.add("Shaper", 21, tone), 0.2))
-    client.send("/d_recv", shp.blob())
+    client.send("/def_send", "synth", shp.blob())
     client.reply()
-    print("  /s_new wtshaper 3051 (waveshaped through a cheby transfer table)")
-    client.send("/s_new", "wtshaper", 3051, 1, 0, "drive", 0.3)
+    print("  /synth_new wtshaper 3051 (waveshaped through a cheby transfer table)")
+    client.send("/synth_new", "wtshaper", 3051, 1, 0, "drive", 0.3)
     time.sleep(0.8)
-    client.send("/n_set", 3051, "drive", 1.0)  # more drive -> more harmonics
+    client.send("/node_set", 3051, "drive", 1.0)  # more drive -> more harmonics
     time.sleep(1.2)
-    client.send("/n_free", 3051)
+    client.send("/node_free", 3051)
 
-    client.send("/b_free", 20)
-    client.send("/b_free", 21)
+    client.send("/buffer_free", 20)
+    client.send("/buffer_free", 21)
     client.reply()
     client.reply()
 
@@ -453,13 +453,13 @@ def demo_disk(client: Client):
     rec = SynthDefBuilder("drec")
     sig = rec.add("Mul", rec.add("Sine", 440.0), 0.2)
     rec.add("DiskOut", sig, path=path, format="float")
-    client.send("/d_recv", rec.blob())
+    client.send("/def_send", "synth", rec.blob())
     client.reply()
     print(f"disk demo: recording 440 Hz to {path} for ~1.2 s (DiskOut)")
-    client.send("/s_new", "drec", 3006, 1, 0)
+    client.send("/synth_new", "drec", 3006, 1, 0)
     time.sleep(1.2)
     # Freeing the synth joins the writer thread, which finalizes the WAV.
-    client.send("/n_free", 3006)
+    client.send("/node_free", 3006)
     time.sleep(0.3)
 
     # 2. DiskIn: stream the file back (looping) to both outputs.
@@ -467,12 +467,12 @@ def demo_disk(client: Client):
     streamed = play.add("DiskIn", 0.0, path=path, loop=True)
     play.add("Out", 0, streamed)
     play.add("Out", 1, streamed)
-    client.send("/d_recv", play.blob())
+    client.send("/def_send", "synth", play.blob())
     client.reply()
     print("  streaming it back from disk for ~2 s (DiskIn, looping)")
-    client.send("/s_new", "dplay", 3007, 1, 0)
+    client.send("/synth_new", "dplay", 3007, 1, 0)
     time.sleep(2.0)
-    client.send("/n_free", 3007)
+    client.send("/node_free", 3007)
     time.sleep(0.2)
     os.remove(path)
 
@@ -481,7 +481,7 @@ def demo_disk(client: Client):
 
 
 def demo_bundle(client: Client):
-    """An arpeggio scheduled entirely up front: every /s_new and /n_free
+    """An arpeggio scheduled entirely up front: every /synth_new and /node_free
     travels now inside a timetagged bundle, and the server fires them
     sample-accurately — note the machine-steady rhythm."""
     notes = [330.0, 440.0, 550.0, 660.0, 880.0]
@@ -489,14 +489,14 @@ def demo_bundle(client: Client):
     for i, freq in enumerate(notes):
         when = 0.5 + i * 0.4
         node = 3100 + i
-        on = message("/s_new", "default", node, 1, 0, "freq", freq, "amp", 0.3)
-        off = message("/n_free", node)
+        on = message("/synth_new", "default", node, 1, 0, "freq", freq, "amp", 0.3)
+        off = message("/node_free", node)
         client.send_raw(bundle(when, on))
         client.send_raw(bundle(when + 0.3, off))
     time.sleep(0.5 + len(notes) * 0.4 + 0.2)
 
 
-# ---- /d_faust: the Signal API (JSON signal tree) ----
+# ---- /def_send faust: the Signal API (JSON signal tree) ----
 
 
 def sig(op: str, *inputs) -> dict:
@@ -529,37 +529,37 @@ def signal_lowpass_def() -> str:
 
 
 def demo_signal(client: Client):
-    print("signal demo: /d_faust ssine (Signal API recursion/self sine)")
-    client.send("/d_faust", "ssine", signal_sine_def())
+    print("signal demo: /def_send faust ssine (Signal API recursion/self sine)")
+    client.send("/def_send", "faust", "ssine", signal_sine_def())
     addr, _ = client.reply()
     if addr == "/fail":
         print("  (is the server running with --features faust?)")
         return
-    print("  /s_new ssine 3010 (freq 330 -> 440)")
-    client.send("/s_new", "ssine", 3010, 1, 0)
+    print("  /synth_new ssine 3010 (freq 330 -> 440)")
+    client.send("/synth_new", "ssine", 3010, 1, 0)
     time.sleep(1.2)
-    client.send("/n_set", 3010, "freq", 440.0)
+    client.send("/node_set", 3010, "freq", 440.0)
     time.sleep(1.0)
-    client.send("/n_free", 3010)
+    client.send("/node_free", 3010)
 
     # Explicit-feedback filter: a UGen noise source on bus 4, a Signal-API
     # one-pole reading it via its reserved `in` control.
     print("  one-pole lowpass on noise (explicit feedback filter)")
     noise = SynthDefBuilder("noise4")
     noise.add("Out", 4, noise.add("Mul", noise.add("WhiteNoise"), 0.3))
-    client.send("/d_recv", noise.blob())
+    client.send("/def_send", "synth", noise.blob())
     client.reply()
-    client.send("/d_faust", "siglp", signal_lowpass_def())
+    client.send("/def_send", "faust", "siglp", signal_lowpass_def())
     if client.reply()[0] == "/fail":
         return
-    client.send("/s_new", "noise4", 3011, 1, 0)
-    client.send("/s_new", "siglp", 3012, 1, 0, "in", 4.0, "out", 0.0)
+    client.send("/synth_new", "noise4", 3011, 1, 0)
+    client.send("/synth_new", "siglp", 3012, 1, 0, "in", 4.0, "out", 0.0)
     time.sleep(1.5)
-    print("  /n_set 3012 a 0.99 (tighter lowpass)")
-    client.send("/n_set", 3012, "a", 0.99)
+    print("  /node_set 3012 a 0.99 (tighter lowpass)")
+    client.send("/node_set", 3012, "a", 0.99)
     time.sleep(1.5)
-    client.send("/n_free", 3011)
-    client.send("/n_free", 3012)
+    client.send("/node_free", 3011)
+    client.send("/node_free", 3012)
 
 
 def demo_feedback(client: Client):
@@ -577,13 +577,13 @@ def demo_feedback(client: Client):
     d.add("Out", 1, mix)
     d.add("LocalOut", 0, d.add("Mul", mix, 0.98))    # feed back, decaying
 
-    print("feedback demo: /d_recv fbcomb (LocalIn/LocalOut resonant comb)")
-    client.send("/d_recv", d.blob())
+    print("feedback demo: /def_send synth fbcomb (LocalIn/LocalOut resonant comb)")
+    client.send("/def_send", "synth", d.blob())
     client.reply()
-    print("  /s_new fbcomb 3005 — rings at sampleRate/64 ≈ 750 Hz")
-    client.send("/s_new", "fbcomb", 3005, 1, 0)
+    print("  /synth_new fbcomb 3005 — rings at sampleRate/64 ≈ 750 Hz")
+    client.send("/synth_new", "fbcomb", 3005, 1, 0)
     time.sleep(3.0)
-    client.send("/n_free", 3005)
+    client.send("/node_free", 3005)
 
 
 def demo_demand(client: Client):
@@ -591,7 +591,7 @@ def demo_demand(client: Client):
     yields the next one only when *pulled*; a `Demand` driver pulls it on each
     tick of a 4 Hz `Impulse`, holding the frequency between ticks. That held
     (control-like) signal drives a `Sine`, so the sine hops through the
-    sequence — a step sequencer with no per-note `/s_new`. The `"rate": "dr"`
+    sequence — a step sequencer with no per-note `/synth_new`. The `"rate": "dr"`
     on the `Dseq` marks it demand-rate; the compiler then only lets it feed
     something that *pulls* it — a driver, or another demand ugen nesting it.
     `repeats` 0 is the endless stream. This is the smallest member of a family
@@ -607,13 +607,13 @@ def demo_demand(client: Client):
     d.add("Out", 0, osc)
     d.add("Out", 1, osc)
 
-    print("demand demo: /d_recv dseqmelody (Impulse -> Demand -> Dseq)")
-    client.send("/d_recv", d.blob())
+    print("demand demo: /def_send synth dseqmelody (Impulse -> Demand -> Dseq)")
+    client.send("/def_send", "synth", d.blob())
     client.reply()
-    print("  /s_new dseqmelody 3013 — a 4 Hz step sequence looping 6 notes")
-    client.send("/s_new", "dseqmelody", 3013, 1, 0)
+    print("  /synth_new dseqmelody 3013 — a 4 Hz step sequence looping 6 notes")
+    client.send("/synth_new", "dseqmelody", 3013, 1, 0)
     time.sleep(3.0)
-    client.send("/n_free", 3013)
+    client.send("/node_free", 3013)
 
 
 def demo_fft(client: Client):
@@ -622,7 +622,7 @@ def demo_fft(client: Client):
     spectral domain (zeroing the top bins), and `IFFT` resynthesises audio by
     overlap-add. No buffer is allocated — the spectral frame is synth-private
     scratch (SuperCollider's `LocalBuf` model). Only the `FFT` names the window
-    size; the compiler propagates it down the chain. Then `/u_cmd` swaps the
+    size; the compiler propagates it down the chain. Then `/node_ugenCmd` swaps the
     analysis window live."""
     d = SynthDefBuilder("fftbrick")
     src = d.add("Mul", d.add("WhiteNoise"), 0.4)
@@ -633,17 +633,17 @@ def demo_fft(client: Client):
     d.add("Out", 0, audio)
     d.add("Out", 1, audio)
 
-    print("fft demo: /d_recv fftbrick (WhiteNoise -> FFT -> PV_BrickWall -> IFFT)")
-    client.send("/d_recv", d.blob())
+    print("fft demo: /def_send synth fftbrick (WhiteNoise -> FFT -> PV_BrickWall -> IFFT)")
+    client.send("/def_send", "synth", d.blob())
     client.reply()
-    print("  /s_new fftbrick 3020 — spectrally low-passed noise")
-    client.send("/s_new", "fftbrick", 3020, 1, 0)
+    print("  /synth_new fftbrick 3020 — spectrally low-passed noise")
+    client.send("/synth_new", "fftbrick", 3020, 1, 0)
     time.sleep(1.5)
-    # /u_cmd <node> <ugenIndex> window <wintype>: ugen index 2 is the FFT.
-    print("  /u_cmd 3020 2 window 4 — switch the FFT to a Blackman window")
-    client.send("/u_cmd", 3020, 2, "window", 4.0)
+    # /node_ugenCmd <node> <ugenIndex> window <wintype>: ugen index 2 is the FFT.
+    print("  /node_ugenCmd 3020 2 window 4 — switch the FFT to a Blackman window")
+    client.send("/node_ugenCmd", 3020, 2, "window", 4.0)
     time.sleep(1.5)
-    client.send("/n_free", 3020)
+    client.send("/node_free", 3020)
 
 
 def score_bundle(seconds: float, *packets: bytes) -> bytes:
@@ -669,12 +669,12 @@ def demo_score():
         node = 3100 + i
         packets.append(
             score_bundle(
-                when, message("/s_new", "default", node, 1, 0, "freq", freq, "amp", 0.3)
+                when, message("/synth_new", "default", node, 1, 0, "freq", freq, "amp", 0.3)
             )
         )
-        packets.append(score_bundle(when + 0.3, message("/n_free", node)))
+        packets.append(score_bundle(when + 0.3, message("/node_free", node)))
     # The render ends at the last bundle's time: this one sets the duration.
-    packets.append(score_bundle(0.1 + len(notes) * 0.4, message("/n_free", 3100)))
+    packets.append(score_bundle(0.1 + len(notes) * 0.4, message("/node_free", 3100)))
     with open(path, "wb") as f:
         f.write(b"".join(struct.pack(">i", len(p)) + p for p in packets))
     print(f"wrote {path} ({len(packets)} bundles); render it with:")
@@ -683,77 +683,77 @@ def demo_score():
 
 def demo_commands(client: Client):
     """OSC command-set completion: control ranges, value queries, tree
-    reordering, control-bus ranges, a server command, and /clearSched."""
-    print("commands demo: /g_new 1 with three quiet synths")
-    client.send("/g_new", 1, 1, 0)
+    reordering, control-bus ranges, a server command, and /sched_clear."""
+    print("commands demo: /group_new 1 with three quiet synths")
+    client.send("/group_new", 1, 1, 0)
     for i, nid in enumerate((1001, 1002, 1003)):
-        client.send("/s_new", "default", nid, 1, 1, "freq", 300.0 + 110 * i, "amp", 0.05)
+        client.send("/synth_new", "default", nid, 1, 1, "freq", 300.0 + 110 * i, "amp", 0.05)
     time.sleep(0.5)
 
-    # /n_setn sets a consecutive control range (freq@0, amp@1) in one message.
-    print("  /n_setn 1001 0 2 660 0.08  (freq + amp as one range)")
-    client.send("/n_setn", 1001, 0, 2, 660.0, 0.08)
-    # /s_getn reads a range back -> /n_set 1001 0 2 <freq> <amp>.
-    client.send("/s_getn", 1001, 0, 2)
-    print("  /s_getn ->", client.reply(quiet=True))
+    # /node_setRange sets a consecutive control range (freq@0, amp@1) in one message.
+    print("  /node_setRange 1001 0 2 660 0.08  (freq + amp as one range)")
+    client.send("/node_setRange", 1001, 0, 2, 660.0, 0.08)
+    # /synth_getRange reads a range back -> /node_set 1001 0 2 <freq> <amp>.
+    client.send("/synth_getRange", 1001, 0, 2)
+    print("  /synth_getRange ->", client.reply(quiet=True))
 
     # Reorder the group: move 1003 to the head, then query the child order.
-    print("  /g_head 1 1003, then /g_queryTree")
-    client.send("/g_head", 1, 1003)
-    client.send("/g_queryTree", 1, 0)
+    print("  /group_head 1 1003, then /group_queryTree")
+    client.send("/group_head", 1, 1003)
+    client.send("/group_queryTree", 1, 0)
     print("  tree ->", client.reply(quiet=True))
 
-    # Control-bus range: set buses 10..12, read them back with /c_getn.
-    client.send("/c_setn", 10, 3, 0.1, 0.2, 0.3)
-    client.send("/c_getn", 10, 3)
-    print("  /c_getn ->", client.reply(quiet=True))
+    # Control-bus range: set buses 10..12, read them back with /bus_getRange.
+    client.send("/bus_setRange", 10, 3, 0.1, 0.2, 0.3)
+    client.send("/bus_getRange", 10, 3)
+    print("  /bus_getRange ->", client.reply(quiet=True))
 
     # A typed, discoverable server-wide command.
-    client.send("/cmd", "ping")
-    print("  /cmd ping ->", client.reply(quiet=True))
+    client.send("/server_cmd", "ping")
+    print("  /server_cmd ping ->", client.reply(quiet=True))
 
     time.sleep(0.5)
-    client.send("/n_free", 1)  # frees the group and its synths
-    # /clearSched would flush any pending timed bundles (none scheduled here).
-    client.send("/clearSched")
-    print("  /clearSched ->", client.reply(quiet=True))
+    client.send("/node_free", 1)  # frees the group and its synths
+    # /sched_clear would flush any pending timed bundles (none scheduled here).
+    client.send("/sched_clear")
+    print("  /sched_clear ->", client.reply(quiet=True))
 
 
 def demo_replies(client: Client):
     """Side-effect UGens: an output-less def (no Out) that replies over OSC.
-    SendTrig and SendReply fire on a trigger control; a /notify client receives
-    the /tr and custom-address messages the audio thread emits."""
-    client.send("/notify", 1)
+    SendTrig and SendReply fire on a trigger control; a /server_notify client receives
+    the /node_trigger and custom-address messages the audio thread emits."""
+    client.send("/server_notify", 1)
     client.reply(quiet=True)  # /done registering
 
     d = SynthDefBuilder("replies")
-    # A trigger control: a /n_set holds it for one block, so it fires once.
+    # A trigger control: a /node_set holds it for one block, so it fires once.
     d.controls.append({"name": "t", "default": 0.0, "rate": "tr"})
     trig = {"control": 0}
     # No Out anywhere: the def exists purely for its side effects.
-    d.add("SendTrig", trig, 7.0, 0.5)  # -> /tr node 7 0.5
+    d.add("SendTrig", trig, 7.0, 0.5)  # -> /node_trigger node 7 0.5
     d.add("SendReply", trig, 42.0, 1.5, 2.5, label="/custom")  # -> /custom ...
 
-    print("replies demo: /d_recv replies (no Out — side-effect only)")
-    client.send("/d_recv", d.blob())
+    print("replies demo: /def_send synth replies (no Out — side-effect only)")
+    client.send("/def_send", "synth", d.blob())
     client.reply(quiet=True)  # /done
-    client.send("/s_new", "replies", 3200, 1, 0)
+    client.send("/synth_new", "replies", 3200, 1, 0)
     print("  <- (n_go)", client.reply(quiet=True))
     time.sleep(0.2)
 
-    print("  /n_set 3200 t 1  -> fires SendTrig then SendReply")
-    client.send("/n_set", 3200, "t", 1.0)
-    print("  <-", client.reply(quiet=True))  # /tr 3200 7 0.5
+    print("  /node_set 3200 t 1  -> fires SendTrig then SendReply")
+    client.send("/node_set", 3200, "t", 1.0)
+    print("  <-", client.reply(quiet=True))  # /node_trigger 3200 7 0.5
     print("  <-", client.reply(quiet=True))  # /custom 3200 42 1.5 2.5
 
-    client.send("/n_free", 3200)
+    client.send("/node_free", 3200)
 
 
 def demo_serverinfo(client: Client):
     """Boot-time configuration: discover the server's pool sizes and I/O
-    channels with /server_info, then, if the server was started with --inputs,
+    channels with /server_query, then, if the server was started with --inputs,
     pass live device input straight to the output through an In -> Out synth."""
-    client.send("/server_info")
+    client.send("/server_query")
     _, info = client.reply(quiet=True)
     # [audio_buses, control_buses, out_ch, block, nom_sr, act_sr, in_ch,
     #  max_nodes, max_buffers, max_graph_children, max_ugen_inputs]
@@ -785,11 +785,11 @@ def demo_serverinfo(client: Client):
     print(f"  passthru: In(bus {int(in_bus)}) -> Out(bus 0) for 3 s")
     b = SynthDefBuilder("passthru")
     b.add("Out", 0.0, b.add("In", in_bus))
-    client.send("/d_recv", b.blob())
+    client.send("/def_send", "synth", b.blob())
     client.reply(quiet=True)
-    client.send("/s_new", "passthru", 3100, 1, 0)
+    client.send("/synth_new", "passthru", 3100, 1, 0)
     time.sleep(3.0)
-    client.send("/n_free", 3100)
+    client.send("/node_free", 3100)
 
 
 def main():
@@ -797,7 +797,7 @@ def main():
     client = Client()
     for demo in demos:
         if demo == "status":
-            client.send("/status")
+            client.send("/server_status")
             client.reply()
         elif demo == "ugen":
             demo_ugen(client)
@@ -832,7 +832,7 @@ def main():
         elif demo == "score":
             demo_score()
         elif demo == "quit":
-            client.send("/quit")
+            client.send("/server_quit")
             client.reply()
         else:
             sys.exit(

@@ -93,20 +93,20 @@ pub(super) struct App {
     pub(super) resumed: bool,
     /// Next scheduled repaint for animated (meter/scope) windows.
     pub(super) next_frame: Instant,
-    /// The server-buffer fetch machine (`/b_query` → chunked `/b_getn`),
+    /// The server-buffer fetch machine (`/buffer_query` → chunked `/buffer_getRange`),
     /// shared with the browser front.
     pub(super) fetches: BufferFetches,
     /// The node tree last read from the server, by group id, feeding `nodetree`
-    /// widgets (filled by `/g_queryTree.reply`).
+    /// widgets (filled by `/group_queryTree.reply`).
     pub(super) node_trees: HashMap<i32, NodeTree>,
     /// Whether the client leg has registered for node notifications
-    /// (`/notify 1`), so it is sent once even with several node-tree windows.
+    /// (`/server_notify 1`), so it is sent once even with several node-tree windows.
     pub(super) notified: bool,
-    /// Next scheduled re-query of the server's node tree (the `/n_set` poll).
+    /// Next scheduled re-query of the server's node tree (the `/node_set` poll).
     pub(super) next_query: Instant,
     /// Standalone mode: the host booted a pre-loaded GuiDef with no script front
     /// (`--standalone`). Closing the last window then quits the app, so the
-    /// embedded audio server is dropped (and `/quit`ed) instead of left running.
+    /// embedded audio server is dropped (and `/server_quit`ed) instead of left running.
     pub(super) standalone: bool,
     /// Live MIDI input: the virtual input port, held open while any open
     /// window has a `midi_in` piano-roll (dropping it closes the port).
@@ -498,7 +498,7 @@ impl ApplicationHandler<UserEvent> for App {
 
     /// After handling events, schedule the next wake-up: a ~30 fps repaint for
     /// animated (meter/scope) windows so their shared-memory values keep moving,
-    /// and a low-rate re-query for node-tree windows so `/n_set` changes show.
+    /// and a low-rate re-query for node-tree windows so `/node_set` changes show.
     /// With neither, windows stay event-driven (`Wait`).
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
@@ -562,7 +562,7 @@ impl ApplicationHandler<UserEvent> for App {
             }
         }
 
-        // Node-tree polling, driven from the client leg (the `/n_set` poll).
+        // Node-tree polling, driven from the client leg (the `/node_set` poll).
         if self.host.server().is_some() && !self.node_tree_groups().is_empty() {
             if now >= self.next_query {
                 self.requery_node_trees();

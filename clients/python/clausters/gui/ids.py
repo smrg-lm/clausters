@@ -14,7 +14,7 @@ sibling of `clausters.defs.node.NodeIdAllocator`, built on the same core
   redraw. The capacity is generous (`CAPACITY`): exhaustion means that many
   widgets are live *at once*, a client bug, and is raised loudly.
 - **The client drives the recycle.** A node id returns to the pool when the
-  server reports the node's death (``/n_end``); a widget id has no such
+  server reports the node's death (``/node_end``); a widget id has no such
   side-channel, so it returns when the client frees the widget (`GuiHost.free`/
   `close`, and a redraw re-defining a window, which frees the old subtree first).
 

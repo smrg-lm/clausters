@@ -53,7 +53,7 @@ SR = 48000.0
 def py_default(name="py_default") -> SynthDef:
     """`Sine(freq) * EnvGen(gate) * amp` to buses 0 and 1 — the client-side twin
     of the server's built-in `default`. `freq`/`amp`/`gate` are named controls
-    (the `/s_new`/`/n_set` parameters a `Pbind` drives).
+    (the `/synth_new`/`/node_set` parameters a `Pbind` drives).
 
     The envelope is the built-in's own: a gated ASR on equal-power sine ramps
     (0.01 s attack, sustain at 1.0 while the gate is held, 0.3 s release) with
@@ -73,7 +73,7 @@ def py_default(name="py_default") -> SynthDef:
 
 def render_pbind(instrument: str, sdef: SynthDef | None):
     """Render the arpeggio on `instrument`; if `sdef` is given, score its
-    `/d_recv` first so the offline renderer compiles it before time advances."""
+    `/def_send synth` first so the offline renderer compiles it before time advances."""
     server = Server(interface=OscNrtInterface())
     if sdef is not None:
         sdef.send(server)      # scored at t=0 in NRT
@@ -89,7 +89,7 @@ def render_pbind(instrument: str, sdef: SynthDef | None):
 
 def main():
     sdef = py_default()
-    print("SynthDef JSON the server compiles (/d_recv):")
+    print("SynthDef JSON the server compiles (/def_send synth):")
     print(json.dumps(sdef.spec(), indent=2))
     print("controls:", sdef.control_names())
 

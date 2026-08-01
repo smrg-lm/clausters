@@ -175,9 +175,9 @@ The GUI host (`clients/gui`) also compiles to **WebAssembly** and runs in a brow
 
 The browser fills the host's data paths over the network instead of shared memory and mapped files:
 
-- **Meters/scopes/canvas buses**: the host subscribes the buses its widgets read with `/c_stream` and the server streams `/c_set` snapshots back at ~30 fps over the same WebSocket — the network counterpart of the shared-memory segment (see the control-bus commands in [Def schemas](schemas.md)).
-- **Audio-bus views**: the host subscribes the audio buses its audio-rate scopes, phasescopes (a stereo pair) and live spectra read with `/tap_stream` and the server streams `/tap_data` windows back — the network counterpart of reading the segment's sample rings, and the subscription is itself what asks the server to record those buses (see [Def schemas](schemas.md)). The phasescope's correlation and goniometer geometry and the spectrum's FFT all come from `clausters-core`, so the browser computes them in wasm identically to the desktop.
-- **Bulk waveform/spectrogram/plot/clip data**: a `path`/`cache` reference is fetched as a URL against the page origin (raw `f32` samples — every interleaved channel kept — a prebuilt peak-pyramid cache, or an STFT cache; the pyramids and STFT lanes for raw fetches are built in wasm — the analysis lives in `clausters-core`), and a server `buffer` reference is pulled over `/b_query` + chunked `/b_getn` on the WebSocket leg. The editor chrome of the two heavy views (multichannel lanes, adaptive time/Hz rulers, the selection overlay, the vertical `y_start`/`y_len` view window) renders through the same shared frame path as the desktop — a `/gui_set` of any of it displays identically in the browser, and the pointer/wheel/keyboard gestures (drag-select, pan, zoom, BPF and clip editing, the piano-roll editing set) ride the same shared gesture machine as the desktop, so an edit behaves identically on either front; the playhead is driven by polling `/clock` once per animation tick instead of reading the shared segment's sample clock. The **linked navigation groups** (an explicit `link` prop shares one horizontal view, selection and playhead across timeline views; `/gui_set` of `view_start`/`view_len`/`sel_*`/`playhead_at` on any member applies group-wide) live in the host core's protocol dispatch, so they behave identically in the browser.
+- **Meters/scopes/canvas buses**: the host subscribes the buses its widgets read with `/bus_stream` and the server streams `/bus_set` snapshots back at ~30 fps over the same WebSocket — the network counterpart of the shared-memory segment (see the control-bus commands in [Def schemas](schemas.md)).
+- **Audio-bus views**: the host subscribes the audio buses its audio-rate scopes, phasescopes (a stereo pair) and live spectra read with `/bus_tapStream` and the server streams `/bus_tapStream.reply` windows back — the network counterpart of reading the segment's sample rings, and the subscription is itself what asks the server to record those buses (see [Def schemas](schemas.md)). The phasescope's correlation and goniometer geometry and the spectrum's FFT all come from `clausters-core`, so the browser computes them in wasm identically to the desktop.
+- **Bulk waveform/spectrogram/plot/clip data**: a `path`/`cache` reference is fetched as a URL against the page origin (raw `f32` samples — every interleaved channel kept — a prebuilt peak-pyramid cache, or an STFT cache; the pyramids and STFT lanes for raw fetches are built in wasm — the analysis lives in `clausters-core`), and a server `buffer` reference is pulled over `/buffer_query` + chunked `/buffer_getRange` on the WebSocket leg. The editor chrome of the two heavy views (multichannel lanes, adaptive time/Hz rulers, the selection overlay, the vertical `y_start`/`y_len` view window) renders through the same shared frame path as the desktop — a `/gui_set` of any of it displays identically in the browser, and the pointer/wheel/keyboard gestures (drag-select, pan, zoom, BPF and clip editing, the piano-roll editing set) ride the same shared gesture machine as the desktop, so an edit behaves identically on either front; the playhead is driven by polling `/clock_query` once per animation tick instead of reading the shared segment's sample clock. The **linked navigation groups** (an explicit `link` prop shares one horizontal view, selection and playhead across timeline views; `/gui_set` of `view_start`/`view_len`/`sel_*`/`playhead_at` on any member applies group-wide) live in the host core's protocol dispatch, so they behave identically in the browser.
 
 **Quick start** (from `clients/web/`, the one web directory — the host's wasm bundle is staged into the package's `dist/gui-host/`; one-time setup: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli --version <the wasm-bindgen version in Cargo.lock>`):
 
@@ -197,7 +197,7 @@ needs. One directory runs on three legs: a browser tab, the desktop
 against a running server. In the tab the engine runs in an AudioWorklet
 ([Using as a library](using-as-a-library.md) describes the pulled server it
 wraps), the GUI host draws into a `<canvas>`, and the streamed data paths
-(`/c_stream`, `/tap_stream`, `/b_getn`, `/clock`) ride the in-page leg
+(`/bus_stream`, `/bus_tapStream`, `/buffer_getRange`, `/clock_query`) ride the in-page leg
 unchanged — meters, scopes and buffer views are live with no server process
 anywhere.
 
@@ -212,8 +212,8 @@ text with the instrument sounding beside the paragraph that explains it
 fm-voice/
   index.js                            the generated ES module: registers the tag
   bundle.json                         the manifest
-  defs/synthdefs/fm-voice.voice.json  a /d_recv payload, verbatim
-  defs/graphdefs/fm-voice.graph.json  a /d_graph payload, verbatim
+  defs/synthdefs/fm-voice.voice.json  a /def_send synth payload, verbatim
+  defs/graphdefs/fm-voice.graph.json  a /def_send graph payload, verbatim
   defs/guidefs/fm-voice.json          the GuiDef record - a *template*
   presets/bright.json                 a parameter map
   audio/hit.wav                       optional sample data
@@ -274,7 +274,7 @@ resolve(manifest, template, allocation, params)  ->  { def_id, tree, boot, param
 ```
 
 Nothing is added to the `/gui_*` protocol and no state to the host: what comes
-out is the same `/d_recv`/`/d_graph`/`/gui_def`/`/graph_new` traffic as a
+out is the same `/def_send`/`/gui_def`/`/graph_new` traffic as a
 hand-written bundle. `validate` is the same machinery pointed the other way,
 for the writers.
 
@@ -339,11 +339,11 @@ above never names a transport.
 **The client.** `Server` and the def model, mirroring the Python client's
 `clausters/defs/` module for module: both def families as peers (`SynthDef`
 with the lowercase UGen callables, `FaustDef` with the Faust signal API) plus
-`GraphDef`, the `/sync` barrier, nodes, groups, graph instances, buses,
+`GraphDef`, the `/server_sync` barrier, nodes, groups, graph instances, buses,
 buffers and the introspection queries. The allocators come from the same core
 — the wasm shell also exposes the **registry** (the occupancy map behind node
 ids, buses and buffers) that `clausters-ffi` exposes to Python, and a `Server`
-sizes itself from the server's own `/server_info`. Two shapes differ from the
+sizes itself from the server's own `/server_query`. Two shapes differ from the
 reference client by necessity, both recorded in `docs/decisions.md`: everything
 that waits is a **promise** (the browser has one thread), and the graph
 composes **by method** (`sine(freq).mul(amp)`), TypeScript having no operator
@@ -374,7 +374,7 @@ on the very same `Connection` seam the audio client does, so the two carriers a
 browser has are one line apart: `GuiHost.page()` drives the wasm host on this
 page's canvas through its binding bridge, `GuiHost.connect(url)` a native
 `clausters-gui --ws` host. A widget is **bound** the same way
-(`w.bind("/n_set", node.id, "freq")`), and the value then flows host → engine
+(`w.bind("/node_set", node.id, "freq")`), and the value then flows host → engine
 with no round trip through the page's script. Two differences from the
 reference client, both in `docs/decisions.md`: the options are camelCase where
 the props are the wire's snake_case, and there is **no pump** — the host's
@@ -436,7 +436,7 @@ package over the same OSC, against a native server.
 | Python wheels packaging | done |
 | MIDI interfaces in the Python client (`MidiServer`, SMF / MIDI 2.0 clip export, live port) | done |
 | Client-side OSC/MIDI responders (`OscFunc`/`MidiFunc`) | done |
-| Browser GUI host (wasm bundle; meters over `/c_stream`, bulk over fetch/`/b_getn`) | done |
+| Browser GUI host (wasm bundle; meters over `/bus_stream`, bulk over fetch/`/buffer_getRange`) | done |
 | Arrangement model in the Python client (elements, recursive groups, rendering) | done |
 | Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `patch`) and the driver that binds them to the arrangement | done |
 | Engraved music notation (the `score` widget, its display list and the click/transpose edit round trip) | done |

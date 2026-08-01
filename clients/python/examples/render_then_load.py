@@ -19,7 +19,7 @@ the same process wrote it and reads it:
    renderer, which streams straight to disk, so the samples never cross into
    Python. What comes back is the stats — frames, events, per-channel peak
    and RMS — measured while it streamed.
-2. A live session boots, and ``read_buffer`` (``/b_allocRead``) loads that
+2. A live session boots, and ``read_buffer`` (``/buffer_allocRead``) loads that
    same file into a server buffer. Float32 WAV, read by the decoder the
    server already ships; nothing is converted to int16 on the way.
 3. A `play_buf` synth plays the buffer — the take, sounding as a sample.
@@ -93,7 +93,7 @@ def main():
 
     # ---- 3. load it into a running server and play it ---------------------
     with Session.live(tempo=2.0, latency=0.15) as live:
-        buf = Buffer.read(wav, server=live.server)          # /b_allocRead, by content
+        buf = Buffer.read(wav, server=live.server)          # /buffer_allocRead, by content
         info = buf.info()
         print(f"\nbuffer {buf.bufnum} on the server: {info.frames} frames, "
               f"{info.channels} ch, {info.sample_rate:.0f} Hz")

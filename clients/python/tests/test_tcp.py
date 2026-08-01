@@ -49,21 +49,21 @@ def _unframe(blob: bytes):
 
 def test_send_msg_is_length_prefixed():
     iface = _iface()
-    iface.send_msg(("127.0.0.1", 57110), "/s_new", "default", 1000, 1, 0)
+    iface.send_msg(("127.0.0.1", 57110), "/synth_new", "default", 1000, 1, 0)
     addr, args = osc.decode(_unframe(bytes(iface._sock.sent)))
-    assert addr == "/s_new"
+    assert addr == "/synth_new"
     assert args[:4] == ["default", 1000, 1, 0]
 
 
 def test_send_bundle_is_framed():
     iface = _iface()
-    iface.send_bundle(("127.0.0.1", 57110), 1.0, ("/status",))
+    iface.send_bundle(("127.0.0.1", 57110), 1.0, ("/server_status",))
     payload = _unframe(bytes(iface._sock.sent))
     assert payload[:8] == b"#bundle\x00"     # an OSC bundle
 
 
 def test_recv_reassembles_a_frame_split_across_segments():
-    reply = osc.message("/status.reply", 1, 0, 0, 1, 1)
+    reply = osc.message("/server_status.reply", 1, 0, 0, 1, 1)
     frame = len(reply).to_bytes(4, "big") + reply
     # Deliver the frame in three awkward pieces: part of the prefix, the rest of
     # the prefix plus part of the payload, then the tail.
@@ -72,7 +72,7 @@ def test_recv_reassembles_a_frame_split_across_segments():
     got = iface.recv(timeout=1.0)
     assert got == reply
     addr, _ = osc.decode(got)
-    assert addr == "/status.reply"
+    assert addr == "/server_status.reply"
 
 
 def test_recv_returns_none_when_no_data():
@@ -81,12 +81,12 @@ def test_recv_returns_none_when_no_data():
 
 
 def test_two_frames_in_one_chunk_are_returned_one_at_a_time():
-    a = osc.message("/done", "/d_recv")
-    b = osc.message("/status.reply", 1)
+    a = osc.message("/done", "/def_send")
+    b = osc.message("/server_status.reply", 1)
     blob = (len(a).to_bytes(4, "big") + a) + (len(b).to_bytes(4, "big") + b)
     iface = _iface([blob])                # both frames arrive together
     assert osc.decode(iface.recv(1.0))[0] == "/done"
-    assert osc.decode(iface.recv(1.0))[0] == "/status.reply"
+    assert osc.decode(iface.recv(1.0))[0] == "/server_status.reply"
 
 
 if __name__ == "__main__":

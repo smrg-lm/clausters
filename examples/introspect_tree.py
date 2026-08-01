@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """Reading the server's node tree as structured data (and steering its logs).
 
-The node tree — groups, synths, ids, defs, controls, `/n_map` bindings, the
+The node tree — groups, synths, ids, defs, controls, `/node_map` bindings, the
 inferred bus usage — is available to a client as **structured replies**, never
 by scraping the server's console. This builds a small tree and reads it back
 three ways:
 
-  * ``server.query_tree()`` -> the whole tree (``/g_queryTree``), asked of the
+  * ``server.query_tree()`` -> the whole tree (``/group_queryTree``), asked of the
     server because it is about *every* node it holds. Every entry is the same
     record one node reports about itself, so nothing needs a second query;
-  * ``node.info()`` -> that record for one node (``/n_query`` -> ``/n_info``),
+  * ``node.info()`` -> that record for one node (``/node_query`` -> ``/node_query.reply``),
     asked of the node because it is about *itself*: parent, siblings, def,
     controls, maps, reads/writes buses. A node that is gone answers
     ``exists = False`` rather than raising;
   * ``server.dump_graph(g)`` -> the inferred bus graph as readable text
-    (``/g_dumpGraph``), a debugging aid.
+    (``/group_dumpGraph``), a debugging aid.
 
 The server's own logs are a separate channel (its stderr), which the client can
-retune live with ``/verbosity`` (level) and ``/dumpOSC`` (OSC-traffic target) —
+retune live with ``/server_verbosity`` (level) and ``/server_dumpOsc`` (OSC-traffic target) —
 shown at the end. No Faust needed; a plain server build works.
 
     cargo build --release
@@ -63,7 +63,7 @@ def connect(timeout: float = 8.0) -> Server:
 
 def build_tree(server: Server):
     """A group holding two synths; the second's freq is mapped to a control
-    bus, so it shows up as a `/n_map` in the node detail."""
+    bus, so it shows up as a `/node_map` in the node detail."""
     SynthDef("beep", out(0.0, sine(control("freq", 440.0))
                                               * control("amp", 0.2))).send(server)
     group = Group.new(server=server)
@@ -106,8 +106,8 @@ def main():
 
         # The logs are a separate channel: the client can retune the server's
         # verbosity live (output lands on the server's stderr, not here).
-        server.request("/verbosity", 1, timeout=2.0, expect=("/done", "/fail"))
-        print("\nset server log level to info via /verbosity (see the server's stderr)")
+        server.request("/server_verbosity", 1, timeout=2.0, expect=("/done", "/fail"))
+        print("\nset server log level to info via /server_verbosity (see the server's stderr)")
 
         group.free()
     finally:

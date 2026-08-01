@@ -31,7 +31,7 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
 
       ?smoke=1 is the scripted-acceptance mode (scripts/smoke-web-standalone.sh
       under headless Chrome): boots without the gesture, watches the streamed
-      /c_set of the GuiDef's meter bus, and beacons a PASS/FAIL verdict as a
+      /bus_set of the GuiDef's meter bus, and beacons a PASS/FAIL verdict as a
       fetch the runner reads from the HTTP access log.
     -->
     <script type="module">
@@ -56,14 +56,14 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
         await loadOsc();
 
         // Observe the bus stream for the harness/smoke readout: every
-        // /c_set the meter subscription brings in.
+        // /bus_set the meter subscription brings in.
         let snapshots = 0;
         const seen = new Set();
         let dead = null;
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
             if (addr === "/fail") dead = `engine /fail: ${JSON.stringify(args)}`;
-            if (addr !== "/c_set") continue;
+            if (addr !== "/bus_set") continue;
             snapshots += 1;
             for (let i = 0; i + 1 < args.length; i += 2) seen.add(args[i + 1]);
           }
@@ -74,19 +74,19 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
           name: params.get("name"),
         });
         note(`bundle up: GuiDef ${id} opened, engine live (context ` +
-             `${engine.context.sampleRate} Hz). Meters stream over /c_stream.`);
+             `${engine.context.sampleRate} Hz). Meters stream over /bus_stream.`);
 
         if (!smoke) return;
         // Smoke asserts: the meter's control bus streams (proof the host
-        // parsed the GuiDef, subscribed /c_stream over the in-page leg, and
-        // the engine's boot /s_new is producing values) with at least two
+        // parsed the GuiDef, subscribed /bus_stream over the in-page leg, and
+        // the engine's boot /synth_new is producing values) with at least two
         // distinct values (the LFO moves — a live meter, not a stuck one).
         const t0 = performance.now();
         while (performance.now() - t0 < 20000) {
           if (dead) throw new Error(dead);
           const moving = [...seen].filter((v) => Math.abs(v) > 0.01);
           if (snapshots >= 5 && moving.length >= 2) {
-            return verdict(`PASS: GuiDef ${id} up; ${snapshots} /c_set ` +
+            return verdict(`PASS: GuiDef ${id} up; ${snapshots} /bus_set ` +
               `snapshots, ${moving.length} distinct live values`);
           }
           await new Promise((r) => setTimeout(r, 100));

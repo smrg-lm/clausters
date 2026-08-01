@@ -21,7 +21,7 @@
       <div id="note">a playable piano as one web component: the bundle below
 (authored by make_bundle.py with the Python client) opens a virtual keyboard
 whose keys the GUI host maps to server voices on the wasm engine in this tab —
-a /s_new per key press, a gate release per key up, no server process, no
+a /synth_new per key press, a gate release per key up, no server process, no
 script in between. Drag the strip above the keys to pan the MIDI range, wheel
 over it to zoom; grayed keys are outside the instrument's active range. The
 power button is the autoplay gesture.</div>
@@ -42,7 +42,7 @@ power button is the autoplay gesture.</div>
       root (serving piano/ itself turns them into 404s/MIME errors). From
       clients/web:  python3 -m http.server  and open /examples/piano/.
 
-      ?smoke=1 asserts the voice chain end to end — the same /s_new … gate 1 a
+      ?smoke=1 asserts the voice chain end to end — the same /synth_new … gate 1 a
       key press makes the host send, verified sounding by the envelope the
       voice publishes on **this instance's own** control bus, then gated off
       and verified silent — beaconing the verdict as a fetch, the standard
@@ -84,7 +84,7 @@ power button is the autoplay gesture.</div>
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
             if (addr === "/fail") failed = JSON.stringify(args);
-            if (addr !== "/c_set") continue;
+            if (addr !== "/bus_set") continue;
             for (let i = 0; i + 1 < args.length; i += 2) {
               if (args[i] === envBus) latest = args[i + 1];
             }
@@ -94,14 +94,14 @@ power button is the autoplay gesture.</div>
         // explicit node id, so the release below can gate it), carrying the
         // env_bus this instance publishes on.
         const NODE = 0x10000000;
-        engine.send(encodeMessage("/s_new", [
+        engine.send(encodeMessage("/synth_new", [
           ["s", "piano.voice"], ["i", NODE], ["i", 0], ["i", 0],
           ["s", "freq"], ["f", 440.0], ["s", "amp"], ["f", 0.3],
           ["s", "gate"], ["f", 1.0], ["s", "env_bus"], ["f", envBus],
         ]));
         await until(() => latest > 0.5, "the voice envelope never opened");
         // The key release: gate 0 — the envelope falls and the node frees.
-        engine.send(encodeMessage("/n_set",
+        engine.send(encodeMessage("/node_set",
           [["i", NODE], ["s", "gate"], ["f", 0.0]]));
         await until(() => latest < 0.05, "the voice never released");
         if (failed) throw new Error(`/fail: ${failed}`);

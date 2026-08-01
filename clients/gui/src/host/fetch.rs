@@ -2,10 +2,10 @@
 //! fronts.
 //!
 //! A `waveform` or `spectrogram` that references a server `buffer` pulls its
-//! samples over the client leg: `/b_query` for the shape, then chunked
-//! `/b_getn` requests whose `/b_setn` replies fill a flat interleaved array.
+//! samples over the client leg: `/buffer_query` for the shape, then chunked
+//! `/buffer_getRange` requests whose `/buffer_getRange.reply` replies fill a flat interleaved array.
 //! The finished download keeps **every channel** (interleaved, with the
-//! channel count and sample rate from `/b_info`): the waiting front looks up
+//! channel count and sample rate from `/buffer_query.reply`): the waiting front looks up
 //! each widget and builds a multichannel waveform or a per-channel STFT from
 //! it. The protocol conversation is transport- and platform-independent —
 //! only *sending* the returned messages and *placing* the finished samples
@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use clausters_core::osc::{OscMessage, OscType};
 
-/// Samples per `/b_getn` request when pulling a server buffer (each reply must
+/// Samples per `/buffer_getRange` request when pulling a server buffer (each reply must
 /// fit a frame on every transport; a bulk-transfer optimization would replace
 /// this path, not grow the chunk).
 pub(crate) const BUFFER_CHUNK: usize = 8192;
@@ -32,7 +32,7 @@ pub(crate) struct WaveWant {
 }
 
 /// An in-progress fetch of a server buffer: the flat interleaved samples
-/// filled in as `/b_setn` chunks arrive.
+/// filled in as `/buffer_getRange.reply` chunks arrive.
 struct BufferFetch {
     channels: usize,
     sample_rate: f64,
@@ -43,7 +43,7 @@ struct BufferFetch {
 
 /// What one protocol step asks the driving front to do.
 pub(crate) enum FetchStep {
-    /// Send this message to the audio server (the next `/b_getn`).
+    /// Send this message to the audio server (the next `/buffer_getRange`).
     Request(OscMessage),
     /// A buffer finished downloading: its interleaved samples and shape, ready
     /// for the waiting widgets. `wants` may be empty if every waiting window
@@ -70,7 +70,7 @@ pub(crate) struct BufferFetches {
 }
 
 impl BufferFetches {
-    /// Registers a widget waiting on `bufnum`. Returns the `/b_query` to send
+    /// Registers a widget waiting on `bufnum`. Returns the `/buffer_query` to send
     /// the first time a buffer is wanted (`None` when a query or download for
     /// it is already under way — the widget just joins the wait).
     pub(crate) fn want(&mut self, def_id: i32, widget_id: i32, bufnum: i32) -> Option<OscMessage> {
@@ -80,12 +80,12 @@ impl BufferFetches {
             .or_default()
             .push(WaveWant { def_id, widget_id });
         (first && !self.fetches.contains_key(&bufnum)).then(|| OscMessage {
-            addr: "/b_query".into(),
+            addr: "/buffer_query".into(),
             args: vec![OscType::Int(bufnum)],
         })
     }
 
-    /// `/b_info` for a buffer we are waiting on: start its download (or finish
+    /// `/buffer_query.reply` for a buffer we are waiting on: start its download (or finish
     /// immediately when it is empty/unallocated).
     pub(crate) fn on_info(
         &mut self,
@@ -115,7 +115,7 @@ impl BufferFetches {
         FetchStep::Request(request_chunk(bufnum, 0, total))
     }
 
-    /// `/b_setn bufnum start count value...`: store a chunk, then request the
+    /// `/buffer_getRange.reply bufnum start count value...`: store a chunk, then request the
     /// next one or finish when the whole buffer has arrived.
     pub(crate) fn on_data(&mut self, args: &[OscType]) -> FetchStep {
         let [
@@ -180,11 +180,11 @@ impl BufferFetches {
     }
 }
 
-/// The `/b_getn` for the next chunk of `bufnum` starting at `start`.
+/// The `/buffer_getRange` for the next chunk of `bufnum` starting at `start`.
 fn request_chunk(bufnum: i32, start: usize, total: usize) -> OscMessage {
     let count = BUFFER_CHUNK.min(total.saturating_sub(start));
     OscMessage {
-        addr: "/b_getn".into(),
+        addr: "/buffer_getRange".into(),
         args: vec![
             OscType::Int(bufnum),
             OscType::Int(start as i32),
@@ -220,17 +220,17 @@ mod tests {
     #[test]
     fn query_sent_once_per_buffer_then_chunks_keeping_all_channels() {
         let mut fetches = BufferFetches::default();
-        // Two widgets on the same buffer: one /b_query, the second just waits.
+        // Two widgets on the same buffer: one /buffer_query, the second just waits.
         let query = fetches.want(1, 10, 7).expect("first want queries");
-        assert_eq!(query.addr, "/b_query");
+        assert_eq!(query.addr, "/buffer_query");
         assert_eq!(ints(&query), vec![7]);
         assert!(fetches.want(1, 11, 7).is_none());
 
         // Stereo, 3 frames: one chunk covers it; both channels come out.
         let FetchStep::Request(msg) = fetches.on_info(7, 3, 2, 48_000.0) else {
-            panic!("expected the first /b_getn");
+            panic!("expected the first /buffer_getRange");
         };
-        assert_eq!(msg.addr, "/b_getn");
+        assert_eq!(msg.addr, "/buffer_getRange");
         assert_eq!(ints(&msg), vec![7, 0, 6]);
         let step = fetches.on_data(&setn_args(7, 0, &[0.0, 9.0, 1.0, 9.0, 2.0, 9.0]));
         let FetchStep::Done {
@@ -261,7 +261,7 @@ mod tests {
         let mut fetches = BufferFetches::default();
         fetches.want(1, 10, 3);
         let FetchStep::Request(msg) = fetches.on_info(3, total, 1, 44_100.0) else {
-            panic!("expected the first /b_getn");
+            panic!("expected the first /buffer_getRange");
         };
         assert_eq!(ints(&msg), vec![3, 0, BUFFER_CHUNK as i32]);
         let FetchStep::Request(msg) = fetches.on_data(&setn_args(3, 0, &vec![1.0; BUFFER_CHUNK]))

@@ -172,7 +172,7 @@ impl App {
 
     /// Closes a window on user request, and quits the app once the last window is
     /// gone in standalone mode — so the embedded audio server is dropped (and
-    /// `/quit`ed) rather than left running with no window. A script-driven host
+    /// `/server_quit`ed) rather than left running with no window. A script-driven host
     /// stays alive (the script may open another window); only standalone exits.
     pub(super) fn user_close(&mut self, id: i32, event_loop: &ActiveEventLoop) {
         self.close_by_user(id);

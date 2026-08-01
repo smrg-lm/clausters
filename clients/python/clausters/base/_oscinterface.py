@@ -86,8 +86,8 @@ class OscReceiver:
 
     def send(self, target, addr, *args):
         """Send an OSC message out the receiver's own socket. Lets a responder
-        reply on the port it listens on, and lets a client register ``/notify``
-        from here so the server's pushes (e.g. ``/transport.reply``) come back to
+        reply on the port it listens on, and lets a client register ``/server_notify``
+        from here so the server's pushes (e.g. ``/transport_query.reply``) come back to
         *this* socket and reach the responders. ``target`` is ``(host, port)``."""
         if self._sock is None:
             raise RuntimeError("OscReceiver.send before start()")
@@ -382,7 +382,7 @@ class OscNrtInterface(OscInterface):
         and `clausters.Session.render` are the surfaces, this is the one
         implementation, because the score is this interface's own.
 
-        Schedule a closing bundle (e.g. ``/n_free 0``) at the end so the render
+        Schedule a closing bundle (e.g. ``/node_free 0``) at the end so the render
         has a defined duration — scsynth semantics (its commands do not sound).
         ``workers`` adds DSP threads for the score's parallel groups.
 

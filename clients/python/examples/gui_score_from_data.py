@@ -119,7 +119,7 @@ def main():
         def play():
             playhead.play(at=0.0)
             # anchor the cursor: the clock now, plus the play latency, is score 0
-            _, args = server.request("/clock", expect=("/clock.reply",))
+            _, args = server.request("/clock_query", expect=("/clock_query.reply",))
             now = float(args[0]) + server.latency * sr
             win["score"].set(playhead_at=now)
 

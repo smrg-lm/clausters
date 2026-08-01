@@ -23,7 +23,7 @@
 //! # Feature flags
 //!
 //! - `synth` (default) — the SynthDef family: the UGen library, the def
-//!   compiler (`/d_recv`) and the `synthdef` module.
+//!   compiler (`/def_send synth`) and the `synthdef` module.
 //! - `faust` — the FaustDef family: libfaust embedding (Box API + LLVM JIT);
 //!   adds the `faust` module.
 //!
@@ -31,7 +31,7 @@
 //!   build a single-family server (`--no-default-features --features
 //!   faust,realtime,midi` is a Faust-only build). With neither, the engine
 //!   core (groups, buses, buffers, transports) still builds and runs, but
-//!   every `/s_new` fails for lack of defs.
+//!   every `/synth_new` fails for lack of defs.
 //! - `realtime` (default) — the cpal backend (the live server). Disable it for
 //!   offline or embedded use with no audio device.
 //! - `embed` — the C ABI for embedding the server in-process; adds the `embed`

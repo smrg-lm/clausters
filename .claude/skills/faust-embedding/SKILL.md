@@ -69,7 +69,7 @@ CboxSelect2(sel,a,b) CboxSelect3(...)
 CboxWaveform(...)  CboxSoundfile(...)
 ```
 
-UI elements = named parameters (these become our `/n_set` controls):
+UI elements = named parameters (these become our `/node_set` controls):
 
 ```text
 CboxHSlider(label, init, min, max, step)
@@ -97,7 +97,7 @@ fragments where primitives would be painful.
 `buildUserInterfaceCDSPInstance` walks the UI tree calling your `UIGlue`
 callbacks with `(label, FAUSTFLOAT* zone, init, min, max, step)`. Collect
 `label → zone` into the synth's control map at instantiation time (non-RT).
-At `/n_set` time the audio thread just writes the `f32` through the pointer —
+At `/node_set` time the audio thread just writes the `f32` through the pointer —
 a plain aligned store, RT-safe. (Faust reads zones at block boundaries; no
 torn-read concern for f32.)
 

@@ -3,7 +3,7 @@
 Two ways to feed a `SampleClockTimebase`:
 
 - `UdpSampleClock` — over UDP, where the client can't read the sample counter
-  directly, it queries the server's ``/clock`` and models the counter (below).
+  directly, it queries the server's ``/clock_query`` and models the counter (below).
 - `EmbedSampleClock` — for an in-process embedded server, whose handle exposes
   the counter itself: no socket, no round trips, no model — every read *is* the
   counter. It mirrors the tracker's surface so `TempoClock.lock_to` treats both
@@ -16,7 +16,7 @@ The UDP tracker models
 from ``(local monotonic time, counter)`` anchor pairs, a least-squares line over
 a sliding window (JACK-DLL / Ableton-Link in spirit; same model as the server's
 ``examples/sample_clock.py``). The TempoClock then paces against this and the
-Server schedules every event by absolute sample with ``/sched`` — drift-free.
+Server schedules every event by absolute sample with ``/sched_at`` — drift-free.
 
 Query latency does not accumulate: an anchor is paired with the *midpoint* of
 its round trip, whose half-width is a bounded uncertainty that only shifts the
@@ -27,15 +27,15 @@ sample recomputed from the routine's absolute logical beat — ``round((origin +
 beat / tempo) * sample_rate)`` — not stepped from the previous event, so error
 never accumulates: at 48 kHz the target stays integer-exact within ``float64``
 for hours. The fitted line above only sizes the *lead* (how far ahead the
-``/sched`` is queued), never the event time, which the server's own counter
+``/sched_at`` is queued), never the event time, which the server's own counter
 resolves exactly. So the only failure mode is **binary, not cumulative**: a
-``/sched`` that arrives *after* its target sample (lead < worst-case client +
+``/sched_at`` that arrives *after* its target sample (lead < worst-case client +
 network + model jitter) lands late; one that arrives in time lands exact. A long
 run at perfect spacing just means the lead was never violated.
 
 Surviving suspend. The server's counter counts samples *actually emitted*, so it
 freezes when the audio device suspends (system sleep, or the sink going idle)
-and resumes in place — it is not a wall clock. A ``/sched`` keyed to an absolute
+and resumes in place — it is not a wall clock. A ``/sched_at`` keyed to an absolute
 sample simply waits in the server's queue and fires when the counter reaches it,
 so the audio grid stays sample-exact across the gap (consecutive events keep
 their exact spacing; the freeze just drops out of the timeline). The tracker
@@ -106,7 +106,7 @@ class SampleClockModel:
 class UdpSampleClock:
     """Tracks a server's sample clock over UDP and yields a timebase.
 
-    Uses its **own** socket (so ``/clock`` round trips never contend with the
+    Uses its **own** socket (so ``/clock_query`` round trips never contend with the
     Server's command socket). Build one with ``server.sample_clock()``.
     """
 
@@ -119,16 +119,16 @@ class UdpSampleClock:
         self._thread = None
 
     def anchor(self) -> float:
-        """One ``/clock`` round trip; returns the anchor's uncertainty (s)."""
+        """One ``/clock_query`` round trip; returns the anchor's uncertainty (s)."""
         t0 = time.monotonic()
-        self._iface.send_msg(self.target, "/clock")
+        self._iface.send_msg(self.target, "/clock_query")
         packet = self._iface.recv(self._timeout)
         t1 = time.monotonic()
         if packet is None:
-            raise TimeoutError("no /clock.reply (is the server on UDP?)")
+            raise TimeoutError("no /clock_query.reply (is the server on UDP?)")
         addr, args = _osclib.decode(packet)
-        if addr != "/clock.reply":
-            raise RuntimeError(f"expected /clock.reply, got {addr}")
+        if addr != "/clock_query.reply":
+            raise RuntimeError(f"expected /clock_query.reply, got {addr}")
         self.model.add_anchor((t0 + t1) / 2, args[0], args[1])
         return (t1 - t0) / 2
 

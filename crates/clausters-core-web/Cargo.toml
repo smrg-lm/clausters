@@ -1,6 +1,6 @@
 [package]
 name = "clausters-core-web"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "The shared core's JS door: a thin wasm-bindgen shell over clausters-core (OSC codec first) for the web client, numerically identical to the server and the Python client by construction."

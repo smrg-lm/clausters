@@ -34,10 +34,10 @@
 
         /gui_def 1: window opened from the page      (each demo)
         audio-server WebSocket open                  (the WS leg)
-        /c_stream subscription: [10]                 (meters over the wire)
+        /bus_stream subscription: [10]                 (meters over the wire)
         waveform: fetched peak cache sine.peaks …    (bulk: cache fetch)
         waveform: fetched N samples from sine.f32 …  (bulk: raw fetch + wasm pyramid)
-        buffer 0: N frames loaded into 1 waveform(s) (bulk: /b_getn over WS)
+        buffer 0: N frames loaded into 1 waveform(s) (bulk: /buffer_getRange over WS)
 
       Serve sine.f32/sine.peaks next to this page and allocate server buffer 0
       first. Headless:
@@ -65,7 +65,7 @@
         meters: {
           type: "window", title: "meters", w: 640, h: 440, layout: "col",
           children: [
-            { id: 10, type: "knob", label: "bus 10", min: -1.0, max: 1.0, value: 0.0, bind: ["/c_set", 10] },
+            { id: 10, type: "knob", label: "bus 10", min: -1.0, max: 1.0, value: 0.0, bind: ["/bus_set", 10] },
             { id: 11, type: "meter", bus: 10, min: -1.0, max: 1.0, label: "bus" },
             { id: 12, type: "scope", bus: 10, min: -1.0, max: 1.0, label: "bus" },
           ],

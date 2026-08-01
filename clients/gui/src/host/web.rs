@@ -75,8 +75,8 @@ fn set_status(msg: &str) {
 
 /// The host's audio-server leg over a browser `WebSocket` to a `--ws` server.
 /// Bidirectional: outbound frames carry bound-widget values and the host's own
-/// requests (`/c_stream`, `/b_query`, `/b_getn`); inbound frames (the server's
-/// replies and streamed `/c_set` snapshots) are forwarded into the event loop
+/// requests (`/bus_stream`, `/buffer_query`, `/buffer_getRange`); inbound frames (the server's
+/// replies and streamed `/bus_set` snapshots) are forwarded into the event loop
 /// as [`WebEvent::ServerInbound`] and decode through the one `decode_packet`
 /// door. Frames sent before the socket opens are buffered and flushed on open,
 /// so a `connect` immediately followed by interaction does not drop values.
@@ -107,7 +107,7 @@ impl WsServerLink {
         socket.set_onopen(Some(on_open.as_ref().unchecked_ref()));
         on_open.forget();
         // Inbound: each binary frame is one OSC packet from the audio server
-        // (a streamed `/c_set`, a `/b_info`/`/b_setn` reply, a `/fail`),
+        // (a streamed `/bus_set`, a `/buffer_query.reply`/`/buffer_getRange.reply` reply, a `/fail`),
         // forwarded to the app through the event-loop proxy.
         let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(
             move |event: web_sys::MessageEvent| {
@@ -204,7 +204,7 @@ enum WebEvent {
     /// to this page-registered callback (replies via `server_reply`).
     ConnectPage(js_sys::Function),
     /// One inbound OSC packet from the audio server over the WS leg (a streamed
-    /// `/c_set`, a `/b_info`/`/b_setn` reply, a `/fail`).
+    /// `/bus_set`, a `/buffer_query.reply`/`/buffer_getRange.reply` reply, a `/fail`).
     ServerInbound(Vec<u8>),
     /// The animation tick (a `setInterval` at ~30 fps while the window has live
     /// widgets): advance the scope histories and repaint.
@@ -385,33 +385,33 @@ struct WebApp {
     /// like the native front's; binding it to the browser's OS clipboard (a
     /// `writeText` out plus a `paste`-event listener in) is a later refinement.
     text_clipboard: String,
-    /// Live control-bus values streamed from the audio server (`/c_stream` →
-    /// `/c_set`), the browser's [`BusSource`] for meters/scopes/canvases.
+    /// Live control-bus values streamed from the audio server (`/bus_stream` →
+    /// `/bus_set`), the browser's [`BusSource`] for meters/scopes/canvases.
     buses: Arc<StreamedBuses>,
-    /// The bus set currently subscribed with `/c_stream` (sorted), so a tree
+    /// The bus set currently subscribed with `/bus_stream` (sorted), so a tree
     /// change only resubscribes when the set actually changed.
     streamed: Vec<i32>,
-    /// The newest `/tap_data` window per tap — the browser's source for
+    /// The newest `/bus_tapStream.reply` window per tap — the browser's source for
     /// audio-rate scopes, read on the tick exactly as the native front reads
     /// the segment's tap rings.
     taps: Arc<StreamedTaps>,
-    /// The `(taps, window frames)` currently subscribed with `/tap_stream`,
+    /// The `(taps, window frames)` currently subscribed with `/bus_tapStream`,
     /// so a tree change only resubscribes when they actually changed.
     tap_streamed: (Vec<i32>, usize),
-    /// The server's sample rate (from `/clock.reply`, requested when the leg
+    /// The server's sample rate (from `/clock_query.reply`, requested when the leg
     /// connects); `0.0` until known — window sizing then assumes 48 kHz.
     server_rate: f64,
-    /// The engine's sample clock from the newest `/clock.reply` — the browser
+    /// The engine's sample clock from the newest `/clock_query.reply` — the browser
     /// playhead source (polled once per tick while a playhead is shown; the
     /// native front reads the shm header instead).
     server_clock: f64,
     /// The animation tick: the `setInterval` id and its closure, kept alive
     /// while the current def has live widgets (meter/scope/canvas).
     tick: Option<(i32, Closure<dyn FnMut()>)>,
-    /// Whether the first streamed `/c_set` snapshot was logged (one line as
+    /// Whether the first streamed `/bus_set` snapshot was logged (one line as
     /// evidence the bus stream is flowing; logging every frame would spam).
     stream_seen: bool,
-    /// The server-buffer fetch machine (`/b_query` → chunked `/b_getn`),
+    /// The server-buffer fetch machine (`/buffer_query` → chunked `/buffer_getRange`),
     /// shared with the native front; requests ride the WS leg.
     fetches: BufferFetches,
 }
@@ -562,7 +562,7 @@ impl WebApp {
     /// The defs currently drawing: one canvas each, and in the viewport.
     ///
     /// Everything that costs something per frame or per packet — the tick, the
-    /// `/c_stream` and `/tap_stream` subscriptions — is derived from exactly
+    /// `/bus_stream` and `/bus_tapStream` subscriptions — is derived from exactly
     /// this set, which is what makes a scrolled-away component free.
     fn visible_defs(&self) -> Vec<i32> {
         let mut ids: Vec<i32> = self
@@ -578,13 +578,13 @@ impl WebApp {
     /// A freshly attached server leg (WS or in-page) holds no subscription:
     /// forget the old ones and subscribe the current tree's buses and taps
     /// (WS frames queue until the socket opens, so sending now is safe).
-    /// `/clock` fetches the rate the oscilloscope windows are sized with.
+    /// `/clock_query` fetches the rate the oscilloscope windows are sized with.
     fn on_server_attached(&mut self) {
         self.streamed.clear();
         self.tap_streamed = (Vec::new(), 0);
         if let Some(server) = self.host.server() {
             let _ = server.send(OscMessage {
-                addr: "/clock".into(),
+                addr: "/clock_query".into(),
                 args: vec![],
             });
         }
@@ -592,7 +592,7 @@ impl WebApp {
     }
 
     /// Re-derives everything that follows from the current tree's live widgets:
-    /// the `/c_stream` and `/tap_stream` subscriptions on the WS leg and the
+    /// the `/bus_stream` and `/bus_tapStream` subscriptions on the WS leg and the
     /// animation tick. Called on open/close/redraw and after the server leg
     /// attaches; cheap (a tree walk) and idempotent, so calling it eagerly is
     /// fine.
@@ -617,7 +617,7 @@ impl WebApp {
     }
 
     /// Subscribes the audio server to exactly the control buses the drawing
-    /// canvases read live (`/c_stream`, replacing this client's previous
+    /// canvases read live (`/bus_stream`, replacing this client's previous
     /// subscription), or cancels when none are left. Skipped without a server
     /// leg; `ConnectServer` re-runs it once the leg exists.
     fn sync_bus_stream(&mut self, wanted: Vec<i32>) {
@@ -635,19 +635,19 @@ impl WebApp {
             args.extend(wanted.iter().map(|&bus| OscType::Int(bus)));
         }
         match server.send(OscMessage {
-            addr: "/c_stream".into(),
+            addr: "/bus_stream".into(),
             args,
         }) {
             Ok(()) => {
-                log(&format!("/c_stream subscription: {wanted:?}"));
+                log(&format!("/bus_stream subscription: {wanted:?}"));
                 self.streamed = wanted;
             }
-            Err(e) => log(&format!("failed to (re)subscribe /c_stream: {e}")),
+            Err(e) => log(&format!("failed to (re)subscribe /bus_stream: {e}")),
         }
     }
 
     /// Subscribes the audio server to exactly the audio taps the drawing
-    /// canvases' oscilloscopes read (`/tap_stream`, replacing this client's
+    /// canvases' oscilloscopes read (`/bus_tapStream`, replacing this client's
     /// previous subscription), sized to the largest raw window any of them
     /// needs; cancels when none are left. Skipped without a server leg.
     fn sync_tap_stream(&mut self, wanted: Vec<i32>, frames: usize) {
@@ -667,14 +667,16 @@ impl WebApp {
             args.extend(wanted.iter().map(|&tap| OscType::Int(tap)));
         }
         match server.send(OscMessage {
-            addr: "/tap_stream".into(),
+            addr: "/bus_tapStream".into(),
             args,
         }) {
             Ok(()) => {
-                log(&format!("/tap_stream subscription: {wanted:?} x{frames}"));
+                log(&format!(
+                    "/bus_tapStream subscription: {wanted:?} x{frames}"
+                ));
                 self.tap_streamed = (wanted, frames);
             }
-            Err(e) => log(&format!("failed to (re)subscribe /tap_stream: {e}")),
+            Err(e) => log(&format!("failed to (re)subscribe /bus_tapStream: {e}")),
         }
     }
 
@@ -713,7 +715,7 @@ impl WebApp {
 
     /// One animation tick: push a fresh streamed-bus sample into every scope's
     /// rolling history and refresh the audio-rate scopes' triggered windows
-    /// from the `/tap_data` store (time-based, exactly like the native tick),
+    /// from the `/bus_tapStream.reply` store (time-based, exactly like the native tick),
     /// then repaint.
     fn on_tick(&mut self) {
         let mut wants_clock = false;
@@ -758,7 +760,7 @@ impl WebApp {
         // page, however many canvases show one.
         if wants_clock && let Some(server) = self.host.server() {
             let _ = server.send(OscMessage {
-                addr: "/clock".into(),
+                addr: "/clock_query".into(),
                 args: vec![],
             });
         }
@@ -789,7 +791,7 @@ impl WebApp {
     }
 
     /// Routes one decoded OSC packet from the audio server (the WS leg): the
-    /// streamed `/c_set` snapshots into [`StreamedBuses`], the buffer replies
+    /// streamed `/bus_set` snapshots into [`StreamedBuses`], the buffer replies
     /// into the shared fetch machine. The browser twin of the native
     /// `handle_server_packet`.
     fn on_server_inbound(&mut self, bytes: &[u8]) {
@@ -801,7 +803,7 @@ impl WebApp {
             return; // bundles are not used on the reply path
         };
         match msg.addr.as_str() {
-            "/c_set" => {
+            "/bus_stream.reply" => {
                 if !self.stream_seen {
                     self.stream_seen = true;
                     log(&format!("bus stream flowing: {:?}", msg.args));
@@ -814,7 +816,7 @@ impl WebApp {
                     }
                 }
             }
-            "/b_info" => {
+            "/buffer_query.reply" => {
                 // (bufnum, frames, channels, sampleRate) per buffer.
                 for group in msg.args.chunks(4) {
                     if let [
@@ -839,11 +841,11 @@ impl WebApp {
                     }
                 }
             }
-            "/b_setn" => {
+            "/buffer_getRange.reply" => {
                 let step = self.fetches.on_data(&msg.args);
                 self.apply_fetch_step(step);
             }
-            "/tap_data" => {
+            "/bus_tapStream.reply" => {
                 // (tap, stream position, raw LE f32 blob): the newest window
                 // of one tap; store it for the tick to align and draw.
                 if let (Some(OscType::Int(tap)), Some(OscType::Blob(bytes))) =
@@ -856,7 +858,7 @@ impl WebApp {
                     self.taps.set(*tap, samples);
                 }
             }
-            "/clock.reply" => {
+            "/clock_query.reply" => {
                 // (samples, rate, ...): keep the rate for window sizing and
                 // the sample counter for the timeline playhead.
                 if let Some(OscType::Long(samples)) = msg.args.first() {
@@ -870,7 +872,7 @@ impl WebApp {
                 }
             }
             "/fail" => log(&format!("audio server replied /fail: {:?}", msg.args)),
-            // `/done` acks (e.g. for `/c_stream`) need no action.
+            // `/done` acks (e.g. for `/bus_stream`) need no action.
             "/done" => {}
             _ => {}
         }
@@ -970,7 +972,7 @@ impl WebApp {
         }
     }
 
-    /// Sends one fetch-machine message over the WS leg (`/b_query`, `/b_getn`),
+    /// Sends one fetch-machine message over the WS leg (`/buffer_query`, `/buffer_getRange`),
     /// logging instead of failing when no server is attached.
     fn send_to_server(&self, msg: OscMessage) {
         let Some(server) = self.host.server() else {
@@ -1994,7 +1996,7 @@ impl GuiBridge {
     /// `IntersectionObserver`).
     ///
     /// A hidden canvas is skipped on the tick and its buses leave the
-    /// `/c_stream`/`/tap_stream` sets — a document can hold fifty canvases with
+    /// `/bus_stream`/`/bus_tapStream` sets — a document can hold fifty canvases with
     /// three in view, and neither this host nor the server should be working
     /// for the other forty-seven.
     pub fn set_visible(&self, def_id: i32, visible: bool) {
@@ -2032,8 +2034,8 @@ impl GuiBridge {
     }
 
     /// Attaches the host's audio-server leg to the **in-page engine**: every
-    /// outbound OSC packet (bound-widget values, `/c_stream`/`/tap_stream`
-    /// subscriptions, buffer fetches, `/clock`) is handed to `send` as a
+    /// outbound OSC packet (bound-widget values, `/bus_stream`/`/bus_tapStream`
+    /// subscriptions, buffer fetches, `/clock_query`) is handed to `send` as a
     /// `Uint8Array`; the page forwards it to the engine and feeds the engine's
     /// replies back through [`server_reply`](Self::server_reply).
     pub fn connect_page(&self, send: js_sys::Function) {
@@ -2071,8 +2073,8 @@ impl GuiBridge {
         }
     }
 
-    /// Feeds one reply packet from the in-page engine (a streamed `/c_set`, a
-    /// `/tap_data`, a `/b_info`/`/b_setn`, a `/clock.reply`) into the host —
+    /// Feeds one reply packet from the in-page engine (a streamed `/bus_set`, a
+    /// `/bus_tapStream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply`, a `/clock_query.reply`) into the host —
     /// the inbound half of [`connect_page`](Self::connect_page), the same
     /// dispatch the WS leg's `onmessage` uses.
     pub fn server_reply(&self, packet: &[u8]) {
@@ -2086,8 +2088,8 @@ impl GuiBridge {
 /// in-page engine: `synthdefs`/`graphdefs` are arrays of `Uint8Array` (each
 /// file's bytes verbatim), `boot_json` the optional `boot.json` text,
 /// `guidef_tree` the GuiDef tree JSON (its root `boot` messages run last).
-/// Returns an array of `Uint8Array` packets ending in `/sync sync_id+1` — the
-/// page knows the bundle is up when `/synced sync_id+1` comes back. The
+/// Returns an array of `Uint8Array` packets ending in `/server_sync sync_id+1` — the
+/// page knows the bundle is up when `/server_sync.reply sync_id+1` comes back. The
 /// ordering/encoding logic lives in the platform-agnostic `host::bundle`
 /// module, natively unit-tested.
 #[wasm_bindgen]

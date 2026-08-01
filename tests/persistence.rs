@@ -352,17 +352,17 @@ mod faust {
             panic!("never received {addr}");
         }
 
-        /// `/status.reply` def count (arg index 4).
+        /// `/server_status.reply` def count (arg index 4).
         fn def_count(&self) -> i32 {
-            self.send("/status", vec![]);
-            let status = self.recv_until("/status.reply");
+            self.send("/server_status", vec![]);
+            let status = self.recv_until("/server_status.reply");
             match status.args[4] {
                 OscType::Int(n) => n,
                 ref other => panic!("unexpected def count arg: {other:?}"),
             }
         }
 
-        /// Polls `/status` until the def count reaches `want` (defs reload
+        /// Polls `/server_status` until the def count reaches `want` (defs reload
         /// incrementally on the compiler thread) or the deadline passes.
         fn wait_for_def_count(&self, want: i32) {
             let start = std::time::Instant::now();
@@ -376,7 +376,7 @@ mod faust {
         }
 
         fn quit(self) {
-            self.send("/quit", vec![]);
+            self.send("/server_quit", vec![]);
             self.recv_until("/done");
             self.handle.join().unwrap().unwrap();
         }
@@ -389,14 +389,16 @@ mod faust {
         // Session 1: define a Faust def; it gets persisted.
         let a = TestServer::spawn(dir.path());
         a.send(
-            "/d_faust",
+            "/def_send",
             vec![
+                OscType::String("faust".into()),
                 OscType::String("psine".into()),
                 OscType::String(SINE.into()),
             ],
         );
         let done = a.recv_until("/done");
-        assert_eq!(done.args[1], OscType::String("psine".into()));
+        assert_eq!(done.args[1], OscType::String("faust".into()));
+        assert_eq!(done.args[2], OscType::String("psine".into()));
         a.quit();
 
         // The record and a bitcode file landed in defs/faustdefs/.
@@ -420,16 +422,20 @@ mod faust {
         let dir = TempDir::new("free");
         let s = TestServer::spawn(dir.path());
         s.send(
-            "/d_faust",
-            vec![OscType::String("gone".into()), OscType::String(SINE.into())],
+            "/def_send",
+            vec![
+                OscType::String("faust".into()),
+                OscType::String("gone".into()),
+                OscType::String(SINE.into()),
+            ],
         );
         s.recv_until("/done");
 
         let faustdefs = dir.path().join("defs").join("faustdefs");
         assert!(faustdefs.join("gone.json").exists());
 
-        s.send("/d_free", vec![OscType::String("gone".into())]);
-        // /d_free has no reply; a following round-trip flushes it.
+        s.send("/def_free", vec![OscType::String("gone".into())]);
+        // /def_free has no reply; a following round-trip flushes it.
         let _ = s.def_count();
         assert!(
             !faustdefs.join("gone.json").exists(),

@@ -51,11 +51,11 @@ Break-points are `(time, value, shape, curve)` — times in beats, values in the
 control's real units (Hertz here); the stored curve is an `Env`, the same
 object the envelope editor round-trips. How it is rendered is worth knowing,
 because it is all server machinery you already have: the curve is discretized
-into a **control buffer** on the server (`/b_gen "env"`, evaluated through the
+into a **control buffer** on the server (`/buffer_gen "env"`, evaluated through the
 same envelope math the `EnvGen` UGen plays — what is drawn is what is heard),
 and at play time a small internal synth reads that buffer onto a **control
 bus** over the curve's duration. A target node would follow the bus via
-`/n_map`; our drone simply reads the bus itself, so `target=None` — the
+`/node_map`; our drone simply reads the bus itself, so `target=None` — the
 automation just writes its bus.
 
 The two-phase shape is deliberate: **`prepare(server)` blocks** (it allocates
@@ -136,7 +136,7 @@ truth shared by the picture and the data. One step is still yours today: the
 **server-side control buffer** was filled from the `Env` when you first
 `prepare`d it, and rendering schedules the lane synth over that buffer
 without re-filling it — so after a curve edit, call `prepare(server)` again
-(it re-runs the `/b_gen` on the buffer it already owns; cheap, and safe at the
+(it re-runs the `/buffer_gen` on the buffer it already owns; cheap, and safe at the
 top level). Skip it and the next play sounds the curve as it was at the last
 `prepare`, not as drawn.
 

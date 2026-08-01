@@ -457,7 +457,7 @@ fn run_standalone(
         data_dir.display()
     );
 
-    // Bring the instrument up: the GuiDef's own `boot` messages (e.g. an /s_new),
+    // Bring the instrument up: the GuiDef's own `boot` messages (e.g. an /synth_new),
     // unless the config disabled it. A mounted bundle's boot list came out of
     // the resolver with its ids already filled in.
     if run_boot {

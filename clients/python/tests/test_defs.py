@@ -1,6 +1,6 @@
 """C3 tests: Faust signal graphs, FaustDef payloads, resource allocators, the
 Server round-trip (over a fake connection), and the end-to-end vertical slice
-(build a graph -> /d_faust -> /s_new -> control -> render)."""
+(build a graph -> /def_send faust -> /synth_new -> control -> render)."""
 
 import pytest
 
@@ -109,7 +109,7 @@ def test_node_id_allocator_recycles_and_never_wraps():
     with pytest.raises(RuntimeError, match="out of node ids"):
         a.alloc()
     # Foreign ids (the server's ranges, other clients) are ignored quietly:
-    # every /n_end on the server is reported here, not only ours.
+    # every /node_end on the server is reported here, not only ours.
     a.free(999)
     a.free(1004)
 
@@ -143,8 +143,8 @@ def test_bus_commands_go_through_the_bus():
     bus = Bus.control(server=srv)
     assert bus.server is srv and bus.rate == "control"
     bus.set(0.25)
-    assert iface.sent[-1] == ("/c_set", [bus.index, 0.25])
-    iface.queue_reply("/c_set", bus.index, 0.25)
+    assert iface.sent[-1] == ("/bus_set", [bus.index, 0.25])
+    iface.queue_reply("/bus_get.reply", bus.index, 0.25)
     assert bus.get() == 0.25
     bus.free()
     assert srv.control_buses.in_use == 0
@@ -155,9 +155,9 @@ def test_bus_watch_taps_the_bus():
     srv = Server(interface=iface)
     bus = Bus.audio(2, server=srv)
     bus.watch()
-    assert iface.sent[-1] == ("/tap", [bus.index, 1])
+    assert iface.sent[-1] == ("/bus_tap", [bus.index, 1])
     bus.watch(False)
-    assert iface.sent[-1] == ("/tap", [bus.index, 0])
+    assert iface.sent[-1] == ("/bus_tap", [bus.index, 0])
 
 
 def test_bus_allocator_refuses_double_free():
@@ -216,7 +216,7 @@ def test_synth_new_builds_s_new_correctly():
     synth = Synth.new("foo", {"freq": 440.0}, target=0, action=AddAction.TAIL,
                       server=srv)
     assert synth.id == 1000 and synth.defname == "foo" and synth.server is srv
-    assert iface.sent[-1] == ("/s_new", ["foo", 1000, 1, 0, "freq", 440.0])
+    assert iface.sent[-1] == ("/synth_new", ["foo", 1000, 1, 0, "freq", 440.0])
 
 
 def test_node_commands_go_through_the_node():
@@ -224,20 +224,20 @@ def test_node_commands_go_through_the_node():
     srv = Server(interface=iface)
     node = Synth.new("foo", server=srv)
     node.set({"freq": 220.0})
-    assert iface.sent[-1] == ("/n_set", [node.id, "freq", 220.0])
+    assert iface.sent[-1] == ("/node_set", [node.id, "freq", 220.0])
     node.free()
-    assert iface.sent[-1] == ("/n_free", [node.id])
+    assert iface.sent[-1] == ("/node_free", [node.id])
 
 
 def test_group_new_and_graph_build_their_own_message():
     iface = _FakeInterface()
     srv = Server(interface=iface)
     group = Group.new(server=srv)
-    assert iface.sent[-1] == ("/g_new", [group.id, 1, 0])
+    assert iface.sent[-1] == ("/group_new", [group.id, 1, 0])
     inst = Group.graph("chain", {"gain": 0.8}, server=srv)
     assert iface.sent[-1] == ("/graph_new", ["chain", inst.id, 1, 0, "gain", 0.8])
     voice = inst.voice({"freq": 440.0})
-    assert iface.sent[-1] == ("/graph_voice", [inst.id, voice.id, "freq", 440.0])
+    assert iface.sent[-1] == ("/graph_newVoice", [inst.id, voice.id, "freq", 440.0])
 
 
 def test_faustdef_send_waits_for_done_and_raises_on_fail():
@@ -245,25 +245,25 @@ def test_faustdef_send_waits_for_done_and_raises_on_fail():
     srv = Server(interface=iface)
     fdef = FaustDef.from_source("ok", "process = _;")
 
-    iface.queue_reply("/done", "/d_faust", "ok")
+    iface.queue_reply("/done", "/def_send", "faust", "ok")
     assert fdef.send(srv) == "ok"
-    assert iface.sent[-1][0] == "/d_faust"
+    assert iface.sent[-1][0] == "/def_send"
 
-    iface.queue_reply("/fail", "/d_faust", "boom")
+    iface.queue_reply("/fail", "/def_send", "faust", "boom")
     with pytest.raises(RuntimeError):
         fdef.send(srv)
 
-    # wait=False is fire-and-forget: sends /d_faust without expecting a reply.
+    # wait=False is fire-and-forget: sends /def_send faust without expecting a reply.
     assert fdef.send(srv, wait=False) == "ok"
-    assert iface.sent[-1][0] == "/d_faust"
+    assert iface.sent[-1][0] == "/def_send"
 
 
 def test_server_sync_round_trips_synced_id():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    iface.queue_reply("/synced", 1)
+    iface.queue_reply("/server_sync.reply", 1)
     assert srv.sync() == 1
-    assert iface.sent[-1][0] == "/sync"
+    assert iface.sent[-1][0] == "/server_sync"
     assert iface.sent[-1][1] == [1]
 
 
@@ -272,38 +272,38 @@ def test_node_map_and_set_layout():
     srv = Server(interface=iface)
     node = Synth.new("foo", server=srv)
     node.set({"in": 4.0, "out": 0.0})             # reserved controls via dict
-    assert iface.sent[-1] == ("/n_set", [1000, "in", 4.0, "out", 0.0])
+    assert iface.sent[-1] == ("/node_set", [1000, "in", 4.0, "out", 0.0])
     bus = Bus.audio(1, server=srv)
     node.map("in", bus, audio=True)
-    assert iface.sent[-1] == ("/n_mapa", [1000, "in", bus.index])
+    assert iface.sent[-1] == ("/node_mapAudio", [1000, "in", bus.index])
 
 
 def test_server_stream_buses_subscribes_and_cancels():
-    # /c_stream: periodic /c_set snapshots of control buses (the network
+    # /bus_stream: periodic /bus_set snapshots of control buses (the network
     # counterpart of the shared-memory segment, e.g. browser meters).
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    iface.queue_reply("/done", "/c_stream")
+    iface.queue_reply("/done", "/bus_stream")
     addr, args = srv.stream_buses(33, 10, Bus.control(server=srv))
-    assert addr == "/done" and args[0] == "/c_stream"
-    assert iface.sent[-1] == ("/c_stream", [33, 10, 0])
+    assert addr == "/done" and args[0] == "/bus_stream"
+    assert iface.sent[-1] == ("/bus_stream", [33, 10, 0])
     # period <= 0 (or no buses) cancels the subscription.
-    iface.queue_reply("/done", "/c_stream")
+    iface.queue_reply("/done", "/bus_stream")
     srv.stream_buses(0)
-    assert iface.sent[-1] == ("/c_stream", [0])
+    assert iface.sent[-1] == ("/bus_stream", [0])
 
 
 def test_node_run_pause_resume_emit_n_run():
-    # S4: /n_run pauses (flag 0) / resumes (flag 1) a node.
+    # S4: /node_run pauses (flag 0) / resumes (flag 1) a node.
     iface = _FakeInterface()
     srv = Server(interface=iface)
     node = Synth.new("foo", server=srv)
     node.pause()
-    assert iface.sent[-1] == ("/n_run", [1000, 0])
+    assert iface.sent[-1] == ("/node_run", [1000, 0])
     node.resume()
-    assert iface.sent[-1] == ("/n_run", [1000, 1])
+    assert iface.sent[-1] == ("/node_run", [1000, 1])
     Group(1234, srv).run(False)                   # a handle for a reported id
-    assert iface.sent[-1] == ("/n_run", [1234, 0])
+    assert iface.sent[-1] == ("/node_run", [1234, 0])
 
 
 def test_done_action_full_set():
@@ -317,7 +317,7 @@ def test_done_action_full_set():
     assert DoneAction.FREE_SELF_RESUME_NEXT == 15
 
 
-# ---- end-to-end vertical slice: graph -> /d_faust -> /s_new -> control -> render ----
+# ---- end-to-end vertical slice: graph -> /def_send faust -> /synth_new -> control -> render ----
 
 def _sine_def(name="c3sine", default_freq=330.0):
     freq = S.hslider("freq", default_freq, 20.0, 20000.0, 0.01)
@@ -333,13 +333,13 @@ def test_faustdef_renders_through_the_seam():
 
     def play():
         # def first, then instantiate (same beat; score keeps insertion order)
-        server.send_bundle(("/d_faust", fdef.name, fdef.dump_def()))
-        server.send_bundle(("/s_new", fdef.name, 1000, 1, 0))
+        server.send_bundle(("/def_send", "faust", fdef.name, fdef.dump_def()))
+        server.send_bundle(("/synth_new", fdef.name, 1000, 1, 0))
         yield 0.5
-        server.send_bundle(("/n_set", 1000, "freq", 660.0))  # control by clock
+        server.send_bundle(("/node_set", 1000, "freq", 660.0))  # control by clock
         yield 0.5
-        server.send_bundle(("/n_free", 1000))
-        server.send_bundle(("/n_free", 0))                   # closes the render
+        server.send_bundle(("/node_free", 1000))
+        server.send_bundle(("/node_free", 0))                   # closes the render
 
     clock.play(Routine(play))
     clock.render()
@@ -434,13 +434,13 @@ def test_parse_n_info_synth_group_and_absent():
 def test_defs_query_collects_until_done():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    # Two /d_info replies then the /done terminator that closes the batch.
-    iface.queue_reply("/d_info", "one", "synth", 1, "freq", 440.0, "kr")
-    iface.queue_reply("/d_info", "two", "graph", 0)
-    iface.queue_reply("/done", "/d_query")
+    # Two /def_query.reply replies then the /done terminator that closes the batch.
+    iface.queue_reply("/def_query.reply", "one", "synth", 1, "freq", 440.0, "kr")
+    iface.queue_reply("/def_query.reply", "two", "graph", 0)
+    iface.queue_reply("/done", "/def_query")
 
     infos = srv.query_defs()
-    assert iface.sent[-1] == ("/d_query", [])
+    assert iface.sent[-1] == ("/def_query", [])
     assert [d.name for d in infos] == ["one", "two"]
     assert [d.family for d in infos] == ["synth", "graph"]
     assert infos[0].controls[0].name == "freq"
@@ -451,11 +451,11 @@ def test_defs_query_collects_until_done():
 def test_defs_query_passes_names_and_flags_unknown():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    iface.queue_reply("/d_info", "nope", "", 0)
-    iface.queue_reply("/done", "/d_query")
+    iface.queue_reply("/def_query.reply", "nope", "", 0)
+    iface.queue_reply("/done", "/def_query")
 
     infos = srv.query_defs("nope")
-    assert iface.sent[-1] == ("/d_query", ["nope"])
+    assert iface.sent[-1] == ("/def_query", ["nope"])
     # An unknown def is reported, not raised: one bad name never fails a batch.
     assert infos[0].exists is False
     assert infos[0].controls == []
@@ -485,14 +485,14 @@ def test_parse_def_info_faust_ranges_and_graph_targets():
 def test_ugens_query_parses_signatures():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    iface.queue_reply("/u_info", "Sine", 1, "ar", "kr,ar", "normal", "", 0, "", "",
+    iface.queue_reply("/ugen_query.reply", "Sine", 1, "ar", "kr,ar", "normal", "", 0, "", "",
                       1, "freq", 440.0)
-    iface.queue_reply("/u_info", "EnvGen", -1, "ar", "ar", "normal", "", 0, "", "",
+    iface.queue_reply("/ugen_query.reply", "EnvGen", -1, "ar", "ar", "normal", "", 0, "", "",
                       2, "gate", 1.0, "level_scale", 1.0)
-    iface.queue_reply("/done", "/u_query")
+    iface.queue_reply("/done", "/ugen_query")
 
     ugens = srv.query_ugens()
-    assert iface.sent[-1] == ("/u_query", [])
+    assert iface.sent[-1] == ("/ugen_query", [])
     sine, env = ugens
     assert sine.arity == 1 and sine.variadic is False
     assert sine.rates == ("kr", "ar") and sine.default_rate == "ar"
@@ -505,10 +505,10 @@ def test_ugens_query_parses_signatures():
 def test_buffers_query_lists_allocated_slots():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    iface.queue_reply("/b_info", 0, 50, 1, 48000.0, 3, 100, 2, 44100.0)
+    iface.queue_reply("/buffer_query.reply", 0, 50, 1, 48000.0, 3, 100, 2, 44100.0)
 
     bufs = srv.query_buffers()
-    assert iface.sent[-1] == ("/b_query", [])
+    assert iface.sent[-1] == ("/buffer_query", [])
     assert [(b.bufnum, b.frames, b.channels) for b in bufs] == [(0, 50, 1), (3, 100, 2)]
     assert bufs[1].sample_rate == 44100.0
 
@@ -518,6 +518,6 @@ def test_introspection_batch_raises_on_fail():
 
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    iface.queue_reply("/fail", "/d_query", "expected string def names")
+    iface.queue_reply("/fail", "/def_query", "expected string def names")
     with pytest.raises(CommandError):
         srv.query_defs()

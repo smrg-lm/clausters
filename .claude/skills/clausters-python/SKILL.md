@@ -1,6 +1,6 @@
 ---
 name: clausters-python
-description: How to use the Clausters Python client idiomatically — the client/server split and the NRT/RT/embed seam, building both def families as peers (UGen-graph SynthDefs; FaustDefs from the signal API, the box API or Faust source), sending defs asynchronously with the /sync barrier, and sequencing with BOTH event patterns and generator routines (and the rule that a routine must never block the clock thread). Consult when writing any client-side Clausters Python.
+description: How to use the Clausters Python client idiomatically — the client/server split and the NRT/RT/embed seam, building both def families as peers (UGen-graph SynthDefs; FaustDefs from the signal API, the box API or Faust source), sending defs asynchronously with the /server_sync barrier, and sequencing with BOTH event patterns and generator routines (and the rule that a routine must never block the clock thread). Consult when writing any client-side Clausters Python.
 ---
 
 # Clausters Python client
@@ -59,32 +59,32 @@ fdef = FaustDef.from_signals("sine", S.sin(phasor * 6.2831853) * 0.2, ...)  # >1
   helper for `signals`.
 - `FaustDef.from_signals/from_box/from_source` — three equal ways to write a
   Faust def: one output at a time, composed processors, or the language itself.
-  `SynthDef` (`/d_recv`) is the **peer family**, not a lesser one: instance-based
+  `SynthDef` (`/def_send synth`) is the **peer family**, not a lesser one: instance-based
   UGen graphs with the full unary/binary maths (the generic op UGens), and the
   only way to reach bus I/O, buffer playback, `send_reply`/`poll` and the FFT
   chain. Combine them freely (a FaustDef voice routed by a SynthDef).
-- `/d_faust` needs a server built with the **`faust` feature** and `/d_recv`
+- `/def_send faust` needs a server built with the **`faust` feature** and `/def_send synth`
   the **`synth`** feature — **both are on by default**; only a custom
   `--no-default-features` build can lack one (the server then replies `/fail`).
 - Reserved controls `in`/`out` (bus selectors) are added by the server.
 
-## Sending defs is asynchronous — use the /sync barrier
+## Sending defs is asynchronous — use the /server_sync barrier
 
-`/d_faust` JIT-compiles on the server's network thread (and `/b_*` run on an NRT
+`/def_send faust` JIT-compiles on the server's network thread (and `/buffer_*` run on an NRT
 thread). The client mirrors scsynth:
 
 ```python
 fdef.send(srv)                   # RT: BLOCKS until /done (or raises CommandError/ReplyTimeout)
 fdef.send(srv, wait=False)       # fire-and-forget (does not block)
-srv.sync()                       # barrier: /sync->/synced, waits for ALL earlier async work
+srv.sync()                       # barrier: /server_sync->/server_sync.reply, waits for ALL earlier async work
 sdef.send(srv, wait=...)         # same shape for UGen defs
 ```
 
 - `wait=True` (default) blocks on `/done`; `wait=False` only sends — then call
-  `sync()` before the `/s_new` that needs the def.
+  `sync()` before the `/synth_new` that needs the def.
 - In **NRT** `add_*` always *scores* the def at time 0 (the renderer compiles
   before time advances); `wait` does not apply.
-- `Server.sync()` is the real barrier (not a `/status` round-trip): a `/synced`
+- `Server.sync()` is the real barrier (not a `/server_status` round-trip): a `/server_sync.reply`
   guarantees prior compiles/buffer jobs are installed.
 
 ## Sequencing: event patterns AND generator routines
@@ -92,8 +92,8 @@ sdef.send(srv, wait=...)         # same shape for UGen defs
 Two idioms — pick by the shape of the logic, not by habit.
 
 **Event patterns** — for streams of notes. A `Pbind` zips value patterns into
-`Event`s; each event plays itself (`/s_new` with controls, then a scheduled
-`/n_free`), so you never hand-write a bundle:
+`Event`s; each event plays itself (`/synth_new` with controls, then a scheduled
+`/node_free`), so you never hand-write a bundle:
 
 ```python
 from clausters.seq import Pbind, Pseq, Pwhite
@@ -104,7 +104,7 @@ pat.play(clock, server)                # EventStreamPlayer: a Routine yielding e
 ```
 
 **Generator routines** — for anything beyond a flat note stream: branching,
-state, coordinating several nodes, mid-note `/n_set` modulation, conditional
+state, coordinating several nodes, mid-note `/node_set` modulation, conditional
 timing. A routine is a generator; `yield <beats>` cedes time to the clock, which
 resumes it at that exact logical beat. You can still create `Event`s and call
 `event.play(server)` inside it to avoid writing bundles by hand:
@@ -116,7 +116,7 @@ from clausters.seq import Event
 def voice(server):
     for hz in (400, 900, 1600, 900, 400):
         Event(instrument="rlpf", freq=110.0, cutoff=float(hz),
-              dur=0.25, legato=1.0).play(server)   # Event emits /s_new (+ scheduled /n_free)
+              dur=0.25, legato=1.0).play(server)   # Event emits /synth_new (+ scheduled /node_free)
         yield 0.25                                 # advance the clock; never time.sleep
     # ...arbitrary logic, conditionals, nested routines, etc.
 
@@ -136,7 +136,7 @@ Blocking it freezes the whole timeline. So inside a routine generator:
 - **never** `time.sleep` — `yield` the beats instead;
 - **never** call a blocking `sync()` or a `wait=True` def send (they wait on a
   reply). To create a def from a routine, send it `wait=False` and `yield`
-  enough time before the dependent `/s_new` (a non-blocking, yield-able barrier
+  enough time before the dependent `/synth_new` (a non-blocking, yield-able barrier
   is future `OSCFunc`/notification work).
 
 ## Timing
@@ -193,7 +193,7 @@ surface, where new human-audible/visual behavior gets checked; a
 not a per-milestone log. Keep code, the `PLAN.md` roadmaps and `docs/decisions.md`
 English, the conversation Spanish; commit messages English/ASCII.
 In docstrings and docs, name API actions by the API's own verbs — a node or
-widget is **freed** (`/n_free`, `/gui_free`, `node.free()`), a def is
+widget is **freed** (`/node_free`, `/gui_free`, `node.free()`), a def is
 **sent**/**loaded**, a server is **booted**, an element is **rendered** — never
 everyday synonyms ("destroyed", "deleted", "killed", "realized"); verbs from
 other domains keep their own APIs' words (`subprocess.terminate()`, shell

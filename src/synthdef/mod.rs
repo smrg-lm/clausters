@@ -1,9 +1,9 @@
 //! SynthDefs: our own definition format (JSON via serde, not SC's binary
 //! `.scsyndef`), the compiler that validates it, and the runtime instance.
 //!
-//! A [`SynthDefSpec`] arrives in `/d_recv` as a JSON blob, is compiled into a
+//! A [`SynthDefSpec`] arrives in `/def_send synth` as a JSON blob, is compiled into a
 //! [`SynthDef`] (resolved input references, gathered constants) and stored on
-//! the network thread. `/s_new` builds a [`instance::UGenSynth`] from it —
+//! the network thread. `/synth_new` builds a [`instance::UGenSynth`] from it —
 //! fully allocated on the network thread — and ships it to the audio thread.
 //!
 //! Output happens exclusively through `Out`/`ReplaceOut` UGens writing to
@@ -77,10 +77,10 @@ pub enum ControlType {
     /// A plain control, read once per block, settable any time (`kr`).
     #[default]
     Control,
-    /// A one-block trigger: a `/n_set` holds for one block, then the engine
+    /// A one-block trigger: a `/node_set` holds for one block, then the engine
     /// resets it to 0 (`tr`).
     Trigger,
-    /// A scalar read once at init and frozen; a later `/n_set` is ignored
+    /// A scalar read once at init and frozen; a later `/node_set` is ignored
     /// (`ir`, pairing with S1's `ir` rate).
     Scalar,
 }

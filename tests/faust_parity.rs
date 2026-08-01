@@ -301,7 +301,7 @@ fn gain_stages_are_bit_exact_on_the_same_input() {
 #[test]
 fn ugen_and_faust_synths_share_a_group() {
     // Both kinds live as siblings inside a non-root group, mix into the same
-    // bus, and a single /g_freeAll-style command frees them together.
+    // bus, and a single /group_freeAll-style command frees them together.
     const FSINE_SRC: &str = "process = sin(6.283185307179586 * \
         ((+(440.0/48000.0) : (_ <: _ - floor(_))) ~ _)) * 0.2;";
     let fdef = compile_faust("gsine", CompilePayload::Source(FSINE_SRC.into()));

@@ -20,21 +20,22 @@ def resolve(server=None):
     return main.resolve_server(None)
 
 
-def send_def(server, addr: str, payload, name: str, wait: bool,
+def send_def(server, family: str, payload, name: str, wait: bool,
              timeout: float) -> str:
-    """Sends one def message and returns the def's ``name``.
+    """Sends one ``/def_send`` message and returns the def's ``name``.
 
-    The shape every family shares: in NRT the send is *scored* at time 0 (the
-    renderer loads the def before time advances, so ``wait`` does not apply);
-    in RT ``wait=True`` blocks until ``/done``/``/fail`` — raising
+    The shape every family shares — ``family`` is the wire argument that selects
+    it (``"synth"``, ``"faust"`` or ``"graph"``): in NRT the send is *scored* at
+    time 0 (the renderer loads the def before time advances, so ``wait`` does not
+    apply); in RT ``wait=True`` blocks until ``/done``/``/fail`` — raising
     `clausters.errors.CommandError` on the failure — and ``wait=False`` returns
     immediately, to be sequenced with a ``sync`` barrier.
     """
     if getattr(server.interface, "time_mode", "unix") == "score" or not wait:
-        server.send_msg(addr, *payload)
+        server.send_msg("/def_send", family, *payload)
         return name
-    reply, args = server.request(*(addr, *payload), timeout=timeout,
+    reply, args = server.request("/def_send", family, *payload, timeout=timeout,
                                  expect=("/done", "/fail"))
     if reply == "/fail":
-        raise CommandError(f"{addr} {name!r} failed: {args}")
+        raise CommandError(f"/def_send {family} {name!r} failed: {args}")
     return name

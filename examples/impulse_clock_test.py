@@ -2,17 +2,17 @@
 """Long-running sample-clock check, driven by the high-level Python client.
 
 Locks a `TempoClock` to a running server's **sample clock** (`lock_to`, over
-UDP, modelling `/clock` — no shared memory) and runs a `Routine` that, once per
+UDP, modelling `/clock_query` — no shared memory) and runs a `Routine` that, once per
 second, spawns a synth of a single one-sample-impulse **SynthDef** and fires it
 sample-accurately, then frees the synth. The def is defined and loaded **once**
 before the run — as on scsynth, a SynthDef is sent to the server one time and
-each beat only instantiates a node with `/s_new`. The server's audio output is
+each beat only instantiates a node with `/synth_new`. The server's audio output is
 recorded to a WAV in real time; when the run finishes — or on SIGINT / SIGTERM —
 the recording is analyzed to confirm there is exactly one one-sample click per
 second, evenly spaced.
 
 Each impulse is `Impulse` at frequency 0: a single 1.0 on the synth's first
-sample, silence after. Scheduled by `/sched` at the sample the routine's logical
+sample, silence after. Scheduled by `/sched_at` at the sample the routine's logical
 beat maps to, that first sample *is* the target, so the click lands on an exact
 frame — no envelope, no onset ramp.
 
@@ -74,16 +74,16 @@ def impulse_def(name: str) -> SynthDef:
 def impulse_routine(server: Server, counter: list):
     """Once per beat (= one second at tempo 1.0): spawn a synth of the
     pre-loaded impulse `SynthDef` at the routine's exact logical beat (so
-    `/sched` lands it on the sample) and free it shortly after. The def is
-    defined and loaded once before the run, so the loop only sends `/s_new` +
-    `/n_free` — never a def — and never blocks the clock thread."""
+    `/sched_at` lands it on the sample) and free it shortly after. The def is
+    defined and loaded once before the run, so the loop only sends `/synth_new` +
+    `/node_free` — never a def — and never blocks the clock thread."""
 
     def routine():
         k = 0
         while True:
             node = NODE_BASE + (k % NODE_SPAN)
-            server.send_bundle(("/s_new", IMPULSE_DEF, node, 1, 0))   # sample-accurate
-            server.send_bundle(("/n_free", node), delay_beats=HOLD)   # tidy up the tree
+            server.send_bundle(("/synth_new", IMPULSE_DEF, node, 1, 0))   # sample-accurate
+            server.send_bundle(("/node_free", node), delay_beats=HOLD)   # tidy up the tree
             counter[0] = k + 1
             yield 1.0                                                 # complete the 1 s cycle
             k += 1
@@ -209,7 +209,7 @@ def parse_args(argv):
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=57110)
     p.add_argument("--latency", type=float, default=0.1,
-                   help="scheduling lookahead added to each /sched target")
+                   help="scheduling lookahead added to each /sched_at target")
     p.add_argument("--seconds", type=float, default=3700.0,
                    help="run duration (one impulse per second)")
     p.add_argument("--out", default="/tmp/clausters_impulse_clock.wav")

@@ -424,7 +424,7 @@ class Session(Environment):
         the ambient `Moment`, so a sequence sent to another application keeps
         the same logical timing as one sent to the server. What it does not
         send is anything of ours: no `Server.latency`, no sample-accurate
-        ``/sched``, no offline score."""
+        ``/sched_at``, no offline score."""
         dest = OscDestination(host, port)
         self._destinations.append(dest)
         return dest

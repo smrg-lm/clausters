@@ -6,7 +6,7 @@ It builds on two other pages. [Timing models](timing-models.md) explains *why* t
 
 ## The shared grid
 
-The transport is deliberately small: an **origin sample** (the sample position of beat 0) and a **tempo** (beats per second). Together they are a grid — beat `b` is sample `origin + b·rate/tempo` — that the server stores under `/transport` and any client can read. That is the whole of it: the server *hosts* the grid but never plays from it. There is no server-side playhead rolling forward; each client's `TempoClock` is its own playhead, and the grid is the common ruler they all measure bars against.
+The transport is deliberately small: an **origin sample** (the sample position of beat 0) and a **tempo** (beats per second). Together they are a grid — beat `b` is sample `origin + b·rate/tempo` — that the server stores under `/transport_set` and any client can read. That is the whole of it: the server *hosts* the grid but never plays from it. There is no server-side playhead rolling forward; each client's `TempoClock` is its own playhead, and the grid is the common ruler they all measure bars against.
 
 One client is the **conductor**: it defines the grid once.
 
@@ -46,7 +46,7 @@ session.play(pattern, quant=4)                  # the Session form
 
 How tightly the clients align depends on the time reference each clock paces against — the subject of [Timing models](timing-models.md), in one paragraph here:
 
-- **Plain (wall-clock) followers** align to the **beat**, drift-bounded: the grid's sample origin is mapped to OSC time through the server's `/clock` anchor, so everyone agrees on the bar to within the wall-vs-audio drift.
+- **Plain (wall-clock) followers** align to the **beat**, drift-bounded: the grid's sample origin is mapped to OSC time through the server's `/clock_query` anchor, so everyone agrees on the bar to within the wall-vs-audio drift.
 - **Followers that also `lock_to(server)`** align to the **sample**: the grid lives on the master's sample axis, so the shared bar is one exact sample for all of them.
 
 ```python
@@ -58,24 +58,24 @@ Order does not matter much, but lock first and join second reads well: choose th
 
 ## Following a tempo change live
 
-This is where the transport behaves most like a DAW's: when the conductor changes the tempo (or origin), every follower should move with it. Setting `/transport` again **pushes** the new grid to every client registered for notifications, so followers do not have to poll. A follower reacts with an [OSC responder](responders.md) on `/transport.reply`:
+This is where the transport behaves most like a DAW's: when the conductor changes the tempo (or origin), every follower should move with it. Setting `/transport_set` again **pushes** the new grid to every client registered for notifications, so followers do not have to poll. A follower reacts with an [OSC responder](responders.md) on `/transport_query.reply`:
 
 ```python
 from clausters.base import OscReceiver
 from clausters.responders import OscFunc
 
 recv = OscReceiver().start()
-recv.send(server.target.addr(), "/notify", 1)   # subscribe on this socket
+recv.send(server.target.addr(), "/server_notify", 1)   # subscribe on this socket
 
 def follow_transport(msg, time, src):
-    # msg == ["/transport.reply", origin_sample, tempo, defined]
+    # msg == ["/transport_query.reply", origin_sample, tempo, defined]
     if msg[3]:                                   # defined
         clock.join_transport(server)             # re-adopt the new grid
 
-OscFunc(follow_transport, "/transport.reply", recv=recv)
+OscFunc(follow_transport, "/transport_query.reply", recv=recv)
 ```
 
-Now the conductor doing `server.set_transport(0, 3.0)` later in the session re-tempos every follower at once — the bar grid they quantize against moves together. (Register `/notify` from the *receiver's* socket, as above, so the push lands where the responder is listening.) The shipped `osc_responder.py` example wires exactly this reaction; see [Examples](examples.md).
+Now the conductor doing `server.set_transport(0, 3.0)` later in the session re-tempos every follower at once — the bar grid they quantize against moves together. (Register `/server_notify` from the *receiver's* socket, as above, so the push lands where the responder is listening.) The shipped `osc_responder.py` example wires exactly this reaction; see [Examples](examples.md).
 
 ## Rolling the transport: a conductor with play / stop / locate
 
@@ -100,7 +100,7 @@ clock.start()
 head.follow_transport(server, quant=4)   # obey the transport; start on a bar
 ```
 
-`follow_transport` registers `/notify` and an `OscFunc` on `/transport.reply` (the [responder layer](responders.md)) so it reacts to the broadcast, then applies the current state once. Because every follower computes from the *same* broadcast state, they roll in lockstep: beat-aligned in plain wall-clock mode, and **sample-exact** when each clock is also `lock_to` the server. The everyone-is-symmetric design makes this simple — every client (including the one issuing the commands, if it follows too) reacts to the same broadcast identically. `transport_conductor.py` ([Examples](examples.md)) shows two followers rolling together; `unfollow_transport()` releases it.
+`follow_transport` registers `/server_notify` and an `OscFunc` on `/transport_query.reply` (the [responder layer](responders.md)) so it reacts to the broadcast, then applies the current state once. Because every follower computes from the *same* broadcast state, they roll in lockstep: beat-aligned in plain wall-clock mode, and **sample-exact** when each clock is also `lock_to` the server. The everyone-is-symmetric design makes this simple — every client (including the one issuing the commands, if it follows too) reacts to the same broadcast identically. `transport_conductor.py` ([Examples](examples.md)) shows two followers rolling together; `unfollow_transport()` releases it.
 
 ## A worked example: two clients, one bar
 
@@ -123,7 +123,7 @@ Sampled back to back, the two clients return the same next-bar sample — that e
 
 The analogy to a DAW transport is the **bar grid and tempo plus a play/stop/position state** — enough to lock clients to the same bars, tempo, and rolling playhead. The rest of a DAW's transport is intentionally not here:
 
-- **The server broadcasts transport *control*, it does not schedule audio.** It holds the grid and the rolling state (playing + position) and pushes changes; the actual rolling — which note sounds when — is each client's own `Playhead` on the shared grid (see [Timelines and the playhead](timelines.md)). The audio scheduling stays per-client (via `/sched`), so the server never becomes an audio clock.
+- **The server broadcasts transport *control*, it does not schedule audio.** It holds the grid and the rolling state (playing + position) and pushes changes; the actual rolling — which note sounds when — is each client's own `Playhead` on the shared grid (see [Timelines and the playhead](timelines.md)). The audio scheduling stays per-client (via `/sched_at`), so the server never becomes an audio clock.
 - **One grid per server, last-writer-wins.** There is a single shared transport; whoever calls `set_transport` most recently defines it. Several conductors are a coordination choice you make, not something the server arbitrates. (Multiple independently named transports on one server were considered and deferred.)
 - **Tempo and origin only — no meter object.** A "bar" is whatever beat multiple you pass as `quant`; there is no separate time-signature the server stores. Pick a `quant` that matches your meter (4 for 4/4, 3 for 3/4).
 - **No server-side recording or arrangement.** The timeline a playhead rolls lives in the client; the server holds only the shared position and tempo, not the notes.
@@ -140,7 +140,7 @@ These are the honest edges of a small, composable feature: shared bars, a shared
 | Leave it | `clock.leave_transport()` |
 | Start on the next bar | `clock.play(routine, quant=4)` / `session.play(pattern, quant=4)` |
 | Align to the sample, not just the beat | `clock.lock_to(server)` as well (see [Timing models](timing-models.md)) |
-| Follow live tempo changes | an `OscFunc("/transport.reply", …)` that re-`join_transport`s (see [Receiving OSC and MIDI](responders.md)) |
+| Follow live tempo changes | an `OscFunc("/transport_query.reply", …)` that re-`join_transport`s (see [Receiving OSC and MIDI](responders.md)) |
 | Roll a playhead from a conductor | `server.transport_play()` / `transport_stop()` / `transport_locate(beat)`; followers `playhead.follow_transport(server, quant=4)` |
 | Read the rolling state | `server.transport_state()` → `{tempo, playing, position, …}` |
 
@@ -151,4 +151,4 @@ These are the honest edges of a small, composable feature: shared bars, a shared
 - [Receiving OSC and MIDI](responders.md) — the responder layer the live-change reaction uses.
 - [Sessions](sessions.md) — the handle that bundles a clock and a server, with `join_transport`.
 - [Examples](examples.md) — `transport_sync.py` (two clients on one bar) and `osc_responder.py` (the live transport reaction).
-- The **[Clausters server book](https://clausters.readthedocs.io/)** — `/transport` and `/clock` on the wire.
+- The **[Clausters server book](https://clausters.readthedocs.io/)** — `/transport_set` and `/clock_query` on the wire.

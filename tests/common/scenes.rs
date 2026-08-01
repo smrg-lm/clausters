@@ -49,14 +49,14 @@ fn f(v: f32) -> OscType {
 }
 
 /// Two voices of the built-in "default" def overlapping, with mid-block
-/// entries, an `/n_set` retune and staggered frees: exercises the node tree,
+/// entries, an `/node_set` retune and staggered frees: exercises the node tree,
 /// named controls and the sample-accurate scheduler end to end. 0.3 s mono.
 pub fn arpeggio() -> Score {
     Score::new([
         (
             t(0),
             vec![msg(
-                "/s_new",
+                "/synth_new",
                 vec![
                     s("default"),
                     i(1000),
@@ -74,7 +74,7 @@ pub fn arpeggio() -> Score {
             t(5000),
             vec![
                 msg(
-                    "/s_new",
+                    "/synth_new",
                     vec![
                         s("default"),
                         i(1001),
@@ -86,15 +86,15 @@ pub fn arpeggio() -> Score {
                         f(0.2),
                     ],
                 ),
-                msg("/n_set", vec![i(1000), s("freq"), f(220.0)]),
+                msg("/node_set", vec![i(1000), s("freq"), f(220.0)]),
             ],
         ),
         (
             t(9603),
             vec![
-                msg("/n_free", vec![i(1000)]),
+                msg("/node_free", vec![i(1000)]),
                 msg(
-                    "/s_new",
+                    "/synth_new",
                     vec![
                         s("default"),
                         i(1002),
@@ -109,7 +109,7 @@ pub fn arpeggio() -> Score {
             ],
         ),
         // Final bundle: sets the render length (its commands are not heard).
-        (t(14400), vec![msg("/n_free", vec![i(1001), i(1002)])]),
+        (t(14400), vec![msg("/node_free", vec![i(1001), i(1002)])]),
     ])
     .expect("valid scene")
 }
@@ -144,8 +144,8 @@ pub fn write_playbuf_source(path: &Path) {
     .expect("write the playbuf source file");
 }
 
-/// `/d_recv` + `/b_allocRead` + PlayBuf at the file/server rate ratio, a
-/// sample-accurate `/c_set` amplitude drop and a `/b_zero` mid-playback
+/// `/def_send synth` + `/buffer_allocRead` + PlayBuf at the file/server rate ratio, a
+/// sample-accurate `/bus_set` amplitude drop and a `/buffer_zero` mid-playback
 /// (buffers are immutable: the swap must land on its exact sample and the
 /// tail must be silent). 0.25 s mono. `source` is the file written by
 /// [`write_playbuf_source`].
@@ -156,17 +156,20 @@ pub fn playbuf(source: &Path) -> Score {
             t(0),
             vec![
                 msg(
-                    "/d_recv",
-                    vec![OscType::Blob(PLAYER_DEF.as_bytes().to_vec())],
+                    "/def_send",
+                    vec![
+                        OscType::String("synth".into()),
+                        OscType::Blob(PLAYER_DEF.as_bytes().to_vec()),
+                    ],
                 ),
-                msg("/b_allocRead", vec![i(0), s(path)]),
-                msg("/c_set", vec![i(0), f(0.4)]),
+                msg("/buffer_allocRead", vec![i(0), s(path)]),
+                msg("/bus_set", vec![i(0), f(0.4)]),
             ],
         ),
         (
             t(2401),
             vec![msg(
-                "/s_new",
+                "/synth_new",
                 vec![
                     s("player"),
                     i(1),
@@ -177,9 +180,9 @@ pub fn playbuf(source: &Path) -> Score {
                 ],
             )],
         ),
-        (t(6001), vec![msg("/c_set", vec![i(0), f(0.15)])]),
-        (t(9000), vec![msg("/b_zero", vec![i(0)])]),
-        (t(12000), vec![msg("/n_free", vec![i(1)])]),
+        (t(6001), vec![msg("/bus_set", vec![i(0), f(0.15)])]),
+        (t(9000), vec![msg("/buffer_zero", vec![i(0)])]),
+        (t(12000), vec![msg("/node_free", vec![i(1)])]),
     ])
     .expect("valid scene")
 }

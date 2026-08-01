@@ -42,7 +42,7 @@ between. The power button is the autoplay gesture.</div>
 
       ?smoke=1 asserts the chain end to end — the graph's LFO streaming on
       **this instance's own** control bus (the /graph_new instantiated and
-      sounding) and an /n_set of a named surface port on its own node id,
+      sounding) and an /node_set of a named surface port on its own node id,
       accepted without /fail — beaconing the verdict as a fetch, the standard
       web-smoke posture under headless Chrome.
     -->
@@ -81,7 +81,7 @@ between. The power button is the autoplay gesture.</div>
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
             if (addr === "/fail") failed = JSON.stringify(args);
-            if (addr !== "/c_set") continue;
+            if (addr !== "/bus_set") continue;
             for (let i = 0; i + 1 < args.length; i += 2) {
               if (args[i] === lfo) seen.add(args[i + 1]);
             }
@@ -89,7 +89,7 @@ between. The power button is the autoplay gesture.</div>
         });
         // A named surface port over the raw singleton — the same message the
         // knobs' bind sends host-side, to this instance's own graph node.
-        engine.send(encodeMessage("/n_set",
+        engine.send(encodeMessage("/node_set",
           [["i", graph], ["s", "rate"], ["f", 9.0]]));
         const t0 = performance.now();
         for (;;) {
@@ -98,7 +98,7 @@ between. The power button is the autoplay gesture.</div>
           if (moving.length >= 3) {
             return verdict(`PASS: graph component up (GuiDef ${id}, node ` +
               `${graph}, lfo bus ${lfo}); LFO streaming (${moving.length} ` +
-              `values); surface /n_set accepted`);
+              `values); surface /node_set accepted`);
           }
           if (performance.now() - t0 > 20000) {
             throw new Error(`LFO never streamed ` +

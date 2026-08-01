@@ -70,14 +70,14 @@ def main():
     voice = Synth.new("soft_voice", {"freq": 220.0, "amp": 0.25}, server=session.server)
 
     def sequence():
-        # The fragment sliders are ordinary controls: /n_set by label.
+        # The fragment sliders are ordinary controls: /node_set by label.
         for step, midi in enumerate([57, 60, 64, 67, 64, 60, 57, 52]):
             hz = 440.0 * 2.0 ** ((midi - 69) / 12.0)
-            session.server.send_bundle(("/n_set", voice.id, "freq", hz,
+            session.server.send_bundle(("/node_set", voice.id, "freq", hz,
                                         "cutoff", 600.0 + 400.0 * step))
             yield 0.5
         yield 2.0                                # let the reverb tail ring
-        session.server.send_bundle(("/n_free", voice.id))
+        session.server.send_bundle(("/node_free", voice.id))
 
     Routine(sequence).play(session.clock)
     stats = session.render(sample_rate=SR, channels=2, path=out_path)

@@ -3,7 +3,7 @@
 // A control bus carries one value per block; an oscilloscope, a phasescope and
 // a spectrum need the samples themselves. An audio bus does not sit in shared
 // memory the way a control bus does, so the server records the ones it is
-// asked for and a page reads them as `/tap_data` — the newest window of each
+// asked for and a page reads them as `/bus_tapStream.reply` — the newest window of each
 // subscribed bus, every period. **A script names the bus**: the subscription
 // is itself the request to record it, and the ring behind it is the server's
 // bookkeeping.
@@ -158,9 +158,9 @@ export class TapStream {
         this.listeners.clear();
     }
 
-    /** One `/tap_data bus endPosition blob` snapshot. */
+    /** One `/bus_tapStream.reply bus endPosition blob` snapshot. */
     private take(msg: OscMessage): void {
-        if (msg.addr !== "/tap_data") return;
+        if (msg.addr !== "/bus_tapStream.reply") return;
         const bus = Number(msg.args[0]);
         if (!this.buses.includes(bus)) return;
         const blob = msg.args[2];
@@ -175,7 +175,7 @@ export class TapStream {
 }
 
 /**
- * A `/tap_data` blob — raw little-endian `f32` — as samples. Read through a
+ * A `/bus_tapStream.reply` blob — raw little-endian `f32` — as samples. Read through a
  * `DataView`, so the endianness is the wire's and not the machine's, and an
  * unaligned blob offset is a non-issue.
  */

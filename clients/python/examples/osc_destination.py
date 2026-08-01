@@ -9,8 +9,8 @@ same logical timing the audio gets. A destination is where OSC goes:
 
 What travels is standard OSC: a message, or a bundle with an NTP timetag. A
 destination adds nothing of ours to it — not the server's ``latency`` (that is
-our audio pipeline's property, not another program's), not ``/sched``, not
-``/sync``. If another application needs to run ahead, ask for it as an explicit
+our audio pipeline's property, not another program's), not ``/sched_at``, not
+``/server_sync``. If another application needs to run ahead, ask for it as an explicit
 ``delay_beats``.
 
 There is no second program to run here: the example stands in for one with an

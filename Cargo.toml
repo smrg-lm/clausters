@@ -13,7 +13,7 @@ resolver = "3"
 
 [package]
 name = "clausters"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "A real-time audio synthesis server in the style of SuperCollider's scsynth, controlled over OSC, with Faust JIT-compiled synth definitions."
@@ -33,11 +33,11 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = ["synth", "faust", "realtime", "midi", "pipewire", "rtprio"]
 # The SynthDef family (scsynth-style UGen graphs): the UGen library, the def
-# compiler (`/d_recv`) and `UGenSynth`. Default. Independent from — and
+# compiler (`/def_send synth`) and `UGenSynth`. Default. Independent from — and
 # combinable with — `faust`: a custom build can ship either def family alone
 # (e.g. `--no-default-features --features faust,realtime,midi` is a
 # Faust-only server) or both. With neither, only the engine core remains
-# (groups, buses, buffers, transports) and every `/s_new` fails.
+# (groups, buses, buffers, transports) and every `/synth_new` fails.
 synth = []
 # cpal backend. Can be disabled for tests/CI without an audio device.
 realtime = ["dep:cpal"]
@@ -54,7 +54,7 @@ midi = ["dep:midir"]
 # resolves to pipewire-jack via its ld.so.conf.d entry, so MIDI still goes
 # through PipeWire. The default `midi` feature keeps the ALSA backend.
 midi-jack = ["midi", "midir/jack"]
-# The FaustDef family: libfaust embedding (Signal/Box API + LLVM JIT, `/d_faust`).
+# The FaustDef family: libfaust embedding (Signal/Box API + LLVM JIT, `/def_send faust`).
 # Default — the two def families are peers, and a server that cannot compile a
 # FaustDef is a partial product. The cost is a build dependency: it needs
 # libfaust built with the LLVM backend (see BUILD.md for the recipe), located
@@ -101,10 +101,10 @@ required-features = ["synth"]
 # client binding use, so client-side results match the server by construction.
 clausters-core = { path = "crates/clausters-core" }
 cpal = { version = "0.18", optional = true }
-# WAV read/write: exact, supports int24, and what `/b_write` emits. Kept as the
+# WAV read/write: exact, supports int24, and what `/buffer_write` emits. Kept as the
 # canonical WAV path; compressed/other formats decode through symphonia below.
 hound = "3"
-# Multi-format audio decoding for `/b_read`/`/b_allocRead` (FLAC, OGG/Vorbis,
+# Multi-format audio decoding for `/buffer_read`/`/buffer_allocRead` (FLAC, OGG/Vorbis,
 # MP3, MP4/AAC, ALAC, AIFF, ...). Pure Rust, decode-only; WAV stays on hound.
 symphonia = { version = "0.6", default-features = false, features = ["flac", "ogg", "vorbis", "mpa", "isomp4", "aac", "alac", "adpcm", "pcm", "wav", "aiff", "caf"] }
 # M17: live MIDI I/O over the OS's standard MIDI (ALSA seq on Linux). Pure
@@ -119,7 +119,7 @@ sha2 = "0.10"
 # Leveled, target-filtered logging. The audio thread never logs (it reports via
 # FIFOs to the network thread); the subscriber is installed only by the binary,
 # so library/embed users keep their own. `env-filter` gives RUST_LOG + the
-# runtime-reloadable filter the `/verbosity` OSC command swaps.
+# runtime-reloadable filter the `/server_verbosity` OSC command swaps.
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

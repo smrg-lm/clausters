@@ -105,10 +105,10 @@
         }
 
         // The unbound control reports to this script; the bound one bypasses
-        // it and sends /n_set straight to the engine.
+        // it and sends /node_set straight to the engine.
         const events = [];
         win.widget("cutoff").onEvent((...args) => events.push(args));
-        win.widget("freq").bind("/n_set", synth.id, "freq");
+        win.widget("freq").bind("/node_set", synth.id, "freq");
 
         // The host holds what was sent (a /gui_query round trip in-page).
         const info = await win.widget("cutoff").query();

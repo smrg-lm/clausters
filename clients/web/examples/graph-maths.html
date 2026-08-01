@@ -96,7 +96,7 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
           // MIDI notes go out as they are: the def turns them into Hz with
           // .midicps(), so the client never converts a pitch by hand.
           for (const midi of [48, 52, 55, 59, 60, 59, 55, 52]) {
-            server.sendBundle([["/n_set", ["i", lead.id], "note", ["f", midi]]]);
+            server.sendBundle([["/node_set", ["i", lead.id], "note", ["f", midi]]]);
             yield 0.5;
           }
           log("phrase done");

@@ -35,7 +35,7 @@ export interface ClaustersServer {
     clockAnchor(): Promise<ClockAnchor>;
     /**
      * Installs host-decoded samples as buffer `index` (the browser's
-     * /b_allocRead); `samples` is interleaved and transferred.
+     * /buffer_allocRead); `samples` is interleaved and transferred.
      */
     bLoad(
         index: number,
@@ -65,7 +65,7 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
         for (const listener of [...listeners]) listener(bytes);
     };
     raw.onError = (message) => console.error(`clausters engine: ${message}`);
-    raw.onQuit = () => console.warn("clausters engine: /quit — engine stopped");
+    raw.onQuit = () => console.warn("clausters engine: /server_quit — engine stopped");
     return {
         context: raw.context,
         node: raw.node,

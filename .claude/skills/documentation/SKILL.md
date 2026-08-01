@@ -67,7 +67,7 @@ Three rules hold across *all* of the above (repeat them to yourself):
    Those live only in the `PLAN.md` roadmaps.
 3. **Prose names API actions by the API's own verbs.** When the protocol or API
    has a verb for an action, use *that* verb: a node or widget is **freed**
-   (`/n_free`, `/gui_free`), never "destroyed"/"deleted"/"killed"; a def is
+   (`/node_free`, `/gui_free`), never "destroyed"/"deleted"/"killed"; a def is
    **sent**/**loaded**; a server is **booted**; an element is **rendered**,
    never "realized". Verbs from *other* domains keep their own APIs' words
    (shell `kill`, `subprocess.terminate()`, POSIX "the kernel kills the

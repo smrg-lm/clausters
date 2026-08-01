@@ -99,7 +99,7 @@ fn garbage_overflow_leaks_instead_of_blocking() {
     );
 }
 
-/// Event FIFO (2048) overflow: `/n_go`//`/n_end` are best-effort — extra
+/// Event FIFO (2048) overflow: `/node_start`//`/node_end` are best-effort — extra
 /// events drop silently, nothing else is affected.
 #[test]
 fn event_overflow_drops_silently() {

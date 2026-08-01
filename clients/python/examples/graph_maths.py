@@ -52,10 +52,10 @@ def main():
     def sequence():
         # Set MIDI notes directly — the def turns them into Hz with .midicps().
         for midi in [48, 52, 55, 59, 60, 59, 55, 52]:
-            session.server.send_bundle(("/n_set", lead.id, "note", float(midi)))
+            session.server.send_bundle(("/node_set", lead.id, "note", float(midi)))
             yield 0.5
         yield 1.0
-        session.server.send_bundle(("/n_free", lead.id))
+        session.server.send_bundle(("/node_free", lead.id))
 
     Routine(sequence).play(session.clock)
     stats = session.render(sample_rate=SR, channels=2, path=out_path)

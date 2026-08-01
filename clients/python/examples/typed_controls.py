@@ -11,7 +11,7 @@ The point of interest is the SynthDef and the control **types**:
 
 - ``freq`` carries a ``lag`` (0.12 s), so when the routine sets a new note the
   pitch **glides** to it instead of jumping — a portamento lead.
-- ``gate`` is a trigger (``rate="tr"``): a ``/n_set gate 1`` holds for one block
+- ``gate`` is a trigger (``rate="tr"``): a ``/node_set gate 1`` holds for one block
   and the server resets it, so each set **re-plucks** the percussive envelope.
   A plain ``kr`` gate would stay 1 and never re-trigger.
 - ``detune`` is drawn once with ``rand`` (an ``ir`` scalar): a small random
@@ -19,7 +19,7 @@ The point of interest is the SynthDef and the control **types**:
 
 One persistent synth is driven by a `Routine` that sets ``freq``/``gate`` per
 note; the lag and the trigger only make sense on a synth that outlives its
-notes, which is exactly what a routine (not one ``/s_new`` per note) gives.
+notes, which is exactly what a routine (not one ``/synth_new`` per note) gives.
 """
 
 import sys
@@ -62,7 +62,7 @@ def main():
     out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "typed_controls.wav")
 
     session = Session.nrt(tempo=2.0)
-    glide_lead().send(session.server)        # /d_recv at time 0
+    glide_lead().send(session.server)        # /def_send synth at time 0
 
     lead = Synth.new("glide_lead", {"amp": 0.2, "freq": mtof(48)}, server=session.server)
 
@@ -74,10 +74,10 @@ def main():
         # collapse onto time 0 and free the synth before it ever sounds.
         for midi in [48, 55, 60, 63, 60, 55, 51, 48]:
             session.server.send_bundle(
-                ("/n_set", lead.id, "freq", mtof(midi), "gate", 1.0))
+                ("/node_set", lead.id, "freq", mtof(midi), "gate", 1.0))
             yield 0.5                                 # beats between notes
         yield 1.0
-        session.server.send_bundle(("/n_free", lead.id))
+        session.server.send_bundle(("/node_free", lead.id))
 
     Routine(sequence).play(session.clock)
     stats = session.render(sample_rate=SR, channels=2, path=out_path)

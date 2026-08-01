@@ -81,7 +81,7 @@
             {
               "type": "text",
               "id": 10,
-              "value": "/n_set 1000 freq 440",
+              "value": "/node_set 1000 freq 440",
               "multiline": false
             }
           ]

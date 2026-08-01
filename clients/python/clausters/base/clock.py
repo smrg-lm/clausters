@@ -73,7 +73,7 @@ class TempoClock:
         #: events. The default is the OS monotonic clock; pass a
         #: `SampleClockTimebase` to anchor to the
         #: server's sample clock. The Server reads this to choose how to stamp
-        #: events (NTP timetag vs ``/sched`` absolute sample).
+        #: events (NTP timetag vs ``/sched_at`` absolute sample).
         self.timebase = timebase if timebase is not None else MonotonicTimebase()
         self._now = self.timebase
 
@@ -135,7 +135,7 @@ class TempoClock:
         """The timebase value (seconds) of the current beat axis' zero, placed
         by `start`. For a sample-clock timebase this is
         ``sample_origin / sample_rate``, which the Server turns into the
-        absolute sample for ``/sched``."""
+        absolute sample for ``/sched_at``."""
         return self._mono_start
 
     def set_tempo(self, tempo: float):
@@ -177,7 +177,7 @@ class TempoClock:
         Opt-in: a plain clock paces against wall-clock OSC time, which works
         standalone, against another program, or across a network. `lock_to`
         switches it to the server's sample clock — over UDP it tracks the
-        server's published `/clock` anchor on its own socket; an in-process
+        server's published `/clock_query` anchor on its own socket; an in-process
         embedded server needs no tracker at all (the counter is read directly
         from shared memory). The switch is **graceful**: an offline (score)
         server, or a master that does not answer, leaves the clock on
@@ -185,7 +185,7 @@ class TempoClock:
         Returns ``self``.
 
         **Blocking — call it before `start`/`run`, never from inside a
-        routine** (it does `/clock` round trips). Release it with `unlock` or
+        routine** (it does `/clock_query` round trips). Release it with `unlock` or
         `close`. **Idempotent**: on an already sample-locked clock it is a no-op
         (keeps the live tracker), so it is safe to call after a
         `Session.live()`/`embed()` that already anchored by default.
@@ -230,7 +230,7 @@ class TempoClock:
     # ---- shared transport (phase alignment) ----
 
     def join_transport(self, server):
-        """Adopt a master ``server``'s shared `/transport` beat grid as this
+        """Adopt a master ``server``'s shared `/transport_set` beat grid as this
         clock's tempo and grid, so a `quant`-ed routine starts on the **same**
         beat as every other client joined to it.
 
@@ -249,10 +249,10 @@ class TempoClock:
         if isinstance(self.timebase, SampleClockTimebase):
             self._transport = ("sample", float(origin_sample), tempo)
         else:
-            # Map the sample-defined origin to OSC time via the /clock anchor,
+            # Map the sample-defined origin to OSC time via the /clock_query anchor,
             # so a wall-clock client quantizes on the same grid (the offset is
             # the core's samples->seconds conversion, shared with the server).
-            _, args = server.request("/clock", expect=("/clock.reply",))
+            _, args = server.request("/clock_query", expect=("/clock_query.reply",))
             sample0, rate, osc0 = int(args[0]), float(args[1]), float(args[2])
             origin_osc = osc0 + _native.samples_to_secs(int(origin_sample) - sample0, rate)
             self._transport = ("wall", origin_osc, tempo)

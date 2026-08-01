@@ -19,7 +19,7 @@ plain, editable OSC/MIDI score.
 
 This layer is **client-side**: each playhead has its own local transport over
 its own timeline, and several clients phase-align through `quant` and the shared
-`/transport` grid (see the timing docs). A server-broadcast transport (one
+`/transport_set` grid (see the timing docs). A server-broadcast transport (one
 conductor's play/stop/locate driving every client) can layer on top later
 without changing this.
 """
@@ -321,8 +321,8 @@ class Playhead:
         this playhead rolls / halts / seeks to match — so several clients run in
         lockstep on the shared grid.
 
-        It registers ``/notify`` (so the server's `/transport.reply` pushes
-        arrive) and an `clausters.responders.OscFunc` on ``/transport.reply``
+        It registers ``/server_notify`` (so the server's `/transport_query.reply` pushes
+        arrive) and an `clausters.responders.OscFunc` on ``/transport_query.reply``
         that drives this playhead, then applies the current state once. Pass a
         started `clausters.base.OscReceiver` as ``recv`` (it must be subscribable
         on its own socket); one is created if omitted. ``quant`` snaps each
@@ -337,10 +337,10 @@ class Playhead:
         owns_recv = recv is None
         if recv is None:
             recv = OscReceiver().start()
-        recv.send(server.target, "/notify", 1)
+        recv.send(server.target, "/server_notify", 1)
 
         def on_transport(msg, time, src):
-            # msg == ["/transport.reply", origin, tempo, defined, playing, position]
+            # msg == ["/transport_query.reply", origin, tempo, defined, playing, position]
             if len(msg) < 6 or not int(msg[3]):
                 return
             playing, position = int(msg[4]), float(msg[5])
@@ -350,7 +350,7 @@ class Playhead:
                 self.stop()
                 self.locate(position)
 
-        func = OscFunc(on_transport, "/transport.reply", recv=recv)
+        func = OscFunc(on_transport, "/transport_query.reply", recv=recv)
         self._follow = (func, recv if owns_recv else None)
 
         state = server.transport_state()

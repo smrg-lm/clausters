@@ -3,7 +3,7 @@
 The user-facing way to build a FaustDef. Each function here is a small
 **lowercase** callable (a design choice that keeps graph-building fluent in
 Python) that returns a `Signal`; composing signals with Python operators
-or these functions builds the JSON **signal tree** the server's `/d_faust`
+or these functions builds the JSON **signal tree** the server's `/def_send faust`
 consumes (``{"signals": [ <node>, … ]}``, one node per output — see the
 server's ``faust::signals``). The same lowercase pattern will return UGen-graph
 nodes for SynthDefs later.
@@ -14,7 +14,7 @@ Plain numbers are constants (Faust ``int``/``real``); explicit feedback uses
 ``recursion``/``self_`` (one sample of delay), and ``input(n)`` reads audio
 input ``n``.
 
-Reserved controls ``in`` and ``out`` (set with ``/s_new … "in" b "out" b``)
+Reserved controls ``in`` and ``out`` (set with ``/synth_new … "in" b "out" b``)
 choose the input/output buses; they are added by the server, not declared here.
 """
 

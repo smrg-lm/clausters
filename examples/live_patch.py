@@ -17,7 +17,7 @@ actually owns:
   * **audio buses** connecting the sources to the mixer, and a **control bus**
     driving the voice's pitch (so one write retunes it with no command);
   * **reading from a buffer**: a one-shot pluck WAV is generated, loaded with
-    ``/b_allocRead`` and looped by the ``PlayBuf`` SynthDef.
+    ``/buffer_allocRead`` and looped by the ``PlayBuf`` SynthDef.
 
 The signal flow::
 
@@ -86,7 +86,7 @@ def launch(options: ServerOptions, *extra_args: str) -> subprocess.Popen:
 
 
 def wait_until_ready(server: Server, timeout: float = 8.0) -> "object":
-    """Poll ``/server_info`` until the freshly launched server answers, then
+    """Poll ``/server_query`` until the freshly launched server answers, then
     return what it reports so we can confirm it matches our options."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -120,18 +120,18 @@ def write_pluck_wav(path: str, sr: float, freq: float = 330.0, dur: float = 0.7)
 
 
 def alloc_read(server: Server, path: str, frames: int):
-    """``/b_allocRead`` through the client's resources: take a buffer index from
+    """``/buffer_allocRead`` through the client's resources: take a buffer index from
     the Server's allocator, then send the command and wait for ``/done``. (The
-    high-level :meth:`Server.alloc_buffer` only does the empty ``/b_alloc``; for
-    loading a file we drive ``/b_allocRead`` over :meth:`Server.request`.)"""
+    high-level :meth:`Server.alloc_buffer` only does the empty ``/buffer_alloc``; for
+    loading a file we drive ``/buffer_allocRead`` over :meth:`Server.request`.)"""
     from clausters.defs.buffer import Buffer
 
     bufnum = server.buffers.alloc()
-    addr, args = server.request("/b_allocRead", bufnum, path,
+    addr, args = server.request("/buffer_allocRead", bufnum, path,
                                 timeout=5.0, expect=("/done", "/fail"))
     if addr == "/fail":
         server.buffers.free(bufnum)
-        raise CommandError(f"/b_allocRead failed: {args}")
+        raise CommandError(f"/buffer_allocRead failed: {args}")
     return Buffer(bufnum, frames, 1)
 
 
@@ -188,7 +188,7 @@ def run(server: Server, buf):
     freq_bus.set(220.0)      # initial pitch lives on the control bus
 
     # The Faust voice writes to bus_voice; its freq is *mapped* to the control
-    # bus, so retuning is a single /c_set with no per-note command.
+    # bus, so retuning is a single /bus_set with no per-note command.
     voice = Synth.new("fsine", {"out": bus_voice.index},
                          target=sources.id, action=AddAction.TAIL, server=server)
     voice.map("freq", freq_bus)

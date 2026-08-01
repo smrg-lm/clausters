@@ -57,13 +57,13 @@ def test_nrt_render_with_workers_is_bit_identical():
         SynthDef(
             "par_voice", out(0.0, sine(control("freq", 330.0)) * 0.1)).send(server)
         band = Group.new(server=server)
-        server.send_msg("/g_parallel", band.id, 1)
+        server.send_msg("/group_parallel", band.id, 1)
         voices = [Synth.new("par_voice", {"freq": 220.0 * (i + 1)},
                                target=band.id, server=server) for i in range(4)]
 
         def score():
             yield 0.5
-            server.send_bundle(*[("/n_free", v.id) for v in voices])
+            server.send_bundle(*[("/node_free", v.id) for v in voices])
 
         from clausters.base.stream import Routine
         s.clock.play(Routine(score))
@@ -182,7 +182,7 @@ def test_two_sessions_are_independent():
     a.clock.render()
     b.clock.render()
 
-    # each session kept its own score (2 notes vs 3, each = /s_new + /n_free)
+    # each session kept its own score (2 notes vs 3, each = /synth_new + /node_free)
     assert len(a.server.interface.score.bundles) == 2 * 2
     assert len(b.server.interface.score.bundles) == 3 * 2
     # and they are genuinely separate objects — no shared global
@@ -255,7 +255,7 @@ if __name__ == "__main__":
                     traceback.print_exc()
 
 
-# ---- the catalog contrast: ugens.py against the server's own /u_query ----
+# ---- the catalog contrast: ugens.py against the server's own /ugen_query ----
 
 # The kinds whose Python signature does not line up with the wire order, so the
 # positional contrast below cannot apply to them. They are split by *why*,
@@ -336,7 +336,7 @@ def _python_callables_by_kind():
 
 
 def test_ugen_catalog_matches_the_python_callables():
-    """`/u_query` is the server's own catalog; `clausters.defs.ugens` is the
+    """`/ugen_query` is the server's own catalog; `clausters.defs.ugens` is the
     client's hand-written mirror of it. This is what keeps the two from
     drifting: for every kind whose Python signature maps 1:1 onto the wire, the
     input names and defaults must agree exactly."""

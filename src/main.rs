@@ -10,8 +10,8 @@ usage:
       --audio-buses <n>    audio buses (default 128, the hard maximum)
       --control-buses <n>  control buses (default 16384)
       --taps <n>           audio-tap rings for oscilloscopes (default 8;
-                           0 disables): /tap routes an audio bus into one,
-                           read from the shared segment or via /tap_stream
+                           0 disables): /bus_tap routes an audio bus into one,
+                           read from the shared segment or via /bus_tapStream
       --tap-frames <n>     per-tap ring capacity in samples (default 16384;
                            rounded up to a power of two)
       --outputs <n>        hardware output channels (default: the device's);
@@ -49,7 +49,7 @@ usage:
                            here to replay that exact take)
       --stats              print the render's stats as one JSON line instead
                            of the human summary (for a client driving --nrt)
-      --workers <n>        DSP threads for /g_parallel groups (default 0)
+      --workers <n>        DSP threads for /group_parallel groups (default 0)
       --shm <path>         shared-memory segment for local clients (RT only;
                            put it on /dev/shm — see docs/ipc.md)
       --data-dir <dir>     where defs are persisted/reloaded (RT only;
@@ -58,7 +58,7 @@ usage:
   -v, -vv, -vvv            log verbosity: warn (default) -> info -> debug ->
                            trace; -q for errors only. RUST_LOG overrides it
                            (e.g. RUST_LOG=clausters::osc=trace); a client can
-                           retune it live with /verbosity and /dumpOSC. Logs go
+                           retune it live with /server_verbosity and /server_dumpOsc. Logs go
                            to stderr.
 
 A score is the scsynth binary format: length-prefixed OSC bundles whose
@@ -71,7 +71,7 @@ project clausters.toml); a flag on the command line wins over both.";
 fn main() {
     // Verbosity flags are consumed here (anywhere on the line) and removed
     // before dispatch, so the subcommand parsers never see them. `RUST_LOG`
-    // overrides the level; the `/verbosity` OSC command retunes it live.
+    // overrides the level; the `/server_verbosity` OSC command retunes it live.
     let mut verbosity: i8 = 0;
     let mut args: Vec<String> = Vec::new();
     for arg in std::env::args().skip(1) {
@@ -418,7 +418,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let tap_frames = tap_frames.next_power_of_two();
     // Taps live in the segment. With `--shm` the mapped file carries them; a
     // server without `--shm` but with taps gets an in-memory segment so
-    // `/tap_stream` still works (nothing else changes: the control buses just
+    // `/bus_tapStream` still works (nothing else changes: the control buses just
     // live inside it, exactly as in the embed case).
     let segment = match &shm_path {
         Some(path) => Some(Segment::create_full(
@@ -526,7 +526,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     println!(
-        "clausters — silent until /s_new | {} Hz, {} out / {} in ch | {} DSP worker(s) | OSC on {} | /quit or Ctrl-C to stop",
+        "clausters — silent until /synth_new | {} Hz, {} out / {} in ch | {} DSP worker(s) | OSC on {} | /server_quit or Ctrl-C to stop",
         backend.sample_rate,
         backend.channels,
         backend.input_channels,
@@ -536,7 +536,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // The OSC server runs on the main thread; the audio runs in cpal's
     // callback thread until `backend` is dropped.
     osc.run()?;
-    tracing::info!("received /quit, shutting down");
+    tracing::info!("received /server_quit, shutting down");
     Ok(())
 }
 

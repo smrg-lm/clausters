@@ -51,7 +51,7 @@ for (const t of [200, 300, 300, 300, 1000, 1000]) {
     );
 }
 console.log("packets sent:", sent.length, "queued:", clock.queued);
-const c = await server.request("/clock", [], { expect: ["/clock.reply"] });
+const c = await server.request("/clock_query", [], { expect: ["/clock_query.reply"] });
 console.log("clock reply:", c.args);
 clock.close();
 server.close();

@@ -13,11 +13,11 @@ The engine (`server::engine`) knows nothing about the audio backend: it processe
 
 | feature | default | what it adds |
 |---|---|---|
-| `synth` | yes | the SynthDef family: the UGen library, the def compiler (`/d_recv`) and `UGenSynth`. Independent from `faust` — the two def families combine freely, and a single-family build works (with neither, the engine core still builds but has no defs to instantiate). |
+| `synth` | yes | the SynthDef family: the UGen library, the def compiler (`/def_send synth`) and `UGenSynth`. Independent from `faust` — the two def families combine freely, and a single-family build works (with neither, the engine core still builds but has no defs to instantiate). |
 | `realtime` | yes | the cpal backend (the live server). Disable it for offline/embedded use with no audio device. |
 | `pipewire` | yes | native PipeWire audio backend on Linux/BSD via cpal's pipewire host. `cpal::default_host()` prefers PipeWire, falling back to ALSA at runtime, so no code changes. Default (the binary hard-links `libpipewire`); drop it with `--no-default-features` for a plain-ALSA build. Building it needs `libpipewire-0.3-dev` and `clang`. |
 | `midi-jack` | no | routes live MIDI through midir's JACK backend instead of ALSA seq (needed on PipeWire systems — the ALSA-seq backend panics on the timestamp of events bridged from PipeWire). Building it needs `libjack-jackd2-dev`. |
-| `faust` | yes | the FaustDef family: libfaust embedding (Box API + LLVM JIT, `/d_faust`). Needs libfaust built with the LLVM backend — see [Contributing](contributing.md). |
+| `faust` | yes | the FaustDef family: libfaust embedding (Box API + LLVM JIT, `/def_send faust`). Needs libfaust built with the LLVM backend — see [Contributing](contributing.md). |
 | `embed` | no | the C ABI (`clausters_*` exports) for embedding the server in another process — see [Local transports & embedding](ipc.md). |
 
 ## Offline rendering (the simplest entry point)
@@ -58,7 +58,7 @@ let (mut engine, mut handle) = engine_pair(48_000.0, 2);
 // (it resolves def names, allocates synths, keeps the tree mirror):
 let mut translator = CmdTranslator::new(48_000.0);
 let mut cmds = Vec::new();
-let msg = OscMessage { addr: "/s_new".into(), args: vec![/* … */] };
+let msg = OscMessage { addr: "/synth_new".into(), args: vec![/* … */] };
 translator.translate(&msg, &mut cmds)?;
 for cmd in cmds { let _ = handle.send(cmd); }
 
@@ -69,14 +69,14 @@ handle.collect_garbage();
 # Ok::<(), String>(())
 ```
 
-You can also construct `Cmd` values directly (see the rustdoc for the enum) if you don't need OSC. `engine_pair_with_workers` adds a DSP worker pool for `/g_parallel` groups; `engine_pair_full` wires an IPC segment so external processes share the control buses and sample clock.
+You can also construct `Cmd` values directly (see the rustdoc for the enum) if you don't need OSC. `engine_pair_with_workers` adds a DSP worker pool for `/group_parallel` groups; `engine_pair_full` wires an IPC segment so external processes share the control buses and sample clock.
 
 ## The pulled server: the whole server inside your audio callback
 
 Between the raw engine pair (above) and the threaded in-process server (below)
 sits `clausters::embed::ClaustersHeadless` (feature `embed`, no `realtime`
 needed): the **complete server** — the OSC translator, def machinery, buffer
-commands, `/c_stream`/`/tap_stream`, `/sync`, everything — with **no device,
+commands, `/bus_stream`/`/bus_tapStream`, `/server_sync`, everything — with **no device,
 no sockets and no threads**. The host owns the audio thread and pulls,
 callback-style:
 
@@ -98,9 +98,9 @@ Three properties define the mode:
   measured on the engine's sample axis (anchored at `unix_epoch`, the third
   constructor argument), not the wall clock — so an offline or faster-than-
   real-time drive stays deterministic, and a paused callback pauses time.
-- **NRT work runs inline.** `/b_alloc` and friends execute on the calling
+- **NRT work runs inline.** `/buffer_alloc` and friends execute on the calling
   thread in submission order; `b_load(index, channels, sample_rate, samples)`
-  installs host-decoded samples directly — the `/b_allocRead` replacement for
+  installs host-decoded samples directly — the `/buffer_allocRead` replacement for
   hosts without a filesystem (a browser page decodes with `decodeAudioData`
   and hands the engine the floats).
 - **Not RT-strict.** The serving turn allocates on the calling thread (the

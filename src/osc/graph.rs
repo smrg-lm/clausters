@@ -2,10 +2,10 @@
 //!
 //! The execution order problem: a node reading an audio bus must run *after*
 //! the nodes writing it, and scsynth makes the client manage that order by
-//! hand (`addAction`, `/n_before`). This module infers the dependency DAG
+//! hand (`addAction`, `/node_before`). This module infers the dependency DAG
 //! from the defs themselves — which audio buses each node reads (`In`,
 //! Faust `in`) and writes (`Out`/`ReplaceOut`, Faust `out`) — and keeps
-//! **opt-in auto-sorted groups** (`/g_sortMode`) in topological order, so
+//! **opt-in auto-sorted groups** (`/group_sortMode`) in topological order, so
 //! groups behave like the channels of a multitrack editor.
 //!
 //! Everything runs on the network thread against [`TreeMirror`], a mirror of
@@ -17,7 +17,7 @@
 //!
 //! Analysis rules:
 //! - A bus index that is a **constant or a control** is static and
-//!   contributes edges (writer before reader). A `/n_set` on a control used
+//!   contributes edges (writer before reader). A `/node_set` on a control used
 //!   as a bus index re-analyzes and re-sorts.
 //! - A bus index computed by a **signal** makes the node *dynamic*: a
 //!   conservative barrier that keeps its position, with nothing sorted
@@ -45,7 +45,7 @@ use crate::faust::synth::FaustDef;
 pub use crate::dsp::BusUsage;
 
 /// Analyzes a UGen def against a node's current control values. Returns the
-/// usage plus the control indices that act as bus indexes (a `/n_set` on one
+/// usage plus the control indices that act as bus indexes (a `/node_set` on one
 /// of those must re-run the analysis).
 #[cfg(feature = "synth")]
 pub fn ugen_usage(def: &SynthDef, controls: &[f32]) -> (BusUsage, Vec<u32>) {
@@ -154,19 +154,19 @@ pub fn stable_topo_sort(units: &[(i32, BusUsage)]) -> Vec<i32> {
 pub enum MirrorBody {
     Group {
         children: Vec<i32>,
-        /// `/g_sortMode`: re-sort on every topology or bus-usage change.
+        /// `/group_sortMode`: re-sort on every topology or bus-usage change.
         auto: bool,
-        /// `/g_parallel` (M13): mirrored for `/g_dumpGraph` introspection.
+        /// `/group_parallel` (M13): mirrored for `/group_dumpGraph` introspection.
         parallel: bool,
     },
     Synth {
         def_name: String,
-        /// Current control values (defaults, then `/s_new` and `/n_set`).
+        /// Current control values (defaults, then `/synth_new` and `/node_set`).
         controls: Vec<f32>,
         usage: BusUsage,
-        /// Control indices used as bus indexes; `/n_set` on these re-sorts.
+        /// Control indices used as bus indexes; `/node_set` on these re-sorts.
         bus_controls: Vec<u32>,
-        /// Active `/n_map`/`/n_mapa` bindings as `(control, bus, audio)`.
+        /// Active `/node_map`/`/node_mapAudio` bindings as `(control, bus, audio)`.
         /// An audio map adds the bus to the node's reads; mapping a
         /// `bus_controls` index makes the node a dynamic barrier (see
         /// [`TreeMirror::fold_maps_into_usage`]).
@@ -362,7 +362,7 @@ impl TreeMirror {
         }
     }
 
-    /// `/g_freeAll`: drop all children, keep the group.
+    /// `/group_freeAll`: drop all children, keep the group.
     pub fn free_all(&mut self, group: i32) {
         let Some(children) = self.children(group).map(<[i32]>::to_vec) else {
             return;
@@ -372,7 +372,7 @@ impl TreeMirror {
         }
     }
 
-    /// `/g_deepFree`: drop the synths of the group and its subgroups; the
+    /// `/group_deepFree`: drop the synths of the group and its subgroups; the
     /// groups stay.
     pub fn deep_free(&mut self, group: i32) {
         let Some(children) = self.children(group).map(<[i32]>::to_vec) else {

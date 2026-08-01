@@ -79,7 +79,7 @@ def test_perceptual_frequency_scales_round_trip():
 
 
 def test_osc_bundle_builds():
-    msg = osc.message("/s_new", "default", 1000, 1, 0, "freq", 440.0)
+    msg = osc.message("/synth_new", "default", 1000, 1, 0, "freq", 440.0)
     b = osc.score_bundle(0.0, msg)
     assert b.startswith(b"#bundle\x00")
     # framed score is a sequence of length-prefixed packets
@@ -90,10 +90,10 @@ def test_render_default_synth():
     sc = osc.score(
         osc.score_bundle(
             0.0,
-            osc.message("/s_new", "default", 1000, 1, 0, "freq", 440.0, "amp", 0.2),
+            osc.message("/synth_new", "default", 1000, 1, 0, "freq", 440.0, "amp", 0.2),
         ),
-        osc.score_bundle(0.2, osc.message("/n_free", 1000)),
-        osc.score_bundle(0.3, osc.message("/n_free", 0)),  # closes the render
+        osc.score_bundle(0.2, osc.message("/node_free", 1000)),
+        osc.score_bundle(0.3, osc.message("/node_free", 0)),  # closes the render
     )
     try:
         _st0 = clausters.render(sc, sample_rate=48_000.0, channels=2)

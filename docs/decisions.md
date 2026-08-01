@@ -18,15 +18,15 @@ memory leaves through a garbage FIFO to be dropped on the network thread.
 
 - **Defs and their control-name tables live only on the network thread.** The
   `HashMap<String, Arc<SynthDef>>` and a mirror `node_id → Arc<SynthDef>` (kept
-  from `/s_new`, cleaned on `Garbage::Freed`) stay off the audio thread, so
+  from `/synth_new`, cleaned on `Garbage::Freed`) stay off the audio thread, so
   `Cmd::SetControl` is plain-old-data and the audio thread never compares
-  strings. `/d_free` only removes the map entry — live synths keep their `Arc`
+  strings. `/def_free` only removes the map entry — live synths keep their `Arc`
   (exact scsynth semantics).
 - **UGen wiring allocates nothing.** `UGenSynth::process` builds each UGen's
   inputs in a fixed stack array (`MAX_UGEN_INPUTS`) via `split_at_mut` over the
   wires; the topological order guarantees inputs only read earlier wires.
   Guarded by `assert_no_alloc`.
-- **Asynchronous command semantics are deliberate.** A `/status` immediately
+- **Asynchronous command semantics are deliberate.** A `/server_status` immediately
   after a command may report the old count: commands apply at the start of the
   next block. That is scsynth's model, not a race.
 
@@ -41,7 +41,7 @@ independent Cargo features that combine freely — new work feature-gates agains
 
 ## Buses, execution order, and the network-thread mirror
 
-- **Control buses bypass the command FIFO.** `/c_set`/`/c_get` operate directly
+- **Control buses bypass the command FIFO.** `/bus_set`/`/bus_get` operate directly
   on shared atomics from the network thread; a synth sees the change on its next
   block — the same effect as routing through the FIFO, without the traffic.
 - **Execution order is audible and testable.** `Out` sums, `ReplaceOut`
@@ -56,7 +56,7 @@ independent Cargo features that combine freely — new work feature-gates agains
 
 The safety of parallelism must not depend on the network mirror (which can run
 ahead). So `BusUsage` masks travel *to the engine* inside `Cmd::AddSynth` (and
-are re-sent by `Cmd::SetUsage` when a `/n_set` touches a control used as a bus
+are re-sent by `Cmd::SetUsage` when a `/node_set` touches a control used as a bus
 index), and stage partitioning happens on the audio thread with its own data —
 pure bitops, no allocation. A greedy per-block rule in child order closes a
 stage on the first bus conflict, so writers to the same bus serialize in order.
@@ -121,7 +121,7 @@ Guarded by `tests/denormals.rs` and the Faust-tail test in `tests/golden.rs`.
 `faust` used to be an opt-in Cargo feature, purely to keep a development build
 free of the libfaust dependency. The cost of that convenience landed on the
 *user*: the packaged artifacts were built with the default features, so an
-installed wheel could not compile a `FaustDef` at all — `/d_faust` replied
+installed wheel could not compile a `FaustDef` at all — `/def_send faust` replied
 `/fail`, and one of the two def families was, in practice, unavailable. Two
 families we document as peers cannot have one of them missing from the product.
 
@@ -245,7 +245,7 @@ Two layers, decided with the user:
 - **B — JSON is the transparent source of truth.** `synthdefs/<name>.json` is the
   `SynthDefSpec` verbatim; `faustdefs/<name>.json` is a `FaustRecord`
   (source/JSON + libfaust version + payload sha256). Reload = recompile from
-  there, by the same path as a fresh `/d_recv`/`/d_faust`. The `FaustDef` itself
+  there, by the same path as a fresh `/def_send`. The `FaustDef` itself
   is never serialized — its factory is opaque LLVM JIT state.
 - **A — the LLVM bitcode cache is non-authoritative.** `faustdefs/<name>.<sha16>.bc`
   is restored only if the libfaust version matches and the file reads cleanly; any
@@ -256,11 +256,11 @@ Two layers, decided with the user:
 ## MIDI: standard channel-voice, byte-identical to OSC, in a shared crate
 
 - **A MIDI voice realizes the *same* OSC commands an OSC client would send.**
-  `CmdTranslator::translate_midi` maps note-on → `/s_new` (with `freq`/`amp`
-  from named conversions), note-off → `/n_free` or `/n_set gate 0`,
-  aftertouch/CC/bend → `/n_set` on live voices. Reusing the OSC path makes a MIDI
+  `CmdTranslator::translate_midi` maps note-on → `/synth_new` (with `freq`/`amp`
+  from named conversions), note-off → `/node_free` or `/node_set gate 0`,
+  aftertouch/CC/bend → `/node_set` on live voices. Reusing the OSC path makes a MIDI
   voice byte-identical to its OSC equivalent, and the reserved voice-ID range
-  (`MIDI_NODE_ID_BASE`) stays disjoint from client and `/s_new -1` IDs.
+  (`MIDI_NODE_ID_BASE`) stays disjoint from client and `/synth_new -1` IDs.
 - **MIDI lives in a reusable native crate, not the Python client.** The original
   plan (MIDI 1.0 in a Python library) was scrapped: MIDI belongs in
   `crates/clausters-midi` (a versioned C ABI, shared by client and server), with
@@ -273,8 +273,8 @@ Two layers, decided with the user:
 Decided with the user: a single global transport, and a conductor's
 play/stop/locate drives every client's playhead in lockstep. The server
 broadcasts transport *control* (`/transport_play|stop|locate`, pushed to
-`/notify` clients) and **never schedules audio** — each client rolls its own
-playhead on the shared grid. The `/transport.reply` carries `playing` and
+`/server_notify` clients) and **never schedules audio** — each client rolls its own
+playhead on the shared grid. The `/transport_query.reply` carries `playing` and
 `position` beside the three tempo fields it started with.
 
 ## One seeded random context per script
@@ -746,7 +746,7 @@ data still parses.
 MIDI-note ↔ name / black-key spelling on the keyboard — went to
 `clausters_core::scale` (`note_name`/`pitch_class`/`is_black_key`), beside the
 perceptual frequency scales; its FFI export is **deferred** until a client
-evaluates it client-side (the `envshape`/tap-reader precedent). Everything else is
+evaluates it client-side (the `envshape`/bus_tap-reader precedent). Everything else is
 display-only and stays gui-side. The edit-back stays flat payloads, not new
 addresses: `"notes"` (`start dur pitch velocity channel …`) and `"osc"`
 (`time label …`) — the fourth use of the one edit-back pattern.
@@ -800,12 +800,12 @@ common case, controlled networks for sound installations) get nothing back from
 staying datagram-only. TCP's framing makes size a **configuration**, not a
 protocol property: the length-prefix ceiling exists only so an untrusted prefix
 cannot drive an allocation, so it is a boot option (`--max-frame`, default
-16 MiB, advertised in `/server_info.reply` for clients to size bulk requests
+16 MiB, advertised in `/server_query.reply` for clients to size bulk requests
 from) rather than a constant — no limit is hard-wired, per the rule that the
 project must stay usable as a desktop/mobile application without arbitrary
 ceilings. Timing is unaffected by the switch: it rides on bundle timetags and
-`/sched`, never on arrival time. Replies became transport-aware in the same
-move (a `/tap_stream` window may fill a whole frame for a stream client; UDP
+`/sched_at`, never on arrival time. Replies became transport-aware in the same
+move (a `/bus_tapStream` window may fill a whole frame for a stream client; UDP
 keeps the datagram-safe clamp), and the IPC command rings deliberately stayed
 at 64 KiB — large payloads ride TCP even locally, and growing the ring would
 bump the versioned segment layout for no demonstrated need.
@@ -855,7 +855,7 @@ Two out-of-the-box defaults, chosen for the common case of a **local** session:
   note-off (the node is freed mid-cycle). It is now `Sine * EnvGen * amp` with
   a gated ASR — equal-power sine ramps (0.01 s attack, 0.3 s release),
   `doneAction = FREE_SELF` — the same shape as SuperCollider's `\default`. Because
-  a click-free note-off *requires* a release ramp, and a direct `/n_free` cuts
+  a click-free note-off *requires* a release ramp, and a direct `/node_free` cuts
   the ramp, the player must release this instrument by **closing its gate**. The
   global event default stays `has_gate = False` (a gate-less custom def is still
   freed directly, so it can never leak); the player special-cases `instrument ==
@@ -866,7 +866,7 @@ Two out-of-the-box defaults, chosen for the common case of a **local** session:
   by default** (config `[client].clock`, default `"sample"`), rather than
   wall-clock OSC timetags. For a local session the sample clock is strictly
   better — drift-free and sample-exact — and making it the default also
-  exercises the `/sched` path on every run. It falls back to wall-clock
+  exercises the `/sched_at` path on every run. It falls back to wall-clock
   gracefully if no master answers, so a client with no Clausters server still
   works; `"monotonic"` opts out for driving a remote or non-Clausters peer.
   `Session.embed()` was excluded at first — the sample-clock tracker reaches the
@@ -890,7 +890,7 @@ track of a resource. The audit's headline: the event player allocated one node
 id per note and never returned it, so a long-running session marched the id
 space monotonically into the server's reserved ranges (silent duplicate-id
 rejections at two million notes) and eventually into `struct.pack` overflow;
-the server's own `/s_new -1` and MIDI-voice counters wrapped `i32` in release
+the server's own `/synth_new -1` and MIDI-voice counters wrapped `i32` in release
 builds; the client bus allocator reused freed runs only at exact width and
 would hand out the GraphDef reserved top of the bus space.
 
@@ -904,11 +904,11 @@ the weight:
 
 - **Release follows the resource, not the request.** A node id returns to its
   registry when the node *dies* — the server releases auto/MIDI ids as `End`
-  events drain, a client releases its ids on `/n_end` (never at `/n_free`-send
+  events drain, a client releases its ids on `/node_end` (never at `/node_free`-send
   time, which could re-hand an id whose node is still alive). The registry is
   passive (events are fed in; it never calls out), which keeps it identical
   across bindings and wasm-compatible. The corollary: an engine rejection
-  produces no `/n_end`, so the server broadcasts `/fail` **with the id
+  produces no `/node_end`, so the server broadcasts `/fail` **with the id
   appended** — otherwise the client's in-flight id would be lost, violating
   invariant three.
 - **Every capacity is bounded at boot, including node ids**, even though ids
@@ -917,9 +917,9 @@ the weight:
   (`NodeIdPartition::from_max_nodes` — client 4×, auto 2×, MIDI 2× — replacing
   the magic 2M/3M bases). A bounded registry turns a leak into a visible
   fail-fast error, preallocates once (no growth, no `i32` overflow), and lets
-  clients size themselves from `/server_info`'s `max_nodes` by the shared
+  clients size themselves from `/server_query`'s `max_nodes` by the shared
   formula — by query, not convention. The sanctioned exception is NRT/score:
-  no real-time bound and no live `/n_end` stream, so a score client's node-id
+  no real-time bound and no live `/node_end` stream, so a score client's node-id
   registry is unbounded by design.
 
 **Generous defaults (2026-07-16 follow-up).** With every id space bounded and
@@ -933,7 +933,7 @@ The memory cost is small: ~2 MB of node slab, 64 KB of control buses (the shm
 segment's default instance grows to 721 600 bytes), 4 KB per created group.
 One capacity now *scales* rather than being constant: the node-event and
 garbage FIFOs grow to `2 × max_nodes` at boot (floor 2048/1024), because the
-registries recycle off `/n_end` — a dropped end event is a client id that
+registries recycle off `/node_end` — a dropped end event is a client id that
 never returns, so a full-tree mass-free must fit one turnover per drain.
 
 ## The verbs divide by state: an element is rendered, a timeline is played
@@ -1078,7 +1078,7 @@ individually reasonable decisions composed into a silent wrong answer.
 
 **Why a name prefix rather than a wire flag.** Persistence is a property of
 the *def*, and the name already travels with it everywhere: no per-command
-argument, no ABI move, and a log line or a `/d_query` listing says which defs
+argument, no ABI move, and a log line or a `/def_query` listing says which defs
 are throwaway without consulting anything. The cost is that a user def named
 `tmp_...` is ephemeral too — which is the documented meaning of the prefix
 rather than a leak, the same way a leading underscore means private in Python.
@@ -1154,7 +1154,7 @@ re-transforms the kernel *inside the audio callback* on a swap trigger — a
 cost spike that violates every RT rule Clausters has. M28 takes the opposite
 shape: **one** `Conv` UGen (uniformly partitioned overlap-save with a
 frequency-domain delay line), with the kernel spectra computed **once, off the
-audio thread**, by the typed `/b_gen prepare_partconv` routine into an
+audio thread**, by the typed `/buffer_gen prepare_partconv` routine into an
 ordinary immutable pool buffer — the scsynth `PartConv`+`PreparePartConv`
 lineage, which was always the one design compatible with the immutable-buffer
 pool and the no-allocation callback.
@@ -1357,8 +1357,8 @@ format. The split of labor is deliberate: the boot's **ordering and encoding**
 live in the GUI host's platform-agnostic `host::bundle` module (natively
 unit-tested; it mirrors the server's own boot order — defs → graphdefs → boot
 preset → the GuiDef's `boot` messages), while the **fetching** stays in page
-JS (`clients/gui/web/bundle.js`). The replay is bracketed by two `/sync`s: the
-engine serves strictly in order, so the trailing `/synced` is the page's
+JS (`clients/gui/web/bundle.js`). The replay is bracketed by two `/server_sync`s: the
+engine serves strictly in order, so the trailing `/server_sync.reply` is the page's
 "bundle is up" signal — no per-command acking.
 
 - **The one addition is `bundle.json`**, a manifest at the bundle's root
@@ -1366,13 +1366,13 @@ engine serves strictly in order, so the trailing `/synced` is the page's
   native store lists it. It is generated (`web/bundle-manifest.py`), never
   hand-maintained, and also carries the one genuinely browser-side mapping:
   which audio URL feeds which server buffer (fetch + `decodeAudioData` →
-  the engine's `b_load` — the browser's `/b_allocRead`, decoded by the host
+  the engine's `b_load` — the browser's `/buffer_allocRead`, decoded by the host
   page because the wasm engine has no sndfile).
 - **The in-page leg is one more `ServerLink` variant, not a new protocol.**
   `ServerLink::Page` hands outbound packets to a page-registered callback and
   takes replies through `GuiBridge.server_reply`; the host's streamed data
-  paths (`/c_stream`, `/tap_stream`, `/b_getn`, `/clock`) run over it
-  unchanged — the acceptance smoke watches the meter's `/c_set` stream arrive
+  paths (`/bus_stream`, `/bus_tapStream`, `/buffer_getRange`, `/clock_query`) run over it
+  unchanged — the acceptance smoke watches the meter's `/bus_set` stream arrive
   with moving values.
 - MIDI bindings, the remaining thing the native data-dir boot restores, are
   deliberately not replayed: the browser has no MIDI leg.
@@ -1395,8 +1395,8 @@ Context (the B track's capstone): the web components had a deferred design
   is wired inside `guiHost()`'s first boot, exactly once. The engine handle's
   single `onReply` slot is owned by the singleton and fanned out to a
   listener set, so any number of components, watchers and REPL scripts
-  coexist; per-boot `/sync` ids keep concurrent bundle boots from mistaking
-  each other's `/synced`.
+  coexist; per-boot `/server_sync` ids keep concurrent bundle boots from mistaking
+  each other's `/server_sync.reply`.
 - **One canvas, adopted by the last-booted element.** The browser GUI host
   shows one window-rooted def on one canvas (its long-standing shape), so
   `<clausters-bundle>` does not pretend otherwise: booting an element moves
@@ -1480,8 +1480,8 @@ core-backed one replaced it. Unmaintainable as the client track grows.
 ## The piano's host voices use explicit node ids from a dedicated high window
 
 Context (the `piano` widget's voice mode): a key press must spawn a server
-voice the key *release* can later reach — `/s_new` on press, `/n_set <id> gate
-0` on release. The server-assigned id form (`/s_new … -1`) was rejected for
+voice the key *release* can later reach — `/synth_new` on press, `/node_set <id> gate
+0` on release. The server-assigned id form (`/synth_new … -1`) was rejected for
 exactly that reason: the host would never learn the id it needs to gate, and
 adding a reply round-trip for it would put a network latency inside a played
 note. So the host sends **explicit positive ids**, which the server accepts
@@ -1492,7 +1492,7 @@ from any client, and allocates them from a dedicated window:
   (`1000 + 4·max_nodes ..`), so a host voice can never collide with a node a
   script created — the three allocators partition the id space by
   construction, with no coordination protocol.
-- **No `/n_end` tracking.** A voice def is required to free itself on release
+- **No `/node_end` tracking.** A voice def is required to free itself on release
   (`FREE_SELF` on the gate envelope), so the host's bookkeeping is just the
   live `(pitch, node)` pairs per widget: the release (or a glissando, a
   re-press, a widget free/redefine — all of which gate the old voice) removes
@@ -1505,7 +1505,7 @@ playing voices, a drum grid): reuse this window, not a new one per widget.
 ## EnvGen: a gate already closed at the first sample is a release, not a wait
 
 Context (found through the piano widget, but a server-wide property): a live
-client's note-on (`/s_new … gate 1`) and its note-off (`/n_set … gate 0`) can
+client's note-on (`/synth_new … gate 1`) and its note-off (`/node_set … gate 0`) can
 land in the **same command drain** — the engine drains the whole FIFO at block
 start, and both messages may have accumulated during one audio callback
 interval (a PipeWire quantum is ~20 ms; any note shorter than that can lose
@@ -1580,7 +1580,7 @@ inherit it gave the plane a restriction only the special case means.
 
 ## The UGen registry owns its input names; the client tables become mirrors
 
-`/u_query` needed the catalog to report each UGen's inputs, and the descriptors
+`/ugen_query` needed the catalog to report each UGen's inputs, and the descriptors
 in `src/dsp/registry.rs` carried only an *arity* — a count. The names existed,
 but in two places that no client can consult: the catalog table in
 `docs/schemas.md` (prose) and the parameter names of the lowercase callables in
@@ -1692,7 +1692,7 @@ description of where the track already is.
 extended.** Level-2 representation reads the def object **in memory**, which
 covers the authoring case (a def you built or loaded through the client).
 Inspecting a def the server holds but no client in this process built would
-require the server to report each def's internal UGen graph over `/d_query` —
+require the server to report each def's internal UGen graph over `/def_query` —
 **deliberately not done**: it would add per-def storage and processing to the
 server for something the arrangement model does not do for its other abstractions
 either. It stays an explicit later decision, never a prerequisite of this track.
@@ -1723,7 +1723,7 @@ pass land in `clausters-core`": that holds for the level-1 pass; level 2, having
 pass, keeps its model where `GraphPatch` already lives. Two smaller decisions fell
 out of decoding a def **headless** (`plot_def` runs no server): a UGen box's inlet
 names come from **the client's own builder signatures** (`ugen_input_names`, the
-same callables the `/u_query` contrast test pins to the server registry — no new
+same callables the `/ugen_query` contrast test pins to the server registry — no new
 verb), falling back to positional for the generic op UGens and the wire-misaligned
 kinds; and an **unset UGen output rate defaults to audio** — the exact per-kind
 default is the server compiler's, not the client's, so the view takes the honest
@@ -2019,7 +2019,7 @@ match the `/gui_event` back. Two questions had to be settled: **where** ids are
 allocated, and **how** a script refers to a widget without naming an integer.
 
 **Allocation stays client-side, mirroring `NodeIdAllocator`.** The tempting
-alternative — the host assigns ids the way `/s_new … -1` lets the audio server
+alternative — the host assigns ids the way `/synth_new … -1` lets the audio server
 assign a node id — was rejected for the GUI for the same reason the piano's host
 voices reject it (see above): the client needs the id *immediately* (to `set`,
 `bind`, wire an edit-back), so a host-assigned id would force a reply round-trip
@@ -2374,7 +2374,7 @@ place.
 
 **`FreeSelf`/`PauseSelf` do not latch.** They report their action for the block
 just processed. For `FreeSelf` the difference is unobservable (the node is gone
-either way), but a latched `PauseSelf` would re-pause the instant `/n_run 1`
+either way), but a latched `PauseSelf` would re-pause the instant `/node_run 1`
 resumed the node — making the command useless and turning a gate into a one-way
 door. So the action is recomputed per block rather than remembered.
 
@@ -3044,7 +3044,7 @@ cannot infer int-vs-float from a value the way Python does. The `Server` therefo
 tags **by position** — node ids, bus indices and add actions as int32, control
 values as float32 — and only the free-form `sendMsg`/`genBuffer` guess (an
 integral number is an int32), with an explicit `[tag, value]` pair as the escape
-hatch where the guess is wrong (`/b_gen`'s flag word).
+hatch where the guess is wrong (`/buffer_gen`'s flag word).
 
 ## A GuiDef from TypeScript: the options are the language's, the document is the wire's
 
@@ -3120,7 +3120,7 @@ the two carriers need different work:
   quantum per render quantum of that context), so from then on the counter is
   `currentTime` read synchronously: exact, and drift is not a thing between a
   clock and itself.
-- **over a socket** — `/clock` round trips feed the core's `SampleClockModel`,
+- **over a socket** — `/clock_query` round trips feed the core's `SampleClockModel`,
   which regresses local time against the server's counter. The warmup must
   **spread its anchors over time**: five back-to-back round trips all land
   inside a couple of milliseconds, and a regression over that span is noise, not
@@ -3167,7 +3167,7 @@ a click focuses them, which is when keyboard input is wanted anyway.
 three in the viewport. The browser already skips compositing what is off screen,
 but that does not stop *our* host from computing the frame — the spectrum
 analysis, the scope advance, the FFT — nor, more expensively, from keeping its
-`/c_stream` and `/tap_stream` subscriptions alive, which is server CPU and wire
+`/bus_stream` and `/bus_tapStream` subscriptions alive, which is server CPU and wire
 traffic for something nobody is looking at. So each component carries an
 `IntersectionObserver`, and every per-frame and per-packet cost is derived from
 the **visible** set (`host::live::demand`, platform-agnostic and natively
@@ -3184,7 +3184,7 @@ them at mount.
 
 The load-bearing decision is *where placeholders are allowed*: *only* in the
 GuiDef record and its `boot` list, never in a def payload. That is what makes a
-second instance cheap — the `/d_recv` and `/d_graph` payloads are byte-identical
+second instance cheap — the `/def_send synth` and `/def_send graph` payloads are byte-identical
 between instances, so they are sent to the server once and shared. It also
 forces one authoring rule, which is the right rule anyway:
 
@@ -3343,7 +3343,7 @@ thread. The goniometer and the spectroscope took only taps, in pairs and runs.
 So the surface said there were two kinds of signal, `bus` and `tap`, when the
 server has exactly one kind of thing at two rates. Worse, the "tap" number was
 not even a bus at a different rate: it is *which of eight canaletas is currently
-carrying that bus*, which the caller had to allocate, route (`/tap tapIndex
+carrying that bus*, which the caller had to allocate, route (`/bus_tap tapIndex
 bus`), thread into the widget, and release. Every layer above the segment —
 the wire, the host, both clients, the examples, the books — repeated that
 bookkeeping.
@@ -3355,13 +3355,13 @@ with a keystroke to flip it), and it makes bus 0 — the first hardware output �
 the default a bare `scope()` or `meter()` shows.
 
 The ring does not disappear; it stops being anyone's business but the server's.
-`/tap bus watch` replaces `/tap tapIndex bus`: the client asks for a bus, the
+`/bus_tap bus watch` replaces `/bus_tap tapIndex bus`: the client asks for a bus, the
 **server** picks the ring and publishes the choice in a per-bus directory in the
 segment, so every reader resolves bus → samples by lookup. Watches are counted,
 so two views of one bus share one ring and the last one to stop frees it. The
 GUI host is what turns a widget into that command — it diffs the audio buses its
 open documents read whenever a def, a free or a set changes them — and a
-`/tap_stream` subscription *is* a watch, so a browser client never issues the
+`/bus_tapStream` subscription *is* a watch, so a browser client never issues the
 command at all.
 
 Why the host and not each client: the alternative was to keep the ring on the
@@ -3623,7 +3623,7 @@ itself, which meant a duplicate WAV writer, a duplicate decision about sample
 format, and — because the stdlib `wave` module cannot read a float32 WAV — no way
 to read back what it had just written. Meanwhile the server had both halves
 already: `render_to_wav` streams a score to disk through hound, and `read_audio`
-decodes WAV/FLAC/OGG/MP3/AAC/ALAC/AIFF for `/b_allocRead`. Neither was reachable
+decodes WAV/FLAC/OGG/MP3/AAC/ALAC/AIFF for `/buffer_allocRead`. Neither was reachable
 from a client.
 
 The reading half became an FFI export, because a client genuinely needs the
@@ -3643,8 +3643,8 @@ the audio goes, not whether there is a result**: every render returns one
 file. The alternative — samples in one case, a bare frame count in the other —
 makes every caller branch on an argument it passed itself.
 
-**Interleaved stays the currency.** It is the server's own layout (`/b_getn`
-indexes `frame * channels + channel`; `/b_export` writes the same order), so
+**Interleaved stays the currency.** It is the server's own layout (`/buffer_getRange`
+indexes `frame * channels + channel`; `/buffer_export` writes the same order), so
 audio *going to* the server needs no conversion, and the one place the server
 goes planar — Faust's `soundfile` — it converts internally. Deinterleaving is a
 client-side convenience for analysis, and it stays in Python rather than the
@@ -3682,7 +3682,7 @@ a moment into wire time. The interfaces keep receiving an absolute instant, so
 none of their signatures moved, in either client.
 
 What that leaves in `Server` is exactly what belongs to a server *we control*:
-its `latency`, `/sched` at an absolute sample, `/sync`, and the offline score.
+its `latency`, `/sched_at` at an absolute sample, `/server_sync`, and the offline score.
 None of those is standard OSC, and none of them is an external application's
 business — least of all latency, which is the headroom our audio pipeline needs,
 not a fact about someone else's program. An external destination therefore adds
@@ -3728,8 +3728,8 @@ rather than implied.
 
 The tree then had no reason to invent a shape: it is the node catalog, so its
 entries are `NodeInfo`s and what it adds is the nesting. That needed the wire
-to carry as much per tree entry as `/n_info` does, which is why scsynth's
-`/g_queryTree` *flag* widened into a **detail level** — 0 and 1 remain what
+to carry as much per tree entry as `/node_query.reply` does, which is why scsynth's
+`/group_queryTree` *flag* widened into a **detail level** — 0 and 1 remain what
 scsynth sends, 2 appends the maps and inferred bus lists. The client asks for 2
 and derives the rest from the structure it already received: a node's parent,
 its siblings, a group's head and tail. One reply, no follow-up query per node.
@@ -3738,11 +3738,57 @@ The tree is data first and drawing second, which in Python is exactly the
 `toString()`).
 
 Finally, absence. Three commands had three answers for "it is not there":
-`/d_query` reported an empty family, `/b_query` zeros (indistinguishable from a
-real buffer), `/n_query` a `/fail`. A resource that is gone is a **state of the
+`/def_query` reported an empty family, `/buffer_query` zeros (indistinguishable from a
+real buffer), `/node_query` a `/fail`. A resource that is gone is a **state of the
 resource**, not a protocol error — and a batch query must survive one dead id,
-which is why `/d_query` never failed in the first place. So every singular query
+which is why `/def_query` never failed in the first place. So every singular query
 now answers with a record whose `exists` is false, marked on the wire by a
 sentinel in a field that has no valid negative value: `isGroup = -1`,
 `frames = -1`, the empty family. `/fail` is left for what it should always have
 meant — a malformed request.
+
+## One naming rule beats compatibility with a name nobody types twice
+
+Clausters spoke scsynth's command names because it speaks scsynth's *model*, and
+inheriting the vocabulary looked free. It was not. scsynth's rule is
+`/<letter>_<verb>`, where the letter is a resource class (`n`, `s`, `g`, `b`,
+`c`, `d`, `u`); everything Clausters added had no letter to take, so it grew a
+second tier of full-word namespaces — `/graph_new`, `/midi_bind`,
+`/transport_play`, `/tap_stream`, `/server_info` — and the protocol carried two
+conventions at once. Worse, the seams between them had gone quietly wrong:
+`_info` was the reply suffix everywhere (`/n_info`, `/b_info`, `/d_info`) except
+in `/server_info`, which was a command; watching a control bus was named after
+the resource (`/c_stream`) and watching an audio bus after the mechanism
+(`/tap`); `u_` meant a UGen *instance* in `/u_cmd` and the UGen *catalog* in
+`/u_query`; and sending a def was `/d_recv`, `/d_faust` or `/d_graph` — two of
+them naming a family where the third named an action.
+
+The decision is to **break the command names completely** and spell every one of
+them by a single rule, `/<resource>_<action>` with the resource as a full word,
+replies as `<command>.reply`, and ranges as `Range`. The reference states the
+rule at the top ([`schemas.md`](schemas.md)), because a convention a reader can
+apply is worth more than a table they have to consult.
+
+What made this affordable is that the compatibility being given up was never
+real. Clausters had already diverged in the places that decide whether sclang
+can drive it — its own def formats instead of `.scsyndef`, a typed `/cmd`
+surface, a persistent `/error` toggle — so it was close enough to look like a
+drop-in and far enough to fail as one, which is the worst of both. And the model
+is what a SuperCollider reader actually carries over: the node tree, the add
+actions, the bus and buffer pools, the async barrier. Those are unchanged. Only
+the spelling moved, and it moved mechanically (`/s_new` → `/synth_new`,
+`/c_getn` → `/bus_getRange`).
+
+Two commands changed shape rather than just spelling, and both for the same
+reason — the old name was carrying a datum:
+
+- **`/def_send <family> …`** replaces `/d_recv`/`/d_faust`/`/d_graph`. A def has
+  a family whatever command sent it; `/def_query` already reports it, in the
+  same three spellings. So the family is an argument, and one command sends a
+  def.
+- **`/transport_query`** splits off `/transport_set`. One command that queried
+  when called with no arguments and set when called with two was two commands
+  wearing one name — and only the query has a reply to name.
+
+Pre-1.0, nothing here is frozen; the counterpart obligation is that the four
+packages move together, which this change did in one commit.

@@ -11,8 +11,8 @@
 //! This module is **transport-independent**: it parses/represents a decoded
 //! [`ChannelVoiceMessage`] and holds the binding state ([`MidiBindings`]); the
 //! mapping to engine commands lives in [`crate::osc::translate::CmdTranslator`]
-//! (`translate_midi`), which synthesizes the equivalent `/s_new` / `/n_set` /
-//! `/n_free` and reuses the OSC path, so a MIDI-driven voice is byte-identical
+//! (`translate_midi`), which synthesizes the equivalent `/synth_new` / `/node_set` /
+//! `/node_free` and reuses the OSC path, so a MIDI-driven voice is byte-identical
 //! to the OSC one. The wire transport (how UMP/MIDI bytes arrive — UDP MIDI
 //! 2.0, ALSA seq, or a virtual port) is the remaining open decision; see
 //! `PLAN.md` M17. All of this runs on the network thread, never the audio
@@ -34,8 +34,8 @@ pub mod live;
 
 // MIDI-spawned voices get node IDs from a reserved range of the node-id
 // partition (`clausters_core::registry::NodeIdPartition`), disjoint from the
-// client ID space and the `/s_new -1` auto range, every range scaled from
-// `--max-nodes`. The range is a registry: ids return on `/n_end`.
+// client ID space and the `/synth_new -1` auto range, every range scaled from
+// `--max-nodes`. The range is a registry: ids return on `/node_end`.
 
 /// A decoded standard channel-voice message, normalized to MIDI 2.0 / UMP
 /// resolution. One variant per message type the actuation path handles.
@@ -163,7 +163,7 @@ pub struct MidiBinding {
     pub instrument: String,
     pub target: i32,
     pub action: i32,
-    /// Note off sets `gate_control` to 0 (gate-aware defs) instead of `/n_free`.
+    /// Note off sets `gate_control` to 0 (gate-aware defs) instead of `/node_free`.
     pub gate: bool,
     /// Control names per message type (overridable via `/midi_map`).
     pub freq_control: String,
@@ -180,7 +180,7 @@ pub struct MidiBinding {
     pub programs: HashMap<u8, String>,
     /// M18: when the instrument is a **GraphDef**, the shared instance group
     /// spawned at bind time. A note then spawns a per-voice sub-graph
-    /// (`/graph_voice`) inside it instead of a plain `/s_new`. Runtime only —
+    /// (`/graph_newVoice`) inside it instead of a plain `/synth_new`. Runtime only —
     /// not persisted (it is re-instantiated on restore, M19).
     #[serde(skip)]
     pub graph_instance: Option<i32>,

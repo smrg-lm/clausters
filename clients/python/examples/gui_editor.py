@@ -80,7 +80,7 @@ def render_stereo(path: str) -> list:
     """Bounces the phrase to `path` and reads it back.
 
     The server writes the WAV (`render(path=...)` hands the score to the
-    ``--nrt`` renderer), so the same file feeds two consumers: `/b_allocRead`
+    ``--nrt`` renderer), so the same file feeds two consumers: `/buffer_allocRead`
     loads it into a buffer for the playhead to sound, and `read_soundfile`
     brings the samples here for the waveform view -- interleaved f32, the
     layout everything downstream already speaks.
@@ -123,10 +123,10 @@ print(f"audio server on segment {server.shm}")
 
 
 # The playhead's sound source: the very file the render wrote, in a server
-# buffer, looped by a synth. Nothing converts it -- /b_allocRead reads float
+# buffer, looped by a synth. Nothing converts it -- /buffer_allocRead reads float
 # WAV through the same decoder read_soundfile used above.
 bufnum = server.buffers.alloc()
-server.send_msg("/b_allocRead", bufnum, wav_path)
+server.send_msg("/buffer_allocRead", bufnum, wav_path)
 SynthDef(
     "sampler",
     out(0.0, play_buf(float(bufnum), 0.0)),
@@ -168,12 +168,12 @@ _closed = False
 
 
 def play_pass():
-    """(Re)start a buffer pass and anchor the playhead at the /clock sample where
+    """(Re)start a buffer pass and anchor the playhead at the /clock_query sample where
     buffer position 0 starts sounding."""
     global _synth
     if _synth is not None:
         _synth.free()
-    _, args = server.request("/clock", expect=("/clock.reply",))
+    _, args = server.request("/clock_query", expect=("/clock_query.reply",))
     clock_samples = float(args[0])
     _synth = Synth.new("sampler", server=server)
     win["wave"].set(playhead_at=clock_samples)

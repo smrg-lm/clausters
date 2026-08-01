@@ -36,20 +36,20 @@ This is the model for a bare clock, or when driving something other than a Claus
 
 ## Sample clock — drift-free, locked to a master (the session default)
 
-Locking the clock to a Clausters server makes it schedule on the **server's own sample counter** (via `/sched`, by absolute sample), which removes the drift between the client's clock and the audio device. A `Session.live()` does this **for you by default**, so a local live session is drift-free out of the box; a bare clock opts in with one call:
+Locking the clock to a Clausters server makes it schedule on the **server's own sample counter** (via `/sched_at`, by absolute sample), which removes the drift between the client's clock and the audio device. A `Session.live()` does this **for you by default**, so a local live session is drift-free out of the box; a bare clock opts in with one call:
 
 ```python
 session = Session.live(host, port)   # already sample-locked (config [client].clock = "sample")
 clock.lock_to(server)                # a hand-built clock: lock it explicitly
 ```
 
-- The server becomes the **master clock**. Over UDP the client tracks the server's published `/clock` anchor on its own socket; with an in-process or shared-memory server it reads the counter directly.
+- The server becomes the **master clock**. Over UDP the client tracks the server's published `/clock_query` anchor on its own socket; with an in-process or shared-memory server it reads the counter directly.
 - **Drift-free and sample-coherent.** Events land on exact samples, and several clients locked to the same master share one sample axis.
 - **Graceful.** With no reachable master — an offline render, or no server running — `lock_to` leaves the clock on wall-clock time instead of failing.
 
 ### Watching it, from Python
 
-The point of this model is real, drift-free timing, so it is worth *seeing* it. The sample-clock tracker reads the server's live position from real `/clock` replies; everything below is plain Python, with a server running (the installed `clausters` command). Build the tracker explicitly so you can read it, and hand its timebase to the clock:
+The point of this model is real, drift-free timing, so it is worth *seeing* it. The sample-clock tracker reads the server's live position from real `/clock_query` replies; everything below is plain Python, with a server running (the installed `clausters` command). Build the tracker explicitly so you can read it, and hand its timebase to the clock:
 
 ```python
 sc = server.sample_clock()                  # a tracker on its own socket
@@ -63,7 +63,7 @@ after = sc.now()
 print(f"counter advanced {after - before} samples = {(after - before) / sc.rate:.3f} s")
 ```
 
-`sc.now()` is the server's real sample counter (the model is fit from live round trips, not guessed), `sc.rate` is its measured sample rate, and `sc.model.drift_ppm()` is the actual measured difference between the two clocks. To verify the lock: the advance should match the `3.0` seconds you ran the clock to within the tracker's small uncertainty, and `drift_ppm` should be a handful of ppm, not hundreds. (The server can also print the exact sample of each scheduled event at trace level — enable it from Python with `server.request("/verbosity", "clausters::osc=trace", expect=("/done",))` and read the server's own terminal — but the client-side reading above needs nothing but Python.)
+`sc.now()` is the server's real sample counter (the model is fit from live round trips, not guessed), `sc.rate` is its measured sample rate, and `sc.model.drift_ppm()` is the actual measured difference between the two clocks. To verify the lock: the advance should match the `3.0` seconds you ran the clock to within the tracker's small uncertainty, and `drift_ppm` should be a handful of ppm, not hundreds. (The server can also print the exact sample of each scheduled event at trace level — enable it from Python with `server.request("/server_verbosity", "clausters::osc=trace", expect=("/done",))` and read the server's own terminal — but the client-side reading above needs nothing but Python.)
 
 `clock.lock_to(server)` is the same lock in one call when you do not need the tracker handle; it falls back to wall-clock time if no master answers.
 
@@ -74,7 +74,7 @@ print(f"counter advanced {after - before} samples = {(after - before) / sc.rate:
 Locking to a master gives every client the same sample axis, but each routine still *starts* whenever you play it. To make several clients begin on the **same beat**, two pieces work together:
 
 - **`quant`** — `clock.play(routine, quant=4)` (or `session.play(pattern, quant=4)`) snaps the routine's start to the next beat that is a multiple of `quant` (a bar in 4/4). `None` or `0` starts immediately. On its own it snaps to the clock's own grid — handy for one client adding a voice cleanly on the next bar.
-- **A shared transport** — `clock.join_transport(server)` (or `Session.join_transport()`) adopts the server's `/transport` grid: its tempo and an origin every client shares. Now `quant` snaps to *that* grid, so every client on it hits the same bar. One client (the conductor) defines it with `server.set_transport(origin_sample, tempo)`; the others join.
+- **A shared transport** — `clock.join_transport(server)` (or `Session.join_transport()`) adopts the server's `/transport_set` grid: its tempo and an origin every client shares. Now `quant` snaps to *that* grid, so every client on it hits the same bar. One client (the conductor) defines it with `server.set_transport(origin_sample, tempo)`; the others join.
 
 With each client also `lock_to` the master, the shared bar is an exact sample, so the clients are sample-aligned; in plain wall-clock mode they are beat-aligned (drift-bounded, via the server's OSC-time anchor). Start the clock before playing a quantized routine, so `quant` snaps against the running grid.
 
@@ -114,7 +114,7 @@ MIDI output never uses the sample clock. A `MidiServer` writing a score keeps it
 
 ## The API, at a glance
 
-- `TempoClock.lock_to(server)` / `unlock()` — switch to / off the server's sample clock. `Session.lock_to_server()` is the session wrapper. Blocking over UDP (it does `/clock` round trips; instant on an embedded server); call before `start`/`run`, never from a routine.
+- `TempoClock.lock_to(server)` / `unlock()` — switch to / off the server's sample clock. `Session.lock_to_server()` is the session wrapper. Blocking over UDP (it does `/clock_query` round trips; instant on an embedded server); call before `start`/`run`, never from a routine.
 - `TempoClock.join_transport(server)` / `leave_transport()` — adopt / drop the server's shared transport grid. `Session.join_transport()` is the wrapper.
 - `Server.set_transport(origin_sample, tempo)` / `Server.transport()` — define / read the shared grid (the conductor sets it once).
 - `play(routine, quant=...)` — start on the next `quant`-beat boundary of the current grid.
@@ -124,4 +124,4 @@ MIDI output never uses the sample clock. A `MidiServer` writing a score keeps it
 - [Routines and clocks](routines-and-clocks.md) — writing the routines you play on these clocks.
 - [Sessions](sessions.md) — the handle that bundles a clock and a server.
 - [API reference](api.md) — `TempoClock.lock_to` / `join_transport`, `Session`, `Server`.
-- The **[Clausters server book](https://clausters.readthedocs.io/)** — `/clock` (the master-clock anchor), `/sched` and `/transport`.
+- The **[Clausters server book](https://clausters.readthedocs.io/)** — `/clock_query` (the master-clock anchor), `/sched_at` and `/transport_set`.

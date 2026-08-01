@@ -25,18 +25,18 @@ pub trait SynthNode: Send {
     /// Unknown indices must be ignored, like scsynth.
     fn set_control(&mut self, index: u32, value: f32);
     /// Maps control `index` to a bus read at the start of every block:
-    /// `/n_map` (a control bus, `audio = false`) or `/n_mapa` (an audio bus
+    /// `/node_map` (a control bus, `audio = false`) or `/node_mapAudio` (an audio bus
     /// sampled at control rate, `audio = true`). `bus < 0` removes the
     /// mapping. Unknown indices are ignored, like scsynth. A later
     /// [`set_control`](Self::set_control) on the same index clears the mapping.
     fn map_control(&mut self, index: u32, bus: i32, audio: bool);
-    /// How many UGens this synth contributes to `/status.reply`.
+    /// How many UGens this synth contributes to `/server_status.reply`.
     fn ugen_count(&self) -> usize;
     /// The maximum done action returned by any of this synth's UGens
     fn done_action(&self) -> DoneAction {
         DoneAction::None
     }
-    /// Routes a `/u_cmd` payload to the UGen at `index`. Out-of-range indices
+    /// Routes a `/node_ugenCmd` payload to the UGen at `index`. Out-of-range indices
     /// are ignored. The default has no addressable UGens (e.g. a Faust synth is
     /// one opaque block). Runs on the audio thread — allocation-free.
     fn ugen_command(&mut self, _index: u32, _cmd: &crate::dsp::UGenCmd) {}
@@ -70,7 +70,7 @@ pub trait SynthNode: Send {
     fn drain_replies(&mut self, _node_id: i32, _sink: &mut dyn FnMut(ReplyMsg)) {}
 }
 
-/// One control's bus mapping (`/n_map`/`/n_mapa`), stored per synth parallel
+/// One control's bus mapping (`/node_map`/`/node_mapAudio`), stored per synth parallel
 /// to its controls. `bus < 0` is unmapped; `audio` selects the audio-bus
 /// space (sampled at control rate, one frame per block) over the control-bus
 /// space. The synth applies live mappings at the start of every block.
@@ -129,9 +129,9 @@ impl AddAction {
 }
 
 /// Where to move an existing node. `Before`/`After` place it relative to a
-/// sibling (`/n_before`, `/n_after`); `Head`/`Tail` place it as the first/last
-/// child of a group (`/g_head`, `/g_tail`) — for those two the `target` is the
-/// destination **group** itself, not a sibling. `/n_order` uses all four.
+/// sibling (`/node_before`, `/node_after`); `Head`/`Tail` place it as the first/last
+/// child of a group (`/group_head`, `/group_tail`) — for those two the `target` is the
+/// destination **group** itself, not a sibling. `/node_order` uses all four.
 #[derive(Clone, Copy, Debug)]
 pub enum Place {
     Before,
@@ -154,7 +154,7 @@ pub struct Group {
     /// Slot indices of the children, in execution order. Pre-allocated; the
     /// tree rejects inserts that would grow it.
     pub children: Vec<usize>,
-    /// `/g_parallel` (M13): children run in dependency stages on the worker
+    /// `/group_parallel` (M13): children run in dependency stages on the worker
     /// pool instead of strictly in order.
     pub parallel: bool,
 }
@@ -184,7 +184,7 @@ impl Default for Group {
 }
 
 /// A node leaving the tree, reported through the free sink. Carries the
-/// parent's node ID for `/n_end` notifications.
+/// parent's node ID for `/node_end` notifications.
 pub enum FreedNode {
     Synth {
         id: i32,
@@ -203,9 +203,9 @@ struct NodeSlot {
     parent: usize,
     kind: NodeKind,
     /// Paused by `DoneAction::PauseSelf`, a `FreeSelfPause{Prev,Next}`, or
-    /// `/n_run 0`: the node stays in the tree and keeps its state but is skipped
+    /// `/node_run 0`: the node stays in the tree and keeps its state but is skipped
     /// during processing (silent). A paused **group** skips its whole subtree.
-    /// Cleared by `/n_run 1` (or `FreeSelfResumeNext` on the next sibling).
+    /// Cleared by `/node_run 1` (or `FreeSelfResumeNext` on the next sibling).
     paused: bool,
 }
 
@@ -439,7 +439,7 @@ impl NodeTree {
     }
 
     /// Frees the subtree rooted at `idx` (already unlinked from its parent),
-    /// reporting every node to `sink` parent-first — the order `/n_end`
+    /// reporting every node to `sink` parent-first — the order `/node_end`
     /// notifications go out in.
     fn free_subtree(&mut self, idx: usize, parent_id: i32, sink: &mut dyn FnMut(FreedNode)) {
         debug_assert!(self.free_stack.is_empty());
@@ -474,7 +474,7 @@ impl NodeTree {
     }
 
     /// Inserts a node relative to `target` according to `action`. On success
-    /// returns the parent group's node ID (for `/n_go`). On failure
+    /// returns the parent group's node ID (for `/node_start`). On failure
     /// (duplicate ID, unknown target, full slab/group, type mismatch) returns
     /// the node back so the caller can dispose of it RT-safely. A `Replace`
     /// frees the target's subtree through `sink`.
@@ -597,7 +597,7 @@ impl NodeTree {
         self.free(parent_id, sink)
     }
 
-    /// `/g_freeAll`: frees every child of the group (recursively); the group
+    /// `/group_freeAll`: frees every child of the group (recursively); the group
     /// itself stays.
     pub fn free_all(&mut self, group_id: i32, sink: &mut dyn FnMut(FreedNode)) -> bool {
         let Some(idx) = self.find(group_id) else {
@@ -614,7 +614,7 @@ impl NodeTree {
         }
     }
 
-    /// `/g_deepFree`: frees every synth in the group and its subgroups; the
+    /// `/group_deepFree`: frees every synth in the group and its subgroups; the
     /// groups all stay.
     pub fn deep_free(&mut self, group_id: i32, sink: &mut dyn FnMut(FreedNode)) -> bool {
         let Some(idx) = self.find(group_id) else {
@@ -676,7 +676,7 @@ impl NodeTree {
     }
 
     /// Pauses (`paused = true`) or resumes (`false`) a node — a synth or a
-    /// whole group. `/n_run` and the pause/resume done actions route here.
+    /// whole group. `/node_run` and the pause/resume done actions route here.
     /// Returns `false` if the ID is unknown. Never allocates.
     pub fn set_paused(&mut self, id: i32, paused: bool) -> bool {
         match self.find(id).and_then(|idx| self.slot_mut(idx)) {
@@ -815,7 +815,7 @@ impl NodeTree {
         }
     }
 
-    /// `/n_before` / `/n_after` / `/g_head` / `/g_tail`: moves a node, possibly
+    /// `/node_before` / `/node_after` / `/group_head` / `/group_tail`: moves a node, possibly
     /// under a different parent. For `Before`/`After`, `target` is a sibling;
     /// for `Head`/`Tail`, `target` is the destination group and the node lands
     /// first/last in it. Rejects moves of/into the node's own subtree, of the
@@ -890,7 +890,7 @@ impl NodeTree {
         }
     }
 
-    /// Updates a synth's bus-usage masks (`Cmd::SetUsage`, after an `/n_set`
+    /// Updates a synth's bus-usage masks (`Cmd::SetUsage`, after an `/node_set`
     /// on a control used as a bus index).
     pub fn set_usage(&mut self, id: i32, usage: BusUsage) {
         if let Some(idx) = self.find(id)
@@ -901,7 +901,7 @@ impl NodeTree {
         }
     }
 
-    /// Flags a group as parallel (`/g_parallel`). Returns `false` when the
+    /// Flags a group as parallel (`/group_parallel`). Returns `false` when the
     /// ID is missing or not a group.
     pub fn set_parallel(&mut self, id: i32, parallel: bool) -> bool {
         let Some(idx) = self.find(id) else {
@@ -918,7 +918,7 @@ impl NodeTree {
 
     /// Depth-first traversal in execution order; synths write to the buses in
     /// `ctx` through their I/O UGens. Runs on the audio thread: no
-    /// allocation. Children of groups flagged parallel (`/g_parallel`) run
+    /// allocation. Children of groups flagged parallel (`/group_parallel`) run
     /// in dependency **stages** on the worker pool (M13).
     pub fn process(&mut self, ctx: &ProcessCtx, pool: &WorkerPool) {
         // SAFETY: entry point — this thread owns the whole tree; the pool

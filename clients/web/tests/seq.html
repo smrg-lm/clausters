@@ -26,7 +26,7 @@
       The page-carrier half of W3's acceptance (clients/web/test.sh, headless
       Chrome): ?smoke=1 auto-runs and asserts that
         - `server.sampleTimebase()` returns the engine-anchored sample clock
-          (the in-page carrier shares the page's AudioContext, so no /clock
+          (the in-page carrier shares the page's AudioContext, so no /clock_query
           tracking is involved);
         - a pattern's notes start at the beats its deltas add up to and end a
           sustain later, as the engine reports them;
@@ -57,7 +57,7 @@
         const connection = await pageConnection();
         const server = await Server.open(connection);
 
-        // A plain sine: the event's own release frees it, so /n_end is the
+        // A plain sine: the event's own release frees it, so /node_end is the
         // note ending exactly where the schedule put it.
         await new SynthDef("web_seq_beep",
             out(0.0, sine(control("freq", 440.0)).mul(0.05))).send(server);
@@ -78,8 +78,8 @@
         const t0 = () => clock.startTime + server.latency;
         server.onReply(({ addr }) => {
           const now = Date.now() / 1000;
-          if (addr === "/n_go") started.push(now - t0());
-          else if (addr === "/n_end") ended.push(now - t0());
+          if (addr === "/node_start") started.push(now - t0());
+          else if (addr === "/node_end") ended.push(now - t0());
         });
 
         const clock = new TempoClock(1.0, { timebase });

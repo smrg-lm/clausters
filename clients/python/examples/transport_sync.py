@@ -2,7 +2,7 @@
 """Two clients phase-aligned on one server's shared transport.
 
 A server hosts a **transport** — a beat grid `(origin_sample, tempo)` it stores
-under `/transport`. Several independent clients can *join* that grid, so a
+under `/transport_set`. Several independent clients can *join* that grid, so a
 `quant`-ed routine on each starts on the **same** beat. When each client is also
 locked to the server's sample clock (`lock_to`), that alignment is sample-exact;
 in plain wall-clock mode it is beat-accurate (drift-bounded).

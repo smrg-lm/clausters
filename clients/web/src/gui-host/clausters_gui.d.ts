@@ -27,8 +27,8 @@ export class GuiBridge {
     attach(def_id: number, canvas: HTMLCanvasElement): void;
     /**
      * Attaches the host's audio-server leg to the **in-page engine**: every
-     * outbound OSC packet (bound-widget values, `/c_stream`/`/tap_stream`
-     * subscriptions, buffer fetches, `/clock`) is handed to `send` as a
+     * outbound OSC packet (bound-widget values, `/bus_stream`/`/bus_tapStream`
+     * subscriptions, buffer fetches, `/clock_query`) is handed to `send` as a
      * `Uint8Array`; the page forwards it to the engine and feeds the engine's
      * replies back through [`server_reply`](Self::server_reply).
      */
@@ -81,8 +81,8 @@ export class GuiBridge {
      */
     resize(def_id: number, width: number, height: number, scale: number): void;
     /**
-     * Feeds one reply packet from the in-page engine (a streamed `/c_set`, a
-     * `/tap_data`, a `/b_info`/`/b_setn`, a `/clock.reply`) into the host —
+     * Feeds one reply packet from the in-page engine (a streamed `/bus_set`, a
+     * `/bus_tapStream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply`, a `/clock_query.reply`) into the host —
      * the inbound half of [`connect_page`](Self::connect_page), the same
      * dispatch the WS leg's `onmessage` uses.
      */
@@ -92,7 +92,7 @@ export class GuiBridge {
      * `IntersectionObserver`).
      *
      * A hidden canvas is skipped on the tick and its buses leave the
-     * `/c_stream`/`/tap_stream` sets — a document can hold fifty canvases with
+     * `/bus_stream`/`/bus_tapStream` sets — a document can hold fifty canvases with
      * three in view, and neither this host nor the server should be working
      * for the other forty-seven.
      */
@@ -111,8 +111,8 @@ export class GuiBridge {
  * in-page engine: `synthdefs`/`graphdefs` are arrays of `Uint8Array` (each
  * file's bytes verbatim), `boot_json` the optional `boot.json` text,
  * `guidef_tree` the GuiDef tree JSON (its root `boot` messages run last).
- * Returns an array of `Uint8Array` packets ending in `/sync sync_id+1` — the
- * page knows the bundle is up when `/synced sync_id+1` comes back. The
+ * Returns an array of `Uint8Array` packets ending in `/server_sync sync_id+1` — the
+ * page knows the bundle is up when `/server_sync.reply sync_id+1` comes back. The
  * ordering/encoding logic lives in the platform-agnostic `host::bundle`
  * module, natively unit-tested.
  */

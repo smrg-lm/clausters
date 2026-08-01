@@ -21,11 +21,11 @@ newer build stays readable by an older one.
 
 | Key | Type | Default | Flag | What it sets |
 | --- | --- | --- | --- | --- |
-| `workers` | integer | `0` (the server chooses) | `--workers` | DSP worker threads for `/g_parallel` groups |
+| `workers` | integer | `0` (the server chooses) | `--workers` | DSP worker threads for `/group_parallel` groups |
 | `sample_rate` | integer (Hz) | `48000`; `0` follows the device | `--sample-rate` | The output rate the server imposes on the audio backend |
 | `audio_buses` | integer | `128` (also the hard maximum) | `--audio-buses` | Audio bus count; buses `0..outputs` are the hardware outs |
 | `control_buses` | integer | `16384` | `--control-buses` | Control bus count |
-| `taps` | integer | `8`; `0` disables the tap region | `--taps` | Audio-tap rings in the shared segment — what `/tap` routes an audio bus into, and what an oscilloscope reads |
+| `taps` | integer | `8`; `0` disables the tap region | `--taps` | Audio-tap rings in the shared segment — what `/bus_tap` routes an audio bus into, and what an oscilloscope reads |
 | `tap_frames` | integer (samples) | `16384`, rounded up to a power of two | `--tap-frames` | Per-tap ring capacity |
 | `outputs` | integer | the device's own channel count | `--outputs` | Hardware output channels |
 | `inputs` | integer | `0` (no input device) | `--inputs` | Hardware input channels; `> 0` opens the default input device, readable with `In` on buses `outputs..outputs+inputs` |
@@ -56,7 +56,7 @@ raising them costs memory whether or not you use it.
 | Flag | What it does |
 | --- | --- |
 | `--pin <cpu[,cpu…]>` | CPU affinity (Linux, experimental, `rtprio` builds only): the first CPU takes the audio callback thread, the rest are round-robined over the DSP workers |
-| `-v` / `-vv` / `-vvv` / `-q` | Log verbosity: warn (the default) → info → debug → trace, `-q` for errors only. `RUST_LOG` overrides it, and a client retunes it live with `/verbosity` |
+| `-v` / `-vv` / `-vvv` / `-q` | Log verbosity: warn (the default) → info → debug → trace, `-q` for errors only. `RUST_LOG` overrides it, and a client retunes it live with `/server_verbosity` |
 
 The offline renderer is a separate mode with its own flags and no configuration
 section, since a render is described by its invocation:

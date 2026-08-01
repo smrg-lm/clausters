@@ -346,7 +346,7 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
       loaded. The most compact **bulk path**: nothing rides OSC. A cache built
       with ``channels > 1`` holds every channel in the one file.
     - ``path`` — a path to a file of raw little-endian ``f32`` samples (see
-      `samples_to_file`, or the server's ``/b_export``) the host memory-maps; a
+      `samples_to_file`, or the server's ``/buffer_export``) the host memory-maps; a
       **multi-megabyte buffer renders with no OSC and no re-send**.
     - ``buffer`` — a server buffer number; the host fetches its samples from the
       audio server over OSC (it must be started with ``--server``). The async
@@ -377,7 +377,7 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     in samples (dragging on the view updates it and emits
     ``/gui_event id "selection" start len``; Shift+drag pans, the wheel zooms).
     ``playhead_at`` draws a playhead tracking the engine sample clock: pass the
-    ``/clock`` sample value that corresponds to buffer position 0 (negative or
+    ``/clock_query`` sample value that corresponds to buffer position 0 (negative or
     omitted = no playhead). ``playhead_loop_start``/``playhead_loop_len`` (in
     samples) make that sweep **wrap** inside the region instead of running
     straight past it — what a looping playback does, so playing a selection on
@@ -521,7 +521,7 @@ def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     rulers: ``ruler`` (x, in milliseconds of the window) and ``ruler_y`` (value
     over ``[min, max]``), both shown by default and hidden with ``False`` (or
     ``"off"``). Natively the host reads the samples out of the ``--shm``
-    segment with zero messages; in the browser it subscribes ``/tap_stream``
+    segment with zero messages; in the browser it subscribes ``/bus_tapStream``
     over the server leg. ``min``/``max`` set the vertical range (default the
     bipolar ``-1``/``1``).
     """
@@ -548,7 +548,7 @@ def phasescope(bus: int = 0, *, window_ms: float | None = None, hold: bool | Non
     the last ``window_ms`` of pairs (default 30 ms) and a **correlation**
     read-out (Pearson's r over the window) sits under the field. ``hold``
     freezes the trace. Audio rate only. Reads the segment natively (zero
-    messages) and ``/tap_stream`` in the browser, like the oscilloscope."""
+    messages) and ``/bus_tapStream`` in the browser, like the oscilloscope."""
     extra = _drop_none(window_ms=window_ms, label=label, color=color)
     if hold is not None:
         extra["hold"] = 1 if hold else 0
@@ -595,7 +595,7 @@ def nodetree(*, group: int = 0, controls: bool | None = None, label: str | None 
     """A live ``nodetree`` view of the audio server's node tree rooted at ``group``
     (default the root group ``0``). The host mirrors the server's tree over its
     client leg (it must be started with ``--server``), refreshing on node
-    creation/removal and a low-rate poll, so group/synth changes and ``/n_set``
+    creation/removal and a low-rate poll, so group/synth changes and ``/node_set``
     edits show live. ``controls`` (default true) shows each synth's control
     name/value pairs. A read-only view."""
     extra = _drop_none(label=label, color=color)
@@ -806,7 +806,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     then), and it is driven exactly like the timeline views':
 
     - ``playhead_at`` — the engine sample-clock value at score time 0. Set it
-      once when a pass starts (``server.request("/clock", …)``) and the cursor
+      once when a pass starts (``server.request("/clock_query", …)``) and the cursor
       *sweeps* on its own, since the host reads the clock every frame; a
       negative value stops it. ``sample_rate`` converts clock to musical time
       (omitted / ``0`` = the server's own rate).
@@ -858,7 +858,7 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
       ``quant`` label beats. One ruler under the bottom lane is the usual layout.
     - ``playhead_at`` — the engine sample-clock value at timeline position 0, so
       the playhead sweeps the clips as the composition plays (the same anchor the
-      `waveform` uses; read the clock with ``Server.request("/clock")``). Set it
+      `waveform` uses; read the clock with ``Server.request("/clock_query")``). Set it
       live with ``GuiHost.set(track_id, playhead_at=clock)``; a negative value
       (the default) draws no playhead.
 
@@ -1081,11 +1081,11 @@ def piano(*, min: int | None = None, max: int | None = None, active_min: int | N
       with ``freq``/``amp`` from pitch/velocity), ``state 0`` sends its
       ``gate=0``. Fully programmable, like driving any GuiDef.
     - **Host voices** — set ``voice`` to a SynthDef name and the *host* manages
-      one server voice per held key: ``/s_new <voice> … freq <hz> amp <vel/127>
+      one server voice per held key: ``/synth_new <voice> … freq <hz> amp <vel/127>
       gate 1`` on press, ``gate 0`` on release. The def must have
       ``freq``/``amp``/``gate`` controls and free itself on release (an
       ``Env.adsr`` with ``FREE_SELF``). ``voice_args`` is an iterable of extra
-      ``(name, value)`` control pairs for the ``/s_new``. This path needs no
+      ``(name, value)`` control pairs for the ``/synth_new``. This path needs no
       script in the loop — a saved GuiDef bundle plays standalone."""
     extra = _drop_none(min=min, max=max, active_min=active_min,
                        active_max=active_max, velocity=velocity,

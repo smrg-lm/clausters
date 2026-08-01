@@ -7,7 +7,7 @@
 //! on the audio thread: no allocation.
 
 // Engine-core submodules, built with every feature set: the buffer pool
-// (`/b_*` serves any def family), denormal control, and the `/b_gen`
+// (`/buffer_*` serves any def family), denormal control, and the `/buffer_gen`
 // wavetable/generator commands (pure buffer math).
 pub mod buffer;
 pub mod denormals;
@@ -21,7 +21,7 @@ pub mod binop;
 #[cfg(feature = "synth")]
 pub mod buf;
 // `conv` is listed with the core modules below: its kernel layout is data
-// the `/b_gen prepare_partconv` routine (feature-independent) writes; only
+// the `/buffer_gen prepare_partconv` routine (feature-independent) writes; only
 // the UGen inside it is synth-gated.
 pub mod conv;
 #[cfg(feature = "synth")]
@@ -153,7 +153,7 @@ impl Limits {
 }
 
 /// Control buses are single floats shared between threads: the network
-/// thread serves `/c_set`/`/c_get` directly, the audio thread reads them via
+/// thread serves `/bus_set`/`/bus_get` directly, the audio thread reads them via
 /// the `InCtl` UGen. Plain atomic bit-cast stores — lock-free on both sides.
 ///
 /// Since M14 the backing storage is abstract: a heap array by default, or
@@ -398,7 +398,7 @@ pub enum DoneAction {
     /// Do nothing (the envelope just holds its final level).
     None = 0,
     /// Pause this synth (skip it from now on; it stays in the tree). Cleared by
-    /// `/n_run 1`.
+    /// `/node_run 1`.
     PauseSelf = 1,
     /// Free this synth.
     FreeSelf = 2,
@@ -650,7 +650,7 @@ pub trait UGen: Send {
     fn drive(&mut self, _ctx: &ProcessCtx, _inputs: &mut dyn DemandInputs, _output: &mut [f32]) {}
 
     /// Receives a typed out-of-band command addressed to this instance
-    /// (`/u_cmd`). The mechanism the future FFT/streaming UGens use to take
+    /// (`/node_ugenCmd`). The mechanism the future FFT/streaming UGens use to take
     /// parameters that are neither audio nor control inputs. Runs on the audio
     /// thread — the payload is inline, so this must stay allocation-free. The
     /// default ignores every command (an unknown selector is a no-op).
@@ -722,11 +722,11 @@ pub const REPLY_NAME_MAX: usize = 31;
 /// thread turns it into an OSC reply or console line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReplyKind {
-    /// `SendTrig` — a `/tr nodeID trigID value` message.
+    /// `SendTrig` — a `/node_trigger nodeID trigID value` message.
     Trig,
     /// `SendReply` — a `cmdName nodeID replyID value…` message.
     Reply,
-    /// `Poll` — a console line `label: value`, plus a `/tr` when its trigid ≥ 0.
+    /// `Poll` — a console line `label: value`, plus a `/node_trigger` when its trigid ≥ 0.
     Poll,
 }
 
@@ -796,11 +796,11 @@ impl Default for ReplyMsg {
 
 /// Max inline float args a [`UGenCmd`] carries. Sized for realistic UGen
 /// commands (a selector plus a few scalar params); keeps the payload `Copy` and
-/// heap-free, so applying a `/u_cmd` on the audio thread allocates nothing.
+/// heap-free, so applying a `/node_ugenCmd` on the audio thread allocates nothing.
 pub const MAX_UGEN_CMD_ARGS: usize = 8;
 
-/// A typed command addressed to one UGen instance (`/u_cmd`) — the discoverable
-/// replacement for scsynth's untyped `/u_cmd` blob. The command name is hashed
+/// A typed command addressed to one UGen instance (`/node_ugenCmd`) — the discoverable
+/// replacement for scsynth's untyped `/node_ugenCmd` blob. The command name is hashed
 /// to a stable `selector` on the network thread (so both sides agree without a
 /// shared table); `args` are inline floats. Consumers are future UGens; today
 /// every UGen's default [`UGen::command`] ignores it.
@@ -812,7 +812,7 @@ pub struct UGenCmd {
     pub num_args: u8,
 }
 
-/// FNV-1a hash of a `/u_cmd` command name into its selector. Deterministic and
+/// FNV-1a hash of a `/node_ugenCmd` command name into its selector. Deterministic and
 /// shared by the network thread (which resolves the name) and any consumer
 /// UGen (which matches `ugen_cmd_selector("myCommand")` in its `command`).
 pub fn ugen_cmd_selector(name: &str) -> u32 {

@@ -10,7 +10,7 @@ Runs from the *installed* package, offline, like ``offline_render.py``::
 The point of interest is the SynthDef: a sine shaped by an ``EnvGen`` playing an
 `Env.adsr`. The envelope's `gate` is a control, and its `done_action` is
 ``FREE_SELF``, so the synth stays alive exactly as long as its sound and then
-frees itself -- no ``/n_free`` bookkeeping from the client.
+frees itself -- no ``/node_free`` bookkeeping from the client.
 
 ``Pbind(..., has_gate=True)`` is what closes the gate: for each note the player
 sends ``gate 0`` after the note's ``sustain`` instead of freeing the node
@@ -71,7 +71,7 @@ def main():
     out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "envelope.wav")
 
     session = Session.nrt(tempo=2.0)
-    adsr_pad().send(session.server)  # /d_recv at time 0 in the score
+    adsr_pad().send(session.server)  # /def_send synth at time 0 in the score
     session.play(phrase())
     stats = session.render(sample_rate=SR, channels=2, path=out_path)
 

@@ -91,7 +91,7 @@ pub struct UGenConfig {
     pub hop: Option<f32>,
     /// Spectral chain (S8): window type (`FFT`/`IFFT`), a
     /// [`Window`](clausters_core::window::Window) `wintype` integer, default `0`
-    /// (Hann). Also settable live via `/u_cmd`. Ignored by every other kind.
+    /// (Hann). Also settable live via `/node_ugenCmd`. Ignored by every other kind.
     pub wintype: Option<i32>,
     /// `Conv` (M28): FDL capacity in partitions — the longest prepared kernel
     /// this instance accepts, sizing its pre-allocated state. Ignored by
@@ -169,7 +169,7 @@ pub enum Arity {
 ///
 /// The wire itself stays positional (a def names a `kind` and lists values; no
 /// input is ever addressed by name), so this is descriptive metadata, not a new
-/// contract: it exists so `/u_query` can report a UGen's signature and a client
+/// contract: it exists so `/ugen_query` can report a UGen's signature and a client
 /// palette can label an inlet instead of copying the names into its own table.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UGenInput {
@@ -453,7 +453,7 @@ const I_A: &[UGenInput] = &[inp("a", 0.0)];
 const I_AB: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0)];
 const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
 /// The non-band-limited modulation shapes (U1). The two with a duty cycle
-/// declare a third input; the two without do not, so `/u_query` never reports
+/// declare a third input; the two without do not, so `/ugen_query` never reports
 /// an inlet the UGen ignores.
 const I_LF: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0)];
 const I_LF_WIDTH: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0), inp("width", 0.5)];
@@ -1234,7 +1234,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(BufRd),
     ),
-    // --- table oscillators & waveshaper (S5); read `/b_gen` wavetables ---
+    // --- table oscillators & waveshaper (S5); read `/buffer_gen` wavetables ---
     desc(
         "Osc",
         Fixed(3),
@@ -2360,7 +2360,7 @@ static UGENS: &[UGenDescriptor] = &[
         |c, _| Box::new(PvKernel::new(c)),
     ),
     // --- partitioned convolution (M28): one UGen, kernel spectra prepared
-    //     off the RT thread by `/b_gen prepare_partconv`, MACs spread across
+    //     off the RT thread by `/buffer_gen prepare_partconv`, MACs spread across
     //     the hop's blocks for flat load. Not a PV_*: fast convolution's
     //     zero-padded rectangular segments are incompatible with the windowed
     //     COLA chain. See `dsp::conv`. ---
@@ -2383,7 +2383,7 @@ pub fn lookup(name: &str) -> Option<&'static UGenDescriptor> {
     UGENS.iter().find(|d| d.name == name)
 }
 
-/// The whole catalog, in table order — what `/u_query` reports (M30). The
+/// The whole catalog, in table order — what `/ugen_query` reports (M30). The
 /// contents depend on the build (`DiskIn`/`DiskOut` are native-only), which is
 /// exactly why a client asks the server instead of carrying its own copy.
 pub fn all() -> &'static [UGenDescriptor] {
@@ -2394,7 +2394,7 @@ pub fn all() -> &'static [UGenDescriptor] {
 mod tests {
     use super::*;
 
-    /// The catalog is data, and `/u_query` publishes it: a row whose names do
+    /// The catalog is data, and `/ugen_query` publishes it: a row whose names do
     /// not line up with its arity would ship a wrong signature to every client
     /// palette. Not feature-gated — the table exists in every build.
     #[test]

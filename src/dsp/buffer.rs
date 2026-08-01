@@ -5,7 +5,7 @@
 //! engine's pool via `Cmd::SetBuffer`, and from then on it is only read.
 //! That makes `Arc<Buffer>` freely shareable across threads with no locks:
 //! the audio thread reads it inside `process`, while the network thread
-//! keeps a mirror clone for `/b_query`, `/b_write` and `/b_zero`/`/b_read`
+//! keeps a mirror clone for `/buffer_query`, `/buffer_write` and `/buffer_zero`/`/buffer_read`
 //! (which *replace* the buffer with a freshly built one instead of mutating
 //! in place — scsynth mutates shared memory; we trade one copy for aliasing
 //! safety). Recording UGens would need a different scheme.

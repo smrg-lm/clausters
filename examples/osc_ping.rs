@@ -2,7 +2,7 @@
 //!
 //! Usage: cargo run --example osc_ping -- [status] [info] [beep] [vibrato] [map] [quit]
 //! Default (no args): status. `beep` plays the default synth for a moment,
-//! re-tunes it with /n_set, then frees it. `map` demos /n_map and /n_mapa
+//! re-tunes it with /node_set, then frees it. `map` demos /node_map and /node_mapAudio
 //! (controls driven live by buses).
 
 use std::net::UdpSocket;
@@ -43,20 +43,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for command in &commands {
         match command.as_str() {
             "status" => {
-                send("/status", vec![])?;
-                recv("/status")?;
+                send("/server_status", vec![])?;
+                recv("/server_status")?;
             }
             "info" => {
                 // Static server config: [audio_buses, control_buses, channels,
                 // block_size, nominal_sr, actual_sr]. A client sizes its own
                 // bus allocators from this instead of hardcoding the counts.
-                send("/server_info", vec![])?;
-                recv("/server_info")?;
+                send("/server_query", vec![])?;
+                recv("/server_query")?;
             }
             "beep" => {
-                println!("/s_new default 1000 (440 Hz)");
+                println!("/synth_new default 1000 (440 Hz)");
                 send(
-                    "/s_new",
+                    "/synth_new",
                     vec![
                         OscType::String("default".into()),
                         OscType::Int(1000),
@@ -65,9 +65,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ],
                 )?;
                 std::thread::sleep(Duration::from_millis(600));
-                println!("/n_set 1000 freq 660");
+                println!("/node_set 1000 freq 660");
                 send(
-                    "/n_set",
+                    "/node_set",
                     vec![
                         OscType::Int(1000),
                         OscType::String("freq".into()),
@@ -75,8 +75,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ],
                 )?;
                 std::thread::sleep(Duration::from_millis(600));
-                println!("/n_free 1000");
-                send("/n_free", vec![OscType::Int(1000)])?;
+                println!("/node_free 1000");
+                send("/node_free", vec![OscType::Int(1000)])?;
             }
             "vibrato" => {
                 // M3 demo: define a synth as JSON, then play it
@@ -93,11 +93,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         {"kind": "Out",    "inputs": [{"const": 1.0}, {"ugen": 4}]}
                     ]
                 }"#;
-                send("/d_recv", vec![OscType::Blob(json.as_bytes().to_vec())])?;
-                recv("/d_recv")?;
-                println!("/s_new vibrato 1001");
                 send(
-                    "/s_new",
+                    "/def_send",
+                    vec![
+                        OscType::String("synth".into()),
+                        OscType::Blob(json.as_bytes().to_vec()),
+                    ],
+                )?;
+                recv("/def_send")?;
+                println!("/synth_new vibrato 1001");
+                send(
+                    "/synth_new",
                     vec![
                         OscType::String("vibrato".into()),
                         OscType::Int(1001),
@@ -106,16 +112,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ],
                 )?;
                 std::thread::sleep(Duration::from_millis(1200));
-                println!("/n_free 1001");
-                send("/n_free", vec![OscType::Int(1001)])?;
+                println!("/node_free 1001");
+                send("/node_free", vec![OscType::Int(1001)])?;
             }
             "map" => {
-                // /n_map: bind a control to a *control bus*. The synth re-reads
+                // /node_map: bind a control to a *control bus*. The synth re-reads
                 // the bus every block, so writing the bus retunes it live — no
-                // /n_set per change.
-                println!("/s_new default 1002, then /n_map freq -> control bus 5");
+                // /node_set per change.
+                println!("/synth_new default 1002, then /node_map freq -> control bus 5");
                 send(
-                    "/s_new",
+                    "/synth_new",
                     vec![
                         OscType::String("default".into()),
                         OscType::Int(1002),
@@ -124,7 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ],
                 )?;
                 send(
-                    "/n_map",
+                    "/node_map",
                     vec![
                         OscType::Int(1002),
                         OscType::String("freq".into()),
@@ -132,13 +138,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ],
                 )?;
                 for hz in [330.0_f32, 495.0, 660.0] {
-                    println!("/c_set 5 {hz}  (pitch follows the bus)");
-                    send("/c_set", vec![OscType::Int(5), OscType::Float(hz)])?;
+                    println!("/bus_set 5 {hz}  (pitch follows the bus)");
+                    send("/bus_set", vec![OscType::Int(5), OscType::Float(hz)])?;
                     std::thread::sleep(Duration::from_millis(500));
                 }
-                send("/n_free", vec![OscType::Int(1002)])?;
+                send("/node_free", vec![OscType::Int(1002)])?;
 
-                // /n_mapa: bind a control to an *audio bus*, sampled once per
+                // /node_mapAudio: bind a control to an *audio bus*, sampled once per
                 // block (control-rate). An LFO synth writes a slow sine into a
                 // non-output bus; the target's freq tracks it → vibrato.
                 let lfo = r#"{
@@ -150,11 +156,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         {"kind": "Out",    "inputs": [{"const": 20.0}, {"ugen": 2}]}
                     ]
                 }"#;
-                send("/d_recv", vec![OscType::Blob(lfo.as_bytes().to_vec())])?;
-                recv("/d_recv")?;
-                println!("/s_new lfo 1003 (writes bus 20), /s_new default 1004");
                 send(
-                    "/s_new",
+                    "/def_send",
+                    vec![
+                        OscType::String("synth".into()),
+                        OscType::Blob(lfo.as_bytes().to_vec()),
+                    ],
+                )?;
+                recv("/def_send")?;
+                println!("/synth_new lfo 1003 (writes bus 20), /synth_new default 1004");
+                send(
+                    "/synth_new",
                     vec![
                         OscType::String("lfo".into()),
                         OscType::Int(1003),
@@ -163,7 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ],
                 )?;
                 send(
-                    "/s_new",
+                    "/synth_new",
                     vec![
                         OscType::String("default".into()),
                         OscType::Int(1004),
@@ -171,9 +183,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         OscType::Int(0),
                     ],
                 )?;
-                println!("/n_mapa 1004 freq -> audio bus 20 (vibrato)");
+                println!("/node_mapAudio 1004 freq -> audio bus 20 (vibrato)");
                 send(
-                    "/n_mapa",
+                    "/node_mapAudio",
                     vec![
                         OscType::Int(1004),
                         OscType::String("freq".into()),
@@ -181,11 +193,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ],
                 )?;
                 std::thread::sleep(Duration::from_millis(1500));
-                send("/n_free", vec![OscType::Int(1003), OscType::Int(1004)])?;
+                send("/node_free", vec![OscType::Int(1003), OscType::Int(1004)])?;
             }
             "quit" => {
-                send("/quit", vec![])?;
-                recv("/quit")?;
+                send("/server_quit", vec![])?;
+                recv("/server_quit")?;
             }
             other => {
                 eprintln!("unknown command: {other} (use status, info, beep, vibrato, map, quit)")

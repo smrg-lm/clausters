@@ -155,7 +155,7 @@ is reproducible with the same line:
 ## Conventions
 
 - **Language**: everything under `src/`, `tests/` and `examples/` (code, comments, strings, test names) is in **English**, as are the roadmap files `PLAN.md` / `clients/python/PLAN.md` and the design record `docs/decisions.md`; this book and the rustdoc are the English documentation.
-- **API verbs in prose**: when the protocol or API has a verb for an action, the documentation names the action with that verb — a node or widget is **freed** (`/n_free`, `/gui_free`), never "destroyed" or "deleted"; a def is **sent**/**loaded**; a server is **booted**. Everyday synonyms make the prose drift from the surface the reader actually types against.
+- **API verbs in prose**: when the protocol or API has a verb for an action, the documentation names the action with that verb — a node or widget is **freed** (`/node_free`, `/gui_free`), never "destroyed" or "deleted"; a def is **sent**/**loaded**; a server is **booted**. Everyday synonyms make the prose drift from the surface the reader actually types against.
 - **Closing a milestone** means, where applicable: code plus tests, a clear **commit message** (that is the record of *what* shipped — there is no separate per-milestone log), the `PLAN.md` roadmap checkbox updated, developer/user docs where the feature touches them (`docs/architecture.md`, `docs/schemas.md`, module docs), and a commented `examples/` entry for user-facing features — the examples are also the manual-test surface, so new human-audible/visual behavior is checked by running one. Add a short entry to `docs/decisions.md` **only** when a choice has non-obvious context — not a per-milestone obligation.
 
 ## Project skills

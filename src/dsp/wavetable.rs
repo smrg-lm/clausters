@@ -1,4 +1,4 @@
-//! Wavetable format and buffer generators (`/b_gen`), S5.
+//! Wavetable format and buffer generators (`/buffer_gen`), S5.
 //!
 //! Two things live here, both pure and off the audio thread:
 //!
@@ -11,12 +11,12 @@
 //!    offset/slope pair instead of the raw samples is what lets the read be one
 //!    madd with no branch. See `Osc`/`VOsc`/`Shaper` in `crate::dsp::osc`.
 //!
-//! 2. **The generators.** [`GenCommand`] is one parsed `/b_gen` command
+//! 2. **The generators.** [`GenCommand`] is one parsed `/buffer_gen` command
 //!    (`sine1`/`sine2`/`sine3` additive spectra, `cheby` waveshaping transfer
 //!    functions, `copy` between buffers), with the [`GenFlags`] (normalize /
 //!    wavetable / clear). [`GenCommand::apply`] runs it against the current
 //!    buffer contents and returns a fresh immutable [`Buffer`] — the network
-//!    thread swaps it in through the same build-and-swap path as `/b_read`, so
+//!    thread swaps it in through the same build-and-swap path as `/buffer_read`, so
 //!    the audio thread only ever sees a finished buffer.
 
 use std::f64::consts::TAU;
@@ -25,7 +25,7 @@ use clausters_core::envshape::shape_value;
 
 use crate::dsp::buffer::Buffer;
 
-/// The `/b_gen` flag bits, packed into the command's `flags` int (scsynth's
+/// The `/buffer_gen` flag bits, packed into the command's `flags` int (scsynth's
 /// `normalize`(1) / `wavetable`(2) / `clear`(4)).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GenFlags {
@@ -49,7 +49,7 @@ impl GenFlags {
     }
 }
 
-/// One parsed `/b_gen` command, fully resolved (source buffers already pulled
+/// One parsed `/buffer_gen` command, fully resolved (source buffers already pulled
 /// from the mirror) so it can run on the NRT thread with no further lookups.
 pub enum GenCommand {
     /// `sine1 flags amp...`: additive sine partials — `amp[k]` is the amplitude
@@ -179,7 +179,7 @@ impl GenCommand {
 
     /// The accumulation buffer the generator writes into: zeros when clearing,
     /// otherwise the first `n` samples of the current contents (so a second
-    /// `/b_gen` without `clear` adds to what is already there).
+    /// `/buffer_gen` without `clear` adds to what is already there).
     fn base_signal(&self, current: &Buffer, n: usize, clear: bool) -> Vec<f32> {
         if clear {
             vec![0.0; n]

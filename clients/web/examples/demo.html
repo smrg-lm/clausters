@@ -22,7 +22,7 @@ the autoplay gesture. After it is up, the buttons drive the SAME engine
 through the raw singleton — the REPL surface a future TS client builds on.</div>
       <clausters-bundle src="../bundle-demo"></clausters-bundle>
       <div>
-        <button id="status" disabled>/status</button>
+        <button id="status" disabled>/server_status</button>
         <button id="up" disabled>freq +50</button>
       </div>
       <pre id="log"></pre>
@@ -33,7 +33,7 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
       bundle as a page element over the per-page singletons. ?smoke=1
       (scripts/smoke-web-components.sh, headless Chrome) auto-boots and
       asserts: the element came up with the canvas in its shadow DOM, the
-      raw REPL surface sees the element's synth (/status counts it, /n_set
+      raw REPL surface sees the element's synth (/server_status counts it, /node_set
       retunes it), the meter bus streams — one shared namespace. Verdict
       beaconed as a fetch, read from the HTTP access log.
     -->
@@ -64,18 +64,18 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
         const engine = await server();
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
-            if (addr !== "/c_set") log(`<- ${addr} ${JSON.stringify(args)}`);
+            if (addr !== "/bus_set") log(`<- ${addr} ${JSON.stringify(args)}`);
           }
         });
         document.getElementById("status").disabled = false;
         document.getElementById("up").disabled = false;
         document.getElementById("status").onclick = () =>
-          engine.send(encodeMessage("/status"));
+          engine.send(encodeMessage("/server_status"));
         document.getElementById("up").onclick = () => {
           freq += 50;
-          engine.send(encodeMessage("/n_set",
+          engine.send(encodeMessage("/node_set",
             [["i", 1000], ["s", "freq"], ["f", freq]]));
-          log(`-> /n_set 1000 freq ${freq}`);
+          log(`-> /node_set 1000 freq ${freq}`);
         };
         if (smoke) smokeAsserts(engine).catch((err) => verdict(`FAIL: ${err}`));
       });
@@ -87,24 +87,24 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
         if (!element.shadowRoot.querySelector("canvas")) {
           throw new Error("no canvas inside the element's shadow root");
         }
-        // The raw REPL surface shares the element's namespace: /status counts
+        // The raw REPL surface shares the element's namespace: /server_status counts
         // the bundle's synth, and the meter bus streams moving values.
         let synths = -1;
         const seen = new Set();
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
-            if (addr === "/status.reply") synths = args[2];
-            if (addr === "/c_set") {
+            if (addr === "/server_status.reply") synths = args[2];
+            if (addr === "/bus_set") {
               for (let i = 0; i + 1 < args.length; i += 2) seen.add(args[i + 1]);
             }
           }
         });
-        engine.send(encodeMessage("/status"));
+        engine.send(encodeMessage("/server_status"));
         const t0 = performance.now();
         for (;;) {
           const moving = [...seen].filter((v) => Math.abs(v) > 0.01);
           if (synths >= 1 && moving.length >= 2) {
-            return verdict(`PASS: element up, canvas adopted; /status sees ` +
+            return verdict(`PASS: element up, canvas adopted; /server_status sees ` +
               `${synths} synth(s); ${moving.length} live meter values`);
           }
           if (performance.now() - t0 > 20000) {

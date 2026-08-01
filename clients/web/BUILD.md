@@ -107,7 +107,7 @@ The pieces individually:
   the OSC port (57110) is fixed, so two spawned servers cannot overlap.
 - `./test.sh` — the above plus three acceptance pages under headless Chrome,
   each in its own browser: `tests/client.html?smoke=1` (the in-page carrier's
-  `/status` round trip), `tests/defs.html?smoke=1` (a def built, sent,
+  `/server_status` round trip), `tests/defs.html?smoke=1` (a def built, sent,
   played — asserted audible on an analyser — read back out of the node tree
   and freed) and `tests/gui.html?smoke=1` (a panel built with the GuiDef
   builders, opened on the in-page host and then *played with*: the gestures

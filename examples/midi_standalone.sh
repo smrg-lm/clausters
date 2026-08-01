@@ -35,12 +35,12 @@ echo "=== session 1: define the instrument + bind MIDI channel 0, then quit ==="
 "$SERVER" --data-dir "$DATA_DIR" &
 PID=$!
 sleep 1.0
-oscsend localhost $PORT /d_recv s "$VTONE"
-oscsend localhost $PORT /d_recv s "$VGAIN"
-oscsend localhost $PORT /d_graph s "$POLY"
+oscsend localhost $PORT /def_send ss synth "$VTONE"
+oscsend localhost $PORT /def_send ss synth "$VGAIN"
+oscsend localhost $PORT /def_send ss graph "$POLY"
 oscsend localhost $PORT /midi_bind is 0 poly     # channel 0 -> the GraphDef
 sleep 0.3
-oscsend localhost $PORT /quit
+oscsend localhost $PORT /server_quit
 wait $PID
 
 echo
@@ -54,8 +54,8 @@ echo "=== session 2: restart with --midi; the binding is back with no OSC ==="
 PID=$!
 sleep 1.0
 # The restored binding already spawned its shared instance: one group at root.
-oscsend localhost $PORT /g_queryTree i 0
-echo "the channel-0 GraphDef binding is live again (no /d_* or /midi_bind sent)."
+oscsend localhost $PORT /group_queryTree i 0
+echo "the channel-0 GraphDef binding is live again (no /def_* or /midi_bind sent)."
 echo
 echo "to actually PLAY it, route a controller into the server's MIDI input."
 echo "the PipeWire-native path uses the JACK MIDI backend: build with"
@@ -67,7 +67,7 @@ echo "on a plain-ALSA build instead, route the native ALSA-seq port with"
 echo "aconnect (routing that ALSA port through PipeWire is what midi-jack fixes)."
 echo "...then each note spawns a voice. CC/pitch-bend map via /midi_map."
 sleep "${1:-0.5}"
-oscsend localhost $PORT /quit
+oscsend localhost $PORT /server_quit
 wait $PID
 
 echo

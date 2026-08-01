@@ -45,7 +45,7 @@ class FakeServer:
         time_mode = "unix"
 
     def request(self, addr, expect=None):
-        return ("/clock.reply", [CLOCK])
+        return ("/clock_query.reply", [CLOCK])
 
 
 class NrtServer(FakeServer):

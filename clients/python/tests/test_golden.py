@@ -24,9 +24,9 @@ def _embed_or_skip():
 
 def _handrolled_score(freqs, dur=0.5, amp=0.2, legato=0.8) -> bytes:
     """The same notes a Pbind would play, written out as raw OSC bundles —
-    `/s_new` at the beat, then a gate release after the sustain (dur*legato):
+    `/synth_new` at the beat, then a gate release after the sustain (dur*legato):
     the built-in ``default`` carries a gated envelope, so the player closes its
-    gate (`/n_set gate 0`) rather than freeing the node. Node ids from 1000 like
+    gate (`/node_set gate 0`) rather than freeing the node. Node ids from 1000 like
     the client's allocator."""
     sustain = dur * legato
     bundles = []
@@ -34,9 +34,9 @@ def _handrolled_score(freqs, dur=0.5, amp=0.2, legato=0.8) -> bytes:
         node = 1000 + i
         start = i * dur
         bundles.append(osc.score_bundle(
-            start, osc.message("/s_new", "default", node, 1, 0, "freq", freq, "amp", amp)))
+            start, osc.message("/synth_new", "default", node, 1, 0, "freq", freq, "amp", amp)))
         bundles.append(osc.score_bundle(
-            start + sustain, osc.message("/n_set", node, "gate", 0.0)))
+            start + sustain, osc.message("/node_set", node, "gate", 0.0)))
     return osc.score(*bundles)
 
 

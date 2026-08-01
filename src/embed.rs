@@ -158,8 +158,8 @@ pub unsafe extern "C" fn clausters_free_samples(ptr: *mut f32, samples: u64) {
 /// commands are complete OSC packets pushed into the in-memory ring
 /// ([`ClaustersHeadless::send`]), replies are pulled from the reply ring
 /// ([`ClaustersHeadless::poll_into`]), and each `process_block` first runs
-/// one serving turn (`OscServer::step`: drain the ring, pump `/c_stream`/
-/// `/tap_stream`, collect async results) — so everything the socket server
+/// one serving turn (`OscServer::step`: drain the ring, pump `/bus_stream`/
+/// `/bus_tapStream`, collect async results) — so everything the socket server
 /// does, paced by the host's own callback. NRT jobs run inline on the
 /// calling thread, and stream periods/timetags follow the **engine sample
 /// clock** (deterministic under offline drive; see `OscServer::headless`).
@@ -249,7 +249,7 @@ impl ClaustersHeadless {
         Ok(())
     }
 
-    /// Whether a `/quit` has arrived. The pulled server has no loop to end,
+    /// Whether a `/server_quit` has arrived. The pulled server has no loop to end,
     /// so quitting is the host's decision: it reads this and stops calling
     /// [`Self::process_block`] (dropping the value releases everything).
     pub fn quit_requested(&self) -> bool {
@@ -273,11 +273,11 @@ impl ClaustersHeadless {
     }
 
     /// Installs host-provided samples as buffer `index` (interleaved,
-    /// `data.len() = frames * channels`): the browser's `/b_allocRead`
+    /// `data.len() = frames * channels`): the browser's `/buffer_allocRead`
     /// replacement — the page fetches and decodes (Web Audio's
     /// `decodeAudioData`), then hands the engine the samples. Runs on the
-    /// calling thread through the same install path as the async `/b_*`
-    /// commands, so `/b_query` and the def machinery see it identically.
+    /// calling thread through the same install path as the async `/buffer_*`
+    /// commands, so `/buffer_query` and the def machinery see it identically.
     pub fn b_load(
         &mut self,
         index: usize,
@@ -411,14 +411,14 @@ impl Clausters {
 #[cfg(feature = "realtime")]
 impl Drop for Clausters {
     fn drop(&mut self) {
-        // Sends `/quit` through the ring and joins the network thread (the cpal
+        // Sends `/server_quit` through the ring and joins the network thread (the cpal
         // stream stops when `_backend` drops after this). Same shutdown the C
         // ABI's `clausters_close` used to do inline.
         let quit = rosc::encoder::encode(&rosc::OscPacket::Message(rosc::OscMessage {
-            addr: "/quit".into(),
+            addr: "/server_quit".into(),
             args: vec![],
         }))
-        .expect("static /quit message encodes");
+        .expect("static /server_quit message encodes");
         let _ = self.peer.push(&quit);
         if let Some(thread) = self.server.take() {
             let _ = thread.join();
@@ -539,7 +539,7 @@ pub unsafe extern "C" fn clausters_ctl_get(handle: *mut Clausters, index: u32) -
     }
 }
 
-/// Shuts the embedded server down (sends `/quit` through the ring, joins
+/// Shuts the embedded server down (sends `/server_quit` through the ring, joins
 /// the network thread, stops the audio stream) and frees the handle. The
 /// shutdown is [`Clausters`]'s `Drop`; this just reclaims the box.
 ///
@@ -552,12 +552,12 @@ pub unsafe extern "C" fn clausters_close(handle: *mut Clausters) {
         return;
     }
     // SAFETY: ownership returns from clausters_open's Box::into_raw; dropping
-    // the box runs `Clausters::drop` (the /quit + join).
+    // the box runs `Clausters::drop` (the /server_quit + join).
     drop(unsafe { Box::from_raw(handle) });
 }
 
 /// Reads an audio file into a malloc'd **interleaved** `f32` buffer — the
-/// same decoder `/b_allocRead` uses, so a client never needs one of its own.
+/// same decoder `/buffer_allocRead` uses, so a client never needs one of its own.
 /// WAV goes through hound; FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the
 /// rest through symphonia. Integer files are scaled to `[-1, 1]`: whatever the
 /// file holds, what comes back is `f32`.

@@ -18,7 +18,7 @@
 //    boot list.
 //
 // The def payloads carry no holes — that is the invariant the format rests on
-// — so two instances of one bundle share the one `/d_recv` that was sent, and
+// — so two instances of one bundle share the one `/def_send synth` that was sent, and
 // only their GuiDef and their boot differ.
 
 import { loadOsc, decodePacket, encodeMessage } from "./base/osc.ts";
@@ -100,15 +100,15 @@ export interface Mounted {
      * What this instance was allocated, by symbol name: its node ids, its
      * buses, its buffers. Flat because the names share one namespace (the
      * core refuses a name declared twice), and here because a page that wants
-     * to talk to *this* instance — an `/n_set`, a bus to watch — needs them.
+     * to talk to *this* instance — an `/node_set`, a bus to watch — needs them.
      */
     symbols: Record<string, number>;
     /** Whether the engine half has been sent (phase 2). */
     started: boolean;
 }
 
-// Each boot gets its own /sync ids so two components on one page cannot
-// mistake each other's /synced for their own.
+// Each boot gets its own /server_sync ids so two components on one page cannot
+// mistake each other's /server_sync.reply for their own.
 let nextSync = 0xb40;
 
 /**
@@ -287,19 +287,19 @@ export async function startBundle(mounted: Mounted): Promise<void> {
     // engine serves in order, so an issued send is enough.
     const wanted: [string, string][] = [
         ...(manifest.synthdefs ?? []).map(
-            (n) => ["/d_recv", `${base}/defs/synthdefs/${n}.json`] as [string, string],
+            (n) => ["synth", `${base}/defs/synthdefs/${n}.json`] as [string, string],
         ),
         ...(manifest.graphdefs ?? []).map(
-            (n) => ["/d_graph", `${base}/defs/graphdefs/${n}.json`] as [string, string],
+            (n) => ["graph", `${base}/defs/graphdefs/${n}.json`] as [string, string],
         ),
     ];
     await Promise.all(
-        wanted.map(([addr, url]) => {
+        wanted.map(([family, url]) => {
             let send = sentDefs.get(url);
             if (!send) {
                 send = (async () => {
                     const spec = await fetchBytes(url);
-                    engine.send(encodeMessage(addr, [["b", spec]]));
+                    engine.send(encodeMessage("/def_send", [["s", family], ["b", spec]]));
                 })();
                 sentDefs.set(url, send);
             }
@@ -320,7 +320,7 @@ export async function startBundle(mounted: Mounted): Promise<void> {
     }
 
     // The same bracket the native data-dir boot gets implicitly: the first
-    // /sync marks the defs in (loading them is asynchronous on the server),
+    // /server_sync marks the defs in (loading them is asynchronous on the server),
     // the second — arriving after everything, since the engine serves strictly
     // in order — is this instance's "up" signal.
     const syncId = (nextSync += 2);
@@ -330,21 +330,21 @@ export async function startBundle(mounted: Mounted): Promise<void> {
     });
     const watch = (bytes: Uint8Array) => {
         for (const { addr, args } of decodePacket(bytes)) {
-            if (addr === "/synced" && args[0] === syncId + 1) bootedResolve();
+            if (addr === "/server_sync.reply" && args[0] === syncId + 1) bootedResolve();
         }
     };
     engine.addReply(watch);
     try {
-        engine.send(encodeMessage("/sync", [["i", syncId]]));
+        engine.send(encodeMessage("/server_sync", [["i", syncId]]));
         for (const message of resolved.boot) {
             const [addr, ...args] = message as [string, ...unknown[]];
             engine.send(encodeMessage(addr, args.map(oscValue)));
         }
-        engine.send(encodeMessage("/sync", [["i", syncId + 1]]));
+        engine.send(encodeMessage("/server_sync", [["i", syncId + 1]]));
         await Promise.race([
             booted,
             new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("bundle mount: no /synced from the engine")), 15000),
+                setTimeout(() => reject(new Error("bundle mount: no /server_sync.reply from the engine")), 15000),
             ),
         ]);
     } finally {

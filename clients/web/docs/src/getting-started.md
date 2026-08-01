@@ -71,7 +71,7 @@ Save this beside `dist/` and open it:
 Three things in there are the whole client:
 
 - **The graph composes by method** — `saw(freq).mul(0.2)`, where the Python client writes `saw(freq) * 0.2`. TypeScript has no operator overloading; the JSON both send is identical.
-- **Everything that waits is a promise.** `def.send(server)` resolves when the server has acknowledged the def, so the `/s_new` that follows cannot race it. The page has one thread and must keep running: nothing ever blocks.
+- **Everything that waits is a promise.** `def.send(server)` resolves when the server has acknowledged the def, so the `/synth_new` that follows cannot race it. The page has one thread and must keep running: nothing ever blocks.
 - **The click is not decoration.** A browser starts no audio without a gesture, so the first thing that touches the engine has to happen inside an event handler.
 
 ## The other carrier

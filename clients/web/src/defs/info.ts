@@ -30,7 +30,7 @@ export type ReplyArgs = readonly (number | string | boolean | null | Uint8Array)
 const controlKey = (key: ReplyArgs[number]): string =>
     typeof key === "string" ? key : String(Number(key));
 
-/** One inner target of a graph def's surface port, as `/d_info` reports it. */
+/** One inner target of a graph def's surface port, as `/def_query.reply` reports it. */
 export interface PortTargetInfo {
     member: number;
     control: string;
@@ -112,7 +112,7 @@ export interface UgenInfo {
     inputs: UgenInput[];
 }
 
-/** One live `/n_map`/`/n_mapa` binding: the control follows the bus. */
+/** One live `/node_map`/`/node_mapAudio` binding: the control follows the bus. */
 export interface NodeMap {
     control: number;
     bus: number;
@@ -264,7 +264,7 @@ function parseMaps(args: ReplyArgs, i: number): [NodeMap[], number] {
 }
 
 /**
- * One `/n_info` reply. `isGroup` −1 is how the server says the node is not
+ * One `/node_query.reply` reply. `isGroup` −1 is how the server says the node is not
  * there.
  */
 export function parseNodeInfo(args: ReplyArgs): NodeInfo {
@@ -293,7 +293,7 @@ export function parseNodeInfo(args: ReplyArgs): NodeInfo {
 }
 
 /**
- * Recursively parses `count` entries of a `/g_queryTree.reply` starting at
+ * Recursively parses `count` entries of a `/group_queryTree.reply` starting at
  * `i`; returns the subtrees and the next index. A synth has child-count −1.
  *
  * The wire gives the nesting; the siblings and a group's head/tail follow from
@@ -339,7 +339,7 @@ function parseTreeNodes(
     return [out, i];
 }
 
-/** `/g_queryTree.reply` → a `Tree` of `NodeInfo`. */
+/** `/group_queryTree.reply` → a `Tree` of `NodeInfo`. */
 export function parseQueryTree(args: ReplyArgs): Tree {
     const detail = Number(args[0]);
     const rootId = Number(args[1]);
@@ -352,7 +352,7 @@ export function parseQueryTree(args: ReplyArgs): Tree {
 }
 
 /**
- * One `/d_info` reply: `name, family, numControls` then per control `name,
+ * One `/def_query.reply` reply: `name, family, numControls` then per control `name,
  * default, rate` — plus `min, max, step` for a Faust parameter, or
  * `numTargets` and the target tuples for a graph port.
  */
@@ -394,7 +394,7 @@ export function parseDefInfo(args: ReplyArgs): DefInfo {
 }
 
 /**
- * A `/b_info` reply, four args per buffer. `frames` −1 marks a slot with
+ * A `/buffer_query.reply` reply, four args per buffer. `frames` −1 marks a slot with
  * nothing in it (the argument-less listing form never reports one).
  */
 export function parseBufferList(args: ReplyArgs): BufferInfo[] {
@@ -413,7 +413,7 @@ export function parseBufferList(args: ReplyArgs): BufferInfo[] {
 }
 
 /**
- * One `/u_info` reply: ten fixed fields then `(name, default)` per named
+ * One `/ugen_query.reply` reply: ten fixed fields then `(name, default)` per named
  * input.
  */
 export function parseUgenInfo(args: ReplyArgs): UgenInfo {

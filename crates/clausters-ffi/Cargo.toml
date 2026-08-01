@@ -1,6 +1,6 @@
 [package]
 name = "clausters-ffi"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "C ABI over clausters-core: the language-agnostic surface every client binding (Python ctypes now, JS N-API/wasm later) sits on."

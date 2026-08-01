@@ -1,5 +1,5 @@
 //! Process-wide logging: a `tracing` subscriber the **binary** installs, with a
-//! runtime-reloadable filter so the `/verbosity` and `/dumpOSC` OSC commands can
+//! runtime-reloadable filter so the `/server_verbosity` and `/server_dumpOsc` OSC commands can
 //! retune the server's verbosity live (the client controls the server's logs).
 //!
 //! The audio thread never calls the `tracing` macros: it reports conditions over
@@ -14,13 +14,13 @@
 use std::sync::{Mutex, OnceLock};
 use tracing_subscriber::EnvFilter;
 
-/// The OSC-traffic dump target. `/dumpOSC` toggles `clausters::osc=trace`, so
+/// The OSC-traffic dump target. `/server_dumpOsc` toggles `clausters::osc=trace`, so
 /// incoming/scheduled messages are logged through the same system as everything
 /// else (no ad-hoc console print).
 pub const OSC_TARGET: &str = "clausters::osc";
 
 struct LogState {
-    /// Base filter directive (from `-v`/`RUST_LOG` or `/verbosity`), without the
+    /// Base filter directive (from `-v`/`RUST_LOG` or `/server_verbosity`), without the
     /// OSC-dump overlay.
     base: String,
     /// Whether the OSC-traffic dump overlay is currently on.

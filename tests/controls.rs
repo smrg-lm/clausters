@@ -1,5 +1,5 @@
 //! Typed-control tests (S2): trigger (`tr`) controls fire for one block,
-//! lagged controls smooth a step, scalar (`ir`) controls freeze under `/n_set`,
+//! lagged controls smooth a step, scalar (`ir`) controls freeze under `/node_set`,
 //! plus the compiler validation for control types and lag.
 
 #![cfg(feature = "synth")]
@@ -58,7 +58,7 @@ fn trigger_control_fires_exactly_one_block() {
 
     // Block 0: default 0.
     assert!(step(&mut synth, &mut buses).iter().all(|&x| x == 0.0));
-    // /n_set t = 1, then one block: the trigger is live.
+    // /node_set t = 1, then one block: the trigger is live.
     synth.set_control(0, 1.0);
     assert!(step(&mut synth, &mut buses).iter().all(|&x| x == 1.0));
     // Next block with no set: the engine has reset it to 0.
@@ -80,10 +80,10 @@ fn scalar_control_freezes_under_n_set() {
     );
     let mut buses = fresh_buses();
 
-    // An init-time set (before the first block, as /s_new does) still takes.
+    // An init-time set (before the first block, as /synth_new does) still takes.
     synth.set_control(0, 5.0);
     assert!(step(&mut synth, &mut buses).iter().all(|&x| x == 5.0));
-    // A /n_set after the synth has run is ignored — the value is frozen.
+    // A /node_set after the synth has run is ignored — the value is frozen.
     synth.set_control(0, 9.0);
     assert!(step(&mut synth, &mut buses).iter().all(|&x| x == 5.0));
     assert!(step(&mut synth, &mut buses).iter().all(|&x| x == 5.0));

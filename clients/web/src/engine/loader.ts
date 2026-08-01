@@ -34,7 +34,7 @@ export interface ClaustersEngine {
     clockAnchor(): Promise<ClockAnchor>;
     /**
      * Installs host-decoded samples as buffer `index` (the browser's
-     * /b_allocRead). `samples` is interleaved and transferred.
+     * /buffer_allocRead). `samples` is interleaved and transferred.
      */
     bLoad(
         index: number,

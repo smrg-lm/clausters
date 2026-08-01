@@ -4,9 +4,9 @@
 //!
 //! [`CmdTranslator`] owns everything that turning a message into fully built
 //! [`Cmd`]s requires: the def tables, the node→def mirror that resolves
-//! `/n_set` control names, and the auto node-ID counter. It covers the
-//! schedulable subset of the protocol (`/s_new`, node/group commands,
-//! `/c_set`) plus the synchronous def-table commands (`/d_recv`, `/d_free`).
+//! `/node_set` control names, and the auto node-ID counter. It covers the
+//! schedulable subset of the protocol (`/synth_new`, node/group commands,
+//! `/bus_set`) plus the synchronous def-table commands (`/def_send synth`, `/def_free`).
 //! Buffer commands parse into NRT jobs with [`parse_buffer_msg`].
 
 use std::cell::Cell;
@@ -55,7 +55,7 @@ type GraphBusAlloc = (
     Vec<(usize, usize)>,
 );
 
-/// What a live node was built from, mirrored per node ID so `/n_set` can
+/// What a live node was built from, mirrored per node ID so `/node_set` can
 /// resolve control names off the audio thread.
 #[derive(Clone)]
 pub enum NodeDef {
@@ -83,7 +83,7 @@ impl NodeDef {
         }
     }
 
-    /// Control name by index, for `/g_queryTree.reply`.
+    /// Control name by index, for `/group_queryTree.reply`.
     #[cfg_attr(
         not(any(feature = "synth", feature = "faust")),
         allow(unused_variables)
@@ -104,7 +104,7 @@ impl NodeDef {
         }
     }
 
-    /// Number of addressable UGens (`/u_cmd`), or `None` for defs with no UGen
+    /// Number of addressable UGens (`/node_ugenCmd`), or `None` for defs with no UGen
     /// vector (a Faust synth is one opaque block, not a UGen graph).
     fn ugen_count(&self) -> Option<usize> {
         match self {
@@ -152,7 +152,7 @@ impl NodeDef {
 }
 
 pub struct CmdTranslator {
-    /// Faust instances bake the sample rate in at `/s_new` time.
+    /// Faust instances bake the sample rate in at `/synth_new` time.
     #[cfg_attr(not(feature = "faust"), allow(dead_code))]
     sample_rate: f32,
     /// Start of the next instance's run of stochastic-UGen seeds. It belongs
@@ -170,10 +170,10 @@ pub struct CmdTranslator {
     #[cfg(feature = "synth")]
     pub synth_defs: HashMap<String, Arc<SynthDef>>,
     /// Mirror of which def each live node was built from. Maintained from
-    /// `/s_new` and from collected garbage (see [`CmdTranslator::forget_node`]).
+    /// `/synth_new` and from collected garbage (see [`CmdTranslator::forget_node`]).
     pub node_defs: HashMap<i32, NodeDef>,
-    /// Registry of the server's auto node-id range (`/s_new -1`, GraphDef
-    /// members): ids return on `/n_end` (or on engine rejection), so the
+    /// Registry of the server's auto node-id range (`/synth_new -1`, GraphDef
+    /// members): ids return on `/node_end` (or on engine rejection), so the
     /// range recycles instead of counting up. Sized by the node-id partition
     /// (`NodeIdPartition::from_max_nodes`).
     auto_ids: Registry,
@@ -183,7 +183,7 @@ pub struct CmdTranslator {
     /// Network-side tree mirror: topology, per-node controls and bus usage,
     /// auto-sorted groups (M12). Fed by the same commands the engine gets.
     pub mirror: TreeMirror,
-    /// Mirror of the engine's buffer pool, kept in step with `/b_*` results
+    /// Mirror of the engine's buffer pool, kept in step with `/buffer_*` results
     /// (installed by the server). Read when building a Faust instance so its
     /// `soundfile` zones can be filled from a server buffer.
     pub buffers: BufferPool,
@@ -194,16 +194,16 @@ pub struct CmdTranslator {
     /// and the private-bus allocators they draw from.
     pub graph_defs: HashMap<String, Arc<GraphDefSpec>>,
     pub graph_instances: HashMap<i32, GraphInstance>,
-    /// Per-voice sub-graphs spawned by `/graph_voice` (or MIDI notes), keyed by
+    /// Per-voice sub-graphs spawned by `/graph_newVoice` (or MIDI notes), keyed by
     /// their sub-group id.
     pub graph_voices: HashMap<i32, GraphVoice>,
     graph_audio_buses: Registry,
     graph_control_buses: Registry,
     /// Boot-time pool capacities. `max_group_children` sizes every non-root
-    /// group this translator builds (`/g_new`, `/s_new`'s graph subgroups);
+    /// group this translator builds (`/group_new`, `/synth_new`'s graph subgroups);
     /// `max_ugen_inputs` caps accepted inputs when compiling a def; the buffer
     /// pool `buffers` is already sized to `max_buffers` (its `len()` is the
-    /// buffer-index bound). Kept so `/server_info` can report them.
+    /// buffer-index bound). Kept so `/server_query` can report them.
     limits: Limits,
 }
 
@@ -243,7 +243,7 @@ impl CmdTranslator {
         let control_reserved = GRAPH_CONTROL_BUS_RESERVED.min(control_buses);
         // Every node-id range scales from the node table's capacity — the
         // resource that actually bounds concurrent nodes (shared formula,
-        // reported to clients over `/server_info`).
+        // reported to clients over `/server_query`).
         let partition = NodeIdPartition::from_max_nodes(limits.max_nodes);
         #[cfg(feature = "synth")]
         let synth_defs = {
@@ -281,7 +281,7 @@ impl CmdTranslator {
         Group::with_capacity(self.limits.max_group_children)
     }
 
-    /// Total defs of both families, for `/status.reply`.
+    /// Total defs of both families, for `/server_status.reply`.
     pub fn def_count(&self) -> usize {
         #[allow(unused_mut)]
         let mut n = 0;
@@ -372,7 +372,7 @@ impl CmdTranslator {
         self.resort_from(self.mirror.parent(id), cmds);
     }
 
-    /// The synth nodes a `/n_set`/`/n_map`/`/n_mapa` targets. A synth targets
+    /// The synth nodes a `/node_set`/`/node_map`/`/node_mapAudio` targets. A synth targets
     /// itself; a **group** propagates the named controls to every synth/faust
     /// in its subtree, recursing through subgroups and stopping at each synth
     /// — scsynth's group semantics, "transfer the named parameters down to the
@@ -412,17 +412,17 @@ impl CmdTranslator {
     }
 
     /// True iff `id` is unknown (neither in the tree mirror nor a node whose
-    /// def we still hold), so a `/n_set`/`/n_map` on it should `/fail`. An
+    /// def we still hold), so a `/node_set`/`/node_map` on it should `/fail`. An
     /// empty group is *known* — propagation is just a no-op.
     fn node_unknown(&self, id: i32) -> bool {
         self.mirror.get(id).is_none() && !self.node_defs.contains_key(&id)
     }
 
-    /// `/n_map` (control bus) and `/n_mapa` (audio bus): bind controls to
+    /// `/node_map` (control bus) and `/node_mapAudio` (audio bus): bind controls to
     /// buses the synth reads at the start of every block, `bus = -1` to
-    /// unbind. Same pair-wise parsing as `/n_set`; an audio map (or mapping a
+    /// unbind. Same pair-wise parsing as `/node_set`; an audio map (or mapping a
     /// control used as a bus index) re-analyzes the node's bus usage. Like
-    /// `/n_set`, a group target propagates the maps over its subtree.
+    /// `/node_set`, a group target propagates the maps over its subtree.
     fn map_controls(
         &mut self,
         msg: &rosc::OscMessage,
@@ -460,7 +460,7 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/n_setn nodeID [ctrl numControls val...]...`: like `/n_set`, but each
+    /// `/node_setRange nodeID [ctrl numControls val...]...`: like `/node_set`, but each
     /// group sets a **consecutive range** of controls starting at `ctrl`
     /// (resolved by name or index). A group target propagates over its subtree.
     fn set_controls_n(
@@ -509,9 +509,9 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/n_fill nodeID [ctrl numControls value]...`: fills a consecutive range
+    /// `/node_fill nodeID [ctrl numControls value]...`: fills a consecutive range
     /// of controls with a single value (each group a `(ctrl, numControls,
-    /// value)` triple). Propagates over a group target like `/n_set`.
+    /// value)` triple). Propagates over a group target like `/node_set`.
     fn fill_controls(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         let Some(OscType::Int(id)) = msg.args.first() else {
             return Err("expected: id, then (control, numControls, value) triples".into());
@@ -552,7 +552,7 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/n_mapn` / `/n_mapan`: like `/n_map`/`/n_mapa`, but each group
+    /// `/node_mapRange` / `/node_mapAudioRange`: like `/node_map`/`/node_mapAudio`, but each group
     /// `(ctrl, busIndex, numControls)` maps `numControls` **consecutive**
     /// controls to `numControls` **consecutive** buses starting at `busIndex`
     /// (`busIndex = -1` unbinds the whole range).
@@ -602,12 +602,12 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/n_order addAction targetID nodeID...`: moves several nodes to one
+    /// `/node_order addAction targetID nodeID...`: moves several nodes to one
     /// position in listed order. `addAction` 0 = head of the target group, 1 =
     /// tail, 2 = before the target node, 3 = after it. The first node goes to
     /// the position; each following node lands right after the previous one, so
-    /// they keep the given order. Auto-sorted groups (`/g_sortMode`) reject
-    /// manual moves, same as `/n_before`.
+    /// they keep the given order. Auto-sorted groups (`/group_sortMode`) reject
+    /// manual moves, same as `/node_before`.
     fn order_nodes(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         let [OscType::Int(action), OscType::Int(target), nodes @ ..] = msg.args.as_slice() else {
             return Err("expected: addAction, targetID, then node IDs".into());
@@ -634,10 +634,10 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/g_head` / `/g_tail groupID nodeID...`: moves each node to the head/tail
+    /// `/group_head` / `/group_tail groupID nodeID...`: moves each node to the head/tail
     /// of the given group (pairs of `groupID, nodeID`).
     fn move_to_group(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
-        let place = if msg.addr == "/g_head" {
+        let place = if msg.addr == "/group_head" {
             Place::Head
         } else {
             Place::Tail
@@ -654,7 +654,7 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// One node move shared by `/n_order`, `/g_head` and `/g_tail`: rejects
+    /// One node move shared by `/node_order`, `/group_head` and `/group_tail`: rejects
     /// moving into an auto-sorted group, emits the `Cmd::MoveNode`, and re-sorts
     /// the affected auto ancestors. `target` is a sibling (Before/After) or the
     /// destination group (Head/Tail).
@@ -674,7 +674,7 @@ impl CmdTranslator {
         };
         if self.mirror.is_auto_group(dest) {
             return Err(format!(
-                "group {dest} is auto-sorted (/g_sortMode): manual moves are disabled there"
+                "group {dest} is auto-sorted (/group_sortMode): manual moves are disabled there"
             ));
         }
         cmds.push(Cmd::MoveNode { id, target, place });
@@ -687,7 +687,7 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/c_setn busIndex numBuses val...`: sets a consecutive range of control
+    /// `/bus_setRange busIndex numBuses val...`: sets a consecutive range of control
     /// buses (one or more `(busIndex, numBuses, values...)` groups). The
     /// **immediate** form writes the shared atomics on the network thread; the
     /// scheduled form (this) ships `Cmd::SetControlBus` per bus.
@@ -720,7 +720,7 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/c_fill busIndex numBuses value...`: fills a consecutive range of
+    /// `/bus_fill busIndex numBuses value...`: fills a consecutive range of
     /// control buses with one value (groups of `(busIndex, numBuses, value)`).
     fn fill_control_bus(
         &mut self,
@@ -749,9 +749,9 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/u_cmd nodeID ugenIndex commandName args...`: a typed command addressed
+    /// `/node_ugenCmd nodeID ugenIndex commandName args...`: a typed command addressed
     /// to one UGen instance — the discoverable replacement for scsynth's
-    /// untyped `/u_cmd`. The command name is hashed to a stable selector and
+    /// untyped `/node_ugenCmd`. The command name is hashed to a stable selector and
     /// the numeric args are packed inline (no heap crosses to the audio
     /// thread). Validates the node is a UGen synth and the index is in range;
     /// the specific commands a UGen understands land with that UGen.
@@ -796,7 +796,7 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/d_recv`: compile a SynthDef JSON blob into the def table. Returns the
+    /// `/def_send synth`: compile a SynthDef JSON blob into the def table. Returns the
     /// def name, so the caller can persist the spec under it.
     #[cfg(feature = "synth")]
     pub fn d_recv(&mut self, args: &[OscType]) -> Result<String, String> {
@@ -827,13 +827,13 @@ impl CmdTranslator {
         Ok(name)
     }
 
-    /// `/d_recv` on a server built without the SynthDef family.
+    /// `/def_send synth` on a server built without the SynthDef family.
     #[cfg(not(feature = "synth"))]
     pub fn d_recv(&mut self, _args: &[OscType]) -> Result<String, String> {
         Err("server built without synthdef support".into())
     }
 
-    /// `/d_free name...`. Live synths keep their `Arc<SynthDef>`: scsynth
+    /// `/def_free name...`. Live synths keep their `Arc<SynthDef>`: scsynth
     /// semantics. Same for Faust factories (instances refcount them).
     pub fn d_free(&mut self, args: &[OscType]) -> Result<(), String> {
         for arg in args {
@@ -849,7 +849,7 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/d_graph <json>`: parse and validate a GraphDef spec, store it under
+    /// `/def_send graph <json>`: parse and validate a GraphDef spec, store it under
     /// its name. Returns the name so the caller can persist it. Cheap (no
     /// JIT): a GraphDef only references other defs, each carrying its own
     /// compile/cache.
@@ -868,12 +868,12 @@ impl CmdTranslator {
     }
 
     /// Drops a GraphDef. Live instances keep running (they hold no reference
-    /// to the def). Folded into `/d_free` alongside the synth/faust tables.
+    /// to the def). Folded into `/def_free` alongside the synth/faust tables.
     pub fn graph_def_free(&mut self, name: &str) {
         self.graph_defs.remove(name);
     }
 
-    /// Allocates one id from the auto range (`/s_new -1`, GraphDef groups and
+    /// Allocates one id from the auto range (`/synth_new -1`, GraphDef groups and
     /// members). Exhaustion is an explicit error, never a wrap: the range
     /// recycles as nodes die, so running out means the table-scaled margin is
     /// genuinely full of live or in-flight nodes.
@@ -946,7 +946,7 @@ impl CmdTranslator {
     /// Returns a dead (or rejected) node's id to whichever server-owned range
     /// it belongs — the auto range or the MIDI voice range. Ids outside both
     /// are the clients' business (their own registries recycle them from the
-    /// same `/n_end` notifications). Every node death reports here, so no
+    /// same `/node_end` notifications). Every node death reports here, so no
     /// server-allocated id is ever lost.
     pub fn release_node_id(&mut self, id: i32) {
         let id = id as i64;
@@ -993,7 +993,7 @@ impl CmdTranslator {
     /// Instantiates the members at `indices` inside `parent`, consuming the
     /// pre-built synths and pre-allocated node ids (both parallel to
     /// `indices`): sets each control (bus references resolved against
-    /// `bus_index`, `"OUT"` → bus 0) and applies the `/n_map` wiring. Returns
+    /// `bus_index`, `"OUT"` → bus 0) and applies the `/node_map` wiring. Returns
     /// member index → node id. Infallible — the fallible `make_synth` and id
     /// allocation happened in the caller, so an instance is never left
     /// half-built.
@@ -1050,7 +1050,7 @@ impl CmdTranslator {
             );
             node_of.insert(mi, node_id);
         }
-        // `/n_map` wiring, once every member exists.
+        // `/node_map` wiring, once every member exists.
         for &mi in indices {
             let node_id = node_of[&mi];
             for (cname, bname) in &def.members[mi].maps {
@@ -1100,7 +1100,7 @@ impl CmdTranslator {
     }
 
     /// Collects the per-instantiation `port value` overrides trailing a
-    /// `/graph_new`/`/graph_voice`.
+    /// `/graph_new`/`/graph_newVoice`.
     fn port_overrides(rest: &[OscType]) -> Vec<(String, f32)> {
         rest.chunks(2)
             .filter_map(
@@ -1115,8 +1115,8 @@ impl CmdTranslator {
     /// `/graph_new name id action target [port value ...]`: instantiate a
     /// GraphDef as a group holding its **shared** members, with private buses
     /// and a resolved named surface. (Per-voice members wait for
-    /// `/graph_voice`.) It expands entirely into existing primitives (a group,
-    /// member `/s_new`s, `/n_map` wiring), so the engine sees nothing new and
+    /// `/graph_newVoice`.) It expands entirely into existing primitives (a group,
+    /// member `/synth_new`s, `/node_map` wiring), so the engine sees nothing new and
     /// RT-safety is untouched. Atomic: every fallible step (member def
     /// resolution, bus allocation) happens before any command or mirror change.
     fn graph_new(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
@@ -1214,11 +1214,11 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/graph_voice instanceID id [port value ...]`: spawn a per-voice
+    /// `/graph_newVoice instanceID id [port value ...]`: spawn a per-voice
     /// sub-graph inside a running GraphDef instance, wired to its shared
     /// private buses. The voice is a sub-group at the head of the instance
     /// group (the auto-sort then orders it relative to the shared mixer by its
-    /// bus usage); freeing it (`/n_free`) frees its members. Same atomic
+    /// bus usage); freeing it (`/node_free`) frees its members. Same atomic
     /// shape as `/graph_new`.
     fn graph_voice(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         let [OscType::Int(instance), OscType::Int(id), rest @ ..] = msg.args.as_slice() else {
@@ -1340,7 +1340,7 @@ impl CmdTranslator {
     /// `(port, value)` pair against its named surface and return true. Names
     /// absent from the surface are ignored — the surface is the whole public
     /// interface; the member node ids stay private. Anything else returns
-    /// false so `/n_set` falls back to the synth/group path.
+    /// false so `/node_set` falls back to the synth/group path.
     fn graph_set(&mut self, id: i32, pairs: &[OscType], cmds: &mut Vec<Cmd>) -> bool {
         if !self.graph_instances.contains_key(&id) && !self.graph_voices.contains_key(&id) {
             return false;
@@ -1358,7 +1358,7 @@ impl CmdTranslator {
     /// Drops the translator-side state of a freed GraphDef node: a voice
     /// sub-group (forget it, detach from its instance) or an instance group
     /// (reclaim its private buses and forget its voices). A no-op for ordinary
-    /// nodes. The actual node teardown is the `/n_free` `FreeNode` itself.
+    /// nodes. The actual node teardown is the `/node_free` `FreeNode` itself.
     fn free_graph_node(&mut self, id: i32) {
         if let Some(voice) = self.graph_voices.remove(&id) {
             if let Some(inst) = self.graph_instances.get_mut(&voice.instance) {
@@ -1394,7 +1394,7 @@ impl CmdTranslator {
     /// nothing reaches the engine until the caller ships the batch.
     pub fn translate(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         match msg.addr.as_str() {
-            "/s_new" => {
+            "/synth_new" => {
                 let [
                     OscType::String(name),
                     OscType::Int(id),
@@ -1447,7 +1447,7 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            "/n_set" => {
+            "/node_set" => {
                 let Some(OscType::Int(id)) = msg.args.first() else {
                     return Err("expected: id, then control/value pairs".into());
                 };
@@ -1487,23 +1487,23 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            "/n_map" => self.map_controls(msg, false, cmds),
-            "/n_mapa" => self.map_controls(msg, true, cmds),
-            "/n_setn" => self.set_controls_n(msg, cmds),
-            "/n_fill" => self.fill_controls(msg, cmds),
-            "/n_mapn" => self.map_controls_n(msg, false, cmds),
-            "/n_mapan" => self.map_controls_n(msg, true, cmds),
-            "/n_order" => self.order_nodes(msg, cmds),
-            "/g_head" | "/g_tail" => self.move_to_group(msg, cmds),
+            "/node_map" => self.map_controls(msg, false, cmds),
+            "/node_mapAudio" => self.map_controls(msg, true, cmds),
+            "/node_setRange" => self.set_controls_n(msg, cmds),
+            "/node_fill" => self.fill_controls(msg, cmds),
+            "/node_mapRange" => self.map_controls_n(msg, false, cmds),
+            "/node_mapAudioRange" => self.map_controls_n(msg, true, cmds),
+            "/node_order" => self.order_nodes(msg, cmds),
+            "/group_head" | "/group_tail" => self.move_to_group(msg, cmds),
             // M18: instantiate a GraphDef as a wired group with private buses.
             "/graph_new" => self.graph_new(msg, cmds),
             // M18: spawn a per-voice sub-graph inside an instance.
-            "/graph_voice" => self.graph_voice(msg, cmds),
+            "/graph_newVoice" => self.graph_voice(msg, cmds),
             // M17 MIDI binding config (no engine command; pure translator state).
             "/midi_bind" => self.midi_bind(msg, cmds),
             "/midi_unbind" => self.midi_unbind(msg, cmds),
             "/midi_map" => self.midi_map(msg),
-            "/n_free" => {
+            "/node_free" => {
                 for arg in &msg.args {
                     let OscType::Int(id) = arg else {
                         return Err("expected int node IDs".into());
@@ -1518,7 +1518,7 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            "/n_run" => {
+            "/node_run" => {
                 // Pairs of (nodeID, flag): flag 0 pauses the node, non-zero
                 // resumes it. A paused node stays in the tree (no mirror change).
                 for pair in msg.args.chunks(2) {
@@ -1535,8 +1535,8 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            "/n_before" | "/n_after" => {
-                let place = if msg.addr == "/n_before" {
+            "/node_before" | "/node_after" => {
+                let place = if msg.addr == "/node_before" {
                     Place::Before
                 } else {
                     Place::After
@@ -1553,7 +1553,7 @@ impl CmdTranslator {
                             .is_some_and(|p| self.mirror.is_auto_group(p))
                         {
                             return Err(format!(
-                                "node {node} is in an auto-sorted group (/g_sortMode): manual moves are disabled there"
+                                "node {node} is in an auto-sorted group (/group_sortMode): manual moves are disabled there"
                             ));
                         }
                     }
@@ -1574,7 +1574,7 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            "/g_new" => {
+            "/group_new" => {
                 for triple in msg.args.chunks(3) {
                     let [OscType::Int(id), OscType::Int(action), OscType::Int(target)] = triple
                     else {
@@ -1600,12 +1600,12 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            "/g_freeAll" | "/g_deepFree" => {
+            "/group_freeAll" | "/group_deepFree" => {
                 for arg in &msg.args {
                     let OscType::Int(id) = arg else {
                         return Err("expected int group IDs".into());
                     };
-                    if msg.addr == "/g_freeAll" {
+                    if msg.addr == "/group_freeAll" {
                         cmds.push(Cmd::FreeAllInGroup { id: *id });
                         self.mirror.free_all(*id);
                     } else {
@@ -1616,10 +1616,10 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            // M13: `/g_parallel groupID mode` — mode 1 runs the group's
+            // M13: `/group_parallel groupID mode` — mode 1 runs the group's
             // children in dependency stages on the engine's worker pool
             // (sequential without workers); mode 0 returns to strict order.
-            "/g_parallel" => {
+            "/group_parallel" => {
                 if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
                     return Err("expected (groupID, mode) pairs".into());
                 }
@@ -1635,10 +1635,10 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            // M12: `/g_sortMode groupID mode` — mode 1 sorts the group's
+            // M12: `/group_sortMode groupID mode` — mode 1 sorts the group's
             // children by their bus connections now and on every future
             // change; mode 0 returns it to manual ordering.
-            "/g_sortMode" => {
+            "/group_sortMode" => {
                 if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
                     return Err("expected (groupID, mode) pairs".into());
                 }
@@ -1656,7 +1656,7 @@ impl CmdTranslator {
             // The immediate form writes the shared atomics on the network
             // thread, but a scheduled write must land at its exact sample on
             // the engine.
-            "/c_set" => {
+            "/bus_set" => {
                 for pair in msg.args.chunks(2) {
                     let (OscType::Int(index), Some(value)) = (&pair[0], float_value(&pair[1]))
                     else {
@@ -1672,9 +1672,9 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            "/c_setn" => self.set_control_bus_n(msg, cmds),
-            "/c_fill" => self.fill_control_bus(msg, cmds),
-            "/u_cmd" => self.ugen_command(msg, cmds),
+            "/bus_setRange" => self.set_control_bus_n(msg, cmds),
+            "/bus_fill" => self.fill_control_bus(msg, cmds),
+            "/node_ugenCmd" => self.ugen_command(msg, cmds),
             other => Err(format!("{other} cannot be scheduled in a timed bundle")),
         }
     }
@@ -1683,7 +1683,7 @@ impl CmdTranslator {
     /// channel to an instrument def (SynthDef *or* FaustDef *or* GraphDef).
     /// Default control map is `freq`/`amp`; `/midi_map` extends it. When the
     /// instrument is a **GraphDef** (with per-voice members), the shared
-    /// instance is spawned now and each note becomes a `/graph_voice`.
+    /// instance is spawned now and each note becomes a `/graph_newVoice`.
     fn midi_bind(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         let [
             OscType::Int(channel),
@@ -1708,7 +1708,7 @@ impl CmdTranslator {
 
     /// If `instrument` names a GraphDef, spawn its shared instance now (so each
     /// note spawns a voice into it) and return the instance id; otherwise
-    /// `None` (a plain def is `/s_new`'d per note). A GraphDef with no
+    /// `None` (a plain def is `/synth_new`'d per note). A GraphDef with no
     /// per-voice members is rejected — it has nothing to play per note. Shared
     /// by `/midi_bind` and the M19 binding restore.
     fn bind_graph_instance(
@@ -1831,7 +1831,7 @@ impl CmdTranslator {
     }
 
     /// M17: actuate nodes from a standard channel-voice MIDI message. Reuses
-    /// the OSC path by synthesizing the equivalent `/s_new`/`/n_set`/`/n_free`,
+    /// the OSC path by synthesizing the equivalent `/synth_new`/`/node_set`/`/node_free`,
     /// so a MIDI-driven voice is byte-identical to the OSC one. Unbound
     /// channels and unmapped expressive messages are silently ignored (a
     /// running MIDI stream must never error). Network thread only.
@@ -1923,7 +1923,7 @@ impl CmdTranslator {
         }
     }
 
-    /// Note on → `/s_new` with `freq`/`amp` from the conversions. Retriggering
+    /// Note on → `/synth_new` with `freq`/`amp` from the conversions. Retriggering
     /// a note already sounding frees the old voice first.
     fn midi_note_on(
         &mut self,
@@ -1955,7 +1955,7 @@ impl CmdTranslator {
         // surface/control values.
         let msg = match graph_instance {
             Some(instance) => midi_message(
-                "/graph_voice",
+                "/graph_newVoice",
                 vec![
                     OscType::Int(instance),
                     OscType::Int(id),
@@ -1966,7 +1966,7 @@ impl CmdTranslator {
                 ],
             ),
             None => midi_message(
-                "/s_new",
+                "/synth_new",
                 vec![
                     OscType::String(instrument),
                     OscType::Int(id),
@@ -1987,7 +1987,7 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// Note off → `/n_free` (or `/n_set gate 0` for gate-aware bindings).
+    /// Note off → `/node_free` (or `/node_set gate 0` for gate-aware bindings).
     fn midi_note_off(&mut self, channel: u8, note: u8, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         let Some(id) = self.midi.voices.remove(&(channel, note)) else {
             return Ok(());
@@ -1995,24 +1995,24 @@ impl CmdTranslator {
         let gate = self.midi.channels.get(&channel);
         let msg = match gate.filter(|b| b.gate) {
             Some(b) => midi_message(
-                "/n_set",
+                "/node_set",
                 vec![
                     OscType::Int(id),
                     OscType::String(b.gate_control.clone()),
                     OscType::Float(0.0),
                 ],
             ),
-            None => midi_message("/n_free", vec![OscType::Int(id)]),
+            None => midi_message("/node_free", vec![OscType::Int(id)]),
         };
         // A freed voice may already be gone; an unknown control is a no-op.
         let _ = self.translate(&msg, cmds);
         Ok(())
     }
 
-    /// `/n_set` one control on one voice; tolerate a stale node / unknown name.
+    /// `/node_set` one control on one voice; tolerate a stale node / unknown name.
     fn midi_set(&mut self, id: i32, control: &str, value: f32, cmds: &mut Vec<Cmd>) {
         let msg = midi_message(
-            "/n_set",
+            "/node_set",
             vec![
                 OscType::Int(id),
                 OscType::String(control.to_string()),
@@ -2022,24 +2022,24 @@ impl CmdTranslator {
         let _ = self.translate(&msg, cmds);
     }
 
-    /// `/n_set` one control on every live voice of a channel.
+    /// `/node_set` one control on every live voice of a channel.
     fn midi_set_channel(&mut self, channel: u8, control: &str, value: f32, cmds: &mut Vec<Cmd>) {
         for id in self.midi.voice_ids(channel) {
             self.midi_set(id, control, value, cmds);
         }
     }
 
-    /// `/d_info` arguments for `/d_query` (M30), one vector per def — the
+    /// `/def_query.reply` arguments for `/def_query` (M30), one vector per def — the
     /// loaded defs and their control surface, which is what a patcher wires.
     ///
     /// With `names`, details exactly those (an unknown one comes back with an
-    /// empty family and no controls, the way `/b_query` reports an unallocated
+    /// empty family and no controls, the way `/buffer_query` reports an unallocated
     /// buffer as zeros rather than failing the whole batch); with `None`, every
     /// loaded def, ordered by family then name so the reply is deterministic.
     ///
     /// Layout per def: `name, family, numControls`, then per control
     /// `name, default, rate` — `rate` naming the same `kr`/`tr`/`ir` control
-    /// types a `/d_recv` spec declares. A **faust** def appends `min, max,
+    /// types a `/def_send synth` spec declares. A **faust** def appends `min, max,
     /// step` (its params carry a range; the reserved `out`/`in` bus controls
     /// are engine plumbing and stay out of the reported surface). A **graph**
     /// def reports its surface **ports** instead, each followed by
@@ -2139,7 +2139,7 @@ impl CmdTranslator {
         ]
     }
 
-    /// `/b_info` arguments for an argument-less `/b_query` (M30): every
+    /// `/buffer_query.reply` arguments for an argument-less `/buffer_query` (M30): every
     /// **allocated** buffer, four args each (`bufnum, frames, channels,
     /// sampleRate`) — the same shape the per-index form replies with, so one
     /// parser reads both.
@@ -2156,10 +2156,10 @@ impl CmdTranslator {
         args
     }
 
-    /// `/g_queryTree.reply` arguments: `detail`, the queried group and its
+    /// `/group_queryTree.reply` arguments: `detail`, the queried group and its
     /// child count, then depth-first per node: ID and child count (`-1` for
     /// synths), the def name for synths, and per `detail` level the same
-    /// payload `/n_info` carries — 1 adds the control count and (name, value)
+    /// payload `/node_query.reply` carries — 1 adds the control count and (name, value)
     /// pairs (scsynth's `flag`), 2 adds the maps and the inferred bus lists,
     /// which is what makes every entry a full node info.
     pub fn query_tree(&self, group: i32, detail: i32) -> Result<Vec<OscType>, String> {
@@ -2195,8 +2195,8 @@ impl CmdTranslator {
         }
     }
 
-    /// The per-synth payload shared by `/n_info` and a detailed
-    /// `/g_queryTree.reply`: the control count and its (name|index, value)
+    /// The per-synth payload shared by `/node_query.reply` and a detailed
+    /// `/group_queryTree.reply`: the control count and its (name|index, value)
     /// pairs and, with `full`, the map count and its (controlIndex, bus,
     /// audio) triples plus the inferred `reads`/`writes` bus lists.
     fn synth_payload(&self, id: i32, full: bool, args: &mut Vec<OscType>) {
@@ -2229,20 +2229,20 @@ impl CmdTranslator {
         args.push(OscType::String(bus_list(usage.writes)));
     }
 
-    /// `/n_info` arguments for `/n_query`: per-node detail beyond the tree
-    /// structure `/g_queryTree` gives. Layout: `nodeID, parentID, prevID,
+    /// `/node_query.reply` arguments for `/node_query`: per-node detail beyond the tree
+    /// structure `/group_queryTree` gives. Layout: `nodeID, parentID, prevID,
     /// nextID, isGroup`; then for a **group** `headID, tailID` (`-1` if empty);
     /// for a **synth** `defName`, `numControls` + (name|index, value) pairs,
     /// `numMaps` + (controlIndex, bus, audio) triples, and the inferred
     /// `reads`/`writes` bus lists as two strings (same format as
-    /// `/g_dumpGraph`). Siblings are `-1` when absent, and a node the server
+    /// `/group_dumpGraph`). Siblings are `-1` when absent, and a node the server
     /// does not hold answers `nodeID, -1, -1, -1, -1` — `isGroup = -1` is how
     /// the record says the node is gone.
     pub fn node_info(&self, id: i32) -> Vec<OscType> {
         let Some(node) = self.mirror.get(id) else {
             // A node that is not there is a *state*, not a protocol error:
             // `isGroup = -1` says so in the record itself, so one dead id
-            // does not abort a multi-id query (the `/d_query` convention).
+            // does not abort a multi-id query (the `/def_query` convention).
             return vec![
                 OscType::Int(id),
                 OscType::Int(-1),
@@ -2288,7 +2288,7 @@ impl CmdTranslator {
         (prev, next)
     }
 
-    /// `/g_dumpGraph`: a human-readable view of the inferred bus graph of
+    /// `/group_dumpGraph`: a human-readable view of the inferred bus graph of
     /// one group — what each child reads/writes and the current order.
     pub fn dump_graph(&self, group: i32) -> Result<String, String> {
         let Some(children) = self.mirror.children(group) else {
@@ -2338,10 +2338,10 @@ fn bus_list(mask: u128) -> String {
     buses.join(",")
 }
 
-/// Parses one `/b_*` command (except the synchronous `/b_query`) into the
+/// Parses one `/buffer_*` command (except the synchronous `/buffer_query`) into the
 /// buffer index and the NRT job that performs it. `mirror` is the
 /// network-side pool: commands that keep or reuse the current contents
-/// (`/b_read`, `/b_write`, `/b_zero`) read shape and data from it.
+/// (`/buffer_read`, `/buffer_write`, `/buffer_zero`) read shape and data from it.
 pub fn parse_buffer_msg(
     addr: &str,
     args: &[OscType],
@@ -2349,7 +2349,7 @@ pub fn parse_buffer_msg(
     default_sample_rate: f64,
 ) -> Result<(i32, NrtJob), String> {
     let (index, job) = match addr {
-        "/b_alloc" => {
+        "/buffer_alloc" => {
             let (index, frames) = match args {
                 [OscType::Int(index), OscType::Int(frames), ..] => (*index, *frames),
                 _ => return Err("expected: bufnum, frames [, channels]".into()),
@@ -2367,7 +2367,7 @@ pub fn parse_buffer_msg(
                 },
             )
         }
-        "/b_allocRead" => {
+        "/buffer_allocRead" => {
             let (index, path) = match args {
                 [OscType::Int(index), OscType::String(path), ..] => (*index, path.clone()),
                 _ => return Err("expected: bufnum, path [, fileStart, numFrames]".into()),
@@ -2383,7 +2383,7 @@ pub fn parse_buffer_msg(
         }
         // `leaveOpen` is accepted and ignored (no streaming yet). The buffer
         // must already exist; its shape is kept.
-        "/b_read" => {
+        "/buffer_read" => {
             let (index, path) = match args {
                 [OscType::Int(index), OscType::String(path), ..] => (*index, path.clone()),
                 _ => return Err("expected: bufnum, path [, fileStart, numFrames, bufStart]".into()),
@@ -2403,7 +2403,7 @@ pub fn parse_buffer_msg(
             )
         }
         // WAV only in v1.
-        "/b_write" => {
+        "/buffer_write" => {
             let (index, path) = match args {
                 [OscType::Int(index), OscType::String(path), ..] => (*index, path.clone()),
                 _ => {
@@ -2432,7 +2432,7 @@ pub fn parse_buffer_msg(
             )
         }
         // Buffers are immutable: zeroing builds a same-shape replacement.
-        "/b_zero" => {
+        "/buffer_zero" => {
             let Some(OscType::Int(index)) = args.first() else {
                 return Err("expected a buffer index".into());
             };
@@ -2448,7 +2448,7 @@ pub fn parse_buffer_msg(
                 },
             )
         }
-        "/b_free" => {
+        "/buffer_free" => {
             let Some(OscType::Int(index)) = args.first() else {
                 return Err("expected a buffer index".into());
             };
@@ -2464,13 +2464,13 @@ pub fn parse_buffer_msg(
     Ok((index, job))
 }
 
-/// Parses a `/b_gen bufnum cmd ...` command into the buffer index and the NRT
+/// Parses a `/buffer_gen bufnum cmd ...` command into the buffer index and the NRT
 /// job that fills it. The named `cmd` selects a generator (`sine1`/`sine2`/
 /// `sine3`/`cheby`) or `copy`; the flag int and the trailing floats are pulled
 /// per command. Needs an allocated buffer (its shape drives generation), read
-/// from `mirror` — so a `/b_gen` right after a `/b_alloc` needs a `/sync`
-/// between them, exactly like `/b_read`.
-pub fn parse_b_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, NrtJob), String> {
+/// from `mirror` — so a `/buffer_gen` right after a `/buffer_alloc` needs a `/server_sync`
+/// between them, exactly like `/buffer_read`.
+pub fn parse_buffer_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, NrtJob), String> {
     use crate::dsp::wavetable::{EnvSegment, GenCommand, GenFlags};
 
     let (index, cmd) = match args {
@@ -2577,7 +2577,7 @@ pub fn parse_b_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, NrtJob
                 segments,
             }
         }
-        other => return Err(format!("unknown /b_gen command {other:?}")),
+        other => return Err(format!("unknown /buffer_gen command {other:?}")),
     };
     Ok((
         index,
@@ -2588,9 +2588,9 @@ pub fn parse_b_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, NrtJob
     ))
 }
 
-/// `/d_faust name payload` arguments: the payload string is Faust source or
+/// `/def_send faust name payload` arguments: the payload string is Faust source or
 /// a JSON box tree (the caller sniffs the leading `{`).
-pub fn parse_d_faust(args: &[OscType]) -> Result<(String, String), String> {
+pub fn parse_def_send_faust(args: &[OscType]) -> Result<(String, String), String> {
     let (name, def) = match args {
         [OscType::String(name), OscType::String(src), ..] => (name.clone(), src.clone()),
         [OscType::String(name), OscType::Blob(src), ..] => (
@@ -2660,7 +2660,7 @@ pub fn float_value(arg: &OscType) -> Option<f32> {
     }
 }
 
-/// A bus index argument (`/n_map`/`/n_mapa`): a plain int, `-1` to unbind.
+/// A bus index argument (`/node_map`/`/node_mapAudio`): a plain int, `-1` to unbind.
 pub fn int_value(arg: &OscType) -> Option<i32> {
     match arg {
         OscType::Int(i) => Some(*i),

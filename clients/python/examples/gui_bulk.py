@@ -2,7 +2,7 @@
 """Bulk data the right way: a multi-megabyte buffer rendered from a shared file.
 
 Large payloads do **not** ride OSC: a UDP datagram caps near 64 KB, and chunking
-a buffer over ``/b_getn`` re-traverses the network for data that already sits in
+a buffer over ``/buffer_getRange`` re-traverses the network for data that already sits in
 local RAM. Instead the data lands in a **local file** the GUI host memory-maps
 and reads zero-copy. This shows the three shared-resource forms a ``waveform``
 accepts, none of which re-send the samples per frame:
@@ -12,7 +12,7 @@ accepts, none of which re-send the samples per frame:
   overview, never the raw buffer.
 - ``path=`` -- a file of raw little-endian ``f32`` (`samples_to_file`). The host
   maps a multi-megabyte buffer with no OSC and no re-send.
-- a **server buffer exported** to a file with ``/b_export`` -- the audio server
+- a **server buffer exported** to a file with ``/buffer_export`` -- the audio server
   dumps its RT buffer to a local file the host maps.
 
 Files are passed by absolute path, so the host (a separate process) resolves
@@ -101,9 +101,9 @@ server = session.server
 gui = session.gui()
 
 bufnum = server.buffers.alloc()
-server.send_msg("/b_allocRead", bufnum, wav)
+server.send_msg("/buffer_allocRead", bufnum, wav)
 server.sync()
-server.request("/b_export", bufnum, exported_path, expect=("/done", "/fail"))
+server.request("/buffer_export", bufnum, exported_path, expect=("/done", "/fail"))
 print(f"server exported buffer {bufnum} -> {os.path.getsize(exported_path)} B")
 
 # %% [markdown]

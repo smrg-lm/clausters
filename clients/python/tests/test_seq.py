@@ -165,7 +165,7 @@ def test_pbind_timing_is_yield_exact_in_nrt():
     clock.render()
 
     starts = sorted(when for when, raw in server.interface.score.bundles
-                    if _inner_addr(raw) == "/s_new")
+                    if _inner_addr(raw) == "/synth_new")
     # four notes, exactly 0.5 s apart — no wall-clock jitter
     assert starts == [0.0, 0.5, 1.0, 1.5]
 

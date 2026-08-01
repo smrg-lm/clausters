@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The table family: `osc` / `vosc` over `/b_gen` wavetables, and `shaper`.
+"""The table family: `osc` / `vosc` over `/buffer_gen` wavetables, and `shaper`.
 
 Runs from the *installed* package, offline, like ``offline_render.py``::
 
@@ -9,7 +9,7 @@ Runs from the *installed* package, offline, like ``offline_render.py``::
 
 The point of interest is the buffer-backed oscillators:
 
-- Two **wavetable-format** buffers are filled with ``/b_gen sine1`` (flag 7 =
+- Two **wavetable-format** buffers are filled with ``/buffer_gen sine1`` (flag 7 =
   normalize | wavetable | clear): buffer 0 a pure sine, buffer 1 a bright
   sawtooth-like harmonic stack. The wavetable flag stores scsynth's
   offset/slope pairs, which is what the interpolating readers expect.
@@ -45,7 +45,7 @@ from clausters.defs import (
 
 SR = 48000.0
 
-#: /b_gen flags: normalize (1) | wavetable (2) | clear (4).
+#: /buffer_gen flags: normalize (1) | wavetable (2) | clear (4).
 WT = 7
 
 
@@ -97,14 +97,14 @@ def main():
         # Timetagged bundles, as in every NRT routine: the beat stamps them.
         voice = Synth.new("wt_morph", {"freq": 110.0, "pos": 0.0}, server=server)
         yield 1.0
-        server.send_bundle(("/n_set", voice.id, "pos", 1.0))  # glide to saw
+        server.send_bundle(("/node_set", voice.id, "pos", 1.0))  # glide to saw
         yield 3.0
-        server.send_bundle(("/n_set", voice.id, "gate", 0.0))
+        server.send_bundle(("/node_set", voice.id, "gate", 0.0))
         yield 0.5
         answer = Synth.new("wt_shaped", {"freq": 165.0, "drive": 0.1}, server=server)
-        server.send_bundle(("/n_set", answer.id, "drive", 0.9))  # harmonics in
+        server.send_bundle(("/node_set", answer.id, "drive", 0.9))  # harmonics in
         yield 2.0
-        server.send_bundle(("/n_set", answer.id, "gate", 0.0))
+        server.send_bundle(("/node_set", answer.id, "gate", 0.0))
         yield 0.5
 
     Routine(sequence).play(session.clock)

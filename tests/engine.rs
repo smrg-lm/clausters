@@ -160,7 +160,7 @@ fn freed_synth_goes_silent_and_returns_garbage() {
 
     handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
     let left = render_left(&mut engine, 100);
-    assert!(rms(&left) < 1e-9, "bus must be clean after /n_free");
+    assert!(rms(&left) < 1e-9, "bus must be clean after /node_free");
 
     assert_eq!(handle.collect_garbage(), 1);
 }
@@ -206,7 +206,7 @@ fn node_order_is_audible_and_movable() {
     let left = render_left(&mut engine, 100);
     assert!(rms(&left) > 0.1, "silencer at the head must lose the bus");
 
-    // /n_after: move the silencer after the sine — silence
+    // /node_after: move the silencer after the sine — silence
     handle
         .send(Cmd::MoveNode {
             id: 1001,
@@ -218,7 +218,7 @@ fn node_order_is_audible_and_movable() {
     let left = render_left(&mut engine, 100);
     assert!(rms(&left) < 1e-9, "moved after the sine, must win the bus");
 
-    // /n_before: move it back — sine again
+    // /node_before: move it back — sine again
     handle
         .send(Cmd::MoveNode {
             id: 1001,
@@ -426,7 +426,7 @@ fn control_buses_feed_the_audio_thread() {
     let freq = estimated_freq(&render_left(&mut engine, 750));
     assert!((freq - 440.0).abs() < 5.0, "estimated freq = {freq}");
 
-    handle.control_buses().set(7, 660.0); // /c_set, no engine round-trip
+    handle.control_buses().set(7, 660.0); // /bus_set, no engine round-trip
     let freq = estimated_freq(&render_left(&mut engine, 750));
     assert!((freq - 660.0).abs() < 7.0, "estimated freq = {freq}");
 }

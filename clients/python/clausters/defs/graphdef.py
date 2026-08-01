@@ -1,4 +1,4 @@
-"""GraphDef: a named node-graph "program" ready for ``/d_graph``.
+"""GraphDef: a named node-graph "program" ready for ``/def_send graph``.
 
 Where `SynthDef` and
 `FaustDef` each describe a *single* synthesis
@@ -10,7 +10,7 @@ driven through the port names, never the private member node ids (the same
 encapsulation a composite SynthDef would give).
 
 It is a thin JSON builder, like the other two def kinds: it composes a spec and
-sends it with ``gdef.send(server)`` (``/d_graph``). The server resolves the
+sends it with ``gdef.send(server)`` (``/def_send graph``). The server resolves the
 member def names (SynthDef *or* FaustDef, identically), allocates the
 instance's private buses and wires them.
 
@@ -22,7 +22,7 @@ mix = g.bus("mix")                          # a private internal audio bus
 src = g.add("gsrc", out=mix, level=1.0)     # a member; `out` control -> the bus
 g.add("gsink", {"in": mix, "out": "OUT"})   # `in` reads `mix`, `out` -> hardware
 g.port("gain", src["level"], default=0.5)   # surface port -> the source's level
-g.send(server)                       # /d_graph (blocks on /done in RT)
+g.send(server)                       # /def_send graph (blocks on /done in RT)
 
 inst = Group.graph("chain", {"gain": 0.8}, server=server)   # /graph_new
 inst.set({"gain": 0.3})                 # resolves against the surface
@@ -123,7 +123,7 @@ class GraphDef:
         """Adds a member: an instance of the SynthDef/FaustDef ``defname``.
         Control values may be numbers, a `GraphBusRef` (to wire the
         control to an internal bus), or ``"OUT"`` (hardware bus 0). ``maps``
-        binds controls to internal *control* buses via ``/n_map``. Pass
+        binds controls to internal *control* buses via ``/node_map``. Pass
         controls as a dict (needed for reserved names like ``in``) and/or as
         keywords. ``voice=True`` marks a **per-voice** member: instantiated once
         per `clausters.defs.Group.voice` (or MIDI note) instead of at
@@ -161,7 +161,7 @@ class GraphDef:
             self._defaults[str(name)] = float(default)
 
     def spec(self) -> dict:
-        """The ``GraphDefSpec`` dict the server's ``/d_graph`` validates."""
+        """The ``GraphDefSpec`` dict the server's ``/def_send graph`` validates."""
         if not self._members:
             raise ValueError("a GraphDef needs at least one member")
         spec: dict = {"name": self.name, "members": self._members}
@@ -174,14 +174,14 @@ class GraphDef:
         return spec
 
     def dump_def(self) -> str:
-        """The def serialized to text -- the ``/d_graph`` wire payload, the JSON
+        """The def serialized to text -- the ``/def_send graph`` wire payload, the JSON
         ``GraphDefSpec`` (see `spec`). Useful to inspect the composition before
         sending it."""
         return json.dumps(self.spec())
 
     def send(self, server=None, *, wait: bool = True,
              timeout: float = 10.0) -> str:
-        """Sends this def to the server via ``/d_graph`` and returns its
+        """Sends this def to the server via ``/def_send graph`` and returns its
         name.
 
         Loading a GraphDef is cheap on the server (no JIT -- it only validates
@@ -195,7 +195,7 @@ class GraphDef:
         a routine, never block in one). In NRT the send is always *scored* at
         time 0 -- the renderer loads the def before time advances -- so
         ``wait`` does not apply."""
-        return send_def(_resolve(server), "/d_graph", (self.dump_def(),),
+        return send_def(_resolve(server), "graph", (self.dump_def(),),
                         self.name, wait, timeout)
 
     def plot_def(self, defs: dict | None = None, *, label: str | None = None,

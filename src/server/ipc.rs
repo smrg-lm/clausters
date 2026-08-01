@@ -22,7 +22,7 @@
 //!   reads *these very words* through `InCtl`: a client write is live on the
 //!   next block, no command involved), the **audio taps** (ABI v3): a
 //!   fixed set of single-channel sample rings the audio thread appends a
-//!   block to whenever `/tap` routes an audio bus into one, read lock-free by
+//!   block to whenever `/bus_tap` routes an audio bus into one, read lock-free by
 //!   a peer each display frame — the audio-rate sibling of the control buses
 //!   (SuperCollider's `ScopeOut2` scope buffers play this role) — and the
 //!   **audio-bus region** (ABI v4): two words per audio bus, the bus → tap
@@ -325,7 +325,7 @@ impl Segment {
         header.tap_frames = tap_frames as u32;
         header.audio_buses = NUM_AUDIO_BUSES as u32;
         // A zeroed directory would read as "every bus is recorded by tap 0";
-        // `-1` is the absent marker, the same one `/tap` uses. The levels are
+        // `-1` is the absent marker, the same one `/bus_tap` uses. The levels are
         // fine zeroed: those bits are `0.0`, which is silence.
         for bus in 0..NUM_AUDIO_BUSES {
             self.set_tap_of_bus(bus, None);
@@ -369,7 +369,7 @@ impl Segment {
     }
 
     /// Control buses living inside the segment; hand this to
-    /// `engine_pair_full` so `InCtl` and `/c_set` operate on shared memory.
+    /// `engine_pair_full` so `InCtl` and `/bus_set` operate on shared memory.
     pub fn control_buses(self: &Arc<Self>) -> ControlBuses {
         let count = self.layout().header.control_buses as usize;
         let ptr = self.controls_ptr();

@@ -25,7 +25,7 @@
 <code>wavetables.py</code>: <b>the table family</b> — buffers filled by the
 server itself, read as oscillators.
 
-Two <b>wavetable-format</b> buffers are filled with <code>/b_gen sine1</code>
+Two <b>wavetable-format</b> buffers are filled with <code>/buffer_gen sine1</code>
 (flag 7 = normalize | wavetable | clear): buffer 0 a pure sine, buffer 1 a
 bright harmonic stack. The wavetable flag stores the offset/slope pairs the
 interpolating readers expect. <code>vosc(pos, freq)</code> reads the table at
@@ -67,7 +67,7 @@ band-limited recipe instead of a clipped edge.</div>
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
 
-      // /b_gen flags: normalize (1) | wavetable (2) | clear (4).
+      // /buffer_gen flags: normalize (1) | wavetable (2) | clear (4).
       const WT = 7;
 
       // ---- the defs ----

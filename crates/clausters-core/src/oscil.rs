@@ -2,7 +2,7 @@
 //! alignment. Pure — no GPU, no shared memory — so it is unit-testable and
 //! shared by every drawer of a triggered trace: the GUI host's two fronts (the
 //! only difference between them being where the raw tap samples come from — the
-//! shm segment vs `/tap_data` snapshots), and a client script drawing its own
+//! shm segment vs `/bus_tapStream.reply` snapshots), and a client script drawing its own
 //! oscilloscope from a tap it streams itself.
 //!
 //! It lives here for the reason [`crate::fft`] does: the moment a second
@@ -10,7 +10,7 @@
 //! or the two draw subtly different pictures of one signal.
 
 /// Cap on the display window in samples: half the default tap ring (the
-/// tear-free read bound) and the server's `/tap_stream` window cap, so the
+/// tear-free read bound) and the server's `/bus_tapStream` window cap, so the
 /// same widget works over both sources.
 pub const MAX_DISPLAY: usize = 4096;
 

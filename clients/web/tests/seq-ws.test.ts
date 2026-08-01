@@ -2,14 +2,14 @@
 //
 // The WS half of W3's acceptance: a routine schedules events that reach a real
 // server and free themselves, under **both** timebases — the monotonic one
-// (wall-clock timetags) and the sample one anchored on the server's `/clock`.
+// (wall-clock timetags) and the sample one anchored on the server's `/clock_query`.
 // What the client puts on the wire is asserted byte for byte in
 // `timed-send.test.ts`; what is asserted here is that a real server accepts it
 // and the notes start and end where the pattern says they should.
 //
-// The observation is the server's **notifications** (`/n_go`, `/n_end`), not
-// `/g_queryTree`: the tree reply comes from the network-side mirror, which
-// applies each message as it is translated, and a note's `/s_new` and its
+// The observation is the server's **notifications** (`/node_start`, `/node_end`), not
+// `/group_queryTree`: the tree reply comes from the network-side mirror, which
+// applies each message as it is translated, and a note's `/synth_new` and its
 // release are sent in the same instant (only their timetags differ). So the
 // mirror shows a scheduled note born and freed at once while the engine still
 // has it sounding — a property of the mirror, not of the schedule.
@@ -70,7 +70,7 @@ async function withServer(body: (server: Server) => Promise<void>): Promise<void
 
 /**
  * A plain sine with no envelope: the event's own release frees it, so a
- * `/n_end` is the note ending exactly when the schedule said it would.
+ * `/node_end` is the note ending exactly when the schedule said it would.
  */
 const beep = () =>
     new SynthDef("ts_seq_beep", out(0.0, sine(control("freq", 440.0)).mul(0.05)));
@@ -83,7 +83,7 @@ const beep = () =>
 async function awaitEngine(server: Server): Promise<void> {
     const clockNow = async () =>
         Number(
-            (await server.request("/clock", [], { expect: ["/clock.reply"] })).args[0],
+            (await server.request("/clock_query", [], { expect: ["/clock_query.reply"] })).args[0],
         );
     const first = await clockNow();
     for (let i = 0; i < 100; i++) {
@@ -103,8 +103,8 @@ function noteLog(server: Server) {
     const ended: number[] = [];
     server.onReply((msg) => {
         const now = Date.now() / 1000;
-        if (msg.addr === "/n_go") started.push(now);
-        else if (msg.addr === "/n_end") ended.push(now);
+        if (msg.addr === "/node_start") started.push(now);
+        else if (msg.addr === "/node_end") ended.push(now);
     });
     return { started, ended };
 }
@@ -173,7 +173,7 @@ test("the sample timebase anchors on the server's own clock", {
         assert.ok(rate > 8000 && rate < 400000, `implausible rate ${rate}`);
 
         // The counter advances about as fast as real time (the model is a
-        // regression over `/clock` anchors, so this is loose on purpose).
+        // regression over `/clock_query` anchors, so this is loose on purpose).
         const first = (timebase as SampleTimebase).currentSample();
         await sleep(300);
         const advanced = (timebase as SampleTimebase).currentSample() - first;
@@ -182,7 +182,7 @@ test("the sample timebase anchors on the server's own clock", {
             `the counter advanced ${advanced} samples in 300 ms`,
         );
 
-        // A routine on that timebase schedules through `/sched` at absolute
+        // A routine on that timebase schedules through `/sched_at` at absolute
         // samples: the notes land where the pattern says, as under wall time.
         const log = noteLog(server);
         const clock = new TempoClock(1.0, { timebase });

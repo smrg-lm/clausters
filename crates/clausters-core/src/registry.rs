@@ -14,13 +14,13 @@
 //! The registry is a dense occupancy map over `[base, base + capacity)` with a
 //! next-fit scan hint, so a run of `width` contiguous ids (a multichannel bus)
 //! allocates and coalesces with no free-list bookkeeping. It is **passive**:
-//! callers feed it events (an `/n_end` arrival, an engine rejection) — it
+//! callers feed it events (an `/node_end` arrival, an engine rejection) — it
 //! never calls out, which keeps it identical across the FFI bindings and
 //! wasm-compatible.
 //!
 //! The one sanctioned exception is [`Registry::unbounded`], for NRT/score
 //! rendering: an offline render has no real-time bound on concurrent
-//! resources and no live `/n_end` stream to recycle from, so its id space is
+//! resources and no live `/node_end` stream to recycle from, so its id space is
 //! deliberately inexhaustible (and `release` degrades to live-count
 //! accounting).
 
@@ -36,16 +36,16 @@ pub const GRAPH_CONTROL_BUS_RESERVED: usize = 128;
 /// the engine's node-table capacity (`--max-nodes`) — the one resource that
 /// actually bounds concurrent nodes. Id 0 is the root group; ids below
 /// `client_base` stay reserved for well-known client use (scsynth
-/// convention). The server reports the client range over `/server_info`, so
+/// convention). The server reports the client range over `/server_query`, so
 /// a client sizes its registry by query, not convention.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NodeIdPartition {
     /// First id a client's registry hands out.
     pub client_base: i64,
     /// Client id-space size: node-table capacity with in-flight margin — ids
-    /// allocated whose `/s_new` or `/n_end` is still travelling.
+    /// allocated whose `/synth_new` or `/node_end` is still travelling.
     pub client_capacity: usize,
-    /// First id of the server's auto range (`/s_new -1`, GraphDef members).
+    /// First id of the server's auto range (`/synth_new -1`, GraphDef members).
     pub auto_base: i64,
     pub auto_capacity: usize,
     /// First id of the server's MIDI-voice range.
@@ -151,7 +151,7 @@ impl Registry {
     }
 
     /// Whether `id` falls inside this registry's space (allocated or not).
-    /// The filter for foreign `/n_end` ids: releases outside the space are
+    /// The filter for foreign `/node_end` ids: releases outside the space are
     /// another owner's business.
     pub fn contains(&self, id: i64) -> bool {
         match &self.space {
@@ -221,7 +221,7 @@ impl Registry {
         }
     }
 
-    /// Releases everything (a client reset / `/g_freeAll`-scale event).
+    /// Releases everything (a client reset / `/group_freeAll`-scale event).
     pub fn clear(&mut self) {
         match &mut self.space {
             Space::Bounded { used, hint, in_use } => {

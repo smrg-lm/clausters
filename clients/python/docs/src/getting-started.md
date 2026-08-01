@@ -84,7 +84,7 @@ An instrument is a **def** — a named graph the server compiles once and instan
 from clausters.defs import SynthDef, control, sine, out
 
 sdef = SynthDef("beep", out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)))
-sdef.send(server)             # sends /d_recv and waits for the server's /done
+sdef.send(server)             # sends /def_send synth and waits for the server's /done
 ```
 
 Now play it. `synth` starts a node — it sounds until you free it — and `set` changes its controls while it sounds:

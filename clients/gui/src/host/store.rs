@@ -110,7 +110,7 @@ impl GuiStore {
         names
     }
 
-    /// Every persisted SynthDef spec (raw `/d_recv` JSON), for the standalone
+    /// Every persisted SynthDef spec (raw `/def_send synth` JSON), for the standalone
     /// boot to replay into the embedded server.
     pub fn synthdef_specs(&self) -> Vec<Vec<u8>> {
         read_json_files(&self.synthdefs_dir)
@@ -119,7 +119,7 @@ impl GuiStore {
             .collect()
     }
 
-    /// Every persisted GraphDef spec (raw `/d_graph` JSON).
+    /// Every persisted GraphDef spec (raw `/def_send graph` JSON).
     pub fn graphdef_specs(&self) -> Vec<Vec<u8>> {
         read_json_files(&self.graphdefs_dir)
             .into_iter()
@@ -229,12 +229,12 @@ mod tests {
     #[test]
     fn boot_messages_parse_with_the_int_float_distinction() {
         let json = br#"{"type":"window","boot":[
-            ["/s_new","drone",1000,0,0],
-            ["/n_set",1000,"amp",0.2]
+            ["/synth_new","drone",1000,0,0],
+            ["/node_set",1000,"amp",0.2]
         ]}"#;
         let msgs = boot_messages(json);
         assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0].addr, "/s_new");
+        assert_eq!(msgs[0].addr, "/synth_new");
         // Node ids stay integers; the amp is a float.
         assert_eq!(msgs[0].args[1], OscType::Int(1000));
         assert_eq!(msgs[1].args[2], OscType::Float(0.2));

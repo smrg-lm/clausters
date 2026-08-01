@@ -65,9 +65,9 @@ There is no `run(seconds)` here, because nothing in a page may block: a script t
 The clock measures its sleeps against a **timebase**, and the timebase also decides how the `Server` stamps what it emits:
 
 - **`MonotonicTimebase`**, the default, paces on `performance.now()` and emits NTP-timetagged bundles. Relative timing inside the routine is exact; the client's clock and the server's sample clock are still two clocks, and they drift.
-- **`SampleTimebase`** paces on the server's own sample counter and emits `/sched <absolute sample>`. There is no drift left to speak of, because there is only one clock.
+- **`SampleTimebase`** paces on the server's own sample counter and emits `/sched_at <absolute sample>`. There is no drift left to speak of, because there is only one clock.
 
-`server.sampleTimebase()` builds one, and the `Server` is what builds it because the `Server` is what knows the carrier: over the in-page engine it pairs the engine's counter with the `AudioContext`'s in one worklet round trip — they are the same clock, so the pairing is exact — while over a socket it feeds `/clock` anchors into the core's model. Hand it to the clock at construction:
+`server.sampleTimebase()` builds one, and the `Server` is what builds it because the `Server` is what knows the carrier: over the in-page engine it pairs the engine's counter with the `AudioContext`'s in one worklet round trip — they are the same clock, so the pairing is exact — while over a socket it feeds `/clock_query` anchors into the core's model. Hand it to the clock at construction:
 
 ```js
 const clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
@@ -118,7 +118,7 @@ clock.play(new clausters.Routine(function* () {
 
 The note and the lamp carry the *same* timetag, because both read the same `Moment` — the beat the routine has accumulated, not what time it happens to be when each line runs.
 
-What a destination sends is standard OSC and nothing more: a message, or a bundle with an NTP timetag. It does not add the server's `latency` — that is a property of our audio pipeline, and what another application needs is its own business, asked for as an explicit `delayBeats`. Nor does it send our own commands (`/sched`, `/sync`).
+What a destination sends is standard OSC and nothing more: a message, or a bundle with an NTP timetag. It does not add the server's `latency` — that is a property of our audio pipeline, and what another application needs is its own business, asked for as an explicit `delayBeats`. Nor does it send our own commands (`/sched_at`, `/server_sync`).
 
 The page cannot open a UDP socket, so a destination here rides a `Connection` exactly as the server does: for an external application, its WebSocket bridge. The Python client, which can, defaults to UDP — the difference is the carrier, never the timing.
 

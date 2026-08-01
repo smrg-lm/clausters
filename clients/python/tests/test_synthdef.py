@@ -557,7 +557,7 @@ def test_custom_synthdef_renders_like_builtin_default():
     # The client-defined equivalent (same graph, incl. the gated envelope): add
     # it to the score, then the same Pbind — released by gate too (has_gate).
     s1 = Server(interface=OscNrtInterface())
-    _py_default_env().send(s1)              # /d_recv at time 0 in the score
+    _py_default_env().send(s1)              # /def_send synth at time 0 in the score
     c1 = TempoClock(tempo=1.0)
     Pbind(instrument="py_default_env", freq=Pseq(FREQS), dur=0.5, amp=0.2,
           has_gate=True).play(c1, s1)

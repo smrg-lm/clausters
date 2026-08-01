@@ -372,10 +372,10 @@ test("a raw OSC item on a timeline is sent at its beat", () => {
     const destination = recorder();
     const { clock, run } = harness();
     const timeline = new Timeline([
-        [0.5, new OscEvent("/n_set", ["i", 1000], "gate", ["f", 0])],
+        [0.5, new OscEvent("/node_set", ["i", 1000], "gate", ["f", 0])],
     ]);
     new Playhead(timeline, clock, destination).play();
     clock.start();
     run(2);
-    assert.deepEqual(destination.messages, [{ beat: 0.5, addr: "/n_set" }]);
+    assert.deepEqual(destination.messages, [{ beat: 0.5, addr: "/node_set" }]);
 });

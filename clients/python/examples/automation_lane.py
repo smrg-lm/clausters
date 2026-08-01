@@ -4,9 +4,9 @@
 An `Automation` is a control curve placed on the timeline that drives one or
 more ``(node, control)`` targets. It is rendered as a **control vector**: the
 break-point curve is discretized on the server into a control buffer
-(``/b_gen "env"``, evaluated through the same envelope-shape math the ``EnvGen``
+(``/buffer_gen "env"``, evaluated through the same envelope-shape math the ``EnvGen``
 UGen plays), and a small control synth reads that buffer onto a control bus which
-the target follows via ``/n_map``. The curve is the same `Env` the ``bpf`` editor
+the target follows via ``/node_map``. The curve is the same `Env` the ``bpf`` editor
 round-trips (`env_to_points`/`points_to_env`), so a drawn envelope and a played
 automation are one object.
 
@@ -40,7 +40,7 @@ SR = 48000
 # %%
 def tone(name: str = "tone") -> SynthDef:
     """A sine whose ``freq`` and ``amp`` are ``kr`` controls -- ``kr`` so they
-    can be ``/n_map``-ed to a control bus and tracked per block."""
+    can be ``/node_map``-ed to a control bus and tracked per block."""
     freq = control("freq", 220.0, "kr")
     amp = control("amp", 0.2, "kr")
     sig = sine(freq) * amp
@@ -61,12 +61,12 @@ gliss = Automation.from_points(
     target=(voice, "freq"))
 gliss.prepare(server)                               # alloc + fill the control buffer
 
-# %% Play the lane in a routine (it schedules the lane synth + the /n_map),
+# %% Play the lane in a routine (it schedules the lane synth + the /node_map),
 # then free the voice, and render the score to interleaved samples.
 def score():
     gliss.play(server)
     yield gliss.duration()
-    server.send_bundle(("/n_free", voice.id))
+    server.send_bundle(("/node_free", voice.id))
 
 
 session.clock.play(Routine(score))

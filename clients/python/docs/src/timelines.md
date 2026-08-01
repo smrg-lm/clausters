@@ -42,7 +42,7 @@ An *item* is anything that can render itself on a destination — it has a `play
 ```python
 from clausters.seq import OscEvent, MidiEvent
 
-tl.add(0.0, OscEvent("/s_new", "default", -1, 0, 0, "freq", 440.0))
+tl.add(0.0, OscEvent("/synth_new", "default", -1, 0, 0, "freq", 440.0))
 tl.add(1.0, MidiEvent(b"\x90\x3c\x64"))     # note on, key 60, vel 100
 ```
 

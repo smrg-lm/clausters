@@ -11,7 +11,7 @@
 
       Everything that reaches the in-page engine goes through one shared-memory
       ring, which the server sees as a single client (`ClientId::Ring`), and
-      `/c_stream` is one subscription per client, replaced on each call. So the
+      `/bus_stream` is one subscription per client, replaced on each call. So the
       script and the GUI host — both pushing through `engine.send` — take the
       stream from each other. Run it (serve this package and open with
       ?smoke=1, or point a headless browser at it) and read the phases:
@@ -50,12 +50,12 @@
         const raw = await engine({ channels: 2 });
         await raw.resume();
 
-        // A raw window onto every /c_set the engine emits, whoever asked for
+        // A raw window onto every /bus_set the engine emits, whoever asked for
         // it: which bus indices arrive is the whole question.
         const seen = new Map();
         raw.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
-            if (addr !== "/c_set") continue;
+            if (addr !== "/bus_set") continue;
             for (let i = 0; i + 1 < args.length; i += 2) {
               const bus = Number(args[i]);
               seen.set(bus, (seen.get(bus) ?? 0) + 1);
@@ -71,7 +71,7 @@
         const realSend = raw.send.bind(raw);
         raw.send = (bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
-            if (addr === "/c_stream" || addr === "/tap_stream") {
+            if (addr === "/bus_stream" || addr === "/bus_tapStream") {
               out.push(`${addr}(${args.join(",")})`);
             }
           }

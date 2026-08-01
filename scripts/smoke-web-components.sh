@@ -2,7 +2,7 @@
 # The web-components acceptance: a standalone bundle as one HTML element
 # (<clausters-bundle>) over the per-page singletons — element up with the
 # canvas adopted into its shadow DOM, and the raw server() surface sharing the
-# element's namespace (/status counts the bundle's synth, the meter bus
+# element's namespace (/server_status counts the bundle's synth, the meter bus
 # streams moving values). clients/web/examples/demo.html?smoke=1 does the
 # asserting; the verdict is beaconed as a fetch and read from the HTTP access
 # log (the same real-time posture as the other web smokes).

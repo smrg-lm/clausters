@@ -5,7 +5,7 @@ use crate::dsp::{ProcessCtx, UGen, at};
 /// SuperCollider's `Impulse`.
 ///
 /// The phase starts "due" so the **first** output sample is always an impulse.
-/// Combined with a `/sched`'d `/s_new` — which splits the processing block at
+/// Combined with a `/sched_at`'d `/synth_new` — which splits the processing block at
 /// the target sample, so the synth's first sample *is* the target — this
 /// places one pristine impulse on an exact sample of the clock. A frequency
 /// of `0` then emits that single impulse and silence forever after, which is

@@ -5,7 +5,7 @@
 //! free for other persistent aspects (`midi.json`, `boot.json`, and whatever
 //! comes later):
 //!
-//! - `defs/synthdefs/<name>.json` — the `SynthDefSpec` JSON of a `/d_recv`
+//! - `defs/synthdefs/<name>.json` — the `SynthDefSpec` JSON of a `/def_send synth`
 //!   UGen graph, stored verbatim. Reloading just re-parses and recompiles it
 //!   (cheap); there is no compiled artifact to cache.
 //! - `defs/faustdefs/<name>.json` — a `crate::faust::cache::FaustRecord`
@@ -13,7 +13,7 @@
 //!   `defs/faustdefs/<name>.<sha>.bc` bitcode cache (the "A" layer, see
 //!   `faust::cache`). The JSON record is always the source of truth; the
 //!   bitcode is a non-authoritative speed cache.
-//! - `defs/graphdefs/<name>.json` — the `/d_graph` GraphDef spec, verbatim.
+//! - `defs/graphdefs/<name>.json` — the `/def_send graph` GraphDef spec, verbatim.
 //!
 //! The original definition (the JSON) is the transparent source of truth in
 //! both cases: it is what gets recompiled on a libfaust upgrade or a corrupt
@@ -42,7 +42,7 @@ pub const TMP_PREFIX: &str = "tmp_";
 /// never writes to the persistent store.
 ///
 /// The convention is the name itself rather than a wire flag, so it needs no
-/// per-command argument and reads as what it is in a log line or a `/d_query`
+/// per-command argument and reads as what it is in a log line or a `/def_query`
 /// listing. The cost is that a *user* def named `tmp_...` is ephemeral too;
 /// that is the documented meaning of the prefix, not an accident.
 pub fn is_ephemeral(name: &str) -> bool {
@@ -51,7 +51,7 @@ pub fn is_ephemeral(name: &str) -> bool {
 
 /// Where an ephemeral def's unavoidable artifacts go: a subdirectory of the
 /// OS temp directory, never the data directory. Only the Faust pair lands
-/// here — the record and its bitcode — since a `/d_recv` or `/d_graph` has no
+/// here — the record and its bitcode — since a `/def_send synth` or `/def_send graph` has no
 /// compiled artifact to keep; a replayed expression then still skips the
 /// recompile while the persistent store stays clean, and the OS reclaims the
 /// directory on its own schedule.
@@ -144,7 +144,7 @@ impl DefStore {
             .join(format!("{}.json", sanitize_name(name)))
     }
 
-    /// Stores a `/d_recv` SynthDef's spec JSON verbatim. Best-effort: errors
+    /// Stores a `/def_send synth` SynthDef's spec JSON verbatim. Best-effort: errors
     /// are returned so the caller can log them, never fatal.
     pub fn save_synthdef(&self, name: &str, spec_json: &[u8]) -> io::Result<()> {
         atomic_write(&self.synthdef_path(name), spec_json)
@@ -156,7 +156,7 @@ impl DefStore {
     }
 
     /// Reads every persisted SynthDef spec (raw JSON bytes), to be fed back
-    /// through the normal `/d_recv` path on startup. Unreadable entries are
+    /// through the normal `/def_send synth` path on startup. Unreadable entries are
     /// skipped.
     pub fn load_synthdef_specs(&self) -> Vec<Vec<u8>> {
         read_json_files(&self.synthdefs_dir)
@@ -170,7 +170,7 @@ impl DefStore {
             .join(format!("{}.json", sanitize_name(name)))
     }
 
-    /// Stores a `/d_graph` GraphDef's spec JSON verbatim (M18). Like a
+    /// Stores a `/def_send graph` GraphDef's spec JSON verbatim (M18). Like a
     /// SynthDef, the JSON is the transparent source of truth; there is no
     /// compiled artifact (a GraphDef only references other defs).
     pub fn save_graphdef(&self, name: &str, spec_json: &[u8]) -> io::Result<()> {
@@ -203,7 +203,7 @@ impl DefStore {
     }
 
     /// Reads every persisted GraphDef spec (raw JSON bytes) for the startup
-    /// reload, fed back through the normal `/d_graph` path.
+    /// reload, fed back through the normal `/def_send graph` path.
     pub fn load_graphdef_specs(&self) -> Vec<Vec<u8>> {
         read_json_files(&self.graphdefs_dir)
             .into_iter()

@@ -120,7 +120,7 @@ def test_handle_set_and_bind_delegate_to_the_host():
     host = _host()
     win = host.open(window(knob(name="k")))
     host._osc.sent.clear()
-    win["k"].set(value=3.0).bind("/n_set", 1001, "freq")
+    win["k"].set(value=3.0).bind("/node_set", 1001, "freq")
     kinds = [msg[0] for msg in host._osc.sent]
     assert kinds == ["/gui_set", "/gui_bind"]
     assert host._osc.sent[0][1] == win["k"].id  # addressed by the resolved id

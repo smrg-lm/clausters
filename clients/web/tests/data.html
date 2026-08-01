@@ -27,12 +27,12 @@
     <!--
       W10's acceptance (clients/web/test.sh, headless Chrome): ?smoke=1
       auto-runs. A def feeds a control bus and an audio tap; the script
-      subscribes to both, reads a generated buffer with /b_getn, reduces it,
+      subscribes to both, reads a generated buffer with /buffer_getRange, reduces it,
       and draws a meter, an oscilloscope and a waveform itself. What is
       asserted is that the figures are the ones the GUI host would draw from
       the same sources — the columns are the min/max of the very samples read,
       the trace is the core's own trigger alignment, the streamed bus value is
-      what /c_get answers — and that the canvas actually carries ink. The WS
+      what /bus_get answers — and that the canvas actually carries ink. The WS
       half is tests/data-ws.test.ts.
     -->
     <script type="module">
@@ -125,7 +125,7 @@
         const streamed = buses.value(ctlBus);
         const queried = await ctlBus.get();
         log(`bus ${ctlBus.index}: streamed ${streamed.toFixed(4)}, `
-          + `/c_get ${queried.toFixed(4)} (${buses.snapshots} snapshots)`);
+          + `/bus_get ${queried.toFixed(4)} (${buses.snapshots} snapshots)`);
         if (!(streamed >= 0 && streamed <= 1)) {
           throw new Error(`the LFO's value is out of range: ${streamed}`);
         }
@@ -139,7 +139,7 @@
         });
         await sleep(400);
         const window = taps.window(audioBus.index);
-        if (!window) throw new Error("no /tap_data arrived");
+        if (!window) throw new Error("no /bus_tapStream.reply arrived");
         const peak = Math.max(...window.samples.map(Math.abs));
         if (Math.abs(peak - TONE_AMP) > 0.05) {
           throw new Error(`the tap's amplitude is ${peak}, not ~${TONE_AMP}`);

@@ -3,7 +3,7 @@
 //!
 //! Engine-level tests drive the same command FIFO the network thread uses
 //! and listen with signal asserts; the OSC test at the end covers the whole
-//! `/d_faust` → `/s_new` → `/n_set` → `/n_free` round trip with a manually
+//! `/def_send faust` → `/synth_new` → `/node_set` → `/node_free` round trip with a manually
 //! ticked engine.
 
 #![cfg(feature = "faust")]
@@ -58,7 +58,7 @@ fn compile_def(name: &str, src: &str) -> Arc<FaustDef> {
 }
 
 /// Builds the instance on this (network-style) thread, with named controls
-/// resolved exactly like `/s_new` does.
+/// resolved exactly like `/synth_new` does.
 fn add_faust(id: i32, def: &Arc<FaustDef>, controls: &[(&str, f32)]) -> Cmd {
     let mut synth = Box::new(
         FaustSynth::new(Arc::clone(def), SR, &clausters::dsp::buffer::empty_pool())
@@ -238,7 +238,7 @@ fn n_map_drives_a_faust_zone_from_a_control_bus() {
     let f = estimated_freq(&left);
     assert!((f - 660.0).abs() < 8.0, "estimated freq = {f}");
 
-    // The zone tracks the bus live, with no further /n_set.
+    // The zone tracks the bus live, with no further /node_set.
     handle
         .send(Cmd::SetControlBus {
             index: 5,
@@ -365,7 +365,7 @@ fn freed_faust_synth_drops_on_this_thread_and_factory_survives() {
     handle.send(add_faust(1000, &def, &[])).ok().unwrap();
     render_channel(&mut engine, 10, 0);
 
-    // `/d_free` semantics: the table's Arc goes away while the instance is
+    // `/def_free` semantics: the table's Arc goes away while the instance is
     // still playing — its own clone keeps the factory alive.
     drop(def);
     let left = render_channel(&mut engine, 100, 0);
@@ -380,7 +380,7 @@ fn freed_faust_synth_drops_on_this_thread_and_factory_survives() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-// ---- OSC round trip: /d_faust → /s_new → /n_set → /n_free ----
+// ---- OSC round trip: /def_send faust → /synth_new → /node_set → /node_free ----
 
 mod osc {
     use super::*;
@@ -425,21 +425,23 @@ mod osc {
         };
 
         send(
-            "/d_faust",
+            "/def_send",
             vec![
+                OscType::String("faust".into()),
                 OscType::String("fsine".into()),
                 OscType::String(SINE_SRC.into()),
             ],
         );
         let done = recv_until("/done");
-        assert_eq!(done.args[1], OscType::String("fsine".into()));
+        assert_eq!(done.args[1], OscType::String("faust".into()));
+        assert_eq!(done.args[2], OscType::String("fsine".into()));
 
-        // M30: /d_query reports the compiled def's parameter surface, which for
+        // M30: /def_query reports the compiled def's parameter surface, which for
         // a FaustDef carries its declared range (init/min/max/step) after the
         // shared (name, default, rate) triple. The reserved out/in bus controls
         // are engine plumbing and stay out of it.
-        send("/d_query", vec![OscType::String("fsine".into())]);
-        let info = recv_until("/d_info");
+        send("/def_query", vec![OscType::String("fsine".into())]);
+        let info = recv_until("/def_query.reply");
         assert_eq!(info.args[0], OscType::String("fsine".into()));
         assert_eq!(info.args[1], OscType::String("faust".into()));
         assert_eq!(info.args[2], OscType::Int(2), "freq and amp, not out/in");
@@ -454,7 +456,7 @@ mod osc {
 
         // Instantiate with a named control, tick the engine, listen.
         send(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String("fsine".into()),
                 OscType::Int(1000),
@@ -464,7 +466,7 @@ mod osc {
                 OscType::Float(660.0),
             ],
         );
-        // /s_new also crosses the network thread before the engine sees it;
+        // /synth_new also crosses the network thread before the engine sees it;
         // poll until the voice settles at its initial pitch.
         let mut freq = 0.0;
         for _ in 0..50 {
@@ -475,16 +477,16 @@ mod osc {
         }
         assert!((freq - 660.0).abs() < 5.0, "estimated freq = {freq}");
 
-        // /n_set by name through the def mirror.
+        // /node_set by name through the def mirror.
         send(
-            "/n_set",
+            "/node_set",
             vec![
                 OscType::Int(1000),
                 OscType::String("freq".into()),
                 OscType::Float(330.0),
             ],
         );
-        // The /n_set command needs the network thread to forward it before
+        // The /node_set command needs the network thread to forward it before
         // the engine tick can apply it; poll until the pitch settles.
         let mut freq = 0.0;
         for _ in 0..50 {
@@ -495,7 +497,7 @@ mod osc {
         }
         assert!((freq - 330.0).abs() < 5.0, "estimated freq = {freq}");
 
-        send("/n_free", vec![OscType::Int(1000)]);
+        send("/node_free", vec![OscType::Int(1000)]);
         let mut silent = false;
         for _ in 0..50 {
             silent = rms(&render_channel(&mut engine, 100, 0)) < 1e-9;
@@ -503,9 +505,9 @@ mod osc {
                 break;
             }
         }
-        assert!(silent, "bus must be clean after /n_free");
+        assert!(silent, "bus must be clean after /node_free");
 
-        send("/quit", vec![]);
+        send("/server_quit", vec![]);
         recv_until("/done");
         server_thread.join().unwrap().unwrap();
     }

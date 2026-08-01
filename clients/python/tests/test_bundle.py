@@ -45,11 +45,11 @@ def a_bundle() -> Bundle:
     # The root is widget 1 (the record's id), so the children start at 2.
     b.gui(window(
         knob(id=2, label="freq", value=freq, min=60.0, max=700.0,
-             bind=["/n_set", node, "freq"]),
+             bind=["/node_set", node, "freq"]),
         meter(lfo, id=3, label="env"),
         title="FM voice", layout="col",
     ))
-    b.boot(["/s_new", "fm-voice.voice", node, 0, 0, "freq", freq, "env_bus", lfo])
+    b.boot(["/synth_new", "fm-voice.voice", node, 0, 0, "freq", freq, "env_bus", lfo])
     b.preset("bright", freq=660.0)
     return b
 
@@ -80,7 +80,7 @@ def test_the_record_carries_the_holes_and_the_boot_list():
     assert record["id"] == 1
     tree = record["gui"]
     assert tree["children"][0]["value"] == "$freq"
-    assert tree["children"][0]["bind"] == ["/n_set", "@voice", "freq"]
+    assert tree["children"][0]["bind"] == ["/node_set", "@voice", "freq"]
     assert tree["children"][1]["bus"] == "@lfo"
     assert tree["boot"][0][2] == "@voice"
 

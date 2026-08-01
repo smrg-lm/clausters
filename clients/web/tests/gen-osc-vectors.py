@@ -28,17 +28,17 @@ def blob_hex(value):
 
 CASES = [
     # (name, addr, [tagged args])  — the tags mirror base/osc.ts OscArg.
-    ("no_args", "/status", []),
-    ("s_new", "/s_new", [
+    ("no_args", "/server_status", []),
+    ("s_new", "/synth_new", [
         ("s", "sine"), ("i", 1000), ("i", 0), ("i", 1),
         ("s", "freq"), ("f", 440.0),
     ]),
-    ("negative_int", "/n_free", [("i", -1)]),
+    ("negative_int", "/node_free", [("i", -1)]),
     ("int64", "/late", [("h", 4294967296)]),
-    ("blob", "/d_recv", [("b", "0001feff")]),
-    ("blob_pad", "/d_recv", [("b", "deadbeef0a")]),
+    ("blob", "/def_send", [("s", "synth"), ("b", "0001feff")]),
+    ("blob_pad", "/def_send", [("s", "synth"), ("b", "deadbeef0a")]),
     ("utf8_string", "/label", [("s", "árbol ñandú")]),
-    ("mixed", "/n_set", [("i", 1000), ("s", "freq"), ("f", 220.5)]),
+    ("mixed", "/node_set", [("i", 1000), ("s", "freq"), ("f", 220.5)]),
 ]
 
 

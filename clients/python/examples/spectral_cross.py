@@ -79,12 +79,12 @@ def main():
         # A little melody in the modulator: the noise follows it.
         for midi, dur in [(57, 2.0), (60, 2.0), (64, 2.0), (62, 2.0)]:
             freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
-            session.server.send_bundle(("/n_set", voice.id, "freq", freq))
+            session.server.send_bundle(("/node_set", voice.id, "freq", freq))
             yield dur
         # Freeze the last envelope: the melody stops, the texture holds.
-        session.server.send_bundle(("/n_set", voice.id, "freeze", 1.0))
+        session.server.send_bundle(("/node_set", voice.id, "freeze", 1.0))
         yield 4.0
-        session.server.send_bundle(("/n_free", voice.id))
+        session.server.send_bundle(("/node_free", voice.id))
 
     Routine(sequence).play(session.clock)
     stats = session.render(sample_rate=SR, channels=2, path=out_path)

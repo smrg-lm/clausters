@@ -407,7 +407,7 @@ def test_unknown_messages_are_ignored():
     ed.draw()
     assert not ed.apply("/gui_event", [1, "points", 0.0, 1.0])   # a bpf edit
     assert not ed.apply("/gui_event", [999_999, "clip", 0.0, 1.0])  # unknown id
-    assert not ed.apply("/clock.reply", [1234.0])
+    assert not ed.apply("/clock_query.reply", [1234.0])
 
 
 # ---- the automation clip: a curve as the body, edited in place ----
@@ -553,7 +553,7 @@ def test_the_edited_composition_renders_where_it_was_dropped():
         build(server, clock)
         clock.render()
         return sorted(when for when, raw in server.interface.score.bundles
-                      if _inner_addr(raw) == "/s_new")
+                      if _inner_addr(raw) == "/synth_new")
 
     def edited(server, clock):
         note = Event(SeqEvent(instrument="default", freq=440.0, dur=1.0))

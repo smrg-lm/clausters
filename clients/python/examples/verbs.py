@@ -88,7 +88,7 @@ time.sleep(PAUSE)
 long_note.free()                              # ...cut now
 
 # %% An automation coupled to a sounding node: the curve is written to a
-# control bus and /n_map'd onto the control — the node follows it, then keeps
+# control bus and /node_map'd onto the control — the node follows it, then keeps
 # the last value. Outside a clock the curve's beats read as seconds; the
 # returned automation stops the sweep early (the control holds where it was).
 print("an automation sweeping a sounding node's freq, interrupted mid-sweep")

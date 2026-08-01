@@ -78,7 +78,7 @@ fn lcg_samples(n: usize, mut state: u32) -> Vec<f32> {
 }
 
 /// Prepares `ir` (a mono impulse response) into the kernel layout the `Conv`
-/// UGen reads, exactly as `/b_gen prepare_partconv` does.
+/// UGen reads, exactly as `/buffer_gen prepare_partconv` does.
 fn prepare(ir: &[f32], fft_size: usize) -> Buffer {
     let parts = ir.len().div_ceil(fft_size / 2);
     let target = Buffer::zeroed(layout::frames(fft_size, parts), 1, SR as f64);

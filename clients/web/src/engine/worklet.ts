@@ -21,12 +21,12 @@ import { initSync, WebServer } from "./clausters_web.js";
 //                    {type:"clock"}       ask for the sample clock
 //                    {type:"b_load", index, channels, sampleRate, data}
 //                        install host-decoded samples as buffer `index` (the
-//                        browser's /b_allocRead: fetch + decodeAudioData on
+//                        browser's /buffer_allocRead: fetch + decodeAudioData on
 //                        the main thread, interleaved floats in here)
 //   worklet -> main: {type:"osc", data}   one reply packet (bytes)
 //                    {type:"clock", clock, frame, epoch}
 //                    {type:"b_load", index, ok, message?}  the install's ack
-//                    {type:"quit"}        a /quit arrived; processor stops
+//                    {type:"quit"}        a /server_quit arrived; processor stops
 //                    {type:"error", message}  fatal; processor stops
 type InMessage =
     | { type: "osc"; data: ArrayBuffer }

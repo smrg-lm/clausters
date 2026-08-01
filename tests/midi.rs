@@ -1,7 +1,7 @@
 //! M17: standard channel-voice MIDI actuates nodes and their input controls.
 //! The central claim: a MIDI-driven voice is **byte-identical** to the
-//! equivalent OSC one — `translate_midi` synthesizes the same `/s_new`/
-//! `/n_set`/`/n_free` the OSC path would, so the mirrored node state matches.
+//! equivalent OSC one — `translate_midi` synthesizes the same `/synth_new`/
+//! `/node_set`/`/node_free` the OSC path would, so the mirrored node state matches.
 
 #![cfg(feature = "synth")]
 
@@ -80,7 +80,7 @@ fn midi_voice_matches_equivalent_osc() {
     let amp = convert::velocity2amp(32768);
     osc.translate(
         &msg(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String("default".into()),
                 OscType::Int(1000),
@@ -192,7 +192,7 @@ fn gate_binding_releases_instead_of_freeing() {
         &mut cmds,
     )
     .unwrap();
-    // `default` has no gate control, so the /n_set resolves to a no-op — the
+    // `default` has no gate control, so the /node_set resolves to a no-op — the
     // point is that no FreeNode is emitted on the gate path.
     assert!(!cmds.iter().any(|c| matches!(c, Cmd::FreeNode { .. })));
 }

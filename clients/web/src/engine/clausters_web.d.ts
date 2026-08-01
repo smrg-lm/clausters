@@ -13,7 +13,7 @@ export class WebServer {
     [Symbol.dispose](): void;
     /**
      * Installs host-decoded samples as buffer `index` (the browser's
-     * `/b_allocRead` replacement: fetch + `decodeAudioData`, then this).
+     * `/buffer_allocRead` replacement: fetch + `decodeAudioData`, then this).
      */
     b_load(index: number, channels: number, sample_rate: number, data: Float32Array): void;
     /**
@@ -49,7 +49,7 @@ export class WebServer {
      */
     process(out: Float32Array): void;
     /**
-     * Whether a `/quit` arrived; the page decides what closing means.
+     * Whether a `/server_quit` arrived; the page decides what closing means.
      */
     quit_requested(): boolean;
     /**

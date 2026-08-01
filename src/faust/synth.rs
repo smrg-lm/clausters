@@ -10,7 +10,7 @@
 //! # Controls
 //!
 //! Control indices `0..params.len()` are the def's UI parameters in
-//! declaration order; `/n_set` writes the value through the instance's
+//! declaration order; `/node_set` writes the value through the instance's
 //! `FAUSTFLOAT*` zone — a plain aligned store, RT-safe (Faust reads zones at
 //! block boundaries). Two reserved names follow the Faust parameters:
 //! `"out"` (index `params.len()`) and `"in"` (one past it), the first audio
@@ -46,7 +46,7 @@ pub struct ParamSpec {
 
 /// A compiled Faust def ready to instantiate: the factory plus the metadata
 /// shared by every instance. The def table holds it as `Arc<FaustDef>` and
-/// every [`FaustSynth`] keeps a clone, so `/d_free` with live synths cannot
+/// every [`FaustSynth`] keeps a clone, so `/def_free` with live synths cannot
 /// delete the factory under them (`deleteCDSPFactory` with live instances is
 /// UB).
 pub struct FaustDef {
@@ -88,7 +88,7 @@ impl FaustDef {
         })
     }
 
-    /// Control reference for `/s_new`/`/n_set` by name: Faust parameters
+    /// Control reference for `/synth_new`/`/node_set` by name: Faust parameters
     /// first (declaration order), then the reserved `out` and `in` buses.
     pub fn control_index(&self, name: &str) -> Option<u32> {
         if let Some(i) = self.params.iter().position(|p| p.name == name) {
@@ -114,7 +114,7 @@ pub struct FaustSynth {
     dsp: NonNull<ffi::llvm_dsp>,
     /// Parameter zones inside the instance, aligned with `def.params`.
     zones: Vec<*mut f32>,
-    /// Bus mappings parallel to `zones` (`/n_map`/`/n_mapa`). The reserved
+    /// Bus mappings parallel to `zones` (`/node_map`/`/node_mapAudio`). The reserved
     /// `out`/`in` routing controls are not mappable.
     maps: Vec<ControlMap>,
     out_bus: usize,
@@ -179,7 +179,7 @@ impl SynthNode for FaustSynth {
         let (offset, frames) = (ctx.offset, ctx.frames);
         // Pull bus-mapped parameters into their zones before `compute`
         // reads them: a control bus, or one frame of an audio bus
-        // (control-rate, `/n_mapa`). Zones are scalar, so audio mappings are
+        // (control-rate, `/node_mapAudio`). Zones are scalar, so audio mappings are
         // always sampled — Faust has no audio-rate parameter.
         for i in 0..self.maps.len() {
             let m = self.maps[i];
@@ -245,7 +245,7 @@ impl SynthNode for FaustSynth {
         }
     }
 
-    /// The whole JIT instance counts as one UGen in `/status.reply`.
+    /// The whole JIT instance counts as one UGen in `/server_status.reply`.
     fn ugen_count(&self) -> usize {
         1
     }

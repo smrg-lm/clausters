@@ -40,7 +40,7 @@ fn zero_crossings(buf: &[f32]) -> usize {
   -3 dB ≈ gain 0.707).
 - **Envelopes**: sample key points (value at t=attack should be ≈ peak; after
   release, ≈ 0; done flag set).
-- **Silence**: `assert!(rms < 1e-6)` — after `/n_free` the bus must be clean.
+- **Silence**: `assert!(rms < 1e-6)` — after `/node_free` the bus must be clean.
 - **Always**: `assert!(buf.iter().all(|x| x.is_finite()))` in every test.
 
 Tolerances: compare audio floats with relative tolerance (1e-4 is usually enough
@@ -171,9 +171,9 @@ Note: `assert_no_alloc` needs its global allocator (`#[global_allocator]` with
 #[test]
 fn s_new_and_status() {
     let server = TestServer::spawn(); // port 0 → ephemeral, offline mode with manual clock
-    server.send(msg("/s_new", &["default", 1000, 0, 0]));
+    server.send(msg("/synth_new", &["default", 1000, 0, 0]));
     server.tick_blocks(10);
-    let reply = server.request(msg("/status", &[]));
+    let reply = server.request(msg("/server_status", &[]));
     assert_eq!(reply.synth_count(), 1);
 }
 ```
@@ -188,7 +188,7 @@ fn s_new_and_status() {
 
 ```bash
 cargo run --release &           # real server with cpal
-oscsend localhost 57110 /s_new siii default -1 0 0
+oscsend localhost 57110 /synth_new siii default -1 0 0
 # or sclang: s = Server("rust", NetAddr("127.0.0.1", 57110)); — see [[scsynth-osc]]
 ```
 

@@ -30,7 +30,7 @@ def _string(s: str) -> bytes:
 
 
 class Int64:
-    """Marker for an OSC int64 (`h`) argument — e.g. `/sched` sample targets."""
+    """Marker for an OSC int64 (`h`) argument — e.g. `/sched_at` sample targets."""
 
     def __init__(self, value: int):
         self.value = int(value)
@@ -76,7 +76,7 @@ def bundle_at(unix_seconds: float, *packets: bytes) -> bytes:
 
 
 def immediate_bundle(*packets: bytes) -> bytes:
-    """A bundle with the immediate timetag ``{0, 1}`` — used as the ``/sched``
+    """A bundle with the immediate timetag ``{0, 1}`` — used as the ``/sched_at``
     payload, where the server ignores the inner timetag and fires it at the
     scheduled sample."""
     body = b"".join(struct.pack(">i", len(p)) + p for p in packets)
@@ -103,7 +103,7 @@ def _read_string(data: bytes) -> tuple[str, bytes]:
 
 def decode(packet: bytes) -> tuple[str, list]:
     """Decodes a single OSC message into ``(addr, args)``. Enough for the
-    server's replies (`/done`, `/fail`, `/status.reply`, …); bundles are not
+    server's replies (`/done`, `/fail`, `/server_status.reply`, …); bundles are not
     expected as replies."""
     addr, rest = _read_string(packet)
     tags, rest = _read_string(rest)

@@ -673,22 +673,25 @@ fn a_render_is_a_fresh_take_unless_it_is_given_a_seed() {
             0.0,
             vec![
                 msg(
-                    "/d_recv",
-                    vec![OscType::Blob(
-                        serde_json::to_vec(
-                            &serde_json::from_str::<SynthDefSpec>(
-                                r#"{"name": "n", "ugens": [
+                    "/def_send",
+                    vec![
+                        OscType::String("synth".into()),
+                        OscType::Blob(
+                            serde_json::to_vec(
+                                &serde_json::from_str::<SynthDefSpec>(
+                                    r#"{"name": "n", "ugens": [
                                      {"kind": "WhiteNoise", "inputs": []},
                                      {"kind": "Out", "inputs": [{"const": 0.0},
                                                                 {"ugen": 0}]}]}"#,
+                                )
+                                .unwrap(),
                             )
                             .unwrap(),
-                        )
-                        .unwrap(),
-                    )],
+                        ),
+                    ],
                 ),
                 msg(
-                    "/s_new",
+                    "/synth_new",
                     vec![
                         OscType::String("n".into()),
                         OscType::Int(100),
@@ -698,7 +701,7 @@ fn a_render_is_a_fresh_take_unless_it_is_given_a_seed() {
                 ),
             ],
         ),
-        (0.05, vec![msg("/n_free", vec![OscType::Int(100)])]),
+        (0.05, vec![msg("/node_free", vec![OscType::Int(100)])]),
     ];
     let score = Score::new(events).unwrap();
     let cfg = RenderConfig {

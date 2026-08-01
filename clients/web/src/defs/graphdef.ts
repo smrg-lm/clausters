@@ -1,4 +1,4 @@
-// GraphDef: a named node-graph "program" ready for `/d_graph` (mirrors
+// GraphDef: a named node-graph "program" ready for `/def_send graph` (mirrors
 // `clausters/defs/graphdef.py`, emitting the same JSON `GraphDefSpec`).
 //
 // Where `SynthDef` and `FaustDef` each describe a *single* synthesis node, a
@@ -14,7 +14,7 @@
 // const src = g.add("gsrc", { out: mix, level: 1.0 });
 // g.add("gsink", { in: mix, out: "OUT" });           // `out` -> hardware
 // g.port("gain", [src.control("level")], 0.5);       // port -> the level
-// await g.send(server);                       // /d_graph
+// await g.send(server);                       // /def_send graph
 //
 // const inst = Group.graph(server, "chain", { gain: 0.8 }); // /graph_new
 // inst.set({ gain: 0.3 });                   // resolves on the surface
@@ -111,7 +111,7 @@ export interface MemberSpec {
     voice?: boolean;
 }
 
-/** The `GraphDefSpec` the server's `/d_graph` validates. */
+/** The `GraphDefSpec` the server's `/def_send graph` validates. */
 export interface GraphDefSpec {
     name: string;
     members: MemberSpec[];
@@ -154,7 +154,7 @@ export class GraphDef {
      * Adds a member: an instance of the SynthDef/FaustDef `defname`. Control
      * values may be numbers, a `GraphBusRef` (to wire the control to an
      * internal bus), or `"OUT"` (hardware bus 0). `maps` binds controls to
-     * internal *control* buses via `/n_map`. `voice: true` marks a
+     * internal *control* buses via `/node_map`. `voice: true` marks a
      * **per-voice** member: instantiated once per `Server.graphVoice` (or
      * MIDI note) instead of at instantiation — the per-note part of a
      * polyphonic instrument.
@@ -211,7 +211,7 @@ export class GraphDef {
         }
     }
 
-    /** The `GraphDefSpec` object the server's `/d_graph` validates. */
+    /** The `GraphDefSpec` object the server's `/def_send graph` validates. */
     spec(): GraphDefSpec {
         if (this.members_.length === 0) {
             throw new TypeError("a GraphDef needs at least one member");
@@ -224,7 +224,7 @@ export class GraphDef {
     }
 
     /**
-     * Sends this def to the server via `/d_graph` and returns its name.
+     * Sends this def to the server via `/def_send graph` and returns its name.
      *
      * Loading a GraphDef is cheap on the server (no JIT — it only validates and
      * references the member defs), but it is still asynchronous, so the same
@@ -240,15 +240,15 @@ export class GraphDef {
     ): Promise<string> {
         const payload: MsgArg[] = [this.dumpDef()];
         if (!wait) {
-            server.sendMsg("/d_graph", ...payload);
+            server.sendMsg("/def_send", "graph", ...payload);
             return this.name;
         }
-        await server.command("/d_graph", payload, timeout);
+        await server.command("/def_send", ["graph", ...payload], timeout);
         return this.name;
     }
 
     /**
-     * The def serialized to text — the `/d_graph` wire payload. Useful to
+     * The def serialized to text — the `/def_send graph` wire payload. Useful to
      * inspect the composition before sending it.
      */
     dumpDef(): string {

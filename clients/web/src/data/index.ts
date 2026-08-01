@@ -5,9 +5,9 @@
 // tap or a URL draws without a line of script. This module is the same three
 // paths opened to the **script**, for a view the page draws on its own canvas:
 //
-// - `BusStream` — control buses, streamed (`/c_stream`): meters, read-outs,
+// - `BusStream` — control buses, streamed (`/bus_stream`): meters, read-outs,
 //   control-rate traces.
-// - `TapStream` (+ `scopeWindow`) — audio taps, streamed (`/tap_stream`):
+// - `TapStream` (+ `scopeWindow`) — audio taps, streamed (`/bus_tapStream`):
 //   oscilloscopes, phasescopes, spectra.
 // - `Peaks`, `fetchAudio` and `Server.getSamples` — bulk buffer samples and
 //   their reduction: waveforms, audio-editor views.

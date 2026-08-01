@@ -1,6 +1,6 @@
 //! M5 tests: the buffer pool, the NRT thread (alloc / WAV read / write /
 //! zero / free, in submission order) and the `PlayBuf`/`BufRd` UGens, plus
-//! the `/b_*` OSC round trip with a manually ticked engine.
+//! the `/buffer_*` OSC round trip with a manually ticked engine.
 
 #![cfg(feature = "synth")]
 
@@ -494,7 +494,7 @@ fn read_overlays_a_file_keeping_the_buffer_shape() {
         buf_start: 5,
         current: Arc::new(Buffer::zeroed(20, 1, 48_000.0)),
     }));
-    assert_eq!(read.frames(), 20, "/b_read keeps the buffer's shape");
+    assert_eq!(read.frames(), 20, "/buffer_read keeps the buffer's shape");
     for (i, s) in read.data().iter().enumerate() {
         let expected = if (5..15).contains(&i) { 0.5 } else { 0.0 };
         assert_eq!(*s, expected, "frame {i}");
@@ -704,7 +704,7 @@ fn non_wav_extensions_decode_through_symphonia() {
     std::fs::remove_file(&path).ok();
 }
 
-// ---- OSC round trip: /b_* against a live server, engine ticked manually ----
+// ---- OSC round trip: /buffer_* against a live server, engine ticked manually ----
 
 mod osc {
     use super::*;
@@ -760,17 +760,17 @@ mod osc {
         })
         .unwrap();
 
-        // /b_allocRead → /done /b_allocRead 0, then /b_query → /b_info.
+        // /buffer_allocRead → /done /buffer_allocRead 0, then /buffer_query → /buffer_query.reply.
         send(
-            "/b_allocRead",
+            "/buffer_allocRead",
             vec![OscType::Int(0), OscType::String(path.clone())],
         );
         let done = recv_until("/done");
-        assert_eq!(done.args[0], OscType::String("/b_allocRead".into()));
+        assert_eq!(done.args[0], OscType::String("/buffer_allocRead".into()));
         assert_eq!(done.args[1], OscType::Int(0));
 
-        send("/b_query", vec![OscType::Int(0)]);
-        let infos = recv_until("/b_info");
+        send("/buffer_query", vec![OscType::Int(0)]);
+        let infos = recv_until("/buffer_query.reply");
         assert_eq!(
             infos.args,
             vec![
@@ -781,11 +781,11 @@ mod osc {
             ]
         );
 
-        // M30: with no argument, /b_query lists the allocated buffers in the
+        // M30: with no argument, /buffer_query lists the allocated buffers in the
         // same four-arg shape — how a patcher discovers buffers it never
         // allocated itself (the pool outlives any one client).
-        send("/b_query", vec![]);
-        let listed = recv_until("/b_info");
+        send("/buffer_query", vec![]);
+        let listed = recv_until("/buffer_query.reply");
         assert_eq!(
             listed.args,
             vec![
@@ -797,7 +797,7 @@ mod osc {
             "only the allocated slot is listed"
         );
 
-        // Play it through a /d_recv'd PlayBuf def, looping; the engine is
+        // Play it through a /def_send synth'd PlayBuf def, looping; the engine is
         // ticked from here, so the output is deterministic.
         let def = json!({
             "name": "player",
@@ -809,10 +809,16 @@ mod osc {
             ]
         })
         .to_string();
-        send("/d_recv", vec![OscType::Blob(def.into_bytes())]);
+        send(
+            "/def_send",
+            vec![
+                OscType::String("synth".into()),
+                OscType::Blob(def.into_bytes()),
+            ],
+        );
         recv_until("/done");
         send(
-            "/s_new",
+            "/synth_new",
             vec![
                 OscType::String("player".into()),
                 OscType::Int(1000),
@@ -820,7 +826,7 @@ mod osc {
                 OscType::Int(0),
             ],
         );
-        // The /s_new and the buffer install race our ticking: poll until the
+        // The /synth_new and the buffer install race our ticking: poll until the
         // loop comes through.
         let mut ok = false;
         for _ in 0..100 {
@@ -832,10 +838,10 @@ mod osc {
         }
         assert!(ok, "looped playback must reproduce the file exactly");
 
-        // /b_zero keeps the shape but silences the playback.
-        send("/b_zero", vec![OscType::Int(0)]);
+        // /buffer_zero keeps the shape but silences the playback.
+        send("/buffer_zero", vec![OscType::Int(0)]);
         let done = recv_until("/done");
-        assert_eq!(done.args[0], OscType::String("/b_zero".into()));
+        assert_eq!(done.args[0], OscType::String("/buffer_zero".into()));
         let mut silent = false;
         for _ in 0..100 {
             silent = render_channel(&mut engine, 2, 0).iter().all(|s| *s == 0.0);
@@ -844,40 +850,44 @@ mod osc {
             }
         }
         assert!(silent, "zeroed buffer must play silence");
-        send("/b_query", vec![OscType::Int(0)]);
-        let infos = recv_until("/b_info");
-        assert_eq!(infos.args[1], OscType::Int(50), "shape survives /b_zero");
+        send("/buffer_query", vec![OscType::Int(0)]);
+        let infos = recv_until("/buffer_query.reply");
+        assert_eq!(
+            infos.args[1],
+            OscType::Int(50),
+            "shape survives /buffer_zero"
+        );
 
-        // /b_free empties the slot: /b_query answers an absent record, which
+        // /buffer_free empties the slot: /buffer_query answers an absent record, which
         // is `frames = -1` (the shape of a buffer that is not there, told in
         // the record rather than as a /fail).
-        send("/n_free", vec![OscType::Int(1000)]);
-        send("/b_free", vec![OscType::Int(0)]);
+        send("/node_free", vec![OscType::Int(1000)]);
+        send("/buffer_free", vec![OscType::Int(0)]);
         let done = recv_until("/done");
-        assert_eq!(done.args[0], OscType::String("/b_free".into()));
-        send("/b_query", vec![OscType::Int(0)]);
-        let infos = recv_until("/b_info");
+        assert_eq!(done.args[0], OscType::String("/buffer_free".into()));
+        send("/buffer_query", vec![OscType::Int(0)]);
+        let infos = recv_until("/buffer_query.reply");
         assert_eq!(infos.args[1], OscType::Int(-1), "absent buffer");
         // ...and the freed slot drops out of the listing form entirely.
-        send("/b_query", vec![]);
+        send("/buffer_query", vec![]);
         assert!(
-            recv_until("/b_info").args.is_empty(),
+            recv_until("/buffer_query.reply").args.is_empty(),
             "a freed buffer is not listed"
         );
 
         // Errors come back as /fail: unallocated read, bad index.
         send(
-            "/b_read",
+            "/buffer_read",
             vec![OscType::Int(0), OscType::String(path.clone())],
         );
         let fail = recv_until("/fail");
-        assert_eq!(fail.args[0], OscType::String("/b_read".into()));
-        send("/b_alloc", vec![OscType::Int(-1), OscType::Int(10)]);
+        assert_eq!(fail.args[0], OscType::String("/buffer_read".into()));
+        send("/buffer_alloc", vec![OscType::Int(-1), OscType::Int(10)]);
         recv_until("/fail");
 
         // Keep ticking so freed nodes/buffers drain, then shut down.
         render_channel(&mut engine, 2, 0);
-        send("/quit", vec![]);
+        send("/server_quit", vec![]);
         recv_until("/done");
         server_thread.join().unwrap().unwrap();
         std::fs::remove_file(&path).ok();

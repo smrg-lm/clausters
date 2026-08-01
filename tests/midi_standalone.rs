@@ -3,7 +3,7 @@
 //! OSC programming. End-to-end across two real `OscServer` instances on one
 //! data dir (no audio device, no MIDI transport): session 1 sets things up
 //! over OSC, session 2 reloads them at boot. We observe the reload through
-//! `/g_queryTree` (a restored GraphDef binding and a boot graph appear as
+//! `/group_queryTree` (a restored GraphDef binding and a boot graph appear as
 //! groups in the node tree).
 
 #![cfg(feature = "synth")]
@@ -92,22 +92,22 @@ impl TestServer {
         panic!("never received {addr}");
     }
 
-    /// The child count of the root group from `/g_queryTree 0` (arg index 2).
+    /// The child count of the root group from `/group_queryTree 0` (arg index 2).
     fn root_child_count(&self) -> i32 {
-        self.send("/g_queryTree", vec![OscType::Int(0)]);
-        match self.recv_until("/g_queryTree.reply").args[2] {
+        self.send("/group_queryTree", vec![OscType::Int(0)]);
+        match self.recv_until("/group_queryTree.reply").args[2] {
             OscType::Int(n) => n,
             ref other => panic!("unexpected child count: {other:?}"),
         }
     }
 
     fn sync(&self) {
-        self.send("/sync", vec![OscType::Int(1)]);
-        self.recv_until("/synced");
+        self.send("/server_sync", vec![OscType::Int(1)]);
+        self.recv_until("/server_sync.reply");
     }
 
     fn quit(self) {
-        self.send("/quit", vec![]);
+        self.send("/server_quit", vec![]);
         self.recv_until("/done");
         self.handle.join().unwrap().unwrap();
     }
@@ -128,11 +128,11 @@ fn a_graphdef_midi_binding_survives_a_restart() {
     let dir = TempDir::new("bind");
 
     let a = TestServer::spawn(dir.path());
-    a.send("/d_recv", vec![s(VTONE)]);
+    a.send("/def_send", vec![OscType::String("synth".into()), s(VTONE)]);
     a.recv_until("/done");
-    a.send("/d_recv", vec![s(VGAIN)]);
+    a.send("/def_send", vec![OscType::String("synth".into()), s(VGAIN)]);
     a.recv_until("/done");
-    a.send("/d_graph", vec![s(POLY)]);
+    a.send("/def_send", vec![OscType::String("graph".into()), s(POLY)]);
     a.recv_until("/done");
     a.send("/midi_bind", vec![OscType::Int(0), s("poly")]);
     a.sync();
@@ -163,11 +163,11 @@ fn a_boot_preset_instantiates_a_standalone_graph() {
     // Persist the member defs + a voice-capable GraphDef.
     {
         let a = TestServer::spawn(dir.path());
-        a.send("/d_recv", vec![s(VTONE)]);
+        a.send("/def_send", vec![OscType::String("synth".into()), s(VTONE)]);
         a.recv_until("/done");
-        a.send("/d_recv", vec![s(VGAIN)]);
+        a.send("/def_send", vec![OscType::String("synth".into()), s(VGAIN)]);
         a.recv_until("/done");
-        a.send("/d_graph", vec![s(POLY)]);
+        a.send("/def_send", vec![OscType::String("graph".into()), s(POLY)]);
         a.recv_until("/done");
         a.quit();
     }

@@ -38,8 +38,8 @@ def main():
     time.sleep(0.25)
     print(f"sample clock: {t0} -> {c.clock} (+{c.clock - t0} in 0.25 s)")
 
-    # Command plane: a /status round trip through the ring.
-    addr, args = osc.decode(c.request(osc.message("/status")))
+    # Command plane: a /server_status round trip through the ring.
+    addr, args = osc.decode(c.request(osc.message("/server_status")))
     print(f"  <- {addr} {args}")
 
     # A def whose amplitude is control bus 7 (InCtl): the fade below happens
@@ -49,18 +49,18 @@ def main():
     sine = d.add("Mul", d.add("Mul", d.add("Sine", 330), 0.3), amp)
     d.add("Out", 0, sine)
     d.add("Out", 1, sine)
-    addr, _ = osc.decode(c.request(osc.message("/d_recv", d.blob())))
+    addr, _ = osc.decode(c.request(osc.message("/def_send", "synth", d.blob())))
     assert addr == "/done", addr
 
     c.ctl_set(7, 0.0)  # start silent
-    c.send(osc.message("/s_new", "shmsine", 4000, 1, 0))
+    c.send(osc.message("/synth_new", "shmsine", 4000, 1, 0))
     print("fading in and out by writing control bus 7 in shared memory:")
     for v in [0.2, 0.5, 1.0, 0.5, 0.1, 0.0]:
         c.ctl_set(7, v)
         print(f"  bus 7 = {v}  (readback {c.ctl_get(7):.2f})")
         time.sleep(0.5)
-    c.send(osc.message("/n_free", 4000))
-    print("done — the server is still running (quit it with /quit or Ctrl-C).")
+    c.send(osc.message("/node_free", 4000))
+    print("done — the server is still running (quit it with /server_quit or Ctrl-C).")
     c.close()
 
 

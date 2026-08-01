@@ -2,7 +2,7 @@
 
 The box counterpart of `clausters.defs.signals`, and a complete def-building
 API in its own right: each function returns a `Box` and composing boxes
-builds the JSON **box tree** the server's ``/d_faust`` consumes (see the
+builds the JSON **box tree** the server's ``/def_send faust`` consumes (see the
 server's ``faust::boxes`` for the schema). Boxes are Faust's point-free
 algebra — ``seq``/``par``/``split``/``merge``/``rec`` compose whole
 **processors** by their input/output arities. Where ``signals`` describes
@@ -44,7 +44,7 @@ stretch inside a `faust` fragment (``_ <: ...``). Every *other* box value can
 be reused freely: a repeated subexpression is computed once (the server
 shares identical subtrees).
 
-Reserved controls ``in`` and ``out`` (set with ``/s_new ... "in" b "out" b``)
+Reserved controls ``in`` and ``out`` (set with ``/synth_new ... "in" b "out" b``)
 choose the input/output buses; they are added by the server, not declared
 here.
 """

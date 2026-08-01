@@ -61,7 +61,7 @@ _EMBED_NAMES = ("libclausters.so", "libclausters.dylib", "clausters.dll")
 # buses (`--taps` slots of a 64-byte cursor line + a `--tap-frames` sample
 # ring, the region 64-byte aligned); this client reads the counts from the
 # header but does not map-read the rings — headless tap capture goes over
-# `/tap_stream` (see `Server.stream_taps`), the recorded G18 decision. ABI v4
+# `/bus_tapStream` (see `Server.stream_taps`), the recorded G18 decision. ABI v4
 # inserts the **audio-bus region** between the control buses and the taps: two
 # words per audio bus, the bus -> tap directory then the per-bus block level, so
 # a reader names a bus rather than a ring. The whole file is mmap'd, so any
@@ -178,7 +178,7 @@ class ShmClient:
         self.control_buses = struct.unpack_from("<I", self.mm, _OFF_CONTROL_BUSES)[0]
         #: audio-tap ring count and per-tap capacity in samples (ABI v3). The
         #: rings themselves are read by the GUI host; capture them from Python
-        #: over ``/tap_stream`` (``Server.stream_taps``) instead.
+        #: over ``/bus_tapStream`` (``Server.stream_taps``) instead.
         self.taps = struct.unpack_from("<I", self.mm, _OFF_TAPS)[0]
         self.tap_frames = struct.unpack_from("<I", self.mm, _OFF_TAP_FRAMES)[0]
         #: audio-bus count of the bus region (ABI v4), the length of both the

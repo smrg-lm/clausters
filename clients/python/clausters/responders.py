@@ -23,10 +23,10 @@ looping inside the callback.
 from clausters.responders import OscFunc, MidiFunc
 from clausters.defs import Synth
 
-# Relay an incoming /play to the server as a /s_new.
+# Relay an incoming /play to the server as a /synth_new.
 OscFunc(lambda msg, t, src: Synth.new("default", {"freq": msg[1]}, server=server), "/play")
 
-# Drive the server from a MIDI keyboard: note on -> /s_new, note off -> free.
+# Drive the server from a MIDI keyboard: note on -> /synth_new, note off -> free.
 notes = {}
 def on(m, src):
     freq = 440 * 2 ** ((m["note"] - 69) / 12)

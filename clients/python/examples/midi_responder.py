@@ -6,7 +6,7 @@ The MIDI counterpart of `osc_responder.py`: `MidiFunc` listens on a virtual MIDI
 a callback. Here a note-on starts a synth on the Clausters server and the
 matching note-off frees it — the client-side mirror of the server's own direct
 MIDI path (a server can be played by MIDI it receives itself, or by a client
-that listens to MIDI and forwards `/s_new`).
+that listens to MIDI and forwards `/synth_new`).
 
 Needs the live cdylib (the virtual input port):
 

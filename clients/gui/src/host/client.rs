@@ -5,8 +5,8 @@
 //! and, crucially, **through the same OSC encode door**
 //! ([`clausters_core::osc`]), so there is one encoder across the system, not a
 //! parallel one. The leg is bidirectional: the host **sends** queries/control
-//! (`/b_query`, `/b_getn`, later `/n_set` for bound widgets) and **receives**
-//! the server's replies (`/b_info`, `/b_setn`). The windowed front pumps those
+//! (`/buffer_query`, `/buffer_getRange`, later `/node_set` for bound widgets) and **receives**
+//! the server's replies (`/buffer_query.reply`, `/buffer_getRange.reply`). The windowed front pumps those
 //! replies into the main thread to fill server-buffer waveform views.
 //!
 //! Control buses are *not* read through this leg: a `meter`/`scope` reads them

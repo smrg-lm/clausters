@@ -785,7 +785,7 @@ export function spectrum(
 /**
  * A live `nodetree` view of the audio server's node tree rooted at `group`
  * (default the root group). The host mirrors the server's tree over its
- * client leg, so creations, deaths and `/n_set` edits show live. `controls`
+ * client leg, so creations, deaths and `/node_set` edits show live. `controls`
  * (default true) shows each synth's control name/value pairs. Read-only.
  */
 export function nodetree(
@@ -910,7 +910,7 @@ export function piano(
         velocity?: number;
         channel?: number;
         voice?: string;
-        /** Extra `[name, value]` control pairs for the host's `/s_new`. */
+        /** Extra `[name, value]` control pairs for the host's `/synth_new`. */
         voiceArgs?: readonly (readonly [string, number])[];
         label?: string;
     } = {},

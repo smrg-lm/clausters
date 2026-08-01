@@ -202,7 +202,7 @@ audio.samples          # interleaved float32
 ```
 
 WAV goes through hound and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC and AIFF
-through symphonia — the same path `/b_allocRead` takes, so client and server
+through symphonia — the same path `/buffer_allocRead` takes, so client and server
 never disagree about a file. Integer files are scaled to `[-1, 1]` on the way
 out: whatever the file holds, what you get is `float32`. Nothing resamples;
 `sample_rate` is the file's own.
@@ -216,7 +216,7 @@ dependency.
 
 Samples are **interleaved** everywhere: `L R L R …`, `frame * channels +
 channel`. That is not an arbitrary choice — it is the server's own buffer
-layout, the order `/b_getn` indexes and `/b_export` writes — so audio *going
+layout, the order `/buffer_getRange` indexes and `/buffer_export` writes — so audio *going
 to* the server needs no conversion at all.
 
 For analysis on the client side, split it:

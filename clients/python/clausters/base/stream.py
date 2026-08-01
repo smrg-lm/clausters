@@ -97,7 +97,7 @@ class Routine(Stream):
     ``sdef.send(server, wait=False)``) -- which only sends; do *not* call the
     blocking ``server.sync()`` here. A non-blocking, notification-driven
     barrier you can ``yield`` (``OSCFunc``) is future work; until then, send
-    the def async and ``yield`` enough time before the ``/s_new`` that depends
+    the def async and ``yield`` enough time before the ``/synth_new`` that depends
     on it.
     """
 

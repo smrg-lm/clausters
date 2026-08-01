@@ -6,12 +6,12 @@ listens for OSC from *any* application and dispatches matching messages to a
 callback, which here plays a synth on the Clausters server. This is the
 client-side counterpart of driving the server directly — the server can be
 played by OSC it receives itself, or by a client that listens to OSC from
-elsewhere and forwards `/s_new`.
+elsewhere and forwards `/synth_new`.
 
 It also shows the **transport push** (the shared grid reacting live): the
-receiver registers `/notify` on its own socket, so when any client sets the
-server's `/transport`, the server pushes the new grid back and an
-`OscFunc('/transport.reply')` re-aligns this client — no polling.
+receiver registers `/server_notify` on its own socket, so when any client sets the
+server's `/transport_set`, the server pushes the new grid back and an
+`OscFunc('/transport_query.reply')` re-aligns this client — no polling.
 
 Start a server in one terminal::
 
@@ -46,9 +46,9 @@ def main() -> None:
     session.start()
 
     recv = OscReceiver(port=LISTEN_PORT).start()
-    # Register /notify *from the receiver's own socket*, so the server's
-    # /transport.reply pushes land here and reach the responder below.
-    recv.send(server.target.addr(), "/notify", 1)
+    # Register /server_notify *from the receiver's own socket*, so the server's
+    # /transport_query.reply pushes land here and reach the responder below.
+    recv.send(server.target.addr(), "/server_notify", 1)
 
     def play_note(msg, when, src):
         # msg == ["/note", midinote, dur]
@@ -59,14 +59,14 @@ def main() -> None:
         print(f"  /note {midinote} -> freq {freq:.1f} Hz for {dur:.2f}s")
 
     def on_transport(msg, when, src):
-        # msg == ["/transport.reply", origin_sample, tempo, defined]
+        # msg == ["/transport_query.reply", origin_sample, tempo, defined]
         origin, tempo, defined = msg[1], msg[2], msg[3]
         if defined:
             print(f"  transport changed: origin={origin} tempo={tempo} -> re-aligning")
             session.clock.join_transport(server)
 
     OscFunc(play_note, "/note", recv=recv)
-    OscFunc(on_transport, "/transport.reply", recv=recv)
+    OscFunc(on_transport, "/transport_query.reply", recv=recv)
 
     print(f"listening for OSC on 127.0.0.1:{LISTEN_PORT} (/note <midinote> <dur>)")
 
@@ -77,7 +77,7 @@ def main() -> None:
         time.sleep(0.5)
 
     # Act as the conductor: set the server transport. The server pushes the new
-    # grid to /notify clients, so on_transport above fires.
+    # grid to /server_notify clients, so on_transport above fires.
     print("setting the shared transport (conductor)...")
     server.set_transport(origin_sample=0, tempo=2.0)
     time.sleep(0.3)

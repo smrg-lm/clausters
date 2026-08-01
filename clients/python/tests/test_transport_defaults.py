@@ -4,7 +4,7 @@ Pure-unit: no live server. The default `Server` interface is a lazy
 `OscTcpInterface` (it connects on first send, so a handle can exist before a
 reachable server), UDP stays an explicit opt-down, an oversized UDP send fails
 early with an error naming TCP, and bulk chunks size themselves from the frame
-ceiling `/server_info` advertises. The live TCP path is exercised by the Rust
+ceiling `/server_query` advertises. The live TCP path is exercised by the Rust
 integration tests and by the examples.
 """
 
@@ -36,7 +36,7 @@ def test_oversized_udp_send_fails_early_naming_tcp():
     try:
         blob = bytes(70_000)  # over the ~64 KB datagram cap
         with pytest.raises(ValueError, match="TCP"):
-            iface.send_msg(("127.0.0.1", 57110), "/d_recv", blob)
+            iface.send_msg(("127.0.0.1", 57110), "/def_send", "synth", blob)
     finally:
         iface.close()
 
@@ -49,7 +49,7 @@ def test_server_info_max_frame_falls_back_to_the_datagram_cap():
 
 def test_bulk_chunk_sizes_from_the_advertised_ceiling():
     server = Server("127.0.0.1", 57997)  # default tcp, never connected
-    server._max_frame = 16 * 1024 * 1024  # as if /server_info had answered
+    server._max_frame = 16 * 1024 * 1024  # as if /server_query had answered
     assert server._bulk_chunk(timeout=0.0) == (16 * 1024 * 1024 - 256) // 4
     server.close()
 

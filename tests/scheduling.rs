@@ -202,7 +202,7 @@ fn earlier_times_fire_first_regardless_of_send_order() {
 
 #[test]
 fn scheduled_impulse_lands_on_its_exact_sample() {
-    // The example's mechanism: a `/sched`'d Impulse(0) splits the block at
+    // The example's mechanism: a `/sched_at`'d Impulse(0) splits the block at
     // the target and fires its single impulse on that exact frame — unlike
     // Sine (which starts at sin(0) = 0), the marked sample itself is 1.0.
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
@@ -245,7 +245,7 @@ fn late_bundles_execute_at_the_start_of_the_next_block() {
 
 #[test]
 fn scheduled_control_bus_write_lands_on_its_sample() {
-    // InCtl reads control bus 7 each slice: the scheduled /c_set becomes a
+    // InCtl reads control bus 7 each slice: the scheduled /bus_set becomes a
     // mid-block step.
     let spec: SynthDefSpec = serde_json::from_value(json!({
         "name": "ctlreader",
@@ -431,7 +431,7 @@ mod osc {
                 .unwrap();
         };
         let s_new = OscPacket::Message(OscMessage {
-            addr: "/s_new".into(),
+            addr: "/synth_new".into(),
             args: vec![
                 OscType::String("default".into()),
                 OscType::Int(1000),
@@ -461,7 +461,7 @@ mod osc {
                 fractional: 1,
             },
             vec![OscPacket::Message(OscMessage {
-                addr: "/n_free".into(),
+                addr: "/node_free".into(),
                 args: vec![OscType::Int(1000)],
             })],
         );
@@ -478,7 +478,7 @@ mod osc {
         send_bundle(
             ntp_in(0.5),
             vec![OscPacket::Message(OscMessage {
-                addr: "/quit".into(),
+                addr: "/server_quit".into(),
                 args: vec![],
             })],
         );
@@ -491,7 +491,7 @@ mod osc {
 
         // Shut down (immediate message, not in a bundle).
         let quit = OscPacket::Message(OscMessage {
-            addr: "/quit".into(),
+            addr: "/server_quit".into(),
             args: vec![],
         });
         client
@@ -500,7 +500,7 @@ mod osc {
         server_thread.join().unwrap().unwrap();
     }
 
-    /// M8: `/sched` carries an *absolute* sample target, so unlike the NTP
+    /// M8: `/sched_at` carries an *absolute* sample target, so unlike the NTP
     /// test above there is no wall-clock neighborhood to allow for — the
     /// note must start on that exact frame. This precision is the point of
     /// scheduling on the sample clock.
@@ -521,7 +521,7 @@ mod osc {
 
         let target: i64 = 5_025; // deliberately mid-block (5025 % 64 != 0)
         let s_new = OscPacket::Message(OscMessage {
-            addr: "/s_new".into(),
+            addr: "/synth_new".into(),
             args: vec![
                 OscType::String("default".into()),
                 OscType::Int(1000),
@@ -530,7 +530,7 @@ mod osc {
             ],
         });
         let sched = OscPacket::Message(OscMessage {
-            addr: "/sched".into(),
+            addr: "/sched_at".into(),
             args: vec![
                 OscType::Long(target),
                 OscType::Blob(encoder::encode(&s_new).unwrap()),
@@ -552,7 +552,7 @@ mod osc {
         );
 
         let quit = OscPacket::Message(OscMessage {
-            addr: "/quit".into(),
+            addr: "/server_quit".into(),
             args: vec![],
         });
         client

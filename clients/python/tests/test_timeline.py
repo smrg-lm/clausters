@@ -4,7 +4,7 @@ The `Timeline` edits and time-queries are pure unit tests. The `Playhead` is
 driven offline (`clock.render()`) into a recording destination, so play / locate
 / loop are checked deterministically by the logical beats each item lands on —
 no server, no real time. `stop` is checked at the queue level (it unscheds the
-feeder). `follow_transport` is checked by feeding a simulated `/transport.reply`
+feeder). `follow_transport` is checked by feeding a simulated `/transport_query.reply`
 broadcast over loopback (no live server). The full multi-client lockstep is the
 manual E2E in `clients/python/examples/transport_conductor.py`.
 """
@@ -220,10 +220,10 @@ def _wait(predicate, timeout=2.0):
 
 
 def _feed_transport(recv, *, defined=1, playing=0, position=0.0):
-    """Send a simulated /transport.reply broadcast to a receiver's port."""
+    """Send a simulated /transport_query.reply broadcast to a receiver's port."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.sendto(
-        osc.message("/transport.reply", osc.Int64(0), 2.0, int(defined),
+        osc.message("/transport_query.reply", osc.Int64(0), 2.0, int(defined),
                     int(playing), float(position)),
         ("127.0.0.1", recv.port),
     )
@@ -232,7 +232,7 @@ def _feed_transport(recv, *, defined=1, playing=0, position=0.0):
 
 def test_playhead_follows_transport_broadcast():
     recv = OscReceiver().start()
-    # A fake server: follow_transport only needs target.addr() (where /notify
+    # A fake server: follow_transport only needs target.addr() (where /server_notify
     # goes -- a discard port here) and transport_state() for the initial apply.
     server = types.SimpleNamespace(
         target=NetAddr("127.0.0.1", 57199),

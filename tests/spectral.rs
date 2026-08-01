@@ -1,6 +1,6 @@
 //! S8 tests: the frequency-domain (`fr`) chain — an `FFT`→`IFFT` round trip
 //! reconstructs a tone, and a `PV_*` filter attenuates a band — driven through
-//! the real engine (`process_block`), plus a `/u_cmd` window swap.
+//! the real engine (`process_block`), plus a `/node_ugenCmd` window swap.
 
 #![cfg(feature = "synth")]
 
@@ -207,7 +207,7 @@ fn compiler_validates_the_chain() {
     assert!(clausters::synthdef::compile(bad_chain).is_err());
 }
 
-/// `/u_cmd <ugen> window <wintype>` swaps an `FFT`'s analysis window live (the
+/// `/node_ugenCmd <ugen> window <wintype>` swaps an `FFT`'s analysis window live (the
 /// first consumer of the S6 typed per-UGen command surface). Here we drive the
 /// UGen's `command` directly to confirm the selector wiring.
 #[test]

@@ -32,11 +32,11 @@ def arpeggio_score() -> bytes:
     for i, freq in enumerate([262.0, 330.0, 392.0, 523.0, 659.0]):
         node = 1000 + i
         packets.append(osc.score_bundle(
-            i * 0.4, osc.message("/s_new", "default", node, 1, 0,
+            i * 0.4, osc.message("/synth_new", "default", node, 1, 0,
                                  "freq", freq, "amp", 0.25)))
         packets.append(osc.score_bundle(i * 0.4 + 0.35,
-                                        osc.message("/n_free", node)))
-    packets.append(osc.score_bundle(2.1, osc.message("/n_free", 0)))
+                                        osc.message("/node_free", node)))
+    packets.append(osc.score_bundle(2.1, osc.message("/node_free", 0)))
     return b"".join(struct.pack(">i", len(p)) + p for p in packets)
 
 

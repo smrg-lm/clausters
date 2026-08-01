@@ -6,9 +6,9 @@ It shows the two ways the GUI host reaches into the audio server:
 - a ``meter`` and a ``scope`` read a bus **straight from the audio server's
   shared-memory segment**, every frame, with no OSC traffic at all. Both name a
   bus and a rate; here they say ``rate="control"`` (their default is audio, the
-  console case) and the script only writes the bus with ``/c_set``;
+  console case) and the script only writes the bus with ``/bus_set``;
 - a ``waveform`` references a **server buffer by number**; the host fetches its
-  samples from the server (``/b_query`` then ``/b_getn``) and renders them.
+  samples from the server (``/buffer_query`` then ``/buffer_getRange``) and renders them.
 
 Because the meter path is shared memory, the server and the host must map the
 *same* segment, and the host needs its client leg pointed at the server to fetch
@@ -55,7 +55,7 @@ gui = session.gui()
 
 # %% [markdown]
 # ## A sine buffer on the server, and a control bus to animate
-# The WAV is loaded into a server buffer (async: barrier with `/sync`), which the
+# The WAV is loaded into a server buffer (async: barrier with `/server_sync`), which the
 # host fetches over its client leg; the control bus is what the meter/scope read
 # from shared memory.
 
@@ -77,7 +77,7 @@ def write_sine_wav(freq: float = 220.0, secs: float = 1.0, sr: int = 48_000) -> 
 
 wav = write_sine_wav()
 bufnum = server.buffers.alloc()
-server.send_msg("/b_allocRead", bufnum, wav)
+server.send_msg("/buffer_allocRead", bufnum, wav)
 server.sync()
 bus = Bus.control(server=server)
 
@@ -103,7 +103,7 @@ print("watch the meter/scope move and the buffer waveform render; "
 # %% [markdown]
 # ## Drive it
 # Animate the bus with a 0.5 Hz sine. The host reads this bus from shared memory
-# each frame -- these `/c_set` messages go only to the audio server, never to the
+# each frame -- these `/bus_set` messages go only to the audio server, never to the
 # GUI.
 
 # %%

@@ -29,7 +29,7 @@ const connection = await WsConnection.open(url);         // a `--ws` server
 
 `pageConnection()` wraps the per-page engine singleton — the server compiled to wasm in this tab's AudioWorklet — and `WsConnection` a browser (or node) `WebSocket`. Both carry raw OSC in both directions and nothing else, so **no layer above them names a transport**. Swapping carriers is a one-line edit in a program of any size, which is exactly the property the examples demonstrate by offering a radio button.
 
-The engine singleton is reachable directly when a page needs the browser-specific parts: `server()` gives `send`/`addReply`, its `clock()`, `bLoad(...)` (the browser's `/b_allocRead`, over `fetch` and `decodeAudioData`) and `resume()`/`suspend()`. Every component and script in the tab gets that same engine, so they meet in one node, bus and buffer namespace.
+The engine singleton is reachable directly when a page needs the browser-specific parts: `server()` gives `send`/`addReply`, its `clock()`, `bLoad(...)` (the browser's `/buffer_allocRead`, over `fetch` and `decodeAudioData`) and `resume()`/`suspend()`. Every component and script in the tab gets that same engine, so they meet in one node, bus and buffer namespace.
 
 ## Defs and the `Server`
 
@@ -39,7 +39,7 @@ The engine singleton is reachable directly when a page needs the browser-specifi
 const server = await Server.open(connection);
 ```
 
-Opening it queries `/server_info` and sizes the allocators from the answer, so the client's ids match the server that is actually running. It registers for the server's pushes, which is what lets a node id be recycled once its `/n_end` arrives, and it carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions, and the introspection queries about what it holds (`queryInfo`, `queryDefs`, `queryBuffers`, `queryUgens`, `queryTree`, `dumpGraph`). A command addressed to a resource is that resource's method — `def.send(server)`, `Synth.new(server, …)`, `node.set`, `bus.watch`, `buffer.getSamples` — so the receiver is never an argument, and that holds for a question about one resource too: `node.info()` and `buffer.info()` ask about themselves, where `queryTree` and `queryBuffers` ask about all of them.
+Opening it queries `/server_query` and sizes the allocators from the answer, so the client's ids match the server that is actually running. It registers for the server's pushes, which is what lets a node id be recycled once its `/node_end` arrives, and it carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions, and the introspection queries about what it holds (`queryInfo`, `queryDefs`, `queryBuffers`, `queryUgens`, `queryTree`, `dumpGraph`). A command addressed to a resource is that resource's method — `def.send(server)`, `Synth.new(server, …)`, `node.set`, `bus.watch`, `buffer.getSamples` — so the receiver is never an argument, and that holds for a question about one resource too: `node.info()` and `buffer.info()` ask about themselves, where `queryTree` and `queryBuffers` ask about all of them.
 
 Two def families are peers, as everywhere in Clausters:
 
@@ -71,7 +71,7 @@ const win = host.open(gui.window(
   gui.knob({ name: "freq", label: "freq", min: 50.0, max: 2000.0, value: 220.0 }),
   gui.meter(level.index, { name: "level", label: "level" }),
 ));
-win.widget("freq").bind("/n_set", note.id, "freq");
+win.widget("freq").bind("/node_set", note.id, "freq");
 win.widget("freq").onEvent((value) => console.log(value));
 ```
 
@@ -110,7 +110,7 @@ A **routine** is a generator function; it yields a delay in beats and is resumed
 Two things around it are the browser's:
 
 - **The wake-up** sits behind a `Ticker`: a shared worker in a tab (a page's own timers are throttled to about a second in the background), `setTimeout` elsewhere. Tests fill the same seam by hand and so drive the real driver deterministically.
-- **The timebase** decides what the clock measures sleeps against and how emissions are stamped. `MonotonicTimebase` (the default) paces on `performance.now()` and sends NTP-timetagged bundles; `SampleTimebase` paces on the server's own sample counter and emits `/sched <absolute sample>`, which removes the drift between two clocks entirely. `server.sampleTimebase()` builds one — the `Server` anchors it because the `Server` is what knows the carrier, and **the clock itself never talks to a server**.
+- **The timebase** decides what the clock measures sleeps against and how emissions are stamped. `MonotonicTimebase` (the default) paces on `performance.now()` and sends NTP-timetagged bundles; `SampleTimebase` paces on the server's own sample counter and emits `/sched_at <absolute sample>`, which removes the drift between two clocks entirely. `server.sampleTimebase()` builds one — the `Server` anchors it because the `Server` is what knows the carrier, and **the clock itself never talks to a server**.
 
 [Routines and clocks](routines-and-clocks.md) is this layer written out, from a melody by hand to the patterns above it.
 

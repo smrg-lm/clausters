@@ -97,7 +97,7 @@ def play(server):
               Synth.new("seq_bass", {"amp": 0.22}, server=server)]
     yield 4.0
     for v in voices:
-        server.send_bundle(("/n_free", v.id))
+        server.send_bundle(("/node_free", v.id))
 
 
 def render(path=None):

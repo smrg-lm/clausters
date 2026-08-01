@@ -260,7 +260,7 @@ export class TempoClock {
     /**
      * The timebase value of the current beat axis' zero, placed by `start`.
      * For a sample timebase this is `sampleOrigin / sampleRate`, which the
-     * Server turns into the absolute sample for `/sched`.
+     * Server turns into the absolute sample for `/sched_at`.
      */
     get pacingOrigin(): number | null {
         return this.monoStart;

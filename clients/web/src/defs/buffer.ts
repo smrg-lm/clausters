@@ -2,7 +2,7 @@
 //
 // The server's buffer pool is a finite boot-time resource (`--max-buffers`),
 // indices allocated by the client (like scsynth). A `Buffer` holds an index
-// and the server it lives on, and owns the `/b_*` commands addressed to it:
+// and the server it lives on, and owns the `/buffer_*` commands addressed to it:
 // `Buffer.alloc`, `Buffer.read` and `Buffer.load` create one, and `gen`,
 // `zero`, `info`, `getSamples` and `free` drive it.
 //
@@ -70,7 +70,7 @@ export class Buffer {
 
     // ---- constructors ----
 
-    /** Allocates a zeroed buffer (`/b_alloc`). */
+    /** Allocates a zeroed buffer (`/buffer_alloc`). */
     static async alloc(
         server: Server,
         frames: number,
@@ -84,11 +84,11 @@ export class Buffer {
             ["i", Math.trunc(channels)],
         ];
         if (!wait) {
-            server.sendMsg("/b_alloc", ...args);
+            server.sendMsg("/buffer_alloc", ...args);
             return new Buffer(bufnum, frames, channels, 0.0, server);
         }
         try {
-            await server.command("/b_alloc", args, timeout);
+            await server.command("/buffer_alloc", args, timeout);
         } catch (error) {
             server.buffers.free(bufnum);
             throw error;
@@ -97,7 +97,7 @@ export class Buffer {
     }
 
     /**
-     * Loads a sound file into a freshly allocated buffer (`/b_allocRead`).
+     * Loads a sound file into a freshly allocated buffer (`/buffer_allocRead`).
      * The path is the **server's**, so this reaches a native server over the
      * WebSocket carrier; the in-page engine has no filesystem (feed it
      * decoded samples with `load` instead).
@@ -114,7 +114,7 @@ export class Buffer {
         const bufnum = server.buffers.alloc();
         try {
             await server.command(
-                "/b_allocRead",
+                "/buffer_allocRead",
                 [["i", bufnum], path, ["i", fileStart], ["i", numFrames]],
                 timeout,
             );
@@ -131,7 +131,7 @@ export class Buffer {
 
     /**
      * Loads an audio file at `url` into a freshly allocated buffer: the
-     * browser's `/b_allocRead`, since a page has no filesystem and the
+     * browser's `/buffer_allocRead`, since a page has no filesystem and the
      * server's path means nothing to it.
      *
      * `fetch` + the page's own `decodeAudioData` produce the samples, which
@@ -142,7 +142,7 @@ export class Buffer {
      * **In-page only.** A socket carrier would have to write the samples
      * over the wire, and the server has no buffer-write command to write them
      * with; over a `--ws` server, load the file server-side with `read`
-     * (`/b_allocRead`) instead.
+     * (`/buffer_allocRead`) instead.
      */
     static async load(
         server: Server,
@@ -175,7 +175,7 @@ export class Buffer {
     // ---- the commands addressed to this buffer ----
 
     /**
-     * Fills this buffer through `/b_gen` (the wavetable/generator commands:
+     * Fills this buffer through `/buffer_gen` (the wavetable/generator commands:
      * `"env"`, `"sine1"`/`"sine2"`/`"sine3"`, `"cheby"`, `"copy"`).
      *
      * `args` follow each command's own shape — the wavetable generators take
@@ -190,28 +190,28 @@ export class Buffer {
     ): Promise<void> {
         const payload: MsgArg[] = [["i", this.bufnum], cmd, ...args];
         if (!wait) {
-            this.srv().sendMsg("/b_gen", ...payload);
+            this.srv().sendMsg("/buffer_gen", ...payload);
             return;
         }
-        await this.srv().command("/b_gen", payload, timeout);
+        await this.srv().command("/buffer_gen", payload, timeout);
     }
 
-    /** Zeroes this buffer (`/b_zero`). */
+    /** Zeroes this buffer (`/buffer_zero`). */
     async zero({
         wait = true,
         timeout = 5.0,
     }: { wait?: boolean; timeout?: number } = {}): Promise<void> {
         const args: MsgArg[] = [["i", this.bufnum]];
         if (!wait) {
-            this.srv().sendMsg("/b_zero", ...args);
+            this.srv().sendMsg("/buffer_zero", ...args);
             return;
         }
-        await this.srv().command("/b_zero", args, timeout);
+        await this.srv().command("/buffer_zero", args, timeout);
     }
 
     /**
-     * Asks the running server what it holds in this slot (`/b_query` →
-     * `/b_info bufnum frames channels sampleRate`), keeps the record on the
+     * Asks the running server what it holds in this slot (`/buffer_query` →
+     * `/buffer_query.reply bufnum frames channels sampleRate`), keeps the record on the
      * handle and returns it.
      *
      * Unlike a node's, a buffer's record is worth keeping: its shape changes
@@ -220,8 +220,8 @@ export class Buffer {
      * back with `exists` false rather than throwing.
      */
     async info(timeout = 5.0): Promise<BufferInfo> {
-        const msg = await this.srv().request("/b_query", [["i", this.bufnum]], {
-            expect: ["/b_info"],
+        const msg = await this.srv().request("/buffer_query", [["i", this.bufnum]], {
+            expect: ["/buffer_query.reply"],
             timeout,
         });
         this.record = parseBufferList(msg.args)[0]!;
@@ -229,7 +229,7 @@ export class Buffer {
     }
 
     /**
-     * Reads interleaved samples out of this buffer (`/b_getn` → `/b_setn`), in
+     * Reads interleaved samples out of this buffer (`/buffer_getRange` → `/buffer_getRange.reply`), in
      * chunks, as one `Float32Array`. `count` -1 reads to the end (the shape is
      * queried first). Sample indices are flat across channels
      * (`frame * channels + channel`), so a stereo buffer reads `L R L R …`.
@@ -239,9 +239,9 @@ export class Buffer {
      * a stream carrier. This is the path a waveform view is built from; feed
      * the result to `Peaks.build` and draw the columns.
      *
-     * Reading is the only direction there is: the server has no `/b_setn`
-     * **command** (`/b_setn` is `/b_getn`'s reply), so samples reach a buffer
-     * by `gen`, by `read` on a native server, or by `load` in the page.
+     * Reading is the only direction there is: the server has no buffer-write
+     * command at all, so samples reach a buffer by `gen`, by `read` on a native
+     * server, or by `load` in the page.
      */
     async getSamples({
         start = 0,
@@ -262,11 +262,11 @@ export class Buffer {
         while (got < total) {
             const n = Math.min(step, total - got);
             const msg = await server.request(
-                "/b_getn",
+                "/buffer_getRange",
                 [["i", this.bufnum], ["i", start + got], ["i", n]],
-                { expect: ["/b_setn"], timeout },
+                { expect: ["/buffer_getRange.reply"], timeout },
             );
-            // /b_setn: bufnum, start, count, value...
+            // /buffer_getRange.reply: bufnum, start, count, value...
             const returned = Number(msg.args[2]);
             if (returned <= 0) break; // past the end: the server has no more
             for (let i = 0; i < returned; i++) {
@@ -280,7 +280,7 @@ export class Buffer {
     /** Frees this buffer on the server and returns its index to the pool. */
     free(): void {
         const server = this.srv();
-        server.sendMsg("/b_free", ["i", this.bufnum]);
+        server.sendMsg("/buffer_free", ["i", this.bufnum]);
         server.buffers.free(this.bufnum);
     }
 

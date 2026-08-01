@@ -1,5 +1,5 @@
 //! Table-reading oscillators and the waveshaper (S5): the first consumers of
-//! the wavetable format built by `/b_gen` (see [`crate::dsp::wavetable`]).
+//! the wavetable format built by `/buffer_gen` (see [`crate::dsp::wavetable`]).
 //!
 //! - [`Osc`] — interpolating wavetable oscillator (needs a `wavetable`-format
 //!   buffer).
@@ -166,7 +166,7 @@ impl UGen for VOsc {
 }
 
 /// Waveshaper: maps its input signal through a transfer table (wavetable
-/// format, typically built by `/b_gen cheby`). Input `x` in `[-1, 1]` indexes
+/// format, typically built by `/buffer_gen cheby`). Input `x` in `[-1, 1]` indexes
 /// the table from its first to its last point; values outside are clamped.
 /// Inputs: 0 buffer index, 1 input signal. Stateless.
 pub struct Shaper;

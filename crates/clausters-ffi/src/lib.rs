@@ -355,7 +355,7 @@ pub extern "C" fn clausters_core_samples_to_secs(samples: i64, sample_rate: f64)
 }
 
 /// The server's sample counter at Unix instant `unix_secs`, from an anchor
-/// (`anchor_sample` at `anchor_unix`) and the sample rate — the `/sched`
+/// (`anchor_sample` at `anchor_unix`) and the sample rate — the `/sched_at`
 /// target conversion.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_unix_to_sample(
@@ -747,7 +747,7 @@ pub unsafe extern "C" fn clausters_clocksync_intercept(h: *mut SampleClockModel)
 // The shared id allocator model (`clausters_core::registry`): node ids, buses
 // and buffers are finite boot-time resources, the registry is the occupancy
 // map. Handles are internally locked — a client's clock thread allocates
-// while its reply thread releases on `/n_end` — and the registry is passive:
+// while its reply thread releases on `/node_end` — and the registry is passive:
 // events flow in, nothing calls back out.
 
 /// A registry handle safe to share across the binding's threads.
@@ -834,7 +834,7 @@ pub unsafe extern "C" fn clausters_registry_capacity(h: *mut FfiRegistry) -> u64
 }
 
 /// Whether `id` falls inside the registry's space (allocated or not) — the
-/// foreign-id filter for `/n_end` handling. 1 yes, 0 no.
+/// foreign-id filter for `/node_end` handling. 1 yes, 0 no.
 ///
 /// # Safety
 /// `h` must be a live registry handle.

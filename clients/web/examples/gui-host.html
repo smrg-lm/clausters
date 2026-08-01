@@ -69,7 +69,7 @@
         script — while `amp` and the waveform selector come back as
         /gui_event and are applied here, so both paths are visible at once.
       - meters: a level meter and a scope on a control bus, with a bound knob
-        writing that bus: knob -> /c_set -> engine -> the host's /c_stream
+        writing that bus: knob -> /bus_set -> engine -> the host's /bus_stream
         subscription -> the views. A loop with no script in it.
       - views:  the editor-grade waveform and spectrogram of a rendered
         signal, under one navigation group (`link`), plus a bpf envelope
@@ -190,7 +190,7 @@
         playing();
         const w = open(panel());
         // The bound control: its value never passes through this script.
-        w.widget("freq").bind("/n_set", voice.id, "freq");
+        w.widget("freq").bind("/node_set", voice.id, "freq");
         // The scripted controls: the event comes here, and this code decides.
         w.widget("cutoff").onEvent((value) => {
           if (voice) voice.set({ cutoff: value });
@@ -210,7 +210,7 @@
         await audio();
         const bus = Bus.control(server);
         const w = open(meters(bus.index));
-        w.widget("level").bind("/c_set", bus.index);
+        w.widget("level").bind("/bus_set", bus.index);
         say(`meters: the knob writes bus ${bus.index}; the host streams it back`);
       };
 

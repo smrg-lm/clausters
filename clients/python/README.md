@@ -42,7 +42,7 @@ server = session.server
 
 # an instrument: a def the server compiles once and instantiates many times
 sdef = SynthDef("beep", out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)))
-sdef.send(server)                      # /d_recv, waits for the server's /done
+sdef.send(server)                      # /def_send synth, waits for the server's /done
 
 node = Synth.new("beep", {"freq": 330.0}, server=server)   # you hear it now
 node.set({"freq": 550.0})              # change it while it sounds
@@ -94,13 +94,13 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
 - `clausters.base` — the base layer: `builtins` (scalar/list math, f32 via
   the core), `absobject` (operator overloading), `stream` (`Routine`/`Stream`,
   the `yield` layer), `clock` (`TempoClock`, RT + NRT drives — **timing only**),
-  `timebase` (monotonic or, anchored to the server's sample clock, `/sched`),
+  `timebase` (monotonic or, anchored to the server's sample clock, `/sched_at`),
   `netaddr`, `main`, the destination interfaces `_oscinterface` (UDP / **TCP**
   / NRT) and `_midiinterface`, and the minimal OSC wire encoder `_osclib`.
 - `clausters.defs` — the definitions and server resources. Two def families,
   peers of each other: `ugens` (lowercase callables → `Ugen`/`Control`) with
-  `SynthDef` (`/d_recv`) — the server's UGen graph, plus `GraphDef` for
-  multi-node graphs with per-voice partitions — and `FaustDef` (`/d_faust`),
+  `SynthDef` (`/def_send synth`) — the server's UGen graph, plus `GraphDef` for
+  multi-node graphs with per-voice partitions — and `FaustDef` (`/def_send faust`),
   built from `signals` (Faust's Signal API as lowercase callables), from
   `boxes` (its Box API, point-free, with `boxes.faust` pulling in the Faust
   libraries) or from Faust source. All of it instance-based, with no global
@@ -109,7 +109,7 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
   emits**: swap its interface to retarget a routine from live RT to an NRT
   score without touching clock or routine. `clocksync` models the
   server's sample clock over UDP (`Server.sample_clock()`) for drift-free
-  `/sched` timing without shared memory.
+  `/sched_at` timing without shared memory.
 - `clausters.seq` — sequencing: `Event` (a note plays a synth and frees it
   after its sustain), the value patterns (`Pseq`, `Pwhite`, `Pseries`, …) and
   `Pbind`, and `EventStreamPlayer`. `Pbind(...).play(clock, server)` runs live
@@ -118,7 +118,7 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
   adds **static timelines with a random-access playhead** and a
   server-broadcast transport (conductor play/stop/locate across clients).
 - `clausters.responders` — the input path: `OscFunc` and `MidiFunc` register
-  callbacks on incoming OSC replies (`/tr`, `SendReply` addresses, …) and live
+  callbacks on incoming OSC replies (`/node_trigger`, `SendReply` addresses, …) and live
   MIDI, in sclang style.
 - **MIDI output** (`MidiServer` in `clausters.base`, over the
   `clausters-midi` crate) — play an event pattern to a MIDI destination:

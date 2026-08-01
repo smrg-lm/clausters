@@ -13,7 +13,7 @@ server's shared-memory segment — zero messages per frame.
 This is a **sequential visual tour**: each window appears alone, announces
 itself on the console, makes one live change *and comes back* (the trace
 window, the overlay, the stereo width, the frequency scale — all through
-``win.set`` or ``/n_set``), and closes before the next one opens. Watch the
+``win.set`` or ``/node_set``), and closes before the next one opens. Watch the
 oscilloscope's corner read-out: ``lock`` means the trigger found a rising
 crossing and the trace stands still (the faint line marks the level);
 ``free`` means it is free-running (silence or DC).
@@ -38,7 +38,7 @@ server = Server.boot()
 # Left is a plain sine; right crossfades (with `spread`) from a copy of the
 # left (mono — a phasescope draws a vertical line) to a detuned sine
 # (decorrelated — the trace opens into the lozenge). Quiet on purpose.
-# The control is lagged: an /n_set lands as a step, and stepping a crossfade
+# The control is lagged: an /node_set lands as a step, and stepping a crossfade
 # clicks — smoothing it is the def's job (the scopes themselves are passive:
 # a tap only copies a bus into shared memory and can never alter the sound).
 freq = control("freq", 220.0)
@@ -72,7 +72,7 @@ win.close()
 print("2/3 phase: mono reads as a vertical line (correlation ~ +1)")
 win = scope(0, view="phase")
 time.sleep(PAUSE)
-print("    spread -> 1 (/n_set): the field opens, the correlation drops")
+print("    spread -> 1 (/node_set): the field opens, the correlation drops")
 node.set({"spread": 1.0})
 time.sleep(PAUSE)
 print("    spread -> 0 (round trip), and the window closes")

@@ -16,7 +16,7 @@ import { server } from "../engine/server.ts";
 
 /**
  * A synchronous view of a server's sample counter — what a sample-locked
- * clock paces against and a `/sched` target is computed from.
+ * clock paces against and a `/sched_at` target is computed from.
  */
 export interface SampleClock {
     /** The server's current sample, read with no round trip. */
@@ -38,14 +38,14 @@ export interface Connection {
      * The server's sample clock, where the carrier *shares* one with it —
      * the in-page engine runs in this page's `AudioContext`, so its counter
      * is readable synchronously and exactly. A socket has no such thing and
-     * leaves this out; `Server.sampleTimebase()` then anchors over `/clock`
+     * leaves this out; `Server.sampleTimebase()` then anchors over `/clock_query`
      * instead.
      */
     sampleClock?(): Promise<SampleClock>;
     /**
      * Installs decoded samples straight into a server buffer, where the
      * carrier *shares* memory with the server — the in-page engine takes a
-     * whole file in one call, no `/b_setn` chunking and no OSC envelope per
+     * whole file in one call, no `/buffer_getRange.reply` chunking and no OSC envelope per
      * sample. A socket has no such thing and leaves this out; `Buffer.load`
      * then writes the chunks instead. `samples` are interleaved.
      */

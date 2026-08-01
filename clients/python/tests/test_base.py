@@ -271,10 +271,10 @@ def test_routine_renders_through_nrt_interface():
     def arpeggio():  # finds its clock via main.current_tt; emits via the server
         for i, freq in enumerate([262.0, 330.0, 392.0, 523.0, 659.0]):
             node = 1000 + i
-            server.send_bundle(("/s_new", "default", node, 1, 0, "freq", freq, "amp", 0.2))
-            server.send_bundle(("/n_free", node), delay_beats=0.9)
+            server.send_bundle(("/synth_new", "default", node, 1, 0, "freq", freq, "amp", 0.2))
+            server.send_bundle(("/node_free", node), delay_beats=0.9)
             yield 1.0
-        server.send_bundle(("/n_free", 0))  # closes the render
+        server.send_bundle(("/node_free", 0))  # closes the render
 
     clock.play(Routine(arpeggio))
     clock.render()  # drain the queue logically; routine fills the score
@@ -318,8 +318,8 @@ def test_the_score_interface_renders_and_reports_the_take():
         # score's seconds.
         nrt = OscNrtInterface()
         nrt.send_bundle(None, 0.0,
-                        ("/s_new", "default", 1000, 1, 0, "freq", 440.0, "amp", 0.2))
-        nrt.send_bundle(None, 0.05, ("/n_free", 1000))
+                        ("/synth_new", "default", 1000, 1, 0, "freq", 440.0, "amp", 0.2))
+        nrt.send_bundle(None, 0.05, ("/node_free", 1000))
         return nrt
 
     try:

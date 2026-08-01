@@ -245,10 +245,10 @@ class GuiHost:
         """``/gui_bind <id> "server" <address> <prefix…>`` — forward this widget's
         value **straight to the audio server**, bypassing this script.
 
-        On every change the host sends ``address`` (an OSC path like ``/n_set``
-        or ``/c_set``) with the fixed ``prefix`` arguments followed by the
-        widget's value — e.g. ``bind(10, "/n_set", node_id, "freq")`` makes knob
-        10 send ``/n_set <node_id> freq <value>`` to the server itself, so the
+        On every change the host sends ``address`` (an OSC path like ``/node_set``
+        or ``/bus_set``) with the fixed ``prefix`` arguments followed by the
+        widget's value — e.g. ``bind(10, "/node_set", node_id, "freq")`` makes knob
+        10 send ``/node_set <node_id> freq <value>`` to the server itself, so the
         control responds with no round-trip through Python (the low-latency
         path). A bound widget stops emitting ``/gui_event``; `unbind` restores it.
         The host must have been started with ``--server`` for the value to reach

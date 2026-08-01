@@ -143,7 +143,7 @@ def cue(clock):
 
 The note and the lamp carry the *same* timetag, because both read the same `Moment` — the beat the routine has accumulated, not what time it happens to be when each line runs.
 
-What a destination sends is standard OSC and nothing more: a message, or a bundle with an NTP timetag. It does not add the server's `latency` — that is a property of our audio pipeline, and what another application needs is its own business, asked for as an explicit `delay_beats=`. Nor does it send our own commands (sample-exact `/sched`, `/sync`) or take part in an offline render, since nothing is listening there.
+What a destination sends is standard OSC and nothing more: a message, or a bundle with an NTP timetag. It does not add the server's `latency` — that is a property of our audio pipeline, and what another application needs is its own business, asked for as an explicit `delay_beats=`. Nor does it send our own commands (sample-exact `/sched_at`, `/server_sync`) or take part in an offline render, since nothing is listening there.
 
 Outside any routine there is no clock, and the moment is wall-clock now with delays read as seconds — so the same call works in a script with no `TempoClock` at all.
 

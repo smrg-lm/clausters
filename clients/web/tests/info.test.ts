@@ -57,7 +57,7 @@ test("siblings and an empty group come out of the nesting", () => {
 });
 
 test("a resource that is not there is a record, not a throw", () => {
-    // /n_info with isGroup = -1, and /b_info with frames = -1.
+    // /node_query.reply with isGroup = -1, and /buffer_query.reply with frames = -1.
     const gone = parseNodeInfo([4242, -1, -1, -1, -1]);
     assert.equal(gone.id, 4242);
     assert.equal(gone.exists, false);

@@ -6,11 +6,11 @@ reads the other half: the **catalog**, the material a client can build with.
 Three queries, all of them retrieval only (nothing here changes the server):
 
   * ``server.query_defs()``    -> the loaded defs and their control surface
-    (``/d_query`` -> ``/d_info``), across all three families;
+    (``/def_query`` -> ``/def_query.reply``), across all three families;
   * ``server.query_buffers()`` -> every allocated buffer and its shape (an
-    argument-less ``/b_query``);
+    argument-less ``/buffer_query``);
   * ``server.query_ugens()``   -> the UGen catalog this server was built with
-    (``/u_query`` -> ``/u_info``): named inputs, defaults, rate rules.
+    (``/ugen_query`` -> ``/ugen_query.reply``): named inputs, defaults, rate rules.
 
 Why ask instead of assume? Because the answers are genuinely not knowable from
 the client's own state. The **def store persists across restarts**, so a server

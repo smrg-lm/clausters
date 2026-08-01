@@ -1,8 +1,8 @@
 //! The live node-tree view: mirror the audio server's node tree, draw it.
 //!
 //! A read-only view that exercises the host's *client of the audio server* leg.
-//! The host queries the server's tree with `/g_queryTree <group> 1` over the
-//! client leg ([`super::client`]) and receives a `/g_queryTree.reply`; this
+//! The host queries the server's tree with `/group_queryTree <group> 1` over the
+//! client leg ([`super::client`]) and receives a `/group_queryTree.reply`; this
 //! module turns that flat reply into a small [`NodeTree`] model (pure and
 //! testable, no OSC and no GPU) and draws it as indented text through the
 //! flat-geometry painter ([`super::paint`]) plus bitmap text — the same cheap
@@ -61,7 +61,7 @@ pub struct Line {
 }
 
 impl NodeTree {
-    /// Parses a `/g_queryTree.reply` argument list into a tree, or `None` if the
+    /// Parses a `/group_queryTree.reply` argument list into a tree, or `None` if the
     /// reply is short or malformed (a corrupt reply must not panic the host).
     pub fn parse(args: &[OscType]) -> Option<NodeTree> {
         let mut it = args.iter();

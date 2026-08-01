@@ -6,7 +6,7 @@
 // at the running routine's exact logical beat (through `Server.sendBundle`),
 // and the player advances by the event's `delta`.
 //
-// By default a note **frees** its synth after `sustain` (`/n_free`) rather
+// By default a note **frees** its synth after `sustain` (`/node_free`) rather
 // than closing a gate — unless `hasGate` is set, in which case it sends
 // `gate 0` (for defs whose envelope has a release node and a done action that
 // frees the synth once the release finishes). The built-in `"default"`
@@ -184,7 +184,7 @@ export class Event {
 
     /**
      * Plays this event on `destination` (double dispatch): the OSC `Server`
-     * turns it into `/s_new` plus a release, a MIDI destination into note
+     * turns it into `/synth_new` plus a release, a MIDI destination into note
      * on/off — without the clock or the routine knowing which.
      *
      * Returns **this event, with its keys completed**: the derived quantities
@@ -207,7 +207,7 @@ export class Event {
     }
 
     /**
-     * Cuts the played note **now** (`/n_free`), without waiting for its
+     * Cuts the played note **now** (`/node_free`), without waiting for its
      * sustain. A no-op when the event has not sounded (a rest, or never
      * played). The release already scheduled at play time still arrives and
      * is harmless.
@@ -216,22 +216,22 @@ export class Event {
         const node = this.props.node;
         const server = this.props.server as EventDestination | undefined;
         if (typeof node === "number" && server) {
-            server.sendMsg("/n_free", ["i", node]);
+            server.sendMsg("/node_free", ["i", node]);
         }
     }
 
     /**
      * Ends the played note **musically**, now: `gate 0` when it releases by
-     * gate, a plain `/n_free` otherwise. Same no-op rule as `free`.
+     * gate, a plain `/node_free` otherwise. Same no-op rule as `free`.
      */
     release(): void {
         const node = this.props.node;
         const server = this.props.server as EventDestination | undefined;
         if (typeof node !== "number" || !server) return;
         if (this.releasesByGate()) {
-            server.sendMsg("/n_set", ["i", node], ["s", "gate"], ["f", 0]);
+            server.sendMsg("/node_set", ["i", node], ["s", "gate"], ["f", 0]);
         } else {
-            server.sendMsg("/n_free", ["i", node]);
+            server.sendMsg("/node_free", ["i", node]);
         }
     }
 }

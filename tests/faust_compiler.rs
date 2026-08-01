@@ -1,4 +1,4 @@
-//! F1 tests: the dedicated Faust compiler thread and the `/d_faust` OSC
+//! F1 tests: the dedicated Faust compiler thread and the `/def_send faust` OSC
 //! round-trip with async replies. Gated behind the `faust` feature.
 //! Tests wait on explicit completion signals (result channel, reply socket),
 //! never on sleeps.
@@ -145,7 +145,7 @@ mod osc {
         }
 
         fn quit(self) {
-            self.send("/quit", vec![]);
+            self.send("/server_quit", vec![]);
             self.recv_until("/done");
             self.handle.join().unwrap().unwrap();
         }
@@ -156,8 +156,9 @@ mod osc {
         let server = TestServer::spawn();
 
         server.send(
-            "/d_faust",
+            "/def_send",
             vec![
+                OscType::String("faust".into()),
                 OscType::String("fsine".into()),
                 OscType::String(SINE_SRC.into()),
             ],
@@ -165,21 +166,22 @@ mod osc {
         // The reply is asynchronous: it arrives after the compiler thread
         // finishes and the server drains results (GC tick at the latest).
         let done = server.recv_until("/done");
-        assert_eq!(done.args[0], OscType::String("/d_faust".into()));
-        assert_eq!(done.args[1], OscType::String("fsine".into()));
+        assert_eq!(done.args[0], OscType::String("/def_send".into()));
+        assert_eq!(done.args[1], OscType::String("faust".into()));
+        assert_eq!(done.args[2], OscType::String("fsine".into()));
 
-        // /status def count includes the Faust table. The baseline is the
+        // /server_status def count includes the Faust table. The baseline is the
         // built-in "default" SynthDef, which only exists when the `synth`
         // feature is compiled in — a faust-only build starts from zero.
         let builtin = if cfg!(feature = "synth") { 1 } else { 0 };
-        server.send("/status", vec![]);
-        let status = server.recv_until("/status.reply");
+        server.send("/server_status", vec![]);
+        let status = server.recv_until("/server_status.reply");
         assert_eq!(status.args[4], OscType::Int(builtin + 1));
 
-        // /d_free clears it
-        server.send("/d_free", vec![OscType::String("fsine".into())]);
-        server.send("/status", vec![]);
-        let status = server.recv_until("/status.reply");
+        // /def_free clears it
+        server.send("/def_free", vec![OscType::String("fsine".into())]);
+        server.send("/server_status", vec![]);
+        let status = server.recv_until("/server_status.reply");
         assert_eq!(status.args[4], OscType::Int(builtin));
 
         server.quit();
@@ -189,14 +191,15 @@ mod osc {
     fn d_faust_bad_source_fails_with_compiler_error() {
         let server = TestServer::spawn();
         server.send(
-            "/d_faust",
+            "/def_send",
             vec![
+                OscType::String("faust".into()),
                 OscType::String("broken".into()),
                 OscType::String("process = nonsense(;".into()),
             ],
         );
         let fail = server.recv_until("/fail");
-        assert_eq!(fail.args[0], OscType::String("/d_faust".into()));
+        assert_eq!(fail.args[0], OscType::String("/def_send".into()));
         let OscType::String(why) = &fail.args[1] else {
             panic!("expected error string");
         };
@@ -208,14 +211,16 @@ mod osc {
     fn d_faust_json_payload_compiles() {
         let server = TestServer::spawn();
         server.send(
-            "/d_faust",
+            "/def_send",
             vec![
+                OscType::String("faust".into()),
                 OscType::String("jconst".into()),
                 OscType::Blob(br#"{"op": "real", "value": 0.1}"#.to_vec()),
             ],
         );
         let done = server.recv_until("/done");
-        assert_eq!(done.args[1], OscType::String("jconst".into()));
+        assert_eq!(done.args[1], OscType::String("faust".into()));
+        assert_eq!(done.args[2], OscType::String("jconst".into()));
         server.quit();
     }
 
@@ -225,14 +230,16 @@ mod osc {
         // (CompilePayload::classify), not the box one.
         let server = TestServer::spawn();
         server.send(
-            "/d_faust",
+            "/def_send",
             vec![
+                OscType::String("faust".into()),
                 OscType::String("sconst".into()),
                 OscType::Blob(br#"{"signals": [{"op": "mul", "in": [0.5, 0.5]}]}"#.to_vec()),
             ],
         );
         let done = server.recv_until("/done");
-        assert_eq!(done.args[1], OscType::String("sconst".into()));
+        assert_eq!(done.args[1], OscType::String("faust".into()));
+        assert_eq!(done.args[2], OscType::String("sconst".into()));
         server.quit();
     }
 
@@ -240,8 +247,9 @@ mod osc {
     fn d_faust_json_errors_carry_the_node_path() {
         let server = TestServer::spawn();
         server.send(
-            "/d_faust",
+            "/def_send",
             vec![
+                OscType::String("faust".into()),
                 OscType::String("jbad".into()),
                 OscType::String(r#"{"op": "seq", "in": [{"op": "zzz"}, "_"]}"#.into()),
             ],
@@ -257,9 +265,12 @@ mod osc {
     #[test]
     fn d_faust_bad_args_fail_immediately() {
         let server = TestServer::spawn();
-        server.send("/d_faust", vec![OscType::Int(42)]);
+        server.send(
+            "/def_send",
+            vec![OscType::String("faust".into()), OscType::Int(42)],
+        );
         let fail = server.recv_until("/fail");
-        assert_eq!(fail.args[0], OscType::String("/d_faust".into()));
+        assert_eq!(fail.args[0], OscType::String("/def_send".into()));
         server.quit();
     }
 }

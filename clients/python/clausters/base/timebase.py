@@ -9,7 +9,7 @@ the *timebase* is the monotonic-ish source the clock paces its sleeps against
   is small but real.
 - `SampleClockTimebase` — seconds derived from the **server's sample
   counter** (``sample() / sample_rate``). The client paces against the server's
-  own clock, and the Server emits via ``/sched <absolute_sample>`` instead of a
+  own clock, and the Server emits via ``/sched_at <absolute_sample>`` instead of a
   wall-clock timetag, so there is no inter-clock drift and timing is exact at
   the sample. ``sample`` is any callable returning the current sample count
   (e.g. ``Clausters.clock`` or ``ShmClient.clock``).

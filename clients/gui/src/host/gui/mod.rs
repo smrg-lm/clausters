@@ -44,8 +44,8 @@ use app::App;
 /// enough for smooth meters/scopes without spinning the CPU.
 const FRAME: Duration = Duration::from_millis(33);
 /// How often a window with a `nodetree` re-queries the server's tree. Node
-/// creation/removal is caught immediately through `/n_go`/`/n_end`; this low-rate
-/// poll picks up `/n_set` control changes (which raise no notification).
+/// creation/removal is caught immediately through `/node_start`/`/node_end`; this low-rate
+/// poll picks up `/node_set` control changes (which raise no notification).
 const NODETREE_POLL: Duration = Duration::from_millis(200);
 
 /// The origin of a window with no script behind it (a standalone's pre-loaded
@@ -82,7 +82,7 @@ pub enum UserEvent {
     WsOsc { id: u64, bytes: Vec<u8> },
     /// WebSocket connection `id` closed; its reply channel is dropped.
     WsDisconnected { id: u64 },
-    /// One OSC reply from the audio server (the client leg): `/b_info`, `/b_setn`.
+    /// One OSC reply from the audio server (the client leg): `/buffer_query.reply`, `/buffer_getRange.reply`.
     ServerOsc { bytes: Vec<u8> },
 }
 
@@ -183,7 +183,7 @@ fn transport_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>) {
 }
 
 /// Drains the client leg's socket, forwarding the audio server's replies to the
-/// main thread (which routes `/b_info`/`/b_setn` into the buffer-fetch path).
+/// main thread (which routes `/buffer_query.reply`/`/buffer_getRange.reply` into the buffer-fetch path).
 fn server_reply_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>) {
     let mut buf = vec![0u8; 65536];
     loop {

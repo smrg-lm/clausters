@@ -19,7 +19,7 @@
 //   server's is small but real.
 // - `SampleTimebase` — seconds derived from the server's **sample counter**
 //   (`sample() / sampleRate`). The client paces against the server's own
-//   clock and the `Server` emits `/sched <absolute sample>` instead of a
+//   clock and the `Server` emits `/sched_at <absolute sample>` instead of a
 //   wall-clock timetag, so there is no inter-clock drift and the timing is
 //   exact at the sample. Build one with `Server.sampleTimebase()`, which
 //   knows how to reach the counter over each carrier.
@@ -89,7 +89,7 @@ export const beatInBar = (beats: number, quant: number): number =>
 export const unixToNtp = (unixSecs: number): bigint => coreUnixToNtp(unixSecs);
 
 /**
- * A Unix timestamp → the server's absolute sample, through a `/clock` anchor
+ * A Unix timestamp → the server's absolute sample, through a `/clock_query` anchor
  * and the measured rate.
  */
 export const unixToSample = (
@@ -126,7 +126,7 @@ export class MonotonicTimebase implements Timebase {
  * Seconds from a server's sample counter: `sample() / sampleRate`.
  *
  * `sample` is any callable returning the current counter — the page engine's
- * audio clock, or a `/clock`-anchored model against a remote server. It must
+ * audio clock, or a `/clock_query`-anchored model against a remote server. It must
  * be **synchronous**: the clock reads it on every scheduling turn.
  */
 export class SampleTimebase implements Timebase {

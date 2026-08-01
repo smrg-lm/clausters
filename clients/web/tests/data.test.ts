@@ -12,7 +12,7 @@
 //   door and therefore no second implementation to compare against. What is
 //   worth asserting there is what a view depends on: a periodic signal locks,
 //   a full-scale sine reads about 0 dB at its bin.
-// - **Decoding** — the `/c_set` and `/tap_data` snapshots and the bulk
+// - **Decoding** — the `/bus_set` and `/bus_tapStream.reply` snapshots and the bulk
 //   chunking, driven over a fake carrier so they run with no server at all.
 
 import assert from "node:assert/strict";
@@ -352,9 +352,9 @@ async function fakeServer(): Promise<{ server: Server; carrier: FakeConnection }
     // The sizing query, answered like a real server: the allocators (the tap
     // registry included) and the bulk chunking are then the real ones.
     carrier.onSend((msg) => {
-        if (msg.addr !== "/server_info") return;
+        if (msg.addr !== "/server_query") return;
         carrier.reply(
-            "/server_info.reply",
+            "/server_query.reply",
             [128, 16384, 2, 64, 48000, 48000, 0, 8192, 4096, 512, 32, 8, 16384, 65536],
         );
     });
@@ -366,25 +366,25 @@ async function fakeServer(): Promise<{ server: Server; carrier: FakeConnection }
 test("a bus stream subscribes, decodes its snapshots and cancels", async () => {
     const { server, carrier } = await fakeServer();
     const stream = await BusStream.open(server, [7, 9], { periodMs: 50 });
-    const subscribe = carrier.lastSent("/c_stream");
+    const subscribe = carrier.lastSent("/bus_stream");
     assert.deepEqual(subscribe?.args, [50, 7, 9], "period then the buses");
 
     const seen: number[][] = [];
     stream.onSnapshot((values) => seen.push(Array.from(values)));
-    carrier.reply("/c_set", [7, 0.25, 9, -1.5]);
+    carrier.reply("/bus_stream.reply", [7, 0.25, 9, -1.5]);
     assert.deepEqual(Array.from(stream.values), [0.25, -1.5]);
     assert.equal(stream.value(9), -1.5);
     assert.ok(Number.isNaN(stream.value(11)), "a bus outside the stream");
     assert.equal(stream.snapshots, 1);
 
     // A snapshot naming a bus this stream does not watch is not one of ours.
-    carrier.reply("/c_set", [11, 3.0]);
+    carrier.reply("/bus_stream.reply", [11, 3.0]);
     assert.equal(stream.snapshots, 1);
     assert.deepEqual(seen, [[0.25, -1.5]]);
 
     await stream.stop();
-    assert.deepEqual(carrier.lastSent("/c_stream")?.args, [0], "cancelled");
-    carrier.reply("/c_set", [7, 9.0]);
+    assert.deepEqual(carrier.lastSent("/bus_stream")?.args, [0], "cancelled");
+    carrier.reply("/bus_stream.reply", [7, 9.0]);
     assert.equal(stream.snapshots, 1, "a stopped stream decodes nothing");
 });
 
@@ -394,7 +394,7 @@ test("a tap stream places its windows on the tap's sample axis", async () => {
         frames: 4,
         periodMs: 33,
     });
-    assert.deepEqual(carrier.lastSent("/tap_stream")?.args, [33, 4, 0, 1]);
+    assert.deepEqual(carrier.lastSent("/bus_tapStream")?.args, [33, 4, 0, 1]);
 
     const blob = (values: number[]) => {
         const bytes = new Uint8Array(values.length * 4);
@@ -404,8 +404,8 @@ test("a tap stream places its windows on the tap's sample axis", async () => {
     };
     const seen: [number, number][] = [];
     stream.onData((tap, window) => seen.push([tap, window.endPosition]));
-    carrier.reply("/tap_data", [0, 1024, blob([1, 2, 3, 4])]);
-    carrier.reply("/tap_data", [1, 1024, blob([-1, -2, -3, -4])]);
+    carrier.reply("/bus_tapStream.reply", [0, 1024, blob([1, 2, 3, 4])]);
+    carrier.reply("/bus_tapStream.reply", [1, 1024, blob([-1, -2, -3, -4])]);
 
     assert.deepEqual(Array.from(stream.window(0)!.samples), [1, 2, 3, 4]);
     assert.equal(stream.window(0)!.endPosition, 1024);
@@ -418,11 +418,11 @@ test("a tap stream places its windows on the tap's sample axis", async () => {
     assert.deepEqual(Array.from(stream.interleaved(0, 2)), [1, -1, 2, -2, 3, -3, 4, -4]);
 
     // The next snapshot advances the axis by exactly the position delta.
-    carrier.reply("/tap_data", [0, 1536, blob([5, 6, 7, 8])]);
+    carrier.reply("/bus_tapStream.reply", [0, 1536, blob([5, 6, 7, 8])]);
     assert.equal(stream.window(0)!.endPosition - 1024, 512);
 
     await stream.stop();
-    assert.deepEqual(carrier.lastSent("/tap_stream")?.args, [0, 0]);
+    assert.deepEqual(carrier.lastSent("/bus_tapStream")?.args, [0, 0]);
 });
 
 test("a stereo view of taps that have not all reported yet draws nothing", async () => {
@@ -430,7 +430,7 @@ test("a stereo view of taps that have not all reported yet draws nothing", async
     const stream = await TapStream.open(server, [2, 3], { frames: 2 });
     const bytes = new Uint8Array(8);
     new DataView(bytes.buffer).setFloat32(0, 1.0, true);
-    carrier.reply("/tap_data", [2, 64, bytes]);
+    carrier.reply("/bus_tapStream.reply", [2, 64, bytes]);
     assert.equal(stream.interleaved(2, 2).length, 0, "one tap short");
     await stream.stop();
 });
@@ -444,11 +444,11 @@ test("reading a buffer chunks by the transport's frame ceiling", async () => {
     const total = 20000;
     const requests: number[][] = [];
     carrier.onSend((msg) => {
-        if (msg.addr !== "/b_getn") return;
+        if (msg.addr !== "/buffer_getRange") return;
         const [bufnum, start, count] = msg.args.map(Number);
         requests.push([start, count]);
         const values = Array.from({ length: count }, (_, i) => (start + i) / 1000);
-        carrier.reply("/b_setn", [bufnum, start, count, ...values]);
+        carrier.reply("/buffer_getRange.reply", [bufnum, start, count, ...values]);
     });
 
     const samples = await new Buffer(3, 0, 1, 0, server)
@@ -469,12 +469,12 @@ test("a read past the end returns what the buffer holds", async () => {
     const { server, carrier } = await fakeServer();
     carrier.autoDone = false;
     carrier.onSend((msg) => {
-        if (msg.addr !== "/b_getn") return;
+        if (msg.addr !== "/buffer_getRange") return;
         const [bufnum, start] = msg.args.map(Number);
         // The server clamps: only 10 samples exist from `start`.
         const count = start === 0 ? 10 : 0;
         const values = Array.from({ length: count }, () => 0.5);
-        carrier.reply("/b_setn", [bufnum, start, count, ...values]);
+        carrier.reply("/buffer_getRange.reply", [bufnum, start, count, ...values]);
     });
     const samples = await new Buffer(1, 0, 1, 0, server)
         .getSamples({ start: 0, count: 50, chunk: 32 });

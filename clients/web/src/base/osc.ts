@@ -44,7 +44,7 @@ export function loadOsc(source?: BufferSource): Promise<void> {
 }
 
 /**
- * Encodes one OSC message: `encodeMessage("/s_new", [["s","default"],
+ * Encodes one OSC message: `encodeMessage("/synth_new", [["s","default"],
  * ["i",1000]])`. Requires a prior `loadOsc()`.
  */
 export function encodeMessage(addr: string, args: OscArg[] = []): Uint8Array {
@@ -93,7 +93,7 @@ export function encodeBundle(
 
 /**
  * Encodes a bundle with the **immediate** timetag: what rides inside
- * `/sched`, whose own absolute sample carries the time.
+ * `/sched_at`, whose own absolute sample carries the time.
  */
 export function encodeImmediateBundle(
     messages: readonly BundleMessage[],

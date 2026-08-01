@@ -14,16 +14,16 @@ single command that launches it; it talks to nothing. A bundle is just files, so
 the layout is the whole story:
 
     <data>/defs/synthdefs/gui_standalone_drone.json   the instrument (a SynthDef
-                                                       spec, the /d_recv payload)
+                                                       spec, the /def_send synth payload)
     <data>/defs/guidefs/drone.json                    the GuiDef record
 
 Two GuiDef features make a saved tree self-driving, so it needs no live script:
 
 - a root ``boot`` list — OSC messages the standalone host sends right after the
-  defs load, to instantiate the instrument (here one ``/s_new`` creating node
+  defs load, to instantiate the instrument (here one ``/synth_new`` creating node
   1000 from the drone SynthDef);
 - a widget ``bind`` prop — the declarative form of ``/gui_bind``, wiring the
-  knob's value **straight to the embedded server** (here ``/n_set 1000 freq``),
+  knob's value **straight to the embedded server** (here ``/node_set 1000 freq``),
   so turning it changes the pitch with no round-trip through any script.
 
 The int/float distinction is preserved end to end: node ids are written as
@@ -58,7 +58,7 @@ import sys
 from clausters.defs import SynthDef, control, out, sine
 from clausters.gui import knob, window
 
-#: The instrument's def name; the GuiDef's ``boot`` /s_new references it, and it
+#: The instrument's def name; the GuiDef's ``boot`` /synth_new references it, and it
 #: is the file stem under ``defs/synthdefs``.
 SYNTH_NAME = "gui_standalone_drone"
 #: The GuiDef (bundle) name; the file stem under ``defs/guidefs`` and the name
@@ -71,7 +71,7 @@ DRONE_NODE = 1000
 
 def drone() -> SynthDef:
     """A quiet stereo sine drone whose pitch is the ``freq`` control (default
-    160 Hz) — the boot ``/s_new`` instantiates it and the knob's binding drives
+    160 Hz) — the boot ``/synth_new`` instantiates it and the knob's binding drives
     its ``freq``."""
     sig = sine(freq=control("freq", 160.0)) * 0.2
     return SynthDef(SYNTH_NAME, out(0.0, sig), out(1.0, sig))
@@ -83,7 +83,7 @@ def scene() -> dict:
 
     - ``boot`` runs once after the defs load: create node ``DRONE_NODE`` from the
       drone SynthDef in the root group.
-    - the knob's ``bind`` forwards its value as ``/n_set <DRONE_NODE> freq
+    - the knob's ``bind`` forwards its value as ``/node_set <DRONE_NODE> freq
       <value>`` straight to the embedded server on every turn.
     - ``name`` lets a *live* ``clausters-gui --data-dir`` auto-persist this same
       tree on ``/gui_def``; here we write the file ourselves, so it is only for
@@ -93,17 +93,17 @@ def scene() -> dict:
         # `weight` stretches the knob over the pane: at its own natural size
         # it would be a strip at the top, and this window has only the one.
         knob(id=10, label="freq", min=80.0, max=400.0, value=160.0,
-             weight=1.0, bind=["/n_set", DRONE_NODE, "freq"]),
+             weight=1.0, bind=["/node_set", DRONE_NODE, "freq"]),
         title="Standalone drone", w=420, h=260, layout="col",
         name=GUI_NAME,
-        boot=[["/s_new", SYNTH_NAME, DRONE_NODE, 0, 0]],
+        boot=[["/synth_new", SYNTH_NAME, DRONE_NODE, 0, 0]],
     )
 
 
 def write_bundle(data_dir: str):
     """Writes the two bundle files under ``data_dir`` and returns their paths.
 
-    A SynthDef file is exactly the ``/d_recv`` spec JSON (``SynthDef.dump_def``);
+    A SynthDef file is exactly the ``/def_send synth`` spec JSON (``SynthDef.dump_def``);
     a GuiDef record wraps the tree with the id it is defined under,
     ``{"id": <int>, "gui": <tree>}`` — the standalone host replays it as
     ``/gui_def <id> <tree>``.

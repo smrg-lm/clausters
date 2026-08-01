@@ -28,7 +28,7 @@
       Chrome): ?smoke=1 auto-runs. A decoded file reaches a server buffer
       through `Buffer.load` (fetch + decodeAudioData + the carrier's bulk
       install), the host draws it from `buffer:` — which makes it fetch the
-      samples with /b_query + /b_getn over its client leg — and the transport
+      samples with /buffer_query + /buffer_getRange over its client leg — and the transport
       is asserted **audibly** on an analyser: silent, then sounding under play,
       silent again under pause with the node still in the tree, sounding after
       resume, and gone after stop.
@@ -161,7 +161,7 @@
         const playing = await peak(200);
         if (playing < 0.1) throw new Error(`silent under play (${playing})`);
 
-        // Pause is /n_run 0: the node stays in the tree, with its position.
+        // Pause is /node_run 0: the node stays in the tree, with its position.
         voice.pause();
         await sleep(80);
         const pausedPeak = await peak(150);

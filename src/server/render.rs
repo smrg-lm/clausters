@@ -13,17 +13,17 @@
 //!
 //! The render ends at the time of the **last** bundle, whose commands
 //! therefore produce no sound: close a score with a dummy bundle (e.g. a
-//! final `/n_free`) to set the total duration.
+//! final `/node_free`) to set the total duration.
 
 use std::path::Path;
 use std::sync::Arc;
 
-use rosc::{OscMessage, OscPacket, OscTime};
+use rosc::{OscMessage, OscPacket, OscTime, OscType};
 
 use crate::dsp::NUM_AUDIO_BUSES;
 #[cfg(feature = "faust")]
-use crate::osc::translate::parse_d_faust;
-use crate::osc::translate::{CmdTranslator, parse_b_gen, parse_buffer_msg};
+use crate::osc::translate::parse_def_send_faust;
+use crate::osc::translate::{CmdTranslator, parse_buffer_gen, parse_buffer_msg};
 use crate::server::engine::{
     BLOCK_SIZE, Cmd, Engine, EngineHandle, Garbage, NodeEventKind, engine_pair_with_workers,
 };
@@ -142,7 +142,7 @@ pub struct RenderConfig {
     pub sample_rate: f64,
     /// Output channels = how many of the first audio buses land in the file.
     pub channels: usize,
-    /// M13 DSP workers for `/g_parallel` groups. Parallel rendering is
+    /// M13 DSP workers for `/group_parallel` groups. Parallel rendering is
     /// bit-identical to sequential (disjoint stages), just faster.
     pub workers: usize,
     /// Where this render's stochastic UGens start their seeds, or `None` to
@@ -214,7 +214,7 @@ pub fn render(
     if total == 0 {
         return Err(
             "empty render: a score ends at its last bundle's time — close it with a \
-             final bundle (e.g. an /n_free) at the total duration"
+             final bundle (e.g. an /node_free) at the total duration"
                 .into(),
         );
     }
@@ -318,7 +318,7 @@ pub fn render_to_vec(score: &Score, cfg: &RenderConfig) -> Result<(Vec<f32>, Ren
 }
 
 /// Renders a score straight to a WAV file. `sample_format` is `int16`,
-/// `int24` or `float`, like `/b_write`.
+/// `int24` or `float`, like `/buffer_write`.
 pub fn render_to_wav(
     score: &Score,
     cfg: &RenderConfig,
@@ -397,14 +397,25 @@ impl Renderer {
 
     fn message_cmds(&mut self, msg: &OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         match msg.addr.as_str() {
-            "/d_recv" => self.translator.d_recv(&msg.args).map(|_| ()),
-            "/d_free" => self.translator.d_free(&msg.args),
-            "/d_faust" => self.d_faust(&msg.args),
-            "/d_graph" => self.translator.d_graph(&msg.args).map(|_| ()),
-            "/b_alloc" | "/b_allocRead" | "/b_read" | "/b_write" | "/b_zero" | "/b_gen"
-            | "/b_free" => {
-                let (index, job) = if msg.addr == "/b_gen" {
-                    parse_b_gen(&msg.args, &self.translator.buffers)?
+            "/def_send" => {
+                let Some(OscType::String(family)) = msg.args.first() else {
+                    return Err(
+                        "expected a family string (\"synth\", \"faust\" or \"graph\")".into(),
+                    );
+                };
+                let rest = &msg.args[1..];
+                match family.as_str() {
+                    "synth" => self.translator.d_recv(rest).map(|_| ()),
+                    "faust" => self.d_faust(rest),
+                    "graph" => self.translator.d_graph(rest).map(|_| ()),
+                    other => Err(format!("unknown def family '{other}'")),
+                }
+            }
+            "/def_free" => self.translator.d_free(&msg.args),
+            "/buffer_alloc" | "/buffer_allocRead" | "/buffer_read" | "/buffer_write"
+            | "/buffer_zero" | "/buffer_gen" | "/buffer_free" => {
+                let (index, job) = if msg.addr == "/buffer_gen" {
+                    parse_buffer_gen(&msg.args, &self.translator.buffers)?
                 } else {
                     parse_buffer_msg(
                         msg.addr.as_str(),
@@ -444,7 +455,7 @@ impl Renderer {
     #[cfg(feature = "faust")]
     fn d_faust(&mut self, args: &[rosc::OscType]) -> Result<(), String> {
         use crate::faust::compiler::{CompilePayload, compile};
-        let (name, def) = parse_d_faust(args)?;
+        let (name, def) = parse_def_send_faust(args)?;
         let payload = CompilePayload::classify(def);
         let def = compile(&name, &payload)?;
         self.translator.faust_defs.insert(name, Arc::new(def));

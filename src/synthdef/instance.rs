@@ -16,7 +16,7 @@ use crate::synthdef::{ControlType, InputRef, SynthDef};
 pub struct UGenSynth {
     def: Arc<SynthDef>,
     controls: Vec<f32>,
-    /// Bus mappings parallel to `controls` (`/n_map`/`/n_mapa`).
+    /// Bus mappings parallel to `controls` (`/node_map`/`/node_mapAudio`).
     maps: Vec<ControlMap>,
     ugens: Vec<Box<dyn UGen>>,
     /// One output wire per UGen, cache-line aligned (M10).
@@ -214,7 +214,7 @@ impl SynthNode for UGenSynth {
 
     fn process(&mut self, ctx: &mut ProcessCtx) {
         // Pull any bus-mapped controls before running UGens: a control bus
-        // value, or one frame of an audio bus (control-rate, `/n_mapa`).
+        // value, or one frame of an audio bus (control-rate, `/node_mapAudio`).
         // Written straight to `controls`, never through `set_control` (which
         // would clear the mapping).
         for i in 0..self.maps.len() {
@@ -383,7 +383,7 @@ impl SynthNode for UGenSynth {
                 ExecMode::Normal => self.ugens[i].process(ctx, &inputs[..refs.len()], output),
             }
         }
-        // Trigger controls (S2) hold their `/n_set` value for exactly one
+        // Trigger controls (S2) hold their `/node_set` value for exactly one
         // block, then reset to 0 so a rising edge fires once (e.g. an EnvGen
         // gate). Cheap: most defs carry no triggers.
         for (i, ty) in self.def.control_types.iter().enumerate() {
@@ -399,8 +399,8 @@ impl SynthNode for UGenSynth {
     fn set_control(&mut self, index: u32, value: f32) {
         let i = index as usize;
         // Scalar (`ir`) controls are read once at init and frozen (S2): a
-        // `/n_set` after the synth has run is ignored, per scsynth. The initial
-        // `/s_new` values are applied before the first block (still `!initialized`),
+        // `/node_set` after the synth has run is ignored, per scsynth. The initial
+        // `/synth_new` values are applied before the first block (still `!initialized`),
         // so they take.
         if self.initialized && matches!(self.def.control_types.get(i), Some(ControlType::Scalar)) {
             return;

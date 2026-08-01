@@ -16,7 +16,7 @@
 //! synth-private scratch, allocated when the synth is instantiated (on the
 //! network thread, where allocation is legal) and freed with the synth — exactly
 //! like the `LocalIn`/`LocalOut` feedback `locals`, and the moral equivalent of
-//! SuperCollider's `LocalBuf`. No `/b_alloc` is required and the sample pool
+//! SuperCollider's `LocalBuf`. No `/buffer_alloc` is required and the sample pool
 //! stays fully immutable. The chain is shared by the chain's UGens through a
 //! compile-assigned *slot* the synth resolves for each of them (see
 //! `synthdef::instance`); the wire between the UGens only enforces ordering.
@@ -105,13 +105,13 @@ impl SpectralChain {
 /// transform (`> 0` on, `<= 0` off, holding the last frame). The window size,
 /// hop and window type are static per-UGen config, not signal inputs, because
 /// they size the pre-allocated scratch. The window type is also settable live
-/// through `/u_cmd` (selector `window`), the first real consumer of the S6
+/// through `/node_ugenCmd` (selector `window`), the first real consumer of the S6
 /// typed per-UGen command surface.
 pub struct Fft {
     winsize: usize,
     hop_size: usize,
     window_kind: Window,
-    /// Analysis window coefficients (`winsize`); rebuilt when `/u_cmd` changes
+    /// Analysis window coefficients (`winsize`); rebuilt when `/node_ugenCmd` changes
     /// the window type — off any hop, so still allocation-free per block.
     window: Vec<f32>,
     /// Sliding input, a circular buffer of the last `winsize` samples.
@@ -220,7 +220,7 @@ impl UGen for Fft {
     }
 
     fn command(&mut self, cmd: &UGenCmd) {
-        // `/u_cmd <node> <ugen> window <wintype>`: swap the analysis window.
+        // `/node_ugenCmd <node> <ugen> window <wintype>`: swap the analysis window.
         if cmd.selector == ugen_cmd_selector("window") && cmd.num_args >= 1 {
             let kind = Window::from_wintype(cmd.args[0] as i32);
             if kind != self.window_kind {

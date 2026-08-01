@@ -88,11 +88,14 @@ fn d_recv_and_s_new_produce_the_tone() {
         ]
     }"#;
     assert!(server.send(&msg(
-        "/d_recv",
-        vec![OscType::Blob(json.as_bytes().to_vec())]
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(json.as_bytes().to_vec())
+        ]
     )));
     assert!(server.send(&msg(
-        "/s_new",
+        "/synth_new",
         vec![
             OscType::String("beep".into()),
             OscType::Int(1000),
@@ -114,8 +117,8 @@ fn d_recv_and_s_new_produce_the_tone() {
         .collect();
     assert!(
         done.iter()
-            .any(|m| m.args.first() == Some(&OscType::String("/d_recv".into()))),
-        "missing /d_recv done: {done:?}"
+            .any(|m| m.args.first() == Some(&OscType::String("/def_send".into()))),
+        "missing /def_send synth done: {done:?}"
     );
     assert_eq!(server.clock(), SR as u64, "one second of blocks");
 }
@@ -124,14 +127,17 @@ fn d_recv_and_s_new_produce_the_tone() {
 fn c_stream_replies_pace_on_the_sample_clock() {
     let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
     server.ctl_set(3, 0.75);
-    assert!(server.send(&msg("/c_stream", vec![OscType::Int(100), OscType::Int(3)],)));
+    assert!(server.send(&msg(
+        "/bus_stream",
+        vec![OscType::Int(100), OscType::Int(3)],
+    )));
     // 0.35 s of sample time at a 100 ms period: the immediate snapshot plus
     // three paced ones — deterministic, because headless stream time *is*
     // the sample clock, not the wall.
     pull(&mut server, (0.35 * SR) as usize / BLOCK_SIZE);
     let sets: Vec<_> = replies(&server)
         .into_iter()
-        .filter(|m| m.addr == "/c_set")
+        .filter(|m| m.addr == "/bus_set")
         .collect();
     assert_eq!(sets.len(), 4, "immediate + 3 paced snapshots: {sets:?}");
     for m in &sets {
@@ -148,7 +154,7 @@ fn timed_bundle_lands_on_its_exact_sample() {
     assert!(server.send(&bundle_at(
         onset,
         vec![OscMessage {
-            addr: "/s_new".into(),
+            addr: "/synth_new".into(),
             args: vec![
                 OscType::String("default".into()),
                 OscType::Int(1000),
@@ -176,12 +182,12 @@ fn b_load_installs_and_b_query_reports() {
     let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
     let data: Vec<f32> = (0..800).map(|i| (i as f32 / 100.0).sin()).collect();
     server.b_load(7, 2, 44_100.0, &data).unwrap();
-    assert!(server.send(&msg("/b_query", vec![OscType::Int(7)])));
+    assert!(server.send(&msg("/buffer_query", vec![OscType::Int(7)])));
     pull(&mut server, 1);
     let info = replies(&server)
         .into_iter()
-        .find(|m| m.addr == "/b_info")
-        .expect("a /b_info reply");
+        .find(|m| m.addr == "/buffer_query.reply")
+        .expect("a /buffer_query.reply reply");
     assert_eq!(
         &info.args[..4],
         &[
@@ -197,22 +203,22 @@ fn b_load_installs_and_b_query_reports() {
 fn inline_nrt_allocates_without_a_thread() {
     let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
     assert!(server.send(&msg(
-        "/b_alloc",
+        "/buffer_alloc",
         vec![OscType::Int(0), OscType::Int(1024), OscType::Int(1)],
     )));
     pull(&mut server, 1);
     let done = replies(&server)
         .into_iter()
         .find(|m| m.addr == "/done")
-        .expect("a /done for /b_alloc");
-    assert_eq!(done.args[0], OscType::String("/b_alloc".into()));
+        .expect("a /done for /buffer_alloc");
+    assert_eq!(done.args[0], OscType::String("/buffer_alloc".into()));
 }
 
 #[test]
 fn quit_is_reported_not_enacted() {
     let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
     assert!(!server.quit_requested());
-    assert!(server.send(&msg("/quit", vec![])));
+    assert!(server.send(&msg("/server_quit", vec![])));
     pull(&mut server, 1);
     assert!(server.quit_requested());
 }

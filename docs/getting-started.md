@@ -35,10 +35,10 @@ The default features `realtime` + `pipewire` pull in the [cpal](https://crates.i
 cargo run --release
 ```
 
-It opens the audio device and listens for OSC on UDP `127.0.0.1:57110`, printing a one-line banner. It is **silent until you create a synth**. Stop it with `/quit` or Ctrl-C. Useful flags:
+It opens the audio device and listens for OSC on UDP `127.0.0.1:57110`, printing a one-line banner. It is **silent until you create a synth**. Stop it with `/server_quit` or Ctrl-C. Useful flags:
 
 ```sh
-cargo run --release -- --workers 3        # DSP threads for /g_parallel groups
+cargo run --release -- --workers 3        # DSP threads for /group_parallel groups
 cargo run --release -- --shm /dev/shm/clausters   # shared-memory transport
 ```
 
@@ -48,19 +48,19 @@ The server speaks OSC, so any OSC client works. The bundled [`osc_ping`](example
 
 ```sh
 cargo run --example osc_ping -- beep      # default synth at 440 Hz, retuned, freed
-cargo run --example osc_ping -- map       # /n_map + /n_mapa demo (control & audio buses)
+cargo run --example osc_ping -- map       # /node_map + /node_mapAudio demo (control & audio buses)
 cargo run --example osc_ping -- status quit
 ```
 
 By hand with [`oscsend`](https://man.archlinux.org/man/oscsend.1) (from `liblo`):
 
 ```sh
-oscsend localhost 57110 /s_new siii default 1000 1 0   # play "default" at the root
-oscsend localhost 57110 /n_set isf 1000 freq 330       # retune it
-oscsend localhost 57110 /n_free i 1000                 # stop it
+oscsend localhost 57110 /synth_new siii default 1000 1 0   # play "default" at the root
+oscsend localhost 57110 /node_set isf 1000 freq 330       # retune it
+oscsend localhost 57110 /node_free i 1000                 # stop it
 ```
 
-`default` is a built-in sine def; define your own with `/d_recv` (see [Defs, UGens & the OSC protocol](schemas.md)).
+`default` is a built-in sine def; define your own with `/def_send synth` (see [Defs, UGens & the OSC protocol](schemas.md)).
 
 > Sandbox note for the test harness: some environments isolate the network between shell invocations, so a server started in one invocation is unreachable from the next. Run the server and client in the **same** invocation there (server in the background with `&`, then the client). See [Contributing](contributing.md).
 

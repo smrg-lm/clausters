@@ -3,7 +3,7 @@
 //! The value/time half of locking a client clock to a server's sample counter
 //! over a network transport (the Python client's `UdpSampleClock`, the future
 //! TS client alike): anchors are `(local monotonic time, counter)` pairs from
-//! `/clock` round trips, fitted over a sliding window (JACK-DLL / Ableton-Link
+//! `/clock_query` round trips, fitted over a sliding window (JACK-DLL / Ableton-Link
 //! in spirit). The transport — sockets, threads, round-trip midpoints — stays
 //! in the host language; this module owns only the model, so every client
 //! predicts the same sample from the same anchors.
@@ -34,7 +34,7 @@ impl SampleClockModel {
     }
 
     /// Adds an anchor pair and refits. A finite positive `rate` updates the
-    /// nominal rate (the `/clock` reply carries it); pass a non-positive value
+    /// nominal rate (the `/clock_query` reply carries it); pass a non-positive value
     /// to keep the current one.
     pub fn add_anchor(&mut self, t_local: f64, sample: i64, rate: f64) {
         if rate > 0.0 && rate.is_finite() {

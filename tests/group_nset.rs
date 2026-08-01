@@ -1,4 +1,4 @@
-//! scsynth group semantics for `/n_set` and `/n_map`: a command addressed to
+//! scsynth group semantics for `/node_set` and `/node_map`: a command addressed to
 //! a **group** transfers the named parameters down its subtree to every
 //! synth/faust node that has a control with that name, recursing through
 //! subgroups and stopping at each synth. A command addressed to a synth sets
@@ -38,10 +38,10 @@ fn freq_of(t: &CmdTranslator, id: i32) -> f32 {
 }
 
 fn new_synth(t: &mut CmdTranslator, id: i32, group: i32) {
-    // /s_new default id tail(1) group
+    // /synth_new default id tail(1) group
     run(
         t,
-        "/s_new",
+        "/synth_new",
         vec![
             s("default"),
             OscType::Int(id),
@@ -52,10 +52,10 @@ fn new_synth(t: &mut CmdTranslator, id: i32, group: i32) {
 }
 
 fn new_group(t: &mut CmdTranslator, id: i32, target: i32) {
-    // /g_new id head(0) target
+    // /group_new id head(0) target
     run(
         t,
-        "/g_new",
+        "/group_new",
         vec![OscType::Int(id), OscType::Int(0), OscType::Int(target)],
     );
 }
@@ -69,7 +69,7 @@ fn n_set_on_a_group_propagates_to_all_children() {
 
     let cmds = run(
         &mut t,
-        "/n_set",
+        "/node_set",
         vec![OscType::Int(10), s("freq"), OscType::Float(440.0)],
     );
 
@@ -98,7 +98,7 @@ fn n_set_recurses_through_subgroups_and_stops_at_synths() {
 
     run(
         &mut t,
-        "/n_set",
+        "/node_set",
         vec![OscType::Int(10), s("freq"), OscType::Float(550.0)],
     );
 
@@ -115,7 +115,7 @@ fn n_set_on_a_synth_sets_only_that_synth() {
 
     run(
         &mut t,
-        "/n_set",
+        "/node_set",
         vec![OscType::Int(102), s("freq"), OscType::Float(660.0)],
     );
 
@@ -134,7 +134,7 @@ fn n_set_skips_children_without_that_control() {
 
     let cmds = run(
         &mut t,
-        "/n_set",
+        "/node_set",
         vec![OscType::Int(10), s("cutoff"), OscType::Float(1.0)],
     );
     assert!(!cmds.iter().any(|c| matches!(c, Cmd::SetControl { .. })));
@@ -146,7 +146,7 @@ fn n_set_on_empty_group_is_a_noop_not_an_error() {
     new_group(&mut t, 10, 0);
     let cmds = run(
         &mut t,
-        "/n_set",
+        "/node_set",
         vec![OscType::Int(10), s("freq"), OscType::Float(440.0)],
     );
     assert!(cmds.is_empty());
@@ -158,7 +158,7 @@ fn n_set_on_unknown_id_fails() {
     let mut cmds = Vec::new();
     let err = t.translate(
         &msg(
-            "/n_set",
+            "/node_set",
             vec![OscType::Int(999), s("freq"), OscType::Float(440.0)],
         ),
         &mut cmds,
@@ -168,7 +168,7 @@ fn n_set_on_unknown_id_fails() {
 
 #[test]
 fn n_map_on_a_group_propagates() {
-    // /n_map on a group emits a MapControl per child that has the control.
+    // /node_map on a group emits a MapControl per child that has the control.
     let mut t = CmdTranslator::new(SR);
     new_group(&mut t, 10, 0);
     new_synth(&mut t, 101, 10);
@@ -176,7 +176,7 @@ fn n_map_on_a_group_propagates() {
 
     let cmds = run(
         &mut t,
-        "/n_map",
+        "/node_map",
         vec![OscType::Int(10), s("amp"), OscType::Int(7)],
     );
     let mapped: Vec<i32> = cmds

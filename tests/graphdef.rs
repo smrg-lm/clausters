@@ -1,7 +1,7 @@
 //! M18: GraphDef — a persistent node-graph "program" instantiated as a wired
 //! group with private buses and a named parameter surface. Translator-level:
 //! a GraphDef expands into existing primitives (group + member synths +
-//! `/n_map`), so we assert on the mirrored node tree and the resolved surface.
+//! `/node_map`), so we assert on the mirrored node tree and the resolved surface.
 
 #![cfg(feature = "synth")]
 
@@ -142,7 +142,7 @@ fn n_set_on_the_instance_resolves_against_the_surface() {
 
     let cmds = run(
         &mut t,
-        "/n_set",
+        "/node_set",
         vec![
             OscType::Int(500),
             OscType::String("gain".into()),
@@ -173,7 +173,7 @@ fn n_set_unknown_port_is_ignored() {
     );
     let cmds = run(
         &mut t,
-        "/n_set",
+        "/node_set",
         vec![
             OscType::Int(500),
             OscType::String("nonesuch".into()),
@@ -217,7 +217,7 @@ fn free_reclaims_private_buses() {
             OscType::Int(0),
         ],
     );
-    run(&mut t, "/n_free", vec![OscType::Int(500)]);
+    run(&mut t, "/node_free", vec![OscType::Int(500)]);
     assert!(!t.graph_instances.contains_key(&500));
 
     // Every reclaimed bus is allocatable again: cycling instances far past
@@ -235,7 +235,7 @@ fn free_reclaims_private_buses() {
             ],
         );
         assert!(t.graph_instances.contains_key(&id), "instance {id} built");
-        run(&mut t, "/n_free", vec![OscType::Int(id)]);
+        run(&mut t, "/node_free", vec![OscType::Int(id)]);
         assert!(!t.graph_instances.contains_key(&id));
     }
 }
@@ -279,7 +279,7 @@ fn d_graph_rejects_bad_surface_and_bus_refs() {
     assert!(t.d_graph(&[OscType::String(bad_bus.into())]).is_err());
 }
 
-// ---- per-voice partition (/graph_voice) ----
+// ---- per-voice partition (/graph_newVoice) ----
 
 /// A per-voice oscillator: writes `Sine(freq) * level` to the bus `out`.
 const VTONE: &str = r#"{
@@ -305,7 +305,7 @@ const VGAIN: &str = r#"{
 
 /// A polyphonic instrument: a shared mixer (member 0) + a per-voice oscillator
 /// (member 1, `voice: true`). `gain` is a shared port; `freq`/`amp` are voice
-/// ports (so they apply per `/graph_voice`).
+/// ports (so they apply per `/graph_newVoice`).
 const POLY: &str = r#"{
     "name": "poly",
     "buses": [{"name": "mix", "rate": "audio"}],
@@ -348,7 +348,7 @@ fn graph_new_only_instantiates_shared_members() {
     );
 
     let inst = t.graph_instances.get(&700).unwrap();
-    // Only the shared mixer (member 0); the per-voice osc is absent until /graph_voice.
+    // Only the shared mixer (member 0); the per-voice osc is absent until /graph_newVoice.
     assert_eq!(inst.shared_nodes.len(), 1);
     assert!(inst.shared_nodes.contains_key(&0));
     assert!(inst.voices.is_empty());
@@ -375,7 +375,7 @@ fn graph_voice_spawns_a_wired_voice_with_its_surface() {
 
     run(
         &mut t,
-        "/graph_voice",
+        "/graph_newVoice",
         vec![
             OscType::Int(700),
             OscType::Int(710),
@@ -410,14 +410,14 @@ fn n_set_on_a_voice_resolves_against_its_surface() {
     );
     run(
         &mut t,
-        "/graph_voice",
+        "/graph_newVoice",
         vec![OscType::Int(700), OscType::Int(710)],
     );
     let tone = voice_tone(&t, 710);
 
     run(
         &mut t,
-        "/n_set",
+        "/node_set",
         vec![
             OscType::Int(710),
             OscType::String("freq".into()),
@@ -447,7 +447,7 @@ fn graph_voice_needs_voice_members_and_a_live_instance() {
     // "chain" has no voice members.
     assert!(
         t.translate(
-            &msg("/graph_voice", vec![OscType::Int(500), OscType::Int(-1)]),
+            &msg("/graph_newVoice", vec![OscType::Int(500), OscType::Int(-1)]),
             &mut cmds
         )
         .is_err()
@@ -455,7 +455,7 @@ fn graph_voice_needs_voice_members_and_a_live_instance() {
     // unknown instance.
     assert!(
         t.translate(
-            &msg("/graph_voice", vec![OscType::Int(999), OscType::Int(-1)]),
+            &msg("/graph_newVoice", vec![OscType::Int(999), OscType::Int(-1)]),
             &mut cmds
         )
         .is_err()
@@ -478,22 +478,22 @@ fn freeing_a_voice_and_the_instance_cleans_up() {
     );
     run(
         &mut t,
-        "/graph_voice",
+        "/graph_newVoice",
         vec![OscType::Int(700), OscType::Int(710)],
     );
     run(
         &mut t,
-        "/graph_voice",
+        "/graph_newVoice",
         vec![OscType::Int(700), OscType::Int(711)],
     );
 
     // Free one voice: it leaves graph_voices and the instance's set.
-    run(&mut t, "/n_free", vec![OscType::Int(710)]);
+    run(&mut t, "/node_free", vec![OscType::Int(710)]);
     assert!(!t.graph_voices.contains_key(&710));
     assert!(!t.graph_instances.get(&700).unwrap().voices.contains(&710));
 
     // Free the instance: it takes the remaining voice with it.
-    run(&mut t, "/n_free", vec![OscType::Int(700)]);
+    run(&mut t, "/node_free", vec![OscType::Int(700)]);
     assert!(!t.graph_instances.contains_key(&700));
     assert!(!t.graph_voices.contains_key(&711));
 }
@@ -562,7 +562,7 @@ fn midi_bind_to_a_graphdef_plays_voices() {
     assert!(t.graph_instances.is_empty());
 }
 
-/// M30: `/d_query` reports a GraphDef's **ports** — the named surface, which
+/// M30: `/def_query` reports a GraphDef's **ports** — the named surface, which
 /// is what a level-1 patch wires — each with its default and the inner targets
 /// it drives, scaling included. Built at the translator, where the def tables
 /// live; the server handler is a thin dispatch over this.

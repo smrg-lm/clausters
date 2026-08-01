@@ -40,12 +40,12 @@ Feature matrix (see `Cargo.toml`):
 
 | feature | default | adds |
 |---|---|---|
-| `synth` | yes | the **SynthDef family**: the UGen library, the def compiler (`/d_recv`) and `UGenSynth` |
+| `synth` | yes | the **SynthDef family**: the UGen library, the def compiler (`/def_send synth`) and `UGenSynth` |
 | `realtime` | yes | the cpal audio backend (the live server) |
 | `midi` | yes | live MIDI input via midir (ALSA seq on Linux) |
 | `pipewire` | yes | native PipeWire audio backend on Linux/BSD (cpal's pipewire host, ALSA fallback at runtime) — needs `libpipewire-0.3-dev` and `clang` |
 | `rtprio` | yes | real-time scheduling for the audio callback thread (SCHED_FIFO/RR via RTKit over DBus — the standard path for Linux audio clients; needs `libdbus-1-dev`), plus the `--pin` CPU-affinity flag and a SIGXCPU guard: if RTKit's `RLIMIT_RTTIME` watchdog fires under sustained overload, the audio thread is demoted back to SCHED_OTHER (the audio degrades, the server survives). Without the feature the callback runs as SCHED_OTHER and scheduling jitter breaks the audio at roughly half capacity — drop it only for minimal builds (no DBus dep; Linux-specific code isolated in `server::rt`) |
-| `faust` | yes | the **FaustDef family**: libfaust embedding (Signal/Box API + LLVM JIT, `/d_faust`) — needs libfaust built with the LLVM backend (below) |
+| `faust` | yes | the **FaustDef family**: libfaust embedding (Signal/Box API + LLVM JIT, `/def_send faust`) — needs libfaust built with the LLVM backend (below) |
 | `midi-jack` | no | route live MIDI through midir's JACK backend instead of ALSA (for PipeWire-native MIDI routing) — needs `libjack-jackd2-dev`, run under `pw-jack` |
 | `embed` | no | the C ABI (`clausters_*`) for embedding the server in-process |
 
@@ -54,7 +54,7 @@ they are peers, and a server that can compile only one of them is a partial
 product. They are independent and combinable, so a custom build can still ship a
 single family. With neither, the engine core (groups, buses, buffers,
 transports) still builds and runs, but there are no defs to instantiate: every
-`/s_new` fails, `/d_recv` and `/d_faust` reply `/fail` naming the missing
+`/synth_new` fails, `/def_send synth` and `/def_send faust` reply `/fail` naming the missing
 feature, and persisted defs of the absent family are skipped with one warning at
 boot.
 
@@ -85,7 +85,7 @@ cargo build --release --features embed,realtime
 # the lean feature sets on this target; `scripts/parity-web.sh` renders a score
 # through the wasm build (crates/clausters-web) and compares it to the native
 # NRT render; `scripts/smoke-web.sh` runs the live engine in an AudioWorklet
-# under headless Chrome (/status round trip, clock advance, audible sine).
+# under headless Chrome (/server_status round trip, clock advance, audible sine).
 # One-time setup: rustup target add wasm32-unknown-unknown, and
 # cargo install wasm-bindgen-cli at Cargo.lock's wasm-bindgen version.
 cargo check --lib --target wasm32-unknown-unknown --no-default-features --features synth,embed
@@ -317,13 +317,13 @@ environment variables take a piece out on purpose, for development:
 
 | variable | what the package loses |
 |---|---|
-| `CLAUSTERS_SKIP_FAUST` | the FaustDef family: every `/d_faust` fails. Set it to work without building libfaust first |
-| `CLAUSTERS_SKIP_SYNTH` | the SynthDef family: no `/d_recv`, no UGen graphs — a deliberately Faust-only package |
+| `CLAUSTERS_SKIP_FAUST` | the FaustDef family: every `/def_send faust` fails. Set it to work without building libfaust first |
+| `CLAUSTERS_SKIP_SYNTH` | the SynthDef family: no `/def_send synth`, no UGen graphs — a deliberately Faust-only package |
 | `CLAUSTERS_SKIP_VEROVIO` | the notation layer: the `score` widget does not engrave |
 
 The two def-family knobs are peers, like the features themselves: either family
 can go, both can, and what survives is the engine core (groups, buses, buffers)
-where every `/s_new` fails. They are the only way to drop a *default* feature
+where every `/synth_new` fails. They are the only way to drop a *default* feature
 from a packaged build — cargo features only add, so this is what emits
 `--no-default-features` and names the survivors. `CLAUSTERS_SKIP_SYNTH` has no
 library to miss and therefore nothing to probe: it is a preference, not a
@@ -361,7 +361,7 @@ The main groups of options (all detailed in `--help` and in
 - **Audio I/O & pools** — `--sample-rate`, `--inputs`/`--outputs`,
   `--audio-buses`/`--control-buses`, `--max-nodes`, `--max-buffers`, and the
   other pre-allocated pool sizes.
-- **Scheduling** — `--workers <n>` (DSP threads for `/g_parallel` groups).
+- **Scheduling** — `--workers <n>` (DSP threads for `/group_parallel` groups).
 - **Persistence** — `--data-dir <dir>` (where defs and MIDI bindings are
   persisted and reloaded at boot), `--no-persist`.
 - **Offline render** — `--nrt <score.osc> <out.wav>` with `--rate`,

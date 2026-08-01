@@ -184,7 +184,7 @@ pub fn load_records(dir: &Path) -> Vec<FaustRecord> {
         .collect()
 }
 
-/// Removes a def's record and its bitcode (for `/d_free`).
+/// Removes a def's record and its bitcode (for `/def_free`).
 pub fn remove(dir: &Path, name: &str) {
     let _ = std::fs::remove_file(record_path(dir, name));
     clear_bitcode(dir, name);

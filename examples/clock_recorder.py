@@ -8,19 +8,19 @@ N samples** and records the real audio output while it plays. Afterwards it
 scans the recording and measures how evenly the impulses actually landed.
 
 Each marker is the `Impulse` UGen at frequency 0, which emits a single 1.0
-on the synth's first sample and silence after. A `/sched`'d `/s_new` splits
+on the synth's first sample and silence after. A `/sched_at`'d `/synth_new` splits
 the processing block at the target sample, so that first sample *is* the
 target: one clean impulse on an exact frame, with no envelope and no onset
 ramp to blur where it landed.
 
 The point it proves: `ShmClient.clock` mirrors the engine's processed-sample
 counter every block, so the client always knows *which sample the engine is
-on* without asking. Picking a target sample and firing `/sched <target>`
+on* without asking. Picking a target sample and firing `/sched_at <target>`
 ahead of time then makes every impulse land sample-accurately. Two impulses
 N samples apart in the schedule come out N samples apart in the recording —
 the spacing never goes through this machine's wall clock, only the audio
 clock. (Contrast `examples/sample_clock.py`, which has to *model* the clock
-from `/clock` round trips because it talks UDP; here the clock is just a
+from `/clock_query` round trips because it talks UDP; here the clock is just a
 field in mapped memory.)
 
 Run (real audio hardware required — the sandbox has no output device):
@@ -72,21 +72,21 @@ NODE_SPAN = 1024  # node ids cycle here; each synth is freed long before reuse
 
 def define_impulse(c: ShmClient, amp: float):
     """`Impulse.ar(0) · amp` out to both channels: a single 1.0·amp on the
-    synth's first sample, silence after. Started with `/s_new` at the target
+    synth's first sample, silence after. Started with `/synth_new` at the target
     sample (the engine splits the block there), that one impulse marks the
     exact frame — no envelope, no onset ramp."""
     d = osc.SynthDefBuilder(DEF_NAME)
     sig = d.add("Mul", d.add("Impulse", 0.0), amp)
     d.add("Out", 0, sig)
     d.add("Out", 1, sig)
-    addr, args = osc.decode(c.request(osc.message("/d_recv", d.blob())))
+    addr, args = osc.decode(c.request(osc.message("/def_send", "synth", d.blob())))
     if addr == "/done":
         return
     # A `/fail` almost always means the running server predates the `Impulse`
     # UGen: a stale process keeps serving even after you rebuild. Say so.
     reason = args[-1] if args else ""
     raise RuntimeError(
-        f"/d_recv failed: {reason}\n"
+        f"/def_send synth failed: {reason}\n"
         "the running server rejected the Impulse UGen — it is probably a stale "
         "process from before the rebuild. Restart it with the freshly built "
         "binary (e.g. `cargo run --release -- --shm /dev/shm/clausters`) and "
@@ -95,7 +95,7 @@ def define_impulse(c: ShmClient, amp: float):
 
 def send_blocking(c: ShmClient, packet: bytes, drain: bool):
     """Push one packet, retrying on ring backpressure. Drain any server
-    replies meanwhile so the reply ring never fills (a `/sched` only replies
+    replies meanwhile so the reply ring never fills (a `/sched_at` only replies
     on error — a `/fail` here means a malformed packet, worth surfacing)."""
     while not c.send(packet):
         if drain:
@@ -127,7 +127,7 @@ def schedule_impulses(c: ShmClient, *, seconds: float, period: int, hold: int,
     for k in range(count):
         target = start + k * period
         # Wait until the clock (read directly from shared memory) is within
-        # `lead` of the target, then schedule. No /clock round trip.
+        # `lead` of the target, then schedule. No /clock_query round trip.
         while True:
             ahead = target - lead_samples - c.clock
             if ahead <= 0:
@@ -136,10 +136,10 @@ def schedule_impulses(c: ShmClient, *, seconds: float, period: int, hold: int,
         node = NODE_BASE + (k % NODE_SPAN)
         # The impulse fires on the synth's first sample (= the target); `hold`
         # samples later it is pure silence, so free it to keep the tree clean.
-        on = osc.message("/s_new", DEF_NAME, node, 1, 0)
-        off = osc.message("/n_free", node)
-        send_blocking(c, osc.message("/sched", osc.Int64(target), on), drain=True)
-        send_blocking(c, osc.message("/sched", osc.Int64(target + hold), off), drain=True)
+        on = osc.message("/synth_new", DEF_NAME, node, 1, 0)
+        off = osc.message("/node_free", node)
+        send_blocking(c, osc.message("/sched_at", osc.Int64(target), on), drain=True)
+        send_blocking(c, osc.message("/sched_at", osc.Int64(target + hold), off), drain=True)
         if k % 50 == 0 or k == count - 1:
             print(f"  scheduled impulse {k + 1}/{count} at sample {target} "
                   f"(clock now {c.clock})", end="\r", flush=True)
@@ -410,7 +410,7 @@ def parse_args(argv):
     p.add_argument("--period", type=int, default=24000,
                    help="samples between impulses (default 24000 = 0.5 s @ 48 kHz)")
     p.add_argument("--hold-ms", type=float, default=2.0,
-                   help="how long to keep each impulse synth before /n_free")
+                   help="how long to keep each impulse synth before /node_free")
     p.add_argument("--amp", type=float, default=0.5, help="impulse amplitude 0..1")
     p.add_argument("--lead", type=float, default=1.0,
                    help="seconds to schedule ahead of the clock")

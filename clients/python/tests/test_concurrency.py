@@ -29,14 +29,14 @@ def _inner_msg(raw: bytes):
 
 
 def _starts(score):
-    return sorted(w for w, raw in score.bundles if _inner_msg(raw)[0] == "/s_new")
+    return sorted(w for w, raw in score.bundles if _inner_msg(raw)[0] == "/synth_new")
 
 
 def _freqs(score):
     out = []
     for _, raw in score.bundles:
         addr, args = _inner_msg(raw)
-        if addr == "/s_new":
+        if addr == "/synth_new":
             out.append(args[args.index("freq") + 1])
     return sorted(out)
 
@@ -92,7 +92,7 @@ def test_rt_and_nrt_in_the_same_script():
 
     def churn():
         while True:
-            rt_server.send_bundle(("/status",))
+            rt_server.send_bundle(("/server_status",))
             yield 0.02
 
     rt_clock.play(Routine(churn))

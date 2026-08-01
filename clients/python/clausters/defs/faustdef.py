@@ -1,9 +1,9 @@
-"""FaustDef: a named Faust definition ready for ``/d_faust``.
+"""FaustDef: a named Faust definition ready for ``/def_send faust``.
 
 Wraps a graph built with `clausters.defs.signals` (the **signal tree**
 form), one built with `clausters.defs.boxes` (the **box tree** form — a `Box`,
 or a raw dict for machine-generated trees), or a Faust **source** string: the
-three payloads the server's ``/d_faust`` accepts, on equal footing (it sniffs
+three payloads the server's ``/def_send faust`` accepts, on equal footing (it sniffs
 which by the first byte; see the server's ``faust`` module). They are three ways
 of writing Faust, not a main road and two detours — pick the one that says what
 you mean. Sending and instantiating is the
@@ -21,7 +21,7 @@ from .signals import Signal
 
 class FaustDef:
     def __init__(self, name: str, payload, kind: str):
-        #: the def name (also what `/d_faust` replies with on success)
+        #: the def name (also what `/def_send faust` replies with on success)
         self.name = name
         self._payload = payload  # dict (signal/box tree) or str (source)
         self.kind = kind         # 'signals' | 'box' | 'source'
@@ -54,7 +54,7 @@ class FaustDef:
     # --- serialization ---
 
     def dump_def(self) -> str:
-        """The def serialized to text -- the ``/d_faust <name> <payload>`` wire
+        """The def serialized to text -- the ``/def_send faust <name> <payload>`` wire
         payload: a JSON signal/box tree, or the Faust source string verbatim.
         Useful to inspect the built graph before sending it."""
         if self.kind == "source":
@@ -63,10 +63,10 @@ class FaustDef:
 
     def send(self, server=None, *, wait: bool = True,
              timeout: float = 10.0) -> str:
-        """Sends this def to the server via ``/d_faust`` and returns its
+        """Sends this def to the server via ``/def_send faust`` and returns its
         name.
 
-        ``/d_faust`` JIT-compiles **asynchronously** on the server's network
+        ``/def_send faust`` JIT-compiles **asynchronously** on the server's network
         thread, answered later by ``/done``/``/fail``. ``wait=True``
         (the default) blocks in RT until ``/done``/``/fail`` -- raising
         `clausters.errors.CommandError` on the failure, or
@@ -76,7 +76,7 @@ class FaustDef:
         a routine, never block in one). In NRT the send is always *scored* at
         time 0 -- the renderer loads the def before time advances -- so
         ``wait`` does not apply."""
-        return send_def(_resolve(server), "/d_faust", (self.name, self.dump_def()),
+        return send_def(_resolve(server), "faust", (self.name, self.dump_def()),
                         self.name, wait, timeout)
 
     # --- controls ---

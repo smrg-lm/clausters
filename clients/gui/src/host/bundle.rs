@@ -10,10 +10,10 @@
 //!
 //! [`boot_packets`] mirrors the server's own boot order (defs → graphdefs →
 //! boot preset → the GuiDef's `boot` messages) and brackets it with two
-//! `/sync`s: the first marks the defs in (the barrier the native flow gets
+//! `/server_sync`s: the first marks the defs in (the barrier the native flow gets
 //! implicitly by loading in-process), the second — arriving after everything,
 //! since the engine serves strictly in order — is the page's "bundle is up"
-//! signal (`/synced sync_id+1`).
+//! signal (`/server_sync.reply sync_id+1`).
 //!
 //! The second half is the **mount** ([`mount`], [`MountAllocator`]): a bundle
 //! whose manifest declares the component contract is a *template*, and mounting
@@ -36,8 +36,8 @@ use serde_json::Value;
 /// The ordered OSC packets that boot a bundle on an audio server, from the
 /// persisted files' bytes:
 ///
-/// - `synthdefs`: each `defs/synthdefs/<name>.json` verbatim (a `/d_recv` spec);
-/// - `graphdefs`: each `defs/graphdefs/<name>.json` verbatim (a `/d_graph` spec);
+/// - `synthdefs`: each `defs/synthdefs/<name>.json` verbatim (a `/def_send synth` spec);
+/// - `graphdefs`: each `defs/graphdefs/<name>.json` verbatim (a `/def_send graph` spec);
 /// - `boot_json`: `boot.json` (the boot preset of standalone graphs), absent
 ///   when the bundle has none;
 /// - `guidef_tree`: the GuiDef tree JSON (the `"gui"` field of the saved
@@ -56,13 +56,13 @@ pub fn boot_packets(
     let mut messages = Vec::new();
     for spec in synthdefs {
         messages.push(OscMessage {
-            addr: "/d_recv".into(),
+            addr: "/def_send".into(),
             args: vec![OscType::Blob(spec.clone())],
         });
     }
     for spec in graphdefs {
         messages.push(OscMessage {
-            addr: "/d_graph".into(),
+            addr: "/def_send".into(),
             args: vec![OscType::Blob(spec.clone())],
         });
     }
@@ -80,7 +80,7 @@ pub fn boot_packets(
 
 fn sync(id: i32) -> OscMessage {
     OscMessage {
-        addr: "/sync".into(),
+        addr: "/server_sync".into(),
         args: vec![OscType::Int(id)],
     }
 }
@@ -124,7 +124,7 @@ fn boot_graphs(boot_json: &[u8]) -> Vec<OscMessage> {
 
 /// The `boot` messages declared at a GuiDef's root: a list of `[addr, args…]`
 /// the standalone host sends to the server right after the defs load, to bring
-/// the instrument up (e.g. `["/s_new", "drone", 1000, 0, 0]`). The int/float
+/// the instrument up (e.g. `["/synth_new", "drone", 1000, 0, 0]`). The int/float
 /// distinction is preserved (a JSON integer is an OSC `Int`, so node ids stay
 /// integers). Empty when the GuiDef declares no `boot`.
 pub fn boot_messages(tree_json: &[u8]) -> Vec<OscMessage> {
@@ -221,7 +221,7 @@ pub struct Mount {
     pub def_id: i32,
     /// The resolved tree, as the JSON the `/gui_def` argument carries.
     pub tree: Vec<u8>,
-    /// What to send before opening it: the declared buffers' `/b_allocRead`s,
+    /// What to send before opening it: the declared buffers' `/buffer_allocRead`s,
     /// then the GuiDef's own `boot` list.
     pub messages: Vec<OscMessage>,
 }
@@ -240,7 +240,7 @@ pub fn is_symbolic(manifest: &Manifest) -> bool {
 /// resolves the holes, and lays out what to send.
 ///
 /// `dir` is the bundle's directory, used to resolve declared buffer files to
-/// the paths `/b_allocRead` reads. `params` is what the caller supplies for the
+/// the paths `/buffer_allocRead` reads. `params` is what the caller supplies for the
 /// declared parameters (nothing, on the desktop, so the defaults stand).
 pub fn mount(
     manifest: &Manifest,
@@ -262,7 +262,7 @@ pub fn mount(
             continue; // declared as a file but not as a symbol: nothing to fill
         };
         messages.push(OscMessage {
-            addr: "/b_allocRead".into(),
+            addr: "/buffer_allocRead".into(),
             args: vec![
                 OscType::Int(bufnum),
                 OscType::String(format!("{dir}/{file}")),
@@ -333,7 +333,7 @@ mod tests {
         let synthdef = br#"{"name":"drone","ugens":[]}"#.to_vec();
         let graphdef = br#"{"name":"rig","members":[]}"#.to_vec();
         let boot = br#"[{"graph":"rig","ports":{"level":0.5}}]"#;
-        let gui = br#"{"type":"window","boot":[["/s_new","drone",1000,0,0]]}"#;
+        let gui = br#"{"type":"window","boot":[["/synth_new","drone",1000,0,0]]}"#;
         let packets = boot_packets(
             std::slice::from_ref(&synthdef),
             &[graphdef],
@@ -346,12 +346,12 @@ mod tests {
         assert_eq!(
             addrs,
             [
-                "/d_recv",
-                "/d_graph",
-                "/sync",
+                "/def_send",
+                "/def_send",
+                "/server_sync",
                 "/graph_new",
-                "/s_new",
-                "/sync"
+                "/synth_new",
+                "/server_sync"
             ]
         );
         assert_eq!(msgs[0].args, vec![OscType::Blob(synthdef)]);
@@ -367,7 +367,7 @@ mod tests {
                 OscType::Float(0.5),
             ]
         );
-        // The boot /s_new keeps its node id an Int (the JSON was an integer).
+        // The boot /synth_new keeps its node id an Int (the JSON was an integer).
         assert_eq!(msgs[4].args[1], OscType::Int(1000));
         assert_eq!(msgs[5].args, vec![OscType::Int(701)]);
     }
@@ -378,7 +378,7 @@ mod tests {
     fn empty_parts_are_skipped() {
         let packets = boot_packets(&[b"{}".to_vec()], &[], None, b"{}", 1);
         let addrs: Vec<String> = decode(&packets).into_iter().map(|m| m.addr).collect();
-        assert_eq!(addrs, ["/d_recv", "/sync", "/sync"]);
+        assert_eq!(addrs, ["/def_send", "/server_sync", "/server_sync"]);
     }
 
     fn symbolic() -> (Manifest, Template) {
@@ -397,7 +397,7 @@ mod tests {
             "id": 1,
             "gui": {
                 "type": "window",
-                "boot": [["/s_new", "fm.voice", "@graph", 0, 0, "freq", "$freq"]],
+                "boot": [["/synth_new", "fm.voice", "@graph", 0, 0, "freq", "$freq"]],
                 "children": [{ "id": 2, "type": "meter", "bus": "@lfo" }]
             }
         }))
@@ -429,7 +429,7 @@ mod tests {
         .unwrap();
 
         assert_ne!(first.def_id, second.def_id);
-        // Distinct node ids in the boot /s_new ...
+        // Distinct node ids in the boot /synth_new ...
         let node_of = |m: &Mount| m.messages.last().unwrap().args[1].clone();
         assert_ne!(node_of(&first), node_of(&second));
         // ... and distinct buses in the meter each one draws.
@@ -439,7 +439,7 @@ mod tests {
         };
         assert_ne!(bus_of(&first), bus_of(&second));
         // The declared sample is read into each instance's own buffer.
-        assert_eq!(first.messages[0].addr, "/b_allocRead");
+        assert_eq!(first.messages[0].addr, "/buffer_allocRead");
         assert_eq!(
             first.messages[0].args[1],
             OscType::String("/data/fm/audio/hit.wav".into())

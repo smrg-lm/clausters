@@ -83,7 +83,7 @@ pub struct WsHub {
     conns: HashMap<u64, (SyncSender<Vec<u8>>, TcpStream)>,
     /// Connection ids whose `Disconnected` went by since the last
     /// [`take_disconnects`](Self::take_disconnects), so the command loop can
-    /// drop per-client state (bus streams, `/notify` registrations).
+    /// drop per-client state (bus streams, `/server_notify` registrations).
     disconnects: Vec<u64>,
     local_addr: SocketAddr,
 }
@@ -306,7 +306,7 @@ mod tests {
 
         // Send one OSC message as a single binary frame.
         let msg = OscPacket::Message(OscMessage {
-            addr: "/status".into(),
+            addr: "/server_status".into(),
             args: vec![],
         });
         let bytes = encoder::encode(&msg).unwrap();
@@ -319,7 +319,7 @@ mod tests {
 
         // A reply routes back to the same connection as a binary message.
         let reply = OscPacket::Message(OscMessage {
-            addr: "/status.reply".into(),
+            addr: "/server_status.reply".into(),
             args: vec![OscType::Int(7)],
         });
         let reply_bytes = encoder::encode(&reply).unwrap();
