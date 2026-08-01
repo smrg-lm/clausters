@@ -26,7 +26,7 @@ def test_package_reexports_what_a_piece_names():
     # formats and the timing types -- plus the layer modules themselves.
     for name in ("play", "render", "plot", "scope",
                  "Session", "Server", "GuiHost",
-                 "Node", "Synth", "Group", "Bus", "Buffer",
+                 "Synth", "Group", "Bus", "Buffer",
                  "SynthDef", "FaustDef", "GraphDef",
                  "TempoClock", "Routine", "Event", "Timeline", "Playhead",
                  "base", "defs", "seq", "form", "gui", "ipc", "launch", "errors"):
@@ -41,12 +41,17 @@ def test_enumerative_and_plumbing_names_stay_in_their_module():
     # transports and the process launchers.
     for name in ("sine", "Pbind", "knob",
                  "Clausters", "ShmClient", "ServerProcess", "GuiProcess",
-                 "default_shm_path", "CommandError"):
+                 "default_shm_path", "CommandError",
+                 # a base nobody constructs: Synth.set already carries
+                 # Node.set's docstring by inheritance
+                 "Node", "Expr", "NodeInfo", "Tree"):
         assert name not in clausters.__all__, name
     assert clausters.defs.sine and clausters.seq.Pbind and clausters.gui.knob
     assert clausters.ipc.Clausters and clausters.ipc.ShmClient
     assert clausters.launch.ServerProcess and clausters.launch.GuiProcess
     assert clausters.errors.CommandError
+    assert clausters.defs.Node and clausters.defs.Expr and clausters.defs.Tree
+    assert clausters.Synth.set.__doc__ == clausters.defs.Node.set.__doc__
     # ClaustersError is the one error at the top level: the root you catch when
     # you do not care which leaf it was.
     assert clausters.ClaustersError in clausters.errors.CommandError.__mro__
