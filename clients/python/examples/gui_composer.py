@@ -38,6 +38,7 @@ from pathlib import Path
 
 from clausters import Session
 from clausters.defs import (
+    Buffer as ServerBuffer,
     DoneAction,
     Env,
     SynthDef,
@@ -106,7 +107,7 @@ def bounce_take(path: str, beats: float = 2.0) -> str:
 
 
 wav = bounce_take(str(Path(tempfile.mkdtemp(prefix="clausters-")) / "take.wav"))
-buf = Buffer.read(wav, server=server)          # on the server, shape known
+buf = ServerBuffer.read(wav, server=server)    # on the server, shape known
 
 # %% [markdown]
 # ## The material
@@ -117,7 +118,7 @@ buf = Buffer.read(wav, server=server)          # on the server, shape known
 # to play. Same tree, both times.
 
 # %%
-take = Buffer(buf, duration=2.0, instrument="take")       # a Buffer material
+take = Buffer(buf, duration=2.0, instrument="take")       # the element over it
 melody = Track(Timeline([                                 # a Set of events
     (0.0, SeqEvent(midinote=72, dur=1.0)),
     (1.0, SeqEvent(midinote=76, dur=1.0)),
@@ -297,7 +298,7 @@ if __name__ == "__main__":
 # ```python
 # offline = Session.nrt(tempo=TEMPO)
 # sampler().send(offline.server)
-# Buffer.read(wav, server=offline.server)          # the take, on the offline server
+# ServerBuffer.read(wav, server=offline.server)    # the take, on the offline server
 # song.render(offline.server, offline.clock)
 # samples = offline.render()
 # ```
