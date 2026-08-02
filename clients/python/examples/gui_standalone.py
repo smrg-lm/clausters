@@ -49,8 +49,12 @@ AudioWorklet, the GUI host on a canvas, still no server process. That path
 needs one extra file (a ``bundle.json`` manifest, since HTTP cannot list
 directories) and the served page; the script prints those steps too. See "A
 standalone bundle in a tab" in ``docs/clients.md``.
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention):
+step through it with Shift+Enter, or run it as a plain script.
 """
 
+# %%
 import json
 import os
 import sys
@@ -69,6 +73,10 @@ GUI_NAME = "drone"
 DRONE_NODE = 1000
 
 
+# %% [markdown]
+# ## The instrument
+
+# %%
 def drone() -> SynthDef:
     """A quiet stereo sine drone whose pitch is the ``freq`` control (default
     160 Hz) — the boot ``/synth_new`` instantiates it and the knob's binding drives
@@ -77,6 +85,10 @@ def drone() -> SynthDef:
     return SynthDef(SYNTH_NAME, out(0.0, sig), out(1.0, sig))
 
 
+# %% [markdown]
+# ## The GuiDef
+
+# %%
 def scene() -> dict:
     """The GuiDef: one knob over a low range, made self-driving by ``boot`` and
     ``bind`` so the standalone host needs no script.
@@ -100,6 +112,10 @@ def scene() -> dict:
     )
 
 
+# %% [markdown]
+# ## Writing the bundle
+
+# %%
 def write_bundle(data_dir: str):
     """Writes the two bundle files under ``data_dir`` and returns their paths.
 
@@ -124,8 +140,14 @@ def write_bundle(data_dir: str):
     return synth_path, gui_path
 
 
-def main(argv):
-    data_dir = os.path.abspath(argv[1]) if len(argv) > 1 else "/tmp/clausters-bundle"
+# %% [markdown]
+# ## Write it, and print how to launch it
+# This script only *writes* the bundle. Re-launching it needs no interpreter.
+
+# %%
+def run(data_dir: str = "/tmp/clausters-bundle"):
+    """Write the bundle under ``data_dir`` and print the two ways to boot it."""
+    data_dir = os.path.abspath(data_dir)
     synth_path, gui_path = write_bundle(data_dir)
     print(f"wrote {synth_path}")
     print(f"wrote {gui_path}")
@@ -150,7 +172,11 @@ def main(argv):
     print("    http://localhost:8000/examples/standalone.html?bundle=/my-bundle\n")
     print("the engine runs in an AudioWorklet, the GUI on a canvas — no server "
           "process anywhere.")
+    return synth_path, gui_path
 
 
-if __name__ == "__main__":
-    main(sys.argv)
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    run(sys.argv[1] if len(sys.argv) > 1 else "/tmp/clausters-bundle")
+else:
+    print("ready - run('/tmp/clausters-bundle') to write the bundle")

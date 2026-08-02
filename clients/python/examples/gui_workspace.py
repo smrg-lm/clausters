@@ -34,8 +34,13 @@ then::
     python clients/python/examples/gui_workspace.py
 
 Drag and wheel over each of the three panes; every navigation prints here.
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention):
+step through it with Shift+Enter and the window stays up between cells, or run
+it as a plain script.
 """
 
+# %%
 import sys
 import time
 
@@ -45,6 +50,10 @@ from clausters.gui import GuiHost, button, knob, label, panel, scroll, toggle, w
 PLANE_W, PLANE_H = 1600.0, 1200.0
 
 
+# %% [markdown]
+# ## The panes
+
+# %%
 def plane() -> dict:
     """The general case: a free 2D plane holding a scattered set of widgets.
 
@@ -83,6 +92,10 @@ def horizontal_strip() -> dict:
     return scroll(*cells, name="hstrip", axis="x", zoom=False, content_h=70.0)
 
 
+# %% [markdown]
+# ## The workspace
+
+# %%
 def workspace() -> dict:
     return window(
         panel(panel(label("free plane — drag to pan, wheel to zoom"),
@@ -100,6 +113,10 @@ def workspace() -> dict:
     )
 
 
+# %% [markdown]
+# ## Reporting what the gestures did
+
+# %%
 def on_view(name: str):
     """A pane's ``"view"`` edit-back, wired by name — the same three keys the
     reset button sets back."""
@@ -109,43 +126,55 @@ def on_view(name: str):
     return handler
 
 
-def main():
-    # No audio server: `boot` starts a host with no client leg and owns it,
-    # stopping the process on exit.
-    with GuiHost.boot() as gui:
-        win = gui.open(workspace())
-        print("drag and wheel over each pane; navigation events print here")
-        print("('reset view' puts the plane back at the origin, at its default zoom)")
-        print("(close the window to end, or wait ~45 s)")
+# %% [markdown]
+# ## Open it
+# No audio server: `boot` starts a host with no client leg and owns it, stopping
+# the process on exit.
 
-        closed = [False]
-        win.on_closed(lambda: closed.__setitem__(0, True))
+# %%
+gui = GuiHost.boot()
+win = gui.open(workspace())
+print("drag and wheel over each pane; navigation events print here")
+print("('reset view' puts the plane back at the origin, at its default zoom)")
 
-        # The reset button, pressed: the view is state the script owns, so the
-        # handle answers by putting the plane back — the same three keys the
-        # gestures emit.
-        def reset(value):
-            if value == 1:
-                # `view_zoom=0` **clears** the zoom instead of naming one, so
-                # the plane returns to its default -- the display's own scale.
-                # Naming `1.0` here would pin it to one physical pixel per
-                # content unit, which on a 2x screen is half the size the plane
-                # opened at.
-                win["plane"].set(view_x=0.0, view_y=0.0, view_zoom=0)
-                print("view reset to the origin, zoom 1")
-
-        win["plane"].on_event(on_view("plane"))
-        win["vlist"].on_event(on_view("vlist"))
-        win["hstrip"].on_event(on_view("hstrip"))
-        win["reset"].on_event(reset)
-
-        deadline = time.monotonic() + 45.0
-        while not closed[0] and time.monotonic() < deadline:
-            gui.pump(timeout=0.1)
+closed = [False]
+win.on_closed(lambda: closed.__setitem__(0, True))
 
 
-if __name__ == "__main__":
+# %% [markdown]
+# ## The reset button
+# The view is state the script owns, so the handle answers by putting the plane
+# back -- the same three keys the gestures emit. ``view_zoom=0`` **clears** the
+# zoom instead of naming one, so the plane returns to its default (the display's
+# own scale). Naming ``1.0`` here would pin it to one physical pixel per content
+# unit, which on a 2x screen is half the size the plane opened at.
+
+# %%
+def reset(value):
+    if value == 1:
+        win["plane"].set(view_x=0.0, view_y=0.0, view_zoom=0)
+        print("view reset to the origin, zoom 1")
+
+
+win["plane"].on_event(on_view("plane"))
+win["vlist"].on_event(on_view("vlist"))
+win["hstrip"].on_event(on_view("hstrip"))
+win["reset"].on_event(reset)
+
+
+# %%
+def run(seconds: float = 45.0):
+    """Pump the host until the window closes or ``seconds`` elapse."""
+    deadline = time.monotonic() + seconds
+    while not closed[0] and time.monotonic() < deadline:
+        gui.pump(timeout=0.1)
+
+
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        main()
-    except (OSError, RuntimeError, ConnectionError) as e:
-        sys.exit(str(e))
+        run()
+    finally:
+        gui.stop()
+else:
+    print("workspace up - run(20) to drive it, gui.stop() to end")
