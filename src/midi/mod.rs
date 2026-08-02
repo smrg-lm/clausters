@@ -1,5 +1,5 @@
 //! MIDI: standard channel-voice messages as a node/control actuation path
-//! (M17).
+//!.
 //!
 //! Standard MIDI — note on/off, velocity, aftertouch, pitch-bend, control
 //! change, program change — is the **primary** way to drive synthesis nodes
@@ -15,7 +15,7 @@
 //! `/node_free` and reuses the OSC path, so a MIDI-driven voice is byte-identical
 //! to the OSC one. The wire transport (how UMP/MIDI bytes arrive — UDP MIDI
 //! 2.0, ALSA seq, or a virtual port) is the remaining open decision; see
-//! `PLAN.md` M17. All of this runs on the network thread, never the audio
+//! `PLAN.md`. All of this runs on the network thread, never the audio
 //! thread.
 //!
 //! **Backward compatibility**: messages are normalized to MIDI 2.0 / UMP
@@ -178,16 +178,16 @@ pub struct MidiBinding {
     pub cc: HashMap<u8, String>,
     /// Program number → instrument def name (program change re-selects it).
     pub programs: HashMap<u8, String>,
-    /// M18: when the instrument is a **GraphDef**, the shared instance group
+    /// when the instrument is a **GraphDef**, the shared instance group
     /// spawned at bind time. A note then spawns a per-voice sub-graph
     /// (`/graph_newVoice`) inside it instead of a plain `/synth_new`. Runtime only —
-    /// not persisted (it is re-instantiated on restore, M19).
+    /// not persisted (it is re-instantiated on restore).
     #[serde(skip)]
     pub graph_instance: Option<i32>,
 }
 
 /// A persisted binding: a channel plus its config, written to `midi.json` and
-/// re-issued at startup so a MIDI-driven setup survives a restart (M19). The
+/// re-issued at startup so a MIDI-driven setup survives a restart. The
 /// runtime `graph_instance` is excluded (re-instantiated on restore).
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PersistedBinding {
@@ -250,7 +250,7 @@ impl MidiBindings {
         }
     }
 
-    /// The current bindings as a stable, persistable list (M19), sorted by
+    /// The current bindings as a stable, persistable list, sorted by
     /// channel for a deterministic file.
     pub fn persist(&self) -> Vec<PersistedBinding> {
         let mut out: Vec<PersistedBinding> = self

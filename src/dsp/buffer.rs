@@ -1,4 +1,4 @@
-//! Sample buffers (M5).
+//! Sample buffers.
 //!
 //! A [`Buffer`] is **immutable once built**: the NRT thread allocates and
 //! fills it (zeroes or a sound file), the network thread installs it in the

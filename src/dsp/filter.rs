@@ -1,4 +1,4 @@
-//! The filter core (U2): one topology-preserving state-variable filter behind
+//! The filter core: one topology-preserving state-variable filter behind
 //! every two-pole row, plus the one-pole family.
 //!
 //! **Why a state-variable filter and not a biquad.** scsynth realizes `LPF`,

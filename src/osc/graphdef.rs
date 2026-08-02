@@ -1,4 +1,4 @@
-//! GraphDef: persistent node-graph definitions ("programs") — M18.
+//! GraphDef: persistent node-graph definitions ("programs").
 //!
 //! Where a SynthDef/FaustDef persists a *single* synthesis node, a GraphDef
 //! persists a whole **configuration of nodes wired by buses**: an effect
@@ -17,7 +17,7 @@
 //! the same idea as the reserved auto node-id range).
 //!
 //! The spec ([`GraphDefSpec`]) is the transparent source of truth, persisted
-//! verbatim as `defs/graphdefs/<name>.json` (M16). There is no compiled artifact
+//! verbatim as `defs/graphdefs/<name>.json`. There is no compiled artifact
 //! to cache — a GraphDef references other defs, which carry their own.
 
 use std::collections::HashMap;
@@ -70,7 +70,7 @@ pub enum ControlValue {
 
 /// A member node: an instance of an existing SynthDef/FaustDef wired into the
 /// graph. Members are listed in any order; the instance group is auto-sorted
-/// (M12) so the execution order follows the bus connections.
+/// so the execution order follows the bus connections.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GraphMember {
     /// SynthDef or FaustDef name (resolved at instantiation; both kinds are
@@ -227,7 +227,7 @@ pub struct GraphVoice {
     pub surface: ResolvedSurface,
 }
 
-/// One entry of the boot preset (`boot.json`, M19): a standalone GraphDef to
+/// One entry of the boot preset (`boot.json`): a standalone GraphDef to
 /// instantiate at startup (an always-on FX bus, a drone, a mixer), with
 /// initial surface-port values. Authored by the user / a client; read-only at
 /// boot.

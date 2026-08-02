@@ -721,7 +721,7 @@ pub enum DutyKind {
 /// Both `dur` and `level` are pulled, and that is the point: a `Dseq` of
 /// durations against a `Dseq` of pitches is a sequencer, in two streams that
 /// need not be the same length. When either runs out the stream ends and
-/// `done_action` fires (`Done`/`FreeSelf`, U4's set).
+/// `done_action` fires (`Done`/`FreeSelf`).
 ///
 /// The countdown is kept in `f64` and carries its remainder across pulls
 /// (`count += dur * sr` rather than `count = dur * sr`), so a duration that is

@@ -23,10 +23,10 @@ use crate::faust::synth::FaustDef;
 
 /// What `/def_send faust` carries: one of the three def formats.
 pub enum CompilePayload {
-    /// Raw Faust source code (F1), compiled with
+    /// Raw Faust source code, compiled with
     /// `createCDSPFactoryFromString`.
     Source(String),
-    /// JSON box graph (F2), mapped to Box API calls (see [`boxes`]) and
+    /// JSON box graph, mapped to Box API calls (see [`boxes`]) and
     /// compiled with `createCDSPFactoryFromBoxes`.
     Json(String),
     /// JSON signal tree, mapped to Signal API calls (see
@@ -264,7 +264,7 @@ impl Drop for LibContext {
 /// f32, matching our buses), `-ftz 2` plus the stdlib include path
 /// (`FaustArgs::defaults`) and maximum LLVM optimization; afterwards a
 /// throwaway instance is probed for the def's parameters and I/O arity
-/// (F3), so `/synth_new`/`/node_set` can resolve control names without touching
+///, so `/synth_new`/`/node_set` can resolve control names without touching
 /// libfaust again.
 ///
 /// Runs with the FPU in normal precision: the NRT renderer calls this from
@@ -328,7 +328,7 @@ fn compile_source(name: &str, source: &str) -> Result<FaustFactory, String> {
     factory_or_error(ptr, &error_msg)
 }
 
-/// F2: JSON → Box API (see [`boxes`] for the schema). Validation errors come
+/// JSON → Box API (see [`boxes`] for the schema). Validation errors come
 /// back with the path of the offending JSON node; Faust's own errors
 /// (arities, dangling inputs) come from the factory step, verbatim.
 fn compile_json(name: &str, json: &str) -> Result<FaustFactory, String> {

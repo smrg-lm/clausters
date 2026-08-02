@@ -15,7 +15,7 @@ use crate::dsp::{BusUsage, DoneAction, ProcessCtx, ReplyMsg};
 use crate::server::workers::WorkerPool;
 
 /// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
-/// (M3) and, in the F fork, by `FaustSynth` — both built off the audio thread
+/// and, in the F fork, by `FaustSynth` — both built off the audio thread
 /// and shipped in as `Box<dyn SynthNode>`.
 pub trait SynthNode: Send {
     /// Processes one block. Output happens through `Out` UGens writing to the
@@ -42,7 +42,7 @@ pub trait SynthNode: Send {
     fn ugen_command(&mut self, _index: u32, _cmd: &crate::dsp::UGenCmd) {}
 
     /// Intrinsic latency of this synth in samples — the sum of its UGens'
-    /// intrinsic latencies (M28): how far its output lags its input by
+    /// intrinsic latencies: how far its output lags its input by
     /// construction, e.g. a partitioned convolver's partition length.
     /// Informational for now — the graph does not yet compensate parallel
     /// paths (see `docs/model-vs-daw.md`); a future PDC pass consumes this.
@@ -53,12 +53,12 @@ pub trait SynthNode: Send {
     /// Tells the synth its node id, once, when the engine inserts it into the
     /// tree (every path funnels there: OSC, NRT scores, graphdef and MIDI
     /// voices, direct embedding). `UGenSynth` forwards it to its UGens — the
-    /// consumer is `FFT`'s hop-phase stagger (S11). Runs on the audio thread —
+    /// consumer is `FFT`'s hop-phase stagger. Runs on the audio thread —
     /// must stay allocation-free. Default: ignored (e.g. a Faust synth).
     fn set_node_id(&mut self, _id: i32) {}
 
     /// Whether this synth contains any side-effect UGen (`SendReply`/`SendTrig`/
-    /// `Poll`, S9). The tree enqueues such synths for the after-block reply
+    /// `Poll`). The tree enqueues such synths for the after-block reply
     /// drain. Default: no reply UGens.
     fn has_replies(&self) -> bool {
         false
@@ -143,7 +143,7 @@ pub enum Place {
 pub enum NodeKind {
     Synth {
         node: Box<dyn SynthNode>,
-        /// Bus usage analyzed by the network thread at build time (M13):
+        /// Bus usage analyzed by the network thread at build time:
         /// the parallel scheduler partitions stages from this.
         usage: BusUsage,
     },
@@ -154,7 +154,7 @@ pub struct Group {
     /// Slot indices of the children, in execution order. Pre-allocated; the
     /// tree rejects inserts that would grow it.
     pub children: Vec<usize>,
-    /// `/group_parallel` (M13): children run in dependency stages on the worker
+    /// `/group_parallel`: children run in dependency stages on the worker
     /// pool instead of strictly in order.
     pub parallel: bool,
 }
@@ -218,7 +218,7 @@ impl Default for NodeTree {
 }
 
 // SAFETY: the `UnsafeCell`s in `slots` are only accessed concurrently
-// during `process`, where the M13 stage scheduler hands **disjoint
+// during `process`, where the stage scheduler hands **disjoint
 // subtrees** to the workers — each slot is reached by exactly one thread
 // per slice. Every other method takes `&mut self`.
 unsafe impl Sync for NodeTree {}
@@ -241,7 +241,7 @@ pub struct NodeTree {
     done_actions: Vec<AtomicU8>,
     done_count: AtomicUsize,
     /// Lock-free queue of slot indices whose synth buffered reply messages this
-    /// block (`SendReply`/`SendTrig`/`Poll`, S9). Written during the walk (like
+    /// block (`SendReply`/`SendTrig`/`Poll`). Written during the walk (like
     /// `done_nodes`, so the parallel workers can push while holding their slot)
     /// and drained after it by [`Self::drain_replies`]. Slot indices, not node
     /// IDs, so the drain reaches the synth without a linear lookup.
@@ -951,7 +951,7 @@ impl NodeTree {
     /// Depth-first traversal in execution order; synths write to the buses in
     /// `ctx` through their I/O UGens. Runs on the audio thread: no
     /// allocation. Children of groups flagged parallel (`/group_parallel`) run
-    /// in dependency **stages** on the worker pool (M13).
+    /// in dependency **stages** on the worker pool.
     pub fn process(&mut self, ctx: &ProcessCtx, pool: &WorkerPool) {
         // SAFETY: entry point — this thread owns the whole tree; the pool
         // only ever receives disjoint subtrees.

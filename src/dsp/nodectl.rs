@@ -1,4 +1,4 @@
-//! UGens that act on **their own node** rather than on a signal (U4):
+//! UGens that act on **their own node** rather than on a signal:
 //! `FreeSelf`, `PauseSelf`, `FreeSelfWhenDone` and `Done`.
 //!
 //! All four pass their input straight through, so they drop into a chain

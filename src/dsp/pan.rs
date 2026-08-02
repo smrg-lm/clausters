@@ -1,4 +1,4 @@
-//! Panning, stereo-field transforms and selection (U7): one pan law, one
+//! Panning, stereo-field transforms and selection: one pan law, one
 //! two-by-two matrix, one crossfade.
 //!
 //! **One law, computed rather than looked up.** Every equal-power row here —

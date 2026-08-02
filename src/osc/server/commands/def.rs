@@ -89,7 +89,7 @@ impl OscServer {
         }
     }
 
-    /// `/def_send graph <json>` (M18): load a GraphDef (validate + store), persist its
+    /// `/def_send graph <json>`: load a GraphDef (validate + store), persist its
     /// spec verbatim, and reply `/done`. Cheap — no JIT, just validation.
     fn handle_def_send_graph(&mut self, args: &[OscType], from: ClientId) {
         match self.translator.d_graph(args) {
@@ -184,7 +184,7 @@ impl OscServer {
     }
 
     /// `/def_query [name...]` → one `/def_query.reply` per def, then `/done "/def_query"`
-    /// (M30). No argument lists every loaded def. The reply is one message per
+    ///. No argument lists every loaded def. The reply is one message per
     /// def because the control surface is variable-length: an aggregate would
     /// nest, and a large catalog would outgrow a UDP datagram.
     ///

@@ -101,9 +101,9 @@ pub struct DefStore {
     synthdefs_dir: PathBuf,
     faustdefs_dir: PathBuf,
     graphdefs_dir: PathBuf,
-    /// `<data_dir>/midi.json` — persisted MIDI bindings (M19).
+    /// `<data_dir>/midi.json` — persisted MIDI bindings.
     bindings_path: PathBuf,
-    /// `<data_dir>/boot.json` — the boot preset of standalone graphs (M19).
+    /// `<data_dir>/boot.json` — the boot preset of standalone graphs.
     boot_path: PathBuf,
 }
 
@@ -170,7 +170,7 @@ impl DefStore {
             .join(format!("{}.json", sanitize_name(name)))
     }
 
-    /// Stores a `/def_send graph` GraphDef's spec JSON verbatim (M18). Like a
+    /// Stores a `/def_send graph` GraphDef's spec JSON verbatim. Like a
     /// SynthDef, the JSON is the transparent source of truth; there is no
     /// compiled artifact (a GraphDef only references other defs).
     pub fn save_graphdef(&self, name: &str, spec_json: &[u8]) -> io::Result<()> {
@@ -211,7 +211,7 @@ impl DefStore {
             .collect()
     }
 
-    /// Writes the MIDI bindings to `midi.json` (M19). Best-effort: the caller
+    /// Writes the MIDI bindings to `midi.json`. Best-effort: the caller
     /// logs an error, never fatal.
     pub fn save_bindings(&self, bindings: &[crate::midi::PersistedBinding]) -> io::Result<()> {
         let json = serde_json::to_vec_pretty(bindings).map_err(io::Error::other)?;

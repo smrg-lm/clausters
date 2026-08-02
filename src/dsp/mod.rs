@@ -81,7 +81,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// Frames per processing block, like scsynth.
 pub const BLOCK_SIZE: usize = 64;
 
-/// One block of samples, aligned to a cache line (M10): a block is exactly
+/// One block of samples, aligned to a cache line: a block is exactly
 /// four full 64-byte lines, so SIMD loads/stores never straddle a line and
 /// autovectorization stays stable. Wires and audio buses use this; access
 /// the samples through `.0`.
@@ -156,7 +156,7 @@ impl Limits {
 /// thread serves `/bus_set`/`/bus_get` directly, the audio thread reads them via
 /// the `InCtl` UGen. Plain atomic bit-cast stores — lock-free on both sides.
 ///
-/// Since M14 the backing storage is abstract: a heap array by default, or
+/// The backing storage is abstract: a heap array by default, or
 /// the control-bus region of a shared-memory segment (`server::ipc`), where
 /// other *processes* read and write the same atomics. `_owner` keeps the
 /// backing alive (the `Vec` or the mapped segment).
@@ -202,7 +202,7 @@ impl ControlBuses {
         }
     }
 
-    /// Control buses backed by external memory (the M14 IPC segment).
+    /// Control buses backed by external memory (the IPC segment).
     ///
     /// # Safety
     /// `ptr` must point to `count` initialized `AtomicU32`s that stay valid
@@ -248,10 +248,10 @@ impl ControlBuses {
     }
 }
 
-/// Which audio buses a node reads and writes, as `u128` bitmasks (M12/M13).
+/// Which audio buses a node reads and writes, as `u128` bitmasks.
 /// Computed by the network thread from the def and the node's current
 /// control values (`osc::graph`); shipped to the engine inside
-/// `Cmd::AddSynth` so the parallel scheduler (M13) partitions stages from
+/// `Cmd::AddSynth` so the parallel scheduler partitions stages from
 /// engine-owned data — safety never depends on possibly stale mirror state.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct BusUsage {
@@ -288,7 +288,7 @@ impl BusUsage {
 /// Global buses. Audio buses live on the audio thread and are cleared every
 /// block; control buses persist and are shared (see [`ControlBuses`]).
 ///
-/// Each audio bus sits in its own [`UnsafeCell`] so the M13 worker threads
+/// Each audio bus sits in its own [`UnsafeCell`] so the worker threads
 /// can write **disjoint** buses concurrently through a shared `&Buses`: the
 /// stage scheduler (`node::NodeTree::process`) guarantees, from the
 /// [`BusUsage`] masks, that no two nodes of a parallel stage touch
@@ -344,7 +344,7 @@ impl Buses {
     /// # Safety
     /// The caller must be the only thread touching `bus` for the lifetime
     /// of the returned reference. Inside `process` this holds because the
-    /// M13 stage scheduler only runs nodes with disjoint bus usage in
+    /// stage scheduler only runs nodes with disjoint bus usage in
     /// parallel; single-threaded callers hold it trivially.
     #[inline]
     #[allow(clippy::mut_from_ref)]
@@ -355,10 +355,10 @@ impl Buses {
 }
 
 /// One processing slice. Normally a whole block (`offset` 0, `frames` =
-/// [`BLOCK_SIZE`]), but scheduled bundles (M6) split the block at the
+/// [`BLOCK_SIZE`]), but scheduled bundles split the block at the
 /// event's sample: synths then process the sub-range `offset..offset+frames`
 /// of the current block, and bus I/O must index buses at `offset`.
-/// `buses` is a shared reference since M13: bus *writes* go through
+/// `buses` is a shared reference: bus *writes* go through
 /// [`Buses::audio_mut`] under the parallel scheduler's disjointness rule.
 /// The struct is `Copy` so every worker carries its own.
 #[derive(Clone, Copy)]
@@ -468,11 +468,12 @@ impl DoneAction {
     }
 }
 
-/// Calculation rate of a UGen output (S1) — scsynth's four rates, made an
+/// Calculation rate of a UGen output — scsynth's four rates, made an
 /// explicit, validated property of every UGen. It decides how much of the
 /// UGen's output wire is meaningful and when the UGen runs:
 /// - [`Ar`](Rate::Ar): one value per sample — a full [`Block`] wire, run every
-///   block. The default for signal UGens and the only shape before S1.
+///   block. The default for signal UGens, and the only shape there was
+///   before the rate became an explicit property.
 /// - [`Kr`](Rate::Kr): one value per block — a length-1 wire computed once per
 ///   block (read back through [`at`] as a constant across the block).
 /// - [`Ir`](Rate::Ir): one value computed at synth init and held for the
@@ -528,7 +529,7 @@ impl Rate {
     }
 }
 
-/// A demand UGen's view of its own inputs (U8) — the whole `dr` protocol from
+/// A demand UGen's view of its own inputs — the whole `dr` protocol from
 /// the UGen's side.
 ///
 /// A demand input is not a buffer of samples: it is a *stream*, and reading it
@@ -608,7 +609,7 @@ pub trait UGen: Send {
     fn set_done_flag(&mut self, _done: bool) {}
 
     /// Intrinsic latency in samples: how far this UGen's output lags its
-    /// input by construction (M28's partitioned convolver reports its
+    /// input by construction (the partitioned convolver reports its
     /// partition length; almost everything else is 0, the default). Reported
     /// through `SynthNode::latency` for a future delay-compensation pass —
     /// today it is informational only (see `docs/model-vs-daw.md`).
@@ -617,20 +618,20 @@ pub trait UGen: Send {
     }
 
     /// Tells the UGen which node it lives in, once, when the node enters the
-    /// tree. The only consumer today is `FFT`'s hop-phase stagger (S11), which
+    /// tree. The only consumer today is `FFT`'s hop-phase stagger, which
     /// derives a deterministic per-instance offset from the id — same id, same
     /// offset, so RT and NRT renders of the same score stay sample-identical.
     /// Runs on the audio thread — must stay allocation-free (arithmetic only).
     fn set_node_id(&mut self, _id: i32) {}
 
-    /// Demand-rate pull (S1): a demand *source* (the `D*` family) returns its
+    /// Demand-rate pull: a demand *source* (the `D*` family) returns its
     /// next value when it is pulled, or `NaN` once its stream is exhausted.
     /// Non-demand UGens never see this. Runs on the audio thread —
     /// allocation-free, like `process`.
     ///
     /// `inputs` is a [`DemandInputs`] rather than a slice of buffers because a
     /// demand input may itself be a stream: `pull` on it yields *its* next
-    /// value, recursively (U8). Everything a source reads goes through that
+    /// value, recursively. Everything a source reads goes through that
     /// one call, so a plain number and a nested stream are the same code path.
     fn demand(&mut self, _ctx: &ProcessCtx, _inputs: &mut dyn DemandInputs) -> f32 {
         f32::NAN
@@ -656,7 +657,7 @@ pub trait UGen: Send {
     /// default ignores every command (an unknown selector is a no-op).
     fn command(&mut self, _cmd: &UGenCmd) {}
 
-    /// Runs a spectral-chain UGen (`FFT`/`PV_*`/`IFFT`, S8) with access to its
+    /// Runs a spectral-chain UGen (`FFT`/`PV_*`/`IFFT`) with access to its
     /// synth-private [`SpectralChain`](spectral::SpectralChain) — state the plain
     /// `process` path cannot reach, since the chain is shared across UGens. The
     /// synth calls this (instead of `process`) for
@@ -675,7 +676,7 @@ pub trait UGen: Send {
     }
 
     /// Two-chain variant of [`process_spectral`](Self::process_spectral) for a
-    /// combiner (`SpectralRole::Filter2`, M27): reads chains `a` (input 0) and
+    /// combiner (`SpectralRole::Filter2`): reads chains `a` (input 0) and
     /// `b` (input 1), writes the result into `a`. The compiler guarantees the
     /// two are distinct slots of equal window size. Same audio-thread rules.
     /// Only combiner UGens ever see this.
@@ -690,7 +691,7 @@ pub trait UGen: Send {
     ) {
     }
 
-    /// Whether this is a side-effect UGen (`SendReply`/`SendTrig`/`Poll`, S9)
+    /// Whether this is a side-effect UGen (`SendReply`/`SendTrig`/`Poll`)
     /// that emits reply messages instead of (or besides) audio. The synth uses
     /// it to enqueue itself for the reply drain after each block. Default: not
     /// a reply UGen.
@@ -731,7 +732,7 @@ pub enum ReplyKind {
 }
 
 /// A side-effect message a UGen emits on a trigger (`SendReply`/`SendTrig`/
-/// `Poll`, S9): the payload that leaves the audio thread through the reply FIFO
+/// `Poll`): the payload that leaves the audio thread through the reply FIFO
 /// and becomes an OSC reply (or a console post) on the network thread. Fully
 /// inline and `Copy` — buffering and draining one allocates nothing.
 #[derive(Clone, Copy, Debug)]

@@ -134,7 +134,7 @@ impl NodeDef {
         }
     }
 
-    /// Bus usage of an instance with these control values (M12).
+    /// Bus usage of an instance with these control values.
     #[cfg_attr(
         not(any(feature = "synth", feature = "faust")),
         allow(unused_variables)
@@ -181,16 +181,16 @@ pub struct CmdTranslator {
     #[cfg(feature = "faust")]
     pub faust_defs: HashMap<String, Arc<FaustDef>>,
     /// Network-side tree mirror: topology, per-node controls and bus usage,
-    /// auto-sorted groups (M12). Fed by the same commands the engine gets.
+    /// auto-sorted groups. Fed by the same commands the engine gets.
     pub mirror: TreeMirror,
     /// Mirror of the engine's buffer pool, kept in step with `/buffer_*` results
     /// (installed by the server). Read when building a Faust instance so its
     /// `soundfile` zones can be filled from a server buffer.
     pub buffers: BufferPool,
-    /// M17: per-channel MIDI bindings and the live voice table. Channel-voice
+    /// per-channel MIDI bindings and the live voice table. Channel-voice
     /// messages actuate nodes through [`Self::translate_midi`].
     pub midi: MidiBindings,
-    /// M18: loaded GraphDefs by name, the live instances by their group id,
+    /// loaded GraphDefs by name, the live instances by their group id,
     /// and the private-bus allocators they draw from.
     pub graph_defs: HashMap<String, Arc<GraphDefSpec>>,
     pub graph_instances: HashMap<i32, GraphInstance>,
@@ -378,7 +378,7 @@ impl CmdTranslator {
     }
 
     /// After a control change altered a synth's effective bus usage:
-    /// re-analyze, ship the fresh masks to the engine (the M13 scheduler keeps
+    /// re-analyze, ship the fresh masks to the engine (the scheduler keeps
     /// its own copy), and re-sort the parent auto group.
     fn reanalyze_and_resort(&mut self, id: i32, cmds: &mut Vec<Cmd>) {
         self.refresh_usage(id);
@@ -684,7 +684,7 @@ impl CmdTranslator {
     ) -> Result<(), String> {
         // The destination group is the target itself (Head/Tail) or the
         // target's parent (Before/After); manual moves into it are the auto
-        // group's job (M12).
+        // group's job.
         let dest = match place {
             Place::Head | Place::Tail => target,
             Place::Before | Place::After => self.mirror.parent(target).unwrap_or(target),
@@ -1183,7 +1183,7 @@ impl CmdTranslator {
 
         // --- infallible phase: build the instance. The instance group is
         // auto-sorted so member (and voice sub-group) order follows the bus
-        // connections (M12); manual ordering is the graph's, not the client's.
+        // connections; manual ordering is the graph's, not the client's.
         cmds.push(Cmd::AddGroup {
             id: group_id,
             target: *target,
@@ -1501,11 +1501,11 @@ impl CmdTranslator {
             "/node_mapAudioRange" => self.map_controls_n(msg, true, cmds),
             "/node_order" => self.order_nodes(msg, cmds),
             "/group_head" | "/group_tail" => self.move_to_group(msg, cmds),
-            // M18: instantiate a GraphDef as a wired group with private buses.
+            // instantiate a GraphDef as a wired group with private buses.
             "/graph_new" => self.graph_new(msg, cmds),
-            // M18: spawn a per-voice sub-graph inside an instance.
+            // spawn a per-voice sub-graph inside an instance.
             "/graph_newVoice" => self.graph_voice(msg, cmds),
-            // M17 MIDI binding config (no engine command; pure translator state).
+            // MIDI binding config (no engine command; pure translator state).
             "/midi_bind" => self.midi_bind(msg, cmds),
             "/midi_unbind" => self.midi_unbind(msg, cmds),
             "/midi_map" => self.midi_map(msg),
@@ -1551,7 +1551,7 @@ impl CmdTranslator {
                     let [OscType::Int(id), OscType::Int(target)] = pair else {
                         return Err("expected int (nodeID, targetID) pairs".into());
                     };
-                    // Manual ordering is the auto group's job (M12).
+                    // Manual ordering is the auto group's job.
                     for node in [*id, *target] {
                         if self
                             .mirror
@@ -1665,7 +1665,7 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            // M13: `/group_parallel groupID mode` — mode 1 runs the group's
+            // `/group_parallel groupID mode` — mode 1 runs the group's
             // children in dependency stages on the engine's worker pool
             // (sequential without workers); mode 0 returns to strict order.
             "/group_parallel" => {
@@ -1684,7 +1684,7 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            // M12: `/group_sortMode groupID mode` — mode 1 sorts the group's
+            // `/group_sortMode groupID mode` — mode 1 sorts the group's
             // children by their bus connections now and on every future
             // change; mode 0 returns it to manual ordering.
             "/group_sortMode" => {
@@ -1759,7 +1759,7 @@ impl CmdTranslator {
     /// note spawns a voice into it) and return the instance id; otherwise
     /// `None` (a plain def is `/synth_new`'d per note). A GraphDef with no
     /// per-voice members is rejected — it has nothing to play per note. Shared
-    /// by `/midi_bind` and the M19 binding restore.
+    /// by `/midi_bind` and the binding restore.
     fn bind_graph_instance(
         &mut self,
         instrument: &str,
@@ -1795,7 +1795,7 @@ impl CmdTranslator {
         Ok(Some(instance))
     }
 
-    /// M19: re-establish a persisted binding at startup, re-instantiating its
+    /// re-establish a persisted binding at startup, re-instantiating its
     /// shared GraphDef instance if needed. Mirrors `/midi_bind` but takes the
     /// stored config directly (no re-issued OSC).
     pub fn restore_binding(
@@ -1879,7 +1879,7 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// M17: actuate nodes from a standard channel-voice MIDI message. Reuses
+    /// actuate nodes from a standard channel-voice MIDI message. Reuses
     /// the OSC path by synthesizing the equivalent `/synth_new`/`/node_set`/`/node_free`,
     /// so a MIDI-driven voice is byte-identical to the OSC one. Unbound
     /// channels and unmapped expressive messages are silently ignored (a
@@ -2078,7 +2078,7 @@ impl CmdTranslator {
         }
     }
 
-    /// `/def_query.reply` arguments for `/def_query` (M30), one vector per def — the
+    /// `/def_query.reply` arguments for `/def_query`, one vector per def — the
     /// loaded defs and their control surface, which is what a patcher wires.
     ///
     /// With `names`, details exactly those (an unknown one comes back with an
@@ -2188,7 +2188,7 @@ impl CmdTranslator {
         ]
     }
 
-    /// `/buffer_query.reply` arguments for an argument-less `/buffer_query` (M30): every
+    /// `/buffer_query.reply` arguments for an argument-less `/buffer_query`: every
     /// **allocated** buffer, four args each (`bufnum, frames, channels,
     /// sampleRate`) — the same shape the per-index form replies with, so one
     /// parser reads both.

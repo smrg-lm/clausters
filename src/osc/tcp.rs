@@ -1,4 +1,4 @@
-//! TCP transport for the OSC server (server track M / client C8).
+//! TCP transport for the OSC server.
 //!
 //! The command loop ([`super::server::OscServer::run`]) is single-threaded and
 //! blocks on the UDP socket; TCP is multiplexed in **without an async runtime

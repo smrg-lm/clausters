@@ -62,7 +62,7 @@ impl OscServer {
         })
     }
 
-    /// A server with **no socket front** — the pulled mode (B1). Commands and
+    /// A server with **no socket front** — the pulled mode. Commands and
     /// replies travel only through the ring attached with
     /// [`Self::attach_ipc`], and the host drives the loop by calling
     /// [`Self::step`] before each block instead of [`Self::run`]. This is the
@@ -173,13 +173,13 @@ impl OscServer {
         }
         // GraphDefs load after the synth/faust defs (their members may
         // reference those names); validation is structural, so any still-
-        // missing member only fails later at /graph_new (M18).
+        // missing member only fails later at /graph_new.
         for spec in store.load_graphdef_specs() {
             if let Err(e) = self.translator.d_graph(&[OscType::Blob(spec)]) {
                 warn!("persisted GraphDef failed to load: {e}");
             }
         }
-        // M19 boot order: defs -> graphdefs -> bindings -> boot preset, so a
+        // Boot order: defs -> graphdefs -> bindings -> boot preset, so a
         // binding's instrument and a boot graph's name already resolve.
         for pb in store.load_bindings() {
             let channel = pb.channel;
@@ -395,7 +395,7 @@ impl OscServer {
                 self.reply(*client, addr, args.clone());
             }
         }
-        // Side-effect replies (S9): `SendTrig`/`SendReply` reply to `/server_notify`
+        // Side-effect replies: `SendTrig`/`SendReply` reply to `/server_notify`
         // clients; `Poll` posts to the server console and, when its trigid is
         // set, also sends `/node_trigger`.
         while let Some(msg) = self.handle.pop_reply() {

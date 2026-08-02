@@ -1,4 +1,4 @@
-//! Side-effect UGens (S9): `SendTrig`, `SendReply` and `Poll` — UGens whose
+//! Side-effect UGens: `SendTrig`, `SendReply` and `Poll` — UGens whose
 //! purpose is an OSC reply or a console post, not audio on a bus. Each detects
 //! a **trigger** (a signal crossing from `<= 0` up to `> 0`) and buffers one
 //! [`ReplyMsg`] per crossing; the synth drains the buffer after the block (see

@@ -1,4 +1,4 @@
-//! Bus-connection analysis and auto-sorted groups (M12).
+//! Bus-connection analysis and auto-sorted groups.
 //!
 //! The execution order problem: a node reading an audio bus must run *after*
 //! the nodes writing it, and scsynth makes the client manage that order by
@@ -41,7 +41,7 @@ use crate::dsp::registry::BusRole;
 use crate::faust::synth::FaustDef;
 
 /// Bus-usage masks now live in [`crate::dsp`] (the engine's parallel
-/// scheduler uses them too, M13); re-exported here for the analysis API.
+/// scheduler uses them too); re-exported here for the analysis API.
 pub use crate::dsp::BusUsage;
 
 /// Analyzes a UGen def against a node's current control values. Returns the
@@ -156,7 +156,7 @@ pub enum MirrorBody {
         children: Vec<i32>,
         /// `/group_sortMode`: re-sort on every topology or bus-usage change.
         auto: bool,
-        /// `/group_parallel` (M13): mirrored for `/group_dumpGraph` introspection.
+        /// `/group_parallel`: mirrored for `/group_dumpGraph` introspection.
         parallel: bool,
         /// `/group_name`: an optional label on top of the node ID, unique among
         /// the group's siblings. It never replaces the ID — every command still

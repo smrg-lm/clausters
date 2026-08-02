@@ -1,4 +1,4 @@
-//! M14: the embed C ABI (feature `embed`) — Clausters as a library.
+//! the embed C ABI (feature `embed`) — Clausters as a library.
 //!
 //! The cdylib (`libclausters.so` / `.dylib` / `.dll`) is the **canonical
 //! language-agnostic surface**: thin bindings in any language sit on top of
@@ -150,7 +150,7 @@ pub unsafe extern "C" fn clausters_free_samples(ptr: *mut f32, samples: u64) {
     }
 }
 
-/// An in-process server in **pulled mode** (B1): engine + serving logic with
+/// An in-process server in **pulled mode**: engine + serving logic with
 /// **no device, no sockets and no threads** — the host owns the audio thread
 /// and calls [`ClaustersHeadless::process_block`] itself, callback-style.
 /// This is the native face of the browser build (the AudioWorklet calls
@@ -491,7 +491,7 @@ pub unsafe extern "C" fn clausters_poll(handle: *mut Clausters, buf: *mut u8, ca
 }
 
 /// The engine's sample counter (block-accurate, written by the audio
-/// thread) — the M8 sample clock with zero transport jitter.
+/// thread) — the sample clock with zero transport jitter.
 ///
 /// # Safety
 /// `handle` from [`clausters_open`].

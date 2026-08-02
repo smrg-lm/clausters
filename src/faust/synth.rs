@@ -1,4 +1,4 @@
-//! `FaustSynth` (F3): a JIT-compiled Faust instance living in the node tree.
+//! `FaustSynth`: a JIT-compiled Faust instance living in the node tree.
 //!
 //! [`FaustDef`] is what the def table stores: the compiled factory plus the
 //! parameters and I/O arity discovered by probing one throwaway instance on
@@ -174,7 +174,7 @@ impl FaustSynth {
 
 impl SynthNode for FaustSynth {
     fn process(&mut self, ctx: &mut ProcessCtx) {
-        // Scheduled bundles (M6) may split the block: only the
+        // Scheduled bundles may split the block: only the
         // `offset..offset+frames` range of the buses belongs to this call.
         let (offset, frames) = (ctx.offset, ctx.frames);
         // Pull bus-mapped parameters into their zones before `compute`
@@ -211,7 +211,7 @@ impl SynthNode for FaustSynth {
         }
         for (i, buf) in self.out_bufs.iter().enumerate() {
             let bus = (self.out_bus + i).min(NUM_AUDIO_BUSES - 1);
-            // SAFETY: M13 stage disjointness — no other thread touches
+            // SAFETY: stage disjointness — no other thread touches
             // this bus while we sum into it.
             for (d, s) in unsafe { ctx.buses.audio_mut(bus) }[offset..offset + frames]
                 .iter_mut()

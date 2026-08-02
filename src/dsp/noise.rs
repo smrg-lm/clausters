@@ -1,4 +1,4 @@
-//! Noise sources (U6): the stochastic generators, all drawing from the same
+//! Noise sources: the stochastic generators, all drawing from the same
 //! seeded stream.
 //!
 //! **Every generator here takes its randomness from `clausters_core::rng`**,

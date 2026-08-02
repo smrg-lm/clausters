@@ -76,7 +76,7 @@ impl OscServer {
     /// sampleRate) per buffer; zeros for unallocated indices. Synchronous,
     /// answered from the mirror (= state as of the last completed command).
     pub(in crate::osc::server) fn handle_buffer_query(&mut self, msg: &OscMessage, from: ClientId) {
-        // No argument lists every allocated buffer (M30): the patcher shows
+        // No argument lists every allocated buffer: the patcher shows
         // real buffers as objects, and a client that never allocated them (the
         // pool outlives a session) has no other way to learn they exist.
         if msg.args.is_empty() {

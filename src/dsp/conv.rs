@@ -1,4 +1,4 @@
-//! Partitioned convolution (`Conv`, M28): one UGen, kernel spectra prepared
+//! Partitioned convolution (`Conv`): one UGen, kernel spectra prepared
 //! **off** the audio thread, flat steady-state load.
 //!
 //! The scheme is uniformly partitioned **overlap-save** convolution with a
@@ -18,7 +18,7 @@
 //! does only the input FFT, the single fresh-spectrum MAC (`p = 0`) and the
 //! IFFT. The steady-state cost per block is flat
 //! instead of a per-hop sawtooth — the design constraint the whole module is
-//! shaped by (with the S11 stagger, the other half of keeping spectral load
+//! shaped by (with the stagger, the other half of keeping spectral load
 //! spikes out of the RT budget).
 //!
 //! **Why this is not a `PV_*`.** Fast convolution needs zero-padded,

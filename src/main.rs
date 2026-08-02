@@ -209,7 +209,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // `persist = false` in config is the same as `--no-persist`; the flag can
     // still force it off, there is no flag to force it back on.
     let mut no_persist = cfg.persist == Some(false);
-    // TCP is on by default (M25: the command plane for large payloads); the
+    // TCP is on by default (the command plane for large payloads); the
     // config's `tcp = false` — or `--no-tcp` below — turns it off.
     let mut tcp_port: Option<u16> = match cfg.tcp {
         Some(setting) => setting.resolve(DEFAULT_PORT),

@@ -7,7 +7,7 @@
 //! out as [`Garbage`] to be dropped on the network side, and node lifecycle
 //! events flow out as [`NodeEvent`]s for `/node_start`/`/node_end` notifications.
 //!
-//! Timed bundles (M6) arrive as [`Cmd::Schedule`] carrying an absolute
+//! Timed bundles arrive as [`Cmd::Schedule`] carrying an absolute
 //! target in samples; the engine keeps them in a pre-allocated queue sorted
 //! by time (FIFO for equal times) and executes them **sample-accurately**,
 //! splitting the block at each event's offset. The engine publishes its
@@ -36,11 +36,11 @@ const GARBAGE_FIFO_CAPACITY: usize = 1024;
 /// Local holding list for when the garbage FIFO is full.
 const PENDING_GARBAGE_CAPACITY: usize = 64;
 /// Floor for the node-event FIFO; scaled to `2 * max_nodes` at boot. Events
-/// stay best-effort, but the id registries recycle off `/node_end` (S10), so the
+/// stay best-effort, but the id registries recycle off `/node_end`, so the
 /// capacity must cover at least one full-tree turnover per drain — a dropped
 /// end event is a client-side id that never comes back.
 const EVENT_FIFO_CAPACITY: usize = 2048;
-/// Side-effect reply messages (`SendReply`/`SendTrig`/`Poll`, S9) buffered from
+/// Side-effect reply messages (`SendReply`/`SendTrig`/`Poll`) buffered from
 /// the audio thread to the network thread; over capacity they drop, best-effort
 /// like the node events.
 const REPLY_FIFO_CAPACITY: usize = 2048;
@@ -57,7 +57,7 @@ pub enum Cmd {
         target: i32,
         action: AddAction,
         synth: Box<dyn SynthNode>,
-        /// Bus masks analyzed at build time; the M13 parallel scheduler
+        /// Bus masks analyzed at build time; the parallel scheduler
         /// partitions stages from this engine-owned copy.
         usage: BusUsage,
     },
@@ -139,13 +139,13 @@ pub enum Cmd {
         bus: i32,
     },
     /// `/node_set` on a control used as a bus index: ships the re-analyzed
-    /// masks so the parallel scheduler stays in sync (M13).
+    /// masks so the parallel scheduler stays in sync.
     SetUsage {
         id: i32,
         usage: BusUsage,
     },
     /// `/group_parallel`: children of this group run in dependency stages on
-    /// the worker pool (M13).
+    /// the worker pool.
     SetGroupParallel {
         id: i32,
         parallel: bool,
@@ -385,11 +385,11 @@ pub struct Engine {
     level_release: f32,
     channels: usize,
     tree: NodeTree,
-    /// M13 DSP workers for parallel groups; empty pool = sequential.
+    /// DSP workers for parallel groups; empty pool = sequential.
     pool: WorkerPool,
     buses: Buses,
     buffers: BufferPool,
-    /// Live hardware input (S7): decoded interleaved frames arriving from the
+    /// Live hardware input: decoded interleaved frames arriving from the
     /// cpal input stream through a lock-free ring. `0` channels / `None`
     /// consumer means no input stream is open. Read at each block start into
     /// audio buses `channels..channels + input_channels`, which `In`/`In.ar`
@@ -423,7 +423,7 @@ pub struct Engine {
     /// Pre-allocated like `sched`, to the same capacity.
     sched_transport: Vec<ScheduledBundleT>,
     sample_clock: Arc<AtomicU64>,
-    /// M14: block-accurate mirror of the sample clock into the IPC segment
+    /// block-accurate mirror of the sample clock into the IPC segment
     /// (one extra Release store per block); the Arc pins the mapping.
     ipc: Option<Arc<Segment>>,
     /// Which audio bus each segment tap ring records (`-1` = off), indexed by
@@ -449,7 +449,7 @@ pub struct EngineHandle {
     pub channels: usize,
     /// Configured audio bus count (after clamping to the 128 ceiling).
     pub audio_buses: usize,
-    /// Live hardware input channels (S7); `0` when no input stream is open.
+    /// Live hardware input channels; `0` when no input stream is open.
     /// Set by the backend once it has negotiated the input device.
     pub input_channels: usize,
     /// Boot-time pool capacities, surfaced in `/server_query.reply` so a client
@@ -483,7 +483,7 @@ pub fn engine_pair(sample_rate: f32, channels: usize) -> (Engine, EngineHandle) 
 pub const DEFAULT_AUDIO_BUSES: usize = NUM_AUDIO_BUSES;
 pub const DEFAULT_CONTROL_BUSES: usize = NUM_CONTROL_BUSES;
 
-/// Like [`engine_pair`], plus an M13 worker pool of `workers` DSP threads
+/// Like [`engine_pair`], plus a worker pool of `workers` DSP threads
 /// for parallel groups (`/group_parallel`). `workers == 0` is fully sequential
 /// — identical behavior and output either way (stages are bit-identical to
 /// sequential execution by construction).
@@ -503,7 +503,7 @@ pub fn engine_pair_with_workers(
     )
 }
 
-/// Full form (M14): with an IPC segment, the control buses live *inside the
+/// Full form: with an IPC segment, the control buses live *inside the
 /// segment* (clients on the other side write the very atomics `InCtl`
 /// reads) and the engine mirrors its sample clock into it every block.
 pub fn engine_pair_full(
@@ -639,7 +639,7 @@ impl Engine {
         })
     }
 
-    /// Wires live hardware input (S7) to this engine: `channels` interleaved
+    /// Wires live hardware input to this engine: `channels` interleaved
     /// input channels arrive through `rx`, filled every block into audio buses
     /// `channels..channels + input_channels` (scsynth's convention: outputs
     /// first, then inputs). Call once, before the engine starts processing. The
@@ -699,7 +699,7 @@ impl Engine {
         self.flush_pending_garbage();
 
         self.buses.clear_audio();
-        // Live input (S7): fill the input buses after clearing, before any node
+        // Live input: fill the input buses after clearing, before any node
         // runs, so `In` reads this block's captured samples.
         self.fill_input_buses();
         let block_start = self.now;
@@ -867,7 +867,7 @@ impl Engine {
         }
 
         // Drain the side-effect replies buffered this block (`SendReply`/
-        // `SendTrig`/`Poll`, S9) into the reply FIFO for the network thread to
+        // `SendTrig`/`Poll`) into the reply FIFO for the network thread to
         // turn into OSC. Disjoint field borrows: the tree walk reads the synths,
         // the producer takes the messages.
         let tree = &mut self.tree;
@@ -1174,7 +1174,7 @@ impl EngineHandle {
         self.events_rx.pop().ok()
     }
 
-    /// Pops one side-effect reply message (`SendReply`/`SendTrig`/`Poll`, S9),
+    /// Pops one side-effect reply message (`SendReply`/`SendTrig`/`Poll`),
     /// if any. The network thread turns each into an OSC reply / console line.
     pub fn pop_reply(&mut self) -> Option<ReplyMsg> {
         self.reply_rx.pop().ok()

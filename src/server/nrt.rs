@@ -1,4 +1,4 @@
-//! NRT (non-real-time) thread: disk I/O and buffer building (M5).
+//! NRT (non-real-time) thread: disk I/O and buffer building.
 //!
 //! Every `/buffer_*` command that touches sample memory runs here, off both the
 //! audio and the network threads: allocation, file reading (WAV via hound,
@@ -164,7 +164,7 @@ impl Drop for NrtThread {
 
 /// How the server runs its NRT jobs: on the background [`NrtThread`] (the
 /// native run loop), or **inline** on the calling thread (the headless pulled
-/// server, B1) — same submission order, same results, no thread. Inline is
+/// server) — same submission order, same results, no thread. Inline is
 /// the wasm mode (no threads there) and the accepted relaxation that buffer
 /// work happens on whichever thread drives the server.
 pub enum NrtRunner {

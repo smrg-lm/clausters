@@ -1,4 +1,4 @@
-//! Buffer-reading UGens (M5): `PlayBuf` and `BufRd`, plus the `BufInfo`
+//! Buffer-reading UGens: `PlayBuf` and `BufRd`, plus the `BufInfo`
 //! family that reports a buffer's shape/rate at run time.
 //!
 //! `PlayBuf`/`BufRd` are **mono**: our UGens have a single output, so

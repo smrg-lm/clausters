@@ -1,4 +1,4 @@
-//! M14: the shared-memory IPC segment — transport and data plane.
+//! the shared-memory IPC segment — transport and data plane.
 //!
 //! OSC stays the only **encoding**; this module adds two **transports**
 //! beside UDP, both built on one memory segment:
@@ -17,7 +17,7 @@
 //!   scsynth plugin-ABI lesson — never trust an unversioned binary
 //!   boundary);
 //! - the **data plane**: the engine's sample clock, mirrored block-accurately
-//!   by the audio thread (one extra atomic store per block — M8 anchors with
+//!   by the audio thread (one extra atomic store per block — a client anchors with
 //!   zero UDP jitter), the 1024 control buses as raw atomics (the engine
 //!   reads *these very words* through `InCtl`: a client write is live on the
 //!   next block, no command involved), the **audio taps** (ABI v3): a

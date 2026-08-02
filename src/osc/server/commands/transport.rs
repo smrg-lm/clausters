@@ -10,7 +10,7 @@ use super::super::*;
 impl OscServer {
     /// The `/transport_query.reply` payload: the grid plus the rolling state,
     /// `(origin_sample:int64, tempo:double, defined:int32, playing:int32,
-    /// position:double)`. The first three fields are the original M22 grid reply
+    /// position:double)`. The first three fields are the original grid reply
     /// (older clients read just those); `playing`/`position` are appended.
     fn transport_reply_args(&self) -> Vec<OscType> {
         let (origin, tempo, defined, playing, position) = match self.transport {
@@ -59,7 +59,7 @@ impl OscServer {
     ///
     /// The rolling state (play/stop/locate) rides on top: see
     /// [`Self::handle_transport_play`]. Any change is **pushed** to every
-    /// `/server_notify` client (the C13 responder path).
+    /// `/server_notify` client (the responder path).
     pub(in crate::osc::server) fn handle_transport(&mut self, msg: &OscMessage, from: ClientId) {
         let origin = match msg.args.first() {
             Some(OscType::Long(v)) => *v,

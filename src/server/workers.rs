@@ -1,4 +1,4 @@
-//! M13 worker pool: fork-join execution of parallel-group stages.
+//! Worker pool: fork-join execution of parallel-group stages.
 //!
 //! The conductor (the audio thread, inside `Engine::process_block`)
 //! publishes one stage at a time; the workers and the conductor race

@@ -22,7 +22,7 @@ impl OscServer {
     }
 
     /// Starts accepting length-prefixed OSC over TCP on `addr` (server track M /
-    /// client C8). The run loop drains the connections every iteration and a
+    /// a stream client). The run loop drains the connections every iteration and a
     /// zero-length UDP datagram to our own address wakes it the moment a frame
     /// arrives, so TCP requests don't wait for the GC tick. Returns the bound
     /// TCP address.
@@ -64,7 +64,7 @@ impl OscServer {
         Ok(bound)
     }
 
-    /// M17: opens a virtual MIDI input port named `port_name`. The `midir`
+    /// opens a virtual MIDI input port named `port_name`. The `midir`
     /// input thread wakes the loop with a zero-length UDP datagram (same
     /// mechanism as TCP), so MIDI messages are served without waiting for the
     /// GC tick. See [`crate::midi::live`].
@@ -83,7 +83,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// M14: attaches the ring endpoint of an IPC segment. The run loop then
+    /// attaches the ring endpoint of an IPC segment. The run loop then
     /// drains it on every iteration; to keep ring latency low without a
     /// cross-process semaphore (v1 trade-off), the socket timeout — the
     /// loop's tick — is shortened.
@@ -95,7 +95,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// M14: handles every packet waiting in the attached ring. Same
+    /// handles every packet waiting in the attached ring. Same
     /// validation path as UDP (`decode_packet`); ring bytes are untrusted.
     pub(in crate::osc::server) fn drain_ring(&mut self) -> Flow {
         if self.ipc.is_none() {
@@ -193,7 +193,7 @@ impl OscServer {
         }
     }
 
-    /// M17: translates every queued live-MIDI message into engine commands and
+    /// translates every queued live-MIDI message into engine commands and
     /// ships them. Each message is self-contained (one note/control event), so
     /// it is realized like the immediate OSC forms: `translate_midi` (which
     /// reuses the `/synth_new`/`/node_set`/`/node_free` path and keeps the tree mirror in

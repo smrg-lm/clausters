@@ -54,23 +54,23 @@ pub struct SynthDefSpec {
 pub struct ControlSpec {
     pub name: String,
     pub default: f32,
-    /// Control type (S2): `"kr"` (default, a plain control), `"tr"` (a
+    /// Control type: `"kr"` (default, a plain control), `"tr"` (a
     /// one-block trigger the engine resets to 0), or `"ir"` (scalar, read once
     /// at init and frozen). Omitted means `"kr"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate: Option<String>,
-    /// Lag time in seconds (S2): a `kr` control whose changes are smoothed by
+    /// Lag time in seconds: a `kr` control whose changes are smoothed by
     /// an implicit one-pole `Lag` (or `VarLag` with `lag_down`) inserted at
     /// compile time. `None` (or `0`) means no smoothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lag: Option<f32>,
-    /// Separate downward lag time (S2): when set alongside `lag`, the control
+    /// Separate downward lag time: when set alongside `lag`, the control
     /// smooths with `VarLag` (`lag` up, `lag_down` down).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lag_down: Option<f32>,
 }
 
-/// A control's type (S2): scsynth's control rates for SynthDef controls. The
+/// A control's type: scsynth's control rates for SynthDef controls. The
 /// lag time is separate (it compiles to an inserted `Lag`, not a type).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ControlType {
@@ -81,7 +81,7 @@ pub enum ControlType {
     /// resets it to 0 (`tr`).
     Trigger,
     /// A scalar read once at init and frozen; a later `/node_set` is ignored
-    /// (`ir`, pairing with S1's `ir` rate).
+    /// (`ir`, pairing with the `ir` rate).
     Scalar,
 }
 
@@ -120,29 +120,29 @@ pub struct UGenSpec {
     /// resolves it against the shared `clausters_core::builtins` operator table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub op: Option<String>,
-    /// Side-effect UGens (S9): `SendReply`'s command name (the OSC address it
+    /// Side-effect UGens: `SendReply`'s command name (the OSC address it
     /// replies with, default `/reply`) or `Poll`'s label (default `poll`).
     /// Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    /// Spectral chain (S8): `FFT` window size, a supported power of two. Given
+    /// Spectral chain: `FFT` window size, a supported power of two. Given
     /// only on the `FFT`; the compiler propagates it to the rest of the chain.
     /// Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fft_size: Option<usize>,
-    /// Spectral chain (S8): `FFT` hop as a fraction of the window (default
+    /// Spectral chain: `FFT` hop as a fraction of the window (default
     /// `0.5`). Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hop: Option<f32>,
-    /// Spectral chain (S8): `FFT`/`IFFT` window type (default `0`, Hann).
+    /// Spectral chain: `FFT`/`IFFT` window type (default `0`, Hann).
     /// Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wintype: Option<i32>,
-    /// `Conv` (M28): maximum partition count (FDL capacity — the longest
+    /// `Conv`: maximum partition count (FDL capacity — the longest
     /// prepared kernel the instance accepts). Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub partitions: Option<usize>,
-    /// Delay family (U3): the longest delay the instance accepts, in seconds.
+    /// Delay family: the longest delay the instance accepts, in seconds.
     /// It sizes the pre-allocated line, so it is static config rather than a
     /// signal input. Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -221,18 +221,18 @@ pub struct UGenDef {
     /// read it instead of matching on a kind enum.
     pub desc: &'static UGenDescriptor,
     pub inputs: Vec<InputRef>,
-    /// Output calculation rate, inferred and validated at compile time (S1).
+    /// Output calculation rate, inferred and validated at compile time.
     pub rate: Rate,
     /// Static per-UGen parameters (e.g. `DiskIn`/`DiskOut` paths). Default for
     /// every other kind.
     pub config: UGenConfig,
-    /// Spectral-chain slot (S8): which synth-private
+    /// Spectral-chain slot: which synth-private
     /// [`SpectralChain`](crate::dsp::spectral::SpectralChain) this UGen shares.
     /// Assigned by the compiler — a fresh slot for each `FFT`, inherited by the
     /// `PV_*`/`IFFT` downstream. `None` for every non-spectral UGen.
     pub chain_slot: Option<usize>,
     /// Second chain slot of a two-chain combiner (`SpectralRole::Filter2`,
-    /// M27): the chain read as input 1 (chain B). `None` everywhere else.
+    /// the chain read as input 1 (chain B). `None` everywhere else.
     pub chain_slot_b: Option<usize>,
 }
 
@@ -252,7 +252,7 @@ pub struct SynthDef {
     pub name: String,
     pub control_names: Vec<String>,
     pub control_defaults: Vec<f32>,
-    /// Control types parallel to `control_names` (S2): trigger controls the
+    /// Control types parallel to `control_names`: trigger controls the
     /// engine resets each block, scalar controls it freezes after init.
     pub control_types: Vec<ControlType>,
     pub constants: Vec<f32>,
@@ -261,7 +261,7 @@ pub struct SynthDef {
     /// Number of synth-private feedback channels (`LocalIn`/`LocalOut`); the
     /// instance allocates this many persistent `Block`s. 0 for most defs.
     pub num_locals: usize,
-    /// One entry per spectral chain (S8), its FFT window size; the instance
+    /// One entry per spectral chain, its FFT window size; the instance
     /// allocates a [`SpectralChain`](crate::dsp::spectral::SpectralChain) of
     /// each size. Empty for defs with no `FFT`.
     pub spectral_sizes: Vec<usize>,
@@ -288,7 +288,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     let n_controls = spec.controls.len();
     let mut constants = Vec::new();
     let mut ugens: Vec<UGenDef> = Vec::with_capacity(spec.ugens.len());
-    /// How deep demand streams may nest (U8). A pull descends one Rust stack
+    /// How deep demand streams may nest. A pull descends one Rust stack
     /// frame per level *on the audio thread*, so this is a hard ceiling the
     /// compiler enforces, not a runtime check the callback would pay for.
     /// Sixteen is well past any musical use — sclang's own patterns rarely go
@@ -300,11 +300,11 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     // channel's LocalIn to precede its LocalOut (the one-block-delay contract).
     let mut num_locals = 0usize;
     let mut localin_channels = std::collections::HashSet::new();
-    // Spectral chains (S8): each `FFT` opens one; its window size is recorded
+    // Spectral chains: each `FFT` opens one; its window size is recorded
     // here and its slot index is `spectral_sizes.len()` at that point.
     let mut spectral_sizes: Vec<usize> = Vec::new();
 
-    // Control types + lag times (S2). `lagged` collects (control index, up
+    // Control types + lag times. `lagged` collects (control index, up
     // time, optional down time) for the compile-time Lag insertion below.
     let mut control_types = Vec::with_capacity(n_controls);
     let mut lagged: Vec<(usize, f32, Option<f32>)> = Vec::new();
@@ -434,7 +434,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 fft::SUPPORTED_SIZES
             ));
         }
-        // `PV_Kernel` bin expressions (M29): resolve and validate the postfix
+        // `PV_Kernel` bin expressions: resolve and validate the postfix
         // token lists now, so the RT thread only ever runs a program that
         // passed the stack/arity checks. The parameters a program may read
         // (`p0`…) are this UGen's inputs past the chain (input 0).
@@ -477,7 +477,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             });
         }
 
-        // Spectral chain (S8). A `Source` (`FFT`) opens a new chain: validate
+        // Spectral chain. A `Source` (`FFT`) opens a new chain: validate
         // its window size and record its slot. A `Filter`/`Sink` (`PV_*`/
         // `IFFT`) must take a spectral wire as input 0 and inherits that chain's
         // slot, window size and (if unset) window type — so the client only
@@ -532,7 +532,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                     config.hop = up.config.hop;
                 }
             }
-            // A two-chain combiner (M27): inputs 0 and 1 are chains of equal
+            // A two-chain combiner: inputs 0 and 1 are chains of equal
             // window size and distinct slots; the result lands in chain A, so
             // the combiner inherits A's slot (a downstream filter/sink then
             // reads the combined chain through it).
@@ -557,7 +557,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             }
         }
 
-        // Output rate (S1): the explicit `rate` field validated against the
+        // Output rate: the explicit `rate` field validated against the
         // kind, or the kind's default. `ugens` already holds every earlier
         // UGenDef, so a wire's producer rate is known here.
         let rate = match &u.rate {
@@ -576,7 +576,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             None => desc.default_rate,
         };
 
-        // Rate coercion (S1). Lower rates widen into higher-rate inputs for
+        // Rate coercion. Lower rates widen into higher-rate inputs for
         // free, so the only illegal narrowings are:
         //  - an `ir` UGen with a non-`ir` input (it is computed once at init —
         //    a varying source cannot be frozen);
@@ -586,14 +586,14 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             let in_rate = match r {
                 InputRef::Const(_) => Rate::Ir,
                 // A scalar (`ir`) control is init-rate; every other control is
-                // control-rate (S2 pairs `ir` controls with S1's `ir` rate).
+                // control-rate (pairs `ir` controls with the `ir` rate).
                 InputRef::Control(c) if control_types[*c] == ControlType::Scalar => Rate::Ir,
                 InputRef::Control(_) => Rate::Kr,
                 InputRef::Wire(w) => ugens[*w].rate,
             };
             // A `dr` wire may only feed something that *pulls* it: a driver
             // (`Demand`/`Duty`/`TDuty`) or another demand source nesting it
-            // (U8 — `Dseq(1, Dwhite(...), 3)`). Anywhere else it would cross
+            // (`Dseq(1, Dwhite(...), 3)`). Anywhere else it would cross
             // into block order, where a stream has no samples at all.
             let pulls_demand = desc.exec == ExecMode::DemandDriver || rate == Rate::Dr;
             if in_rate == Rate::Dr {
@@ -637,7 +637,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             }
         }
 
-        // Nesting depth of the demand sub-graph rooted here (U8). A pull
+        // Nesting depth of the demand sub-graph rooted here. A pull
         // recurses once per level, on the audio thread, so the depth is capped
         // here rather than guarded there: a def that nests too deep is a def we
         // refuse, not a stack the callback might run off. One more than the
@@ -669,7 +669,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         });
     }
 
-    // Compile-time lag insertion (S2): a lagged control compiles to a `Lag`
+    // Compile-time lag insertion: a lagged control compiles to a `Lag`
     // (or `VarLag`) UGen reading the raw control, prepended to the graph; every
     // reference to that control is rewritten to the smoother's output. Reusing
     // the real UGen keeps a single lag implementation shared with the library

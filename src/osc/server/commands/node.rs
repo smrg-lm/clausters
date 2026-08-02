@@ -9,7 +9,7 @@ use super::super::*;
 
 impl OscServer {
     /// Immediate form of every translator-covered command: translate (which
-    /// also updates the M12 tree mirror and may append re-sort moves), then
+    /// also updates the tree mirror and may append re-sort moves), then
     /// ship the whole batch.
     pub(in crate::osc::server) fn handle_via_translate(
         &mut self,
@@ -27,7 +27,7 @@ impl OscServer {
         }
     }
 
-    /// M19: write the current MIDI bindings to disk after a mutation, if
+    /// write the current MIDI bindings to disk after a mutation, if
     /// persistence is on. Best-effort; a write error is logged, never fatal.
     pub(in crate::osc::server) fn persist_bindings(&self) {
         if let Some(store) = &self.store
@@ -87,7 +87,7 @@ impl OscServer {
         }
     }
 
-    /// M12 debug: the inferred bus graph of one group as a string reply.
+    /// Debug: the inferred bus graph of one group as a string reply.
     pub(in crate::osc::server) fn handle_group_dump_graph(
         &mut self,
         msg: &OscMessage,

@@ -1,4 +1,4 @@
-//! Wavetable format and buffer generators (`/buffer_gen`), S5.
+//! Wavetable format and buffer generators (`/buffer_gen`).
 //!
 //! Two things live here, both pure and off the audio thread:
 //!
@@ -81,7 +81,7 @@ pub enum GenCommand {
         num: i64,
     },
     /// `prepare_partconv fftSize srcBuf`: partition `src`'s samples into the
-    /// prepared-kernel layout the `Conv` UGen reads (M28): partitions of
+    /// prepared-kernel layout the `Conv` UGen reads: partitions of
     /// `L = fftSize/2` samples, each zero-padded to `fftSize` and
     /// forward-transformed **here, off the audio thread** — the RT side only
     /// ever multiplies against the ready spectra. Layout in

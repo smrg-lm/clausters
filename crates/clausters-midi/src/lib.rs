@@ -6,7 +6,7 @@
 //! never a library type. A per-language wrapper (Python `ctypes` now) sits on
 //! top; check [`clausters_midi_abi_version`] first.
 //!
-//! Scope (M17 client output): write a **Standard MIDI File** (`.mid`, SMF type
+//! Scope (client output): write a **Standard MIDI File** (`.mid`, SMF type
 //! 0, via `midly`) — the interop format every DAW reads — and a **MIDI 2.0
 //! Clip File** (SMF2CLIP, assembled from `midi2`'s typed UMP messages) that
 //! carries note velocities at 16-bit resolution instead of SMF's 7 bits. With

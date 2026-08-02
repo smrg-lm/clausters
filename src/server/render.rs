@@ -1,5 +1,5 @@
 //! Offline (NRT) rendering: the same engine, driven by a score instead of
-//! cpal (M7).
+//! cpal.
 //!
 //! A [`Score`] is a time-ordered list of OSC bundles. On disk it uses the
 //! scsynth binary score format — `[i32 big-endian byte count][OSC packet]`
@@ -7,7 +7,7 @@
 //! start of the render** (the immediate tag is time 0). Rendering is single
 //! threaded and synchronous: async commands (defs, buffers) complete before
 //! time advances, like scsynth's NRT mode, while the schedulable subset
-//! travels through the engine's own queue (M6), so a bundle landing
+//! travels through the engine's own queue, so a bundle landing
 //! mid-block splits the block exactly as it would in real time — the offline
 //! render of a score is sample-identical to a perfectly timed live take.
 //!
@@ -143,7 +143,7 @@ pub struct RenderConfig {
     pub sample_rate: f64,
     /// Output channels = how many of the first audio buses land in the file.
     pub channels: usize,
-    /// M13 DSP workers for `/group_parallel` groups. Parallel rendering is
+    /// DSP workers for `/group_parallel` groups. Parallel rendering is
     /// bit-identical to sequential (disjoint stages), just faster.
     pub workers: usize,
     /// Where this render's stochastic UGens start their seeds, or `None` to
@@ -297,7 +297,7 @@ pub fn render(
         if cmds.is_empty() {
             continue;
         }
-        // The engine splits the upcoming block at the exact sample (M6).
+        // The engine splits the upcoming block at the exact sample.
         if r.handle.send(Cmd::Schedule { time: target, cmds }).is_err() {
             return Err(format!(
                 "score event at {:.6}s: command FIFO full (too many bundles inside one block)",

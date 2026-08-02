@@ -81,8 +81,8 @@ impl OscServer {
     /// block_size, nominal_sr, actual_sr, input_channels, max_nodes,
     /// max_buffers, max_graph_children, max_ugen_inputs, taps, tap_frames,
     /// max_frame]`. The first six fields are stable; the boot-time capacities
-    /// (S7), the tap region shape and the stream-transport frame ceiling
-    /// (M25 — what a client should size bulk requests like `/buffer_getRange` chunks
+    ///, the tap region shape and the stream-transport frame ceiling
+    /// (what a client should size bulk requests like `/buffer_getRange` chunks
     /// from) are appended so older clients that read only the six keep
     /// working.
     pub(in crate::osc::server) fn send_server_query(&mut self, to: ClientId) {
@@ -110,7 +110,7 @@ impl OscServer {
         self.reply(to, "/server_query.reply", args);
     }
 
-    /// M8: the sample-clock query. Replies `/clock_query.reply` with the engine's
+    /// the sample-clock query. Replies `/clock_query.reply` with the engine's
     /// sample counter (int64 `h`), the actual sample rate (double `d`) and the
     /// server's OSC/NTP time captured with the counter (timetag `t`). The
     /// `(osc_time, sample)` pair is the master-clock **anchor**: a client maps
@@ -182,7 +182,7 @@ impl OscServer {
     }
 
     /// `/ugen_query [kind...]` → one `/ugen_query.reply` per UGen, then `/done "/ugen_query"`
-    /// (M30): the catalog straight from the `dsp::registry` descriptors, so a
+    ///: the catalog straight from the `dsp::registry` descriptors, so a
     /// palette derives from the server's truth instead of a client-side copy.
     /// An unknown kind replies with an empty rate set and no inputs.
     ///

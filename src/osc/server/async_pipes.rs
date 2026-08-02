@@ -45,8 +45,8 @@ impl OscServer {
     }
 
     /// `/def_send faust <name> <def>`: queue an async Faust compilation. The def
-    /// format is sniffed by [`CompilePayload::classify`]: raw Faust source (F1),
-    /// a JSON box graph (F2, `faust::boxes`), or a JSON signal tree
+    /// format is sniffed by [`CompilePayload::classify`]: raw Faust source,
+    /// a JSON box graph (`faust::boxes`), or a JSON signal tree
     /// (`faust::signals`, root `{"signals": …}`).
     #[cfg(feature = "faust")]
     pub(in crate::osc::server) fn handle_def_send_faust(
@@ -204,7 +204,7 @@ impl OscServer {
     /// the mirror, and sends the async `/done cmd bufnum` / `/fail` replies.
     /// Installs a host-built buffer at `index`: the network-side mirror and
     /// the engine swap, exactly the `NrtAction::Install` path minus the OSC
-    /// reply. The embed `b_load` door (B1): a headless host hands the server
+    /// reply. The embed `b_load` door: a headless host hands the server
     /// samples it decoded itself (the browser's `/buffer_allocRead` replacement,
     /// where there is no filesystem).
     pub fn install_buffer(

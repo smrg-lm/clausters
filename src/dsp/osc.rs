@@ -1,4 +1,4 @@
-//! Table-reading oscillators and the waveshaper (S5): the first consumers of
+//! Table-reading oscillators and the waveshaper: the first consumers of
 //! the wavetable format built by `/buffer_gen` (see [`crate::dsp::wavetable`]).
 //!
 //! - [`Osc`] — interpolating wavetable oscillator (needs a `wavetable`-format

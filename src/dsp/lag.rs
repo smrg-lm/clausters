@@ -1,5 +1,5 @@
-//! One-pole smoothers (S2): `Lag` (symmetric) and `VarLag` (separate up/down
-//! times). These are the single lag implementation the S2 typed controls reuse
+//! One-pole smoothers: `Lag` (symmetric) and `VarLag` (separate up/down
+//! times). These are the single lag implementation the typed controls reuse
 //! — a lagged control compiles to an inserted `Lag`/`VarLag` UGen rather than a
 //! bespoke control path (see `synthdef::compile`), so client-authored `Lag`
 //! and control smoothing share exactly this DSP.

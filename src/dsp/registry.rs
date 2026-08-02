@@ -8,7 +8,7 @@
 //! The small closed sets that *are* general logic stay as enums: [`Rate`]
 //! (the four calculation rates), [`ExecMode`] (how the synth runs a UGen that
 //! needs cross-ugen coordination), [`BusRole`] (its audio-bus role for the
-//! M12 dependency analysis) and [`Arity`]. A UGen names one of each; it does
+//! dependency analysis) and [`Arity`]. A UGen names one of each; it does
 //! not invent new control flow.
 
 use std::cell::Cell;
@@ -55,7 +55,7 @@ use crate::dsp::trig::{
 use crate::dsp::unop::UnaryOp;
 use crate::dsp::{DoneAction, Rate, UGen};
 
-/// Line length a delay row allocates when the def omits `max_delay` (U3), in
+/// Line length a delay row allocates when the def omits `max_delay`, in
 /// seconds. A default rather than a hard error, like `fft_size`'s — but a def
 /// that wants a long echo must say so, because the field sizes memory and
 /// cannot be widened later.
@@ -77,23 +77,23 @@ pub struct UGenConfig {
     /// `clausters_core::builtins` opcode discriminant, validated at compile
     /// time and read by their `build`.
     pub op: Option<u32>,
-    /// Static string tag for the side-effect UGens (S9): `SendReply`'s command
+    /// Static string tag for the side-effect UGens: `SendReply`'s command
     /// name (the OSC address it replies with, default `/reply`) and `Poll`'s
     /// label (default `poll`). Ignored by every other kind.
     pub label: Option<String>,
-    /// Spectral chain (S8): FFT window size, a power of two (`FFT`/`IFFT`/
+    /// Spectral chain: FFT window size, a power of two (`FFT`/`IFFT`/
     /// `PV_*`). Sizes the pre-allocated transform scratch, so it is static
     /// config, not a signal input. The compiler propagates the `FFT`'s size to
     /// the rest of its chain. Ignored by every other kind.
     pub fft_size: Option<usize>,
-    /// Spectral chain (S8): hop as a fraction of the window (`FFT`), default
+    /// Spectral chain: hop as a fraction of the window (`FFT`), default
     /// `0.5`. Ignored by every other kind.
     pub hop: Option<f32>,
-    /// Spectral chain (S8): window type (`FFT`/`IFFT`), a
+    /// Spectral chain: window type (`FFT`/`IFFT`), a
     /// [`Window`](clausters_core::window::Window) `wintype` integer, default `0`
     /// (Hann). Also settable live via `/node_ugenCmd`. Ignored by every other kind.
     pub wintype: Option<i32>,
-    /// `Conv` (M28): FDL capacity in partitions — the longest prepared kernel
+    /// `Conv`: FDL capacity in partitions — the longest prepared kernel
     /// this instance accepts, sizing its pre-allocated state. Ignored by
     /// every other kind.
     pub partitions: Option<usize>,
@@ -103,7 +103,7 @@ pub struct UGenConfig {
     /// Ignored by every other kind.
     pub mag_prog: Option<clausters_core::pvprog::PvProgram>,
     pub phase_prog: Option<clausters_core::pvprog::PvProgram>,
-    /// Delay family (U3): the longest delay this instance accepts, in
+    /// Delay family: the longest delay this instance accepts, in
     /// **seconds**. It sizes the pre-allocated line, so like `partitions` it is
     /// static config resolved at build time, not a signal input. Ignored by
     /// every other kind.
@@ -201,18 +201,18 @@ pub enum ExecMode {
     /// Pulls its demand source each block (`Demand`); see the `dr` contract.
     DemandDriver,
     /// Reads the **done flag** of the UGen its first input names, before
-    /// running (`Done`, `FreeSelfWhenDone`, U4). Like [`DemandDriver`](Self::
+    /// running (`Done`, `FreeSelfWhenDone`). Like [`DemandDriver`](Self::
     /// DemandDriver) this needs the input's *identity*, not its value, so the
     /// synth resolves the wire index and the compiler requires a wire there —
     /// a kind whose descriptor sets `has_done_flag`.
     DoneQuery,
     /// Runs through [`UGen::process_spectral`] with its synth-private
     /// [`SpectralChain`](crate::dsp::spectral::SpectralChain) (`FFT`/`PV_*`/
-    /// `IFFT`, S8). The `spectral` role field says how it uses the chain.
+    /// `IFFT`). The `spectral` role field says how it uses the chain.
     Spectral,
 }
 
-/// A spectral-chain UGen's place in the `FFT`→`PV_*`→`IFFT` pipeline (S8), used
+/// A spectral-chain UGen's place in the `FFT`→`PV_*`→`IFFT` pipeline, used
 /// by the compiler to allocate and thread the synth-private
 /// [`SpectralChain`](crate::dsp::spectral::SpectralChain). `None` on every
 /// non-spectral kind.
@@ -226,7 +226,7 @@ pub enum SpectralRole {
     /// Transforms a chain in place (`PV_*`). Its input 0 is the upstream chain
     /// wire; it inherits that chain's slot.
     Filter,
-    /// Combines **two** chains (`PV_Add`/`PV_Mul`/…, M27): inputs 0 and 1 are
+    /// Combines **two** chains (`PV_Add`/`PV_Mul`/…): inputs 0 and 1 are
     /// chain wires of equal window size and distinct slots; the result lands
     /// in chain A (input 0), whose slot the combiner inherits.
     Filter2,
@@ -245,7 +245,7 @@ pub enum OpFamily {
     Binary,
 }
 
-/// The audio-bus role a UGen plays, for the M12 dependency analysis
+/// The audio-bus role a UGen plays, for the dependency analysis
 /// (`osc::graph::ugen_usage`), read off input 0 (the bus index).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BusRole {
@@ -283,7 +283,7 @@ pub struct UGenDescriptor {
     /// config (`BinaryOpUGen`/`UnaryOpUGen`). `None` for every fixed-behavior
     /// kind.
     pub op_family: Option<OpFamily>,
-    /// Spectral-chain role (S8): whether this kind opens, transforms or closes
+    /// Spectral-chain role: whether this kind opens, transforms or closes
     /// an `FFT` chain. [`SpectralRole::None`] for every non-spectral kind.
     pub spectral: SpectralRole,
     /// Whether this kind raises a **done flag** when it finishes, i.e. whether
@@ -387,7 +387,7 @@ const fn desc(
     )
 }
 
-/// Descriptor for a spectral-chain UGen (`FFT`/`PV_*`/`IFFT`, S8): it runs
+/// Descriptor for a spectral-chain UGen (`FFT`/`PV_*`/`IFFT`): it runs
 /// through [`UGen::process_spectral`] on the synth-private chain. `FFT` and the
 /// `PV_*` filters carry the chain at control rate (one marker per block); `IFFT`
 /// produces audio.
@@ -447,17 +447,17 @@ use Rate::{Ar, Dr, Ir, Kr};
 // Input signatures shared by several rows. Named in **wire order** and in
 // `snake_case`, the one style the whole surface uses (the Python callables, the
 // catalog table in `docs/schemas.md` and these rows must agree — a client test
-// contrasts them, see the M30 note in docs/decisions.md).
+// contrasts them, see the note in docs/decisions.md).
 const I_NONE: &[UGenInput] = &[];
 const I_A: &[UGenInput] = &[inp("a", 0.0)];
 const I_AB: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0)];
 const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
-/// The non-band-limited modulation shapes (U1). The two with a duty cycle
+/// The non-band-limited modulation shapes. The two with a duty cycle
 /// declare a third input; the two without do not, so `/ugen_query` never reports
 /// an inlet the UGen ignores.
 const I_LF: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0)];
 const I_LF_WIDTH: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0), inp("width", 0.5)];
-/// The one-segment ramps (U4). `start`, `end` and `dur` are read once, on the
+/// The one-segment ramps. `start`, `end` and `dur` are read once, on the
 /// first sample, as scsynth reads them: the ramp's geometry is fixed at birth
 /// and modulating these does nothing. `done_action` is the exception — an
 /// input rather than static config, read every block, because it says what
@@ -476,13 +476,13 @@ const I_XLINE: &[UGenInput] = &[
     inp("dur", 1.0),
     inp("done_action", 0.0),
 ];
-/// The noise family (U6). The three spectral shapes and the two bit sources
+/// The noise family. The three spectral shapes and the two bit sources
 /// take no input at all; the held ones take a frequency, and `Dust` a mean
 /// density in impulses per second.
 const I_LF_NOISE: &[UGenInput] = &[inp("freq", 500.0)];
 const I_DENSITY: &[UGenInput] = &[inp("density", 1.0)];
 const I_CHAOS: &[UGenInput] = &[inp("chaos", 1.5)];
-/// The pan family (U7). Every row that emits two channels ends in `chan`, the
+/// The pan family. Every row that emits two channels ends in `chan`, the
 /// index of the one *this* instance carries: the engine gives a UGen one
 /// output, so a stereo panner is two rows sharing their inputs, and the Python
 /// builder returns the pair as a channel list. It sits last because it is the
@@ -531,7 +531,7 @@ const I_PAN_AZ: &[UGenInput] = &[
 ];
 /// `Select`/`SelectX`: the index, then an unbounded run of sources.
 const I_WHICH: &[UGenInput] = &[inp("which", 0.0)];
-// The demand family (U8). `repeats` leads every source that has one — for a
+// The demand family. `repeats` leads every source that has one — for a
 // list it counts passes, for a random pick it counts items (scsynth's own
 // asymmetry, kept). The two stochastic shapes differ by the walk's `step`
 // alone. Both drivers put their clock first; `gap_first` is `TDuty`'s only.
@@ -556,7 +556,7 @@ const I_TDUTY: &[UGenInput] = &[
     inp("done_action", 0.0),
     inp("gap_first", 0.0),
 ];
-/// The trigger family (U5). A kind that takes only triggers has no signal
+/// The trigger family. A kind that takes only triggers has no signal
 /// input at all — but it still defaults to `ar`, because a `kr` consumer
 /// samples an `ar` wire once per block and would drop most of a trigger train.
 const I_TRIG_DUR: &[UGenInput] = &[inp("signal", 0.0), inp("dur", 0.1)];
@@ -587,17 +587,17 @@ const I_SILENCE: &[UGenInput] = &[
     inp("time", 0.1),
     inp("done_action", 0.0),
 ];
-/// The node-control rows (U4): `FreeSelf`/`PauseSelf` watch a signal,
+/// The node-control rows: `FreeSelf`/`PauseSelf` watch a signal,
 /// `Done`/`FreeSelfWhenDone` watch the UGen wired into `source`. The names
 /// differ because what they read differs — one is a value, the other an
 /// identity.
 const I_SIGNAL: &[UGenInput] = &[inp("signal", 0.0)];
 const I_SOURCE: &[UGenInput] = &[inp("source", 0.0)];
-/// The two-pole rows (U2). The Butterworth pair fixes its own damping and
+/// The two-pole rows. The Butterworth pair fixes its own damping and
 /// therefore has no `rq` wire; the resonant ones read it.
 const I_FILT: &[UGenInput] = &[inp("signal", 0.0), inp("freq", 440.0)];
 const I_FILT_RQ: &[UGenInput] = &[inp("signal", 0.0), inp("freq", 440.0), inp("rq", 1.0)];
-/// The delay family (U3). `max_delay` is static config, not an input: it sizes
+/// The delay family. `max_delay` is static config, not an input: it sizes
 /// the allocation, so it belongs where `fft_size` and `partitions` are.
 const I_DELAY: &[UGenInput] = &[inp("signal", 0.0), inp("delaytime", 0.2)];
 const I_DELAY_DECAY: &[UGenInput] = &[
@@ -658,7 +658,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, ctx| Box::new(WhiteNoise::with_seed(ctx.next_seed())),
     ),
-    // --- the phase family (U1): one f64 accumulator, PolyBLEP where the
+    // --- the phase family: one f64 accumulator, PolyBLEP where the
     //     waveform is meant to be heard and exact corners where it is meant to
     //     modulate. See `dsp::phase` for why this is not scsynth's impulse
     //     train. ---
@@ -745,7 +745,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Phasor::new()),
     ),
-    // --- the filter core (U2): one topology-preserving state-variable
+    // --- the filter core: one topology-preserving state-variable
     //     implementation behind every two-pole name, plus the one-pole family.
     //     `BPF` and `Resonz` are the same row twice on purpose - scsynth ships
     //     two historically distinct resonators with the same parameterization
@@ -889,7 +889,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(OneFilter::new(OneKind::Integrator)),
     ),
-    // --- the delay core (U3): one circular line, parameterized by
+    // --- the delay core: one circular line, parameterized by
     //     interpolation and by what it feeds back. The line is synth-private
     //     memory sized at build from `max_delay` and the sample rate - a pool
     //     buffer is immutable, and this one is written every sample. See
@@ -1056,7 +1056,7 @@ static UGENS: &[UGenDescriptor] = &[
             ))
         },
     ),
-    // --- arithmetic: the generic op UGens (S3), selected by a core opcode
+    // --- arithmetic: the generic op UGens, selected by a core opcode
     //     index; every math need is one more `clausters_core::builtins` entry,
     //     not a new kind. `Add`/`Sub`/`Mul`/`Div` stay as thin aliases below
     //     for back-compat with existing defs. ---
@@ -1234,7 +1234,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(BufRd),
     ),
-    // --- table oscillators & waveshaper (S5); read `/buffer_gen` wavetables ---
+    // --- table oscillators & waveshaper; read `/buffer_gen` wavetables ---
     desc(
         "Osc",
         Fixed(3),
@@ -1382,7 +1382,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(LocalOut),
     ),
-    // --- one-pole smoothers (also inserted by S2 lagged controls) ---
+    // --- one-pole smoothers (also inserted by lagged controls) ---
     desc(
         "Lag",
         Fixed(2),
@@ -1425,7 +1425,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(EnvGen::new()),
     )),
-    // The one-segment envelopes (U4): the same engine with its header filled
+    // The one-segment envelopes: the same engine with its header filled
     // in, so they inherit the shape arithmetic and the whole done-action set.
     // Unlike `EnvGen` they run at either rate — a ramp is the archetypal `kr`
     // UGen, and a `kr` one costs a block's worth of work per block.
@@ -1451,7 +1451,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Line::new(LineShape::Exponential)),
     )),
-    // --- noise (U6) ---
+    // --- noise ---
     desc(
         "PinkNoise",
         Fixed(0),
@@ -1573,7 +1573,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Crackle::default()),
     ),
-    // --- panning, the stereo field and selection (U7): one pan law, one
+    // --- panning, the stereo field and selection: one pan law, one
     //     two-by-two matrix, one crossfade. The two-channel rows appear once
     //     each and carry a `chan` index; `numchans` on `PanAz` sizes the ring
     //     the gain is computed against, not an allocation. ---
@@ -1698,7 +1698,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Select::new(SelectKind::Cross)),
     ),
-    // --- triggers and control (U5) ---
+    // --- triggers and control ---
     // All of these default to `ar`, counters included. A `kr` UGen reads one
     // sample per block from an `ar` input, so a `kr` counter fed an `ar`
     // trigger train would silently miss 63 triggers out of 64; the cheaper
@@ -1892,7 +1892,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(DetectSilence::default()),
     )),
-    // --- node control (U4) ---
+    // --- node control ---
     // These four pass their input through and act on their own node. The first
     // two read a signal; the last two read another UGen's done flag, which is
     // why they run in `DoneQuery` rather than `Normal`.
@@ -1940,7 +1940,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(WhenDone::new(WhenDoneMode::Free)),
     ),
-    // --- scalar / init-rate (S1) ---
+    // --- scalar / init-rate ---
     desc(
         "SampleRate",
         Fixed(0),
@@ -1963,7 +1963,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Rand::new()),
     ),
-    // --- demand rate (S1 substrate, U8 catalog): a driver runs specially and
+    // --- demand rate (substrate): a driver runs specially and
     //     pulls; a source is skipped in block order and reached only through a
     //     pull, its own inputs pulled with it when they are streams too. ---
     desc(
@@ -2154,7 +2154,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Dbufrd),
     ),
-    // --- side-effect UGens (S9): reply/observe, no `Out` required. Control or
+    // --- side-effect UGens: reply/observe, no `Out` required. Control or
     //     audio rate; their output is silence (SendTrig/SendReply) or the
     //     polled signal passed through (Poll). ---
     desc(
@@ -2191,7 +2191,7 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |c, _| Box::new(Poll::new(c)),
     ),
-    // --- frequency-domain (`fr`) chain (S8): FFT opens a synth-private
+    // --- frequency-domain (`fr`) chain: FFT opens a synth-private
     //     spectral chain, PV_* transform it in place, IFFT resynthesises audio.
     //     FFT/PV carry the chain at control rate (a per-block ready marker);
     //     IFFT produces audio. See `dsp::spectral`. ---
@@ -2240,7 +2240,7 @@ static UGENS: &[UGenDescriptor] = &[
         SpectralRole::Filter,
         |_, _| Box::new(PvBrickWall),
     ),
-    // M27: the curated PV set — parameterized implementations under the
+    // the curated PV set — parameterized implementations under the
     // scsynth-compatible names, deliberately not a one-UGen-per-op catalog
     // (see docs/decisions.md). PvMag gains a clip mode; PvCombine is ONE
     // binary implementation behind six names; the stateful pair and the bin
@@ -2344,7 +2344,7 @@ static UGENS: &[UGenDescriptor] = &[
         SpectralRole::Filter,
         |c, _| Box::new(PvBinShift::new(c, true)),
     ),
-    // M29: the general per-frame mechanism — one UGen interpreting a
+    // the general per-frame mechanism — one UGen interpreting a
     // compile-validated bin-expression program (`mag_expr`/`phase_expr`) over
     // every bin of each fresh frame. Inputs: `[chain, p0, p1, …]` (variadic
     // parameters, sampled at the hop). An op outside the curated set is a
@@ -2359,7 +2359,7 @@ static UGENS: &[UGenDescriptor] = &[
         SpectralRole::Filter,
         |c, _| Box::new(PvKernel::new(c)),
     ),
-    // --- partitioned convolution (M28): one UGen, kernel spectra prepared
+    // --- partitioned convolution: one UGen, kernel spectra prepared
     //     off the RT thread by `/buffer_gen prepare_partconv`, MACs spread across
     //     the hop's blocks for flat load. Not a PV_*: fast convolution's
     //     zero-padded rectangular segments are incompatible with the windowed
@@ -2383,7 +2383,7 @@ pub fn lookup(name: &str) -> Option<&'static UGenDescriptor> {
     UGENS.iter().find(|d| d.name == name)
 }
 
-/// The whole catalog, in table order — what `/ugen_query` reports (M30). The
+/// The whole catalog, in table order — what `/ugen_query` reports. The
 /// contents depend on the build (`DiskIn`/`DiskOut` are native-only), which is
 /// exactly why a client asks the server instead of carrying its own copy.
 pub fn all() -> &'static [UGenDescriptor] {

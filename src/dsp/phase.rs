@@ -1,4 +1,4 @@
-//! The phase family (U1): everything driven by one accumulating phase — the
+//! The phase family: everything driven by one accumulating phase — the
 //! band-limited `Saw`/`Pulse`, the deliberately band-*un*limited `LF*` shapes,
 //! and `Phasor`.
 //!

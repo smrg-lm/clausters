@@ -19,28 +19,28 @@ pub struct UGenSynth {
     /// Bus mappings parallel to `controls` (`/node_map`/`/node_mapAudio`).
     maps: Vec<ControlMap>,
     ugens: Vec<Box<dyn UGen>>,
-    /// One output wire per UGen, cache-line aligned (M10).
+    /// One output wire per UGen, cache-line aligned.
     wires: Vec<Block>,
     /// Synth-private feedback channels (`LocalIn`/`LocalOut`): unlike `wires`,
     /// these **persist across blocks** — that persistence is the one-block
     /// feedback delay. Empty for defs without feedback.
     locals: Vec<Block>,
-    /// Synth-private spectral frames (S8), one per `FFT` chain, shared by that
+    /// Synth-private spectral frames, one per `FFT` chain, shared by that
     /// chain's `FFT`/`PV_*`/`IFFT` UGens through their compile-assigned slot.
     /// Persistent across blocks and allocated once here (network thread), never
     /// on the audio thread. Empty for defs with no `FFT`.
     chains: Vec<SpectralChain>,
-    /// False until the first `process` runs. The `ir` init pass (S1) runs each
+    /// False until the first `process` runs. The `ir` init pass runs each
     /// `ir` UGen exactly once, on that first block; its wire then holds the
     /// value (wires persist across blocks) and the UGen is skipped thereafter.
     initialized: bool,
     /// True when any UGen is a side-effect reply UGen (`SendReply`/`SendTrig`/
-    /// `Poll`, S9); precomputed so `has_replies` is O(1) and the tree only
+    /// `Poll`); precomputed so `has_replies` is O(1) and the tree only
     /// enqueues these synths for the reply drain.
     has_reply_ugens: bool,
 }
 
-/// One demand UGen's inputs as the pull protocol sees them (U8) — the synth
+/// One demand UGen's inputs as the pull protocol sees them — the synth
 /// side of [`DemandInputs`].
 ///
 /// `ugens` and `wires` are the **prefix** of the graph before the UGen being
@@ -309,7 +309,7 @@ impl SynthNode for UGenSynth {
                         *o = at(signal, j);
                     }
                 }
-                // Done query (U4): `Done`/`FreeSelfWhenDone` read the *done
+                // Done query: `Done`/`FreeSelfWhenDone` read the *done
                 // flag* of the UGen input 0 names — an identity, not a value,
                 // like the demand source below. Topological order puts that
                 // UGen before this one, so the flag is the one it raised this
@@ -324,7 +324,7 @@ impl SynthNode for UGenSynth {
                     u_rest[0].set_done_flag(flag);
                     u_rest[0].process(ctx, &inputs[..refs.len()], output);
                 }
-                // Demand driver (S1, generalized in U8): the driver decides
+                // Demand driver : the driver decides
                 // when to pull, and `Pull` resolves each of its inputs — a
                 // value if it is one, the next item of a stream if it is a `dr`
                 // wire, recursing into that stream's own demand inputs. The
@@ -345,7 +345,7 @@ impl SynthNode for UGenSynth {
                     };
                     u_rest[0].drive(&ctx_copy, &mut pull, output);
                 }
-                // Spectral chain (S8): the FFT/PV_*/IFFT UGen runs with its
+                // Spectral chain: the FFT/PV_*/IFFT UGen runs with its
                 // synth-private `SpectralChain`, resolved by the compile-
                 // assigned slot. `chains` is a distinct field from `ugens`, so
                 // both can be borrowed mutably at once.
@@ -353,7 +353,7 @@ impl SynthNode for UGenSynth {
                     let slot = self.def.ugens[i]
                         .chain_slot
                         .expect("compile assigns a chain slot to every spectral UGen");
-                    // A two-chain combiner (M27) borrows both of its chains at
+                    // A two-chain combiner borrows both of its chains at
                     // once; compile guarantees the slots are distinct, so the
                     // split borrow is always disjoint.
                     if let Some(slot_b) = self.def.ugens[i].chain_slot_b {
@@ -383,7 +383,7 @@ impl SynthNode for UGenSynth {
                 ExecMode::Normal => self.ugens[i].process(ctx, &inputs[..refs.len()], output),
             }
         }
-        // Trigger controls (S2) hold their `/node_set` value for exactly one
+        // Trigger controls hold their `/node_set` value for exactly one
         // block, then reset to 0 so a rising edge fires once (e.g. an EnvGen
         // gate). Cheap: most defs carry no triggers.
         for (i, ty) in self.def.control_types.iter().enumerate() {
@@ -398,7 +398,7 @@ impl SynthNode for UGenSynth {
 
     fn set_control(&mut self, index: u32, value: f32) {
         let i = index as usize;
-        // Scalar (`ir`) controls are read once at init and frozen (S2): a
+        // Scalar (`ir`) controls are read once at init and frozen: a
         // `/node_set` after the synth has run is ignored, per scsynth. The initial
         // `/synth_new` values are applied before the first block (still `!initialized`),
         // so they take.

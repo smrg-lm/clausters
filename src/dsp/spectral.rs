@@ -1,11 +1,11 @@
-//! The frequency-domain (`fr`) chain: `FFT` → `PV_*` → `IFFT` (S8).
+//! The frequency-domain (`fr`) chain: `FFT` → `PV_*` → `IFFT`.
 //!
 //! scsynth's spectral processing bookends a chain of `PV_*` (phase-vocoder)
 //! UGens between [`Fft`] (window an audio input and transform it to a complex
 //! frame) and [`Ifft`] (inverse-transform and overlap-add back to audio). The
 //! chain is **not block-rate**: `FFT` emits one spectral frame per **hop**, and
 //! the `PV_*` UGens only touch the frame on the blocks a fresh one is ready —
-//! the frame-rate (`fr`) substrate, kin to the demand (`dr`) sub-list of S1.
+//! the frame-rate (`fr`) substrate, kin to the demand (`dr`) rate.
 //!
 //! ## Where the spectral frame lives (a deliberate deviation from scsynth)
 //!
@@ -32,7 +32,7 @@
 //! for bit-identical analysis. Every per-hop transform reuses pre-allocated
 //! scratch, so nothing here allocates on the audio thread.
 //!
-//! ## Hop-phase stagger (S11)
+//! ## Hop-phase stagger
 //!
 //! A chain concentrates all its work on the block where its hop closes; chains
 //! instantiated on the same block would all hop on the same block, stacking
@@ -105,7 +105,7 @@ impl SpectralChain {
 /// transform (`> 0` on, `<= 0` off, holding the last frame). The window size,
 /// hop and window type are static per-UGen config, not signal inputs, because
 /// they size the pre-allocated scratch. The window type is also settable live
-/// through `/node_ugenCmd` (selector `window`), the first real consumer of the S6
+/// through `/node_ugenCmd` (selector `window`), the first real consumer of the
 /// typed per-UGen command surface.
 pub struct Fft {
     winsize: usize,
@@ -121,7 +121,7 @@ pub struct Fft {
     filled: usize,
     /// Samples accumulated since the last emitted frame.
     since_hop: usize,
-    /// Hop-phase stagger (S11): samples still to elapse before this instance
+    /// Hop-phase stagger: samples still to elapse before this instance
     /// may emit its *first* frame. Set once from the node id in
     /// [`UGen::set_node_id`] — a deterministic sub-hop offset (a block
     /// multiple) so chains instantiated on the same block spread their
@@ -209,7 +209,7 @@ impl UGen for Fft {
     }
 
     fn set_node_id(&mut self, id: i32) {
-        // S11: derive the deterministic hop-phase stagger — the node id modulo
+        // derive the deterministic hop-phase stagger — the node id modulo
         // the hop's block count, in whole blocks. A hop no longer than one
         // block cannot stack (at most one frame per slice already), so it
         // keeps offset 0.
@@ -378,7 +378,7 @@ impl UGen for Ifft {
 
 /// The kind of magnitude threshold a [`PvMag`] filter applies to each bin.
 /// One implementation, three registered names — the mode is a parameter, not
-/// a UGen (the M27 stance: no one-UGen-per-op catalog).
+/// a UGen (the stance: no one-UGen-per-op catalog).
 #[derive(Clone, Copy)]
 pub enum MagMode {
     /// Keep bins whose magnitude is **above** the threshold (`PV_MagAbove`).
@@ -502,7 +502,7 @@ impl UGen for PvMag {
 }
 
 /// The operator of a [`PvCombine`] two-chain combiner — a parameter of one
-/// implementation, registered under the scsynth-compatible names (the M27
+/// implementation, registered under the scsynth-compatible names (the
 /// stance: the operator set is data, not a UGen catalog).
 #[derive(Clone, Copy)]
 pub enum CombineOp {
@@ -524,7 +524,7 @@ pub enum CombineOp {
 /// `[chain_a, chain_b]`, the result written into chain A bin by bin. It acts
 /// on the slices where **A** has a fresh frame, reading B's *latest* frame
 /// (the frame is persistent chain state; two same-config `FFT`s in one synth
-/// hop on the same blocks anyway, S11 staggering included — the offset is
+/// hop on the same blocks anyway, it staggering included — the offset is
 /// per-node, not per-UGen).
 pub struct PvCombine {
     op: CombineOp,
@@ -788,7 +788,7 @@ impl UGen for PvBinShift {
 ///
 /// The programs are a **per-bin map** — no state across bins or frames, no
 /// bin remapping. Those stay curated implementations (`PV_MagFreeze`,
-/// `PV_BinShift`, …) per the M27 stance; see `docs/decisions.md`.
+/// `PV_BinShift`, …) per the stance; see `docs/decisions.md`.
 pub struct PvKernel {
     mag: PvProgram,
     phase: PvProgram,

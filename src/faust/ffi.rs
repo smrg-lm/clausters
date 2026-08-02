@@ -209,7 +209,7 @@ unsafe extern "C" {
     pub fn CboxSelect3Aux(selector: FaustBox, b1: FaustBox, b2: FaustBox, b3: FaustBox)
     -> FaustBox;
 
-    // UI elements: named parameters, the future `/node_set` controls (F3).
+    // UI elements: named parameters, the future `/node_set` controls.
     pub fn CboxHSlider(
         label: *const c_char,
         init: FaustBox,
@@ -239,7 +239,7 @@ unsafe extern "C" {
     pub fn CboxHGroup(label: *const c_char, group: FaustBox) -> FaustBox;
     pub fn CboxVGroup(label: *const c_char, group: FaustBox) -> FaustBox;
 
-    // Tables (F5). `CboxWaveform` takes a NULL-terminated array of
+    // Tables. `CboxWaveform` takes a NULL-terminated array of
     // `CboxInt`/`CboxReal` boxes; the primitives are the 0-argument forms
     // (3 inputs for rdtable, 5 for rwtable), applied via `CboxSeq`/`CboxPar`
     // exactly like upstream's own `Cbox*TableAux` helpers.
@@ -392,8 +392,8 @@ unsafe extern "C" {
     ) -> FaustSignal;
 
     // ---- LLVM JIT (llvm-dsp-c.h) ----
-    /// Compiles Faust *source code* (no lib context needed). F1 uses this;
-    /// F2 switches to JSON→Box construction + `createCDSPFactoryFromBoxes`.
+    /// Compiles Faust *source code* (no lib context needed). it uses this;
+    /// Switches to JSON→Box construction + `createCDSPFactoryFromBoxes`.
     pub fn createCDSPFactoryFromString(
         name_app: *const c_char,
         dsp_content: *const c_char,

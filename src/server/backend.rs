@@ -62,8 +62,8 @@ impl BlockAdapter {
 }
 
 /// Opens the default output device and starts the engine on its callback,
-/// with `workers` M13 DSP threads for `/group_parallel` groups (0 = sequential),
-/// the boot-time pool `limits`, and, optionally, an M14 IPC segment (shared
+/// with `workers` DSP threads for `/group_parallel` groups (0 = sequential),
+/// the boot-time pool `limits`, and, optionally, an IPC segment (shared
 /// clock + control buses).
 ///
 /// `outputs` requests a specific hardware output-channel count (scsynth `-o`),

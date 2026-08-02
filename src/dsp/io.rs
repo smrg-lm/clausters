@@ -29,7 +29,7 @@ impl UGen for Out {
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let bus = audio_bus(inputs[0]);
         let signal = inputs[1];
-        // SAFETY: the M13 stage scheduler never runs two nodes touching the
+        // SAFETY: the stage scheduler never runs two nodes touching the
         // same bus concurrently (single-threaded otherwise).
         let dest = &mut unsafe { ctx.buses.audio_mut(bus) }[ctx.offset..];
         for (i, s) in output.iter_mut().enumerate() {

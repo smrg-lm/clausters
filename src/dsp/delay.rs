@@ -1,4 +1,4 @@
-//! The delay core (U3): one line behind all nine of scsynth's delay names.
+//! The delay core: one line behind all nine of scsynth's delay names.
 //!
 //! `DelayN/L/C`, `CombN/L/C` and `AllpassN/L/C` are the same circular buffer
 //! with two independent parameters — how a fractional tap is interpolated

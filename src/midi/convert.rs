@@ -1,4 +1,4 @@
-//! MIDI message-type conversions to `f32` control values (M17).
+//! MIDI message-type conversions to `f32` control values.
 //!
 //! One named helper per standard channel-voice message type, so the binding's
 //! control map references them by name and the server and client agree on the

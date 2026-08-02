@@ -1,4 +1,4 @@
-//! Live MIDI input over the OS's standard MIDI, via `midir` (M17 transport).
+//! Live MIDI input over the OS's standard MIDI, via `midir` (transport).
 //!
 //! On Linux `midir` speaks the **ALSA sequencer** — the same system MIDI any
 //! controller or DAW uses — so [`MidiHub::open`] creates a **virtual input

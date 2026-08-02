@@ -6,7 +6,7 @@
 //! allocation-free so the audio thread can call them directly; the server
 //! refactors its native UGens onto them, which makes client-side results match
 //! the server **by construction** for the operations the server computes
-//! natively. See `clients/python/PLAN.md` (milestone C0).
+//! natively. See `clients/python/PLAN.md`.
 //!
 //! Boundary rule (project-wide): only flat data crosses any binding —
 //! `f32`/`f64`/integers and slices of them, never a library type. The C ABI

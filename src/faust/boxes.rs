@@ -1,4 +1,4 @@
-//! JSON → Box API interpreter (F2).
+//! JSON → Box API interpreter.
 //!
 //! A Faust def arrives as a JSON tree where every node denotes a box
 //! expression; the interpreter walks it and issues the corresponding `Cbox*`

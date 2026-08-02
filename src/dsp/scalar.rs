@@ -1,4 +1,4 @@
-//! Scalar / initial-rate (`ir`) UGens (S1): computed once at synth init and
+//! Scalar / initial-rate (`ir`) UGens: computed once at synth init and
 //! held for the node's life. They are the concrete proof of the `ir` init
 //! pass in [`crate::synthdef::instance`]: the synth runs each `ir` UGen on the
 //! very first block and then never again, so a value that would *differ* if

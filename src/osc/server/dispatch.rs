@@ -23,7 +23,7 @@ impl OscServer {
     /// Bundles with the "immediately" timetag (or a past one — scsynth also
     /// runs late bundles right away) execute now; future timetags are
     /// converted to a sample target and shipped to the engine's scheduler,
-    /// which fires them sample-accurately (M6).
+    /// which fires them sample-accurately.
     fn handle_bundle(&mut self, bundle: OscBundle, from: ClientId) -> Flow {
         match self.timetag_delta_secs(bundle.timetag) {
             Some(delta) if delta > 0.0 => {
@@ -87,7 +87,7 @@ impl OscServer {
             "/server_query" => self.send_server_query(from),
             "/server_notify" => self.handle_server_notify(&msg, from),
             // The translator covers the whole schedulable subset (and keeps
-            // the M12 tree mirror in sync), so the immediate forms share one
+            // the tree mirror in sync), so the immediate forms share one
             // path: translate, then ship every command.
             "/synth_new"
             | "/group_new"
@@ -113,7 +113,7 @@ impl OscServer {
             | "/graph_new"
             | "/graph_newVoice" => self.handle_via_translate(&msg, from),
             "/node_trace" => self.handle_node_trace(&msg, from),
-            // MIDI binding mutations also persist the binding set (M19).
+            // MIDI binding mutations also persist the binding set.
             "/midi_bind" | "/midi_unbind" | "/midi_map" => {
                 self.handle_via_translate(&msg, from);
                 self.persist_bindings();
@@ -176,7 +176,7 @@ impl OscServer {
         Flow::Continue
     }
 
-    /// M8: `/sched_at <int64 target> <blob packet>` — a timed bundle whose time
+    /// `/sched_at <int64 target> <blob packet>` — a timed bundle whose time
     /// is an absolute position on the **sample clock** instead of an NTP
     /// timetag (the OSC timetag format is NTP by spec, so sample targets get
     /// a container message rather than a reinterpreted tag; both front-ends

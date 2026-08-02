@@ -1,4 +1,4 @@
-//! Triggers and control (U5): the UGens that read a **rising edge** rather than
+//! Triggers and control: the UGens that read a **rising edge** rather than
 //! a waveform, and the two envelope followers that go with them.
 //!
 //! Everything here is built on [`Edge`], the one definition of what a trigger

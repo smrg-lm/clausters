@@ -82,7 +82,7 @@ const MAX_STREAM_TAPS: usize = 8;
 /// Largest `/bus_tapStream` window in samples for a **datagram-bounded** client
 /// (UDP, and the 64 KiB IPC reply ring): a 32 KB blob (8192 × `f32`) leaves
 /// room for the OSC envelope. A stream client (TCP/WebSocket) is bounded by
-/// the configurable frame ceiling instead (M25). Every window is also clamped
+/// the configurable frame ceiling instead. Every window is also clamped
 /// to half the tap ring, the `tap_read_latest` tear-free bound.
 const MAX_TAP_WINDOW: usize = 8192;
 
@@ -134,7 +134,7 @@ pub struct OscServer {
     recv_buf: Vec<u8>,
     /// Where streams and timetags read time from (see [`TimeSource`]).
     clock: TimeSource,
-    /// M14: the shared-memory / in-process ring endpoint, when attached.
+    /// the shared-memory / in-process ring endpoint, when attached.
     ipc: Option<crate::server::ipc::IpcPeer>,
     /// TCP transport, when `listen_tcp` was called: accepts length-prefixed OSC
     /// connections multiplexed into the same loop. See [`crate::osc::tcp`].
@@ -145,7 +145,7 @@ pub struct OscServer {
     /// wasm32 the engine lives in the page and is fed through the ring.
     #[cfg(not(target_arch = "wasm32"))]
     ws: Option<crate::osc::ws::WsHub>,
-    /// M17 live MIDI input, when `listen_midi` was called: a virtual ALSA port
+    /// Live MIDI input, when `listen_midi` was called: a virtual ALSA port
     /// whose decoded messages the loop drains. See [`crate::midi::live`].
     #[cfg(feature = "midi")]
     midi: Option<crate::midi::live::MidiHub>,
@@ -244,7 +244,7 @@ struct PendingSync {
 
 /// Where the server reads time from. `Wall` is the native default: streams
 /// pace on the monotonic clock and NTP timetags convert through the system
-/// wall clock, as always. `Sample` is the headless/pulled mode (B1): both
+/// wall clock, as always. `Sample` is the headless/pulled mode: both
 /// derive from the **engine sample clock** — the only clock a wasm build has,
 /// and the natural one for a host that drives `process_block` itself (an
 /// offline host makes streams and timetags follow render time, not wall
@@ -378,7 +378,7 @@ impl OscServer {
 /// The raw `SynthDefSpec` JSON of a `/def_send synth` message (blob or string form),
 /// for persisting it verbatim. Mirrors the argument parsing in
 /// [`CmdTranslator::d_recv`].
-/// The `/ugen_query.reply` argument vectors for a `/ugen_query` (M30): the whole catalog
+/// The `/ugen_query.reply` argument vectors for a `/ugen_query`: the whole catalog
 /// when `names` is empty, otherwise one per requested kind — an unknown one
 /// coming back with an empty rate set and no inputs, so a batch never fails
 /// wholesale (the `/buffer_query` convention).
@@ -407,7 +407,7 @@ fn ugen_infos(names: &[String]) -> Vec<Vec<OscType>> {
         .collect()
 }
 
-/// One `/ugen_query.reply` argument vector from a catalog descriptor (M30).
+/// One `/ugen_query.reply` argument vector from a catalog descriptor.
 ///
 /// Layout: `name, arity, defaultRate, rates, exec, bus, needsPath, opFamily,
 /// spectral, numInputs` then per input `name, default`. `arity` is `-1` for a

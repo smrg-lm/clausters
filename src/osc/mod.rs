@@ -15,7 +15,7 @@ use std::net::SocketAddr;
 
 use rosc::OscPacket;
 
-/// Where a request came from and where its replies go (M14): the OSC
+/// Where a request came from and where its replies go: the OSC
 /// *encoding* is transport-independent, so client identity is too. `Udp` is
 /// a remote socket; `Tcp(id)` is a connected TCP client (the per-connection id
 /// from `tcp`); `Ring` is the single shared-memory / in-process ring client of
