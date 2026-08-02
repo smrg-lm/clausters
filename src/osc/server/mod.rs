@@ -50,12 +50,15 @@ use crate::server::engine::cmd_target_nodes;
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
 use crate::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtRunner};
 
+mod args;
 mod async_pipes;
 mod commands;
 mod dispatch;
 mod lifecycle;
 mod streams;
 mod transports;
+
+use args::{Answer, Args};
 
 /// Default scsynth port.
 pub const DEFAULT_PORT: u16 = 57110;

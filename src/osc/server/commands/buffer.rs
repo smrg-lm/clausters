@@ -13,30 +13,29 @@ impl OscServer {
     /// and closes it — so there is never an open handle: this validates the
     /// buffer is live and acknowledges, forward-compatible with the future
     /// streaming UGens.
-    pub(in crate::osc::server) fn handle_buffer_close(&mut self, msg: &OscMessage, from: ClientId) {
-        let Some(OscType::Int(index)) = msg.args.first() else {
-            return self.fail(from, "/buffer_close", "expected int buffer index");
-        };
-        let live = usize::try_from(*index)
-            .ok()
-            .and_then(|i| self.translator.buffers.get(i))
-            .is_some_and(Option::is_some);
-        if live {
-            self.reply(
-                from,
-                "/done",
-                vec![
-                    OscType::String("/buffer_close".into()),
-                    OscType::Int(*index),
-                ],
-            );
-        } else {
-            self.fail(
-                from,
-                "/buffer_close",
-                format!("buffer {index} not allocated"),
-            );
+    pub(in crate::osc::server) fn handle_buffer_close(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let index = args.index()?;
+        if !self
+            .translator
+            .buffers
+            .get(index)
+            .is_some_and(Option::is_some)
+        {
+            return Err(format!("buffer {index} not allocated"));
         }
+        self.reply(
+            from,
+            "/done",
+            vec![
+                OscType::String("/buffer_close".into()),
+                OscType::Int(index as i32),
+            ],
+        );
+        Ok(())
     }
 
     /// Any of the async `/buffer_*` commands: parsing is shared with the NRT
@@ -75,36 +74,40 @@ impl OscServer {
     /// `/buffer_query bufnum...` → `/buffer_query.reply` with (bufnum, frames, channels,
     /// sampleRate) per buffer; zeros for unallocated indices. Synchronous,
     /// answered from the mirror (= state as of the last completed command).
-    pub(in crate::osc::server) fn handle_buffer_query(&mut self, msg: &OscMessage, from: ClientId) {
+    pub(in crate::osc::server) fn handle_buffer_query(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
         // No argument lists every allocated buffer: the patcher shows
         // real buffers as objects, and a client that never allocated them (the
         // pool outlives a session) has no other way to learn they exist.
-        if msg.args.is_empty() {
-            let args = self.translator.buffer_list();
-            return self.reply(from, "/buffer_query.reply", args);
+        if args.is_empty() {
+            let all = self.translator.buffer_list();
+            self.reply(from, "/buffer_query.reply", all);
+            return Ok(());
         }
-        let mut args = Vec::with_capacity(msg.args.len() * 4);
-        for arg in &msg.args {
-            let OscType::Int(index) = arg else {
-                return self.fail(from, "/buffer_query", "expected int buffer indices");
-            };
-            let info = self.mirror_buffer(*index);
+        let mut out = Vec::with_capacity(args.len() * 4);
+        while !args.is_empty() {
+            let index = args.int()?;
+            let info = self.mirror_buffer(index);
             // An unallocated slot answers with `frames = -1`: absence is a
             // state reported in the record, like `/node_query`'s `isGroup = -1`
             // and `/def_query`'s empty family, so one dead index does not abort
             // the batch.
-            args.push(OscType::Int(*index));
-            args.push(OscType::Int(
+            out.push(OscType::Int(index));
+            out.push(OscType::Int(
                 info.as_ref().map_or(-1, |b| b.frames() as i32),
             ));
-            args.push(OscType::Int(
+            out.push(OscType::Int(
                 info.as_ref().map_or(0, |b| b.channels() as i32),
             ));
-            args.push(OscType::Float(
+            out.push(OscType::Float(
                 info.as_ref().map_or(0.0, |b| b.sample_rate() as f32),
             ));
         }
-        self.reply(from, "/buffer_query.reply", args);
+        self.reply(from, "/buffer_query.reply", out);
+        Ok(())
     }
 
     /// `/buffer_get bufnum index...` → `/buffer_get.reply bufnum index value...`: read single
@@ -112,30 +115,27 @@ impl OscServer {
     /// (and any index into an unallocated buffer) read as `0.0`, mirroring how
     /// `Buffer::sample` and the audio-rate UGens treat them. Synchronous, like
     /// `/buffer_query`.
-    pub(in crate::osc::server) fn handle_buffer_get(&mut self, msg: &OscMessage, from: ClientId) {
-        let Some((OscType::Int(bufnum), indices)) = msg.args.split_first() else {
-            return self.fail(
-                from,
-                "/buffer_get",
-                "expected bufnum then int sample indices",
-            );
-        };
-        let buffer = self.mirror_buffer(*bufnum);
+    pub(in crate::osc::server) fn handle_buffer_get(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let bufnum = args.int()?;
+        let buffer = self.mirror_buffer(bufnum);
         let data = buffer.as_deref().map(|b| b.data()).unwrap_or(&[]);
-        let mut args = vec![OscType::Int(*bufnum)];
-        for arg in indices {
-            let OscType::Int(index) = arg else {
-                return self.fail(from, "/buffer_get", "expected int sample indices");
-            };
-            let value = usize::try_from(*index)
+        let mut out = vec![OscType::Int(bufnum)];
+        while !args.is_empty() {
+            let index = args.int()?;
+            let value = usize::try_from(index)
                 .ok()
                 .and_then(|i| data.get(i))
                 .copied()
                 .unwrap_or(0.0);
-            args.push(OscType::Int(*index));
-            args.push(OscType::Float(value));
+            out.push(OscType::Int(index));
+            out.push(OscType::Float(value));
         }
-        self.reply(from, "/buffer_get.reply", args);
+        self.reply(from, "/buffer_get.reply", out);
+        Ok(())
     }
 
     /// `/buffer_getRange bufnum [start count]...` → `/buffer_getRange.reply bufnum start count value...`:
@@ -149,35 +149,25 @@ impl OscServer {
     /// stay under the datagram cap. The shm bulk path is future work.
     pub(in crate::osc::server) fn handle_buffer_get_range(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
-        let Some((OscType::Int(bufnum), pairs)) = msg.args.split_first() else {
-            return self.fail(
-                from,
-                "/buffer_getRange",
-                "expected bufnum then (start, count) pairs",
-            );
-        };
-        if pairs.len() % 2 != 0 {
-            return self.fail(from, "/buffer_getRange", "expected (start, count) pairs");
-        }
-        let buffer = self.mirror_buffer(*bufnum);
+    ) -> Answer {
+        let bufnum = args.int()?;
+        args.expect_groups_of(2, "(start, count) pairs")?;
+        let buffer = self.mirror_buffer(bufnum);
         let data = buffer.as_deref().map(|b| b.data()).unwrap_or(&[]);
-        let mut args = vec![OscType::Int(*bufnum)];
-        for pair in pairs.chunks_exact(2) {
-            let (OscType::Int(start), OscType::Int(count)) = (&pair[0], &pair[1]) else {
-                return self.fail(from, "/buffer_getRange", "expected int start and count");
-            };
-            let start = (*start).max(0) as usize;
-            let count = (*count).max(0) as usize;
+        let mut out = vec![OscType::Int(bufnum)];
+        while !args.is_empty() {
+            let start = args.int()?.max(0) as usize;
+            let count = args.int()?.max(0) as usize;
             let end = start.saturating_add(count).min(data.len());
             let slice = data.get(start..end).unwrap_or(&[]);
-            args.push(OscType::Int(start as i32));
-            args.push(OscType::Int(slice.len() as i32));
-            args.extend(slice.iter().map(|s| OscType::Float(*s)));
+            out.push(OscType::Int(start as i32));
+            out.push(OscType::Int(slice.len() as i32));
+            out.extend(slice.iter().map(|s| OscType::Float(*s)));
         }
-        self.reply(from, "/buffer_getRange.reply", args);
+        self.reply(from, "/buffer_getRange.reply", out);
+        Ok(())
     }
 
     /// `/buffer_export bufnum path` → `/done /buffer_export bufnum`: write the buffer's raw
@@ -191,32 +181,27 @@ impl OscServer {
     /// error.
     pub(in crate::osc::server) fn handle_buffer_export(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
-        let (Some(OscType::Int(bufnum)), Some(OscType::String(path))) =
-            (msg.args.first(), msg.args.get(1))
-        else {
-            return self.fail(from, "/buffer_export", "expected bufnum then a path string");
-        };
-        let Some(buffer) = self.mirror_buffer(*bufnum) else {
-            return self.fail(from, "/buffer_export", "no such buffer");
+    ) -> Answer {
+        let (bufnum, path) = (args.int()?, args.str()?);
+        let Some(buffer) = self.mirror_buffer(bufnum) else {
+            return Err(format!("buffer {bufnum} not allocated"));
         };
         let mut bytes = Vec::with_capacity(buffer.data().len() * 4);
         for &s in buffer.data() {
             bytes.extend_from_slice(&s.to_le_bytes());
         }
-        match std::fs::write(path, &bytes) {
-            Ok(()) => self.reply(
-                from,
-                "/done",
-                vec![
-                    OscType::String("/buffer_export".into()),
-                    OscType::Int(*bufnum),
-                ],
-            ),
-            Err(e) => self.fail(from, "/buffer_export", format!("write {path}: {e}")),
-        }
+        std::fs::write(path, &bytes).map_err(|e| format!("write {path}: {e}"))?;
+        self.reply(
+            from,
+            "/done",
+            vec![
+                OscType::String("/buffer_export".into()),
+                OscType::Int(bufnum),
+            ],
+        );
+        Ok(())
     }
 
     fn mirror_buffer(&self, index: i32) -> Option<Arc<crate::dsp::buffer::Buffer>> {

@@ -7,6 +7,10 @@
 
 use super::super::*;
 
+/// Every `/transport_*` command but `/transport_set` needs a grid to act on,
+/// and refuses the same way when there is none.
+const NO_TRANSPORT: &str = "no transport defined";
+
 impl OscServer {
     /// The `/transport_query.reply` payload: the grid plus the rolling state,
     /// `(origin_sample:int64, tempo:double, defined:int32, playing:int32,
@@ -60,35 +64,14 @@ impl OscServer {
     /// The rolling state (play/stop/locate) rides on top: see
     /// [`Self::handle_transport_play`]. Any change is **pushed** to every
     /// `/server_notify` client (the responder path).
-    pub(in crate::osc::server) fn handle_transport(&mut self, msg: &OscMessage, from: ClientId) {
-        let origin = match msg.args.first() {
-            Some(OscType::Long(v)) => *v,
-            Some(OscType::Int(v)) => *v as i64,
-            _ => {
-                return self.fail(
-                    from,
-                    "/transport_set",
-                    "expected (int64 originSample, double tempo)",
-                );
-            }
-        };
-        let tempo = match msg.args.get(1) {
-            Some(OscType::Double(v)) => *v,
-            Some(OscType::Float(v)) => *v as f64,
-            _ => {
-                return self.fail(
-                    from,
-                    "/transport_set",
-                    "expected (int64 originSample, double tempo)",
-                );
-            }
-        };
+    pub(in crate::osc::server) fn handle_transport(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let (origin, tempo) = (args.long()?, args.double()?);
         if origin < 0 || tempo.is_nan() || tempo <= 0.0 {
-            return self.fail(
-                from,
-                "/transport_set",
-                "originSample must be >= 0 and tempo > 0",
-            );
+            return Err("originSample must be >= 0 and tempo > 0".into());
         }
         // Setting the grid (re)defines the transport: stopped, at position 0.
         // The governed group survives, because it is a binding to the tree, not
@@ -112,6 +95,7 @@ impl OscServer {
             vec![OscType::String("/transport_set".into())],
         );
         self.broadcast_transport();
+        Ok(())
     }
 
     /// `/transport_play [position:double]` — start the transport rolling. With a
@@ -121,18 +105,14 @@ impl OscServer {
     /// grid). Needs a grid defined first (`/transport_set`).
     pub(in crate::osc::server) fn handle_transport_play(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
+    ) -> Answer {
         let Some(mut t) = self.transport else {
-            return self.fail(from, "/transport_play", "no transport defined");
+            return Err(NO_TRANSPORT.into());
         };
-        if let Some(pos) = msg.args.first() {
-            match pos {
-                OscType::Double(v) => t.position = *v,
-                OscType::Float(v) => t.position = *v as f64,
-                _ => return self.fail(from, "/transport_play", "expected (double position)"),
-            }
+        if let Some(pos) = args.opt_double()? {
+            t.position = pos;
         }
         t.playing = true;
         self.transport = Some(t);
@@ -147,13 +127,14 @@ impl OscServer {
             vec![OscType::String("/transport_play".into())],
         );
         self.broadcast_transport();
+        Ok(())
     }
 
     /// `/transport_stop` — stop the transport. Every client's playhead halts at
     /// its current point; `position` holds for the next play.
     pub(in crate::osc::server) fn handle_transport_stop(&mut self, from: ClientId) {
         let Some(mut t) = self.transport else {
-            return self.fail(from, "/transport_stop", "no transport defined");
+            return self.fail(from, "/transport_stop", NO_TRANSPORT);
         };
         t.playing = false;
         self.transport = Some(t);
@@ -173,17 +154,13 @@ impl OscServer {
     /// it; the `playing` flag is unchanged.
     pub(in crate::osc::server) fn handle_transport_locate(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
+    ) -> Answer {
         let Some(mut t) = self.transport else {
-            return self.fail(from, "/transport_locate", "no transport defined");
+            return Err(NO_TRANSPORT.into());
         };
-        match msg.args.first() {
-            Some(OscType::Double(v)) => t.position = *v,
-            Some(OscType::Float(v)) => t.position = *v as f64,
-            _ => return self.fail(from, "/transport_locate", "expected (double position)"),
-        }
+        t.position = args.double()?;
         self.transport = Some(t);
         self.reply(
             from,
@@ -191,6 +168,7 @@ impl OscServer {
             vec![OscType::String("/transport_locate".into())],
         );
         self.broadcast_transport();
+        Ok(())
     }
 
     /// `/transport_group <int32 group>` — binds the group the transport
@@ -204,23 +182,20 @@ impl OscServer {
     /// left to resume it would be unreachable except by `/node_run`.
     pub(in crate::osc::server) fn handle_transport_group(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
+    ) -> Answer {
         let Some(mut t) = self.transport else {
-            return self.fail(from, "/transport_group", "no transport defined");
+            return Err(NO_TRANSPORT.into());
         };
-        let id = match msg.args.first() {
-            Some(OscType::Int(v)) => *v,
-            _ => return self.fail(from, "/transport_group", "expected (int32 group)"),
-        };
+        let id = args.int()?;
         if id >= 0 && self.translator.mirror.children(id).is_none() {
-            return self.fail(from, "/transport_group", "unknown group");
+            return Err(format!("unknown group {id}"));
         }
         t.group = if id >= 0 { Some(id) } else { None };
         self.transport = Some(t);
         if self.handle.send(Cmd::TransportGroup { id }).is_err() {
-            return self.fail(from, "/transport_group", "command FIFO full");
+            return Err("command FIFO full".into());
         }
         // Binding while the transport is stopped freezes the group at once, and
         // the engine's own `TransportGroup` arm does that. Binding while it
@@ -231,5 +206,6 @@ impl OscServer {
             vec![OscType::String("/transport_group".into())],
         );
         self.broadcast_transport();
+        Ok(())
     }
 }

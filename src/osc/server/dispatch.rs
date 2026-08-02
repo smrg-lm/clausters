@@ -122,18 +122,18 @@ impl OscServer {
             "/group_query" => self.handle_group_query(&msg, from),
             "/node_query" => self.handle_node_query(&msg, from),
             "/group_dumpGraph" => self.handle_group_dump_graph(&msg, from),
-            "/bus_set" => self.handle_bus_set(&msg, from),
-            "/bus_get" => self.handle_bus_get(&msg, from),
-            "/bus_setRange" => self.handle_bus_set_range(&msg, from),
-            "/bus_getRange" => self.handle_bus_get_range(&msg, from),
-            "/bus_fill" => self.handle_bus_fill(&msg, from),
+            "/bus_set" => self.attempt(&msg, from, Self::handle_bus_set),
+            "/bus_get" => self.attempt_for(&msg, from, Self::handle_bus_get),
+            "/bus_setRange" => self.attempt(&msg, from, Self::handle_bus_set_range),
+            "/bus_getRange" => self.attempt_for(&msg, from, Self::handle_bus_get_range),
+            "/bus_fill" => self.attempt(&msg, from, Self::handle_bus_fill),
             "/bus_stream" => self.handle_bus_stream(&msg, from),
             "/bus_tap" => self.handle_bus_tap(&msg, from),
             "/bus_tapStream" => self.handle_bus_tap_stream(&msg, from),
             "/synth_get" => self.handle_synth_get(&msg, from, false),
             "/synth_getRange" => self.handle_synth_get(&msg, from, true),
             "/synth_forgetId" => self.handle_synth_forget_id(&msg, from),
-            "/buffer_close" => self.handle_buffer_close(&msg, from),
+            "/buffer_close" => self.attempt_for(&msg, from, Self::handle_buffer_close),
             "/def_load" => self.handle_def_load(&msg, from),
             "/def_loadDir" => self.handle_def_load_dir(&msg, from),
             "/sched_clear" => self.handle_sched_clear(from),
@@ -149,23 +149,23 @@ impl OscServer {
             "/buffer_zero" => self.handle_buffer_cmd(&msg, from, "/buffer_zero"),
             "/buffer_gen" => self.handle_buffer_gen(&msg, from),
             "/buffer_free" => self.handle_buffer_cmd(&msg, from, "/buffer_free"),
-            "/buffer_query" => self.handle_buffer_query(&msg, from),
+            "/buffer_query" => self.attempt_for(&msg, from, Self::handle_buffer_query),
             "/def_query" => self.handle_def_query(&msg, from),
             "/ugen_query" => self.handle_ugen_query(&msg, from),
-            "/buffer_get" => self.handle_buffer_get(&msg, from),
-            "/buffer_getRange" => self.handle_buffer_get_range(&msg, from),
-            "/buffer_export" => self.handle_buffer_export(&msg, from),
+            "/buffer_get" => self.attempt_for(&msg, from, Self::handle_buffer_get),
+            "/buffer_getRange" => self.attempt_for(&msg, from, Self::handle_buffer_get_range),
+            "/buffer_export" => self.attempt_for(&msg, from, Self::handle_buffer_export),
             "/server_sync" => self.handle_server_sync(&msg, from),
             "/def_send" => self.handle_def_send(&msg, from),
             "/def_free" => self.handle_def_free(&msg, from),
             "/server_dumpOsc" => self.handle_server_dump_osc(&msg, from),
             "/server_verbosity" => self.handle_server_verbosity(&msg, from),
             "/transport_query" => self.handle_transport_query(from),
-            "/transport_set" => self.handle_transport(&msg, from),
-            "/transport_play" => self.handle_transport_play(&msg, from),
+            "/transport_set" => self.attempt_for(&msg, from, Self::handle_transport),
+            "/transport_play" => self.attempt_for(&msg, from, Self::handle_transport_play),
             "/transport_stop" => self.handle_transport_stop(from),
-            "/transport_locate" => self.handle_transport_locate(&msg, from),
-            "/transport_group" => self.handle_transport_group(&msg, from),
+            "/transport_locate" => self.attempt_for(&msg, from, Self::handle_transport_locate),
+            "/transport_group" => self.attempt_for(&msg, from, Self::handle_transport_group),
             "/sched_atTransport" => self.handle_sched_at_transport(&msg, from),
             "/server_quit" => {
                 self.reply(from, "/done", vec![OscType::String("/server_quit".into())]);
@@ -351,5 +351,38 @@ impl OscServer {
             }
         }
         false
+    }
+}
+
+impl OscServer {
+    /// Runs a handler that reads its arguments through [`Args`], turning a
+    /// refusal into `/fail`.
+    ///
+    /// This is the only place a parse failure becomes a reply, which is what
+    /// makes the wording consistent — and the address it fails with is the one
+    /// the client sent, so a handler cannot name a command different from the
+    /// one that reached it.
+    pub(in crate::osc::server) fn attempt(
+        &mut self,
+        msg: &OscMessage,
+        from: ClientId,
+        run: fn(&mut Self, Args) -> Answer,
+    ) {
+        if let Err(why) = run(self, Args::new(msg)) {
+            self.fail(from, &msg.addr, why);
+        }
+    }
+
+    /// The same, for a handler that also needs to know who asked (a query that
+    /// replies, rather than a command that only acts).
+    pub(in crate::osc::server) fn attempt_for(
+        &mut self,
+        msg: &OscMessage,
+        from: ClientId,
+        run: fn(&mut Self, Args, ClientId) -> Answer,
+    ) {
+        if let Err(why) = run(self, Args::new(msg), from) {
+            self.fail(from, &msg.addr, why);
+        }
     }
 }
