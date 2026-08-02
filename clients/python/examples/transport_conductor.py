@@ -22,8 +22,13 @@ then:
 This runs two independent followers in one process for clarity -- the state two
 separate programs would hold. It prints their song positions while the transport
 rolls (they match: that is the lockstep) and plays a note loop on each.
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention),
+which suits a conductor: bring the followers up once, then drive them cell by
+cell -- play, watch the positions, locate, stop.
 """
 
+# %%
 import sys
 import time
 
@@ -32,6 +37,12 @@ from clausters.defs import Server
 from clausters.seq import Pbind, Playhead, Pseq, Timeline
 
 
+# %% [markdown]
+# ## A follower
+# An independent client: its own server connection and clock, locked and joined
+# to the shared transport, with a playhead following it.
+
+# %%
 def make_follower(freq):
     """An independent client: its own server connection and clock, locked and
     joined to the shared transport, with a playhead following it."""
@@ -49,29 +60,43 @@ def make_follower(freq):
     return server, clock, head
 
 
-def main():
-    # The conductor defines the grid once (beat 0 at sample 0, 2 beats/s).
-    conductor = Server()
-    conductor.set_transport(0, 2.0)
+# %% [markdown]
+# ## The conductor
+# It defines the grid once (beat 0 at sample 0, 2 beats/s), then two followers
+# join it.
 
-    followers = [make_follower(440.0), make_follower(550.0)]
+# %%
+conductor = Server()
+conductor.set_transport(0, 2.0)
+followers = [make_follower(440.0), make_follower(550.0)]
 
-    # Press play: the server broadcasts, both playheads start rolling together.
-    print("conductor: play")
-    conductor.transport_play(0.0)
-    for _ in range(3):
-        time.sleep(0.7)
-        positions = [f"{head.position():.2f}" for _, _, head in followers]
-        print(f"  follower positions: {positions}  (in lockstep)")
+# %% [markdown]
+# ## Press play
+# The server broadcasts, both playheads start rolling together.
 
-    # Seek everyone back to the top, then stop.
-    print("conductor: locate to 0")
-    conductor.transport_locate(0.0)
-    time.sleep(1.0)
-    print("conductor: stop")
-    conductor.transport_stop()
-    time.sleep(0.3)
+# %%
+print("conductor: play")
+conductor.transport_play(0.0)
+for _ in range(3):
+    time.sleep(0.7)
+    positions = [f"{head.position():.2f}" for _, _, head in followers]
+    print(f"  follower positions: {positions}  (in lockstep)")
 
+# %% [markdown]
+# ## Seek everyone back to the top, then stop
+
+# %%
+print("conductor: locate to 0")
+conductor.transport_locate(0.0)
+time.sleep(1.0)
+print("conductor: stop")
+conductor.transport_stop()
+time.sleep(0.3)
+
+
+# %%
+def close():
+    """Unfollow and close every client."""
     for server, clock, head in followers:
         head.unfollow_transport()
         clock.close()
@@ -80,8 +105,8 @@ def main():
     print("done")
 
 
-if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, RuntimeError, ConnectionError) as e:
-        sys.exit(str(e))
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    close()
+else:
+    print("conductor up - conductor.transport_play(0.0), close() to end")
