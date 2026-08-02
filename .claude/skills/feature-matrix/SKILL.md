@@ -34,8 +34,8 @@ saying why** — never a silent pass.
 
 ## What already runs on its own
 
-Two hooks cover the parts that can be automated, so this skill is for the part
-that cannot:
+Three things cover parts of this automatically, none of them the part this skill
+is for:
 
 - `.claude/hooks/fmt-rust.sh` formats every `.rs` file as it is written.
 - `.githooks/pre-commit` blocks a commit whose fmt or clippy is dirty — but only
@@ -43,9 +43,18 @@ that cannot:
   because five extra builds at commit time is not a cost worth paying on every
   commit. It needs `git config core.hooksPath .githooks` once per clone; if that
   was never run, nothing is being checked at commit time at all.
+- `.github/workflows/release.yml` runs this script **in full** in its `verify`
+  job, and nothing publishes until it passes (nor until `cargo test` passes on
+  the default set and on `+embed`). A tag used to go straight to building and
+  publishing, so a red commit reached PyPI and npm; it no longer can.
 
-The def-family matrix is the remaining gap, and it is deliberately manual: run
-it when the change touches feature-gated code, and before a release.
+The release gate does not make the by-hand run redundant, because of *when* the
+two fire. The release one is the last line of defence, and it defends the wrong
+end: by the time it speaks, the warning is already on `main`, already in the
+history, and the thing it blocks is the release rather than the mistake. Between
+a push and a tag CI is still blind to the def families and the docs, so the
+matrix is still what you run **when the change touches feature-gated code or a
+doc comment** — before committing, not before releasing.
 
 ## Running it
 
@@ -92,6 +101,12 @@ under one set of `cfg`s is not always right under another.
 Every clippy line runs with `-- -D warnings` and every doc line with
 `RUSTDOCFLAGS=-D warnings`, matching CI's bar, so a warning is a failure rather
 than something to scroll past.
+
+**The `In CI?` column is about `ci.yml`** — the per-push run, which is what
+decides whether a warning can land on `main`. Five rows say yes; the nine that
+say no are exactly what `--fast` runs, and what a release's `verify` job now
+runs on the tagged commit. So a `no` no longer means "watched by nobody", but it
+still means "not watched until it is too late to be cheap".
 
 Configuration 4 is also the build that must stay green **without libfaust
 installed at all** — the core has to compile and test with no LLVM-backed

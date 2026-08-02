@@ -100,8 +100,10 @@ on trust, so that is where drift accumulates:
   before testing, always. Re-run the generators and commit whatever vectors
   move.
 - **CI does not lint everything.** It skips the def-family feature matrix and
-  never builds the docs, so rustdoc's lints are watched by nothing:
-  `.claude/skills/feature-matrix/check.sh`.
+  never builds the docs, so between a push and a tag rustdoc's lints are watched
+  by nothing: `.claude/skills/feature-matrix/check.sh`. A release runs the whole
+  matrix before it publishes, which catches these — but only once they are
+  already on `main`.
 - **The staged artifacts go stale silently** — the binaries bundled in the
   Python package (`scripts/refresh-bin.sh`) and the web package's `dist/`.
 - **The books drift last and loudest.** A concept renamed in one client is
