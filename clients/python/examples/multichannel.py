@@ -26,8 +26,13 @@ and ``play(sine(440).dup())`` sounds it in stereo on a live server. The channels
 land on buses 0, 1, … in order, which is why the render must have at least as
 many outputs as the expression writes — asking for fewer raises rather than
 dropping half the take.
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
+Offline does not mean run-once: change the voice count in the def cell and
+re-render in the next one.
 """
 
+# %%
 import sys
 
 from clausters import Event, Session, render
@@ -49,10 +54,13 @@ from clausters.defs import (
 SR = 48000.0
 VOICES = 12
 
+# %% [markdown]
+# ## The def
+# A detuned unison bank around ``freq``: each voice adds its own ``rand``
+# cents-scale offset, drawn once at synth init.
 
+# %%
 def unison(name: str = "unison") -> SynthDef:
-    """A detuned unison bank around ``freq``: each voice adds its own
-    ``rand`` cents-scale offset, drawn once at synth init."""
     freq = control("freq", 110.0)
     gate = control("gate", 1.0)
     amp = control("amp", 0.1)
@@ -63,44 +71,55 @@ def unison(name: str = "unison") -> SynthDef:
     return SynthDef(name, out(0.0, dup(sig)))
 
 
-def main():
-    out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "multichannel.wav")
+# %% [markdown]
+# ## The score
+# Notes go out as events, not as `server.synth`. A message has no time --
+# `server.synth` sends one, so from inside a routine it lands *now* and every
+# voice would start at 0 no matter what the yields say. An event rides the
+# bundle path: ``/synth_new`` at the routine's exact logical beat and the gate
+# release a ``sustain`` later, which is what makes this a sequence rather than a
+# chord. `has_gate` releases by closing the gate, which is what this def's
+# `env_gen` waits for.
 
-    session = Session.nrt(tempo=2.0)
-    unison().send(session.server)
+# %%
+session = Session.nrt(tempo=2.0)
+unison().send(session.server)
 
-    # Notes go out as events, not as `server.synth`. A message has no time --
-    # `server.synth` sends one, so from inside a routine it lands *now* and
-    # every voice would start at 0 no matter what the yields say. An event
-    # rides the bundle path: `/synth_new` at the routine's exact logical beat and
-    # the gate release a `sustain` later, which is what makes this a sequence
-    # rather than a chord. `has_gate` releases by closing the gate, which is
-    # what this def's `env_gen` waits for.
-    def sequence():
-        for midi, dur in [(45, 3.0), (52, 3.0), (50, 4.0)]:
-            freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
-            Event(instrument="unison", freq=freq, amp=0.4,
-                  dur=dur, sustain=dur - 0.5, has_gate=True).play(session.server)
-            yield dur
 
-    Routine(sequence).play(session.clock)
-    stats = session.render(sample_rate=SR, channels=2, path=out_path)
+def sequence():
+    for midi, dur in [(45, 3.0), (52, 3.0), (50, 4.0)]:
+        freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
+        Event(instrument="unison", freq=freq, amp=0.4,
+              dur=dur, sustain=dur - 0.5, has_gate=True).play(session.server)
+        yield dur
 
+
+Routine(sequence).play(session.clock)
+
+
+# %%
+def run(path: str = "multichannel.wav"):
+    """Render the score to ``path``."""
+    stats = session.render(sample_rate=SR, channels=2, path=path)
     peak = max(stats.peak, default=0.0)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
-
-    print(f"wrote {out_path} - listen with: pw-play {out_path}")
-
-    # No def, no session: a channel list is an expression, so the verbs take
-    # it directly. Two different signals, one per channel.
-    pair = render(chans(sine(220.0) * 0.2, sine(330.0) * 0.2),
-                  dur=0.5, sample_rate=SR, channels=2)
-    print(f"bare channel list: {pair.channels} channels, "
-          f"peak {max(pair.peak, default=0.0):.3f}")
+    print(f"wrote {path} - listen with: pw-play {path}")
+    return stats
 
 
-if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, RuntimeError) as e:
-        sys.exit(str(e))
+# %% [markdown]
+# ## A channel list needs no def at all
+# No def, no session: a channel list is an expression, so the verbs take it
+# directly. Two different signals, one per channel.
+
+# %%
+pair = render(chans(sine(220.0) * 0.2, sine(330.0) * 0.2),
+              dur=0.5, sample_rate=SR, channels=2)
+print(f"bare channel list: {pair.channels} channels, "
+      f"peak {max(pair.peak, default=0.0):.3f}")
+
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    run(next((a for a in sys.argv[1:] if not a.startswith("-")), "multichannel.wav"))
+else:
+    print("score ready - run('out.wav') to render it")

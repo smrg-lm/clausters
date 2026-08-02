@@ -20,8 +20,13 @@ they go out through ``send_bundle`` (stamped with the routine's logical beat)
 rather than the immediate ``pause``/``resume``, which would collapse onto time
 0. A live RT session would call ``node.pause()`` /
 ``.resume(node)`` directly instead.
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
+Offline does not mean run-once: step through it with Shift+Enter, change the
+score in one cell and re-render in the next.
 """
 
+# %%
 import sys
 
 from clausters import Session
@@ -32,38 +37,52 @@ from clausters.defs import Synth
 
 SR = 48000.0
 
+# %% [markdown]
+# ## The def
+# A plain sustained sine -- no envelope, so it runs until paused or freed. Its
+# phase is what we watch survive a pause and resume.
 
+# %%
 def drone(name: str = "drone") -> SynthDef:
-    """A plain sustained sine -- no envelope, so it runs until paused or freed;
-    its phase is what we watch survive a pause and resume."""
     freq = control("freq", 220.0)
     amp = control("amp", 0.2)
     sig = sine(freq) * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
-def main():
-    out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "pause_resume.wav")
+# %% [markdown]
+# ## The score
+# Tone, pause, tone. In an NRT score the toggles must be timetagged, so they go
+# out through `send_bundle` (stamped with the routine's logical beat).
 
-    session = Session.nrt(tempo=2.0)
-    drone().send(session.server)             # /def_send synth at time 0
-    node = Synth("drone", {"freq": 220.0, "amp": 0.2}, server=session.server)
+# %%
+session = Session.nrt(tempo=2.0)
+drone().send(session.server)             # /def_send synth at time 0
+node = Synth("drone", {"freq": 220.0, "amp": 0.2}, server=session.server)
 
-    def sequence():
-        yield 1.0                                    # a beat of tone
-        session.server.send_bundle(("/node_run", node.id, 0))   # pause: goes silent
-        yield 1.0                                    # a beat of silence
-        session.server.send_bundle(("/node_run", node.id, 1))   # resume: tone returns
-        yield 1.0                                    # a beat of tone again
-        session.server.send_bundle(("/node_free", node.id))
 
-    Routine(sequence).play(session.clock)
-    stats = session.render(sample_rate=SR, channels=2, path=out_path)
+def sequence():
+    yield 1.0                                    # a beat of tone
+    session.server.send_bundle(("/node_run", node.id, 0))   # pause: goes silent
+    yield 1.0                                    # a beat of silence
+    session.server.send_bundle(("/node_run", node.id, 1))   # resume: tone returns
+    yield 1.0                                    # a beat of tone again
+    session.server.send_bundle(("/node_free", node.id))
 
-    # The middle beat is silent, the outer beats are not -- a quick sanity
-    # check, and it needs the samples per beat rather than the whole-render
-    # RMS the stats carry. The server wrote the file; read it back for them.
-    audio = read_soundfile(out_path)
+
+Routine(sequence).play(session.clock)
+
+
+# %% [markdown]
+# ## Render, and check the gap by the numbers
+# The middle beat is silent and the outer beats are not. That needs the samples
+# per beat rather than the whole-render RMS the stats carry, so the file the
+# server wrote is read back for them.
+
+# %%
+def run(path: str = "pause_resume.wav"):
+    stats = session.render(sample_rate=SR, channels=2, path=path)
+    audio = read_soundfile(path)
     third = audio.frames // 3
     rms = lambda a: (sum(s * s for s in a) / max(1, len(a))) ** 0.5
     mono = audio.channel(0)
@@ -71,12 +90,12 @@ def main():
     print(f"beat RMS: {rms(mono[:third]):.3f} (on) "
           f"{rms(mono[third:2 * third]):.3f} (paused) "
           f"{rms(mono[2 * third:]):.3f} (resumed)")
+    print(f"wrote {path} - listen with: pw-play {path}")
+    return stats
 
-    print(f"wrote {out_path} - listen with: pw-play {out_path}")
 
-
-if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, RuntimeError) as e:
-        sys.exit(str(e))
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    run(next((a for a in sys.argv[1:] if not a.startswith("-")), "pause_resume.wav"))
+else:
+    print("score ready - run('out.wav') to render it")

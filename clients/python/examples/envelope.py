@@ -19,8 +19,13 @@ release finishes. The built-in ``default`` instrument carries a gated envelope
 of exactly this shape (a fixed ASR) and is gate-released for you; this example
 shows how to build your **own** envelope -- a full ADSR with a chosen attack,
 decay, sustain and release.
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
+Offline does not mean run-once: change an envelope segment in the def cell and
+re-render in the next one.
 """
 
+# %%
 import sys
 
 from clausters import Session
@@ -37,10 +42,13 @@ from clausters.seq import Pbind, Pseq
 
 SR = 48000.0
 
+# %% [markdown]
+# ## The def
+# A sine whose amplitude follows an ADSR. ``gate`` sustains at half level while
+# held; on release it fades out and frees the synth.
 
+# %%
 def adsr_pad(name: str = "adsr_pad") -> SynthDef:
-    """A sine whose amplitude follows an ADSR. ``gate`` sustains at half level
-    while held; on release it fades out and frees the synth."""
     freq = control("freq", 440.0)
     amp = control("amp", 0.2)
     gate = control("gate", 1.0)
@@ -53,36 +61,40 @@ def adsr_pad(name: str = "adsr_pad") -> SynthDef:
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
-def phrase() -> Pbind:
-    # `has_gate` makes each note release its envelope (gate 0) after `sustain`
-    # rather than being freed outright; `sustain` < `dur` leaves a gap so the
-    # release tail is audible before the next note.
-    return Pbind(
-        instrument="adsr_pad",
-        has_gate=True,
-        degree=Pseq([0, 2, 4, 7], repeats=2),
-        dur=0.5,
-        sustain=0.35,
-        amp=0.2,
-    )
+# %% [markdown]
+# ## The phrase
+# `has_gate` makes each note release its envelope (``gate 0``) after ``sustain``
+# rather than being freed outright; ``sustain`` < ``dur`` leaves a gap so the
+# release tail is audible before the next note.
+
+# %%
+phrase = Pbind(
+    instrument="adsr_pad",
+    has_gate=True,
+    degree=Pseq([0, 2, 4, 7], repeats=2),
+    dur=0.5,
+    sustain=0.35,
+    amp=0.2,
+)
+
+# %%
+session = Session.nrt(tempo=2.0)
+adsr_pad().send(session.server)  # /def_send synth at time 0 in the score
+session.play(phrase)
 
 
-def main():
-    out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "envelope.wav")
-
-    session = Session.nrt(tempo=2.0)
-    adsr_pad().send(session.server)  # /def_send synth at time 0 in the score
-    session.play(phrase())
-    stats = session.render(sample_rate=SR, channels=2, path=out_path)
-
+# %%
+def run(path: str = "envelope.wav"):
+    """Render the score to ``path``."""
+    stats = session.render(sample_rate=SR, channels=2, path=path)
     peak = max(stats.peak, default=0.0)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
+    print(f"wrote {path} - listen with: pw-play {path}")
+    return stats
 
-    print(f"wrote {out_path} - listen with: pw-play {out_path}")
 
-
-if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, RuntimeError) as e:
-        sys.exit(str(e))
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    run(next((a for a in sys.argv[1:] if not a.startswith("-")), "envelope.wav"))
+else:
+    print("score ready - run('out.wav') to render it")
