@@ -859,21 +859,20 @@ class Server:
         sits). A `clausters.seq.timeline.Playhead` follows this with
         `follow_transport`. RT only.
 
-        ``group`` is the governed group (`transport_group`) or ``None``, and
-        ``transport_sample`` is the transport clock: samples elapsed under the
-        transport, held while it is stopped. Both are ``None`` against a server
-        old enough to reply with only the first five fields."""
+        ``group`` is the governed group (`transport_group`) or ``None`` when
+        nothing is bound, and ``transport_sample`` is the transport clock:
+        samples elapsed under the transport, held while it is stopped."""
         _, args = self.request("/transport_query", timeout=timeout, expect=("/transport_query.reply",))
         if not int(args[2]):
             return None
-        group = int(args[5]) if len(args) > 5 else None
+        group = int(args[5])
         return {
             "origin_sample": int(args[0]),
             "tempo": float(args[1]),
             "playing": bool(int(args[3])),
             "position": float(args[4]),
-            "group": None if group is None or group < 0 else group,
-            "transport_sample": int(args[6]) if len(args) > 6 else None,
+            "group": None if group < 0 else group,
+            "transport_sample": int(args[6]),
         }
 
     def transport_group(self, group, timeout: float = 5.0):

@@ -742,8 +742,8 @@ The shape to follow:
   and fails when it disagrees with its own classification, so surface that
   failure rather than swallowing it.
 - `transportState()` grows two trailing fields, `group` (or `null` when `-1`)
-  and `transportSample`. Read them as absent when the reply has only five
-  fields, the way the Python client does.
+  and `transportSample`. Both are always there — every server reports them —
+  so read them straight, the way the Python client does.
 - `Transport.resume()` **distinct from** `play()` — MIDI's continue against
   start. Play re-renders from a position; resume continues the frozen sound and
   must not call the source again. A governed `pause()` freezes the clock and
