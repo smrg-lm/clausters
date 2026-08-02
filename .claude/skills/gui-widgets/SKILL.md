@@ -11,14 +11,14 @@ This skill is the widget-level companion of [[clausters-gui]] (the track map: pr
 
 Adding a widget is **never a protocol change** — the generic GuiDef node (`{id, type, ...props, children}`) already carries it; an unknown type is laid out but not painted. The checklist, all inside `clients/gui/`:
 
-1. **Typed kind** — a new `WidgetKind` variant in `src/host/widget.rs` plus its `Widget::from_node` parse (keep the int/float distinction; props are flat OSC-primitive JSON).
+1. **Typed kind** — a new `WidgetKind` variant in `src/host/widget/mod.rs`, its construction arm in `widget/build.rs` and, for every live-updatable prop, an arm in `widget/apply.rs` (that is `/gui_set`). Keep the int/float distinction; props are flat OSC-primitive JSON.
 2. **Renderer** — two shapes exist; pick by cost:
    - *Cheap*: pure functions over the flat-geometry `Mesh` (`src/host/paint.rs` `Painter`: rect/quad/line/disc + the `src/host/font.rs` bitmap text), like `meters`/`nodetree`/`plot`. GPU-free, unit-testable without a window.
    - *Heavy GPU*: an own pipeline/view like `waveform`/`spectrogram`/`canvas` (the `TimelineView` shape). Only when a mesh per frame cannot express it (textures, shaders, very dense geometry).
 3. **Natural size** — say whether the kind is elastic or knows how big it wants to be (the section below decides it), and derive the number from the metrics roles, never from a fresh literal.
 4. **Frame plumbing** — live inputs reach the shared per-window render `src/host/frame.rs` (`FrameInputs`); both fronts (native `gui/`, web `web.rs`) call the same `frame::render`, so a widget drawn there is browser-correct by construction.
 5. **Interaction** — hit-test + mutation in `src/host/interact.rs` (shared by both fronts); a value-bearing interaction goes through the one `deliver` path: binding `forward` first, `/gui_event` when unbound.
-6. **Python builder** — one function in `clients/python/clausters/gui/guidef.py` (mirror the existing ones: keyword props, `_drop_none`), plus a commented example in `examples/`.
+6. **Both builders** — one function in `clients/python/clausters/gui/guidef.py` (mirror the existing ones: keyword props, `_drop_none`) and its counterpart in `clients/web/src/gui/guidef.ts`, plus a commented example in `examples/`. A prop that reaches one surface and not the others needs a row in `docs/gui-props.md` saying why: `clients/python/tests/test_gui_props.py` reads the host, the Python builders and the TS builders and fails on an undeclared divergence — which is the only thing standing between a prop and the three edits it costs.
 7. **Tests** — GPU-free logic (models, math, parse) in `cargo test` from `clients/gui/`; window binaries and E2E follow the single-Bash-invocation rule.
 8. **The two tables** — a new/moved widget (or a change to what feeds one) updates, in the same change: the **widget map** in `docs/architecture.md` §"The widget map" (widget → module(s) → fed by, the development index) and the **widget catalog** in `docs/gui-protocol.md` (widget → props, the wire reference). Review both whenever GUI functionality changes shape, not only on a brand-new widget.
 

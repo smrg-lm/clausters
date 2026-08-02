@@ -954,17 +954,38 @@ near.
   `clients/web/PLAN.md` carries the shape for the TS port — including the
   timeout, which `defs/server.ts` repeats 26 times.
 
-- ⬜ **R7 — The widget's props declared once.** `gui/guidef.py` (1278 lines, 29
-  builders) and `gui/guidef.ts` (1302) each enumerate every widget's props as
-  explicit keyword arguments filtered through `_drop_none`. It reads well and
-  documents itself, which is why it stays *shaped* like that — but a prop
-  currently costs three synchronized edits (host, Python builder, TS builder)
-  and nothing checks the three agree. Drive the builders from a declarative
-  `{type: [props]}` table shared by both clients (generated from the host's
-  widget registry, so `docs/gui-protocol.md` and the two builders cannot
-  diverge from what the host accepts), keeping the typed signatures where they
-  earn their keep. This is R1's problem in the GUI layer and should follow its
-  decision.
+- ✅ **R7 — The widget's props, declared once** *(done 2026-08-02)* — a prop
+  costs three synchronized edits (host, Python builder, TS builder) and nothing
+  checked the three agree. It follows R1's decision, and for R1's reason: the
+  premise it was written with does not hold.
+
+  **There is no widget registry to generate from.** `host::registry::Registry`
+  is bookkeeping over `Map<String, Value>` — it stores whatever arrives and
+  knows nothing about which props a `knob` takes. The vocabulary lives in the
+  *schema's* two wire passes (`widget::build`, `widget::apply`), one arm per
+  kind plus the shared bundles those arms embed. And generation was the wrong
+  goal anyway: the explicit signatures **are** the documentation — the Python
+  docstring is the widget's user reference and the TS option type is what an
+  editor completes.
+
+  So `docs/gui-props.md` is the manifest and
+  `clients/python/tests/test_gui_props.py` enforces it: Python read by *calling
+  it* (`inspect.signature`, exact), the TS option types and the host's two
+  passes read statically. A prop that does not reach all three fails the test
+  unless a row says why, with R1's three verdicts. Verified by mutation in six
+  directions (a prop dropped from a builder, a prop added to one, a row
+  deleted, a row naming the wrong surfaces, a stale row, the host no longer
+  reading a prop).
+
+  **What it surfaced, as its first act: 28 rows, 26 pointing the same way.**
+  The host implements the timeline chrome (`playhead`, `playhead_loop_*`,
+  `sel_*`, `y_*`, `link`), `docs/gui-protocol.md` documents it and the TS
+  `TimelineOptions` declares it once for every timeline widget — while the
+  Python builders name it widget by widget, so `track` and `timeruler` name
+  almost none of it. The other two point the other way and are worse: the TS
+  `plot` offers `buffer` and `cache` that the host's plot never reads, so a
+  page passing them gets no error and no effect. Closing either is an API
+  change, so both are recorded as `gap` rather than fixed here.
 
 - ⬜ **R8 — Catalogs split by family.** `clients/python/clausters/defs/ugens.py`
   (1971 lines, 161 functions) becomes `defs/ugens/{osc,filter,buf,demand,

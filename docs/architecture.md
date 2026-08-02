@@ -536,9 +536,14 @@ Take a hypothetical `meterbar`. The steps are always the same:
    `host/interact.rs` (shared, so both fronts behave the same); the *gesture*
    (which button, which drag state) belongs to the front. If the widget writes
    data back, add its flat event payload here — never a new OSC address.
-6. **The Python builder** — a function in `clients/python/clausters/gui/guidef.py`
-   returning the node dict, with the docstring that *is* the widget's user
-   reference (the API page is generated from it).
+6. **The two builders** — a function in
+   `clients/python/clausters/gui/guidef.py` returning the node dict, with the
+   docstring that *is* the widget's user reference (the API page is generated
+   from it), and its counterpart in `clients/web/src/gui/guidef.ts`. A prop that
+   reaches one of them and not the other (or not the host) needs a row in the
+   prop manifest `docs/gui-props.md` saying why —
+   `clients/python/tests/test_gui_props.py` reads all three surfaces and fails
+   on a divergence nobody declared.
 7. **Tests and an example** — pure tests for the layout/hit-test/edit, and a
    `clients/python/examples/gui_*.py` when the widget is user-facing.
 8. **The maps** — a row in [the widget map](#the-widget-map) above and one in

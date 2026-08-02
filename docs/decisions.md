@@ -4037,3 +4037,45 @@ impossible is divergence nobody wrote down. `gap` is a first-class verdict for
 exactly that reason: the honest answer is often "I have not thought about the
 other side", and a manifest that had no way to say so would be filled with
 invented rationales instead.
+
+## There is no widget registry to generate the builders from
+
+The GUI layer has the same disease the core's bindings had, one level up: a
+widget prop is declared in the host (`clients/gui/src/host/widget`), in the
+Python builder and in the TypeScript one, and **nothing ties the three
+together**. The wire is untyped JSON on purpose — that is what lets a widget be
+added without touching the protocol — so an unknown prop is ignored and a prop
+added on one side and forgotten on another is silent in every build.
+
+The plan for it was to generate both builders from a declarative table taken
+from the host's widget registry. Measured, that table does not exist and the
+name misleads: `host::registry::Registry` is bookkeeping over
+`Map<String, Value>` — it stores whatever props arrive and knows nothing about
+which ones a `knob` accepts. The vocabulary lives in the *schema's* two wire
+passes, `widget::build` (construction) and `widget::apply` (`/gui_set`), spread
+over one arm per kind plus the shared bundles (`Flow`, `EditorProps`, `Range`)
+those arms embed. There is a source of truth; there is no table.
+
+Generation was also the wrong goal for a second reason: the explicit keyword
+signatures **are** the documentation. The Python builder's docstring is the
+widget's user reference (the API page is generated from it) and the TS option
+type is what an editor completes. A generated `**props` passthrough would trade
+the thing a reader uses for the thing a machine finds convenient.
+
+So the artifact is the one `docs/bindings.md` already established for the core:
+`docs/gui-props.md` records every prop that does *not* reach all three surfaces,
+with the same three verdicts (`idiom`, `n/a`, `gap`), and
+`clients/python/tests/test_gui_props.py` reads the three and fails on a
+divergence the table does not name — or on a row that names one no longer there.
+The readers differ because the sources do: Python is read by **calling it**
+(`inspect.signature`, exact), the TS builders and the host's two passes are read
+statically.
+
+Its first act was to surface twenty-eight rows, twenty-six of them pointing the
+same way: the host implements the timeline chrome (the playhead, its loop
+region, the selection, the vertical window), `docs/gui-protocol.md` documents
+it, the TS `TimelineOptions` declares it once for every timeline widget — and
+the Python builders name it widget by widget, so `track` and `timeruler` name
+almost none of it. The other two point the other way and are the more urgent
+kind: the TS `plot` offers `buffer` and `cache` that the host's plot never
+reads, so a page passing them gets no error and no effect.
