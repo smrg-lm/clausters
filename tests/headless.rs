@@ -124,7 +124,7 @@ fn d_recv_and_s_new_produce_the_tone() {
 }
 
 #[test]
-fn c_stream_replies_pace_on_the_sample_clock() {
+fn bus_stream_replies_pace_on_the_sample_clock() {
     let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
     server.ctl_set(3, 0.75);
     assert!(server.send(&msg(
@@ -137,7 +137,7 @@ fn c_stream_replies_pace_on_the_sample_clock() {
     pull(&mut server, (0.35 * SR) as usize / BLOCK_SIZE);
     let sets: Vec<_> = replies(&server)
         .into_iter()
-        .filter(|m| m.addr == "/bus_set")
+        .filter(|m| m.addr == "/bus_stream.reply")
         .collect();
     assert_eq!(sets.len(), 4, "immediate + 3 paced snapshots: {sets:?}");
     for m in &sets {
