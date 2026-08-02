@@ -1141,14 +1141,23 @@ near.
   actually stops the run.
 
   This is unproven rather than untried, because the obvious test is unsafe.
-  The workflow's only trigger is a `v*` tag, so testing it means starting a
-  real release; and if `verify` passed when it should not have — precisely the
-  misconfiguration under test — the run would continue into `publish-npm` and
-  `publish-pypi`, which cannot be taken back. **The test's failure mode is the
-  disaster it is testing for**, so it does not get run casually, and it did not
-  get run to close this milestone.
+  Testing it meant starting a real release; and if `verify` passed when it
+  should not have — precisely the misconfiguration under test — the run would
+  continue into `publish-npm` and `publish-pypi`, which cannot be taken back.
+  **The test's failure mode is the disaster it is testing for**, so it does not
+  get run casually, and it did not get run to close this milestone.
 
-  How to close it safely, when it is worth the time:
+  **Half of it is now observed** (2026-08-02): a `workflow_dispatch` trigger
+  rehearses the workflow without a tag — `verify` runs exactly as a release
+  would, and the four build/publish jobs are guarded by
+  `github.event_name == 'push'`, so nothing can reach a registry. The first run
+  went green in 6m1s with all four skipped, which retires the weaker of the two
+  doubts: the job runs on Actions at all, on the real runner, not just as YAML
+  that parses. It says nothing about the stronger one — the dispatch path skips
+  the publish jobs whatever `verify` does, so it cannot distinguish a gate from
+  its absence.
+
+  How to close the rest safely, when it is worth the time:
 
   - **On a fork or a scratch repository.** The `npm` and `pypi` environments,
     the `NPM_TOKEN` secret and PyPI's trusted-publisher binding (which names
@@ -1161,10 +1170,10 @@ near.
     rules on `pypi` and `npm`. A required reviewer turns any run that reaches a
     publish step into a pause instead of a publication — a second, independent
     stop that does not depend on this workflow being correct.
-  - **What does not count as proof:** watching a real release pass through a
-    green `verify`. That shows the job runs, not that its failure stops
-    anything, and those are different claims. A gate only ever observed passing
-    is indistinguishable from no gate.
+  - **What does not count as proof:** watching a green `verify` — in a real
+    release or in a dispatch rehearsal. That shows the job runs, not that its
+    failure stops anything, and those are different claims. A gate only ever
+    observed passing is indistinguishable from no gate.
 
 **Not in this track (it is new work, not restructuring).** The review also found
 a real parity gap: `defs/ugens.py` exposes 151 builders against
