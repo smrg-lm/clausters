@@ -43,7 +43,9 @@ clausters = "clausters._cli:main"
 dev = ["pytest>=7"]
 
 [tool.setuptools]
-packages = ["clausters", "clausters.base", "clausters.seq", "clausters.defs", "clausters.form", "clausters.gui"]
+packages = ["clausters", "clausters.base", "clausters.seq", "clausters.defs",
+            "clausters.defs.server", "clausters.defs.ugens", "clausters.form",
+            "clausters.gui"]
 
 # The cargo-built artifacts that build_native.py stages into the package: the
 # cdylibs in _libs/ (embedded server / numeric core), libfaust and the libLLVM it
