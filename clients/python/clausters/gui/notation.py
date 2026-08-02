@@ -37,9 +37,21 @@ own unit filled in.
 from __future__ import annotations
 
 import json
+import os
 
-from .. import _native
+from .. import _libpath, _native
 from .transport import Transport
+
+# Where the SMuFL data the engraver reads lives. verovio bakes a resource path
+# in at *build* time -- the configure-time prefix, which is not where a wheel's
+# copy ends up -- so an installed package has to say where its own staged data
+# is, or every engraving fails with "font resources are not available". The
+# native side reads `CLAUSTERS_VEROVIO` and looks for `<dir>/verovio` under it;
+# `setdefault` so an explicit override still wins, and only when the bundled
+# directory is actually there (a source checkout has none and falls back to the
+# build prefix baked in by `clausters-notation`'s build script).
+if os.path.isdir(os.path.join(_libpath.LIBS_DIR, "verovio")):
+    os.environ.setdefault("CLAUSTERS_VEROVIO", _libpath.LIBS_DIR)
 
 # 32nd-note resolution: every duration snaps to an integer number of these, so
 # the encoder's barline splitting and tie decomposition are exact integer
