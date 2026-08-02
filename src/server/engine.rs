@@ -25,7 +25,6 @@ use crate::dsp::{
     Buses, ControlBuses, Limits, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx, ReplyMsg,
 };
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
-#[cfg(feature = "transport")]
 use crate::server::clock_axis::{DeviceSample, TransportSample};
 use crate::server::ipc::Segment;
 use crate::server::workers::WorkerPool;
@@ -88,13 +87,11 @@ pub enum Cmd {
     /// Rolls (`rolling = true`) or stops (`false`) the transport. Stopped, the
     /// transport clock holds and the transport queue cannot fall due; the
     /// device clock is untouched either way.
-    #[cfg(feature = "transport")]
     TransportRun {
         rolling: bool,
     },
     /// Binds the group the transport governs; `id < 0` unbinds. Unbinding
     /// thaws the group, so no frozen ownerless subtree is left behind.
-    #[cfg(feature = "transport")]
     TransportGroup {
         id: i32,
     },
@@ -213,7 +210,6 @@ struct ScheduledBundle {
 /// A timed bundle on the transport axis. Same shape as [`ScheduledBundle`];
 /// the type of `time` is the whole difference, and it is what keeps the two
 /// queues from being fed each other's stamps.
-#[cfg(feature = "transport")]
 struct ScheduledBundleT {
     time: TransportSample,
     cmds: Vec<Cmd>,
@@ -225,7 +221,6 @@ struct ScheduledBundleT {
 ///
 /// Every variant is listed: no catch-all arm, so a `Cmd` added later fails to
 /// compile here rather than being silently classified as ungoverned.
-#[cfg(feature = "transport")]
 pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
     match cmd {
         // A node being created does not exist yet, so the end that can be
@@ -406,24 +401,19 @@ pub struct Engine {
     now: u64,
     /// Whether the transport rolls. Stopped, `frozen_total` accumulates and
     /// `transport_now` holds.
-    #[cfg(feature = "transport")]
     transport_rolling: bool,
     /// Total samples the transport has spent stopped since boot. The whole of
     /// the device -> transport conversion (see `server::clock_axis`).
-    #[cfg(feature = "transport")]
     frozen_total: u64,
     /// Block-accurate mirror of the transport clock for the network thread,
     /// beside `sample_clock`.
-    #[cfg(feature = "transport")]
     transport_clock: Arc<AtomicU64>,
     /// Total samples the transport has spent stopped, mirrored for the network
     /// thread. Published beside the clock rather than derived from
     /// `current_samples() - current_transport_samples()`, because those are two
     /// separate loads and can straddle a block.
-    #[cfg(feature = "transport")]
     frozen_clock: Arc<AtomicU64>,
     /// The group the transport governs, frozen while the transport is stopped.
-    #[cfg(feature = "transport")]
     transport_group: Option<i32>,
     /// Pending timed bundles, sorted by time (stable for equal times).
     /// Pre-allocated: insertion and removal never allocate.
@@ -431,7 +421,6 @@ pub struct Engine {
     /// Pending timed bundles on the transport axis. Frozen with the transport:
     /// while stopped nothing here can fall due, and nothing here is rewritten.
     /// Pre-allocated like `sched`, to the same capacity.
-    #[cfg(feature = "transport")]
     sched_transport: Vec<ScheduledBundleT>,
     sample_clock: Arc<AtomicU64>,
     /// M14: block-accurate mirror of the sample clock into the IPC segment
@@ -472,13 +461,11 @@ pub struct EngineHandle {
     reply_rx: Consumer<ReplyMsg>,
     control_buses: ControlBuses,
     sample_clock: Arc<AtomicU64>,
-    #[cfg(feature = "transport")]
     transport_clock: Arc<AtomicU64>,
     /// Total samples the transport has spent stopped, mirrored for the network
     /// thread. Published beside the clock rather than derived from
     /// `current_samples() - current_transport_samples()`, because those are two
     /// separate loads and can straddle a block.
-    #[cfg(feature = "transport")]
     frozen_clock: Arc<AtomicU64>,
     counters: Arc<Counters>,
     /// The IPC segment when one exists — the network thread reads the audio
@@ -555,9 +542,7 @@ pub fn engine_pair_full(
         None => ControlBuses::new(control_buses),
     };
     let sample_clock = Arc::new(AtomicU64::new(0));
-    #[cfg(feature = "transport")]
     let transport_clock = Arc::new(AtomicU64::new(0));
-    #[cfg(feature = "transport")]
     let frozen_clock = Arc::new(AtomicU64::new(0));
     let tap_buses = vec![-1i32; ipc.as_ref().map_or(0, |s| s.taps())];
     let segment = ipc.clone();
@@ -572,18 +557,12 @@ pub fn engine_pair_full(
         input_channels: 0,
         input_rx: None,
         now: 0,
-        #[cfg(feature = "transport")]
         transport_rolling: false,
-        #[cfg(feature = "transport")]
         frozen_total: 0,
-        #[cfg(feature = "transport")]
         transport_clock: Arc::clone(&transport_clock),
-        #[cfg(feature = "transport")]
         frozen_clock: Arc::clone(&frozen_clock),
-        #[cfg(feature = "transport")]
         transport_group: None,
         sched: Vec::with_capacity(SCHED_CAPACITY),
-        #[cfg(feature = "transport")]
         sched_transport: Vec::with_capacity(SCHED_CAPACITY),
         sample_clock: Arc::clone(&sample_clock),
         ipc,
@@ -609,9 +588,7 @@ pub fn engine_pair_full(
         reply_rx,
         control_buses,
         sample_clock,
-        #[cfg(feature = "transport")]
         transport_clock,
-        #[cfg(feature = "transport")]
         frozen_clock,
         counters,
         segment,
@@ -629,7 +606,6 @@ impl Engine {
     }
 
     /// The transport clock: samples elapsed under the transport.
-    #[cfg(feature = "transport")]
     pub fn transport_now(&self) -> TransportSample {
         DeviceSample::new(self.now).to_transport(self.frozen_total)
     }
@@ -637,7 +613,6 @@ impl Engine {
     /// Whether the transport queue holds nothing. A server that never binds a
     /// group never puts a bundle here, so this staying true is the observable
     /// form of "scheduling behaves exactly as it did before the transport".
-    #[cfg(feature = "transport")]
     pub fn transport_queue_is_empty(&self) -> bool {
         self.sched_transport.is_empty()
     }
@@ -652,7 +627,6 @@ impl Engine {
     ///
     /// RT-safe: `is_descendant_of` is a bounded walk up the `parent` links and
     /// allocates nothing, so this is a plain scan of the bundle.
-    #[cfg(feature = "transport")]
     fn bundle_is_governed(&self, cmds: &[Cmd]) -> bool {
         let Some(group) = self.transport_group else {
             return false;
@@ -730,114 +704,90 @@ impl Engine {
         self.fill_input_buses();
         let block_start = self.now;
         let block_end = block_start + BLOCK_SIZE as u64;
-        // The block is cut by the union of both queues. The two branches below
-        // are deliberately duplicated rather than factored: a build without the
-        // `transport` feature must run exactly the code the server ran before
-        // the transport existed, and the only way to *read* that guarantee is
-        // to see the original walk sitting there unchanged.
-        #[cfg(feature = "transport")]
-        {
-            let mut offset = 0usize;
-            // Where inside this block the current frozen run began, if the
-            // transport is stopped. Frozen time is credited **at the sample the
-            // transport flips**, not a whole block at a time: a stop and a
-            // resume both land mid-block, and crediting a flat `BLOCK_SIZE`
-            // whenever the transport happened to be stopped at the boundary
-            // loses (stop offset - resume offset) samples on every cycle, an
-            // error that accumulates without bound. Crediting at the flip also
-            // keeps `frozen_total` correct *during* the block, which is what
-            // the transport-queue projection below reads.
-            let mut frozen_from = if self.transport_rolling {
-                None
+        // The block is cut by the union of both queues: a transport entry
+        // is projected onto the device axis with the frozen total known at
+        // this instant, and a stopped transport can never reach its own queue.
+        let mut offset = 0usize;
+        // Where inside this block the current frozen run began, if the
+        // transport is stopped. Frozen time is credited **at the sample the
+        // transport flips**, not a whole block at a time: a stop and a
+        // resume both land mid-block, and crediting a flat `BLOCK_SIZE`
+        // whenever the transport happened to be stopped at the boundary
+        // loses (stop offset - resume offset) samples on every cycle, an
+        // error that accumulates without bound. Crediting at the flip also
+        // keeps `frozen_total` correct *during* the block, which is what
+        // the transport-queue projection below reads.
+        let mut frozen_from = if self.transport_rolling {
+            None
+        } else {
+            Some(0usize)
+        };
+        loop {
+            let device_due = self.sched.first().map(|b| b.time);
+            // A transport entry's device time only exists while rolling: a
+            // stopped transport can never reach it. Both this and
+            // `frozen_total` are read afresh on every iteration, because a
+            // bundle applied below may have carried a `TransportRun` — a
+            // stop scheduled mid-block freezes the transport queue from
+            // that sample on, which is the wanted behaviour.
+            let transport_due = if self.transport_rolling {
+                self.sched_transport
+                    .first()
+                    .map(|b| b.time.to_device(self.frozen_total).get())
             } else {
-                Some(0usize)
+                None
             };
-            loop {
-                let device_due = self.sched.first().map(|b| b.time);
-                // A transport entry's device time only exists while rolling: a
-                // stopped transport can never reach it. Both this and
-                // `frozen_total` are read afresh on every iteration, because a
-                // bundle applied below may have carried a `TransportRun` — a
-                // stop scheduled mid-block freezes the transport queue from
-                // that sample on, which is the wanted behaviour.
-                let transport_due = if self.transport_rolling {
-                    self.sched_transport
-                        .first()
-                        .map(|b| b.time.to_device(self.frozen_total).get())
-                } else {
-                    None
-                };
-                let take_transport = match (device_due, transport_due) {
-                    (_, None) => false,
-                    (None, Some(_)) => true,
-                    // Ties go to the device queue: a fixed preference, because
-                    // cross-queue enqueue order is not recoverable at fire time
-                    // (a transport entry's device time is not fixed when it is
-                    // enqueued). Device-first is the right side, since it makes
-                    // an empty transport queue indistinguishable from the
-                    // single-queue walk below.
-                    (Some(d), Some(t)) => t < d,
-                };
-                let due_time = if take_transport {
-                    transport_due
-                } else {
-                    device_due
-                };
-                let Some(due_time) = due_time.filter(|t| *t < block_end) else {
-                    break;
-                };
-                let at = due_time.saturating_sub(block_start) as usize;
-                if at > offset {
-                    self.process_slice(offset, at - offset);
-                    offset = at;
-                }
-                // Vec::remove on the pre-allocated queue: memmove, no (de)alloc.
-                let mut cmds = if take_transport {
-                    self.sched_transport.remove(0).cmds
-                } else {
-                    self.sched.remove(0).cmds
-                };
-                for cmd in cmds.drain(..) {
-                    self.apply(cmd);
-                }
-                self.push_garbage(Garbage::SpentBundle(cmds));
-                // The bundle may have carried a `TransportRun`. Close or open
-                // the frozen run at this exact sample. A bundle holding both a
-                // stop and a resume nets to no frozen time, which is right:
-                // they land on the same sample.
-                match (frozen_from, self.transport_rolling) {
-                    (Some(from), true) => {
-                        self.frozen_total += (offset - from) as u64;
-                        frozen_from = None;
-                    }
-                    (None, false) => frozen_from = Some(offset),
-                    _ => {}
-                }
+            let take_transport = match (device_due, transport_due) {
+                (_, None) => false,
+                (None, Some(_)) => true,
+                // Ties go to the device queue: a fixed preference, because
+                // cross-queue enqueue order is not recoverable at fire time
+                // (a transport entry's device time is not fixed when it is
+                // enqueued). Device-first is the right side, since it makes
+                // an empty transport queue indistinguishable from a single
+                // queue over the device axis.
+                (Some(d), Some(t)) => t < d,
+            };
+            let due_time = if take_transport {
+                transport_due
+            } else {
+                device_due
+            };
+            let Some(due_time) = due_time.filter(|t| *t < block_end) else {
+                break;
+            };
+            let at = due_time.saturating_sub(block_start) as usize;
+            if at > offset {
+                self.process_slice(offset, at - offset);
+                offset = at;
             }
-            self.process_slice(offset, BLOCK_SIZE - offset);
-            // The block ends with the transport still stopped: credit the tail.
-            if let Some(from) = frozen_from {
-                self.frozen_total += (BLOCK_SIZE - from) as u64;
+            // Vec::remove on the pre-allocated queue: memmove, no (de)alloc.
+            let mut cmds = if take_transport {
+                self.sched_transport.remove(0).cmds
+            } else {
+                self.sched.remove(0).cmds
+            };
+            for cmd in cmds.drain(..) {
+                self.apply(cmd);
+            }
+            self.push_garbage(Garbage::SpentBundle(cmds));
+            // The bundle may have carried a `TransportRun`. Close or open
+            // the frozen run at this exact sample. A bundle holding both a
+            // stop and a resume nets to no frozen time, which is right:
+            // they land on the same sample.
+            match (frozen_from, self.transport_rolling) {
+                (Some(from), true) => {
+                    self.frozen_total += (offset - from) as u64;
+                    frozen_from = None;
+                }
+                (None, false) => frozen_from = Some(offset),
+                _ => {}
             }
         }
-        #[cfg(not(feature = "transport"))]
-        {
-            let mut offset = 0usize;
-            while self.sched.first().is_some_and(|b| b.time < block_end) {
-                // Vec::remove on the pre-allocated queue: memmove, no (de)alloc.
-                let due = self.sched.remove(0);
-                let at = due.time.saturating_sub(block_start) as usize;
-                if at > offset {
-                    self.process_slice(offset, at - offset);
-                    offset = at;
-                }
-                let mut cmds = due.cmds;
-                for cmd in cmds.drain(..) {
-                    self.apply(cmd);
-                }
-                self.push_garbage(Garbage::SpentBundle(cmds));
-            }
-            self.process_slice(offset, BLOCK_SIZE - offset);
+        self.process_slice(offset, BLOCK_SIZE - offset);
+        // The block ends with the transport still stopped: credit the tail.
+        if let Some(from) = frozen_from {
+            self.frozen_total += (BLOCK_SIZE - from) as u64;
         }
 
         // Buses 0..channels are the hardware outputs.
@@ -848,15 +798,12 @@ impl Engine {
         }
 
         self.now = block_end;
-        #[cfg(feature = "transport")]
-        {
-            // `frozen_total` was already credited to the sample inside the
-            // block-cut loop above; here the clock is only published.
-            self.transport_clock
-                .store(self.transport_now().get(), Ordering::Relaxed);
-            self.frozen_clock
-                .store(self.frozen_total, Ordering::Relaxed);
-        }
+        // `frozen_total` was already credited to the sample inside the
+        // block-cut loop above; here the clock is only published.
+        self.transport_clock
+            .store(self.transport_now().get(), Ordering::Relaxed);
+        self.frozen_clock
+            .store(self.frozen_total, Ordering::Relaxed);
         self.sample_clock.store(block_end, Ordering::Relaxed);
         if let Some(segment) = &self.ipc {
             // Audio taps first, then the clock: a reader that sees clock N
@@ -886,7 +833,6 @@ impl Engine {
             // The transport clock goes out before the device clock, for the
             // same reason the taps do: a reader that sees device clock N has
             // seen everything block N published.
-            #[cfg(feature = "transport")]
             segment
                 .transport_clock()
                 .store(self.transport_now().get(), Ordering::Relaxed);
@@ -992,7 +938,6 @@ impl Engine {
         // Classified here rather than in the arm below because the garbage
         // sink borrows three of our fields for the whole `match`, and the
         // classification wants `&self`. A discriminant test per command.
-        #[cfg(feature = "transport")]
         let governed = match &cmd {
             Cmd::Schedule { cmds, .. } => self.bundle_is_governed(cmds),
             _ => false,
@@ -1084,14 +1029,12 @@ impl Engine {
                 Cmd::RunNode { id, run } => {
                     self.tree.set_paused(id, !run);
                 }
-                #[cfg(feature = "transport")]
                 Cmd::TransportRun { rolling } => {
                     self.transport_rolling = rolling;
                     if let Some(group) = self.transport_group {
                         self.tree.set_paused(group, !rolling);
                     }
                 }
-                #[cfg(feature = "transport")]
                 Cmd::TransportGroup { id } => {
                     // Thaw whatever we governed before letting it go, and
                     // freeze the new one if we are already stopped.
@@ -1155,7 +1098,6 @@ impl Engine {
                         }
                     }
                 }
-                #[cfg(feature = "transport")]
                 Cmd::Schedule { time, cmds } => {
                     if governed {
                         // The stamp arrives on the device axis (the network
@@ -1178,19 +1120,6 @@ impl Engine {
                         self.sched.insert(pos, ScheduledBundle { time, cmds });
                     }
                 }
-                #[cfg(not(feature = "transport"))]
-                Cmd::Schedule { time, cmds } => {
-                    if self.sched.len() == self.sched.capacity() {
-                        // Queue full: reject the whole bundle; the network
-                        // side logs it when it collects the garbage.
-                        sink.push(Garbage::SpentBundle(cmds));
-                    } else {
-                        // Sorted insert, after equal times (FIFO ties).
-                        // Vec::insert below capacity does not allocate.
-                        let pos = self.sched.partition_point(|b| b.time <= time);
-                        self.sched.insert(pos, ScheduledBundle { time, cmds });
-                    }
-                }
                 Cmd::ClearSched => {
                     // `drain` keeps the queue's capacity (no dealloc here); each
                     // bundle's heap is freed on the network side.
@@ -1200,7 +1129,6 @@ impl Engine {
                     // Both queues: `/sched_clear` drops *every* pending bundle,
                     // and a governed one left behind would fire on the next
                     // resume with nothing left to explain it.
-                    #[cfg(feature = "transport")]
                     for bundle in self.sched_transport.drain(..) {
                         sink.push(Garbage::SpentBundle(bundle.cmds));
                     }
@@ -1288,14 +1216,12 @@ impl EngineHandle {
     }
 
     /// The transport clock as of the last completed block.
-    #[cfg(feature = "transport")]
     pub fn current_transport_samples(&self) -> u64 {
         self.transport_clock.load(Ordering::Relaxed)
     }
 
     /// Total samples the transport has spent stopped, as of the last completed
     /// block -- the whole of the device <-> transport axis conversion.
-    #[cfg(feature = "transport")]
     pub fn current_frozen_total(&self) -> u64 {
         self.frozen_clock.load(Ordering::Relaxed)
     }

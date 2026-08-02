@@ -98,9 +98,7 @@ struct Header {
     /// The transport clock (ABI v6): samples elapsed *under the transport*,
     /// frozen while it is stopped. The sample clock above never stops, so a
     /// reader drawing the piece's position wants this one and a reader pacing
-    /// on the device wants that one. Built without the `transport` feature it
-    /// stays 0 -- the field is in the layout either way, so one segment shape
-    /// serves every build.
+    /// on the device wants that one.
     ///
     /// It sits in what was reserved space rather than beside `sample_clock`,
     /// which is where it belongs by meaning: putting it there would shift every
@@ -386,7 +384,7 @@ impl Segment {
     }
 
     /// The transport clock: samples elapsed under the transport, held while it
-    /// is stopped. Zero in a build without the `transport` feature.
+    /// is stopped.
     pub fn transport_clock(&self) -> &AtomicU64 {
         &self.layout().header.transport_clock
     }

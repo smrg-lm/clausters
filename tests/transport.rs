@@ -1,5 +1,4 @@
 //! The server transport: a governed subtree frozen and resumed sample-exactly.
-#![cfg(feature = "transport")]
 
 use std::sync::Arc as SegArc;
 use std::sync::atomic::Ordering;
@@ -12,7 +11,7 @@ use clausters::server::ipc::Segment;
 // legible, which needs the `synth` def family (UGenSynth/synthdef::compile).
 // The transport-clock tests above them need neither, so only this half of
 // the file is gated — gating the whole file would silently drop the clock
-// tests' only coverage in a `transport`-without-`synth` build.
+// tests' only coverage in a build without the def family.
 #[cfg(feature = "synth")]
 use std::sync::Arc;
 

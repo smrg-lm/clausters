@@ -34,16 +34,13 @@ use tracing::{error, info, warn};
 use crate::dsp::ReplyKind;
 #[cfg(feature = "faust")]
 use crate::faust::compiler::{CacheJob, CompilePayload, CompileRequest, CompilerThread};
-#[cfg(feature = "transport")]
 use crate::node::MAX_NODES;
 use crate::osc::ClientId;
 use crate::osc::translate::{
     CmdTranslator, control_key, float_value, int_arg, parse_buffer_gen, parse_buffer_msg,
 };
-#[cfg(feature = "transport")]
 use crate::server::clock_axis::TransportSample;
 use crate::server::defstore::{self, DefKind, DefStore};
-#[cfg(feature = "transport")]
 use crate::server::engine::cmd_target_nodes;
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
 use crate::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtRunner};
@@ -198,7 +195,6 @@ struct Transport {
     /// server stores and broadcasts, which clients obey by choice. With a group
     /// bound, the engine enforces it -- `/transport_stop` freezes that subtree
     /// and the transport clock, `/transport_play` thaws them.
-    #[cfg(feature = "transport")]
     group: Option<i32>,
 }
 
@@ -941,15 +937,10 @@ impl OscServer {
                 Garbage::FreedSynth { id, .. } => {
                     self.translator.forget_node(id);
                 }
-                Garbage::FreedGroup {
-                    #[cfg(feature = "transport")]
-                    id,
-                    ..
-                } => {
+                Garbage::FreedGroup { id, .. } => {
                     // A governed group that has been freed cannot govern
                     // anything: unbind rather than leave the transport pointing
                     // at a node that no longer exists.
-                    #[cfg(feature = "transport")]
                     if self.transport.and_then(|t| t.group) == Some(id) {
                         if let Some(mut t) = self.transport {
                             t.group = None;
@@ -1219,9 +1210,7 @@ impl OscServer {
             "/transport_play" => self.handle_transport_play(&msg, from),
             "/transport_stop" => self.handle_transport_stop(from),
             "/transport_locate" => self.handle_transport_locate(&msg, from),
-            #[cfg(feature = "transport")]
             "/transport_group" => self.handle_transport_group(&msg, from),
-            #[cfg(feature = "transport")]
             "/sched_atTransport" => self.handle_sched_at_transport(&msg, from),
             "/server_quit" => {
                 self.reply(from, "/done", vec![OscType::String("/server_quit".into())]);
@@ -1358,17 +1347,8 @@ impl OscServer {
             Some(t) => (t.origin_sample, t.tempo, 1, t.playing as i32, t.position),
             None => (0, 0.0, 0, 0, 0.0),
         };
-        #[cfg(feature = "transport")]
         let group = self.transport.and_then(|t| t.group).unwrap_or(-1);
-        // Built without the transport feature there is no governed group and no
-        // transport clock, so the two trailing fields report "none" rather than
-        // disappearing: a client reads one reply shape from every build.
-        #[cfg(not(feature = "transport"))]
-        let group = -1;
-        #[cfg(feature = "transport")]
         let transport_sample = self.handle.current_transport_samples() as i64;
-        #[cfg(not(feature = "transport"))]
-        let transport_sample = 0i64;
         vec![
             OscType::Long(origin),
             OscType::Double(tempo),
@@ -1444,18 +1424,15 @@ impl OscServer {
         // The governed group survives, because it is a binding to the tree, not
         // part of the grid -- and dropping it here would silently leave a frozen
         // subtree with nobody owning it.
-        #[cfg(feature = "transport")]
         let group = self.transport.and_then(|t| t.group);
         self.transport = Some(Transport {
             origin_sample: origin,
             tempo,
             playing: false,
             position: 0.0,
-            #[cfg(feature = "transport")]
             group,
         });
         // Redefining the grid stops the transport, so a bound group freezes.
-        #[cfg(feature = "transport")]
         if group.is_some() {
             self.handle.send(Cmd::TransportRun { rolling: false }).ok();
         }
@@ -1487,7 +1464,6 @@ impl OscServer {
         self.transport = Some(t);
         // With a group bound this is no longer an advisory: it thaws the
         // subtree and restarts the transport clock.
-        #[cfg(feature = "transport")]
         if t.group.is_some() {
             self.handle.send(Cmd::TransportRun { rolling: true }).ok();
         }
@@ -1507,7 +1483,6 @@ impl OscServer {
         };
         t.playing = false;
         self.transport = Some(t);
-        #[cfg(feature = "transport")]
         if t.group.is_some() {
             self.handle.send(Cmd::TransportRun { rolling: false }).ok();
         }
@@ -1549,7 +1524,6 @@ impl OscServer {
     ///
     /// Unbinding **thaws** the group it governed: a frozen subtree with nobody
     /// left to resume it would be unreachable except by `/node_run`.
-    #[cfg(feature = "transport")]
     fn handle_transport_group(&mut self, msg: &OscMessage, from: ClientId) {
         let Some(mut t) = self.transport else {
             return self.fail(from, "/transport_group", "no transport defined");
@@ -1588,7 +1562,6 @@ impl OscServer {
     /// server compares the declaration against its own classification and fails
     /// when they disagree, instead of playing the bundle in the wrong place,
     /// which is what a silently mismatched axis would do.
-    #[cfg(feature = "transport")]
     fn handle_sched_at_transport(&mut self, msg: &OscMessage, from: ClientId) {
         const ADDR: &str = "/sched_atTransport";
         let Some(t) = self.transport else {
@@ -1640,7 +1613,6 @@ impl OscServer {
     /// command in `cmds` targets a node at or under `group`, walked on the
     /// **mirror** rather than the engine's tree (the engine's is not reachable
     /// from here). Kept in step with `Engine::bundle_is_governed` by hand.
-    #[cfg(feature = "transport")]
     fn packet_targets_group(&self, cmds: &[Cmd], group: i32) -> bool {
         cmds.iter().any(|cmd| {
             cmd_target_nodes(cmd)
@@ -1652,7 +1624,6 @@ impl OscServer {
 
     /// Walks the network-side mirror up from `id` to see whether `group` is on
     /// its parent chain. `id == group` counts, as it does engine-side.
-    #[cfg(feature = "transport")]
     fn mirror_is_descendant_of(&self, id: i32, group: i32) -> bool {
         let mut current = id;
         // Bounded by the mirror's size: a parent chain cannot be longer, and an

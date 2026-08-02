@@ -80,7 +80,7 @@ _OFF_AUDIO_BUSES = 40  # u32: audio-bus count of the bus region (ABI v4)
 # u64: the transport clock (ABI v6) -- samples elapsed *under the transport*,
 # held while it is stopped, where `_OFF_CLOCK` never stops. It sits in what was
 # reserved header space, so v6 moved no other offset and did not change the
-# segment size. Zero from a server built without the transport feature.
+# segment size.
 _OFF_TRANSPORT_CLOCK = 48
 _RING_CAPACITY = 64 * 1024
 _RING_HEADER = 64  # head u32, tail u32, padding

@@ -2,13 +2,11 @@
 //!
 //! Three questions, three sections:
 //!
-//! 1. **Idle cost.** A build with the `transport` feature but no group bound
-//!    must be indistinguishable from one without the feature. Run this example
-//!    in both configurations and compare:
+//! 1. **Idle cost.** With no group bound the transport governs nothing, and the
+//!    block must cost what it costs a server that has no transport at all:
 //!
 //!    ```sh
 //!    cargo run --release --example bench_transport
-//!    cargo run --release --example bench_transport --no-default-features --features synth
 //!    ```
 //!
 //! 2. **Governed cost.** With a group bound, is the block-cut loop's second
@@ -134,13 +132,9 @@ fn report(label: &str, ns: f64, baseline: Option<f64>) {
 }
 
 fn main() {
-    #[cfg(feature = "transport")]
-    let build_kind = "transport ON";
-    #[cfg(not(feature = "transport"))]
-    let build_kind = "transport OFF";
     println!(
         "transport cost — {SAMPLE_RATE} Hz, blocks of {BLOCK_SIZE} frames \
-         (budget {BLOCK_BUDGET_NS:.0} ns), build: {build_kind}"
+         (budget {BLOCK_BUDGET_NS:.0} ns)"
     );
 
     // ---- 1 & 2: the per-block cost with nothing scheduled ----
@@ -153,7 +147,6 @@ fn main() {
         let idle = time_blocks(&mut engine, &mut out);
         report("ungoverned (no group bound)", idle, None);
 
-        #[cfg(feature = "transport")]
         {
             let (mut engine, mut handle) = boot();
             let group = build(&mut engine, &mut handle, voices);
@@ -193,7 +186,6 @@ fn main() {
                 let group = build(&mut engine, &mut handle, voices);
                 time_with_traffic(&mut engine, &mut handle, &mut out, per_block, group, voices)
             };
-            #[cfg(feature = "transport")]
             let governed = {
                 let (mut engine, mut handle) = boot();
                 let group = build(&mut engine, &mut handle, voices);
@@ -205,14 +197,11 @@ fn main() {
                 time_with_traffic(&mut engine, &mut handle, &mut out, per_block, group, voices)
             };
 
-            #[cfg(feature = "transport")]
             println!(
                 "    {per_block:>3} bundles/block   ungoverned {ungoverned:9.1} ns   \
                  governed {governed:9.1} ns   {:+6.2}%",
                 (governed - ungoverned) / ungoverned * 100.0
             );
-            #[cfg(not(feature = "transport"))]
-            println!("    {per_block:>3} bundles/block   ungoverned {ungoverned:9.1} ns");
         }
     }
 }

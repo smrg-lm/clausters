@@ -2567,7 +2567,6 @@ fn a_group_with_a_refused_name_is_not_created() {
 /// `/transport_group` binds the group the transport governs. With one bound the
 /// transport stops being an advisory the clients obey by choice and becomes
 /// something the engine enforces; the query reply reports which group it is.
-#[cfg(feature = "transport")]
 #[test]
 fn transport_group_binds_and_unbinds() {
     let server = TestServer::spawn();
@@ -2622,7 +2621,6 @@ fn transport_group_binds_and_unbinds() {
 /// `/sched_atTransport` declares that its absolute sample is on the transport
 /// axis. The declaration is a **check**: a packet that does not belong to the
 /// governed subtree fails, rather than firing in the wrong place.
-#[cfg(feature = "transport")]
 #[test]
 fn sched_at_transport_checks_the_declared_axis() {
     let server = TestServer::spawn();
@@ -2692,7 +2690,6 @@ fn sched_at_transport_checks_the_declared_axis() {
 
 /// Freeing the governed group unbinds the transport: it cannot govern a node
 /// that no longer exists, and leaving the binding would strand the next bind.
-#[cfg(feature = "transport")]
 #[test]
 fn freeing_the_governed_group_unbinds_the_transport() {
     let mut server = TestServer::spawn();

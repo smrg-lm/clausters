@@ -153,7 +153,7 @@ What rides which clock is decided by **where a scheduled bundle's messages point
 
 **`/sched_atTransport <int64 sampleTarget> <blob packet>`** is `/sched_at` on the transport axis (see below), for a client naming an absolute sample of the piece. Declaring the axis is not about disambiguation — classification is deterministic, and a client that bound the group knows which of its nodes are governed — it is about **verification**: the server compares the declaration against its own classification and replies `/fail` when they disagree, instead of playing the bundle in the wrong place. It needs a group bound.
 
-Built without the `transport` Cargo feature (it is on by default) the governing half is absent: `/transport_group` and `/sched_atTransport` are unknown commands, `group` reports `-1` and `transportSample` `0`, and the transport is the advisory registry it has always been. See [`sample-clock.md`](sample-clock.md).
+With no group bound, `group` reports `-1` and the transport is the advisory registry it has always been: `/transport_play` and `/transport_stop` are broadcast for the clients to obey by choice, and nothing in the tree freezes. See [`sample-clock.md`](sample-clock.md).
 
 UDP is not the only transport: local clients can speak the same OSC through **shared memory** (`clausters --shm <path>`) or run the whole server **in-process** through the embed C ABI, with the sample clock and the control buses readable and writable directly in mapped memory. See [`ipc.md`](ipc.md) and `clients/python/clausters/ipc.py`.
 

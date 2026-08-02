@@ -1759,7 +1759,6 @@ fn pan_ugens_do_not_allocate_on_the_audio_thread() {
 /// due first must not allocate. Both queues are pre-allocated to the same
 /// capacity as the original one, so the sorted insert and the `remove(0)` are
 /// a memmove each.
-#[cfg(feature = "transport")]
 #[test]
 fn transport_scheduling_does_not_allocate_on_the_audio_thread() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);

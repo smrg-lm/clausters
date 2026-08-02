@@ -251,9 +251,8 @@ Section added 2026-08-02. M22's transport is a shared beat grid plus an advisory
 rolling state the server never schedules audio from. T makes it able to *stop
 time*: a group bound with `/transport_group` is frozen with its internal state
 intact, the transport clock stops, and the queue of anything scheduled against
-that clock stops falling due — all at the same sample. Behind the `transport`
-Cargo feature (default on), so a build can opt out and provably run the old
-`process_block`.
+that clock stops falling due — all at the same sample. Part of the server, not a
+Cargo feature: every build has both clocks and both queues.
 
 - ✅ **T1 — The governing transport** *(done 2026-08-02)* — two clocks
   (`transport_now = now - frozen_total`, made two Rust types so an axis cannot be

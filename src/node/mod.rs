@@ -698,7 +698,6 @@ impl NodeTree {
     /// unknown. The walk is bounded by the slot count: the tree never forms
     /// a parent cycle, but a bound here is cheap and turns any future bug
     /// that did into a wrong answer instead of a hang on the audio thread.
-    #[cfg(feature = "transport")]
     pub fn is_descendant_of(&self, id: i32, ancestor: i32) -> bool {
         let Some(mut idx) = self.find(id) else {
             return false;
@@ -1265,7 +1264,6 @@ mod tests {
     }
 
     /// Root with sibling synth 1 and group 2, group 2 holding synth 3.
-    #[cfg(feature = "transport")]
     fn tree_with_group_2_holding_synth_3() -> NodeTree {
         let mut t = NodeTree::new();
         add_synth(&mut t, 1, ROOT_NODE_ID);
@@ -1274,7 +1272,6 @@ mod tests {
         t
     }
 
-    #[cfg(feature = "transport")]
     #[test]
     fn is_descendant_of_walks_up_to_the_ancestor() {
         let t = tree_with_group_2_holding_synth_3();
@@ -1284,7 +1281,6 @@ mod tests {
         assert!(!t.is_descendant_of(1, 2), "the root is not under the group");
     }
 
-    #[cfg(feature = "transport")]
     #[test]
     fn is_descendant_of_is_false_for_unknown_ids() {
         let t = tree_with_group_2_holding_synth_3();

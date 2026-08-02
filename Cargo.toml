@@ -31,7 +31,7 @@ readme = "README.md"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["synth", "faust", "realtime", "midi", "pipewire", "rtprio", "transport"]
+default = ["synth", "faust", "realtime", "midi", "pipewire", "rtprio"]
 # The SynthDef family (scsynth-style UGen graphs): the UGen library, the def
 # compiler (`/def_send synth`) and `UGenSynth`. Default. Independent from — and
 # combinable with — `faust`: a custom build can ship either def family alone
@@ -62,12 +62,6 @@ midi-jack = ["midi", "midir/jack"]
 # Drop it (`--no-default-features` plus the others) for a SynthDef-only server
 # that builds with no libfaust on the system.
 faust = []
-# The transport clock: a second sample counter, derived from the device
-# clock, that a governed subtree can be frozen against sample-exactly.
-# Default. Off, `Engine::process_block` is exactly what it is on a build that
-# predates the transport — the escape hatch a later task's scheduler rewrite
-# relies on to prove an opted-out build is unaffected.
-transport = []
 # M14: the C ABI for embedding the server in-process (clausters_* exports).
 embed = []
 # Native PipeWire audio backend (Linux/BSD) via cpal's pipewire host. Default,
@@ -103,7 +97,7 @@ required-features = ["synth"]
 
 [[example]]
 name = "bench_transport"
-required-features = ["synth", "transport"]
+required-features = ["synth"]
 
 [dependencies]
 # Shared native core: the single source of truth for the numeric builtins,
