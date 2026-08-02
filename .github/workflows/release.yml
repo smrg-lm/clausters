@@ -28,9 +28,15 @@
 
 name: Release
 
+# The manual trigger is a dry run of the gate, and only of the gate: `verify`
+# runs exactly as it would for a release, and every job that builds or
+# publishes an artifact is skipped, so the workflow can be proved on Actions
+# without a tag and without anything reaching a registry. A tag is one-way; the
+# job that guards it should not be first exercised by the run it guards.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -119,6 +125,10 @@ jobs:
   build:
     name: wheel + server binary (linux x86_64)
     needs: verify
+    # Tag pushes only -- see the workflow_dispatch note above. The three jobs
+    # below carry the same guard rather than relying on a skipped `needs:`
+    # propagating: what must not run on a dry run is stated where it would run.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -174,6 +184,7 @@ jobs:
     # something to fail at. The order between the two registries is arbitrary;
     # what matters is that one of them is a gate.
     needs: [build, publish-npm]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -192,6 +203,7 @@ jobs:
     # wheel build, so without this it would be the way an unverified commit
     # reached a registry.
     needs: verify
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: npm
@@ -244,6 +256,7 @@ jobs:
     # release page is the announcement, and announcing a release whose
     # packages are not installable is worse than announcing it late.
     needs: [build, publish-npm, publish-pypi]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write

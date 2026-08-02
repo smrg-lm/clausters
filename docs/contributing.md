@@ -145,6 +145,16 @@ is reproducible with the same line:
   repository needs a `pypi` environment. There is deliberately **no sdist**:
   the package compiles cdylibs from the Rust workspace, which an sdist of
   `clients/python` would not contain.
+- **Nothing publishes before the tag is verified.** The `verify` job runs the
+  fmt + clippy + rustdoc feature matrix (`.claude/skills/feature-matrix/check.sh`
+  — nine of its fourteen configurations are covered by no other automation) and
+  `cargo test` on the default set and on `+embed`, against the exact commit the
+  tag points at; every other job hangs off it. A tag is not a proof: it can sit
+  on a commit whose CI is red or never ran. **Rehearse it without a tag** with
+  *Actions → Release → Run workflow* (or `gh workflow run release.yml`): the
+  manual trigger runs `verify` and nothing else — the build, both registry legs
+  and the release page are skipped — so the gate can be exercised without a
+  one-way publish.
 - **The npm leg** builds what CI never does: the `publish-npm` job installs the
   wasm32 target and the `wasm-bindgen` CLI the lockfiles pin, runs
   `clients/web/build.sh` to compile and stage the three wasm bundles, passes
