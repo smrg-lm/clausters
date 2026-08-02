@@ -279,6 +279,15 @@ there is no separate `adr/` or C4 tree, by design:
   the frozen `docs/history/build-log.md` is not maintained/published as
   reference.
 
+## 4. Examples
+
+An example's *form* is its own subject — which of the three directories it
+belongs to decides whether it is a notebook, a closed script or a page. That is
+the **`examples` skill**; consult it before writing or editing one. What belongs
+here: an example documents itself in its module docstring, and no book page
+enumerates the examples (`examples.md` says only where the directories are and
+how to run each family).
+
 ## Closing a milestone (documentation side)
 
 When a feature is user-facing, "done" includes, where applicable:
