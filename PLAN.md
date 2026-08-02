@@ -930,18 +930,29 @@ near.
   back inside the noise floor on every column, which is what the boundary move
   was checked against.
 
-- ⬜ **R6 — Split the client's `Server` facade
-  (`clients/python/clausters/defs/server.py`).** The mirror image of R2 on the
-  other end of the wire: ~35 public methods spanning boot, sending, queries,
-  transport, streams and offline render, with `timeout: float = 5.0` copied into
-  23 signatures. Regroup as collaborators or mixins (`ServerQueries`,
-  `ServerTransport`, `ServerStreams`) hanging off the same `Server`, so no
-  attribute path a script or an example uses changes, and make the timeout an
-  instance default the per-call argument overrides. The manual test surface is
-  the examples: run the ones that boot a server, query it and drive the
-  transport. When it lands, the TS port's shape is the same — say so in
-  `clients/web/PLAN.md` rather than letting `defs/server.ts` re-derive a
-  different split.
+- ✅ **R6 — Split the client's `Server` facade** *(done 2026-08-02)* — the
+  mirror image of R2 on the other end of the wire: `defs/server.py` was 958
+  lines spanning boot, sending, queries, transport, streams and offline render.
+  It is now a package whose `Server` composes `ServerQueries`,
+  `ServerStreams` and `ServerTransport`, with the configuration types
+  (`ServerOptions`/`ServerInfo`) in `options`. Mixins rather than collaborators
+  precisely so no attribute path moves: `server.query_tree(...)` is the same
+  call it was, and `from clausters.defs.server import ...` still answers to
+  every name it used to.
+
+  **The timeout is now the handle's**, `Server.timeout`, resolved in the two
+  methods that actually consume it. The milestone counted 23 copies of
+  `timeout: float = 5.0` in this file; there were 31 across the client, because
+  `Buffer`, `Bus` and `Node` each carried the literal too and passed it down
+  explicitly — which would have made the instance default a lie for half the
+  API. All 31 became `None`, so an absent timeout means "the handle's" all the
+  way down and `server.timeout = 30` is one assignment instead of an argument
+  at every call site.
+
+  The generated API page splits along the same lines (the four new modules are
+  listed in `pydoc-markdown.yml`, so nothing left the reference), and
+  `clients/web/PLAN.md` carries the shape for the TS port — including the
+  timeout, which `defs/server.ts` repeats 26 times.
 
 - ⬜ **R7 — The widget's props declared once.** `gui/guidef.py` (1278 lines, 29
   builders) and `gui/guidef.ts` (1302) each enumerate every widget's props as

@@ -46,6 +46,10 @@ loaders:
       - clausters.defs.synthdef
       - clausters.defs.graphdef
       - clausters.defs.server
+      - clausters.defs.server.options
+      - clausters.defs.server.queries
+      - clausters.defs.server.transport
+      - clausters.defs.server.streams
       - clausters.defs.node
       - clausters.defs.bus
       - clausters.defs.buffer

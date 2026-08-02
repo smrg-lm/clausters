@@ -792,3 +792,29 @@ The shape to follow:
   sends `/transport_stop` instead of stopping the playhead.
 - The shm reader follows ABI v6: the transport clock sits at header offset 48,
   in what was reserved space, so no existing offset moved.
+
+## Port pending: the `Server` facade's shape (server R6, 2026-08-02)
+
+The Python `Server` was one class of ~35 methods; it is now a package whose
+`Server` composes three mixins, and `defs/server.ts` should land the same split
+rather than re-deriving a different one:
+
+- `ServerQueries` — `queryDefs`, `queryBuffers`, `queryUgens`, `queryInfo`,
+  `queryTree`, `groupAt`, `dumpGraph`: the blocking round trips that report what
+  a running server holds.
+- `ServerTransport` — the shared grid: `transport`, `setTransport`,
+  `transportState`, `transportGroup`, `schedAtTransport`, `transportPlay`,
+  `transportStop`, `transportLocate` (see the transport port note above, which
+  this split does not change).
+- `ServerStreams` — `streamBuses`, `streamTaps`, the push subscriptions.
+
+What stays on `Server` itself: the interface and the allocators, the raw OSC
+paths (`sendMsg`/`sendBundle`/`schedAt`), `request`, the def table, the node-id
+recycling, render, and the server's own lifecycle.
+
+And the piece worth porting even if the split is not: **the timeout is an
+instance default**, `server.timeout`, not a literal repeated in every
+signature. Each call's `timeout` argument is optional and only `request` (and
+its batch form) resolves an absent one against the handle. TypeScript has the
+same disease — a default written at each call site is a default nobody can
+change globally.

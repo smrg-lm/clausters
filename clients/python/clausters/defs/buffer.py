@@ -130,7 +130,7 @@ class Buffer:
 
     @classmethod
     def alloc(cls, frames: int, channels: int = 1, *, wait: bool = True,
-              timeout: float = 5.0, server=None) -> "Buffer":
+              timeout: "float | None" = None, server=None) -> "Buffer":
         """Allocates a zeroed buffer. In NRT it scores ``/buffer_alloc`` at time 0
         (so the renderer installs it before time advances); in RT ``wait=True``
         (default) blocks on ``/done``, ``wait=False`` is fire-and-forget."""
@@ -149,7 +149,7 @@ class Buffer:
 
     @classmethod
     def read(cls, path, *, file_start: int = 0, num_frames: int = 0,
-             wait: bool = True, timeout: float = 5.0, server=None) -> "Buffer":
+             wait: bool = True, timeout: "float | None" = None, server=None) -> "Buffer":
         """Allocate a buffer and read a sound file into it (``/buffer_allocRead``): the
         shape and sample rate come from the file (``num_frames`` 0 = the whole
         file, from ``file_start``). Decoding is by content (WAV, FLAC, OGG, MP3,
@@ -176,7 +176,7 @@ class Buffer:
 
     # ---- the commands addressed to this buffer ----
 
-    def gen(self, cmd: str, *args, wait: bool = True, timeout: float = 5.0):
+    def gen(self, cmd: str, *args, wait: bool = True, timeout: "float | None" = None):
         """Fills this buffer through ``/buffer_gen`` (the wavetable/generator commands:
         ``"env"``, ``"sine1"``/``"sine2"``/``"sine3"``, ``"cheby"``, ``"copy"``,
         and ``"prepare_partconv" fft_size ir_bufnum`` — the partitioned-kernel
@@ -194,7 +194,7 @@ class Buffer:
             raise CommandError(f"/buffer_gen {self.bufnum} {cmd} failed: {rargs}")
 
     def read_into(self, path, *, file_start: int = 0, num_frames: int = -1,
-                  buf_start: int = 0, wait: bool = True, timeout: float = 5.0):
+                  buf_start: int = 0, wait: bool = True, timeout: "float | None" = None):
         """Read a sound file into this buffer (``/buffer_read``), keeping its shape.
         NRT scores at time 0; RT ``wait=True`` blocks on ``/done``."""
         srv = self._server()
@@ -209,7 +209,7 @@ class Buffer:
             raise CommandError(f"/buffer_read {self.bufnum} {path!r} failed: {rargs}")
 
     def write(self, path, *, sample_format: str = "int16", num_frames: int = -1,
-              buf_start: int = 0, wait: bool = True, timeout: float = 5.0):
+              buf_start: int = 0, wait: bool = True, timeout: "float | None" = None):
         """Write this buffer to a WAV file (``/buffer_write``); ``sample_format`` is
         ``"int16"``, ``"int24"`` or ``"float"``. NRT scores at time 0; RT
         ``wait=True`` blocks on ``/done``."""
@@ -224,7 +224,7 @@ class Buffer:
         if addr == "/fail":
             raise CommandError(f"/buffer_write {self.bufnum} {path!r} failed: {rargs}")
 
-    def zero(self, *, wait: bool = True, timeout: float = 5.0):
+    def zero(self, *, wait: bool = True, timeout: "float | None" = None):
         """Zero this buffer (``/buffer_zero``). NRT scores at time 0; RT
         ``wait=True`` blocks on ``/done``."""
         srv = self._server()
@@ -236,7 +236,7 @@ class Buffer:
         if addr == "/fail":
             raise CommandError(f"/buffer_zero {self.bufnum} failed: {rargs}")
 
-    def info(self, timeout: float = 5.0) -> BufferInfo:
+    def info(self, timeout: "float | None" = None) -> BufferInfo:
         """Ask the running server what it holds in this slot (``/buffer_query`` →
         ``/buffer_query.reply bufnum frames channels sampleRate``), keep the record on the
         handle and return it.
@@ -252,7 +252,7 @@ class Buffer:
         return self._info
 
     def get_samples(self, start: int = 0, count: int = -1, *,
-                    chunk: "int | None" = None, timeout: float = 5.0):
+                    chunk: "int | None" = None, timeout: "float | None" = None):
         """Fetch interleaved samples from this buffer (``/buffer_getRange`` →
         ``/buffer_getRange.reply``), in chunks, as a stdlib ``array('f')``. ``count`` -1 = to
         the end (the shape is queried first). RT only (it needs replies); for

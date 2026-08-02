@@ -125,7 +125,7 @@ class Bus:
         """Write a value to this control bus (``/bus_set``)."""
         self._server().send_msg("/bus_set", self.index, float(value))
 
-    def get(self, timeout: float = 5.0) -> float:
+    def get(self, timeout: "float | None" = None) -> float:
         """Read this control bus's current value (``/bus_get`` -> ``/bus_get.reply``).
         RT only (it needs a reply)."""
         _, args = self._server().request("/bus_get", self.index, timeout=timeout,

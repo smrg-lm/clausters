@@ -175,7 +175,7 @@ class Node:
         self._server().send_msg("/node_mapAudio" if audio else "/node_map",
                                 self.id, name, index)
 
-    def info(self, timeout: float = 5.0) -> NodeInfo:
+    def info(self, timeout: "float | None" = None) -> NodeInfo:
         """This node as the server holds it **right now** (``/node_query`` ->
         ``/node_query.reply``): where it sits in the tree, and for a synth its def, its
         controls, its ``/node_map`` bindings and the buses it reads and writes.
