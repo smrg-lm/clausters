@@ -219,8 +219,7 @@ impl SharedSegment {
     ///
     /// [`Self::sample_clock`] never stops, so a view drawing where the *piece*
     /// is reads this one and anything pacing on the device reads that one. The
-    /// two only differ while a transport with a governed group is stopped, and
-    /// a server built without transport support publishes 0 here.
+    /// two only differ while a transport with a governed group is stopped.
     pub fn transport_clock(&self) -> u64 {
         header_u64(self.ptr, OFF_TRANSPORT_CLOCK)
     }

@@ -206,8 +206,8 @@ class ShmClient:
 
         The counterpart of `clock`, which never stops. A view drawing where the
         piece is reads this one; anything pacing on the device reads `clock`.
-        The two only differ while a transport with a governed group is stopped,
-        and a server built without transport support reports 0 here.
+        The two only differ while a transport with a governed group is
+        stopped.
         """
         return struct.unpack_from("<Q", self.mm, _OFF_TRANSPORT_CLOCK)[0]
 
