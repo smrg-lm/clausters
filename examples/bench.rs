@@ -1,4 +1,4 @@
-//! Graph throughput benchmark (M7): processes blocks offline as fast as
+//! Graph throughput benchmark: processes blocks offline as fast as
 //! possible and reports the real-time headroom at 48 kHz. The interesting
 //! number is the "x real time" column: how many copies of that graph fit in
 //! one audio callback budget. Run it in release mode:
@@ -6,7 +6,16 @@
 //! ```sh
 //! cargo run --release --example bench
 //! cargo run --release --example bench --features faust
+//! cargo run --release --example bench -- --json > head.json
 //! ```
+//!
+//! `--json` swaps the human table for one machine-readable record per measured
+//! row — `{name, x_real_time, peak_block, gated}` — which is what
+//! `scripts/bench-gate.py` diffs between two builds. The table is the default
+//! and stays exactly as it was; nothing is measured differently in either mode.
+//! A row carries `gated: false` when its number is not stable enough to fail a
+//! build on: the Faust sections (their cost includes what the LLVM JIT decided
+//! that run) and the worker-pool sweep (it reads the machine's core count).
 //!
 //! With `--features faust` it also runs two **apples-to-apples** UGen-vs-Faust
 //! sections, both using `tests/faust_parity.rs` pairs the two engines compute
@@ -36,6 +45,66 @@ use clausters::server::engine::{
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{compile, default_spec};
 
+/// One measured row, for `--json`. Both metrics are optional because a row
+/// reports one or the other: throughput for most sections, and, for the
+/// spectral chain, the worst single block — the number an average hides.
+struct Record {
+    name: String,
+    x_real_time: Option<f64>,
+    peak_block: Option<f64>,
+    gated: bool,
+}
+
+thread_local! {
+    static RECORDS: std::cell::RefCell<Vec<Record>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Whether `--json` was passed. Read once; the table and the records are
+/// produced by the same run either way.
+fn json_mode() -> bool {
+    std::env::args().any(|a| a == "--json")
+}
+
+/// Prints only in table mode, so `--json` writes nothing but the JSON.
+macro_rules! say {
+    ($($arg:tt)*) => { if !json_mode() { println!($($arg)*) } };
+}
+
+fn record(name: impl Into<String>, x_real_time: Option<f64>, peak_block: Option<f64>, gated: bool) {
+    RECORDS.with(|r| {
+        r.borrow_mut().push(Record {
+            name: name.into(),
+            x_real_time,
+            peak_block,
+            gated,
+        })
+    });
+}
+
+/// The records as JSON, hand-written rather than through serde: this is an
+/// example, not a library, and the shape is four flat fields.
+fn emit_json() {
+    println!("[");
+    RECORDS.with(|r| {
+        let rows = r.borrow();
+        for (i, rec) in rows.iter().enumerate() {
+            let num = |v: Option<f64>| match v {
+                Some(n) => format!("{n:.4}"),
+                None => "null".into(),
+            };
+            let comma = if i + 1 < rows.len() { "," } else { "" };
+            println!(
+                "  {{\"name\": {:?}, \"x_real_time\": {}, \"peak_block\": {}, \"gated\": {}}}{comma}",
+                rec.name,
+                num(rec.x_real_time),
+                num(rec.peak_block),
+                rec.gated
+            );
+        }
+    });
+    println!("]");
+}
+
 const SAMPLE_RATE: f64 = 48000.0;
 /// Minimum wall time per measurement.
 const MEASURE_SECS: f64 = 0.5;
@@ -43,10 +112,10 @@ const MEASURE_SECS: f64 = 0.5;
 const VOICE_COUNTS: &[usize] = &[1, 32, 128, 512, 1000];
 
 fn main() {
-    println!(
+    say!(
         "graph benchmark — {SAMPLE_RATE} Hz, blocks of {BLOCK_SIZE} frames, release-mode wall clock"
     );
-    println!("\ndefault def (Sine · amp → 2× Out):");
+    say!("\ndefault def (Sine · amp → 2× Out):");
     for &n in VOICE_COUNTS {
         report(n, bench(n, |_| make_default_synth()));
     }
@@ -69,7 +138,7 @@ fn main() {
     // whole point of /group_parallel.
     let chains = 8usize;
     let voices = 125usize;
-    println!(
+    say!(
         "\nparallel group (/group_parallel): {chains} subgroups x {voices} sines, disjoint buses:"
     );
     let max_workers = std::thread::available_parallelism()
@@ -85,6 +154,10 @@ fn main() {
     counts.dedup();
     for w in counts {
         report_parallel(w, bench_parallel(w, chains, voices), base);
+    }
+
+    if json_mode() {
+        emit_json();
     }
 }
 
@@ -138,10 +211,13 @@ fn bench_sine_vs_wavetable() {
         ("OscN", def("cmp_oscn", "OscN")),
     ];
 
-    println!("\nSine (f64 phase + sin) vs wavetable Osc/OscN (8192-sample table), xRT:");
-    println!(
+    say!("\nSine (f64 phase + sin) vs wavetable Osc/OscN (8192-sample table), xRT:");
+    say!(
         "  {:>6}  {:>11}  {:>11}  {:>11}",
-        "synths", "Sine", "Osc", "OscN"
+        "synths",
+        "Sine",
+        "Osc",
+        "OscN"
     );
     for &n in VOICE_COUNTS {
         let mut cols = Vec::new();
@@ -174,9 +250,14 @@ fn bench_sine_vs_wavetable() {
             );
             cols.push(blocks * BLOCK_SIZE as f64 / SAMPLE_RATE);
         }
-        println!(
+        for (kind, xrt) in ["sine", "osc", "oscn"].iter().zip(&cols) {
+            record(format!("wavetable/{kind}/{n}"), Some(*xrt), None, true);
+        }
+        say!(
             "  {n:>6}  {:>10.1}x  {:>10.1}x  {:>10.1}x",
-            cols[0], cols[1], cols[2]
+            cols[0],
+            cols[1],
+            cols[2]
         );
     }
 }
@@ -224,10 +305,13 @@ fn bench_pan() {
     let fixed = def("cmp_pan_fixed", false);
     let moving = def("cmp_pan_moving", true);
 
-    println!("\npan position, block-rate vs per-sample (Sine -> Pan2 -> 2x Out):");
-    println!(
+    say!("\npan position, block-rate vs per-sample (Sine -> Pan2 -> 2x Out):");
+    say!(
         "  {:>6}  {:>13}  {:>13}  {:>14}",
-        "synths", "scalar xRT", "ar pos xRT", "per-sample cost"
+        "synths",
+        "scalar xRT",
+        "ar pos xRT",
+        "per-sample cost"
     );
     for &n in VOICE_COUNTS {
         let f = Arc::clone(&fixed);
@@ -248,9 +332,11 @@ fn bench_pan() {
         });
         let a_xrt = a * BLOCK_SIZE as f64 / SAMPLE_RATE;
         let b_xrt = b * BLOCK_SIZE as f64 / SAMPLE_RATE;
-        println!("  {n:>6}  {a_xrt:>11.1}x  {b_xrt:>11.1}x  {:>12.2}x", a / b);
+        record(format!("pan/scalar/{n}"), Some(a_xrt), None, true);
+        record(format!("pan/ar/{n}"), Some(b_xrt), None, true);
+        say!("  {n:>6}  {a_xrt:>11.1}x  {b_xrt:>11.1}x  {:>12.2}x", a / b);
     }
-    println!(
+    say!(
         "  (the moving row also pays for its own LFTri, so the ratio is an\n\
          \x20  upper bound on what evaluating the law per sample costs.)"
     );
@@ -328,10 +414,16 @@ fn bench_fused() {
         ]),
     );
 
-    println!("\nfused arithmetic vs the unfused graph it folds (shared Sine source):");
-    println!(
+    say!("\nfused arithmetic vs the unfused graph it folds (shared Sine source):");
+    say!(
         "  {:>6}  {:>12}  {:>12}  {:>10}  {:>12}  {:>10}  {:>6}",
-        "synths", "MulAdd xRT", "Mul+Add xRT", "fused", "Sum4 xRT", "3x Add xRT", "fused"
+        "synths",
+        "MulAdd xRT",
+        "Mul+Add xRT",
+        "fused",
+        "Sum4 xRT",
+        "3x Add xRT",
+        "fused"
     );
     for &n in VOICE_COUNTS {
         let run = |d: &Arc<clausters::synthdef::SynthDef>| {
@@ -347,7 +439,11 @@ fn bench_fused() {
         };
         let (f_ma, u_ma) = (run(&mul_add), run(&mul_then_add));
         let (f_s4, u_s4) = (run(&sum4), run(&three_adds));
-        println!(
+        record(format!("fused/muladd/{n}"), Some(f_ma), None, true);
+        record(format!("fused/mul+add/{n}"), Some(u_ma), None, true);
+        record(format!("fused/sum4/{n}"), Some(f_s4), None, true);
+        record(format!("fused/3xadd/{n}"), Some(u_s4), None, true);
+        say!(
             "  {n:>6}  {f_ma:>11.1}x  {u_ma:>11.1}x  {:>9.2}x  {f_s4:>11.1}x  {u_s4:>9.1}x  {:>5.2}x",
             f_ma / u_ma,
             f_s4 / u_s4
@@ -374,12 +470,15 @@ fn bench_spectral() {
     use clausters_core::fft;
 
     let budget_us = BLOCK_SIZE as f64 / SAMPLE_RATE * 1e6;
-    println!(
+    say!(
         "\nspectral transforms (per call; one {BLOCK_SIZE}-frame block @ {SAMPLE_RATE} Hz = {budget_us:.0} us):"
     );
-    println!(
+    say!(
         "  {:>6}  {:>10}  {:>10}  {:>15}",
-        "n", "rfft", "irfft", "pair, % block"
+        "n",
+        "rfft",
+        "irfft",
+        "pair, % block"
     );
     for &n in fft::SUPPORTED_SIZES {
         let input: Vec<f32> = (0..n).map(|i| (i as f32 * 0.01).sin()).collect();
@@ -387,16 +486,16 @@ fn bench_spectral() {
         let mut time = vec![0.0f32; n];
         let fwd = time_per_call(|| fft::rfft_into(std::hint::black_box(&input), &mut frame));
         let inv = time_per_call(|| fft::irfft_into(std::hint::black_box(&frame), &mut time));
-        println!(
+        say!(
             "  {n:>6}  {fwd:>8.2} us  {inv:>8.2} us  {:>14.1}%",
             (fwd + inv) / budget_us * 100.0
         );
     }
 
-    println!("  partitioned-convolution spectral MAC per hop (uniform FDL):");
+    say!("  partitioned-convolution spectral MAC per hop (uniform FDL):");
     for &(n, parts, label) in &[(4096usize, 47usize, "2 s IR"), (4096, 12, "0.5 s IR")] {
         let us = time_conv_mac(n, parts);
-        println!(
+        say!(
             "    n={n} x {parts} partitions ({label} @ 48k): {us:>6.1} us = {:.1}% of block",
             us / budget_us * 100.0
         );
@@ -449,22 +548,47 @@ fn bench_spectral() {
         measure_peak(&mut engine, &mut out)
     };
 
-    println!(
+    say!(
         "\nspectral chain (Sine → FFT 1024 → PV_MagAbove → IFFT → Out), aligned vs S11-staggered hops:"
     );
-    println!(
+    say!(
         "  {:>6}  {:>11}  {:>12}  {:>14}  {:>14}",
-        "synths", "xRT", "avg block", "peak aligned", "peak staggered"
+        "synths",
+        "xRT",
+        "avg block",
+        "peak aligned",
+        "peak staggered"
     );
     for &n in VOICE_COUNTS {
         let (_, _, peak_aligned) = run(n, 8); // ids ≡ 0 (mod 8): one hop block
         let (blocks_per_sec, avg_us, peak_stag) = run(n, 1); // consecutive ids
         let xrt = blocks_per_sec * BLOCK_SIZE as f64 / SAMPLE_RATE;
-        println!(
+        record(format!("spectral/{n}"), Some(xrt), None, true);
+        // Only the **aligned** peak is a repeatable measurement, and only once
+        // enough chains are running that the block is dominated by the
+        // transform: it is the deliberate worst arrangement (every chain hops
+        // on the same block), so the number is a property of the code. At one
+        // voice two runs of the same build differ by 250%, and the *staggered*
+        // peak is by construction a measure of scheduling luck — which is what
+        // makes it worth printing and useless as a gate. See
+        // `scripts/bench-gate.py` for the spreads these thresholds come from.
+        record(
+            format!("spectral/peak-aligned/{n}"),
+            None,
+            Some(peak_aligned),
+            n >= 32,
+        );
+        record(
+            format!("spectral/peak-staggered/{n}"),
+            None,
+            Some(peak_stag),
+            false,
+        );
+        say!(
             "  {n:>6}  {xrt:>10.1}x  {avg_us:>9.1} us  {peak_aligned:>11.1} us  {peak_stag:>11.1} us"
         );
     }
-    println!(
+    say!(
         "  (peak = the worst single block; aligned, every chain transforms on the same\n\
          \x20  hop block, staggered (S11, id-derived) the spikes spread. The budget is\n\
          \x20  {budget_us:.0} us per block — and the hard deadline is the audio callback,\n\
@@ -574,14 +698,12 @@ fn bench_conv(budget_us: f64) {
         .fold(f64::INFINITY, |a, &b| a.min(b))
         .max(0.0)
         * 1e6;
-    println!(
-        "\npartitioned convolution (Conv, 2 s IR, {parts} partitions of {part}, MACs spread):"
-    );
-    println!(
+    say!("\npartitioned convolution (Conv, 2 s IR, {parts} partitions of {part}, MACs spread):");
+    say!(
         "  1 voice: avg block {avg_us:>6.1} us | steady phase {flat_us:>6.1} us | hop phase \
          {peak_us:>6.1} us (budget {budget_us:.0} us)"
     );
-    println!(
+    say!(
         "  (per-phase minima over {periods} hop periods, so OS noise is filtered out:\n\
          \x20  the spread MAC share is the steady phase, and the hop phase adds only the\n\
          \x20  input FFT/IFFT pair — compare the un-spread MAC row above.)"
@@ -719,10 +841,13 @@ fn bench_ugen_vs_faust() {
             .expect("faust sine compiles"),
     );
 
-    println!("\nUGen vs Faust — identical DSP (sin(2π·phasor(freq)) · 0.2 → 1 bus), JIT excluded:");
-    println!(
+    say!("\nUGen vs Faust — identical DSP (sin(2π·phasor(freq)) · 0.2 → 1 bus), JIT excluded:");
+    say!(
         "  {:>6}  {:>13}  {:>13}  {:>14}",
-        "synths", "UGen xRT", "Faust xRT", "Faust slowdown"
+        "synths",
+        "UGen xRT",
+        "Faust xRT",
+        "Faust slowdown"
     );
     for &n in VOICE_COUNTS {
         let ud = Arc::clone(&ugen_def);
@@ -746,12 +871,16 @@ fn bench_ugen_vs_faust() {
         });
         let u_xrt = ugen * BLOCK_SIZE as f64 / SAMPLE_RATE;
         let f_xrt = faust * BLOCK_SIZE as f64 / SAMPLE_RATE;
-        println!(
+        record(format!("sine/ugen/{n}"), Some(u_xrt), None, true);
+        // Not gated: a Faust row's cost includes whatever the LLVM JIT chose
+        // for that run, which is not a property of this repository's code.
+        record(format!("sine/faust/{n}"), Some(f_xrt), None, false);
+        say!(
             "  {n:>6}  {u_xrt:>11.1}x  {f_xrt:>11.1}x  {:>12.2}x",
             ugen / faust
         );
     }
-    println!(
+    say!(
         "  (slowdown < 1.0 = Faust is faster. Caveat: Sine accumulates phase\n\
          \x20  and calls sin in f64; Faust -single does both in f32, which is cheaper,\n\
          \x20  so part of the gap is arithmetic precision, not engine overhead.)"
@@ -808,10 +937,13 @@ fn bench_gain_overhead() {
     let in_idx = faust_gain.control_index("in").expect("in control");
     let out_idx = faust_gain.control_index("out").expect("out control");
 
-    println!("\nUGen vs Faust — pure engine overhead (bit-exact · 0.5 gain, bus 4 → bus 0):");
-    println!(
+    say!("\nUGen vs Faust — pure engine overhead (bit-exact · 0.5 gain, bus 4 → bus 0):");
+    say!(
         "  {:>6}  {:>13}  {:>13}  {:>14}",
-        "synths", "UGen xRT", "Faust xRT", "Faust slowdown"
+        "synths",
+        "UGen xRT",
+        "Faust xRT",
+        "Faust slowdown"
     );
     for &n in VOICE_COUNTS {
         let ug = Arc::clone(&ugen_gain);
@@ -838,12 +970,16 @@ fn bench_gain_overhead() {
         });
         let u_xrt = ugen * BLOCK_SIZE as f64 / SAMPLE_RATE;
         let f_xrt = faust * BLOCK_SIZE as f64 / SAMPLE_RATE;
-        println!(
+        record(format!("gain/ugen/{n}"), Some(u_xrt), None, true);
+        // Not gated: a Faust row's cost includes whatever the LLVM JIT chose
+        // for that run, which is not a property of this repository's code.
+        record(format!("gain/faust/{n}"), Some(f_xrt), None, false);
+        say!(
             "  {n:>6}  {u_xrt:>11.1}x  {f_xrt:>11.1}x  {:>12.2}x",
             ugen / faust
         );
     }
-    println!(
+    say!(
         "  (one shared source synth sits in both columns, so the high-n rows are\n\
          \x20  the cleanest read of the per-synth gain overhead.)"
     );
@@ -992,7 +1128,10 @@ fn bench_parallel(workers: usize, chains: usize, voices: usize) -> f64 {
 
 fn report_parallel(workers: usize, blocks_per_sec: f64, base: f64) {
     let xrt = blocks_per_sec * BLOCK_SIZE as f64 / SAMPLE_RATE;
-    println!(
+    // Not gated: how far this scales is a property of the runner's core count,
+    // which two builds on the same machine share but two runs need not.
+    record(format!("parallel/{workers}w"), Some(xrt), None, false);
+    say!(
         "  {workers} workers: {blocks_per_sec:>12.0} blocks/s = {xrt:>8.1}x real time (speedup {:>4.2}x)",
         blocks_per_sec / base
     );
@@ -1000,7 +1139,8 @@ fn report_parallel(workers: usize, blocks_per_sec: f64, base: f64) {
 
 fn report(n: usize, blocks_per_sec: f64) {
     let xrt = blocks_per_sec * BLOCK_SIZE as f64 / SAMPLE_RATE;
-    println!(
+    record(format!("default/{n}"), Some(xrt), None, true);
+    say!(
         "  {n:5} synths: {blocks_per_sec:>12.0} blocks/s = {xrt:>8.1}x real time ({:>7.1} synth·xRT)",
         xrt * n as f64
     );

@@ -4079,3 +4079,52 @@ the Python builders name it widget by widget, so `track` and `timeruler` name
 almost none of it. The other two point the other way and are the more urgent
 kind: the TS `plot` offers `buffer` and `cache` that the host's plot never
 reads, so a page passing them gets no error and no effect.
+
+## A cost gate compares two runs, not a number, and its threshold is measured
+
+The R track's invariant is that a refactor closes with a before/after
+`examples/bench.rs`. That is a step a human remembers, and a check that depends
+on someone remembering is one that eventually is not run — so it became a CI
+job. What the job is *not* is the obvious design.
+
+**Committing a baseline number does not work.** `ubuntu-latest` runners are
+shared and virtualized; 10–20% swings between runs of identical code are
+ordinary. An absolute threshold against a stored number fires on the weather,
+and a gate that cries wolf is ignored, which is worse than no gate. So the job
+builds and benches the **merge base** and then the head *in the same job on the
+same runner, back to back*, and compares those two. Both measurements share the
+machine, the thermal state and the noise; the ratio means what the absolute
+values do not. The cost is one extra release build per pull request.
+
+**The thresholds are measured, not chosen, and they differ per metric** —
+because the metrics do. Three runs of an identical build, compared pairwise on
+this machine:
+
+| metric | median | worst |
+|---|---|---|
+| `x_real_time` (210 comparisons) | 0.5% | 5.6% |
+| `peak_block`, aligned, ≥32 voices | | 21.0% |
+| `peak_block`, staggered, ≥32 voices | | 34.6% |
+| `peak_block`, one voice | | **251.8%** |
+
+So throughput is gated at 10% and the peak block at 50%, each roughly twice its
+observed worst case: loose enough never to fire on noise, tight enough to catch
+the cliff the gate exists for — a lost inline, an allocation that crept into the
+block path. A 3% drift is invisible to it on purpose.
+
+The last two rows are why some measurements are **reported and never gated**.
+The spectral peak at one voice is a single hop's spike, and two runs of the same
+build differed by 250%: it is not a measurement. The *staggered* peak is worse
+in a more interesting way — it measures whether two chains' hops happened to
+collide this run, which is exactly what the stagger exists to scatter, so its
+variance is the feature working. The **aligned** peak is the deliberate worst
+arrangement (every chain hops on the same block), which makes it a property of
+the code, and it is the one that is gated. The Faust rows carry whatever the
+LLVM JIT decided that run, and the worker sweep reads the machine's core count;
+both are printed and neither can fail a build.
+
+**A gate nobody has seen trip is a gate nobody knows is wired up**, so it was
+verified in both directions before landing: three identical runs pass in all
+three pairings, and `#[inline(never)]` on two hot bus accessors turns eleven
+gated rows red at once (`default/1` −10.8%, `sine/ugen/1` −16.2%, the aligned
+512-voice peak −49.5%).

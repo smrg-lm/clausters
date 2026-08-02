@@ -771,9 +771,11 @@ the machine it ran on (re-run the baseline, don't compare against a number from
 another day); anything beyond it is a regression to explain or revert, not to
 accept because the tests are green. Two columns carry the claim: "x real time"
 for throughput, and the spectral section's **peak block**, which is the one an
-average hides. R11 turns this from a discipline into a CI gate; until it lands,
-it is a discipline, and a discipline nobody checks is how the sediment got here
-in the first place.
+average hides. **R11 has since turned this into a CI gate** — a pull request is
+benched against its merge base on the same runner, and `scripts/bench-gate.py`
+fails it on a regression past the measured threshold — so the before/after is
+now done by the machine. Run it by hand anyway while working; the gate is the
+backstop, not the instrument.
 
 The exposure is wider than the audio thread, and mostly indirect. R9 is the
 only milestone that edits `process_block`/`apply` directly. But R2 and R5 move
@@ -1055,46 +1057,35 @@ near.
   private) and `mod` (the passes, the binding envelope, the tests). The only
   edits movement forced were visibility, and the compiler named each one.
 
-- ⬜ **R11 — The performance gate stops being a discipline.** Everything the
-  track's cost invariant asks for is, until this lands, a step a human
-  remembers: CI (`.github/workflows/ci.yml`) runs fmt, clippy, the test matrix
-  and the GUI/wasm gate, and **no benchmark at all**, so a regression ships if
-  whoever closed the milestone skipped the before/after run. This milestone
-  makes the machine do it.
+- ✅ **R11 — The performance gate stops being a discipline** *(done
+  2026-08-02)* — CI ran fmt, clippy, the test matrix and the GUI/wasm gate, and
+  no benchmark at all, so the track's cost invariant shipped only if whoever
+  closed a milestone remembered it. It is a job now: on a pull request, the
+  merge base and the head are built and benched **in the same job on the same
+  runner**, and `scripts/bench-gate.py` compares those two. `[no-bench]` in the
+  head commit message steps it aside.
 
-  **The hard part is not running the bench, it is having something to compare
-  against.** `ubuntu-latest` runners are shared and noisy — 10–20% swings
-  between runs of identical code are ordinary — so an absolute threshold
-  against a committed number produces false alarms until the gate is ignored,
-  which is worse than no gate. The design that survives that is a
-  **same-runner, same-job A/B**: in one workflow step, build and bench the
-  merge base, then build and bench the head, and compare *those two* numbers.
-  Both measurements share the machine, the thermal state and the noise, so the
-  ratio means something the absolute values don't. Cost is one extra release
-  build per run, which is why this is its own milestone and not a line in the
-  workflow.
+  `examples/bench.rs` grew `--json` — one record per measured row, `{name,
+  x_real_time, peak_block, gated}` — beside the human table, which is still the
+  default and still prints exactly what it did.
 
-  Shape to aim for:
-  - `examples/bench.rs` learns a machine-readable mode (a `--json` flag or an
-    env var) emitting per-section `{name, x_real_time, peak_block}`. Today it
-    prints a human table; the gate needs to parse it, and the human table stays
-    the default.
-  - A script diffs two such JSONs and fails on a regression past a threshold
-    **set generously** (start around 10%, tighten only if the observed run-to-run
-    spread on the runner turns out narrower). Deliberately blind to small
-    changes: this catches the 30% cliff from a lost inline, not a 3% drift.
-  - It runs on the branch, not on every push to `main`, and a label or a
-    commit-message opt-out exists — a refactor that knowingly trades speed for
-    something else should be able to say so and move on.
-  - Sections that are themselves noisy (anything JIT-dependent under `faust`)
-    are reported but not gated, at least initially.
+  **The thresholds are measured, not chosen**, and the measuring changed the
+  design twice. Three runs of an identical build, compared pairwise: throughput
+  moves 0.5% median and 5.6% worst over 210 comparisons — so 10% is a safe
+  gate. The peak block does not behave like that: 21% worst for the *aligned*
+  peak, 34.6% for the *staggered* one, and **251.8% at one voice**. So the peak
+  is gated at 50% and only where it is a measurement — the aligned peak from 32
+  voices up. The staggered peak measures whether two chains' hops collided this
+  run, which is the stagger working, and is reported instead. Same for the
+  Faust rows (the JIT is in the number) and the worker sweep (it reads the
+  core count). Rationale and the table in `docs/decisions.md`.
 
-  **Acceptance: prove it catches something.** Land it with a deliberately
-  pessimized commit (an `#[inline(never)]` on a hot path, reverted after) and
-  show the gate going red — a threshold nobody has ever seen trip is a
-  threshold nobody knows is wired up. Useful beyond this track: once it exists,
-  the U track's new UGens and the S11 stagger work get the same protection for
-  free.
+  **Proved in both directions before landing**, since a threshold nobody has
+  seen trip is one nobody knows is wired up: three identical runs pass in all
+  three pairings, and `#[inline(never)]` on two hot bus accessors turns eleven
+  gated rows red at once (`default/1` −10.8%, `sine/ugen/1` −16.2%). The
+  pessimization was reverted; the gate's own bootstrap case — a merge base that
+  predates `--json` — is handled by the compare step, which says so and passes.
 
 - ⬜ **R12 — A release verifies something.** `release.yml` fires on a `v*` tag
   and chains `build` → `publish-npm` → `publish-pypi` → `github-release`, with

@@ -265,3 +265,85 @@ jobs:
         with:
           analyze: "true"
           name: test-default
+
+  # The cost gate. CLAUDE.md's R-track invariant says a refactor closes with a
+  # before/after bench; this is that step, done by the machine.
+  #
+  # It only runs on a pull request, because it is an A/B against the merge base
+  # and a push to `main` has nothing to compare against. Both measurements are
+  # taken in *this* job, on *this* runner, back to back: a shared runner swings
+  # 10-20% between runs of identical code, so an absolute threshold against a
+  # committed number would fire on the weather, while the ratio of two runs that
+  # shared the machine and its thermal state means something. The cost is one
+  # extra release build.
+  #
+  # No libfaust: the bench builds with `--no-default-features --features synth`,
+  # so the Faust sections (whose numbers include whatever the LLVM JIT chose
+  # that run, and which the gate never fails on) are simply not compiled in.
+  #
+  # Opt out with `[no-bench]` anywhere in the PR's head commit message — a
+  # change that knowingly trades speed for something else should be able to say
+  # so and move on.
+  bench:
+    name: cost gate (A/B against the merge base)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench
+      - name: Opt-out check
+        id: optout
+        run: |
+          msg=$(git log -1 --pretty=%B "${{ github.event.pull_request.head.sha }}")
+          if printf '%s' "$msg" | grep -qF '[no-bench]'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "head commit says [no-bench]; the cost gate is skipped"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      # The merge base first, so the head's numbers are the ones taken on the
+      # warmer machine -- if anything that biases *against* the head, which is
+      # the safe direction for a gate. `|| true`: a base that predates the
+      # bench's `--json` mode writes the human table instead, which the compare
+      # step below detects and skips on rather than failing the PR that
+      # introduces the gate.
+      - name: Bench the merge base
+        if: steps.optout.outputs.skip == 'false'
+        run: |
+          base=$(git merge-base HEAD "${{ github.event.pull_request.base.sha }}")
+          echo "merge base: $base"
+          git checkout --detach "$base"
+          cargo run --release --no-default-features --features synth \
+            --example bench -- --json > /tmp/base.json || true
+      - name: Bench this branch
+        if: steps.optout.outputs.skip == 'false'
+        run: |
+          git checkout --detach "${{ github.event.pull_request.head.sha }}"
+          cargo run --release --no-default-features --features synth \
+            --example bench -- --json > /tmp/head.json
+      - name: Compare
+        if: steps.optout.outputs.skip == 'false'
+        run: |
+          if ! python3 -c "import json,sys; json.load(open('/tmp/base.json'))" 2>/dev/null; then
+            echo "the merge base produced no machine-readable bench; nothing to"
+            echo "compare against, so the gate passes. This is expected exactly"
+            echo "once: on the pull request that adds --json."
+            exit 0
+          fi
+          scripts/bench-gate.py /tmp/base.json /tmp/head.json
+      - name: Keep both measurements
+        if: always() && steps.optout.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench
+          path: /tmp/*.json

@@ -108,6 +108,15 @@ is reproducible with the same line:
   client book, TypeDoc for the web client book. Each is built the way its own
   Read the Docs project builds it, so a book that breaks there breaks here
   first.
+- **bench** — the cost gate, on pull requests only: it builds and benches the
+  merge base and then this branch **in the same job on the same runner**, and
+  `scripts/bench-gate.py` compares those two numbers. An absolute threshold
+  against a committed number cannot work here (a shared runner swings 10-20%
+  between runs of identical code), but the ratio of two runs that shared the
+  machine can. Reproduce it locally with two runs of
+  `cargo run --release --example bench -- --json` and the same script. A change
+  that knowingly trades speed for something else says `[no-bench]` in its head
+  commit message and the gate steps aside.
 - **faust** — the default `cargo test` covers it, with libfaust built from
   source at the commit pinned in the workflow (the recipe in
   `third_party/BUILD-FAUST.md`) and cached; a cache hit makes the job cheap.
