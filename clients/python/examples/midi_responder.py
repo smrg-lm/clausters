@@ -12,11 +12,8 @@ Needs the live cdylib (the virtual input port):
 
     cargo build --release -p clausters-midi --features live
 
-Start a Clausters server in one terminal::
-
-    cargo run --release
-
-then run this; it opens a virtual MIDI input port named ``clausters-in``::
+`Session.live` boots an audio server if none is up, so this runs on its own; it
+opens a virtual MIDI input port named ``clausters-in``::
 
     python clients/python/examples/midi_responder.py [seconds]
 

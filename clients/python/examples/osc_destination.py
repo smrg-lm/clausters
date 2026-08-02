@@ -18,11 +18,7 @@ There is no second program to run here: the example stands in for one with an
 with the time it was stamped for. Point ``--port`` at something else and the
 same routine drives that instead.
 
-Start a server in one terminal::
-
-    cargo run --release                 # or: clausters   (the installed binary)
-
-then run this::
+`Session.live` boots an audio server if none is up, so this runs on its own::
 
     python clients/python/examples/osc_destination.py [beats] [--port N]
 

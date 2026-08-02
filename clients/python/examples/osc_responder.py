@@ -13,11 +13,7 @@ receiver registers `/server_notify` on its own socket, so when any client sets t
 server's `/transport_set`, the server pushes the new grid back and an
 `OscFunc('/transport_query.reply')` re-aligns this client — no polling.
 
-Start a server in one terminal::
-
-    cargo run --release                 # or: clausters   (the installed binary)
-
-then run this (it self-sends a few `/note` messages and one transport change to
+`Session.live` boots an audio server if none is up, so this runs on its own (it self-sends a few `/note` messages and one transport change to
 demonstrate, but it will relay anything sent to its port from another app too)::
 
     python clients/python/examples/osc_responder.py

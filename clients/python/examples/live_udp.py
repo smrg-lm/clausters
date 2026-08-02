@@ -6,11 +6,8 @@ API, but a live RT session sends OSC over UDP to a running Clausters server. The
 only thing that changes between offline and live is the session factory -- the
 pattern and the clock are identical.
 
-Start a server in one terminal::
-
-    cargo run --release                 # or: clausters   (the installed binary)
-
-then, in a venv where the client is installed (``pip install ./clients/python``)::
+`Session.live` boots an audio server if none is up, so in a venv where the
+client is installed (``pip install ./clients/python``) this runs on its own::
 
     python clients/python/examples/live_udp.py
 

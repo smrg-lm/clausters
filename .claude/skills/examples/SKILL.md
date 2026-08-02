@@ -43,29 +43,36 @@ live-coder works: `# %%` cells (the VS Code / Jupyter convention) with
 module level inside the cells — not buried in a `main()` the reader cannot
 step into.
 
-Two endings are idiomatic, and both are in the tree:
+**This holds for every client example, offline ones included.** An NRT example
+that renders a WAV and exits looks like a closed script and is not one: the
+reader still wants to build the def in one cell, change it, and re-render in the
+next without re-running the file. There is no "it only produces a file"
+exception — if it lives under `clients/python/examples/`, it is a notebook.
 
-- **Plain top-level**, ending with the teardown (`server.close()` /
-  `session.close()`). For an example that runs a fixed span and stops
-  (`verbs.py`, `scoping.py`, `automation_lane.py`).
-- **The dual-mode guard**, for an example that holds something open (a GUI
-  window, a live session) and wants to be *both* a script and a REPL session:
+The cells pair with the **dual-mode guard** as the last cell, so the same file
+is both a script and a REPL session:
 
-  ```python
-  # %%
-  if __name__ == "__main__" and not hasattr(sys, "ps1"):
-      try:
-          run(30.0)
-      finally:
-          session.close()
-  else:
-      print("up - run(10) to drive it, session.close() to end")
-  ```
+```python
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    try:
+        run(30.0)
+    finally:
+        session.close()
+else:
+    print("up - run(10) to drive it, session.close() to end")
+```
 
-  `hasattr(sys, "ps1")` is the interactive-interpreter test: run as a script it
-  drives itself and tears down; imported into a REPL it leaves the objects live
-  and tells you what to call. 20 of the client examples do this — it is the
-  default for anything with a GUI or a long live session.
+`hasattr(sys, "ps1")` is the interactive-interpreter test: run as a script it
+drives itself and tears down; imported into a REPL it leaves the objects live
+and tells you what to call. For an example that just renders and stops, the
+guard is smaller — the render call and the teardown inside it, the `else`
+naming what to call by hand.
+
+A few older examples end with plain top-level teardown and no guard
+(`verbs.py`, `scoping.py`). That is the earlier form, not a second idiom: the
+guard is what keeps the file from tearing itself down under the reader's feet
+when it is imported.
 
 ### The web client's examples are pages
 

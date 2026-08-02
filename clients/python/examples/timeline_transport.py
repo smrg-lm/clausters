@@ -10,11 +10,7 @@ This example captures a pattern into a timeline, edits it programmatically, then
 drives it live with the playhead. Random access happens at the boundaries
 (play/locate/loop); between them the playhead just scans forward.
 
-Start a server first:
-
-    cargo run --release                 # or the installed `clausters` binary
-
-then:
+`Session.live` boots an audio server if none is up, so this runs on its own:
 
     python clients/python/examples/timeline_transport.py
 """
