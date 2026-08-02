@@ -33,8 +33,13 @@ Then, with the client importable::
 
 A window shows the engraved timeline; press **play** and the cursor follows the
 sound. Close the window to stop. Needs an audio device, a display and a GPU.
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention):
+step through it with Shift+Enter and the window stays up between cells, or run
+it as a plain script.
 """
 
+# %%
 import sys
 
 from clausters import Event, Session
@@ -46,6 +51,10 @@ from clausters.seq.timeline import Playhead, Timeline
 TEMPO = 1.0
 
 
+# %% [markdown]
+# ## The source timeline
+
+# %%
 def build_timeline() -> Timeline:
     """A four-bar timeline built in code: a triad on each downbeat with a melody
     running above it. The melody's rests and the chord onsets are exactly what
@@ -66,6 +75,10 @@ def build_timeline() -> Timeline:
     return tl
 
 
+# %% [markdown]
+# ## What the engraving plays back
+
+# %%
 def playback_timeline(notes: list) -> Timeline:
     """Place the **engraved** notes on a timeline to play them (their ``t``/
     ``dur`` are the score's own timemap, in ms -> beats/1000, so the sound runs
@@ -79,6 +92,10 @@ def playback_timeline(notes: list) -> Timeline:
     return timeline
 
 
+# %% [markdown]
+# ## The window
+
+# %%
 def scene(display_list: dict, sample_rate: float) -> dict:
     """A minimal transport over the engraved page. Every widget is *named*, so
     the script drives it by name and never picks an id."""
@@ -93,53 +110,73 @@ def scene(display_list: dict, sample_rate: float) -> dict:
     )
 
 
-def main():
-    source = build_timeline()
+# %% [markdown]
+# ## Engrave it
+# The score is generated from the timeline, not typed. `from_timeline` groups the
+# events sharing a beat into chords and fills the gaps with rests; the melody's
+# durations become the written note values (a 2-beat note a half, a 0.5-beat note
+# an eighth). One beat is a quarter (``beat_unit=4``).
 
-    # The score is generated from the timeline, not typed. `from_timeline` groups
-    # the events sharing a beat into chords and fills the gaps with rests; the
-    # melody's durations become the written note values (a 2-beat note a half,
-    # a 0.5-beat note an eighth). One beat is a quarter (`beat_unit=4`).
-    score = notation.Score.from_timeline(source, meter="4/4", key="C",
-                                         beat_unit=4, page_width=1600)
-    dl = score.display_list()
-    print(f"engraved {len(dl['notes'])} notes into {len(dl['prims'])} primitives")
+# %%
+source = build_timeline()
+score = notation.Score.from_timeline(source, meter="4/4", key="C",
+                                     beat_unit=4, page_width=1600)
+dl = score.display_list()
+print(f"engraved {len(dl['notes'])} notes into {len(dl['prims'])} primitives")
 
-    with Session.live(tempo=TEMPO) as session:
-        server = session.server
-        sr = float(server.options.sample_rate)
-        gui = session.gui()
-        win = gui.open(scene(dl, sr))
-        session.start()
+# %% [markdown]
+# ## Open it
 
-        # Play the engraved score, not the source timeline: the cursor rides the
-        # engraving's timemap, so the sound must run on the same time base.
-        playhead = Playhead(playback_timeline(dl["notes"]), session.clock, server)
+# %%
+session = Session.live(tempo=TEMPO)
+server = session.server
+sr = float(server.options.sample_rate)
+gui = session.gui()
+win = gui.open(scene(dl, sr))
+session.start()
 
-        def play():
-            playhead.play(at=0.0)
-            # anchor the cursor: the clock now, plus the play latency, is score 0
-            _, args = server.request("/clock_query", expect=("/clock_query.reply",))
-            now = float(args[0]) + server.latency * sr
-            win["score"].set(playhead_at=now)
+# %% [markdown]
+# ## Transport
+# Play the engraved score, not the source timeline: the cursor rides the
+# engraving's timemap, so the sound must run on the same time base.
 
-        def stop():
-            playhead.stop()
-            win["score"].set(playhead_at=-1.0, playhead=0.0)
-
-        # Wire the two buttons by name: act on the press (1), ignore the release.
-        win["play"].on_event(lambda value: play() if value == 1 else None)
-        win["stop"].on_event(lambda value: stop() if value == 1 else None)
-        closed = [False]
-        win.on_closed(lambda: (closed.__setitem__(0, True), print("window closed")))
-
-        print("press play -- the cursor follows the sound; close the window to stop")
-        while not closed[0]:
-            gui.pump(timeout=0.1)
+# %%
+playhead = Playhead(playback_timeline(dl["notes"]), session.clock, server)
 
 
-if __name__ == "__main__":
+def play():
+    playhead.play(at=0.0)
+    # anchor the cursor: the clock now, plus the play latency, is score 0
+    _, args = server.request("/clock_query", expect=("/clock_query.reply",))
+    now = float(args[0]) + server.latency * sr
+    win["score"].set(playhead_at=now)
+
+
+def stop():
+    playhead.stop()
+    win["score"].set(playhead_at=-1.0, playhead=0.0)
+
+
+# Wire the two buttons by name: act on the press (1), ignore the release.
+win["play"].on_event(lambda value: play() if value == 1 else None)
+win["stop"].on_event(lambda value: stop() if value == 1 else None)
+closed = [False]
+win.on_closed(lambda: (closed.__setitem__(0, True), print("window closed")))
+print("press play -- the cursor follows the sound; close the window to stop")
+
+
+# %%
+def run():
+    """Pump the host until the window closes."""
+    while not closed[0]:
+        gui.pump(timeout=0.1)
+
+
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        main()
-    except (OSError, RuntimeError, ValueError) as e:
-        sys.exit(str(e))
+        run()
+    finally:
+        session.close()
+else:
+    print("score up - play(), stop(), run() to pump; session.close() to end")
