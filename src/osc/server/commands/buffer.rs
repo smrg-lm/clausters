@@ -44,9 +44,9 @@ impl OscServer {
     /// same index.
     pub(in crate::osc::server) fn handle_buffer_cmd(
         &mut self,
+        cmd: &'static str,
         msg: &OscMessage,
         from: ClientId,
-        cmd: &'static str,
     ) {
         let (index, job) = match parse_buffer_msg(
             cmd,

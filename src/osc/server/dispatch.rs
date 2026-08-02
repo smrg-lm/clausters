@@ -82,104 +82,20 @@ impl OscServer {
 
     fn handle_message(&mut self, msg: OscMessage, from: ClientId) -> Flow {
         tracing::trace!(target: crate::logging::OSC_TARGET, "{} {:?}", msg.addr, msg.args);
-        match msg.addr.as_str() {
-            "/server_status" => self.send_server_status(from),
-            "/server_query" => self.send_server_query(from),
-            "/server_notify" => self.handle_server_notify(&msg, from),
-            // The translator covers the whole schedulable subset (and keeps
-            // the tree mirror in sync), so the immediate forms share one
-            // path: translate, then ship every command.
-            "/synth_new"
-            | "/group_new"
-            | "/group_freeAll"
-            | "/group_deepFree"
-            | "/node_free"
-            | "/node_run"
-            | "/node_set"
-            | "/node_setRange"
-            | "/node_fill"
-            | "/node_map"
-            | "/node_mapAudio"
-            | "/node_mapRange"
-            | "/node_mapAudioRange"
-            | "/node_before"
-            | "/node_after"
-            | "/node_order"
-            | "/group_head"
-            | "/group_tail"
-            | "/group_sortMode"
-            | "/group_parallel"
-            | "/group_name"
-            | "/graph_new"
-            | "/graph_newVoice" => self.handle_via_translate(&msg, from),
-            "/node_trace" => self.attempt(&msg, from, Self::handle_node_trace),
-            // MIDI binding mutations also persist the binding set.
-            "/midi_bind" | "/midi_unbind" | "/midi_map" => {
-                self.handle_via_translate(&msg, from);
-                self.persist_bindings();
-            }
-            "/group_queryTree" => self.attempt_for(&msg, from, Self::handle_group_query_tree),
-            "/group_query" => self.attempt_for(&msg, from, Self::handle_group_query),
-            "/node_query" => self.attempt_for(&msg, from, Self::handle_node_query),
-            "/group_dumpGraph" => self.attempt_for(&msg, from, Self::handle_group_dump_graph),
-            "/bus_set" => self.attempt(&msg, from, Self::handle_bus_set),
-            "/bus_get" => self.attempt_for(&msg, from, Self::handle_bus_get),
-            "/bus_setRange" => self.attempt(&msg, from, Self::handle_bus_set_range),
-            "/bus_getRange" => self.attempt_for(&msg, from, Self::handle_bus_get_range),
-            "/bus_fill" => self.attempt(&msg, from, Self::handle_bus_fill),
-            "/bus_stream" => self.handle_bus_stream(&msg, from),
-            "/bus_tap" => self.handle_bus_tap(&msg, from),
-            "/bus_tapStream" => self.handle_bus_tap_stream(&msg, from),
-            "/synth_get" => {
-                if let Err(why) = self.handle_synth_get(Args::new(&msg), from, false) {
-                    self.fail(from, "/synth_get", why);
+        // The one command that answers by ending the loop, so it cannot be a
+        // table row like the others.
+        if msg.addr == "/server_quit" {
+            self.reply(from, "/done", vec![OscType::String("/server_quit".into())]);
+            return Flow::Quit;
+        }
+        match COMMANDS.binary_search_by_key(&msg.addr.as_str(), |(addr, _)| addr) {
+            Ok(i) => {
+                let (addr, run) = COMMANDS[i];
+                if let Err(why) = run(self, addr, &msg, from) {
+                    self.fail(from, &msg.addr, why);
                 }
             }
-            "/synth_getRange" => {
-                if let Err(why) = self.handle_synth_get(Args::new(&msg), from, true) {
-                    self.fail(from, "/synth_getRange", why);
-                }
-            }
-            "/synth_forgetId" => self.attempt_for(&msg, from, Self::handle_synth_forget_id),
-            "/buffer_close" => self.attempt_for(&msg, from, Self::handle_buffer_close),
-            "/def_load" => self.attempt_for(&msg, from, Self::handle_def_load),
-            "/def_loadDir" => self.attempt_for(&msg, from, Self::handle_def_load_dir),
-            "/sched_clear" => self.handle_sched_clear(from),
-            "/server_errorMode" => self.attempt(&msg, from, Self::handle_server_error_mode),
-            "/server_cmd" => self.attempt_for(&msg, from, Self::handle_server_cmd),
-            "/node_ugenCmd" => self.handle_via_translate(&msg, from),
-            "/clock_query" => self.handle_clock_query(from),
-            "/sched_at" => self.handle_sched_at(&msg, from),
-            "/buffer_alloc" => self.handle_buffer_cmd(&msg, from, "/buffer_alloc"),
-            "/buffer_allocRead" => self.handle_buffer_cmd(&msg, from, "/buffer_allocRead"),
-            "/buffer_read" => self.handle_buffer_cmd(&msg, from, "/buffer_read"),
-            "/buffer_write" => self.handle_buffer_cmd(&msg, from, "/buffer_write"),
-            "/buffer_zero" => self.handle_buffer_cmd(&msg, from, "/buffer_zero"),
-            "/buffer_gen" => self.handle_buffer_gen(&msg, from),
-            "/buffer_free" => self.handle_buffer_cmd(&msg, from, "/buffer_free"),
-            "/buffer_query" => self.attempt_for(&msg, from, Self::handle_buffer_query),
-            "/def_query" => self.attempt_for(&msg, from, Self::handle_def_query),
-            "/ugen_query" => self.attempt_for(&msg, from, Self::handle_ugen_query),
-            "/buffer_get" => self.attempt_for(&msg, from, Self::handle_buffer_get),
-            "/buffer_getRange" => self.attempt_for(&msg, from, Self::handle_buffer_get_range),
-            "/buffer_export" => self.attempt_for(&msg, from, Self::handle_buffer_export),
-            "/server_sync" => self.handle_server_sync(&msg, from),
-            "/def_send" => self.attempt_for(&msg, from, Self::handle_def_send),
-            "/def_free" => self.handle_def_free(&msg, from),
-            "/server_dumpOsc" => self.handle_server_dump_osc(&msg, from),
-            "/server_verbosity" => self.handle_server_verbosity(&msg, from),
-            "/transport_query" => self.handle_transport_query(from),
-            "/transport_set" => self.attempt_for(&msg, from, Self::handle_transport),
-            "/transport_play" => self.attempt_for(&msg, from, Self::handle_transport_play),
-            "/transport_stop" => self.handle_transport_stop(from),
-            "/transport_locate" => self.attempt_for(&msg, from, Self::handle_transport_locate),
-            "/transport_group" => self.attempt_for(&msg, from, Self::handle_transport_group),
-            "/sched_atTransport" => self.handle_sched_at_transport(&msg, from),
-            "/server_quit" => {
-                self.reply(from, "/done", vec![OscType::String("/server_quit".into())]);
-                return Flow::Quit;
-            }
-            other => self.fail(from, other, "unknown command"),
+            Err(_) => self.fail(from, &msg.addr, "unknown command"),
         }
         Flow::Continue
     }
@@ -362,35 +278,307 @@ impl OscServer {
     }
 }
 
-impl OscServer {
-    /// Runs a handler that reads its arguments through [`Args`], turning a
-    /// refusal into `/fail`.
-    ///
-    /// This is the only place a parse failure becomes a reply, which is what
-    /// makes the wording consistent — and the address it fails with is the one
-    /// the client sent, so a handler cannot name a command different from the
-    /// one that reached it.
-    pub(in crate::osc::server) fn attempt(
-        &mut self,
-        msg: &OscMessage,
-        from: ClientId,
-        run: fn(&mut Self, Args) -> Answer,
-    ) {
-        if let Err(why) = run(self, Args::new(msg)) {
-            self.fail(from, &msg.addr, why);
-        }
-    }
+/// What every command handler looks like from the dispatcher's side. The
+/// handlers themselves keep the shape that suits them -- some read through
+/// [`Args`], some need only the client, some hand the whole message to the
+/// translator -- and the row adapts.
+///
+/// The `&'static str` is the row's own address. A handler that needs to name
+/// its command (the async buffer jobs, which carry it into the `/done` they
+/// reply much later) takes it from here rather than being told it a second
+/// time by its caller: the table is where the name is written once.
+type Command = fn(&mut OscServer, &'static str, &OscMessage, ClientId) -> Answer;
 
-    /// The same, for a handler that also needs to know who asked (a query that
-    /// replies, rather than a command that only acts).
-    pub(in crate::osc::server) fn attempt_for(
-        &mut self,
-        msg: &OscMessage,
-        from: ClientId,
-        run: fn(&mut Self, Args, ClientId) -> Answer,
-    ) {
-        if let Err(why) = run(self, Args::new(msg), from) {
-            self.fail(from, &msg.addr, why);
-        }
-    }
-}
+/// **The command set, as data.** Sorted by address, because the lookup is a
+/// binary search and because a sorted list is one a human can scan.
+///
+/// A `match` over the same addresses would dispatch just as well. What a table
+/// adds is that the set becomes *enumerable*: `tests/schema.rs` walks it and
+/// fails when a command the server answers is missing from `docs/schemas.md`,
+/// which is the drift nothing could catch before -- a command is easy to add
+/// and easy to forget to document, and the two lived in different files with
+/// no way to compare them.
+///
+/// `/server_quit` is deliberately not here; see [`OscServer::handle_message`].
+pub(super) static COMMANDS: &[(&str, Command)] = &[
+    ("/buffer_alloc", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
+    ("/buffer_allocRead", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
+    ("/buffer_close", |s, _, m, f| {
+        s.handle_buffer_close(Args::new(m), f)
+    }),
+    ("/buffer_export", |s, _, m, f| {
+        s.handle_buffer_export(Args::new(m), f)
+    }),
+    ("/buffer_free", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
+    ("/buffer_gen", |s, _, m, f| {
+        s.handle_buffer_gen(m, f);
+        Ok(())
+    }),
+    ("/buffer_get", |s, _, m, f| {
+        s.handle_buffer_get(Args::new(m), f)
+    }),
+    ("/buffer_getRange", |s, _, m, f| {
+        s.handle_buffer_get_range(Args::new(m), f)
+    }),
+    ("/buffer_query", |s, _, m, f| {
+        s.handle_buffer_query(Args::new(m), f)
+    }),
+    ("/buffer_read", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
+    ("/buffer_write", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
+    ("/buffer_zero", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
+    ("/bus_fill", |s, _, m, _| s.handle_bus_fill(Args::new(m))),
+    ("/bus_get", |s, _, m, f| s.handle_bus_get(Args::new(m), f)),
+    ("/bus_getRange", |s, _, m, f| {
+        s.handle_bus_get_range(Args::new(m), f)
+    }),
+    ("/bus_set", |s, _, m, _| s.handle_bus_set(Args::new(m))),
+    ("/bus_setRange", |s, _, m, _| {
+        s.handle_bus_set_range(Args::new(m))
+    }),
+    ("/bus_stream", |s, _, m, f| {
+        s.handle_bus_stream(m, f);
+        Ok(())
+    }),
+    ("/bus_tap", |s, _, m, f| {
+        s.handle_bus_tap(m, f);
+        Ok(())
+    }),
+    ("/bus_tapStream", |s, _, m, f| {
+        s.handle_bus_tap_stream(m, f);
+        Ok(())
+    }),
+    ("/clock_query", |s, _, _, f| {
+        s.handle_clock_query(f);
+        Ok(())
+    }),
+    ("/def_free", |s, _, m, f| {
+        s.handle_def_free(m, f);
+        Ok(())
+    }),
+    ("/def_load", |s, _, m, f| s.handle_def_load(Args::new(m), f)),
+    ("/def_loadDir", |s, _, m, f| {
+        s.handle_def_load_dir(Args::new(m), f)
+    }),
+    ("/def_query", |s, _, m, f| {
+        s.handle_def_query(Args::new(m), f)
+    }),
+    ("/def_send", |s, _, m, f| s.handle_def_send(Args::new(m), f)),
+    ("/graph_new", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/graph_newVoice", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/group_deepFree", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/group_dumpGraph", |s, _, m, f| {
+        s.handle_group_dump_graph(Args::new(m), f)
+    }),
+    ("/group_freeAll", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/group_head", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/group_name", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/group_new", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/group_parallel", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/group_query", |s, _, m, f| {
+        s.handle_group_query(Args::new(m), f)
+    }),
+    ("/group_queryTree", |s, _, m, f| {
+        s.handle_group_query_tree(Args::new(m), f)
+    }),
+    ("/group_sortMode", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/group_tail", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/midi_bind", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        s.persist_bindings();
+        Ok(())
+    }),
+    ("/midi_map", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        s.persist_bindings();
+        Ok(())
+    }),
+    ("/midi_unbind", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        s.persist_bindings();
+        Ok(())
+    }),
+    ("/node_after", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_before", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_fill", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_free", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_map", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_mapAudio", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_mapAudioRange", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_mapRange", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_order", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_query", |s, _, m, f| {
+        s.handle_node_query(Args::new(m), f)
+    }),
+    ("/node_run", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_set", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_setRange", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/node_trace", |s, _, m, _| {
+        s.handle_node_trace(Args::new(m))
+    }),
+    ("/node_ugenCmd", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/sched_at", |s, _, m, f| {
+        s.handle_sched_at(m, f);
+        Ok(())
+    }),
+    ("/sched_atTransport", |s, _, m, f| {
+        s.handle_sched_at_transport(m, f);
+        Ok(())
+    }),
+    ("/sched_clear", |s, _, _, f| {
+        s.handle_sched_clear(f);
+        Ok(())
+    }),
+    ("/server_cmd", |s, _, m, f| {
+        s.handle_server_cmd(Args::new(m), f)
+    }),
+    ("/server_dumpOsc", |s, _, m, f| {
+        s.handle_server_dump_osc(m, f);
+        Ok(())
+    }),
+    ("/server_errorMode", |s, _, m, _| {
+        s.handle_server_error_mode(Args::new(m))
+    }),
+    ("/server_notify", |s, _, m, f| {
+        s.handle_server_notify(m, f);
+        Ok(())
+    }),
+    ("/server_query", |s, _, _, f| {
+        s.send_server_query(f);
+        Ok(())
+    }),
+    ("/server_status", |s, _, _, f| {
+        s.send_server_status(f);
+        Ok(())
+    }),
+    ("/server_sync", |s, _, m, f| {
+        s.handle_server_sync(m, f);
+        Ok(())
+    }),
+    ("/server_verbosity", |s, _, m, f| {
+        s.handle_server_verbosity(m, f);
+        Ok(())
+    }),
+    ("/synth_forgetId", |s, _, m, f| {
+        s.handle_synth_forget_id(Args::new(m), f)
+    }),
+    ("/synth_get", |s, addr, m, f| {
+        s.handle_synth_get(Args::new(m), f, addr.ends_with("Range"))
+    }),
+    ("/synth_getRange", |s, addr, m, f| {
+        s.handle_synth_get(Args::new(m), f, addr.ends_with("Range"))
+    }),
+    ("/synth_new", |s, _, m, f| {
+        s.handle_via_translate(m, f);
+        Ok(())
+    }),
+    ("/transport_group", |s, _, m, f| {
+        s.handle_transport_group(Args::new(m), f)
+    }),
+    ("/transport_locate", |s, _, m, f| {
+        s.handle_transport_locate(Args::new(m), f)
+    }),
+    ("/transport_play", |s, _, m, f| {
+        s.handle_transport_play(Args::new(m), f)
+    }),
+    ("/transport_query", |s, _, _, f| {
+        s.handle_transport_query(f);
+        Ok(())
+    }),
+    ("/transport_set", |s, _, m, f| {
+        s.handle_transport(Args::new(m), f)
+    }),
+    ("/transport_stop", |s, _, _, f| {
+        s.handle_transport_stop(f);
+        Ok(())
+    }),
+    ("/ugen_query", |s, _, m, f| {
+        s.handle_ugen_query(Args::new(m), f)
+    }),
+];

@@ -874,13 +874,39 @@ near.
   doing its job — and the reason to check, before starting, which strings the
   suite is holding.
 
-- ⬜ **R4 — Dispatch as a table, checked against the schema.** `handle_message`
-  is a ~100-arm `match` on the address string. A `&[(&'static str,
-  HandlerFn)]` table makes the command set **enumerable at runtime**, which buys
-  the thing the `match` cannot: a test asserting that the dispatch table and
-  `docs/schemas.md` list the same addresses. Today nothing checks that the
-  reference documents the commands the server actually answers. Depends on R2
-  (it lives in `dispatch.rs`) and reads best after R3.
+- ✅ **R4 — Dispatch as a table, checked against the schema** *(done 2026-08-02)*
+  — `handle_message` was a ~100-arm `match` on the address string. It is now
+  `COMMANDS`, a sorted `&[(&str, Command)]` searched in one binary search, with
+  one place that answers `/fail`.
+
+  The table is not faster and was never meant to be; what it buys is that the
+  command set became **enumerable**, and `tests/schema.rs` walks it in both
+  directions against `docs/schemas.md`: a command the server answers and nobody
+  documented, and a command the reference promises and nothing answers. Neither
+  was catchable before — the two lived in different files with no way to
+  compare them, so the reference could be trusted only as far as somebody's
+  memory.
+
+  Two things fell out rather than being aimed at. The dispatcher passes each
+  row its own `&'static str`, so the handlers that carry their command's name
+  into a later reply (the async buffer jobs) take it from the table instead of
+  being told it a second time by their caller, and `/synth_get` distinguishes
+  itself from `/synth_getRange` by reading its own address. And `attempt` /
+  `attempt_for` disappeared: they existed because a `match` arm could not
+  express "run this, and fail with the address that matched", which is now what
+  the dispatcher does for every row.
+
+  The parser needed real rules rather than an exclusion list, since the
+  reference spells three other things as `/name`: group paths
+  (`/mixer/drums`), scsynth's original names cited in the mapping table
+  (`/s_new`, `/c_getn` — told apart by their one-letter resource prefix, which
+  is exactly what clausters replaced), and the addresses the server *sends*
+  (`/done`, the node notifications, `SendReply`'s default `/reply`).
+
+  What it cannot check is whether the *arguments* a page describes are the ones
+  the handler reads. That is the deeper drift; it needs types the protocol does
+  not have, and this catches the coarse one, which is the one that has actually
+  happened.
 
 - ⬜ **R5 — Split the translator (`src/osc/translate.rs`, 2747 lines).** Three
   concerns share a file and little else: the OSC→`Cmd` translation proper, the

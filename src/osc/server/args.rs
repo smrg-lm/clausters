@@ -12,10 +12,9 @@
 //! must never do is match on the string, which is why the reference documents
 //! the arguments and not the sentences.
 //!
-//! Handlers wired through [`OscServer::attempt`] never name their own address
-//! either -- the failure is addressed with the one the client actually sent, so
-//! a handler and its dispatch arm cannot drift into disagreeing about what the
-//! command is called.
+//! Handlers never name their own address either: the dispatcher fails with the
+//! address it matched, so a handler and its table row cannot drift into
+//! disagreeing about what the command is called.
 
 use rosc::{OscMessage, OscType};
 
@@ -32,7 +31,8 @@ pub(in crate::osc::server) struct Args<'a> {
 }
 
 /// What a handler returns: `Ok` if it answered, `Err` with the reason if the
-/// arguments made no sense. [`OscServer::attempt`] turns the `Err` into `/fail`.
+/// arguments made no sense. `OscServer::handle_message` turns the `Err` into
+/// `/fail` -- the one place in the server that does.
 pub(in crate::osc::server) type Answer = Result<(), String>;
 
 impl<'a> Args<'a> {

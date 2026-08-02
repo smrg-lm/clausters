@@ -58,6 +58,14 @@ mod lifecycle;
 mod streams;
 mod transports;
 
+/// The addresses the server answers, in the order the dispatch table holds
+/// them (sorted). Exposed so a test can compare the command set against
+/// `docs/schemas.md`; there is no other way to enumerate it, which is the
+/// point of the table being data.
+pub fn commands() -> Vec<&'static str> {
+    dispatch::COMMANDS.iter().map(|(addr, _)| *addr).collect()
+}
+
 use args::{Answer, Args};
 
 /// Default scsynth port.
