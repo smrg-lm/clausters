@@ -73,6 +73,13 @@ impl<'a> Args<'a> {
         )
     }
 
+    /// The next argument, whatever it is: the escape hatch for a reader the
+    /// handler has to do itself because it needs context this type has no
+    /// business knowing -- resolving a control name against a def, say.
+    pub(in crate::osc::server) fn one(&mut self) -> Result<&'a OscType, String> {
+        self.next("an argument")
+    }
+
     pub(in crate::osc::server) fn int(&mut self) -> Result<i32, String> {
         match self.next("an integer")? {
             OscType::Int(n) => Ok(*n),

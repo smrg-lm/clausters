@@ -130,8 +130,16 @@ impl OscServer {
             "/bus_stream" => self.handle_bus_stream(&msg, from),
             "/bus_tap" => self.handle_bus_tap(&msg, from),
             "/bus_tapStream" => self.handle_bus_tap_stream(&msg, from),
-            "/synth_get" => self.handle_synth_get(&msg, from, false),
-            "/synth_getRange" => self.handle_synth_get(&msg, from, true),
+            "/synth_get" => {
+                if let Err(why) = self.handle_synth_get(Args::new(&msg), from, false) {
+                    self.fail(from, "/synth_get", why);
+                }
+            }
+            "/synth_getRange" => {
+                if let Err(why) = self.handle_synth_get(Args::new(&msg), from, true) {
+                    self.fail(from, "/synth_getRange", why);
+                }
+            }
             "/synth_forgetId" => self.attempt_for(&msg, from, Self::handle_synth_forget_id),
             "/buffer_close" => self.attempt_for(&msg, from, Self::handle_buffer_close),
             "/def_load" => self.attempt_for(&msg, from, Self::handle_def_load),

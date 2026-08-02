@@ -844,19 +844,35 @@ near.
   OscServer` block per file — the struct and every signature stay put, so the
   diff is pure movement and `git log --follow` still reads.
 
-- ⬜ **R3 — An argument reader, and one voice for failures.** Every handler
-  re-derives the same destructuring by hand: 95 `OscType::Int` patterns feeding
-  117 `self.fail(...)` sites whose message strings were each written
-  individually and have drifted in wording. Introduce an `Args<'a>` reader
-  (`int()`, `float()`, `str()`, `pairs()`, `rest()`, each returning `Result<_,
-  String>`) and a `self.command(addr, |args| …)` wrapper mapping `Err` to
-  `fail`, so a handler states what it wants and the failure text comes from one
-  place. Collapse with it the five near-identical bus-range walkers
-  (`/bus_set`, `/bus_get`, `/bus_setRange`, `/bus_getRange`, `/bus_fill`) onto
-  one `for_each_bus_range` helper, and the `/buffer_get`↔`/buffer_getRange`,
-  `/synth_get`↔`/synth_getRange` pairs likewise. The error *strings* clients
-  read may be reworded here (they are prose, not protocol), but the `/fail`
-  address and its arguments may not.
+- ✅ **R3 — An argument reader, and one voice for failures** *(done 2026-08-02)*
+  — every handler used to destructure `msg.args` by hand and write its own
+  refusal at each step, which is how 117 `fail` sites came to phrase the same
+  four complaints in a dozen ways. `Args` is a cursor whose readers
+  (`int`, `index`, `float`, `str`, `long`, `double`, the `opt_*` pair) return
+  `Err` instead, handlers return `Answer`, and `OscServer::attempt` is the one
+  place a refusal becomes `/fail`. Every command handler now reads through it;
+  the count is down to 55, and what is left is not argument shape — the
+  dispatch layer, the stream subscriptions and the async pipelines fail about
+  other things.
+
+  Beyond the count, two properties the old shape could not have. The failure is
+  addressed with **the address the client sent**, so a handler and its dispatch
+  arm can no longer drift into disagreeing about what the command is called.
+  And `index()` is one read where callers used to write two separate refusals —
+  not an integer, and negative — which is exactly the pair that had drifted
+  most.
+
+  The bus family is where the duplication was worst: five commands walking the
+  same `(base, count, values)` shape with five copies of the same three checks,
+  now differing only in the reading. `/synth_get`↔`/synth_getRange` collapsed
+  into one body over a shared `control` reader, since resolving a control name
+  needs the def and is the one read `Args` has no business doing.
+
+  Two error strings did **not** change, because tests read them: rewording
+  `"unknown group"` broke `transport_group_binds_and_unbinds`, and the wording
+  went back rather than the test being edited. That is the track's invariant
+  doing its job — and the reason to check, before starting, which strings the
+  suite is holding.
 
 - ⬜ **R4 — Dispatch as a table, checked against the schema.** `handle_message`
   is a ~100-arm `match` on the address string. A `&[(&'static str,

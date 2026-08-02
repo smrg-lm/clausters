@@ -114,65 +114,51 @@ impl OscServer {
     /// `(control, numControls, val...)`), the query counterpart of `/node_set`.
     pub(in crate::osc::server) fn handle_synth_get(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
         ranged: bool,
-    ) {
-        let addr = if ranged {
-            "/synth_getRange"
-        } else {
-            "/synth_get"
-        };
-        let Some(OscType::Int(id)) = msg.args.first() else {
-            return self.fail(from, addr, "expected: nodeID, then controls");
-        };
-        let Some(def) = self.translator.node_defs.get(id).cloned() else {
-            return self.fail(from, addr, format!("synth {id} not found"));
-        };
-        let Some((_, controls)) = self.translator.mirror.synth_info(*id) else {
-            return self.fail(from, addr, format!("node {id} is not a synth"));
-        };
-        let mut args = vec![OscType::Int(*id)];
+    ) -> Answer {
+        let id = args.int()?;
+        let def = self
+            .translator
+            .node_defs
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| format!("synth {id} not found"))?;
+        let (_, controls) = self
+            .translator
+            .mirror
+            .synth_info(id)
+            .ok_or_else(|| format!("node {id} is not a synth"))?;
         let read = |index: u32| -> Result<f32, String> {
             controls
                 .get(index as usize)
                 .copied()
                 .ok_or_else(|| format!("control index {index} out of range"))
         };
-        if ranged {
-            for pair in msg.args[1..].chunks(2) {
-                let (Some(base), Some(OscType::Int(count))) =
-                    (pair.first().and_then(|a| control_key(a, &def)), pair.get(1))
-                else {
-                    return self.fail(from, addr, "expected (control, numControls) pairs");
-                };
-                let Ok(count) = u32::try_from(*count) else {
-                    return self.fail(from, addr, "numControls must be >= 0");
-                };
-                args.push(OscType::Int(base as i32));
-                args.push(OscType::Int(count as i32));
+        // A control is named or numbered, so it is the one read `Args` cannot
+        // do on its own: resolving it needs the def.
+        let control = |args: &mut Args| -> Result<u32, String> {
+            let arg = args.one()?;
+            control_key(arg, &def).ok_or_else(|| format!("unknown control {arg:?}"))
+        };
+        let mut out = vec![OscType::Int(id)];
+        while !args.is_empty() {
+            let base = control(&mut args)?;
+            if ranged {
+                let count = u32::try_from(args.int()?).map_err(|_| "numControls must be >= 0")?;
+                out.push(OscType::Int(base as i32));
+                out.push(OscType::Int(count as i32));
                 for offset in 0..count {
-                    match read(base + offset) {
-                        Ok(v) => args.push(OscType::Float(v)),
-                        Err(e) => return self.fail(from, addr, e),
-                    }
+                    out.push(OscType::Float(read(base + offset)?));
                 }
-            }
-        } else {
-            for arg in &msg.args[1..] {
-                let Some(index) = control_key(arg, &def) else {
-                    return self.fail(from, addr, "unknown control");
-                };
-                match read(index) {
-                    Ok(v) => {
-                        args.push(OscType::Int(index as i32));
-                        args.push(OscType::Float(v));
-                    }
-                    Err(e) => return self.fail(from, addr, e),
-                }
+            } else {
+                out.push(OscType::Int(base as i32));
+                out.push(OscType::Float(read(base)?));
             }
         }
-        self.reply(from, "/node_set", args);
+        self.reply(from, "/node_set", out);
+        Ok(())
     }
 
     /// `/synth_forgetId nodeID...`: in scsynth this releases the integer node IDs so the
