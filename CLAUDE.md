@@ -35,7 +35,9 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   through an `examples/` entry (root `examples/` for the server,
   `clients/python/examples/` for the client and the GUI), so an example that
   exercises the new behavior *is* the manual test, and keeping it runnable is
-  part of closing the work.
+  part of closing the work. **How one is written — a closed script, a `# %%`
+  notebook or a page, by which package it belongs to — is the `examples`
+  skill**; consult it before adding or editing one.
 - **An example documents itself, and the documentation never enumerates the
   examples.** The examples travel with the *repository*, not with the wheel or
   the npm package, so a catalog of them inside a book serves a reader who does
