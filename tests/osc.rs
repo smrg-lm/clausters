@@ -2708,6 +2708,13 @@ fn freeing_the_governed_group_unbinds_the_transport() {
     );
     server.send("/transport_group", vec![OscType::Int(100)]);
     server.recv_until("/done");
+    // The bind is announced *after* its own /done, so the announcement is still
+    // in flight here. Consume it: left in the socket, the tick below would match
+    // it instead of the unbind's and stop ticking before the free had drained.
+    assert_eq!(
+        server.recv_until("/transport_query.reply").args[5],
+        OscType::Int(100)
+    );
 
     // The group's death reaches the network thread through the garbage FIFO,
     // which is drained on the server's own tick, so drive it until the push.
