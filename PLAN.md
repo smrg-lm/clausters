@@ -1024,12 +1024,21 @@ near.
   per command per block. Lowest value in the track and the highest care — do it
   last, or not at all, and let the measurement decide which.
 
-- ⬜ **R10 — Split the remaining oversized crate files.**
-  `clausters-ffi/src/lib.rs` (1543) by domain — `builtins`, `time`, `rng`,
-  `registry`, `sched`, `clocksync` — the way `notation.rs` and `ws.rs` already
-  sit apart; `clausters-core/src/bundle.rs` (1287) along its assembly/decoding
-  seam. Follows R1, since the manifest decides how the ABI functions are
-  written before deciding which file they live in.
+- ✅ **R10 — The remaining oversized crate files** *(done 2026-08-02)* —
+  `clausters-ffi/src/lib.rs` (1543) is now ten domain modules beside the
+  `notation.rs` and `ws.rs` that already sat apart: `builtins`, `time`, `scale`,
+  `rng`, `sched`, `clocksync`, `registry`, `patch`, `bundle`, `measure`. `lib.rs`
+  keeps the crate docs, the ABI version and the re-exports — the C symbols do
+  not care which file declares them (`no_mangle` names are flat), but a Rust
+  caller does, so `pub use` keeps every `clausters_ffi::…` path. Each test
+  travelled with what it tests. Proved by `nm` on the built cdylib: the same 69
+  exported symbols, and `tests/bindings.rs` (which reads the whole `src`
+  directory) passes untouched.
+
+  `clausters-core/src/bundle.rs` (1287) split at its own seam: `format` (the
+  serde types and the one `Error`), `resolve` (the substitution machinery,
+  private) and `mod` (the passes, the binding envelope, the tests). The only
+  edits movement forced were visibility, and the compiler named each one.
 
 - ⬜ **R11 — The performance gate stops being a discipline.** Everything the
   track's cost invariant asks for is, until this lands, a step a human
