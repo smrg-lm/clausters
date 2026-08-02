@@ -961,16 +961,16 @@ near.
     to the bar every merge is. Rejecting the tag when the commit's CI is not
     green is the alternative, and is weaker — it depends on CI having run at
     all on that exact commit.
-  - **The eight configurations nobody automates.** Of the thirteen in
+  - **The nine configurations nobody automates.** Of the fourteen in
     `.claude/skills/feature-matrix/check.sh`, CI covers five (the two `fmt`s
-    and three `clippy` runs). The other eight — `clippy` under neither def
-    family, `synth` alone, `faust` alone, `clausters-ffi` with `verovio`, and
-    all five `rustdoc` builds — are covered by a human remembering, which is
-    what the skill exists to remind them of. Running the full `check.sh` in
-    the release's `verify` job is the cheapest place to make that automatic:
-    once per release rather than once per push, at the moment where being
-    wrong is unrecoverable. `check.sh --fast` runs exactly the eight if the
-    five are already proven by the same job. The `faust`-linking
+    and the workspace/gui/default `clippy` runs). The other nine — `clippy`
+    under neither def family, `synth` alone, `faust` alone, `clausters-ffi`
+    with `verovio`, and all five `rustdoc` builds — are covered by a human
+    remembering, which is what the skill exists to remind them of. Running the
+    full `check.sh` in the release's `verify` job is the cheapest place to make
+    that automatic: once per release rather than once per push, at the moment
+    where being wrong is unrecoverable. `check.sh --fast` runs exactly the nine
+    if the five are already proven by the same job. The `faust`-linking
     configurations need libfaust, which the release workflow already builds
     and caches through the `.github/actions/libfaust` composite — reuse it,
     don't add a second recipe.

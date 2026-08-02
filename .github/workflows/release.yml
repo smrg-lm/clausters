@@ -17,6 +17,14 @@
 #
 # Linux x86_64 only for now; adding macOS/Windows wheels is a matter of
 # extending the build matrix once those targets are verified by hand.
+#
+# Nothing publishes before `verify` passes. A tag is not a proof: it can sit on
+# a commit whose CI is red, or that CI never ran on at all, and publishing is
+# one-way in exactly the way the CLAUSTERS_REQUIRE_COMPLETE rule below already
+# recognizes -- that rule keeps an *incomplete* package off PyPI, and this gate
+# keeps a *broken* one off. It also runs the eight feature-matrix
+# configurations CI does not cover (see the job's own comment), which is the
+# one place they become automatic instead of remembered.
 
 name: Release
 
@@ -42,8 +50,75 @@ env:
   CLAUSTERS_REQUIRE_COMPLETE: "1"
 
 jobs:
+  # The gate every other job hangs off. Two halves, both of them things no
+  # other automation does for the commit being published:
+  #
+  #  - `check.sh` -- the fmt + clippy + rustdoc matrix. CI covers five of its
+  #    fourteen configurations (the two fmts, and the workspace/gui/default
+  #    clippy runs); the other nine -- clippy under neither def family, `synth`
+  #    alone, `faust` alone, clausters-ffi with `verovio`, and all five rustdoc
+  #    builds -- were, until this job, run only by a maintainer who remembered
+  #    to; they are what `check.sh --fast` runs. Once per release is
+  #    the right frequency for them: they are slow, they rarely break, and the
+  #    moment being wrong is unrecoverable is this one. It only ever reads --
+  #    it is a gate, not a formatter, and it never gets a --fix pass.
+  #  - `cargo test` on the default set and on `+embed`, the same two runs CI's
+  #    test-default job makes, against the exact commit the tag points at.
+  #
+  # Deliberately NOT re-run here: the libfaust-free test combos, the GUI/wasm
+  # gate and the Python suite. Those are CI's per-push job and duplicating them
+  # would double an already long release for little: the failure this gate
+  # exists to catch is a tag on an unverified commit, and a compile or lint
+  # error under any configuration surfaces in the runs above.
+  verify:
+    name: verify the tagged commit (tests + the full feature matrix)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Job-scoped, and it must stay that way. Virtualized runners misreport
+      # their CPU features, so a host-tuned Faust JIT hits an illegal
+      # instruction here (the same reason ci.yml sets this workflow-wide; see
+      # docs/decisions.md). The build and publish jobs below leave it unset on
+      # purpose -- what ships must be host-tuned for the user's real machine.
+      CLAUSTERS_FAUST_TARGET: "x86_64-unknown-linux-gnu:x86-64"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      # The matrix builds `faust` alone and the default set, both of which link
+      # libfaust; the composite restores the same cache CI populates.
+      - uses: ./.github/actions/libfaust
+        with:
+          prefix: ${{ env.FAUST_PREFIX }}
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: verify
+      # Every configuration runs even when an earlier one fails, and the script
+      # exits non-zero if any did -- so one run reports the whole picture
+      # instead of stopping at the first break.
+      - name: The fmt + clippy + rustdoc matrix
+        run: .claude/skills/feature-matrix/check.sh
+      # Mirrors ci.yml's test-default invocation, including --test-threads=1 and
+      # the coredump capture: this is the run that has historically produced the
+      # Faust SIGILL, and a release failing here is exactly when the dump is
+      # worth having.
+      - uses: ./.github/actions/coredump
+      - run: ulimit -c unlimited && cargo test --workspace -- --test-threads=1
+      - run: ulimit -c unlimited && cargo test --workspace --features embed -- --test-threads=1
+      - uses: ./.github/actions/coredump
+        if: failure()
+        with:
+          analyze: "true"
+          name: verify
+
   build:
     name: wheel + server binary (linux x86_64)
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -112,6 +187,11 @@ jobs:
 
   publish-npm:
     name: publish the web client to npm
+    # Behind `verify` on its own account, not merely by sitting after `build`:
+    # this job publishes, and it is the one leg that does not depend on the
+    # wheel build, so without this it would be the way an unverified commit
+    # reached a registry.
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: npm
