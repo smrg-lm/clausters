@@ -1286,7 +1286,9 @@ fn transport_query_and_set() {
     let server = TestServer::spawn();
 
     // Unset: defined flag 0, zeros. Reply is (origin, tempo, defined, playing,
-    // position) -- the grid plus the rolling state.
+    // position, group, transportSample) -- the grid, the rolling state, and the
+    // governed group with the transport clock. The last two are appended, so a
+    // client reading the first five still works.
     server.send("/transport_query", vec![]);
     let reply = server.recv_until("/transport_query.reply");
     assert_eq!(
@@ -1297,6 +1299,8 @@ fn transport_query_and_set() {
             OscType::Int(0),
             OscType::Int(0),
             OscType::Double(0.0),
+            OscType::Int(-1),
+            OscType::Long(0),
         ]
     );
 
@@ -1321,6 +1325,8 @@ fn transport_query_and_set() {
             OscType::Int(1),
             OscType::Int(0),
             OscType::Double(0.0),
+            OscType::Int(-1),
+            OscType::Long(0),
         ]
     );
 
@@ -1412,6 +1418,8 @@ fn transport_pushes_on_change_to_notify_clients() {
             OscType::Int(1),
             OscType::Int(0),
             OscType::Double(0.0),
+            OscType::Int(-1),
+            OscType::Long(0),
         ]
     );
 
@@ -2553,5 +2561,167 @@ fn a_group_with_a_refused_name_is_not_created() {
         server.recv_until("/group_query.reply").args[1],
         OscType::Int(100)
     );
+    server.quit();
+}
+
+/// `/transport_group` binds the group the transport governs. With one bound the
+/// transport stops being an advisory the clients obey by choice and becomes
+/// something the engine enforces; the query reply reports which group it is.
+#[cfg(feature = "transport")]
+#[test]
+fn transport_group_binds_and_unbinds() {
+    let server = TestServer::spawn();
+
+    // A grid must exist first, like the rest of the family.
+    server.send("/transport_group", vec![OscType::Int(0)]);
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/transport_group".into())
+    );
+
+    server.send(
+        "/transport_set",
+        vec![OscType::Long(0), OscType::Double(2.0)],
+    );
+    server.recv_until("/done");
+
+    // An id that is not a group is refused rather than silently accepted.
+    server.send("/transport_group", vec![OscType::Int(9999)]);
+    let fail = server.recv_until("/fail");
+    assert_eq!(fail.args[0], OscType::String("/transport_group".into()));
+    assert!(
+        format!("{:?}", fail.args[1]).contains("unknown group"),
+        "got {:?}",
+        fail.args
+    );
+
+    server.send(
+        "/group_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send("/transport_group", vec![OscType::Int(100)]);
+    server.recv_until("/done");
+    server.send("/transport_query", vec![]);
+    assert_eq!(
+        server.recv_until("/transport_query.reply").args[5],
+        OscType::Int(100)
+    );
+
+    // A negative id unbinds.
+    server.send("/transport_group", vec![OscType::Int(-1)]);
+    server.recv_until("/done");
+    server.send("/transport_query", vec![]);
+    assert_eq!(
+        server.recv_until("/transport_query.reply").args[5],
+        OscType::Int(-1)
+    );
+
+    server.quit();
+}
+
+/// `/sched_atTransport` declares that its absolute sample is on the transport
+/// axis. The declaration is a **check**: a packet that does not belong to the
+/// governed subtree fails, rather than firing in the wrong place.
+#[cfg(feature = "transport")]
+#[test]
+fn sched_at_transport_checks_the_declared_axis() {
+    let server = TestServer::spawn();
+
+    let packet = encoder::encode(&OscPacket::Message(OscMessage {
+        addr: "/node_run".into(),
+        args: vec![OscType::Int(0), OscType::Int(1)],
+    }))
+    .unwrap();
+
+    server.send(
+        "/transport_set",
+        vec![OscType::Long(0), OscType::Double(2.0)],
+    );
+    server.recv_until("/done");
+
+    // No group bound: there is no transport axis to name.
+    server.send(
+        "/sched_atTransport",
+        vec![OscType::Long(48_000), OscType::Blob(packet.clone())],
+    );
+    let fail = server.recv_until("/fail");
+    assert!(
+        format!("{:?}", fail.args[1]).contains("no group bound"),
+        "got {:?}",
+        fail.args
+    );
+
+    server.send(
+        "/group_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send("/transport_group", vec![OscType::Int(100)]);
+    server.recv_until("/done");
+
+    // The packet targets the root group, which is not governed: the client's
+    // declared axis and the server's classification disagree, and that is
+    // exactly what this command exists to catch.
+    server.send(
+        "/sched_atTransport",
+        vec![OscType::Long(48_000), OscType::Blob(packet)],
+    );
+    let fail = server.recv_until("/fail");
+    assert!(
+        format!("{:?}", fail.args[1]).contains("not governed"),
+        "got {:?}",
+        fail.args
+    );
+
+    // A packet aimed at the governed group itself is accepted.
+    let governed = encoder::encode(&OscPacket::Message(OscMessage {
+        addr: "/node_run".into(),
+        args: vec![OscType::Int(100), OscType::Int(1)],
+    }))
+    .unwrap();
+    server.send(
+        "/sched_atTransport",
+        vec![OscType::Long(48_000), OscType::Blob(governed)],
+    );
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/sched_atTransport".into())
+    );
+
+    server.quit();
+}
+
+/// Freeing the governed group unbinds the transport: it cannot govern a node
+/// that no longer exists, and leaving the binding would strand the next bind.
+#[cfg(feature = "transport")]
+#[test]
+fn freeing_the_governed_group_unbinds_the_transport() {
+    let mut server = TestServer::spawn();
+
+    // The unbind is announced on the push channel, so subscribe to it.
+    server.send("/server_notify", vec![OscType::Int(1)]);
+    server.recv_until("/done");
+    server.send(
+        "/transport_set",
+        vec![OscType::Long(0), OscType::Double(2.0)],
+    );
+    server.recv_until("/done");
+    server.send(
+        "/group_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send("/transport_group", vec![OscType::Int(100)]);
+    server.recv_until("/done");
+
+    // The group's death reaches the network thread through the garbage FIFO,
+    // which is drained on the server's own tick, so drive it until the push.
+    server.send("/node_free", vec![OscType::Int(100)]);
+    server.tick_until("/transport_query.reply");
+
+    server.send("/transport_query", vec![]);
+    assert_eq!(
+        server.recv_until("/transport_query.reply").args[5],
+        OscType::Int(-1)
+    );
+
     server.quit();
 }

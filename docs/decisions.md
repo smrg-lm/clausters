@@ -3943,3 +3943,58 @@ is for renaming to notify, which closes the case for every group at once; an
 optional string in `/graph_new` would close it for graphs alone, and would add
 the protocol's only label sitting in the middle of an argument list instead of
 at the end of a fixed group of arguments.
+
+
+## A transport can pause a piece it cannot seek
+
+Every transport protocol worth surveying — JACK's `jack_position_t` with its BBT
+and its slow-sync `Starting` state, Ableton Link, MIDI clock's Song Position
+Pointer, VST3's `ProcessContext`, CLAP's `clap_event_transport` — shares one
+assumption it never states: **position is an index into material that already
+exists**. `song_pos_beats` means something because something is addressable at
+that beat.
+
+A clausters piece generates sound. In the extreme it is one def running
+stochastic processes and demand-rate sequences on the server, with nothing to
+read and no messages arriving. Such a subtree has no index. Its position *is*
+its internal state, and no number summarises it.
+
+So the transport splits what those protocols keep together:
+
+- **Pause and resume are symmetric.** They work identically for material and for
+  a generator, because they are only a freeze of the subtree, the clock and the
+  queue. Universal, and cheap — the freeze itself is `NodeTree::set_paused`,
+  which already keeps a node in the tree with its state intact.
+- **Locate is asymmetric.** Over generated material it is an index; over a
+  generator it does not exist as an operation. `/transport_locate` therefore
+  moves the position and never the state of a node, and says so.
+
+This is not a limitation worked around; it is the same law the arrangement layer
+already states, arriving at the server. `clausters.form` distinguishes a
+*generated* element (random-access: it can be read backwards, sliced, edited)
+from a *generator* (forward-only: it can only be evaluated), with **render** as
+the change of state between them. A generator becomes locatable by being
+rendered — the same answer, one layer down.
+
+It follows that the **locatability flag lives in the client, not the protocol**.
+The server cannot know which of its nodes are generators; `form` can, because it
+holds the material. Putting a capability bit on the wire would be the server
+promising something it cannot check.
+
+## The two transports were absorbed, not renamed
+
+`/transport_*` already existed as a shared beat grid plus an advisory rolling
+state: fields a client read to phase-align, which the server stored and
+broadcast but never scheduled audio from. The governing transport needs exactly
+those fields plus a group — it is, near enough, a `jack_position_t` without BBT.
+
+The choice was to rename the old one (`/grid_*`, freeing `/transport_*` for the
+real transport) or to absorb both into one command family. Absorbing won: one
+vocabulary across the three books, `Playhead.follow_transport` unbroken, and no
+protocol break for a distinction most clients never make.
+
+The price is one command with two intensities — with no group bound
+`/transport_stop` is an advisory, with one bound it freezes the engine — and
+that has to be said plainly in the reference rather than left to be discovered.
+It is a smaller cost than two parallel families that clients can put into
+disagreement with each other.

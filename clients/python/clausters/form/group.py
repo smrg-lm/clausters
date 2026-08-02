@@ -96,6 +96,16 @@ class Group(Element):
 
     # ---- editing ----
 
+
+    @property
+    def locatable(self) -> bool:
+        """A group is locatable only when every member is.
+
+        One resident generator inside it makes the whole placement unlocatable:
+        a position on the group would be a position on that member too, and it
+        has none. See `clausters.form.element.Element.locatable`."""
+        return all(handle.element.locatable for handle in self.handles)
+
     def _add_child(self, child):
         if isinstance(child, Element):
             self.add(child)

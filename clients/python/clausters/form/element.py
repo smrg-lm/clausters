@@ -71,10 +71,32 @@ class Element:
         duration: length in beats, or ``None``.
     """
 
-    def __init__(self, wraps=None, onset=None, duration=None):
+    def __init__(self, wraps=None, onset=None, duration=None, resident=False):
         self.wraps = wraps
         self.onset = None if onset is None else float(onset)
         self.duration = None if duration is None else float(duration)
+        #: Whether this element's material is produced by a def running **on the
+        #: server** rather than by messages the arrangement flattens. Such an
+        #: element is a generator with no index (see `locatable`).
+        self.resident = bool(resident)
+
+    @property
+    def locatable(self) -> bool:
+        """Whether a position on this element means anything.
+
+        A **generated** element has an index: the arrangement flattens it to
+        messages at absolute beats, so a transport can put itself anywhere on
+        it. A **resident generator** — a def producing its own material on the
+        server, a stochastic process, a demand-rate sequence — has none. Its
+        position *is* its internal state, and no number moves it: the only thing
+        a transport can do to it is stop it and let it carry on.
+
+        This is the same asymmetry the arrangement is built around, reaching the
+        transport. Pause is symmetric and works for both; locate is not. A
+        generator becomes locatable by being **rendered** — the change of state
+        from generator to generated — after which it is material like any other.
+        """
+        return not self.resident
 
     @property
     def temporal_character(self) -> str:

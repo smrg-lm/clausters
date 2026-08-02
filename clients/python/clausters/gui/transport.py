@@ -52,7 +52,7 @@ class Transport:
     """
 
     def __init__(self, host, ids, *, source, tempo: float, sample_rate: float,
-                 to_units=None, extent=None):
+                 to_units=None, extent=None, clock=None, governed: bool = False):
         self.host = host
         self.ids = ids
         self.source = source
@@ -60,6 +60,15 @@ class Transport:
         self.sample_rate = float(sample_rate)
         self.to_units = self.beats_to_samples if to_units is None else to_units
         self.extent = extent
+        #: The clock the pass runs on, when there is one. A governed `pause`
+        #: freezes it instead of stopping the playhead.
+        self.clock = clock
+        #: Whether a **server** transport governs the material (its
+        #: `clausters.defs.server.Server.transport_group` is bound). Governed, a
+        #: pause freezes the server's subtree and this clock rather than
+        #: stopping the playhead, so `resume` continues the sound where it
+        #: stopped instead of re-rendering it.
+        self.governed = bool(governed)
         #: The server the anchor queries for its clock — the destination of the
         #: last `play`, or whatever `anchor` was given.
         self.server = None
@@ -128,13 +137,47 @@ class Transport:
         """Halt where we are: the cursor stays on what the music stopped on, and
         `play` resumes from there. What is already sounding keeps sounding —
         stopping a playhead is not a panic button (the script owns its voices).
-        Returns the position it stopped at."""
+        Returns the position it stopped at.
+
+        **Governed** (a server transport holds the material), the playhead is
+        not stopped at all — it is starved of time. `/transport_stop` freezes
+        the server's subtree and its queue, the clock freezes with them, and the
+        scan simply stops making progress. That is what lets `resume` continue
+        the sound rather than start it again."""
         ph = self._playhead
         if ph is not None and ph.playing:
             self._at = ph.position()
-        self._halt()
+        if self.governed:
+            server = self.server
+            if server is not None and hasattr(server, "transport_stop"):
+                server.transport_stop()
+            if self.clock is not None:
+                self.clock.freeze()
+        else:
+            self._halt()
         self.cursor(self._at)
         return self._at
+
+    def resume(self):
+        """Continue from where `pause` left off, **without re-rendering**.
+
+        The difference from `play` is MIDI's `continue` versus `start`: play
+        reads the composition as it now stands and starts it again from `at`,
+        resume picks the frozen sound back up. Governed, the server still holds
+        every node's internal state and every scheduled bundle, so what comes
+        back is the same sound carried on — a stochastic texture continues
+        mid-gesture instead of restarting. Ungoverned there is nothing frozen to
+        continue, so this falls back to `play`."""
+        if not self.governed:
+            return self.play()
+        server = self.server
+        if server is not None and hasattr(server, "transport_play"):
+            server.transport_play()
+        if self.clock is not None:
+            self.clock.thaw()
+        self._ended = False
+        self.anchor(at=self.position)
+        return self._playhead
 
     def stop(self):
         """Halt and go back to the top."""

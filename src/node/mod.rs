@@ -690,6 +690,37 @@ impl NodeTree {
         }
     }
 
+    /// Whether `id` sits at or under `ancestor` — the query that routes a
+    /// scheduled bundle to the transport queue or the device one. A walk up
+    /// `parent`, so it allocates nothing and is safe to call while draining
+    /// commands on the audio thread. `id == ancestor` counts: a message to
+    /// the governed group itself is governed. `false` if either id is
+    /// unknown. The walk is bounded by the slot count: the tree never forms
+    /// a parent cycle, but a bound here is cheap and turns any future bug
+    /// that did into a wrong answer instead of a hang on the audio thread.
+    #[cfg(feature = "transport")]
+    pub fn is_descendant_of(&self, id: i32, ancestor: i32) -> bool {
+        let Some(mut idx) = self.find(id) else {
+            return false;
+        };
+        if self.find(ancestor).is_none() {
+            return false;
+        }
+        for _ in 0..=self.slots.len() {
+            let Some(slot) = self.slot(idx) else {
+                return false;
+            };
+            if slot.id == ancestor {
+                return true;
+            }
+            if slot.parent == NO_PARENT {
+                return false;
+            }
+            idx = slot.parent;
+        }
+        false
+    }
+
     /// Applies a queued freeing/relative [`DoneAction`] (everything except
     /// `None`/`PauseSelf`, which are handled inline during the walk): frees this
     /// node and, per the action, its previous/next sibling, the run of nodes to
@@ -1231,6 +1262,34 @@ mod tests {
         assert!(t.set_paused(2, true) && is_paused(&t, 2));
         assert!(t.set_paused(2, false) && !is_paused(&t, 2));
         assert!(!t.set_paused(999, true)); // unknown id
+    }
+
+    /// Root with sibling synth 1 and group 2, group 2 holding synth 3.
+    #[cfg(feature = "transport")]
+    fn tree_with_group_2_holding_synth_3() -> NodeTree {
+        let mut t = NodeTree::new();
+        add_synth(&mut t, 1, ROOT_NODE_ID);
+        add_group(&mut t, 2, ROOT_NODE_ID);
+        add_synth(&mut t, 3, 2);
+        t
+    }
+
+    #[cfg(feature = "transport")]
+    #[test]
+    fn is_descendant_of_walks_up_to_the_ancestor() {
+        let t = tree_with_group_2_holding_synth_3();
+        assert!(t.is_descendant_of(3, 2), "a child is a descendant");
+        assert!(t.is_descendant_of(2, 2), "a node is its own ancestor here");
+        assert!(!t.is_descendant_of(2, 3), "and not the other way round");
+        assert!(!t.is_descendant_of(1, 2), "the root is not under the group");
+    }
+
+    #[cfg(feature = "transport")]
+    #[test]
+    fn is_descendant_of_is_false_for_unknown_ids() {
+        let t = tree_with_group_2_holding_synth_3();
+        assert!(!t.is_descendant_of(999, 2));
+        assert!(!t.is_descendant_of(3, 999));
     }
 
     #[test]

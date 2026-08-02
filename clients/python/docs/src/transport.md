@@ -144,6 +144,71 @@ These are the honest edges of a small, composable feature: shared bars, a shared
 | Roll a playhead from a conductor | `server.transport_play()` / `transport_stop()` / `transport_locate(beat)`; followers `playhead.follow_transport(server, quant=4)` |
 | Read the rolling state | `server.transport_state()` → `{tempo, playing, position, …}` |
 
+## Freezing a piece: when the transport governs the sound
+
+Everything above is a transport clients obey **by choice** — a shared grid and a
+rolling state the server broadcasts, which each client reads to start on the
+same bar. `server.transport_group(group)` changes that. With a group bound, the
+transport stops being an advisory and the **engine enforces it**:
+`transport_stop()` freezes that group and everything under it at the exact
+sample it lands on, and `transport_play()` thaws it.
+
+A frozen node stays in the tree with its internal state untouched — filters keep
+their memory, phasors their phase, envelopes their position. So a resume
+**continues** the sound rather than starting it again:
+
+```python
+piece = Group(server=server)
+server.set_transport(0, 2.0)
+server.transport_group(piece.id)
+server.transport_play()
+...
+server.transport_stop()    # the subtree freezes, mid-gesture
+...
+server.transport_play()    # and carries on from exactly there
+```
+
+This matters most for material the server *generates*. A def running a
+stochastic process or a demand-rate sequence has nothing to read and no
+messages arriving, so there is no position to seek to — its position **is** its
+internal state. Continuing is the only thing a pause can honestly mean for it,
+and it is what no DAW transport offers, because a DAW's material exists before
+you press play.
+
+That asymmetry runs through the whole feature:
+
+- **Pause and resume work on anything.** They are a freeze, so they do not care
+  what produced the sound.
+- **Locate does not.** `transport_locate(beat)` moves the position and never a
+  node's state, and `Editor.locate` refuses over a composition holding a
+  resident generator instead of moving a cursor the sound will not follow.
+  Render the element first and it becomes material like any other — the change
+  of state the [composition](composition.md) chapter is built around.
+
+Anything **scheduled** against a governed node waits out the pause with it and
+fires on resume in its right relative place, so a look-ahead already in flight
+is not lost. A bundle is atomic, so a bundle holding one governed message and
+one live one waits entirely — the one way a message aimed at a live node ends up
+waiting.
+
+The clock follows too. `TempoClock.freeze()` holds the beat where it is and
+`thaw()` picks it up there, so a client does not run away from a piece that is
+not moving; `clausters.gui.Transport` does this for you, and its `resume()` is
+deliberately **not** `play()` — play re-renders from a position, resume
+continues the frozen sound.
+
+| You want to… | Do this |
+| --- | --- |
+| Let the engine enforce the transport | `server.transport_group(group.id)` |
+| Give it back | `server.transport_group(None)` (thaws what it governed) |
+| Freeze / carry on | `server.transport_stop()` / `server.transport_play()` |
+| Read the piece's own clock | `server.transport_state()["transport_sample"]` |
+| Continue rather than restart, client-side | `transport.resume()` (not `play()`) |
+| Ask whether a seek means anything | `editor.locatable` |
+
+`transport_freeze.py` in the examples freezes a generative texture and resumes
+it, which is the way to hear the difference between continuing and restarting.
+
 ## See also
 
 - [Timing models](timing-models.md) — the time reference behind beat-accurate vs sample-exact alignment.

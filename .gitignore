@@ -18,3 +18,5 @@ uv.lock
 # Working design notes and implementation plans (local only). What shipped is
 # the git history and the PLAN.md roadmaps; a spec is scaffolding, not a record.
 /specs/
+# Subagent-driven-development scratch (ledgers, briefs, review packages).
+/.superpowers/

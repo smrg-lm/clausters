@@ -3,6 +3,7 @@
 
 #[cfg(feature = "realtime")]
 pub mod backend;
+pub mod clock_axis;
 pub mod defstore;
 pub mod engine;
 pub mod ipc;

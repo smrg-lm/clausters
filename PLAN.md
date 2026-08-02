@@ -245,6 +245,42 @@ completed items lives in the git history.)
   (versioning the binary boundary) is applied where the boundary truly exists:
   the embedded mode's C ABI and the M14 segment layout.
 
+## T track — The governing transport (a pause that stops time)
+
+Section added 2026-08-02. M22's transport is a shared beat grid plus an advisory
+rolling state the server never schedules audio from. T makes it able to *stop
+time*: a group bound with `/transport_group` is frozen with its internal state
+intact, the transport clock stops, and the queue of anything scheduled against
+that clock stops falling due — all at the same sample. Behind the `transport`
+Cargo feature (default on), so a build can opt out and provably run the old
+`process_block`.
+
+- ✅ **T1 — The governing transport** *(done 2026-08-02)* — two clocks
+  (`transport_now = now - frozen_total`, made two Rust types so an axis cannot be
+  swapped silently), two scheduler queues with bundles routed by where their
+  messages point, `/transport_group` and `/sched_atTransport`, the transport
+  clock in the shm header (ABI v6, in reserved space so no offset moved), a
+  `TempoClock` that freezes and thaws, `Transport.resume()` distinct from
+  `play()` (MIDI's continue against start), and `form`'s `locatable` — a
+  resident generator has no position, so a locate over one refuses and names
+  the way out rather than faking it. Proven by cutting the frozen span out of a
+  paused render and asserting it equals the unpaused one sample for sample, over
+  a seeded-noise def, with a deliberately non-block-aligned pause.
+
+Open, not blocking:
+
+- ⬜ **T2 — `/transport_set`'s grid origin on the transport axis.** With a group
+  bound, `originSample` is still read on the device axis, so the grid slides by
+  the frozen total across a pause. Needs the grid semantics re-derived; no test
+  pins it today.
+- ⬜ **T3 — Classification is once, at drain.** A bundle scheduled before
+  `/transport_group` binds stays on the device queue even if its target becomes
+  governed. Documented; re-classifying would mean rewriting a queue on the audio
+  thread.
+- ⬜ **T4 — `bundle_is_governed` re-resolves the group per message.** A linear
+  `find` per targeted message, bounded and allocation-free but `O(messages x
+  nodes)` worst case inside a block budget. Hoist the group's index.
+
 ## S track — Synthesis-engine infrastructure completion (the substrate for future UGens)
 
 Section added 2026-07-01. The base UGen set and the node/bus/def machinery are in place, but before *growing the UGen library* we finish the **substrate** every future UGen leans on, so that adding a UGen later is a self-contained job (a `process`, a registry entry, a test) with no engine surgery. Everything here is deliberately **infrastructure, not a UGen catalog**: the concrete DSP UGens it enables — the demand family (`Dseq`/`Dseries`/`Dwhite`), `FFT`/`IFFT` and PV_* processing, the table oscillators (`Osc`/`VOsc`/`Shaper`), more filters — land afterwards as loose items (per "Future milestones (M9+)"), each cheap once the substrate exists. Like the F fork, S coexists with the M line and does not replace anything; the pieces are largely independent (S1 enables S2's `ir` controls and the future demand/FFT UGens; S5 depends on S6's `/buffer_gen` slot but is written together; S4 pulls `/node_run` in from S6 because it is tied to pause semantics). Canonical scsynth lists below were **verified against the SuperCollider source** (`server/plugins/UnaryOpUGens.cpp`, `BinaryOpUGens.cpp`, `HelpSource/Classes/Done.schelp`) on 2026-07-01.

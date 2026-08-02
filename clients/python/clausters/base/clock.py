@@ -91,6 +91,9 @@ class TempoClock:
         self._thread = None
         self._sample_clock = None     # the master-clock tracker, set by lock_to()
         self._transport = None        # joined shared beat grid, set by join_transport()
+        #: The timebase reading at which `freeze` stopped the beat, or ``None``
+        #: while the clock runs normally. See `freeze`.
+        self._frozen_at = None
         #: the session this clock belongs to, so a play running on it resolves
         #: that session's server/rng (``current_tt.clock.session``). A `Session`
         #: (or the default session's `get_default_clock`) sets it; ``None`` for a
@@ -117,7 +120,50 @@ class TempoClock:
         and after a `stop`, which holds the beat it reached."""
         if self._mode == "nrt" or not self._running or self._mono_start is None:
             return self._logical_beat
+        if self._frozen_at is not None:
+            return self.secs2beats(self._frozen_at - self._mono_start)
         return self.secs2beats(self._now() - self._mono_start)
+
+    # ---- the freeze gate (a server transport's pause, reaching the clock) ----
+
+    @property
+    def frozen(self) -> bool:
+        """Whether the beat is held where `freeze` left it."""
+        return self._frozen_at is not None
+
+    def freeze(self):
+        """Hold the logical beat where it is, without stopping the clock.
+
+        This is how a server transport's pause reaches a client. The sample
+        timebase only decides how long to sleep between events and how to stamp
+        one, so a client whose server froze would otherwise keep advancing beats
+        and scheduling material ahead — running away from a piece that is not
+        moving. Freezing stops the beat instead of stopping the playhead: what
+        was already scheduled stays scheduled, and the server's frozen queue
+        holds it.
+
+        The client's reaction does not have to be precise. Between the server's
+        stop and this call, a little look-ahead has already gone out; it lands
+        in the server's frozen queue and fires on resume in its exact relative
+        place. The exactness is the engine's, not the client's.
+
+        Idempotent: freezing an already frozen clock keeps the first freeze's
+        position."""
+        if self._frozen_at is None:
+            self._frozen_at = self._now()
+        return self
+
+    def thaw(self):
+        """Resume from where `freeze` left the beat.
+
+        The pacing origin shifts by the time spent frozen, so those seconds are
+        not part of the piece: the beat picks up where it stopped rather than
+        jumping forward by the length of the pause."""
+        if self._frozen_at is not None:
+            if self._mono_start is not None:
+                self._mono_start += self._now() - self._frozen_at
+            self._frozen_at = None
+        return self
 
     @property
     def start_time(self):

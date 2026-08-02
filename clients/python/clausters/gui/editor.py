@@ -665,9 +665,38 @@ class Editor:
     def locate(self, beat: float):
         """Seek: put the transport at ``beat``. Playing, it re-renders from there
         (so a seek also picks up any edit); stopped, it just moves the cursor the
-        lanes draw. This is what a click on a lane's ruler does."""
+        lanes draw. This is what a click on a lane's ruler does.
+
+        A composition holding a **resident generator** has no position to seek
+        to — its material is produced on the server, so its position is that
+        def's internal state and no number moves it. Rather than move the cursor
+        somewhere the sound will not follow, this refuses and says why. Render
+        the element first (`clausters.form.render`) and it becomes material like
+        any other."""
+        if not self.locatable:
+            raise ValueError(
+                "this composition contains a resident generator, which has no "
+                "position to locate to; render it first to give it one"
+            )
         self.transport.locate(beat)
         return self
+
+    @property
+    def locatable(self) -> bool:
+        """Whether the composition can be seeked at all — false when any element
+        is a resident generator. The view draws those lanes as their own class,
+        since a ruler click means nothing on one."""
+        return self.element.locatable
+
+    def resume(self):
+        """Continue where `pause` left off, **without re-rendering**.
+
+        MIDI's `continue` against `play`'s `start`: play reads the composition
+        as it now stands and starts it again, resume picks the frozen sound back
+        up. Under a server transport that governs the material, every node kept
+        its internal state through the pause, so a texture carries on
+        mid-gesture instead of restarting."""
+        return self.transport.resume()
 
     def anchor(self, server, *, at: float = 0.0) -> bool:
         """Anchor every lane's playhead to the engine clock, so the line starts at

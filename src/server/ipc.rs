@@ -60,8 +60,10 @@ pub const MAGIC: u32 = 0x5541_4C43;
 /// Bump on **any** layout change: attaching rejects mismatches. v5 changed the
 /// embed C ABI rather than the segment: `clausters_render` grew a `seed` in
 /// pointer form (NULL for a fresh take, a seed to repeat one) and out pointers
-/// for the score's event count and for the seed the render actually used.
-pub const ABI_VERSION: u32 = 5;
+/// for the score's event count and for the seed the render actually used. v6
+/// added the transport clock beside the sample clock, so a local peer reads
+/// the piece's own position with a load.
+pub const ABI_VERSION: u32 = 6;
 /// Byte capacity of each ring (power of two).
 pub const RING_CAPACITY: usize = 64 * 1024;
 /// Default audio-tap count (`--taps`).
@@ -91,7 +93,22 @@ struct Header {
     /// Audio-bus count (ABI v4): the length of the per-bus directory and level
     /// table that sit between the control slots and the tap region.
     audio_buses: u32,
-    _reserved: [u32; 5],
+    /// Kept for 8-byte alignment of `transport_clock` below.
+    _pad: u32,
+    /// The transport clock (ABI v6): samples elapsed *under the transport*,
+    /// frozen while it is stopped. The sample clock above never stops, so a
+    /// reader drawing the piece's position wants this one and a reader pacing
+    /// on the device wants that one. Built without the `transport` feature it
+    /// stays 0 -- the field is in the layout either way, so one segment shape
+    /// serves every build.
+    ///
+    /// It sits in what was reserved space rather than beside `sample_clock`,
+    /// which is where it belongs by meaning: putting it there would shift every
+    /// field after it, and out-of-process readers pin those offsets by hand
+    /// (`clients/python/clausters/ipc.py`). Reserved space exists precisely so
+    /// a counter can be added without moving anything.
+    transport_clock: AtomicU64,
+    _reserved: [u32; 2],
 }
 
 #[repr(C)]
@@ -366,6 +383,12 @@ impl Segment {
     /// The shared sample-clock cell (the engine's block-accurate mirror).
     pub fn clock(&self) -> &AtomicU64 {
         &self.layout().header.sample_clock
+    }
+
+    /// The transport clock: samples elapsed under the transport, held while it
+    /// is stopped. Zero in a build without the `transport` feature.
+    pub fn transport_clock(&self) -> &AtomicU64 {
+        &self.layout().header.transport_clock
     }
 
     /// Control buses living inside the segment; hand this to

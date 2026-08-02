@@ -243,3 +243,97 @@ def test_the_ids_are_read_on_each_use():
     lanes = [20]                            # redrawn: a new lane
     tp.locate(2.0)
     assert host.sets[-1][0] == 20
+
+
+# ---- play versus resume: MIDI's start versus continue ----
+
+class FakeGovernedServer:
+    """A server whose transport governs a subtree: it records the calls rather
+    than freezing anything."""
+
+    def __init__(self):
+        self.calls = []
+
+    def transport_stop(self):
+        self.calls.append("stop")
+
+    def transport_play(self, position=None):
+        self.calls.append("play")
+
+
+def test_resume_does_not_re_render():
+    """Play restarts the material; resume continues it.
+
+    Governed, re-rendering on a resume would restart the very nodes the server
+    froze so they could carry on -- which is the whole point of the freeze.
+    """
+    calls = []
+    clock = TempoClock(TEMPO)
+    dest = Recorder()
+
+    def source(at, **_kw):
+        calls.append(at)
+        return Playhead(arp(), clock, dest).play(at=at)
+
+    server = FakeGovernedServer()
+    tp = Transport(FakeHost(), 7, source=source, tempo=TEMPO, sample_rate=SR,
+                   clock=clock, governed=True)
+    tp.server = server
+
+    tp.play(at=0.0)
+    assert calls == [0.0]
+    tp.pause()
+    tp.resume()
+    assert calls == [0.0], "resume must not call source again"
+    assert server.calls == ["stop", "play"]
+
+
+def test_play_still_re_renders():
+    calls = []
+    clock = TempoClock(TEMPO)
+    dest = Recorder()
+
+    def source(at, **_kw):
+        calls.append(at)
+        return Playhead(arp(), clock, dest).play(at=at)
+
+    tp = Transport(FakeHost(), 7, source=source, tempo=TEMPO, sample_rate=SR)
+    tp.play(at=0.0)
+    tp.pause()
+    tp.play()
+    assert len(calls) == 2, "play reads the material as it now stands"
+
+
+def test_a_governed_pause_starves_the_playhead_instead_of_stopping_it():
+    clock = TempoClock(TEMPO)
+    dest = Recorder()
+    heads = []
+
+    def source(at, **_kw):
+        ph = Playhead(arp(), clock, dest).play(at=at)
+        heads.append(ph)
+        return ph
+
+    tp = Transport(FakeHost(), 7, source=source, tempo=TEMPO, sample_rate=SR,
+                   clock=clock, governed=True)
+    tp.server = FakeGovernedServer()
+    tp.play(at=0.0)
+    tp.pause()
+    assert heads[0].playing, "the playhead is not stopped, it runs out of time"
+    assert clock.frozen
+
+
+def test_an_ungoverned_pause_still_stops_the_playhead():
+    clock = TempoClock(TEMPO)
+    dest = Recorder()
+    heads = []
+
+    def source(at, **_kw):
+        ph = Playhead(arp(), clock, dest).play(at=at)
+        heads.append(ph)
+        return ph
+
+    tp = Transport(FakeHost(), 7, source=source, tempo=TEMPO, sample_rate=SR)
+    tp.play(at=0.0)
+    tp.pause()
+    assert not heads[0].playing

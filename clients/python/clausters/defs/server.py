@@ -853,20 +853,67 @@ class Server:
 
     def transport_state(self, timeout: float = 5.0):
         """The full shared transport state as a dict ``{origin_sample, tempo,
-        playing, position}``, or ``None`` if no grid is defined. ``playing`` is
-        whether the transport is rolling and ``position`` the song-position beat
-        (where play starts, or where a stopped transport sits). A
-        `clausters.seq.timeline.Playhead` follows this with `follow_transport`.
-        RT only."""
+        playing, position, group, transport_sample}``, or ``None`` if no grid is
+        defined. ``playing`` is whether the transport is rolling and ``position``
+        the song-position beat (where play starts, or where a stopped transport
+        sits). A `clausters.seq.timeline.Playhead` follows this with
+        `follow_transport`. RT only.
+
+        ``group`` is the governed group (`transport_group`) or ``None``, and
+        ``transport_sample`` is the transport clock: samples elapsed under the
+        transport, held while it is stopped. Both are ``None`` against a server
+        old enough to reply with only the first five fields."""
         _, args = self.request("/transport_query", timeout=timeout, expect=("/transport_query.reply",))
         if not int(args[2]):
             return None
+        group = int(args[5]) if len(args) > 5 else None
         return {
             "origin_sample": int(args[0]),
             "tempo": float(args[1]),
             "playing": bool(int(args[3])),
             "position": float(args[4]),
+            "group": None if group is None or group < 0 else group,
+            "transport_sample": int(args[6]) if len(args) > 6 else None,
         }
+
+    def transport_group(self, group, timeout: float = 5.0):
+        """Bind the group the transport governs (``/transport_group``), or
+        unbind with ``None``.
+
+        This is what gives the transport its teeth. With no group bound it is a
+        shared beat grid plus a rolling state that clients obey by choice. With
+        one bound, the **engine** enforces it: `transport_stop` freezes that
+        subtree and the server's transport clock, `transport_play` thaws them.
+        Every node in the subtree keeps its internal state across the freeze, so
+        a resume continues the sound rather than restarting it — which is the
+        only thing a pause can mean for material the server generates itself.
+
+        Freeing the group unbinds the transport, and unbinding thaws whatever it
+        governed, so no frozen subtree is left with nobody to resume it."""
+        arg = -1 if group is None else int(group)
+        addr, args = self.request("/transport_group", arg,
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/transport_group failed: {args}")
+        return self
+
+    def sched_at_transport(self, target: int, *messages):
+        """Schedule ``packet`` at an absolute sample on the **transport** axis
+        (``/sched_atTransport``), the counterpart of ``/sched_at``'s device axis.
+
+        Declaring the axis is not about disambiguation — classification is
+        deterministic, and a client that bound the group knows which of its
+        nodes are governed. It is about **verification**: the server compares
+        the declaration against its own classification and fails when they
+        disagree, instead of playing the bundle in the wrong place. Needs a
+        group bound. ``messages`` are ``(addr, *args)`` tuples, as for
+        `send_bundle`."""
+        inner = _osclib.immediate_bundle(*[_osclib.message(*m) for m in messages])
+        addr, args = self.request("/sched_atTransport", _osclib.Int64(int(target)), inner,
+                                  expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/sched_atTransport failed: {args}")
+        return self
 
     def transport_play(self, position: "float | None" = None, timeout: float = 5.0):
         """Start the shared transport rolling (``/transport_play``). With

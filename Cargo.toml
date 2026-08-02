@@ -13,7 +13,7 @@ resolver = "3"
 
 [package]
 name = "clausters"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "A real-time audio synthesis server in the style of SuperCollider's scsynth, controlled over OSC, with Faust JIT-compiled synth definitions."
@@ -31,7 +31,7 @@ readme = "README.md"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["synth", "faust", "realtime", "midi", "pipewire", "rtprio"]
+default = ["synth", "faust", "realtime", "midi", "pipewire", "rtprio", "transport"]
 # The SynthDef family (scsynth-style UGen graphs): the UGen library, the def
 # compiler (`/def_send synth`) and `UGenSynth`. Default. Independent from — and
 # combinable with — `faust`: a custom build can ship either def family alone
@@ -62,6 +62,12 @@ midi-jack = ["midi", "midir/jack"]
 # Drop it (`--no-default-features` plus the others) for a SynthDef-only server
 # that builds with no libfaust on the system.
 faust = []
+# The transport clock: a second sample counter, derived from the device
+# clock, that a governed subtree can be frozen against sample-exactly.
+# Default. Off, `Engine::process_block` is exactly what it is on a build that
+# predates the transport — the escape hatch a later task's scheduler rewrite
+# relies on to prove an opted-out build is unaffected.
+transport = []
 # M14: the C ABI for embedding the server in-process (clausters_* exports).
 embed = []
 # Native PipeWire audio backend (Linux/BSD) via cpal's pipewire host. Default,
@@ -94,6 +100,10 @@ rtprio = ["realtime", "cpal/realtime-dbus"]
 [[example]]
 name = "bench"
 required-features = ["synth"]
+
+[[example]]
+name = "bench_transport"
+required-features = ["synth", "transport"]
 
 [dependencies]
 # Shared native core: the single source of truth for the numeric builtins,

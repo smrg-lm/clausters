@@ -109,12 +109,14 @@ fn file_segments_validate_magic_and_version() {
     let _ = std::fs::remove_file(&path);
     // Pins the layout for out-of-process clients (clients/python parses
     // these offsets): changing the *structure* requires bumping ABI_VERSION.
-    // This is the default-count instance of the v4 layout: header + rings +
-    // 16384 default control buses, then the audio-bus region (128 buses × two
-    // words: the bus -> tap directory and the block levels), aligned to 64,
-    // plus 8 default taps × (64-byte cursor line + 16384 × f32 ring). The
-    // counts travel in the header, so a non-default boot changes the size,
-    // never the offsets' derivation.
+    // This is the default-count instance of the layout: header + rings + 16384
+    // default control buses, then the audio-bus region (128 buses × two words:
+    // the bus -> tap directory and the block levels), aligned to 64, plus 8
+    // default taps × (64-byte cursor line + 16384 × f32 ring). The counts
+    // travel in the header, so a non-default boot changes the size, never the
+    // offsets' derivation. v6 added the transport clock inside the header's
+    // reserved space, so the size and every offset are unchanged from v5 --
+    // which is what reserved space is for.
     assert_eq!(SEGMENT_SIZE, 722_624);
 }
 

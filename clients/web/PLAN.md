@@ -728,3 +728,25 @@ it leans on verbs this client does not have yet.
 - **Node target.** Already true in the harness, not yet a supported target: the `node --test` suites drive a real `clausters --ws` server and a real `clausters-gui --ws` host, so `WsConnection` runs under node's global `WebSocket` (`src/base/connection.ts` says so) and the wasm core loads there (`loadCore(bytes)`, node's `fetch` not reading `file://`). What remains is making it a *product*: a load path that finds the core's `.wasm` without the test's manual read, a documented entry point for headless scripting/CI the way `clients/python` runs without a display, and the boundary written down — the def, sequencing and GUI-driver layers port, the in-page engine (AudioWorklet) and the page host (canvas) do not.
 - **Type-safe GuiDef/def schemas.** Generate TS types for the widget/def vocabularies from a single source shared with the server, so an invalid GuiDef is a compile error, not a runtime warning. Two things have since appeared that change the shape of the answer rather than the want: the frozen parity vectors (`tests/gen-*-vectors.py`) already catch a drifted *builder* at test time, and M30's `/def_query`/`/ugen_query` make the server's own catalogue readable at run time — so the open question is narrower, which source generates the types and when, not whether one exists.
 - **A remote-server standalone page.** The in-tab standalone (a bundle booting against the embedded wasm engine) **shipped with the B track** and grew up in W4 (the bundle contract, the resolver, the pools, the components); what remains is the same mount against a **remote `--ws` server** — a one-file instrument front for a server running elsewhere. The old note called this cheap "once W1/W2 exist"; they exist, and W4 is what actually decides the work: `openBundle`/`startBundle` reach the page's `guiHost()` and `engine` singletons directly, so the step is giving the mount a **destination seam** (a `Server` + `GuiHost` pair, both already carrier-agnostic since W1/W2) in place of those singletons. The boot replay itself stays carrier-agnostic above the W0 seam, as it always was.
+
+
+## Port pending: the governing transport (server T1, 2026-08-02)
+
+The server gained a transport that freezes a governed subtree sample-exactly,
+and the Python client is the reference. None of it exists in TypeScript yet.
+The shape to follow:
+
+- `transportGroup(group: number | null)` — `/transport_group`, `null` unbinds.
+- `schedAtTransport(target: number, ...messages)` — `/sched_atTransport`, the
+  transport-axis counterpart of `schedAt`. The server checks the declared axis
+  and fails when it disagrees with its own classification, so surface that
+  failure rather than swallowing it.
+- `transportState()` grows two trailing fields, `group` (or `null` when `-1`)
+  and `transportSample`. Read them as absent when the reply has only five
+  fields, the way the Python client does.
+- `Transport.resume()` **distinct from** `play()` — MIDI's continue against
+  start. Play re-renders from a position; resume continues the frozen sound and
+  must not call the source again. A governed `pause()` freezes the clock and
+  sends `/transport_stop` instead of stopping the playhead.
+- The shm reader follows ABI v6: the transport clock sits at header offset 48,
+  in what was reserved space, so no existing offset moved.

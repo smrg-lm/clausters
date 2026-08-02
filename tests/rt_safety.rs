@@ -1752,3 +1752,106 @@ fn pan_ugens_do_not_allocate_on_the_audio_thread() {
     });
     assert_eq!(handle.collect_garbage(), 1);
 }
+
+/// Same guardian for the transport's second queue: classifying a bundle
+/// (walking each message's target up to the governed group), converting its
+/// stamp onto the transport axis, and cutting the block by whichever queue is
+/// due first must not allocate. Both queues are pre-allocated to the same
+/// capacity as the original one, so the sorted insert and the `remove(0)` are
+/// a memmove each.
+#[cfg(feature = "transport")]
+#[test]
+fn transport_scheduling_does_not_allocate_on_the_audio_thread() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // A governed group and a live one, each with a synth to aim at.
+    handle
+        .send(Cmd::AddGroup {
+            id: 100,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::AddGroup {
+            id: 200,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
+        })
+        .ok()
+        .unwrap();
+    let def = Arc::new(compile(default_spec()).unwrap());
+    for (id, target) in [(101, 100), (201, 200)] {
+        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def), 48_000.0, SEED_STRIDE));
+        synth.set_control(1, 0.01);
+        handle
+            .send(Cmd::AddSynth {
+                id,
+                target,
+                action: AddAction::Tail,
+                synth,
+                usage: Default::default(),
+            })
+            .ok()
+            .unwrap();
+    }
+    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+
+    // 16 bundles at odd offsets, alternating governed and live, so both queues
+    // fill and the block is cut by their union.
+    for i in 0..16u64 {
+        let id = if i % 2 == 0 { 101 } else { 201 };
+        handle
+            .send(Cmd::Schedule {
+                time: i * 37 + 13, // never on a block boundary
+                cmds: vec![
+                    Cmd::SetControl {
+                        id,
+                        index: 0,
+                        value: 200.0 + i as f32,
+                    },
+                    Cmd::SetControlBus {
+                        index: 7,
+                        value: i as f32,
+                    },
+                ],
+            })
+            .ok()
+            .unwrap();
+    }
+    // And one that stops the transport mid-block, so the loop re-reads
+    // `transport_rolling` between two due bundles.
+    handle
+        .send(Cmd::Schedule {
+            time: 200,
+            cmds: vec![Cmd::TransportRun { rolling: false }],
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..20 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    // Resuming lets whatever the pause held back fall due, still without
+    // allocating.
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..30 {
+            engine.process_block(&mut out);
+        }
+    });
+}

@@ -447,3 +447,35 @@ def test_render_routes_a_logical_group_to_graphdef():
     assert sent_def[0] == "/def_send" and sent_def[1][0] == "graph"
     assert json.loads(sent_def[1][1])["name"] == "chain"
     assert sent_new == ("/graph_new", ["chain", 1000, 1, 0, "gain", 0.5])
+
+
+# ---- what can be located at all ----
+
+def test_a_flattened_element_is_locatable():
+    """Everything the arrangement flattens becomes messages at absolute beats,
+    so a position on it means something."""
+    from clausters.form import Element
+    from clausters.seq import Event as SeqEvent
+
+    assert Element(SeqEvent(instrument="default")).locatable
+
+
+def test_a_resident_generator_is_not_locatable():
+    """A def generating its own material on the server has no index: its
+    position *is* its internal state, and no number moves it."""
+    from clausters.form import Element
+    from clausters.seq import Event as SeqEvent
+
+    assert not Element(SeqEvent(instrument="default"), resident=True).locatable
+
+
+def test_a_group_is_locatable_only_if_every_member_is():
+    """One resident generator makes the whole placement unlocatable: a position
+    on the group would be a position on it too."""
+    from clausters.form import Element, Group
+    from clausters.seq import Event as SeqEvent
+
+    g = Group([Element(SeqEvent(instrument="default"))])
+    assert g.locatable
+    g.add(Element(SeqEvent(instrument="default"), resident=True))
+    assert not g.locatable

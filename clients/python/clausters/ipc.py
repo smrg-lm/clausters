@@ -42,7 +42,7 @@ from .errors import (
     ServerError,
 )
 
-ABI_VERSION = 5
+ABI_VERSION = 6
 
 #: The stride between successive stochastic-UGen seeds within one render —
 #: ``SEED_STRIDE`` in ``clausters_core::rng``. A client needs it to reproduce a
@@ -77,6 +77,11 @@ _OFF_CONTROL_BUSES = 28  # u32: number of slots in the trailing control region
 _OFF_TAPS = 32  # u32: audio-tap ring count (ABI v3)
 _OFF_TAP_FRAMES = 36  # u32: per-tap ring capacity in samples (ABI v3)
 _OFF_AUDIO_BUSES = 40  # u32: audio-bus count of the bus region (ABI v4)
+# u64: the transport clock (ABI v6) -- samples elapsed *under the transport*,
+# held while it is stopped, where `_OFF_CLOCK` never stops. It sits in what was
+# reserved header space, so v6 moved no other offset and did not change the
+# segment size. Zero from a server built without the transport feature.
+_OFF_TRANSPORT_CLOCK = 48
 _RING_CAPACITY = 64 * 1024
 _RING_HEADER = 64  # head u32, tail u32, padding
 _OFF_C2S = _HEADER_SIZE  # 64; rings come right after the header
@@ -194,6 +199,17 @@ class ShmClient:
     def clock(self) -> int:
         """The engine's sample counter, mirrored every block (64 samples)."""
         return struct.unpack_from("<Q", self.mm, _OFF_CLOCK)[0]
+
+    @property
+    def transport_clock(self) -> int:
+        """Samples elapsed **under the transport**, held while it is stopped.
+
+        The counterpart of `clock`, which never stops. A view drawing where the
+        piece is reads this one; anything pacing on the device reads `clock`.
+        The two only differ while a transport with a governed group is stopped,
+        and a server built without transport support reports 0 here.
+        """
+        return struct.unpack_from("<Q", self.mm, _OFF_TRANSPORT_CLOCK)[0]
 
     @property
     def sample_rate(self) -> float:
