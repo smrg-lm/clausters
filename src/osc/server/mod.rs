@@ -396,7 +396,7 @@ impl OscServer {
 #[cfg(feature = "synth")]
 fn ugen_infos(names: &[String]) -> Vec<Vec<OscType>> {
     if names.is_empty() {
-        return crate::dsp::registry::all().iter().map(ugen_info).collect();
+        return crate::dsp::registry::all().map(ugen_info).collect();
     }
     names
         .iter()

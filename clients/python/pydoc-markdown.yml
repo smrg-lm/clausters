@@ -41,6 +41,16 @@ loaders:
       - clausters.defs.signals
       - clausters.defs.boxes
       - clausters.defs.ugens
+      - clausters.defs.ugens.graph
+      - clausters.defs.ugens.osc
+      - clausters.defs.ugens.filter
+      - clausters.defs.ugens.pan
+      - clausters.defs.ugens.io
+      - clausters.defs.ugens.buf
+      - clausters.defs.ugens.spectral
+      - clausters.defs.ugens.trig
+      - clausters.defs.ugens.demand
+      - clausters.defs.ugens.env
       - clausters.defs.asdef
       - clausters.defs.faustdef
       - clausters.defs.synthdef

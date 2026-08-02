@@ -987,13 +987,32 @@ near.
   page passing them gets no error and no effect. Closing either is an API
   change, so both are recorded as `gap` rather than fixed here.
 
-- ⬜ **R8 — Catalogs split by family.** `clients/python/clausters/defs/ugens.py`
-  (1971 lines, 161 functions) becomes `defs/ugens/{osc,filter,buf,demand,
-  spectral,io}.py` re-exported from `ugens/__init__.py`; `src/dsp/registry.rs`
-  (2443) keeps its descriptor-as-data design untouched — that design is the
-  reason adding a UGen is one entry — and only splits the `UGENS` array into
-  per-family tables concatenated at the end. Navigability only; no symbol moves
-  out of its public path.
+- ✅ **R8 — Catalogs split by family** *(done 2026-08-02)* — the two catalogs,
+  1971 and 2443 lines, both of them a long list with the families marked only
+  by a comment. Navigability only: no symbol moved out of its public path.
+
+  `defs/ugens.py` became `defs/ugens/{graph,osc,filter,pan,io,buf,spectral,
+  trig,demand,env}.py`, all 156 names re-exported from `__init__` (plus the
+  three private ones other modules already imported). `ugen_input_names` stays
+  in `__init__` and not in a family module for a reason worth writing down: it
+  maps each server kind to the parameter names of the callable that builds it
+  by reading `globals()`, and only there are all the builders in one namespace.
+  Proved by comparison against the pre-split module: the same 141 kinds mapped,
+  the same signatures and docstrings for all 177 names.
+
+  `src/dsp/registry.rs` became `registry/` with one module per family and
+  `FAMILIES`, a slice of slices — an array literal cannot be assembled from
+  pieces at compile time, so the catalog is the concatenation, still entirely
+  static (no allocation, no lazy init). The families are **contiguous groups in
+  the original table order**, which is not a detail: `all()` is what
+  `/ugen_query` reports, so a regrouping would have reordered a reply. Verified
+  by dumping the catalog before and after — the same 147 kinds, same order,
+  same arities and input names.
+
+  `all()` returns an iterator rather than a slice now, which its one caller and
+  the uniqueness test adapt to (same assertion, same message). `lookup` runs in
+  `compile`, once per def sent — not per `/synth_new` — so instantiation
+  latency is untouched; the bench's RT columns confirm nothing else moved.
 
 - ⬜ **R9 — Group the engine's command application.** `Engine::apply` is a
   ~210-line `match Cmd` and `process_block` ~215 lines. Group `apply` by family

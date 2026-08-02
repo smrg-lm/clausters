@@ -1,0 +1,130 @@
+//! Oscillators: the plain generators and the phase family.
+//!
+//! One slice of the catalog, in its place in the table order;
+//! `super::FAMILIES` concatenates them all.
+
+use super::*;
+
+pub(super) static UGENS: &[UGenDescriptor] = &[
+    // --- generators (audio or control rate; the default shape) ---
+    desc(
+        "Sine",
+        Fixed(1),
+        &[inp("freq", 440.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Sine::new()),
+    ),
+    desc(
+        "Impulse",
+        Fixed(1),
+        &[inp("freq", 1.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Impulse::new()),
+    ),
+    desc(
+        "WhiteNoise",
+        Fixed(0),
+        I_NONE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(WhiteNoise::with_seed(ctx.next_seed())),
+    ),
+    // --- the phase family: one f64 accumulator, PolyBLEP where the
+    //     waveform is meant to be heard and exact corners where it is meant to
+    //     modulate. See `dsp::phase` for why this is not scsynth's impulse
+    //     train. ---
+    desc(
+        "Saw",
+        Fixed(1),
+        &[inp("freq", 440.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Saw::new()),
+    ),
+    desc(
+        "Pulse",
+        Fixed(2),
+        &[inp("freq", 440.0), inp("width", 0.5)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Pulse::new()),
+    ),
+    desc(
+        "LFSaw",
+        Fixed(2),
+        I_LF,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Lf::new(LfShape::Saw)),
+    ),
+    desc(
+        "LFPulse",
+        Fixed(3),
+        I_LF_WIDTH,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Lf::new(LfShape::Pulse)),
+    ),
+    desc(
+        "LFTri",
+        Fixed(2),
+        I_LF,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Lf::new(LfShape::Tri)),
+    ),
+    desc(
+        "VarSaw",
+        Fixed(3),
+        I_LF_WIDTH,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Lf::new(LfShape::VarSaw)),
+    ),
+    desc(
+        "Phasor",
+        Fixed(5),
+        &[
+            inp("trig", 0.0),
+            inp("rate", 1.0),
+            inp("start", 0.0),
+            inp("end", 1.0),
+            inp("reset_pos", 0.0),
+        ],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Phasor::new()),
+    ),
+];
