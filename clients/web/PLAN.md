@@ -432,6 +432,35 @@ authoring surfaces are W7's, both of them.
 - `defs/ugens.ts`: the rest of the server's UGen catalogue — sources, filters, delays, panning, envelopes, triggers, bus and buffer I/O, the demand pair, the spectral chain (`fft`/`ifft`/`pv_*`, the client side of S8), the output-less roots (`sendReply`/`sendTrig`/`poll`), and the complete unary/binary operator tables.
 - The W1 composition rule is unchanged: TypeScript has no operator overloading, so operators stay methods and parity is asserted on the **emitted spec**, never on the source.
 
+**The gap, measured 2026-08-02** (the list above predates the U track, which
+grew the demand family from the "pair" it names to thirteen builders). Python
+exposes 151 builders in `defs/ugens.py`, TypeScript 116 in `defs/ugens.ts`; **40
+are missing**, and they are not scattered — they are five whole families, which
+is why the difference reads as "the same catalogue minus some entries" and is
+not:
+
+- **Demand (13)** — `dseries`, `dgeom`, `dwhite`, `diwhite`, `dbrown`,
+  `dibrown`, `dxrand`, `dshuf`, `dbufrd`, `dstutter`, `dswitch1`, `duty`,
+  `tduty`. The `dr` rate itself has no TS presence, so this is the family that
+  costs most: the rate is part of the def model, not just a list of builders.
+- **Spectral (17)** — `fft`, `ifft` and the fifteen `pv_*`
+  (`pv_add`/`pv_mul`/`pv_max`/`pv_min`, `pv_mag_above`/`_below`/`_clip`/
+  `_mul`/`_shift`/`_smear`/`_freeze`, `pv_bin_shift`, `pv_brick_wall`,
+  `pv_copy_phase`, `pv_kernel`). The `fr` rate is in the same position as `dr`.
+- **Panning and stereo field (4)** — `pan_az`, `rotate2`, `mid_side`,
+  `stereo_width`.
+- **Convolution (2)** — `conv`, `partconv_frames`.
+- **Disk I/O (2)** — `disk_in`, `disk_out`. These are the one family worth
+  questioning before porting: they stream from the *server's* filesystem, so
+  the builders port fine but only mean something against a native server, never
+  against the in-page wasm engine. Port them with that written next to them.
+- **Filters (2)** — `svf`, `svf_morph`.
+
+Naming note: Python's `oscn` is TS's `oscN` — a spelling difference, not a
+missing builder. Both directions also carry helpers with no counterpart
+(`ugen_input_names` here; `add`/`sub`/`mul`/`div`/`resolveCurve` there, which
+are the operator methods the composition rule calls for); neither is a gap.
+
 **Acceptance:** every UGen builder the Python client exposes has a TS counterpart emitting the same spec JSON, checked by extending the frozen vectors (`tests/gen-def-vectors.py`); a graph transcribed from a Python example plays over either carrier.
 
 ### W7 - The Faust surfaces: the box algebra, then the signal API
@@ -722,6 +751,19 @@ it leans on verbs this client does not have yet.
   and friends, or one `describe(record)` — with `Tree.lines` calling the node
   one, keeping the same single-source property. Do it when the def layer is
   next opened; the strings above are the reference output.
+
+- **The four `guidef` helpers that look missing and are not** (checked
+  2026-08-02, recorded so the next diff of the two modules does not re-raise
+  them). A name-by-name comparison of `gui/guidef.py` against `gui/guidef.ts`
+  reports `correlation`, `lissajous`, `peaks_cache_file` and `samples_to_file`
+  as Python-only. The first two are **reachable here already**, through the
+  wasm core rather than the GUI module (`correlation` and `lissajous` in
+  `core/clausters_core_web.d.ts`) — the capability is present, only the door
+  differs, and re-exporting them from `gui/guidef.ts` for symmetry is a taste
+  question, not a port. The other two write a local file for the host to map
+  (`waveform(path=…)`, `waveform(cache=…)`), which a page has no equivalent of
+  and should not: the browser's bulk path is the blob/`ArrayBuffer` one, which
+  W10 shipped. So: nothing to port, by design in both halves.
 
 ## Future directions
 
