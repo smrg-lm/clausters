@@ -19,9 +19,15 @@ This runs in a single process for clarity, but the two `Server` / `TempoClock`
 pairs are completely independent — exactly the state two separate programs would
 hold. It prints the next-bar sample each client computes (they match: that *is*
 the alignment) and plays one note on each at that bar, so the two sound together.
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention):
+step through it with Shift+Enter, or run it as a plain script. It needs a
+server already up (``clausters``), because its subject is several *independent*
+clients meeting on one -- so none of them boots it.
 """
 
 import math
+# %%
 import sys
 
 from clausters.base import Routine, TempoClock
@@ -29,6 +35,12 @@ from clausters.defs import Server
 from clausters.seq import Event
 
 
+# %% [markdown]
+# ## An independent client
+# Its own server connection and clock, locked to the server's sample clock and
+# joined to the shared transport. Two of these stand in for two programs.
+
+# %%
 def make_client():
     """An independent client: its own server connection and clock, locked to the
     server's sample clock and joined to the shared transport."""
@@ -39,6 +51,12 @@ def make_client():
     return server, clock
 
 
+# %% [markdown]
+# ## Where the next bar falls
+# Computed from public state only, so it is the *same* number for every client
+# on the same transport.
+
+# %%
 def next_bar_sample(server, clock, quant=4):
     """The absolute sample the clock's next `quant`-beat bar falls on — computed
     from public state only, so it is the *same* number for every client on the
@@ -50,6 +68,7 @@ def next_bar_sample(server, clock, quant=4):
     return round(origin + target * rate / tempo)
 
 
+# %%
 def one_note(server, freq):
     def routine():
         Event(freq=freq, amp=0.2, dur=0.5).play(server)
@@ -57,34 +76,47 @@ def one_note(server, freq):
     return routine
 
 
-def main():
-    # The "conductor" defines the shared grid once: beat 0 at sample 0, 2 bps.
-    Server().set_transport(0, 2.0)
+# %% [markdown]
+# ## The conductor and the two clients
+# The conductor defines the shared grid once: beat 0 at sample 0, 2 bps.
 
-    (sa, ca), (sb, cb) = make_client(), make_client()
+# %%
+Server().set_transport(0, 2.0)
+(sa, ca), (sb, cb) = make_client(), make_client()
 
-    # Sampled back-to-back, both clients see the same next bar — the alignment.
-    bar_a, bar_b = next_bar_sample(sa, ca), next_bar_sample(sb, cb)
-    print(f"client A next bar -> sample {bar_a}")
-    print(f"client B next bar -> sample {bar_b}")
-    print("aligned to the sample" if abs(bar_a - bar_b) <= 2 else "NOT aligned")
+# %% [markdown]
+# ## The alignment
+# Sampled back-to-back, both clients see the same next bar.
 
-    # Play one note on each, quantized to the next bar (quant=4): the routines
-    # start on the same beat, so the notes sound together. Start each clock
-    # before playing so quant snaps against the running, transport-locked grid.
+# %%
+bar_a, bar_b = next_bar_sample(sa, ca), next_bar_sample(sb, cb)
+print(f"client A next bar -> sample {bar_a}")
+print(f"client B next bar -> sample {bar_b}")
+print("aligned to the sample" if abs(bar_a - bar_b) <= 2 else "NOT aligned")
+
+
+# %% [markdown]
+# ## One note each, quantized to the next bar
+# The routines start on the same beat, so the notes sound together. Each clock
+# is started before playing so `quant` snaps against the running,
+# transport-locked grid.
+
+# %%
+def run():
     for clock, server, freq in ((ca, sa, 440.0), (cb, sb, 660.0)):
         clock.start()
         clock.play(Routine(one_note(server, freq)), quant=4)
-
     ca.run(3.0)        # let the bar arrive and the notes play, then wind down
     cb.stop()
-    for s in (sa, sb):
-        s.close()
     print("played; the two notes landed on the same bar")
 
 
-if __name__ == "__main__":
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        main()
-    except (OSError, RuntimeError, ConnectionError) as e:
-        sys.exit(str(e))
+        run()
+    finally:
+        for s in (sa, sb):
+            s.close()
+else:
+    print("two clients up - run() to play, sa.close(); sb.close() to end")

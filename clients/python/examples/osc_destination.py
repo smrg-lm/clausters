@@ -25,8 +25,12 @@ same routine drives that instead.
 Listen to it and watch the printout together: every lamp line lands on a beat,
 and the gap between consecutive stamps is exactly the tempo's, however late the
 wake-up was.
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention):
+step through it with Shift+Enter, or run it as a plain script.
 """
 
+# %%
 import sys
 import time
 
@@ -39,10 +43,14 @@ TEMPO = 2.0                 # beats per second
 COLOURS = ("red", "amber", "green", "blue")
 
 
-def stand_in_for_another_app(port):
-    """A receiver playing the part of the external application.
+# %% [markdown]
+# ## The other application
+# A receiver playing its part. Any OSC program would do -- this one just prints
+# what arrives and when it was *stamped for*, which is what the example is about.
 
-    Any OSC program would do -- this one just prints what arrives and when it
+# %%
+def stand_in_for_another_app(port):
+    """Any OSC program would do -- this one just prints what arrives and when it
     was *stamped for*, which is what the example is about.
     """
     receiver = OscReceiver(port=port).start()
@@ -58,43 +66,52 @@ def stand_in_for_another_app(port):
     return receiver
 
 
-def main(argv):
-    beats = float(argv[1]) if len(argv) > 1 and not argv[1].startswith("--") else 8.0
-    port = 57123
-    if "--port" in argv:
-        port = int(argv[argv.index("--port") + 1])
+# %% [markdown]
+# ## The session and the destination
+# A bare message has no time: it means "now". Use it for what has no place in a
+# timeline -- here, telling the other app we are starting.
 
-    listener = stand_in_for_another_app(port)
-    print(f"standing in for an external app on UDP {listener.port}")
+# %%
+PORT = 57123
+listener = stand_in_for_another_app(PORT)
+print(f"standing in for an external app on UDP {listener.port}")
 
-    with Session.live(tempo=TEMPO, latency=0.1) as session:
-        lights = session.destination("127.0.0.1", listener.port)
+session = Session.live(tempo=TEMPO, latency=0.1)
+lights = session.destination("127.0.0.1", listener.port)
+lights.send_msg("/lamps/reset")
 
-        # A bare message has no time: it means "now". Use it for what has no
-        # place in a timeline -- here, telling the other app we are starting.
-        lights.send_msg("/lamps/reset")
+# %% [markdown]
+# ## One routine drives the sound and the other application at once
+# The note and the lamp read the *same* moment: the beat the routine has
+# accumulated by yielding, not what time it is when each line runs. So they stay
+# locked to each other whatever the scheduler did in between.
 
-        def cue(clock):
-            """One routine drives the sound and the other application at once."""
-            for i in range(int(beats)):
-                colour = COLOURS[i % len(COLOURS)]
-                # The note and the lamp read the *same* moment: the beat this
-                # routine has accumulated by yielding, not what time it is when
-                # each line runs. So they stay locked to each other whatever
-                # the scheduler did in between.
-                Event(instrument="default", freq=220.0 * (1 + i % 4), dur=0.5).play()
-                lights.send_bundle(("/lamp", colour, 1.0))
-                # A lamp that goes out half a beat later: same call, a delay in
-                # beats, still on the clock's grid.
-                lights.send_bundle(("/lamp", colour, 0.0), delay_beats=0.5)
-                yield 1.0
+# %%
+def cue(clock, beats):
+    for i in range(int(beats)):
+        colour = COLOURS[i % len(COLOURS)]
+        Event(instrument="default", freq=220.0 * (1 + i % 4), dur=0.5).play()
+        lights.send_bundle(("/lamp", colour, 1.0))
+        # A lamp that goes out half a beat later: same call, a delay in beats,
+        # still on the clock's grid.
+        lights.send_bundle(("/lamp", colour, 0.0), delay_beats=0.5)
+        yield 1.0
 
-        Routine(cue).play(session.clock)
-        session.run(beats / TEMPO + 1.0)
 
-    listener.stop()
+# %%
+def run(beats: float = 8.0):
+    """Cue ``beats`` beats of notes and lamps together."""
+    Routine(lambda clock: cue(clock, beats)).play(session.clock)
+    session.run(beats / TEMPO + 1.0)
     print("done")
 
 
-if __name__ == "__main__":
-    main(sys.argv)
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    try:
+        run(float(sys.argv[1]) if len(sys.argv) > 1 else 8.0)
+    finally:
+        listener.stop()
+        session.close()
+else:
+    print("destination up - run(8) to cue, listener.stop(); session.close() to end")
