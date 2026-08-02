@@ -835,14 +835,19 @@ near.
   small work or a decision to write down, and the manifest is where they now sit
   in the open instead of being invisible.
 
-- ⬜ **R2 — Split the OSC front (`src/osc/server.rs`, 3217 lines).**
-  `OscServer` carries five separable jobs: binding and draining the transports
-  (UDP/TCP/WS/MIDI/IPC), packet and bundle dispatch, ~60 command handlers, the
-  streaming subscriptions (`BusStream`/`TapStream`), and the async pipelines
-  (NRT/Faust plus the `/server_sync` barrier). Split into
-  `osc/server/{mod,transports,dispatch,streams,async_pipes}.rs` with one `impl
-  OscServer` block per file — the struct and every signature stay put, so the
-  diff is pure movement and `git log --follow` still reads.
+- ✅ **R2 — Split the OSC front** *(done 2026-08-02)* — `src/osc/server.rs` was
+  3217 lines and one `impl` block of 109 methods carrying five separable jobs:
+  binding and draining the transports (UDP/TCP/WS/MIDI/IPC), packet and bundle
+  dispatch, ~60 command handlers, the streaming subscriptions
+  (`BusStream`/`TapStream`), and the async pipelines (NRT/Faust plus the
+  `/server_sync` barrier). Pure movement: no signature changed and no test was
+  touched, and the only edit the move forced was visibility — the compiler
+  named all 62 methods a sibling module calls, so none was promoted on a guess.
+
+  The milestone sketched five files and left the handlers unplaced; they are
+  the bulk, so they became `commands/`, one module per resource family — the
+  same families the wire names. That keeps the largest file at 500 lines
+  instead of folding 1700 lines of handlers into `dispatch`.
 
 - ✅ **R3 — An argument reader, and one voice for failures** *(done 2026-08-02)*
   — every handler used to destructure `msg.args` by hand and write its own
@@ -908,14 +913,22 @@ near.
   not have, and this catches the coarse one, which is the one that has actually
   happened.
 
-- ⬜ **R5 — Split the translator (`src/osc/translate.rs`, 2747 lines).** Three
-  concerns share a file and little else: the OSC→`Cmd` translation proper, the
-  GraphDef instancing (`graph_new`/`graph_voice`/`alloc_graph_*`/
-  `resolve_ports`, ~600 lines) and the MIDI layer (~1000 lines from
-  `midi_bind` on: bind/unbind/map, note on/off, binding persistence). Split into
-  `translate/{mod,graph,midi}.rs`. The MIDI half touches `clausters-midi` and
-  nothing else in the translator beyond the tree mirror, so it separates
-  cleanly.
+- ✅ **R5 — Split the translator** *(done 2026-08-02)* —
+  `src/osc/translate.rs` was 2747 lines. The milestone named three concerns;
+  measured, there were five, and the two it did not name are the ones a reader
+  scrolls past looking for the translation proper: what the translator
+  *reports* (`def_info`, `query_tree`, `node_info`, `dump_graph` — reply
+  arguments, never a `Cmd`) and the `/buffer_*` parsing, which produces
+  `NrtJob`s and is not translation at all. So `translate/{graph,midi,queries,
+  buffers}.rs` beside a `mod.rs` that keeps the struct, the node and control
+  commands, and `translate` itself.
+
+  Pure movement, verified as such: the same 85 `fn` declarations before and
+  after, and the whole code stream with whitespace removed differs by exactly
+  the module scaffolding plus the seven methods the compiler demanded be
+  promoted to `pub(in crate::osc::translate)`. No test touched. The bench came
+  back inside the noise floor on every column, which is what the boundary move
+  was checked against.
 
 - ⬜ **R6 — Split the client's `Server` facade
   (`clients/python/clausters/defs/server.py`).** The mirror image of R2 on the

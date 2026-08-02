@@ -65,11 +65,11 @@ Two measured facts to keep in mind when reading the meter (numbers from a deskto
 | `src/dsp/denormals.rs` | Per-thread flush-to-zero (x86-64 MXCSR, aarch64 FPCR) |
 | `src/synthdef/` | SynthDef JSON wire format, validation/compilation, `UGenSynth` instance |
 | `src/osc/mod.rs` | `decode_packet` — the only entry point for incoming OSC bytes |
-| `src/osc/server.rs` | The network thread: socket loop, immediate handlers, replies |
+| `src/osc/server/` | The network thread: transports, dispatch, the immediate handlers (`commands/`, one module per resource family), the push subscriptions and the NRT/Faust pipelines |
 | `src/osc/tcp.rs` | TCP transport (on by default): acceptor/reader threads, length-prefixed framing, `TcpHub` |
-| `src/osc/translate.rs` | `CmdTranslator`: OSC message → `Cmd`, shared by the live server and the renderer; owns the tree mirror |
+| `src/osc/translate/` | `CmdTranslator`: OSC message → `Cmd`, shared by the live server and the renderer; owns the tree mirror. Beside it: GraphDef instancing (`graph.rs`), MIDI bindings and voices (`midi.rs`), the reply payloads it reports (`queries.rs`), the `/buffer_*` commands parsed into NRT jobs (`buffers.rs`) |
 | `src/osc/graph.rs` | bus-usage analysis, the network-side `TreeMirror`, the stable topological sort behind `/group_sortMode` |
-| `src/osc/graphdef.rs` | GraphDef spec/instance types + the private-bus `RangeAllocator`; instantiation lives in `translate.rs` |
+| `src/osc/graphdef.rs` | GraphDef spec/instance types + the private-bus `RangeAllocator`; instantiation lives in `translate/graph.rs` |
 | `src/midi/` | standard channel-voice MIDI actuation — message-type conversions (`convert.rs`), bindings/voice state, MIDI 1.0→2.0 widening; live input via `midir`/ALSA (`live.rs`, feature `midi`). `CmdTranslator::translate_midi` realizes a message as the equivalent `/synth_new`/`/node_set`/`/node_free` on the **network thread** (the audio thread is untouched) |
 | `src/faust/` | libfaust embedding: hand-written FFI, compiler thread, JSON→Box interpreter (`boxes.rs`), `FaustDef`/`FaustSynth`; `soundfile("<bufnum>", n)` is filled from a server buffer at instantiation (`SoundfileData` in `synth.rs`) |
 | `src/main.rs` | CLI: realtime server (default) or `--nrt` renderer |
