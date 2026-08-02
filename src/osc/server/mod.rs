@@ -41,7 +41,7 @@ use crate::faust::compiler::{CacheJob, CompilePayload, CompileRequest, CompilerT
 use crate::node::MAX_NODES;
 use crate::osc::ClientId;
 use crate::osc::translate::{
-    CmdTranslator, control_key, float_value, int_arg, parse_buffer_gen, parse_buffer_msg,
+    CmdTranslator, control_key, float_value, parse_buffer_gen, parse_buffer_msg,
 };
 
 use crate::server::clock_axis::TransportSample;

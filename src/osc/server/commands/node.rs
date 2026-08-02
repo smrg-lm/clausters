@@ -43,15 +43,14 @@ impl OscServer {
     /// maps and inferred bus lists, which makes each entry a full node info.
     pub(in crate::osc::server) fn handle_group_query_tree(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
-        let group = int_arg(&msg.args, 0).unwrap_or(0);
-        let detail = int_arg(&msg.args, 1).unwrap_or(0).clamp(0, 2);
-        match self.translator.query_tree(group, detail) {
-            Ok(args) => self.reply(from, "/group_queryTree.reply", args),
-            Err(e) => self.fail(from, "/group_queryTree", e),
-        }
+    ) -> Answer {
+        let group = args.opt_int()?.unwrap_or(0);
+        let detail = args.opt_int()?.unwrap_or(0).clamp(0, 2);
+        let tree = self.translator.query_tree(group, detail)?;
+        self.reply(from, "/group_queryTree.reply", tree);
+        Ok(())
     }
 
     /// Per-node detail: replies `/node_query.reply` for each queried node ID (scsynth's
@@ -59,49 +58,54 @@ impl OscServer {
     /// bus usage — see [`CmdTranslator::node_info`]). An id the server does
     /// not hold answers with an absent record, not `/fail`: only a malformed
     /// request is a protocol error.
-    pub(in crate::osc::server) fn handle_node_query(&mut self, msg: &OscMessage, from: ClientId) {
-        for arg in &msg.args {
-            let OscType::Int(id) = arg else {
-                return self.fail(from, "/node_query", "expected int node ids");
-            };
-            let args = self.translator.node_info(*id);
-            self.reply(from, "/node_query.reply", args);
+    pub(in crate::osc::server) fn handle_node_query(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        while !args.is_empty() {
+            let id = args.int()?;
+            let info = self.translator.node_info(id);
+            self.reply(from, "/node_query.reply", info);
         }
+        Ok(())
     }
 
     /// `/group_query path...`: resolves each path to the node it names,
     /// replying `/group_query.reply <path> <nodeID>` — the one place a path is
     /// interpreted. A path nothing answers to resolves to `-1` (absence is a
     /// state, as in `/node_query`), so one dead path does not abort the rest.
-    pub(in crate::osc::server) fn handle_group_query(&mut self, msg: &OscMessage, from: ClientId) {
-        for arg in &msg.args {
-            let OscType::String(path) = arg else {
-                return self.fail(from, "/group_query", "expected string paths");
-            };
-            let id = self.translator.resolve_path(path);
+    pub(in crate::osc::server) fn handle_group_query(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        while !args.is_empty() {
+            let path = args.str()?.to_string();
+            let id = self.translator.resolve_path(&path);
             self.reply(
                 from,
                 "/group_query.reply",
-                vec![OscType::String(path.clone()), OscType::Int(id)],
+                vec![OscType::String(path), OscType::Int(id)],
             );
         }
+        Ok(())
     }
 
     /// Debug: the inferred bus graph of one group as a string reply.
     pub(in crate::osc::server) fn handle_group_dump_graph(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
-        let group = int_arg(&msg.args, 0).unwrap_or(0);
-        match self.translator.dump_graph(group) {
-            Ok(dump) => self.reply(
-                from,
-                "/group_dumpGraph.reply",
-                vec![OscType::Int(group), OscType::String(dump)],
-            ),
-            Err(e) => self.fail(from, "/group_dumpGraph", e),
-        }
+    ) -> Answer {
+        let group = args.opt_int()?.unwrap_or(0);
+        let dump = self.translator.dump_graph(group)?;
+        self.reply(
+            from,
+            "/group_dumpGraph.reply",
+            vec![OscType::Int(group), OscType::String(dump)],
+        );
+        Ok(())
     }
 
     /// `/synth_get nodeID control...` / `/synth_getRange nodeID control numControls...`:
@@ -179,18 +183,22 @@ impl OscServer {
     /// (the plan's "compatibility of model, not literal copy").
     pub(in crate::osc::server) fn handle_synth_forget_id(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
-        if msg.args.is_empty() {
-            return self.fail(from, "/synth_forgetId", "expected node IDs");
+    ) -> Answer {
+        if args.is_empty() {
+            return Err("expected node IDs".into());
         }
-        for arg in &msg.args {
-            let OscType::Int(id) = arg else {
-                return self.fail(from, "/synth_forgetId", "expected int node IDs");
-            };
+        let ids: Vec<i32> = {
+            let mut ids = Vec::with_capacity(args.len());
+            while !args.is_empty() {
+                ids.push(args.int()?);
+            }
+            ids
+        };
+        for id in &ids {
             if !self.translator.node_defs.contains_key(id) {
-                return self.fail(from, "/synth_forgetId", format!("synth {id} not found"));
+                return Err(format!("synth {id} not found"));
             }
         }
         self.reply(
@@ -198,23 +206,22 @@ impl OscServer {
             "/done",
             vec![OscType::String("/synth_forgetId".into())],
         );
+        Ok(())
     }
 
     /// `/node_trace nodeID...`: debug-traces a node by logging its current control
     /// values (from the mirror) to the server console — the introspection
     /// counterpart of scsynth's per-block node trace. Network-thread only, no
     /// reply (matches scsynth).
-    pub(in crate::osc::server) fn handle_node_trace(&mut self, msg: &OscMessage, from: ClientId) {
-        for arg in &msg.args {
-            let OscType::Int(id) = arg else {
-                return self.fail(from, "/node_trace", "expected int node IDs");
-            };
-            match self.translator.mirror.synth_info(*id) {
+    pub(in crate::osc::server) fn handle_node_trace(&mut self, mut args: Args) -> Answer {
+        while !args.is_empty() {
+            let id = args.int()?;
+            match self.translator.mirror.synth_info(id) {
                 Some((name, controls)) => {
                     info!(target: crate::logging::OSC_TARGET, "/node_trace node {id} synth {name:?} controls {controls:?}");
                 }
-                None if self.translator.mirror.get(*id).is_some() => {
-                    let children = self.translator.mirror.children(*id).unwrap_or(&[]);
+                None if self.translator.mirror.get(id).is_some() => {
+                    let children = self.translator.mirror.children(id).unwrap_or(&[]);
                     info!(target: crate::logging::OSC_TARGET, "/node_trace node {id} group children {children:?}");
                 }
                 None => {
@@ -222,5 +229,6 @@ impl OscServer {
                 }
             }
         }
+        Ok(())
     }
 }

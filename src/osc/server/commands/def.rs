@@ -47,22 +47,20 @@ impl OscServer {
     ///
     /// The ack echoes both: `/done "/def_send" <family>` (a faust compile,
     /// which finishes asynchronously, appends the def name).
-    pub(in crate::osc::server) fn handle_def_send(&mut self, msg: &OscMessage, from: ClientId) {
-        let Some(OscType::String(family)) = msg.args.first() else {
-            return self.fail(
-                from,
-                "/def_send",
-                "expected a family string (\"synth\", \"faust\" or \"graph\")",
-            );
-        };
-        let family = family.clone();
-        let rest = &msg.args[1..];
+    pub(in crate::osc::server) fn handle_def_send(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let family = args.str()?.to_string();
+        let rest = args.rest();
         match family.as_str() {
             "synth" => self.handle_def_send_synth(rest, from),
             "faust" => self.handle_def_send_faust(rest, from),
             "graph" => self.handle_def_send_graph(rest, from),
-            other => self.fail(from, "/def_send", format!("unknown def family '{other}'")),
+            other => return Err(format!("unknown def family '{other}'")),
         }
+        Ok(())
     }
 
     fn handle_def_send_synth(&mut self, args: &[OscType], from: ClientId) {
@@ -134,36 +132,37 @@ impl OscServer {
     /// `/def_load path`: loads a SynthDef from a JSON spec file on disk (the
     /// Clausters def format — the same body `/def_send synth` carries), on demand,
     /// complementing the boot-time reload. GraphDefs load through `/def_send graph`.
-    pub(in crate::osc::server) fn handle_def_load(&mut self, msg: &OscMessage, from: ClientId) {
-        let Some(OscType::String(path)) = msg.args.first() else {
-            return self.fail(from, "/def_load", "expected string path");
-        };
-        match self.load_synthdef_file(std::path::Path::new(path)) {
-            Ok(()) => self.reply(from, "/done", vec![OscType::String("/def_load".into())]),
-            Err(e) => self.fail(from, "/def_load", e),
-        }
+    pub(in crate::osc::server) fn handle_def_load(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let path = args.str()?;
+        self.load_synthdef_file(std::path::Path::new(path))?;
+        self.reply(from, "/done", vec![OscType::String("/def_load".into())]);
+        Ok(())
     }
 
     /// `/def_loadDir dir`: loads every `*.json` SynthDef spec in a directory. A
     /// single unreadable/invalid file fails the whole command (like scsynth
     /// aborting on a bad def), naming the offending file.
-    pub(in crate::osc::server) fn handle_def_load_dir(&mut self, msg: &OscMessage, from: ClientId) {
-        let Some(OscType::String(dir)) = msg.args.first() else {
-            return self.fail(from, "/def_loadDir", "expected string directory");
-        };
-        let entries = match std::fs::read_dir(dir) {
-            Ok(entries) => entries,
-            Err(e) => return self.fail(from, "/def_loadDir", format!("{dir}: {e}")),
-        };
+    pub(in crate::osc::server) fn handle_def_load_dir(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let dir = args.str()?;
+        let entries = std::fs::read_dir(dir).map_err(|e| format!("{dir}: {e}"))?;
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "json")
                 && let Err(e) = self.load_synthdef_file(&path)
             {
-                return self.fail(from, "/def_loadDir", e);
+                return Err(e);
             }
         }
         self.reply(from, "/done", vec![OscType::String("/def_loadDir".into())]);
+        Ok(())
     }
 
     /// Reads one SynthDef spec file, compiles it through the `/def_send synth` path and
@@ -190,18 +189,20 @@ impl OscServer {
     ///
     /// Retrieval only — the def store persists across sessions, so this is how
     /// a client learns what a running server actually holds.
-    pub(in crate::osc::server) fn handle_def_query(&mut self, msg: &OscMessage, from: ClientId) {
-        let mut names = Vec::with_capacity(msg.args.len());
-        for arg in &msg.args {
-            let OscType::String(name) = arg else {
-                return self.fail(from, "/def_query", "expected string def names");
-            };
-            names.push(name.clone());
+    pub(in crate::osc::server) fn handle_def_query(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let mut names = Vec::with_capacity(args.len());
+        while !args.is_empty() {
+            names.push(args.str()?.to_string());
         }
         let requested = (!names.is_empty()).then_some(names.as_slice());
-        for args in self.translator.def_info(requested) {
-            self.reply(from, "/def_query.reply", args);
+        for info in self.translator.def_info(requested) {
+            self.reply(from, "/def_query.reply", info);
         }
         self.reply(from, "/done", vec![OscType::String("/def_query".into())]);
+        Ok(())
     }
 }

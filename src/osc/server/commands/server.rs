@@ -138,21 +138,9 @@ impl OscServer {
     /// server-side console logging is gated. scsynth's bundle-local `-1`/`-2`
     /// are not separately supported (deliberate deviation): the persistent
     /// `0`/`1` toggle is the model that fits our logging.
-    pub(in crate::osc::server) fn handle_server_error_mode(
-        &mut self,
-        msg: &OscMessage,
-        from: ClientId,
-    ) {
-        match msg.args.first() {
-            Some(OscType::Int(mode)) => {
-                self.post_errors = *mode != 0;
-            }
-            _ => self.fail(
-                from,
-                "/server_errorMode",
-                "expected int mode (0 = off, 1 = on)",
-            ),
-        }
+    pub(in crate::osc::server) fn handle_server_error_mode(&mut self, mut args: Args) -> Answer {
+        self.post_errors = args.int()? != 0;
+        Ok(())
     }
 
     /// `/server_cmd name args...`: a server-wide, typed command — the discoverable
@@ -160,11 +148,12 @@ impl OscServer {
     /// the built-in registry; unknown names `/fail` with the offending name.
     /// The mechanism exists for future server commands; the built-in `ping`
     /// (replies `/done /server_cmd ping`) proves the surface.
-    pub(in crate::osc::server) fn handle_server_cmd(&mut self, msg: &OscMessage, from: ClientId) {
-        let Some(OscType::String(name)) = msg.args.first() else {
-            return self.fail(from, "/server_cmd", "expected string command name");
-        };
-        match name.as_str() {
+    pub(in crate::osc::server) fn handle_server_cmd(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        match args.str()? {
             "ping" => self.reply(
                 from,
                 "/done",
@@ -173,12 +162,9 @@ impl OscServer {
                     OscType::String("ping".into()),
                 ],
             ),
-            other => self.fail(
-                from,
-                "/server_cmd",
-                format!("unknown server command {other:?}"),
-            ),
+            other => return Err(format!("unknown server command {other:?}")),
         }
+        Ok(())
     }
 
     /// `/ugen_query [kind...]` → one `/ugen_query.reply` per UGen, then `/done "/ugen_query"`
@@ -192,19 +178,21 @@ impl OscServer {
     /// Built without the `synth` feature there is no UGen catalog at all, and
     /// the honest reply is an **empty** listing rather than a `/fail` — the
     /// same way `/def_query` on such a build simply lists no synth defs.
-    pub(in crate::osc::server) fn handle_ugen_query(&mut self, msg: &OscMessage, from: ClientId) {
-        let mut names = Vec::with_capacity(msg.args.len());
-        for arg in &msg.args {
-            let OscType::String(name) = arg else {
-                return self.fail(from, "/ugen_query", "expected string UGen kinds");
-            };
-            names.push(name.clone());
+    pub(in crate::osc::server) fn handle_ugen_query(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let mut names = Vec::with_capacity(args.len());
+        while !args.is_empty() {
+            names.push(args.str()?.to_string());
         }
         #[cfg(feature = "synth")]
-        for args in ugen_infos(&names) {
-            self.reply(from, "/ugen_query.reply", args);
+        for info in ugen_infos(&names) {
+            self.reply(from, "/ugen_query.reply", info);
         }
         self.reply(from, "/done", vec![OscType::String("/ugen_query".into())]);
+        Ok(())
     }
 
     pub(in crate::osc::server) fn handle_server_notify(

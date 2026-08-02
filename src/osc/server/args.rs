@@ -128,6 +128,17 @@ impl<'a> Args<'a> {
         }
     }
 
+    /// An optional trailing integer: absent is `Ok(None)`, present but of the
+    /// wrong type is still an error -- the shape of a command whose arguments
+    /// all have defaults, where saying nothing and saying it wrong are
+    /// different answers.
+    pub(in crate::osc::server) fn opt_int(&mut self) -> Result<Option<i32>, String> {
+        if self.is_empty() {
+            return Ok(None);
+        }
+        self.int().map(Some)
+    }
+
     /// An optional trailing double: absent is `Ok(None)`, present but of the
     /// wrong type is still an error.
     pub(in crate::osc::server) fn opt_double(&mut self) -> Result<Option<f64>, String> {
