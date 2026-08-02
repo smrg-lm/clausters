@@ -3907,3 +3907,39 @@ command names are not scsynth's — so a shape is chosen for consistency, and th
 four packages move together in the same commit. A back-compatibility patch for
 a reader that does not exist is a wart that outlives the reason for it: the
 clients parse the field as always present, because it always is.
+
+## A def is a template, so only an instance can be named
+
+A group carries a label now (the entry above), which raises the next question
+on its own: a GraphDef instantiates as a group, so should the def declare what
+that group is called? It should not. A def is a **template**; a name is a
+property of a **place in the tree**, and the two do not travel together.
+
+Sibling names are unique, and a name that comes from the def repeats by
+construction: instantiate the same graph twice under one parent and the second
+label is already taken. For the per-voice sub-groups of `/graph_newVoice` it
+collides *always* — every voice of one instance is the same def. That leaves
+the server three ways out, each worse than an unnamed group. Refusing the
+instantiation answers a client that asked for two voices with an error about a
+label it never wrote. Creating it anonymous is the silent downgrade the naming
+rules exist to prevent. Inventing a suffix (`reverb-2`) buys navigability with
+a name the client cannot predict and has to read back out of the tree. An
+unnamed group is not a hole in the addressing anyway: it answers to its id, and
+a path reaches it through its decimal segment.
+
+**Naming the instance is a different feature, and it already composes.** Both
+clients allocate the instance's id themselves — no client sends `/graph_new`
+with `-1` — so the label is a second message on an id the caller already holds,
+`/graph_new` then `/group_name`, in order on the same connection. A `name=`
+argument in the clients is the whole of it, with nothing new on the wire.
+
+Carrying the label in `/graph_new` itself would buy exactly one thing the
+composition cannot: the name riding in the instance's own `/node_start`. That
+is recorded here rather than built, because the gap it names is not the graph's
+— **a rename notifies nobody**. `/group_name` pushes nothing to the
+`/server_notify` clients, so an observer that builds its model from the
+notifications misses every rename until it queries. If that ever bites, the fix
+is for renaming to notify, which closes the case for every group at once; an
+optional string in `/graph_new` would close it for graphs alone, and would add
+the protocol's only label sitting in the middle of an argument list instead of
+at the end of a fixed group of arguments.
