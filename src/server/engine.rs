@@ -948,87 +948,10 @@ impl Engine {
                 pending_garbage: &mut self.pending_garbage,
                 events_tx: &mut self.events_tx,
             };
+            let Some(cmd) = apply_to_tree(&mut self.tree, &mut sink, cmd) else {
+                return;
+            };
             match cmd {
-                Cmd::AddSynth {
-                    id,
-                    target,
-                    action,
-                    mut synth,
-                    usage,
-                } => {
-                    // Every add path funnels here, so this is the one place a
-                    // synth learns its id (arithmetic only — RT-safe). See
-                    // `SynthNode::set_node_id`.
-                    synth.set_node_id(id);
-                    match self.tree.insert(
-                        id,
-                        NodeKind::Synth { node: synth, usage },
-                        target,
-                        action,
-                        &mut |f| sink.consume(f),
-                    ) {
-                        Ok(parent_id) => {
-                            let _ = sink.events_tx.push(NodeEvent {
-                                kind: NodeEventKind::Go,
-                                id,
-                                parent_id,
-                                is_group: false,
-                            });
-                        }
-                        Err(NodeKind::Synth { node: synth, .. }) => {
-                            sink.push(Garbage::RejectedSynth { id, synth });
-                        }
-                        Err(NodeKind::Group(group)) => {
-                            sink.push(Garbage::RejectedGroup { id, group });
-                        }
-                    }
-                }
-                Cmd::SetUsage { id, usage } => self.tree.set_usage(id, usage),
-                Cmd::SetGroupParallel { id, parallel } => {
-                    // Unknown or non-group IDs are ignored, like /node_set.
-                    let _ = self.tree.set_parallel(id, parallel);
-                }
-                Cmd::AddGroup {
-                    id,
-                    target,
-                    action,
-                    group,
-                } => {
-                    match self
-                        .tree
-                        .insert(id, NodeKind::Group(group), target, action, &mut |f| {
-                            sink.consume(f)
-                        }) {
-                        Ok(parent_id) => {
-                            let _ = sink.events_tx.push(NodeEvent {
-                                kind: NodeEventKind::Go,
-                                id,
-                                parent_id,
-                                is_group: true,
-                            });
-                        }
-                        Err(NodeKind::Synth { node: synth, .. }) => {
-                            sink.push(Garbage::RejectedSynth { id, synth });
-                        }
-                        Err(NodeKind::Group(group)) => {
-                            sink.push(Garbage::RejectedGroup { id, group });
-                        }
-                    }
-                }
-                Cmd::FreeNode { id } => {
-                    // Unknown IDs are silently ignored here; the network
-                    // thread already replied /fail where it could tell.
-                    self.tree.free(id, &mut |f| sink.consume(f));
-                }
-                Cmd::FreeAllInGroup { id } => {
-                    self.tree.free_all(id, &mut |f| sink.consume(f));
-                }
-                Cmd::DeepFreeGroup { id } => {
-                    self.tree.deep_free(id, &mut |f| sink.consume(f));
-                }
-                Cmd::RunNode { id, run } => {
-                    self.tree.set_paused(id, !run);
-                }
                 Cmd::TransportRun { rolling } => {
                     self.transport_rolling = rolling;
                     if let Some(group) = self.transport_group {
@@ -1046,24 +969,6 @@ impl Engine {
                         if !self.transport_rolling {
                             self.tree.set_paused(id, true);
                         }
-                    }
-                }
-                Cmd::MoveNode { id, target, place } => {
-                    self.tree.move_node(id, target, place);
-                }
-                Cmd::SetControl { id, index, value } => {
-                    if let Some(synth) = self.tree.synth_mut(id) {
-                        synth.set_control(index, value);
-                    }
-                }
-                Cmd::MapControl {
-                    id,
-                    index,
-                    bus,
-                    audio,
-                } => {
-                    if let Some(synth) = self.tree.synth_mut(id) {
-                        synth.map_control(index, bus, audio);
                     }
                 }
                 Cmd::SetBuffer { index, buffer } => {
@@ -1133,14 +1038,23 @@ impl Engine {
                         sink.push(Garbage::SpentBundle(bundle.cmds));
                     }
                 }
-                Cmd::UGenCommand {
-                    id,
-                    ugen_index,
-                    command,
-                } => {
-                    if let Some(synth) = self.tree.synth_mut(id) {
-                        synth.ugen_command(ugen_index, &command);
-                    }
+                // Named rather than left to a `_`, so the compiler still
+                // refuses a `Cmd` variant that neither this match nor
+                // `apply_to_tree` handles — a wildcard here would turn that
+                // omission into a panic on the audio thread.
+                Cmd::AddSynth { .. }
+                | Cmd::AddGroup { .. }
+                | Cmd::FreeNode { .. }
+                | Cmd::FreeAllInGroup { .. }
+                | Cmd::DeepFreeGroup { .. }
+                | Cmd::RunNode { .. }
+                | Cmd::MoveNode { .. }
+                | Cmd::SetControl { .. }
+                | Cmd::MapControl { .. }
+                | Cmd::SetUsage { .. }
+                | Cmd::SetGroupParallel { .. }
+                | Cmd::UGenCommand { .. } => {
+                    debug_assert!(false, "apply_to_tree returned a node command");
                 }
             }
         }
@@ -1154,6 +1068,127 @@ impl Engine {
             }
         }
     }
+}
+
+/// The node-tree half of [`Engine::apply`] — every command whose only engine
+/// state is the tree itself, which is twelve of the nineteen.
+///
+/// A free function taking the two things it touches, rather than a method:
+/// `sink` borrows three of the engine's fields for the whole match, so a
+/// `&mut self` helper could not coexist with it. Returns the command back when
+/// it is not one of these, so the caller matches the remaining seven and no
+/// command is classified twice.
+#[inline]
+fn apply_to_tree(tree: &mut NodeTree, sink: &mut GarbageSink, cmd: Cmd) -> Option<Cmd> {
+    match cmd {
+        Cmd::AddSynth {
+            id,
+            target,
+            action,
+            mut synth,
+            usage,
+        } => {
+            // Every add path funnels here, so this is the one place a
+            // synth learns its id (arithmetic only — RT-safe). See
+            // `SynthNode::set_node_id`.
+            synth.set_node_id(id);
+            match tree.insert(
+                id,
+                NodeKind::Synth { node: synth, usage },
+                target,
+                action,
+                &mut |f| sink.consume(f),
+            ) {
+                Ok(parent_id) => {
+                    let _ = sink.events_tx.push(NodeEvent {
+                        kind: NodeEventKind::Go,
+                        id,
+                        parent_id,
+                        is_group: false,
+                    });
+                }
+                Err(NodeKind::Synth { node: synth, .. }) => {
+                    sink.push(Garbage::RejectedSynth { id, synth });
+                }
+                Err(NodeKind::Group(group)) => {
+                    sink.push(Garbage::RejectedGroup { id, group });
+                }
+            }
+        }
+        Cmd::SetUsage { id, usage } => tree.set_usage(id, usage),
+        Cmd::SetGroupParallel { id, parallel } => {
+            // Unknown or non-group IDs are ignored, like /node_set.
+            let _ = tree.set_parallel(id, parallel);
+        }
+        Cmd::AddGroup {
+            id,
+            target,
+            action,
+            group,
+        } => {
+            match tree.insert(id, NodeKind::Group(group), target, action, &mut |f| {
+                sink.consume(f)
+            }) {
+                Ok(parent_id) => {
+                    let _ = sink.events_tx.push(NodeEvent {
+                        kind: NodeEventKind::Go,
+                        id,
+                        parent_id,
+                        is_group: true,
+                    });
+                }
+                Err(NodeKind::Synth { node: synth, .. }) => {
+                    sink.push(Garbage::RejectedSynth { id, synth });
+                }
+                Err(NodeKind::Group(group)) => {
+                    sink.push(Garbage::RejectedGroup { id, group });
+                }
+            }
+        }
+        Cmd::FreeNode { id } => {
+            // Unknown IDs are silently ignored here; the network
+            // thread already replied /fail where it could tell.
+            tree.free(id, &mut |f| sink.consume(f));
+        }
+        Cmd::FreeAllInGroup { id } => {
+            tree.free_all(id, &mut |f| sink.consume(f));
+        }
+        Cmd::DeepFreeGroup { id } => {
+            tree.deep_free(id, &mut |f| sink.consume(f));
+        }
+        Cmd::RunNode { id, run } => {
+            tree.set_paused(id, !run);
+        }
+        Cmd::MoveNode { id, target, place } => {
+            tree.move_node(id, target, place);
+        }
+        Cmd::SetControl { id, index, value } => {
+            if let Some(synth) = tree.synth_mut(id) {
+                synth.set_control(index, value);
+            }
+        }
+        Cmd::MapControl {
+            id,
+            index,
+            bus,
+            audio,
+        } => {
+            if let Some(synth) = tree.synth_mut(id) {
+                synth.map_control(index, bus, audio);
+            }
+        }
+        Cmd::UGenCommand {
+            id,
+            ugen_index,
+            command,
+        } => {
+            if let Some(synth) = tree.synth_mut(id) {
+                synth.ugen_command(ugen_index, &command);
+            }
+        }
+        other => return Some(other),
+    }
+    None
 }
 
 impl EngineHandle {

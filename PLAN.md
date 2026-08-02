@@ -1014,15 +1014,30 @@ near.
   `compile`, once per def sent — not per `/synth_new` — so instantiation
   latency is untouched; the bench's RT columns confirm nothing else moved.
 
-- ⬜ **R9 — Group the engine's command application.** `Engine::apply` is a
-  ~210-line `match Cmd` and `process_block` ~215 lines. Group `apply` by family
-  (`apply_node`, `apply_bus`, `apply_buffer`). **This is audio-thread code**:
-  the change must be purely syntactic, and it is not finished until
-  `tests/rt_safety.rs` and the golden renders pass untouched **and the bench
-  says it costs what it cost before** — grouping a `match` into functions is
-  exactly the shape of change that can stop being inlined, and `apply` runs
-  per command per block. Lowest value in the track and the highest care — do it
-  last, or not at all, and let the measurement decide which.
+- ✅ **R9 — The engine's command application, grouped** *(done 2026-08-02)* —
+  `Engine::apply` was a ~210-line `match Cmd` of nineteen arms. Done last, as
+  the milestone asked, and the shape it takes is decided by the borrow the
+  milestone did not account for: `sink` holds three of the engine's fields for
+  the whole match, so a `&mut self` helper cannot coexist with it. What is
+  separable is the family that touches **only the tree** — twelve of the
+  nineteen arms — and that is one free function of two parameters,
+  `apply_to_tree(tree, sink, cmd)`, returning the command back when it is not
+  one of its own. The other seven each read different engine fields
+  (`transport_*`, `sched`, `buffers`, `tap_buses`, `ipc`) and stay where they
+  are: 210 lines become 110 plus a homogeneous 111.
+
+  The leftover match names the twelve rather than using a `_`, so the compiler
+  still refuses a `Cmd` variant neither half handles — a wildcard there would
+  turn that omission into a panic on the audio thread.
+
+  **Measured, paired and alternated on the same machine**, because this is
+  audio-thread code: `bench.rs` A/B/A/B reads 1506.5x and 1481.9x before
+  against 1486.6x and 1514.2x after (1 synth) — the distributions overlap and
+  the spread matches four no-change baseline runs earlier the same day.
+  `bench_transport` reads ~6% *faster* after, uniformly, **including its
+  0-bundles-per-block rows where `apply` never runs** — which is what says that
+  number is code layout in that binary and not the command path. `rt_safety`
+  and the golden renders pass untouched.
 
 - ✅ **R10 — The remaining oversized crate files** *(done 2026-08-02)* —
   `clausters-ffi/src/lib.rs` (1543) is now ten domain modules beside the
