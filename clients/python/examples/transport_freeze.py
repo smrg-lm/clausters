@@ -36,6 +36,7 @@ audio server (`Session.live`); by hand that would be ``clausters``.
 """
 
 # %%
+import sys
 import time
 
 from clausters import Session
@@ -129,11 +130,19 @@ time.sleep(4.0)
 
 # %% [markdown]
 # ## Unbind
-# Unbinding thaws whatever the transport governed, so no frozen subtree is left
-# with nobody to resume it.
 
 # %%
-server.transport_group(None)
-piece.free()
-session.close()
-print("unbound; done")
+def teardown():
+    """Unbinding thaws whatever the transport governed, so no frozen subtree is
+    left with nobody to resume it."""
+    server.transport_group(None)
+    piece.free()
+    session.close()
+    print("unbound; done")
+
+
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    teardown()
+else:
+    print("piece up - server.transport_stop() / transport_play(), teardown() to end")
