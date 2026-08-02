@@ -38,7 +38,7 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
       beaconed as a fetch, read from the HTTP access log.
     -->
     <script type="module">
-      import { server, loadOsc, encodeMessage, decodePacket }
+      import { server, startPage, loadOsc, encodeMessage, decodePacket }
         from "../dist/index.js";
 
       const params = new URLSearchParams(location.search);
@@ -64,7 +64,7 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
         const engine = await server();
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
-            if (addr !== "/bus_set") log(`<- ${addr} ${JSON.stringify(args)}`);
+            if (addr !== "/bus_stream.reply") log(`<- ${addr} ${JSON.stringify(args)}`);
           }
         });
         document.getElementById("status").disabled = false;
@@ -94,14 +94,17 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
             if (addr === "/server_status.reply") synths = args[2];
-            if (addr === "/bus_set") {
+            if (addr === "/bus_stream.reply") {
               for (let i = 0; i + 1 < args.length; i += 2) seen.add(args[i + 1]);
             }
           }
         });
-        engine.send(encodeMessage("/server_status"));
+        // Asked on every turn, not once: the component's engine half — the
+        // defs and the boot list that make the synth — goes out on the page's
+        // gesture, which is a phase later than this handler.
         const t0 = performance.now();
         for (;;) {
+          engine.send(encodeMessage("/server_status"));
           const moving = [...seen].filter((v) => Math.abs(v) > 0.01);
           if (synths >= 1 && moving.length >= 2) {
             return verdict(`PASS: element up, canvas adopted; /server_status sees ` +
@@ -115,7 +118,9 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
         }
       }
 
-      if (smoke) element.boot();
+      // The page's own gesture, in place of the power button: phase 2 is
+      // page-wide, so this starts the engine half of every component waiting.
+      if (smoke) startPage();
     </script>
   </body>
 </html>

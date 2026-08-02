@@ -81,7 +81,7 @@ export class GuiBridge {
      */
     resize(def_id: number, width: number, height: number, scale: number): void;
     /**
-     * Feeds one reply packet from the in-page engine (a streamed `/bus_set`, a
+     * Feeds one reply packet from the in-page engine (a streamed `/bus_stream.reply`, a
      * `/bus_tapStream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply`, a `/clock_query.reply`) into the host —
      * the inbound half of [`connect_page`](Self::connect_page), the same
      * dispatch the WS leg's `onmessage` uses.

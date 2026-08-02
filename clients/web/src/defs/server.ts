@@ -508,7 +508,7 @@ export class Server {
     // ---- bus and tap subscriptions (one per client, over a set) ----
 
     /**
-     * Subscribes this client to a periodic `/bus_set` snapshot of `buses`
+     * Subscribes this client to a periodic `/bus_stream.reply` snapshot of `buses`
      * (`/bus_stream`): the server sends one immediately and then one every
      * `periodMs` (10 ms floor, at most 128 buses) with no further requests —
      * the message-based counterpart of reading the shared-memory segment, and

@@ -3,7 +3,7 @@
 //! Meters, scopes and `canvas` bus parameters read control buses every
 //! animation frame. Natively the values come from the shared-memory segment
 //! ([`super::shm`], zero messages); in the browser they arrive as periodic
-//! `/bus_set` snapshots from the server's `/bus_stream` subscription (the network
+//! `/bus_stream.reply` snapshots from the server's `/bus_stream` subscription (the
 //! counterpart of the segment). Everything around that difference — which
 //! buses a tree reads, how a scope's rolling history advances, how a window
 //! decides it is animated — is platform-independent and lives here, so both
@@ -468,7 +468,7 @@ pub(crate) fn demand<'a>(
     out
 }
 
-/// A [`BusSource`] filled from `/bus_stream`'s periodic `/bus_set` snapshots — the
+/// A [`BusSource`] filled from `/bus_stream`'s periodic snapshots — the
 /// message-based counterpart of the shared-memory segment, for the browser.
 /// Unsubscribed or never-streamed buses read `0.0`, exactly like unmapped or
 /// out-of-range buses natively. The `Mutex` only satisfies the trait's

@@ -2202,7 +2202,7 @@ impl OscServer {
         }
     }
 
-    /// `/bus_getRange busIndex numBuses ...`: replies `/bus_setRange` with each requested
+    /// `/bus_getRange busIndex numBuses ...`: replies `/bus_getRange.reply` with each requested
     /// range expanded to `(busIndex, numBuses, val0, val1, ...)`.
     fn handle_bus_get_range(&mut self, msg: &OscMessage, from: ClientId) {
         if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {

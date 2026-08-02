@@ -1372,7 +1372,7 @@ engine serves strictly in order, so the trailing `/server_sync.reply` is the pag
   `ServerLink::Page` hands outbound packets to a page-registered callback and
   takes replies through `GuiBridge.server_reply`; the host's streamed data
   paths (`/bus_stream`, `/bus_tapStream`, `/buffer_getRange`, `/clock_query`) run over it
-  unchanged — the acceptance smoke watches the meter's `/bus_set` stream arrive
+  unchanged — the acceptance smoke watches the meter's `/bus_stream.reply` stream arrive
   with moving values.
 - MIDI bindings, the remaining thing the native data-dir boot restores, are
   deliberately not replayed: the browser has no MIDI leg.

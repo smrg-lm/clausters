@@ -75,7 +75,7 @@ impl TestServer {
     }
 
     /// Receives until a message with this address arrives, discarding others
-    /// (e.g. interleaved /node_start//n_end notifications).
+    /// (e.g. interleaved /node_start//node_end notifications).
     fn recv_until(&self, addr: &str) -> OscMessage {
         for _ in 0..100 {
             let msg = self.recv();

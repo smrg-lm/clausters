@@ -147,8 +147,10 @@
           { layout: "row" },
           gui.knob({ name: "level", label: `bus ${bus}`, min: -1.0, max: 1.0,
                      value: 0.0, w: 120 }),
-          gui.meter(bus, { min: -1.0, max: 1.0, label: "level", w: 80 }),
-          gui.scope(bus, { min: -1.0, max: 1.0, label: "history" }),
+          gui.meter(bus, { rate: "control", min: -1.0, max: 1.0,
+                           label: "level", w: 80 }),
+          gui.scope(bus, { rate: "control", min: -1.0, max: 1.0,
+                           label: "history" }),
         ),
       );
 

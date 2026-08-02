@@ -43,7 +43,7 @@ instrument *allocates* is named rather than numbered. `bus`, `node` and
 naturally wherever an index goes:
 
 ```python
-meter(bus=lfo, label="lfo")              # the widget watches "@lfo"
+meter(bus=lfo, rate="control", label="lfo")   # the widget watches "@lfo"
 b.boot(["/node_set", graph, "rate", 4.0])   # the message names "@graph"
 ```
 

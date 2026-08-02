@@ -4,7 +4,7 @@
 // of control buses and repaint. Natively the GUI host reads those buses out of
 // the server's shared memory with no messages at all; a page cannot map that
 // segment, so the server offers the message-based counterpart — `/bus_stream`,
-// one subscription per client, a periodic `/bus_set` snapshot of the listed
+// one subscription per client, a periodic `/bus_stream.reply` snapshot of the listed
 // buses. This is that subscription with its decoding attached.
 //
 // The whole object is a *latest value* store, not a history: a snapshot

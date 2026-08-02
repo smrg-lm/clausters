@@ -76,7 +76,7 @@ fn set_status(msg: &str) {
 /// The host's audio-server leg over a browser `WebSocket` to a `--ws` server.
 /// Bidirectional: outbound frames carry bound-widget values and the host's own
 /// requests (`/bus_stream`, `/buffer_query`, `/buffer_getRange`); inbound frames (the server's
-/// replies and streamed `/bus_set` snapshots) are forwarded into the event loop
+/// replies and streamed `/bus_stream.reply` snapshots) are forwarded into the event loop
 /// as [`WebEvent::ServerInbound`] and decode through the one `decode_packet`
 /// door. Frames sent before the socket opens are buffered and flushed on open,
 /// so a `connect` immediately followed by interaction does not drop values.
@@ -107,7 +107,7 @@ impl WsServerLink {
         socket.set_onopen(Some(on_open.as_ref().unchecked_ref()));
         on_open.forget();
         // Inbound: each binary frame is one OSC packet from the audio server
-        // (a streamed `/bus_set`, a `/buffer_query.reply`/`/buffer_getRange.reply` reply, a `/fail`),
+        // (a streamed `/bus_stream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply` reply, a `/fail`),
         // forwarded to the app through the event-loop proxy.
         let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(
             move |event: web_sys::MessageEvent| {
@@ -204,7 +204,7 @@ enum WebEvent {
     /// to this page-registered callback (replies via `server_reply`).
     ConnectPage(js_sys::Function),
     /// One inbound OSC packet from the audio server over the WS leg (a streamed
-    /// `/bus_set`, a `/buffer_query.reply`/`/buffer_getRange.reply` reply, a `/fail`).
+    /// `/bus_stream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply` reply, a `/fail`).
     ServerInbound(Vec<u8>),
     /// The animation tick (a `setInterval` at ~30 fps while the window has live
     /// widgets): advance the scope histories and repaint.
@@ -386,7 +386,7 @@ struct WebApp {
     /// `writeText` out plus a `paste`-event listener in) is a later refinement.
     text_clipboard: String,
     /// Live control-bus values streamed from the audio server (`/bus_stream` →
-    /// `/bus_set`), the browser's [`BusSource`] for meters/scopes/canvases.
+    /// `/bus_stream.reply`), the browser's [`BusSource`] for meters/scopes/canvases.
     buses: Arc<StreamedBuses>,
     /// The bus set currently subscribed with `/bus_stream` (sorted), so a tree
     /// change only resubscribes when the set actually changed.
@@ -408,7 +408,7 @@ struct WebApp {
     /// The animation tick: the `setInterval` id and its closure, kept alive
     /// while the current def has live widgets (meter/scope/canvas).
     tick: Option<(i32, Closure<dyn FnMut()>)>,
-    /// Whether the first streamed `/bus_set` snapshot was logged (one line as
+    /// Whether the first streamed `/bus_stream.reply` snapshot was logged (one line as
     /// evidence the bus stream is flowing; logging every frame would spam).
     stream_seen: bool,
     /// The server-buffer fetch machine (`/buffer_query` → chunked `/buffer_getRange`),
@@ -791,7 +791,7 @@ impl WebApp {
     }
 
     /// Routes one decoded OSC packet from the audio server (the WS leg): the
-    /// streamed `/bus_set` snapshots into [`StreamedBuses`], the buffer replies
+    /// streamed `/bus_stream.reply` snapshots into [`StreamedBuses`], the buffer replies
     /// into the shared fetch machine. The browser twin of the native
     /// `handle_server_packet`.
     fn on_server_inbound(&mut self, bytes: &[u8]) {
@@ -2073,7 +2073,7 @@ impl GuiBridge {
         }
     }
 
-    /// Feeds one reply packet from the in-page engine (a streamed `/bus_set`, a
+    /// Feeds one reply packet from the in-page engine (a streamed `/bus_stream.reply`, a
     /// `/bus_tapStream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply`, a `/clock_query.reply`) into the host —
     /// the inbound half of [`connect_page`](Self::connect_page), the same
     /// dispatch the WS leg's `onmessage` uses.

@@ -30,8 +30,8 @@ cat > "$BUNDLE/defs/guidefs/webdrone.json" << 'EOF'
  "children":[
   {"id":10,"type":"knob","label":"freq","min":80.0,"max":600.0,"value":220.0,
    "bind":["/node_set",1000,"freq"]},
-  {"id":11,"type":"meter","bus":0,"min":-1.0,"max":1.0,"label":"lfo"},
-  {"id":12,"type":"scope","bus":0,"min":-1.0,"max":1.0,"label":"lfo"}
+  {"id":11,"type":"meter","bus":0,"rate":"control","min":-1.0,"max":1.0,"label":"lfo"},
+  {"id":12,"type":"scope","bus":0,"rate":"control","min":-1.0,"max":1.0,"label":"lfo"}
  ]}}
 EOF
 python3 tools/bundle-manifest.py "$BUNDLE"

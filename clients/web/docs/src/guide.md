@@ -71,7 +71,7 @@ The widget catalogue is a set of builders in the `gui` namespace, and a whole tr
 const win = host.open(gui.window(
   { title: "a tone", w: 480, h: 240, layout: "col" },
   gui.knob({ name: "freq", label: "freq", min: 50.0, max: 2000.0, value: 220.0 }),
-  gui.meter(level.index, { name: "level", label: "level" }),
+  gui.meter(level.index, { rate: "control", name: "level", label: "level" }),
 ));
 win.widget("freq").bind("/node_set", note.id, "freq");
 win.widget("freq").onEvent((value) => console.log(value));
