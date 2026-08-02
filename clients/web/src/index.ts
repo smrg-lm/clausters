@@ -82,6 +82,11 @@ export type { Connection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";
 export { Server } from "./defs/server.ts";
 export { AddAction, Group, Synth } from "./defs/node.ts";
+// The options bags of `Synth.new` and `Group.new`. Exported as types so the
+// API reference documents what those parameters accept: TypeDoc reports a
+// public signature that names a type it cannot reach, and an intersection like
+// GroupOptions is one it cannot inline away.
+export type { GroupOptions, Placement } from "./defs/node.ts";
 export { Bus } from "./defs/bus.ts";
 export { Buffer } from "./defs/buffer.ts";
 export { SynthDef } from "./defs/synthdef.ts";

@@ -236,8 +236,8 @@ export class Group extends Node {
      *
      * A name does not replace the id: every command still addresses the group
      * by id, and this one is no exception. What it adds is a way to *say* which
-     * group you mean — the label comes back in every node report ({@link
-     * Node.info}, `Server.queryTree`) and names one segment of the group's
+     * group you mean — the label comes back in every node report
+     * ({@link Node.info}, `Server.queryTree`) and names one segment of the group's
      * path, which `Server.groupAt` resolves. That is what makes a mixer's
      * channels, its busses and its master addressable by what they are instead
      * of by the ids they happened to get.
