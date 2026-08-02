@@ -23,8 +23,13 @@ The point of interest is the buffer-backed oscillators:
   distortion with an exact, band-limited recipe instead of a clipped edge.
 
 The morph plays first (two bars), the waveshaped note answers (one bar).
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
+Offline does not mean run-once: change the def in one cell and re-render in the
+next.
 """
 
+# %%
 import sys
 
 from clausters import Session
@@ -49,6 +54,10 @@ SR = 48000.0
 WT = 7
 
 
+# %% [markdown]
+# ## Morphing between tables
+
+# %%
 def morph(name: str = "wt_morph") -> SynthDef:
     """`vosc` between adjacent tables; ``pos`` glides thanks to its lag."""
     pos = control("pos", 0.0, lag=2.0)               # the morph itself
@@ -61,6 +70,10 @@ def morph(name: str = "wt_morph") -> SynthDef:
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
+# %% [markdown]
+# ## Waveshaping through a table
+
+# %%
 def shaped(name: str = "wt_shaped") -> SynthDef:
     """A pure sine pushed through the cheby transfer table; ``drive`` (also
     lagged) is how far into the curve the input reaches."""
@@ -74,50 +87,57 @@ def shaped(name: str = "wt_shaped") -> SynthDef:
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
-def main():
-    out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "wavetables.wav")
+# %% [markdown]
+# ## The score
 
-    session = Session.nrt(tempo=2.0)
-    server = session.server
+# %%
+session = Session.nrt(tempo=2.0)
+server = session.server
 
-    # Three buffers, scored at time 0. 2048 frames hold a 1024-point table.
-    # vosc reads pos and pos+1, so the two wavetables must be adjacent and
-    # equally sized; the allocator hands out 0, 1, 2 in order.
-    sine_buf = Buffer.alloc(2048, 1, server=server)
-    sine_buf.gen("sine1", WT, 1.0)
-    saw_buf = Buffer.alloc(2048, 1, server=server)
-    saw_buf.gen("sine1", WT, *(1.0 / k for k in range(1, 9)))
-    cheby_buf = Buffer.alloc(2048, 1, server=server)
-    cheby_buf.gen("cheby", WT, 1.0, 0.0, 0.6, 0.0, 0.3)
+# Three buffers, scored at time 0. 2048 frames hold a 1024-point table.
+# vosc reads pos and pos+1, so the two wavetables must be adjacent and
+# equally sized; the allocator hands out 0, 1, 2 in order.
+sine_buf = Buffer.alloc(2048, 1, server=server)
+sine_buf.gen("sine1", WT, 1.0)
+saw_buf = Buffer.alloc(2048, 1, server=server)
+saw_buf.gen("sine1", WT, *(1.0 / k for k in range(1, 9)))
+cheby_buf = Buffer.alloc(2048, 1, server=server)
+cheby_buf.gen("cheby", WT, 1.0, 0.0, 0.6, 0.0, 0.3)
 
-    morph().send(server)
-    shaped().send(server)
+morph().send(server)
+shaped().send(server)
 
-    def sequence():
-        # Timetagged bundles, as in every NRT routine: the beat stamps them.
-        voice = Synth("wt_morph", {"freq": 110.0, "pos": 0.0}, server=server)
-        yield 1.0
-        server.send_bundle(("/node_set", voice.id, "pos", 1.0))  # glide to saw
-        yield 3.0
-        server.send_bundle(("/node_set", voice.id, "gate", 0.0))
-        yield 0.5
-        answer = Synth("wt_shaped", {"freq": 165.0, "drive": 0.1}, server=server)
-        server.send_bundle(("/node_set", answer.id, "drive", 0.9))  # harmonics in
-        yield 2.0
-        server.send_bundle(("/node_set", answer.id, "gate", 0.0))
-        yield 0.5
 
-    Routine(sequence).play(session.clock)
-    stats = session.render(sample_rate=SR, channels=2, path=out_path)
+def sequence():
+    # Timetagged bundles, as in every NRT routine: the beat stamps them.
+    voice = Synth("wt_morph", {"freq": 110.0, "pos": 0.0}, server=server)
+    yield 1.0
+    server.send_bundle(("/node_set", voice.id, "pos", 1.0))  # glide to saw
+    yield 3.0
+    server.send_bundle(("/node_set", voice.id, "gate", 0.0))
+    yield 0.5
+    answer = Synth("wt_shaped", {"freq": 165.0, "drive": 0.1}, server=server)
+    server.send_bundle(("/node_set", answer.id, "drive", 0.9))  # harmonics in
+    yield 2.0
+    server.send_bundle(("/node_set", answer.id, "gate", 0.0))
+    yield 0.5
+
+Routine(sequence).play(session.clock)
+
+
+# %%
+def run(path: str = "wavetables.wav"):
+    """Render the score to ``path``."""
+    stats = session.render(sample_rate=SR, channels=2, path=path)
 
     peak = max(stats.peak, default=0.0)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
 
-    print(f"wrote {out_path} - listen with: pw-play {out_path}")
+    print(f"wrote {path} - listen with: pw-play {path}")
 
 
-if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, RuntimeError) as e:
-        sys.exit(str(e))
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    run(next((a for a in sys.argv[1:] if not a.startswith("-")), "wavetables.wav"))
+else:
+    print("score ready - run('out.wav') to render it")

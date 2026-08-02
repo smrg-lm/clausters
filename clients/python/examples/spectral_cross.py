@@ -25,8 +25,13 @@ combines them — the two-chain PV family:
 Left channel: the dry modulator (quiet, for reference). Right channel: the
 cross-synthesized noise. The combined chain is one def — no buffers, no buses
 between the stages; the spectral frames are synth-private scratch.
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
+Offline does not mean run-once: change the def in one cell and re-render in the
+next.
 """
 
+# %%
 import sys
 
 from clausters import Session
@@ -47,6 +52,11 @@ from clausters.defs import (
 SR = 48000.0
 
 
+# %% [markdown]
+# ## The def
+# Two FFT chains crossed: one signal's magnitudes on the other's phases.
+
+# %%
 def cross(name: str = "cross") -> SynthDef:
     """White noise wearing the spectral envelope of a harmonic stack."""
     freq = control("freq", 220.0)
@@ -68,35 +78,42 @@ def cross(name: str = "cross") -> SynthDef:
     return SynthDef(name, out(0.0, mod * 0.05), out(1.0, sig * 0.01))
 
 
-def main():
-    out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "spectral_cross.wav")
+# %% [markdown]
+# ## The score
 
-    session = Session.nrt(tempo=2.0)
-    cross().send(session.server)
+# %%
+session = Session.nrt(tempo=2.0)
+cross().send(session.server)
 
-    def sequence():
-        voice = Synth("cross", server=session.server)
-        # A little melody in the modulator: the noise follows it.
-        for midi, dur in [(57, 2.0), (60, 2.0), (64, 2.0), (62, 2.0)]:
-            freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
-            session.server.send_bundle(("/node_set", voice.id, "freq", freq))
-            yield dur
-        # Freeze the last envelope: the melody stops, the texture holds.
-        session.server.send_bundle(("/node_set", voice.id, "freeze", 1.0))
-        yield 4.0
-        session.server.send_bundle(("/node_free", voice.id))
 
-    Routine(sequence).play(session.clock)
-    stats = session.render(sample_rate=SR, channels=2, path=out_path)
+def sequence():
+    voice = Synth("cross", server=session.server)
+    # A little melody in the modulator: the noise follows it.
+    for midi, dur in [(57, 2.0), (60, 2.0), (64, 2.0), (62, 2.0)]:
+        freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
+        session.server.send_bundle(("/node_set", voice.id, "freq", freq))
+        yield dur
+    # Freeze the last envelope: the melody stops, the texture holds.
+    session.server.send_bundle(("/node_set", voice.id, "freeze", 1.0))
+    yield 4.0
+    session.server.send_bundle(("/node_free", voice.id))
+
+Routine(sequence).play(session.clock)
+
+
+# %%
+def run(path: str = "spectral_cross.wav"):
+    """Render the score to ``path``."""
+    stats = session.render(sample_rate=SR, channels=2, path=path)
 
     peak = max(stats.peak, default=0.0)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
 
-    print(f"wrote {out_path} - listen with: pw-play {out_path}")
+    print(f"wrote {path} - listen with: pw-play {path}")
 
 
-if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, RuntimeError) as e:
-        sys.exit(str(e))
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    run(next((a for a in sys.argv[1:] if not a.startswith("-")), "spectral_cross.wav"))
+else:
+    print("score ready - run('out.wav') to render it")

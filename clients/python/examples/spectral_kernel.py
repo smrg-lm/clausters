@@ -27,8 +27,13 @@ What an expression can NOT do — state across frames (freeze), moving energy
 between bins (shift), reading another chain (combiners) — stays with the
 dedicated ``pv_*`` filters; see the composition docs ("Writing your own
 spectral operation").
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
+Offline does not mean run-once: change the def in one cell and re-render in the
+next.
 """
 
+# %%
 import sys
 
 from clausters import Session
@@ -40,11 +45,22 @@ from clausters.defs import Synth
 SR = 48000.0
 
 
+# %% [markdown]
+# ## The source
+# Unprocessed noise, for the ear to compare against.
+
+# %%
 def raw(name: str = "raw") -> SynthDef:
     """The unprocessed reference: plain noise on the left channel."""
     return SynthDef(name, out(0.0, white_noise() * 0.25))
 
 
+# %% [markdown]
+# ## The kernel
+# A per-bin program: one `PV_Kernel` interpreting a postfix expression
+# over every bin, authored client-side with the operator algebra.
+
+# %%
 def tilted_gate(name: str = "tiltgate") -> SynthDef:
     """Noise -> FFT -> a user-written tilted gate -> IFFT, on the right.
 
@@ -72,33 +88,39 @@ def tilted_gate(name: str = "tiltgate") -> SynthDef:
     return SynthDef(name, out(1.0, ifft(chain)))
 
 
-def main():
-    out_path = next((a for a in sys.argv[1:] if not a.startswith("-")),
-                    "spectral_kernel.wav")
+# %% [markdown]
+# ## The score
 
-    session = Session.nrt(tempo=1.0)
-    raw().send(session.server)
-    tilted_gate().send(session.server)
+# %%
+session = Session.nrt(tempo=1.0)
+raw().send(session.server)
+tilted_gate().send(session.server)
 
-    reference = Synth("raw", server=session.server)
-    gated = Synth("tiltgate", server=session.server)
+reference = Synth("raw", server=session.server)
+gated = Synth("tiltgate", server=session.server)
 
-    def stop():
-        yield 2.0
-        session.server.send_bundle(("/node_free", reference.id))
-        session.server.send_bundle(("/node_free", gated.id))
 
-    Routine(stop).play(session.clock)
-    stats = session.render(sample_rate=SR, channels=2, path=out_path)
+def stop():
+    yield 2.0
+    session.server.send_bundle(("/node_free", reference.id))
+    session.server.send_bundle(("/node_free", gated.id))
+
+Routine(stop).play(session.clock)
+
+
+# %%
+def run(path: str = "spectral_kernel.wav"):
+    """Render the score to ``path``."""
+    stats = session.render(sample_rate=SR, channels=2, path=path)
     peak = max(stats.peak, default=0.0)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
 
-    print(f"wrote {out_path} - left = raw noise, right = tilted spectral gate")
-    print(f"listen with: pw-play {out_path}")
+    print(f"wrote {path} - left = raw noise, right = tilted spectral gate")
+    print(f"listen with: pw-play {path}")
 
 
-if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, RuntimeError) as e:
-        sys.exit(str(e))
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    run(next((a for a in sys.argv[1:] if not a.startswith("-")), "spectral_kernel.wav"))
+else:
+    print("score ready - run('out.wav') to render it")
