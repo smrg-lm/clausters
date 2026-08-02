@@ -85,7 +85,7 @@ struct Header {
     ring_capacity: u32,
     control_buses: u32,
     /// Audio-tap count and per-tap ring capacity in samples (ABI v3); the tap
-    /// region trails the control buses (see [`Segment::tap_region_offset`]).
+    /// region trails the control buses (see `Segment::tap_region_offset`).
     taps: u32,
     tap_frames: u32,
     /// Audio-bus count (ABI v4): the length of the per-bus directory and level

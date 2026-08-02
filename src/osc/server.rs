@@ -1295,7 +1295,7 @@ impl OscServer {
     /// server's OSC/NTP time captured with the counter (timetag `t`). The
     /// `(osc_time, sample)` pair is the master-clock **anchor**: a client maps
     /// its logical OSC time `T` to this server's sample axis with
-    /// `S0 + (T − T0)·rate` and schedules with [`/sched_at`] (`Self::handle_sched_at`)
+    /// `S0 + (T − T0)·rate` and schedules with `/sched_at` ([`Self::handle_sched_at`])
     /// directly in samples — see `docs/sample-clock.md`. Clients that only want
     /// the older two-field form ignore the trailing timetag. The counter counts
     /// *processed* samples: it runs a device buffer ahead of the speakers and
@@ -3014,7 +3014,7 @@ const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
 
 /// The current wall-clock instant as an OSC/NTP timetag (seconds since 1900 in
 /// a 32-bit count, plus a 32-bit binary fraction) — the inverse of the NTP→Unix
-/// math in [`timetag_delta_secs`]. Published alongside the sample counter in
+/// math in `timetag_delta_secs`. Published alongside the sample counter in
 /// `/clock_query.reply` so a client gets the anchor `(osc_time, sample)` it needs to
 /// place its logical OSC time on this server's sample axis.
 fn unix_to_ntp(unix: f64) -> OscTime {
