@@ -50,12 +50,12 @@
         const raw = await engine({ channels: 2 });
         await raw.resume();
 
-        // A raw window onto every /bus_set the engine emits, whoever asked for
-        // it: which bus indices arrive is the whole question.
+        // A raw window onto every /bus_stream.reply the engine emits, whoever
+        // subscribed: which bus indices arrive is the whole question.
         const seen = new Map();
         raw.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
-            if (addr !== "/bus_set") continue;
+            if (addr !== "/bus_stream.reply") continue;
             for (let i = 0; i + 1 < args.length; i += 2) {
               const bus = Number(args[i]);
               seen.set(bus, (seen.get(bus) ?? 0) + 1);

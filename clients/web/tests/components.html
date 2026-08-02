@@ -158,7 +158,7 @@
         engine.addReply((bytes) => {
             for (const { addr, args } of decodePacket(bytes)) {
                 if (addr === "/fail") failed = JSON.stringify(args);
-                if (addr !== "/bus_set") continue;
+                if (addr !== "/bus_stream.reply") continue;
                 for (let i = 0; i + 1 < args.length; i += 2) {
                     seen.get(args[i])?.add(args[i + 1]);
                 }
