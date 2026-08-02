@@ -80,7 +80,11 @@ The wires and where their ends live:
   leave `clients/web/PLAN.md` naming the shape the port must follow, so the two
   do not re-derive it differently.
 - A **shared-core function** (`clausters-core`) — every client binds the same
-  one; new numeric or timing logic belongs there rather than in a client.
+  one; new numeric or timing logic belongs there rather than in a client. Its
+  bindings are declared in `docs/bindings.md` and enforced by
+  `tests/bindings.rs` (C ABI ↔ wasm) and
+  `clients/python/tests/test_native_parity.py` (C ABI ↔ ctypes): a new symbol
+  that reaches only one of them fails a test until the table says why.
 
 **What is actually checked, and what is not.** The compiled Rust is safe:
 cargo refuses to build a caller of a signature that moved. Everything else is

@@ -3998,3 +3998,42 @@ The price is one command with two intensities — with no group bound
 that has to be said plainly in the reference rather than left to be discovered.
 It is a smaller cost than two parallel families that clients can put into
 disagreement with each other.
+
+## The wasm binding is not held to the C ABI's shape, only to a written decision
+
+`clausters-core` reaches the world through three bindings, and cargo checks only
+that each agrees with *core* — never that they agree with each other. The C ABI
+is compiler-checked; `clausters/_native.py` restates it by hand in ctypes; the
+wasm surface is a third statement. So a function could be added to one and never
+reach the others with every build green, which is how a "shared" core stops
+being shared.
+
+The two legs are held to different standards, on purpose.
+
+**Python owes the C ABI total coverage**, so its check is a comparison and needs
+no list to maintain: `ctypes` caches each symbol on the `CDLL` instance as it is
+reached, so after `_configure` runs the instance dictionary *is* the record of
+what the binding declared, and the crate's own source is the other side.
+
+**The wasm surface is legitimately partial**, and the first attempt to test it
+as "the same set" was the wrong instrument. A browser already has WebSocket;
+libverovio is not built for wasm; JavaScript has no `u64`; wasm frees by `Drop`
+where C needs an explicit `_free`; the C peak cache is a byte blob its consumer
+parses while the wasm one is a live object. Measured, the two surfaces differ in
+*both* directions and most differences are correct. A test asserting equality
+would have needed some sixty exemptions — and those exemptions are the only
+interesting content, which is the signal that the exemption list *was* the
+artifact.
+
+So `docs/bindings.md` is a manifest of the shared surface: one row per symbol on
+either side, with a verdict when a cell is empty — `idiom` (same capability,
+different shape), `n/a` (deliberately absent, with the reason), or `gap`
+(missing, nobody has decided). `tests/bindings.rs` fails when a symbol appears
+in neither column, and when the manifest names one that no longer exists.
+
+The point is what it does *not* enforce. Divergence stays allowed, because
+forbidding it would only teach people to lie to the table; what becomes
+impossible is divergence nobody wrote down. `gap` is a first-class verdict for
+exactly that reason: the honest answer is often "I have not thought about the
+other side", and a manifest that had no way to say so would be filled with
+invented rationales instead.
