@@ -94,9 +94,41 @@ from .handle import WidgetHandle, WindowHandle
 from .host import DEFAULT_PORT, GuiHost
 from .transport import Transport
 
+#: The host registered by `set_ambient_host`, if any.
+_ambient = None
+
+
+def set_ambient_host(host):
+    """Register the host the ambient visual verbs open their windows on, and
+    return the one previously registered (``None`` if there was none).
+
+    `clausters.plot` and `clausters.scope` resolve a host without being told
+    one: the current session's, else a ``clausters-gui`` process they boot and
+    own. That fallback assumes the host is a local process, which is the one
+    assumption an out-of-process front cannot meet — a host living somewhere
+    this module knows nothing about (a browser canvas reached over a notebook
+    kernel's comm, a test double collecting packets) has no process to boot.
+    Registering one here puts it ahead of the fallback, so the verbs keep
+    working unchanged and neither they nor `GuiHost` learn where it runs.
+
+    Pass ``None`` to unregister and restore the ordinary resolution. The
+    registered host is *not* owned here: whoever registered it stops it.
+    """
+    global _ambient
+    previous, _ambient = _ambient, host
+    return previous
+
+
+def ambient_host():
+    """The host registered by `set_ambient_host`, or ``None``."""
+    return _ambient
+
+
 __all__ = [
     "GuiHost",
     "DEFAULT_PORT",
+    "set_ambient_host",
+    "ambient_host",
     "Editor",
     "Transport",
     "WidgetHandle",

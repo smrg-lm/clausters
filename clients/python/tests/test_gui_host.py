@@ -29,6 +29,22 @@ def test_unknown_transport_is_refused():
         GuiHost(transport="ws")
 
 
+def test_a_supplied_interface_is_used_as_is():
+    """The seam a carrier this module does not know about comes in through —
+    the same one `clausters.defs.Server` already has."""
+    iface = _Recorder()
+    host = GuiHost(interface=iface)
+    assert host._osc is iface
+
+
+def test_a_supplied_interface_wins_over_transport():
+    """`transport` is not consulted at all, so an unknown one cannot raise:
+    the carrier is the object, not the name."""
+    iface = _Recorder()
+    host = GuiHost(transport="ws", interface=iface)
+    assert host._osc is iface
+
+
 class _Recorder:
     """A stub OSC interface capturing what GuiHost would send."""
 

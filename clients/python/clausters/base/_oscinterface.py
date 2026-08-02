@@ -133,6 +133,15 @@ class OscReceiver:
 class OscInterface:
     time_mode = "unix"
 
+    #: Whether a packet on this carrier is free of the datagram ceiling. A
+    #: stream (TCP, WebSocket, a kernel comm) frames its own packets, so a
+    #: bulk round trip can use the server's whole frame ceiling; a datagram
+    #: carrier must stay under `_UDP_MAX` and keeps the classic chunk. Read by
+    #: `clausters.defs.Server._bulk_chunk`, which is why it is a capability
+    #: here rather than a list of types there — a carrier this module never
+    #: heard of answers the question for itself.
+    stream = False
+
     def send_msg(self, target, addr, *args):
         raise NotImplementedError(f"{type(self).__name__}.send_msg")
 
@@ -219,6 +228,7 @@ class OscTcpInterface(OscInterface):
     port as UDP (``--no-tcp`` disables it)."""
 
     time_mode = "unix"
+    stream = True
 
     def __init__(self, host: str = "127.0.0.1", port: int = 57110):
         self.host = host
@@ -303,6 +313,7 @@ class OscWsInterface(OscInterface):
     (`examples/ws_ping.html`), not this class. ``wss://`` (TLS) is out of scope."""
 
     time_mode = "unix"
+    stream = True
 
     def __init__(self, host: str = "127.0.0.1", port: int = 57120, path: str = "/"):
         self.host = host

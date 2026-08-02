@@ -416,7 +416,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         transports keep the classic 1024; a stream transport uses the frame
         ceiling from ``/server_query`` (queried once and cached), minus headroom
         for the reply's OSC envelope."""
-        if not isinstance(self.interface, (OscTcpInterface, OscWsInterface)):
+        if not getattr(self.interface, "stream", False):
             return 1024
         if self._max_frame is None:
             try:

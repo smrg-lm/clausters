@@ -240,3 +240,35 @@ def test_plot_renders_a_graphdef_offline():
     assert widget["label"] == "plot_chain"
     frames = os.path.getsize(widget["path"]) // 4
     assert abs(frames - 0.1 * SR) <= 128, f"~0.1 s rendered, got {frames}"
+
+
+def test_a_registered_ambient_host_wins_over_booting_one():
+    """The seam an out-of-process front (a notebook cell, a test double) comes
+    in through: `plot` with no `host=` resolves the registered one instead of
+    booting a `clausters-gui` process, and the verb itself is unchanged."""
+    from clausters.gui import ambient_host, set_ambient_host
+    from clausters.plot import _ambient_host
+
+    host = FakeHost()
+    previous = set_ambient_host(host)
+    try:
+        assert ambient_host() is host
+        assert _ambient_host() is host
+        # A server argument does not send it looking elsewhere: a registered
+        # host's client leg is its registrar's business, not plot's.
+        assert _ambient_host(server=object()) is host
+        plot([0.0, 1.0, 0.5], sample_rate=SR)
+        assert len(host.opened) == 1
+    finally:
+        set_ambient_host(previous)
+    assert ambient_host() is None
+
+
+def test_unregistering_restores_the_ordinary_resolution():
+    from clausters.gui import ambient_host, set_ambient_host
+
+    first, second = FakeHost(), FakeHost()
+    assert set_ambient_host(first) is None
+    assert set_ambient_host(second) is first
+    assert set_ambient_host(None) is second
+    assert ambient_host() is None

@@ -375,9 +375,14 @@ def _is_sequence(x) -> bool:
 # ---- the ambient GUI host ----
 
 def _ambient_host(server=None):
-    """The GUI host the ambient visual verbs open windows on: the current
+    """The GUI host the ambient visual verbs open windows on: one registered
+    through `clausters.gui.set_ambient_host` if there is one, else the current
     (else default) session's `gui` host when one is already up, else a
     standalone host booted once and owned by this module.
+
+    A registered host wins outright, ``server`` included: it is a front this
+    module cannot boot, reconnect or point elsewhere (that is the whole reason
+    it was registered), so its client leg is whoever registered it's business.
 
     ``server`` is the audio server the caller needs the host to be a client
     of — `clausters.scope` passes the resolved live server so the owned host
@@ -388,7 +393,11 @@ def _ambient_host(server=None):
     `Session.gui` wires the leg from the start)."""
     global _own_host, _own_host_server
     from .base.main import main, default_session
+    from .gui import ambient_host
 
+    registered = ambient_host()
+    if registered is not None:
+        return registered
     for session in (main.current_session, default_session):
         gui = getattr(session, "_gui", None)
         if gui is not None:

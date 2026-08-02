@@ -56,3 +56,26 @@ def test_bulk_chunk_sizes_from_the_advertised_ceiling():
     udp = Server(transport="udp")
     assert udp._bulk_chunk(timeout=0.0) == 1024  # datagram-bounded
     udp.close()
+
+
+def test_bulk_chunk_reads_the_carrier_capability_not_its_type():
+    """A carrier the server module never heard of answers the
+    datagram-or-stream question itself, through `OscInterface.stream`."""
+    from clausters.base import OscInterface
+
+    class Carrier(OscInterface):
+        stream = True
+
+        def send_msg(self, target, addr, *args):
+            pass
+
+    server = Server(interface=Carrier())
+    server._max_frame = 1024 * 1024
+    assert server._bulk_chunk(timeout=0.0) == (1024 * 1024 - 256) // 4
+
+    class Datagram(Carrier):
+        stream = False
+
+    bounded = Server(interface=Datagram())
+    bounded._max_frame = 1024 * 1024
+    assert bounded._bulk_chunk(timeout=0.0) == 1024

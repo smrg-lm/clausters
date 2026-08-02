@@ -39,12 +39,22 @@ class GuiHost:
     ``/gui_def`` tree with its blobs can be as large as the host's frame
     ceiling) or ``"udp"`` (each message must fit a datagram; for constrained
     setups or a host started with ``--no-tcp``).
+
+    ``interface`` supplies an already-built `clausters.base.OscInterface`
+    instead, and then ``transport`` is not consulted — the same seam
+    `clausters.defs.Server` has, for a carrier this module does not know
+    about (a host reached over a notebook's kernel comm, a test double). The
+    interface only has to speak the `clausters.base.OscInterface` protocol;
+    ``host``/``port`` are still recorded as `target` for the sake of anything
+    that reports where this client points.
     """
 
     def __init__(self, host: str = "127.0.0.1", port: int = DEFAULT_PORT,
-                 transport: str = "tcp"):
+                 transport: str = "tcp", interface=None):
         self.target = (host, port)
-        if transport == "tcp":
+        if interface is not None:
+            self._osc = interface
+        elif transport == "tcp":
             self._osc = OscTcpInterface(host, port)
         elif transport == "udp":
             self._osc = OscUdpInterface()
