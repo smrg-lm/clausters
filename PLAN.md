@@ -979,11 +979,47 @@ near.
   wiring it into a workflow introduces a `--fix` pass — clearing a warning is
   deliberate, by hand, on one configuration at a time.
 
-  **Acceptance: prove it blocks.** Tag a commit with a known-bad tree (a
-  warning that only appears under one def family is the honest test, since that
-  is the class CI cannot see) on a throwaway tag, and show the release stopping
-  before any publish step. A gate that has only ever been observed passing is
-  indistinguishable from no gate.
+  **Both halves shipped** (2026-08-02): the `verify` job runs `check.sh` in
+  full and the two `cargo test` runs, `build` and `publish-npm` each `needs:`
+  it, and `CLAUSTERS_FAUST_TARGET` is set on that job alone so the published
+  artifacts stay host-tuned. Wiring it turned up the two reds it exists to
+  catch, both already on `main` and both fixed alongside: a headless test still
+  filtering for a reply address the wire rename had moved, and two TypeDoc
+  warnings failing the mdBooks job.
+
+  **⚠ The one thing left, and the only reason this is not ✅: nobody has
+  watched the gate stop anything.** Everything about it is verified except the
+  behaviour that is its whole purpose. What *is* verified: the `needs:` graph
+  (nothing reaches a publish step without `verify`), and the job's contents,
+  run by hand on this tree — the fourteen matrix configurations clean and the
+  four test configurations green. What is **not**: that a failing `verify`
+  actually stops the run.
+
+  This is unproven rather than untried, because the obvious test is unsafe.
+  The workflow's only trigger is a `v*` tag, so testing it means starting a
+  real release; and if `verify` passed when it should not have — precisely the
+  misconfiguration under test — the run would continue into `publish-npm` and
+  `publish-pypi`, which cannot be taken back. **The test's failure mode is the
+  disaster it is testing for**, so it does not get run casually, and it did not
+  get run to close this milestone.
+
+  How to close it safely, when it is worth the time:
+
+  - **On a fork or a scratch repository.** The `npm` and `pypi` environments,
+    the `NPM_TOKEN` secret and PyPI's trusted-publisher binding (which names
+    this repository *and* this workflow) exist only here, so on a fork a
+    publish leg cannot succeed even if it is reached. Push a `v*` tag there on
+    a deliberately broken tree — a warning under one def family alone is the
+    honest break, since that is the class CI cannot see — and watch `verify`
+    go red with everything downstream skipped.
+  - **Worth having regardless of the test:** GitHub environment protection
+    rules on `pypi` and `npm`. A required reviewer turns any run that reaches a
+    publish step into a pause instead of a publication — a second, independent
+    stop that does not depend on this workflow being correct.
+  - **What does not count as proof:** watching a real release pass through a
+    green `verify`. That shows the job runs, not that its failure stops
+    anything, and those are different claims. A gate only ever observed passing
+    is indistinguishable from no gate.
 
 **Not in this track (it is new work, not restructuring).** The review also found
 a real parity gap: `defs/ugens.py` exposes 151 builders against
