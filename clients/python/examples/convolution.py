@@ -24,8 +24,13 @@ The convolver has an intrinsic latency of ``fft_size / 2`` samples (the
 partition length) — at 1024 that is ~10.7 ms, inaudible as the reverb's
 predelay here. Left channel: the dry pluck. Right channel: the convolved
 tail (100% wet, so the reverb is obvious).
+
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
+Offline does not mean run-once: change the def in one cell and re-render in the
+next.
 """
 
+# %%
 import math
 import random
 import struct
@@ -55,6 +60,11 @@ FFT_SIZE = 1024
 IR_SECONDS = 0.7
 
 
+# %% [markdown]
+# ## An impulse response to convolve with
+# Synthesised here so the example needs no asset: a short noisy decay.
+
+# %%
 def write_ir(path: str) -> int:
     """A synthetic reverb impulse response: exponentially decaying noise,
     seeded for reproducibility. Returns its frame count."""
@@ -72,6 +82,11 @@ def write_ir(path: str) -> int:
     return frames
 
 
+# %% [markdown]
+# ## The def
+# A pluck run through partitioned convolution with that IR.
+
+# %%
 def pluck(kernel_bufnum: int, partitions: int, name: str = "pluck") -> SynthDef:
     """A plucked tone, dry on bus 0 and fully wet (convolved) on bus 1."""
     freq = control("freq", 440.0)
@@ -85,42 +100,49 @@ def pluck(kernel_bufnum: int, partitions: int, name: str = "pluck") -> SynthDef:
     return SynthDef(name, out(0.0, sig * 0.6), out(1.0, wet * 0.04))
 
 
-def main():
-    out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "convolution.wav")
+# %% [markdown]
+# ## The score
 
-    ir_path = str(Path(tempfile.gettempdir()) / "clausters_ir.wav")
-    ir_frames = write_ir(ir_path)
+# %%
+ir_path = str(Path(tempfile.gettempdir()) / "clausters_ir.wav")
+ir_frames = write_ir(ir_path)
 
-    session = Session.nrt(tempo=2.0)
-    server = session.server
+session = Session.nrt(tempo=2.0)
+server = session.server
 
-    # 1. The raw IR, 2. the prepared kernel (spectra, computed off-RT).
-    ir = Buffer.read(ir_path, server=server)
-    partitions = -(-ir_frames // (FFT_SIZE // 2))
-    kernel = Buffer.alloc(partconv_frames(ir_frames, FFT_SIZE), server=server)
-    kernel.gen("prepare_partconv", FFT_SIZE, ir.bufnum)
+# 1. The raw IR, 2. the prepared kernel (spectra, computed off-RT).
+ir = Buffer.read(ir_path, server=server)
+partitions = -(-ir_frames // (FFT_SIZE // 2))
+kernel = Buffer.alloc(partconv_frames(ir_frames, FFT_SIZE), server=server)
+kernel.gen("prepare_partconv", FFT_SIZE, ir.bufnum)
 
-    pluck(kernel.bufnum, partitions).send(server)
+pluck(kernel.bufnum, partitions).send(server)
 
-    def sequence():
-        for midi, dur in [(69, 1.5), (64, 1.5), (71, 1.5), (69, 3.0)]:
-            freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
-            voice = Synth("pluck", {"freq": freq}, server=server)
-            yield dur
-            server.send_bundle(("/node_free", voice.id))
 
-    Routine(sequence).play(session.clock)
-    stats = session.render(sample_rate=SR, channels=2, path=out_path)
+def sequence():
+    for midi, dur in [(69, 1.5), (64, 1.5), (71, 1.5), (69, 3.0)]:
+        freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
+        voice = Synth("pluck", {"freq": freq}, server=server)
+        yield dur
+        server.send_bundle(("/node_free", voice.id))
+
+Routine(sequence).play(session.clock)
+
+
+# %%
+def run(path: str = "convolution.wav"):
+    """Render the score to ``path``."""
+    stats = session.render(sample_rate=SR, channels=2, path=path)
 
     peak = max(stats.peak, default=0.0)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f} "
           f"| IR {IR_SECONDS:.1f} s = {partitions} partitions")
 
-    print(f"wrote {out_path} - listen with: pw-play {out_path}")
+    print(f"wrote {path} - listen with: pw-play {path}")
 
 
-if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, RuntimeError) as e:
-        sys.exit(str(e))
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    run(next((a for a in sys.argv[1:] if not a.startswith("-")), "convolution.wav"))
+else:
+    print("score ready - run('out.wav') to render it")
