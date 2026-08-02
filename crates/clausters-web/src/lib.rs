@@ -50,6 +50,9 @@ fn render_score(
         channels: channels as usize,
         workers: 0,
         seed,
+        // The wasm entry point exposes no capacity arguments, so a browser
+        // render takes the defaults.
+        ..RenderConfig::default()
     };
     render_to_vec(&score, &cfg).map(|(samples, stats)| (samples, stats.seed))
 }

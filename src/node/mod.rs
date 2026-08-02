@@ -160,10 +160,18 @@ pub struct Group {
 }
 
 impl Group {
-    /// A non-root group with the default child capacity, built on the network
-    /// thread. The live server uses [`Group::with_capacity`] with its
-    /// `--max-graph-children`.
-    pub fn new() -> Self {
+    /// A non-root group with the **default** child capacity
+    /// ([`MAX_GROUP_CHILDREN`]), for tests and for callers that genuinely want
+    /// the default rather than a configured one.
+    ///
+    /// Not public: every caller that has a [`crate::dsp::Limits`] must go
+    /// through [`Group::with_capacity`] with its `max_group_children`, and a
+    /// constructor that silently answers 512 makes forgetting that invisible —
+    /// the group simply rejects the 513th child, and only a client watching for
+    /// the rejection notices. The live server (`osc::translate`) and the
+    /// offline renderer both pass their configured limit.
+    #[cfg(test)]
+    pub(crate) fn new() -> Self {
         Self::with_capacity(MAX_GROUP_CHILDREN)
     }
 
@@ -174,12 +182,6 @@ impl Group {
             children: Vec::with_capacity(capacity.max(1)),
             parallel: false,
         }
-    }
-}
-
-impl Default for Group {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

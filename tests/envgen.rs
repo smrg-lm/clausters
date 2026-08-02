@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use clausters::clausters_core::rng::SEED_STRIDE;
-use clausters::node::{AddAction, Group, ROOT_NODE_ID, SynthNode};
+use clausters::node::{AddAction, Group, MAX_GROUP_CHILDREN, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{SynthDefSpec, compile};
@@ -364,7 +364,7 @@ fn done_action_free_group_frees_the_enclosing_group() {
             id: 1,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            group: Group::new(),
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
         })
         .ok()
         .unwrap();
@@ -500,7 +500,7 @@ fn n_run_pauses_and_resumes_a_whole_group() {
             id: 1,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            group: Group::new(),
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
         })
         .ok()
         .unwrap();

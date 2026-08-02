@@ -20,12 +20,13 @@ use std::sync::Arc;
 
 use rosc::{OscMessage, OscPacket, OscTime, OscType};
 
-use crate::dsp::NUM_AUDIO_BUSES;
+use crate::dsp::{Limits, NUM_AUDIO_BUSES};
 #[cfg(feature = "faust")]
 use crate::osc::translate::parse_def_send_faust;
 use crate::osc::translate::{CmdTranslator, parse_buffer_gen, parse_buffer_msg};
 use crate::server::engine::{
-    BLOCK_SIZE, Cmd, Engine, EngineHandle, Garbage, NodeEventKind, engine_pair_with_workers,
+    BLOCK_SIZE, Cmd, DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES, Engine, EngineHandle, Garbage,
+    NodeEventKind, engine_pair_full,
 };
 use crate::server::nrt::{NrtAction, run_job, wav_format};
 
@@ -155,6 +156,16 @@ pub struct RenderConfig {
     /// actually used comes back in [`RenderStats::seed`], so a take you liked
     /// is never lost.
     pub seed: Option<u64>,
+    /// Boot-time pool capacities, the offline half of the live server's
+    /// `--max-nodes` / `--max-graph-children` / `--max-buffers`.
+    ///
+    /// A render is meant to be sample-identical to a perfectly timed live take,
+    /// and that only holds if both sides are built the same way: a group whose
+    /// child capacity is 512 here and 4096 on the server truncates offline where
+    /// the live take does not, and the two diverge without either one failing.
+    /// So the limits travel with the render config rather than being defaulted
+    /// inside the renderer.
+    pub limits: Limits,
 }
 
 impl Default for RenderConfig {
@@ -164,6 +175,7 @@ impl Default for RenderConfig {
             channels: 2,
             workers: 0,
             seed: None,
+            limits: Limits::default(),
         }
     }
 }
@@ -232,12 +244,25 @@ pub fn render(
     let seed = cfg.seed.unwrap_or_else(clausters_core::rng::entropy_seed);
 
     crate::dsp::denormals::flush_to_zero();
-    let (engine, handle) = engine_pair_with_workers(sr as f32, cfg.channels, cfg.workers);
+    let (engine, handle) = engine_pair_full(
+        sr as f32,
+        cfg.channels,
+        cfg.workers,
+        None,
+        DEFAULT_AUDIO_BUSES,
+        DEFAULT_CONTROL_BUSES,
+        cfg.limits,
+    );
     let mut r = Renderer {
         engine,
         handle,
         translator: {
-            let mut t = CmdTranslator::new(sr as f32);
+            let mut t = CmdTranslator::with_limits(
+                sr as f32,
+                DEFAULT_AUDIO_BUSES,
+                DEFAULT_CONTROL_BUSES,
+                cfg.limits,
+            );
             t.set_seed(seed);
             t
         },

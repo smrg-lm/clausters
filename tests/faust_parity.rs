@@ -19,7 +19,7 @@ use std::time::Duration;
 use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
 use clausters::faust::synth::{FaustDef, FaustSynth};
-use clausters::node::{AddAction, Group, ROOT_NODE_ID, SynthNode};
+use clausters::node::{AddAction, Group, MAX_GROUP_CHILDREN, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, engine_pair};
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{SynthDefSpec, compile};
@@ -312,7 +312,7 @@ fn ugen_and_faust_synths_share_a_group() {
             id: 1,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            group: Group::new(),
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
         })
         .ok()
         .unwrap();

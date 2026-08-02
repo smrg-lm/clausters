@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use clausters::clausters_core::rng::SEED_STRIDE;
-use clausters::node::{AddAction, Group, Place, ROOT_NODE_ID, SynthNode};
+use clausters::node::{AddAction, Group, MAX_GROUP_CHILDREN, Place, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, engine_pair};
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{compile, default_spec};
@@ -30,7 +30,7 @@ fn audio_thread_does_not_allocate() {
             id: 1,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            group: Group::new(),
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
         })
         .ok()
         .unwrap();
@@ -933,7 +933,7 @@ fn relative_done_actions_and_n_run_do_not_allocate() {
             id: 1,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            group: Group::new(),
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
         })
         .ok()
         .unwrap();
@@ -985,7 +985,7 @@ fn parallel_dispatch_does_not_allocate() {
             id: 1,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            group: Group::new(),
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
         })
         .ok()
         .unwrap();
@@ -1052,7 +1052,7 @@ fn command_set_completion_does_not_allocate_on_the_audio_thread() {
             id: 1,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            group: Group::new(),
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
         })
         .ok()
         .unwrap();

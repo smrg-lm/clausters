@@ -10,7 +10,7 @@ mod signal;
 use std::sync::Arc;
 
 use clausters::clausters_core::rng::SEED_STRIDE;
-use clausters::node::{AddAction, Group, Place, ROOT_NODE_ID, SynthNode};
+use clausters::node::{AddAction, Group, MAX_GROUP_CHILDREN, Place, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{SynthDef, SynthDefSpec, compile, default_spec};
@@ -73,7 +73,7 @@ fn add_group(id: i32, target: i32, action: AddAction) -> Cmd {
         id,
         target,
         action,
-        group: Group::new(),
+        group: Group::with_capacity(MAX_GROUP_CHILDREN),
     }
 }
 

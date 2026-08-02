@@ -29,7 +29,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clausters::clausters_core::rng::SEED_STRIDE;
-use clausters::node::{AddAction, SynthNode};
+use clausters::node::{AddAction, Group, MAX_GROUP_CHILDREN, SynthNode};
 use clausters::server::engine::{
     BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair, engine_pair_with_workers,
 };
@@ -900,7 +900,6 @@ fn bench_chain(
 /// shines: every subgroup is an independent unit of one big stage.
 fn bench_parallel(workers: usize, chains: usize, voices: usize) -> f64 {
     use clausters::dsp::BusUsage;
-    use clausters::node::Group;
     use clausters::synthdef::SynthDefSpec;
 
     let (mut engine, mut handle) = engine_pair_with_workers(SAMPLE_RATE as f32, 2, workers);
@@ -911,7 +910,7 @@ fn bench_parallel(workers: usize, chains: usize, voices: usize) -> f64 {
             id: 1,
             target: 0,
             action: AddAction::Tail,
-            group: Group::new(),
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
         })
         .ok()
         .unwrap();
@@ -930,7 +929,7 @@ fn bench_parallel(workers: usize, chains: usize, voices: usize) -> f64 {
                 id: gid,
                 target: 1,
                 action: AddAction::Tail,
-                group: Group::new(),
+                group: Group::with_capacity(MAX_GROUP_CHILDREN),
             })
             .ok()
             .unwrap();

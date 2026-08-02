@@ -109,6 +109,10 @@ pub unsafe extern "C" fn clausters_render(
             channels: channels as usize,
             workers: workers as usize,
             seed,
+            // The embed ABI has no capacity arguments, so an embedded render
+            // takes the defaults. Raising them would mean widening the C ABI,
+            // which moves ABI_VERSION -- deferred until something needs it.
+            ..RenderConfig::default()
         };
         render_to_vec(&score, &cfg)
     });

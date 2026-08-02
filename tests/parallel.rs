@@ -319,9 +319,83 @@ fn nrt_render_with_workers_is_bit_identical() {
         // counts, and an unseeded render is a fresh take, so leaving it open
         // would make the comparison depend on the RNG it is not testing.
         seed: Some(1),
+        ..RenderConfig::default()
     };
     let (a, _) = render_to_vec(&score, &base).unwrap();
     let (b, _) = render_to_vec(&score, &RenderConfig { workers: 2, ..base }).unwrap();
     assert!(a.iter().any(|s| *s != 0.0));
     assert!(a == b, "offline parallel render must be bit-identical");
+}
+
+/// A render is meant to be sample-identical to a perfectly timed live take, and
+/// that only holds if both sides are built with the same capacities. Before
+/// `RenderConfig` carried `Limits`, the renderer defaulted them: a group whose
+/// child capacity a server had raised was still 512 offline, so the voices past
+/// the 512th were rejected in the render and present in the live take, and the
+/// two diverged with neither one failing.
+#[test]
+fn a_render_honours_the_configured_group_capacity() {
+    use clausters::dsp::Limits;
+    use clausters::server::render::{RenderConfig, Score, render_to_vec};
+
+    const CHILDREN: usize = 600; // more than the default 512
+
+    let mut voices = Vec::new();
+    for i in 0..CHILDREN {
+        voices.push(msg(
+            "/synth_new",
+            vec![
+                OscType::String("src16".into()),
+                OscType::Int(1000 + i as i32),
+                OscType::Int(1),
+                OscType::Int(100),
+            ],
+        ));
+    }
+    let score = Score::new(vec![
+        (
+            0.0,
+            vec![
+                src_def("src16", 0.0, 220.0),
+                msg(
+                    "/group_new",
+                    vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+                ),
+            ],
+        ),
+        (0.01, voices),
+        (0.2, vec![msg("/node_free", vec![OscType::Int(100)])]),
+    ])
+    .unwrap();
+
+    let cramped = RenderConfig {
+        sample_rate: SR as f64,
+        channels: 2,
+        workers: 0,
+        seed: Some(1),
+        ..RenderConfig::default()
+    };
+    let roomy = RenderConfig {
+        limits: Limits {
+            max_group_children: CHILDREN,
+            ..Limits::default()
+        },
+        ..cramped
+    };
+
+    let (tight, _) = render_to_vec(&score, &cramped).unwrap();
+    let (wide, _) = render_to_vec(&score, &roomy).unwrap();
+
+    // The default capacity drops the voices past 512, so the configured render
+    // carries more of them and is louder. Were `limits` ignored, the two would
+    // be identical -- which is exactly the silent divergence this pins.
+    let energy = |b: &[f32]| b.iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>();
+    assert!(energy(&tight) > 0.0, "the cramped render must still sound");
+    assert!(
+        energy(&wide) > energy(&tight) * 1.05,
+        "the configured capacity must actually reach the renderer \
+         (tight {:.6}, wide {:.6})",
+        energy(&tight),
+        energy(&wide)
+    );
 }
