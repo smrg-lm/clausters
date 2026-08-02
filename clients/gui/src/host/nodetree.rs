@@ -8,11 +8,13 @@
 //! flat-geometry painter ([`super::paint`]) plus bitmap text — the same cheap
 //! path the meters and scopes use, no dedicated pipeline.
 //!
-//! The reply is scsynth's depth-first encoding (mirrored by the server's
-//! `CmdTranslator::query_tree`): a **detail level**, the queried group id and
-//! its child count, then per node its id and child count (`-1` marks a synth),
-//! a synth's def name and — from detail 1 — its control count followed by
-//! `(name|index, value)` pairs, a group's children inline. Detail 2 appends
+//! The reply is the server's depth-first encoding (`CmdTranslator::query_tree`):
+//! a **detail level**, the queried group id, its child count and its name, then
+//! per node its id, its child count (`-1` marks a synth) and a name — a group's
+//! own (empty when it has none) or a synth's def name — and, for a synth from
+//! detail 1, its control count followed by `(name|index, value)` pairs; a
+//! group's children follow inline. Every node reads `id, count, name`, one
+//! shape for both kinds, which is what keeps the walk in step. Detail 2 appends
 //! what a full node info carries (maps, inferred bus lists), which this view
 //! does not draw and skips; the host asks for 1. Parsing tolerates a short or
 //! malformed reply by returning `None` rather than panicking.
@@ -34,10 +36,15 @@ pub struct NodeEntry {
     pub body: NodeBody,
 }
 
-/// A node's contents: a group holds its children, a synth its def and controls.
+/// A node's contents: a group holds its name and its children, a synth its def
+/// and controls. A group's name is empty when it has none, and the id stays its
+/// identity either way.
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeBody {
-    Group(Vec<NodeEntry>),
+    Group {
+        name: String,
+        children: Vec<NodeEntry>,
+    },
     Synth {
         def_name: String,
         controls: Vec<(String, f32)>,
@@ -49,6 +56,8 @@ pub enum NodeBody {
 pub struct NodeTree {
     /// The group this tree was queried for.
     pub group: i32,
+    /// That group's own name, empty when it has none.
+    pub name: String,
     /// The direct children of `group` (groups and synths), depth-first.
     pub root: Vec<NodeEntry>,
 }
@@ -68,8 +77,9 @@ impl NodeTree {
         let detail = next_int(&mut it)?;
         let group = next_int(&mut it)?;
         let count = next_int(&mut it)?.max(0) as usize;
+        let name = next_string(&mut it)?;
         let root = parse_children(&mut it, count, detail)?;
-        Some(NodeTree { group, root })
+        Some(NodeTree { group, name, root })
     }
 
     /// The flattened display lines (depth + text), header group first. When
@@ -77,7 +87,7 @@ impl NodeTree {
     pub fn lines(&self, controls: bool) -> Vec<Line> {
         let mut out = vec![Line {
             depth: 0,
-            text: format!("group {}", self.group),
+            text: group_text(self.group, &self.name),
         }];
         for entry in &self.root {
             push_lines(entry, 1, controls, &mut out);
@@ -95,9 +105,12 @@ fn parse_children<'a>(
     for _ in 0..count {
         let id = next_int(it)?;
         let child_count = next_int(it)?;
+        // Every node names itself here, group or synth; a group's name is empty
+        // when it has none. Reading it for both is what keeps the walk aligned.
+        let name = next_string(it)?;
         let body = if child_count < 0 {
-            // A synth: def name, then its controls from detail 1.
-            let def_name = next_string(it)?;
+            // A synth: the name was its def, then its controls from detail 1.
+            let def_name = name;
             let mut controls = Vec::new();
             if detail >= 1 {
                 let n = next_int(it)?.max(0) as usize;
@@ -119,19 +132,35 @@ fn parse_children<'a>(
             }
             NodeBody::Synth { def_name, controls }
         } else {
-            NodeBody::Group(parse_children(it, child_count as usize, detail)?)
+            NodeBody::Group {
+                name,
+                children: parse_children(it, child_count as usize, detail)?,
+            }
         };
         out.push(NodeEntry { id, body });
     }
     Some(out)
 }
 
+/// The header line for the queried group: its id, and its name when it has one.
+fn group_text(id: i32, name: &str) -> String {
+    if name.is_empty() {
+        format!("group {id}")
+    } else {
+        format!("group {id} {name}")
+    }
+}
+
 fn push_lines(entry: &NodeEntry, depth: usize, controls: bool, out: &mut Vec<Line>) {
     match &entry.body {
-        NodeBody::Group(children) => {
+        NodeBody::Group { name, children } => {
             out.push(Line {
                 depth,
-                text: format!("{} group", entry.id),
+                text: if name.is_empty() {
+                    format!("{} group", entry.id)
+                } else {
+                    format!("{} {name}", entry.id)
+                },
             });
             for child in children {
                 push_lines(child, depth + 1, controls, out);
@@ -265,16 +294,19 @@ fn fmt(v: f32) -> String {
 mod tests {
     use super::*;
 
-    /// A reply for: group 0 holding group 1, which holds synth 1000 "sine"
-    /// (controls freq=440, amp=0.2). Built the way the server encodes it.
+    /// A reply for: group 0 (unnamed) holding group 1 "mixer", which holds synth
+    /// 1000 "sine" (controls freq=440, amp=0.2). Built the way the server
+    /// encodes it — every node reads `id, count, name`, groups included.
     fn sample_reply() -> Vec<OscType> {
         vec![
-            OscType::Int(1), // flag: controls included
-            OscType::Int(0), // queried group
-            OscType::Int(1), // it has one child
-            // group 1, one child
+            OscType::Int(1),            // flag: controls included
+            OscType::Int(0),            // queried group
+            OscType::Int(1),            // it has one child
+            OscType::String("".into()), // and no name of its own
+            // group 1 "mixer", one child
             OscType::Int(1),
             OscType::Int(1),
+            OscType::String("mixer".into()),
             // synth 1000, -1 marks a synth, def "sine", 2 controls
             OscType::Int(1000),
             OscType::Int(-1),
@@ -292,10 +324,12 @@ mod tests {
         let tree = NodeTree::parse(&sample_reply()).expect("valid reply parses");
         assert_eq!(tree.group, 0);
         assert_eq!(tree.root.len(), 1);
-        let NodeBody::Group(children) = &tree.root[0].body else {
+        assert_eq!(tree.name, "");
+        let NodeBody::Group { name, children } = &tree.root[0].body else {
             panic!("expected a group at the root");
         };
         assert_eq!(tree.root[0].id, 1);
+        assert_eq!(name, "mixer");
         assert_eq!(children.len(), 1);
         match &children[0].body {
             NodeBody::Synth { def_name, controls } => {
@@ -316,6 +350,8 @@ mod tests {
         let depths: Vec<usize> = lines.iter().map(|l| l.depth).collect();
         assert_eq!(depths, vec![0, 1, 2, 3, 3]);
         assert_eq!(lines[0].text, "group 0");
+        // A named group reads like a synth does: the id, then what it is called.
+        assert_eq!(lines[1].text, "1 mixer");
         assert_eq!(lines[2].text, "1000 sine");
         assert_eq!(lines[3].text, "freq 440");
         // Without controls, the synth's parameter lines are dropped.
@@ -324,7 +360,12 @@ mod tests {
 
     #[test]
     fn an_empty_tree_is_just_the_header() {
-        let reply = vec![OscType::Int(0), OscType::Int(0), OscType::Int(0)];
+        let reply = vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::String("".into()),
+        ];
         let tree = NodeTree::parse(&reply).unwrap();
         assert!(tree.root.is_empty());
         assert_eq!(
@@ -337,12 +378,26 @@ mod tests {
     }
 
     #[test]
+    fn the_queried_group_shows_its_own_name() {
+        let reply = vec![
+            OscType::Int(0),
+            OscType::Int(1000),
+            OscType::Int(0),
+            OscType::String("console".into()),
+        ];
+        let tree = NodeTree::parse(&reply).unwrap();
+        assert_eq!(tree.name, "console");
+        assert_eq!(tree.lines(true)[0].text, "group 1000 console");
+    }
+
+    #[test]
     fn an_index_control_renders_with_a_hash() {
         // A control with no name comes back as an integer index.
         let reply = vec![
             OscType::Int(1),
             OscType::Int(0),
             OscType::Int(1),
+            OscType::String("".into()),
             OscType::Int(7),
             OscType::Int(-1),
             OscType::String("anon".into()),
@@ -358,7 +413,12 @@ mod tests {
     #[test]
     fn a_truncated_reply_returns_none_not_a_panic() {
         // Claims a child but ends early.
-        let reply = vec![OscType::Int(0), OscType::Int(0), OscType::Int(1)];
+        let reply = vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int(1),
+            OscType::String("".into()),
+        ];
         assert!(NodeTree::parse(&reply).is_none());
     }
 
