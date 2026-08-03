@@ -151,6 +151,27 @@ change.</div>
         await wait(PAUSE * 2);
         playhead.stop();
 
+        // An automation coupled to a sounding node: the curve is written to a
+        // control bus and /node_map-ed onto the control, so the node follows
+        // it and then keeps the last value. Outside a clock the curve's beats
+        // read as seconds. `prepare` is the half that waits — this verb is
+        // the one kind `play` refuses to start unprepared.
+        log("an Automation sweeping a node's freq, interrupted mid-sweep");
+        const swept = play(new SynthDef(
+          "verbs_swept",
+          out(0.0, sine(control("freq", 440.0)).mul(0.15)),
+          out(1.0, sine(control("freq", 440.0)).mul(0.15)),
+        ));
+        const sweep = new seq.Automation(
+          new Env([440.0, 1760.0, 440.0], [1.5, 1.5]), [swept, "freq"]);
+        await sweep.prepare();
+        play(sweep);
+        await wait(1500);
+        sweep.stop();          // interrupted at the top: the freq holds there
+        await wait(PAUSE);
+        sweep.free();
+        swept.free();
+
         // A buffer — sounded through the stock playbuf instrument the verb
         // provides. A buffer sounds *through* an instrument; here the verb
         // supplies the default one and frees it when the take ends.
@@ -171,7 +192,6 @@ change.</div>
 
         log("\nnot on this tour, each waiting on the milestone that opens it:");
         log("  a bare signal expression (needs the ephemeral-def wrapper)");
-        log("  an automation curve (needs the automation lane)");
         log("  render (needs an offline drive)");
         $("tour").disabled = false;
       }

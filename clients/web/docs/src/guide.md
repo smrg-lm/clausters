@@ -110,7 +110,7 @@ play(new seq.Pbind({ degree: new seq.Pseq([0, 2, 4]), dur: 0.5 }));
 new Synth("beep", { freq: 440 });           // and the bare constructor too
 ```
 
-`play` dispatches by kind — an `Event` or a plain object of event keys, an event pattern, a `Routine` or a bare generator, a def, a `Timeline`, a `Buffer` — and returns something that knows how to end what just started. `examples/verbs.html` visits every kind.
+`play` dispatches by kind — an `Event` or a plain object of event keys, an event pattern, a `Routine` or a bare generator, a def, a `Timeline`, a `Buffer`, an `Automation` — and returns something that knows how to end what just started. `examples/verbs.html` visits every kind.
 
 Resolution is one ladder, and it is worth knowing because it is what makes several sessions safe on one page:
 

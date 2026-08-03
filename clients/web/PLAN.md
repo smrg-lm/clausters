@@ -86,6 +86,29 @@ The repo-wide posture — minimal, user-space, reproducible — applied to the J
 
 Labels (`Wx`) live only here, never in published docs or docstrings - the same rule as the other plans.
 
+**`play` is a checklist every milestone has to tick.** The free verb
+(`src/play.ts`) enumerates the kinds it knows, so it is the one surface that
+goes stale *silently*: nothing fails to compile when a milestone lands a new
+playable and the verb has never heard of it, and a kind the verb refuses by
+name goes on refusing long after the milestone that would open it has shipped.
+A milestone that opens a playable closes by walking the whole enumeration, not
+just the dispatch:
+
+- `src/play.ts` — the `Playable` union, the dispatch chain, the header's list
+  of kinds, the `TypeError` that names what it expected, and the paragraph
+  naming what this client cannot play yet, which shrinks by exactly the kind
+  that just landed (with its own refusal, if it had one).
+- `docs/src/guide.md` — the one sentence in "Sessions and the ambient verbs"
+  that lists the kinds.
+- `examples/verbs.html` — the tour that visits every kind, and its closing list
+  of the ones it cannot visit yet.
+- `tests/session.html` — the sweep that asserts every kind `play` dispatches is
+  **audible**; its verdict names them, so a kind missing there is visible in
+  the test output rather than only in the source.
+
+W11 is what made this a written rule: the automation landed and four of those
+five still said the client had no lane.
+
 **What a milestone defers becomes a later milestone, which names the milestone
 it was deferred from.** So a "not in scope" line is always a forward reference
 to a numbered slot, never a loose note, and every slot past W5 carries its own

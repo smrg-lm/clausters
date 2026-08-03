@@ -157,6 +157,17 @@
           ]));
           return () => head.stop();
         });
+        await heard("Automation", async () => {
+          // A curve sweeping a drone's freq: prepared first (that half waits),
+          // then triggered — the one kind `play` refuses unprepared.
+          const sig = sine(control("freq", 200.0)).mul(0.2);
+          const node = play(new SynthDef("session_swept", out(0.0, sig), out(1.0, sig)));
+          const sweep = new seq.Automation(
+            new Env([200.0, 900.0], [1.0]), [node, "freq"]);
+          await sweep.prepare();
+          play(sweep);
+          return () => { sweep.stop(); sweep.free(); node.free(); };
+        });
         await heard("Buffer", async () => {
           const buf = await Buffer.alloc(24_000, 1);
           await buf.gen("sine1", [["i", 7], ["f", 1.0]]);
