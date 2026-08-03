@@ -61,3 +61,4 @@ export type { GraphDefSpec, MemberControlValue, MemberSpec } from "./graphdef.ts
 
 export * from "./ugens/index.ts";
 export * as signals from "./signals.ts";
+export * as pvExpr from "./pv_expr.ts";

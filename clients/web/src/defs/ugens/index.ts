@@ -32,15 +32,13 @@
 // **Where things live.** The callables are grouped by family, one module each
 // — the same split the Python package makes: `graph` (the node, control and
 // channel-list types, plus the fused arithmetic), `osc`, `filter` (filters,
-// delays, smoothers), `pan`, `io` (buses, replies, feedback), `buf`, `trig`,
-// `demand` and `env`. Every name is re-exported here, so importing from
-// `defs/ugens` — and the `defs` package's own re-export — is what it always
-// was: the split is navigational.
+// delays, smoothers), `pan`, `io` (buses, replies, disk, feedback), `buf`,
+// `spectral`, `trig`, `demand` and `env`. Every name is re-exported here, so
+// importing from `defs/ugens` — and the `defs` package's own re-export — is
+// what it always was: the split is navigational.
 //
-// The families the Python package has and this one does not yet — `spectral`
-// (`fft`/`ifft`/`pv_*`), and the rest of `demand`, `pan`, `filter` and `io` —
-// land with the full catalogue (`clients/web/PLAN.md`, W6), each in the module
-// its Python sibling already names.
+// The per-bin expressions `pvKernel` takes are a module of their own,
+// `defs/pv_expr`, exactly where the Python client keeps them.
 
 export {
     ChannelList,
@@ -108,6 +106,8 @@ export {
     resonz,
     rhpf,
     rlpf,
+    svf,
+    svfMorph,
     varLag,
 } from "./filter.ts";
 export type { Resonance } from "./filter.ts";
@@ -116,14 +116,20 @@ export {
     balance2,
     linPan2,
     linXfade2,
+    midSide,
     pan2,
+    panAz,
+    rotate2,
     select,
     selectX,
     splay,
+    stereoWidth,
     xfade2,
 } from "./pan.ts";
 
 export {
+    diskIn,
+    diskOut,
     inCtl,
     in_,
     localIn,
@@ -171,7 +177,47 @@ export {
     trig1,
 } from "./trig.ts";
 
-export { demand, drand, dseq } from "./demand.ts";
+export {
+    dbrown,
+    dbufrd,
+    demand,
+    dgeom,
+    dibrown,
+    diwhite,
+    drand,
+    dseq,
+    dseries,
+    dshuf,
+    dstutter,
+    dswitch1,
+    duty,
+    dwhite,
+    dxrand,
+    tduty,
+} from "./demand.ts";
+
+export {
+    conv,
+    fft,
+    ifft,
+    partconvFrames,
+    pvAdd,
+    pvBinShift,
+    pvBrickWall,
+    pvCopyPhase,
+    pvKernel,
+    pvMagAbove,
+    pvMagBelow,
+    pvMagClip,
+    pvMagFreeze,
+    pvMagMul,
+    pvMagShift,
+    pvMagSmear,
+    pvMax,
+    pvMin,
+    pvMul,
+} from "./spectral.ts";
+export type { ConvOptions, FftOptions, PvKernelOptions } from "./spectral.ts";
 
 export {
     DoneAction,

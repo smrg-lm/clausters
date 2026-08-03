@@ -449,7 +449,7 @@ a Read the Docs project — (**W17**), and the `Session` facade this layout
 sketched into this slot (**W18**), which is an API layer rather than a
 packaging one and leans on verbs the client does not have yet.
 
-### W6 - The full UGen catalogue
+### ✅ W6 - The full UGen catalogue *(done 2026-08-03)*
 
 *Deferred out of W1.* W1 shipped the def model with representatives of each
 family; this fills out the UGen-graph one, so a graph written against the
@@ -497,6 +497,56 @@ missing builder. Both directions also carry helpers with no counterpart
 are the operator methods the composition rule calls for); neither is a gap.
 
 **Acceptance:** every UGen builder the Python client exposes has a TS counterpart emitting the same spec JSON, checked by extending the frozen vectors (`tests/gen-def-vectors.py`); a graph transcribed from a Python example plays over either carrier.
+
+**What shipped.** The forty builders, in the five modules the gap named, plus
+the module the gap did not: `defs/pv_expr.ts`, the per-bin expression language
+`pvKernel` takes, which is a *surface* rather than a list of entries. The
+catalogues now match name for name — a sweep of both trees reports nothing
+missing in either direction beyond the differences this plan already records
+(the free `add`/`sub`/`mul`/`div` and `resolveCurve` here, `ugen_input_names`
+there). Three things are worth carrying forward:
+
+- **`dr` was already in the def model; `fr` never needed to be.** The gap read
+  the two rates as the family's real cost, and only half of that was true. The
+  demand rate was there since W1 (`dseq` set it), so the thirteen new sources
+  are ordinary builders. The spectral chain sets **no** rate at all: `fft` and
+  the `pv*` filters carry the frame at control rate and `ifft` produces audio,
+  which the server's own registry decides — so `fr` has no client presence in
+  *either* client, and the plan's symmetry between the two rates was wrong.
+- **The expression language reuses the graph's math surface** instead of
+  copying it. `SynthExpr` gained an operand type parameter, so `PvExpr` extends
+  the same class and inherits the whole vocabulary — seventy-odd methods
+  carrying the wire's own operator names — while composing its own tree. That
+  is what keeps a per-bin `mag.ge(param(0))` and a graph's `sig.ge(x)` the same
+  operator by construction, and it is the first step of the `base/absobject.ts`
+  the parity section has wanted since W21.
+- **A demand stream cannot be shared, and that is a fact about the model, not
+  a client rule.** A stream is *pulled*, so two drivers reading one `dseq` node
+  take alternate items from it and each hears half the pattern. The builders
+  cannot prevent it (the node is a perfectly good input twice over), so it is
+  written where it is met: the book's def chapter, and `examples/demand.html`,
+  whose duration stream is a factory for exactly this reason.
+
+`conv` and `partconvFrames` land in `spectral.ts` beside the chain, where the
+Python client keeps them, and `partconvFrames` — the one plain-number helper in
+the catalogue — is frozen as **values** in the vectors rather than as a spec.
+`diskIn`/`diskOut` ported with the warning the gap asked for written next to
+them: they stream the *server's* filesystem, so they only mean something
+against a native server, never against the in-page engine.
+
+**Verified:** `./build.sh && ./test.sh` — 232 `node --test` cases (10 new
+SynthDef-parity vectors covering every new family, and the scalar one) and
+sixteen headless-Chrome acceptances, the new one being `tests/catalogue.html`:
+what a spec vector cannot show, which is that the graph it describes does what
+its family says. The brick wall cuts 30 dB above 8 kHz while the passband
+survives, a `duty` pulling two `dseq`s visits both its pitches with nothing
+sent after the synth starts, the `midSide` round trip returns each tone to its
+own channel while `stereoWidth(…, 0)` folds both onto both, and `svfMorph`
+sweeps the response from lowpass to highpass on one control. Examples:
+`examples/spectral.html`, the port of `spectral.py` with the wipe live under
+the hand instead of rendered offline, and `examples/demand.html`, the
+sequence that lives in the def. Book: the def chapter now names the three
+families that are not read like the rest.
 
 ### W7 - The Faust surfaces: the box algebra, then the signal API
 
@@ -1236,12 +1286,12 @@ tree finds the other.
   the `Server`'s connection. The model is untouched — the anchor is still the
   midpoint of a measured round trip.
 
-The two families the split leaves empty are the ones no milestone has opened
-yet, and each now has the module its Python sibling names waiting for it:
-`ugens/spectral.ts` is **W6**'s; `server/transport.ts` was **W22**'s and is written. The
+The two families the split left empty are both written now: `ugens/spectral.ts`
+was **W6**'s and `server/transport.ts` **W22**'s. The
 Python modules with no counterpart at all are unported *features*, not
-misplaced code, and each is already owned: `defs/boxes.py` and `defs/pv_expr.py`
-(**W7**), the MIDI half of `responders.py` (**W9** — its OSC half is ported),
+misplaced code, and each is already owned: `defs/boxes.py` (**W7**;
+`defs/pv_expr.py` came with **W6**, which is what `pvKernel` takes),
+the MIDI half of `responders.py` (**W9** — its OSC half is ported),
 `session.py`/`play.py`/`base/main.py`/`base/environment.py`/`defs/_wire.py`
 (**W18**), `render.py`/`defs/asdef.py` (**W13**), `form/` and `gui/editor.py`/
 `gui/transport.py`/`gui/notation.py` (**W16**'s named track), `defs/patch.py`
@@ -1263,7 +1313,10 @@ is a decision rather than an oversight:
   familiar name somewhere meaning something else, which is worse than the
   honest difference. It becomes real work when the abstract-object base is
   ported — and that is also what would let the value and graph sides share one
-  written expression, as they do there.
+  written expression, as they do there. **W6 took the first step** rather than
+  the whole one: `SynthExpr` gained an operand type parameter, so `PvExpr`
+  composes the same vocabulary over its own operands without a second copy of
+  it, and the class it hangs off is still the graph's.
 - **Two modules keep a different name for the same role**, both declared in
   this plan's architecture sketch since W0: `base/osc.ts` is `base/_osclib.py`
   (the byte layer) and `base/connection.ts` is `base/_oscinterface.py` (the

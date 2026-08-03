@@ -6,7 +6,7 @@
 // interpolation), and the one-pole smoothers that make a control move instead
 // of jump.
 
-import { Ugen } from "./graph.ts";
+import { Ugen, channelBinop, channelUnop } from "./graph.ts";
 import type { Channel } from "./graph.ts";
 
 /** Resolves the mutually exclusive `rq`/`q` pair into a wire `rq`. */
@@ -70,6 +70,59 @@ export const resonz = (
     freq: Channel = 440.0,
     res: Resonance = {},
 ): Ugen => new Ugen("Resonz", [signal, freq, resonance(res.rq, res.q)]);
+
+/**
+ * The state-variable filter with its three tap gains as **signal inputs**, so
+ * the response itself can be modulated.
+ *
+ * Every classic response is a mix of the three taps, and each of these is a
+ * valid argument triple:
+ *
+ * | response | `low` | `band` | `high` |
+ * |---|---|---|---|
+ * | lowpass | 1 | 0 | 0 |
+ * | bandpass (peak gain Q) | 0 | 1 | 0 |
+ * | bandpass (unity peak) | 0 | `rq` | 0 |
+ * | highpass | 0 | 0 | 1 |
+ * | notch | 1 | 0 | 1 |
+ * | peak | -1 | 0 | 1 |
+ * | allpass | 1 | `-rq` | 1 |
+ *
+ * Sweeping between them costs the mix and nothing else: the three taps come
+ * out of the same pair of integrator updates. See `svfMorph` for the one-knob
+ * version.
+ */
+export const svf = (
+    signal: Channel,
+    freq: Channel = 440.0,
+    res: Resonance = {},
+    low: Channel = 1.0,
+    band: Channel = 0.0,
+    high: Channel = 0.0,
+): Ugen =>
+    new Ugen("Svf", [signal, freq, resonance(res.rq, res.q), low, band, high]);
+
+/**
+ * The `(low, band, high)` gains for a continuous lowpass → bandpass →
+ * highpass sweep, to spread into `svf`: `svf(sig, freq, res, ...svfMorph(p))`.
+ *
+ * `pos` runs 0 → 1 → 2 and may be a signal, so the response becomes an
+ * automation lane like any other. The ordering lives here rather than on the
+ * wire, where committing to one arbitrary sequence of responses would exclude
+ * every other (notch, peak, allpass are all reachable through `svf` itself).
+ */
+export function svfMorph(pos: Channel): [Channel, Channel, Channel] {
+    const clamp01 = (x: Channel): Channel =>
+        channelBinop(channelBinop(x, "max", 0.0), "min", 1.0);
+
+    const low = clamp01(channelBinop(1.0, "sub", pos));
+    const high = clamp01(channelBinop(pos, "sub", 1.0));
+    // A triangle peaking at pos == 1: 1 - |pos - 1|.
+    const band = clamp01(
+        channelBinop(1.0, "sub", channelUnop(channelBinop(pos, "sub", 1.0), "abs")),
+    );
+    return [low, band, high];
+}
 
 /** One-pole filter: `coef` positive lowpasses, negative highpasses. */
 export const onePole = (signal: Channel, coef: Channel = 0.5): Ugen =>

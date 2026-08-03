@@ -166,6 +166,7 @@ run_page hosts.html    # two host instances in one page, sharing only the event 
 run_page session.html  # two sessions on two engines: the ambient verbs resolve right
 run_page plot.html     # the plot verb: its six kinds, each in its own window
 run_page responders.html # OscFunc over the engine's own notifications
+run_page catalogue.html # the filled-out UGen families, measured on the output
 run_page notebook.html # the notebook cell's front end: audio through the boot, teardown
 
 # The components and lifecycle acceptances mount the example bundles, which are build

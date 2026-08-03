@@ -73,7 +73,15 @@ const def = new SynthDef("voice", out(0.0, rlpf(saw(freq), cutoff).mul(amp)));
 const fdef = FaustDef.fromSignals("blown", signals.hslider("freq", 440, 50, 2000, 1).sin());
 ```
 
-`SynthDef` takes a UGen graph built from the lowercase callables (`sine`, `saw`, `rlpf`, `envGen`, `playBuf`, `out`, …); a `FaustDef` is built from a signal expression (`fromSignals`), a box tree or Faust source (`fromSource`) — the last only against a native server, the in-page engine having no Faust compiler in it. `GraphDef` wires several of either into one named, instantiable configuration with a port surface.
+`SynthDef` takes a UGen graph built from the lowercase callables (`sine`, `saw`, `rlpf`, `envGen`, `playBuf`, `out`, …) — the whole catalogue the server has, family for family with the Python client's, so a graph written against one transcribes into the other. Three of its families are worth naming because they are not read like the rest:
+
+- **The frequency-domain chain** — `fft` opens a spectral *frame*, each `pv*` transforms it in place and `ifft` closes it back to samples. The frame is synth-private scratch, so nothing is allocated and only `fft` names a size; the server propagates it down the chain. `pvKernel` is the general case: a per-bin program written with the terms in `defs/pv_expr` (`mag`, `phase`, `binIndex`, `nbins`, `binfreq`, `param(i)`), which the server validates when the def is sent.
+- **The demand streams** — `dseq`, `dxrand`, `dbrown` and the rest have no samples, only a next value, and they yield one each time a driver (`demand`, `duty`, `tduty`) asks. A stream's items may be streams themselves, which is what makes a sequence of phrases expressible; `repeats` of `0` means endlessly. Because a stream is *pulled*, it cannot be shared: two drivers reading one `dseq` take alternate items from it, so give each its own.
+- **The stereo field** — `pan2`, `panAz`, `rotate2`, `midSide` and `stereoWidth` produce several channels, and a UGen has one output, so each returns a `ChannelList` the same way `dup` does.
+
+`diskIn`/`diskOut` are the one pair that only means something against a **native** server: they stream the server's own filesystem, which a tab does not have.
+
+A `FaustDef` is built from a signal expression (`fromSignals`), a box tree or Faust source (`fromSource`) — the last only against a native server, the in-page engine having no Faust compiler in it. `GraphDef` wires several of either into one named, instantiable configuration with a port surface.
 
 A def is a plain value until it is sent, and the definitions themselves mean exactly what the [server book](https://clausters.readthedocs.io/) says they mean: this client only builds the JSON.
 

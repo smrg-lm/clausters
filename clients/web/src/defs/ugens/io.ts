@@ -3,8 +3,8 @@
 //
 // The bus pair (`in_`/`out`, with their control-rate and replacing forms), the
 // side-effect UGens that emit an OSC reply or a console post instead of audio
-// (a def may hold only these and no `out` at all), and the `localIn`/
-// `localOut` feedback pair. Streaming disk I/O has no builder here yet.
+// (a def may hold only these and no `out` at all), the streaming disk pair,
+// and the `localIn`/`localOut` feedback pair.
 
 import { ChannelList, Ugen, isList } from "./graph.ts";
 import type { Channel } from "./graph.ts";
@@ -122,7 +122,40 @@ export const poll = (
     trigId: Channel = -1,
 ): Ugen => new Ugen("Poll", [trig, signal, trigId], { label });
 
-// --- synth-private feedback ---
+// --- streaming disk I/O ---
+//
+// These two read and write the **server's** filesystem, so they only mean
+// something against a native server: the in-page engine runs in a tab, which
+// has no path to stream from or to. Over the page carrier the def is rejected
+// on the server side rather than silently doing nothing — the builders are
+// here for parity with the reference client, and for the socket carrier.
+
+/**
+ * Streams a file from disk, one file frame per server sample (no resampling —
+ * pitch follows the sample-rate ratio). Mono per UGen: `chan` picks the
+ * channel, a stereo file is two `diskIn`s. `loop` restarts at the end of the
+ * stream. For a handful of streams, not per-voice (each spawns its own I/O
+ * thread).
+ */
+export const diskIn = (path: string, chan: Channel = 0.0, loop = false): Ugen =>
+    new Ugen("DiskIn", [chan], { static: { path: String(path), loop: Boolean(loop) } });
+
+/**
+ * Streams `signal` to a mono WAV at `path` (`format` is `"int16"`, `"int24"`
+ * or `"float"`) and passes `signal` through as its output. Record stereo with
+ * two `diskOut`s.
+ *
+ * It delivers audio out of the graph, so it is a valid def root on its own:
+ * `play(diskOut(path, sig))` records **without sounding**. To record and hear
+ * the same take, route it yourself — `out(0, diskOut(path, sig))`, which is
+ * what the pass-through output is for.
+ */
+export const diskOut = (
+    path: string,
+    signal: Channel,
+    format: "int16" | "int24" | "float" = "int16",
+): Ugen =>
+    new Ugen("DiskOut", [signal], { static: { path: String(path), format: String(format) } });
 
 // --- synth-private feedback ---
 

@@ -23,19 +23,72 @@ import {
     Env,
     chans,
     control,
+    conv,
+    dbrown,
+    dbufrd,
+    demand,
+    dgeom,
+    dibrown,
+    diskIn,
+    diskOut,
+    diwhite,
+    drand,
+    dseq,
+    dseries,
+    dshuf,
+    dstutter,
+    dswitch1,
     dup,
+    duty,
+    dwhite,
+    dxrand,
     envGen,
+    fft,
+    ifft,
+    impulse,
     lpf,
     madd,
+    midSide,
     mix,
     out,
     pan2,
+    panAz,
+    partconvFrames,
+    pvAdd,
+    pvBinShift,
+    pvBrickWall,
+    pvCopyPhase,
+    pvKernel,
+    pvMagAbove,
+    pvMagBelow,
+    pvMagClip,
+    pvMagFreeze,
+    pvMagMul,
+    pvMagShift,
+    pvMagSmear,
+    pvMax,
+    pvMin,
+    pvMul,
+    rotate2,
     saw,
     sendTrig,
     sine,
+    stereoWidth,
+    svf,
+    svfMorph,
+    tduty,
     whiteNoise,
 } from "../src/defs/ugens/index.ts";
 import type { Channel } from "../src/defs/ugens/index.ts";
+import {
+    binIndex,
+    binfreq,
+    mag,
+    nbins,
+    param,
+    phase,
+    pvOp,
+} from "../src/defs/pv_expr.ts";
 
 const here = new URL(".", import.meta.url);
 
@@ -47,6 +100,7 @@ interface Vectors {
     synthdefs: { name: string; spec: unknown }[];
     faustdefs: { name: string; payload: unknown }[];
     graphdefs: { name: string; spec: unknown }[];
+    scalars: { name: string; args: number[]; value: number }[];
 }
 
 const vectors: Vectors = JSON.parse(
@@ -112,6 +166,139 @@ const synthdefs: Record<string, () => SynthDef> = {
             "rates",
             out(0.0, chans(sine(5.0).atRate("kr"), sine(7.0).atRate("kr"))),
         ),
+
+    // ---- the full catalogue: one case per family the port filled out ----
+
+    // Every demand *source*, nested the way the family is meant to be: a
+    // sequence whose items are themselves streams. The `dr` rate rides along.
+    demand_sources: () => {
+        const steps = dseq([
+            dseries(3, 60.0, 2.0),
+            dgeom(2, 220.0, 1.5),
+            dwhite(1, 100.0, 200.0),
+            diwhite(1, 48.0, 72.0),
+            dbrown(1, 0.0, 1.0, 0.1),
+            dibrown(1, 0, 12, 1),
+        ], 2.0);
+        return new SynthDef(
+            "sources",
+            out(0.0, sine(demand(impulse(8.0), 0.0, steps))),
+        );
+    },
+
+    // The pickers, the stutter, the buffer read and both drivers.
+    demand_drivers: () => {
+        const picked = dswitch1(
+            dxrand([0.0, 1.0, 2.0], 0.0),
+            dshuf([110.0, 220.0, 330.0], 1.0),
+            dstutter(2.0, drand([440.0, 550.0])),
+            dbufrd(control("buf", 0.0, { rate: "ir" }), dseries(0, 0.0, 1.0)),
+        );
+        return new SynthDef(
+            "drivers",
+            out(
+                0.0,
+                sine(duty(dseq([0.25, 0.5], 0.0), 0.0, picked, DoneAction.NONE))
+                    .mul(tduty(0.5, 0.0, 0.2, DoneAction.NONE, 1.0)),
+            ),
+        );
+    },
+
+    // The frequency-domain chain: `fft` carries the static fields, every
+    // `pv*` transforms in place, `ifft` closes it. Two chains, so the
+    // combiners have a B side.
+    spectral_chain: () => {
+        const opts = { fftSize: 512, hop: 0.25, wintype: 1 };
+        let a = fft(whiteNoise(), 1.0, opts);
+        let b = fft(saw(110.0), 1.0, opts);
+        a = pvMagAbove(a, 3.0);
+        a = pvMagBelow(a, 200.0);
+        a = pvMagClip(a, 50.0);
+        a = pvBrickWall(a, 0.4);
+        a = pvMagSmear(a, 2.0);
+        a = pvMagFreeze(a, control("freeze", 0.0));
+        a = pvBinShift(a, 1.5, 2.0);
+        a = pvMagShift(a, 0.5, -1.0);
+        b = pvMul(b, pvAdd(pvMin(a, b), pvMax(a, b)));
+        b = pvCopyPhase(pvMagMul(a, b), b);
+        return new SynthDef("spectral", out(0.0, ifft(b)));
+    },
+
+    // A per-bin program: every term the expression language has, a unary, a
+    // comparison and both expressions, so the token lists are compared whole.
+    pv_kernel_expr: () => {
+        const tilt = param(0).mul(
+            pvOp("add", 1.0, pvOp("mul", 4.0, binIndex).div(nbins)),
+        );
+        return new SynthDef(
+            "kernel",
+            out(0.0, ifft(pvKernel(fft(whiteNoise()), {
+                mag: mag.mul(mag.ge(tilt)).mul(binfreq.div(1000.0).sqrt()),
+                phase: phase.add(param(1)),
+                params: [control("thresh", 2.0), control("spin", 0.0)],
+            }))),
+        );
+    },
+
+    // Partitioned convolution, whose two static fields size the instance.
+    convolution: () =>
+        new SynthDef(
+            "conv",
+            out(0.0, conv(saw(110.0), control("kernel", 0.0, { rate: "ir" }), {
+                fftSize: 512,
+                partitions: 8,
+            })),
+        ),
+
+    // The stereo field: the three matrices, each building one UGen per
+    // channel with the index as its last input.
+    stereo_field: () => {
+        const ms = midSide(sine(220.0), saw(110.0));
+        const turned = rotate2(ms.at(0), ms.at(1), 0.25);
+        return new SynthDef(
+            "field",
+            out(0.0, stereoWidth(turned.at(0), turned.at(1), 1.5)),
+        );
+    },
+
+    ring_pan: () =>
+        new SynthDef(
+            "ring",
+            out(0.0, panAz(4, whiteNoise(), 0.3, 0.5, 3.0, 0.0)),
+        ),
+
+    // The state-variable filter, once with the tap gains given directly and
+    // once swept by `svfMorph` — with a signal position, whose clamps are
+    // graph nodes, and with a constant one, whose clamps fold to numbers.
+    svf_taps: () =>
+        new SynthDef(
+            "taps",
+            out(0.0, svf(saw(110.0), 800.0, { rq: 0.3 }, 1.0, -0.5, 1.0)),
+        ),
+
+    svf_sweep: () => {
+        const pos = control("morph", 0.0);
+        return new SynthDef(
+            "sweep",
+            out(
+                0.0,
+                svf(saw(110.0), 800.0, { rq: 0.3 }, ...svfMorph(pos))
+                    .add(svf(saw(55.0), 400.0, { rq: 0.3 }, ...svfMorph(0.5))),
+            ),
+        );
+    },
+
+    // Streaming disk I/O: two static fields each, and a def whose root is the
+    // recorder's pass-through.
+    disk_io: () =>
+        new SynthDef(
+            "disk",
+            out(0.0, diskOut(
+                "/tmp/take.wav",
+                diskIn("/tmp/loop.wav", 0.0, true).mul(0.5),
+                "float",
+            )),
+        ),
 };
 
 for (const [name, build] of Object.entries(synthdefs)) {
@@ -157,6 +344,16 @@ test("GraphDef parity: a wired chain with a scaled port", () => {
     g.add("gvoice", { out: bus }, { voice: true });
     g.port("gain", [src.control("level").scaled(2.0, 0.1)], 0.5);
     assert.deepEqual(g.spec(), expected);
+});
+
+// The catalogue's one plain-number helper: it sizes a buffer rather than
+// building a graph, so it is frozen as values.
+test("scalar parity: partconvFrames", () => {
+    for (const row of vectors.scalars.filter((r) => r.name === "partconv_frames")) {
+        const [irFrames, fftSize] = row.args as [number, number];
+        assert.equal(partconvFrames(irFrames, fftSize), row.value,
+            `partconvFrames(${String(irFrames)}, ${String(fftSize)})`);
+    }
 });
 
 // ---- the rules the spec walk enforces, which no vector can show ----

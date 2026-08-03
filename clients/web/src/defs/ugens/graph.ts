@@ -28,14 +28,20 @@ const BINOP_UGEN: Record<string, string> = {
 // `op` is the operator **name** — the same name the server's builtins table
 // resolves, so a graph op and an off-RT value agree. The selector *is* the
 // wire name (no numeric index crosses the wire).
-const BINOP_OPS = new Set([
+/**
+ * @internal — the operator names a `BinaryOpUGen` may carry. Exported for
+ * `defs/pv_expr`, which validates the same vocabulary per bin, as the Python
+ * package keeps `_BINOP_OPS` importable for the same reason.
+ */
+export const BINOP_OPS = new Set([
     "mod", "pow", "min", "max", "atan2", "gt", "lt", "ge", "le", "eq", "ne",
     "bitand", "bitor", "bitxor", "lshift", "rshift", "hypot", "ring1", "ring2",
     "ring3", "ring4", "sumsqr", "difsqr", "sqrsum", "sqrdif", "absdif",
     "thresh", "clip2", "excess", "round", "trunc", "fold2", "wrap2", "gcd",
     "lcm", "hypot_apx",
 ]);
-const UNOP_OPS = new Set([
+/** @internal — the operator names a `UnaryOpUGen` may carry; see `BINOP_OPS`. */
+export const UNOP_OPS = new Set([
     "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log",
     "log10", "log2", "sqrt", "floor", "ceil", "rint", "as_int", "as_float",
     "squared", "cubed", "recip", "frac", "sign", "sinh", "cosh", "tanh",
@@ -80,56 +86,62 @@ export const isList = (x: unknown): x is ChannelList | readonly Channel[] =>
  * It also carries the shared math surface: `add`/`sub`/`mul`/`div` compose
  * the dedicated alias kinds, everything else a generic
  * `BinaryOpUGen`/`UnaryOpUGen` carrying the operator name.
+ *
+ * That surface is the one thing here that is not about UGens — it is the
+ * operator vocabulary of the shared builtins table — so `TOperand` opens it
+ * to a subclass whose operands are not channels: `defs/pv_expr`'s per-bin
+ * terms compose the same names into their own tree. (The Python client keeps
+ * the vocabulary in `base.absobject` for the same reason.)
  */
-export abstract class SynthExpr<TSelf> {
-    protected abstract binop<T extends OpOperand>(
+export abstract class SynthExpr<TSelf, TOperand = OpOperand> {
+    protected abstract binop<T extends TOperand>(
         selector: string,
         other: T,
     ): OpResult<TSelf, T>;
     protected abstract unop(selector: string): TSelf;
 
     // --- binary ---
-    add<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("add", x); }
-    sub<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("sub", x); }
-    mul<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("mul", x); }
-    div<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("div", x); }
-    mod<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("mod", x); }
-    pow<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("pow", x); }
-    min<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("min", x); }
-    max<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("max", x); }
-    atan2<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("atan2", x); }
-    gt<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("gt", x); }
-    lt<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("lt", x); }
-    ge<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("ge", x); }
-    le<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("le", x); }
-    eq<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("eq", x); }
-    ne<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("ne", x); }
-    bitand<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitand", x); }
-    bitor<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitor", x); }
-    bitxor<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitxor", x); }
-    lshift<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("lshift", x); }
-    rshift<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("rshift", x); }
-    hypot<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypot", x); }
+    add<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("add", x); }
+    sub<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("sub", x); }
+    mul<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("mul", x); }
+    div<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("div", x); }
+    mod<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("mod", x); }
+    pow<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("pow", x); }
+    min<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("min", x); }
+    max<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("max", x); }
+    atan2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("atan2", x); }
+    gt<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("gt", x); }
+    lt<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("lt", x); }
+    ge<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ge", x); }
+    le<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("le", x); }
+    eq<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("eq", x); }
+    ne<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ne", x); }
+    bitand<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitand", x); }
+    bitor<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitor", x); }
+    bitxor<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitxor", x); }
+    lshift<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("lshift", x); }
+    rshift<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("rshift", x); }
+    hypot<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypot", x); }
     /** The cheap hypotenuse approximation (`hypot_apx` on the wire). */
-    hypotApx<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypot_apx", x); }
-    ring1<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring1", x); }
-    ring2<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring2", x); }
-    ring3<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring3", x); }
-    ring4<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring4", x); }
-    sumsqr<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("sumsqr", x); }
-    difsqr<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("difsqr", x); }
-    sqrsum<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("sqrsum", x); }
-    sqrdif<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("sqrdif", x); }
-    absdif<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("absdif", x); }
-    thresh<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("thresh", x); }
-    clip2<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("clip2", x); }
-    excess<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("excess", x); }
-    round<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("round", x); }
-    trunc<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("trunc", x); }
-    fold2<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("fold2", x); }
-    wrap2<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("wrap2", x); }
-    gcd<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("gcd", x); }
-    lcm<T extends OpOperand>(x: T): OpResult<TSelf, T> { return this.binop("lcm", x); }
+    hypotApx<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypot_apx", x); }
+    ring1<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring1", x); }
+    ring2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring2", x); }
+    ring3<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring3", x); }
+    ring4<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring4", x); }
+    sumsqr<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("sumsqr", x); }
+    difsqr<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("difsqr", x); }
+    sqrsum<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("sqrsum", x); }
+    sqrdif<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("sqrdif", x); }
+    absdif<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("absdif", x); }
+    thresh<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("thresh", x); }
+    clip2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("clip2", x); }
+    excess<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("excess", x); }
+    round<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("round", x); }
+    trunc<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("trunc", x); }
+    fold2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("fold2", x); }
+    wrap2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("wrap2", x); }
+    gcd<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("gcd", x); }
+    lcm<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("lcm", x); }
 
     // --- unary ---
     neg(): TSelf { return this.unop("neg"); }
@@ -380,14 +392,26 @@ function checkChannel(m: unknown): Channel {
 // Any other selector between two constants would need the core's builtins
 // table, which the web client does not carry yet — refuse rather than
 // diverge numerically from the server.
+// `min`/`max` fold beside them for a different reason: they *select* an
+// operand rather than compute one, so there is no rounding to disagree about
+// and the precision question does not arise. (`abs`, in `channelUnop` below,
+// is the unary of the same kind — it only clears a sign bit.)
 const NUMERIC_FOLD: Record<string, (a: number, b: number) => number> = {
     add: (a, b) => a + b,
     sub: (a, b) => a - b,
     mul: (a, b) => a * b,
     div: (a, b) => a / b,
+    min: (a, b) => Math.min(a, b),
+    max: (a, b) => Math.max(a, b),
 };
 
-function channelBinop(a: Channel, selector: string, b: Channel): Channel {
+/**
+ * @internal — a binary op between two operands either of which may be a
+ * constant. Exported for the family modules that compose arithmetic of their
+ * own (`filter`'s `svfMorph`), the way the Python package shares its own
+ * underscored helper.
+ */
+export function channelBinop(a: Channel, selector: string, b: Channel): Channel {
     if (isLeaf(a)) return a.composeWith(selector, b);
     if (isLeaf(b)) return b.rcomposeWith(selector, a);
     const fold = NUMERIC_FOLD[selector];
@@ -401,9 +425,11 @@ function channelBinop(a: Channel, selector: string, b: Channel): Channel {
     return fold(a, b);
 }
 
-function channelUnop(m: Channel, selector: string): Channel {
+/** @internal — the unary counterpart of `channelBinop`. */
+export function channelUnop(m: Channel, selector: string): Channel {
     if (isLeaf(m)) return m.unopWith(selector);
     if (selector === "neg") return -m;
+    if (selector === "abs") return Math.abs(m);
     throw new TypeError(
         `'${selector}' on a constant needs the core's builtins, which this ` +
             "client does not carry yet: compute it in JS, or make it a node",

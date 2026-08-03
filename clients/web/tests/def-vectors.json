@@ -609,6 +609,1393 @@
           }
         ]
       }
+    },
+    {
+      "name": "demand_sources",
+      "spec": {
+        "name": "sources",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "Impulse",
+            "inputs": [
+              {
+                "const": 8.0
+              }
+            ]
+          },
+          {
+            "kind": "Dseries",
+            "inputs": [
+              {
+                "const": 3.0
+              },
+              {
+                "const": 60.0
+              },
+              {
+                "const": 2.0
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Dgeom",
+            "inputs": [
+              {
+                "const": 2.0
+              },
+              {
+                "const": 220.0
+              },
+              {
+                "const": 1.5
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Dwhite",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "const": 100.0
+              },
+              {
+                "const": 200.0
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Diwhite",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "const": 48.0
+              },
+              {
+                "const": 72.0
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Dbrown",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": 0.1
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Dibrown",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 12.0
+              },
+              {
+                "const": 1.0
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Dseq",
+            "inputs": [
+              {
+                "const": 2.0
+              },
+              {
+                "ugen": 1
+              },
+              {
+                "ugen": 2
+              },
+              {
+                "ugen": 3
+              },
+              {
+                "ugen": 4
+              },
+              {
+                "ugen": 5
+              },
+              {
+                "ugen": 6
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Demand",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 7
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "ugen": 8
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 9
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "demand_drivers",
+      "spec": {
+        "name": "drivers",
+        "controls": [
+          {
+            "name": "buf",
+            "default": 0.0,
+            "rate": "ir"
+          }
+        ],
+        "ugens": [
+          {
+            "kind": "Dseq",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "const": 0.25
+              },
+              {
+                "const": 0.5
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Dxrand",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": 2.0
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Dshuf",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "const": 110.0
+              },
+              {
+                "const": 220.0
+              },
+              {
+                "const": 330.0
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Drand",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "const": 440.0
+              },
+              {
+                "const": 550.0
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Dstutter",
+            "inputs": [
+              {
+                "const": 2.0
+              },
+              {
+                "ugen": 3
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Dseries",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 1.0
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Dbufrd",
+            "inputs": [
+              {
+                "control": 0
+              },
+              {
+                "ugen": 5
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": 0.0
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Dswitch1",
+            "inputs": [
+              {
+                "ugen": 1
+              },
+              {
+                "ugen": 2
+              },
+              {
+                "ugen": 4
+              },
+              {
+                "ugen": 6
+              }
+            ],
+            "rate": "dr"
+          },
+          {
+            "kind": "Duty",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 7
+              },
+              {
+                "const": 0.0
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "ugen": 8
+              }
+            ]
+          },
+          {
+            "kind": "TDuty",
+            "inputs": [
+              {
+                "const": 0.5
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 0.2
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 9
+              },
+              {
+                "ugen": 10
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 11
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "spectral_chain",
+      "spec": {
+        "name": "spectral",
+        "controls": [
+          {
+            "name": "freeze",
+            "default": 0.0
+          }
+        ],
+        "ugens": [
+          {
+            "kind": "WhiteNoise",
+            "inputs": []
+          },
+          {
+            "kind": "FFT",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 1.0
+              }
+            ],
+            "fft_size": 512,
+            "hop": 0.25,
+            "wintype": 1
+          },
+          {
+            "kind": "PV_MagAbove",
+            "inputs": [
+              {
+                "ugen": 1
+              },
+              {
+                "const": 3.0
+              }
+            ]
+          },
+          {
+            "kind": "PV_MagBelow",
+            "inputs": [
+              {
+                "ugen": 2
+              },
+              {
+                "const": 200.0
+              }
+            ]
+          },
+          {
+            "kind": "PV_MagClip",
+            "inputs": [
+              {
+                "ugen": 3
+              },
+              {
+                "const": 50.0
+              }
+            ]
+          },
+          {
+            "kind": "PV_BrickWall",
+            "inputs": [
+              {
+                "ugen": 4
+              },
+              {
+                "const": 0.4
+              }
+            ]
+          },
+          {
+            "kind": "PV_MagSmear",
+            "inputs": [
+              {
+                "ugen": 5
+              },
+              {
+                "const": 2.0
+              }
+            ]
+          },
+          {
+            "kind": "PV_MagFreeze",
+            "inputs": [
+              {
+                "ugen": 6
+              },
+              {
+                "control": 0
+              }
+            ]
+          },
+          {
+            "kind": "PV_BinShift",
+            "inputs": [
+              {
+                "ugen": 7
+              },
+              {
+                "const": 1.5
+              },
+              {
+                "const": 2.0
+              }
+            ]
+          },
+          {
+            "kind": "PV_MagShift",
+            "inputs": [
+              {
+                "ugen": 8
+              },
+              {
+                "const": 0.5
+              },
+              {
+                "const": -1.0
+              }
+            ]
+          },
+          {
+            "kind": "Saw",
+            "inputs": [
+              {
+                "const": 110.0
+              }
+            ]
+          },
+          {
+            "kind": "FFT",
+            "inputs": [
+              {
+                "ugen": 10
+              },
+              {
+                "const": 1.0
+              }
+            ],
+            "fft_size": 512,
+            "hop": 0.25,
+            "wintype": 1
+          },
+          {
+            "kind": "PV_Min",
+            "inputs": [
+              {
+                "ugen": 9
+              },
+              {
+                "ugen": 11
+              }
+            ]
+          },
+          {
+            "kind": "PV_Max",
+            "inputs": [
+              {
+                "ugen": 9
+              },
+              {
+                "ugen": 11
+              }
+            ]
+          },
+          {
+            "kind": "PV_Add",
+            "inputs": [
+              {
+                "ugen": 12
+              },
+              {
+                "ugen": 13
+              }
+            ]
+          },
+          {
+            "kind": "PV_Mul",
+            "inputs": [
+              {
+                "ugen": 11
+              },
+              {
+                "ugen": 14
+              }
+            ]
+          },
+          {
+            "kind": "PV_MagMul",
+            "inputs": [
+              {
+                "ugen": 9
+              },
+              {
+                "ugen": 15
+              }
+            ]
+          },
+          {
+            "kind": "PV_CopyPhase",
+            "inputs": [
+              {
+                "ugen": 16
+              },
+              {
+                "ugen": 15
+              }
+            ]
+          },
+          {
+            "kind": "IFFT",
+            "inputs": [
+              {
+                "ugen": 17
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 18
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "pv_kernel_expr",
+      "spec": {
+        "name": "kernel",
+        "controls": [
+          {
+            "name": "thresh",
+            "default": 2.0
+          },
+          {
+            "name": "spin",
+            "default": 0.0
+          }
+        ],
+        "ugens": [
+          {
+            "kind": "WhiteNoise",
+            "inputs": []
+          },
+          {
+            "kind": "FFT",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 1.0
+              }
+            ],
+            "fft_size": 1024,
+            "hop": 0.5,
+            "wintype": 0
+          },
+          {
+            "kind": "PV_Kernel",
+            "inputs": [
+              {
+                "ugen": 1
+              },
+              {
+                "control": 0
+              },
+              {
+                "control": 1
+              }
+            ],
+            "mag_expr": [
+              "mag",
+              "mag",
+              "p0",
+              1.0,
+              4.0,
+              "bin",
+              "mul",
+              "nbins",
+              "div",
+              "add",
+              "mul",
+              "ge",
+              "mul",
+              "binfreq",
+              1000.0,
+              "div",
+              "sqrt",
+              "mul"
+            ],
+            "phase_expr": [
+              "phase",
+              "p1",
+              "add"
+            ]
+          },
+          {
+            "kind": "IFFT",
+            "inputs": [
+              {
+                "ugen": 2
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "convolution",
+      "spec": {
+        "name": "conv",
+        "controls": [
+          {
+            "name": "kernel",
+            "default": 0.0,
+            "rate": "ir"
+          }
+        ],
+        "ugens": [
+          {
+            "kind": "Saw",
+            "inputs": [
+              {
+                "const": 110.0
+              }
+            ]
+          },
+          {
+            "kind": "Conv",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "control": 0
+              }
+            ],
+            "fft_size": 512,
+            "partitions": 8
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "stereo_field",
+      "spec": {
+        "name": "field",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 220.0
+              }
+            ]
+          },
+          {
+            "kind": "Saw",
+            "inputs": [
+              {
+                "const": 110.0
+              }
+            ]
+          },
+          {
+            "kind": "MidSide",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "ugen": 1
+              },
+              {
+                "const": 0.0
+              }
+            ]
+          },
+          {
+            "kind": "MidSide",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "ugen": 1
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "Rotate2",
+            "inputs": [
+              {
+                "ugen": 2
+              },
+              {
+                "ugen": 3
+              },
+              {
+                "const": 0.25
+              },
+              {
+                "const": 0.0
+              }
+            ]
+          },
+          {
+            "kind": "Rotate2",
+            "inputs": [
+              {
+                "ugen": 2
+              },
+              {
+                "ugen": 3
+              },
+              {
+                "const": 0.25
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "StereoWidth",
+            "inputs": [
+              {
+                "ugen": 4
+              },
+              {
+                "ugen": 5
+              },
+              {
+                "const": 1.5
+              },
+              {
+                "const": 0.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 6
+              }
+            ]
+          },
+          {
+            "kind": "StereoWidth",
+            "inputs": [
+              {
+                "ugen": 4
+              },
+              {
+                "ugen": 5
+              },
+              {
+                "const": 1.5
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "ugen": 8
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ring_pan",
+      "spec": {
+        "name": "ring",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "WhiteNoise",
+            "inputs": []
+          },
+          {
+            "kind": "PanAz",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 0.3
+              },
+              {
+                "const": 0.5
+              },
+              {
+                "const": 3.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 4.0
+              },
+              {
+                "const": 0.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 1
+              }
+            ]
+          },
+          {
+            "kind": "PanAz",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 0.3
+              },
+              {
+                "const": 0.5
+              },
+              {
+                "const": 3.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 4.0
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "ugen": 3
+              }
+            ]
+          },
+          {
+            "kind": "PanAz",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 0.3
+              },
+              {
+                "const": 0.5
+              },
+              {
+                "const": 3.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 4.0
+              },
+              {
+                "const": 2.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 2.0
+              },
+              {
+                "ugen": 5
+              }
+            ]
+          },
+          {
+            "kind": "PanAz",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 0.3
+              },
+              {
+                "const": 0.5
+              },
+              {
+                "const": 3.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 4.0
+              },
+              {
+                "const": 3.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 3.0
+              },
+              {
+                "ugen": 7
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "svf_taps",
+      "spec": {
+        "name": "taps",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "Saw",
+            "inputs": [
+              {
+                "const": 110.0
+              }
+            ]
+          },
+          {
+            "kind": "Svf",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 800.0
+              },
+              {
+                "const": 0.3
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": -0.5
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "svf_sweep",
+      "spec": {
+        "name": "sweep",
+        "controls": [
+          {
+            "name": "morph",
+            "default": 0.0
+          }
+        ],
+        "ugens": [
+          {
+            "kind": "Saw",
+            "inputs": [
+              {
+                "const": 110.0
+              }
+            ]
+          },
+          {
+            "kind": "Sub",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "control": 0
+              }
+            ]
+          },
+          {
+            "kind": "BinaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 1
+              },
+              {
+                "const": 0.0
+              }
+            ],
+            "op": "max"
+          },
+          {
+            "kind": "BinaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 2
+              },
+              {
+                "const": 1.0
+              }
+            ],
+            "op": "min"
+          },
+          {
+            "kind": "Sub",
+            "inputs": [
+              {
+                "control": 0
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "UnaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 4
+              }
+            ],
+            "op": "abs"
+          },
+          {
+            "kind": "Sub",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "ugen": 5
+              }
+            ]
+          },
+          {
+            "kind": "BinaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 6
+              },
+              {
+                "const": 0.0
+              }
+            ],
+            "op": "max"
+          },
+          {
+            "kind": "BinaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 7
+              },
+              {
+                "const": 1.0
+              }
+            ],
+            "op": "min"
+          },
+          {
+            "kind": "Sub",
+            "inputs": [
+              {
+                "control": 0
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "BinaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 9
+              },
+              {
+                "const": 0.0
+              }
+            ],
+            "op": "max"
+          },
+          {
+            "kind": "BinaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 10
+              },
+              {
+                "const": 1.0
+              }
+            ],
+            "op": "min"
+          },
+          {
+            "kind": "Svf",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 800.0
+              },
+              {
+                "const": 0.3
+              },
+              {
+                "ugen": 3
+              },
+              {
+                "ugen": 8
+              },
+              {
+                "ugen": 11
+              }
+            ]
+          },
+          {
+            "kind": "Saw",
+            "inputs": [
+              {
+                "const": 55.0
+              }
+            ]
+          },
+          {
+            "kind": "Svf",
+            "inputs": [
+              {
+                "ugen": 13
+              },
+              {
+                "const": 400.0
+              },
+              {
+                "const": 0.3
+              },
+              {
+                "const": 0.5
+              },
+              {
+                "const": 0.5
+              },
+              {
+                "const": 0.0
+              }
+            ]
+          },
+          {
+            "kind": "Add",
+            "inputs": [
+              {
+                "ugen": 12
+              },
+              {
+                "ugen": 14
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 15
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "disk_io",
+      "spec": {
+        "name": "disk",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "DiskIn",
+            "inputs": [
+              {
+                "const": 0.0
+              }
+            ],
+            "path": "/tmp/loop.wav",
+            "loop": true
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 0.5
+              }
+            ]
+          },
+          {
+            "kind": "DiskOut",
+            "inputs": [
+              {
+                "ugen": 1
+              }
+            ],
+            "path": "/tmp/take.wav",
+            "format": "float"
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 2
+              }
+            ]
+          }
+        ]
+      }
     }
   ],
   "faustdefs": [
@@ -1033,6 +2420,40 @@
           "gain": 0.5
         }
       }
+    }
+  ],
+  "scalars": [
+    {
+      "name": "partconv_frames",
+      "args": [
+        1,
+        1024
+      ],
+      "value": 1026
+    },
+    {
+      "name": "partconv_frames",
+      "args": [
+        512,
+        1024
+      ],
+      "value": 1026
+    },
+    {
+      "name": "partconv_frames",
+      "args": [
+        513,
+        1024
+      ],
+      "value": 2050
+    },
+    {
+      "name": "partconv_frames",
+      "args": [
+        44100,
+        512
+      ],
+      "value": 88578
     }
   ]
 }

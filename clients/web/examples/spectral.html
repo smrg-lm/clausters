@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the frequency-domain chain</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+      input[type=range] { width: 18rem; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>spectral.py</code>: <b>an FFT → PV → IFFT chain</b>.
+
+<code>fft</code> analyses a bright source into a spectral <b>frame</b>, each
+<code>pv*</code> transforms that frame in place, and <code>ifft</code>
+overlap-adds it back to samples. No buffer is allocated — the frame is
+synth-private scratch on the server — so the chain is just wired UGen to UGen,
+and only <code>fft</code> names the window size, which the server propagates
+down the chain.
+
+Where the Python example renders the effect offline, this one runs it
+<b>live</b>: <code>pvBrickWall</code>'s <code>wipe</code> is a lagged control,
+so dragging it band-limits the noise in the spectral domain while you listen —
+positive wipes zero the top fraction of the bins (a low pass), negative ones
+the bottom (a high pass), and 0 passes everything. Beside it,
+<code>pvMagFreeze</code> holds the magnitudes of whatever frame was passing
+when you press it, so the spectral envelope stands still while its phases keep
+running.
+
+Everything sounds through the <b>in-page engine</b>: no server process, no
+socket. Swapping to a <code>--ws</code> server is the one line marked below.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+        <button id="play" disabled>play the chain</button>
+        <button id="stop" disabled>stop</button>
+      </div>
+      <label>wipe <input id="wipe" type="range" min="-0.95" max="0.95"
+                         step="0.01" value="0.75" disabled />
+        <span id="wipev">0.75 (low pass)</span></label>
+      <label><input id="freeze" type="checkbox" disabled /> freeze the
+        magnitudes</label>
+
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        loadOsc, pageConnection, server as engine, Server, Synth, SynthDef,
+      } from "../dist/index.js";
+      import {
+        control, fft, ifft, out, pvBrickWall, pvMagFreeze, whiteNoise,
+      } from "../dist/defs/index.js";
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      // The chain: analyse, band-limit in the frequency domain, resynthesise.
+      // `wipe` and `freeze` are ordinary controls, so the whole thing is one
+      // def whose response moves while it sounds.
+      const chainDef = () => {
+        const wipe = control("wipe", 0.75, { lag: 0.05 });
+        const freeze = control("freeze", 0.0);
+        const amp = control("amp", 0.25);
+        let chain = fft(whiteNoise().mul(amp), 1.0,
+                        { fftSize: 1024, hop: 0.5, wintype: 0 });
+        chain = pvBrickWall(chain, wipe);
+        chain = pvMagFreeze(chain, freeze);
+        const sig = ifft(chain);
+        return new SynthDef("web_spectral", out(0.0, sig), out(1.0, sig));
+      };
+
+      let server = null;
+      let voice = null;
+
+      async function start() {
+        await loadOsc();
+        await (await engine({ channels: 2 })).resume();
+        server = await Server.open(await pageConnection());   // or WsConnection
+
+        await chainDef().send(server);
+        log("def sent — the frame is scratch, so nothing was allocated for it");
+
+        el("start").disabled = true;
+        for (const id of ["play", "wipe", "freeze"]) el(id).disabled = false;
+      }
+
+      el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
+
+      el("play").onclick = () => {
+        voice = new Synth("web_spectral", {
+          wipe: Number(el("wipe").value),
+          freeze: el("freeze").checked ? 1.0 : 0.0,
+        }, { server });
+        el("stop").disabled = false;
+        el("play").disabled = true;
+        log(`chain on node ${voice.id} — drag wipe to hear the bins go`);
+      };
+
+      el("stop").onclick = () => {
+        if (voice) voice.free();
+        voice = null;
+        el("stop").disabled = true;
+        el("play").disabled = false;
+      };
+
+      el("wipe").oninput = () => {
+        const wipe = Number(el("wipe").value);
+        const shape = wipe > 0.02 ? "low pass"
+          : wipe < -0.02 ? "high pass" : "everything through";
+        el("wipev").textContent = `${wipe.toFixed(2)} (${shape})`;
+        if (voice) voice.set({ wipe });
+      };
+
+      el("freeze").onchange = () => {
+        if (voice) voice.set({ freeze: el("freeze").checked ? 1.0 : 0.0 });
+      };
+    </script>
+  </body>
+</html>
