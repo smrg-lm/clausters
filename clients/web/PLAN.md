@@ -609,6 +609,7 @@ timing: the TS side of C23 pulls in buffers, `Env` and a control def.
 
 - `seq/automation.ts`: a break-point curve discretized into a control buffer on the server (`/buffer_gen "env"`, the server's own `envshape`) and read back onto a control bus by a lane synth (`OutCtl`), prepared without blocking the driver, then played and freed like any other element.
 - The `bpf` builder already in W2's GuiDef catalogue becomes its editor, so the curve is authored, heard and edited over the same loop the multitrack editor uses.
+- **`plot(automation)` comes with it** (*named here from W23*, which ports the visual verbs without this kind): an automation's curve *is* an `Env`, so the leg is the `Env` one already written, labelled with the automation's control name — a few lines once the class exists.
 
 **Acceptance:** a curve authored in TS drives a synth's control over either carrier with the same values the Python client produces for the same break points, and dragging it in the browser GUI's `bpf` widget moves the sounding value.
 
@@ -620,6 +621,7 @@ C15 and of C16's `follow_transport`.
 - `quant` honored when a routine starts (snap to a beat boundary), and joining the server's `/transport_set` grid so pages started at different moments share one bar line.
 - Following the `/transport_play|stop|locate` broadcasts, so a page's playhead rolls in lockstep with every other client: the server broadcasts control, never audio.
 - W3's rule is not bent: the clock still never talks to a server. The `Server` feeds the grid inward, the way `sampleTimebase()` already anchors the timebase.
+- **`Session.joinTransport()`** (*owed here since W18*, which shipped the facade without it): the third of the Python `Session`'s chaining verbs, beside `lockToServer`. It is one line over whatever this milestone gives the clock, and the facade is incomplete against its reference until it exists.
 
 **Acceptance:** two pages — or a page and a Python client — join the same transport and land on the same bar; a `/transport_locate` moves the page's playhead with it.
 
@@ -632,6 +634,9 @@ the two carriers: a destination that *writes* time instead of waiting for it.
 - A score destination for the sequencing layer — the same pattern or timeline that plays live emitted as a timestamped score — rendered either by a native server's NRT mode over WS, or in-page by the wasm engine running faster than real time into a buffer the page can play or download.
 - W3 already *bounces* without one (`Timeline.fromPattern` drives the ordinary clock through its manual seams); what is missing is the interface, not the arithmetic.
 - Score parity is the check C5 keeps on the Python side: one piece, one score, compared byte for byte.
+- **`Session.nrt()` and `session.render(...)`** (*owed here since W18*): the third factory and the verb that drains the clock into a render. W18 shipped the facade with the two live carriers only, and said so — a facade must not name a verb it cannot keep, which is the whole reason this pairs with the drive rather than preceding it.
+- **`defs/asdef.ts`** — the ephemeral-def coercion (`asDef`, `exprChannels`), so a bare **expression** becomes playable: `play(sine(440).mul(0.5))` sends a def it wrapped for you. W18's `play` dispatches every other kind and refuses this one by name.
+- **The three rendered legs of `plot`** (*deferred out of W23*, which ports the visual verbs with only what runs live): a def, a bare expression and — through them — the offline look at what a def actually produces without a server or an audio device. That is the Python verb's headline use, and it is blocked on nothing but this drive.
 
 **Acceptance:** a piece written once emits a score byte-identical to the Python client's for the same input, and renders from the browser to a WAV that matches the native NRT render.
 
@@ -803,11 +808,12 @@ clock, and every kind `play` dispatches asserted audible. Example:
 `examples/verbs.html`, the port of the Python client's `verbs.py` — a session
 opened, then every playable kind visited in turn.
 
-Not in scope, and each already owned: the `plot`/`scope` visual verbs and the
-`set_ambient_host` registry that serves them (unclaimed — `plot.py`/`scope.py`
-have no milestone here yet), a bare **signal expression** as a playable (it
-needs the ephemeral-def wrapper, **W13**'s `asdef`), and an `Automation`
-(**W11**).
+Not in scope, and each now owned: the `plot`/`scope` visual verbs and the
+`set_ambient_host` registry that serves them (**W23**, opened by this
+milestone), a bare **signal expression** as a playable (it needs the
+ephemeral-def wrapper, **W13**'s `asdef`), an `Automation` (**W11**), and the
+two chaining verbs the Python `Session` has and this one does not —
+`joinTransport` (**W12**) and `nrt`/`render` (**W13**).
 
 ### ✅ W19 - The notebook front end (`src/notebook/widget.ts`)
 
@@ -873,8 +879,9 @@ instances share the loop and nothing else.
   without being told one, ahead of their boot-a-process fallback. This client
   has neither verb nor fallback, and W18 gave the GUI leg a better owner than a
   process-wide registry: `session.gui()`, which wires the host to *its*
-  session's engine. So the registry ports with the visual verbs, and
-  `plot.py`/`scope.py` are the two Python modules with no milestone here yet.
+  session's engine. So the registry ports with the visual verbs, which is
+  **W23** — it carries `set_ambient_host` along with `scope.py` and as much of
+  `plot.py` as runs without an offline drive.
 
 - **The widget props are their own manifest, and it is `docs/gui-props.md`.**
   That table compares all three surfaces — the host, the Python builders, this
@@ -1038,3 +1045,84 @@ The mixin this milestone adds is `ServerTransport` — `transport`,
 `transportPlay`, `transportStop`, `transportLocate` — the third of the three
 the Python package composes, and the only one W21 could not port because the
 surface underneath it does not exist here yet.
+
+### W23 - The visual verbs: `scope`, and as much of `plot` as runs live
+
+*Deferred out of W18*, which ported the ambient environment and the `play`
+verb and left its visual siblings — `clausters.plot` and `clausters.scope`, the
+two Python modules W21's inventory found with no milestone at all. This is that
+slot, and it is split the way the surface actually splits: one verb ports
+whole, the other does not.
+
+- **`gui/index.ts`: `setAmbientHost` / `ambientHost`.** The registry both verbs
+  resolve a host through, and the piece W18 twice declined to port on its own
+  because nothing consumed it. Python's resolution ladder is *registered host →
+  the current (else default) session's `gui` host → one the module boots and
+  owns*; here the third rung is `GuiHost.page()`, a page having no process to
+  boot, and the first exists for the same reason it does there — a front this
+  module cannot boot or point elsewhere (a notebook cell's canvas over a
+  kernel comm, a test double collecting packets).
+- **`scope.ts`, whole.** It is pure GuiDef assembly over a resolved host, so
+  nothing blocks it: the three views (`signal` the triggered oscilloscope,
+  `phase` the goniometer, `spectrum` the live FFT), the per-view defaults and
+  labels, and a `ScopeWindow` handle with `set`/`close`. The one requirement
+  that does **not** port is Python's shared-memory check — it refuses a server
+  with no `shm` because the native host reads the taps out of that segment, and
+  the browser host has no segment to map and streams them over its own server
+  leg instead. Python's own comment beside that check already says so.
+- **`plot.ts`, three legs of six.** What runs without an offline drive: a
+  `Buffer` or buffer number (fetched from the ambient live server — W10 shipped
+  `getSamples`), any iterable of numbers or `Pattern` (materialized, capped at
+  `n`, value axis auto-fitted), and an `Env`. The remaining three — a def, a
+  bare expression, an `Automation` — are **W13**'s and **W11**'s, named in
+  those milestones. Until they land the verb must refuse them by name and say
+  which milestone opens each, the way `play` already refuses an expression: a
+  verb that silently plots nothing is worse than one that says what it cannot
+  do yet.
+- **The `Env` leg reaches the same math by another door, and that is the
+  decision to record** (`docs/decisions.md`). Python renders an `Env` through
+  an NRT `EnvGen` precisely so that what you plot is what the engine plays; a
+  page has no NRT, but `/buffer_gen "env"` evaluates the curve with
+  **`clausters-core`'s `envshape`** — the very function the `EnvGen` UGen plays
+  (`docs/schemas.md` says so where it documents the command). So the property
+  survives the change of door, and the door is what needs writing down.
+
+**Acceptance:** `scope()` opens each of its three views on a live in-page
+engine and follows a signal (asserted on the host's own drawing, as `data.html`
+does); `plot` draws a generated buffer, a `Pwhite` sequence and an `Env`, the
+envelope's samples matching what the Python client's `plot(Env.adsr())`
+produces for the same break points; each unported kind raises naming its
+milestone; and both verbs find the ambient host with no host named — a
+session's when one is up, the page's otherwise.
+
+### W24 - The completeness pass
+
+The slot for what the milestone-by-milestone port leaves behind: differences
+that are nobody's feature. It is deliberately last and deliberately open — it
+gathers loose ends rather than opening a layer, and an entry leaves it as soon
+as some other milestone has a better claim on it.
+
+- **`defs/patch.ts`** — `GraphPatch` and `DefPatch`, the models behind
+  `def.plot_def()`, which open a def's **structure** (not its sound) as a
+  `patch` view. The widget has existed since W2 and `examples/composer.html`
+  drives one by hand; what is missing is the model that reads a def and emits
+  `{boxes, cords}`, plus the `PatchWindow` handle. W21's inventory listed
+  `defs/patch.py` as unclaimed and it still is; it lands here unless the def
+  layer is opened for something else first.
+- **`Session.connectGui(url)` is a verb this client invented**, and it should
+  not survive on those terms. W18 added it so a session could adopt a native
+  `clausters-gui --ws` host; the Python `Session` has no counterpart — there,
+  a native host that the session did not boot is built directly and stays the
+  caller's. Resolve it in one direction: drop it here, or add the verb to the
+  reference client first and keep it. The standing rule says the reference
+  leads, so the default is to drop it.
+- **The general rule this slot enforces**: a name that exists in one client and
+  not the other is either a *feature* some milestone owns, or a *difference*
+  `docs/gui-props.md` and this plan's parity section record with a reason.
+  Anything that is neither belongs here, and the way to find them is the
+  module-by-module, symbol-by-symbol comparison W21 did — worth repeating
+  whenever a run of milestones has landed.
+
+**Acceptance:** a fresh comparison of the two module trees reports only
+differences that are written down somewhere — a milestone that owns them, a
+row in `docs/gui-props.md`, or a paragraph in this plan's parity section.
