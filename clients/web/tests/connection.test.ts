@@ -8,10 +8,10 @@
 // missing, so `npm test` stays runnable from a source tree without a build.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
+import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
 import { loadOsc, encodeMessage, decodePacket } from "../src/base/osc.ts";
@@ -27,11 +27,7 @@ await loadOsc(
 );
 
 test("WsConnection: /server_status round trip", { skip: !hasServer }, async () => {
-    const server = spawn(
-        serverBin,
-        ["--ws", String(wsPort), "--no-tcp", "--no-persist"],
-        { stdio: "ignore" },
-    );
+    const server = spawnChild(serverBin, ["--ws", String(wsPort), "--no-tcp", "--no-persist"]);
     try {
         // The server binds the WS listener during boot; retry until it is up.
         let connection: WsConnection | null = null;
@@ -60,6 +56,6 @@ test("WsConnection: /server_status round trip", { skip: !hasServer }, async () =
         assert.equal(synths, 0, "a fresh server reports zero synths");
         connection.close();
     } finally {
-        server.kill();
+        server.stop();
     }
 });

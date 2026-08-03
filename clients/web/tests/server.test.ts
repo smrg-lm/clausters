@@ -18,12 +18,12 @@
 // server would find the port taken.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
+import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
 import { loadOsc } from "../src/base/osc.ts";
@@ -56,11 +56,7 @@ await loadOsc(
  * per-invocation network isolation.
  */
 async function withServer(body: (server: Server) => Promise<void>): Promise<void> {
-    const process = spawn(
-        serverBin,
-        ["--ws", String(wsPort), "--no-tcp", "--no-persist"],
-        { stdio: "ignore" },
-    );
+    const child = spawnChild(serverBin, ["--ws", String(wsPort), "--no-tcp", "--no-persist"]);
     let connection: WsConnection | null = null;
     let server: Server | null = null;
     try {
@@ -76,7 +72,7 @@ async function withServer(body: (server: Server) => Promise<void>): Promise<void
     } finally {
         server?.close();
         connection?.close();
-        process.kill();
+        child.stop();
         // The port is reused by the next test; give the OS its release.
         await sleep(50);
     }

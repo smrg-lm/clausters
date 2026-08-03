@@ -9,10 +9,10 @@
 // runnable from a source tree without that build.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
+import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
 import { loadOsc } from "../src/base/osc.ts";
@@ -36,11 +36,9 @@ await loadOsc(
  * stopping both afterwards.
  */
 async function withHost(body: (gui: GuiHost) => Promise<void>): Promise<void> {
-    const process = spawn(
-        hostBin,
-        ["--headless", "--no-tcp", "--port", String(udpPort), "--ws", String(wsPort)],
-        { stdio: "ignore" },
-    );
+    const host = spawnChild(hostBin, [
+        "--headless", "--no-tcp", "--port", String(udpPort), "--ws", String(wsPort),
+    ]);
     try {
         // The host binds the WS listener during boot; retry until it is up.
         let connection: WsConnection | null = null;
@@ -58,7 +56,7 @@ async function withHost(body: (gui: GuiHost) => Promise<void>): Promise<void> {
             connection.close();
         }
     } finally {
-        process.kill();
+        host.stop();
     }
 }
 

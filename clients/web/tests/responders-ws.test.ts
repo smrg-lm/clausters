@@ -12,10 +12,10 @@
 // missing, so `npm test` stays runnable from a source tree without a build.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
+import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
 import { loadOsc } from "../src/base/osc.ts";
@@ -55,21 +55,7 @@ async function awaitEngine(server: Server): Promise<void> {
 }
 
 async function withServer(body: (server: Server) => Promise<void>): Promise<void> {
-    const child = spawn(
-        serverBin,
-        ["--ws", String(wsPort), "--no-tcp", "--no-persist"],
-        { stdio: "ignore" },
-    );
-    // A server spawned here outlives this process if nobody kills it: node
-    // runs no `finally` when it is signalled, and an orphaned audio server
-    // keeps its thread and its device. So the signals are handled too, and
-    // the handler goes as soon as the ordinary teardown has run.
-    const onSignal = () => {
-        child.kill("SIGKILL");
-        globalThis.process.exit(143);
-    };
-    globalThis.process.once("SIGTERM", onSignal);
-    globalThis.process.once("SIGINT", onSignal);
+    const child = spawnChild(serverBin, ["--ws", String(wsPort), "--no-tcp", "--no-persist"]);
     let connection: WsConnection | null = null;
     let server: Server | null = null;
     try {
@@ -84,9 +70,7 @@ async function withServer(body: (server: Server) => Promise<void>): Promise<void
     } finally {
         server?.close();
         connection?.close();
-        child.kill();
-        globalThis.process.off("SIGTERM", onSignal);
-        globalThis.process.off("SIGINT", onSignal);
+        child.stop();
         await sleep(50);
     }
 }
