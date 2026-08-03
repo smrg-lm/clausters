@@ -27,7 +27,11 @@
 // the Python package makes, as mixins rather than collaborators precisely so
 // no attribute path moves. The `transport` module the Python package also has
 // (the shared beat grid) waits on the port of that surface, which no
-// TypeScript milestone has opened yet (`clients/web/PLAN.md`, W12/W21).
+// TypeScript milestone has opened yet (`clients/web/PLAN.md`, W12/W22).
+//
+// The sample-clock tracking a `sampleTimebase()` sets up is not here either:
+// it is `defs/clocksync.ts`, one class per carrier, as in the Python client.
+// This handle only resolves which one and keeps it.
 
 import {
     decodePacket,
@@ -43,7 +47,8 @@ import type { Connection } from "../../base/connection.ts";
 import { Moment } from "../../base/moment.ts";
 import { MonotonicTimebase, SampleTimebase } from "../../base/timebase.ts";
 import type { Timebase } from "../../base/timebase.ts";
-import { SampleClockModel } from "../../core/clausters_core_web.js";
+import { sampleClockFor } from "../clocksync.ts";
+import type { ServerSampleClock } from "../clocksync.ts";
 import type { TempoClock } from "../../base/clock.ts";
 import type { Event } from "../../seq/event.ts";
 import { CommandError, ReplyTimeout } from "../../errors.ts";
@@ -87,17 +92,6 @@ export type { MsgArg };
 
 /** The handle's default reply timeout, in seconds. */
 const DEFAULT_TIMEOUT = 5.0;
-
-/**
- * One `/clock_query` observation: the server's counter and rate, and the local time
- * the exchange is centred on.
- */
-interface ClockReply {
-    local: number;
-    sample: number;
-    rate: number;
-    oscTime: number;
-}
 
 interface Pending {
     match: (msg: OscMessage) => boolean;
@@ -596,79 +590,26 @@ export class Server {
      * Hand the result to a clock (`new TempoClock(2, { timebase })`); the
      * clock never talks to a server itself.
      */
-    async sampleTimebase({
-        timeout,
-        anchors = 5,
-        gap = 0.05,
-        trackEvery = 0.5,
-    }: {
+    async sampleTimebase(options: {
         timeout?: number;
         anchors?: number;
         gap?: number;
         trackEvery?: number;
     } = {}): Promise<Timebase> {
-        if (this.connection.sampleClock) {
-            const clock = await this.connection.sampleClock();
-            return new SampleTimebase(clock.sample, clock.sampleRate);
-        }
-        let info: ClockReply;
-        try {
-            info = await this.clockAnchor(timeout);
-        } catch (error) {
-            if (!(error instanceof ReplyTimeout)) throw error;
+        const clock = await sampleClockFor(this, options);
+        if (clock === null) {
             console.warn(
                 "clausters: no /clock_query reply; the clock stays on wall-clock time",
             );
             return new MonotonicTimebase();
         }
-        const model = new SampleClockModel(info.rate, 64);
-        model.addAnchor(info.local, info.sample, info.rate);
-        // Firm the model up before anything schedules against it: one anchor
-        // gives an offset, several give a rate — but only if they are spread
-        // over enough time. Back-to-back round trips all land inside a couple
-        // of milliseconds, and a regression over that span is noise.
-        for (let i = 1; i < anchors; i++) {
-            if (gap > 0) await new Promise((done) => setTimeout(done, gap * 1000));
-            const next = await this.clockAnchor(timeout);
-            model.addAnchor(next.local, next.sample, next.rate);
-        }
-        if (trackEvery > 0) {
-            this.clockTracker = setInterval(() => {
-                this.clockAnchor(timeout)
-                    .then((a) => model.addAnchor(a.local, a.sample, a.rate))
-                    .catch(() => {
-                        /* a missed anchor is not fatal: the model holds. */
-                    });
-            }, trackEvery * 1000);
-        }
-        this.clockModel = model;
-        return new SampleTimebase(
-            () => model.sampleAt(performance.now() / 1000),
-            info.rate,
-        );
+        this.clock?.close();
+        this.clock = clock;
+        return clock.timebase();
     }
 
-    private clockTracker: ReturnType<typeof setInterval> | null = null;
-    private clockModel: SampleClockModel | null = null;
-
-    /**
-     * One `/clock_query` round trip, timestamped at the midpoint of the exchange —
-     * the best estimate of when the server read its own counter.
-     */
-    private async clockAnchor(timeout?: number): Promise<ClockReply> {
-        const sent = performance.now() / 1000;
-        const msg = await this.request("/clock_query", [], {
-            expect: ["/clock_query.reply"],
-            timeout,
-        });
-        const received = performance.now() / 1000;
-        return {
-            local: (sent + received) / 2,
-            sample: Number(msg.args[0]),
-            rate: Number(msg.args[1]),
-            oscTime: Number(msg.args[2]),
-        };
-    }
+    /** The sample clock this server is tracked by, once one is built. */
+    private clock: ServerSampleClock | null = null;
 
     /**
      * The drift the sample-clock model has measured, in parts per million, or
@@ -676,7 +617,7 @@ export class Server {
      * no model — it shares the page's audio clock).
      */
     get clockDriftPpm(): number | null {
-        return this.clockModel?.driftPpm ?? null;
+        return this.clock?.driftPpm ?? null;
     }
 
     /**
@@ -692,8 +633,8 @@ export class Server {
      * any shared in-page engine, keep running). Pending requests reject.
      */
     close(): void {
-        if (this.clockTracker !== null) clearInterval(this.clockTracker);
-        this.clockTracker = null;
+        this.clock?.close();
+        this.clock = null;
         this.connection.removeReply(this.listener);
         for (const p of this.pending) {
             clearTimeout(p.timer);

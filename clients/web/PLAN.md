@@ -37,7 +37,7 @@ clients/web/
     defs/                 #   the def model + server client (mirrors clausters/defs)
       server/             #     the handle, and beside it options/queries/streams
       ugens/              #     the UGen catalogue, one module per family
-      node.ts  bus.ts  buffer.ts  info.ts
+      node.ts  bus.ts  buffer.ts  info.ts  clocksync.ts
       signals.ts  synthdef.ts  faustdef.ts  graphdef.ts
     gui/                  #   the GUI host driver (mirrors clausters/gui)
       host.ts             #     GuiHost + the per-page guiHost() singleton
@@ -857,20 +857,75 @@ tree finds the other.
 - **`defs/tap.ts` folds into `defs/server/options.ts`**, where the Python
   client keeps `DEFAULT_TAPS`: how many rings exist is the server's property,
   and a one-constant module was a file the Python tree does not have.
+- **`defs/clocksync.ts` is extracted from `Server`.** The one placement gap a
+  file-name comparison does not show, since it is about where methods sit: the
+  sample-clock tracking — the anchor round trip, the warmup, the tracking
+  interval, the model, the teardown — was inlined in `Server` where the Python
+  client has a module of its own, with one class per carrier and a common
+  surface (`anchor`/`warmup`/`track`/`untrack`/`now`/`rate`/`timebase`/`close`).
+  It is now `WsSampleClock` and `PageSampleClock`, the counterparts of
+  `UdpSampleClock` and `EmbedSampleClock`, and `Server.sampleTimebase()` is
+  what it reads as in Python: resolve the carrier, warm it up, keep it. **One
+  difference is the carrier's and is written next to it**: the Python tracker
+  opens its *own* UDP socket so `/clock_query` never contends with the command
+  socket, and a page has one WebSocket to a given server, so this tracker rides
+  the `Server`'s connection. The model is untouched — the anchor is still the
+  midpoint of a measured round trip.
 
 The two families the split leaves empty are the ones no milestone has opened
 yet, and each now has the module its Python sibling names waiting for it:
-`ugens/spectral.ts` is **W6**'s, and `server/transport.ts` is **W22**'s.
+`ugens/spectral.ts` is **W6**'s, and `server/transport.ts` is **W22**'s. The
+Python modules with no counterpart at all are unported *features*, not
+misplaced code, and each is already owned: `defs/boxes.py` and `defs/pv_expr.py`
+(**W7**), `seq/automation.py` (**W11**), `responders.py` (**W8**/**W9**),
+`session.py`/`play.py`/`base/main.py`/`base/environment.py`/`defs/_wire.py`
+(**W18**), `render.py`/`defs/asdef.py` (**W13**), `form/` and `gui/editor.py`/
+`gui/transport.py`/`gui/notation.py` (**W16**'s named track), `defs/patch.py`
+(unclaimed), and the launcher/IPC/CLI/config set (`launch.py`, `ipc.py`,
+`_cli.py`, `config.py`, `_midi.py`, `_libpath.py`), which is a process-shaped
+surface a page has no counterpart for.
 
-**What this does not do**, recorded so the next diff of the two trees does not
-raise it as a gap: `SynthExpr` stays in `ugens/graph.ts` rather than moving to
-a `defs/expr.ts`. In the Python client that module holds three empty markers
-(`Expr`, `SynthExpr`, `FaustExpr`) and the operator surface comes from
-`base/absobject.py`, which the value side shares; here `SynthExpr` *is* the
-math surface, `Signal` extends nothing, and there is no `base/absobject.ts`.
-Mirroring the file without porting what makes it a marker would leave a name
-in the same place meaning something else, which is worse than the honest
-difference. It becomes real work when the abstract-object base is ported.
+**What is left, checked module by module and symbol by symbol against the
+Python tree, so the next comparison does not re-derive it.** Every ported
+module now sits at its sibling's path; these four differences remain, and each
+is a decision rather than an oversight:
+
+- **`SynthExpr` stays in `ugens/graph.ts`** rather than moving to a
+  `defs/expr.ts`. In the Python client that module holds three empty markers
+  (`Expr`, `SynthExpr`, `FaustExpr`) and the operator surface comes from
+  `base/absobject.py`, which the value side shares; here `SynthExpr` *is* the
+  math surface, `Signal` extends nothing, and there is no `base/absobject.ts`.
+  Mirroring the file without porting what makes it a marker would leave a
+  familiar name somewhere meaning something else, which is worse than the
+  honest difference. It becomes real work when the abstract-object base is
+  ported — and that is also what would let the value and graph sides share one
+  written expression, as they do there.
+- **Two modules keep a different name for the same role**, both declared in
+  this plan's architecture sketch since W0: `base/osc.ts` is `base/_osclib.py`
+  (the byte layer) and `base/connection.ts` is `base/_oscinterface.py` (the
+  carrier seam). The Python names carry a leading underscore, which is that
+  language's privacy marker and means nothing in a package whose surface is
+  its `exports` map; renaming to match would import a convention rather than a
+  structure.
+- **There is no `_native.ts`.** Python's `_native.py` is a hand-written ctypes
+  binding — 1065 lines of signature declarations — and the TypeScript door is
+  generated by wasm-bindgen (`core/clausters_core_web.d.ts`), so there is no
+  binding module to mirror. What the Python client reaches as
+  `_native.beats_to_secs(...)` this one re-exports from the module that uses
+  it (`base/timebase.ts`, `base/builtins.ts`, `base/core.ts`).
+- **`errors.ts` is a browser-shaped subset with one addition.** Python's
+  hierarchy carries `LibraryError`/`LibraryNotFoundError`/`LibraryFeatureError`/
+  `AbiMismatchError` (loading a native library), `SegmentError`/
+  `CommandRingFull` (the shared-memory transport) and `RenderError` (the
+  offline drive) — none of which a page can reach, the last of them until
+  **W13**. Missing and portable: `ServerError`. Added here and absent there:
+  `AllocationError`, because Python raises a bare `RuntimeError` when an
+  allocator is exhausted and JavaScript has no such class, so a named one is
+  the idiomatic equivalent rather than a new concept.
+
+`data/` has no Python counterpart at all, by design and not by omission: it is
+the script's own reading path, which exists because a page draws its own
+canvas (**W10** records the whole rationale).
 
 **Verified:** `./build.sh && ./test.sh` — the 166 `node --test` cases and the
 nine headless-Chrome acceptances, unchanged and green, which is the whole
