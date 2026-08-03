@@ -21,7 +21,13 @@ export interface RenderResult {
     seed: bigint;
 }
 
-type EngineModule = {
+/**
+ * The engine wasm's own surface, as `loadRenderer` resolves it: the
+ * wasm-bindgen glue's init pair plus the render entry points. Exported because
+ * it is what a public signature returns — a reference that names a type the
+ * reader cannot reach is a broken page.
+ */
+export type EngineModule = {
     default: (init?: unknown) => Promise<unknown>;
     initSync: (module: unknown) => unknown;
     render: (

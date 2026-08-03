@@ -63,6 +63,7 @@ export type {
     Renderable,
 } from "./render.ts";
 export { loadRenderer } from "./engine/render.ts";
+export type { EngineModule } from "./engine/render.ts";
 export { newPools, pagePools } from "./base/pool.ts";
 export type { Pool, Pools } from "./base/pool.ts";
 export {
