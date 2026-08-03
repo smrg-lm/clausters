@@ -1260,11 +1260,15 @@ tree finds the other.
   that were one long list with the families marked by a comment become
   `graph` (the node, control and channel-list types, plus the fused
   arithmetic), `osc`, `filter` (filters, delays, smoothers), `pan`, `io`,
-  `buf`, `trig`, `demand` and `env` — **the same nine names the Python package
+  `buf`, `trig`, `demand` and `env` — **the same names the Python package
   uses, with each callable in the module its Python sibling is in**, so the
   two catalogues diff family by family. Everything is re-exported from
   `index.ts`. The one helper crossing modules, `isList`, is exported
   `@internal` the way the Python package shares its underscored helpers.
+  (**W6** completed the set with the tenth module, `spectral`, and widened that
+  last point: `sources`, `channelBinop`/`channelUnop` and the two operator
+  tables cross modules the same way now, each for the same reason its Python
+  underscored sibling does.)
 - **`defs/tap.ts` folds into `defs/server/options.ts`**, where the Python
   client keeps `DEFAULT_TAPS`: how many rings exist is the server's property,
   and a one-constant module was a file the Python tree does not have.
@@ -1504,6 +1508,17 @@ as some other milestone has a better claim on it.
   Anything that is neither belongs here, and the way to find them is the
   module-by-module, symbol-by-symbol comparison W21 did — worth repeating
   whenever a run of milestones has landed.
+
+**A sweep is owed, and half of it is already done.** W6 closed the UGen
+catalogue by *doing* that comparison over `defs/ugens/` — the two trees now
+report nothing missing in either direction there, beyond the free
+`add`/`sub`/`mul`/`div` and `resolveCurve` here and `ugen_input_names` there.
+So when this slot is taken up, the catalogue is settled and what is left to
+sweep is the rest of the tree; the entries above were found by the sweep of
+2026-08-03 and are what that pass left standing, not a fresh reading. Re-read
+**W21**'s parity section at the same time — it is the record the sweep writes
+into, and it is the one section a later milestone can silently falsify (W6
+already did, twice).
 
 **Acceptance:** a fresh comparison of the two module trees reports only
 differences that are written down somewhere — a milestone that owns them, a
