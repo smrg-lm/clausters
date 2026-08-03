@@ -24,7 +24,7 @@
 
 import { AllocationError } from "../errors.ts";
 import { Registry, graphBusReserved } from "../base/core.ts";
-import type { Server } from "./server.ts";
+import type { Server } from "./server/index.ts";
 
 export type BusRate = "audio" | "control";
 
@@ -72,7 +72,7 @@ export class Bus {
     }
 
     /** Reads this control bus's value (`/bus_get`). */
-    async get(timeout = 5.0): Promise<number> {
+    async get(timeout?: number): Promise<number> {
         const msg = await this.srv().request("/bus_get", [["i", this.index]], {
             expect: ["/bus_get.reply"],
             timeout,

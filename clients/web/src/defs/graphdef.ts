@@ -30,7 +30,7 @@
  * as a member control value (it serializes to the bus name).
  */
 import type { MsgArg } from "../base/osc.ts";
-import type { Server } from "./server.ts";
+import type { Server } from "./server/index.ts";
 
 export class GraphBusRef {
     readonly name: string;

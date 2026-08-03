@@ -1,5 +1,5 @@
 // The audio server, driven over the W0 carrier seam (mirrors
-// `clausters/defs/server.py`).
+// `clausters/defs/server/`).
 //
 // A `Server` is the only object that knows a connection: defs, nodes, buses
 // and buffers are built transport-agnostically and reach the server through
@@ -18,6 +18,16 @@
 // as float32 — which is what each of them is. The free-form `sendMsg` infers
 // (an integral number is an int32) and takes an explicit `[tag, value]` pair
 // wherever that guess is wrong.
+//
+// **Where things live.** This module holds the `Server` itself — the
+// connection, the allocators, the raw OSC paths, the request machinery and the
+// server's own lifecycle. Beside it, `options` (the configuration it is sized
+// from and the configuration it reports), `queries` (what a running server
+// holds) and `streams` (the subscriptions the server pushes) — the same split
+// the Python package makes, as mixins rather than collaborators precisely so
+// no attribute path moves. The `transport` module the Python package also has
+// (the shared beat grid) waits on the port of that surface, which no
+// TypeScript milestone has opened yet (`clients/web/PLAN.md`, W12/W21).
 
 import {
     decodePacket,
@@ -26,80 +36,47 @@ import {
     encodeMessage,
     oscArg,
     toBundle,
-} from "../base/osc.ts";
-import type { MsgArg, OscArg, OscMessage, TimedMessage } from "../base/osc.ts";
-export type { TimedMessage } from "../base/osc.ts";
-import type { Connection } from "../base/connection.ts";
-import { Moment } from "../base/moment.ts";
-import { MonotonicTimebase, SampleTimebase } from "../base/timebase.ts";
-import type { Timebase } from "../base/timebase.ts";
-import { SampleClockModel } from "../core/clausters_core_web.js";
-import type { TempoClock } from "../base/clock.ts";
-import type { Event } from "../seq/event.ts";
-import { CommandError, ReplyTimeout } from "../errors.ts";
+} from "../../base/osc.ts";
+import type { MsgArg, OscMessage, TimedMessage } from "../../base/osc.ts";
+export type { TimedMessage } from "../../base/osc.ts";
+import type { Connection } from "../../base/connection.ts";
+import { Moment } from "../../base/moment.ts";
+import { MonotonicTimebase, SampleTimebase } from "../../base/timebase.ts";
+import type { Timebase } from "../../base/timebase.ts";
+import { SampleClockModel } from "../../core/clausters_core_web.js";
+import type { TempoClock } from "../../base/clock.ts";
+import type { Event } from "../../seq/event.ts";
+import { CommandError, ReplyTimeout } from "../../errors.ts";
+import { NodeIdAllocator } from "../node.ts";
+import { AudioBusAllocator, ControlBusAllocator } from "../bus.ts";
+import { BufferAllocator } from "../buffer.ts";
 import {
-    Tree,
-    parseBufferList,
-    parseDefInfo,
-    parseQueryTree,
-    parseUgenInfo,
-} from "./info.ts";
-import type { BufferInfo, DefInfo, UgenInfo } from "./info.ts";
-import { Group, NodeIdAllocator, ROOT_NODE_ID, nodeId } from "./node.ts";
-import type { NodeLike } from "./node.ts";
-import { AudioBusAllocator, Bus, ControlBusAllocator, busIndex } from "./bus.ts";
-import type { BusLike } from "./bus.ts";
-import { Buffer, BufferAllocator, bufferNumber } from "./buffer.ts";
-import { fetchAudio, interleave } from "../data/samples.ts";
-import type { BufferLike } from "./buffer.ts";
-import { DEFAULT_TAPS } from "./tap.ts";
-import { SynthDef } from "./synthdef.ts";
-import { FaustDef } from "./faustdef.ts";
-import { GraphDef } from "./graphdef.ts";
+    DEFAULT_AUDIO_BUSES,
+    DEFAULT_CONTROL_BUSES,
+    DEFAULT_MAX_BUFFERS,
+    DEFAULT_MAX_NODES,
+    DEFAULT_TAPS,
+} from "./options.ts";
+import type { ServerSizing } from "./options.ts";
+import { ServerQueries } from "./queries.ts";
+import { ServerStreams } from "./streams.ts";
 
-// The server's compiled defaults — what a `/server_query` query falls back to
-// when the server does not answer (or is too old to report a field).
-export const DEFAULT_AUDIO_BUSES = 128;
-export const DEFAULT_CONTROL_BUSES = 16384;
-export const DEFAULT_SAMPLE_RATE = 48000;
-export const DEFAULT_MAX_NODES = 8192;
-export const DEFAULT_MAX_BUFFERS = 4096;
-export const DEFAULT_MAX_GRAPH_CHILDREN = 512;
-export const DEFAULT_MAX_UGEN_INPUTS = 32;
-
-/**
- * The sizes a client's allocators need. They are a property of the *server*,
- * so `Server.open` reads them from `/server_query` rather than guessing;
- * pass them explicitly to skip that round trip.
- */
-export interface ServerSizing {
-    audioBuses: number;
-    controlBuses: number;
-    maxNodes: number;
-    maxBuffers: number;
-    /**
-     * Hardware output channels — the audio buses reserved at the bottom of
-     * the space, which the allocator never hands out.
-     */
-    channels: number;
-    /** Audio-tap rings (`--taps`); 0 on a server with no tap region. */
-    taps: number;
-}
-
-/** The static configuration a running server reports over `/server_query`. */
-export interface ServerInfo extends ServerSizing {
-    blockSize: number;
-    nominalSampleRate: number;
-    actualSampleRate: number;
-    inputChannels: number;
-    maxGraphChildren: number;
-    maxUgenInputs: number;
-    /** Audio-tap region shape; 0/0 when the server has no segment. */
-    taps: number;
-    tapFrames: number;
-    /** The stream-transport frame ceiling in bytes. */
-    maxFrame: number;
-}
+// The package's public surface: `Server` plus what its configuration is made
+// of. The names re-exported here are the ones the module answered to before it
+// became a package, so importing from `defs/server` is unchanged.
+export {
+    DEFAULT_AUDIO_BUSES,
+    DEFAULT_CONTROL_BUSES,
+    DEFAULT_MAX_BUFFERS,
+    DEFAULT_MAX_GRAPH_CHILDREN,
+    DEFAULT_MAX_NODES,
+    DEFAULT_MAX_UGEN_INPUTS,
+    DEFAULT_SAMPLE_RATE,
+    DEFAULT_TAPS,
+} from "./options.ts";
+export type { ServerInfo, ServerSizing } from "./options.ts";
+export { ServerQueries } from "./queries.ts";
+export { ServerStreams } from "./streams.ts";
 
 /**
  * A plain value a message argument may take, or an explicit `[tag, value]`
@@ -108,10 +85,8 @@ export interface ServerInfo extends ServerSizing {
  */
 export type { MsgArg };
 
-/**
- * Control values, by name. The reserved `in`/`out` bus controls are
- * expressible here like any other name.
- */
+/** The handle's default reply timeout, in seconds. */
+const DEFAULT_TIMEOUT = 5.0;
 
 /**
  * One `/clock_query` observation: the server's counter and rate, and the local time
@@ -131,6 +106,8 @@ interface Pending {
     timer: ReturnType<typeof setTimeout>;
 }
 
+/** The mixin surface, merged so `server.queryTree(...)` types as its own. */
+export interface Server extends ServerQueries, ServerStreams {}
 
 export class Server {
     readonly connection: Connection;
@@ -145,6 +122,13 @@ export class Server {
      * so the sequencing layer (a later milestone) has one place to read it.
      */
     latency = 0.05;
+    /**
+     * How long a reply is waited for, in seconds, when a call does not say.
+     * The handle's, not a literal repeated at each call site: every method
+     * taking a `timeout` leaves it optional and an absent one resolves here,
+     * so `server.timeout = 30` moves them all at once.
+     */
+    timeout = DEFAULT_TIMEOUT;
 
     private pending = new Set<Pending>();
     private handlers = new Set<(msg: OscMessage) => void>();
@@ -153,9 +137,10 @@ export class Server {
     private maxFrame: number | null = null;
     private readonly listener: (packet: Uint8Array) => void;
 
-    private constructor(connection: Connection, sizing: ServerSizing) {
+    private constructor(connection: Connection, sizing: ServerSizing, timeout: number) {
         this.connection = connection;
         this.sizing = sizing;
+        this.timeout = timeout;
         this.nodes = NodeIdAllocator.forMaxNodes(sizing.maxNodes);
         this.audioBuses = new AudioBusAllocator(sizing.audioBuses, sizing.channels);
         this.controlBuses = new ControlBusAllocator(sizing.controlBuses);
@@ -173,6 +158,9 @@ export class Server {
      * place. `notify` (default `true`) registers for the server's pushes,
      * which is what recycles node ids as their `/node_end` arrives.
      *
+     * `timeout` becomes the handle's own default (`Server.timeout`), and is
+     * what the opening round trips are given.
+     *
      * The core wasm must be loaded first (`await loadOsc()`).
      */
     static async open(
@@ -180,7 +168,7 @@ export class Server {
         {
             sizing,
             notify = true,
-            timeout = 2.0,
+            timeout = DEFAULT_TIMEOUT,
         }: {
             sizing?: Partial<ServerSizing>;
             notify?: boolean;
@@ -198,7 +186,7 @@ export class Server {
         // A provisional server, so the query below goes through the same
         // reply dispatch every other command uses; the real sizing replaces
         // it once the answer is in.
-        const probe = new Server(connection, defaults);
+        const probe = new Server(connection, defaults, timeout);
         let resolved: ServerSizing = { ...defaults, ...sizing };
         if (!sizing) {
             try {
@@ -220,7 +208,7 @@ export class Server {
             }
         }
         probe.close();
-        const server = new Server(connection, resolved);
+        const server = new Server(connection, resolved, timeout);
         if (notify) await server.notify(true, timeout);
         return server;
     }
@@ -258,14 +246,19 @@ export class Server {
 
     /**
      * Resolves with the first reply message `match` accepts, or rejects with
-     * `ReplyTimeout` after `timeout` seconds. Registered *before* whatever
-     * send provokes the reply, so a fast server cannot outrun it.
+     * `ReplyTimeout` after `timeout` seconds (absent: the handle's). Registered
+     * *before* whatever send provokes the reply, so a fast server cannot outrun
+     * it.
+     *
+     * This and `requestBatch` are the two places a `timeout` is finally
+     * resolved: everything above just passes the argument down.
      */
     awaitReply(
         match: (msg: OscMessage) => boolean,
-        timeout = 5.0,
+        timeout?: number,
         what = "a reply",
     ): Promise<OscMessage> {
+        const secs = timeout ?? this.timeout;
         return new Promise((resolve, reject) => {
             const entry: Pending = {
                 match,
@@ -273,8 +266,8 @@ export class Server {
                 reject,
                 timer: setTimeout(() => {
                     this.pending.delete(entry);
-                    reject(new ReplyTimeout(`no ${what} within ${timeout}s`));
-                }, timeout * 1000),
+                    reject(new ReplyTimeout(`no ${what} within ${secs}s`));
+                }, secs * 1000),
             };
             this.pending.add(entry);
         });
@@ -408,7 +401,7 @@ export class Server {
         {
             expect,
             cmd,
-            timeout = 5.0,
+            timeout,
         }: { expect: readonly string[]; cmd?: string; timeout?: number },
     ): Promise<OscMessage> {
         const reply = this.awaitReply(
@@ -430,14 +423,15 @@ export class Server {
     requestBatch(
         addr: string,
         args: MsgArg[] = [],
-        { reply, timeout = 5.0 }: { reply: string; timeout?: number },
+        { reply, timeout }: { reply: string; timeout?: number },
     ): Promise<OscMessage[]> {
+        const secs = timeout ?? this.timeout;
         return new Promise((resolve, reject) => {
             const collected: OscMessage[] = [];
             const timer = setTimeout(() => {
                 unsubscribe();
-                reject(new ReplyTimeout(`no reply to ${addr} within ${timeout}s`));
-            }, timeout * 1000);
+                reject(new ReplyTimeout(`no reply to ${addr} within ${secs}s`));
+            }, secs * 1000);
             const unsubscribe = this.onReply((msg) => {
                 if (msg.addr === reply) {
                     collected.push(msg);
@@ -462,7 +456,7 @@ export class Server {
     async command(
         addr: string,
         args: MsgArg[],
-        timeout: number,
+        timeout?: number,
     ): Promise<OscMessage> {
         const msg = await this.request(addr, args, {
             expect: ["/done", "/fail"],
@@ -480,7 +474,7 @@ export class Server {
      * command sent earlier — def compiles, buffer jobs — has completed.
      * Returns the id used.
      */
-    async sync(timeout = 5.0): Promise<number> {
+    async sync(timeout?: number): Promise<number> {
         const id = ++this.syncCounter;
         const reply = this.awaitReply(
             (msg) => msg.addr === "/server_sync.reply" && msg.args[0] === id,
@@ -505,57 +499,6 @@ export class Server {
         this.sendMsg("/def_free", ...names);
     }
 
-    // ---- bus and tap subscriptions (one per client, over a set) ----
-
-    /**
-     * Subscribes this client to a periodic `/bus_stream.reply` snapshot of `buses`
-     * (`/bus_stream`): the server sends one immediately and then one every
-     * `periodMs` (10 ms floor, at most 128 buses) with no further requests —
-     * the message-based counterpart of reading the shared-memory segment, and
-     * what a meter or a control-rate scope in the page feeds on.
-     *
-     * One subscription per client, **replaced** by each call; `periodMs <= 0`
-     * (or no buses) cancels. Resolves on the `/done` ack. Read the snapshots
-     * with `onReply`, or let `busStream` do all of it.
-     */
-    async streamBuses(
-        periodMs: number,
-        buses: readonly BusLike[],
-        timeout = 5.0,
-    ): Promise<void> {
-        const args: MsgArg[] = [["i", Math.trunc(periodMs)]];
-        for (const bus of buses) args.push(["i", busIndex(bus)]);
-        await this.command("/bus_stream", args, timeout);
-    }
-
-    /**
-     * Subscribes this client to a periodic `/bus_tapStream.reply` snapshot of `buses`
-     * (`/bus_tapStream`): every `periodMs` (10 ms floor) the server sends, per
-     * bus, its newest `frames` samples — the path an oscilloscope, a
-     * phasescope or a spectrum in the page reads.
-     *
-     * The subscription **is** the watch: it starts recording each bus it
-     * lists and stops when it is replaced, cancelled or the connection dies,
-     * so a streaming client never calls `watch` itself. `frames` is clamped to
-     * the transport's bound and to half the ring; at most 8 buses; one
-     * subscription per client, replaced by each call, `periodMs <= 0` (or no
-     * buses) cancels. Resolves on the `/done` ack; `tapStream` wraps the whole
-     * thing.
-     */
-    async streamTaps(
-        periodMs: number,
-        frames: number,
-        buses: readonly BusLike[],
-        timeout = 5.0,
-    ): Promise<void> {
-        const args: MsgArg[] = [
-            ["i", Math.trunc(periodMs)],
-            ["i", Math.trunc(frames)],
-        ];
-        for (const bus of buses) args.push(["i", busIndex(bus)]);
-        await this.command("/bus_tapStream", args, timeout);
-    }
-
     // ---- bulk sizing ----
 
     /**
@@ -564,7 +507,7 @@ export class Server {
      * headroom for the reply's OSC envelope. A server that does not answer
      * leaves the conservative 1024 a datagram fits.
      */
-    async bulkChunk(timeout: number): Promise<number> {
+    async bulkChunk(timeout?: number): Promise<number> {
         if (this.maxFrame === null) {
             try {
                 this.maxFrame = (await this.queryInfo(timeout)).maxFrame;
@@ -576,45 +519,13 @@ export class Server {
         return Math.max(1024, Math.floor((this.maxFrame - 256) / 4));
     }
 
-    // ---- server introspection ----
-
-    /**
-     * The server's static configuration: bus counts, output/input channels,
-     * block size, sample rate and the boot-time pool sizes. The appended
-     * capacity fields degrade to the compiled defaults against a server too
-     * old to report them.
-     */
-    async queryInfo(timeout = 5.0): Promise<ServerInfo> {
-        const msg = await this.request("/server_query", [], {
-            expect: ["/server_query.reply"],
-            timeout,
-        });
-        const a = msg.args;
-        const at = (i: number, fallback: number) =>
-            i < a.length ? Number(a[i]) : fallback;
-        return {
-            audioBuses: Number(a[0]),
-            controlBuses: Number(a[1]),
-            channels: Number(a[2]),
-            blockSize: Number(a[3]),
-            nominalSampleRate: Number(a[4]),
-            actualSampleRate: Number(a[5]),
-            inputChannels: at(6, 0),
-            maxNodes: at(7, DEFAULT_MAX_NODES),
-            maxBuffers: at(8, DEFAULT_MAX_BUFFERS),
-            maxGraphChildren: at(9, DEFAULT_MAX_GRAPH_CHILDREN),
-            maxUgenInputs: at(10, DEFAULT_MAX_UGEN_INPUTS),
-            taps: at(11, 0),
-            tapFrames: at(12, 0),
-            maxFrame: at(13, 65536),
-        };
-    }
+    // ---- server control ----
 
     /**
      * The live counters (`/server_status`): `[unused, ugens, synths, groups, defs,
      * avgCpu, peakCpu, nominalSr, actualSr]`.
      */
-    async status(timeout = 5.0): Promise<(number | string | boolean | null | Uint8Array)[]> {
+    async status(timeout?: number): Promise<(number | string | boolean | null | Uint8Array)[]> {
         const msg = await this.request("/server_status", [], {
             expect: ["/server_status.reply"],
             timeout,
@@ -623,113 +534,11 @@ export class Server {
     }
 
     /**
-     * The defs the server holds, each with its control surface (`/def_query`,
-     * answered by one `/def_query.reply` per def). With `names`, details exactly
-     * those — an unknown one comes back with an empty `family` rather than
-     * failing; with none, every loaded def of every family.
-     *
-     * The def store persists across restarts, so a server may well hold defs
-     * this client never sent: this is how you find out.
-     */
-    async queryDefs(names: string[] = [], timeout = 5.0): Promise<DefInfo[]> {
-        const replies = await this.requestBatch("/def_query", names, {
-            reply: "/def_query.reply",
-            timeout,
-        });
-        return replies.map((msg) => parseDefInfo(msg.args));
-    }
-
-    /**
-     * Every **allocated** buffer with its shape (an argument-less
-     * `/buffer_query`). Like `queryDefs`, this reports what the server holds
-     * rather than what this client allocated.
-     */
-    async queryBuffers(timeout = 5.0): Promise<BufferInfo[]> {
-        const msg = await this.request("/buffer_query", [], {
-            expect: ["/buffer_query.reply"],
-            timeout,
-        });
-        return parseBufferList(msg.args);
-    }
-
-    /**
-     * The server's UGen catalog (`/ugen_query`, answered by one `/ugen_query.reply` per
-     * kind): every kind with its named inputs, defaults and rate rules, or
-     * just `kinds` if given.
-     *
-     * This is the catalog **this** server was built with, which is why it is
-     * worth asking instead of assuming: a build without the `synth` feature
-     * has no UGens at all and returns an empty list (its defs would all be
-     * FaustDefs, whose box vocabulary is Faust's own and lives client-side).
-     */
-    async queryUgens(kinds: string[] = [], timeout = 5.0): Promise<UgenInfo[]> {
-        const replies = await this.requestBatch("/ugen_query", kinds, {
-            reply: "/ugen_query.reply",
-            timeout,
-        });
-        return replies.map((msg) => parseUgenInfo(msg.args));
-    }
-
-    /**
-     * The node tree from `group` down (`/group_queryTree`) as a `Tree`: every
-     * entry is the same `NodeInfo` that `Node.info` returns, so reading a
-     * subtree needs no follow-up query. `String(tree)` draws it indented.
-     */
-    async queryTree(group: NodeLike = ROOT_NODE_ID, timeout = 5.0): Promise<Tree> {
-        const msg = await this.request(
-            "/group_queryTree",
-            [["i", nodeId(group)], ["i", 2]],
-            { expect: ["/group_queryTree.reply"], timeout },
-        );
-        return parseQueryTree(msg.args);
-    }
-
-    /**
-     * The group a path names (`/group_query`), or `undefined` when nothing
-     * answers to it.
-     *
-     * A path is the group names from the root down, `/mixer/drums`; a group
-     * with no name contributes its id instead (`/1000/drums`), so every group
-     * is reachable whether it was labelled or not. Resolve once and keep the
-     * handle: the id is the identity, the path is how you found it, and a group
-     * that is renamed or freed leaves the handle pointing at the id it resolved
-     * to.
-     */
-    async groupAt(path: string, timeout = 5.0): Promise<Group | undefined> {
-        const msg = await this.request("/group_query", [path], {
-            expect: ["/group_query.reply", "/fail"],
-            timeout,
-        });
-        if (msg.addr === "/fail") {
-            throw new CommandError(`/group_query failed: ${msg.args.join(" ")}`);
-        }
-        const id = Number(msg.args[1]);
-        return id >= 0 ? new Group(id, this) : undefined;
-    }
-
-    /**
-     * The server's rendered node graph as text (`/group_dumpGraph`) — a
-     * debugging aid; for machine use prefer `queryTree`.
-     */
-    async dumpGraph(group: NodeLike = ROOT_NODE_ID, timeout = 5.0): Promise<string> {
-        const msg = await this.request("/group_dumpGraph", [["i", nodeId(group)]], {
-            expect: ["/group_dumpGraph.reply", "/fail"],
-            timeout,
-        });
-        if (msg.addr === "/fail") {
-            throw new CommandError(`/group_dumpGraph failed: ${msg.args.join(" ")}`);
-        }
-        return String(msg.args[1]);
-    }
-
-    // ---- server control ----
-
-    /**
      * Registers (or drops) this client for the server's pushes — `/node_end`
      * node deaths, `/node_trigger` triggers, the transport broadcasts. Registering is
      * what lets the node-id registry recycle.
      */
-    async notify(flag = true, timeout = 5.0): Promise<void> {
+    async notify(flag = true, timeout?: number): Promise<void> {
         const reply = this.awaitReply(
             (msg) => msg.addr === "/done" && msg.args[0] === "/server_notify",
             timeout,
@@ -788,7 +597,7 @@ export class Server {
      * clock never talks to a server itself.
      */
     async sampleTimebase({
-        timeout = 2.0,
+        timeout,
         anchors = 5,
         gap = 0.05,
         trackEvery = 0.5,
@@ -846,7 +655,7 @@ export class Server {
      * One `/clock_query` round trip, timestamped at the midpoint of the exchange —
      * the best estimate of when the server read its own counter.
      */
-    private async clockAnchor(timeout: number): Promise<ClockReply> {
+    private async clockAnchor(timeout?: number): Promise<ClockReply> {
         const sent = performance.now() / 1000;
         const msg = await this.request("/clock_query", [], {
             expect: ["/clock_query.reply"],
@@ -892,5 +701,17 @@ export class Server {
         }
         this.pending.clear();
         this.handlers.clear();
+    }
+}
+
+// Mixin composition: the queries and the stream subscriptions are grouped in
+// their own modules but are still `Server`'s own methods, exactly as the
+// Python package's mixins are — copying the prototypes is what makes
+// `server.queryTree(...)` the same call it was before the split.
+for (const mixin of [ServerQueries, ServerStreams]) {
+    for (const name of Object.getOwnPropertyNames(mixin.prototype)) {
+        if (name === "constructor") continue;
+        const descriptor = Object.getOwnPropertyDescriptor(mixin.prototype, name);
+        if (descriptor) Object.defineProperty(Server.prototype, name, descriptor);
     }
 }

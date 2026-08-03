@@ -24,7 +24,7 @@ import { loadCore } from "../src/base/core.ts";
 import { decodePacket, encodeMessage, loadOsc } from "../src/base/osc.ts";
 import type { Connection } from "../src/base/connection.ts";
 import { Buffer } from "../src/defs/buffer.ts";
-import { Server } from "../src/defs/server.ts";
+import { Server } from "../src/defs/server/index.ts";
 import { BusStream, TapStream } from "../src/data/index.ts";
 import {
     Peaks,

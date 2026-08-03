@@ -22,7 +22,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadOsc } from "../src/base/osc.ts";
-import { Env } from "../src/defs/ugens.ts";
+import { Env } from "../src/defs/ugens/index.ts";
 import { BASE_ID, GuiIdAllocator } from "../src/gui/ids.ts";
 import {
     bpf,

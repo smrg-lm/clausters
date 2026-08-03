@@ -22,7 +22,7 @@ import type { BusLike } from "./bus.ts";
 import { parseNodeInfo } from "./info.ts";
 import type { NodeInfo } from "./info.ts";
 import type { MsgArg, OscArg } from "../base/osc.ts";
-import type { Server } from "./server.ts";
+import type { Server } from "./server/index.ts";
 
 export const ROOT_NODE_ID = 0;
 
@@ -120,7 +120,7 @@ export class Node {
      * freed, or ended by a `doneAction` — comes back with `exists` false
      * rather than throwing.
      */
-    async info(timeout = 5.0): Promise<NodeInfo> {
+    async info(timeout?: number): Promise<NodeInfo> {
         const server = this.srv();
         const reply = server.awaitReply(
             (msg) => msg.addr === "/node_query.reply" && Number(msg.args[0]) === this.id,

@@ -18,7 +18,7 @@
 // build, not of this class — nothing here names a carrier.
 
 import type { MsgArg } from "../base/osc.ts";
-import type { Server } from "./server.ts";
+import type { Server } from "./server/index.ts";
 import { Signal } from "./signals.ts";
 import type { SignalNode } from "./signals.ts";
 

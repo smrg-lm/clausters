@@ -11,7 +11,7 @@
 // replaces the previous one. A view that wants a rolling trace keeps its own
 // history from `onSnapshot` — how long a trace is, is the view's decision.
 
-import type { Server } from "../defs/server.ts";
+import type { Server } from "../defs/server/index.ts";
 import type { BusLike } from "../defs/bus.ts";
 import { busIndex } from "../defs/bus.ts";
 import type { OscMessage } from "../base/osc.ts";

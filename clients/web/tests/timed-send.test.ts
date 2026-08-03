@@ -18,7 +18,7 @@ import type { ManualTicker } from "../src/base/clock.ts";
 import { SampleTimebase, secsToSamples, unixToNtp } from "../src/base/timebase.ts";
 import type { Timebase } from "../src/base/timebase.ts";
 import { Routine } from "../src/base/stream.ts";
-import { Server } from "../src/defs/server.ts";
+import { Server } from "../src/defs/server/index.ts";
 import { Event } from "../src/seq/event.ts";
 
 await loadCore(

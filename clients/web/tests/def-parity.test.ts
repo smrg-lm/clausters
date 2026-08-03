@@ -34,8 +34,8 @@ import {
     sendTrig,
     sine,
     whiteNoise,
-} from "../src/defs/ugens.ts";
-import type { Channel } from "../src/defs/ugens.ts";
+} from "../src/defs/ugens/index.ts";
+import type { Channel } from "../src/defs/ugens/index.ts";
 
 const here = new URL(".", import.meta.url);
 
@@ -183,7 +183,7 @@ test("one control name cannot carry two definitions", () => {
 });
 
 test("a modulated delaytime must state how long the line is", async () => {
-    const { delayL } = await import("../src/defs/ugens.ts");
+    const { delayL } = await import("../src/defs/ugens/index.ts");
     assert.throws(() => delayL(sine(440.0), sine(1.0)), TypeError);
     // With the size stated it builds, and the size rides as a static field.
     const spec = new SynthDef(

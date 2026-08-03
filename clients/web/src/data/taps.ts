@@ -18,7 +18,7 @@
 //   the view; `scopeWindow` aligns it on a rising crossing with the core's own
 //   trigger — the one the GUI host draws with, so the two traces agree.
 
-import type { Server } from "../defs/server.ts";
+import type { Server } from "../defs/server/index.ts";
 import type { OscMessage } from "../base/osc.ts";
 import {
     oscil_align,

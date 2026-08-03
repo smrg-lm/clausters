@@ -24,7 +24,7 @@ import { Routine } from "../base/stream.ts";
 import { Event } from "./event.ts";
 import type { EventDestination } from "./event.ts";
 import type { Pattern } from "./pattern.ts";
-import type { TimedMessage } from "../defs/server.ts";
+import type { TimedMessage } from "../defs/server/index.ts";
 import type { MsgArg } from "../base/osc.ts";
 
 /** What a timeline can hold: anything that renders itself on a destination. */

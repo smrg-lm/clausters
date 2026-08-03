@@ -35,8 +35,10 @@ clients/web/
       (clock.ts  timebase.ts  builtins.ts — W3)
     errors.ts             #   the error hierarchy (mirrors errors.py)
     defs/                 #   the def model + server client (mirrors clausters/defs)
-      server.ts  node.ts  bus.ts  buffer.ts
-      signals.ts  ugens.ts  synthdef.ts  faustdef.ts  graphdef.ts
+      server/             #     the handle, and beside it options/queries/streams
+      ugens/              #     the UGen catalogue, one module per family
+      node.ts  bus.ts  buffer.ts  info.ts
+      signals.ts  synthdef.ts  faustdef.ts  graphdef.ts
     gui/                  #   the GUI host driver (mirrors clausters/gui)
       host.ts             #     GuiHost + the per-page guiHost() singleton
       guidef.ts  handle.ts  ids.ts
@@ -429,12 +431,12 @@ family; this fills out the UGen-graph one, so a graph written against the
 Python client ports by transcription rather than by lookup. The Faust
 authoring surfaces are W7's, both of them.
 
-- `defs/ugens.ts`: the rest of the server's UGen catalogue — sources, filters, delays, panning, envelopes, triggers, bus and buffer I/O, the demand pair, the spectral chain (`fft`/`ifft`/`pv_*`, the client side of S8), the output-less roots (`sendReply`/`sendTrig`/`poll`), and the complete unary/binary operator tables.
+- `defs/ugens/`: the rest of the server's UGen catalogue — sources, filters, delays, panning, envelopes, triggers, bus and buffer I/O, the demand pair, the spectral chain (`fft`/`ifft`/`pv_*`, the client side of S8), the output-less roots (`sendReply`/`sendTrig`/`poll`), and the complete unary/binary operator tables.
 - The W1 composition rule is unchanged: TypeScript has no operator overloading, so operators stay methods and parity is asserted on the **emitted spec**, never on the source.
 
 **The gap, measured 2026-08-02** (the list above predates the U track, which
 grew the demand family from the "pair" it names to thirteen builders). Python
-exposes 151 builders in `defs/ugens.py`, TypeScript 116 in `defs/ugens.ts`; **40
+exposes 151 builders in `defs/ugens.py`, TypeScript 116 in `defs/ugens/`; **40
 are missing**, and they are not scattered — they are five whole families, which
 is why the difference reads as "the same catalogue minus some entries" and is
 not:
@@ -455,6 +457,14 @@ not:
   the builders port fine but only mean something against a native server, never
   against the in-page wasm engine. Port them with that written next to them.
 - **Filters (2)** — `svf`, `svf_morph`.
+
+Since W21 the two catalogues are split by family into the same nine module
+names, so **each row above already knows the file it lands in**: `ugens/demand.ts`,
+`ugens/pan.ts`, `ugens/io.ts` and `ugens/filter.ts` each gain their missing
+entries beside the ones they hold, and `ugens/spectral.ts` — the one module the
+split left unwritten, because nothing in it is ported — is created by this
+milestone. Convolution lands in `spectral.ts`, where the Python client keeps
+`conv`/`partconv_frames`.
 
 Naming note: Python's `oscn` is TS's `oscN` — a spelling difference, not a
 missing builder. Both directions also carry helpers with no counterpart
@@ -802,11 +812,76 @@ instances share the loop and nothing else.
 - **A remote-server standalone page.** The in-tab standalone (a bundle booting against the embedded wasm engine) **shipped with the B track** and grew up in W4 (the bundle contract, the resolver, the pools, the components); what remains is the same mount against a **remote `--ws` server** — a one-file instrument front for a server running elsewhere. The old note called this cheap "once W1/W2 exist"; they exist, and W4 is what actually decides the work: `openBundle`/`startBundle` reach the page's `guiHost()` and `engine` singletons directly, so the step is giving the mount a **destination seam** (a `Server` + `GuiHost` pair, both already carrier-agnostic since W1/W2) in place of those singletons. The boot replay itself stays carrier-agnostic above the W0 seam, as it always was.
 
 
-## Port pending: the governing transport (server T1, 2026-08-02)
+### ✅ W21 - The module tree mirrors the Python client's *(done 2026-08-03)*
+
+Not a milestone the plan foresaw, and it earns a number for the same reason
+the server's R track does: what shipped between W1 and W20 was placed
+correctly *within* a module, and two modules had grown past the point where
+their Python siblings had already been split. The reference client leads, so
+this is the port of a shape, not a new one — no symbol moved out of its public
+path, no behaviour changed, and the whole point is that a reader who knows one
+tree finds the other.
+
+- **`defs/server.ts` becomes `defs/server/`** (the port of server R6): the 896
+  lines that spanned the connection, the raw OSC, the requests, the
+  configuration, the queries and the subscriptions become the handle itself in
+  `index.ts`, with `options` (the sizes it is built against and the
+  `ServerInfo` it reports), `queries` (`queryDefs`/`queryBuffers`/`queryUgens`/
+  `queryInfo`/`queryTree`/`groupAt`/`dumpGraph`) and `streams`
+  (`streamBuses`/`streamTaps`) beside it. **Mixins rather than collaborators**,
+  exactly as in the Python package and for the same reason: `server.queryTree(…)`
+  is the same call it was. TypeScript has no multiple inheritance, so the
+  composition is the language's own mixin recipe — the mixin methods declare
+  `this: Server` and their prototypes are copied onto `Server` — which is what
+  keeps both the runtime path and the type.
+- **The timeout is the handle's**, `server.timeout`, the second half of R6 that
+  the plan already recorded as owed here: 26 copies of `timeout = 5.0`
+  (plus the `10.0` and `30.0` in `Buffer`) became `timeout?: number`, and an
+  absent one now resolves in the two places that consume it, `awaitReply` and
+  `requestBatch`. `server.timeout = 30` is one assignment instead of an
+  argument at every call site. One behaviour change rides along and is
+  deliberate: `Server.open`'s sizing probe waited 2 s and now waits the
+  handle's default (5 s, the Python client's), because one number naming one
+  thing is worth more than the shorter wait on a server that is not answering
+  — the probe already degrades to the compiled defaults, and it is awaited, not
+  blocking.
+- **`defs/ugens.ts` becomes `defs/ugens/`** (the port of server R8): 1811 lines
+  that were one long list with the families marked by a comment become
+  `graph` (the node, control and channel-list types, plus the fused
+  arithmetic), `osc`, `filter` (filters, delays, smoothers), `pan`, `io`,
+  `buf`, `trig`, `demand` and `env` — **the same nine names the Python package
+  uses, with each callable in the module its Python sibling is in**, so the
+  two catalogues diff family by family. Everything is re-exported from
+  `index.ts`. The one helper crossing modules, `isList`, is exported
+  `@internal` the way the Python package shares its underscored helpers.
+- **`defs/tap.ts` folds into `defs/server/options.ts`**, where the Python
+  client keeps `DEFAULT_TAPS`: how many rings exist is the server's property,
+  and a one-constant module was a file the Python tree does not have.
+
+The two families the split leaves empty are the ones no milestone has opened
+yet, and each now has the module its Python sibling names waiting for it:
+`ugens/spectral.ts` is **W6**'s, and `server/transport.ts` is **W22**'s.
+
+**What this does not do**, recorded so the next diff of the two trees does not
+raise it as a gap: `SynthExpr` stays in `ugens/graph.ts` rather than moving to
+a `defs/expr.ts`. In the Python client that module holds three empty markers
+(`Expr`, `SynthExpr`, `FaustExpr`) and the operator surface comes from
+`base/absobject.py`, which the value side shares; here `SynthExpr` *is* the
+math surface, `Signal` extends nothing, and there is no `base/absobject.ts`.
+Mirroring the file without porting what makes it a marker would leave a name
+in the same place meaning something else, which is worse than the honest
+difference. It becomes real work when the abstract-object base is ported.
+
+**Verified:** `./build.sh && ./test.sh` — the 166 `node --test` cases and the
+nine headless-Chrome acceptances, unchanged and green, which is the whole
+claim: nothing moved that a caller can see.
+
+### W22 - The governing transport *(server T1, 2026-08-02)*
 
 The server gained a transport that freezes a governed subtree sample-exactly,
-and the Python client is the reference. None of it exists in TypeScript yet.
-The shape to follow:
+and the Python client is the reference. None of it exists in TypeScript yet;
+it lands as `defs/server/transport.ts`, the `ServerTransport` mixin the Python
+package already has and W21 left a slot for. The shape to follow:
 
 - `transportGroup(group: number | null)` — `/transport_group`, `null` unbinds.
 - `schedAtTransport(target: number, ...messages)` — `/sched_atTransport`, the
@@ -823,28 +898,8 @@ The shape to follow:
 - The shm reader follows ABI v6: the transport clock sits at header offset 48,
   in what was reserved space, so no existing offset moved.
 
-## Port pending: the `Server` facade's shape (server R6, 2026-08-02)
-
-The Python `Server` was one class of ~35 methods; it is now a package whose
-`Server` composes three mixins, and `defs/server.ts` should land the same split
-rather than re-deriving a different one:
-
-- `ServerQueries` — `queryDefs`, `queryBuffers`, `queryUgens`, `queryInfo`,
-  `queryTree`, `groupAt`, `dumpGraph`: the blocking round trips that report what
-  a running server holds.
-- `ServerTransport` — the shared grid: `transport`, `setTransport`,
-  `transportState`, `transportGroup`, `schedAtTransport`, `transportPlay`,
-  `transportStop`, `transportLocate` (see the transport port note above, which
-  this split does not change).
-- `ServerStreams` — `streamBuses`, `streamTaps`, the push subscriptions.
-
-What stays on `Server` itself: the interface and the allocators, the raw OSC
-paths (`sendMsg`/`sendBundle`/`schedAt`), `request`, the def table, the node-id
-recycling, render, and the server's own lifecycle.
-
-And the piece worth porting even if the split is not: **the timeout is an
-instance default**, `server.timeout`, not a literal repeated in every
-signature. Each call's `timeout` argument is optional and only `request` (and
-its batch form) resolves an absent one against the handle. TypeScript has the
-same disease — a default written at each call site is a default nobody can
-change globally.
+The mixin this milestone adds is `ServerTransport` — `transport`,
+`setTransport`, `transportState`, `transportGroup`, `schedAtTransport`,
+`transportPlay`, `transportStop`, `transportLocate` — the third of the three
+the Python package composes, and the only one W21 could not port because the
+surface underneath it does not exist here yet.

@@ -20,7 +20,7 @@ import { fetchAudio, interleave } from "../data/samples.ts";
 import type { MsgArg } from "../base/osc.ts";
 import { parseBufferList } from "./info.ts";
 import type { BufferInfo } from "./info.ts";
-import type { Server } from "./server.ts";
+import type { Server } from "./server/index.ts";
 
 export const NUM_BUFFERS = 4096;
 
@@ -75,7 +75,7 @@ export class Buffer {
         server: Server,
         frames: number,
         channels = 1,
-        { wait = true, timeout = 5.0 }: { wait?: boolean; timeout?: number } = {},
+        { wait = true, timeout }: { wait?: boolean; timeout?: number } = {},
     ): Promise<Buffer> {
         const bufnum = server.buffers.alloc();
         const args: MsgArg[] = [
@@ -108,7 +108,7 @@ export class Buffer {
         {
             fileStart = 0,
             numFrames = 0,
-            timeout = 10.0,
+            timeout,
         }: { fileStart?: number; numFrames?: number; timeout?: number } = {},
     ): Promise<Buffer> {
         const bufnum = server.buffers.alloc();
@@ -147,7 +147,7 @@ export class Buffer {
     static async load(
         server: Server,
         url: string,
-        { timeout = 30.0 }: { timeout?: number } = {},
+        { timeout }: { timeout?: number } = {},
     ): Promise<Buffer> {
         const bulkLoad = server.connection.bulkLoad;
         if (!bulkLoad) {
@@ -186,7 +186,7 @@ export class Buffer {
     async gen(
         cmd: string,
         args: MsgArg[] = [],
-        { wait = true, timeout = 5.0 }: { wait?: boolean; timeout?: number } = {},
+        { wait = true, timeout }: { wait?: boolean; timeout?: number } = {},
     ): Promise<void> {
         const payload: MsgArg[] = [["i", this.bufnum], cmd, ...args];
         if (!wait) {
@@ -199,7 +199,7 @@ export class Buffer {
     /** Zeroes this buffer (`/buffer_zero`). */
     async zero({
         wait = true,
-        timeout = 5.0,
+        timeout,
     }: { wait?: boolean; timeout?: number } = {}): Promise<void> {
         const args: MsgArg[] = [["i", this.bufnum]];
         if (!wait) {
@@ -219,7 +219,7 @@ export class Buffer {
      * change it. A slot with nothing in it (never allocated, or freed) comes
      * back with `exists` false rather than throwing.
      */
-    async info(timeout = 5.0): Promise<BufferInfo> {
+    async info(timeout?: number): Promise<BufferInfo> {
         const msg = await this.srv().request("/buffer_query", [["i", this.bufnum]], {
             expect: ["/buffer_query.reply"],
             timeout,
@@ -247,7 +247,7 @@ export class Buffer {
         start = 0,
         count = -1,
         chunk,
-        timeout = 10.0,
+        timeout,
     }: { start?: number; count?: number; chunk?: number; timeout?: number } = {}):
         Promise<Float32Array> {
         const server = this.srv();

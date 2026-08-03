@@ -80,7 +80,7 @@ export { loadCore } from "./base/core.ts";
 export { WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";
-export { Server } from "./defs/server.ts";
+export { Server } from "./defs/server/index.ts";
 export { AddAction, Group, Synth } from "./defs/node.ts";
 // The options bags of `Synth.new` and `Group.new`. Exported as types so the
 // API reference documents what those parameters accept: TypeDoc reports a

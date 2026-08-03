@@ -4,9 +4,9 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { WsConnection } from "../src/base/connection.ts";
 import { loadOsc } from "../src/base/osc.ts";
-import { Server } from "../src/defs/server.ts";
+import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
-import { control, out, sine } from "../src/defs/ugens.ts";
+import { control, out, sine } from "../src/defs/ugens/index.ts";
 import { TempoClock } from "../src/base/clock.ts";
 import { Pbind, Pseq } from "../src/seq/index.ts";
 

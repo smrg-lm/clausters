@@ -22,9 +22,9 @@
 // error.
 
 import type { MsgArg } from "../base/osc.ts";
-import type { Server } from "./server.ts";
-import { ChannelList, Control, Ugen } from "./ugens.ts";
-import type { Channel } from "./ugens.ts";
+import type { Server } from "./server/index.ts";
+import { ChannelList, Control, Ugen } from "./ugens/index.ts";
+import type { Channel } from "./ugens/index.ts";
 
 /**
  * One serialized UGen input: a reference to an earlier UGen, to a control,

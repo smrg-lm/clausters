@@ -27,8 +27,8 @@
 // every id/index prop as an integer, so the tree means the same thing it does
 // from Python.
 
-import { Env, envToPoints, pointsToEnv, resolveCurve } from "../defs/ugens.ts";
-import type { Curve } from "../defs/ugens.ts";
+import { Env, envToPoints, pointsToEnv, resolveCurve } from "../defs/ugens/index.ts";
+import type { Curve } from "../defs/ugens/index.ts";
 
 export { Env, envToPoints, pointsToEnv };
 export type { Curve };

@@ -22,9 +22,9 @@ import { loadOsc } from "../src/base/osc.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Buffer } from "../src/defs/buffer.ts";
 import { Synth } from "../src/defs/node.ts";
-import { Server } from "../src/defs/server.ts";
+import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
-import { control, out, outCtl, sine } from "../src/defs/ugens.ts";
+import { control, out, outCtl, sine } from "../src/defs/ugens/index.ts";
 import { BusStream, Peaks, TapStream, scopeFrames, scopeWindow } from "../src/data/index.ts";
 
 const here = new URL(".", import.meta.url);
