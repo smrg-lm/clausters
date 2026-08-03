@@ -863,8 +863,11 @@ tree finds the other.
   interval, the model, the teardown — was inlined in `Server` where the Python
   client has a module of its own, with one class per carrier and a common
   surface (`anchor`/`warmup`/`track`/`untrack`/`now`/`rate`/`timebase`/`close`).
-  It is now `WsSampleClock` and `PageSampleClock`, the counterparts of
-  `UdpSampleClock` and `EmbedSampleClock`, and `Server.sampleTimebase()` is
+  It is now `WsSampleClock` and `EmbedSampleClock`, named for the carriers the
+  way `UdpSampleClock` and `EmbedSampleClock` are there — the in-page engine
+  *is* an embedded server (the `synth,embed` build, reached through the embed
+  door), and what makes its counter readable with no round trip is that it
+  runs in this process, not that a page holds one of it. `Server.sampleTimebase()` is
   what it reads as in Python: resolve the carrier, warm it up, keep it. **One
   difference is the carrier's and is written next to it**: the Python tracker
   opens its *own* UDP socket so `/clock_query` never contends with the command

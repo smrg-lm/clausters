@@ -33,7 +33,7 @@ export {
     DEFAULT_TAPS,
 } from "./server/index.ts";
 
-export { PageSampleClock, WsSampleClock, sampleClockFor } from "./clocksync.ts";
+export { EmbedSampleClock, WsSampleClock, sampleClockFor } from "./clocksync.ts";
 export type { Anchor, ServerSampleClock } from "./clocksync.ts";
 
 export { AddAction, Group, Node, NodeIdAllocator, ROOT_NODE_ID, Synth } from "./node.ts";

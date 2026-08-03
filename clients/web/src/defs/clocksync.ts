@@ -1,5 +1,5 @@
-// Track the server's sample clock: over a socket, or read directly in the page
-// (mirrors `clausters/defs/clocksync.py`).
+// Track the server's sample clock: over a socket, or read directly in this
+// process (mirrors `clausters/defs/clocksync.py`).
 //
 // Two ways to feed a `SampleTimebase`, one per carrier:
 //
@@ -7,10 +7,14 @@
 //   counter directly, it queries the server's `/clock_query` and models the
 //   counter (below). The Python client's `UdpSampleClock`, over the carrier a
 //   browser has.
-// - `PageSampleClock` — for the in-page engine, whose connection exposes the
+// - `EmbedSampleClock` — for an in-page engine, whose connection exposes the
 //   counter itself: no round trips, no model — every read *is* the counter. It
 //   mirrors the tracker's surface so `Server.sampleTimebase` treats both alike.
-//   The Python client's `EmbedSampleClock`.
+//   The Python client's class of the same name, and named for the same
+//   property: what makes the counter readable is that the server is **embedded
+//   in this process** (the wasm engine is the `synth,embed` build, reached
+//   through the embed door), not that there is one of it per page — a page
+//   opens as many engines as it wants to.
 //
 // The socket tracker models
 //
@@ -31,8 +35,8 @@
 //
 // **One difference from the Python client, and it is the carrier's.** There a
 // tracker opens its **own** UDP socket, so `/clock_query` round trips never
-// contend with the Server's command socket. A page has one WebSocket to a
-// given server and cannot open a second cheaply, so this tracker rides the
+// contend with the Server's command socket. A browser client has one
+// WebSocket to a given server and cannot open a second cheaply, so this tracker rides the
 // `Server`'s connection through its ordinary request path. Nothing about the
 // model changes — the anchor is still the midpoint of a measured round trip —
 // only that the round trip shares a queue with everything else the client
@@ -179,16 +183,17 @@ export class WsSampleClock implements ServerSampleClock {
 }
 
 /**
- * The in-page counterpart of `WsSampleClock`: reads the engine's sample
- * counter straight off the connection, which shares this page's
- * `AudioContext` with it.
+ * The in-process counterpart of `WsSampleClock`: reads the engine's sample
+ * counter straight off the connection, which shares an `AudioContext` with
+ * it. One per engine, not one per page — a connection carries a client over
+ * one engine, and a page may hold several.
  *
  * There is nothing to track — the counter is read synchronously and exactly —
  * so `anchor`/`warmup`/`track` are trivial no-ops kept only for surface parity
  * with the socket tracker, and they never wait or time out. `close` releases
  * nothing: the clock belongs to the connection that opened it.
  */
-export class PageSampleClock implements ServerSampleClock {
+export class EmbedSampleClock implements ServerSampleClock {
     private readonly clock: SampleClock;
 
     constructor(clock: SampleClock) {
@@ -237,7 +242,7 @@ export class PageSampleClock implements ServerSampleClock {
  * or `null` when the server does not answer `/clock_query` — which leaves the
  * caller on wall-clock time rather than failing.
  *
- * The in-page carrier needs no warmup and no tracking, so both arguments are
+ * An embedded engine needs no warmup and no tracking, so both arguments are
  * ignored there; over a socket they size the regression (see `warmup`).
  */
 export async function sampleClockFor(
@@ -250,7 +255,7 @@ export async function sampleClockFor(
     } = {},
 ): Promise<ServerSampleClock | null> {
     if (server.connection.sampleClock) {
-        return new PageSampleClock(await server.connection.sampleClock());
+        return new EmbedSampleClock(await server.connection.sampleClock());
     }
     let first: Anchor;
     try {
