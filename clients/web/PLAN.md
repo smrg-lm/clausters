@@ -883,6 +883,18 @@ instances share the loop and nothing else.
   **W23** — it carries `set_ambient_host` along with `scope.py` and as much of
   `plot.py` as runs without an offline drive.
 
+- **The server abstractions are complete, checked symbol by symbol**
+  (2026-08-03, over `Server`, `Node`/`Synth`/`Group`, `Bus`, `Buffer`,
+  `SynthDef`, `FaustDef`, `GraphDef`). W22's port closed the last two names
+  (`Buffer.readInto`/`Buffer.write`). What a fresh comparison still reports, and
+  why each is not a gap: `Server.boot`, `Server.args` and `Server.shm` are
+  process- and segment-shaped, so a page has no counterpart; `Server.render` is
+  **W13**'s; `Server.sample_clock` is `sampleTimebase()` plus `defs/clocksync.ts`,
+  the rename W21 recorded; and `plotDef()` on the three def classes waits on the
+  patch model, which is **W24**'s. Everything else matches name for name, with
+  the TypeScript-only additions being option bags and type aliases the language
+  needs (`Placement`, `BufferLike`, `ServerSizing`).
+
 - **The widget props are their own manifest, and it is `docs/gui-props.md`.**
   That table compares all three surfaces — the host, the Python builders, this
   client's option types — and `clients/python/tests/test_gui_props.py` fails on
@@ -961,7 +973,7 @@ tree finds the other.
 
 The two families the split leaves empty are the ones no milestone has opened
 yet, and each now has the module its Python sibling names waiting for it:
-`ugens/spectral.ts` is **W6**'s, and `server/transport.ts` is **W22**'s. The
+`ugens/spectral.ts` is **W6**'s; `server/transport.ts` was **W22**'s and is written. The
 Python modules with no counterpart at all are unported *features*, not
 misplaced code, and each is already owned: `defs/boxes.py` and `defs/pv_expr.py`
 (**W7**), `seq/automation.py` (**W11**), `responders.py` (**W8**/**W9**),
@@ -1018,7 +1030,7 @@ canvas (**W10** records the whole rationale).
 nine headless-Chrome acceptances, unchanged and green, which is the whole
 claim: nothing moved that a caller can see.
 
-### W22 - The governing transport *(server T1, 2026-08-02)*
+### ✅ W22 - The governing transport *(server T1, 2026-08-02; ported 2026-08-03)*
 
 The server gained a transport that freezes a governed subtree sample-exactly,
 and the Python client is the reference. None of it exists in TypeScript yet;
@@ -1045,6 +1057,53 @@ The mixin this milestone adds is `ServerTransport` — `transport`,
 `transportPlay`, `transportStop`, `transportLocate` — the third of the three
 the Python package composes, and the only one W21 could not port because the
 surface underneath it does not exist here yet.
+
+**What shipped.** The mixin as sketched, at its sibling's path
+(`defs/server/transport.ts`), plus the half of the feature that is not on the
+`Server` at all.
+
+- **`ServerTransport`**, the eight methods above, composed onto `Server` beside
+  `ServerQueries` and `ServerStreams`, so `server.transportStop()` is the same
+  kind of call `server.queryTree()` is. The two records it reports are
+  interfaces — `TransportGrid` and `TransportState` — where the Python client
+  returns a tuple and a dict; `group` is `null` rather than `-1` and
+  `transportSample` is read straight, both of them always present. Everything
+  that waits is a promise, as everywhere else in this client.
+- **`TempoClock.freeze` / `thaw` / `frozen`**, which the sketch did not name
+  and the feature does not work without: a page whose server froze would keep
+  advancing beats and scheduling into a piece that is not moving. Only
+  `beats()` consults the freeze, exactly as in the reference client — what was
+  already scheduled stays scheduled and lands in the server's frozen queue, so
+  the exactness is the engine's rather than the page's.
+- **`Buffer.readInto` / `Buffer.write`**, found by the completeness pass this
+  port ran over the server abstractions rather than by the transport itself:
+  the two `Buffer` commands that address the *server's* filesystem, the last
+  names missing from `Server`/`Node`/`Bus`/`Buffer`/`SynthDef`/`FaustDef`/
+  `GraphDef` once `plotDef` (**W24**) is set aside. Like `Buffer.read` they
+  mean something only against a native server; the in-page engine has no
+  filesystem, and a page saving what it read downloads a blob instead.
+
+What the sketch names and this milestone does **not** port: `Transport.resume()`
+is `clausters.gui.transport`, part of the editor track (**W16**), and the shm
+reader has no browser counterpart at all. The *joining* half of the advisory
+transport — `clock.joinTransport`, a `Playhead` following the broadcasts,
+`session.joinTransport()` — stays **W12**'s, and the book's transport chapter
+says so in prose rather than leaving the reader to find out.
+
+**Verified:** `./build.sh && ./test.sh` — 181 `node --test` cases (four new: the
+grid defined, read, rolled and located; a governed group freezing the transport
+clock; `/sched_atTransport` accepted for a governed packet and refused for one
+that is not; and the buffer written to a file and read back into another — the
+first three against a real `clausters --ws` server) and eleven headless-Chrome
+acceptances, the new one being `tests/transport.html`: a drone inside a governed
+group, **asserted audible** while rolling (0.200), silent when the transport
+stops (0.000) with the transport clock held at 30720 samples and the node still
+in the tree, audible again on the resume, and thawed by unbinding — with the
+page's clock frozen and thawed alongside, its beat held and the pause not
+charged to the piece. Example: `examples/transport-freeze.html`, the port of the
+Python client's `transport_freeze.py` — a generative texture frozen mid-gesture
+and continued, driven end to end in a browser. Book chapter: "The transport: a
+shared grid, and a piece that freezes".
 
 ### W23 - The visual verbs: `scope`, and as much of `plot` as runs live
 
@@ -1116,6 +1175,11 @@ as some other milestone has a better claim on it.
   caller's. Resolve it in one direction: drop it here, or add the verb to the
   reference client first and keep it. The standing rule says the reference
   leads, so the default is to drop it.
+- **Two names the sweep of 2026-08-03 left over**, each too small to own a
+  milestone and neither a difference with a reason: `Routine.run(func, clock,
+  quant)`, the classmethod that constructs and starts in one call (the instance
+  `play` is here, the shortcut is not), and `ServerError`, which W21 already
+  listed as missing and portable and which nothing has since claimed.
 - **The general rule this slot enforces**: a name that exists in one client and
   not the other is either a *feature* some milestone owns, or a *difference*
   `docs/gui-props.md` and this plan's parity section record with a reason.

@@ -279,3 +279,27 @@ test("a routine that throws is dropped, and the clock keeps driving the rest", (
     assert.deepEqual(survivor, [0, 1, 2], "the other routine ran to its end");
     assert.equal(bad.state, "done", "...and the raising one lost its place");
 });
+
+test("freeze holds the beat, and thaw does not charge the piece for the pause", () => {
+    const { clock, run } = harness();
+    clock.start();
+    run(0.5);
+    assert.equal(clock.beats(), 0.5);
+
+    // A governed transport stopped on the server: the page holds its beat
+    // rather than running away from a piece that is not moving.
+    clock.freeze();
+    assert.equal(clock.frozen, true);
+    run(2);
+    assert.equal(clock.beats(), 0.5, "the beat is held where the freeze left it");
+
+    // Freezing twice keeps the first freeze's position.
+    clock.freeze();
+    assert.equal(clock.beats(), 0.5);
+
+    clock.thaw();
+    assert.equal(clock.frozen, false);
+    assert.equal(clock.beats(), 0.5, "the frozen seconds are not part of the piece");
+    run(0.25);
+    assert.ok(Math.abs(clock.beats() - 0.75) < 1e-9);
+});

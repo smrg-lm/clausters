@@ -12,7 +12,9 @@
 // queries, the subscriptions).
 
 export { Server } from "./server/index.ts";
-export type { MsgArg, ServerInfo, ServerSizing, TimedMessage } from "./server/index.ts";
+export type {
+    MsgArg, ServerInfo, ServerSizing, TimedMessage, TransportGrid, TransportState,
+} from "./server/index.ts";
 export { Tree } from "./info.ts";
 export type {
     BufferInfo,

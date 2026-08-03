@@ -19,7 +19,9 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -365,5 +367,128 @@ test("control buses carry a value both ways", { skip: !hasServer }, async () => 
         const bus = Bus.control(1, { server });
         bus.set(0.25);
         assert.equal(await bus.get(), 0.25);
+    });
+});
+
+test("the shared transport is defined, read, rolled and located", {
+    skip: !hasServer,
+}, async () => {
+    await withServer(async (server) => {
+        // Nothing is defined until a conductor sets the grid.
+        assert.equal(await server.transport(), null);
+        assert.equal(await server.transportState(), null);
+
+        await server.setTransport(0, 2.0);
+        const grid = await server.transport();
+        assert.deepEqual(grid, { originSample: 0, tempo: 2.0 });
+
+        // Setting the grid leaves it stopped at 0, with no group bound.
+        const fresh = (await server.transportState())!;
+        assert.equal(fresh.playing, false);
+        assert.equal(fresh.position, 0.0);
+        assert.equal(fresh.group, null);
+
+        await server.transportLocate(8.0);
+        assert.equal((await server.transportState())!.position, 8.0);
+
+        // Play from an explicit position, then stop: the position holds.
+        await server.transportPlay(4.0);
+        const rolling = (await server.transportState())!;
+        assert.equal(rolling.playing, true);
+        assert.equal(rolling.position, 4.0);
+        await server.transportStop();
+        const stopped = (await server.transportState())!;
+        assert.equal(stopped.playing, false);
+        assert.equal(stopped.position, 4.0);
+    });
+});
+
+test("a governed group freezes the transport clock", { skip: !hasServer }, async () => {
+    await withServer(async (server) => {
+        const piece = new Group({ server });
+        await server.setTransport(0, 2.0);
+        await server.transportGroup(piece);
+        assert.equal((await server.transportState())!.group, piece.id);
+
+        // Bound and stopped: the transport clock is frozen, so two reads
+        // spanning real time report the same sample. The device clock, which
+        // never stops, is what `/clock_query` reads.
+        await server.transportPlay();
+        await sleep(120);
+        await server.transportStop();
+        const first = (await server.transportState())!.transportSample;
+        assert.ok(first > 0, "the transport clock advanced while rolling");
+        await sleep(120);
+        assert.equal((await server.transportState())!.transportSample, first);
+
+        // A resume moves it again.
+        await server.transportPlay();
+        await sleep(120);
+        assert.ok((await server.transportState())!.transportSample > first);
+
+        // `null` unbinds — and thaws whatever it governed.
+        await server.transportGroup(null);
+        assert.equal((await server.transportState())!.group, null);
+        piece.free();
+    });
+});
+
+test("/sched_atTransport verifies the axis it is told", { skip: !hasServer }, async () => {
+    await withServer(async (server) => {
+        await new SynthDef("ts_hold", out(0.0, sine(control("freq", 220.0)).mul(0.0)))
+            .send(server);
+        const piece = new Group({ server });
+        await server.setTransport(0, 2.0);
+        await server.transportGroup(piece);
+
+        // A message aimed inside the governed subtree rides the transport
+        // axis, which is what the declaration claims.
+        const inside = server.nodes.alloc();
+        await server.schedAtTransport(0, [
+            ["/synth_new", "ts_hold", ["i", inside], ["i", 0], ["i", piece.id]],
+        ]);
+
+        // One aimed outside it does not, and the server says so rather than
+        // playing the bundle on the wrong clock.
+        const outside = server.nodes.alloc();
+        await assert.rejects(
+            server.schedAtTransport(0, [
+                ["/synth_new", "ts_hold", ["i", outside], ["i", 0], ["i", 0]],
+            ]),
+            CommandError,
+        );
+
+        await server.transportGroup(null);
+        piece.free();
+    });
+});
+
+test("a buffer is written to a file and read back into another", {
+    skip: !hasServer,
+}, async () => {
+    await withServer(async (server) => {
+        const dir = await mkdtemp(join(tmpdir(), "clausters-ts-"));
+        try {
+            const source = await Buffer.alloc(1024, 1, { server });
+            await source.gen("sine1", [1, 1.0]);
+            const path = join(dir, "wave.wav");
+            // Float samples, so the round trip is exact rather than quantized
+            // to the int16 default.
+            await source.write(path, { sampleFormat: "float" });
+
+            // `readInto` keeps the target's shape, where `Buffer.read`
+            // allocates one to fit the file.
+            const target = await Buffer.alloc(1024, 1, { server });
+            await target.readInto(path);
+            assert.deepEqual(
+                Array.from(await target.getSamples({ count: 64 })),
+                Array.from(await source.getSamples({ count: 64 })),
+            );
+
+            source.free();
+            target.free();
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
     });
 });

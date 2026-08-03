@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters transport</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>the governing transport over the in-page carrier: a group bound to
+        the server's transport, stopped and resumed, with the page's clock
+        freezing alongside it.</div>
+      <button id="boot">boot + freeze</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The page-carrier half of the transport port (clients/web/test.sh,
+      headless Chrome): ?smoke=1 auto-runs and asserts that
+        - the grid is defined, read back and reported with its governed group;
+        - a governed stop is audible — the subtree goes silent — and freezes
+          the transport clock, which two reads spanning real time confirm;
+        - a resume brings the same sound back (it continued, it was not
+          restarted: the node was never freed);
+        - `clock.freeze()` holds the page's beat for exactly as long, and
+          `thaw()` does not charge the piece for the pause;
+        - unbinding thaws whatever the transport governed.
+      Verdict beaconed as a fetch, read from the HTTP access log.
+    -->
+    <script type="module">
+      import {
+        Group, Server, Synth, SynthDef, TempoClock, loadOsc, pageConnection,
+        server as engine,
+      } from "../dist/index.js";
+      import { control, out, sine } from "../dist/defs/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+      async function run() {
+        await loadOsc();
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        const analyser = raw.context.createAnalyser();
+        analyser.fftSize = 2048;
+        raw.node.connect(analyser);
+        const bins = new Float32Array(analyser.fftSize);
+        const peak = async () => {
+          // Settle first: the analyser's window is a fifth of a second wide,
+          // so a measurement taken straight after a command still holds the
+          // sound from before it.
+          await sleep(250);
+          let top = 0;
+          for (let i = 0; i < 6; i++) {
+            await sleep(30);
+            analyser.getFloatTimeDomainData(bins);
+            for (const v of bins) top = Math.max(top, Math.abs(v));
+          }
+          return top;
+        };
+
+        const server = await Server.open(await pageConnection());
+
+        // A drone with no envelope: what survives the freeze is its phase, and
+        // nothing but the transport can silence it.
+        const sig = sine(control("freq", 220.0)).mul(0.2);
+        await new SynthDef("page_drone", out(0.0, sig), out(1.0, sig))
+          .send(server);
+
+        // The grid, and the group it governs.
+        const piece = new Group({ server });
+        await server.setTransport(0, 2.0);
+        await server.transportGroup(piece);
+        const state = await server.transportState();
+        if (state.group !== piece.id) {
+          throw new Error(`group ${state.group}, expected ${piece.id}`);
+        }
+        await server.transportPlay();
+        const drone = new Synth("page_drone", { freq: 220.0 }, {
+          target: piece, server,
+        });
+
+        const sounding = await peak();
+        if (sounding < 0.05) throw new Error(`silent while rolling (${sounding})`);
+        log(`rolling: peak ${sounding.toFixed(3)}`);
+
+        // The page's clock freezes with the server's transport.
+        const clock = new TempoClock(2.0);
+        clock.start();
+        await sleep(200);
+
+        // Freeze first and read the held beat off the frozen clock, so the
+        // reading is not the round trip's own few milliseconds.
+        clock.freeze();
+        const heldBeat = clock.beats();
+        await server.transportStop();
+        const frozen = await peak();
+        if (frozen > 0.01) throw new Error(`still sounding frozen (${frozen})`);
+        const first = (await server.transportState()).transportSample;
+        await sleep(300);
+        const second = (await server.transportState()).transportSample;
+        if (first !== second) {
+          throw new Error(`the transport clock advanced frozen: ${first} -> ${second}`);
+        }
+        if (clock.beats() !== heldBeat) {
+          throw new Error(`the page's beat advanced frozen: ${clock.beats()}`);
+        }
+        // The node is frozen, not freed: it is still in the tree.
+        const tree = await server.queryTree(piece);
+        if (!JSON.stringify(tree).includes(String(drone.id))) {
+          throw new Error("the frozen node left the tree");
+        }
+        log(`frozen: peak ${frozen.toFixed(3)}, transport clock held at ${first}, `
+          + `beat held at ${heldBeat.toFixed(3)}`);
+
+        // And the resume brings the same sound back.
+        await server.transportPlay();
+        clock.thaw();
+        // Read immediately: nothing has run since the thaw: the beat picks up where it stopped
+        // rather than jumping forward by the length of the pause.
+        const afterThaw = clock.beats();
+        if (Math.abs(afterThaw - heldBeat) > 0.05) {
+          throw new Error(
+            `the pause was charged to the piece: ${afterThaw} vs ${heldBeat}`);
+        }
+        const resumed = await peak();
+        if (resumed < 0.05) throw new Error(`silent after resume (${resumed})`);
+        const rolling = (await server.transportState()).transportSample;
+        if (rolling <= first) {
+          throw new Error(`the transport clock did not resume: ${rolling}`);
+        }
+        log(`resumed: peak ${resumed.toFixed(3)}, transport clock at ${rolling}`);
+
+        // Unbinding thaws what it governed, so nothing is left frozen with
+        // nobody to resume it.
+        await server.transportStop();
+        await server.transportGroup(null);
+        const unbound = await peak();
+        if (unbound < 0.05) throw new Error(`unbinding left it frozen (${unbound})`);
+        if ((await server.transportState()).group !== null) {
+          throw new Error("the group is still bound");
+        }
+
+        drone.free();
+        piece.free();
+        clock.close();
+        verdict(`PASS: governed transport — rolling ${sounding.toFixed(3)}, `
+          + `frozen ${frozen.toFixed(3)} with the clock held at ${first} samples `
+          + `and the node still in the tree, resumed ${resumed.toFixed(3)}, `
+          + `unbinding thawed it (${unbound.toFixed(3)})`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

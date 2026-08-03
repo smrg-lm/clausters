@@ -226,6 +226,8 @@ export class TempoClock {
     private logicalBeat = 0;
     private monoStart: number | null = null;
     private unixStart: number | null = null;
+    /** The timebase instant `freeze` held the beat at, or `null` when running. */
+    private frozenAt: number | null = null;
     private pumping = false;
 
     constructor(tempo = 1.0, { timebase, ticker }: TempoClockOptions = {}) {
@@ -254,7 +256,58 @@ export class TempoClock {
      */
     beats(): number {
         if (!this.running || this.monoStart === null) return this.logicalBeat;
+        if (this.frozenAt !== null) {
+            return this.secs2beats(this.frozenAt - this.monoStart);
+        }
         return this.secs2beats(this.timebase.now() - this.monoStart);
+    }
+
+    // ---- the freeze gate (a server transport's pause, reaching the clock) ----
+
+    /** Whether the beat is held where `freeze` left it. */
+    get frozen(): boolean {
+        return this.frozenAt !== null;
+    }
+
+    /**
+     * Holds the logical beat where it is, without stopping the clock.
+     *
+     * This is how a server transport's pause reaches a client
+     * (`Server.transportStop` on a governed group). The timebase only decides
+     * how long to sleep between events and how to stamp one, so a page whose
+     * server froze would otherwise keep advancing beats and scheduling material
+     * ahead — running away from a piece that is not moving. Freezing stops the
+     * beat instead of stopping the playhead: what was already scheduled stays
+     * scheduled, and the server's frozen queue holds it.
+     *
+     * The client's reaction does not have to be precise. Between the server's
+     * stop and this call a little look-ahead has already gone out; it lands in
+     * the server's frozen queue and fires on resume in its exact relative
+     * place. The exactness is the engine's, not the page's.
+     *
+     * Idempotent: freezing an already frozen clock keeps the first freeze's
+     * position.
+     */
+    freeze(): this {
+        if (this.frozenAt === null) this.frozenAt = this.timebase.now();
+        return this;
+    }
+
+    /**
+     * Resumes from where `freeze` left the beat.
+     *
+     * The pacing origin shifts by the time spent frozen, so those seconds are
+     * not part of the piece: the beat picks up where it stopped rather than
+     * jumping forward by the length of the pause.
+     */
+    thaw(): this {
+        if (this.frozenAt !== null) {
+            if (this.monoStart !== null) {
+                this.monoStart += this.timebase.now() - this.frozenAt;
+            }
+            this.frozenAt = null;
+        }
+        return this;
     }
 
     /**

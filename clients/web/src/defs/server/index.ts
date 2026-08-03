@@ -23,11 +23,10 @@
 // connection, the allocators, the raw OSC paths, the request machinery and the
 // server's own lifecycle. Beside it, `options` (the configuration it is sized
 // from and the configuration it reports), `queries` (what a running server
-// holds) and `streams` (the subscriptions the server pushes) — the same split
-// the Python package makes, as mixins rather than collaborators precisely so
-// no attribute path moves. The `transport` module the Python package also has
-// (the shared beat grid) waits on the port of that surface, which no
-// TypeScript milestone has opened yet (`clients/web/PLAN.md`, W12/W22).
+// holds), `streams` (the subscriptions the server pushes) and `transport` (the
+// shared beat grid, and the group it governs) — the same split the Python
+// package makes, as mixins rather than collaborators precisely so no attribute
+// path moves.
 //
 // The sample-clock tracking a `sampleTimebase()` sets up is not here either:
 // it is `defs/clocksync.ts`, one class per carrier, as in the Python client.
@@ -65,6 +64,7 @@ import {
 import type { ServerSizing } from "./options.ts";
 import { ServerQueries } from "./queries.ts";
 import { ServerStreams } from "./streams.ts";
+import { ServerTransport } from "./transport.ts";
 
 // The package's public surface: `Server` plus what its configuration is made
 // of. The names re-exported here are the ones the module answered to before it
@@ -82,6 +82,8 @@ export {
 export type { ServerInfo, ServerSizing } from "./options.ts";
 export { ServerQueries } from "./queries.ts";
 export { ServerStreams } from "./streams.ts";
+export { ServerTransport } from "./transport.ts";
+export type { TransportGrid, TransportState } from "./transport.ts";
 
 /**
  * A plain value a message argument may take, or an explicit `[tag, value]`
@@ -101,7 +103,7 @@ interface Pending {
 }
 
 /** The mixin surface, merged so `server.queryTree(...)` types as its own. */
-export interface Server extends ServerQueries, ServerStreams {}
+export interface Server extends ServerQueries, ServerStreams, ServerTransport {}
 
 export class Server {
     readonly connection: Connection;
@@ -649,7 +651,7 @@ export class Server {
 // their own modules but are still `Server`'s own methods, exactly as the
 // Python package's mixins are — copying the prototypes is what makes
 // `server.queryTree(...)` the same call it was before the split.
-for (const mixin of [ServerQueries, ServerStreams]) {
+for (const mixin of [ServerQueries, ServerStreams, ServerTransport]) {
     for (const name of Object.getOwnPropertyNames(mixin.prototype)) {
         if (name === "constructor") continue;
         const descriptor = Object.getOwnPropertyDescriptor(mixin.prototype, name);

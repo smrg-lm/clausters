@@ -206,6 +206,84 @@ export class Buffer {
         await this.srv().command("/buffer_gen", payload, timeout);
     }
 
+    /**
+     * Reads a sound file into this buffer (`/buffer_read`), keeping its shape —
+     * the in-place counterpart of `Buffer.read`, which allocates one to fit the
+     * file.
+     *
+     * The path is the **server's**, as in `read`: this reaches a native server
+     * over the WebSocket carrier, and means nothing to the in-page engine,
+     * which has no filesystem.
+     */
+    async readInto(
+        path: string,
+        {
+            fileStart = 0,
+            numFrames = -1,
+            bufStart = 0,
+            wait = true,
+            timeout,
+        }: {
+            fileStart?: number;
+            numFrames?: number;
+            bufStart?: number;
+            wait?: boolean;
+            timeout?: number;
+        } = {},
+    ): Promise<void> {
+        const args: MsgArg[] = [
+            ["i", this.bufnum],
+            path,
+            ["i", fileStart],
+            ["i", numFrames],
+            ["i", bufStart],
+        ];
+        if (!wait) {
+            this.srv().sendMsg("/buffer_read", ...args);
+            return;
+        }
+        await this.srv().command("/buffer_read", args, timeout);
+    }
+
+    /**
+     * Writes this buffer to a WAV file on the **server's** filesystem
+     * (`/buffer_write`); `sampleFormat` is `"int16"`, `"int24"` or `"float"`.
+     *
+     * Server-side, so it reaches a native server over the WebSocket carrier.
+     * A page saving what it has read itself downloads a blob instead — the
+     * samples are already there (`getSamples`).
+     */
+    async write(
+        path: string,
+        {
+            sampleFormat = "int16",
+            numFrames = -1,
+            bufStart = 0,
+            wait = true,
+            timeout,
+        }: {
+            sampleFormat?: "int16" | "int24" | "float";
+            numFrames?: number;
+            bufStart?: number;
+            wait?: boolean;
+            timeout?: number;
+        } = {},
+    ): Promise<void> {
+        const args: MsgArg[] = [
+            ["i", this.bufnum],
+            path,
+            "wav",
+            sampleFormat,
+            ["i", numFrames],
+            ["i", bufStart],
+        ];
+        if (!wait) {
+            this.srv().sendMsg("/buffer_write", ...args);
+            return;
+        }
+        await this.srv().command("/buffer_write", args, timeout);
+    }
+
     /** Zeroes this buffer (`/buffer_zero`). */
     async zero({
         wait = true,
