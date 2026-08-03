@@ -662,8 +662,8 @@ carrying forward:
   tags as well as the numbers.
 
 The one piece of this slot that did **not** ship is the one it borrowed:
-`plot(automation)` needs `plot`, which is **W23**'s and not written yet. It
-stays named there.
+`plot(automation)` needs `plot`, which was not written yet. *(It landed with
+**W13**, which brought the whole verb forward.)*
 
 **Verified:** `./build.sh && ./test.sh` — 188 `node --test` cases (7 new: the
 lane def's spec and three curves against `seq-vectors.json`, frozen from the
@@ -755,7 +755,7 @@ following half Python's does not have — driven headlessly, a client joining
 2.6 beats late still sounded at grid beat 4.011 alongside one that had been
 waiting. Book: the joining and following sections of "The transport".
 
-### W13 - An NRT / score drive
+### ✅ W13 - An NRT / score drive *(done 2026-08-03)*
 
 *Deferred out of W3*, whose `Timeline.fromPattern` bounces by driving the
 ordinary clock through its manual seams. The third `Server` interface, beside
@@ -769,6 +769,70 @@ the two carriers: a destination that *writes* time instead of waiting for it.
 - **The three rendered legs of `plot`** (*deferred out of W23*, which ports the visual verbs with only what runs live): a def, a bare expression and — through them — the offline look at what a def actually produces without a server or an audio device. That is the Python verb's headline use, and it is blocked on nothing but this drive.
 
 **Acceptance:** a piece written once emits a score byte-identical to the Python client's for the same input, and renders from the browser to a WAV that matches the native NRT render.
+
+**What shipped.** The drive, its two verbs, and — since the verb it was
+deferred *from* had not landed either — the whole of `plot` with it.
+
+- **The score carrier** (`base/connection.ts`): `Score` and `ScoreConnection`,
+  the Python client's `OscScore`/`OscNrtInterface` at this client's seam. A
+  `Connection` grew a `timeMode` and a structured `addBundle(secs, messages)`,
+  and `Server` branches on the first exactly where the reference branches on
+  `interface.time_mode` — a score's bundle is stamped in seconds from the
+  render's start, its `latency` is 0 (there is no deadline to lead), its node
+  ids are unbounded (no `/node_end` stream to recycle from), and every command
+  that would await a `/done` resolves at once, since nothing answers a score.
+  Rationale in `docs/decisions.md`.
+- **`TempoClock.render(until?)`** — the same driver the browser runs with the
+  waiting taken out, synchronous on purpose: nothing is being waited *for*.
+- **`Session.nrt()` and `session.render(...)`**, closing what W18 shipped the
+  facade without, and **`Server.render`** under them.
+- **`render.ts`**: the verb, `RenderStats`, `renderScore`, `bounceDef`,
+  `wavBytes`. No `path` — a page has no writer and no filesystem, so the take
+  is a `Float32Array` and `Buffer.fromSamples` (new) puts it straight back into
+  the engine, which is the browser's render-then-load.
+- **`defs/asdef.ts`** — `asDef`/`exprChannels`/`isExpr`, so `play`, `plot` and
+  `render` all take a bare expression. `play` dispatches it now; the Faust
+  `Box` leg has nothing to coerce until the box algebra lands (**W7**).
+- **`plot.ts`, all six legs** (*brought forward from* **W23**, which never
+  shipped): the three rendered ones this milestone unblocked (a def, a bare
+  expression, an `Env`/`Automation`) and the three live ones W23 had scoped (a
+  `Buffer`, an iterable/`Pattern`), plus `PlotWindow` and
+  `gui/ambient.ts`'s `setAmbientHost`/`ambientHost`. **W23's planned decision
+  entry is obsolete**: it argued the `Env` leg would reach the same math by
+  another door (`/buffer_gen "env"`), because a page had no NRT — with one, the
+  leg is the reference client's verbatim, an `envGen` rendered offline, and the
+  parity vectors compare the drawn curves across clients.
+- **A seedless render is a fresh take again.** The engine's entropy source is
+  `SystemTime`, absent on wasm, so a render given no seed took a *fixed* one
+  and every take of a noisy piece was the same take. The client forwards a word
+  from `crypto.getRandomValues`, which is what the wasm shell's own comment
+  asks the caller to do.
+- **Both clients gained `defs` on the bounce paths.** `render(pattern)` sent
+  the extra defs only on the def path — in Python too — so a bounced pattern
+  naming its own instrument rendered silence against an ephemeral session that
+  had never been sent it. Fixed in `clausters/render.py` and here.
+
+**Verified**, in pieces rather than by one `./test.sh` run (the browser pages
+are ~460 MB each and were run individually): the node suites, `plot.html`,
+`gui.html` and `data.html` under headless Chrome, and the example driven end to
+end. **The full page suite has not been run against this commit** — do that
+before the next release. The acceptance's first half is
+`tests/score-parity.test.ts` against `score-vectors.json`, frozen from the
+Python client's own NRT sessions by the new `gen-score-vectors.py`: three
+pieces — a synth, a routine, a pattern — written twice by hand and compared
+**byte for byte**, which pins the score epoch's timetag packing, the ordering
+rule, the framing and the beat-to-second mapping in one assertion. (The pieces
+send no def: a def's payload is JSON *text* whose formatting differs between
+the two serializers, which `def-parity.test.ts` already pins by comparing the
+parsed spec.) Beside it the render half — a score this client wrote rendered by
+the engine's wasm, the seed drawn fresh and then handed back for a
+sample-identical replay, an expression refused for being wider than the
+render's outputs, `until` bounding an endless pattern, and the three rendered
+envelopes matching the Python client's drawn curves. The page half is
+`tests/plot.html`: the six kinds each opening a window the host reports back.
+Example: `examples/offline.html` — a phrase rendered at 60x real time, looked
+at, downloaded and played back through a buffer, with the seed demonstrated on
+a noisy def. Book: "The ambient verbs: play, plot, render".
 
 ### W14 - Component lifecycle: freeing what a removed element owns
 
@@ -1235,22 +1299,29 @@ Python client's `transport_freeze.py` — a generative texture frozen mid-gestur
 and continued, driven end to end in a browser. Book chapter: "The transport: a
 shared grid, and a piece that freezes".
 
-### W23 - The visual verbs: `scope`, and as much of `plot` as runs live
+### W23 - `scope`: the live views
 
 *Deferred out of W18*, which ported the ambient environment and the `play`
 verb and left its visual siblings — `clausters.plot` and `clausters.scope`, the
-two Python modules W21's inventory found with no milestone at all. This is that
-slot, and it is split the way the surface actually splits: one verb ports
-whole, the other does not.
+two Python modules W21's inventory found with no milestone at all.
 
-- **`gui/index.ts`: `setAmbientHost` / `ambientHost`.** The registry both verbs
-  resolve a host through, and the piece W18 twice declined to port on its own
-  because nothing consumed it. Python's resolution ladder is *registered host →
-  the current (else default) session's `gui` host → one the module boots and
-  owns*; here the third rung is `GuiHost.page()`, a page having no process to
-  boot, and the first exists for the same reason it does there — a front this
-  module cannot boot or point elsewhere (a notebook cell's canvas over a
-  kernel comm, a test double collecting packets).
+**Half of this slot shipped with W13, and the reason is worth keeping.** This
+milestone was written to port `plot` with only the three legs that run live,
+because the other three needed an offline drive that did not exist; W13 built
+that drive and the split stopped being real — a `plot` missing its headline use
+(looking at what a def produces, with no server and no audio device) would have
+been a verb shipped to be finished twice. So `plot.ts`, all six legs, and the
+`setAmbientHost`/`ambientHost` registry both verbs resolve through went out
+with the drive. What is left here is `scope`, which is what the title now says.
+
+The sketch below is kept as written, minus what shipped; one of its
+observations is **obsolete** and marked so.
+
+- ~~**`gui/index.ts`: `setAmbientHost` / `ambientHost`.**~~ *Shipped with
+  **W13*** (`gui/ambient.ts`), since `plot` is what consumed it. The ladder is
+  the reference client's: *registered host → the current (else default)
+  session's host when one is up → one the module opens and owns*, the third
+  rung being `GuiHost.page()` because a page has no process to boot.
 - **`scope.ts`, whole.** It is pure GuiDef assembly over a resolved host, so
   nothing blocks it: the three views (`signal` the triggered oscilloscope,
   `phase` the goniometer, `spectrum` the live FFT), the per-view defaults and
@@ -1259,30 +1330,23 @@ whole, the other does not.
   with no `shm` because the native host reads the taps out of that segment, and
   the browser host has no segment to map and streams them over its own server
   leg instead. Python's own comment beside that check already says so.
-- **`plot.ts`, three legs of six.** What runs without an offline drive: a
-  `Buffer` or buffer number (fetched from the ambient live server — W10 shipped
-  `getSamples`), any iterable of numbers or `Pattern` (materialized, capped at
-  `n`, value axis auto-fitted), and an `Env`. The remaining three — a def, a
-  bare expression, an `Automation` — are **W13**'s and, for the automation, a
-  few lines over the `Env` leg now that **W11** has shipped the class. Until they land the verb must refuse them by name and say
-  which milestone opens each, the way `play` already refuses an expression: a
-  verb that silently plots nothing is worse than one that says what it cannot
-  do yet.
-- **The `Env` leg reaches the same math by another door, and that is the
-  decision to record** (`docs/decisions.md`). Python renders an `Env` through
-  an NRT `EnvGen` precisely so that what you plot is what the engine plays; a
-  page has no NRT, but `/buffer_gen "env"` evaluates the curve with
-  **`clausters-core`'s `envshape`** — the very function the `EnvGen` UGen plays
-  (`docs/schemas.md` says so where it documents the command). So the property
-  survives the change of door, and the door is what needs writing down.
+- ~~**`plot.ts`, three legs of six.**~~ *Shipped with **W13**, all six.*
+- ~~**The `Env` leg reaches the same math by another door**~~ — **obsolete, and
+  the reason is the interesting part.** The argument was that Python renders an
+  `Env` through an NRT `EnvGen` so that what you plot is what the engine plays,
+  that a page had no NRT, and that `/buffer_gen "env"` would reach the same
+  core function by another door — so the property would survive and the door
+  would need writing down. With W13 the premise is gone: the page renders an
+  `envGen` offline exactly as the reference client does, so there is no second
+  door and nothing to record. What replaced it is stronger than the note would
+  have been — the parity vectors compare the *drawn curves* of both clients.
 
 **Acceptance:** `scope()` opens each of its three views on a live in-page
 engine and follows a signal (asserted on the host's own drawing, as `data.html`
-does); `plot` draws a generated buffer, a `Pwhite` sequence and an `Env`, the
-envelope's samples matching what the Python client's `plot(Env.adsr())`
-produces for the same break points; each unported kind raises naming its
-milestone; and both verbs find the ambient host with no host named — a
-session's when one is up, the page's otherwise.
+does), and finds the ambient host with none named — a session's when one is up,
+the page's otherwise. (`plot`'s half of this acceptance is met: `tests/plot.html`
+draws all six kinds and `score-parity.test.ts` matches the Python client's
+rendered envelopes.)
 
 ### W24 - The completeness pass
 

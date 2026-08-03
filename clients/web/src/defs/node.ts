@@ -363,14 +363,30 @@ function createGroup(
 export class NodeIdAllocator {
     private registry: Registry;
 
-    constructor(base: number, capacity: number) {
-        this.registry = new Registry(base, capacity);
+    /** Bounded over `[base, base + capacity)`; open-ended with no `capacity`. */
+    constructor(base: number, capacity?: number) {
+        this.registry = capacity === undefined
+            ? Registry.unbounded(base)
+            : new Registry(base, capacity);
     }
 
     /** The allocator for a server whose node table holds `maxNodes` slots. */
     static forMaxNodes(maxNodes: number): NodeIdAllocator {
         const p = nodeIdPartition(maxNodes);
         return new NodeIdAllocator(p.clientBase, p.clientCapacity);
+    }
+
+    /**
+     * The registry an **offline score** allocates from: ids ascend from the
+     * client base and allocation never fails.
+     *
+     * Recycling is what bounds a live client — an id is reusable once its
+     * `/node_end` arrives — and a score has no `/node_end` stream and no
+     * real-time bound on how many nodes its length asks for. So the range is
+     * open there, which is the reference client's rule too.
+     */
+    static unbounded(maxNodes: number): NodeIdAllocator {
+        return new NodeIdAllocator(nodeIdPartition(maxNodes).clientBase);
     }
 
     /**

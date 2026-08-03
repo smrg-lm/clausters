@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: rendering offline in a tab</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      a { color: #8fd0ff; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>offline_render.py</code> and <code>plotting.py</code> in one page:
+<b>a piece rendered faster than real time in this tab, looked at, and
+downloaded — with no audio device and no server anywhere</b>.
+
+The third carrier is not a carrier at all. <code>Session.nrt()</code> gives a
+<code>Server</code> whose connection <i>writes time</i> instead of waiting for
+it: every command a piece emits is accumulated as a timestamped score, and
+<code>session.render()</code> drains the clock — logically, with no sleeping —
+and hands that score to the engine's own renderer, the same wasm that makes
+this page's sound, running as fast as the machine manages.
+
+Above it sit the two verbs. <code>render(x)</code> is the <b>change of state</b>:
+a def, a bare expression, a pattern or a timeline goes in, and what comes back
+is samples plus what the take measured — frames, per-channel peak and RMS, and
+the <b>seed</b>, which is how you get a take back (hand it to the next render
+and it repeats sample for sample). <code>plot(x)</code> is its visual sibling:
+the same materialization, drawn in its own window rather than returned.
+
+Nothing here needs a gesture except the last button: an offline render has no
+<code>AudioContext</code> to unlock. That is the point of it — the piece is
+evaluated, not performed.
+
+<b>What to look for:</b> the noisy def rendered twice is two different takes,
+and rendered again with the first take's seed it is that take back, sample for
+sample. The seed governs the <i>server's</i> stochastic UGens; the amp jitter
+in the phrase is a <code>Pwhite</code>, which is the client's own seeded
+stream — two kinds of randomness, reproduced from two different places.
+Needs <code>./build.sh</code> in
+<code>clients/web</code> first (<code>dist/</code> is git-ignored); serve it
+over HTTP (<code>python3 -m http.server</code>) and open
+<code>/examples/offline.html</code>.</div>
+
+      <div class="row">
+        <button id="render">render the phrase</button>
+        <button id="again" disabled>the seed, on a noisy def</button>
+        <button id="look" disabled>plot what it produced</button>
+        <button id="hear" disabled>play the render (needs a gesture)</button>
+        <span id="download"></span>
+      </div>
+
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        Buffer, Session, SynthDef, play, plot, render, seq, wavBytes,
+      } from "../dist/index.js";
+      import {
+        DoneAction, Env, control, envGen, out, pan2, sine, whiteNoise,
+      } from "../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // ---- the instrument, and the phrase ----
+      //
+      // A plucked tone with an envelope that frees the node: offline or live,
+      // the def is the same object and the score is what differs.
+      function pluck() {
+        const freq = control("freq", 440.0);
+        const amp = control("amp", 0.2);
+        const env = envGen(Env.perc(0.005, 0.4), {
+          doneAction: DoneAction.FREE_SELF,
+        });
+        return new SynthDef("offline_pluck",
+          out(0.0, pan2(sine(freq).mul(env).mul(amp), 0.0)));
+      }
+
+      const phrase = () => new seq.Pbind({
+        instrument: "offline_pluck",
+        degree: new seq.Pseq([0, 2, 4, 7, 4, 2], 2),
+        dur: 0.25,
+        amp: new seq.Pwhite(0.1, 0.2),
+      });
+
+      let take = null;
+
+      // ---- the render ----
+      //
+      // An ephemeral offline session under the hood: the pattern plays into a
+      // score and the score becomes samples. `render` reports what the take
+      // was, which is why the numbers below are the render's own and not a
+      // second measurement of them.
+      async function renderPhrase(seed) {
+        const started = performance.now();
+        const stats = await render(phrase(), {
+          defs: [pluck()],          // the ephemeral session starts empty
+          channels: 2,
+          seed,
+        });
+        const elapsed = (performance.now() - started) / 1000;
+        log(`${stats.duration.toFixed(2)} s of audio in ${elapsed.toFixed(2)} s `
+          + `(${(stats.duration / elapsed).toFixed(1)}x real time)`);
+        log(`  ${stats.frames} frames x ${stats.channels} ch @ `
+          + `${stats.sampleRate} Hz`);
+        log(`  peak ${stats.peak.map((p) => p.toFixed(3)).join(" / ")}, `
+          + `rms ${stats.rms.map((r) => r.toFixed(3)).join(" / ")}`);
+        log(`  seed ${stats.seed}`);
+        return stats;
+      }
+
+      async function first() {
+        // A pattern needs the defs it names: the offline session is ephemeral
+        // and starts with nothing sent, so they ride along.
+        log("rendering the phrase...");
+        take = await renderPhrase();
+        for (const id of ["again", "look", "hear"]) $(id).disabled = false;
+
+        // The browser's answer to the reference client's `path`: there is no
+        // filesystem to write to, so the file is a blob the page offers.
+        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "phrase.wav";
+        link.textContent = "download phrase.wav";
+        $("download").replaceChildren(link);
+      }
+
+      // A def with noise in it, so the seed has something to govern. What
+      // `stats.seed` reports is the starting seed of the *server's* stochastic
+      // UGens — not of the client-side `Pwhite` jittering the phrase's amp,
+      // which is the session's own random root.
+      const breath = () => new SynthDef("offline_breath",
+        out(0.0, pan2(whiteNoise().mul(0.15), 0.0)));
+
+      async function again() {
+        log("\nthe same noisy def, rendered twice with no seed:");
+        const first = await render(breath(), { dur: 0.25, channels: 1 });
+        const second = await render(breath(), { dur: 0.25, channels: 1 });
+        log(`  seeds ${first.seed} and ${second.seed} — two takes`);
+
+        log("and once more, with the first take's seed:");
+        const replayed = await render(breath(), {
+          dur: 0.25, channels: 1, seed: first.seed,
+        });
+        const identical = replayed.samples.every((x, i) => x === first.samples[i]);
+        log(identical
+          ? "  identical sample for sample: the take is back"
+          : "  the samples moved, which would mean the seed governs nothing");
+      }
+
+      async function look() {
+        // `plot` is the same materialization, drawn. The def leg renders
+        // offline exactly as `render` does — one lane per channel.
+        log("\nplotting: the def's own output, then its spectrum");
+        const win = await plot(pluck(), {
+          dur: 0.5, controls: { freq: 220.0 }, label: "offline_pluck",
+        });
+        setTimeout(() => win.set({ view: "spectrum", freqScale: "log" }), 1500);
+
+        // And the envelope behind it, rendered through the engine's own
+        // envGen — what is drawn is what the engine plays, not a second
+        // evaluation of the break points.
+        await plot(Env.perc(0.005, 0.4), { label: "the pluck's envelope" });
+      }
+
+      async function hear() {
+        // The one thing that needs a gesture: an AudioContext. This is the
+        // reference client's render-then-load, with the file taken out of the
+        // middle — it bounces to a WAV and reads that back, and a page has no
+        // filesystem, so the samples go straight into a buffer on the page's
+        // engine. Either way the render is *material* now: random-access
+        // audio, sounded through an instrument like any other.
+        const session = (await Session.page({ channels: 2 })).adoptDefault();
+        const buffer = await Buffer.fromSamples(
+          take.samples, take.channels, take.sampleRate,
+          { server: session.server },
+        );
+        log(`\nplaying the render back: buffer ${buffer.bufnum}, `
+          + `${buffer.frames} frames x ${buffer.channels} ch`);
+        play(buffer, { server: session.server, controls: { amp: 0.8 } });
+      }
+
+      const guard = (fn) => () => fn().catch((err) => log(`error: ${err}`));
+      $("render").onclick = guard(first);
+      $("again").onclick = guard(again);
+      $("look").onclick = guard(look);
+      $("hear").onclick = guard(hear);
+    </script>
+  </body>
+</html>

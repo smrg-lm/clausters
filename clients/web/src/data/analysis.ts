@@ -12,6 +12,7 @@
 // a trace remembers is a look, not a measurement.
 
 import {
+    channel_stats,
     correlation as coreCorrelation,
     lissajous as coreLissajous,
     spectrum_db,
@@ -78,4 +79,20 @@ export function spectrumDb(
     }: { fftSize?: number; window?: WindowShape } = {},
 ): Float32Array {
     return spectrum_db(samples, fftSize, WINTYPE[window] ?? 0);
+}
+
+/**
+ * The **peak and RMS** of one channel of an interleaved buffer, as
+ * `[peak, rms]` — what a render reports about what it produced.
+ *
+ * The stride walk measures without deinterleaving first, so these are the same
+ * two numbers the server and the Python client report for the same audio. An
+ * empty pair for a channel the buffer does not have.
+ */
+export function channelStats(
+    samples: Float32Array,
+    channels: number,
+    channel: number,
+): number[] {
+    return [...channel_stats(samples, channels, channel)];
 }

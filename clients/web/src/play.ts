@@ -13,6 +13,9 @@
 //   scheduled on a clock;
 // - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) → sent and instanced on
 //   the server. Returns the node handle — it plays until you free it;
+// - a bare **expression** (a UGen graph, a `ChannelList`, a Faust `Signal`) →
+//   the same, through the ephemeral-def coercion (`defs/asdef.ts`), so
+//   `play(sine(440).mul(0.5))` sounds a def it wrapped for you;
 // - a `Timeline` → a `Playhead` over the ambient clock and server;
 // - an `Automation` → its lane synth triggered and its targets mapped
 //   (`await auto.prepare(server)` first — see below);
@@ -34,11 +37,7 @@
 // play(new Pbind({ degree: new Pseq([0, 2, 4]), dur: 0.5 })); // a phrase
 // ```
 //
-// **One kind the Python client dispatches and this one does not**: a bare
-// **expression** (a UGen graph wrapped in an ephemeral def) needs the `asDef`
-// wrapper, which waits on the offline drive. Hand a def instead until then.
-//
-// **One difference where it does dispatch.** The reference verb prepares an
+// **One difference.** The reference verb prepares an
 // unprepared `Automation` on the spot, blocking off the clock thread; a
 // synchronous verb in a page cannot, so an unprepared one is refused by name
 // and `await auto.prepare(server)` is the door.
@@ -46,6 +45,8 @@
 import { main } from "./base/main.ts";
 import { Routine, Stream } from "./base/stream.ts";
 import type { TempoClock } from "./base/clock.ts";
+import { asDef, isExpr } from "./defs/asdef.ts";
+import type { Expr } from "./defs/asdef.ts";
 import { Buffer } from "./defs/buffer.ts";
 import { FaustDef } from "./defs/faustdef.ts";
 import { GraphDef } from "./defs/graphdef.ts";
@@ -73,6 +74,7 @@ export type Playable =
     | SynthDef
     | FaustDef
     | GraphDef
+    | Expr
     | Timeline
     | Buffer
     | Automation
@@ -127,6 +129,12 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
     ) {
         return playDef(playable, main.resolveServer(server), controls);
     }
+    if (isExpr(playable)) {
+        // A bare expression: coerced into an ephemeral def and played like
+        // any other. The def is named `tmp_*`, so the server never persists
+        // it, and it is this call's alone.
+        return playDef(asDef(playable), main.resolveServer(server), controls);
+    }
     if (playable instanceof Timeline) {
         const playhead = new Playhead(
             playable,
@@ -157,7 +165,8 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
     throw new TypeError(
         `don't know how to play ${String(playable)}; expected an Event or event ` +
             "object, an event Pattern (Pbind), a Routine/Stream or generator, a " +
-            "def (SynthDef/FaustDef/GraphDef), a Timeline, a Buffer, an " +
+            "def (SynthDef/FaustDef/GraphDef) or a bare expression, a Timeline, a " +
+            "Buffer, an " +
             "Automation, or anything with play(destination)",
     );
 }

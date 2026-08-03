@@ -67,12 +67,14 @@ wasm-bindgen --target web --out-dir dist/gui-host \
 wasm-bindgen --target web --out-dir dist/core \
     "../../target/wasm32-unknown-unknown/$profile/clausters_core_web.wasm"
 
-# The src/ stubs: .d.ts for type-checking everywhere; the core also gets the
-# glue .js because node runs src/base/osc.ts directly (tests need no build).
+# The src/ stubs: .d.ts for type-checking everywhere; the core and the engine
+# also get the glue .js, because node runs those sources directly (the codec in
+# src/base/osc.ts, the offline renderer in src/engine/render.ts) and the tests
+# need no build step to reach them.
 mkdir -p src/core src/gui-host
 cp dist/core/clausters_core_web.js dist/core/clausters_core_web.d.ts src/core/
 cp dist/gui-host/clausters_gui.d.ts src/gui-host/
-cp dist/engine/clausters_web.d.ts src/engine/
+cp dist/engine/clausters_web.js dist/engine/clausters_web.d.ts src/engine/
 
 # Type-check + emit the package into dist/ (js + d.ts + maps).
 if [ -d node_modules ]; then

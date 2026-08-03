@@ -16,6 +16,7 @@ import {
     osc_encode_bundle,
     osc_encode_immediate_bundle,
     osc_encode_message,
+    osc_encode_score_bundle,
     osc_decode_packet,
 } from "../core/clausters_core_web.js";
 
@@ -89,6 +90,21 @@ export function encodeBundle(
     messages: readonly BundleMessage[],
 ): Uint8Array {
     return osc_encode_bundle(unixSecs, asEntries(messages));
+}
+
+/**
+ * Encodes a bundle stamped at `secs` **from the start of a render** — the
+ * bundle an NRT score is made of.
+ *
+ * The same packing as `encodeBundle` on a different epoch: a score's time is
+ * not a wall clock, so nothing is added to it. Sharing the core's packing is
+ * what makes a score written here byte-identical to the Python client's.
+ */
+export function encodeScoreBundle(
+    secs: number,
+    messages: readonly BundleMessage[],
+): Uint8Array {
+    return osc_encode_score_bundle(secs, asEntries(messages));
 }
 
 /**

@@ -150,6 +150,12 @@
           const node = play(new SynthDef("session_drone", out(0.0, sig), out(1.0, sig)));
           return () => node.free();
         });
+        await heard("expression", () => {
+          // A bare expression: no def, no name — `play` wraps it in an
+          // ephemeral one and sounds that.
+          const node = play(sine(240.0).mul(0.2));
+          return () => node.free();
+        });
         await heard("Timeline", () => {
           const head = play(new seq.Timeline([
             [0.0, new Event({ degree: 0, dur: 0.3, amp: 0.2, instrument: "session_voice" })],

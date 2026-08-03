@@ -11,7 +11,16 @@
 // - `pageConnection()` — the in-page engine: the audio server compiled to
 //   wasm in this page's AudioWorklet, reached through the per-page
 //   `server()` singleton. No process, no socket.
+//
+// Beside the two carriers there is a third thing shaped like one and going
+// nowhere: `ScoreConnection`, which **writes time instead of waiting for it**.
+// It accumulates what a `Server` would have sent as a timestamped score for an
+// offline render, which is why it declares a `timeMode` — a live carrier
+// stamps a bundle with the wall clock, a score with seconds from the render's
+// start. The Python client's `OscNrtInterface`, at this client's seam.
 
+import { encodeScoreBundle, oscArg } from "./osc.ts";
+import type { BundleMessage, MsgArg, OscArg } from "./osc.ts";
 import { server } from "../engine/server.ts";
 import type { ClaustersServer } from "../engine/server.ts";
 
@@ -28,6 +37,21 @@ export interface SampleClock {
 
 /** A duplex OSC byte pipe to an audio server. */
 export interface Connection {
+    /**
+     * What a time on this carrier *means*, and so how a `Server` stamps what
+     * it emits: `"unix"` (absent, the default) is the wall clock a live
+     * server reads as an NTP timetag; `"score"` is seconds from the start of
+     * an offline render. The one thing above the seam that varies with the
+     * carrier, and it varies because time itself does.
+     */
+    readonly timeMode?: "unix" | "score";
+    /**
+     * Accumulates a bundle at `secs` from the render's start — a score
+     * carrier's structured entry point, and the reason a score never has to
+     * decode bytes to learn when they were meant to happen. Live carriers
+     * leave it out.
+     */
+    addBundle?(secs: number, messages: readonly BundleMessage[]): void;
     /** Sends one complete OSC packet. */
     send(packet: Uint8Array): void;
     /** Subscribes to every reply packet. */
@@ -159,4 +183,99 @@ export async function pageConnection(
             };
         },
     };
+}
+
+// ---- the score: a carrier that writes time instead of waiting for it ----
+
+/**
+ * Accumulated NRT bundles, ordered by time, serialized to the binary score
+ * (`[i32 len][packet]…`) the offline renderer consumes — the Python client's
+ * `OscScore`.
+ */
+export class Score {
+    private readonly bundles: { at: number; packet: Uint8Array }[] = [];
+
+    /** How many bundles are in the score. */
+    get length(): number {
+        return this.bundles.length;
+    }
+
+    /** Adds one already-encoded bundle, stamped at `at` seconds. */
+    add(at: number, packet: Uint8Array): void {
+        this.bundles.push({ at, packet });
+    }
+
+    /** Drops everything accumulated so far. */
+    clear(): void {
+        this.bundles.length = 0;
+    }
+
+    /**
+     * The binary score: every bundle in time order, each framed by its
+     * big-endian `i32` byte count. Sorting is stable, so two bundles at the
+     * same instant keep the order they were emitted in — which is what makes
+     * a def and the synth that names it land in the right sequence.
+     */
+    bytes(): Uint8Array {
+        const ordered = [...this.bundles].sort((a, b) => a.at - b.at);
+        const total = ordered.reduce((n, b) => n + 4 + b.packet.length, 0);
+        const out = new Uint8Array(total);
+        const view = new DataView(out.buffer);
+        let offset = 0;
+        for (const { packet } of ordered) {
+            view.setInt32(offset, packet.length, false);
+            out.set(packet, offset + 4);
+            offset += 4 + packet.length;
+        }
+        return out;
+    }
+}
+
+/**
+ * The offline carrier: instead of sending, it accumulates a timestamped
+ * `Score` an offline render consumes (`Session.nrt()` builds one; `render()`
+ * drains it).
+ *
+ * There is no server at the other end and nothing ever replies, which is the
+ * whole point — an offline piece is written by the same code that plays a live
+ * one, and the difference is which carrier the `Server` was opened over.
+ */
+export class ScoreConnection implements Connection {
+    readonly timeMode = "score";
+    readonly score = new Score();
+
+    addBundle(secs: number, messages: readonly BundleMessage[]): void {
+        this.score.add(secs, encodeScoreBundle(secs, messages));
+    }
+
+    /** A message alone has no time, so it lands at the top of the score. */
+    sendMsg(addr: string, args: readonly MsgArg[] = []): void {
+        this.addBundle(0, [{ addr, args: args.map(oscArg) as OscArg[] }]);
+    }
+
+    /**
+     * The byte door, for anything that reaches past the structured one: the
+     * packet is wrapped in a score bundle at time 0. Nothing in the client
+     * takes this path — `Server` branches on `timeMode` first — and it exists
+     * so a `ScoreConnection` is a `Connection` in full rather than one with a
+     * hole in it.
+     */
+    send(packet: Uint8Array): void {
+        // The 16-byte `#bundle` header at time 0, built by the core rather
+        // than spelled out here: a timetag is a time, and this package
+        // computes none of those itself.
+        const header = encodeScoreBundle(0, []);
+        const framed = new Uint8Array(header.length + 4 + packet.length);
+        framed.set(header, 0);
+        new DataView(framed.buffer).setInt32(header.length, packet.length, false);
+        framed.set(packet, header.length + 4);
+        this.score.add(0, framed);
+    }
+
+    /** Nothing ever replies to a score. */
+    addReply(): void {}
+    removeReply(): void {}
+    close(): void {
+        this.score.clear();
+    }
 }

@@ -228,7 +228,7 @@ export class TempoClock {
     private nextId = 1;
     private readonly ticker: Ticker;
     private running = false;
-    private mode: "rt" | "stopped" = "stopped";
+    private mode: "rt" | "nrt" | "stopped" = "stopped";
     /** The yield-driven beat while an item is being resumed. */
     private logicalBeat = 0;
     private monoStart: number | null = null;
@@ -573,6 +573,45 @@ export class TempoClock {
         this.monoStart = this.timebase.now() - held; // the pacing origin
         this.unixStart = Date.now() / 1000 - held; // the wall origin, for timetags
         this.pump();
+        return this;
+    }
+
+    /**
+     * The **offline drive**: resumes everything queued in beat order, with no
+     * sleeping and no wall clock at all, and returns when the queue is empty
+     * (or the next item is past `untilBeat`).
+     *
+     * This is the same driver the real-time one runs — the same `wake`, the
+     * same yield-accumulated logical beat — with the waiting taken out. What
+     * the routines emit lands wherever their `Server` puts it; against a
+     * score carrier that is a score, which is what makes a piece written for
+     * a live take renderable without changing a line of it.
+     *
+     * `untilBeat` is required for an endless source: an infinite pattern
+     * never drains on its own, and nothing here is watching a clock to stop
+     * it.
+     *
+     * Synchronous on purpose, where everything else in this client that waits
+     * is a promise: nothing is being waited *for*. A render occupies the page
+     * for as long as it takes and then returns, the way a long loop does.
+     */
+    render(untilBeat?: number): this {
+        this.mode = "nrt";
+        this.logicalBeat = 0;
+        try {
+            for (;;) {
+                const beat = this.queue.peekTime();
+                if (beat === undefined) break;
+                if (untilBeat !== undefined && beat > untilBeat) break;
+                const due = this.queue.popDue(beat);
+                if (due === undefined) break;
+                const item = this.take(due[1]!);
+                this.logicalBeat = due[0]!;
+                if (item !== null) this.wake(item, due[0]!);
+            }
+        } finally {
+            this.mode = "stopped";
+        }
         return this;
     }
 

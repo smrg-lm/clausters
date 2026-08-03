@@ -182,6 +182,44 @@ export class Buffer {
         return new Buffer(buffer.bufnum, frames, channels, sampleRate, server);
     }
 
+    /**
+     * Installs interleaved `samples` into a freshly allocated buffer — the
+     * page's way back from a render to something that sounds.
+     *
+     * This is what closes the loop the `render` verb opens: the reference
+     * client bounces a piece to a **file** and reads that file back with
+     * `/buffer_allocRead`, and a page has neither a file to write nor a
+     * filesystem the server could read one from. What it has instead is
+     * memory shared with the engine, so the samples go in directly.
+     *
+     * **In-page only**, for the same reason `load` is: a socket carrier would
+     * have to write every sample over the wire, and the server has no
+     * buffer-write command to write them with.
+     */
+    static async fromSamples(
+        samples: Float32Array,
+        channels = 1,
+        sampleRate = 0.0,
+        { timeout, server: on }: BufferOptions = {},
+    ): Promise<Buffer> {
+        const server = resolveServer(on);
+        const bulkLoad = server.connection.bulkLoad;
+        if (!bulkLoad) {
+            throw new CommandError(
+                "Buffer.fromSamples needs a carrier that shares memory with the "
+                    + "server (the in-page engine); over a socket there is no way "
+                    + "to write samples into a buffer",
+            );
+        }
+        const rate = sampleRate > 0
+            ? sampleRate
+            : (await server.queryInfo(timeout)).nominalSampleRate;
+        const frames = Math.floor(samples.length / Math.max(1, channels));
+        const buffer = await Buffer.alloc(frames, channels, { timeout, server });
+        await bulkLoad.call(server.connection, buffer.bufnum, channels, rate, samples);
+        return new Buffer(buffer.bufnum, frames, channels, rate, server);
+    }
+
     // ---- the commands addressed to this buffer ----
 
     /**

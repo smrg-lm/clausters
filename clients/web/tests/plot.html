@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters plot</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      canvas { display: block; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>the <code>plot</code> verb over the in-page carrier: every kind it
+        dispatches, each opening its own window on the page's GUI host — the
+        three that need the offline drive (a def, a bare expression, an
+        envelope) beside the three that run live (a buffer, a sequence, an
+        automation's curve).</div>
+      <button id="boot">boot + plot</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The page half of W13's plot legs (clients/web/test.sh, headless Chrome):
+      ?smoke=1 auto-runs and asserts that
+        - each kind opens a window whose widget the host reports back as a
+          `plot` with the shape the kind implies (a def two lanes, an
+          expression one, an envelope one, a buffer its own, a sequence a
+          rate-less index axis);
+        - the rendered legs actually rendered — the drawn data is not empty and
+          the widget carries the render's sample rate;
+        - `set` retunes a live window (signal -> spectrum) and `close` frees it;
+        - the verb finds the ambient host with none named, and a registered one
+          wins over it.
+      What the *samples* are is asserted in node (tests/score-parity.test.ts,
+      against the Python client's own renders); what this page adds is that a
+      window opens on a real host and carries them.
+      Verdict beaconed as a fetch, read from the HTTP access log.
+    -->
+    <script type="module">
+      import {
+        Buffer, Session, SynthDef, gui, plot, seq,
+      } from "../dist/index.js";
+      import { Env, control, out, sine } from "../dist/defs/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+
+      async function run() {
+        const session = (await Session.page({ channels: 2 })).adoptDefault();
+        const failures = [];
+        const check = (ok, what) => { if (!ok) failures.push(what); };
+        const shapes = {};
+
+        // Each plot opens its own window; the host is asked what it holds, so
+        // what is asserted is the widget the host actually built.
+        const opened = async (name, promise) => {
+          const win = await promise;
+          const info = await win.host.query(win.widgetId);
+          shapes[name] = info;
+          check(info.type === "plot", `${name}: widget is ${info.type}`);
+          log(`  plot(${name}): ${info.type}, channels=${info.props.channels}, `
+            + `rate=${info.props.sample_rate ?? "-"}`);
+          return win;
+        };
+
+        // ---- the three rendered legs ----
+
+        // A def: rendered offline for `dur` seconds, one lane per channel.
+        const sig = sine(control("freq", 220.0)).mul(0.3);
+        const defWin = await opened("def", plot(
+          new SynthDef("plot_probe", out(0.0, sig), out(1.0, sig)),
+          { dur: 0.05, label: "plot_probe" },
+        ));
+        check(Number(shapes.def.props.channels) === 2, "def: two lanes");
+
+        // A bare expression: as wide as it writes, through the same coercion
+        // `play` uses.
+        await opened("expression", plot(sine(440.0).mul(0.5), { dur: 0.02 }));
+        check(Number(shapes.expression.props.channels) === 1, "expression: one lane");
+
+        // An envelope: rendered through the engine's own envGen, so the drawn
+        // curve is what an envGen plays.
+        await opened("env", plot(Env.adsr(), { label: "adsr" }));
+        check(Number(shapes.env.props.channels) === 1, "env: one lane");
+        check(Number(shapes.env.props.sample_rate) === 48000, "env: a time axis");
+
+        // ---- the three live legs ----
+
+        // A buffer, fetched from the ambient server with its own shape.
+        const buffer = await Buffer.alloc(2048, 1);
+        await buffer.gen("sine1", [["i", 7], ["f", 1.0], ["f", 0.5]]);
+        await buffer.info();
+        await opened("buffer", plot(buffer));
+        check(Number(shapes.buffer.props.channels) === 1, "buffer: its own width");
+
+        // A sequence: no rate at all, so the x axis reads in counts.
+        await opened("sequence", plot(new seq.Pwhite(40.0, 4700.0), { n: 200 }));
+        check(shapes.sequence.props.ruler === "samples", "sequence: an index axis");
+
+        // An automation's curve is an Env, labelled with its control name.
+        const auto = new seq.Automation(new Env([200.0, 4000.0], [0.5]), null,
+          { name: "cutoff" });
+        await opened("automation", plot(auto));
+        check(shapes.automation.props.label === "cutoff",
+          `automation: labelled ${shapes.automation.props.label}`);
+
+        // ---- the window stays adjustable, and closes ----
+        defWin.set({ view: "spectrum" });
+        const retuned = await defWin.host.query(defWin.widgetId);
+        check(retuned.props.view === "spectrum",
+          `set: view is ${retuned.props.view}`);
+        defWin.close();
+
+        // ---- the ambient host ----
+        //
+        // With nothing registered the verb found the page's host on its own
+        // (every window above proves it). A registered host wins outright.
+        const registered = await gui.GuiHost.page();
+        gui.setAmbientHost(registered);
+        const onRegistered = await plot([1, 2, 3, 2, 1]);
+        check(onRegistered.host === registered, "a registered host wins");
+        gui.setAmbientHost(null);
+
+        session.close();
+        verdict(failures.length === 0
+          ? `PASS: six plot kinds drew — def ${shapes.def.props.channels} lanes, `
+            + `expression ${shapes.expression.props.channels}, env at `
+            + `${shapes.env.props.sample_rate} Hz, buffer `
+            + `${shapes.buffer.props.channels}, a rate-less sequence and an `
+            + `automation labelled ${shapes.automation.props.label}; `
+            + `set retuned one to spectrum and a registered host won`
+          : `FAIL: ${failures.join("; ")}`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

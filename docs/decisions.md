@@ -4271,3 +4271,47 @@ the bytes precisely because the reference being frozen is the decoder, not the
 encoder. It is a small file and will stay small; what earns its place is that
 it covers the direction where a value's *meaning* crosses, which is where two
 implementations of one wire drift without any test going red.
+
+## The third carrier writes time, and a page's render has no file at the end
+
+The web client's offline drive had two things to decide, and the second is the
+one that does not follow from the first.
+
+**Where the score lives.** The Python client puts it in the *interface* — an
+`OscNrtInterface` that accumulates bundles instead of sending them — and the
+seam this client has at that spot is `Connection`, which carries bytes and
+nothing else. A score cannot be assembled from bytes: a bundle's timetag has to
+say *when*, and by the time the packet is encoded that number is already inside
+it. So `Connection` grew two optional members — a `timeMode` (`"unix"` or
+`"score"`) and a structured `addBundle(secs, messages)` — and the `Server`
+branches on the first exactly where the Python client branches on
+`interface.time_mode`. The alternative was a second seam above the carrier, and
+that would have made "which carrier" a question the layers above `Server` could
+ask, which is the one property the seam exists to prevent.
+
+What that buys is worth stating plainly: **only the connection changes**. The
+same patterns, defs and routines write a score that a live session would have
+sent, and the score comes out byte-identical to the Python client's for the
+same piece.
+
+**Where the audio goes.** Here the two clients genuinely part. Python's
+`render(path=...)` hands the score to a `clausters --nrt` process that streams
+straight to disk — the samples never cross into Python, which is what lets a
+long bounce not materialize millions of floats, and what makes `int16`/`int24`
+output meaningful. A page has no process to hand a score to and no filesystem
+to write to: its renderer *is* the wasm engine already in the tab, and what it
+produces is a `Float32Array` in this page's memory. There is no honest `path`
+to offer, so the client offers none, and the intent is served twice over
+instead — `wavBytes(stats)` for a download, `Buffer.fromSamples(...)` to put
+the take straight back into the engine (the reference client's render-then-load
+with the file taken out of the middle, since the carrier shares memory with the
+server).
+
+One consequence had to be repaired rather than documented. `render` with no
+seed is supposed to draw a fresh one — a take of a noisy piece is a
+performance, unpredictable first — but the engine's entropy source is
+`SystemTime`, which wasm does not have, so a seedless render there takes a
+**fixed** seed and every take is the same take. The platform that has entropy
+is the caller's, so the client draws the word from `crypto.getRandomValues` and
+forwards it. The wasm shell inventing one would have been the wrong place: it
+owns no logic, and this is a capability of the edge, not of the renderer.

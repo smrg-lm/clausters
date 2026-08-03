@@ -181,8 +181,10 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             the length).
         controls: ``{name: value}`` controls a def or expression is instanced
             with.
-        defs: extra defs a def render needs first (a `GraphDef`'s member
-            defs; the ephemeral offline session starts empty).
+        defs: extra defs the render needs first — a `GraphDef`'s member defs,
+            or the instrument a bounced pattern, timeline or routine names.
+            Every offline path starts from an **empty** ephemeral session, so
+            whatever the material names has to ride along.
         until: stop the offline bounce at this beat — required for an endless
             source (an infinite pattern never drains on its own).
         tempo: the offline bounce's clock tempo, in beats per second (beats
@@ -228,7 +230,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             return render_element(obj, destination, clock, at=at, quant=quant,
                                   ports=ports)
         return _bounce(lambda session: _start_element(obj, session, at),
-                       until, tempo, sample_rate, channels, path, seed)
+                       until, tempo, sample_rate, channels, path, seed, defs)
 
     if isinstance(obj, Timeline):
         if destination is not None:
@@ -239,7 +241,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         return _bounce(
             lambda session: Playhead(obj, session.clock, session.server)
             .play(at=at),
-            until, tempo, sample_rate, channels, path, seed)
+            until, tempo, sample_rate, channels, path, seed, defs)
 
     playable = obj
     if not isinstance(playable, (Pattern, Routine, Stream)):
@@ -265,9 +267,9 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
     if isinstance(playable, Pattern):
         return _bounce(
             lambda session: playable.play(session.clock, session.server),
-            until, tempo, sample_rate, channels, path, seed)
+            until, tempo, sample_rate, channels, path, seed, defs)
     return _bounce(lambda session: playable.play(session.clock),
-                   until, tempo, sample_rate, channels, path, seed)
+                   until, tempo, sample_rate, channels, path, seed, defs)
 
 
 def _check_expr_width(obj, channels):
@@ -325,12 +327,19 @@ def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,
 
 # ---- the offline bounce ----
 
-def _bounce(start, until, tempo, sample_rate, channels, path, seed):
+def _bounce(start, until, tempo, sample_rate, channels, path, seed, defs=()):
     """An ephemeral NRT session: ``start(session)`` schedules the source on
-    its clock and server, the drained score renders to samples."""
+    its clock and server, the drained score renders to samples.
+
+    ``defs`` are sent into that session first. The session starts **empty** —
+    it is not the one the caller has been working in — so a pattern naming an
+    instrument of its own has to bring it along, exactly as a def bounce does.
+    """
     from .session import Session
 
     session = Session.nrt(tempo=tempo)
+    for d in defs:
+        d.send(session.server)
     with session._active():
         start(session)
     return session.render(sample_rate=sample_rate, channels=channels,

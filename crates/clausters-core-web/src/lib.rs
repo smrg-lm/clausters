@@ -453,6 +453,18 @@ pub fn osc_encode_bundle(unix_secs: f64, messages: js_sys::Array) -> Result<Vec<
     encode_bundle(osc::unix_to_ntp(unix_secs), messages)
 }
 
+/// JS face: a bundle stamped at `secs` **from the start of a render** → the
+/// bundle an NRT score is made of. The same packing as [`osc_encode_bundle`]
+/// on a different epoch: a score's time is not a wall clock, so nothing is
+/// added to it (`clausters_core::osc::pack_timetag`, the rule every client
+/// shares — the Python client reaches it through `clausters_core_ntp_timetag`
+/// and assembles the bundle itself).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn osc_encode_score_bundle(secs: f64, messages: js_sys::Array) -> Result<Vec<u8>, JsError> {
+    encode_bundle(osc::pack_timetag(secs), messages)
+}
+
 /// JS face: a bundle with the *immediate* timetag → `Uint8Array`. What rides
 /// inside `/sched_at`, whose own absolute sample carries the time.
 #[cfg(target_arch = "wasm32")]
@@ -668,6 +680,22 @@ pub fn bundle_validate(request: &str) -> Result<(), JsError> {
 // meter, oscilloscope, spectrum or waveform gets the host's numbers rather
 // than a second implementation of them. Nothing here keeps state except the
 // peak pyramid, which is a cache by definition.
+
+/// JS face: the **peak and RMS** of one channel of an interleaved buffer, as
+/// `[peak, rms]` — what a render reports back about what it produced. The
+/// stride walk measures a render without deinterleaving it first, so a page
+/// reads the same two numbers the server and the Python client report.
+///
+/// An empty pair for a channel the buffer does not have.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn channel_stats(samples: &[f32], channels: usize, channel: usize) -> Vec<f32> {
+    if channels == 0 || channel >= channels {
+        return Vec::new();
+    }
+    let (peak, rms) = measure::channel_stats(samples, channels, channel);
+    vec![peak, rms]
+}
 
 /// JS face: the stereo **correlation** (Pearson's r) of two equal-length
 /// channels, in `[-1, 1]`. `undefined` when it is undefined — a length

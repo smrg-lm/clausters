@@ -268,6 +268,16 @@ export function bundle_resolve(request: string): string;
 export function bundle_validate(request: string): void;
 
 /**
+ * JS face: the **peak and RMS** of one channel of an interleaved buffer, as
+ * `[peak, rms]` — what a render reports back about what it produced. The
+ * stride walk measures a render without deinterleaving it first, so a page
+ * reads the same two numbers the server and the Python client report.
+ *
+ * An empty pair for a channel the buffer does not have.
+ */
+export function channel_stats(samples: Float32Array, channels: number, channel: number): Float32Array;
+
+/**
  * JS face: the stereo **correlation** (Pearson's r) of two equal-length
  * channels, in `[-1, 1]`. `undefined` when it is undefined — a length
  * mismatch, an empty pair, or a constant channel.
@@ -326,6 +336,16 @@ export function osc_encode_immediate_bundle(messages: Array<any>): Uint8Array;
  * float64, `"s"` string, `"b"` blob (`Uint8Array`).
  */
 export function osc_encode_message(addr: string, args: Array<any>): Uint8Array;
+
+/**
+ * JS face: a bundle stamped at `secs` **from the start of a render** → the
+ * bundle an NRT score is made of. The same packing as [`osc_encode_bundle`]
+ * on a different epoch: a score's time is not a wall clock, so nothing is
+ * added to it (`clausters_core::osc::pack_timetag`, the rule every client
+ * shares — the Python client reaches it through `clausters_core_ntp_timetag`
+ * and assembles the bundle itself).
+ */
+export function osc_encode_score_bundle(secs: number, messages: Array<any>): Uint8Array;
 
 /**
  * JS face: the triggered window's start inside `raw`, as `[start, locked]`
@@ -409,6 +429,7 @@ export interface InitOutput {
     readonly bundle_requirements: (a: number, b: number) => [number, number, number, number];
     readonly bundle_resolve: (a: number, b: number) => [number, number, number, number];
     readonly bundle_validate: (a: number, b: number) => [number, number];
+    readonly channel_stats: (a: number, b: number, c: number, d: number) => [number, number];
     readonly correlation: (a: number, b: number, c: number, d: number) => number;
     readonly degree_to_midinote: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly graph_bus_reserved: () => [number, number];
@@ -418,6 +439,7 @@ export interface InitOutput {
     readonly osc_encode_bundle: (a: number, b: any) => [number, number, number, number];
     readonly osc_encode_immediate_bundle: (a: any) => [number, number, number, number];
     readonly osc_encode_message: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly osc_encode_score_bundle: (a: number, b: any) => [number, number, number, number];
     readonly oscil_align: (a: number, b: number, c: number, d: number) => [number, number];
     readonly oscil_raw_frames: (a: number) => number;
     readonly pyramid_baseBucket: (a: number) => number;

@@ -14,6 +14,7 @@ node_modules/
 !/src/core/clausters_core_web.d.ts
 /src/gui-host/*
 !/src/gui-host/clausters_gui.d.ts
+/src/engine/clausters_web.js
 
 # The demo bundle the smokes write (tools/demo-bundle.sh), and the bundle
 # examples the make_bundle.py scripts generate.

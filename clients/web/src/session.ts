@@ -32,12 +32,13 @@
 
 import { TempoClock } from "./base/clock.ts";
 import type { Timebase } from "./base/timebase.ts";
-import { pageConnection, WsConnection } from "./base/connection.ts";
+import { pageConnection, ScoreConnection, WsConnection } from "./base/connection.ts";
 import type { Connection } from "./base/connection.ts";
 import { OscDestination } from "./base/destination.ts";
 import { Environment } from "./base/environment.ts";
 import { main } from "./base/main.ts";
 import { loadOsc } from "./base/osc.ts";
+import type { RenderOptions, RenderStats } from "./render.ts";
 import { Server } from "./defs/server/index.ts";
 import type { ClaustersServer } from "./engine/server.ts";
 import { engine as engineInstance, server as pageEngine } from "./engine/server.ts";
@@ -112,6 +113,27 @@ export class Session extends Environment {
     }
 
     // ---- the factories (the "defaults", explicit) ----
+
+    /**
+     * An **offline** session: its `Server` writes a timestamped score instead
+     * of sending anything, and `render` turns that score into samples through
+     * the engine's own renderer running as fast as it can.
+     *
+     * No `AudioContext`, no gesture, no socket and no server process — which
+     * is why this is the one factory that is not asynchronous past loading the
+     * codec. What is *not* different is everything above the carrier: the same
+     * patterns, defs and routines play into it, because only the connection
+     * underneath the `Server` changed.
+     *
+     * The clock's tempo is what maps the piece's beats onto the render's
+     * seconds; at the default 1.0 a beat is a second.
+     */
+    static async nrt({ tempo = 1.0 }: { tempo?: number } = {}): Promise<Session> {
+        await loadOsc();
+        const connection = new ScoreConnection();
+        const server = await Server.open(connection, { sizing: {}, notify: false });
+        return new Session(server, new TempoClock(tempo));
+    }
 
     /**
      * A session on an **in-page engine** — the audio server compiled to wasm
@@ -198,6 +220,15 @@ export class Session extends Environment {
      * `<body>` included); one holding its own engine gets a host of its own,
      * which appends no canvas — pass yours to the def, as a component does.
      */
+    /**
+     * The GUI host this session already has, or `null` when none was opened —
+     * what the ambient visual verbs read, so they draw on a session's host
+     * rather than opening a second one, without opening one themselves.
+     */
+    get guiHost(): GuiHost | null {
+        return this.gui_;
+    }
+
     async gui(): Promise<GuiHost> {
         if (this.gui_) return this.gui_;
         this.gui_ = this.ownedEngine
@@ -280,6 +311,27 @@ export class Session extends Environment {
     async joinTransport(): Promise<this> {
         await this.clock.joinTransport(this.server, this.server.timeout);
         return this;
+    }
+
+    /**
+     * Drains the clock and renders the accumulated score (offline sessions
+     * only).
+     *
+     * Advances the clock logically, with no real-time waiting, so everything
+     * scheduled lands in the score, and then renders that score. Schedule a
+     * closing event — freeing the root group, or whatever ends the piece — so
+     * the render has a defined length: the renderer stops when the score does,
+     * and commands do not sound.
+     *
+     * `until` bounds the drain in beats, which an endless source needs (an
+     * infinite pattern never drains on its own).
+     */
+    async render(options: RenderOptions & { until?: number } = {}): Promise<RenderStats> {
+        const { until, ...rest } = options;
+        this.use(() => {
+            this.clock.render(until);
+        });
+        return this.server.render(rest);
     }
 
     /**

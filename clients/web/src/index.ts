@@ -53,6 +53,16 @@ export type { Main, SessionLike } from "./base/main.ts";
 export { Environment, RandomContext } from "./base/environment.ts";
 export { play } from "./play.ts";
 export type { Playable, PlayOptions } from "./play.ts";
+export { plot, PlotWindow } from "./plot.ts";
+export type { Plottable, PlotOptions } from "./plot.ts";
+export { bounceDef, channel, render, renderScore, wavBytes } from "./render.ts";
+export type {
+    RenderOptions,
+    RenderStats,
+    RenderVerbOptions,
+    Renderable,
+} from "./render.ts";
+export { loadRenderer } from "./engine/render.ts";
 export { newPools, pagePools } from "./base/pool.ts";
 export type { Pool, Pools } from "./base/pool.ts";
 export {
@@ -92,7 +102,7 @@ export { Event, rest } from "./seq/event.ts";
 export { Playhead, Timeline } from "./seq/timeline.ts";
 export * as data from "./data/index.ts";
 export { loadCore } from "./base/core.ts";
-export { WsConnection, pageConnection } from "./base/connection.ts";
+export { Score, ScoreConnection, WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";
 export { Server } from "./defs/server/index.ts";

@@ -43,13 +43,12 @@ change.</div>
     <!--
       The web sibling of clients/python/examples/verbs.py, and it mirrors that
       example's shape: open an environment once, then visit every playable kind
-      audibly. Two of its stops have no counterpart here yet — a bare signal
-      expression (there is no ephemeral-def wrapper in this client) and an
-      automation curve — so the tour skips them and says so.
+      audibly, and finish by rendering one of them offline instead of playing
+      it — the same material, evaluated rather than sounded.
     -->
     <script type="module">
       import {
-        Buffer, Event, Session, Synth, SynthDef, play, seq,
+        Buffer, Event, Session, Synth, SynthDef, play, render, seq,
       } from "../dist/index.js";
       import {
         DoneAction, Env, control, envGen, out, sine,
@@ -130,6 +129,14 @@ change.</div>
         await wait(PAUSE * 2);
         player.stop();
 
+        // A bare expression — no def, no name. `play` wraps it in an
+        // ephemeral def (`tmp_*`, which the server never persists) and
+        // instances that, so a signal is playable directly.
+        log("a bare expression, wrapped in an ephemeral def");
+        const bare = play(sine(330.0).mul(0.15));
+        await wait(PAUSE);
+        bare.free();
+
         // A def — sent and instanced. It plays until you free it, so this one
         // is a drone with no envelope of its own to end it.
         log("a def, instanced as a drone (freed by hand)");
@@ -190,9 +197,14 @@ change.</div>
         await wait(PAUSE);
         note.set({ gate: 0.0 });
 
-        log("\nnot on this tour, each waiting on the milestone that opens it:");
-        log("  a bare signal expression (needs the ephemeral-def wrapper)");
-        log("  render (needs an offline drive)");
+        // The verb the tour ends on is not `play` at all. `render` takes the
+        // same material and *evaluates* it instead of sounding it: an
+        // offline session, faster than real time, and what comes back is
+        // samples plus what the take measured.
+        log("\nand the same expression rendered instead of played:");
+        const stats = await render(sine(330.0).mul(0.15), { dur: 0.5, channels: 1 });
+        log(`  render -> ${stats.frames} frames, ${stats.duration.toFixed(2)} s, `
+          + `peak ${stats.peak[0].toFixed(3)}, seed ${stats.seed}`);
         $("tour").disabled = false;
       }
 

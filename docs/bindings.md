@@ -48,7 +48,7 @@ thought about the other side", write `gap` — that is what it is for.
 | `clausters_core_binary` | `binary` | |
 | `clausters_core_whitenoise` | — | **gap** — `JsRng` steps values one at a time; there is no buffer fill, so a browser cannot reproduce a server noise stream in one call |
 | `clausters_core_window` | — | **gap** — the FFT smoothing windows. The web spectrogram takes magnitudes from `spectrumDb`, which applies its own |
-| `clausters_core_stats` | — | **gap** — min/max/rms over a slice |
+| `clausters_core_stats` | `channel_stats` | `idiom` — the peak and RMS of one channel of an interleaved buffer; C writes the pair through an out pointer, wasm returns it as a two-element array |
 | `clausters_core_correlation` | `correlation` | |
 | `clausters_core_lissajous` | `lissajous` | |
 | `clausters_core_hz_to_mel` | — | **gap** — the perceptual axes a spectrogram labels |
@@ -73,7 +73,7 @@ thought about the other side", write `gap` — that is what it is for.
 | `clausters_core_bar` | `bar` | |
 | `clausters_core_beat_in_bar` | `beat_in_bar` | |
 | `clausters_core_unix_to_ntp` | `unix_to_ntp` | |
-| `clausters_core_ntp_timetag` | — | `n/a` — wasm packs the timetag inside `oscEncodeBundle`, which takes Unix seconds; nothing on that side holds a raw NTP value |
+| `clausters_core_ntp_timetag` | — | `n/a` — wasm packs the timetag inside the bundle encoders (`osc_encode_bundle` from Unix seconds, `osc_encode_score_bundle` from render seconds); nothing on that side holds a raw NTP value |
 | `clausters_core_degree_to_midinote` | `degree_to_midinote` | |
 
 ## Randomness
@@ -173,6 +173,7 @@ thought about the other side", write `gap` — that is what it is for.
 | — | `osc_decode_packet` | `n/a` — as above |
 | — | `osc_encode_bundle` | `n/a` — as above |
 | — | `osc_encode_immediate_bundle` | `n/a` — as above |
+| — | `osc_encode_score_bundle` | `n/a` — as above; the NRT score's epoch (seconds from the render's start), where Python packs the timetag with `clausters_core_ntp_timetag` and assembles the bundle itself |
 
 ## Notation
 

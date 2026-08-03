@@ -1,0 +1,409 @@
+// The free-standing `plot` — one verb for looking at a signal (mirrors
+// `clausters/plot.py`).
+//
+// `plot` is the visual sibling of `play`: it plots whatever you hand it,
+// resolving the ambient GUI host so a quick look never spells one out. Each
+// call opens its **own window**. It dispatches by kind:
+//
+// - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) is **rendered offline**
+//   (an ephemeral NRT session: sent, instanced with `controls`, freed at
+//   `dur`) and its output plotted, every channel in its own lane — the way to
+//   eyeball what a def actually produces with no server and no audio device;
+// - a bare **expression** takes the same offline path through the
+//   ephemeral-def coercion `play` uses, so `plot(sine(440).mul(0.5))` shows
+//   the signal directly. It plots as wide as it writes;
+// - an `Env` is rendered through the engine's own `envGen`, so the drawn curve
+//   is exactly what the engine plays — not a second evaluation of the same
+//   break points. An `Automation` plots the same way (its curve *is* an
+//   `Env`), labelled with the automation's control name;
+// - a `Buffer` (or a buffer number) is fetched from the ambient **live**
+//   server with its shape and rate — the way to check a buffer's contents;
+// - any other **iterable of numbers** — an array, a `Float32Array`, a
+//   `Pattern` — is materialized (up to `n` items for the endless ones) and
+//   plotted as a sequence: index counts on the x axis, the value axis fitted
+//   to the data.
+//
+// `view: "spectrum"` plots the averaged magnitude spectrum instead. Either way
+// the window is static — no zoom, pan or editing — but measured: the rulers
+// fit the data and hovering reads out the sample or bin under the cursor.
+//
+// **Asynchronous, where the reference verb is not.** Opening a host, fetching
+// a buffer and running a render all wait, and a page may not block; so `plot`
+// resolves with its window rather than returning it. That is this client's one
+// standing difference, not a difference in the verb.
+//
+// ```ts
+// await plot(sine(440.0).mul(0.2), { dur: 0.02 });
+// await plot(Env.adsr(), { label: "adsr" });
+// await plot(new seq.Pwhite(40.0, 4700.0), { n: 200 });
+// ```
+
+import { main } from "./base/main.ts";
+import { asDef, exprChannels, isExpr } from "./defs/asdef.ts";
+import { Buffer } from "./defs/buffer.ts";
+import { FaustDef } from "./defs/faustdef.ts";
+import { GraphDef } from "./defs/graphdef.ts";
+import { Synth } from "./defs/node.ts";
+import type { Controls } from "./defs/node.ts";
+import { SynthDef } from "./defs/synthdef.ts";
+import { Env, control, envGen, out } from "./defs/ugens/index.ts";
+import { GuiHost } from "./gui/host.ts";
+import type { PropValue } from "./gui/host.ts";
+import { ambientHost } from "./gui/ambient.ts";
+import * as guidef from "./gui/guidef.ts";
+import { Automation } from "./seq/automation.ts";
+import { Pattern } from "./seq/pattern.ts";
+import { bounceDef } from "./render.ts";
+
+/**
+ * Inline `data` ceiling: at most this many floats ride the GuiDef JSON. More
+ * take the blob path — the samples travel beside the message rather than
+ * inside it, which is what keeps a megabyte of floats out of the tree.
+ */
+const INLINE_MAX = 2048;
+
+/** The module's own host, opened lazily when no session brought one. */
+let ownHost: GuiHost | null = null;
+
+/**
+ * One open plot window: its GUI `host`, the window `id` and the plot widget's
+ * id, so the display stays adjustable after the fact.
+ *
+ * ```ts
+ * const win = await plot(seq);
+ * win.set({ view: "spectrum", freqScale: "mel" });   // live
+ * win.close();
+ * ```
+ */
+export class PlotWindow {
+    readonly host: GuiHost;
+    readonly id: number;
+    readonly widgetId: number;
+
+    constructor(host: GuiHost, id: number, widgetId: number) {
+        this.host = host;
+        this.id = id;
+        this.widgetId = widgetId;
+    }
+
+    /**
+     * Live-sets plot props (`view`, `min`/`max` — a number, or `"auto"` to
+     * refit — `freqScale`, `dbFloor`/`dbCeil`, `ruler`/`rulerY`, `label`…)
+     * through `/gui_set`.
+     */
+    set(props: Record<string, PropValue>): this {
+        this.host.set(this.widgetId, props);
+        return this;
+    }
+
+    /** Closes the window (`/gui_free`). */
+    close(): void {
+        this.host.close(this.id);
+    }
+}
+
+/** What `plot` accepts. */
+export type Plottable =
+    | SynthDef
+    | FaustDef
+    | GraphDef
+    | Env
+    | Automation
+    | Buffer
+    | number
+    | Iterable<number>
+    | Iterable<Iterable<number>>
+    | Pattern<unknown>
+    // A bare expression (Ugen / ChannelList / Signal), which has no one type.
+    | object;
+
+export interface PlotOptions {
+    /** Seconds a def or expression is held before it is freed. */
+    dur?: number;
+    /** Controls (ports, for a `GraphDef`) the instance is started with. */
+    controls?: Controls;
+    /** Extra defs the render needs first — a `GraphDef`'s member defs. */
+    defs?: readonly (SynthDef | FaustDef | GraphDef)[];
+    /** Materialization cap for endless sequences. */
+    n?: number;
+    /** The offline render's rate; also places a fetched buffer's time axis. */
+    sampleRate?: number;
+    /**
+     * How many channels to show. Absent it is derived — a bare expression is
+     * as wide as it writes, an already-built def defaults to 2. Ignored by the
+     * other kinds (a buffer brings its own; a sequence infers it).
+     */
+    channels?: number;
+    /** `"signal"` (default) or `"spectrum"`. */
+    view?: string;
+    /** Draw channels as overlaid traces instead of lanes. */
+    overlay?: boolean;
+    /** Value-axis sides of the signal view; absent, that side auto-fits. */
+    min?: number;
+    max?: number;
+    /** Spectrum frequency axis: `"log"` (default), `"linear"`, `"mel"`, `"bark"`. */
+    freqScale?: string;
+    /** Spectrum analysis size (a power of two). */
+    fftSize?: number;
+    /** Spectrum dB window. */
+    dbFloor?: number;
+    dbCeil?: number;
+    /** The signal view's time unit: `"time"`, `"samples"` or `"off"`. */
+    ruler?: string;
+    /** `"off"` hides the value-axis strip. */
+    rulerY?: string;
+    /** The plot's label strip; defaults to something sensible per kind. */
+    label?: string;
+    /** The window title (defaults to the label). */
+    title?: string;
+    /** Window width in px. */
+    w?: number;
+    /** Window height (default sized to the channel count). */
+    h?: number;
+    /** An explicit host; absent, the ambient one. */
+    host?: GuiHost;
+}
+
+/**
+ * Plots `obj` in its own window on the ambient GUI host, and resolves with the
+ * `PlotWindow` — `set(...)` retunes the display live, `close()` closes it.
+ */
+export async function plot(
+    obj: Plottable,
+    options: PlotOptions = {},
+): Promise<PlotWindow> {
+    const {
+        dur = 1.0, controls, defs = [], n = 1024, sampleRate = 48_000.0,
+        channels, view, overlay, min, max, freqScale, fftSize, dbFloor, dbCeil,
+        ruler, rulerY, label, title, w = 760, h, host: explicitHost,
+    } = options;
+
+    const drawn = await materialize(obj, {
+        dur, controls, defs, n, sampleRate, channels,
+    });
+    const text = label ?? drawn.label;
+    const host = explicitHost ?? await resolveHost();
+
+    // Widget ids live in the host's one namespace (every window, every script
+    // on it), so each plot's widget takes a fresh one — a repeated id would be
+    // skipped at define time and `set` would reach whichever widget claimed it
+    // first.
+    const widgetId = host.allocId();
+    const props: Record<string, unknown> = {
+        id: widgetId,
+        channels: drawn.channels,
+        view,
+        overlay: overlay || undefined,
+        min,
+        max,
+        freqScale,
+        fftSize,
+        dbFloor,
+        dbCeil,
+        ruler,
+        rulerY,
+        label: text,
+    };
+    if (drawn.sampleRate > 0) props.sampleRate = drawn.sampleRate;
+    else if (ruler === undefined) props.ruler = "samples"; // no rate: read in counts
+
+    let widget: guidef.GuiNode;
+    const blobs: Uint8Array[] = [];
+    if (drawn.samples.length <= INLINE_MAX) {
+        widget = guidef.plot({ ...props, data: [...drawn.samples] });
+    } else {
+        // A page shares no filesystem with its host, so the samples travel
+        // with the message — beside the JSON, not inside it.
+        blobs.push(guidef.samplesToBlob(drawn.samples));
+        widget = guidef.plot({ ...props, blob: 0 });
+    }
+    const height = h ?? (drawn.channels <= 1 ? 260 : 160 + 140 * drawn.channels);
+    const tree = guidef.window({ title: title ?? text ?? "plot", w, h: height }, widget);
+    const handle = host.open(tree, { blobs });
+    return new PlotWindow(host, handle.id, widgetId);
+}
+
+// ---- dispatch: turning the object into interleaved samples ----
+
+interface Drawn {
+    samples: Float32Array | number[];
+    channels: number;
+    /** 0 marks an index (sequence) axis rather than a time one. */
+    sampleRate: number;
+    label: string;
+}
+
+async function materialize(
+    obj: Plottable,
+    {
+        dur, controls, defs, n, sampleRate, channels,
+    }: {
+        dur: number;
+        controls?: Controls;
+        defs: readonly (SynthDef | FaustDef | GraphDef)[];
+        n: number;
+        sampleRate: number;
+        channels?: number;
+    },
+): Promise<Drawn> {
+    if (obj instanceof Env) return renderEnv(obj, sampleRate, "env");
+    if (obj instanceof Automation) {
+        return renderEnv(obj.env, sampleRate, obj.name);
+    }
+    if (isExpr(obj)) {
+        // Plot configures its render for what is being looked at, so the
+        // expression is as wide as it writes (`exprChannels` is the one place
+        // that knows). One that routes itself entirely says 0, and there is
+        // nothing to infer: fall back to a stereo look.
+        const width = channels ?? (exprChannels(obj) || 2);
+        const stats = await bounceDef(asDef(obj), {
+            dur, controls, defs, sampleRate, channels: width,
+        });
+        return { samples: stats.samples, channels: width, sampleRate, label: "expr" };
+    }
+    if (obj instanceof SynthDef || obj instanceof FaustDef || obj instanceof GraphDef) {
+        const width = channels ?? 2;
+        const stats = await bounceDef(obj, {
+            dur, controls, defs, sampleRate, channels: width,
+        });
+        return { samples: stats.samples, channels: width, sampleRate, label: obj.name };
+    }
+    if (obj instanceof Buffer || typeof obj === "number") {
+        return fetchBuffer(obj, sampleRate);
+    }
+    return sequence(obj as Iterable<number>, n);
+}
+
+/**
+ * Renders an `Env` through the engine's own `envGen` — what you plot is what
+ * an `envGen` plays, rather than a second evaluation of the same break points.
+ * A sustained envelope (one with a `releaseNode`) has its gate closed at the
+ * sustain point, so the release segments show too.
+ */
+/**
+ * The samples `plot(Env)` draws — the envelope rendered through the engine's
+ * own `envGen`, without the window around it. Exposed because it is the thing
+ * worth comparing against the reference client: both render an envelope the
+ * same way, so the drawn curve is comparable across clients rather than only
+ * within one.
+ */
+export async function renderEnvSamples(
+    env: Env,
+    sampleRate = 48_000.0,
+): Promise<{ samples: Float32Array; channels: number }> {
+    const drawn = await renderEnv(env, sampleRate, "env");
+    return { samples: drawn.samples as Float32Array, channels: drawn.channels };
+}
+
+async function renderEnv(
+    env: Env,
+    sampleRate: number,
+    label: string,
+): Promise<Drawn> {
+    const { Session } = await import("./session.ts");
+    const total = env.times.reduce((a, b) => a + b, 0) || 1.0;
+    const session = await Session.nrt({ tempo: 1.0 });
+    const server = session.server;
+    const gate = control("gate", 1.0);
+    const def = new SynthDef("_plot_env", out(0.0, envGen(env, { gate })));
+    await def.send(server);
+    const node = new Synth(def.name, undefined, { server });
+    if (env.releaseNode !== undefined) {
+        const sustainAt = env.times
+            .slice(0, env.releaseNode)
+            .reduce((a, b) => a + b, 0);
+        server.sendBundleAfter(sustainAt, [
+            ["/node_set", ["i", node.id], "gate", ["f", 0.0]],
+        ]);
+    }
+    server.sendBundleAfter(total, [["/node_free", ["i", node.id]]]);
+    const stats = await session.render({ sampleRate, channels: 1 });
+    return { samples: stats.samples, channels: 1, sampleRate, label };
+}
+
+/**
+ * Fetches a buffer's interleaved samples and shape from the ambient **live**
+ * server — the buffer-contents check.
+ */
+async function fetchBuffer(
+    target: Buffer | number,
+    fallbackRate: number,
+): Promise<Drawn> {
+    const buffer = target instanceof Buffer
+        ? target
+        : new Buffer(target, 0, 1, 0.0, main.resolveServer());
+    await buffer.info();
+    const samples = await buffer.getSamples();
+    const rate = buffer.sampleRate > 0 ? buffer.sampleRate : fallbackRate;
+    return {
+        samples,
+        channels: Math.max(1, buffer.channels),
+        sampleRate: rate,
+        label: `buffer ${buffer.bufnum}`,
+    };
+}
+
+/**
+ * Materializes an iterable of numbers (or of per-channel rows, interleaved) —
+ * up to `n` items for the endless ones. The rate is 0: the x axis reads in
+ * index counts and the value range auto-fits.
+ */
+function sequence(obj: Iterable<number>, n: number): Drawn {
+    const first = take(obj, n);
+    if (first.length > 0 && isRow(first[0])) {
+        const rows = (first as unknown[]).map((row) => take(row as Iterable<number>, n));
+        const frames = Math.min(...rows.map((row) => row.length));
+        const interleaved: number[] = [];
+        for (let f = 0; f < frames; f++) {
+            for (const row of rows) interleaved.push(Number(row[f]));
+        }
+        return {
+            samples: interleaved,
+            channels: rows.length,
+            sampleRate: 0,
+            label: "sequence",
+        };
+    }
+    return {
+        samples: first.map(Number),
+        channels: 1,
+        sampleRate: 0,
+        label: "sequence",
+    };
+}
+
+/** The first `n` items of anything iterable — a `Pattern` included. */
+function take(obj: Iterable<unknown>, n: number): unknown[] {
+    const out: unknown[] = [];
+    for (const value of obj) {
+        out.push(value);
+        if (out.length === n) break;
+    }
+    return out;
+}
+
+/** A per-channel row: iterable, but not a number. */
+function isRow(value: unknown): boolean {
+    return typeof value !== "number" && typeof value !== "string"
+        && value !== null && typeof value === "object"
+        && typeof (value as { [Symbol.iterator]?: unknown })[Symbol.iterator] === "function";
+}
+
+/**
+ * The GUI host the ambient visual verbs open windows on: one registered
+ * through `setAmbientHost` if there is one, else the current (else default)
+ * session's host when one is already up, else a host this module opens once
+ * and owns.
+ *
+ * A registered host wins outright: it is a front this module could not have
+ * opened itself, which is the whole reason it was registered.
+ */
+async function resolveHost(): Promise<GuiHost> {
+    const registered = ambientHost();
+    if (registered) return registered;
+    const session = main.currentSession as { guiHost?: GuiHost | null } | null;
+    const sessionHost = session?.guiHost ?? null;
+    if (sessionHost) return sessionHost;
+    ownHost ??= await GuiHost.page();
+    return ownHost;
+}

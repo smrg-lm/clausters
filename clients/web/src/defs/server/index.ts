@@ -43,6 +43,8 @@ import {
 import type { MsgArg, OscMessage, TimedMessage } from "../../base/osc.ts";
 export type { TimedMessage } from "../../base/osc.ts";
 import type { Connection } from "../../base/connection.ts";
+import { ScoreConnection } from "../../base/connection.ts";
+import type { RenderOptions, RenderStats } from "../../render.ts";
 import { Moment } from "../../base/moment.ts";
 import { MonotonicTimebase, SampleTimebase } from "../../base/timebase.ts";
 import type { Timebase } from "../../base/timebase.ts";
@@ -116,8 +118,21 @@ export class Server {
     /**
      * Seconds added to every timed send — the scheduling headroom. Kept here
      * so the sequencing layer (a later milestone) has one place to read it.
+     *
+     * A **score** carrier sets it to 0 in the constructor: latency is lead
+     * time against a real deadline, and an offline render has none.
      */
     latency = 0.05;
+
+    /**
+     * Whether this handle writes a score instead of sending to a server —
+     * the carrier's `timeMode`, read where the difference shows: how a bundle
+     * is stamped, whether a confirmation can ever arrive, and whether node
+     * ids have to be recycled.
+     */
+    get scoring(): boolean {
+        return this.connection.timeMode === "score";
+    }
     /**
      * How long a reply is waited for, in seconds, when a call does not say.
      * The handle's, not a literal repeated at each call site: every method
@@ -137,7 +152,13 @@ export class Server {
         this.connection = connection;
         this.sizing = sizing;
         this.timeout = timeout;
-        this.nodes = NodeIdAllocator.forMaxNodes(sizing.maxNodes);
+        // An offline score has no `/node_end` stream to recycle from and no
+        // real-time bound on how many ids its length needs, so the registry is
+        // unbounded there — the reference client's rule.
+        this.nodes = this.scoring
+            ? NodeIdAllocator.unbounded(sizing.maxNodes)
+            : NodeIdAllocator.forMaxNodes(sizing.maxNodes);
+        if (this.scoring) this.latency = 0.0;
         this.audioBuses = new AudioBusAllocator(sizing.audioBuses, sizing.channels);
         this.controlBuses = new ControlBusAllocator(sizing.controlBuses);
         this.buffers = new BufferAllocator(sizing.maxBuffers);
@@ -279,6 +300,12 @@ export class Server {
      * buffers, opening the groups a piece is built on.
      */
     sendMsg(addr: string, ...args: MsgArg[]): void {
+        if (this.scoring) {
+            // A message has no time, so in a score it lands at the top —
+            // which is exactly what "no time" means for a render.
+            this.connection.addBundle!(0, [{ addr, args: args.map(oscArg) }]);
+            return;
+        }
         this.connection.send(encodeMessage(addr, args.map(oscArg)));
     }
 
@@ -313,6 +340,12 @@ export class Server {
         } = {},
     ): void {
         const when = (at ?? Moment.current(clock)).at(delayBeats);
+        if (this.scoring) {
+            // NRT: seconds from the render's start — logical, and independent
+            // of any timebase, since no wall clock is involved.
+            this.connection.addBundle!(when.secs(), toBundle(messages));
+            return;
+        }
         const timebase = when.clock?.timebase;
         if (timebase instanceof SampleTimebase) {
             // Anchored to the server's sample clock: schedule by absolute
@@ -454,6 +487,13 @@ export class Server {
         args: MsgArg[],
         timeout?: number,
     ): Promise<OscMessage> {
+        if (this.scoring) {
+            // Nothing answers a score. The command still goes in — it is part
+            // of the piece — and the confirmation this call is named for
+            // simply does not exist offline.
+            this.sendMsg(addr, ...args);
+            return { addr: "/done", args: [addr] };
+        }
         const msg = await this.request(addr, args, {
             expect: ["/done", "/fail"],
             cmd: addr,
@@ -472,6 +512,9 @@ export class Server {
      */
     async sync(timeout?: number): Promise<number> {
         const id = ++this.syncCounter;
+        // A score is not concurrent: everything in it is already ordered by
+        // the time it carries, so the barrier has nothing to wait for.
+        if (this.scoring) return id;
         const reply = this.awaitReply(
             (msg) => msg.addr === "/server_sync.reply" && msg.args[0] === id,
             timeout,
@@ -480,6 +523,30 @@ export class Server {
         this.sendMsg("/server_sync", ["i", id]);
         await reply;
         return id;
+    }
+
+    /**
+     * Renders the score this handle accumulated (a **score carrier** only).
+     *
+     * The one surface where an offline `Server` differs from a live one, and
+     * it is not a command: nothing is sent, the score is handed to the
+     * engine's own renderer and the samples come back. `Session.render` drains
+     * the clock first and then calls this.
+     *
+     * Schedule a closing bundle — freeing the root group, or whatever ends the
+     * piece — so the render has a defined length: it stops when the score
+     * does, and commands do not sound.
+     */
+    async render(options: RenderOptions = {}): Promise<RenderStats> {
+        const connection = this.connection;
+        if (!(connection instanceof ScoreConnection)) {
+            throw new TypeError(
+                "render() needs a Server opened over a ScoreConnection "
+                    + "(Session.nrt() builds one)",
+            );
+        }
+        const { renderScore } = await import("../../render.ts");
+        return renderScore(connection.score.bytes(), options);
     }
 
     // ---- definitions ----
@@ -535,6 +602,7 @@ export class Server {
      * what lets the node-id registry recycle.
      */
     async notify(flag = true, timeout?: number): Promise<void> {
+        if (this.scoring) return; // no pushes to register for, and no ids to recycle
         const reply = this.awaitReply(
             (msg) => msg.addr === "/done" && msg.args[0] === "/server_notify",
             timeout,

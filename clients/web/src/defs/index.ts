@@ -53,6 +53,9 @@ export type { ControlSpec, SpecInput, SynthDefSpec, UgenSpec } from "./synthdef.
 export { FaustDef } from "./faustdef.ts";
 export type { FaustDefKind } from "./faustdef.ts";
 
+export { asDef, exprChannels, isExpr } from "./asdef.ts";
+export type { Expr } from "./asdef.ts";
+
 export { GraphBusRef, GraphDef, MemberRef, PortTarget } from "./graphdef.ts";
 export type { GraphDefSpec, MemberControlValue, MemberSpec } from "./graphdef.ts";
 
