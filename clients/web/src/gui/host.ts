@@ -78,6 +78,17 @@ interface Pending {
 export type PropValue = number | string | boolean | readonly unknown[] | Record<string, unknown>;
 
 /**
+ * A prop name as the wire wants it. The builders spell each one out
+ * (`["window_ms", windowMs]`) because they also decide what to drop; a live
+ * `set` takes a whole bag at once and has nothing to spell out, so the
+ * conversion is mechanical here. Wire names are snake_case throughout
+ * (`docs/gui-protocol.md`), which is what makes the round trip safe: a name
+ * already in that form has no capital to convert.
+ */
+const wireProp = (name: string): string =>
+    name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+
+/**
  * A connection to a running GUI host — the object that sends the GuiDefs and
  * reads the widgets back.
  */
@@ -243,11 +254,17 @@ export class GuiHost {
      * `/gui_set <id> <k> <v> …` — update one live widget. A value that is
      * logically an array or a table (a curve's break-points, a theme) rides
      * as its **JSON string**, since an OSC key/value is a scalar.
+     *
+     * Prop names are written the way the builders take them and go out the
+     * way the wire wants them (`windowMs` → `window_ms`), which is the
+     * package's standing rule — the options are TypeScript's, the props are
+     * the wire's. A name already in wire form passes through untouched, so
+     * `set({ ruler: "off" })` is what it always was.
      */
     set(id: number, props: Record<string, PropValue>): void {
         const args: MsgArg[] = [];
         for (const [key, value] of Object.entries(props)) {
-            args.push(key, typeof value === "object" && value !== null
+            args.push(wireProp(key), typeof value === "object" && value !== null
                 ? JSON.stringify(value)
                 : value);
         }
