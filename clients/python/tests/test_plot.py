@@ -28,6 +28,7 @@ class FakeHost:
         self.opened = []
         self.sets = []
         self.closed = []
+        self.blobs = []
         self._ids = itertools.count(1000)
 
     def alloc_id(self):
@@ -35,6 +36,7 @@ class FakeHost:
 
     def open(self, tree, *blobs, id=None):
         self.opened.append(tree)
+        self.blobs.append(blobs)
         return 1000
 
     def set(self, id, **props):
@@ -272,3 +274,27 @@ def test_unregistering_restores_the_ordinary_resolution():
     assert set_ambient_host(second) is first
     assert set_ambient_host(None) is second
     assert ambient_host() is None
+
+
+def test_bulk_rides_a_blob_when_the_host_shares_no_filesystem():
+    """A host that cannot read what this process writes (`local_files`) gets
+    the samples beside the message instead of a path to map — the browser
+    canvas a notebook draws in, or any host on another machine."""
+    host = FakeHost()
+    host.local_files = False
+    samples = [i / 5000.0 for i in range(5000)]
+    plot(samples, n=len(samples), sample_rate=SR, host=host)
+    widget = _plot_widget(host.opened[0])
+    assert widget["blob"] == 0
+    assert "path" not in widget
+    (blobs,) = host.blobs
+    assert len(blobs) == 1 and len(blobs[0]) == len(samples) * 4
+
+
+def test_bulk_still_maps_a_file_for_a_host_that_can_read_it():
+    host = FakeHost()                      # local_files defaults to True
+    samples = [i / 5000.0 for i in range(5000)]
+    plot(samples, n=len(samples), sample_rate=SR, host=host)
+    widget = _plot_widget(host.opened[0])
+    assert "blob" not in widget
+    assert os.path.getsize(widget["path"]) == len(samples) * 4

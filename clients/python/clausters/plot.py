@@ -3,7 +3,7 @@
 `plot` is the visual sibling of `clausters.play`: it plots whatever you hand
 it, resolving the ambient context so you never spell out a host or a renderer
 for a quick look. Each call opens its **own window** on the GUI host (booted
-lazily on first use; plots ride the bulk file path, so no audio server is
+lazily on first use; plots ride the bulk path, so no audio server is
 involved unless the object itself needs one). It dispatches by kind:
 
 - a **def** — a `clausters.defs.SynthDef`, `clausters.defs.FaustDef` or
@@ -59,8 +59,10 @@ from .defs.node import Synth
 
 __all__ = ["plot", "PlotWindow", "PatchWindow"]
 
-#: Inline `data` ceiling: at most this many floats ride the GuiDef JSON; more
-#: go through a temp raw-f32 file the host maps (the bulk path).
+#: Inline `data` ceiling: at most this many floats ride the GuiDef JSON. More
+#: take the bulk path — a temp raw-f32 file the host maps, or, for a host that
+#: does not share this filesystem (`GuiHost.local_files`), a blob beside the
+#: message.
 _INLINE_MAX = 2048
 
 #: The module-level GUI host the ambient verbs (`plot`, `clausters.scope`)
@@ -193,18 +195,25 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
         # No rate: clock time is meaningless, so the x axis reads in counts.
         props["ruler"] = "samples"
     props = {k: v for k, v in props.items() if v is not None}
+    blobs = ()
     if len(samples) <= _INLINE_MAX:
         widget = guidef.plot(id=widget_id, data=[float(x) for x in samples], **props)
-    else:
+    elif getattr(host, "local_files", True):
         fd, path = tempfile.mkstemp(prefix="clausters_plot_", suffix=".f32")
         os.close(fd)
         guidef.samples_to_file(samples, path)
         _tmp_files.append(path)
         widget = guidef.plot(id=widget_id, path=path, **props)
+    else:
+        # A host that does not share this filesystem cannot map a path, so the
+        # samples travel with the message instead — beside the JSON, not
+        # inside it, which is what keeps a megabyte of floats out of the tree.
+        blobs = (guidef.samples_to_blob(samples),)
+        widget = guidef.plot(id=widget_id, blob=0, **props)
     if h is None:
         h = 260 if chans <= 1 else 160 + 140 * chans
     tree = guidef.window(widget, title=title or label or "plot", w=w, h=h)
-    window_id = host.open(tree)
+    window_id = host.open(tree, *blobs)
     return PlotWindow(host, window_id, widget_id)
 
 

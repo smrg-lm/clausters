@@ -49,6 +49,18 @@ class GuiHost:
     that reports where this client points.
     """
 
+    #: Whether this host can read a file this process writes — the bulk path,
+    #: where a large payload rides as a path the host memory-maps instead of
+    #: crossing the wire. True for a host that shares the filesystem, which is
+    #: every ``clausters-gui`` process; false for one that does not, and then
+    #: the payload has to travel *with* the message as a blob.
+    #:
+    #: A capability rather than a look at the transport, because the two are
+    #: not the same question: a TCP host on another machine cannot map the
+    #: path either, and a carrier this module has no name for can answer for
+    #: itself (a browser canvas driven over a notebook's comm sets it false).
+    local_files = True
+
     def __init__(self, host: str = "127.0.0.1", port: int = DEFAULT_PORT,
                  transport: str = "tcp", interface=None):
         self.target = (host, port)
