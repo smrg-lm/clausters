@@ -14,7 +14,8 @@ import test from "node:test";
 import { loadCore } from "../src/base/core.ts";
 import { TempoClock, manualTicker } from "../src/base/clock.ts";
 import type { ManualTicker } from "../src/base/clock.ts";
-import { ManualTimebase } from "../src/base/timebase.ts";
+import { ManualTimebase, SampleTimebase } from "../src/base/timebase.ts";
+import type { Server } from "../src/defs/server/index.ts";
 import { Routine } from "../src/base/stream.ts";
 
 await loadCore(
@@ -302,4 +303,177 @@ test("freeze holds the beat, and thaw does not charge the piece for the pause", 
     assert.equal(clock.beats(), 0.5, "the frozen seconds are not part of the piece");
     run(0.25);
     assert.ok(Math.abs(clock.beats() - 0.75) < 1e-9);
+});
+
+// ---- the shared transport grid ----
+
+/**
+ * A fake server that answers the two reads a join makes: the grid itself, and
+ * the `/clock_query` anchor a wall-clock clock maps it through. Nothing else
+ * of `Server` is reached, which is the point — the clock keeps three numbers
+ * and never talks to it again.
+ */
+function transportServer(
+    grid: { originSample: number; tempo: number } | null,
+    anchor: { sample: number; rate: number; unix: number } = {
+        sample: 0,
+        rate: 48000,
+        unix: 0,
+    },
+): Server {
+    return {
+        transport: async () => grid,
+        request: async () => ({
+            addr: "/clock_query.reply",
+            args: [anchor.sample, anchor.rate, anchor.unix],
+        }),
+    } as unknown as Server;
+}
+
+/**
+ * One sample counter, and clocks pacing against it — two independent clients
+ * on one server's clock, as far as this layer can tell. The ticker records
+ * the absolute instant it was armed at, so the driver can fire several clocks
+ * in the order their wakes fall due.
+ */
+function sampleGrid(rate = 48000) {
+    let sample = 0;
+    const now = () => sample / rate;
+    const clocks: { clock: TempoClock; due: () => number | null; fire: () => void }[] = [];
+
+    const makeClock = (tempo = 1.0) => {
+        let at: number | null = null;
+        let callback: (() => void) | null = null;
+        const ticker = {
+            schedule(seconds: number, cb: () => void) {
+                at = now() + Math.max(seconds, 0);
+                callback = cb;
+            },
+            cancel() {
+                at = null;
+                callback = null;
+            },
+            close() {
+                this.cancel();
+            },
+        };
+        const clock = new TempoClock(tempo, {
+            timebase: new SampleTimebase(() => sample, rate),
+            ticker,
+        });
+        clocks.push({
+            clock,
+            due: () => at,
+            fire: () => {
+                const run = callback;
+                at = null;
+                callback = null;
+                run?.();
+            },
+        });
+        return clock;
+    };
+
+    // Advances the counter to `seconds`, firing each armed wake at its own
+    // instant and in order — the one property the ordering of two clients
+    // depends on.
+    const runTo = (seconds: number) => {
+        for (;;) {
+            const next = clocks
+                .map((c) => c.due())
+                .filter((d): d is number => d !== null && d <= seconds)
+                .sort((a, b) => a - b)[0];
+            if (next === undefined) break;
+            sample = Math.round(next * rate);
+            for (const c of clocks) if (c.due() === next) c.fire();
+        }
+        sample = Math.round(seconds * rate);
+    };
+
+    return { makeClock, runTo, at: (seconds: number) => (sample = Math.round(seconds * rate)) };
+}
+
+test("a joined grid is the conductor's, not the clock's own beats", async () => {
+    const { makeClock, at } = sampleGrid();
+    at(10); // the page opens ten seconds into the server's life
+    const clock = makeClock(1.0);
+    clock.start();
+
+    assert.equal(clock.joined, false);
+    assert.equal(clock.gridBeat(), clock.beats());
+
+    // Beat 0 of the grid fell two seconds after the server started, at 2 b/s.
+    await clock.joinTransport(transportServer({ originSample: 2 * 48000, tempo: 2.0 }));
+    assert.equal(clock.joined, true);
+    assert.equal(clock.tempo, 2.0, "the grid brings its tempo");
+    assert.equal(clock.gridBeat(), 16, "(10s - 2s) * 2 b/s, whoever is asking");
+
+    clock.leaveTransport();
+    assert.equal(clock.joined, false);
+    assert.equal(clock.gridBeat(), clock.beats(), "back on its own beats");
+});
+
+test("two clocks joined to one grid land on the same bar", async () => {
+    const { makeClock, runTo, at } = sampleGrid();
+    const grid = { originSample: 0, tempo: 1.0 };
+
+    // Two independent clients, started three and a half seconds apart: they
+    // agree on nothing except the grid they both read.
+    at(0);
+    const first = makeClock(1.0);
+    await first.joinTransport(transportServer(grid));
+    first.start();
+
+    at(3.5);
+    const second = makeClock(1.0);
+    await second.joinTransport(transportServer(grid));
+    second.start();
+
+    const started: Record<string, { grid: number; own: number }> = {};
+    const play = (clock: TempoClock, name: string) => {
+        const routine = new Routine(function* () {
+            started[name] = { grid: clock.gridBeat(), own: clock.beats() };
+            yield 1;
+        });
+        clock.play(routine, 4);
+    };
+    play(first, "first");
+    play(second, "second");
+
+    runTo(10);
+    // The next bar of the *shared* grid, for both — and they reach it from
+    // different beats of their own, which is exactly what a grid is for.
+    assert.equal(started.first?.grid, 4);
+    assert.equal(started.second?.grid, 4);
+    assert.equal(started.first?.own, 4);
+    assert.equal(started.second?.own, 0.5);
+});
+
+test("a wall-clock clock maps the grid through the /clock_query anchor", async () => {
+    const { clock } = harness(1.0);
+    clock.start();
+
+    // The server read sample 480000 at Unix second 1000; beat 0 of the grid is
+    // ten seconds of samples earlier, so it fell at Unix 990.
+    const server = transportServer(
+        { originSample: 0, tempo: 2.0 },
+        { sample: 480000, rate: 48000, unix: 1000 },
+    );
+    await clock.joinTransport(server);
+
+    const expected = (Date.now() / 1000 - 990) * 2;
+    assert.ok(
+        Math.abs(clock.gridBeat() - expected) < 0.05,
+        `the wall grid tracks Unix time (${clock.gridBeat()} vs ${expected})`,
+    );
+});
+
+test("a server with no transport leaves the clock's own grid alone", async () => {
+    const { clock, timebase } = harness(1.0);
+    clock.start();
+    timebase.advance(2.3);
+    await clock.joinTransport(transportServer(null));
+    assert.equal(clock.joined, false);
+    assert.equal(clock.tempo, 1.0);
+    assert.ok(Math.abs(clock.gridBeat() - 2.3) < 1e-9);
 });

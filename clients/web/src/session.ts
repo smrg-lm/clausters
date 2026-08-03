@@ -24,8 +24,7 @@
 // ```
 //
 // **What the Python client has here and this one does not, yet.** Its `nrt`
-// factory and `render` need an offline drive, which is its own milestone; the
-// `join_transport` verb needs the shared transport grid, likewise. The
+// factory and `render` need an offline drive, which is its own milestone. The
 // factories are named for the carriers this package already names them by —
 // `page`/`connect`, as on `Server` and `GuiHost` — rather than for Python's
 // `embed`/`live`, whose parameters (a host, a port, a process to boot) a page
@@ -267,6 +266,19 @@ export class Session extends Environment {
         this.clock.timebase = await this.server.sampleTimebase({
             timeout: this.server.timeout,
         });
+        return this;
+    }
+
+    /**
+     * Joins this session's server's shared transport, so a `quant`-ed pattern
+     * starts on the same beat as every other client on it (see
+     * `TempoClock.joinTransport`). Resolves with `this`, so it chains after
+     * the other anchoring verb: `await (await session.lockToServer())
+     * .joinTransport()` — lock first, and the alignment is sample-exact. A
+     * server with no transport defined leaves the clock's own grid alone.
+     */
+    async joinTransport(): Promise<this> {
+        await this.clock.joinTransport(this.server, this.server.timeout);
         return this;
     }
 

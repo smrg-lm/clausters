@@ -31,7 +31,7 @@ import { SynthDef } from "../src/defs/synthdef.ts";
 import { control, out, outCtl, sine } from "../src/defs/ugens/index.ts";
 import { TempoClock } from "../src/base/clock.ts";
 import { SampleTimebase } from "../src/base/timebase.ts";
-import { Pbind, Pseq } from "../src/seq/index.ts";
+import { Event, Pbind, Playhead, Pseq, Timeline } from "../src/seq/index.ts";
 import { Automation } from "../src/seq/automation.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Synth } from "../src/defs/node.ts";
@@ -256,5 +256,98 @@ test("an automation curve drives a control through a bus", { skip: !hasServer },
         assert.equal(auto.buf, null);
         target.free();
         readback.free();
+    });
+});
+
+test("two clocks join one grid and land on the same bar", {
+    skip: !hasServer,
+}, async () => {
+    await withServer(async (server) => {
+        await beep().send(server);
+        await awaitEngine(server);
+
+        // The conductor defines the grid: beat 0 at the current sample, two
+        // beats a second.
+        const anchor = await server.request("/clock_query", [], {
+            expect: ["/clock_query.reply"],
+        });
+        await server.setTransport(Number(anchor.args[0]), 2.0);
+
+        // Two independent clients on it — one on wall time, one locked to the
+        // server's sample clock. They share nothing but the grid.
+        const wall = new TempoClock(1.0);
+        await wall.joinTransport(server);
+        const locked = new TempoClock(1.0, {
+            timebase: await server.sampleTimebase({ trackEvery: 0 }),
+        });
+        await locked.joinTransport(server);
+        assert.equal(wall.tempo, 2.0, "the grid brings its tempo");
+        assert.equal(locked.tempo, 2.0);
+        assert.ok(
+            Math.abs(wall.gridBeat() - locked.gridBeat()) < 0.1,
+            `the two grids disagree: ${wall.gridBeat()} vs ${locked.gridBeat()}`,
+        );
+
+        // Started a beat apart, both land on the same bar line of the grid.
+        const log = noteLog(server);
+        wall.start();
+        new Pbind({ instrument: "ts_seq_beep", degree: new Pseq([0]), dur: 1 })
+            .play(server, { clock: wall, quant: 4 });
+        await sleep(500);
+        locked.start();
+        new Pbind({ instrument: "ts_seq_beep", degree: new Pseq([7]), dur: 1 })
+            .play(server, { clock: locked, quant: 4 });
+
+        await sleep(2600);
+        assert.equal(log.started.length, 2, "both clients played their note");
+        assert.ok(
+            Math.abs(log.started[0]! - log.started[1]!) < 0.05,
+            `the two notes landed ${log.started[1]! - log.started[0]!}s apart`,
+        );
+        wall.close();
+        locked.close();
+    });
+});
+
+test("a playhead follows the server's transport over the wire", {
+    skip: !hasServer,
+}, async () => {
+    await withServer(async (server) => {
+        await awaitEngine(server);
+        const anchor = await server.request("/clock_query", [], {
+            expect: ["/clock_query.reply"],
+        });
+        await server.setTransport(Number(anchor.args[0]), 1.0);
+
+        const clock = new TempoClock(1.0);
+        await clock.joinTransport(server);
+        clock.start();
+        // One item far out of the way: what is asserted is the transport
+        // reacting, not what it renders.
+        const timeline = new Timeline([[100, new Event({ degree: 0 })]]);
+        const playhead = new Playhead(timeline, clock, server);
+        await playhead.followTransport(server);
+        assert.equal(playhead.playing, false, "a stopped transport rolls nothing");
+
+        await server.transportPlay(0);
+        await sleep(200);
+        assert.equal(playhead.playing, true, "the conductor's play rolls the page");
+
+        await server.transportLocate(8.0);
+        await sleep(200);
+        assert.ok(
+            Math.abs(playhead.position() - 8.0) < 0.5,
+            `the locate did not move the playhead: ${playhead.position()}`,
+        );
+
+        await server.transportStop();
+        await sleep(200);
+        assert.equal(playhead.playing, false, "the conductor's stop halts the page");
+
+        playhead.unfollowTransport();
+        await server.transportPlay(0);
+        await sleep(200);
+        assert.equal(playhead.playing, false, "an unfollowed playhead ignores it");
+        clock.close();
     });
 });

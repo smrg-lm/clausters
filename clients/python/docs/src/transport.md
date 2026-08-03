@@ -26,7 +26,9 @@ clock = TempoClock()                    # its own tempo is about to be overwritt
 clock.join_transport(server)            # adopt the shared tempo + origin
 ```
 
-With a `Session`, both sides are one call — `session.server.set_transport(...)` to conduct, `session.join_transport()` to follow. `clock.leave_transport()` (or never joining) returns a clock to its own private grid.
+With a `Session`, both sides are one call — `session.server.set_transport(...)` to conduct, `session.join_transport()` to follow. `clock.leave_transport()` (or never joining) returns a clock to its own private grid, and `clock.joined` says which of the two it is on.
+
+Joining reads the grid once and keeps it; from then on `clock.grid_beat()` is where the shared grid is now — the clock's own `beats()` when it has not joined one. That is the number `quant` snaps against, and the one to read when computing where a bar falls.
 
 ## Starting together on a bar
 
@@ -112,8 +114,7 @@ import math
 def next_bar_sample(server, clock, quant=4):
     origin, tempo = server.transport()
     rate = clock.timebase.sample_rate
-    grid_beat = (clock.timebase.current_sample() - origin) * tempo / rate
-    target = math.ceil(grid_beat / quant) * quant
+    target = math.ceil(clock.grid_beat() / quant) * quant
     return round(origin + target * rate / tempo)
 ```
 

@@ -19,20 +19,25 @@
 // time (`beats`, `beats2secs`, `startTime`); emitting belongs to `Server`,
 // which reads the clock of the routine it is resuming. Anchoring to a
 // server's sample clock is likewise the Server's job — `server.sampleTimebase()`
-// hands back a timebase this clock merely reads.
+// hands back a timebase this clock merely reads, and `joinTransport` reads a
+// server's shared grid **once**, at the join, keeping three numbers: after it
+// the clock is as offline as before.
 
 import { Scheduler } from "../core/clausters_core_web.js";
 import { setCurrentRoutine } from "./context.ts";
 import { Routine, Stream, StopStream } from "./stream.ts";
 import {
     MonotonicTimebase,
+    SampleTimebase,
     bar,
     beatInBar,
     beatsToSecs,
     quantDelay,
+    samplesToSecs,
     secsToBeats,
 } from "./timebase.ts";
 import type { SessionLike } from "./main.ts";
+import type { Server } from "../defs/server/index.ts";
 import type { Timebase } from "./timebase.ts";
 import type { TickReply, TickRequest } from "./tick-worker.ts";
 
@@ -215,6 +220,8 @@ export class TempoClock {
 
     private baseBeats = 0;
     private baseSecs = 0;
+    /** The joined `/transport_set` grid, or `null` on this clock's own beats. */
+    private transport: { kind: "sample" | "wall"; origin: number; tempo: number } | null = null;
     private readonly queue = new Scheduler();
     private readonly items = new Map<number, Entry>();
     private readonly ids = new WeakMap<object, number>();
@@ -367,6 +374,89 @@ export class TempoClock {
         return beatInBar(beats ?? this.beats(), quant);
     }
 
+    // ---- the shared transport (phase alignment) ----
+
+    /**
+     * Adopts a master `server`'s shared `/transport_set` beat grid as this
+     * clock's tempo and grid, so a `quant`-ed routine starts on the **same**
+     * beat as every other client joined to it — a page opened halfway through
+     * a bar still lands on the next bar line the conductor and every other
+     * client land on.
+     *
+     * Reads the transport once; a server with none defined leaves the clock on
+     * its own grid (no-op). A clock on a `SampleTimebase` (`lockToServer`)
+     * aligns **sample-exactly**, since the grid is defined on the very counter
+     * it paces against; a wall-clock one aligns to beats through the server's
+     * `/clock_query` anchor (drift-bounded, and re-joining re-anchors it).
+     *
+     * The rule the clock never bends holds here too: it does not *talk* to a
+     * server — this reads the grid once, off a handle you pass, and keeps
+     * three numbers. Nothing about a joined clock is asynchronous afterwards.
+     */
+    async joinTransport(server: Server, timeout?: number): Promise<this> {
+        const grid = await server.transport(timeout);
+        if (grid === null) return this;
+        this.tempo = grid.tempo;
+        if (this.timebase instanceof SampleTimebase) {
+            this.transport = { kind: "sample", origin: grid.originSample, tempo: grid.tempo };
+            return this;
+        }
+        // The grid's origin is a sample; a wall-clock clock cannot read that
+        // axis, so the `/clock_query` anchor maps it to Unix time — the same
+        // core conversion the server uses, so both grids are one grid.
+        const anchor = await server.request("/clock_query", [], {
+            expect: ["/clock_query.reply"],
+            timeout,
+        });
+        const sample0 = Number(anchor.args[0]);
+        const rate = Number(anchor.args[1]);
+        const unix0 = Number(anchor.args[2]);
+        this.transport = {
+            kind: "wall",
+            origin: unix0 + samplesToSecs(grid.originSample - sample0, rate),
+            tempo: grid.tempo,
+        };
+        return this;
+    }
+
+    /**
+     * Stops following a joined transport: `quant` snaps against this clock's
+     * own elapsed beats again. The tempo the grid set is kept — leaving the
+     * grid is not a tempo change.
+     */
+    leaveTransport(): this {
+        this.transport = null;
+        return this;
+    }
+
+    /** Whether this clock is following a shared transport grid. */
+    get joined(): boolean {
+        return this.transport !== null;
+    }
+
+    /**
+     * The current position, in beats, on the grid `quant` snaps to: the shared
+     * transport's when joined, else this clock's own elapsed beats.
+     *
+     * The two are deliberately different axes. The clock's beat starts when
+     * *it* starts; the shared one is the conductor's, running whether this
+     * page is playing or not — which is exactly what makes two pages started
+     * seconds apart agree on where the next bar falls.
+     */
+    gridBeat(): number {
+        const grid = this.transport;
+        if (grid === null) return this.beats();
+        if (grid.kind === "sample") {
+            // A timebase swapped out from under a joined grid (a `lockToServer`
+            // after the join) leaves the sample origin meaningless; the clock's
+            // own beats are the honest answer until it re-joins.
+            const timebase = this.timebase;
+            if (!(timebase instanceof SampleTimebase)) return this.beats();
+            return ((timebase.currentSample() - grid.origin) * grid.tempo) / timebase.sampleRate;
+        }
+        return (Date.now() / 1000 - grid.origin) * grid.tempo;
+    }
+
     // ---- scheduling ----
 
     /**
@@ -426,10 +516,11 @@ export class TempoClock {
      *
      * `quant` starts it on the next beat that is a multiple of it (`4` = the
      * next bar in 4/4); 0 or undefined starts it now. The grid is the clock's
-     * own elapsed beats.
+     * own elapsed beats, or a shared one once the clock has joined a transport
+     * (`joinTransport`) — which is what makes several clients start together.
      */
     play<T extends Schedulable>(item: T, quant?: number): T {
-        this.sched(quant ? quantDelay(this.beats(), quant) : 0, item);
+        this.sched(quant ? quantDelay(this.gridBeat(), quant) : 0, item);
         return item;
     }
 

@@ -4239,3 +4239,35 @@ host, because a page that holds one until it unloads has nothing to close; a
 caller that opens them over time does, and an abandoned instance keeps its
 WebSocket open, its `setInterval` running and its GPU surfaces alive. Hence
 `GuiBridge::close`.
+
+## A decoded timetag is Unix seconds in every client, and only a reader found out
+
+The three bindings of the shared core agree on what they *export*; nothing makes
+them agree on what a value *means* once it has crossed. A timetag argument was
+the case where they did not. The Python decoder subtracts the NTP epoch and
+hands back Unix seconds, as does the server's own `osc::ntp_to_unix`; the wasm
+door built the float straight from `seconds + fractional/2^32` and handed back
+NTP seconds — seventy years off, silently, in the one shape a caller cannot
+sanity-check by looking at it.
+
+It survived because **no consumer read one**. `/clock_query.reply`'s third
+field is the only timetag the server sends as an *argument*, and the sample-clock
+tracker models the counter from the first two: the anchor it needs is a local
+timestamp, not the server's. The divergence sat in the codec from the day the
+codec landed and cost nothing until a wall-clock clock joined a transport, where
+mapping the grid's sample origin to Unix time is exactly what the field is for.
+
+Two things follow, and the second is the one worth keeping. The fix is trivial —
+the wasm door converts through the core's own function, so there is one
+conversion and not two. The lesson is that the parity vectors would not have
+caught it: they were **encode** vectors, frozen from the Python encoder and
+compared byte for byte, and a decode divergence is invisible to them. Byte parity
+on the way out is not value parity on the way in.
+
+So `gen-osc-vectors.py` now writes a second file, `osc-decode-vectors.json`:
+packets the Python *encoder* cannot even build — it has no timetag tag — paired
+with what the Python *decoder* reads out of them. The generator hand-assembles
+the bytes precisely because the reference being frozen is the decoder, not the
+encoder. It is a small file and will stay small; what earns its place is that
+it covers the direction where a value's *meaning* crosses, which is where two
+implementations of one wire drift without any test going red.

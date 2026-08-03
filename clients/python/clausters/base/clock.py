@@ -310,9 +310,20 @@ class TempoClock:
         self._transport = None
         return self
 
-    def _grid_beat(self) -> float:
+    @property
+    def joined(self) -> bool:
+        """Whether this clock is following a shared transport grid
+        (`join_transport`)."""
+        return self._transport is not None
+
+    def grid_beat(self) -> float:
         """Current position, in beats, on the grid `quant` snaps to: the shared
-        transport grid when joined, else the clock's own elapsed beats."""
+        transport grid when joined, else the clock's own elapsed beats.
+
+        The two are different axes on purpose. The clock's own beat starts when
+        *it* starts; the shared one is the conductor's, running whether this
+        client is playing or not — which is what makes two clients started
+        seconds apart agree on where the next bar falls."""
         if self._transport is None:
             return self.beats()
         kind, origin, tempo = self._transport
@@ -327,7 +338,7 @@ class TempoClock:
         ``quant_delay``, shared by every client)."""
         if not quant:
             return 0.0
-        return _native.quant_delay(self._grid_beat(), quant)
+        return _native.quant_delay(self.grid_beat(), quant)
 
     # ---- scheduling ----
 

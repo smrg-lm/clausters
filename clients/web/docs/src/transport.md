@@ -33,6 +33,34 @@ const state = await server.transportState();
 
 `group` is the governed group or `null`, and `transportSample` is the transport clock — samples elapsed *under the transport*, held while it is stopped. It is the time of the piece, as against the device clock (the taps, the bus streams, `/clock_query`), which never stops. The two are one physical clock and cannot drift apart; they differ only while a governed transport is stopped.
 
+## Joining the grid
+
+Reading the grid is not the same as being on it. **Joining** it makes the grid the axis a `quant`-ed start snaps to, so a page opened halfway through a bar lands on the next bar line the conductor and every other client land on:
+
+```js
+await session.joinTransport();          // or clock.joinTransport(server)
+session.play(pattern, 4);               // starts on the *shared* bar line
+```
+
+The join reads the grid once and keeps three numbers — a tempo (the grid brings its own), an origin and which axis that origin lives on. Afterwards the clock is as offline as it was before: it does not talk to the server, and nothing about a joined clock is asynchronous. `clock.gridBeat()` is where the shared grid is now (the clock's own `beats()` when it has not joined one), `clock.leaveTransport()` goes back to its own beats, and a server with no grid defined leaves the clock exactly as it was.
+
+How exact the alignment is follows from the timebase. A clock locked to the server's sample clock (`session.lockToServer()`, which every session factory does by default) is on the very counter the grid's origin is defined against, so the alignment is **sample-exact**; a wall-clock clock maps the origin through the server's `/clock_query` anchor and lands within the drift between the two clocks. Lock first, then join.
+
+## Following the conductor
+
+A `Playhead` can obey the broadcasts instead of its own buttons:
+
+```js
+const playhead = new Playhead(timeline, clock, server);
+await playhead.followTransport(server, { quant: 4 });
+```
+
+From then on the conductor's `transportPlay()` rolls it, `transportStop()` halts it and `transportLocate(beat)` seeks it, alongside every other client following the same server — the server broadcasts *control*, never audio. `quant` snaps each rolling start to a beat boundary, and with the clock joined to the grid that boundary is the shared bar line, so the followers land together rather than each on its own next beat. `unfollowTransport()` releases it.
+
+Where the Python client opens a receiver and an `OscFunc` for this, a page has one connection per server and every reply already arrives on it: the subscription *is* the responder. Anything else that wants to react to a conductor reads the `/transport_query.reply` pushes off `server.onReply` the same way.
+
+`examples/transport-sync.html` runs two independent clients on one grid and a playhead following it, which is how to *hear* that a late joiner still lands on the bar.
+
 ## Freezing a piece
 
 Binding a group is what gives the transport teeth:
@@ -80,12 +108,8 @@ await server.schedAtTransport(sample, [
 
 The declaration is not there to disambiguate — the classification is deterministic, and a client that bound the group knows which of its nodes are governed. It is there to be **verified**: the server compares it against its own classification and fails when they disagree, rather than playing the bundle in the wrong place. It needs a group bound.
 
-## What is not here yet
-
-The advisory half of the transport is readable and drivable from this client, but not yet *joinable*: `clock.joinTransport(server)`, a `Playhead` that follows the broadcasts, and `session.joinTransport()` are the Python client's and have no counterpart here. Until they land, a page that wants to phase-align reads `server.transport()` and quantizes its own start against the grid.
-
 ## See also
 
 - [Routines and clocks](routines-and-clocks.md) — the clock the freeze holds, and the logical time it keeps.
-- The **[Python client's book](https://clausters-python.readthedocs.io/)** — the same transport with the joining half, the playhead and the conductor examples.
+- The **[Python client's book](https://clausters-python.readthedocs.io/)** — the same transport from the reference client, with its conductor examples.
 - The **[Clausters server book](https://clausters.readthedocs.io/)** — `/transport_set`, `/transport_group` and `/sched_atTransport` on the wire.

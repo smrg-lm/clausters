@@ -15,7 +15,10 @@
 // plain, editable OSC score.
 //
 // This layer is **client-side**: each playhead has its own local transport
-// over its own timeline.
+// over its own timeline, and several clients phase-align through `quant` and
+// the shared `/transport_set` grid. A playhead can also *follow* the server's
+// transport (`followTransport`), which is one conductor's play/stop/locate
+// driving every client — the same local transport, driven from outside.
 
 import { TempoClock, manualTicker } from "../base/clock.ts";
 import { ManualTimebase } from "../base/timebase.ts";
@@ -24,7 +27,7 @@ import { Routine } from "../base/stream.ts";
 import { Event } from "./event.ts";
 import type { EventDestination } from "./event.ts";
 import type { Pattern } from "./pattern.ts";
-import type { TimedMessage } from "../defs/server/index.ts";
+import type { Server, TimedMessage } from "../defs/server/index.ts";
 import type { MsgArg } from "../base/osc.ts";
 
 /** What a timeline can hold: anything that renders itself on a destination. */
@@ -266,6 +269,8 @@ export class Playhead {
     private startBeat = 0;
     private posBeat = 0;
     private posClock: number | null = null;
+    /** The transport subscription's unsubscribe, while following one. */
+    private following: (() => void) | null = null;
 
     constructor(timeline: Timeline, clock: TempoClock, destination: PlayDestination) {
         this.timeline = timeline;
@@ -338,6 +343,65 @@ export class Playhead {
     /** Stops looping; the scan plays through to the end. */
     unloop(): this {
         this.loopWindow = null;
+        return this;
+    }
+
+    // ---- following the server's shared transport ----
+
+    /**
+     * Makes this playhead obey a `server`'s shared transport: when a conductor
+     * calls `transportPlay` / `transportStop` / `transportLocate`, the server
+     * broadcasts the new state and this playhead rolls / halts / seeks to
+     * match — so several clients run in lockstep on one grid.
+     *
+     * It registers for the server's pushes (`notify`, which `Server.open`
+     * already does) and subscribes to the `/transport_query.reply` broadcasts
+     * through `server.onReply`, then applies the current state once. `quant`
+     * snaps each rolling start to a beat boundary, so every follower lands
+     * together — with the clock joined to the same grid
+     * (`TempoClock.joinTransport`) that boundary is the *shared* bar line.
+     * Release with `unfollowTransport`.
+     *
+     * Beat-aligned in plain wall-clock mode; sample-exact when the clock is
+     * also locked to the server (`Session.lockToServer`).
+     *
+     * Where the Python client opens a receiver and an `OscFunc` for this, a
+     * page has one connection per server and every reply already arrives on
+     * it: the subscription *is* the responder.
+     */
+    async followTransport(
+        server: Server,
+        { quant, timeout }: { quant?: number; timeout?: number } = {},
+    ): Promise<this> {
+        this.unfollowTransport();
+        await server.notify(true, timeout);
+        this.following = server.onReply((msg) => {
+            // /transport_query.reply originSample tempo defined playing position ...
+            if (msg.addr !== "/transport_query.reply") return;
+            if (msg.args.length < 6 || !Number(msg.args[2])) return;
+            const position = Number(msg.args[4]);
+            if (Number(msg.args[3])) {
+                this.play({ at: position, quant });
+            } else {
+                this.stop();
+                this.locate(position);
+            }
+        });
+        const state = await server.transportState(timeout);
+        if (state !== null) {
+            if (state.playing) this.play({ at: state.position, quant });
+            else this.locate(state.position);
+        }
+        return this;
+    }
+
+    /**
+     * Stops following a server transport (see `followTransport`): drops the
+     * subscription, leaving the playhead wherever the last broadcast left it.
+     */
+    unfollowTransport(): this {
+        this.following?.();
+        this.following = null;
         return this;
     }
 

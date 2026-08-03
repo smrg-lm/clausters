@@ -20,8 +20,8 @@
 //! The JS argument convention mirrors the tagged pairs the interim page codec
 //! used: encode takes `[tag, value]` pairs (`"i"`/`"h"`/`"f"`/`"d"`/`"s"`/
 //! `"b"`), preserving the int/float distinction explicitly; decode returns
-//! plain values (`{addr, args}` per message, bundles flattened), which is
-//! what reply consumers want.
+//! plain values (`{addr, args}` per message, bundles flattened, timetags as
+//! Unix seconds), which is what reply consumers want.
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType, decode_packet, encode};
 #[cfg(target_arch = "wasm32")]
@@ -162,9 +162,11 @@ fn js_value(arg: OscType) -> JsValue {
         OscType::Blob(b) => js_sys::Uint8Array::from(b.as_slice()).into(),
         OscType::Bool(b) => JsValue::from_bool(b),
         OscType::Nil => JsValue::NULL,
-        OscType::Time(t) => {
-            JsValue::from_f64(t.seconds as f64 + t.fractional as f64 / (1u64 << 32) as f64)
-        }
+        // A timetag crosses as **Unix** seconds, not the raw NTP epoch: it is
+        // what the Python client's decoder yields for the same byte
+        // (`/clock_query.reply`'s anchor, which a joining clock maps its grid
+        // through), and the two clients must read one wire the same way.
+        OscType::Time(t) => JsValue::from_f64(osc::ntp_to_unix(t)),
         // The remaining rosc types (char, color, midi, arrays, inf) do not
         // appear on this server's wire; surface them as null rather than
         // failing the whole packet.

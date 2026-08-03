@@ -685,7 +685,7 @@ for). Book: "Automation: a curve driving a control", in the routines chapter.
 today's Python client and none of the committed files moved — the parity
 surface is exactly what it claims to be, and `seq-vectors.json` joins it.
 
-### W12 - The shared `/transport_set` grid
+### ✅ W12 - The shared `/transport_set` grid *(done 2026-08-03)*
 
 *Deferred out of W3.* Phase alignment across clients — the TS counterpart of
 C15 and of C16's `follow_transport`.
@@ -696,6 +696,64 @@ C15 and of C16's `follow_transport`.
 - **`Session.joinTransport()`** (*owed here since W18*, which shipped the facade without it): the third of the Python `Session`'s chaining verbs, beside `lockToServer`. It is one line over whatever this milestone gives the clock, and the facade is incomplete against its reference until it exists.
 
 **Acceptance:** two pages — or a page and a Python client — join the same transport and land on the same bar; a `/transport_locate` moves the page's playhead with it.
+
+**What shipped.** The joining half, in the two places the reference client
+keeps it, plus the facade verb it was owed.
+
+- **`TempoClock.joinTransport(server)` / `leaveTransport()` / `gridBeat()`**
+  (`src/base/clock.ts`): the join reads `/transport_query` once and keeps three
+  numbers — tempo, origin, and which axis the origin lives on — so W3's rule
+  holds exactly as written: the clock reads a `Server` handed to it and never
+  talks to one again. Nothing about a joined clock is asynchronous afterwards.
+  `play(item, quant)` now snaps against `gridBeat()` rather than `beats()`,
+  which is the whole behavioral change: on an unjoined clock the two are the
+  same number, so no existing page moved.
+- **Two axes, as in Python.** A clock on a `SampleTimebase` keeps the origin in
+  samples and reads its own counter, which is sample-exact by construction; a
+  wall-clock one maps the sample origin to Unix time through the
+  `/clock_query` anchor and the core's `samples_to_secs`. A timebase swapped
+  out from under a joined sample grid falls back to the clock's own beats
+  rather than reading a meaningless origin — re-join after a `lockToServer`.
+- **`Playhead.followTransport(server, { quant })` / `unfollowTransport()`**
+  (`src/seq/timeline.ts`): the `/transport_query.reply` broadcasts drive the
+  local transport — play rolls it from the broadcast position, stop halts and
+  locates it. Where the Python client opens an `OscReceiver` and an `OscFunc`,
+  a page has one connection per server and every reply already arrives on it,
+  so the `server.onReply` subscription *is* the responder and W8 is not a
+  prerequisite after all.
+- **`Session.joinTransport()`** — the third chaining verb, one line over the
+  clock's, closing what W18 shipped the facade without.
+- **The reference client moved with it.** `grid_beat()` was private in Python
+  (`_grid_beat`) and a test was already reaching through the underscore, while
+  the example and two book pages recomputed it by hand from `transport()` and
+  the timebase. It is public there now, with `joined` beside it, so the two
+  clients name the same thing — and `transport_sync.py`'s `next_bar_sample`
+  is a line shorter for it.
+- **A decode divergence found by the port** (`crates/clausters-core-web`): an
+  OSC **timetag argument** crossed to JS as raw NTP seconds where the Python
+  decoder yields Unix seconds. Nothing read one until the wall-clock join
+  needed `/clock_query.reply`'s third field, so it had never surfaced; the
+  wasm door now converts through the core's own `ntp_to_unix`, and the two
+  clients read one wire the same way. The committed vectors could not have
+  caught it — they are encode vectors, and a decode divergence is invisible to
+  byte parity — so `gen-osc-vectors.py` grew a second output,
+  `osc-decode-vectors.json`: packets the Python encoder cannot build, paired
+  with what the Python decoder reads out of them.
+
+**Verified:** `./build.sh && ./test.sh` — 196 `node --test` cases (8 new) and
+the twelve headless-Chrome acceptances, unchanged. Five of the new cases are
+offline: the grid as the conductor's axis and not the clock's, two clocks
+landing on the same bar from different beats of their own, the wall-clock
+mapping through the anchor, an undefined transport left alone, and a playhead
+driven by simulated broadcasts. Two run against a real `clausters --ws`
+server — a wall-clock and a sample-locked client join one grid, agree on it
+and land their notes under 50 ms apart, and a playhead follows a conductor's
+play / locate / stop over the wire and stops following on
+`unfollowTransport` — and the eighth is the decode-parity vector. Example:
+`examples/transport-sync.html`, the port of `transport_sync.py` with the
+following half Python's does not have — driven headlessly, a client joining
+2.6 beats late still sounded at grid beat 4.011 alongside one that had been
+waiting. Book: the joining and following sections of "The transport".
 
 ### W13 - An NRT / score drive
 

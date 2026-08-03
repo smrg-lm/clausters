@@ -88,8 +88,7 @@ import math
 def next_bar_sample(server, clock, quant=4):
     origin, tempo = server.transport()
     rate = clock.timebase.sample_rate
-    grid_beat = (clock.timebase.current_sample() - origin) * tempo / rate
-    target = math.ceil(grid_beat / quant) * quant
+    target = math.ceil(clock.grid_beat() / quant) * quant
     return round(origin + target * rate / tempo)
 ```
 

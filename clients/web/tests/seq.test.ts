@@ -33,6 +33,8 @@ import {
     rest,
 } from "../src/seq/index.ts";
 import type { EventDestination, PlayDestination } from "../src/seq/index.ts";
+import type { OscMessage } from "../src/base/osc.ts";
+import type { Server } from "../src/defs/server/index.ts";
 
 await loadCore(
     await readFile(
@@ -378,4 +380,63 @@ test("a raw OSC item on a timeline is sent at its beat", () => {
     clock.start();
     run(2);
     assert.deepEqual(destination.messages, [{ beat: 0.5, addr: "/node_set" }]);
+});
+
+test("a playhead follows the server's transport broadcasts", async () => {
+    const destination = recorder();
+    const { clock, run } = harness();
+    const timeline = new Timeline([
+        [0, new Event({ degree: 0 })],
+        [1, new Event({ degree: 1 })],
+        [2, new Event({ degree: 2 })],
+    ]);
+    const playhead = new Playhead(timeline, clock, destination);
+    clock.start();
+
+    // A fake server: what a follower touches is the notify registration, the
+    // reply subscription and one read of the current state.
+    const handlers = new Set<(msg: OscMessage) => void>();
+    let notified = false;
+    const server = {
+        notify: async () => {
+            notified = true;
+        },
+        onReply: (handler: (msg: OscMessage) => void) => {
+            handlers.add(handler);
+            return () => handlers.delete(handler);
+        },
+        transportState: async () => null,
+    } as unknown as Server;
+    // origin, tempo, defined, playing, position, group, transportSample
+    const broadcast = (playing: number, position: number) => {
+        for (const handler of [...handlers]) {
+            handler({
+                addr: "/transport_query.reply",
+                args: [0, 1.0, 1, playing, position, -1, 0],
+            });
+        }
+    };
+
+    await playhead.followTransport(server);
+    assert.equal(notified, true, "a follower registers for the pushes");
+    assert.equal(playhead.playing, false, "nothing rolls until the server says so");
+
+    broadcast(1, 1); // the conductor rolls, from song position 1
+    assert.equal(playhead.playing, true);
+    run(1.5);
+    assert.deepEqual(
+        destination.played.map((p) => p.event.get("degree")),
+        [1, 2],
+        "it rolled from where the broadcast said, not from the top",
+    );
+
+    broadcast(0, 0); // stop, and locate back to the top
+    assert.equal(playhead.playing, false);
+    assert.equal(playhead.position(), 0);
+    run(4);
+    assert.equal(destination.played.length, 2, "a halted follower renders nothing");
+
+    playhead.unfollowTransport();
+    broadcast(1, 0);
+    assert.equal(playhead.playing, false, "an unfollowed playhead ignores the wire");
 });

@@ -241,7 +241,7 @@ def test_quant_on_a_joined_wall_clock_transport():
     # tempo 2 bps -> ~2 beats elapsed; the next bar (quant 4) is ~2 beats off.
     clock = TempoClock(tempo=2.0)
     clock._transport = ("wall", _t.time() - 1.0, 2.0)
-    assert 1.8 < clock._grid_beat() < 2.2
+    assert 1.8 < clock.grid_beat() < 2.2
     assert 1.8 < clock._quant_delay(4) < 2.2
 
 
