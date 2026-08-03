@@ -737,7 +737,21 @@ it leans on verbs this client does not have yet.
 
 **Acceptance:** the getting-started example rewritten through a `Session` is shorter and does the same thing; two sessions over different carriers coexist in one page, each with its own clock; a bare `Routine(f).play()` runs with nothing else set up; `new Synth("blip", …)` creates against the session's server, and `Synth.fromId` is the only way to wrap a reported id.
 
-### ✅ W19 - Host and engine instances: the page is not the unit *(done 2026-08-03)*
+### ✅ W19 - The notebook front end (`src/notebook/widget.ts`)
+
+Shipped 2026-08-03, with the `clausters-jupyter` Python package that stages it
+(server-side plan: `clients/python/PLAN.md`, C38). This package owns the
+browser half of a Clausters notebook: the module anywidget loads as the
+widget's `_esm`, which takes this package's built `dist/` over the kernel's
+comm and boots the wasm GUI host — and, for the in-page backend, the engine —
+inside the cell.
+
+- `src/notebook/widget.ts`: the cell's end of the comm. It carries bytes and decides nothing about what to draw. Its substance is the staging: the assets arrive as buffers (anywidget serves one module, and a remote kernel has no static route to add the rest to), become blob URLs in an order topologically sorted over their import graph, and have their relative specifiers rewritten to those URLs — a blob module resolves relatives against the blob's origin, where nothing lives. The scanner and the rewriter must count exactly the same things as imports; a side-effect `import "./x.js"` (no `from`) once ordered correctly and then went unrewritten, which killed the audio thread.
+- `src/gui/canvasbox.ts`: `CanvasBox`, `canvasBox` and `onScaleChange` split out of `gui/page.ts` as a leaf, so the notebook shares the *real* measuring instead of a second copy. `page.ts` re-exports them.
+- The host and the engine are wired to **each other** in the page, and the singleton lives on `globalThis`, not in module scope: anywidget instantiates the ESM per widget, so a module-level one is a 5.4 MB wasm host per cell.
+- Tests: `clients/web/tests/notebook.test.ts` — the byte view (`DataView`, which `new Uint8Array(view)` silently empties), the import scan/rewrite agreement, the topological order, the OSC padding walk for a def id, and the type-only-import rule for the sibling module.
+
+### ✅ W20 - Host and engine instances: the page is not the unit *(done 2026-08-03)*
 
 A page held one GUI host because winit's one `EventLoop` was mistaken for one
 host — a second `start()` was `RecreationAttempt`, a panic inside the wasm
@@ -749,7 +763,7 @@ instances share the loop and nothing else.
 - Instances share **nothing** else: each has its own `Host` (and therefore its own widget-id space), its own audio-server leg, canvases, buses, taps, tick and fetches. No id range is partitioned between them — which is the point, since the two allocating clients are separate processes with no channel to agree over. The GPU was already per canvas, so an instance adds no device.
 - `GuiBridge.close()`, new: an instance that outlives its purpose otherwise keeps its WebSocket open, its `setInterval` running and its GPU surfaces alive. A page that holds its host until it unloads never needs it.
 - The same rule on the audio side: `engine()` beside `server()`, and `pageConnection(target?)` to carry a client over one. Nothing there was ever page-global except the memo — `bootClausters` already built its own `AudioContext` and worklet per call.
-- `guiHost()` in `page.ts` keeps its memo unchanged: its contract is *the page's host with the page's default canvas*, and a second one of those means nothing. A caller wanting instances uses the primitives.
+- `guiHost()` in `page.ts` keeps its memo: its contract is *the page's host with the page's default canvas*, and a second one of those means nothing. Its instance counterpart is `newGuiHost()`, added once it was clear that leaving callers to the raw wasm binding was the gap, not the design — the notebook front end was reaching under the client to call `start()` itself, and so would anyone else. `newPools()` travels with it: page-global pools were right while the page held one client.
 
 **Verified:** `tests/hosts.html` under the headless-Chrome harness — two hosts in one page both draw; widget `1003` holds `0.2` in one and `0.8` in the other at once; a gesture on one leaves the other's outbox empty and its widget unmoved; each bound knob reaches its own engine and not its sibling's (`220 → 984.7` while the other stays `220`); closing one leaves the other drawing, answering and driving its engine. Example: `examples/two-hosts.html`.
 

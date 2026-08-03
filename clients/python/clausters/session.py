@@ -180,12 +180,11 @@ class Session(Environment):
 
         server = Server(host, port, latency=latency, options=options, transport=transport)
         if boot and not server_is_up(server.target.host, server.target.port):
-            server.close()  # drop the plain interface; boot opens its own
-            server = Server.boot(options=options, shm=shm, transport=transport,
-                                 verbose=verbose, workers=workers,
-                                 data_dir=data_dir, server_args=server_args,
-                                 latency=latency, ready_timeout=ready_timeout,
-                                 _adopt_default=False)  # an explicit session is not the default
+            # The handle is already the right one; booting re-points it at the
+            # address the launcher picks. An explicit session is not the default.
+            server.boot(shm=shm, verbose=verbose, workers=workers,
+                        data_dir=data_dir, server_args=server_args,
+                        ready_timeout=ready_timeout, adopt_default=False)
         return cls(server, TempoClock(tempo, timebase=timebase))._apply_default_clock(timebase)
 
     def _apply_default_clock(self, timebase):
@@ -289,9 +288,12 @@ class Session(Environment):
         from .gui import GuiHost
 
         server_addr = f"{self.server.target.host}:{self.server.target.port}"
-        self._gui = GuiHost.boot(
-            server=server_addr, shm=self.server.shm, port=port,
-            transport=transport, verbose=verbose,
+        from .gui.host import DEFAULT_PORT
+
+        self._gui = GuiHost(
+            port=DEFAULT_PORT if port is None else port, transport=transport,
+        ).boot(
+            server=server_addr, shm=self.server.shm, verbose=verbose,
             data_dir=data_dir, extra_args=extra_args, ready_timeout=ready_timeout,
         )
         return self._gui

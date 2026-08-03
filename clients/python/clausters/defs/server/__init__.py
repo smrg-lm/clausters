@@ -94,6 +94,9 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         #: use), ``"udp"`` (each packet must fit a datagram) or ``"ws"``. UDP
         #: remains the *discovery* protocol: `boot` probes over it before
         #: connecting.
+        #: Whether this handle built its own interface, and may therefore have
+        #: a process behind it that `boot` can start.
+        self._own_carrier = interface is None
         if interface is not None:
             self.interface = interface
         else:
@@ -154,67 +157,80 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         #: start.
         self._process = None
 
-    @classmethod
-    def boot(cls, options: "ServerOptions | None" = None, *, shm="auto",
-             transport: "str | None" = None,
-             verbose: int = 0, workers: "int | None" = None,
-             data_dir=None, server_args=(),
-             latency: "float | None" = None, ready_timeout: float = 10.0,
-             _adopt_default: bool = True) -> "Server":
-        """Start a **separate** ``clausters`` server process and return a `Server`
-        connected to and owning it.
+    def boot(self, *, shm="auto", verbose: int = 0, workers: "int | None" = None,
+             data_dir=None, server_args=(), ready_timeout: float = 10.0,
+             adopt_default: bool = True) -> "Server":
+        """Start the server **this handle is for**, and return ``self``.
 
-        The launcher's ergonomic non-`Session` entry point: it spawns the
-        standalone server (choosing a shared-memory segment), waits until it
-        answers, and hands back a `Server` whose `close` also stops the process
-        (and interpreter exit stops it too). Pair it with
-        `clausters.gui.GuiHost.boot` for the GUI, or use `clausters.Session.live`
-        for the bundled, clock-included path.
+        A `Server` is a handle: constructing one runs nothing and reaches
+        nothing, which is what makes it cheap to build one before there is
+        anything to talk to. This is the verb that brings up what it points at,
+        and what that means is the carrier's to say —
+
+        - the default carriers (TCP/UDP/WS) have a process behind them, so this
+          spawns the standalone ``clausters`` server and waits until it
+          answers, at **this handle's own address** — it does not move, and a
+          handle pointing where a booted server cannot be raises rather than
+          launching one elsewhere;
+        - a carrier that knows how to start its own peer is asked to (a
+          notebook's, whose engine is in the browser and needs a cell rather
+          than a process);
+        - an offline or in-process carrier has nothing to start, and this is a
+          no-op rather than an error — an NRT score is already "up".
+
+        Pair it with `close`, which stops a process this booted. The server's
+        *configuration* belongs to the constructor (``options=``), since it
+        sizes this handle's allocators too; what belongs here is the launch
+        itself.
 
         Args:
-            options: a `ServerOptions` — the enumeration of **every** option a
-                launched server takes (sizing *and* behavior: transports, MIDI,
-                persistence, workers, ...) — sizing this handle's allocators
-                alike; ``None`` uses the server's defaults.
-            shm: the shared-memory segment — ``"auto"`` picks one, a path forces
-                it, ``None`` launches without one. Remembered for a GUI to map.
-            transport: the carrier this handle talks over — ``"tcp"``
-                (default), ``"udp"`` or ``"ws"`` (a ``--ws`` server). The
-                boot-or-attach probe itself always rides UDP.
+            shm: the shared-memory segment — ``"auto"`` picks one, a path
+                forces it, ``None`` launches without one. Remembered for a GUI
+                to map (`shm`).
             verbose: server log verbosity (``1``/``2``/``3`` -> ``-v``/``-vv``/
                 ``-vvv``; negative -> ``-q``).
             workers: shortcut for ``options.workers`` (DSP worker threads for
                 parallel groups); it wins over a value set there. ``None``
                 emits no flag.
-            data_dir: the server's ``--data-dir``; ``None`` uses its default.
-            server_args: raw CLI tokens appended **last** (they win over
-                everything above) — an escape hatch for flags newer than this
-                client; prefer `ServerOptions` fields.
-            latency: seconds added to RT timetags (see the constructor).
+            data_dir: the server's ``--data-dir`` for its def store.
+            server_args: extra CLI tokens, appended last.
             ready_timeout: seconds to wait for the server to answer.
+            adopt_default: make this the default session's server when there is
+                none, so the free-standing verbs resolve it. A server already
+                adopted is not displaced.
 
-        A server booted free-standing (not from within a `Session`) is adopted
-        as the **default session's** server, first-wins: the first such boot sets
-        ``clausters.default_session.server``, so ``Event().play()`` and
-        ``clausters.play(...)`` find it with no session wiring. A later boot does
-        not displace it, and an explicit `Session` never adopts.
-
-        Returns:
-            A booted `Server`; ``server.shm`` is the segment path (or ``None``).
+        Returns: ``self``, so ``Server(...).boot()`` reads as one expression.
         """
+        starter = getattr(self.interface, "boot", None)
+        if starter is not None:
+            starter()
+            return self
+        if not self._own_carrier:
+            return self                  # an offline or in-process carrier
         from ...launch import ServerProcess
 
+        # The address this handle was built with is the address it keeps: the
+        # server binary takes no port flag and always listens on the default,
+        # so a handle pointing anywhere else names a server that a boot cannot
+        # produce. Saying so beats launching one somewhere the caller did not
+        # ask for and quietly moving the handle to meet it.
+        if (self.target.host, self.target.port) != (ServerProcess.host, ServerProcess.port):
+            raise ValueError(
+                f"this handle points at {self.target.host}:{self.target.port}, "
+                f"and a booted server always listens on {ServerProcess.host}:"
+                f"{ServerProcess.port} (the binary takes no port flag, so one "
+                "machine runs one at a time). Build the handle without an "
+                "address to boot one, or connect to the server already running "
+                "there.")
         extra = list(server_args)
         if workers is not None:
             extra = ["--workers", str(workers)] + extra
-        proc = ServerProcess(options, shm=shm, verbose=verbose, data_dir=data_dir,
-                             extra_args=extra, ready_timeout=ready_timeout).start()
-        server = cls(proc.host, proc.port, latency=latency, options=options,
-                     transport=transport)
-        server._process = proc
-        if _adopt_default and main.server is None:
-            main.server = server
-        return server
+        self._process = ServerProcess(
+            self.options, shm=shm, verbose=verbose, data_dir=data_dir,
+            extra_args=extra, ready_timeout=ready_timeout).start()
+        if adopt_default and main.server is None:
+            main.server = self
+        return self
 
     @property
     def shm(self) -> "str | None":
@@ -491,6 +507,16 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         return sync_id
 
     def quit(self):
+        """Stop the server (``/server_quit``).
+
+        The wire command, so it is the server that stops rather than this end
+        of it — `close` is the other half, releasing the interface and any
+        process this handle booted.
+
+        What getting another one costs depends on where it was: a launched
+        process is booted again from here, while a notebook's in-page engine
+        comes with the page and is therefore back on a reload.
+        """
         self.send_msg("/server_quit")
 
     def sample_clock(self, window: int = 64, timeout: float = 2.0):

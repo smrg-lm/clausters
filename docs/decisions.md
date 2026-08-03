@@ -4129,6 +4129,54 @@ three pairings, and `#[inline(never)]` on two hot bus accessors turns eleven
 gated rows red at once (`default/1` −10.8%, `sine/ugen/1` −16.2%, the aligned
 512-voice peak −49.5%).
 
+## The notebook is a package of its own, and it relays nothing
+
+Two decisions, taken together because each is the reason the other is
+affordable.
+
+**Notebook support ships as `clausters-jupyter`, not as an extra of
+`clausters`.** The alternative — `_repr_mimebundle_` on `PlotWindow`, an
+`IPython` import guarded by a `try`, a `notebook=True` somewhere in `Session` —
+is what several audio libraries did and it is why their core carries display
+logic in a dozen files. The cost of that is not size, it is that every change
+to the core is a change to the notebook path, forever.
+
+What made the split cheap is that nothing new was needed in the core to enable
+it. Three small seams did it, and each is useful on its own: `GuiHost` and
+`Server` already took an `interface=`, so the comm carrier plugs in where TCP
+does; `OscInterface.stream` became a *capability* the bulk chunker reads rather
+than a transport check; `GuiHost.local_files` became a second one, so a host
+that shares no filesystem gets the samples instead of a path — which is also
+the honest answer for a remote kernel, and would have been the right shape for
+the browser host regardless. IPython's own `for_type` registers a formatter for
+a class **from outside it**, which is the mechanism this situation was invented
+for, so `clausters` gained no display hook at all.
+
+**The audio leg never passes through Python.** A GUI host in the page and a
+server somewhere are two peers, and the tempting shape is to route their
+traffic through the kernel that authored both — it already has a carrier to the
+page, and it would be one code path instead of two. It is also the wrong one: a
+bound knob would then deliver its value at the kernel's convenience, which
+during a running cell is *never*, because ipykernel holds the shell channel
+until the cell ends. A bound widget that stops responding while you run
+something is not a slow widget, it is a broken one.
+
+So each backend gives the host a direct wire and the kernel stays an author:
+the in-page engine is handed to the host inside the tab
+(`GuiBridge::connect_page`), and a native server is reached by the page opening
+its own WebSocket to the server's `--ws` port (`connect_server`). The second
+one is why the native backend forces `ws` on rather than defaulting it, and why
+it is local-only twice over — the sound comes out of the kernel's machine, and
+the socket is opened from the browser. Neither is detectable from inside the
+kernel, so that one is documented rather than checked.
+
+The consequence to accept: the one thing that *does* need the kernel — an
+unbound widget's `/gui_event`, a `/gui_query` reply — cannot be awaited from a
+running cell at all. `CommInterface.recv` raises `RoundTripInCell` there
+instead of blocking until a timeout that would always expire, because a
+diagnosis is worth more than a hang. A zero timeout still polls, which is what
+`GuiHost.pump` does, and reading widgets back between cells is the ordinary
+notebook posture anyway.
 ## A page holds one host because it wants one, not because it can hold one
 
 `start()` used to be a page-wide singleton: a second call reached winit's
@@ -4165,9 +4213,19 @@ bus and buffer space with the rest of the document.
 So the rule for both, and the reason the default reads as a default rather than a
 limit: **one host and one engine per page unless a caller asks for another.** Two
 of them in one tab are as independent as two tabs. `guiHost()` in `page.ts` keeps
-its memo unchanged on purpose — its contract is *the page's host with the page's
-default canvas*, and a second one of those is not a thing anyone wants; a caller
-who needs instances goes one layer down, to the binding surface.
+its memo — its contract is *the page's host with the page's default canvas*, and
+a second one of those is not a thing anyone wants — and `newGuiHost()` sits
+beside it for the caller who needs an instance.
+
+That second function was not there at first, on the reading that such a caller
+could go one layer down to the binding surface. That reading was wrong, and the
+evidence was in the tree: the notebook front end went down there, importing
+`clausters_gui.js` and calling `start()` itself, because the client offered
+nothing else. A capability the client has and does not expose is a capability
+every consumer re-implements. `newPools()` came with it for the same reason —
+page-global id pools are right for components that share the page's engine and
+wrong for a client that does not, and the page having exactly one client had
+stopped being true.
 
 The cost of an instance is worth naming, because it is what makes the default
 defensible: the wasm module and its memory are shared, and the GPU was already

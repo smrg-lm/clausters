@@ -90,47 +90,41 @@ class GuiHost:
         #: start.
         self._process = None
 
-    @classmethod
-    def boot(cls, server: "str | None" = None, *, shm: "str | None" = None,
-             port: "int | None" = None, transport: str = "tcp",
-             verbose: int = 0, data_dir=None,
-             extra_args=(), ready_timeout: float = 10.0) -> "GuiHost":
-        """Start a ``clausters-gui`` visual-server process and return a `GuiHost`
-        connected to and owning it.
+    def boot(self, server: "str | None" = None, *, shm: "str | None" = None,
+             verbose: int = 0, data_dir=None, extra_args=(),
+             ready_timeout: float = 10.0) -> "GuiHost":
+        """Start the ``clausters-gui`` process **this handle is for**, connect
+        to it, and return ``self``.
 
-        The launcher's ergonomic non-`Session` entry point for the GUI: it spawns
-        the host binary (its client leg pointed at ``server`` and, when given,
-        mapping the audio server's ``shm`` segment), waits until it answers, and
-        hands back a started `GuiHost` whose `stop` also stops the process (as
-        does interpreter exit). Pass a `clausters.defs.Server`'s address and its
-        ``shm``, or let `clausters.Session.gui` wire those for you.
+        A `GuiHost` is a handle: constructing one runs nothing, and this is the
+        verb that brings up what it points at. Unlike the audio server's, this
+        handle's address does not move — the port is the one given to the
+        constructor (57210 by default) and the process is told to use it — so
+        booting only launches, waits, and starts the connection.
+
+        Pair it with `stop`, which closes the connection and stops a process
+        this booted. `clausters.Session.gui` does all of it wired to the
+        session's server; this is the way to it without one.
 
         Args:
             server: the audio server address as ``"host:port"``, or ``None`` for
                 a host with no client leg.
             shm: the audio server's shared-memory segment path to map (Unix
                 only), or ``None`` to skip it.
-            port: the GUI host's own port (UDP and TCP alike); ``None`` uses
-                the default (57210).
-            transport: the carrier this `GuiHost` talks over — ``"tcp"``
-                (default) or ``"udp"``.
             verbose: host log verbosity, like `clausters.defs.Server.boot`.
             data_dir: the host's ``--data-dir`` for its GuiDef store.
             extra_args: extra host CLI tokens.
             ready_timeout: seconds to wait for the host to answer.
 
-        Returns:
-            A started, process-owning `GuiHost`.
+        Returns: ``self``, so ``GuiHost().boot()`` reads as one expression.
         """
-        from ..launch import GUI_DEFAULT_PORT, GuiProcess
+        from ..launch import GuiProcess
 
-        port = GUI_DEFAULT_PORT if port is None else port
-        proc = GuiProcess(server=server, shm=shm, port=port, verbose=verbose,
-                          data_dir=data_dir, extra_args=extra_args,
-                          ready_timeout=ready_timeout).start()
-        host = cls("127.0.0.1", port, transport=transport).start()
-        host._process = proc
-        return host
+        self._process = GuiProcess(
+            server=server, shm=shm, port=self.target[1], verbose=verbose,
+            data_dir=data_dir, extra_args=extra_args,
+            ready_timeout=ready_timeout).start()
+        return self.start()
 
     def start(self) -> "GuiHost":
         self._osc.start()

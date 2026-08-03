@@ -118,8 +118,8 @@
     <script type="module">
       import {
         loadOsc,
+        newGuiHost,
         pageConnection,
-        engine,
         Server,
         Synth,
         SynthDef,
@@ -163,17 +163,15 @@
           ],
         });
 
-      async function boot(start, canvasId, title, freq) {
-        // One host instance. The first call also builds the page's event loop
+      async function boot(canvasId, title, freq) {
+        // One host instance, with an engine of its own: `guiHost()` and
+        // `server()` would hand back the page's, which is precisely what these
+        // two must not share. The first call also builds the page's event loop
         // (winit allows exactly one); every later call joins it.
-        const bridge = start();
-
-        // One engine of its own -- `server()` would hand back the page's
-        // shared one, which is precisely what these two must not do.
-        const audio = await engine({ channels: 2 });
+        const gui = await newGuiHost();
+        const bridge = gui.bridge;
+        const audio = gui.engine;
         await audio.resume();
-        audio.addReply((bytes) => bridge.server_reply(bytes));
-        bridge.connect_page((bytes) => audio.send(bytes));
 
         const server = await Server.open(await pageConnection(audio));
         await new SynthDef(
@@ -217,12 +215,8 @@
 
       async function run() {
         await loadOsc();
-        const { default: init, start } = await import(
-          "../dist/gui-host/clausters_gui.js"
-        );
-        await init();
-        hostA = await boot(start, "a", "host A", 220.0);
-        await boot(start, "b", "host B", 330.0);
+        hostA = await boot("a", "host A", 220.0);
+        await boot("b", "host B", 330.0);
       }
 
       document.getElementById("boot").onclick = () =>

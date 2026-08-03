@@ -15,7 +15,8 @@
 // The host's wasm glue is loaded **on demand** (inside `boot`), not at import
 // time.
 import type { GuiBridge } from "../gui-host/clausters_gui.js";
-import { server } from "../engine/server.ts";
+import { engine as engineInstance, server } from "../engine/server.ts";
+import type { ClaustersServer } from "../engine/server.ts";
 import { decodePacket } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
 import { canvasBox, onScaleChange } from "./canvasbox.ts";
@@ -78,29 +79,63 @@ export interface ClaustersGui {
     ): () => void;
     addEvent(listener: EventListener): void;
     removeEvent(listener: EventListener): void;
+    /**
+     * The engine this host's audio leg is wired to — the page's under
+     * `guiHost`, its own under `newGuiHost`. Exposed because a caller holding
+     * an instance needs exactly this to open a `Server` on it, and asking for
+     * it again by name would hand back the page's.
+     */
+    engine: ClaustersServer;
 }
 
 let instance: Promise<ClaustersGui> | null = null;
 
 /**
- * The page's GUI host, booting it (and the engine) on first call.
+ * The page's GUI host, booting it (and the page's engine) on first call.
  *
- * One wasm GUI host serves the page, drawing one canvas per `window`-rooted
- * def. The first call initializes the wasm module, starts the host, makes the
- * page's default canvas (appended to `<body>`, where a page that makes none of
- * its own finds it), and wires the two singletons together **once**: engine
- * replies → `bridge.server_reply`, host outbound → `engine.send` (the in-page
- * server leg). Later calls get the same instance, so several components share
- * one host and one engine — the shared node/bus/buffer namespace.
+ * **The page's, not the page's only one.** This is the host a document wants by
+ * default — its components belong to one mix, so they meet in one node, bus,
+ * buffer and widget namespace — and it comes with the page's default canvas,
+ * appended to `<body>` where a page that makes none of its own finds it. Later
+ * calls get the same instance.
+ *
+ * A caller that wants an *independent* client uses `newGuiHost`, which is to
+ * this what `engine` is to `server`.
  */
 export function guiHost(): Promise<ClaustersGui> {
     instance ??= boot();
     return instance;
 }
 
-async function boot(): Promise<ClaustersGui> {
+/**
+ * A GUI host of one's own, sharing the page with whatever else is on it.
+ *
+ * The instance counterpart of `guiHost`, as `engine` is of `server`. What a
+ * page holds one of is the windowing event loop, not the host: the loop drives
+ * any number of windows, so instances share it and nothing else. Two of them
+ * may hold the very same window and widget ids without seeing each other,
+ * which is the only arrangement that works for clients that allocate ids
+ * independently and have no channel to agree on a range over — notebooks open
+ * in one JupyterLab tab, isolated demos side by side.
+ *
+ * Two differences from `guiHost`, both because this host is not the page's:
+ * it appends no canvas (the caller owns where its windows draw, and passes one
+ * to `attach`), and it takes the engine to wire its audio leg to — its own by
+ * default, since an independent client wants an independent node space.
+ *
+ * A second host costs neither a download nor a GPU device; a second engine is
+ * a second `AudioContext`, and browsers cap those (Chrome at six). Release one
+ * with `bridge.close()`.
+ */
+export async function newGuiHost(
+    options: { engine?: ClaustersServer } = {},
+): Promise<ClaustersGui> {
+    return boot(options.engine ?? await engineInstance());
+}
+
+async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
     const { default: init, start } = await import("../gui-host/clausters_gui.js");
-    const engine = await server();
+    const engine = audio ?? await server();
     await init();
     const bridge = start();
 
@@ -109,13 +144,17 @@ async function boot(): Promise<ClaustersGui> {
     // the only way several canvases can exist at once. This one is the page's
     // default, in <body> where the older single-canvas pages expect it; a
     // component supplies its own to `attach`.
+    //
+    // Only the page's host gets one. An instance from `newGuiHost` belongs to
+    // whoever asked for it, and appending a canvas to <body> on their behalf
+    // would put it somewhere they did not choose.
     const canvas = document.createElement("canvas");
     canvas.width = DEFAULT_CANVAS.width;
     canvas.height = DEFAULT_CANVAS.height;
     canvas.style.display = "block";
-    document.body.append(canvas);
+    if (audio === undefined) document.body.append(canvas);
 
-    // The in-page server leg, wired once for the whole page.
+    // This host's server leg, wired once.
     engine.addReply((bytes) => bridge.server_reply(bytes));
     bridge.connect_page((bytes: Uint8Array) => engine.send(bytes));
 
@@ -131,6 +170,7 @@ async function boot(): Promise<ClaustersGui> {
     return {
         bridge,
         canvas,
+        engine,
         attach: (defId, element) => bridge.attach(defId, element ?? canvas),
         fit: (defId, element, target) => {
             const surface = target ?? canvas;

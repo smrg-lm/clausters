@@ -421,10 +421,10 @@ def _ambient_host(server=None):
         _own_host.stop()
         _own_host = None
     if server is None:
-        _own_host = GuiHost.boot(server=None)
+        _own_host = GuiHost().boot(server=None)
     else:
         addr = f"{server.target.host}:{server.target.port}"
-        _own_host = GuiHost.boot(server=addr, shm=server.shm)
+        _own_host = GuiHost().boot(server=addr, shm=server.shm)
     _own_host_server = server
     return _own_host
 

@@ -42,9 +42,19 @@ const audio = await engine({ channels: 2 });      // not the page's
 const server = await Server.open(await pageConnection(audio));
 ```
 
-The GUI host does the same one layer down, at the wasm binding: each call to `start()` returns an instance, and `close()` releases one. Instances share the browser tab and nothing else, so two of them may use the very same widget ids without colliding — which is the point, since clients that allocate ids independently have no way to agree on a range. A second host costs neither a download nor a GPU device; a second engine is a second `AudioContext`, and browsers cap those (Chrome at six).
+The GUI host has the same pair. `newGuiHost()` boots an instance — its own engine unless you hand it one — where `guiHost()` returns the page's:
 
-`guiHost()` is unaffected and stays the page's: its canvas is the page's default one. `examples/two-hosts.html` shows the other case end to end.
+```ts
+import { newGuiHost, newPools } from "clausters";
+
+const gui = await newGuiHost();                   // not the page's
+const pools = newPools();                         // nor its ids
+gui.attach(windowId, myCanvas);                   // and it appends no canvas
+```
+
+Instances share the browser tab and nothing else, so two of them may use the very same window, widget and node ids without colliding — which is the point, since clients that allocate ids independently have no way to agree on a range. Take `newPools()` along with the host: the page's pools are shared by everything that shares the page's engine, and an independent client wants an id space of its own. A second host costs neither a download nor a GPU device; a second engine is a second `AudioContext`, and browsers cap those (Chrome at six). `gui.bridge.close()` releases one.
+
+What each pair differs in is only what a page wants by default. `guiHost()` and `server()` are memoized and come with the page's default canvas; `newGuiHost()` and `engine()` are neither, since a host that is not the page's has no business appending a canvas to `<body>`. `examples/two-hosts.html` shows the whole arrangement end to end.
 
 ## Defs and the `Server`
 

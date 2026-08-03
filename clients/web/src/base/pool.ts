@@ -91,16 +91,32 @@ export function pool(base: number, capacity: number, what: string): Pool {
 let instance: Pools | null = null;
 
 /**
- * The page's pools, made on first use. Every component on the page allocates
- * from these, which is what keeps two instances of one bundle apart.
+ * A fresh set of pools, owning its id ranges and sharing them with nobody.
+ *
+ * What `pagePools` hands out is one set for the whole document, which is right
+ * for components that share the page's engine and host: they are one client
+ * between them, and one pool is what keeps two instances of a bundle from
+ * colliding. It stopped being right for everything the day the page could hold
+ * more than one client — a host and an engine of one's own (`newGuiHost`,
+ * `engine`) want an id space of their own too, since the whole point of an
+ * independent client is that its ids are its own and may repeat another's.
  */
-export function pagePools(): Pools {
-    instance ??= {
+export function newPools(): Pools {
+    return {
         widgets: pool(WIDGET_BASE, WIDGET_CAPACITY, "widget"),
         nodes: pool(NODE_BASE, NODE_CAPACITY, "node"),
         controlBuses: pool(CONTROL_BUS_BASE, CONTROL_BUS_CAPACITY, "control bus"),
         audioBuses: pool(AUDIO_BUS_BASE, AUDIO_BUS_CAPACITY, "audio bus"),
         buffers: pool(BUFFER_BASE, BUFFER_CAPACITY, "buffer"),
     };
+}
+
+/**
+ * The page's pools, made on first use. Every component sharing the page's
+ * engine and host allocates from these, which is what keeps two instances of
+ * one bundle apart. A client of its own takes `newPools` instead.
+ */
+export function pagePools(): Pools {
+    instance ??= newPools();
     return instance;
 }

@@ -21,7 +21,7 @@
 // `clausters-gui --ws` over a WebSocket (`GuiHost.connect(url)`) — the same
 // object either way.
 
-export { GuiHost, guiHost, pageGuiConnection, DEFAULT_PORT, DEFAULT_WS_PORT } from "./host.ts";
+export { GuiHost, guiHost, newGuiHost, pageGuiConnection, DEFAULT_PORT, DEFAULT_WS_PORT } from "./host.ts";
 export type { ClaustersGui, EventListener, PropValue, WidgetInfo } from "./host.ts";
 
 export { WidgetHandle, WindowHandle } from "./handle.ts";

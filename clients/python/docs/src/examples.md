@@ -1,8 +1,8 @@
 # Examples
 
 The examples live in the **repository**, not in the wheel: `pip install
-clausters` gives you the client, a checkout gives you the scripts. There are two
-directories of them —
+clausters` gives you the client, a checkout gives you the scripts. There are
+three directories of them —
 
 - `clients/python/examples/` — the installed-package scripts: they import
   `clausters` the way your own code does (no `sys.path` shim, no `target/`
@@ -10,6 +10,9 @@ directories of them —
 - `examples/` at the repository root — the lower-level demos: the transports,
   the raw OSC helpers, the audible tours of the UGen families. Those use a
   `sys.path` shim, so they run from a checkout with no install.
+- `clients/jupyter/examples/` — the notebook ones, which need
+  `clausters-jupyter` and a browser and are opened in Jupyter rather than run
+  from a terminal (see [Notebooks: the GUI in a cell](notebook.md)).
 
 Run them after installing the package (see [Getting started](getting-started.md)):
 

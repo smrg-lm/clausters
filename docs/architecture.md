@@ -556,6 +556,59 @@ reaches the screen through the editor driver (`clausters/gui/editor.py`), which 
 the only module that knows both the arrangement and the widget tree. The Python
 book's composition chapter is its user documentation.
 
+## The notebook package: where it lives
+
+`clients/jupyter` (`clausters-jupyter` on PyPI) puts the GUI in a Jupyter cell.
+It is a **separate distribution on purpose**: `clausters` keeps no IPython
+logic, no display hooks and no optional notebook import, so a script, a test or
+a plain REPL carries none of it.
+
+It builds nothing. The browser half is the **web client's own `dist/`**, staged
+into the package by `scripts/refresh-web.sh` (which runs `clients/web/build.sh`
+and copies) — the wasm GUI host, the wasm engine, the shared core, and one
+module of its own, `clients/web/src/notebook/widget.ts`, which lives with the
+rest of the TypeScript rather than inside the Python package.
+
+| Path | Contents |
+|---|---|
+| `clausters_jupyter/carrier.py` | `CommInterface`: an `OscInterface` over the kernel's comm, so `GuiHost(interface=…)` and `Server(interface=…)` take it through the seam they already had |
+| `clausters_jupyter/journal.py` | `Journal` — the outbound GUI traffic reduced to **state, not history** (a `/gui_set` coalesced per widget+prop, a `/gui_free` dropping a subtree), which is what a mount replays |
+| `clausters_jupyter/bridge.py` | The routing: one carrier fanned out to one widget per `window`-rooted def, and the events merged back. It asks the journal which root a packet edits |
+| `clausters_jupyter/widget.py` | `ClaustersWidget`, the anywidget — the only file that imports it. Moves tagged OSC in both directions and hands the front end its assets on mount |
+| `clausters_jupyter/formatters.py` | `for_type` registrations, so a window displays as its canvas without any `clausters` class knowing |
+| `clausters_jupyter/session.py` | `notebook()`: the one function that knows a notebook is involved, and the backend choice |
+| `clausters_jupyter/assets.py` | Where the staged `dist/` comes from, and which files each backend needs |
+
+Three constraints shape all of it, and each is a property of where it runs:
+
+- **The assets travel over the comm.** anywidget serves one module — the
+  widget's own `_esm` — and a remote kernel has no static route to add the rest
+  to. So the modules arrive as buffers and become blob URLs, with their
+  relative import specifiers rewritten to those URLs (a blob module resolves
+  relatives against the blob's origin, where nothing lives) in an order
+  topologically sorted over the import graph. The `.wasm` arrives as bytes,
+  which is what wasm-bindgen's `init` takes.
+- **A reply cannot arrive while a cell runs.** ipykernel holds an asyncio lock
+  across the whole `execute_request` so cells run in order, and a `comm_msg` is
+  a shell message. There is no loop to pump (ipykernel 7 removed
+  `do_one_iteration`) and awaiting does not help. `CommInterface.recv` therefore
+  raises `RoundTripInCell` rather than hanging — except at a zero timeout, which
+  is a poll of what already arrived and is how `GuiHost.pump` reads events back.
+- **A host per notebook, and the page holds them by session.** anywidget
+  instantiates the ESM per widget, so a module-scope singleton is one 5.4 MB
+  wasm host *per cell*; the state lives on `globalThis` instead, keyed by the
+  kernel's session id. Not one *per page* either: JupyterLab is a single-page
+  application, and two notebooks sharing a `globalThis` allocate ids from the
+  same bases, so each boots an instance of its own and they share only the
+  windowing event loop.
+
+The audio leg never passes through Python. Under the default `page` backend the
+in-page engine is wired to the host in the tab (`GuiBridge::connect_page`);
+under `native` the host opens its own WebSocket to the server's `--ws` port
+(`connect_server`), which is why that backend forces `ws` on and is local-only.
+Either way a bound widget reaches the audio at frame rate while the kernel is
+busy — the same wire a served page and the desktop use.
+
 ## Extending the server: the plugin question
 
 scsynth grew a binary plugin API (`UnitCmd`/interface tables) whose ABI broke with struct or feature changes, and keeping out-of-tree UGens alive became a maintenance tax. Rust removes the temptation: **there is no stable Rust ABI**, so dynamically loaded Rust plugins are off the table in v1, by decision and not omission:

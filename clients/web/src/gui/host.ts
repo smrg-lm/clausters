@@ -38,7 +38,7 @@ import { guiHost, pageGuiConnection } from "./page.ts";
 // lives in `./page.ts` so the component run time can load it without this
 // module and the GuiDef builders behind it. Re-exported here, where callers
 // have always found it.
-export { guiHost, pageGuiConnection } from "./page.ts";
+export { guiHost, newGuiHost, pageGuiConnection } from "./page.ts";
 export type { ClaustersGui, EventListener } from "./page.ts";
 
 /**

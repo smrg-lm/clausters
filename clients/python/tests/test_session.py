@@ -81,29 +81,35 @@ def test_nrt_render_with_workers_is_bit_identical():
 
 
 def test_boot_workers_becomes_the_cli_flag(monkeypatch):
-    # Server.boot(workers=N) must launch `clausters --workers N` (before any
+    # Server().boot(workers=N) must launch `clausters --workers N` (before any
     # explicit server_args, so those stay the escape hatch that wins).
     import clausters.launch as launch
+    from clausters.launch import DEFAULT_PORT
 
     captured = {}
 
     class FakeProcess:
+        # The address is a class attribute, as the real launcher's is: the
+        # binary takes no port flag, and `boot` reads it off the class to
+        # refuse a handle pointing where a booted server cannot be.
+        host, port = "127.0.0.1", DEFAULT_PORT
+
         def __init__(self, options=None, **kwargs):
             captured.update(kwargs)
-            self.host, self.port, self.shm = "127.0.0.1", 57997, None
+            self.shm = None
 
         def start(self):
             return self
 
     monkeypatch.setattr(launch, "ServerProcess", FakeProcess)
-    server = Server.boot(workers=3, server_args=("--tcp",), transport="udp",
-                         _adopt_default=False)
+    server = Server(transport="udp").boot(
+        workers=3, server_args=("--tcp",), adopt_default=False)
     try:
         assert captured["extra_args"] == ["--workers", "3", "--tcp"]
     finally:
         server.interface.close()
     # None emits no flag: the server keeps its config-file default.
-    Server.boot(transport="udp", _adopt_default=False).interface.close()
+    Server(transport="udp").boot(adopt_default=False).interface.close()
     assert captured["extra_args"] == []
 
 
