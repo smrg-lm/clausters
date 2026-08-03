@@ -167,8 +167,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         stop();
         anchor = await raw.clock();
         paused = 0;
-        voice = Synth.new(server, `editor_player_${buffer.channels}`,
-                             { buf: buffer.bufnum });
+        voice = new Synth(`editor_player_${buffer.channels}`, { buf: buffer.bufnum }, { server });
         setPlayhead({ from: anchor });
         log("play");
       }
@@ -177,9 +176,9 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         if (!selection) return log("drag on a view to select a region first");
         stop();
         const [start, len] = selection;
-        voice = Synth.new(server, `editor_region_${buffer.channels}`, {
+        voice = new Synth(`editor_region_${buffer.channels}`, {
           buf: buffer.bufnum, start, end: start + len,
-        });
+        }, { server });
         // The line follows the loop, still on one anchor and no message per
         // frame: `playhead_loop_*` makes the host's own sweep wrap inside the
         // region, exactly as the `Phasor` does over the same bounds.
@@ -277,7 +276,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         // The editor is on screen before there is anything to hear: an empty
         // buffer draws a silent timeline with its rulers, and picking a file
         // replaces it.
-        await openBuffer(await Buffer.alloc(server, Math.round(4 * 48000), 1));
+        await openBuffer(await Buffer.alloc(Math.round(4 * 48000), 1, { server }));
         log("an empty editor — pick an audio file, or generate a tone");
       }
 
@@ -291,7 +290,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         const url = URL.createObjectURL(file);
         try {
           log(`loading ${file.name} …`);
-          await openBuffer(await Buffer.load(server, url));
+          await openBuffer(await Buffer.load(url, { server }));
         } catch (error) {
           log(`could not load ${file.name}: ${error}`);
         } finally {
@@ -302,7 +301,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       // No file at hand: the *server* fills a buffer instead (`/buffer_gen sine1`,
       // a few partials), so the page has something to look at and play.
       el("tone").onclick = async () => {
-        const buf = await Buffer.alloc(server, 96000, 1);
+        const buf = await Buffer.alloc(96000, 1, { server });
         await buf.gen("sine1", [["i", 7], 1.0, 0.5, 0.25, 0.12]);
         await openBuffer(await buf.info());
       };

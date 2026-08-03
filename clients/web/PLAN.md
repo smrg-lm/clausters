@@ -32,23 +32,25 @@ clients/web/
       core.ts             #     the shared core's wasm: one load, the registry
       osc.ts              #     OSC encode/decode over the wasm core (mirrors _osclib)
       connection.ts       #     the carrier seam: WsConnection | pageConnection()
-      (clock.ts  timebase.ts  builtins.ts — W3)
+      clock.ts timebase.ts builtins.ts
+      environment.ts main.ts  #   the ambient environment + the default session
     errors.ts             #   the error hierarchy (mirrors errors.py)
     defs/                 #   the def model + server client (mirrors clausters/defs)
       server/             #     the handle, and beside it options/queries/streams
       ugens/              #     the UGen catalogue, one module per family
-      node.ts  bus.ts  buffer.ts  info.ts  clocksync.ts
+      node.ts  bus.ts  buffer.ts  info.ts  clocksync.ts  wire.ts
       signals.ts  synthdef.ts  faustdef.ts  graphdef.ts
     gui/                  #   the GUI host driver (mirrors clausters/gui)
       host.ts             #     GuiHost + the per-page guiHost() singleton
       guidef.ts  handle.ts  ids.ts
-    (seq/                 #   sequencing (mirrors clausters/seq) — W3
-      event.ts  eventstream.ts  pattern.ts  timeline.ts)
+    seq/                  #   sequencing (mirrors clausters/seq)
+      event.ts  eventstream.ts  pattern.ts  timeline.ts
     data/                 #   the data paths: what a view reads off the server
       buses.ts  taps.ts   #     the streamed sources (/bus_stream, /bus_tapStream)
       samples.ts  peaks.ts analysis.ts
     (responders.ts        #   OscFunc/MidiFunc dispatch (mirrors responders.py) — W8/W9)
-    (session.ts           #   the Session facade — W18)
+    session.ts            #   the Session facade + the default session
+    play.ts               #   the free `play` verb
     engine/               #   browser-only: the in-page engine runtime
       worklet.ts  loader.ts  worklet-shim.ts  server.ts (the server() singleton)
     bundle.ts elements.ts #   browser-only: bundle boot + the custom elements
@@ -732,7 +734,7 @@ same version; the book is live, with the API pages generated on Read the Docs
 itself; the doc build was reproduced from `git archive` before the push, on a
 tree with no `node_modules` and no Rust.
 
-### W18 - The `Session` facade
+### ✅ W18 - The `Session` facade *(done 2026-08-03)*
 
 *Deferred out of W5*, whose layout sketched a `session.ts` into the slot while
 the milestone itself was docs, examples and packaging. It is an API layer, and
@@ -746,6 +748,66 @@ it leans on verbs this client does not have yet.
 - **`Synth.new` / `Group.new` become the constructor here too, and this is the milestone that can do it.** The Python client made the move already: `new` was an sclang transliteration — that language has no distinguished initializer, so every constructor is a class method called `new` — and Python has `__init__`, so `Synth("blip", {"freq": 440}, target=group)` and `Group()` now create and send, with `Synth.from_id` / `Group.from_id` naming a node that already exists (a responder's id, a tree query) and sending nothing. The rule is general: **`new` is the constructor, and alternates get names** (`Group.graph`, `Bus.audio`, `Buffer.alloc`, `FaustDef.fromSource`). The port waits for this milestone because the two signatures only converge once there is an ambient session: today `Synth.new(server, defname, …)` takes the server as its first positional, which as a constructor would read `new Synth(server, "blip", …)` — the server first here, the def name first there. With a session resolving it, both become `Synth("blip", controls, {target, action, server})`. Do the two together; `Synth.fromId(id, defname, server)` and `Group.fromId(id, server)` come with it, and `nodeId()` already lets `target` be a node or an id, which Python has now copied.
 
 **Acceptance:** the getting-started example rewritten through a `Session` is shorter and does the same thing; two sessions over different carriers coexist in one page, each with its own clock; a bare `Routine(f).play()` runs with nothing else set up; `new Synth("blip", …)` creates against the session's server, and `Synth.fromId` is the only way to wrap a reported id.
+
+**What shipped.** The whole ambient layer, at the Python client's paths:
+`base/environment.ts` (`RandomContext` + `Environment`), `base/main.ts`
+(`Main`, `main`/`defaultSession`, `resolveServer`/`resolveClock`/
+`getDefaultClock`), `session.ts`, `play.ts` and `defs/wire.ts` — the five
+modules W21 listed as this milestone's. Four things are worth carrying
+forward:
+
+- **The page has one thread, so the registry is not thread-local.** Python
+  keeps `current_tt` and `current_session` in a `threading.local`; the running
+  routine already lived in `base/context.ts` (a module slot is exactly as
+  sound when a wake runs to its next `yield` with nothing interleaving) and
+  the active session is one more slot beside it. `Session.use(body)` is the
+  port of `with session:` and is **synchronous by design** — an `await` inside
+  would let another task run while this session is ambient, and there is no
+  way to scope that on one thread.
+- **The factories are named for the carriers, not for Python's.**
+  `Session.page()` and `Session.connect(url)`, matching `GuiHost.page()`/
+  `GuiHost.connect()` and the `Server` carriers this package already has,
+  rather than `embed`/`live(host, port)` — whose parameters (a host, a port, a
+  process to boot) a page has none of. `nrt`/`render` and `join_transport`
+  wait on **W13** and **W12**.
+- **`adoptDefault()` lends the server and not the clock.** In Python the
+  default server is adopted by a free-standing `Server.boot()`; a page has no
+  process to boot, so the verb is the session's. It stops at the server on
+  purpose: the default session's clock is created *and started* by the first
+  ambient play, so lending a stopped one would hand `play()` a clock nothing
+  ever starts. A named session's clock is reached through `session.play` or
+  inside `session.use`.
+- **`new` became the constructor**, as the plan called for: `new Synth("blip",
+  controls, { target, action, server })`, `new Group({ name, … })`,
+  `Group.graph(defname, ports, …)`, with `Synth.fromId`/`Group.fromId` the
+  door for an id something else reported. The server moved into the options
+  bag on every resource constructor (`Bus.audio`, `Buffer.alloc`/`read`/
+  `load`, `def.send`) and resolves ambiently when absent — 93 call sites
+  across the package, the tests and the examples moved with it.
+
+Two smaller things the milestone needed and grew: `ClaustersServer.close()`
+(the engine sibling of W20's `GuiBridge.close()`, so a session that opened its
+own engine releases the `AudioContext` with it) and `pageGuiConnection(host)` /
+`GuiHost.page(host)` taking an instance, so `session.gui()` can wire a GUI leg
+to *this session's* engine rather than the page's.
+
+**Verified:** `./build.sh && ./test.sh` — 176 `node --test` cases (9 new in
+`tests/session.test.ts`: the resolution ladder, `use` scoping and unwinding,
+`fromId` sending nothing, the default clock created and started by a bare
+`Routine.play()`, two independent random contexts, the `play` dispatch) and
+ten headless-Chrome acceptances, the new one being `tests/session.html`: two
+sessions on two engines, an ambient note audible on the default session's
+analyser (0.200) and silent on the other's (0.000), the same call inside
+`b.use(…)` the other way round, a bare `play()` driving the default session's
+clock, and every kind `play` dispatches asserted audible. Example:
+`examples/verbs.html`, the port of the Python client's `verbs.py` — a session
+opened, then every playable kind visited in turn.
+
+Not in scope, and each already owned: the `plot`/`scope` visual verbs and the
+`set_ambient_host` registry that serves them (unclaimed — `plot.py`/`scope.py`
+have no milestone here yet), a bare **signal expression** as a playable (it
+needs the ephemeral-def wrapper, **W13**'s `asdef`), and an `Automation`
+(**W11**).
 
 ### ✅ W19 - The notebook front end (`src/notebook/widget.ts`)
 
@@ -806,13 +868,13 @@ instances share the loop and nothing else.
   W10 shipped. So: nothing to port, by design in both halves.
 
 - **`gui/__init__.py`'s `set_ambient_host`/`ambient_host` have no counterpart
-  here, and the reason is **W18**.** They exist so the Python client's ambient
-  visual verbs (`clausters.plot`, `clausters.scope`) can resolve a host without
-  being told one, ahead of their boot-a-process fallback. This client has
-  neither verb nor fallback — `GuiHost.page()` *is* the ambient host of a page
-  — so the registry would have nothing to register for. It ports with the
-  ambient layer, not before it: whatever resolves a default `Server` and a
-  default clock in W18 is what a default `GuiHost` hangs off.
+  here, and W18 did not change that.** They exist so the Python client's
+  ambient visual verbs (`clausters.plot`, `clausters.scope`) can resolve a host
+  without being told one, ahead of their boot-a-process fallback. This client
+  has neither verb nor fallback, and W18 gave the GUI leg a better owner than a
+  process-wide registry: `session.gui()`, which wires the host to *its*
+  session's engine. So the registry ports with the visual verbs, and
+  `plot.py`/`scope.py` are the two Python modules with no milestone here yet.
 
 - **The widget props are their own manifest, and it is `docs/gui-props.md`.**
   That table compares all three surfaces — the host, the Python builders, this

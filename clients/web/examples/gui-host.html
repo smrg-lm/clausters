@@ -110,7 +110,7 @@
         return server;
       }
 
-      const playing = () => (voice ??= Synth.new(server, "gui_tone", { freq: 220.0, amp: 0.2 }));
+      const playing = () => (voice ??= new Synth("gui_tone", { freq: 220.0, amp: 0.2 }, { server }));
 
       // The GUI side. `GuiHost.page()` drives the wasm host on this page's
       // canvas; `GuiHost.connect(url)` would drive a native one, and nothing
@@ -210,7 +210,7 @@
 
       document.getElementById("meters").onclick = async () => {
         await audio();
-        const bus = Bus.control(server);
+        const bus = Bus.control(1, { server });
         const w = open(meters(bus.index));
         w.widget("level").bind("/bus_set", bus.index);
         say(`meters: the knob writes bus ${bus.index}; the host streams it back`);

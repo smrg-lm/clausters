@@ -15,6 +15,7 @@
 // `hasGate` default left false.
 
 import { cpsmidi, degreeToMidinote, midicps } from "../base/builtins.ts";
+import { main } from "../base/main.ts";
 import type { OscArg } from "../base/osc.ts";
 
 /**
@@ -197,12 +198,14 @@ export class Event {
      * Outside a clock the note plays immediately; inside a routine it emits
      * at the routine's logical beat.
      */
-    play(destination: EventDestination): this {
+    play(destination?: EventDestination): this {
+        const target = destination
+            ?? (main.resolveServer() as unknown as EventDestination);
         const midinote = this.midinote();
         const freq = this.freq();
         this.set({ midinote, freq, delta: this.delta(), sustain: this.sustain() });
-        this.props.node = destination.playEvent(this);
-        this.props.server = destination;
+        this.props.node = target.playEvent(this);
+        this.props.server = target;
         return this;
     }
 

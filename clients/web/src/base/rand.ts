@@ -23,6 +23,12 @@
 
 import { Rng as CoreRng } from "../core/clausters_core_web.js";
 import { currentRoutine } from "./context.ts";
+// The default session, for the root a draw falls back to. `environment.ts`
+// imports `Rng` back from here, so the two modules form a cycle — a harmless
+// one: neither reaches into the other while it is still evaluating (the
+// constructor is called from a method, and `main` is built from classes that
+// touch no random state), and the module-graph test holds it.
+import { main } from "./main.ts";
 
 /**
  * A resumable seeded value stream over the core generator: uniform doubles in
@@ -77,25 +83,29 @@ export class Rng {
  * wasm has to be loaded first) and seeded from the wall clock, so an unseeded
  * script differs run to run — exactly what `seed(n)` takes away.
  */
-let root: Rng | null = null;
-
 /**
- * Seeds the root stream, reproducing every draw made outside a routine and
- * every routine created after this call.
+ * Seeds the **default session's** root stream, reproducing every draw made
+ * outside a routine and every routine created after this call.
+ *
+ * A named `Session` is its own random context: `session.seed(n)` reproduces
+ * *that* session's material without touching another's, which is what lets
+ * two sessions on one page stay reproducible independently.
  */
 export function seed(value: number): void {
-    root = new Rng(value);
+    main.seed(value);
 }
 
 /**
- * The stream of the routine running right now; outside a routine, the root.
- * This is where every random value in the library comes from.
+ * The stream a draw comes from: the routine running right now, else the
+ * ambient session's root (the running routine's session, or the one active on
+ * this page), else the default session's. This is where every random value in
+ * the library comes from.
  */
 export function currentRng(): Rng {
     const routine = currentRoutine();
     if (routine?.rng) return routine.rng;
-    root ??= new Rng(Date.now());
-    return root;
+    const session = routine?.clock?.session ?? main.currentSession;
+    return session?.rng ?? main.rng;
 }
 
 /**

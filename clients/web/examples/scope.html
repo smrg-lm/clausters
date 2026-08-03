@@ -165,19 +165,19 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
         // What is being watched: a tone on an audio bus, an LFO on a control
         // bus. The tone is *not* routed to the hardware out — this example is
         // about looking, so it stays on its own bus and the page is silent.
-        const audioBus = Bus.audio(server);
-        const ctlBus = Bus.control(server);
+        const audioBus = Bus.audio(1, { server });
+        const ctlBus = Bus.control(1, { server });
         await tone().send(server);
         await lfo().send(server);
-        const voice = Synth.new(server, "scope_tone", { bus: audioBus.index });
-        Synth.new(server, "scope_lfo", { bus: ctlBus.index });
+        const voice = new Synth("scope_tone", { bus: audioBus.index }, { server });
+        new Synth("scope_lfo", { bus: ctlBus.index }, { server });
 
         await server.sync();
 
         // A buffer to draw: filled by the server, read back in bulk, reduced
         // once. The pyramid outlives the samples — after `build` the raw
         // array is not needed again.
-        const buffer = await Buffer.alloc(server, BUFFER_FRAMES, 1);
+        const buffer = await Buffer.alloc(BUFFER_FRAMES, 1, { server });
         await buffer.gen("sine1", [["i", 7], 1.0, 0.6, 0.3]);
         const samples = await buffer.getSamples();
         const peaks = data.Peaks.build(samples, { baseBucket: 256 });

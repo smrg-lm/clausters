@@ -12,6 +12,7 @@
 import { FunctionStream, StopStream } from "../base/stream.ts";
 import type { Stream } from "../base/stream.ts";
 import * as rand from "../base/rand.ts";
+import { main } from "../base/main.ts";
 import { Event } from "./event.ts";
 import type { EventDestination } from "./event.ts";
 import { EventStreamPlayer } from "./eventstream.ts";
@@ -47,13 +48,19 @@ export abstract class Pattern<T = unknown> {
     /**
      * Plays this (event) pattern on `clock`, sending to `destination`.
      *
-     * Inside a running routine the clock defaults to the one driving it.
+     * Both are optional and resolve against the ambient context (the running
+     * session, else the active one, else the default session): an omitted
+     * `destination` takes that environment's server, and an omitted `clock`
+     * the running routine's or, outside one, the default session's — created
+     * and started on first use. So `new Pbind(…).play()` sounds with a
+     * `Session` opened somewhere and nothing else wired.
      */
     play(
-        destination: EventDestination,
+        destination?: EventDestination,
         { clock, quant }: { clock?: TempoClock; quant?: number } = {},
     ): EventStreamPlayer {
-        return new EventStreamPlayer(this as Pattern<unknown>, destination).play(
+        const target = destination ?? (main.resolveServer() as unknown as EventDestination);
+        return new EventStreamPlayer(this as Pattern<unknown>, target).play(
             clock,
             quant,
         );

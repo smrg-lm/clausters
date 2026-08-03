@@ -203,14 +203,21 @@ async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
  * Closing detaches this connection's listeners; the host keeps running (it is
  * shared page state, not this connection's to stop).
  *
- * A `/gui_def` sent over this carrier gets the page's default canvas attached
- * to it first, unless the caller already gave that def one. A `GuiHost` is
+ * A `/gui_def` sent over this carrier gets a canvas attached to it first,
+ * unless the caller already gave that def one. A `GuiHost` is
  * transport-agnostic — the same object drives a native `--ws` host, which has
  * windows rather than canvases — so the canvas policy belongs here, on the
  * carrier that *is* the page.
+ *
+ * Defaults to the page's host, which is what a page wants. Pass one built by
+ * `newGuiHost` to carry a client over a host of its own — a `Session` that
+ * holds its own engine wires its GUI leg to a host wired to that engine, so
+ * a bound widget reaches its session's server and not the page's.
  */
-export async function pageGuiConnection(): Promise<Connection> {
-    const gui = await guiHost();
+export async function pageGuiConnection(
+    target?: Promise<ClaustersGui> | ClaustersGui,
+): Promise<Connection> {
+    const gui = await (target ?? guiHost());
     const mine = new Set<EventListener>();
     const attached = new Set<number>();
     return {

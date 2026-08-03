@@ -64,7 +64,7 @@ async function withServer(body: (server: Server) => Promise<void>): Promise<void
 
 test("a control bus streams to the client at the period it asked for", { skip: !hasServer }, async () => {
     await withServer(async (server) => {
-        const bus = Bus.control(server);
+        const bus = Bus.control(1, { server });
         // A steady value, written by the client rather than by a synth: what
         // is under test is the stream, not what feeds the bus.
         bus.set(0.75);
@@ -94,9 +94,9 @@ test("a control bus streams to the client at the period it asked for", { skip: !
 
 test("a lfo on a bus reaches the client through the stream", { skip: !hasServer }, async () => {
     await withServer(async (server) => {
-        const bus = Bus.control(server);
+        const bus = Bus.control(1, { server });
         await new SynthDef("ts_data_lfo", outCtl(control("bus", 0.0), sine(2.0))).send(server);
-        Synth.new(server, "ts_data_lfo", { bus: bus.index });
+        new Synth("ts_data_lfo", { bus: bus.index }, { server });
         await server.sync();
 
         const stream = await BusStream.open(server, [bus], { periodMs: 10 });
@@ -117,9 +117,9 @@ test("a tap carries the samples a synth is writing", { skip: !hasServer }, async
         const info = await server.queryInfo();
         if (info.taps === 0) return; // a server built with no tap region
 
-        const bus = Bus.audio(server);
+        const bus = Bus.audio(1, { server });
         await new SynthDef("ts_data_tone", out(control("bus", 0.0), sine(400.0).mul(0.5))).send(server);
-        Synth.new(server, "ts_data_tone", { bus: bus.index });
+        new Synth("ts_data_tone", { bus: bus.index }, { server });
         await server.sync();
         await sleep(200); // let the ring fill a window
 
@@ -157,7 +157,7 @@ test("a generated buffer reads back in chunks, and reduces", { skip: !hasServer 
         // The buffer is filled by the server (`/buffer_gen`), since a client has no
         // way to write one: the read direction is the whole of the bulk path.
         const frames = 5000;
-        const buffer = await Buffer.alloc(server, frames, 1);
+        const buffer = await Buffer.alloc(frames, 1, { server });
         await buffer.gen("sine1", [["i", 7], 1.0]);
 
         const read = await buffer.getSamples();

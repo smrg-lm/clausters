@@ -17,7 +17,8 @@ server instead is marked in its source.
 **Each page documents itself**: the comment at the top of its source says what
 it shows and what it needs, so the directory listing plus each page's header is
 the catalog. Start with `synth.html` — a def built, sent, played and retuned
-from TypeScript, over either carrier.
+from TypeScript, over either carrier — or with `verbs.html`, which opens a
+`Session` and then plays every kind of thing there is to play against it.
 
 Some of the pages are ports of the Python client's examples of the same name, so
 the two can be read against each other: the same instrument, the same point of

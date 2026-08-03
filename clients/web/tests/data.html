@@ -105,14 +105,14 @@
         // What feeds the paths: a tone on an audio bus, and an LFO on a
         // control bus. Both are ordinary defs — nothing about them knows a
         // view is watching.
-        const audioBus = Bus.audio(server);
-        const ctlBus = Bus.control(server);
+        const audioBus = Bus.audio(1, { server });
+        const ctlBus = Bus.control(1, { server });
         await new SynthDef("page_data_tone",
           out(control("bus", 0.0), sine(TONE_HZ).mul(TONE_AMP))).send(server);
         await new SynthDef("page_data_lfo",
           outCtl(control("bus", 0.0), sine(1.5).mul(0.5).add(0.5))).send(server);
-        Synth.new(server, "page_data_tone", { bus: audioBus.index });
-        Synth.new(server, "page_data_lfo", { bus: ctlBus.index });
+        new Synth("page_data_tone", { bus: audioBus.index }, { server });
+        new Synth("page_data_lfo", { bus: ctlBus.index }, { server });
 
         await server.sync();
 
@@ -167,7 +167,7 @@
 
         // ---- path 3: the buffer, in bulk ----
         const total = 8000;
-        const buffer = await Buffer.alloc(server, total, 1);
+        const buffer = await Buffer.alloc(total, 1, { server });
         await buffer.gen("sine1", [["i", 7], 1.0, 0.5]);
         const samples = await buffer.getSamples();
         if (samples.length !== total) {

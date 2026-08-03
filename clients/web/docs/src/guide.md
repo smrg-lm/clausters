@@ -1,6 +1,6 @@
 # The client, layer by layer
 
-The package mirrors the [Python client](https://clausters-python.readthedocs.io/) module for module: `base/` is the server-agnostic seam (the codec, the clock, the values), `defs/` the definitions and the `Server` that drives them, `gui/` the GUI-host driver, `seq/` the events and patterns. A reader who knows one client finds the other at the same relative path.
+The package mirrors the [Python client](https://clausters-python.readthedocs.io/) module for module: `base/` is the server-agnostic seam (the codec, the clock, the values), `defs/` the definitions and the `Server` that drives them, `gui/` the GUI-host driver, `seq/` the events and patterns, and `session.ts` the handle that bundles them. A reader who knows one client finds the other at the same relative path.
 
 What follows is the layers from the bottom up, and — at the end — the three places where the browser makes this client shaped differently from its reference.
 
@@ -64,7 +64,7 @@ What each pair differs in is only what a page wants by default. `guiHost()` and 
 const server = await Server.open(connection);
 ```
 
-Opening it queries `/server_query` and sizes the allocators from the answer, so the client's ids match the server that is actually running. It registers for the server's pushes, which is what lets a node id be recycled once its `/node_end` arrives, and it carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions, and the introspection queries about what it holds (`queryInfo`, `queryDefs`, `queryBuffers`, `queryUgens`, `queryTree`, `dumpGraph`). A command addressed to a resource is that resource's method — `def.send(server)`, `Synth.new(server, …)`, `node.set`, `bus.watch`, `buffer.getSamples` — so the receiver is never an argument, and that holds for a question about one resource too: `node.info()` and `buffer.info()` ask about themselves, where `queryTree` and `queryBuffers` ask about all of them.
+Opening it queries `/server_query` and sizes the allocators from the answer, so the client's ids match the server that is actually running. It registers for the server's pushes, which is what lets a node id be recycled once its `/node_end` arrives, and it carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions, and the introspection queries about what it holds (`queryInfo`, `queryDefs`, `queryBuffers`, `queryUgens`, `queryTree`, `dumpGraph`). A command addressed to a resource is that resource's method — `def.send()`, `node.set`, `bus.watch`, `buffer.getSamples` — so the receiver is never an argument, and that holds for a question about one resource too: `node.info()` and `buffer.info()` ask about themselves, where `queryTree` and `queryBuffers` ask about all of them.
 
 Two def families are peers, as everywhere in Clausters:
 
@@ -77,9 +77,57 @@ const fdef = FaustDef.fromSignals("blown", signals.hslider("freq", 440, 50, 2000
 
 A def is a plain value until it is sent, and the definitions themselves mean exactly what the [server book](https://clausters.readthedocs.io/) says they mean: this client only builds the JSON.
 
-Handles are `Synth`, `Group`, `Bus` and `Buffer` — thin objects over an id from the core's allocator, freed by `node.free()`, `bus.free()`, `buf.free()`.
+Handles are `Synth`, `Group`, `Bus` and `Buffer` — thin objects over an id from the core's allocator, freed by `node.free()`, `bus.free()`, `buf.free()`. **The constructor creates the thing**: `new Synth("beep", { freq: 440 })` allocates an id and sends the `/synth_new`, so the synth is sounding by the time it returns. The other door is `fromId`, a handle on a node that already exists — an id a responder, a tree query or the GUI reported — which sends nothing.
 
-A `Group` is **born named** — `Group.new(server, { name: "mixer" })`, and `group.rename(...)` afterwards — a referenceable label on top of the node id: the id stays the identity every command uses, and the name is how you *refer* to the group instead of to a number, comes back in every node record, and makes the tree navigable by path (`server.groupAt("/mixer/drums")`). That is what lets a mixer's channels, its sends and its master be built out of groups and still be sayable.
+Neither names a server, because the [ambient session](#sessions-and-the-ambient-verbs) resolves one; `{ server }` in the options bag names another.
+
+A `Group` is **born named** — `new Group({ name: "mixer" })`, and `group.rename(...)` afterwards — a referenceable label on top of the node id: the id stays the identity every command uses, and the name is how you *refer* to the group instead of to a number, comes back in every node record, and makes the tree navigable by path (`server.groupAt("/mixer/drums")`). That is what lets a mixer's channels, its sends and its master be built out of groups and still be sayable.
+
+## Sessions and the ambient verbs
+
+A **`Session`** is a server, a clock and (if you ask for one) a GUI host, bundled into the handle a piece is written against:
+
+```js
+const s = await Session.page({ tempo: 2.0 });       // this tab's engine
+const s = await Session.connect(url);               // a `clausters --ws` server
+```
+
+That one call opens the connection, opens the `Server`, builds a clock at that tempo and anchors it to the server's own sample counter — the four lines a page used to write by hand. It is also the unit of **isolation**: its own random root (`s.seed(1)` reproduces this session's material and no other's), and, with `Session.page({ own: true })`, its own engine, so its nodes, buses and buffers share nothing with the rest of the document. Several coexist, which is why this exists at all: since the engines and hosts became instances, an environment is a thing a page has more than one of.
+
+`s.close()` releases what the session owns — its GUI host, its server client, its clock, and an engine it opened for itself. The page's shared engine is not a session's to stop.
+
+### The default session
+
+Beside the named ones there is the **default session**, `defaultSession`: the ambient environment everything falls back to when no session was named. Lend a server to it and the ambient verbs work with nothing wired:
+
+```js
+import { Session, Synth, play, Event, seq } from "clausters";
+
+const s = (await Session.page()).adoptDefault();
+
+play(new Event({ degree: 0, dur: 0.5 }));   // a note, now
+play(new seq.Pbind({ degree: new seq.Pseq([0, 2, 4]), dur: 0.5 }));
+new Synth("beep", { freq: 440 });           // and the bare constructor too
+```
+
+`play` dispatches by kind — an `Event` or a plain object of event keys, an event pattern, a `Routine` or a bare generator, a def, a `Timeline`, a `Buffer` — and returns something that knows how to end what just started. `examples/verbs.html` visits every kind.
+
+Resolution is one ladder, and it is worth knowing because it is what makes several sessions safe on one page:
+
+- **the server**: the one you passed, else the session of the routine running right now (a clock names its session), else the session active in a `use()` block, else the default session's;
+- **the clock**: the one you passed, else the clock driving the running routine, else the active session's, else the default session's — created at tempo 1.0 and started on first use, never at import.
+
+`adoptDefault()` lends the session's **server** and not its clock, which is deliberate: a stopped clock lent to `play()` would never fire. To put a piece on a *named* session's clock, use `s.play(pattern)` or write inside `s.use(...)`:
+
+```js
+b.use(() => new Synth("beep"));   // reaches b, whatever the page's default is
+```
+
+`use` is synchronous by design: an `await` inside it would let another task run while this session is ambient, and the page's one thread has no way to scope that. Await outside, create inside.
+
+### The GUI leg
+
+`s.gui()` opens the session's host once and wires it to **this session's** engine, so a bound widget reaches this server and not the page's — the browser parallel of the Python client's `session.gui()`, which boots a `clausters-gui` process pointed at its session's server. `s.connectGui(url)` drives a native `--ws` host instead.
 
 ## Driving the GUI host
 

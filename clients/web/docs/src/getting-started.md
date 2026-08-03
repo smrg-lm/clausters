@@ -43,9 +43,7 @@ Save this beside `dist/` and open it:
 <!doctype html>
 <button id="go">play</button>
 <script type="module">
-  import {
-    loadOsc, pageConnection, server as engine, Server, Synth, SynthDef,
-  } from "./dist/index.js";
+  import { Session, Synth, SynthDef } from "./dist/index.js";
   // The UGen callables are a vocabulary of over a hundred names, so they are
   // named through the def layer rather than the package's flat surface.
   import { Env, DoneAction, control, envGen, out, saw } from "./dist/defs/index.js";
@@ -59,12 +57,13 @@ Save this beside `dist/` and open it:
   const def = new SynthDef("hello", out(0.0, voice), out(1.0, voice));
 
   document.getElementById("go").onclick = async () => {
-    await loadOsc();                       // the core's wasm: the OSC codec
-    await (await engine({ channels: 2 })).resume();
-    const server = await Server.open(await pageConnection());
-    await def.send(server);         // resolves when the server acked it
+    // One call: this tab's engine, a Server over it, and a clock anchored to
+    // that server's own sample counter. `adoptDefault` makes it the ambient
+    // one, so nothing below names a server.
+    const session = (await Session.page()).adoptDefault();
+    await def.send();               // resolves when the server acked it
 
-    const note = Synth.new(server, "hello", { freq: 330.0 });
+    const note = new Synth("hello", { freq: 330.0 });
     setTimeout(() => note.set({ gate: 0.0 }), 1000);
   };
 </script>
@@ -74,15 +73,16 @@ Three things in there are the whole client:
 
 - **The graph composes by method** — `saw(freq).mul(0.2)`, where the Python client writes `saw(freq) * 0.2`. TypeScript has no operator overloading; the JSON both send is identical.
 - **Everything that waits is a promise.** `def.send(server)` resolves when the server has acknowledged the def, so the `/synth_new` that follows cannot race it. The page has one thread and must keep running: nothing ever blocks.
-- **The click is not decoration.** A browser starts no audio without a gesture, so the first thing that touches the engine has to happen inside an event handler.
+- **The click is not decoration.** A browser starts no audio without a gesture, so the first thing that touches the engine — here `Session.page()` — has to happen inside an event handler.
+
+A `Session` is not required: `Server.open(await pageConnection())` gives the same server, and every call that resolves one ambiently takes `{ server }` instead. What the session buys is that the clock, the random root and the GUI host come with it, and that a page can hold more than one of the set without them meeting.
 
 ## The other carrier
 
-The same page drives a native server if you hand `Server.open` the other connection:
+The same page drives a native server through the other factory:
 
 ```js
-import { WsConnection } from "./dist/index.js";
-const server = await Server.open(await WsConnection.open("ws://127.0.0.1:57120"));
+const session = (await Session.connect("ws://127.0.0.1:57120")).adoptDefault();
 ```
 
 with the server started as

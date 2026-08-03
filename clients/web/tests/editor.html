@@ -111,7 +111,7 @@
 
         // ---- the file, into a server buffer ----
         const url = wavUrl();
-        const buffer = await Buffer.load(server, url);
+        const buffer = await Buffer.load(url, { server });
         URL.revokeObjectURL(url);
         if (buffer.frames < 100000 || buffer.channels !== 1) {
           throw new Error(`unexpected buffer: ${JSON.stringify(buffer)}`);
@@ -155,7 +155,7 @@
         if (silent > 0.01) throw new Error(`not silent before play (${silent})`);
 
         const anchor = await raw.clock();
-        const voice = Synth.new(server, "editor_test_player", { buf: buffer.bufnum });
+        const voice = new Synth("editor_test_player", { buf: buffer.bufnum }, { server });
         win.widget("wave").set({ playhead_at: anchor });
         win.widget("stft").set({ playhead_at: anchor });
         const playing = await peak(200);
@@ -193,9 +193,9 @@
           out(0.0, bufRd(rbuf, 0.0, phase).mul(0.8)),
           out(1.0, bufRd(rbuf, 0.0, phase).mul(0.8))).send(server);
         await server.sync();
-        const region = Synth.new(server, "editor_test_region", {
+        const region = new Synth("editor_test_region", {
           buf: buffer.bufnum, start: 24000, end: 72000,
-        });
+        }, { server });
         const looping = await peak(200);
         if (looping < 0.1) throw new Error(`the selection is silent (${looping})`);
         region.free();

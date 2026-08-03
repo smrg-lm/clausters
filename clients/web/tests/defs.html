@@ -87,7 +87,7 @@
         }
         log(`def loaded: ${loaded[0].controls.map((c) => c.name).join(", ")}`);
 
-        const synth = Synth.new(server, "page_beep", { freq: 330.0, amp: 0.2 });
+        const synth = new Synth("page_beep", { freq: 330.0, amp: 0.2 }, { server });
         await server.sync();
 
         // Read it back out of the tree — the queryable half of the acceptance.

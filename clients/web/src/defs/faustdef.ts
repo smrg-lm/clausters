@@ -19,6 +19,7 @@
 
 import type { MsgArg } from "../base/osc.ts";
 import type { Server } from "./server/index.ts";
+import { resolveServer } from "./wire.ts";
 import { Signal } from "./signals.ts";
 import type { SignalNode } from "./signals.ts";
 
@@ -79,15 +80,16 @@ export class FaustDef {
      * with the server's `sync` before anything relies on the def.
      */
     async send(
-        server: Server,
+        server?: Server,
         { wait = true, timeout = 10.0 }: { wait?: boolean; timeout?: number } = {},
     ): Promise<string> {
+        const target = resolveServer(server);
         const payload: MsgArg[] = [this.name, this.dumpDef()];
         if (!wait) {
-            server.sendMsg("/def_send", "faust", ...payload);
+            target.sendMsg("/def_send", "faust", ...payload);
             return this.name;
         }
-        await server.command("/def_send", ["faust", ...payload], timeout);
+        await target.command("/def_send", ["faust", ...payload], timeout);
         return this.name;
     }
 

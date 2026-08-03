@@ -25,6 +25,7 @@
 import { AllocationError } from "../errors.ts";
 import { Registry, graphBusReserved } from "../base/core.ts";
 import type { Server } from "./server/index.ts";
+import { resolveServer } from "./wire.ts";
 
 export type BusRate = "audio" | "control";
 
@@ -45,25 +46,28 @@ export class Bus {
         this.server = server;
     }
 
-    /** A run of `channels` contiguous audio buses from the server's pool. */
-    static audio(server: Server, channels = 1): Bus {
-        return server.audioBuses.alloc(channels, server);
+    /**
+     * A run of `channels` contiguous audio buses from the server's pool,
+     * above the hardware outputs. The server is the ambient session's unless
+     * named.
+     */
+    static audio(channels = 1, { server }: { server?: Server } = {}): Bus {
+        const srv = resolveServer(server);
+        return srv.audioBuses.alloc(channels, srv);
     }
 
     /** A run of `channels` contiguous control buses from the server's pool. */
-    static control(server: Server, channels = 1): Bus {
-        return server.controlBuses.alloc(channels, server);
+    static control(channels = 1, { server }: { server?: Server } = {}): Bus {
+        const srv = resolveServer(server);
+        return srv.controlBuses.alloc(channels, srv);
     }
 
-    /** This bus's server, or a clear failure when the handle carries none. */
+    /**
+     * This bus's server, or the ambient one — a handle built from a reported
+     * index carries none.
+     */
     private srv(): Server {
-        if (!this.server) {
-            throw new Error(
-                `bus ${this.index} has no server: build the handle with one, ` +
-                    `e.g. new Bus(${this.index}, ${this.channels}, "${this.rate}", server)`,
-            );
-        }
-        return this.server;
+        return resolveServer(this.server);
     }
 
     /** Sets this control bus's value (`/bus_set`). */

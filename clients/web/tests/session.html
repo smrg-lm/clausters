@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters session</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>two sessions in one page, each on its own engine: the ambient verbs
+        reach the right one, and the two are audible independently.</div>
+      <button id="boot">open two sessions</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The session acceptance (clients/web/test.sh, headless Chrome). What it
+      has to show is what a unit test cannot: that the ambient resolution is
+      not bookkeeping but reaches two *different* engines — a note played with
+      no server named sounds on the default session's analyser and not on the
+      other's, and one played inside `b.use(...)` the other way round. ?smoke=1
+      auto-runs; the verdict is beaconed as a fetch and read from the access log.
+    -->
+    <script type="module">
+      import {
+        DoneAction, Env, control, envGen, out, sine,
+      } from "../dist/defs/index.js";
+      import {
+        Buffer, Event, Session, SynthDef, Synth, engine, play, seq,
+      } from "../dist/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+
+      // A def that holds while its gate is up, so a peak is readable.
+      const voice = () => {
+        const amp = control("amp", 0.2);
+        const gate = control("gate", 1.0);
+        const sig = sine(control("freq", 220.0)).mul(amp).mul(
+          envGen(Env.asr(0.01, 1.0, 0.05), {
+            gate, doneAction: DoneAction.FREE_SELF,
+          }));
+        return new SynthDef("session_voice", out(0.0, sig), out(1.0, sig));
+      };
+
+      /** An analyser on an engine's output, and the peak it reads. */
+      function meter(audio) {
+        const analyser = audio.context.createAnalyser();
+        analyser.fftSize = 2048;
+        audio.node.connect(analyser);
+        const frame = new Float32Array(analyser.fftSize);
+        return () => {
+          analyser.getFloatTimeDomainData(frame);
+          let peak = 0;
+          for (const s of frame) peak = Math.max(peak, Math.abs(s));
+          return peak;
+        };
+      }
+
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      async function run() {
+        // Two engines this page owns, so each session's output can be
+        // measured on its own — they mix in the browser, not in one engine.
+        const audioA = await engine({ channels: 2 });
+        const audioB = await engine({ channels: 2 });
+        const a = await Session.page({ engine: audioA, tempo: 2.0 });
+        const b = await Session.page({ engine: audioB, tempo: 2.0 });
+        a.adoptDefault();   // the page's default: what an ambient verb reaches
+        log(`two sessions open, each on its own engine`);
+
+        const peakA = meter(audioA);
+        const peakB = meter(audioB);
+
+        await voice().send(a.server);
+        await voice().send(b.server);
+
+        // Ambient: no server named anywhere. It must reach a, the default.
+        const note = new Synth("session_voice", { freq: 220.0 });
+        await wait(300);
+        const onA = peakA(), quietB = peakB();
+        note.set({ gate: 0.0 });
+        await wait(300);
+        log(`ambient note: a=${onA.toFixed(3)} b=${quietB.toFixed(3)}`);
+
+        // Scoped: the same ambient call inside b.use() reaches b instead.
+        const other = b.use(() => new Synth("session_voice", { freq: 330.0 }));
+        await wait(300);
+        const onB = peakB(), quietA = peakA();
+        other.set({ gate: 0.0 });
+        await wait(300);
+        log(`scoped note:  a=${quietA.toFixed(3)} b=${onB.toFixed(3)}`);
+
+        // The free verb, with nothing wired: the default session's server, and
+        // its clock, created and started right here on first use.
+        const player = play(new seq.Pbind({
+          instrument: "session_voice",
+          freq: new seq.Pseq([440, 550, 660], 4),
+          dur: 0.25,
+          amp: 0.2,
+        }));
+        await wait(500);
+        const patternPeak = peakA();
+        player.stop();
+        log(`ambient pattern on the default clock: a=${patternPeak.toFixed(3)}`);
+
+        // Every kind `play` dispatches, each asserted to have made ink on the
+        // default session's engine — the paths examples/verbs.html walks.
+        const kinds = {};
+        const heard = async (name, start) => {
+          const stop = await start();
+          let peak = 0;
+          for (let i = 0; i < 8; i++) { await wait(60); peak = Math.max(peak, peakA()); }
+          stop?.();
+          await wait(200);
+          kinds[name] = peak;
+          log(`  play(${name}): a=${peak.toFixed(3)}`);
+        };
+        await heard("Event", () => {
+          play(new Event({ degree: 0, dur: 0.6, amp: 0.2, instrument: "session_voice" }));
+        });
+        await heard("object", () => {
+          play({ degree: 4, dur: 0.6, amp: 0.2, instrument: "session_voice" });
+        });
+        await heard("generator", () => {
+          play(function* () {
+            for (const degree of [0, 2, 4]) {
+              play(new Event({ degree, dur: 0.3, amp: 0.2, instrument: "session_voice" }));
+              yield 0.2;
+            }
+          });
+        });
+        await heard("SynthDef", () => {
+          const sig = sine(control("freq", 180.0)).mul(0.2);
+          const node = play(new SynthDef("session_drone", out(0.0, sig), out(1.0, sig)));
+          return () => node.free();
+        });
+        await heard("Timeline", () => {
+          const head = play(new seq.Timeline([
+            [0.0, new Event({ degree: 0, dur: 0.3, amp: 0.2, instrument: "session_voice" })],
+            [0.3, new Event({ degree: 7, dur: 0.3, amp: 0.2, instrument: "session_voice" })],
+          ]));
+          return () => head.stop();
+        });
+        await heard("Buffer", async () => {
+          const buf = await Buffer.alloc(24_000, 1);
+          await buf.gen("sine1", [["i", 7], ["f", 1.0]]);
+          await buf.info();
+          play(buf, { controls: { amp: 0.3 } });
+        });
+
+        // Closing gives the default slots back and releases both engines.
+        a.close();
+        b.close();
+
+        const silent = Object.entries(kinds).filter(([, p]) => p <= 0.02);
+        const ok = onA > 0.05 && quietB < 0.01 && onB > 0.05 && quietA < 0.01
+          && patternPeak > 0.05 && silent.length === 0;
+        verdict(ok
+          ? `PASS: two sessions on two engines — the ambient note sounded on `
+            + `a (${onA.toFixed(3)}) and not on b (${quietB.toFixed(3)}), the `
+            + `scoped one on b (${onB.toFixed(3)}) and not on a `
+            + `(${quietA.toFixed(3)}), and a bare play() drove the default `
+            + `session's clock (${patternPeak.toFixed(3)}); every play() kind `
+            + `sounded (${Object.keys(kinds).join(", ")})`
+          : `FAIL: a=${onA.toFixed(3)}/${quietA.toFixed(3)} `
+            + `b=${quietB.toFixed(3)}/${onB.toFixed(3)} pattern=${patternPeak.toFixed(3)} `
+            + `silent=${silent.map(([k, p]) => `${k}:${p.toFixed(3)}`).join(",")}`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

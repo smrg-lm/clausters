@@ -86,7 +86,7 @@ than an <code>/synth_new</code> per note.</div>
         });
         clock.start();
 
-        lead = Synth.new(server, "web_glide_lead", { amp: 0.2, freq: mtof(48) });
+        lead = new Synth("web_glide_lead", { amp: 0.2, freq: mtof(48) }, { server });
         log(`the lead is node ${lead.id}, silent until a gate arrives`);
 
         el("start").disabled = true;

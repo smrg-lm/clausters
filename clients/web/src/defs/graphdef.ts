@@ -16,7 +16,7 @@
 // g.port("gain", [src.control("level")], 0.5);       // port -> the level
 // await g.send(server);                       // /def_send graph
 //
-// const inst = Group.graph(server, "chain", { gain: 0.8 }); // /graph_new
+// const inst = Group.graph("chain", { gain: 0.8 });        // /graph_new
 // inst.set({ gain: 0.3 });                   // resolves on the surface
 // inst.free();                                 // group + private buses
 // ```
@@ -31,6 +31,7 @@
  */
 import type { MsgArg } from "../base/osc.ts";
 import type { Server } from "./server/index.ts";
+import { resolveServer } from "./wire.ts";
 
 export class GraphBusRef {
     readonly name: string;
@@ -235,15 +236,16 @@ export class GraphDef {
      * with the server's `sync` before anything relies on the def.
      */
     async send(
-        server: Server,
+        server?: Server,
         { wait = true, timeout = 10.0 }: { wait?: boolean; timeout?: number } = {},
     ): Promise<string> {
+        const target = resolveServer(server);
         const payload: MsgArg[] = [this.dumpDef()];
         if (!wait) {
-            server.sendMsg("/def_send", "graph", ...payload);
+            target.sendMsg("/def_send", "graph", ...payload);
             return this.name;
         }
-        await server.command("/def_send", ["graph", ...payload], timeout);
+        await target.command("/def_send", ["graph", ...payload], timeout);
         return this.name;
     }
 

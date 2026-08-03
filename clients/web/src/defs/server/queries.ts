@@ -148,7 +148,7 @@ export class ServerQueries {
             throw new CommandError(`/group_query failed: ${msg.args.join(" ")}`);
         }
         const id = Number(msg.args[1]);
-        return id >= 0 ? new Group(id, this) : undefined;
+        return id >= 0 ? Group.fromId(id, this) : undefined;
     }
 
     /**

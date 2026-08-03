@@ -178,7 +178,7 @@
           "two_hosts_tone",
           out(0.0, sine(control("freq", 220.0)).mul(control("amp", 0.1))),
         ).send(server);
-        const synth = Synth.new(server, "two_hosts_tone", { freq, amp: 0.1 });
+        const synth = new Synth("two_hosts_tone", { freq, amp: 0.1 }, { server });
         await server.sync();
 
         // The document owns the canvas and places it; the host is told which

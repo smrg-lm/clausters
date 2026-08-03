@@ -120,10 +120,10 @@ after that line is the same code.</div>
 
       function play() {
         note?.free();          // one note at a time, for the demo
-        note = Synth.new(server, "web_voice", {
+        note = new Synth("web_voice", {
           freq: Number($("freq").value),
           cutoff: Number($("cutoff").value),
-        });
+        }, { server });
         log(`playing node ${note.id}`);
       }
 

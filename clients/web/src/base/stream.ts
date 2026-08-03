@@ -15,7 +15,7 @@
 // `function*` and not `async function*`: the ambient "what is running right
 // now" (`base/context.ts`) is only sound while a wake runs to completion.
 
-import { currentRoutine } from "./context.ts";
+import { main } from "./main.ts";
 import { spawnRng } from "./rand.ts";
 import type { Rng } from "./rand.ts";
 import type { TempoClock } from "./clock.ts";
@@ -62,6 +62,21 @@ export abstract class Stream {
      * on the base; stateful subclasses override it.
      */
     reset(): void {}
+
+    /**
+     * Schedules this stream to start on `clock`; returns itself.
+     *
+     * With none, the ambient ladder resolves one: the clock of the routine
+     * running right now, else the active session's, else the **default
+     * session's** — created at tempo 1.0 and started on first use. So
+     * `new Routine(f).play()` needs no session, no clock and no server.
+     */
+    play(clock?: TempoClock, quant?: number): this {
+        const target = clock ?? resolveClock();
+        this.clock = target; // known from scheduling, not only from waking
+        target.play(this, quant);
+        return this;
+    }
 
     /** Iterating a stream runs it to its end (a `StopStream` closes the loop). */
     *[Symbol.iterator](): Generator<unknown, void, undefined> {
@@ -170,17 +185,6 @@ export class Routine extends Stream {
     }
 
     /**
-     * Schedules this routine to start on `clock`; returns itself. Inside a
-     * running routine the clock defaults to the one driving it.
-     */
-    play(clock?: TempoClock, quant?: number): this {
-        const target = clock ?? resolveClock();
-        this.clock = target; // known from scheduling, not only from waking
-        target.play(this, quant);
-        return this;
-    }
-
-    /**
      * Takes this routine off its clock, keeping its position; returns itself.
      * The generator is untouched, so a later `play` resumes it at the very
      * `yield` it was paused on — the counterpart of `reset`, which throws that
@@ -206,14 +210,11 @@ export class Routine extends Stream {
 }
 
 /**
- * The clock driving the routine that is running right now. Throws where there
- * is none, because "later" has no meaning without one.
+ * The clock an ambient play schedules on — the running routine's, else the
+ * active session's, else the default session's, created and started here on
+ * first use (never at import: a page that only draws must not start a clock
+ * by loading a module).
  */
 function resolveClock(): TempoClock {
-    const running = currentRoutine();
-    if (running?.clock) return running.clock;
-    throw new Error(
-        "no clock to play on: pass one, or play from inside a routine already " +
-            "running on a TempoClock",
-    );
+    return main.resolveClock() ?? main.getDefaultClock();
 }

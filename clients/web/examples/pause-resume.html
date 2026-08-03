@@ -71,7 +71,7 @@ paused: it is still there.</div>
         server = await Server.open(await pageConnection());   // or WsConnection
 
         await drone().send(server);
-        node = Synth.new(server, "web_drone", { freq: 220.0, amp: 0.2 });
+        node = new Synth("web_drone", { freq: 220.0, amp: 0.2 }, { server });
         log(`the drone is node ${node.id}, sounding`);
 
         el("start").disabled = true;

@@ -52,6 +52,15 @@ export interface ClaustersServer {
     ): Promise<number>;
     resume(): Promise<void>;
     suspend(): Promise<void>;
+    /**
+     * Releases this engine: the `AudioContext` and with it the worklet, the
+     * audio device and the browser's per-page context slot. Nothing restarts
+     * it. The sibling of `GuiBridge.close()` on the GUI side, and for the
+     * same reason — an instance that outlives its purpose otherwise keeps
+     * rendering. The page's shared engine (`server()`) is never closed by
+     * anything that merely uses it.
+     */
+    close(): Promise<void>;
 }
 
 let instance: Promise<ClaustersServer> | null = null;
@@ -107,5 +116,9 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
             raw.bLoad(index, channels, sampleRate, samples),
         resume: () => raw.context.resume(),
         suspend: () => raw.context.suspend(),
+        close: async () => {
+            listeners.clear();
+            await raw.context.close();
+        },
     };
 }

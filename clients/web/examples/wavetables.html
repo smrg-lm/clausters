@@ -106,14 +106,14 @@ band-limited recipe instead of a clipped edge.</div>
 
         // 2048 frames hold a 1024-point table; the allocator hands out 0, 1, 2
         // in order, and `vosc` needs its two tables adjacent.
-        const sineBuf = await Buffer.alloc(server, 2048, 1);
+        const sineBuf = await Buffer.alloc(2048, 1, { server });
         await sineBuf.gen("sine1", [["i", WT], ["f", 1.0]]);
-        const sawBuf = await Buffer.alloc(server, 2048, 1);
+        const sawBuf = await Buffer.alloc(2048, 1, { server });
         await sawBuf.gen("sine1", [
           ["i", WT],
           ...Array.from({ length: 8 }, (_, k) => ["f", 1.0 / (k + 1)]),
         ]);
-        const chebyBuf = await Buffer.alloc(server, 2048, 1);
+        const chebyBuf = await Buffer.alloc(2048, 1, { server });
         await chebyBuf.gen("cheby", [
           ["i", WT], ["f", 1.0], ["f", 0.0], ["f", 0.6], ["f", 0.0], ["f", 0.3],
         ]);
@@ -134,9 +134,9 @@ band-limited recipe instead of a clipped edge.</div>
       el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
 
       el("morph").onclick = () => {
-        morphVoice = Synth.new(server, "web_wt_morph", {
+        morphVoice = new Synth("web_wt_morph", {
           freq: 110.0, pos: Number(el("pos").value),
-        });
+        }, { server });
         el("morphOff").disabled = false;
         log(`morph voice on node ${morphVoice.id} — drag pos to hear it glide`);
       };
@@ -153,9 +153,9 @@ band-limited recipe instead of a clipped edge.</div>
       };
 
       el("shaped").onclick = () => {
-        shapedVoice = Synth.new(server, "web_wt_shaped", {
+        shapedVoice = new Synth("web_wt_shaped", {
           freq: 165.0, drive: Number(el("drive").value),
-        });
+        }, { server });
         el("shapedOff").disabled = false;
         log(`shaped voice on node ${shapedVoice.id} — raise drive for harmonics`);
       };

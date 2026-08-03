@@ -33,6 +33,7 @@ import { GuiIdAllocator } from "./ids.ts";
 import { WidgetHandle, WindowHandle } from "./handle.ts";
 import type { EventArgs } from "./handle.ts";
 import { guiHost, pageGuiConnection } from "./page.ts";
+import type { ClaustersGui } from "./page.ts";
 
 // The page's own host — the singleton, its canvases and the carrier over it —
 // lives in `./page.ts` so the component run time can load it without this
@@ -112,10 +113,12 @@ export class GuiHost {
 
     /**
      * A `GuiHost` driving **this page's** host (the `guiHost()` singleton) —
-     * the carrier that needs no process and no socket.
+     * the carrier that needs no process and no socket. Pass an instance built
+     * by `newGuiHost` to drive one of its own instead, which is how a
+     * `Session` with its own engine gets a GUI leg wired to that engine.
      */
-    static async page(): Promise<GuiHost> {
-        return new GuiHost(await pageGuiConnection());
+    static async page(target?: Promise<ClaustersGui> | ClaustersGui): Promise<GuiHost> {
+        return new GuiHost(await pageGuiConnection(target));
     }
 
     /**

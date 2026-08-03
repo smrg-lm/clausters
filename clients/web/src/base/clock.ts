@@ -32,6 +32,7 @@ import {
     quantDelay,
     secsToBeats,
 } from "./timebase.ts";
+import type { SessionLike } from "./main.ts";
 import type { Timebase } from "./timebase.ts";
 import type { TickReply, TickRequest } from "./tick-worker.ts";
 
@@ -200,6 +201,17 @@ export class TempoClock {
      * items, and read by `Server` to choose how to stamp what it emits.
      */
     timebase: Timebase;
+    /**
+     * The environment this clock belongs to, set by whoever owns it (a
+     * `Session` on construction, `Main` for the default clock). It is the
+     * back-reference ambient resolution follows: a play running on this clock
+     * resolves *that* session's server and random root, which is what keeps
+     * several sessions on one page isolated from each other.
+     *
+     * The clock still never talks to a server — this is a field it is read
+     * through, not a collaborator it calls.
+     */
+    session: SessionLike | null = null;
 
     private baseBeats = 0;
     private baseSecs = 0;

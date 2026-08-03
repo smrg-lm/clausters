@@ -20,6 +20,11 @@
 // routines on musical time, and `seq` holds the events, patterns and
 // timelines that ride on it.
 //
+// A `Session` bundles one server, one clock and one GUI host into the handle
+// a piece is written against, and the **default session** (`defaultSession`)
+// is the ambient one everything falls back to — which is what lets `play(...)`
+// and a bare `new Synth(...)` name no server at all.
+//
 // What this module exports flat is what you name while writing a piece: the
 // hosts (`Server`, `GuiHost`), the server's resources, the three def formats,
 // the timing types and the verbs. Everything enumerative — the UGen and signal
@@ -41,6 +46,13 @@ export * as gui from "./gui/index.ts";
 export { bootBundle, openBundle, startBundle } from "./bundle.ts";
 export type { BundleManifest, MountOptions, Mounted, ParamSpec } from "./bundle.ts";
 export { ClaustersBundle, ClaustersPower, defineComponent, startPage } from "./elements.ts";
+export { Session } from "./session.ts";
+export type { SessionOptions } from "./session.ts";
+export { defaultSession, main } from "./base/main.ts";
+export type { Main, SessionLike } from "./base/main.ts";
+export { Environment, RandomContext } from "./base/environment.ts";
+export { play } from "./play.ts";
+export type { Playable, PlayOptions } from "./play.ts";
 export { newPools, pagePools } from "./base/pool.ts";
 export type { Pool, Pools } from "./base/pool.ts";
 export {
@@ -74,6 +86,9 @@ export type { Destination } from "./base/destination.ts";
 export { Rng, choice, currentRng, seed, spawnRng, uniform } from "./base/rand.ts";
 export * as builtins from "./base/builtins.ts";
 export * as seq from "./seq/index.ts";
+// The names a piece types without a namespace, as the Python facade exports
+// them; the enumerative half (the value patterns) stays behind `seq`.
+export { Event, rest } from "./seq/event.ts";
 export { Playhead, Timeline } from "./seq/timeline.ts";
 export * as data from "./data/index.ts";
 export { loadCore } from "./base/core.ts";
@@ -81,14 +96,15 @@ export { WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";
 export { Server } from "./defs/server/index.ts";
-export { AddAction, Group, Synth } from "./defs/node.ts";
-// The options bags of `Synth.new` and `Group.new`. Exported as types so the
-// API reference documents what those parameters accept: TypeDoc reports a
-// public signature that names a type it cannot reach, and an intersection like
+export { AddAction, Group, Node, Synth } from "./defs/node.ts";
+// The options bags the node constructors take. Exported as types so the API
+// reference documents what those parameters accept: TypeDoc reports a public
+// signature that names a type it cannot reach, and an intersection like
 // GroupOptions is one it cannot inline away.
-export type { GroupOptions, Placement } from "./defs/node.ts";
+export type { Controls, GroupOptions, NodeLike, Placement } from "./defs/node.ts";
 export { Bus } from "./defs/bus.ts";
 export { Buffer } from "./defs/buffer.ts";
+export type { BufferOptions } from "./defs/buffer.ts";
 export { SynthDef } from "./defs/synthdef.ts";
 export { FaustDef } from "./defs/faustdef.ts";
 export { GraphDef } from "./defs/graphdef.ts";

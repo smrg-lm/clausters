@@ -84,7 +84,7 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
         clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
         clock.start();
 
-        lead = Synth.new(server, "web_maths_lead", { note: 48.0, amp: 0.3 });
+        lead = new Synth("web_maths_lead", { note: 48.0, amp: 0.3 }, { server });
         log(`the lead is node ${lead.id}, sounding a MIDI 48 already shaped`);
 
         el("start").disabled = true;

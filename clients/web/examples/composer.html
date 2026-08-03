@@ -149,7 +149,7 @@ process, no socket.</div>
         // The take: the *server* fills a buffer (`/buffer_gen sine1`, a few
         // partials), so the lane has a real body to decimate — a clip's take
         // is reached exactly as the heavy waveform's samples are.
-        const take = await Buffer.alloc(server, Math.round(beats(2.0)), 1);
+        const take = await Buffer.alloc(Math.round(beats(2.0)), 1, { server });
         await take.gen("sine1", [["i", 7], 1.0, 0.5, 0.25, 0.12]);
         await server.sync();
 

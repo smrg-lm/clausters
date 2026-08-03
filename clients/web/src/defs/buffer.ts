@@ -21,8 +21,17 @@ import type { MsgArg } from "../base/osc.ts";
 import { parseBufferList } from "./info.ts";
 import type { BufferInfo } from "./info.ts";
 import type { Server } from "./server/index.ts";
+import { resolveServer } from "./wire.ts";
 
 export const NUM_BUFFERS = 4096;
+
+/** What every `Buffer` constructor takes: which server, and how long to wait. */
+export interface BufferOptions {
+    /** How long to wait for the server's `/done`; the handle's by default. */
+    timeout?: number;
+    /** The server to allocate on; the ambient session's by default. */
+    server?: Server;
+}
 
 export class Buffer {
     /**
@@ -72,11 +81,11 @@ export class Buffer {
 
     /** Allocates a zeroed buffer (`/buffer_alloc`). */
     static async alloc(
-        server: Server,
         frames: number,
         channels = 1,
-        { wait = true, timeout }: { wait?: boolean; timeout?: number } = {},
+        { wait = true, timeout, server: on }: BufferOptions & { wait?: boolean } = {},
     ): Promise<Buffer> {
+        const server = resolveServer(on);
         const bufnum = server.buffers.alloc();
         const args: MsgArg[] = [
             ["i", bufnum],
@@ -103,14 +112,15 @@ export class Buffer {
      * decoded samples with `load` instead).
      */
     static async read(
-        server: Server,
         path: string,
         {
             fileStart = 0,
             numFrames = 0,
             timeout,
-        }: { fileStart?: number; numFrames?: number; timeout?: number } = {},
+            server: on,
+        }: BufferOptions & { fileStart?: number; numFrames?: number } = {},
     ): Promise<Buffer> {
+        const server = resolveServer(on);
         const bufnum = server.buffers.alloc();
         try {
             await server.command(
@@ -145,10 +155,10 @@ export class Buffer {
      * (`/buffer_allocRead`) instead.
      */
     static async load(
-        server: Server,
         url: string,
-        { timeout }: { timeout?: number } = {},
+        { timeout, server: on }: BufferOptions = {},
     ): Promise<Buffer> {
+        const server = resolveServer(on);
         const bulkLoad = server.connection.bulkLoad;
         if (!bulkLoad) {
             throw new CommandError(
@@ -161,7 +171,7 @@ export class Buffer {
         const decoded = await fetchAudio(url, { sampleRate: rate });
         const { numberOfChannels: channels, length: frames, sampleRate } = decoded;
         const samples = interleave(decoded);
-        const buffer = await Buffer.alloc(server, frames, channels, { timeout });
+        const buffer = await Buffer.alloc(frames, channels, { timeout, server });
         await bulkLoad.call(
             server.connection,
             buffer.bufnum,

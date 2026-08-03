@@ -91,10 +91,10 @@ test("Server.open sizes its allocators from the running server", {
 
         // The allocators hand out of the space those sizes describe: audio
         // buses start above the hardware outputs, control buses at 0.
-        const audio = Bus.audio(server, 2);
+        const audio = Bus.audio(2, { server });
         assert.equal(audio.index, info.channels);
         assert.equal(audio.channels, 2);
-        assert.equal(Bus.control(server).index, 0);
+        assert.equal(Bus.control(1, { server }).index, 0);
 
         // A freed run is reusable — the registry invariant. Reuse is not
         // *immediate* (the scan hint rotates on, so a freshly released run is
@@ -103,7 +103,7 @@ test("Server.open sizes its allocators from the running server", {
         audio.free();
         assert.equal(server.audioBuses.inUse, 0);
         for (let i = 0; i < info.audioBuses; i++) {
-            Bus.audio(server, 2).free();
+            Bus.audio(2, { server }).free();
         }
         assert.equal(server.audioBuses.inUse, 0);
     });
@@ -140,7 +140,7 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
             ["amp", "freq", "gate"],
         );
 
-        const synth = Synth.new(server, "ts_beep", { freq: 220.0, amp: 0.05 });
+        const synth = new Synth("ts_beep", { freq: 220.0, amp: 0.05 }, { server });
         await server.sync();
 
         // It is in the tree, under the root, with the controls it was given.
@@ -198,7 +198,7 @@ test("the example's voice def compiles and its gate releases it", {
             .ugens.find((u) => u.kind === "RLPF")!;
         assert.deepEqual(rq.inputs[2], { const: 0.25 });
 
-        const note = Synth.new(server, "ts_voice", { freq: 330.0 });
+        const note = new Synth("ts_voice", { freq: 330.0 }, { server });
         await server.sync();
         assert.equal((await note.info()).defname, "ts_voice");
 
@@ -222,7 +222,7 @@ test("a node id returns to the registry when its /node_end arrives", {
 }, async () => {
     await withServer(async (server) => {
         await new SynthDef("ts_quiet", out(0.0, sine(1.0).mul(0))).send(server);
-        const first = Synth.new(server, "ts_quiet");
+        const first = new Synth("ts_quiet", undefined, { server });
         assert.equal(server.nodes.inUse, 1);
         first.free();
         // Freeing does not release the id: it stays tracked until the server
@@ -254,7 +254,7 @@ test("a FaustDef is JIT-compiled and played", { skip: !hasServer }, async () => 
         const defs = await server.queryDefs(["ts_tone"]);
         assert.equal(defs[0]!.family, "faust");
 
-        const synth = Synth.new(server, "ts_tone", { freq: 330.0 });
+        const synth = new Synth("ts_tone", { freq: 330.0 }, { server });
         await server.sync();
         assert.equal((await synth.info()).defname, "ts_tone");
         synth.free();
@@ -279,7 +279,7 @@ test("a GraphDef instantiates as a wired group driven through its surface", {
         g.port("gain", [src.control("level")], 0.5);
         await g.send(server);
 
-        const instance = Group.graph(server, "ts_chain", { gain: 0.3 });
+        const instance = Group.graph("ts_chain", { gain: 0.3 }, { server });
         await server.sync();
 
         // The instance is a group holding the members the def named.
@@ -337,7 +337,7 @@ test("buffers allocate, generate and free through the pool", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {
-        const buf = await Buffer.alloc(server, 1024, 1);
+        const buf = await Buffer.alloc(1024, 1, { server });
         assert.equal(server.buffers.inUse, 1);
 
         const queried = await buf.info();
@@ -362,7 +362,7 @@ test("buffers allocate, generate and free through the pool", {
 
 test("control buses carry a value both ways", { skip: !hasServer }, async () => {
     await withServer(async (server) => {
-        const bus = Bus.control(server);
+        const bus = Bus.control(1, { server });
         bus.set(0.25);
         assert.equal(await bus.get(), 0.25);
     });

@@ -95,9 +95,9 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
       function play() {
         new Routine(function* () {
           for (const [midi, dur] of [[45, 3.0], [52, 3.0], [50, 4.0]]) {
-            const voice = Synth.new(server, "web_unison", {
+            const voice = new Synth("web_unison", {
               freq: mtof(midi), amp: 0.4,
-            });
+            }, { server });
             log(`voice on node ${voice.id} at MIDI ${midi}`);
             yield dur - 0.5;
             // Timed, not immediate: the bundle is stamped with the routine's

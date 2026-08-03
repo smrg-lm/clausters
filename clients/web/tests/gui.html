@@ -80,7 +80,7 @@
         const freq = control("freq", 220.0);
         const amp = control("amp", 0.1);
         await new SynthDef("gui_tone", out(0.0, sine(freq).mul(amp))).send(server);
-        const synth = Synth.new(server, "gui_tone", { freq: 220.0, amp: 0.1 });
+        const synth = new Synth("gui_tone", { freq: 220.0, amp: 0.1 }, { server });
         await server.sync();
         log(`playing node ${synth.id}`);
 

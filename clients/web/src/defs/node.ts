@@ -3,13 +3,18 @@
 // The server's node tree: the root group is id 0; clients allocate positive
 // ids. Add actions match the server: head/tail of a group, before/after a
 // node, or replace. `Synth` and `Group` hold an id and the server it lives on,
-// and own the commands addressed to it: `Synth.new` / `Group.new` /
-// `Group.graph` create one, and `set`, `map`, `run` and `free` drive it. The
-// id pool itself belongs to the `Server`.
+// and own the commands addressed to it: **the constructor creates the node** —
+// `new Synth(…)`, `new Group(…)`, `Group.graph(…)` — and `set`, `map`, `run`
+// and `free` drive it. The id pool itself belongs to the `Server`.
 //
-// The server is the first argument of every constructor here, where the Python
-// client takes it last and optionally: that client has an ambient session to
-// fall back on and the page has none, so there is nothing to default to.
+// `fromId` is the other door: a handle on a node that **already** exists,
+// named by an id something else reported (a responder, a tree query, the GUI).
+// It sends nothing, and the handle may carry no server — it then falls back to
+// the ambient one, the rule the free `play` follows.
+//
+// The server is the last thing named here, in the options bag, because a
+// session resolves it: `new Synth("blip", { freq: 440 })` reaches the ambient
+// session's server, and `{ server }` names another.
 //
 // (`Node` shadows the DOM's global of the same name inside a module that
 // imports it. The name is the one the protocol and every other client use, so
@@ -21,6 +26,7 @@ import { busIndex } from "./bus.ts";
 import type { BusLike } from "./bus.ts";
 import { parseNodeInfo } from "./info.ts";
 import type { NodeInfo } from "./info.ts";
+import { resolveServer } from "./wire.ts";
 import type { MsgArg, OscArg } from "../base/osc.ts";
 import type { Server } from "./server/index.ts";
 
@@ -62,8 +68,22 @@ export function flattenControls(controls?: Controls): OscArg[] {
     return out;
 }
 
-/** Where a new node goes, for every constructor here. */
-export type Placement = { target?: NodeLike; action?: AddAction };
+/** Where a new node goes, and on which server, for every constructor here. */
+export type Placement = {
+    /** The node the new one is placed relative to; the root group by default. */
+    target?: NodeLike;
+    /** Where relative to `target`; the tail of it by default. */
+    action?: AddAction;
+    /** The server to create it on; the ambient session's by default. */
+    server?: Server;
+    /**
+     * The id of a node that **already exists**, adopted instead of creating
+     * one. The door is `fromId`; this is how it reaches the constructor.
+     *
+     * @internal
+     */
+    adopt?: number;
+};
 
 /** A `Placement` plus the optional label a new group is created with. */
 export type GroupOptions = Placement & { name?: string };
@@ -71,7 +91,7 @@ export type GroupOptions = Placement & { name?: string };
 export class Node {
     readonly id: number;
     /**
-     * The server this node lives on (set by `Synth.new` and friends), so its
+     * The server this node lives on (set by the constructor), so its
      * commands know where to go without being told.
      */
     readonly server?: Server;
@@ -81,15 +101,12 @@ export class Node {
         this.server = server;
     }
 
-    /** This node's server, or a clear failure when the handle carries none. */
+    /**
+     * This node's server, or the ambient one — a handle built from a reported
+     * id (a responder, the GUI, a tree query) carries none.
+     */
     protected srv(): Server {
-        if (!this.server) {
-            throw new Error(
-                `node ${this.id} has no server: build the handle with one, ` +
-                    `e.g. new Group(${this.id}, server)`,
-            );
-        }
-        return this.server;
+        return resolveServer(this.server);
     }
 
     /**
@@ -181,38 +198,71 @@ export class Node {
 export class Synth extends Node {
     readonly defname: string;
 
-    constructor(id: number, defname: string, server?: Server) {
-        super(id, server);
+    /**
+     * Starts a synth from a def already loaded on the server, by name
+     * (`/synth_new`). **Building one is starting it**: the id comes from the
+     * server's `NodeIdAllocator` and the command goes out here, so the synth
+     * is sounding by the time the constructor returns.
+     *
+     * ```ts
+     * const g = new Group();
+     * const n = new Synth("beep", { freq: 440 }, { target: g });
+     * ```
+     *
+     * An unknown def name throws nothing here: the command is
+     * fire-and-forget, the server answers `/fail` on its own channel, and the
+     * handle carries an id no node was created for — `info()` reports it as
+     * not existing.
+     *
+     * @param defname a def already installed on the server, of either family.
+     * @param controls the controls overriding the def's defaults, as an
+     *   object or a list of `[name, value]` pairs.
+     */
+    constructor(defname: string, controls?: Controls, options: Placement = {}) {
+        const server = resolveServer(options.server);
+        super(options.adopt ?? createNode(server, "/synth_new", defname, controls, options),
+            server);
         this.defname = defname;
     }
 
     /**
-     * Starts a synth from a def already loaded on the server, by name
-     * (`/synth_new`), with `controls` overriding the def defaults.
+     * A handle on a synth that is **already** on the server, named by the id
+     * something else reported (a responder, a tree query, the GUI). Sends
+     * nothing.
      */
-    static new(
-        server: Server,
-        defname: string,
-        controls?: Controls,
-        { target = ROOT_NODE_ID, action = AddAction.TAIL }: Placement = {},
-    ): Synth {
-        const id = server.nodes.alloc();
-        server.sendMsg(
-            "/synth_new",
-            defname,
-            ["i", id],
-            ["i", action],
-            ["i", nodeId(target)],
-            ...flattenControls(controls),
-        );
-        return new Synth(id, defname, server);
+    static fromId(id: number, defname: string, server?: Server): Synth {
+        return new Synth(defname, undefined, { adopt: id, server });
     }
+}
+
+/**
+ * Allocates an id, sends the creation command and returns the id — the one
+ * shape `/synth_new` and `/graph_new` share.
+ */
+function createNode(
+    server: Server,
+    addr: string,
+    defname: string,
+    controls: Controls | undefined,
+    { target = ROOT_NODE_ID, action = AddAction.TAIL }: Placement,
+): number {
+    const id = server.nodes.alloc();
+    server.sendMsg(
+        addr,
+        defname,
+        ["i", id],
+        ["i", action],
+        ["i", nodeId(target)],
+        ...flattenControls(controls),
+    );
+    return id;
 }
 
 export class Group extends Node {
     /**
      * An empty group in the node tree (`/group_new`), optionally labelled —
-     * see {@link Group.rename} for what a name is.
+     * see {@link Group.rename} for what a name is. Building one creates it,
+     * as with `Synth`.
      *
      * The label travels with the creation, in one message: a group is born
      * knowing what it is. `rename` is for changing it afterwards. A name the
@@ -220,15 +270,17 @@ export class Group extends Node {
      * **creation**: no group appears, rather than an anonymous one you did not
      * ask for.
      */
-    static new(
-        server: Server,
-        { name, target = ROOT_NODE_ID, action = AddAction.TAIL }: GroupOptions = {},
-    ): Group {
-        const id = server.nodes.alloc();
-        const args: MsgArg[] = [["i", id], ["i", action], ["i", nodeId(target)]];
-        if (name) args.push(name);
-        server.sendMsg("/group_new", ...args);
-        return new Group(id, server);
+    constructor(options: GroupOptions = {}) {
+        const server = resolveServer(options.server);
+        super(options.adopt ?? createGroup(server, options), server);
+    }
+
+    /**
+     * A handle on a group that is **already** on the server, named by the id
+     * something else reported. Sends nothing.
+     */
+    static fromId(id: number, server?: Server): Group {
+        return new Group({ adopt: id, server });
     }
 
     /**
@@ -258,22 +310,12 @@ export class Group extends Node {
      * (`/node_set` resolves names against the surface, not the private members)
      * and tear it down with `free` (which also reclaims its private buses).
      */
-    static graph(
-        server: Server,
-        defname: string,
-        ports?: Controls,
-        { target = ROOT_NODE_ID, action = AddAction.TAIL }: Placement = {},
-    ): Group {
-        const id = server.nodes.alloc();
-        server.sendMsg(
-            "/graph_new",
-            defname,
-            ["i", id],
-            ["i", action],
-            ["i", nodeId(target)],
-            ...flattenControls(ports),
+    static graph(defname: string, ports?: Controls, options: Placement = {}): Group {
+        const server = resolveServer(options.server);
+        return Group.fromId(
+            createNode(server, "/graph_new", defname, ports, options),
+            server,
         );
-        return new Group(id, server);
     }
 
     /**
@@ -289,8 +331,20 @@ export class Group extends Node {
             ["i", id],
             ...flattenControls(ports),
         );
-        return new Group(id, server);
+        return Group.fromId(id, server);
     }
+}
+
+/** Allocates an id and sends the `/group_new` that creates the group. */
+function createGroup(
+    server: Server,
+    { name, target = ROOT_NODE_ID, action = AddAction.TAIL }: GroupOptions,
+): number {
+    const id = server.nodes.alloc();
+    const args: MsgArg[] = [["i", id], ["i", action], ["i", nodeId(target)]];
+    if (name) args.push(name);
+    server.sendMsg("/group_new", ...args);
+    return id;
 }
 
 /**
