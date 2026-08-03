@@ -23,7 +23,7 @@ Everything above the connection seam — the `Server`, the def builders, the `Gu
 - **The def model** (`defs/`) — `Server` (the only object that knows a connection), `SynthDef` with the lowercase UGen callables, `FaustDef` with the signal API, `GraphDef`, and the `Node`/`Bus`/`Buffer` handles whose ids come from the core's own allocator.
 - **The GUI driver** (`gui/`) — `GuiHost` over the same connection seam, and the whole widget catalogue as builders (`gui.window`, `gui.knob`, `gui.waveform`, `gui.track`, …) emitting the same GuiDef JSON the Python builders emit.
 - **The sequencing layer** (`base/clock.ts`, `seq/`) — a `TempoClock` that resumes generator routines on musical time, `Event`, the value patterns and `Pbind`, `Timeline` and `Playhead`, under either timebase (the page's monotonic clock, or the server's own sample clock).
-- **The page runtime** (`engine/`, `bundle.ts`, `elements.ts`) — the engine and GUI-host singletons and the custom elements that mount a bundle. A page that only *mounts* an instrument loads this and none of the builders.
+- **The page runtime** (`engine/`, `bundle.ts`, `elements.ts`) — the page's engine and GUI host (one of each by default, more when a caller asks) and the custom elements that mount a bundle. A page that only *mounts* an instrument loads this and none of the builders.
 
 ## How to read this book
 

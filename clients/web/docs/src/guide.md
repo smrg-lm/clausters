@@ -27,9 +27,24 @@ const connection = await pageConnection();               // this tab's engine
 const connection = await WsConnection.open(url);         // a `--ws` server
 ```
 
-`pageConnection()` wraps the per-page engine singleton — the server compiled to wasm in this tab's AudioWorklet — and `WsConnection` a browser (or node) `WebSocket`. Both carry raw OSC in both directions and nothing else, so **no layer above them names a transport**. Swapping carriers is a one-line edit in a program of any size, which is exactly the property the examples demonstrate by offering a radio button.
+`pageConnection()` wraps the page's engine — the server compiled to wasm in this tab's AudioWorklet — and `WsConnection` a browser (or node) `WebSocket`. Both carry raw OSC in both directions and nothing else, so **no layer above them names a transport**. Swapping carriers is a one-line edit in a program of any size, which is exactly the property the examples demonstrate by offering a radio button.
 
-The engine singleton is reachable directly when a page needs the browser-specific parts: `server()` gives `send`/`addReply`, its `clock()`, `bLoad(...)` (the browser's `/buffer_allocRead`, over `fetch` and `decodeAudioData`) and `resume()`/`suspend()`. Every component and script in the tab gets that same engine, so they meet in one node, bus and buffer namespace.
+That engine is reachable directly when a page needs the browser-specific parts: `server()` gives `send`/`addReply`, its `clock()`, `bLoad(...)` (the browser's `/buffer_allocRead`, over `fetch` and `decodeAudioData`) and `resume()`/`suspend()`. Every component and script in the tab gets that same engine, so they meet in one node, bus and buffer namespace.
+
+### More than one of either
+
+One engine and one GUI host per page is the **default, not a limit**: it is what a page wants, since its components belong to one mix. A document embedding several *independent* clients — notebooks open in one tab, isolated demos side by side — needs each to keep its own node, bus, buffer and widget ids, and asks for its own of each:
+
+```ts
+import { engine, pageConnection, Server } from "clausters";
+
+const audio = await engine({ channels: 2 });      // not the page's
+const server = await Server.open(await pageConnection(audio));
+```
+
+The GUI host does the same one layer down, at the wasm binding: each call to `start()` returns an instance, and `close()` releases one. Instances share the browser tab and nothing else, so two of them may use the very same widget ids without colliding — which is the point, since clients that allocate ids independently have no way to agree on a range. A second host costs neither a download nor a GPU device; a second engine is a second `AudioContext`, and browsers cap those (Chrome at six).
+
+`guiHost()` is unaffected and stays the page's: its canvas is the page's default one. `examples/two-hosts.html` shows the other case end to end.
 
 ## Defs and the `Server`
 

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: two independent hosts in one page</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #0d0d12;
+        color: #dddddd;
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+      }
+      main {
+        max-width: 60rem;
+        margin: 0 auto;
+        padding: 20px 16px;
+      }
+      .pair {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .pair > section {
+        flex: 1 1 380px;
+      }
+      h2 {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0 0 6px;
+        color: #9ab;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 320px;
+        border: 1px solid #333;
+      }
+      button {
+        background: #22222c;
+        color: #ddd;
+        border: 1px solid #444;
+        padding: 6px 12px;
+        cursor: pointer;
+        margin: 8px 8px 0 0;
+      }
+      p {
+        font-size: 14px;
+        max-width: 46rem;
+      }
+      code {
+        color: #cba;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Two hosts, one page</h1>
+      <p>
+        Two <strong>independent</strong> clausters GUI hosts in one document,
+        each driving an audio engine of its own. They share the browser tab and
+        nothing else: their widget ids, node ids, buses and buffers are separate
+        spaces, so both panels below are built with <em>the same</em> ids and
+        neither can see the other.
+      </p>
+      <p>
+        A page normally wants one of each — its components belong to one mix,
+        and <code>guiHost()</code> / <code>server()</code> give exactly that.
+        This is the other case: several clients that happen to live in one
+        document (notebooks open in one JupyterLab tab, isolated demos side by
+        side) and must not share state. Each calls <code>start()</code> for a
+        host and <code>engine()</code> for a server of its own.
+      </p>
+
+      <button id="boot">boot both</button>
+      <button id="closeA">close host A</button>
+
+      <div class="pair">
+        <section>
+          <h2>host A — its own engine, playing 220 Hz</h2>
+          <canvas id="a"></canvas>
+        </section>
+        <section>
+          <h2>host B — its own engine, playing 330 Hz</h2>
+          <canvas id="b"></canvas>
+        </section>
+      </div>
+
+      <p>
+        Drag a knob and only its own tone follows. Close host A and B keeps
+        drawing and sounding — an instance owns its canvases, its GPU surfaces,
+        its animation tick and its audio leg, and takes them with it.
+      </p>
+    </main>
+
+    <!--
+      What this shows: a page holding more than one GUI host and more than one
+      audio engine, which is what any document embedding several independent
+      clausters clients needs.
+
+      What it needs: the built package (`./build.sh` in clients/web) and a
+      static server, since the modules and the wasm are fetched.
+
+      How to run it:
+        cd clients/web && ./build.sh
+        python3 -m http.server
+        open http://localhost:8000/examples/two-hosts.html
+
+      Why the hosts are driven as raw OSC here rather than through `GuiHost`:
+      the TS client's `GuiHost.page()` resolves *the page's* host, which is the
+      right default and the wrong thing to demonstrate. A caller wanting two
+      goes one layer down, to the binding surface the wasm exports.
+    -->
+    <script type="module">
+      import {
+        loadOsc,
+        pageConnection,
+        engine,
+        Server,
+        Synth,
+        SynthDef,
+      } from "../dist/index.js";
+      import { control, out, sine } from "../dist/defs/index.js";
+      import { encodeMessage } from "../dist/base/osc.js";
+
+      // Deliberately identical for both hosts: same window id, same widget
+      // ids. Two instances never have to agree on an id range, which is the
+      // whole reason to have instances rather than one shared host.
+      const panel = (title) =>
+        JSON.stringify({
+          type: "window",
+          id: 1000,
+          title,
+          w: 480,
+          h: 320,
+          layout: "col",
+          margin: 8.0,
+          gap: 8.0,
+          children: [
+            { type: "label", id: 1001, text: title, h: 28 },
+            {
+              type: "knob",
+              id: 1002,
+              name: "freq",
+              min: 50.0,
+              max: 2000.0,
+              value: 220.0,
+              h: 130,
+            },
+            {
+              type: "slider",
+              id: 1003,
+              name: "amp",
+              min: 0.0,
+              max: 0.3,
+              value: 0.1,
+              h: 110,
+            },
+          ],
+        });
+
+      async function boot(start, canvasId, title, freq) {
+        // One host instance. The first call also builds the page's event loop
+        // (winit allows exactly one); every later call joins it.
+        const bridge = start();
+
+        // One engine of its own -- `server()` would hand back the page's
+        // shared one, which is precisely what these two must not do.
+        const audio = await engine({ channels: 2 });
+        await audio.resume();
+        audio.addReply((bytes) => bridge.server_reply(bytes));
+        bridge.connect_page((bytes) => audio.send(bytes));
+
+        const server = await Server.open(await pageConnection(audio));
+        await new SynthDef(
+          "two_hosts_tone",
+          out(0.0, sine(control("freq", 220.0)).mul(control("amp", 0.1))),
+        ).send(server);
+        const synth = Synth.new(server, "two_hosts_tone", { freq, amp: 0.1 });
+        await server.sync();
+
+        // The document owns the canvas and places it; the host is told which
+        // def draws into it, and at what size in device pixels.
+        const canvas = document.getElementById(canvasId);
+        const box = canvas.getBoundingClientRect();
+        const scale = devicePixelRatio || 1;
+        canvas.width = Math.round(box.width * scale);
+        canvas.height = Math.round(box.height * scale);
+        bridge.attach(1000, canvas);
+        bridge.resize(1000, canvas.width, canvas.height, scale);
+        bridge.feed(
+          encodeMessage("/gui_def", [["i", 1000], ["s", panel(title)]]),
+        );
+
+        // Both controls drive this host's own engine directly: the value goes
+        // from the canvas to the AudioWorklet without passing through this
+        // script, per instance.
+        for (const [id, name] of [[1002, "freq"], [1003, "amp"]]) {
+          bridge.feed(
+            encodeMessage("/gui_bind", [
+              ["i", id],
+              ["s", "server"],
+              ["s", "/node_set"],
+              ["i", synth.id],
+              ["s", name],
+            ]),
+          );
+        }
+        return bridge;
+      }
+
+      let hostA = null;
+
+      async function run() {
+        await loadOsc();
+        const { default: init, start } = await import(
+          "../dist/gui-host/clausters_gui.js"
+        );
+        await init();
+        hostA = await boot(start, "a", "host A", 220.0);
+        await boot(start, "b", "host B", 330.0);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => console.error(err));
+      // Closing an instance releases its canvases, GPU surfaces, tick and
+      // audio leg. A page that keeps its host until it unloads never needs it;
+      // one that opens hosts over time does.
+      document.getElementById("closeA").onclick = () => hostA?.close();
+    </script>
+  </body>
+</html>

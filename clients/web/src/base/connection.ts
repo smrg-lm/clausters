@@ -13,6 +13,7 @@
 //   `server()` singleton. No process, no socket.
 
 import { server } from "../engine/server.ts";
+import type { ClaustersServer } from "../engine/server.ts";
 
 /**
  * A synchronous view of a server's sample counter — what a sample-locked
@@ -110,12 +111,20 @@ export class WsConnection implements Connection {
 }
 
 /**
- * The in-page carrier: a `Connection` over the per-page engine singleton.
- * Closing detaches this connection's listeners; the engine keeps running
- * (it is shared page state, not this connection's to stop).
+ * The in-page carrier: a `Connection` over an engine in this tab.
+ *
+ * Defaults to the page's shared engine, which is what a page wants — its
+ * components play into one mix. Pass one built by `engine()` to carry a client
+ * that must not share a node, bus and buffer space with the rest of the
+ * document; several such clients in one page is the case this exists for.
+ *
+ * Closing detaches this connection's listeners; the engine keeps running (it
+ * is the page's, or its owner's — not this connection's to stop).
  */
-export async function pageConnection(): Promise<Connection> {
-    const engine = await server();
+export async function pageConnection(
+    target?: Promise<ClaustersServer> | ClaustersServer,
+): Promise<Connection> {
+    const engine = await (target ?? server());
     const mine = new Set<(packet: Uint8Array) => void>();
     return {
         send: (packet) => engine.send(packet),

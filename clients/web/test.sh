@@ -74,6 +74,7 @@ run_page gui.html      # the GuiDef builders + GuiHost, gestures and all
 run_page seq.html      # the clock and the patterns on the engine's own clock
 run_page data.html     # the data paths: buses, taps and bulk, drawn by the script
 run_page editor.html   # the editor views host-drawn from a buffer, and a transport
+run_page hosts.html    # two host instances in one page, sharing only the event loop
 
 # The components acceptance mounts the two example bundles, which are build
 # products (git-ignored, written by the Python client). Generate them here so a

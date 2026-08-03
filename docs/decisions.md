@@ -4128,3 +4128,56 @@ verified in both directions before landing: three identical runs pass in all
 three pairings, and `#[inline(never)]` on two hot bus accessors turns eleven
 gated rows red at once (`default/1` −10.8%, `sine/ugen/1` −16.2%, the aligned
 512-voice peak −49.5%).
+
+## A page holds one host because it wants one, not because it can hold one
+
+`start()` used to be a page-wide singleton: a second call reached winit's
+`EventLoop::build`, which answers `RecreationAttempt` — a panic inside the wasm,
+not an error a caller could catch — so the notebook front end refused a second
+client with a sentence in the cell rather than a stack trace.
+
+The refusal was reasoning from the wrong constraint. **The event loop is what a
+page can hold one of; the host is not.** That loop already drives any number of
+windows — it is how one host serves a document's canvases — so the fix is not to
+partition anything, it is to stop conflating the two: build the loop once,
+memoize it in the proxy the instances already shared, and let `start()` add an
+instance to the app already running.
+
+What made this worth getting right rather than working around is what the
+workaround would have cost. Sharing one host between two clients means their
+widget ids land in one namespace, so the ranges have to be partitioned — and the
+allocating clients are *separate processes with no channel between them*. The
+only arbiter that can see who shares a tab is the page, which appears late, after
+the first `plot()` has already assigned ids. Every escape from that is bad in its
+own way: a slot derived from a session key collides silently, a claim file in the
+Jupyter runtime directory puts protocol state on a disk the client may not share,
+and rebasing an already-built journal onto a slot learned at mount is correct but
+fiddly. A second host instance makes the question not arise: independent id
+spaces by construction.
+
+The same reasoning settles the audio side, and settles it the same way. Nothing
+in the engine was page-global either — `bootClausters` has always built its own
+`AudioContext` and worklet per call — so `server()`'s memo *was* the singleton.
+It stays, because sharing is what a page wants (its components play into one
+mix), and `engine()` sits beside it for the caller that must not share a node,
+bus and buffer space with the rest of the document.
+
+So the rule for both, and the reason the default reads as a default rather than a
+limit: **one host and one engine per page unless a caller asks for another.** Two
+of them in one tab are as independent as two tabs. `guiHost()` in `page.ts` keeps
+its memo unchanged on purpose — its contract is *the page's host with the page's
+default canvas*, and a second one of those is not a thing anyone wants; a caller
+who needs instances goes one layer down, to the binding surface.
+
+The cost of an instance is worth naming, because it is what makes the default
+defensible: the wasm module and its memory are shared, and the GPU was already
+per canvas, so a second host downloads nothing and adds no device. A second
+*engine*, on the other hand, is a second `AudioContext` — they mix in the browser
+rather than in the engine, and browsers cap how many a page may have (Chrome at
+six), which bounds how many independent clients a tab is worth holding.
+
+One thing had to be added rather than merely unlocked. Nothing ever closed a
+host, because a page that holds one until it unloads has nothing to close; a
+caller that opens them over time does, and an abandoned instance keeps its
+WebSocket open, its `setInterval` running and its GPU surfaces alive. Hence
+`GuiBridge::close`.

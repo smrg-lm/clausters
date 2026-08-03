@@ -737,6 +737,22 @@ it leans on verbs this client does not have yet.
 
 **Acceptance:** the getting-started example rewritten through a `Session` is shorter and does the same thing; two sessions over different carriers coexist in one page, each with its own clock; a bare `Routine(f).play()` runs with nothing else set up; `new Synth("blip", …)` creates against the session's server, and `Synth.fromId` is the only way to wrap a reported id.
 
+### ✅ W19 - Host and engine instances: the page is not the unit *(done 2026-08-03)*
+
+A page held one GUI host because winit's one `EventLoop` was mistaken for one
+host — a second `start()` was `RecreationAttempt`, a panic inside the wasm
+rather than an error a caller could catch. The loop drives any number of
+windows, which is already how one host serves a document's canvases, so the
+instances share the loop and nothing else.
+
+- `web.rs`: `WebApp` became the instance and a new `WebHosts` is the one `ApplicationHandler` winit takes, owning the set. Events carry a `HostId`; `window_event` finds the owner by asking who holds the `WindowId`, so no second index has to stay in step with every attach and detach. The loop is built once and memoized in the proxy the instances already shared; `start()` builds it on the first call and adds an instance on every later one.
+- Instances share **nothing** else: each has its own `Host` (and therefore its own widget-id space), its own audio-server leg, canvases, buses, taps, tick and fetches. No id range is partitioned between them — which is the point, since the two allocating clients are separate processes with no channel to agree over. The GPU was already per canvas, so an instance adds no device.
+- `GuiBridge.close()`, new: an instance that outlives its purpose otherwise keeps its WebSocket open, its `setInterval` running and its GPU surfaces alive. A page that holds its host until it unloads never needs it.
+- The same rule on the audio side: `engine()` beside `server()`, and `pageConnection(target?)` to carry a client over one. Nothing there was ever page-global except the memo — `bootClausters` already built its own `AudioContext` and worklet per call.
+- `guiHost()` in `page.ts` keeps its memo unchanged: its contract is *the page's host with the page's default canvas*, and a second one of those means nothing. A caller wanting instances uses the primitives.
+
+**Verified:** `tests/hosts.html` under the headless-Chrome harness — two hosts in one page both draw; widget `1003` holds `0.2` in one and `0.8` in the other at once; a gesture on one leaves the other's outbox empty and its widget unmoved; each bound knob reaches its own engine and not its sibling's (`220 → 984.7` while the other stays `220`); closing one leaves the other drawing, answering and driving its engine. Example: `examples/two-hosts.html`.
+
 ## Parity gaps carried from the Python client
 
 - **The introspection records print as data, not as lines.** `Tree` here has a

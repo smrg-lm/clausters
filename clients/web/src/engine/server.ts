@@ -1,11 +1,18 @@
-// The per-page audio-server singleton.
+// The page's audio server: one by default, more when a caller asks.
 //
 // A page has one audio engine, however many components sit on it: the first
 // `server()` call boots the AudioWorklet engine (AudioContext + worklet +
 // wasm server, via the engine bundle's loader) and every later call — another
 // component, a REPL, the TS client — gets the same instance. The raw engine
-// handle exposes a single `onReply` slot, so the singleton owns it and fans
+// handle exposes a single `onReply` slot, so the shared one owns it and fans
 // replies out to any number of listeners; everything else passes through.
+//
+// Sharing is the default, not a limit of the page: `engine()` boots a separate
+// one for a caller that must not share a node, bus and buffer space with the
+// rest of the document. Nothing here was ever page-global except that memo —
+// `bootClausters` builds its own AudioContext and worklet per call — which is
+// the same shape the GUI host has, where the instance and not the page is what
+// owns an id space.
 //
 // The AudioContext starts suspended under the autoplay policy: call `resume()`
 // from a user gesture (the `<clausters-*>` elements' power affordance does).
@@ -52,10 +59,32 @@ let instance: Promise<ClaustersServer> | null = null;
 /**
  * The page's engine, booting it on first call. `options` (channels, an
  * existing AudioContext) only apply to that first call.
+ *
+ * This is the shared one, and sharing is what a page wants: every component on
+ * it plays into the same mix. Use {@link engine} for the other case — a caller
+ * that needs an engine of its own rather than the page's.
  */
 export function server(options: BootOptions = {}): Promise<ClaustersServer> {
     instance ??= boot(options);
     return instance;
+}
+
+/**
+ * A **separate** engine, not the page's.
+ *
+ * The default is one engine per page, as {@link server} gives, because
+ * components on one page belong to one mix. But the count is a property of the
+ * caller, not of the page: a document hosting several independent clients —
+ * notebooks in one tab, isolated demos side by side — needs each to have its
+ * own node ids, its own buses and its own buffers, and that is exactly what a
+ * separate engine gives without partitioning anything.
+ *
+ * Each one is its own `AudioContext` and its own worklet, so they mix in the
+ * browser rather than in the engine. Browsers cap concurrent `AudioContext`s
+ * (Chrome at six), which bounds how many are worth having.
+ */
+export function engine(options: BootOptions = {}): Promise<ClaustersServer> {
+    return boot(options);
 }
 
 async function boot(options: BootOptions): Promise<ClaustersServer> {

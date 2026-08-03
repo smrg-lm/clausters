@@ -87,8 +87,10 @@ pub struct WsServerLink {
 }
 
 impl WsServerLink {
-    /// Opens a WebSocket to `url` (e.g. `ws://127.0.0.1:57120`).
-    pub fn connect(url: &str) -> Result<Self, String> {
+    /// Opens a WebSocket to `url` (e.g. `ws://127.0.0.1:57120`) for `host` —
+    /// the instance whose leg this is, since a page may hold several and each
+    /// reaches its own server.
+    pub(crate) fn connect(url: &str, host: HostId) -> Result<Self, String> {
         let socket = web_sys::WebSocket::new(url).map_err(|e| format!("{e:?}"))?;
         socket.set_binary_type(web_sys::BinaryType::Arraybuffer);
         let open = Rc::new(Cell::new(false));
@@ -115,8 +117,8 @@ impl WsServerLink {
                     return; // non-binary frames carry nothing of ours
                 };
                 let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
-                if let Some(proxy) = WEB_PROXY.with(|p| p.borrow().clone()) {
-                    let _ = proxy.send_event(WebEvent::ServerInbound(bytes));
+                if let Some(proxy) = web_proxy() {
+                    let _ = proxy.send_event(HostEvent::To(host, WebEvent::ServerInbound(bytes)));
                 }
             },
         );
@@ -167,6 +169,41 @@ impl PageServerLink {
             .map_err(|e| std::io::Error::other(format!("{e:?}")))?;
         Ok(())
     }
+}
+
+/// Which host instance on this page an event is for.
+///
+/// A page holds one host by default and one is what a served page ever asks
+/// for, but the count is not a property of the page: it is one per caller of
+/// [`start`]. See [`WebHosts`] for why the instance — and not the page — is the
+/// unit that owns a widget-id space and an audio-server leg.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct HostId(u32);
+
+impl std::fmt::Display for HostId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "host {}", self.0)
+    }
+}
+
+/// One [`WebEvent`] addressed to its instance, plus the two that manage the set
+/// itself.
+///
+/// The event loop owns the instances, so a new one cannot be inserted by a
+/// call: it arrives as `Add`, like everything else. That costs nothing
+/// observable — every [`GuiBridge`] method already goes through the proxy, so a
+/// packet sent immediately after [`start`] queues behind the `Add` in order.
+enum HostEvent {
+    /// Take a new instance into the set, with the outbox its bridge drains.
+    Add {
+        id: HostId,
+        outbox: Rc<RefCell<VecDeque<Vec<u8>>>>,
+    },
+    /// Drop an instance: its canvases, its GPU slots, its tick and its
+    /// audio-server leg go with it.
+    Remove(HostId),
+    /// One event for one instance.
+    To(HostId, WebEvent),
 }
 
 /// What the binding surface and the async GPU hand the running app, through the
@@ -369,6 +406,11 @@ impl CanvasSlot {
 /// The browser host application: the live [`Host`], one [`CanvasSlot`] per
 /// `window`-rooted def, and the shared outbox the binding surface drains.
 struct WebApp {
+    /// Which instance this is, for the events its own closures send back
+    /// (`Gpu::new`'s hand-off, the tick, a bulk fetch, the WS leg's
+    /// `onmessage`) — all four are built inside this struct's methods, so the
+    /// id is always at hand where a proxy is taken.
+    id: HostId,
     host: Host,
     outbox: Rc<RefCell<VecDeque<Vec<u8>>>>,
     /// One canvas per `window`-rooted def, keyed by its def id.
@@ -417,8 +459,9 @@ struct WebApp {
 }
 
 impl WebApp {
-    fn new(outbox: Rc<RefCell<VecDeque<Vec<u8>>>>) -> Self {
+    fn new(id: HostId, outbox: Rc<RefCell<VecDeque<Vec<u8>>>>) -> Self {
         Self {
+            id,
             host: Host::new(),
             outbox,
             canvases: HashMap::new(),
@@ -482,12 +525,13 @@ impl WebApp {
         log(&format!(
             "def {def_id}: canvas attached; requesting GPU adapter"
         ));
-        let proxy = WEB_PROXY.with(|p| p.borrow().clone());
+        let (proxy, host) = (web_proxy(), self.id);
         wasm_bindgen_futures::spawn_local(async move {
             match Gpu::new(window).await {
                 Ok(gpu) => {
                     if let Some(proxy) = proxy {
-                        let _ = proxy.send_event(WebEvent::GpuReady { def_id, gpu });
+                        let _ = proxy
+                            .send_event(HostEvent::To(host, WebEvent::GpuReady { def_id, gpu }));
                     }
                 }
                 Err(e) => {
@@ -691,9 +735,10 @@ impl WebApp {
         };
         match (animated, self.tick.is_some()) {
             (true, false) => {
+                let host = self.id;
                 let closure = Closure::<dyn FnMut()>::new(move || {
-                    if let Some(proxy) = WEB_PROXY.with(|p| p.borrow().clone()) {
-                        let _ = proxy.send_event(WebEvent::Tick);
+                    if let Some(proxy) = web_proxy() {
+                        let _ = proxy.send_event(HostEvent::To(host, WebEvent::Tick));
                     }
                 });
                 match window.set_interval_with_callback_and_timeout_and_arguments_0(
@@ -1000,7 +1045,7 @@ impl WebApp {
             }
         }
         for (widget_id, request) in requests {
-            wasm_bindgen_futures::spawn_local(fetch_bulk(def, widget_id, request));
+            wasm_bindgen_futures::spawn_local(fetch_bulk(self.id, def, widget_id, request));
         }
     }
 
@@ -1384,18 +1429,20 @@ fn to_text_key(key: &Key) -> Option<TextKey> {
     }
 }
 
-impl ApplicationHandler<WebEvent> for WebApp {
+/// The instance's own half of the loop's callbacks. [`WebHosts`] is the
+/// [`ApplicationHandler`]: winit takes one, and a page holds several of these.
+impl WebApp {
     /// Nothing opens on its own: a canvas exists because the page attached one
     /// (or because a `/gui_def` arrived without one). This only unblocks the
     /// attaches that raced ahead of the loop.
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    fn on_resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.resumed = true;
         for (def_id, canvas) in std::mem::take(&mut self.pending_attach) {
             self.attach(event_loop, def_id, canvas);
         }
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: WebEvent) {
+    fn on_user_event(&mut self, event_loop: &ActiveEventLoop, event: WebEvent) {
         match event {
             WebEvent::Attach { def_id, canvas } => self.attach(event_loop, def_id, canvas),
             WebEvent::Detach(def_id) => self.detach(def_id),
@@ -1481,7 +1528,7 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 self.request_redraw(def_id);
             }
             WebEvent::Inbound(bytes) => self.on_inbound(event_loop, &bytes),
-            WebEvent::ConnectServer(url) => match WsServerLink::connect(&url) {
+            WebEvent::ConnectServer(url) => match WsServerLink::connect(&url, self.id) {
                 Ok(link) => {
                     self.host.set_server_link(ServerLink::Ws(link));
                     log(&format!("audio-server leg connecting to {url}"));
@@ -1541,9 +1588,16 @@ impl ApplicationHandler<WebEvent> for WebApp {
         }
     }
 
+    /// Whether this instance is the one holding `id`'s canvas — how
+    /// [`WebHosts`] finds an event's owner without a second index to keep in
+    /// step with every attach and detach.
+    fn owns(&self, id: WindowId) -> bool {
+        self.by_winit.contains_key(&id)
+    }
+
     /// Every per-canvas event routes by winit's window id: a document's
     /// canvases each get their own pointer, modifiers and repaints.
-    fn window_event(&mut self, _event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+    fn on_window_event(&mut self, id: WindowId, event: WindowEvent) {
         let Some(def) = self.by_winit.get(&id).copied() else {
             return;
         };
@@ -1644,10 +1698,106 @@ impl ApplicationHandler<WebEvent> for WebApp {
     }
 }
 
+/// The page's host instances behind winit's one [`ApplicationHandler`].
+///
+/// **The event loop is the only thing a page can hold just one of.** winit
+/// refuses a second `EventLoop` — `RecreationAttempt`, a panic inside the wasm
+/// rather than an error a caller could catch — but it drives any number of
+/// windows, which is already how one instance serves a document's canvases. So
+/// the loop is built once and memoized in [`WEB_PROXY`], and [`start`] adds an
+/// instance to this set rather than starting anything.
+///
+/// Everything a host *is* lives in [`WebApp`]: its `Host` (and therefore its
+/// widget-id space), its audio-server leg, its canvases, buses, taps, tick and
+/// fetches. Nothing here is shared, which is the point — two instances are as
+/// independent as two pages, and neither has to partition an id range against
+/// the other. The GPU was already per canvas (`Gpu::new` builds one per
+/// `CanvasSlot`), so instances add no devices.
+struct WebHosts {
+    apps: HashMap<HostId, WebApp>,
+    /// Whether the loop resumed. A window can only be created after it, and an
+    /// instance added later has missed the callback — so it is remembered here
+    /// and handed on, or its first canvas would wait for a `resumed` that
+    /// already happened.
+    resumed: bool,
+}
+
+impl WebHosts {
+    fn new(id: HostId, outbox: Rc<RefCell<VecDeque<Vec<u8>>>>) -> Self {
+        let mut apps = HashMap::new();
+        apps.insert(id, WebApp::new(id, outbox));
+        Self {
+            apps,
+            resumed: false,
+        }
+    }
+}
+
+impl ApplicationHandler<HostEvent> for WebHosts {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        self.resumed = true;
+        for app in self.apps.values_mut() {
+            app.on_resumed(event_loop);
+        }
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: HostEvent) {
+        match event {
+            HostEvent::Add { id, outbox } => {
+                let mut app = WebApp::new(id, outbox);
+                if self.resumed {
+                    app.on_resumed(event_loop);
+                }
+                self.apps.insert(id, app);
+                log(&format!("{id} added ({} on this page)", self.apps.len()));
+            }
+            HostEvent::Remove(id) => {
+                if self.apps.remove(&id).is_some() {
+                    log(&format!("{id} closed ({} left)", self.apps.len()));
+                }
+            }
+            HostEvent::To(id, event) => match self.apps.get_mut(&id) {
+                Some(app) => app.on_user_event(event_loop, event),
+                // A packet for an instance that was closed while it was in
+                // flight. Dropping it is the whole handling: the canvases it
+                // would have drawn into are gone with it.
+                None => log(&format!("event for {id}, which is closed")),
+            },
+        }
+    }
+
+    /// winit addresses a window, not an instance, so the owner is whoever
+    /// claims the id. The set is a page's worth of hosts — units, not
+    /// thousands — and asking them is what keeps the routing correct across
+    /// every attach and detach without a second index to maintain.
+    fn window_event(&mut self, _event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        let owner = self
+            .apps
+            .iter()
+            .find(|(_, app)| app.owns(id))
+            .map(|(host, _)| *host);
+        if let Some(app) = owner.and_then(|host| self.apps.get_mut(&host)) {
+            app.on_window_event(id, event);
+        }
+    }
+}
+
 thread_local! {
-    /// The running app's event-loop proxy, so `resumed` can reach it for the
-    /// async GPU hand-off (winit's web loop is single-threaded).
-    static WEB_PROXY: RefCell<Option<EventLoopProxy<WebEvent>>> = const { RefCell::new(None) };
+    /// The page's one event-loop proxy, so an instance's own closures can reach
+    /// the loop for the async GPU hand-off, the tick and the bulk fetches
+    /// (winit's web loop is single-threaded). Shared by every instance —
+    /// each of its events carries the [`HostId`] it is for.
+    ///
+    /// It doubles as the record that the loop exists: `Some` means [`start`]
+    /// already built it, and the next call adds an instance instead.
+    static WEB_PROXY: RefCell<Option<EventLoopProxy<HostEvent>>> = const { RefCell::new(None) };
+    /// The source of instance ids, page-wide.
+    static NEXT_HOST: Cell<u32> = const { Cell::new(0) };
+}
+
+/// The proxy every instance-side closure reaches the loop through.
+fn web_proxy() -> Option<EventLoopProxy<HostEvent>> {
+    WEB_PROXY.with(|p| p.borrow().clone())
 }
 
 /// Builds the GPU slot for every inline-data `waveform`/`spectrogram` in the
@@ -1817,7 +1967,7 @@ fn collect_bulk(
 
 /// Fetches one bulk URL and decodes it off the event loop, then hands the
 /// result back through the proxy as [`WebEvent::BulkReady`].
-async fn fetch_bulk(def_id: i32, widget_id: i32, request: BulkRequest) {
+async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, request: BulkRequest) {
     let url = match &request {
         BulkRequest::Cache(url) | BulkRequest::StftCache(url) => url,
         BulkRequest::Raw { url, .. }
@@ -1895,12 +2045,15 @@ async fn fetch_bulk(def_id: i32, widget_id: i32, request: BulkRequest) {
             BulkData::Plot(flat.into())
         }
     };
-    if let Some(proxy) = WEB_PROXY.with(|p| p.borrow().clone()) {
-        let _ = proxy.send_event(WebEvent::BulkReady {
-            def_id,
-            widget_id,
-            data,
-        });
+    if let Some(proxy) = web_proxy() {
+        let _ = proxy.send_event(HostEvent::To(
+            host,
+            WebEvent::BulkReady {
+                def_id,
+                widget_id,
+                data,
+            },
+        ));
     }
 }
 
@@ -1934,10 +2087,28 @@ fn decode_f32(bytes: &[u8]) -> Vec<f32> {
 /// The binding surface JS holds: feed OSC packets / GuiDefs in, drain events out,
 /// and connect the audio-server WebSocket. It reaches the running app through the
 /// event-loop proxy and shares the outbox queue.
+///
+/// One bridge is one host instance. A page that calls [`start`] once — every
+/// served page — never sees the distinction; one that calls it again gets a
+/// second host that shares nothing with the first.
 #[wasm_bindgen]
 pub struct GuiBridge {
-    proxy: EventLoopProxy<WebEvent>,
+    /// Which instance this drives. Every event carries it, since the page's
+    /// instances share one event loop and one proxy.
+    id: HostId,
+    proxy: EventLoopProxy<HostEvent>,
     outbox: Rc<RefCell<VecDeque<Vec<u8>>>>,
+}
+
+impl GuiBridge {
+    /// Addresses one event to this bridge's instance and posts it.
+    ///
+    /// A failed send means the loop is gone (the page is going away), which is
+    /// nothing a caller can act on — the same posture the discarded results
+    /// here always had.
+    fn send(&self, event: WebEvent) {
+        let _ = self.proxy.send_event(HostEvent::To(self.id, event));
+    }
 }
 
 #[wasm_bindgen]
@@ -1945,7 +2116,7 @@ impl GuiBridge {
     /// Feeds one raw OSC packet (e.g. a `/gui_def`/`/gui_set`/`/gui_bind`) to the
     /// host, exactly as the WS wire format delivers it (one packet per call).
     pub fn feed(&self, packet: &[u8]) {
-        let _ = self.proxy.send_event(WebEvent::Inbound(packet.to_vec()));
+        self.send(WebEvent::Inbound(packet.to_vec()));
     }
 
     /// Gives one `window`-rooted def its own `<canvas>`, which the caller
@@ -1961,7 +2132,7 @@ impl GuiBridge {
     /// A page that never calls this still works: a `/gui_def` with no canvas
     /// gets one appended to `<body>`, the older single-canvas posture.
     pub fn attach(&self, def_id: i32, canvas: web_sys::HtmlCanvasElement) {
-        let _ = self.proxy.send_event(WebEvent::Attach {
+        self.send(WebEvent::Attach {
             def_id,
             canvas: Some(canvas),
         });
@@ -1970,7 +2141,7 @@ impl GuiBridge {
     /// Frees a def's canvas: its GPU surface and every derived resource go. The
     /// `<canvas>` element itself is the page's, to remove or reuse.
     pub fn detach(&self, def_id: i32) {
-        let _ = self.proxy.send_event(WebEvent::Detach(def_id));
+        self.send(WebEvent::Detach(def_id));
     }
 
     /// Sizes a canvas in **device pixels**, with the **scale** those pixels were
@@ -1984,7 +2155,7 @@ impl GuiBridge {
     /// the ratio — and a product cannot be un-multiplied. A page that already
     /// scales its box by `devicePixelRatio` passes the same ratio here.
     pub fn resize(&self, def_id: i32, width: u32, height: u32, scale: f32) {
-        let _ = self.proxy.send_event(WebEvent::Resize {
+        self.send(WebEvent::Resize {
             def_id,
             width,
             height,
@@ -2000,9 +2171,7 @@ impl GuiBridge {
     /// three in view, and neither this host nor the server should be working
     /// for the other forty-seven.
     pub fn set_visible(&self, def_id: i32, visible: bool) {
-        let _ = self
-            .proxy
-            .send_event(WebEvent::SetVisible { def_id, visible });
+        self.send(WebEvent::SetVisible { def_id, visible });
     }
 
     /// Convenience: build and feed a `/gui_def <id> <json>` from a GuiDef JSON
@@ -2028,9 +2197,7 @@ impl GuiBridge {
     /// Attaches the host's audio-server leg to a `--ws` server `url`, so a bound
     /// widget forwards straight to it (the bypass path, in the browser).
     pub fn connect_server(&self, url: &str) {
-        let _ = self
-            .proxy
-            .send_event(WebEvent::ConnectServer(url.to_string()));
+        self.send(WebEvent::ConnectServer(url.to_string()));
     }
 
     /// Attaches the host's audio-server leg to the **in-page engine**: every
@@ -2039,7 +2206,7 @@ impl GuiBridge {
     /// `Uint8Array`; the page forwards it to the engine and feeds the engine's
     /// replies back through [`server_reply`](Self::server_reply).
     pub fn connect_page(&self, send: js_sys::Function) {
-        let _ = self.proxy.send_event(WebEvent::ConnectPage(send));
+        self.send(WebEvent::ConnectPage(send));
     }
 
     /// Overlays the host's color theme from a JSON object of
@@ -2049,9 +2216,7 @@ impl GuiBridge {
     pub fn theme(&self, json: &str) {
         match serde_json::from_str::<std::collections::BTreeMap<String, String>>(json) {
             Ok(table) => {
-                let _ = self
-                    .proxy
-                    .send_event(WebEvent::Theme(table.into_iter().collect()));
+                self.send(WebEvent::Theme(table.into_iter().collect()));
             }
             Err(e) => log(&format!("cannot parse theme JSON: {e}")),
         }
@@ -2065,9 +2230,7 @@ impl GuiBridge {
     pub fn metrics(&self, json: &str) {
         match serde_json::from_str::<std::collections::BTreeMap<String, f64>>(json) {
             Ok(table) => {
-                let _ = self
-                    .proxy
-                    .send_event(WebEvent::Metrics(table.into_iter().collect()));
+                self.send(WebEvent::Metrics(table.into_iter().collect()));
             }
             Err(e) => log(&format!("cannot parse metrics JSON: {e}")),
         }
@@ -2078,9 +2241,21 @@ impl GuiBridge {
     /// the inbound half of [`connect_page`](Self::connect_page), the same
     /// dispatch the WS leg's `onmessage` uses.
     pub fn server_reply(&self, packet: &[u8]) {
-        let _ = self
-            .proxy
-            .send_event(WebEvent::ServerInbound(packet.to_vec()));
+        self.send(WebEvent::ServerInbound(packet.to_vec()));
+    }
+
+    /// Closes this host: its canvases, GPU slots, tick and audio-server leg go,
+    /// and the page's other instances carry on.
+    ///
+    /// A page that holds one host for as long as it lives never needs this —
+    /// which is why nothing called it while a page could hold only one. A
+    /// caller that opens hosts over time does: an abandoned instance keeps its
+    /// WebSocket open, its `setInterval` running and its GPU surfaces alive,
+    /// none of which the loop will collect on its own.
+    ///
+    /// Sending through the bridge afterwards is harmless and does nothing.
+    pub fn close(&self) {
+        let _ = self.proxy.send_event(HostEvent::Remove(self.id));
     }
 }
 
@@ -2119,24 +2294,57 @@ pub fn bundle_boot_packets(
         .collect()
 }
 
-/// The wasm entry point: build the event loop, spawn the app on the browser's
-/// animation-frame loop (returns immediately, nothing blocks the main thread),
-/// and hand the page a [`GuiBridge`] to drive it.
+/// The wasm entry point: **one host instance**, and the page's event loop under
+/// the first of them.
+///
+/// The first call builds the loop and spawns the app on the browser's
+/// animation-frame loop (returning immediately, nothing blocks the main
+/// thread); every later call adds an instance to the app already running. A
+/// page that calls this once — which is every served page — behaves exactly as
+/// before and needs to know none of it.
+///
+/// **Instances share nothing.** Each has its own widget-id space, its own
+/// audio-server leg, its own canvases and its own streamed data, so two hosts
+/// in one document are as independent as two documents — no id range has to be
+/// partitioned between them. What they do share is the event loop, because
+/// winit allows a page exactly one (a second `EventLoop` is
+/// `RecreationAttempt`, a panic inside the wasm), and the wasm module itself,
+/// so the second instance costs neither a download nor a GPU device.
+///
+/// Close one with [`GuiBridge::close`] when it outlives its purpose; a page
+/// that keeps its host until it unloads need not.
 #[wasm_bindgen]
 pub fn start() -> GuiBridge {
     console_error_panic_hook::set_once();
-    let event_loop = EventLoop::<WebEvent>::with_user_event()
+    let id = HostId(NEXT_HOST.with(|n| {
+        let id = n.get();
+        n.set(id + 1);
+        id
+    }));
+    let outbox = Rc::new(RefCell::new(VecDeque::new()));
+
+    // The loop already runs: this is an additional instance, and it joins the
+    // set the way every other message travels, through the proxy.
+    if let Some(proxy) = web_proxy() {
+        let _ = proxy.send_event(HostEvent::Add {
+            id,
+            outbox: outbox.clone(),
+        });
+        return GuiBridge { id, proxy, outbox };
+    }
+
+    let event_loop = EventLoop::<HostEvent>::with_user_event()
         .build()
         .expect("build the web event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
     let proxy = event_loop.create_proxy();
     WEB_PROXY.with(|p| *p.borrow_mut() = Some(proxy.clone()));
-    let outbox = Rc::new(RefCell::new(VecDeque::new()));
     let bridge = GuiBridge {
+        id,
         proxy,
         outbox: outbox.clone(),
     };
     log("clausters-gui web host starting");
-    event_loop.spawn_app(WebApp::new(outbox));
+    event_loop.spawn_app(WebHosts::new(id, outbox));
     bridge
 }

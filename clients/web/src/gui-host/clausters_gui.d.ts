@@ -5,6 +5,10 @@
  * The binding surface JS holds: feed OSC packets / GuiDefs in, drain events out,
  * and connect the audio-server WebSocket. It reaches the running app through the
  * event-loop proxy and shares the outbox queue.
+ *
+ * One bridge is one host instance. A page that calls [`start`] once — every
+ * served page — never sees the distinction; one that calls it again gets a
+ * second host that shares nothing with the first.
  */
 export class GuiBridge {
     private constructor();
@@ -25,6 +29,19 @@ export class GuiBridge {
      * gets one appended to `<body>`, the older single-canvas posture.
      */
     attach(def_id: number, canvas: HTMLCanvasElement): void;
+    /**
+     * Closes this host: its canvases, GPU slots, tick and audio-server leg go,
+     * and the page's other instances carry on.
+     *
+     * A page that holds one host for as long as it lives never needs this —
+     * which is why nothing called it while a page could hold only one. A
+     * caller that opens hosts over time does: an abandoned instance keeps its
+     * WebSocket open, its `setInterval` running and its GPU surfaces alive,
+     * none of which the loop will collect on its own.
+     *
+     * Sending through the bridge afterwards is harmless and does nothing.
+     */
+    close(): void;
     /**
      * Attaches the host's audio-server leg to the **in-page engine**: every
      * outbound OSC packet (bound-widget values, `/bus_stream`/`/bus_tapStream`
@@ -119,9 +136,25 @@ export class GuiBridge {
 export function bundle_boot_packets(synthdefs: Array<any>, graphdefs: Array<any>, boot_json: string | null | undefined, guidef_tree: string, sync_id: number): Array<any>;
 
 /**
- * The wasm entry point: build the event loop, spawn the app on the browser's
- * animation-frame loop (returns immediately, nothing blocks the main thread),
- * and hand the page a [`GuiBridge`] to drive it.
+ * The wasm entry point: **one host instance**, and the page's event loop under
+ * the first of them.
+ *
+ * The first call builds the loop and spawns the app on the browser's
+ * animation-frame loop (returning immediately, nothing blocks the main
+ * thread); every later call adds an instance to the app already running. A
+ * page that calls this once — which is every served page — behaves exactly as
+ * before and needs to know none of it.
+ *
+ * **Instances share nothing.** Each has its own widget-id space, its own
+ * audio-server leg, its own canvases and its own streamed data, so two hosts
+ * in one document are as independent as two documents — no id range has to be
+ * partitioned between them. What they do share is the event loop, because
+ * winit allows a page exactly one (a second `EventLoop` is
+ * `RecreationAttempt`, a panic inside the wasm), and the wasm module itself,
+ * so the second instance costs neither a download nor a GPU device.
+ *
+ * Close one with [`GuiBridge::close`] when it outlives its purpose; a page
+ * that keeps its host until it unloads need not.
  */
 export function start(): GuiBridge;
 
@@ -132,6 +165,7 @@ export interface InitOutput {
     readonly __wbg_guibridge_free: (a: number, b: number) => void;
     readonly bundle_boot_packets: (a: any, b: any, c: number, d: number, e: number, f: number, g: number) => any;
     readonly guibridge_attach: (a: number, b: number, c: any) => void;
+    readonly guibridge_close: (a: number) => void;
     readonly guibridge_connect_page: (a: number, b: any) => void;
     readonly guibridge_connect_server: (a: number, b: number, c: number) => void;
     readonly guibridge_def: (a: number, b: number, c: number, d: number) => void;
