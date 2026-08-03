@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters automation</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>the automation lane over the in-page carrier: a break-point curve
+        rendered as a control vector, driving a synth's control — and the same
+        curve drawn in the <code>bpf</code> editor, edited by hand and played
+        back.</div>
+      <button id="boot">boot + sweep</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The page-carrier half of the automation milestone (clients/web/test.sh,
+      headless Chrome): ?smoke=1 auto-runs and asserts that
+        - a prepared curve sweeps a /node_map-ed control, read back off a
+          control bus by the script (the values the curve says, not just
+          "something moved");
+        - `stop` frees the lane, so the mapped control holds its last value;
+        - the curve seeds a `bpf` editor and a drag on it comes back as a
+          "points" edit, which rebuilds an Automation that plays the *edited*
+          curve — the drawn envelope and the played one being one object;
+        - `free` returns the buffer and the bus to their allocators.
+      Verdict beaconed as a fetch, read from the HTTP access log.
+    -->
+    <script type="module">
+      import {
+        Bus, GuiHost, Server, Synth, SynthDef, gui, guiHost, loadOsc,
+        pageConnection, seq, server as engine,
+      } from "../dist/index.js";
+      import { control, outCtl } from "../dist/defs/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+      // A pointer gesture on the host's canvas, in the widget coordinates the
+      // GuiDef lays out in (device pixels from the canvas origin).
+      function pointer(canvas, type, x, y, buttons) {
+        const rect = canvas.getBoundingClientRect();
+        const scale = canvas.width / rect.width;
+        canvas.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, pointerId: 1, isPrimary: true,
+          pointerType: "mouse", button: 0, buttons,
+          clientX: rect.left + x / scale, clientY: rect.top + y / scale,
+        }));
+      }
+
+      async function run() {
+        await loadOsc();
+        await (await engine({ channels: 2 })).resume();
+        const server = await Server.open(await pageConnection());
+
+        // The target: a synth that writes its own `cutoff` control to a
+        // control bus, so what the lane produced is *readable* rather than
+        // inferred from the sound.
+        const cutoff = control("cutoff", 200.0, { rate: "kr" });
+        const probe = control("probe", 0.0, { rate: "ir" });
+        await new SynthDef("page_auto_target", outCtl(probe, cutoff))
+          .send(server);
+        const readback = Bus.control(1, { server });
+        const target = new Synth("page_auto_target", { probe: readback.index },
+                                 { server });
+        await sleep(150);
+        const start = await readback.get();
+        if (Math.abs(start - 200.0) > 1e-3) {
+          throw new Error(`the control did not start at its default: ${start}`);
+        }
+
+        // Four seconds of curve in the bpf widget's own flat form: 200 Hz to
+        // 4000 Hz, linearly. No clock in context, so its beats read as seconds.
+        const auto = seq.Automation.fromPoints(
+          [0.0, 200.0, 1, 0.0, 4.0, 4000.0, 1, 0.0],
+          [target, "cutoff"],
+        );
+        await auto.prepare(server);
+        if (!auto.buf || !auto.bus) throw new Error("prepare allocated nothing");
+        if (auto.duration() !== 4.0) throw new Error("wrong curve duration");
+
+        auto.play(server);
+        await sleep(1000);
+        const quarter = Number(await readback.get());
+        await sleep(1000);
+        const half = Number(await readback.get());
+        // A linear sweep: the second reading is above the first, and both sit
+        // inside the curve's own span with room for the read's own latency.
+        if (!(quarter > 700 && quarter < 1900)) {
+          throw new Error(`a quarter in reads ${quarter}, off the curve`);
+        }
+        if (!(half > quarter + 500 && half < 2900)) {
+          throw new Error(`half way reads ${half}, not above ${quarter}`);
+        }
+        log(`sweep: ${start} -> ${quarter.toFixed(0)} -> ${half.toFixed(0)}`);
+
+        // Interrupting frees the lane synth, so the control holds where the
+        // curve had reached instead of carrying on to 4000.
+        auto.stop();
+        await sleep(600);
+        const held = Number(await readback.get());
+        if (Math.abs(held - half) > 700) {
+          throw new Error(`the control kept sweeping after stop: ${half} -> ${held}`);
+        }
+        log(`stopped: held at ${held.toFixed(0)}`);
+
+        // ---- the editor half: the curve drawn, edited, and played back ----
+        const host = await GuiHost.page();
+        const { canvas } = await guiHost();
+        const win = host.open(gui.window(
+          { title: "automation", w: 480, h: 300, layout: "col", margin: 8.0 },
+          gui.bpf({
+            name: "curve", points: auto.toPoints(), min: 100.0, max: 5000.0,
+            duration: 4.0, h: 284,
+          }),
+        ));
+        const edits = [];
+        win.widget("curve").onEvent((...args) => edits.push(args));
+        await sleep(600);
+
+        // Drag the curve's one segment downward. A segment is hit by the x
+        // under the cursor alone, so this needs no pixel-exact aim at a
+        // point: it bends the curvature, which is the edit the widget's
+        // `curve` field carries.
+        pointer(canvas, "pointerdown", 240, 150, 1);
+        await sleep(50);
+        pointer(canvas, "pointermove", 240, 230, 1);
+        await sleep(50);
+        pointer(canvas, "pointerup", 240, 230, 0);
+        for (let i = 0; i < 40 && edits.length === 0; i++) await sleep(50);
+        if (edits.length === 0) {
+          throw new Error("the bpf editor never emitted a points edit");
+        }
+        const points = edits.at(-1).flat().filter((v) => typeof v === "number");
+        if (points.length < 8) {
+          throw new Error(`unexpected edit payload: ${JSON.stringify(edits.at(-1))}`);
+        }
+        // The bent segment carries the custom-curvature shape (5) and a
+        // non-zero curve — the same pair `Env` stores for a numeric curve.
+        const [shape, curveValue] = [points[2], points[3]];
+        if (shape !== 5 || curveValue === 0) {
+          throw new Error(
+            `the drag did not bend the segment: shape ${shape}, curve ${curveValue}`);
+        }
+        log(`edited: the segment came back as shape ${shape}, curve `
+          + `${curveValue.toFixed(3)}`);
+
+        // The drawn curve *is* the played one: rebuild the lane from the edit
+        // and hear the bend — half way along, a curve dragged down sits below
+        // the straight line's reading at the same phase.
+        auto.free();
+        const edited = seq.Automation.fromPoints(points, [target, "cutoff"]);
+        if (Math.abs(edited.duration() - 4.0) > 1e-6) {
+          throw new Error(`the rebuilt curve is ${edited.duration()} long`);
+        }
+        await edited.prepare(server);
+        edited.play(server);
+        await sleep(2000);
+        const bent = Number(await readback.get());
+        edited.stop();
+        if (!(bent < half - 150)) {
+          throw new Error(
+            `the bend never reached the sound: ${bent} vs the straight ${half}`);
+        }
+        log(`the edited curve read ${bent.toFixed(0)} where the straight one `
+          + `read ${half.toFixed(0)}`);
+
+        // Everything the lane allocated goes back.
+        const busesBefore = server.controlBuses.inUse;
+        const buffersBefore = server.buffers.inUse;
+        edited.free();
+        if (edited.buf !== null || edited.bus !== null) {
+          throw new Error("free left the buffer or the bus on the handle");
+        }
+        if (server.controlBuses.inUse !== busesBefore - 1
+            || server.buffers.inUse !== buffersBefore - 1) {
+          throw new Error("free did not return the buffer and the bus");
+        }
+
+        target.free();
+        readback.free();
+        win.close();
+        verdict(`PASS: the lane swept a mapped control ${start} -> `
+          + `${quarter.toFixed(0)} -> ${half.toFixed(0)}, stop held it at `
+          + `${held.toFixed(0)}, the bpf edit came back at `
+          + `shape 5 / curve ${curveValue.toFixed(2)}, and the rebuilt curve `
+          + `read ${bent.toFixed(0)} where the straight one read `
+          + `${half.toFixed(0)}`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

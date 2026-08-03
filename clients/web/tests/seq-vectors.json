@@ -1,0 +1,213 @@
+{
+  "lane_def": {
+    "name": "clausters.auto_lane",
+    "spec": {
+      "name": "clausters.auto_lane",
+      "controls": [
+        {
+          "name": "bus",
+          "default": 0.0,
+          "rate": "ir"
+        },
+        {
+          "name": "buf",
+          "default": 0.0,
+          "rate": "ir"
+        },
+        {
+          "name": "dur",
+          "default": 1.0,
+          "rate": "ir"
+        }
+      ],
+      "ugens": [
+        {
+          "kind": "BufFrames",
+          "inputs": [
+            {
+              "control": 1
+            }
+          ],
+          "rate": "kr"
+        },
+        {
+          "kind": "SampleRate",
+          "inputs": [],
+          "rate": "ir"
+        },
+        {
+          "kind": "Mul",
+          "inputs": [
+            {
+              "control": 2
+            },
+            {
+              "ugen": 1
+            }
+          ]
+        },
+        {
+          "kind": "Div",
+          "inputs": [
+            {
+              "ugen": 0
+            },
+            {
+              "ugen": 2
+            }
+          ]
+        },
+        {
+          "kind": "PlayBuf",
+          "inputs": [
+            {
+              "control": 1
+            },
+            {
+              "const": 0.0
+            },
+            {
+              "ugen": 3
+            },
+            {
+              "const": 0.0
+            }
+          ]
+        },
+        {
+          "kind": "OutCtl",
+          "inputs": [
+            {
+              "control": 0
+            },
+            {
+              "ugen": 4
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "automations": [
+    {
+      "name": "drawn_curve",
+      "points": [
+        0.0,
+        200.0,
+        1,
+        0.0,
+        2.0,
+        4000.0,
+        2,
+        0.0,
+        3.0,
+        800.0,
+        5,
+        -4.0
+      ],
+      "env_args": [
+        200.0,
+        4000.0,
+        2.0,
+        1,
+        0.0,
+        800.0,
+        1.0,
+        2,
+        0.0
+      ],
+      "to_points": [
+        0.0,
+        200.0,
+        1,
+        0.0,
+        2.0,
+        4000.0,
+        2,
+        0.0,
+        3.0,
+        800.0,
+        1,
+        0.0
+      ],
+      "duration": 3.0
+    },
+    {
+      "name": "leading_delay",
+      "points": [
+        1.0,
+        0.0,
+        1,
+        0.0,
+        3.0,
+        1.0,
+        1,
+        0.0
+      ],
+      "env_args": [
+        0.0,
+        0.0,
+        1.0,
+        8,
+        0.0,
+        1.0,
+        2.0,
+        1,
+        0.0
+      ],
+      "to_points": [
+        0.0,
+        0.0,
+        8,
+        0.0,
+        1.0,
+        0.0,
+        1,
+        0.0,
+        3.0,
+        1.0,
+        1,
+        0.0
+      ],
+      "duration": 3.0
+    },
+    {
+      "name": "adsr_env",
+      "points": null,
+      "env_args": [
+        0.0,
+        1.0,
+        0.01,
+        5,
+        -4.0,
+        0.6,
+        0.2,
+        5,
+        -4.0,
+        0.0,
+        0.4,
+        5,
+        -4.0
+      ],
+      "to_points": [
+        0.0,
+        0.0,
+        5,
+        -4.0,
+        0.01,
+        1.0,
+        5,
+        -4.0,
+        0.21000000000000002,
+        0.6,
+        5,
+        -4.0,
+        0.6100000000000001,
+        0.0,
+        1,
+        0.0
+      ],
+      "duration": 0.61
+    }
+  ]
+}

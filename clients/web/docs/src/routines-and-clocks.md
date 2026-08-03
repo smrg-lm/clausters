@@ -100,6 +100,50 @@ Everything random — `Pwhite`, `Prand`, and the module functions `uniform(lo, h
 
 Each routine gets its **own** generator when it is created, derived from the context that created it. Same root seed plus same creation order gives the same music, and because each routine draws from its own stream, concurrent routines stay reproducible however their wakes interleave. `seed(n)`, called before you build and play, makes a whole page reproducible; there are deliberately no per-pattern seeds. To isolate some material, play it in its own routine, which is its own derived stream by construction.
 
+## Automation: a curve driving a control
+
+A note is not the only thing a piece places in time. An **`Automation`** is a break-point curve that drives one or more `[node, control]` targets — a filter sweep, a fade, a glissando — and it is played the way an event is: it has a duration, it goes on a timeline, and `play` starts it.
+
+How it is rendered is worth knowing, because it is machinery you already have. The curve is discretized on the **server** into a control buffer (`/buffer_gen "env"`, evaluated through the same envelope-shape math the `EnvGen` UGen plays), and at play time a small internal synth reads that buffer onto a **control bus** over the curve's duration; the targets follow that bus with `/node_map`. So the curve is computed where the sound is, not stepped from the page.
+
+```js
+import { seq } from "./dist/index.js";
+
+// Break-points are [time, value, shape, curve]: times in beats, values in the
+// control's real units, shapes the server's own envelope numbers (1 linear,
+// 2 exponential, 5 a numeric curvature in `curve`).
+const sweep = seq.Automation.fromPoints(
+  [0.0, 200.0, 1, 0.0, 2.0, 4000.0, 2, 0.0],
+  [synth, "cutoff"],
+);
+
+await sweep.prepare(server);   // allocate and fill the buffer, allocate the bus
+sweep.play(server);            // schedule the lane; nothing here waits
+```
+
+**The two phases are the point.** `prepare` allocates and fills — it waits on the server, so it belongs at setup. `play` only *schedules* (the lane synth, the `/node_map`s and the free at the end of the curve) and waits for nothing, which is what makes it callable from inside a routine, where an `await` would hold up the whole timeline. Play it from a routine and the lane starts at the routine's exact logical beat, the curve's beats being the clock's; play it with no clock in context and it starts now, its beats reading as seconds.
+
+`stop()` frees the lane synth mid-sweep, so the mapped controls **hold** their last value rather than jumping; `free()` returns the buffer and the bus to their allocators.
+
+### The curve is the drawn one
+
+The stored curve is an `Env`, the same object the `bpf` editor round-trips (`envToPoints` / `pointsToEnv`), so a drawn envelope and a played automation are one object rather than two representations that have to agree:
+
+```js
+const win = host.open(gui.window({ title: "lane", w: 520, h: 260 },
+  gui.bpf({ name: "curve", points: sweep.toPoints(), min: 100, max: 5000,
+            duration: 4.0, exp: true })));
+
+win.widget("curve").onEvent((...args) => {
+  // The edit comes back as the same flat break-point list `fromPoints` takes.
+  points = args.flat().filter((v) => typeof v === "number");
+});
+```
+
+`examples/automation-lane.html` is exactly that loop: draw the glissando, play it, hear what you drew.
+
+**One difference from the reference client**, and it is the page's single thread again: `play(auto)` there prepares an unprepared curve on the spot, blocking. A synchronous verb in a page cannot, so an unprepared curve is refused by name — `await auto.prepare(server)` first.
+
 ## Sending to another application
 
 The same logical beat is available to anything else that speaks OSC. A **destination** is where OSC goes: `Server` is the one we control, `OscDestination` is any other application.

@@ -5,10 +5,20 @@
 //   `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`) plus `Pbind` (an
 //   event pattern).
 // - `eventstream` — `EventStreamPlayer`.
+// - `automation` — `Automation` (a break-point control curve rendered as a
+//   control vector) and the lane def it plays through.
 // - `timeline` — `Timeline` (a static, editable, random-access sequence) and
 //   `Playhead` (play/stop/locate/loop over it), plus the `OscEvent` raw-message
 //   item.
 
+export {
+    Automation,
+    DEFAULT_FRAMES,
+    LANE_DEF,
+    addAutomationDef,
+    autoLaneDef,
+} from "./automation.ts";
+export type { AutomationTarget, AutomationTargets } from "./automation.ts";
 export { DEFAULTS, Event, rest } from "./event.ts";
 export type { EventDestination, EventProps } from "./event.ts";
 export { EventStreamPlayer } from "./eventstream.ts";

@@ -14,6 +14,8 @@
 // - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) → sent and instanced on
 //   the server. Returns the node handle — it plays until you free it;
 // - a `Timeline` → a `Playhead` over the ambient clock and server;
+// - an `Automation` → its lane synth triggered and its targets mapped
+//   (`await auto.prepare(server)` first — see below);
 // - a `Buffer` → sounded through the stock playbuf instrument (a buffer
 //   sounds through an instrument; here the verb provides the default one —
 //   `rate`/`amp` controls, freed when the take ends);
@@ -32,11 +34,14 @@
 // play(new Pbind({ degree: new Pseq([0, 2, 4]), dur: 0.5 })); // a phrase
 // ```
 //
-// **Two kinds the Python client dispatches and this one does not**, each
-// waiting on the milestone that opens its surface: a bare **expression** (a
-// UGen graph wrapped in an ephemeral def) needs the `asDef` wrapper, and an
-// `Automation` needs the automation lane. Hand a def rather than an
-// expression until then.
+// **One kind the Python client dispatches and this one does not**: a bare
+// **expression** (a UGen graph wrapped in an ephemeral def) needs the `asDef`
+// wrapper, which waits on the offline drive. Hand a def instead until then.
+//
+// **One difference where it does dispatch.** The reference verb prepares an
+// unprepared `Automation` on the spot, blocking off the clock thread; a
+// synchronous verb in a page cannot, so an unprepared one is refused by name
+// and `await auto.prepare(server)` is the door.
 
 import { main } from "./base/main.ts";
 import { Routine, Stream } from "./base/stream.ts";
@@ -53,6 +58,7 @@ import { Event } from "./seq/event.ts";
 import type { EventDestination } from "./seq/event.ts";
 import type { EventStreamPlayer } from "./seq/eventstream.ts";
 import { Pattern } from "./seq/pattern.ts";
+import { Automation } from "./seq/automation.ts";
 import { Playhead, Timeline } from "./seq/timeline.ts";
 import type { PlayDestination } from "./seq/timeline.ts";
 
@@ -69,6 +75,7 @@ export type Playable =
     | GraphDef
     | Timeline
     | Buffer
+    | Automation
     | { play(destination: unknown): unknown };
 
 export interface PlayOptions {
@@ -95,8 +102,8 @@ export interface PlayOptions {
  * Returns something that knows how to end what just started: the completed
  * event for an event or object (`free()` / `release()`), the
  * `EventStreamPlayer` for a pattern (`stop()`), the routine for a routine, the
- * node handle for a def or a buffer (`free()`), and the `Playhead` for a
- * timeline (`stop()`).
+ * node handle for a def or a buffer (`free()`), the `Playhead` for a timeline
+ * (`stop()`) and the `Automation` itself (`stop()`).
  */
 export function play(playable: Playable, options: PlayOptions = {}): unknown {
     const { server, clock, quant, controls } = options;
@@ -132,6 +139,10 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
     if (playable instanceof Buffer) {
         return playBuffer(playable, main.resolveServer(server), controls);
     }
+    if (playable instanceof Automation) {
+        playable.play(main.resolveServer(server));
+        return playable;
+    }
     if (typeof playable === "object" && typeof (playable as Playable & {
         play?: unknown;
     }).play === "function") {
@@ -146,8 +157,8 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
     throw new TypeError(
         `don't know how to play ${String(playable)}; expected an Event or event ` +
             "object, an event Pattern (Pbind), a Routine/Stream or generator, a " +
-            "def (SynthDef/FaustDef/GraphDef), a Timeline, a Buffer, or anything " +
-            "with play(destination)",
+            "def (SynthDef/FaustDef/GraphDef), a Timeline, a Buffer, an " +
+            "Automation, or anything with play(destination)",
     );
 }
 

@@ -74,6 +74,7 @@ run_page gui.html      # the GuiDef builders + GuiHost, gestures and all
 run_page seq.html      # the clock and the patterns on the engine's own clock
 run_page data.html     # the data paths: buses, taps and bulk, drawn by the script
 run_page editor.html   # the editor views host-drawn from a buffer, and a transport
+run_page automation.html # the automation lane, and the bpf editor that draws it
 run_page transport.html # the governing transport: a frozen subtree and a held beat
 run_page hosts.html    # two host instances in one page, sharing only the event loop
 run_page session.html  # two sessions on two engines: the ambient verbs resolve right

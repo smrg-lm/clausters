@@ -602,7 +602,7 @@ buffer, drawn by the **host** as a linked waveform and spectrogram, with a
 transport whose playhead is anchored to the engine clock and whose pause is
 `/node_run`. Book chapter: "Reading the server".
 
-### W11 - Automation: a break-point curve as a control vector
+### ✅ W11 - Automation: a break-point curve as a control vector *(done 2026-08-03)*
 
 *Deferred out of W3*, because it is the one sequencing piece that is not pure
 timing: the TS side of C23 pulls in buffers, `Env` and a control def.
@@ -612,6 +612,55 @@ timing: the TS side of C23 pulls in buffers, `Env` and a control def.
 - **`plot(automation)` comes with it** (*named here from W23*, which ports the visual verbs without this kind): an automation's curve *is* an `Env`, so the leg is the `Env` one already written, labelled with the automation's control name — a few lines once the class exists.
 
 **Acceptance:** a curve authored in TS drives a synth's control over either carrier with the same values the Python client produces for the same break points, and dragging it in the browser GUI's `bpf` widget moves the sounding value.
+
+**What shipped.** `seq/automation.ts`, at its sibling's path and with its
+sibling's shape: `LANE_DEF`, `autoLaneDef()`, `addAutomationDef()` and the
+`Automation` class (`fromPoints`/`toPoints`/`duration`/`prepare`/`play`/
+`stop`/`free`), exported from `seq/` and dispatched by the free `play` — the
+same placement the reference module has, down to staying out of the package
+facade, which is where the Python client keeps it too. Three things are worth
+carrying forward:
+
+- **The two phases are the same two, for a different reason.** There they keep
+  a *thread* unblocked; here `prepare` is the half that `await`s and `play`
+  waits for nothing, so a routine can start a lane without holding up the
+  page's one thread. Same split, same words, the language doing the arguing.
+- **`play` refuses an unprepared curve rather than preparing it.** The
+  reference verb prepares on the spot, blocking off the clock thread; a
+  synchronous verb in a page cannot, and returning a promise from `play` for
+  one kind of playable would break the verb. So the refusal names
+  `await auto.prepare(server)`. The other half of that asymmetry — the NRT
+  self-prepare — has nothing to port to: there is no score destination here
+  (**W13**).
+- **The `/buffer_gen "env"` payload is tagged, not inferred.** A whole-numbered
+  level would otherwise ride as an int where the reference client sends a
+  float, so `envGenArgs` tags every value the way that client types it (the
+  shape an int, everything else a float) and the parity vector asserts the
+  tags as well as the numbers.
+
+The one piece of this slot that did **not** ship is the one it borrowed:
+`plot(automation)` needs `plot`, which is **W23**'s and not written yet. It
+stays named there.
+
+**Verified:** `./build.sh && ./test.sh` — 188 `node --test` cases (7 new: the
+lane def's spec and three curves against `seq-vectors.json`, frozen from the
+reference lane by the new `gen-seq-vectors.py`; the target normalization; the
+refusal; and one against a real `clausters --ws` server where the curve sweeps
+a `/node_map`-ed control read back off a bus) and twelve headless-Chrome
+acceptances, the new one being `tests/automation.html`: the lane sweeping a
+mapped control on the in-page engine (200 → 1153 → 2107 read off the bus by
+the script), `stop` holding it, then the same curve seeded into a `bpf` widget,
+**bent by a synthesized drag**, coming back as shape 5 with a curvature, and
+the rebuilt lane reading 544 where the straight one read 2107 — the drawn
+curve and the played one being one object. Example:
+`examples/automation-lane.html`, the port of `automation_lane.py` with the
+editor beside it (the Python one renders offline, which a page has no drive
+for). Book: "Automation: a curve driving a control", in the routines chapter.
+
+**The frozen vectors were re-checked while porting**: every generator in
+`tests/` (`osc`, `def`, `gui`, `clock`, `data`, `bundle`) was re-run against
+today's Python client and none of the committed files moved — the parity
+surface is exactly what it claims to be, and `seq-vectors.json` joins it.
 
 ### W12 - The shared `/transport_set` grid
 
@@ -681,8 +730,8 @@ The largest single item behind this, named here because it is a **track and not
 an example**: `gui_composer.py` needs the **arrangement layer** — `clausters.form`
 (elements placed recursively, and the rendering that flattens them) plus the
 multitrack `Editor` and its transport, roughly two thousand lines of Python with
-no TypeScript counterpart — and it pulls W11 (the automation lane) and W13 (the
-offline bounce of its take) with it. No design is staged for that port, and the
+no TypeScript counterpart — and it pulls W13 (the offline bounce of its take)
+with it; the automation lane it also needs is here since W11. No design is staged for that port, and the
 cross-client rule says the reference client is finished and polished first, then
 ported, with whatever is language-agnostic pushed into the shared core as it is
 written; deciding *what* goes down there is the first question of that milestone,
@@ -976,7 +1025,7 @@ yet, and each now has the module its Python sibling names waiting for it:
 `ugens/spectral.ts` is **W6**'s; `server/transport.ts` was **W22**'s and is written. The
 Python modules with no counterpart at all are unported *features*, not
 misplaced code, and each is already owned: `defs/boxes.py` and `defs/pv_expr.py`
-(**W7**), `seq/automation.py` (**W11**), `responders.py` (**W8**/**W9**),
+(**W7**), `responders.py` (**W8**/**W9**),
 `session.py`/`play.py`/`base/main.py`/`base/environment.py`/`defs/_wire.py`
 (**W18**), `render.py`/`defs/asdef.py` (**W13**), `form/` and `gui/editor.py`/
 `gui/transport.py`/`gui/notation.py` (**W16**'s named track), `defs/patch.py`
@@ -1133,8 +1182,8 @@ whole, the other does not.
   `Buffer` or buffer number (fetched from the ambient live server — W10 shipped
   `getSamples`), any iterable of numbers or `Pattern` (materialized, capped at
   `n`, value axis auto-fitted), and an `Env`. The remaining three — a def, a
-  bare expression, an `Automation` — are **W13**'s and **W11**'s, named in
-  those milestones. Until they land the verb must refuse them by name and say
+  bare expression, an `Automation` — are **W13**'s and, for the automation, a
+  few lines over the `Env` leg now that **W11** has shipped the class. Until they land the verb must refuse them by name and say
   which milestone opens each, the way `play` already refuses an expression: a
   verb that silently plots nothing is worse than one that says what it cannot
   do yet.

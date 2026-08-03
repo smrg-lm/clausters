@@ -28,10 +28,13 @@ import { WsConnection } from "../src/base/connection.ts";
 import { loadOsc } from "../src/base/osc.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
-import { control, out, sine } from "../src/defs/ugens/index.ts";
+import { control, out, outCtl, sine } from "../src/defs/ugens/index.ts";
 import { TempoClock } from "../src/base/clock.ts";
 import { SampleTimebase } from "../src/base/timebase.ts";
 import { Pbind, Pseq } from "../src/seq/index.ts";
+import { Automation } from "../src/seq/automation.ts";
+import { Bus } from "../src/defs/bus.ts";
+import { Synth } from "../src/defs/node.ts";
 
 const here = new URL(".", import.meta.url);
 const serverBin = new URL("../../../target/debug/clausters", here).pathname;
@@ -199,5 +202,59 @@ test("the sample timebase anchors on the server's own clock", {
         assertNear(log.started, t0, [0, 0.5], "note starts");
         assertNear(log.ended, t0, [1.0, 1.5], "note ends");
         clock.close();
+    });
+});
+
+test("an automation curve drives a control through a bus", { skip: !hasServer }, async () => {
+    await withServer(async (server) => {
+        // A synth whose `cutoff` the curve will drive. It writes that control
+        // straight to a control bus, so the value the lane produced is
+        // readable rather than inferred.
+        const cutoff = control("cutoff", 200.0);
+        const probe = control("probe", 0.0, { rate: "ir" });
+        await new SynthDef("ts_auto_target", outCtl(probe, cutoff)).send(server);
+
+        const readback = Bus.control(1, { server });
+        const target = new Synth("ts_auto_target", { probe: readback.index }, {
+            server,
+        });
+        await sleep(150);   // one control block, so the synth has written once
+        assert.equal(await readback.get(), 200.0, "the control starts at its default");
+
+        // Two seconds of curve, in the bpf widget's own flat form: 200 Hz to
+        // 4000 Hz, linearly.
+        const auto = Automation.fromPoints(
+            [0.0, 200.0, 1, 0.0, 2.0, 4000.0, 1, 0.0],
+            [target, "cutoff"],
+        );
+        await auto.prepare(server);
+        assert.ok(auto.buf, "prepare allocated the control buffer");
+        assert.ok(auto.bus, "prepare allocated the control bus");
+        assert.equal(auto.duration(), 2.0);
+
+        // No clock in context: the lane starts now and the curve's beats read
+        // as seconds, so a third of the way in is a third of the sweep.
+        auto.play(server);
+        await sleep(700);
+        const mid = Number(await readback.get());
+        assert.ok(
+            mid > 800 && mid < 2600,
+            `mid-sweep value ${mid} is not between the ends`,
+        );
+
+        // Interrupting frees the lane synth, so the mapped control holds the
+        // last value the curve reached rather than continuing.
+        auto.stop();
+        await sleep(300);
+        const held = Number(await readback.get());
+        assert.ok(
+            Math.abs(held - mid) < 900,
+            `the control kept sweeping after stop: ${mid} -> ${held}`,
+        );
+
+        auto.free();
+        assert.equal(auto.buf, null);
+        target.free();
+        readback.free();
     });
 });
