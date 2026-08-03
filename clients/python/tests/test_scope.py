@@ -170,3 +170,19 @@ def test_guidef_spectrum_carries_freq_scale_with_log_freq_legacy():
     # The legacy boolean still rides (the host reads it as linear/log).
     legacy = guidef.spectrum(0, id=8, log_freq=False)
     assert legacy["log_freq"] == 0 and "freq_scale" not in legacy
+
+
+def test_a_registered_host_answers_the_shm_question_itself():
+    """The shm demand is about the native host `scope` would boot. A host
+    registered from outside (the notebook's, in the page) reads the taps its
+    own way, and this module cannot reason about a front it cannot boot."""
+    from clausters.gui import set_ambient_host
+
+    host = FakeHost()
+    server = FakeServer(shm=None)
+    set_ambient_host(host)
+    try:
+        win = scope(bus=0, server=server)
+    finally:
+        set_ambient_host(None)
+    assert _widget(host.opened[0], "scope")["bus"] == 0
