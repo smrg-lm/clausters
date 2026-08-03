@@ -7,7 +7,7 @@
 - [Getting started](getting-started.md)
 - [The client, layer by layer](guide.md)
 - [Routines and clocks](routines-and-clocks.md)
-- [The ambient verbs: play, plot, render](verbs.md)
+- [The ambient verbs: play, plot, scope, render](verbs.md)
 - [The transport: a shared grid, and a piece that freezes](transport.md)
 - [Reading the server: buses and buffers](data.md)
 - [Receiving: responders](responders.md)

@@ -1427,7 +1427,7 @@ Python client's `transport_freeze.py` — a generative texture frozen mid-gestur
 and continued, driven end to end in a browser. Book chapter: "The transport: a
 shared grid, and a piece that freezes".
 
-### W23 - `scope`: the live views
+### ✅ W23 - `scope`: the live views *(done 2026-08-03)*
 
 *Deferred out of W18*, which ported the ambient environment and the `play`
 verb and left its visual siblings — `clausters.plot` and `clausters.scope`, the
@@ -1475,6 +1475,52 @@ does), and finds the ambient host with none named — a session's when one is up
 the page's otherwise. (`plot`'s half of this acceptance is met: `tests/plot.html`
 draws all six kinds and `score-parity.test.ts` matches the Python client's
 rendered envelopes.)
+
+**What shipped.** `src/scope.ts` at its sibling's path and with its sibling's
+surface — the `scope(bus, {...})` verb, its three views and a `ScopeWindow`
+with `set`/`close` — and, exactly as the sketch said, nothing blocked it: it is
+GuiDef assembly over a resolved host, sharing `plot`'s own ambient ladder
+(`resolveHost` is `@internal`-exported the way the reference client shares
+`plot._ambient_host`). Three things are worth carrying forward:
+
+- **The shared-memory requirement did not port, and the sketch was right about
+  why.** The reference verb refuses a server with no `shm` because the native
+  host reads the taps out of that segment; the browser host has no segment to
+  map and streams them over its own server leg. So this module has no check
+  where its sibling has one, and that absence is written into the module's own
+  header rather than left to be rediscovered.
+- **A live `set` never reached the host, and had not since W13.** The window
+  handles document their props the way the builders take them (`freqScale`,
+  `windowMs`) while `GuiHost.set` sent each key verbatim, so every camelCase
+  prop was a `/gui_set` the host ignored — silently, since an unknown prop is
+  not an error. `examples/offline.html` had been calling
+  `win.set({ freqScale: "log" })` into the void. The conversion now happens at
+  the door, which is where the package's standing rule already lives: the
+  options are TypeScript's, the props are the wire's. Fixed in its own commit,
+  ahead of this one.
+- **What the acceptance does *not* assert, and why it cannot.** The plan asked
+  for the trace to be checked "on the host's own drawing, as `data.html`
+  does", and that is not available here: `data.html` counts ink on a 2D canvas
+  the *script* fills, while the host draws on a wgpu surface whose buffer is
+  not readable after a frame — and the numbers behind it cannot be read from
+  the script either, because on one page the host and the script are a single
+  client and a script-side tap subscription would take the host's own away (the
+  ring clash W10 records, fixed in server **M31**). So the page asserts the
+  widget the host built, that its surface took a size, and the live `set` and
+  `close`; the arithmetic behind the pixels is asserted natively, in
+  `clausters_core::{oscil, spectrum}`, which is the one place both clients read
+  it from. Worth revisiting once M31 lands and a page can hold two readers.
+
+**Verified:** `./build.sh && ./test.sh` — 232 `node --test` cases unchanged and
+seventeen headless-Chrome acceptances, the new one being `tests/scope.html`:
+the three views on a live stereo tone, each reported back by the host as the
+widget its view means, the two arguments that are refused rather than coerced
+(a third channel on the phase view, an unknown view), `set` retuning the open
+window and `close` freeing it, and the ambient ladder resolving with none
+named and yielding to a registered host. Example: `examples/scoping.html`, the
+port of `scoping.py` — where the Python one is a timed tour that opens each
+window alone, the page puts the three side by side and leaves the knobs under
+the reader's hand. Book: the verbs chapter is `play, plot, scope, render` now.
 
 ### W24 - The completeness pass
 

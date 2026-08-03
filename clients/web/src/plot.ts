@@ -397,8 +397,12 @@ function isRow(value: unknown): boolean {
  *
  * A registered host wins outright: it is a front this module could not have
  * opened itself, which is the whole reason it was registered.
+ *
+ * @internal — exported for `./scope.ts`, the other ambient visual verb, which
+ * resolves through the same ladder and shares this module's own host. The
+ * Python client shares it the same way, as `plot._ambient_host`.
  */
-async function resolveHost(): Promise<GuiHost> {
+export async function resolveHost(): Promise<GuiHost> {
     const registered = ambientHost();
     if (registered) return registered;
     const session = main.currentSession as { guiHost?: GuiHost | null } | null;

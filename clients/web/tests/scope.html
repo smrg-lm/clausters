@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters scope</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      canvas { display: block; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>the <code>scope</code> verb over the in-page carrier: its three
+        views — the triggered oscilloscope, the goniometer and the live
+        spectrum — each opening its own window on the page's GUI host and
+        following a tone the engine is playing.</div>
+      <button id="boot">boot + scope</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The page half of W23 (clients/web/test.sh, headless Chrome): ?smoke=1
+      auto-runs and asserts that
+        - each view opens a window whose widget the host reports back as the
+          widget that view means, on the bus and channel count asked for;
+        - the phase view is the two-channel case and says so when told
+          otherwise, and an unknown view is refused by name;
+        - the host drew: its canvases got a size while the windows were up;
+        - `set` retunes a live window and `close` frees its subtree;
+        - the verb finds the ambient host with none named, and a registered one
+          wins over it.
+
+      What is deliberately *not* asserted here is the trace's own pixels. The
+      host draws on a wgpu surface whose buffer is not readable after a frame,
+      and the numbers behind it cannot be read from the script either: on one
+      page the host and the script are a single client, so a script-side tap
+      subscription would take the host's own away (the ring clash W10 records,
+      fixed in server M31). The arithmetic those pixels come from is asserted
+      natively instead — `clausters_core::{oscil, spectrum}` is where the
+      trigger alignment and the decibel curve live, and both clients read it
+      from there.
+    -->
+    <script type="module">
+      import { Session, SynthDef, Synth, gui, scope } from "../dist/index.js";
+      import { out, sine } from "../dist/defs/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      async function run() {
+        const session = (await Session.page({ channels: 2 })).adoptDefault();
+        const failures = [];
+        const check = (ok, what) => { if (!ok) failures.push(what); };
+
+        // Something for the scopes to follow: a stereo pair with the two
+        // channels a fifth apart, so the goniometer has a real field and the
+        // spectrum has two curves.
+        const left = sine(220.0).mul(0.3);
+        const right = sine(330.0).mul(0.3);
+        await new SynthDef("scope_tone", out(0.0, left), out(1.0, right))
+          .send(session.server);
+        await session.server.sync();
+        const tone = new Synth("scope_tone", {}, { server: session.server });
+        await session.server.sync();
+
+        // Each view opens its own window; the host is asked what it holds, so
+        // what is asserted is the widget the host actually built.
+        const shapes = {};
+        const opened = async (name, promise, type) => {
+          const win = await promise;
+          const info = await win.host.query(win.widgetId);
+          shapes[name] = info;
+          check(info.type === type, `${name}: widget is ${info.type}`);
+          check(Number(info.props.bus) === 0, `${name}: on bus ${info.props.bus}`);
+          log(`  scope(${name}): ${info.type}, bus=${info.props.bus}, `
+            + `channels=${info.props.channels ?? "-"}`);
+          return win;
+        };
+
+        const signal = await opened("signal",
+          scope(0, { channels: 2, windowMs: 10.0, trigger: 0.05 }), "scope");
+        check(Number(signal.channels) === 2, "signal: two channels");
+        check(Number(shapes.signal.props.window_ms) === 10,
+          `signal: window_ms is ${shapes.signal.props.window_ms}`);
+
+        const phase = await opened("phase", scope(0, { view: "phase" }),
+          "phasescope");
+        check(phase.channels === 2, "phase: fixed at two channels");
+
+        const spectrum = await opened("spectrum",
+          scope(0, { view: "spectrum", channels: 2, freqScale: "mel" }),
+          "spectrum");
+        check(shapes.spectrum.props.freq_scale === "mel",
+          `spectrum: freq_scale is ${shapes.spectrum.props.freq_scale}`);
+
+        // The label defaults to the buses, per view.
+        check(shapes.signal.props.label === "bus 0-1",
+          `signal: label is ${shapes.signal.props.label}`);
+        check(shapes.phase.props.label === "bus 0/1",
+          `phase: label is ${shapes.phase.props.label}`);
+
+        // The two arguments that are refused rather than coerced.
+        let refused = 0;
+        for (const [label, call] of [
+          ["a third channel on the phase view", () => scope(0, {
+            view: "phase", channels: 3,
+          })],
+          ["an unknown view", () => scope(0, { view: "waterfall" })],
+        ]) {
+          try {
+            await call();
+            failures.push(`${label} was accepted`);
+          } catch {
+            refused++;
+          }
+        }
+
+        // The host drew. On the page host every window shares the page's
+        // default canvas unless the caller supplies one per def (which is what
+        // a component does), so what is asserted is that the surface took a
+        // size while the windows were up — not one canvas per view.
+        await sleep(600);
+        const canvases = [...document.querySelectorAll("canvas")]
+          .filter((c) => c.width > 100 && c.height > 100);
+        check(canvases.length >= 1,
+          `no canvas took a size (${document.querySelectorAll("canvas").length} present)`);
+
+        // The window stays adjustable, and closes.
+        signal.set({ windowMs: 40.0, ruler: "off" });
+        const retuned = await signal.host.query(signal.widgetId);
+        check(Number(retuned.props.window_ms) === 40,
+          `set: window_ms is ${retuned.props.window_ms}`);
+        signal.close();
+        signal.close();   // idempotent
+        // A freed widget is gone from the host: it answers with no type at
+        // all, or does not answer.
+        let gone = false;
+        try {
+          const after = await signal.host.query(signal.widgetId);
+          gone = after.type === "";
+        } catch {
+          gone = true;
+        }
+        check(gone, "close: the widget is still there");
+
+        // The ambient host: with nothing registered every window above found
+        // the session's host on its own; a registered one wins outright.
+        const registered = await gui.GuiHost.page();
+        gui.setAmbientHost(registered);
+        const onRegistered = await scope(0);
+        check(onRegistered.host === registered, "a registered host wins");
+        onRegistered.close();
+        gui.setAmbientHost(null);
+
+        phase.close();
+        spectrum.close();
+        tone.free();
+        session.close();
+
+        verdict(failures.length === 0
+          ? `PASS: three scope views drew — a 2-channel oscilloscope on `
+            + `"${shapes.signal.props.label}", a goniometer on `
+            + `"${shapes.phase.props.label}", a mel spectrum; `
+            + `${canvases.length} canvases sized, ${refused} bad arguments `
+            + `refused, set retuned the window and close freed it, and a `
+            + `registered host won`
+          : `FAIL: ${failures.join("; ")}`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

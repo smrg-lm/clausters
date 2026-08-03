@@ -1,6 +1,6 @@
-# The ambient verbs: play, plot, render
+# The ambient verbs: play, plot, scope, render
 
-Three free-standing functions cover the interactive loop: **`play`** sounds a thing now, **`plot`** shows a thing, **`render`** turns a thing into audio. Each is one verb for many kinds — hand it whatever you have, and it resolves the **ambient context** (the running session, else the default one) so a quick take never spells out a server, a clock or a GUI host:
+Four free-standing functions cover the interactive loop: **`play`** sounds a thing now, **`plot`** shows a thing, **`scope`** watches what is sounding, **`render`** turns a thing into audio. Each is one verb for many kinds — hand it whatever you have, and it resolves the **ambient context** (the running session, else the default one) so a quick take never spells out a server, a clock or a GUI host:
 
 ```js
 import { Session, play, plot, render } from "clausters";
@@ -18,8 +18,9 @@ The three carry one semantic each, and the split is deliberate:
 - **`play`** is for what already sounds directly — it starts something *now* (or on the clock's next beat) and returns a handle to it.
 - **`render`** is the **change of state**: it evaluates a *generator* thing (a def, a pattern — an algorithm that describes sound) into a *generated* one (samples — random-access audio). Always offline, and it reports what it did.
 - **`plot`** is the visual sibling of `render`: the same materialization, drawn in its own window instead of returned.
+- **`scope`** is the *live* one: where `plot` draws a thing that was materialized once, `scope` opens a window that follows a running server's audio buses frame by frame, with no per-frame messages from the script.
 
-`play` is synchronous; `plot` and `render` resolve with a promise, because opening a host and running a render both wait and a page may not block. That is this client's one standing difference from the [Python client](https://clausters-python.readthedocs.io/), not a difference in the verbs.
+`play` is synchronous; `plot`, `scope` and `render` resolve with a promise, because opening a host and running a render both wait and a page may not block. That is this client's one standing difference from the [Python client](https://clausters-python.readthedocs.io/), not a difference in the verbs.
 
 ## What each verb accepts
 
@@ -43,6 +44,16 @@ The three carry one semantic each, and the split is deliberate:
 | an `Env` or an `Automation` | the curve, rendered through the engine's own `envGen` |
 | a `Buffer` or a buffer number | its contents, fetched from the ambient live server |
 | any iterable of numbers (a `Pattern`, an array, a `Float32Array`) | the sequence, index on the x axis and the value range fitted |
+
+**Scope views** — `await scope(bus, { view })`, one window each:
+
+| `view` | It shows |
+|---|---|
+| `"signal"` (default) | a triggered **oscilloscope** over `channels` adjacent buses — every frame aligned on a rising crossing of `trigger` in the first channel, so a periodic signal stands still and the channels keep their true relative phase |
+| `"phase"` | a **goniometer** of the pair `bus` / `bus + 1`: mono draws a vertical line, anti-phase horizontal, with the correlation under the field |
+| `"spectrum"` | a live **FFT** curve per channel, hertz on `freqScale` against dB over `[dbFloor, dbCeil]` |
+
+`win.set({...})` retunes any prop of the open view while it runs, and `win.close()` closes the window — after which the host stops recording whatever no open view is drawing any more. Naming a bus is all a script does: the host asks the server to record it.
 
 **Renderables** — `await render(x)`:
 
