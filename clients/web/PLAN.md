@@ -805,6 +805,21 @@ instances share the loop and nothing else.
   and should not: the browser's bulk path is the blob/`ArrayBuffer` one, which
   W10 shipped. So: nothing to port, by design in both halves.
 
+- **`gui/__init__.py`'s `set_ambient_host`/`ambient_host` have no counterpart
+  here, and the reason is **W18**.** They exist so the Python client's ambient
+  visual verbs (`clausters.plot`, `clausters.scope`) can resolve a host without
+  being told one, ahead of their boot-a-process fallback. This client has
+  neither verb nor fallback — `GuiHost.page()` *is* the ambient host of a page
+  — so the registry would have nothing to register for. It ports with the
+  ambient layer, not before it: whatever resolves a default `Server` and a
+  default clock in W18 is what a default `GuiHost` hangs off.
+
+- **The widget props are their own manifest, and it is `docs/gui-props.md`.**
+  That table compares all three surfaces — the host, the Python builders, this
+  client's option types — and `clients/python/tests/test_gui_props.py` fails on
+  a difference it does not name. A prop added here or there is checked against
+  it, so this plan does not carry a second list of them.
+
 ## Future directions
 
 - **Node target.** Already true in the harness, not yet a supported target: the `node --test` suites drive a real `clausters --ws` server and a real `clausters-gui --ws` host, so `WsConnection` runs under node's global `WebSocket` (`src/base/connection.ts` says so) and the wasm core loads there (`loadCore(bytes)`, node's `fetch` not reading `file://`). What remains is making it a *product*: a load path that finds the core's `.wasm` without the test's manual read, a documented entry point for headless scripting/CI the way `clients/python` runs without a display, and the boundary written down — the def, sequencing and GUI-driver layers port, the in-page engine (AudioWorklet) and the page host (canvas) do not.

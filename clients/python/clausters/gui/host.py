@@ -212,6 +212,18 @@ class GuiHost:
         self._osc.send_msg(self.target, "/gui_def", id, to_json(tree), *blobs)
         return WindowHandle(self, id, names)
 
+    def load(self, name: str):
+        """``/gui_load <name>`` — instantiate a **persisted** GuiDef by name, the
+        host replaying it as its saved ``/gui_def`` (it must have been started
+        with a ``--data-dir``).
+
+        The tree is the host's, not this client's: it carries the ids it was
+        saved with, so nothing is allocated here and no `clausters.gui.handle.
+        WindowHandle` comes back — address its widgets with `set` / `free` by
+        the ids the def declares.
+        """
+        self._osc.send_msg(self.target, "/gui_load", name)
+
     def _register(self, node: dict, node_id: int, names: dict):
         """Walk ``node`` (whose id is ``node_id``): assign a fresh id to every
         id-less descendant **in place**, record each id's children (the subtree

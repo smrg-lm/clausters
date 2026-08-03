@@ -81,7 +81,9 @@ def cases():
             g.waveform(id=1, path="take.f32", channels=2, base_bucket=512,
                        ruler="beats", ruler_y="db", tempo=2.0, beat_at=0.0,
                        quant=4.0, sel_start=1000.0, sel_len=4000.0,
-                       playhead_at=48000.0, y_start=0.25, y_len=0.5, link=7,
+                       playhead_at=48000.0, playhead=32000.0,
+                       playhead_loop_start=1000.0, playhead_loop_len=8000.0,
+                       y_start=0.25, y_len=0.5, link=7,
                        overlay=True),
             g.spectrogram(id=2, cache="take.stft", window_size=2048, hop=512,
                           sample_rate=48000.0, db_floor=-90.0, db_ceil=0.0,
@@ -132,7 +134,9 @@ def cases():
             g.pianoroll(id=1, notes=[(0.0, 4800.0, 60), (4800.0, 4800.0, 67, 90, 1)],
                         osc=[(0.0, "start"), 9600.0], min=48, max=84,
                         snap=1200.0, velocity=True, osc_lane=True,
-                        ruler="beats", tempo=2.0, playhead_at=-1.0),
+                        ruler="beats", tempo=2.0, playhead_at=-1.0,
+                        playhead=2400.0, playhead_loop_start=0.0,
+                        playhead_loop_len=9600.0),
             g.piano(id=2, min=36, max=96, active_min=48, active_max=84,
                     velocity=100, channel=0, voice="piano_voice",
                     voice_args=[("amp", 0.3)], overview=True, pan=True),
@@ -144,9 +148,35 @@ def cases():
                 g.clip(id=6, offset=72000.0, dur=24000.0,
                        points=[(0.0, 0.0), (24000.0, 1.0, "sin")], exp=False),
                 id=3, label="drums", height=2.0, snap=1200.0, ruler="time",
-                sample_rate=48000.0, playhead_at=0.0,
+                sample_rate=48000.0, playhead_at=0.0, playhead=12000.0,
+                playhead_loop_start=0.0, playhead_loop_len=96000.0, link=7,
             ),
             title="arrangement", layout="col",
+        ),
+    ))
+
+    # The free-standing ruler over a navigation group, the engraved page with
+    # its whole cursor track, and the legacy boolean frequency-axis alias.
+    out.append((
+        "ruler_score_legacy",
+        g.window(
+            g.timeruler(id=1, h=24.0, link=7, ruler="beats", tempo=2.0,
+                        beat_at=0.0, quant=4.0),
+            g.score(id=2,
+                    display_list={
+                        "vb": [100.0, 50.0],
+                        "glyphs": {"e0a4": "M0 0 L1 1 Z"},
+                        "prims": [{"id": "n1", "kind": "glyph", "cp": "e0a4",
+                                   "x": 10.0, "y": 20.0}],
+                        "cursors": [{"t": 0.0, "x": 10.0, "y0": 0.0, "y1": 40.0}],
+                        "step": 2.5,
+                    },
+                    playhead=250.0, playhead_at=48000.0,
+                    playhead_loop_start=0.0, playhead_loop_len=4000.0,
+                    sample_rate=48000.0, selected="n1", editable=True),
+            g.spectrogram(id=3, data=[0.0, 0.5, -0.5, 1.0], log_freq=True),
+            g.spectrum(0, id=4, log_freq=False, label="legacy"),
+            title="ruler and score", layout="col",
         ),
     ))
 

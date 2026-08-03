@@ -97,3 +97,13 @@ def test_the_id_is_never_positional():
     assert guidef.meter(4)["bus"] == 4
     assert guidef.menu(["sine", "saw"])["options"] == ["sine", "saw"]
     assert guidef.panel(guidef.button())["children"][0]["type"] == "button"
+
+
+def test_load_names_a_persisted_def_and_allocates_nothing():
+    """`/gui_load` replays a def the host saved, under the id it was saved
+    with — so the client neither allocates ids nor resolves names for it."""
+    host = GuiHost(interface=_Recorder())
+    host.load("mixer")
+    assert host._osc.sent == [("/gui_load", "mixer")]
+    assert host._alloc.in_use == 0
+    assert host._children == {}

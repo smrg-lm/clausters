@@ -45,11 +45,13 @@ import {
     pointsToEnv,
     samplesToBlob,
     scope,
+    score,
     scroll,
     slider,
     spectrogram,
     spectrum,
     text,
+    timeruler,
     toggle,
     toJson,
     track,
@@ -131,7 +133,9 @@ const trees: Record<string, () => GuiNode> = {
                 id: 1, path: "take.f32", channels: 2, baseBucket: 512,
                 ruler: "beats", rulerY: "db", tempo: 2.0, beatAt: 0.0,
                 quant: 4.0, selStart: 1000.0, selLen: 4000.0,
-                playheadAt: 48000.0, yStart: 0.25, yLen: 0.5, link: 7,
+                playheadAt: 48000.0, playhead: 32000.0,
+                playheadLoopStart: 1000.0, playheadLoopLen: 8000.0,
+                yStart: 0.25, yLen: 0.5, link: 7,
                 overlay: true,
             }),
             spectrogram({
@@ -185,6 +189,8 @@ const trees: Record<string, () => GuiNode> = {
                 osc: [[0.0, "start"], 9600.0],
                 min: 48, max: 84, snap: 1200.0, velocity: true, oscLane: true,
                 ruler: "beats", tempo: 2.0, playheadAt: -1.0,
+                playhead: 2400.0, playheadLoopStart: 0.0,
+                playheadLoopLen: 9600.0,
             }),
             piano({
                 id: 2, min: 36, max: 96, activeMin: 48, activeMax: 84,
@@ -195,6 +201,8 @@ const trees: Record<string, () => GuiNode> = {
                 {
                     id: 3, label: "drums", height: 2.0, snap: 1200.0,
                     ruler: "time", sampleRate: 48000.0, playheadAt: 0.0,
+                    playhead: 12000.0, playheadLoopStart: 0.0,
+                    playheadLoopLen: 96000.0, link: 7,
                 },
                 clip({
                     id: 4, offset: 0.0, dur: 48000.0, path: "take.f32",
@@ -209,6 +217,30 @@ const trees: Record<string, () => GuiNode> = {
                     points: [[0.0, 0.0], [24000.0, 1.0, "sin"]], exp: false,
                 }),
             ),
+        ),
+
+    ruler_score_legacy: () =>
+        window(
+            { title: "ruler and score", layout: "col" },
+            timeruler({
+                id: 1, h: 24.0, link: 7, ruler: "beats", tempo: 2.0,
+                beatAt: 0.0, quant: 4.0,
+            }),
+            score({
+                id: 2,
+                displayList: {
+                    vb: [100.0, 50.0],
+                    glyphs: { e0a4: "M0 0 L1 1 Z" },
+                    prims: [{ id: "n1", kind: "glyph", cp: "e0a4", x: 10.0, y: 20.0 }],
+                    cursors: [{ t: 0.0, x: 10.0, y0: 0.0, y1: 40.0 }],
+                    step: 2.5,
+                },
+                playhead: 250.0, playheadAt: 48000.0,
+                playheadLoopStart: 0.0, playheadLoopLen: 4000.0,
+                sampleRate: 48000.0, selected: "n1", editable: true,
+            }),
+            spectrogram({ id: 3, data: [0.0, 0.5, -0.5, 1.0], logFreq: true }),
+            spectrum(0, { id: 4, logFreq: false, label: "legacy" }),
         ),
 
     patch_canvas: () =>

@@ -73,50 +73,40 @@ measured, so a row that becomes half-true fails rather than rotting.
 
 | widget | prop | surfaces | verdict |
 |---|---|---|---|
-| `pianoroll` | `playhead_loop_len` | host web | **gap** — the sweep's loop region, documented in `docs/gui-protocol.md` and implemented; the Python builder never named it, so a Python script reaches it only through `**props` |
-| `pianoroll` | `playhead_loop_start` | host web | **gap** — as above |
 | `plot` | `buffer` | web | **gap** — the web builder's `plot` takes `SourceOptions`, which carries the two bulk sources; the host's `plot` reads neither, so the option lands nowhere. Either the host grows them (the heavy views have them) or the option type stops claiming them |
 | `plot` | `cache` | web | **gap** — as above |
-| `spectrogram` | `log_freq` | host python | **idiom** — the legacy boolean superseded by `freq_scale`, kept working by the host and still named by the Python builder for the scripts that used it. The web client is newer than the rename and never had it |
-| `spectrogram` | `playhead` | host web | **gap** — the *static* playhead (where the cursor stands while nothing sweeps), beside the `playhead_at` the Python builder does name |
-| `spectrogram` | `playhead_loop_len` | host web | **gap** — as `pianoroll` |
-| `spectrogram` | `playhead_loop_start` | host web | **gap** — as `pianoroll` |
-| `spectrum` | `log_freq` | host python | **idiom** — as `spectrogram` |
-| `timeruler` | `playhead` | host web | **gap** — the ruler carries the same timeline chrome as the views it sits above; the Python builder declares only the time axis (`ruler`, `tempo`, `sample_rate`, `beat_at`, `quant`, `link`) |
-| `timeruler` | `playhead_at` | host web | **gap** — as above |
-| `timeruler` | `playhead_loop_len` | host web | **gap** — as above |
-| `timeruler` | `playhead_loop_start` | host web | **gap** — as above |
-| `timeruler` | `sel_len` | host web | **gap** — as above |
-| `timeruler` | `sel_start` | host web | **gap** — as above |
-| `timeruler` | `y_len` | host web | **gap** — as above |
-| `timeruler` | `y_start` | host web | **gap** — as above |
-| `track` | `link` | host web | **gap** — the shared navigation group; a Python-built track cannot join one by name |
-| `track` | `playhead` | host web | **gap** — listed for `track` in `docs/gui-protocol.md`, absent from the Python builder |
-| `track` | `playhead_loop_len` | host web | **gap** — as above |
-| `track` | `playhead_loop_start` | host web | **gap** — as above |
-| `track` | `sel_len` | host web | **gap** — as above |
-| `track` | `sel_start` | host web | **gap** — as above |
-| `track` | `y_len` | host web | **gap** — as above |
-| `track` | `y_start` | host web | **gap** — as above |
-| `waveform` | `playhead` | host web | **gap** — the static playhead, as `spectrogram` |
-| `waveform` | `playhead_loop_len` | host web | **gap** — as `pianoroll` |
-| `waveform` | `playhead_loop_start` | host web | **gap** — as `pianoroll` |
+| `timeruler` | `playhead` | host web | **idiom** — a ruler draws an axis and nothing else: it parses the whole chrome only because it shares the host's `EditorProps` bundle, and the frame pass gives it a ruler strip with no playhead, selection or vertical window. The web client declares that bundle once (`TimelineOptions`) and so offers the inert members too; the Python builder names props widget by widget and names only the ones the ruler acts on (`ruler`, `tempo`, `beat_at`, `quant`, `sample_rate`, `link`) |
+| `timeruler` | `playhead_at` | host web | **idiom** — as above |
+| `timeruler` | `playhead_loop_len` | host web | **idiom** — as above |
+| `timeruler` | `playhead_loop_start` | host web | **idiom** — as above |
+| `timeruler` | `sel_len` | host web | **idiom** — as above |
+| `timeruler` | `sel_start` | host web | **idiom** — as above |
+| `timeruler` | `y_len` | host web | **idiom** — as above |
+| `timeruler` | `y_start` | host web | **idiom** — as above |
+| `track` | `sel_len` | host web | **idiom** — a lane has no selection and no vertical window (`EditorProps::parse_lane` says so, and the frame pass draws neither), so these four are inert on it for the same reason the ruler's are. The lane *does* act on the playhead and its loop region, and the Python builder names those |
+| `track` | `sel_start` | host web | **idiom** — as above |
+| `track` | `y_len` | host web | **idiom** — as above |
+| `track` | `y_start` | host web | **idiom** — as above |
 
 ## What the table says, read as a whole
 
-Twenty-six of the twenty-eight rows point the same way: **the Python client is
-the reference for the API and is behind on the timeline chrome.** The host
-implements the playhead, its loop region, the selection and the vertical window
-for every timeline widget, `docs/gui-protocol.md` documents them, the web
-client's `TimelineOptions` declares them once for all of them — and the Python
-builders name them widget by widget, which is how `track` and `timeruler` ended
-up naming almost none.
+The table used to be twenty-eight rows, twenty-six of them pointing one way:
+the Python client is the reference for the API and was behind on the timeline
+chrome — the host implemented the playhead, its loop region, the selection and
+the vertical window for every timeline widget, and the Python builders, which
+name props widget by widget rather than sharing an interface, had named only
+some of them. That is closed: `waveform`, `spectrogram`, `pianoroll`, `track`
+and `score` name the whole chrome they act on, and the web client gained the
+`log_freq` alias and `score`'s loop region in the same pass.
 
-That is a real asymmetry and not this file's to fix: closing it changes the
-Python API (new keyword arguments), which is a milestone, not a manifest entry.
-What the manifest does is make it visible and keep it from growing — the next
-prop added to one surface and not the others fails a test on the way in.
+What is left is two kinds of row, and neither is work:
 
-The two rows that point the other way are `plot`'s `buffer` and `cache`: the web
-client offers two options the host does not read. Those are the more urgent
-kind, because a script that passes them gets no error and no effect.
+- **Twelve `idiom` rows on `timeruler` and `track`** — props the host parses
+  for those two only because both embed the shared `EditorProps` bundle, and
+  then draws nothing with. The web client declares the bundle once and inherits
+  them; Python names them per widget and does not. Naming an inert prop is
+  worse than not naming it, so this asymmetry is the correct one.
+- **`plot`'s `buffer` and `cache`** — the one direction that still points the
+  other way: the web client offers two options the host does not read. That is
+  the more urgent kind, because a script that passes them gets no error and no
+  effect.

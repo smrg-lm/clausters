@@ -147,6 +147,9 @@
           "sel_start": 1000.0,
           "sel_len": 4000.0,
           "playhead_at": 48000.0,
+          "playhead": 32000.0,
+          "playhead_loop_start": 1000.0,
+          "playhead_loop_len": 8000.0,
           "y_start": 0.25,
           "y_len": 0.5,
           "link": 7,
@@ -354,6 +357,9 @@
           "ruler": "beats",
           "tempo": 2.0,
           "playhead_at": -1.0,
+          "playhead": 2400.0,
+          "playhead_loop_start": 0.0,
+          "playhead_loop_len": 9600.0,
           "velocity": 1,
           "osc_lane": 1
         },
@@ -383,6 +389,10 @@
           "ruler": "time",
           "sample_rate": 48000.0,
           "playhead_at": 0.0,
+          "playhead": 12000.0,
+          "playhead_loop_start": 0.0,
+          "playhead_loop_len": 96000.0,
+          "link": 7,
           "children": [
             {
               "type": "clip",
@@ -427,6 +437,80 @@
               "exp": 0
             }
           ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "ruler_score_legacy",
+    "tree": {
+      "type": "window",
+      "title": "ruler and score",
+      "layout": "col",
+      "children": [
+        {
+          "type": "timeruler",
+          "id": 1,
+          "h": 24.0,
+          "ruler": "beats",
+          "tempo": 2.0,
+          "beat_at": 0.0,
+          "quant": 4.0,
+          "link": 7
+        },
+        {
+          "type": "score",
+          "id": 2,
+          "playhead": 250.0,
+          "playhead_at": 48000.0,
+          "playhead_loop_start": 0.0,
+          "playhead_loop_len": 4000.0,
+          "sample_rate": 48000.0,
+          "selected": "n1",
+          "editable": true,
+          "vb": [
+            100.0,
+            50.0
+          ],
+          "glyphs": {
+            "e0a4": "M0 0 L1 1 Z"
+          },
+          "prims": [
+            {
+              "id": "n1",
+              "kind": "glyph",
+              "cp": "e0a4",
+              "x": 10.0,
+              "y": 20.0
+            }
+          ],
+          "cursors": [
+            {
+              "t": 0.0,
+              "x": 10.0,
+              "y0": 0.0,
+              "y1": 40.0
+            }
+          ],
+          "step": 2.5
+        },
+        {
+          "type": "spectrogram",
+          "id": 3,
+          "data": [
+            0.0,
+            0.5,
+            -0.5,
+            1.0
+          ],
+          "log_freq": 1
+        },
+        {
+          "type": "spectrum",
+          "id": 4,
+          "bus": 0,
+          "label": "legacy",
+          "log_freq": 0
         }
       ]
     }

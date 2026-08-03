@@ -112,6 +112,7 @@ __all__ = [
     "menu",
     "waveform",
     "spectrogram",
+    "piano",
     "pianoroll",
     "meter",
     "scope",
@@ -122,6 +123,11 @@ __all__ = [
     "env_to_points",
     "points_to_env",
     "plot",
+    "score",
+    "timeruler",
+    "track",
+    "clip",
+    "patch",
     "canvas",
     "to_json",
     "samples_to_blob",
@@ -335,7 +341,9 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
              sample_rate: float | None = None, tempo: float | None = None,
              beat_at: float | None = None, quant: float | None = None,
              sel_start: float | None = None, sel_len: float | None = None,
-             playhead_at: float | None = None, y_start: float | None = None,
+             playhead_at: float | None = None, playhead: float | None = None,
+             playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
+             y_start: float | None = None,
              y_len: float | None = None, link: int | None = None, color: str | None = None,
              id: int | None = None, **props) -> dict:
     """The heavy ``waveform`` view, fed its samples one of several ways (in the
@@ -378,7 +386,11 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     ``/gui_event id "selection" start len``; Shift+drag pans, the wheel zooms).
     ``playhead_at`` draws a playhead tracking the engine sample clock: pass the
     ``/clock_query`` sample value that corresponds to buffer position 0 (negative or
-    omitted = no playhead). ``playhead_loop_start``/``playhead_loop_len`` (in
+    omitted = no playhead). ``playhead`` is the **static** counterpart — a
+    position in samples where a located, stopped transport parks the line
+    (negative = none); it stands still while ``playhead_at`` is off, so a
+    paused cursor does not drift with the clock.
+    ``playhead_loop_start``/``playhead_loop_len`` (in
     samples) make that sweep **wrap** inside the region instead of running
     straight past it — what a looping playback does, so playing a selection on
     a loop can be followed on the same one anchor and still costs no message
@@ -409,7 +421,10 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
                        ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
-                       playhead_at=playhead_at, y_start=y_start, y_len=y_len,
+                       playhead_at=playhead_at, playhead=playhead,
+                       playhead_loop_start=playhead_loop_start,
+                       playhead_loop_len=playhead_loop_len,
+                       y_start=y_start, y_len=y_len,
                        link=link, color=color)
     if overlay is not None:
         extra["overlay"] = 1 if overlay else 0
@@ -425,7 +440,9 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
                 ruler: str | None = None, ruler_y: str | None = None, tempo: float | None = None,
                 beat_at: float | None = None, quant: float | None = None,
                 sel_start: float | None = None, sel_len: float | None = None,
-                playhead_at: float | None = None, y_start: float | None = None,
+                playhead_at: float | None = None, playhead: float | None = None,
+                playhead_loop_start: float | None = None,
+                playhead_loop_len: float | None = None, y_start: float | None = None,
                 y_len: float | None = None, link: int | None = None, color: str | None = None,
                 id: int | None = None, **props) -> dict:
     """The heavy ``spectrogram`` (STFT time-frequency) view, fed like the
@@ -450,7 +467,8 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
     following ``freq_scale``; ``ruler`` labels the time axis exactly as on the
     `waveform` (``"time"``/``"samples"``/``"beats"`` with
     ``tempo``/``beat_at``/``quant``, or ``"off"``). The rest of the editor
-    chrome (``sel_start``/``sel_len``, ``playhead_at``, drag-to-select /
+    chrome (``sel_start``/``sel_len``, ``playhead_at``/``playhead`` and their
+    ``playhead_loop_start``/``playhead_loop_len`` region, drag-to-select /
     Shift+drag pan / wheel zoom) also works exactly as on the `waveform` —
     including the vertical view window ``y_start``/``y_len``, which here
     slices the **frequency display axis** (normalized, ``0, 1`` = the full
@@ -468,7 +486,10 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
                        colormap=colormap, ruler=ruler, ruler_y=ruler_y,
                        tempo=tempo, beat_at=beat_at, quant=quant,
                        sel_start=sel_start, sel_len=sel_len,
-                       playhead_at=playhead_at, y_start=y_start, y_len=y_len,
+                       playhead_at=playhead_at, playhead=playhead,
+                       playhead_loop_start=playhead_loop_start,
+                       playhead_loop_len=playhead_loop_len,
+                       y_start=y_start, y_len=y_len,
                        link=link, color=color)
     if log_freq is not None:
         extra["log_freq"] = 1 if log_freq else 0
@@ -759,7 +780,8 @@ def plot(*, data=None, blob: int | None = None,
 
 
 def score(*, display_list: dict | None = None, playhead: float | None = None,
-          playhead_at: float | None = None, sample_rate: float | None = None,
+          playhead_at: float | None = None, playhead_loop_start: float | None = None,
+          playhead_loop_len: float | None = None, sample_rate: float | None = None,
           selected: str | None = None, editable: bool | None = None, color: str | None = None,
           id: int | None = None, **props) -> dict:
     """An engraved music-notation ``score`` page.
@@ -822,6 +844,8 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     """
     dl = dict(display_list or {})
     extra = _drop_none(color=color, playhead=playhead, playhead_at=playhead_at,
+                       playhead_loop_start=playhead_loop_start,
+                       playhead_loop_len=playhead_loop_len,
                        sample_rate=sample_rate, selected=selected,
                        editable=editable, vb=dl.get("vb"), glyphs=dl.get("glyphs"),
                        prims=dl.get("prims"), cursors=dl.get("cursors"),
@@ -832,7 +856,9 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
 def track(*clips, label: str | None = None, height: float | None = None, snap: float | None = None,
           ruler: str | None = None, sample_rate: float | None = None, tempo: float | None = None,
           beat_at: float | None = None, quant: float | None = None,
-          playhead_at: float | None = None, theme: dict | None = None, color: str | None = None,
+          playhead_at: float | None = None, playhead: float | None = None,
+          playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
+          link: int | None = None, theme: dict | None = None, color: str | None = None,
           id: int | None = None, **props) -> dict:
     """A multitrack ``track`` lane holding `clip` children placed on a shared
     time axis — the DAW-style track editor's lane. ``label`` names it in a left
@@ -860,7 +886,10 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
       the playhead sweeps the clips as the composition plays (the same anchor the
       `waveform` uses; read the clock with ``Server.request("/clock_query")``). Set it
       live with ``GuiHost.set(track_id, playhead_at=clock)``; a negative value
-      (the default) draws no playhead.
+      (the default) draws no playhead. ``playhead`` parks a static cursor where
+      a located, stopped transport sits, and
+      ``playhead_loop_start``/``playhead_loop_len`` wrap the sweep inside a
+      looped region — all exactly as on the `waveform`.
 
     Pass the clips positionally; ``name`` is what a script addresses a lane or a
     clip by::
@@ -871,7 +900,10 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
     """
     extra = _drop_none(label=label, height=height, snap=snap, ruler=ruler,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
-                       quant=quant, playhead_at=playhead_at, theme=theme, color=color)
+                       quant=quant, playhead_at=playhead_at, playhead=playhead,
+                       playhead_loop_start=playhead_loop_start,
+                       playhead_loop_len=playhead_loop_len,
+                       link=link, theme=theme, color=color)
     return node("track", id=id, children=clips, **extra, **props)
 
 
@@ -984,6 +1016,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               tempo: float | None = None, beat_at: float | None = None, quant: float | None = None,
               sel_start: float | None = None, sel_len: float | None = None,
               playhead_at: float | None = None, playhead: float | None = None,
+              playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
               y_start: float | None = None, y_len: float | None = None, label: str | None = None,
               color: str | None = None, id: int | None = None, **props) -> dict:
     """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
@@ -1018,7 +1051,9 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     (``"time"``/``"samples"``/``"beats"``, default ``"time"``) with
     ``sample_rate``/``tempo``/``beat_at``/``quant`` labelling it; ``sel_start``/
     ``sel_len`` mark a time selection; ``playhead_at`` sweeps a playhead from the
-    engine clock (``playhead`` sets a static cursor); ``y_start``/``y_len`` are the
+    engine clock (``playhead`` sets a static cursor, and
+    ``playhead_loop_start``/``playhead_loop_len`` wrap the sweep inside a
+    region); ``y_start``/``y_len`` are the
     vertical pitch window (normalized ``0..1`` over ``[min, max]``) for pitch
     zoom/pan. ``velocity=False`` hides the velocity lane; ``osc_lane=True`` opens
     the OSC lane even with no events (to author them). ``midi_in=True`` arms
@@ -1034,7 +1069,9 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
         min=min, max=max, snap=snap, link=link, ruler=ruler,
         sample_rate=sample_rate, tempo=tempo, beat_at=beat_at, quant=quant,
         sel_start=sel_start, sel_len=sel_len, playhead_at=playhead_at,
-        playhead=playhead, y_start=y_start, y_len=y_len, label=label, color=color)
+        playhead=playhead, playhead_loop_start=playhead_loop_start,
+        playhead_loop_len=playhead_loop_len,
+        y_start=y_start, y_len=y_len, label=label, color=color)
     if velocity is not None:
         extra["velocity"] = 1 if velocity else 0
     if osc_lane is not None:

@@ -550,6 +550,8 @@ export function spectrogram(
         dbFloor?: number;
         dbCeil?: number;
         freqScale?: string;
+        /** The legacy boolean alias of `freqScale`: log against linear. */
+        logFreq?: boolean;
         colormap?: number;
         /** The frequency ruler: `"hz"` (the default) or `"off"`. */
         rulerY?: string;
@@ -557,7 +559,7 @@ export function spectrogram(
 ): GuiNode {
     const {
         cache, path, buffer, data, blob, channels, windowSize, hop,
-        dbFloor, dbCeil, freqScale, colormap, rulerY, ...timeline
+        dbFloor, dbCeil, freqScale, logFreq, colormap, rulerY, ...timeline
     } = options;
     return node("spectrogram", {
         ...timelineProps(timeline),
@@ -568,6 +570,7 @@ export function spectrogram(
             ["db_floor", dbFloor],
             ["db_ceil", dbCeil],
             ["freq_scale", freqScale],
+            ["log_freq", flag(logFreq)],
             ["colormap", colormap],
             ["ruler_y", rulerY],
         ]),
@@ -753,6 +756,8 @@ export function spectrum(
         dbFloor?: number;
         dbCeil?: number;
         freqScale?: string;
+        /** The legacy boolean alias of `freqScale`: log against linear. */
+        logFreq?: boolean;
         averaging?: number;
         peakHold?: boolean;
         ruler?: boolean | string;
@@ -761,8 +766,8 @@ export function spectrum(
     } = {},
 ): GuiNode {
     const {
-        channels, fftSize, dbFloor, dbCeil, freqScale, averaging, peakHold,
-        ruler, rulerY, label: text, ...rest
+        channels, fftSize, dbFloor, dbCeil, freqScale, logFreq, averaging,
+        peakHold, ruler, rulerY, label: text, ...rest
     } = options;
     return node("spectrum", {
         ...rest,
@@ -773,6 +778,7 @@ export function spectrum(
             ["db_floor", dbFloor],
             ["db_ceil", dbCeil],
             ["freq_scale", freqScale],
+            ["log_freq", flag(logFreq)],
             ["averaging", averaging],
             ["peak_hold", flag(peakHold)],
             ["ruler", strip(ruler)],
@@ -1052,13 +1058,17 @@ export function score(
         displayList?: Record<string, unknown>;
         playhead?: number;
         playheadAt?: number;
+        /** The loop region the sweeping cursor wraps inside, in ms. */
+        playheadLoopStart?: number;
+        playheadLoopLen?: number;
         sampleRate?: number;
         selected?: string;
         editable?: boolean;
     } = {},
 ): GuiNode {
     const {
-        displayList, playhead, playheadAt, sampleRate, selected, editable, ...rest
+        displayList, playhead, playheadAt, playheadLoopStart, playheadLoopLen,
+        sampleRate, selected, editable, ...rest
     } = options;
     const dl = displayList ?? {};
     return node("score", {
@@ -1066,6 +1076,8 @@ export function score(
         ...drop([
             ["playhead", playhead],
             ["playhead_at", playheadAt],
+            ["playhead_loop_start", playheadLoopStart],
+            ["playhead_loop_len", playheadLoopLen],
             ["sample_rate", sampleRate],
             ["selected", selected],
             ["editable", editable],
