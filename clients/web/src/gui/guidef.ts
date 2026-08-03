@@ -419,7 +419,11 @@ export function knob(options: RangeOptions = {}): GuiNode {
 export function slider(options: RangeOptions & { vertical?: boolean } = {}): GuiNode {
     const { vertical, ...plain } = options;
     const [rest, props] = rangeProps(plain);
-    return node("slider", { ...rest, ...props, ...drop([["vertical", vertical]]) });
+    // Only a vertical slider says so: the host reads the prop's absence as
+    // horizontal, and the Python builder emits nothing for a false one.
+    return node("slider", {
+        ...rest, ...props, ...drop([["vertical", vertical || undefined]]),
+    });
 }
 
 /** A draggable numeric read-out over a range. */

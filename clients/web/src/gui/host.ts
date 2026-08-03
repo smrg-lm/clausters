@@ -288,8 +288,12 @@ export class GuiHost {
     /**
      * `/gui_query <id>` → the `/gui_info` reply. Rejects with `ReplyTimeout`
      * if the host does not answer; an **empty** `type` means no such widget.
+     *
+     * The default wait is the Python client's second: a host that is up
+     * answers a query off its own event loop, and one that is not will not
+     * answer in five either.
      */
-    async query(id: number, timeout = 5.0): Promise<WidgetInfo> {
+    async query(id: number, timeout = 1.0): Promise<WidgetInfo> {
         const reply = this.awaitReply(
             (msg) => msg.addr === "/gui_info" && Number(msg.args[0]) === id,
             timeout,
