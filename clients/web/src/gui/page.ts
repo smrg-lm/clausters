@@ -18,6 +18,12 @@ import type { GuiBridge } from "../gui-host/clausters_gui.js";
 import { server } from "../engine/server.ts";
 import { decodePacket } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
+import { canvasBox, onScaleChange } from "./canvasbox.ts";
+
+// Measuring an element stayed a leaf so the notebook widget can use it
+// without booting an engine; re-exported here, where callers expect it.
+export { canvasBox, onScaleChange };
+export type { CanvasBox } from "./canvasbox.ts";
 
 export type EventListener = (packet: Uint8Array) => void;
 
@@ -72,75 +78,6 @@ export interface ClaustersGui {
     ): () => void;
     addEvent(listener: EventListener): void;
     removeEvent(listener: EventListener): void;
-}
-
-/**
- * One element box measured for a canvas: its size in **device pixels** (floored
- * at 1, so a hidden element never asks for a zero-sized surface) and the
- * `devicePixelRatio` those pixels were measured at, kept **separately**.
- *
- * The two are not interchangeable. A canvas' backing store is device pixels, so
- * the surface takes `width`/`height`; the sizes a GuiDef declares are logical,
- * so resolving them takes `scale` — and the product alone cannot be
- * un-multiplied. Reporting both is what lets the host draw a 28-pixel strip as
- * 28 *apparent* pixels on any display, while never reading the DOM itself.
- */
-export interface CanvasBox {
-    /** The backing-store width, in device pixels. */
-    width: number;
-    /** The backing-store height, in device pixels. */
-    height: number;
-    /** The device-pixel ratio the box was measured at (the host's UI scale). */
-    scale: number;
-}
-
-/**
- * Calls `apply` whenever the page's `devicePixelRatio` changes, returning the
- * disposer that stops watching.
- *
- * A `ResizeObserver` is not enough, and that is the whole reason this exists: it
- * observes the **CSS** box, so browser zoom or a drag onto a monitor of another
- * density changes the ratio while the box stays exactly as it was — no callback,
- * and the host keeps resolving its sizes against a scale that is no longer true.
- * This is the browser's answer to the desktop's `ScaleFactorChanged`.
- *
- * The mechanism is a media query on the *current* ratio (`(resolution: 2dppx)`),
- * which stops matching the moment it moves; so each firing re-measures and then
- * re-arms on the new ratio.
- */
-export function onScaleChange(apply: () => void): () => void {
-    let query: MediaQueryList | null = null;
-    let stopped = false;
-    const fired = () => {
-        apply();
-        arm();
-    };
-    const arm = () => {
-        query?.removeEventListener("change", fired);
-        query = null;
-        if (stopped) return;
-        const ratio = globalThis.devicePixelRatio || 1;
-        // Absent in a non-browser run time (the module-graph tests): nothing to
-        // watch, and nothing to fail either.
-        query = globalThis.matchMedia?.(`(resolution: ${ratio}dppx)`) ?? null;
-        query?.addEventListener("change", fired);
-    };
-    arm();
-    return () => {
-        stopped = true;
-        arm();
-    };
-}
-
-/** Measures `element` for a canvas (see {@link CanvasBox}). */
-export function canvasBox(element: Element): CanvasBox {
-    const scale = globalThis.devicePixelRatio || 1;
-    const box = element.getBoundingClientRect();
-    return {
-        width: Math.max(1, Math.round(box.width * scale)),
-        height: Math.max(1, Math.round(box.height * scale)),
-        scale,
-    };
 }
 
 let instance: Promise<ClaustersGui> | null = null;
