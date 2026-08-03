@@ -10,6 +10,7 @@
 - [The ambient verbs: play, plot, render](verbs.md)
 - [The transport: a shared grid, and a piece that freezes](transport.md)
 - [Reading the server: buses and buffers](data.md)
+- [Receiving: responders](responders.md)
 - [Components: an instrument in the page](components.md)
 - [Examples](examples.md)
 

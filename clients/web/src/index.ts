@@ -68,12 +68,13 @@ export { newPools, pagePools } from "./base/pool.ts";
 export type { Pool, Pools } from "./base/pool.ts";
 export {
     decodePacket,
+    decodePacketTimed,
     encodeBundle,
     encodeImmediateBundle,
     encodeMessage,
     loadOsc,
 } from "./base/osc.ts";
-export type { BundleMessage, OscArg, OscMessage } from "./base/osc.ts";
+export type { BundleMessage, OscArg, OscMessage, TimedOscMessage } from "./base/osc.ts";
 export {
     TempoClock,
     defaultTicker,
@@ -94,6 +95,15 @@ export { currentRoutine } from "./base/context.ts";
 export { Moment } from "./base/moment.ts";
 export { OscDestination } from "./base/destination.ts";
 export type { Destination } from "./base/destination.ts";
+export { OscFunc, defaultOscReceiver, oscfunc, setDefaultOscReceiver } from "./responders.ts";
+export type {
+    ArgMatcher,
+    OscCallback,
+    OscValue,
+    ResponderMessage,
+} from "./responders.ts";
+export { OscReceiver } from "./base/receiver.ts";
+export type { OscHandler } from "./base/receiver.ts";
 export { Rng, choice, currentRng, seed, spawnRng, uniform } from "./base/rand.ts";
 export * as builtins from "./base/builtins.ts";
 export * as seq from "./seq/index.ts";

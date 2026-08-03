@@ -48,7 +48,7 @@ clients/web/
     data/                 #   the data paths: what a view reads off the server
       buses.ts  taps.ts   #     the streamed sources (/bus_stream, /bus_tapStream)
       samples.ts  peaks.ts analysis.ts
-    (responders.ts        #   OscFunc/MidiFunc dispatch (mirrors responders.py) — W8/W9)
+    responders.ts         #   OscFunc dispatch (mirrors responders.py; MidiFunc — W9)
     session.ts            #   the Session facade + the default session
     play.ts               #   the free `play` verb
     engine/               #   browser-only: the in-page engine runtime
@@ -140,7 +140,7 @@ Python change into two.)*
 
 Drive the audio server.
 
-- `defs/server.ts`: the `Server` object - send `/def_send`/`/def_send faust` specs, `/synth_new`, `/node_set`/`/node_free`, groups, the `/server_sync` barrier, buses and buffers; receive replies through `responders` (W8 hardens this).
+- `defs/server.ts`: the `Server` object - send `/def_send`/`/def_send faust` specs, `/synth_new`, `/node_set`/`/node_free`, groups, the `/server_sync` barrier, buses and buffers; receive replies through `responders` (W8 hardened this).
 - The def builders (`signals`/`ugens`/`synthdef`/`faustdef`/`graphdef`): start by sending the **same spec JSON the Python builders emit** (reused verbatim), then grow the typed TS builder API for parity, with the Python builders (both def families) as the reference.
 
 **Acceptance:** from a browser page, define a def and play it (`/synth_new` then `/node_set`), with `/server_sync` ordering and an audible/queryable result, **over either carrier** through the same `Server` (the W0 seam: nothing above it names a transport) — a synth def against the in-page engine with no server process, and both families against a `--ws` server (the Faust half is WS-only by nature: the wasm engine is the `synth,embed` build, no LLVM JIT).
@@ -525,7 +525,7 @@ one that decides whether the milestone lands**:
 
 **Acceptance:** the Python box-API and signal-API examples rebuilt in TS emit byte-identical spec JSON (new frozen vectors), and one of each compiles and plays **over either carrier** — against a `clausters --ws` server, and in the page with no server process, the source compiled by the staged `libfaust-wasm` and sounding through the in-page engine; a page that mounts a prebuilt bundle loads none of the compiler's assets.
 
-### W8 - Responders: `OscFunc` over the reply stream
+### ✅ W8 - Responders: `OscFunc` over the reply stream *(done 2026-08-03)*
 
 *Deferred out of W1*, which grew its reply handling ad hoc inside `Server`. The
 client's input path and its role as a general OSC hub (sclang's `OSCFunc`),
@@ -535,6 +535,53 @@ mirroring the half of `responders.py` that does not involve MIDI.
 - The reply handling W1 grew ad hoc inside `Server` (the dispatch table and the `/server_sync` barrier) folds onto this one door, so everything arriving comes in the same way.
 
 **Acceptance:** a TS app registers and unregisters `OscFunc` handlers that fire on server notifications (`/node_start`/`/node_end`, `/done`, `/node_trigger`) over either carrier, and the W1/W3 end-to-end suites stay green through the new door.
+
+**What shipped.** `src/responders.ts` at its sibling's path and with its
+sibling's surface — `OscFunc(func, path, { src, argTemplate, recv })`, the
+`(msg, time, src)` callback with `msg` the reference's `[addr, ...args]` list,
+`enable`/`disable`/`free`/`oneShot`, the `oscfunc` builder and the module
+default — and `src/base/receiver.ts` under it, the port's one real question.
+Three things are worth carrying forward:
+
+- **A receiver wraps a `Connection`, because a page can bind no port.** There,
+  a responder registers with a receiver that owns a UDP socket any application
+  can target; a tab can be addressed by nobody, so the door is the carrier the
+  client already opened. `src` therefore names a carrier (a socket's URL, or
+  `page`) rather than a `(host, port)` pair, and the default receiver is the
+  **ambient session's server**, resolved per call rather than cached — a page
+  can hold two sessions, and each server owns one receiver. Rationale in
+  `docs/decisions.md`.
+- **`time` needed a new door in the core.** The callback is defined to receive
+  the containing bundle's time, and `osc_decode_packet` flattens bundles and
+  drops their timetags — right for a reply reader, wrong here. So
+  `clausters-core-web` grew `osc_decode_packet_timed`, carrying each message's
+  bundle time as Unix seconds (`null` for an immediate bundle or a bare
+  message), the rule the reference client's own decoder applies; it is declared
+  in `docs/bindings.md` and asserted natively.
+- **The client's own reply handling folded onto it**, which is what this slot
+  was for: the node ids recycling off `/node_end`, `BusStream` and `TapStream`
+  decoding their snapshots, and `Playhead.followTransport` — each had grown its
+  own address test inside a raw subscription — are `OscFunc`s on the server's
+  receiver now. `Server.onReply` stays under them as the unmatched seam (a
+  decoder that wants everything in arrival order is a real caller), and the
+  packet is decoded once, at the door.
+
+**Verified:** `./build.sh && ./test.sh` — 221 `node --test` cases (14 new over a
+fake carrier: the matching, the template's literal/predicate/hole, the sender
+filter, the bundle time, the lifecycle, the one-shot, the builder, a clock-bound
+receiver, a handler freeing itself mid-dispatch, and the undecodable packet; 4
+new against a real `clausters --ws` server: the node notifications and their
+silence once freed, `/done` narrowed by a template, a def's `SendTrig` and
+`SendReply` on their own addresses, and the id recycling through the new door)
+and fifteen headless-Chrome acceptances, the new one being
+`tests/responders.html` — the same matching on the in-page engine, plus a
+responder that names no receiver resolving the ambient session's server.
+Example: `examples/responders.html`, the port of `osc_responder.py` — a def
+reports its onsets with `SendReply` and a responder answers each with a synth,
+so what arrives is what plays. Book: "Receiving: responders".
+
+Not in scope, by the plan's own division: `MidiFunc` and the MIDI destinations
+(**W9**), both directions being one browser API.
 
 ### W9 - MIDI: `MidiFunc` in, `MidiEvent` and MIDI destinations out
 
@@ -571,8 +618,8 @@ advertises) and `src/data/` the sources over them: `BusStream` decoding the
 periodic `/bus_set` snapshots, `TapStream` placing each `/bus_tapStream.reply` window on its
 tap's own sample axis by `endPosition`, `Peaks` over the wasm pyramid whose
 `columns` reads a whole pixel row per crossing, and the measurements a view is
-drawn with. The subscriptions ride `Server.onReply`, so **W8** folds them onto
-`OscFunc` later without changing their surface.
+drawn with. The subscriptions rode `Server.onReply`, and **W8** folded them
+onto `OscFunc` without changing their surface, as this slot said it would.
 
 Three things are worth carrying forward:
 
@@ -717,10 +764,11 @@ keeps it, plus the facade verb it was owed.
 - **`Playhead.followTransport(server, { quant })` / `unfollowTransport()`**
   (`src/seq/timeline.ts`): the `/transport_query.reply` broadcasts drive the
   local transport — play rolls it from the broadcast position, stop halts and
-  locates it. Where the Python client opens an `OscReceiver` and an `OscFunc`,
-  a page has one connection per server and every reply already arrives on it,
-  so the `server.onReply` subscription *is* the responder and W8 is not a
-  prerequisite after all.
+  locates it. It shipped as a raw `server.onReply` subscription, W8 not being a
+  prerequisite: a page has one connection per server and every reply already
+  arrives on it. **W8 folded it onto `OscFunc`**, where the reference client had
+  it all along — the receiver being the connection the page already has rather
+  than a socket opened for the purpose.
 - **`Session.joinTransport()`** — the third chaining verb, one line over the
   clock's, closing what W18 shipped the facade without.
 - **The reference client moved with it.** `grid_beat()` was private in Python
@@ -889,7 +937,7 @@ one catalogue: same name, same instrument, same point of interest, one written
 as a script and one as a page.
 
 - The remaining `clients/python/examples/` ported to `clients/web/examples/`, each keeping the name of the example it mirrors and the catalog row that says so.
-- Most of what is left is **not** blocked on porting effort but on a surface this client does not have yet — the responders, MIDI, automation, the transport grid, an offline render, the box algebra, the UGens outside the shipped set. Each such example lands with (or after) the milestone that opens its surface, which is why this slot is a destination rather than a queue.
+- Most of what is left is **not** blocked on porting effort but on a surface this client does not have yet — MIDI, automation, the transport grid, an offline render, the box algebra, the UGens outside the shipped set. Each such example lands with (or after) the milestone that opens its surface, which is why this slot is a destination rather than a queue.
 - The examples that are Python-process shaped by nature (a launcher, a live UDP peer, a native GUI shell) have no page counterpart and stay unported; the catalog says so rather than leaving a hole.
 
 **Acceptance:** every Python example either has a web page of the same name or a stated reason in the catalog for having none, and each ported page runs on the in-page engine with the carrier line marked.
@@ -1193,7 +1241,7 @@ yet, and each now has the module its Python sibling names waiting for it:
 `ugens/spectral.ts` is **W6**'s; `server/transport.ts` was **W22**'s and is written. The
 Python modules with no counterpart at all are unported *features*, not
 misplaced code, and each is already owned: `defs/boxes.py` and `defs/pv_expr.py`
-(**W7**), `responders.py` (**W8**/**W9**),
+(**W7**), the MIDI half of `responders.py` (**W9** — its OSC half is ported),
 `session.py`/`play.py`/`base/main.py`/`base/environment.py`/`defs/_wire.py`
 (**W18**), `render.py`/`defs/asdef.py` (**W13**), `form/` and `gui/editor.py`/
 `gui/transport.py`/`gui/notation.py` (**W16**'s named track), `defs/patch.py`

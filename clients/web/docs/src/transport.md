@@ -24,7 +24,7 @@ await server.transportLocate(16.0); // seek the position
 await server.transportStop();       // halt
 ```
 
-Every change is pushed to each client registered for notifications (`server.notify(true)`, which `Server.open` does by default) as a `/transport_query.reply`, so a page that wants to react to a conductor can read those off `server.onReply` rather than polling. Reading the whole state at once:
+Every change is pushed to each client registered for notifications (`server.notify(true)`, which `Server.open` does by default) as a `/transport_query.reply`, so a page that wants to react to a conductor can put a [responder](responders.md) on them rather than polling. Reading the whole state at once:
 
 ```js
 const state = await server.transportState();
@@ -57,7 +57,7 @@ await playhead.followTransport(server, { quant: 4 });
 
 From then on the conductor's `transportPlay()` rolls it, `transportStop()` halts it and `transportLocate(beat)` seeks it, alongside every other client following the same server — the server broadcasts *control*, never audio. `quant` snaps each rolling start to a beat boundary, and with the clock joined to the grid that boundary is the shared bar line, so the followers land together rather than each on its own next beat. `unfollowTransport()` releases it.
 
-Where the Python client opens a receiver and an `OscFunc` for this, a page has one connection per server and every reply already arrives on it: the subscription *is* the responder. Anything else that wants to react to a conductor reads the `/transport_query.reply` pushes off `server.onReply` the same way.
+The subscription is an [`OscFunc`](responders.md) on the server's receiver, as in the Python client — with the receiver a page already has (its connection to the server) rather than a socket opened for the purpose. Anything else that wants to react to a conductor puts its own responder on the same `/transport_query.reply`.
 
 `examples/transport-sync.html` runs two independent clients on one grid and a playhead following it, which is how to *hear* that a late joiner still lands on the bar.
 

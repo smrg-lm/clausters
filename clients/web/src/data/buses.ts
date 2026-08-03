@@ -14,7 +14,8 @@
 import type { Server } from "../defs/server/index.ts";
 import type { BusLike } from "../defs/bus.ts";
 import { busIndex } from "../defs/bus.ts";
-import type { OscMessage } from "../base/osc.ts";
+import { OscFunc } from "../responders.ts";
+import type { ResponderMessage } from "../responders.ts";
 
 /** The subscription period a live view runs at: ~30 fps, the host's own. */
 export const STREAM_PERIOD_MS = 33;
@@ -53,7 +54,8 @@ export class BusStream {
 
     private slot = new Map<number, number>();
     private listeners = new Set<(values: Float32Array, stream: BusStream) => void>();
-    private unsubscribe: (() => void) | null = null;
+    /** The responder decoding this stream's snapshots, while subscribed. */
+    private responder: OscFunc | null = null;
 
     private constructor(server: Server, buses: readonly number[]) {
         this.server = server;
@@ -73,7 +75,11 @@ export class BusStream {
     ): Promise<BusStream> {
         const indices = buses.map(busIndex);
         const stream = new BusStream(server, indices);
-        stream.unsubscribe = server.onReply((msg) => stream.take(msg));
+        stream.responder = new OscFunc(
+            (msg) => stream.take(msg),
+            "/bus_stream.reply",
+            { recv: server.receiver },
+        );
         try {
             await server.streamBuses(periodMs, indices, timeout);
         } catch (error) {
@@ -111,19 +117,18 @@ export class BusStream {
     }
 
     private detach(): void {
-        this.unsubscribe?.();
-        this.unsubscribe = null;
+        this.responder?.free();
+        this.responder = null;
         this.listeners.clear();
     }
 
     /** One `/bus_stream.reply bus value …` snapshot into `values`. */
-    private take(msg: OscMessage): void {
-        if (msg.addr !== "/bus_stream.reply") return;
+    private take(msg: ResponderMessage): void {
         let touched = false;
-        for (let i = 0; i + 1 < msg.args.length; i += 2) {
-            const slot = this.slot.get(Number(msg.args[i]));
+        for (let i = 1; i + 1 < msg.length; i += 2) {
+            const slot = this.slot.get(Number(msg[i]));
             if (slot === undefined) continue;
-            this.values[slot] = Number(msg.args[i + 1]);
+            this.values[slot] = Number(msg[i + 1]);
             touched = true;
         }
         if (!touched) return;

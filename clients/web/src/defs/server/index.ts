@@ -33,7 +33,6 @@
 // This handle only resolves which one and keeps it.
 
 import {
-    decodePacket,
     encodeBundle,
     encodeImmediateBundle,
     encodeMessage,
@@ -44,6 +43,9 @@ import type { MsgArg, OscMessage, TimedMessage } from "../../base/osc.ts";
 export type { TimedMessage } from "../../base/osc.ts";
 import type { Connection } from "../../base/connection.ts";
 import { ScoreConnection } from "../../base/connection.ts";
+import { OscReceiver } from "../../base/receiver.ts";
+import type { OscHandler } from "../../base/receiver.ts";
+import { OscFunc } from "../../responders.ts";
 import type { RenderOptions, RenderStats } from "../../render.ts";
 import { Moment } from "../../base/moment.ts";
 import { MonotonicTimebase, SampleTimebase } from "../../base/timebase.ts";
@@ -146,7 +148,18 @@ export class Server {
     private syncCounter = 0;
     /** The transport's frame ceiling, read once and cached (`bulkChunk`). */
     private maxFrame: number | null = null;
-    private readonly listener: (packet: Uint8Array) => void;
+    /**
+     * The receiving door this server's connection is read through — the one
+     * place a packet is decoded, and the receiver a responder registers with
+     * (`new OscFunc(fn, "/node_start", { recv: server.receiver })`, which is
+     * also what the ambient default resolves to).
+     *
+     * The server's own reply handling is one handler on it, so what this
+     * handle waits for and what a page's responders match arrive the same way
+     * and in the same order.
+     */
+    readonly receiver: OscReceiver;
+    private readonly listener: OscHandler;
 
     private constructor(connection: Connection, sizing: ServerSizing, timeout: number) {
         this.connection = connection;
@@ -162,8 +175,9 @@ export class Server {
         this.audioBuses = new AudioBusAllocator(sizing.audioBuses, sizing.channels);
         this.controlBuses = new ControlBusAllocator(sizing.controlBuses);
         this.buffers = new BufferAllocator(sizing.maxBuffers);
-        this.listener = (packet) => this.dispatch(packet);
-        connection.addReply(this.listener);
+        this.receiver = new OscReceiver(connection);
+        this.listener = (addr, args) => this.dispatch({ addr, args });
+        this.receiver.add(this.listener);
     }
 
     /**
@@ -232,29 +246,30 @@ export class Server {
 
     // ---- the reply stream ----
 
-    private dispatch(packet: Uint8Array): void {
-        let messages: OscMessage[];
-        try {
-            messages = decodePacket(packet);
-        } catch (error) {
-            console.warn(`clausters: undecodable reply packet: ${String(error)}`);
-            return;
-        }
-        for (const msg of messages) {
-            for (const p of [...this.pending]) {
-                if (p.match(msg)) {
-                    this.pending.delete(p);
-                    clearTimeout(p.timer);
-                    p.resolve(msg);
-                }
+    /**
+     * One decoded message off the receiver: what a pending request is waiting
+     * for, then what `onReply` subscribed to. Decoding happened once, at the
+     * door.
+     */
+    private dispatch(msg: OscMessage): void {
+        for (const p of [...this.pending]) {
+            if (p.match(msg)) {
+                this.pending.delete(p);
+                clearTimeout(p.timer);
+                p.resolve(msg);
             }
-            for (const handler of [...this.handlers]) handler(msg);
         }
+        for (const handler of [...this.handlers]) handler(msg);
     }
 
     /**
      * Subscribes to every decoded reply message; returns the unsubscribe.
-     * The seam a responder layer builds on.
+     *
+     * The raw seam under the responders: it sees everything, in arrival order,
+     * with no matching of its own. To respond to *one* address, `OscFunc` is
+     * the door (`new OscFunc(fn, "/node_end", { recv: server.receiver })`) —
+     * it filters by address, sender and arguments, and it is what the reference
+     * client offers under the same name.
      */
     onReply(handler: (msg: OscMessage) => void): () => void {
         this.handlers.add(handler);
@@ -621,18 +636,23 @@ export class Server {
         if (flag) this.recycleNodeIds();
     }
 
-    private recycling = false;
+    private recycling: OscFunc | null = null;
 
     /**
      * Returns a node id to the registry as its `/node_end` arrives — the
      * side-channel that keeps the client range from exhausting.
+     *
+     * It is an ordinary `OscFunc` on this server's receiver: the client's own
+     * reply handling uses the door it gives a page, rather than a private one
+     * beside it.
      */
     private recycleNodeIds(): void {
         if (this.recycling) return;
-        this.recycling = true;
-        this.onReply((msg) => {
-            if (msg.addr === "/node_end") this.nodes.free(Number(msg.args[0]));
-        });
+        this.recycling = new OscFunc(
+            (msg) => this.nodes.free(Number(msg[1])),
+            "/node_end",
+            { recv: this.receiver },
+        );
     }
 
     // ---- the sample clock ----
@@ -705,7 +725,10 @@ export class Server {
     close(): void {
         this.clock?.close();
         this.clock = null;
-        this.connection.removeReply(this.listener);
+        this.recycling?.free();
+        this.recycling = null;
+        this.receiver.remove(this.listener);
+        this.receiver.stop();
         for (const p of this.pending) {
             clearTimeout(p.timer);
             p.reject(new ReplyTimeout("the server was closed"));

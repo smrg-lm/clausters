@@ -171,6 +171,7 @@ thought about the other side", write `gap` — that is what it is for.
 |---|---|---|
 | — | `osc_encode_message` | `n/a` — the Python client encodes OSC in Python and the server in Rust; a browser has no such library, so the wasm module carries the core's OSC door |
 | — | `osc_decode_packet` | `n/a` — as above |
+| — | `osc_decode_packet_timed` | `n/a` — as above, plus each message's containing-bundle time in Unix seconds, which is what the responder layer hands a callback; the Python client reads the same field out of its own decoding door |
 | — | `osc_encode_bundle` | `n/a` — as above |
 | — | `osc_encode_immediate_bundle` | `n/a` — as above |
 | — | `osc_encode_score_bundle` | `n/a` — as above; the NRT score's epoch (seconds from the render's start), where Python packs the timetag with `clausters_core_ntp_timetag` and assembles the bundle itself |

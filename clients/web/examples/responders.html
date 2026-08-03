@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: responders</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; min-height: 12rem; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>osc_responder.py</code>: <b>the client as a hub</b> — what arrives drives
+what is sent.
+
+An <code>OscFunc</code> registers a callback that fires when a matching message
+<i>arrives</i>, and that callback may send onward. Here a def reports its own
+onsets with <code>SendReply</code>; a responder hears them and answers each one
+with a synth, so the piece is played by the messages coming back rather than by
+a loop in the script. Two more watch the server's own notifications
+(<code>/node_start</code>, <code>/node_end</code>) and keep the count of what is
+alive, and a fourth follows the shared transport grid the way the Python
+example's second half does.
+
+Where the reference client binds a UDP port any application can target, a page
+has no socket to bind: its receiver is the carrier it already has — this
+engine's connection — so <code>src</code> reads <code>page</code> rather than a
+host and a port. Over <code>Session.connect(url)</code> the same code listens to
+a native server and <code>src</code> is that socket's URL.
+
+Everything below runs on the <b>in-page engine</b>: no server process.
+</div>
+      <div class="row">
+        <button id="boot">boot + listen</button>
+        <button id="pulse" disabled>set the pulse tempo</button>
+        <button id="stop" disabled>stop</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      // Run it: ./build.sh from clients/web, then serve this directory
+      //   python3 -m http.server
+      // and open http://localhost:8000/examples/responders.html
+      //
+      // Needs nothing but a browser: the audio server is the wasm engine in
+      // this page's AudioWorklet. `?auto=1` boots without the click, which is
+      // how it is checked by hand under a headless browser.
+      import {
+        OscFunc, Session, Synth, SynthDef, loadOsc, oscfunc,
+      } from "../dist/index.js";
+      import {
+        control, dust, envGen, Env, DoneAction, out, sendReply, sine,
+      } from "../dist/defs/index.js";
+
+      const log = (line) => {
+        const pre = document.getElementById("log");
+        pre.textContent += line + "\n";
+        pre.scrollTop = pre.scrollHeight;
+      };
+
+      let session = null;
+      const responders = [];
+      let pulse = null;
+
+      async function boot() {
+        document.getElementById("boot").disabled = true;
+        await loadOsc();
+
+        // The page's own engine, adopted as the ambient session — which is
+        // also what a responder naming no receiver will resolve.
+        session = await Session.page({ tempo: 1.0 });
+        session.adoptDefault();
+        const server = session.server;
+
+        // The reporter: a def whose only job is to say when something
+        // happened. `dust` fires at random, `sendReply` turns each trigger
+        // into an OSC message carrying the value that triggered it — no audio
+        // at all, which is why it is passed as a root of its own.
+        await new SynthDef(
+          "onset_reporter",
+          sendReply(dust(control("density", 2.0)), [control("weight", 0.5)],
+                    { cmd: "/onset", replyId: 1 }),
+        ).send(server);
+
+        // The voice each onset plays.
+        await new SynthDef(
+          "ping",
+          out(0, sine(control("freq", 440.0))
+            .mul(envGen(Env.perc(0.005, 0.4), { doneAction: DoneAction.FreeSelf }))
+            .mul(control("amp", 0.2))),
+        ).send(server);
+        await server.sync();
+
+        // ---- the hub: what arrives is what plays ----
+        // /onset nodeId replyId weight — the reply id is narrowed by the
+        // template, so another def replying on the same address would not be
+        // mistaken for this one.
+        responders.push(new OscFunc((msg, time, src) => {
+          const weight = Number(msg[3]);
+          const freq = 220.0 * Math.pow(2, Math.round(weight * 12) / 12);
+          new Synth("ping", { freq, amp: 0.15 });
+          log(`/onset from ${src} at ${time ?? "now"}: `
+            + `weight ${weight.toFixed(2)} -> ${freq.toFixed(1)} Hz`);
+        }, "/onset", { argTemplate: [null, 1] }));
+
+        // ---- the bookkeeping: the server's own notifications ----
+        let alive = 0;
+        responders.push(new OscFunc(() => { alive++; }, "/node_start"));
+        responders.push(new OscFunc(() => {
+          alive--;
+          if (alive % 5 === 0) log(`nodes alive: ${alive}`);
+        }, "/node_end"));
+
+        // ---- the transport push, as in the Python example ----
+        // Every client registered for notifications is told when a conductor
+        // changes the grid; no polling.
+        responders.push(oscfunc("/transport_query.reply")((msg) => {
+          const [, , tempo, defined, playing] = msg;
+          if (!Number(defined)) return;
+          log(`the transport grid moved: ${Number(tempo).toFixed(2)} beats/s, `
+            + (Number(playing) ? "rolling" : "stopped"));
+        }));
+
+        // The onsets start arriving as soon as the reporter is up.
+        pulse = new Synth("onset_reporter", { density: 2.5, weight: 0.5 });
+        log("listening: the reporter is up, its onsets are playing the pings");
+        document.getElementById("pulse").disabled = false;
+        document.getElementById("stop").disabled = false;
+      }
+
+      // The other end of the same feature: this client is also the conductor,
+      // so the push its own responder reads is one it caused.
+      async function setPulse() {
+        const server = session.server;
+        await server.setTransport(0, 2.0);
+        await server.transportPlay();
+        pulse.set({ density: 5.0 });
+        log("set the grid to 2.0 beats/s and the density to 5/s");
+      }
+
+      function stop() {
+        for (const r of responders) r.free();
+        responders.length = 0;
+        pulse?.free();
+        pulse = null;
+        log("responders freed: the onsets keep firing on the server, and "
+          + "nothing is listening for them any more");
+        document.getElementById("pulse").disabled = true;
+        document.getElementById("stop").disabled = true;
+      }
+
+      document.getElementById("boot").onclick = () =>
+        boot().catch((err) => log(`error: ${err}`));
+      document.getElementById("pulse").onclick = () =>
+        setPulse().catch((err) => log(`error: ${err}`));
+      document.getElementById("stop").onclick = stop;
+      if (new URLSearchParams(location.search).has("auto")) {
+        boot().then(() => setPulse()).catch((err) => log(`error: ${err}`));
+      }
+    </script>
+  </body>
+</html>

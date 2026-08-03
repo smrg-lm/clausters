@@ -18,6 +18,7 @@ import {
     osc_encode_message,
     osc_encode_score_bundle,
     osc_decode_packet,
+    osc_decode_packet_timed,
 } from "../core/clausters_core_web.js";
 
 /**
@@ -58,6 +59,25 @@ export function encodeMessage(addr: string, args: OscArg[] = []): Uint8Array {
  */
 export function decodePacket(bytes: Uint8Array): OscMessage[] {
     return osc_decode_packet(bytes) as unknown as OscMessage[];
+}
+
+/**
+ * A decoded message plus the time of the bundle that carried it, in Unix
+ * seconds — `null` for a bare message and for an immediate bundle, which says
+ * "now" rather than an instant. A nested bundle's messages carry the innermost
+ * timetag.
+ */
+export interface TimedOscMessage extends OscMessage {
+    time: number | null;
+}
+
+/**
+ * `decodePacket` keeping each message's bundle time — what the responder layer
+ * reads, so a callback is handed the same `time` the Python client hands its
+ * own. Requires a prior `loadOsc()`.
+ */
+export function decodePacketTimed(bytes: Uint8Array): TimedOscMessage[] {
+    return osc_decode_packet_timed(bytes) as unknown as TimedOscMessage[];
 }
 
 /** One message inside a bundle: its address and its typed arguments. */

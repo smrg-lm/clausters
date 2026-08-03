@@ -319,6 +319,15 @@ export function node_id_partition(max_nodes: number): object;
 export function osc_decode_packet(bytes: Uint8Array): Array<any>;
 
 /**
+ * JS face: `osc_decode_packet_timed(bytes) -> [{addr, args, time}, ...]` —
+ * [`osc_decode_packet`] plus the containing bundle's time, in Unix seconds
+ * (`null` for an immediate bundle or a bare message). What the responder
+ * layer reads, so a handler is given the same `time` the Python client hands
+ * its own.
+ */
+export function osc_decode_packet_timed(bytes: Uint8Array): Array<any>;
+
+/**
  * JS face: a bundle stamped at `unix_secs` (the wall clock the server reads
  * as an NTP timetag) → `Uint8Array`.
  */
@@ -436,6 +445,7 @@ export interface InitOutput {
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
+    readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];
     readonly osc_encode_bundle: (a: number, b: any) => [number, number, number, number];
     readonly osc_encode_immediate_bundle: (a: any) => [number, number, number, number];
     readonly osc_encode_message: (a: number, b: number, c: any) => [number, number, number, number];

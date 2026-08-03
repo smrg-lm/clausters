@@ -46,6 +46,14 @@ export interface Connection {
      */
     readonly timeMode?: "unix" | "score";
     /**
+     * Where this carrier goes, when it goes anywhere addressable — a socket's
+     * URL. The in-page engine and a score have none, and the receiving door
+     * reads them as `"page"`: it is what a responder filtering by sender
+     * (`OscFunc`'s `src`) compares, a browser having no `(host, port)` to
+     * offer.
+     */
+    readonly url?: string;
+    /**
      * Accumulates a bundle at `secs` from the render's start — a score
      * carrier's structured entry point, and the reason a score never has to
      * decode bytes to learn when they were meant to happen. Live carriers
@@ -85,6 +93,11 @@ export interface Connection {
 export class WsConnection implements Connection {
     private socket: WebSocket;
     private listeners = new Set<(packet: Uint8Array) => void>();
+
+    /** The socket's URL — what a receiver reports as this carrier's `src`. */
+    get url(): string {
+        return this.socket.url;
+    }
 
     private constructor(socket: WebSocket) {
         this.socket = socket;

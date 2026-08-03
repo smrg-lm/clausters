@@ -23,7 +23,7 @@
 //! plain values (`{addr, args}` per message, bundles flattened, timetags as
 //! Unix seconds), which is what reply consumers want.
 
-use clausters_core::osc::{OscMessage, OscPacket, OscType, decode_packet, encode};
+use clausters_core::osc::{OscMessage, OscPacket, OscType, decode_packet, encode, ntp_to_unix};
 #[cfg(target_arch = "wasm32")]
 use clausters_core::{
     builtins, bundle,
@@ -128,6 +128,36 @@ fn js_arg(tag: &str, value: JsValue) -> Result<OscType, JsError> {
     })
 }
 
+/// Decodes one packet into `(message, time)` pairs, in order, bundles
+/// flattened recursively and each message carrying **the time of the bundle
+/// that contained it**: a timetag as Unix seconds, `None` for the immediate
+/// timetag and for a bare message. A nested bundle's messages carry the
+/// innermost timetag.
+///
+/// The same rule the Python client's receiving door applies, so a responder
+/// sees the same `time` in both clients.
+pub fn decode_messages_timed(bytes: &[u8]) -> Result<Vec<(OscMessage, Option<f64>)>, String> {
+    fn walk(packet: OscPacket, time: Option<f64>, out: &mut Vec<(OscMessage, Option<f64>)>) {
+        match packet {
+            OscPacket::Message(m) => out.push((m, time)),
+            OscPacket::Bundle(b) => {
+                // The immediate timetag {0, 1} is "now", not an instant.
+                let inner = if b.timetag.seconds == 0 && b.timetag.fractional == 1 {
+                    None
+                } else {
+                    Some(ntp_to_unix(b.timetag))
+                };
+                for packet in b.content {
+                    walk(packet, inner, out);
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(decode_packet(bytes)?, None, &mut out);
+    Ok(out)
+}
+
 /// JS face: `osc_decode_packet(bytes) -> [{addr, args}, ...]`, bundles
 /// flattened, args as plain JS values (numbers/strings/`Uint8Array`/bool/
 /// null).
@@ -137,18 +167,50 @@ pub fn osc_decode_packet(bytes: &[u8]) -> Result<js_sys::Array, JsError> {
     let messages = decode_messages(bytes).map_err(|e| JsError::new(&e))?;
     let out = js_sys::Array::new();
     for msg in messages {
-        let args = js_sys::Array::new();
-        for arg in msg.args {
-            args.push(&js_value(arg));
-        }
-        let entry = js_sys::Object::new();
-        js_sys::Reflect::set(&entry, &"addr".into(), &msg.addr.into())
-            .map_err(|_| JsError::new("osc decode: cannot build the message object"))?;
-        js_sys::Reflect::set(&entry, &"args".into(), &args)
-            .map_err(|_| JsError::new("osc decode: cannot build the message object"))?;
-        out.push(&entry);
+        out.push(&js_decoded_message(msg, None)?.into());
     }
     Ok(out)
+}
+
+/// JS face: `osc_decode_packet_timed(bytes) -> [{addr, args, time}, ...]` —
+/// [`osc_decode_packet`] plus the containing bundle's time, in Unix seconds
+/// (`null` for an immediate bundle or a bare message). What the responder
+/// layer reads, so a handler is given the same `time` the Python client hands
+/// its own.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn osc_decode_packet_timed(bytes: &[u8]) -> Result<js_sys::Array, JsError> {
+    let messages = decode_messages_timed(bytes).map_err(|e| JsError::new(&e))?;
+    let out = js_sys::Array::new();
+    for (msg, time) in messages {
+        out.push(&js_decoded_message(msg, Some(time))?.into());
+    }
+    Ok(out)
+}
+
+/// One decoded message as `{addr, args}`, plus `time` when the caller asks for
+/// the timed shape (`Some(None)` writes a `null` — the field is there either
+/// way, so a reader never has to test for its presence).
+#[cfg(target_arch = "wasm32")]
+fn js_decoded_message(
+    msg: OscMessage,
+    time: Option<Option<f64>>,
+) -> Result<js_sys::Object, JsError> {
+    let args = js_sys::Array::new();
+    for arg in msg.args {
+        args.push(&js_value(arg));
+    }
+    let entry = js_sys::Object::new();
+    let set = |key: &str, value: &JsValue| {
+        js_sys::Reflect::set(&entry, &key.into(), value)
+            .map_err(|_| JsError::new("osc decode: cannot build the message object"))
+    };
+    set("addr", &JsValue::from_str(&msg.addr))?;
+    set("args", &args)?;
+    if let Some(time) = time {
+        set("time", &time.map_or(JsValue::NULL, JsValue::from_f64))?;
+    }
+    Ok(entry)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -929,5 +991,41 @@ mod tests {
             .map(|m| m.addr)
             .collect();
         assert_eq!(addrs, ["/a", "/b", "/c"]);
+    }
+
+    /// The timed door carries each message's *containing* bundle time, the
+    /// rule the Python client's receiving door applies: an immediate bundle
+    /// and a bare message read `None`, a stamped one reads Unix seconds, and a
+    /// nested bundle overrides its parent for its own contents.
+    #[test]
+    fn the_timed_decode_carries_the_bundle_time() {
+        let msg = |addr: &str| {
+            OscPacket::Message(OscMessage {
+                addr: addr.into(),
+                args: vec![],
+            })
+        };
+        let unix = 1_700_000_000.5_f64;
+        let inner = OscPacket::Bundle(OscBundle {
+            timetag: clausters_core::osc::unix_to_ntp(unix),
+            content: vec![msg("/inner")],
+        });
+        let outer = OscPacket::Bundle(OscBundle {
+            timetag: OscTime {
+                seconds: 0,
+                fractional: 1,
+            },
+            content: vec![msg("/immediate"), inner],
+        });
+        let decoded = decode_messages_timed(&encode(&outer).unwrap()).unwrap();
+        let seen: Vec<(String, Option<f64>)> =
+            decoded.into_iter().map(|(m, t)| (m.addr, t)).collect();
+        assert_eq!(seen[0].0, "/immediate");
+        assert_eq!(seen[0].1, None, "an immediate bundle is 'now', not a time");
+        assert_eq!(seen[1].0, "/inner");
+        assert!((seen[1].1.unwrap() - unix).abs() < 1e-6);
+
+        let bare = decode_messages_timed(&encode(&msg("/bare")).unwrap()).unwrap();
+        assert_eq!(bare[0].1, None, "a bare message carries no time");
     }
 }

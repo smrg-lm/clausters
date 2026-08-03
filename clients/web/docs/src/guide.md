@@ -197,7 +197,7 @@ Above that sit `Event` and `rest`, the value patterns (`Pseq`, `Pser`, `Prand`, 
 
 **The graph composes by method.** `sine(freq).mul(amp).add(bias)` where Python writes `sine(freq) * amp + bias`, TypeScript having no operator overloading. Because of that, parity between the clients is asserted on the **emitted spec**, never on the source text.
 
-**Nothing pumps.** There is no drain call and no event loop of ours: a page subscribes once (`onEvent`, `onClosed`, `onReply`) and the host's or server's messages arrive as calls, while a query resolves a promise.
+**Nothing pumps.** There is no drain call and no event loop of ours: a page subscribes once (`onEvent`, `onClosed`, an [`OscFunc`](responders.md) or the raw `onReply` under it) and the host's or server's messages arrive as calls, while a query resolves a promise.
 
 ## Errors
 

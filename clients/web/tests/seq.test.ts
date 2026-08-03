@@ -33,7 +33,7 @@ import {
     rest,
 } from "../src/seq/index.ts";
 import type { EventDestination, PlayDestination } from "../src/seq/index.ts";
-import type { OscMessage } from "../src/base/osc.ts";
+import type { OscHandler } from "../src/base/receiver.ts";
 import type { Server } from "../src/defs/server/index.ts";
 
 await loadCore(
@@ -394,26 +394,27 @@ test("a playhead follows the server's transport broadcasts", async () => {
     clock.start();
 
     // A fake server: what a follower touches is the notify registration, the
-    // reply subscription and one read of the current state.
-    const handlers = new Set<(msg: OscMessage) => void>();
+    // receiving door its responder registers with, and one read of the current
+    // state.
+    const handlers = new Set<OscHandler>();
     let notified = false;
     const server = {
         notify: async () => {
             notified = true;
         },
-        onReply: (handler: (msg: OscMessage) => void) => {
-            handlers.add(handler);
-            return () => handlers.delete(handler);
+        receiver: {
+            add: (handler: OscHandler) => {
+                handlers.add(handler);
+                return handler;
+            },
+            remove: (handler: OscHandler) => handlers.delete(handler),
         },
         transportState: async () => null,
     } as unknown as Server;
     // origin, tempo, defined, playing, position, group, transportSample
     const broadcast = (playing: number, position: number) => {
         for (const handler of [...handlers]) {
-            handler({
-                addr: "/transport_query.reply",
-                args: [0, 1.0, 1, playing, position, -1, 0],
-            });
+            handler("/transport_query.reply", [0, 1.0, 1, playing, position, -1, 0], null, "page");
         }
     };
 

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters responders</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>the responders over the in-page carrier: <code>OscFunc</code>
+        handlers matching the engine's own notifications, with no server
+        process anywhere.</div>
+      <button id="boot">boot + listen</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The page-carrier half of the responder milestone (clients/web/test.sh,
+      headless Chrome): ?smoke=1 auto-runs and asserts that
+        - `/node_start` and `/node_end` reach responders as a synth comes and
+          goes, carrying its node id;
+        - `/done` reaches one narrowed by an argTemplate to a single command;
+        - a def's SendTrig reaches `/node_trigger`, and a SendReply its own
+          custom address;
+        - a responder needing no `recv` resolves the ambient session's server,
+          which is the browser's answer to the reference client's default
+          receiver;
+        - `disable`/`enable`/`free` and `oneShot` do what they say, and a freed
+          responder stops matching while the engine keeps running;
+        - the reply path the client itself depends on still works through the
+          same door (a node id recycles off `/node_end`).
+      Verdict beaconed as a fetch, read from the HTTP access log.
+    -->
+    <script type="module">
+      import {
+        OscFunc, Server, Session, Synth, SynthDef, loadOsc, oscfunc,
+        pageConnection, server as engine,
+      } from "../dist/index.js";
+      import { impulse, out, sendReply, sendTrig, sine } from "../dist/defs/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+      async function run() {
+        await loadOsc();
+        await (await engine({ channels: 2 })).resume();
+        const server = await Server.open(await pageConnection());
+
+        // ---- the node notifications ----
+        const started = [];
+        const ended = [];
+        const starts = new OscFunc((msg) => started.push(Number(msg[1])),
+                                   "/node_start", { recv: server.receiver });
+        const ends = new OscFunc((msg) => ended.push(Number(msg[1])),
+                                 "/node_end", { recv: server.receiver });
+
+        // A responder that names no receiver resolves the ambient session's
+        // server — the page's answer to the reference client's default one.
+        const session = new Session(server);
+        session.adoptDefault();
+        const ambient = [];
+        const ambientResp = oscfunc("/node_start")((msg) => ambient.push(Number(msg[1])));
+        if (ambientResp.recv !== server.receiver) {
+          throw new Error("the default receiver is not the ambient server's");
+        }
+
+        // A one-shot: it hears the first death and frees itself.
+        const oneShots = [];
+        new OscFunc((msg) => oneShots.push(Number(msg[1])), "/node_end",
+                    { recv: server.receiver }).oneShot();
+
+        await new SynthDef("page_resp_tone", out(0, sine(440).mul(0.1)))
+          .send(server);
+        await server.sync();
+
+        const first = new Synth("page_resp_tone", {}, { server });
+        await sleep(250);
+        if (started.length !== 1 || started[0] !== first.id) {
+          throw new Error(`/node_start reported ${JSON.stringify(started)}, `
+            + `expected [${first.id}]`);
+        }
+        if (ambient.length !== 1) {
+          throw new Error("the ambient-resolved responder heard nothing");
+        }
+        first.free();
+        await sleep(250);
+        if (ended.length !== 1 || ended[0] !== first.id) {
+          throw new Error(`/node_end reported ${JSON.stringify(ended)}`);
+        }
+        if (oneShots.length !== 1) throw new Error("the one-shot did not fire");
+        log(`node ${first.id}: start and end, one-shot fired once`);
+
+        // ---- /done, narrowed by an argTemplate ----
+        const dones = [];
+        const doneResp = new OscFunc((msg) => dones.push(String(msg[1])), "/done",
+                                     { recv: server.receiver, argTemplate: ["/def_send"] });
+        const others = [];
+        new OscFunc((msg) => others.push(String(msg[1])), "/done",
+                    { recv: server.receiver, argTemplate: ["/buffer_alloc"] });
+        await new SynthDef(
+          "page_resp_trig",
+          sendTrig(impulse(20), 7, 0.5),
+          sendReply(impulse(20), [0.25], { cmd: "/measured", replyId: 3 }),
+        ).send(server);
+        await server.sync();
+        if (dones.length < 1 || dones[0] !== "/def_send") {
+          throw new Error(`the /done responder saw ${JSON.stringify(dones)}`);
+        }
+        if (others.length !== 0) {
+          throw new Error("the argTemplate let another command through");
+        }
+        doneResp.free();
+        log(`/done: ${dones.length} for /def_send, 0 for the other template`);
+
+        // ---- a def reporting on its own addresses ----
+        const triggers = [];
+        const replies = [];
+        const trigResp = new OscFunc((msg) => triggers.push(Number(msg[3])),
+                                     "/node_trigger",
+                                     { recv: server.receiver, argTemplate: [null, 7] });
+        const replyResp = new OscFunc((msg) => replies.push(msg), "/measured",
+                                      { recv: server.receiver });
+        const reporter = new Synth("page_resp_trig", {}, { server });
+        await sleep(400);
+        reporter.free();
+        await sleep(150);
+        if (triggers.length === 0) throw new Error("no /node_trigger arrived");
+        if (!triggers.every((v) => Math.abs(v - 0.5) < 1e-6)) {
+          throw new Error(`a trigger carried ${triggers[0]}, expected 0.5`);
+        }
+        if (replies.length === 0 || Number(replies[0][2]) !== 3) {
+          throw new Error("SendReply's custom address did not arrive with its id");
+        }
+        log(`SendTrig: ${triggers.length} triggers at 0.5; SendReply: `
+          + `${replies.length} on /measured with reply id 3`);
+
+        // ---- disable, enable, free ----
+        // Counted from here: every synth above reported its own start too.
+        const before = started.length;
+        starts.disable();
+        const quiet = new Synth("page_resp_tone", {}, { server });
+        await sleep(250);
+        if (started.length !== before) throw new Error("a disabled responder fired");
+        starts.enable();
+        quiet.free();
+        const loud = new Synth("page_resp_tone", {}, { server });
+        await sleep(250);
+        if (started.length !== before + 1) throw new Error("enable did not put it back");
+        const heard = started.length;
+
+        trigResp.free();
+        replyResp.free();
+        starts.free();
+        ends.free();
+        ambientResp.free();
+        loud.free();
+        await sleep(250);
+        const after = new Synth("page_resp_tone", {}, { server });
+        await sleep(250);
+        if (started.length !== heard) {
+          throw new Error("a freed responder kept matching");
+        }
+        after.free();
+
+        // ---- the client's own reply path, through the same door ----
+        for (let i = 0; i < 40 && server.nodes.inUse > 0; i++) await sleep(25);
+        if (server.nodes.inUse !== 0) {
+          throw new Error(`the /node_end responder did not recycle: `
+            + `${server.nodes.inUse} ids still in flight`);
+        }
+
+        verdict(`PASS: /node_start and /node_end on node ${first.id}, the `
+          + `one-shot fired once, ${dones.length} /done for /def_send and 0 `
+          + `for the other template, ${triggers.length} /node_trigger at 0.5 `
+          + `and ${replies.length} on /measured, disable/enable/free honoured `
+          + `(${heard} starts heard), the ambient default resolved the `
+          + `session's server, and every node id recycled`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

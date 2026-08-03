@@ -4349,3 +4349,43 @@ performance, unpredictable first — but the engine's entropy source is
 is the caller's, so the client draws the word from `crypto.getRandomValues` and
 forwards it. The wasm shell inventing one would have been the wrong place: it
 owns no logic, and this is a capability of the edge, not of the renderer.
+
+## A responder listens to the connection it has, since a page can bind no port
+
+`OscFunc` is the client's input path in both clients, and the port keeps its
+whole surface — the constructor, the `(msg, time, src)` callback, the argument
+template, `enable`/`disable`/`free`/`oneShot`, the builder form. What could not
+be ported is what sits *underneath* it, and the difference is not a design
+preference: in the reference client a responder registers with a **receiver**
+that binds a UDP socket of its own, so any application on the machine can target
+it, and a browser tab can bind nothing and be addressed by nobody.
+
+So a receiver wraps the **`Connection` the client already has**. Everything a
+page can hear arrives on the carrier it opened — the in-page engine or a socket
+to a server — and that is where the door goes. Three consequences, each visible
+in the API rather than hidden:
+
+- **`src` names a carrier**: a socket's URL, or `page` for the in-page engine.
+  It answers the same question a `(host, port)` answers — who sent this — with
+  what a browser actually knows, and it is still what a responder narrowed by
+  `src` compares.
+- **The default receiver is the ambient session's server**, resolved per call
+  rather than cached as the reference client caches its module default. A page
+  can hold two sessions on two engines, and each server owns one receiver, so
+  resolving late is what makes a bare `new OscFunc(fn, "/done")` mean "this
+  session's server" in both of them.
+- **`time` had to be brought across the wasm boundary.** The decoding door
+  flattened bundles and dropped their timetags, which is all a reply reader
+  needs and not what a responder's callback is defined to receive, so the shell
+  grew a second door carrying each message's containing-bundle time in Unix
+  seconds (`null` for an immediate bundle or a bare message) — the rule the
+  Python client's own decoder applies, now asserted on both sides.
+
+The fold that comes with it is worth stating too: the client's *own* reply
+handling — the node ids that recycle as `/node_end` arrives, the streams that
+decode `/bus_stream.reply` and `/bus_tapStream.reply`, the playhead that follows
+`/transport_query.reply` — are ordinary `OscFunc`s now, on the receiver a page
+would use. They had each grown their own address test inside a raw subscription,
+which is the shape a responder exists to remove. `Server.onReply` stays under
+them as the unmatched seam, because a decoder that wants everything in arrival
+order is a real caller and not a responder.

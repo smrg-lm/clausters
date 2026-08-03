@@ -375,6 +375,18 @@ monotonic clock and the Web Audio sample-clock — and the driver stays on the
 page: only the wake-up moves to a shared tick worker, which is how the browser
 buys the property Python gets from a background thread.
 
+**The input path.** `OscFunc`, mirroring `clausters.responders` — the same
+constructor, the same `(msg, time, src)` callback, the same `argTemplate` and
+`oneShot`. What differs is the **receiver** under it: the reference client binds
+a UDP port any application can target, and a page can bind nothing, so a
+receiver wraps the `Connection` the client already has and `src` names a carrier
+(a socket's URL, or `page`) rather than a `(host, port)` pair. Each `Server`
+carries one (`server.receiver`), which is also the default a responder resolves
+through the ambient session — and the door the client's own reply handling goes
+through, so what a page matches and what the client waits for arrive the same
+way. MIDI responders are not ported: in a browser both MIDI directions are one
+API (Web MIDI), so they land together.
+
 **The GUI.** `GuiHost` and the GuiDef builders, mirroring the Python client's
 `clausters/gui/`: the widget catalogue as functions (`gui.window`, `gui.knob`,
 `gui.waveform`, `gui.track`, …) emitting the same JSON document, the same
@@ -452,7 +464,7 @@ package over the same OSC, against a native server.
 | Engraved music notation (the `score` widget, its display list and the click/transpose edit round trip) | done |
 | Notation layer in the shared core (`clausters-notation` + `clausters_core::notation`, over the C ABI; every client a shell) | done |
 | Reproducible `third_party` Faust and verovio builds (pin + script; native/CI/release) | done |
-| TypeScript/web client (the core over wasm, `Server` + both def families, the GUI, the sequencing layer, the document's components) | done |
+| TypeScript/web client (the core over wasm, `Server` + both def families, the GUI, the sequencing layer, the OSC responders, the document's components) | done |
 | npm packaging of the web client (the tarball, its contents checked) | done |
 | Web client documentation book (mdBook + generated API reference) | done |
 | Publishing the web client (npm registry, Read the Docs project) | done |

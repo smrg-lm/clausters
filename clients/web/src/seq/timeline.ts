@@ -29,6 +29,7 @@ import type { EventDestination } from "./event.ts";
 import type { Pattern } from "./pattern.ts";
 import type { Server, TimedMessage } from "../defs/server/index.ts";
 import type { MsgArg } from "../base/osc.ts";
+import { OscFunc } from "../responders.ts";
 
 /** What a timeline can hold: anything that renders itself on a destination. */
 export interface TimelineItem {
@@ -269,8 +270,8 @@ export class Playhead {
     private startBeat = 0;
     private posBeat = 0;
     private posClock: number | null = null;
-    /** The transport subscription's unsubscribe, while following one. */
-    private following: (() => void) | null = null;
+    /** The responder obeying a server's transport, while following one. */
+    private following: OscFunc | null = null;
 
     constructor(timeline: Timeline, clock: TempoClock, destination: PlayDestination) {
         this.timeline = timeline;
@@ -365,9 +366,10 @@ export class Playhead {
      * Beat-aligned in plain wall-clock mode; sample-exact when the clock is
      * also locked to the server (`Session.lockToServer`).
      *
-     * Where the Python client opens a receiver and an `OscFunc` for this, a
-     * page has one connection per server and every reply already arrives on
-     * it: the subscription *is* the responder.
+     * The responder is an `OscFunc` on the server's receiver, as in the
+     * reference client — with the receiver the page already has (the server's
+     * connection) rather than a socket opened for the purpose, which a browser
+     * has no way to bind.
      */
     async followTransport(
         server: Server,
@@ -375,18 +377,21 @@ export class Playhead {
     ): Promise<this> {
         this.unfollowTransport();
         await server.notify(true, timeout);
-        this.following = server.onReply((msg) => {
-            // /transport_query.reply originSample tempo defined playing position ...
-            if (msg.addr !== "/transport_query.reply") return;
-            if (msg.args.length < 6 || !Number(msg.args[2])) return;
-            const position = Number(msg.args[4]);
-            if (Number(msg.args[3])) {
-                this.play({ at: position, quant });
-            } else {
-                this.stop();
-                this.locate(position);
-            }
-        });
+        this.following = new OscFunc(
+            (msg) => {
+                // /transport_query.reply originSample tempo defined playing position ...
+                if (msg.length < 7 || !Number(msg[3])) return;
+                const position = Number(msg[5]);
+                if (Number(msg[4])) {
+                    this.play({ at: position, quant });
+                } else {
+                    this.stop();
+                    this.locate(position);
+                }
+            },
+            "/transport_query.reply",
+            { recv: server.receiver },
+        );
         const state = await server.transportState(timeout);
         if (state !== null) {
             if (state.playing) this.play({ at: state.position, quant });
@@ -400,7 +405,7 @@ export class Playhead {
      * subscription, leaving the playhead wherever the last broadcast left it.
      */
     unfollowTransport(): this {
-        this.following?.();
+        this.following?.free();
         this.following = null;
         return this;
     }

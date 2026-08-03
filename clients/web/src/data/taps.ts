@@ -19,7 +19,8 @@
 //   trigger — the one the GUI host draws with, so the two traces agree.
 
 import type { Server } from "../defs/server/index.ts";
-import type { OscMessage } from "../base/osc.ts";
+import { OscFunc } from "../responders.ts";
+import type { ResponderMessage } from "../responders.ts";
 import {
     oscil_align,
     oscil_display_frames,
@@ -71,7 +72,8 @@ export class TapStream {
 
     private windows = new Map<number, TapWindow>();
     private listeners = new Set<(bus: number, window: TapWindow) => void>();
-    private unsubscribe: (() => void) | null = null;
+    /** The responder decoding this stream's windows, while subscribed. */
+    private responder: OscFunc | null = null;
 
     private constructor(server: Server, buses: readonly number[], frames: number) {
         this.server = server;
@@ -90,7 +92,11 @@ export class TapStream {
         }: { frames?: number; periodMs?: number; timeout?: number } = {},
     ): Promise<TapStream> {
         const stream = new TapStream(server, [...buses], frames);
-        stream.unsubscribe = server.onReply((msg) => stream.take(msg));
+        stream.responder = new OscFunc(
+            (msg) => stream.take(msg),
+            "/bus_tapStream.reply",
+            { recv: server.receiver },
+        );
         try {
             await server.streamTaps(periodMs, frames, buses, timeout);
         } catch (error) {
@@ -153,21 +159,20 @@ export class TapStream {
     }
 
     private detach(): void {
-        this.unsubscribe?.();
-        this.unsubscribe = null;
+        this.responder?.free();
+        this.responder = null;
         this.listeners.clear();
     }
 
     /** One `/bus_tapStream.reply bus endPosition blob` snapshot. */
-    private take(msg: OscMessage): void {
-        if (msg.addr !== "/bus_tapStream.reply") return;
-        const bus = Number(msg.args[0]);
+    private take(msg: ResponderMessage): void {
+        const bus = Number(msg[1]);
         if (!this.buses.includes(bus)) return;
-        const blob = msg.args[2];
+        const blob = msg[3];
         if (!(blob instanceof Uint8Array)) return;
         const window: TapWindow = {
             samples: decodeSamples(blob),
-            endPosition: Number(msg.args[1]),
+            endPosition: Number(msg[2]),
         };
         this.windows.set(bus, window);
         for (const handler of [...this.listeners]) handler(bus, window);
