@@ -43,7 +43,7 @@ export type { BootOptions, ClockAnchor } from "./engine/loader.ts";
 export { GuiHost, guiHost, newGuiHost, pageGuiConnection } from "./gui/host.ts";
 export type { ClaustersGui } from "./gui/host.ts";
 export * as gui from "./gui/index.ts";
-export { bootBundle, openBundle, startBundle } from "./bundle.ts";
+export { bootBundle, freeBundle, openBundle, startBundle } from "./bundle.ts";
 export type { BundleManifest, MountOptions, Mounted, ParamSpec } from "./bundle.ts";
 export { ClaustersBundle, ClaustersPower, defineComponent, startPage } from "./elements.ts";
 export { Session } from "./session.ts";

@@ -301,6 +301,16 @@ are per component: one that cannot fetch or resolve its bundle shows the error
 on itself and emits `clausters-error`, and the rest of the page comes up.
 `clausters-ready` fires per component with its resolved def id.
 
+**Unmounting is one.** An element removed from the document frees its window
+and widgets (`/gui_free`), the nodes its `boot` instantiated (`/node_free`) and
+its canvas, and returns its widget, node and bus ids to the page's pools — so a
+document that adds and removes instruments holds a flat occupancy. What is
+shared stays: the AudioContext, the host, and the def payloads and sample
+buffers, which are the same data for every instance of a bundle. An element
+connected again mounts afresh over a new allocation rather than resuming, and a
+window closed by the host (`/gui_closed`) reaches the element that mounted the
+def, which unmounts and emits `clausters-closed`.
+
 **What is not loaded.** Running a component is the browser equivalent of
 `clausters-gui --standalone`: the host is the server's client and there is no
 scripting client in between. The builders ran in the authoring script; what the

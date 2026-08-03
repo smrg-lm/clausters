@@ -56,6 +56,13 @@ export const BUFFER_CAPACITY = 1024;
 export interface Pool {
     alloc(width?: number): number;
     release(first: number, width?: number): void;
+    /**
+     * How many ids are allocated right now — what makes a leak visible. A
+     * document that mounts and unmounts components over an afternoon must
+     * come back to the occupancy it started at, and this is where that is
+     * read (the acceptance for the unmount does exactly that).
+     */
+    readonly inUse: number;
 }
 
 /** The id spaces one mount needs. */
@@ -84,6 +91,9 @@ export function pool(base: number, capacity: number, what: string): Pool {
         },
         release(first, width = 1) {
             registry.release(first, width);
+        },
+        get inUse() {
+            return registry.inUse;
         },
     };
 }

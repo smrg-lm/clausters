@@ -3151,11 +3151,9 @@ it is told "this def draws into this canvas, at this size, and right now it is
 
 What is deliberately absent is the *management* layer. Components are placed in
 the markup by whoever writes the page, in the order they want; nothing opens,
-moves, stacks or closes them. Mounting happens in `connectedCallback`, so an
-element inserted later works. An element **removed** from the DOM does not free
-its def — a `/gui_closed` travelling back is a separate feature, for whenever an
-editing program needs to open and close panels, and inventing it now would be
-guessing at that program's shape.
+moves or stacks them. Mounting happens in `connectedCallback`, so an element
+inserted later works, and unmounting in `disconnectedCallback` — see below for
+what that gives back.
 
 One consequence is worth writing down because it was found the hard way: winit
 focuses a canvas it creates, and a browser scrolls a freshly focused element
@@ -3173,6 +3171,42 @@ traffic for something nobody is looking at. So each component carries an
 the **visible** set (`host::live::demand`, platform-agnostic and natively
 tested). The same waste exists on the desktop behind an occluded window; only
 the browser front acts on it so far.
+
+## An unmounted component gives back what it took, not what the page shares
+
+The mount is two phases because the host does not need audio and the engine
+does. The unmount is deliberately **one**: an element removed from the DOM is
+removed whole, so its window and widgets (`/gui_free`), the nodes its boot
+instantiated (`/node_free`), its canvas (`detach`, which also drops it from the
+frame tick and the `/bus_stream` set) and every id it drew from the page's
+pools go together. What it does *not* touch is anything shared: the
+`AudioContext`, the host, and — the one that looks like a leak and is not — the
+def payloads and the sample buffers. Both are keyed by URL and identical for
+every instance of a bundle, so freeing them would be freeing a sibling's; they
+stay, and a component mounted again finds them loaded.
+
+Which settles the other asymmetry: a re-connected element **mounts afresh**
+rather than resuming. The resolver runs again over a new allocation, so the
+attributes and the preset are read again — there is no half-alive state to
+resume, which is precisely what lets the teardown be complete.
+
+Two things found the hard way. A custom element's constructor **may not touch
+its attributes**: `defineComponent` filled in `src` there, which works when the
+parser upgrades an element and throws `NotSupportedError` on
+`document.createElement` — that is, on exactly the path a page adding
+components from script takes. The default bundle is carried as a field and
+reflected into the attribute on connect. And a component's canvas must follow
+its element's box on **every** `ResizeObserver` firing, not only at mount: an
+element appended and mounted inside one task can be measured before the browser
+has laid it out, and the first firing is what corrects the 1x1 canvas that
+leaves.
+
+The way back — `/gui_closed`, a window closed by the host rather than by the
+page — reaches the element that mounted the def, which unmounts and emits
+`clausters-closed`. The wasm host in the tab never sends one (nothing there
+closes a canvas but the page); a native host over a socket does, and its event
+stream joins the page's through `ClaustersGui.deliver`, so an element hears a
+window closing wherever the window was.
 
 ## Holes live only in the GuiDef record, so a def is sent once
 

@@ -167,7 +167,7 @@ run_page session.html  # two sessions on two engines: the ambient verbs resolve 
 run_page plot.html     # the plot verb: its six kinds, each in its own window
 run_page notebook.html # the notebook cell's front end: audio through the boot, teardown
 
-# The components acceptance mounts the two example bundles, which are build
+# The components and lifecycle acceptances mount the example bundles, which are build
 # products (git-ignored, written by the Python client). Generate them here so a
 # fresh checkout runs the page; skip it — rather than fail — when the client is
 # not importable, the same posture as the WS suites above.
@@ -185,7 +185,8 @@ if PYTHONPATH=../python "$PY" -c "import clausters.bundle" 2>/dev/null; then
         (cd "examples/$example" && PYTHONPATH=../../../python "$PY" make_bundle.py >/dev/null)
     done
     run_page components.html  # bundles as components: N canvases in one document
+    run_page lifecycle.html   # and the unmount: a hundred of them come and go
 else
-    echo "components.html: SKIPPED ($PY cannot import the Python client, so the" \
-         "example bundles cannot be written)" >&2
+    echo "components.html/lifecycle.html: SKIPPED ($PY cannot import the Python" \
+         "client, so the example bundles cannot be written)" >&2
 fi

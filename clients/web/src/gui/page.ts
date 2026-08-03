@@ -80,6 +80,18 @@ export interface ClaustersGui {
     addEvent(listener: EventListener): void;
     removeEvent(listener: EventListener): void;
     /**
+     * Hands one packet to this host's page listeners, as if the host had
+     * emitted it.
+     *
+     * The event stream is a fan-out, and its source is not always this wasm
+     * host: a page whose windows live in a **native** host — one reached over a
+     * `--ws` socket — receives that host's `/gui_event`/`/gui_closed` on the
+     * socket, and the elements on the page are listening here. This is where
+     * those packets join, so an element hears a window closing wherever the
+     * window was.
+     */
+    deliver(packet: Uint8Array): void;
+    /**
      * The engine this host's audio leg is wired to — the page's under
      * `guiHost`, its own under `newGuiHost`. Exposed because a caller holding
      * an instance needs exactly this to open a `Server` on it, and asking for
@@ -160,11 +172,12 @@ async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
 
     // Drain the host's outbound events to the page's listeners.
     const listeners = new Set<EventListener>();
+    const deliver = (packet: Uint8Array) => {
+        for (const listener of [...listeners]) listener(packet);
+    };
     setInterval(() => {
         let packet: Uint8Array | undefined;
-        while ((packet = bridge.poll()) !== undefined) {
-            for (const listener of [...listeners]) listener(packet);
-        }
+        while ((packet = bridge.poll()) !== undefined) deliver(packet);
     }, 33);
 
     return {
@@ -194,6 +207,7 @@ async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
         },
         addEvent: (listener) => listeners.add(listener),
         removeEvent: (listener) => listeners.delete(listener),
+        deliver,
     };
 }
 

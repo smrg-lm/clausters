@@ -834,7 +834,7 @@ Example: `examples/offline.html` — a phrase rendered at 60x real time, looked
 at, downloaded and played back through a buffer, with the seed demonstrated on
 a noisy def. Book: "The ambient verbs: play, plot, render".
 
-### W14 - Component lifecycle: freeing what a removed element owns
+### ✅ W14 - Component lifecycle: freeing what a removed element owns *(done 2026-08-03)*
 
 *Deferred out of W4*, which mounted components but never unmounted them: an
 element removed from the DOM leaves its def standing, and a window the host
@@ -846,6 +846,29 @@ directions.
 - The reverse of W4's two-phase mount is deliberately **not** symmetric: a re-connected element mounts again from the same bundle (defs already sent, a fresh allocation), so the resolver is re-run, not cached.
 
 **Acceptance:** a page that mounts and removes the same component a hundred times holds a flat id/bus/node occupancy (read from the pools and from `/group_queryTree`); a removed component stops sounding and stops streaming; a `/gui_closed` from a native `--ws` host reaches its element; and the surviving components on the page are untouched throughout.
+
+**What shipped:** `freeBundle` (the mount's way out: `/gui_free`, `/node_free`,
+`detach`, and the allocation back to the pools — the page-shared def payloads and
+sample buffers deliberately kept), `disconnectedCallback` and the `/gui_closed`
+handler queued on one chain per element so a DOM *move* cannot race its own
+teardown, `Pool.inUse` (the occupancy a leak is read from), and
+`ClaustersGui.deliver`, where a foreign host's event stream joins the page's.
+Two defects the acceptance found: `defineComponent` set `src` in the
+constructor, which throws on `document.createElement` — the whole
+script-mounting path — and a component's canvas only followed its element's box
+at mount, so one appended and mounted inside a single task kept the 1x1 backing
+store it was measured at.
+
+**Verified:** `./test.sh`, the new page being `tests/lifecycle.html` — a hundred
+mount/remove cycles leaving the pools and `/group_queryTree` exactly where they
+were, the removed instance going from peak 0.125 to silence on the engine's own
+output (the survivor paused, so it is the only thing sounding) and off the
+`/bus_stream` set, and a `/gui_closed` reaching its element. The one thing not
+exercised end to end is the *socket*: the packet is the one a native `--ws` host
+sends, delivered through `deliver` rather than by a host process, since a
+component mounts into the in-page host and nothing there closes a canvas.
+Example: `examples/lifecycle.html` — instruments added and removed by hand, with
+the pools' occupancy on screen.
 
 ### W15 - The TypeScript bundle writer
 

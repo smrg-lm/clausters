@@ -33,7 +33,22 @@ A component mounts in two steps, because an `AudioContext` is page-wide and N po
 
 A component scrolled out of the viewport stops drawing and drops its buses from the streams feeding it, so a long document can hold many instruments and cost only the ones in view. A component that fails to mount fails alone; the rest of the page stays up.
 
-Removing an element from the DOM does **not** yet free what it allocated — the mount has no unmount half yet.
+## Removing one
+
+An element removed from the document gives back everything it took, and nothing the page shares. Its window and its widgets are freed, the nodes its boot instantiated are freed, its canvas leaves the host, and the widget, node and bus ids it drew from the page's pools return to them — so a long document that adds and removes instruments as the reader goes holds a flat occupancy instead of climbing. It goes quiet at once, and no other component notices.
+
+What stays is what belongs to the page: the `AudioContext`, the GUI host, and — deliberately — the def payloads and the sample buffers. Both are shared by URL between every instance of a bundle and are the same data whoever asks, so freeing them would be freeing a sibling's; a component mounted again finds them loaded and comes up the faster for it.
+
+```js
+const voice = document.createElement("fm-voice");
+voice.setAttribute("freq", "220");
+article.append(voice);   // mounts, and sounds on the page's gesture
+voice.remove();          // frees its window, its nodes and its ids
+```
+
+Removing is not a pause: an element connected again **mounts afresh** — same bundle, new allocation, the attributes and the preset resolved again — rather than resuming what it had. That is why the unmount can be complete.
+
+The other direction closes too. A window the *host* closes rather than the page — a `/gui_closed`, which is what a native host sends when the user closes the window a component mounted into — reaches the element that mounted the def: it unmounts and emits `clausters-closed` (detail: `{ id }`), so a page never holds a live tag over a freed def.
 
 ## The slim runtime
 

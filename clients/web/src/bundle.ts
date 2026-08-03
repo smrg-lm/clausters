@@ -20,6 +20,11 @@
 // The def payloads carry no holes — that is the invariant the format rests on
 // — so two instances of one bundle share the one `/def_send synth` that was sent, and
 // only their GuiDef and their boot differ.
+//
+// `freeBundle` is the way back out of both phases at once, since an instance
+// is removed as a whole: what it was allocated goes back to the pools, its
+// window and its nodes are freed, and what the page shares — the defs, the
+// sample buffers, the engine, the host — stays where it is.
 
 import { loadOsc, decodePacket, encodeMessage } from "./base/osc.ts";
 import type { OscArg } from "./base/osc.ts";
@@ -144,14 +149,27 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 /**
- * What `openBundle` keeps for `startBundle` — the engine half, held until a
- * gesture makes an AudioContext legal.
+ * What `openBundle` keeps for `startBundle` and `freeBundle` — the engine
+ * half, held until a gesture makes an AudioContext legal, and the allocation
+ * to give back when the instance goes.
  */
 interface Pending {
     base: string;
     manifest: BundleManifest;
     resolved: Resolved;
     buffers: Record<string, number>;
+    /** The pools this instance drew from — the ones `freeBundle` returns to. */
+    pools: Pools;
+    /**
+     * Exactly what was taken, so exactly that is given back: the widget block
+     * with the width it was allocated at (the def id lives inside it), the
+     * node ids, and the buses with the rate and width each was sized by.
+     */
+    allocated: {
+        widgets: { first: number; width: number };
+        nodes: number[];
+        buses: { first: number; width: number; rate: "audio" | "control" }[];
+    };
 }
 
 const pending = new WeakMap<Mounted, Pending>();
@@ -215,17 +233,26 @@ export async function openBundle(options: MountOptions): Promise<Mounted> {
         buses: { name: string; rate?: string; channels?: number }[];
         buffers: string[];
     };
+    const widgets = { first: 0, width: Math.max(requirements.widgets, 1) };
+    widgets.first = pools.widgets.alloc(widgets.width);
+    const allocated: Pending["allocated"] = { widgets, nodes: [], buses: [] };
     const allocation = {
-        widget_base: pools.widgets.alloc(Math.max(requirements.widgets, 1)),
+        widget_base: widgets.first,
         nodes: {} as Record<string, number>,
         buses: {} as Record<string, number>,
         buffers: {} as Record<string, number>,
     };
-    for (const node of requirements.nodes) allocation.nodes[node] = pools.nodes.alloc();
+    for (const node of requirements.nodes) {
+        allocation.nodes[node] = pools.nodes.alloc();
+        allocated.nodes.push(allocation.nodes[node]);
+    }
     for (const bus of requirements.buses) {
         const width = bus.channels ?? 1;
-        allocation.buses[bus.name] =
-            bus.rate === "audio" ? pools.audioBuses.alloc(width) : pools.controlBuses.alloc(width);
+        const rate = bus.rate === "audio" ? "audio" : "control";
+        const first =
+            rate === "audio" ? pools.audioBuses.alloc(width) : pools.controlBuses.alloc(width);
+        allocation.buses[bus.name] = first;
+        allocated.buses.push({ first, width, rate });
     }
     for (const symbol of requirements.buffers) {
         // Shared by URL: the same sample is the same buffer, so a second
@@ -262,7 +289,14 @@ export async function openBundle(options: MountOptions): Promise<Mounted> {
         symbols: { ...allocation.nodes, ...allocation.buses, ...allocation.buffers },
         started: false,
     };
-    pending.set(mounted, { base, manifest, resolved, buffers: allocation.buffers });
+    pending.set(mounted, {
+        base,
+        manifest,
+        resolved,
+        buffers: allocation.buffers,
+        pools,
+        allocated,
+    });
     return mounted;
 }
 
@@ -349,6 +383,62 @@ export async function startBundle(mounted: Mounted): Promise<void> {
         ]);
     } finally {
         engine.removeReply(watch);
+    }
+}
+
+/**
+ * The unmount: give back everything this instance took, and nothing the page
+ * shares.
+ *
+ * What one instance owns is what it was allocated — its widget block (the def
+ * id is inside it), its node ids, its buses — plus the canvas the host holds
+ * for it. Those go: `/gui_free` closes the window and takes its subtree, its
+ * bindings and any voices it was holding down; `/node_free` takes the nodes
+ * its boot instantiated; `detach` takes the GPU surface, which also drops the
+ * def from the tick and from the `/bus_stream` set. The `<canvas>` element
+ * itself belongs to the page, which keeps or removes it.
+ *
+ * What the *page* owns stays: the AudioContext, the host, and — deliberately —
+ * the def payloads and the sample buffers. Both are shared by URL between
+ * every instance of a bundle, and both are idempotent data the engine holds
+ * once, so freeing them here would be freeing a sibling's; a component mounted
+ * again finds them loaded and boots the faster for it.
+ *
+ * `hostClosed` marks the arrival direction: a window the host closed by itself
+ * (a `/gui_closed`) is already gone there, so the `/gui_free` is skipped and
+ * only the rest is given back. Calling this twice is a no-op.
+ */
+export async function freeBundle(
+    mounted: Mounted,
+    { hostClosed = false }: { hostClosed?: boolean } = {},
+): Promise<void> {
+    const held = pending.get(mounted);
+    if (!held) return;
+    pending.delete(mounted);
+    const { pools, allocated } = held;
+
+    // The engine half only if it went out: an instance removed before the
+    // page's first gesture never instantiated anything, and asking for the
+    // engine here would boot an AudioContext to free nothing.
+    if (mounted.started && allocated.nodes.length > 0) {
+        const engine = await server();
+        engine.send(
+            encodeMessage(
+                "/node_free",
+                allocated.nodes.map((id) => ["i", id] as OscArg),
+            ),
+        );
+    }
+
+    const gui = await guiHost();
+    if (!hostClosed) gui.bridge.feed(encodeMessage("/gui_free", [["i", mounted.defId]]));
+    gui.bridge.detach(mounted.defId);
+
+    pools.widgets.release(allocated.widgets.first, allocated.widgets.width);
+    for (const id of allocated.nodes) pools.nodes.release(id);
+    for (const bus of allocated.buses) {
+        const pool = bus.rate === "audio" ? pools.audioBuses : pools.controlBuses;
+        pool.release(bus.first, bus.width);
     }
 }
 
