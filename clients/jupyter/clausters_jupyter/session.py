@@ -212,12 +212,19 @@ def _boot_native(options: "ServerOptions | None") -> "tuple[Server, int]":
     WebSocket and nothing else. Without it the host has no audio leg, so a
     meter shows nothing and a bound slider moves nothing — the kind of failure
     that looks like a bug in the widget.
+
+    The options belong to the **handle**, not to `clausters.defs.Server.boot`:
+    a `Server` is built for an address and a configuration, and `boot` starts
+    what it points at. It does not adopt the default server slot either — this
+    session is installed as the ambient one a few lines above, and that is what
+    a bare `play()` in a cell resolves through.
     """
     options = ServerOptions() if options is None else options
     if not options.ws:
         options = dataclasses.replace(options, ws=True)
     port = options.ws if options.ws is not True else DEFAULT_WS_PORT
-    return Server.boot(options=options), int(port)
+    server = Server(options=options).boot(adopt_default=False)
+    return server, int(port)
 
 
 def audio():

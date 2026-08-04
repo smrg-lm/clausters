@@ -70,28 +70,40 @@ def test_audio_refuses_when_the_audio_is_not_in_the_page():
 
 def test_the_native_server_is_booted_with_ws_on():
     """``ws`` is forced rather than defaulted: without it the host in the page
-    has no audio leg at all, and the failure looks like a broken widget."""
+    has no audio leg at all, and the failure looks like a broken widget.
+
+    The stub takes ``boot``'s **real** shape -- an instance method, reading the
+    options off the handle it was built for. The one it replaced took them as
+    an argument, which `Server.boot` has never accepted, so the call site was a
+    TypeError this suite agreed with: nothing here booted a server, and nothing
+    else runs the native example. It is the whole reason a stub must be shaped
+    like the thing it stands in for.
+    """
     booted = {}
 
-    def fake_boot(options=None):
-        booted["options"] = options
+    def fake_boot(self, **kwargs):
+        booted["options"] = self.options
+        booted["kwargs"] = kwargs
         return _attached()
 
     original = Server.boot
-    Server.boot = staticmethod(fake_boot)
+    Server.boot = fake_boot
     try:
         notebook("native", options=ServerOptions(workers=2))
     finally:
         Server.boot = original
     assert booted["options"].ws is True
     assert booted["options"].workers == 2, "the rest of the options survive"
+    # This session installs itself as the ambient one; taking the default
+    # server slot as well would leave it behind when the session is replaced.
+    assert booted["kwargs"] == {"adopt_default": False}
 
 
 def test_a_chosen_ws_port_reaches_the_page():
     """``ws=<port>`` moves the server's socket, so it has to move the URL too:
     the page opens that connection itself and cannot ask where it went."""
     original = Server.boot
-    Server.boot = staticmethod(lambda options=None: _attached())
+    Server.boot = lambda self, **kwargs: _attached()
     try:
         session = notebook("native", options=ServerOptions(ws=9000))
     finally:
