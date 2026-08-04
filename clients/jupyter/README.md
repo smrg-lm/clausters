@@ -19,4 +19,6 @@ remote VS Code — and sounds where you are. `native` boots a local
 bulk) and draws its GUI in the cell; it is local-only, since the audio comes
 out of the kernel's machine.
 
-See the notebook chapter of the Clausters Python client's book.
+See the notebook chapter of the Clausters Python client's book, and
+[`examples/`](examples/) for notebooks to open — their README has the two
+commands that install and run them.
