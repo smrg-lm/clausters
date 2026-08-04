@@ -2,36 +2,38 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>probe: host and script both streaming</title>
+    <title>acceptance: host and script both streaming</title>
   </head>
   <body>
     <!--
-      A probe, deliberately **not** part of test.sh: it demonstrates a server
-      gap rather than asserting client behaviour, so it would fail today.
+      The acceptance for ring client identities, and before that the probe that
+      demonstrated their absence.
 
-      Everything that reaches the in-page engine goes through one shared-memory
-      ring, which the server sees as a single client (`ClientId::Ring`), and
-      `/bus_stream` is one subscription per client, replaced on each call. So the
-      script and the GUI host — both pushing through `engine.send` — take the
-      stream from each other. Run it (serve this package and open with
-      ?smoke=1, or point a headless browser at it) and read the phases:
+      Everything reaching the in-page engine goes through one shared-memory
+      ring. The server used to see all of it as a single client
+      (`ClientId::Ring`), and `/bus_stream` is one subscription per client,
+      replaced on each call — so the script and the GUI host, both pushing
+      through `engine.send`, took the stream from each other, and the loss was
+      permanent in one direction: the host only re-subscribes when its own
+      widget set changes. Ring frames now carry a peer tag, so the two are two
+      clients, exactly as a native host and a script on two sockets are.
+
+      The four phases are the probe's, now asserted rather than reported:
 
         phase 1  script only .................. its bus arrives
-        phase 2  host opens a meter ........... only the host's bus arrives,
-                                                the script gains 0 snapshots
-        phase 3  script re-subscribes ......... it takes the stream back
-        phase 4  1.9 s later, untouched ....... the host never recovers, because
-                                                it only re-sends when its own
-                                                widget set changes
+        phase 2  host opens a meter ........... BOTH buses arrive, and the
+                                                script keeps gaining snapshots
+        phase 3  script re-subscribes ......... both still arrive
+        phase 4  1.9 s later, untouched ....... both still arrive
 
-      The fix is server-side (ring clients get identities, PLAN.md M31); when it
-      lands this page becomes an acceptance, asserting that both keep updating.
+      Phase 2 is the one that used to fail, and phase 4 is the one that used to
+      stay failed.
     -->
     <pre id="log"></pre>
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Bus, Synth, SynthDef, GuiHost, gui, data, decodePacket,
+        Bus, Synth, SynthDef, GuiHost, gui, data, decodePacket, ANY_PEER,
       } from "../dist/index.js";
       import { control, outCtl, sine } from "../dist/defs/index.js";
 
@@ -51,7 +53,8 @@
         await raw.resume();
 
         // A raw window onto every /bus_stream.reply the engine emits, whoever
-        // subscribed: which bus indices arrive is the whole question.
+        // subscribed: which bus indices arrive is the whole question. Replies
+        // are addressed per client now, so this is the observer door.
         const seen = new Map();
         raw.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
@@ -61,7 +64,7 @@
               seen.set(bus, (seen.get(bus) ?? 0) + 1);
             }
           }
-        });
+        }, ANY_PEER);
         const snapshot = () => JSON.stringify([...seen.entries()].sort());
         const reset = () => seen.clear();
 
@@ -69,13 +72,13 @@
         // the script's connection both call `engine.send`.
         const out = [];
         const realSend = raw.send.bind(raw);
-        raw.send = (bytes) => {
+        raw.send = (bytes, peer) => {
           for (const { addr, args } of decodePacket(bytes)) {
             if (addr === "/bus_stream" || addr === "/bus_tapStream") {
-              out.push(`${addr}(${args.join(",")})`);
+              out.push(`${addr}@${peer}(${args.join(",")})`);
             }
           }
-          return realSend(bytes);
+          return realSend(bytes, peer);
         };
 
         const connection = await pageConnection();
@@ -92,6 +95,11 @@
         // Phase 1: only the script is subscribed.
         const stream = await data.BusStream.open(server, [scriptBus],
                                                  { periodMs: 20 });
+        // Each entry: the phase's name, the bus indices seen in it, and how
+        // many snapshots the script's own BusStream gained (null when the
+        // phase does not measure that).
+        const checks = [];
+        const busesSeen = () => [...seen.keys()];
         reset();
         await sleep(400);
         log(`phase 1 (script only): buses ${snapshot()}, `
@@ -101,7 +109,9 @@
         // which makes it subscribe its own set through the same page.
         const host = await GuiHost.page();
         host.open(gui.window({ title: "probe", w: 320, h: 160 },
-          gui.meter(hostBus.index, { h: 40 })));
+          // Control-rate: an audio meter reads a bus *level* out of the data
+          // plane and demands no `/bus_stream`, so it would subscribe nothing.
+          gui.meter(hostBus.index, { rate: "control", h: 40 })));
         await sleep(800);   // the host ticks at ~30 fps and (re)subscribes
 
         const before = stream.snapshots;
@@ -109,6 +119,7 @@
         await sleep(400);
         log(`phase 2 (host window open): buses ${snapshot()}, `
           + `script gained ${stream.snapshots - before}`);
+        checks.push(["phase 2", busesSeen(), stream.snapshots - before]);
 
         // Phase 3: the script re-subscribes after the host did.
         await server.streamBuses(20, [scriptBus]);
@@ -117,18 +128,40 @@
         await sleep(400);
         log(`phase 3 (script re-subscribed): buses ${snapshot()}, `
           + `script gained ${stream.snapshots - before3}`);
+        checks.push(["phase 3", busesSeen(), stream.snapshots - before3]);
 
         // Phase 4: does the host come back on its own?
         await sleep(1500);
         reset();
         await sleep(400);
         log(`phase 4 (1.9 s later, nobody touched it): buses ${snapshot()}`);
+        checks.push(["phase 4", busesSeen(), null]);
 
         log(`outbound: ${out.join(" ")}`);
-        verdict(`PROBE ${document.getElementById("log").textContent
-          .replace(/\n/g, " | ")}`);
+
+        // The assertions. Both buses must be arriving in every phase after the
+        // host opened its window, and the script must never stop gaining.
+        const failures = [];
+        for (const [phase, buses, gained] of checks) {
+          if (!buses.includes(scriptBus.index)) {
+            failures.push(`${phase}: the script's bus ${scriptBus.index} stopped arriving`);
+          }
+          if (!buses.includes(hostBus.index)) {
+            failures.push(`${phase}: the host's bus ${hostBus.index} stopped arriving`);
+          }
+          if (gained !== null && gained <= 0) {
+            failures.push(`${phase}: the script gained ${gained} snapshots`);
+          }
+        }
+        if (failures.length) {
+          throw new Error(failures.join("; ") + " || log: " +
+            document.getElementById("log").textContent.replace(/\n/g, " | "));
+        }
+        verdict(`PASS: a GUI host meter and a script bus stream both kept ` +
+          `updating through ${checks.length} phases ` +
+          `(buses ${scriptBus.index} script / ${hostBus.index} host)`);
       }
-      run().catch((e) => verdict(`PROBE FAIL: ${e}`));
+      run().catch((e) => verdict(`FAIL: ${e}`));
     </script>
   </body>
 </html>

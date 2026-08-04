@@ -16,13 +16,20 @@ export interface ClaustersEngine {
     context: AudioContext;
     node: AudioWorkletNode;
     /** Reply callback slot — one consumer; multiplexers own it and fan out. */
-    onReply: ((packet: Uint8Array) => void) | null;
+    /** Every reply, with the tag of the client it is for (`peer`). */
+    onReply: ((packet: Uint8Array, peer: number) => void) | null;
     onQuit: (() => void) | null;
     onError: ((message: string) => void) | null;
     resume(): Promise<void>;
     suspend(): Promise<void>;
     /** One complete OSC packet; the bytes are transferred, not copied. */
-    send(bytes: Uint8Array): void;
+    /**
+     * One complete OSC packet to the engine, authored by `peer` — which of the
+     * page's clients is speaking. The server keeps a subscription and a reply
+     * queue per client, so two of them sharing this engine (a script and a GUI
+     * host) must not send under the same tag.
+     */
+    send(bytes: Uint8Array, peer: number): void;
     /** The engine's sample clock (a round trip through the audio thread). */
     clock(): Promise<number>;
     /**
@@ -62,7 +69,7 @@ export interface BootOptions {
 }
 
 type WorkletReply =
-    | { type: "osc"; data: ArrayBuffer }
+    | { type: "osc"; data: ArrayBuffer; peer: number }
     | { type: "clock"; clock: number; frame: number; epoch: number }
     | { type: "buffer_load"; index: number; ok: boolean; message?: string }
     | { type: "quit" }
@@ -102,8 +109,8 @@ export async function bootClausters({
         onError: null,
         resume: () => ctx.resume(),
         suspend: () => ctx.suspend(),
-        send(bytes: Uint8Array) {
-            node.port.postMessage({ type: "osc", data: bytes }, [
+        send(bytes: Uint8Array, peer: number) {
+            node.port.postMessage({ type: "osc", data: bytes, peer }, [
                 bytes.buffer as ArrayBuffer,
             ]);
         },
@@ -140,7 +147,7 @@ export async function bootClausters({
     }[] = [];
     node.port.onmessage = (e) => {
         const msg = e.data as WorkletReply;
-        if (msg.type === "osc") handle.onReply?.(new Uint8Array(msg.data));
+        if (msg.type === "osc") handle.onReply?.(new Uint8Array(msg.data), msg.peer);
         else if (msg.type === "clock") {
             clockWaiters.shift()?.({
                 sample: msg.clock,

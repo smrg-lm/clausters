@@ -4468,3 +4468,49 @@ What this does **not** solve is the other half of why a client cannot own its
 data paths: over the shared-memory ring every peer is one client, so two of them
 still fight over a `/bus_stream` subscription. That is a segment-layout change
 and is recorded with the ring's own identity work.
+
+## A ring frame says who wrote it, so one segment carries several clients
+
+Context: everything reaching the in-process/shared-memory engine went through
+one ring pair, and the server saw all of it as a single `ClientId::Ring`. But
+`/bus_stream` and `/bus_tapStream` are "one subscription per client, replaced on
+each call", so two peers over one segment silently took the stream from each
+other. The case is not hypothetical and not rare: it is every browser page,
+where the script and the GUI host both push through the in-page carrier. The
+loss was also **permanent in one direction** — the host only re-subscribes when
+its own widget set changes, so once a script replaced the subscription the
+meters stayed frozen until a widget was added or removed.
+
+Decision: each ring frame carries a `u32` **peer tag** beside its length —
+who authored the packet on the inbound ring, who the reply is for on the
+outbound one — and `ClientId::Ring` becomes `ClientId::Ring(u32)`.
+
+- **The tag lives in the frame, not in the segment header.** That is what makes
+  this cheap: no field of the header or the data plane moves, so the readers
+  that pin offsets by hand (`clients/gui/src/host/shm.rs`,
+  `clients/python/clausters/ipc.py`) need only their version constant bumped —
+  exactly the case `shm.rs`'s own comment anticipates. The alternative
+  considered, **several rings** (one pair per client), moves the layout, fixes a
+  client count at boot, and buys nothing the tag does not.
+- **SPSC survives, because the tag is about the packet and not the ring.** One
+  producer still writes each ring; an embedder holding several clients funnels
+  their sends through it and demultiplexes the replies by tag. The page already
+  had that shape — every send crosses into the worklet through one `MessagePort`.
+- **The embedder assigns the tags.** There is no handshake and none is needed:
+  the server has to tell its clients apart, never name them. A sender that picks
+  nothing is peer 0, the single client a segment always had, so every existing
+  embedder keeps working unchanged.
+- **Replies are addressed, and that removed a door.** A listener now hears its
+  own client's replies rather than everything on the wire. Observers — a test
+  asserting the host's meters stream, a debug tap — get an explicit `ANY_PEER`
+  read door in the web client instead of reaching into another client's
+  internals. Two page tests were reading the host's traffic by eavesdropping and
+  now say so.
+- **The C ABI stays single-peer.** Its one consumer is the Python client, which
+  *is* one client; a second tag there would be surface nobody calls.
+  `clausters_send_as` can be added additively if a C embedder ever grows a
+  second client.
+
+Versioning: the framing changed, so `ABI_VERSION` moves 6 → 7 and, by the
+linkage rule, drags the SemVer breaking tier with it. Nothing else about the
+segment moved.

@@ -29,6 +29,18 @@
 
 import type { CanvasBox } from "../gui/canvasbox.ts";
 
+/**
+ * The two clients this notebook's engine serves, by the tag their ring frames
+ * carry: the GUI host in the page, and the kernel's `Server` at the far end of
+ * the comm. The server keeps one `/bus_stream` subscription per client, so
+ * these must differ — sharing a tag is what used to make a meter and a script
+ * reading a bus take the stream from each other. Fixed rather than claimed
+ * because each notebook boots an engine of its own, so there is nobody else to
+ * collide with (see `docs/ipc.md`).
+ */
+const GUI_PEER = 1;
+const KERNEL_PEER = 2;
+
 // Type-only, and that is load-bearing: anywidget serves this module and
 // nothing beside it, so a *value* import of a sibling is a specifier the page
 // cannot resolve. Everything this module runs arrives over the comm and is
@@ -663,7 +675,9 @@ function bootShared(
             // sends nothing here, but a queue that only grows is worse than
             // one that empties).
             const queued = state.toEngine.splice(0);
-            if (engine !== null) for (const packet of queued) engine.send(packet);
+            if (engine !== null) {
+                for (const packet of queued) engine.send(packet, KERNEL_PEER);
+            }
             return engine;
         });
         state.drain = setInterval(() => {
@@ -679,8 +693,10 @@ function bootShared(
 
 /** The in-page engine, once per page, beside the host. */
 interface Engine {
-    send(bytes: Uint8Array): void;
-    onReply: ((packet: Uint8Array) => void) | null;
+    /** One OSC packet, tagged with which of this engine's clients sent it. */
+    send(bytes: Uint8Array, peer: number): void;
+    /** Every reply, with the tag of the client it is for. */
+    onReply: ((packet: Uint8Array, peer: number) => void) | null;
     resume(): Promise<void>;
     suspend(): Promise<void>;
     /** The engine's own AudioContext — what `closeSession` actually releases. */
@@ -741,11 +757,11 @@ async function bootEngine(
     // new onReply per mounted view instead would grow a linked list one link
     // per cell re-run, send the kernel one copy of every reply per link, and
     // hold every dead model alive behind it.
-    engine.onReply = (bytes) => {
-        bridge.server_reply(bytes);
-        for (const send of [...shared(session).replies]) send(bytes);
+    engine.onReply = (bytes, peer) => {
+        if (peer === GUI_PEER) bridge.server_reply(bytes);
+        else for (const send of [...shared(session).replies]) send(bytes);
     };
-    bridge.connect_page((bytes: Uint8Array) => engine.send(bytes));
+    bridge.connect_page((bytes: Uint8Array) => engine.send(bytes, GUI_PEER));
     return engine;
 }
 
@@ -876,7 +892,11 @@ export default {
                     // `engine` is null until the boot assigns it, and the
                     // kernel does not wait -- see `Shared.toEngine`.
                     if (state.engine === null) state.toEngine.push(packet);
-                    else void state.engine.then((engine) => engine?.send(packet));
+                    else {
+                        void state.engine.then((engine) =>
+                            engine?.send(packet, KERNEL_PEER),
+                        );
+                    }
                 }
             }
         });

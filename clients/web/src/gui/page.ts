@@ -166,9 +166,14 @@ async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
     canvas.style.display = "block";
     if (audio === undefined) document.body.append(canvas);
 
-    // This host's server leg, wired once.
-    engine.addReply((bytes) => bridge.server_reply(bytes));
-    bridge.connect_page((bytes: Uint8Array) => engine.send(bytes));
+    // This host's server leg, wired once — and under a client tag of its own.
+    // The host is a *second* client of this engine beside the page's script,
+    // and the server keeps one `/bus_stream` subscription per client: sharing a
+    // tag is what used to make the two take the stream from each other, leaving
+    // the host's meters frozen until a widget was added or removed.
+    const peer = engine.claimPeer();
+    engine.addReply((bytes) => bridge.server_reply(bytes), peer);
+    bridge.connect_page((bytes: Uint8Array) => engine.send(bytes, peer));
 
     // Drain the host's outbound events to the page's listeners.
     const listeners = new Set<EventListener>();

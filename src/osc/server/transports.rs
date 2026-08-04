@@ -106,17 +106,17 @@ impl OscServer {
             let mut buf = std::mem::take(&mut self.recv_buf);
             let popped = ipc.try_pop(&mut buf);
             self.recv_buf = buf;
-            let Some(len) = popped else {
+            let Some((peer, len)) = popped else {
                 return Flow::Continue;
             };
             let packet = match crate::osc::decode_packet(&self.recv_buf[..len]) {
                 Ok(packet) => packet,
                 Err(e) => {
-                    warn!("malformed OSC packet from ring client: {e}");
+                    warn!("malformed OSC packet from ring client {peer}: {e}");
                     continue;
                 }
             };
-            if let Flow::Quit = self.handle_packet(packet, ClientId::Ring) {
+            if let Flow::Quit = self.handle_packet(packet, ClientId::Ring(peer)) {
                 return Flow::Quit;
             }
         }

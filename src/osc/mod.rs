@@ -18,15 +18,20 @@ use rosc::OscPacket;
 /// Where a request came from and where its replies go: the OSC
 /// *encoding* is transport-independent, so client identity is too. `Udp` is
 /// a remote socket; `Tcp(id)` is a connected TCP client (the per-connection id
-/// from `tcp`); `Ring` is the single shared-memory / in-process ring client of
-/// `server::ipc`.
+/// from `tcp`); `Ring(peer)` is one of the shared-memory / in-process ring
+/// clients of `server::ipc`, by the tag its frames carry.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum ClientId {
     Udp(SocketAddr),
     Tcp(u64),
     /// A connected WebSocket client (the per-connection id from `ws`).
     Ws(u64),
-    Ring,
+    /// A client on the shared-memory / in-process ring, by the peer tag its
+    /// frames carry (`server::ipc`). One segment serves several — a script and
+    /// a GUI host in one page — so this is what keeps their `/bus_stream`
+    /// subscriptions and their replies apart; an embedder that never asks for a
+    /// tag is `ipc::DEFAULT_PEER`.
+    Ring(u32),
 }
 
 impl std::fmt::Display for ClientId {
@@ -35,7 +40,7 @@ impl std::fmt::Display for ClientId {
             ClientId::Udp(addr) => write!(f, "{addr}"),
             ClientId::Tcp(id) => write!(f, "tcp client {id}"),
             ClientId::Ws(id) => write!(f, "ws client {id}"),
-            ClientId::Ring => write!(f, "ring client"),
+            ClientId::Ring(peer) => write!(f, "ring client {peer}"),
         }
     }
 }

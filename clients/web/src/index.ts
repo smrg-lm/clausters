@@ -37,7 +37,7 @@
 // `<clausters-power>` custom elements as a side effect; the singletons stay
 // lazy until first used.
 
-export { server, engine } from "./engine/server.ts";
+export { server, engine, ANY_PEER, DEFAULT_PEER } from "./engine/server.ts";
 export type { ClaustersServer, ReplyListener } from "./engine/server.ts";
 export type { BootOptions, ClockAnchor } from "./engine/loader.ts";
 export { GuiHost, guiHost, newGuiHost, pageGuiConnection } from "./gui/host.ts";

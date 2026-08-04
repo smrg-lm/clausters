@@ -40,7 +40,16 @@ export class WebServer {
      */
     constructor(sample_rate: number, channels: number, unix_epoch: number);
     /**
-     * One pending reply as bytes, or `undefined`/`None` when none is.
+     * One pending reply as `[peer, ...bytes]`, or `undefined`/`None` when none
+     * is pending: the first byte group says **who the reply is for**, so the
+     * page routes it to that client instead of handing every reply to all of
+     * them.
+     *
+     * One `Vec` rather than a pair because the value crosses to JS: a tuple
+     * would be a JS array holding a second typed array, which costs an extra
+     * object per reply on the hottest path there is (every streamed bus
+     * snapshot). The peer rides as a `u32` little-endian prefix instead, and
+     * `readReply` in the loader unpacks it.
      */
     poll(): Uint8Array | undefined;
     /**
@@ -53,10 +62,15 @@ export class WebServer {
      */
     quit_requested(): boolean;
     /**
-     * Pushes one complete OSC packet into the command ring. `false` =
-     * momentarily full (backpressure): retry next quantum.
+     * Pushes one complete OSC packet into the command ring, authored by
+     * `peer`. `false` = momentarily full (backpressure): retry next quantum.
+     *
+     * A page holds **several** independent clients over this one engine — the
+     * script and the GUI host, at least — and the server has to tell them
+     * apart or their `/bus_stream` subscriptions overwrite each other. The tag
+     * is the page's to assign; there is no handshake.
      */
-    send(packet: Uint8Array): boolean;
+    send(peer: number, packet: Uint8Array): boolean;
 }
 
 /**
@@ -95,7 +109,7 @@ export interface InitOutput {
     readonly webserver_poll: (a: number) => [number, number];
     readonly webserver_process: (a: number, b: number, c: number, d: any) => [number, number];
     readonly webserver_quit_requested: (a: number) => number;
-    readonly webserver_send: (a: number, b: number, c: number) => number;
+    readonly webserver_send: (a: number, b: number, c: number, d: number) => number;
     readonly last_render_seed: () => bigint;
     readonly abi_version: () => number;
     readonly clausters_free_samples: (a: number, b: bigint) => void;

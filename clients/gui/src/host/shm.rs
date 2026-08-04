@@ -37,8 +37,11 @@ const MAGIC: u32 = 0x5541_4C43;
 /// it is still the rule (there is no separate segment counter to follow), so a
 /// bump lands here as a number change and nothing else whenever the layout
 /// stayed put. v6 did touch the layout, but only inside the header's reserved
-/// space (the transport clock), so every offset below is unchanged.
-const SUPPORTED_ABI_VERSION: u32 = 6;
+/// space (the transport clock), so every offset below is unchanged. v7 changed
+/// the framing *inside* the command rings (each frame gained a peer tag) and no
+/// field of the header or the data plane this reader maps, so it is again a
+/// number change and nothing else.
+const SUPPORTED_ABI_VERSION: u32 = 7;
 
 // Byte offsets of the fields we read inside the `#[repr(C)]` Header.
 const OFF_ABI: usize = 4;

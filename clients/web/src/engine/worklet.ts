@@ -17,19 +17,21 @@ import "./worklet-shim.ts";
 import { initSync, WebServer } from "./clausters_web.js";
 
 // Port protocol, both directions tagged by `type`:
-//   main -> worklet: {type:"osc", data}   one complete OSC packet (bytes)
+//   main -> worklet: {type:"osc", data, peer}  one complete OSC packet (bytes),
+//                        tagged with which of the page's clients authored it
 //                    {type:"clock"}       ask for the sample clock
 //                    {type:"buffer_load", index, channels, sampleRate, data}
 //                        install host-decoded samples as buffer `index` (the
 //                        browser's /buffer_allocRead: fetch + decodeAudioData on
 //                        the main thread, interleaved floats in here)
-//   worklet -> main: {type:"osc", data}   one reply packet (bytes)
+//   worklet -> main: {type:"osc", data, peer}  one reply packet (bytes) and
+//                        which client it is for, so the page routes it
 //                    {type:"clock", clock, frame, epoch}
 //                    {type:"buffer_load", index, ok, message?}  the install's ack
 //                    {type:"quit"}        a /server_quit arrived; processor stops
 //                    {type:"error", message}  fatal; processor stops
 type InMessage =
-    | { type: "osc"; data: ArrayBuffer }
+    | { type: "osc"; data: ArrayBuffer; peer: number }
     | { type: "clock" }
     | {
           type: "buffer_load";
@@ -50,7 +52,8 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     epoch: number;
     server: WebServer;
     interleaved: Float32Array;
-    pending: Uint8Array[]; // packets awaiting ring space (backpressure)
+    // packets awaiting ring space (backpressure), each with its author's tag
+    pending: { peer: number; bytes: Uint8Array }[];
     dead: boolean;
 
     constructor(options: { processorOptions: ProcessorOptions }) {
@@ -69,7 +72,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
 
     onMessage(msg: InMessage): void {
         if (msg.type === "osc") {
-            this.pending.push(new Uint8Array(msg.data));
+            this.pending.push({ peer: msg.peer, bytes: new Uint8Array(msg.data) });
         } else if (msg.type === "clock") {
             // `frame` is the context's own frame counter read in the same
             // instant as the engine's: their difference is a fixed integer, so
@@ -114,7 +117,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             // ordering survives backpressure (retry next quantum).
             while (
                 this.pending.length &&
-                this.server.send(this.pending[0]!)
+                this.server.send(this.pending[0]!.peer, this.pending[0]!.bytes)
             ) {
                 this.pending.shift();
             }
@@ -137,11 +140,18 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                 }
             }
 
+            // poll() returns [peer u32 LE, ...packet] in one allocation; the
+            // packet travels on as its own view so the main thread transfers a
+            // buffer rather than copying it.
             let reply: Uint8Array | undefined;
             while ((reply = this.server.poll()) !== undefined) {
-                this.port.postMessage({ type: "osc", data: reply }, [
+                const peer = new DataView(
                     reply.buffer,
-                ]);
+                    reply.byteOffset,
+                    4,
+                ).getUint32(0, true);
+                const data = reply.slice(4);
+                this.port.postMessage({ type: "osc", data, peer }, [data.buffer]);
             }
 
             if (this.server.quit_requested()) {

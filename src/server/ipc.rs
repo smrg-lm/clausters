@@ -35,14 +35,25 @@
 //!   back by [`ClientId::Ring`](crate::osc::ClientId); ring bytes are as
 //!   untrusted as UDP bytes (`osc::decode_packet` validates).
 //!
+//!   Each frame carries a **peer tag** beside its length: on the inbound ring
+//!   it says who *authored* the packet, on the outbound one who the reply is
+//!   *for*. Every frame is addressed — a notification reaches several clients
+//!   as several frames, one per client registered with `/server_notify` —
+//!   which is what lets one segment serve several independent clients, a
+//!   script and a GUI host in one page, each with its own `/bus_stream`
+//!   subscription and its own replies instead of the single `ClientId::Ring`
+//!   they used to share and overwrite.
+//!   The rings stay SPSC: the tag says who wrote the *packet*, not who wrote
+//!   the ring, and a multi-peer embedder funnels its sends through one
+//!   producer (the page's worklet does exactly this).
+//!
 //! Synchronization is index-based: each ring has a `head` (producer) and
 //! `tail` (consumer) cursor, monotonically increasing `u32`s used modulo the
 //! capacity. The producer copies the packet first and publishes `head` with
 //! Release; the consumer Acquire-loads `head`. A malformed length resyncs
 //! the ring by dropping its contents (the producer is outside our trust
-//! boundary). v1 keeps exactly **one** ring client per segment and the
-//! server polls the ring on a short socket timeout instead of a semaphore —
-//! documented trade-offs in `docs/ipc.md`.
+//! boundary). The server polls the ring on a short socket timeout instead of
+//! a semaphore — a documented trade-off in `docs/ipc.md`.
 
 #[cfg(unix)]
 use std::fs::OpenOptions;
@@ -62,8 +73,15 @@ pub const MAGIC: u32 = 0x5541_4C43;
 /// pointer form (NULL for a fresh take, a seed to repeat one) and out pointers
 /// for the score's event count and for the seed the render actually used. v6
 /// added the transport clock beside the sample clock, so a local peer reads
-/// the piece's own position with a load.
-pub const ABI_VERSION: u32 = 6;
+/// the piece's own position with a load. v7 gave ring frames a peer tag, so one
+/// segment carries several independent clients (see the module docs); no field
+/// of the header or the data plane moved, only the framing inside the rings.
+pub const ABI_VERSION: u32 = 7;
+
+/// The peer tag an embedder gets when it never asks for one: the single client
+/// a segment has always had, so a peer built against the old single-client
+/// behaviour keeps working unchanged.
+pub const DEFAULT_PEER: u32 = 0;
 /// Byte capacity of each ring (power of two).
 pub const RING_CAPACITY: usize = 64 * 1024;
 /// Default audio-tap count (`--taps`).
@@ -567,6 +585,11 @@ fn check_tap_params(taps: usize, tap_frames: usize) {
     );
 }
 
+/// Bytes each ring frame carries before its payload: the `u32` payload length
+/// and the `u32` peer tag, both little-endian. The payload itself is padded to
+/// 4 bytes, so a frame is always 4-aligned.
+const FRAME_HEADER: usize = 8;
+
 /// Which end of the ring pair this peer is.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -605,12 +628,14 @@ impl IpcPeer {
         }
     }
 
-    /// Appends one packet to the outbound ring. `false` when the ring lacks
-    /// space — backpressure, the caller may retry (nothing is dropped).
-    pub fn push(&self, packet: &[u8]) -> bool {
+    /// Appends one packet to the outbound ring, tagged for `peer` — who wrote
+    /// it (client → server) or who it is for (server → client). `false` when
+    /// the ring lacks space — backpressure, the caller may retry (nothing is
+    /// dropped).
+    pub fn push(&self, peer: u32, packet: &[u8]) -> bool {
         let ring = self.outbound();
         let padded = packet.len().div_ceil(4) * 4;
-        let total = 4 + padded;
+        let total = FRAME_HEADER + padded;
         if packet.is_empty() || total > RING_CAPACITY {
             return false;
         }
@@ -621,16 +646,17 @@ impl IpcPeer {
             return false;
         }
         write_ring(ring, head, &(packet.len() as u32).to_le_bytes());
-        write_ring(ring, head.wrapping_add(4), packet);
+        write_ring(ring, head.wrapping_add(4), &peer.to_le_bytes());
+        write_ring(ring, head.wrapping_add(FRAME_HEADER as u32), packet);
         ring.head
             .store(head.wrapping_add(total as u32), Ordering::Release);
         true
     }
 
-    /// Pops one packet from the inbound ring into `buf`, returning its
-    /// length. Malformed lengths (a hostile or crashed peer) drop the whole
-    /// ring contents and return `None`.
-    pub fn try_pop(&self, buf: &mut [u8]) -> Option<usize> {
+    /// Pops one packet from the inbound ring into `buf`, returning its peer tag
+    /// and its length. Malformed lengths (a hostile or crashed peer) drop the
+    /// whole ring contents and return `None`.
+    pub fn try_pop(&self, buf: &mut [u8]) -> Option<(u32, usize)> {
         let ring = self.inbound();
         let head = ring.head.load(Ordering::Acquire);
         let tail = ring.tail.load(Ordering::Relaxed);
@@ -638,21 +664,26 @@ impl IpcPeer {
         if used == 0 {
             return None;
         }
-        let mut len_bytes = [0u8; 4];
-        read_ring(ring, tail, &mut len_bytes);
-        let len = u32::from_le_bytes(len_bytes) as usize;
+        let mut header = [0u8; FRAME_HEADER];
+        read_ring(ring, tail, &mut header);
+        let len = u32::from_le_bytes([header[0], header[1], header[2], header[3]]) as usize;
+        let peer = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
         let padded = len.div_ceil(4) * 4;
-        let total = 4 + padded;
+        let total = FRAME_HEADER + padded;
         if len == 0 || total > used || len > buf.len() {
             // Untrusted peer wrote garbage (or a packet bigger than our
             // buffer): resync by discarding everything buffered.
             ring.tail.store(head, Ordering::Release);
             return None;
         }
-        read_ring(ring, tail.wrapping_add(4), &mut buf[..len]);
+        read_ring(
+            ring,
+            tail.wrapping_add(FRAME_HEADER as u32),
+            &mut buf[..len],
+        );
         ring.tail
             .store(tail.wrapping_add(total as u32), Ordering::Release);
-        Some(len)
+        Some((peer, len))
     }
 }
 

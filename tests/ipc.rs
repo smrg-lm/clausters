@@ -4,6 +4,10 @@
 #![cfg(feature = "synth")]
 
 use std::sync::Arc;
+
+/// The peer tag these tests send under. One client, so any tag does — what
+/// matters is that it comes back on the replies (ABI v7).
+const PEER: u32 = 3;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -34,10 +38,11 @@ fn ring_roundtrip_and_wraparound() {
     for round in 0..200 {
         for i in 0..32 {
             let msg = encode("/node_set", vec![OscType::Int(round * 32 + i)]);
-            assert!(client.push(&msg), "push must succeed while drained");
+            assert!(client.push(PEER, &msg), "push must succeed while drained");
         }
         for i in 0..32 {
-            let len = server.try_pop(&mut buf).expect("packet must be there");
+            let (peer, len) = server.try_pop(&mut buf).expect("packet must be there");
+            assert_eq!(peer, PEER, "the frame's tag says who authored it");
             let expected = encode("/node_set", vec![OscType::Int(round * 32 + i)]);
             assert_eq!(&buf[..len], &expected[..], "FIFO order preserved");
         }
@@ -47,7 +52,7 @@ fn ring_roundtrip_and_wraparound() {
     // Backpressure: an unbounded burst eventually reports full, loses nothing.
     let msg = encode("/server_status", vec![]);
     let mut pushed = 0;
-    while client.push(&msg) {
+    while client.push(PEER, &msg) {
         pushed += 1;
         assert!(pushed < 100_000, "a full ring must reject pushes");
     }
@@ -65,11 +70,11 @@ fn corrupted_ring_contents_resync_instead_of_wedging() {
 
     // A "packet" the consumer cannot fit in its buffer counts as garbage.
     let huge = vec![0x2f_u8; 9000];
-    assert!(client.push(&huge));
+    assert!(client.push(PEER, &huge));
     let mut small = vec![0u8; 256];
     assert!(server.try_pop(&mut small).is_none(), "oversized = dropped");
     // The ring keeps working afterwards.
-    assert!(client.push(&encode("/server_status", vec![])));
+    assert!(client.push(PEER, &encode("/server_status", vec![])));
     assert!(server.try_pop(&mut small).is_some());
 }
 
@@ -193,6 +198,100 @@ fn tap_rings_write_read_and_wrap() {
     assert_eq!(segment.tap_read_latest(1, &mut out), None);
 }
 
+/// M31(b): two independent clients over **one** segment.
+///
+/// The regression this exists for: every ring packet used to arrive as a single
+/// `ClientId::Ring`, so `/bus_stream` — "one subscription per client, replaced
+/// on each call" — could not tell two peers apart. A script and a GUI host
+/// sharing one page took the stream from each other, and the loss was permanent
+/// in one direction, since the host only re-subscribes when its own widget set
+/// changes. With the frame's peer tag they are two clients, exactly as a native
+/// host and a script on two sockets are.
+#[test]
+fn two_ring_peers_keep_their_own_subscriptions() {
+    let segment = Segment::in_memory();
+    let (mut engine, handle) = engine_pair_full(
+        SR,
+        2,
+        0,
+        Some(Arc::clone(&segment)),
+        128,
+        1024,
+        clausters::dsp::Limits::default(),
+    );
+    let info = ServerInfo {
+        nominal_sample_rate: SR as f64,
+        actual_sample_rate: SR as f64,
+    };
+    let mut server = OscServer::headless(info, handle, 0.0);
+    server
+        .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
+        .unwrap();
+    let client = IpcPeer::new(Arc::clone(&segment), Role::Client);
+
+    const SCRIPT: u32 = 1;
+    const HOST: u32 = 2;
+
+    // Distinct control-bus values, so a snapshot says which subscription it is.
+    segment.control_buses().set(0, 0.25);
+    segment.control_buses().set(1, 0.75);
+
+    // The script subscribes to bus 0, then the host to bus 1 -- the order that
+    // used to leave the script silent.
+    assert!(client.push(
+        SCRIPT,
+        &encode("/bus_stream", vec![OscType::Int(20), OscType::Int(0)]),
+    ));
+    assert!(client.push(
+        HOST,
+        &encode("/bus_stream", vec![OscType::Int(20), OscType::Int(1)]),
+    ));
+
+    // Drive the server and collect the snapshots each peer is sent.
+    let mut buf = vec![0u8; 65536];
+    let mut to_script = Vec::new();
+    let mut to_host = Vec::new();
+    for _ in 0..200 {
+        server.step();
+        engine.process_block(&mut vec![0.0f32; BLOCK_SIZE * 2]);
+        while let Some((to, len)) = client.try_pop(&mut buf) {
+            let Ok(OscPacket::Message(msg)) = clausters::osc::decode_packet(&buf[..len]) else {
+                continue;
+            };
+            if msg.addr != "/bus_stream.reply" {
+                continue;
+            }
+            match to {
+                SCRIPT => to_script.push(msg),
+                HOST => to_host.push(msg),
+                other => panic!("a snapshot addressed to nobody: peer {other}"),
+            }
+        }
+        if to_script.len() >= 2 && to_host.len() >= 2 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    assert!(
+        to_script.len() >= 2,
+        "the script kept its stream: {} snapshot(s)",
+        to_script.len()
+    );
+    assert!(
+        to_host.len() >= 2,
+        "the host kept its stream: {} snapshot(s)",
+        to_host.len()
+    );
+    // And each got its own bus, not the other's.
+    for msg in &to_script {
+        assert_eq!(msg.args[0], OscType::Int(0), "the script asked for bus 0");
+    }
+    for msg in &to_host {
+        assert_eq!(msg.args[0], OscType::Int(1), "the host asked for bus 1");
+    }
+}
+
 /// The full server speaking through the ring only: no UDP client at all.
 #[test]
 fn server_speaks_osc_over_the_ring() {
@@ -219,9 +318,10 @@ fn server_speaks_osc_over_the_ring() {
 
     let mut buf = vec![0u8; 65536];
     let mut request = |packet: &[u8]| -> OscMessage {
-        assert!(client.push(packet));
+        assert!(client.push(PEER, packet));
         for _ in 0..500 {
-            if let Some(len) = client.try_pop(&mut buf) {
+            if let Some((to, len)) = client.try_pop(&mut buf) {
+                assert_eq!(to, PEER, "a reply is addressed to the peer that asked");
                 let (_, packet) =
                     clausters::rosc::decoder::decode_udp(&buf[..len]).expect("valid reply");
                 let OscPacket::Message(msg) = packet else {
@@ -238,15 +338,18 @@ fn server_speaks_osc_over_the_ring() {
     assert_eq!(status.addr, "/server_status.reply");
 
     // A synth via the ring must reach the engine and make sound.
-    assert!(client.push(&encode(
-        "/synth_new",
-        vec![
-            OscType::String("default".into()),
-            OscType::Int(1000),
-            OscType::Int(1),
-            OscType::Int(0),
-        ],
-    )));
+    assert!(client.push(
+        PEER,
+        &encode(
+            "/synth_new",
+            vec![
+                OscType::String("default".into()),
+                OscType::Int(1000),
+                OscType::Int(1),
+                OscType::Int(0),
+            ],
+        )
+    ));
     std::thread::sleep(Duration::from_millis(50)); // let the server forward it
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
     let mut heard = false;
@@ -263,7 +366,7 @@ fn server_speaks_osc_over_the_ring() {
     let bad = request(&encode("/zzz", vec![]));
     assert_eq!(bad.addr, "/fail", "errors route back through the ring");
 
-    assert!(client.push(&encode("/server_quit", vec![])));
+    assert!(client.push(PEER, &encode("/server_quit", vec![])));
     thread.join().unwrap().unwrap();
 }
 

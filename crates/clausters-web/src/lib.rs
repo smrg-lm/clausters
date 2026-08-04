@@ -129,16 +129,33 @@ impl WebServer {
         })
     }
 
-    /// Pushes one complete OSC packet into the command ring. `false` =
-    /// momentarily full (backpressure): retry next quantum.
-    pub fn send(&self, packet: &[u8]) -> bool {
-        self.inner.send(packet)
+    /// Pushes one complete OSC packet into the command ring, authored by
+    /// `peer`. `false` = momentarily full (backpressure): retry next quantum.
+    ///
+    /// A page holds **several** independent clients over this one engine — the
+    /// script and the GUI host, at least — and the server has to tell them
+    /// apart or their `/bus_stream` subscriptions overwrite each other. The tag
+    /// is the page's to assign; there is no handshake.
+    pub fn send(&self, peer: u32, packet: &[u8]) -> bool {
+        self.inner.send_as(peer, packet)
     }
 
-    /// One pending reply as bytes, or `undefined`/`None` when none is.
+    /// One pending reply as `[peer, ...bytes]`, or `undefined`/`None` when none
+    /// is pending: the first byte group says **who the reply is for**, so the
+    /// page routes it to that client instead of handing every reply to all of
+    /// them.
+    ///
+    /// One `Vec` rather than a pair because the value crosses to JS: a tuple
+    /// would be a JS array holding a second typed array, which costs an extra
+    /// object per reply on the hottest path there is (every streamed bus
+    /// snapshot). The peer rides as a `u32` little-endian prefix instead, and
+    /// `readReply` in the loader unpacks it.
     pub fn poll(&mut self) -> Option<Vec<u8>> {
-        let len = self.inner.poll_into(&mut self.reply_buf)?;
-        Some(self.reply_buf[..len].to_vec())
+        let (peer, len) = self.inner.poll_from(&mut self.reply_buf)?;
+        let mut out = Vec::with_capacity(4 + len);
+        out.extend_from_slice(&peer.to_le_bytes());
+        out.extend_from_slice(&self.reply_buf[..len]);
+        Some(out)
     }
 
     /// Renders into `out` (interleaved, a multiple of `block_frames() *
@@ -265,6 +282,9 @@ mod tests {
 
     /// The live face, exactly as the worklet drives it: send an `/synth_new`,
     /// pull a second of quanta, hear the tone, drain the `/done`s.
+    /// The page's client tag for these tests. One client here, so any tag does.
+    const PEER: u32 = 1;
+
     #[test]
     fn web_server_pulls_a_tone() {
         let mut server = super::WebServer::new(48000.0, 2, 0.0).unwrap();
@@ -277,7 +297,7 @@ mod tests {
                 OscType::Int(0),
             ],
         };
-        assert!(server.send(&encoder::encode(&OscPacket::Message(s_new)).unwrap()));
+        assert!(server.send(PEER, &encoder::encode(&OscPacket::Message(s_new)).unwrap()));
         let block = server.block_frames() as usize * 2;
         let mut quantum = vec![0.0f32; 128 * 2];
         assert_eq!(

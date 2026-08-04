@@ -71,7 +71,7 @@
     <script type="module">
       import "/examples/graph-controls/bundle/index.js";  // <fm-trem>
       import "/examples/piano/bundle/index.js";           // <piano-keys>
-      import { startPage, server } from "/dist/runtime.js";
+      import { startPage, server, ANY_PEER } from "/dist/runtime.js";
       import { loadOsc, decodePacket, encodeMessage } from "/dist/base/osc.js";
 
       const verdict = (text) => {
@@ -155,6 +155,8 @@
         const seen = new Map([[a.lfo, new Set()], [b.lfo, new Set()],
                               [el("offscreen").symbols.lfo, new Set()]]);
         let failed = null;
+        // ANY_PEER: these snapshots belong to the GUI host's subscription, not
+        // to this page script's client, and replies are addressed per client.
         engine.addReply((bytes) => {
             for (const { addr, args } of decodePacket(bytes)) {
                 if (addr === "/fail") failed = JSON.stringify(args);
@@ -163,7 +165,7 @@
                     seen.get(args[i])?.add(args[i + 1]);
                 }
             }
-        });
+        }, ANY_PEER);
         await until(() => seen.get(a.lfo).size >= 3 && seen.get(b.lfo).size >= 3,
                     () => "the two instances never both streamed " +
                         JSON.stringify({

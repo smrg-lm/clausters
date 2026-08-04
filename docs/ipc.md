@@ -15,12 +15,31 @@ All three coexist: a `--shm` server still serves UDP; the embedded server keeps 
 A single memory region (ABI v4; 722 624 bytes with the default 16 384 control buses, 128 audio buses and 8 audio taps of 16 384 samples) holding, in order:
 
 - **Header**: magic `"CLAU"`, **layout version** — checked on attach, a mismatch refuses to connect (the scsynth plugin-ABI lesson: every binary boundary is versioned) — the device sample rate, the sample clock, the **control-bus count**, the **audio-bus count** and the **tap region shape** (tap count and per-tap ring capacity), so a client maps the whole file and derives every offset from the header alone.
-- **Command plane**: two SPSC byte rings (64 KiB each) of length-prefixed OSC packets — client→server commands, server→client replies. Unlike UDP, a full ring gives **backpressure** (the push fails and you retry) instead of silently dropping packets. Ring contents are untrusted bytes: the server validates exactly as it does UDP datagrams, and garbage resyncs the ring instead of wedging it.
+- **Command plane**: two SPSC byte rings (64 KiB each) of OSC packets — client→server commands, server→client replies. Each frame is a `u32` payload length, a `u32` **peer tag**, then the payload padded to 4 bytes. Unlike UDP, a full ring gives **backpressure** (the push fails and you retry) instead of silently dropping packets. Ring contents are untrusted bytes: the server validates exactly as it does UDP datagrams, and garbage resyncs the ring instead of wedging it.
 - **Data plane**: the **control buses** as raw `f32`-bit atomics — `--control-buses` of them. These are *the* control buses: the engine's `InCtl` reads these very words, so a client write is live on the next 64-sample block with no command, no round trip, no scheduling. (For sample-accurate changes, keep using a timed `/bus_set` — the data plane trades precision timing for immediacy.) The sample clock in the header is the anchor: a read costs a memory load with zero transport jitter.
 - **Audio-bus region**: two words per audio bus — the **bus → tap directory** (which sample ring, if any, is recording that bus) and the **block level** (the peak magnitude of the engine's last block, published for every audio bus). Both are keyed by the bus, which is what makes the bus the only number an API ever names: a reader asks for a bus and finds where its samples land, and a **meter** reads one number per block instead of holding a ring — so metering every bus of a mixer costs no taps at all.
 - **Audio taps** (trailing): `--taps` single-channel **sample rings** of `--tap-frames` samples each (a power of two; 0 taps removes the region). Each slot is a cache-line-aligned monotonic **cursor** (total samples ever written) followed by the ring. `/bus_tap tapIndex bus` routes an audio bus into a ring: the audio thread appends that bus's block every block (one `memcpy` + one Release store — RT-safe) and a peer reads the newest window lock-free, cursor-double-checked, each display frame. The audio-rate sibling of the control buses, and what a GUI oscilloscope draws from with zero per-frame messages; clients that cannot map the segment stream the same windows with `/bus_tapStream` (see [`schemas.md`](schemas.md)).
 
-For two processes, put the segment on a memory filesystem (`/dev/shm/...`). The transport keeps one ring client per segment and the server polls the ring on a 2 ms tick instead of a cross-process semaphore — command latency is bounded by that tick; the data plane has no latency at all. (Semaphore wakeups, multiple ring clients and Windows named mappings are explicitly future work.)
+For two processes, put the segment on a memory filesystem (`/dev/shm/...`). The server polls the ring on a 2 ms tick instead of a cross-process semaphore — command latency is bounded by that tick; the data plane has no latency at all. (Semaphore wakeups and Windows named mappings are explicitly future work.)
+
+### Several clients on one segment
+
+One segment carries **several independent clients**, told apart by the peer tag in each frame: on the way in it says who authored the packet, on the way out who the reply is for. The server treats them exactly as it treats two sockets — a `/bus_stream` subscription, a `/server_notify` registration and a reply queue each — which is what a page needs, since its script and its GUI host both push through the one in-page ring. Sharing a tag means sharing a subscription, and `/bus_stream` is *replaced* on each call, so two clients under one tag take the stream from each other.
+
+The tags are the **embedder's to assign**: there is no handshake on the ring and none is needed, because the server only has to tell its clients apart, never name them. A sender that never picks one is peer `0`, which is the single client a segment has always had — so an embedder with one client writes nothing new.
+
+What the tag does *not* change is the SPSC discipline: it says who wrote the **packet**, not who wrote the **ring**. An embedder holding several clients funnels their sends through one producer and demultiplexes the replies by tag — which is exactly what the browser page does, since every send crosses into the worklet through one `MessagePort` and every reply comes back through it.
+
+The doors that carry a tag:
+
+| Surface | Send | Receive |
+|---|---|---|
+| Rust embed (`clausters::embed`) | `send` (peer 0), `send_as(peer, …)` | `poll_into` (length only), `poll_from` (peer + length) |
+| wasm (`clausters-web`) | `WebServer::send(peer, packet)` | `WebServer::poll()` → `[peer u32 LE, …packet]` |
+| Python (`clausters.ipc`) | `ShmClient.send(packet, peer=0)` | `poll(peer=0)`, `poll_any()` |
+| Embed **C ABI** | `clausters_send` only — peer 0 | `clausters_poll` — length only |
+
+The C ABI is deliberately single-peer: its one consumer is a language client that *is* one client (the Python one), and a second tag there would be surface nobody calls. A C embedder that grows several clients gets `clausters_send_as`/`clausters_poll_to` then, additively.
 
 ## The embed C ABI
 

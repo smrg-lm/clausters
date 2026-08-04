@@ -18,6 +18,25 @@
 // from a user gesture (the `<clausters-*>` elements' power affordance does).
 
 import { bootClausters } from "./loader.ts";
+
+/**
+ * The client tag a caller gets when it never claims one — the single client a
+ * segment has always had (`ipc::DEFAULT_PEER`). Every page with one client
+ * stays exactly as it was.
+ */
+export const DEFAULT_PEER = 0;
+
+/**
+ * Listen to **every** reply this engine produces, whichever client it is for.
+ *
+ * Replies are addressed, so an ordinary listener hears only its own client's —
+ * which is the point, and what keeps two clients over one engine from reading
+ * each other's streams. An observer is the case that is not ordinary: a test
+ * asserting that the GUI host's meters are streaming, a debug tap logging the
+ * wire. Those get a door of their own rather than reaching into another
+ * client's internals, and it is a *read* door: there is no `send` under this.
+ */
+export const ANY_PEER = -1;
 import type { BootOptions, ClockAnchor } from "./loader.ts";
 
 export type ReplyListener = (packet: Uint8Array) => void;
@@ -29,11 +48,27 @@ export type ReplyListener = (packet: Uint8Array) => void;
 export interface ClaustersServer {
     context: AudioContext;
     node: AudioWorkletNode;
-    /** One complete OSC packet to the engine (bytes are transferred). */
-    send(bytes: Uint8Array): void;
-    /** Subscribe to every engine reply packet. */
-    addReply(listener: ReplyListener): void;
-    removeReply(listener: ReplyListener): void;
+    /**
+     * One complete OSC packet to the engine (bytes are transferred), from the
+     * client `peer` — `DEFAULT_PEER` when the caller has not claimed one.
+     */
+    send(bytes: Uint8Array, peer?: number): void;
+    /**
+     * Subscribe to the engine's replies **for one client**. The server keeps a
+     * subscription and a reply queue per client, so a page holding several
+     * (its script and its GUI host) claims a tag each with `claimPeer` and
+     * listens under it; a listener registered without one hears the default
+     * client's replies, which is every page that has only one. `ANY_PEER`
+     * hears all of them — the observer door, for tests and debug taps.
+     */
+    addReply(listener: ReplyListener, peer?: number): void;
+    removeReply(listener: ReplyListener, peer?: number): void;
+    /**
+     * A client tag nobody else in this page is using — what a second
+     * independent client over this one engine needs so its `/bus_stream`
+     * subscription is its own. See `docs/ipc.md`.
+     */
+    claimPeer(): number;
     clock(): Promise<number>;
     /**
      * The engine's clock paired with the context's frame counter, both read
@@ -98,18 +133,31 @@ export function engine(options: BootOptions = {}): Promise<ClaustersServer> {
 
 async function boot(options: BootOptions): Promise<ClaustersServer> {
     const raw = await bootClausters(options);
-    const listeners = new Set<ReplyListener>();
-    raw.onReply = (bytes) => {
-        for (const listener of [...listeners]) listener(bytes);
+    // Listeners are kept per client tag: a reply carries the tag of whoever
+    // asked for it, so it reaches that client's listeners and nobody else's.
+    const listeners = new Map<number, Set<ReplyListener>>();
+    let nextPeer = DEFAULT_PEER;
+    raw.onReply = (bytes, peer) => {
+        const mine = listeners.get(peer);
+        if (mine) for (const listener of [...mine]) listener(bytes);
+        const observers = listeners.get(ANY_PEER);
+        if (observers) for (const listener of [...observers]) listener(bytes);
     };
     raw.onError = (message) => console.error(`clausters engine: ${message}`);
     raw.onQuit = () => console.warn("clausters engine: /server_quit — engine stopped");
     return {
         context: raw.context,
         node: raw.node,
-        send: (bytes) => raw.send(bytes),
-        addReply: (listener) => listeners.add(listener),
-        removeReply: (listener) => listeners.delete(listener),
+        send: (bytes, peer = DEFAULT_PEER) => raw.send(bytes, peer),
+        addReply: (listener, peer = DEFAULT_PEER) => {
+            let mine = listeners.get(peer);
+            if (!mine) listeners.set(peer, (mine = new Set()));
+            mine.add(listener);
+        },
+        removeReply: (listener, peer = DEFAULT_PEER) => {
+            listeners.get(peer)?.delete(listener);
+        },
+        claimPeer: () => ++nextPeer,
         clock: () => raw.clock(),
         clockAnchor: () => raw.clockAnchor(),
         bufferLoad: (index, channels, sampleRate, samples) =>

@@ -42,7 +42,7 @@ from .errors import (
     ServerError,
 )
 
-ABI_VERSION = 6
+ABI_VERSION = 7
 
 #: The stride between successive stochastic-UGen seeds within one render —
 #: ``SEED_STRIDE`` in ``clausters_core::rng``. A client needs it to reproduce a
@@ -84,6 +84,14 @@ _OFF_AUDIO_BUSES = 40  # u32: audio-bus count of the bus region (ABI v4)
 _OFF_TRANSPORT_CLOCK = 48
 _RING_CAPACITY = 64 * 1024
 _RING_HEADER = 64  # head u32, tail u32, padding
+# Each frame inside a ring: the payload length and the peer tag, both u32 LE
+# (ABI v7). The tag says who authored the packet on the way in and who the
+# reply is for on the way out, which is what lets one segment carry several
+# independent clients. The payload is padded to 4, so a frame stays 4-aligned.
+_FRAME_HEADER = 8
+#: The peer tag a client sends under when it does not pick one -- the single
+#: client a segment used to have (``ipc::DEFAULT_PEER``).
+DEFAULT_PEER = 0
 _OFF_C2S = _HEADER_SIZE  # 64; rings come right after the header
 _OFF_S2C = _OFF_C2S + _RING_HEADER + _RING_CAPACITY  # 65664
 _OFF_CONTROLS = _OFF_S2C + _RING_HEADER + _RING_CAPACITY  # 131264 (trailing)
@@ -112,9 +120,9 @@ SEGMENT_SIZE = _tap_region_offset(_DEFAULT_CONTROL_BUSES) + _DEFAULT_TAPS * (
 
 
 class _Ring:
-    """One SPSC byte ring inside the mapped segment (length-prefixed
-    packets padded to 4). ``produce``/``consume`` depend on which side of
-    the pair we are."""
+    """One SPSC byte ring inside the mapped segment (each frame a length and a
+    peer tag, then the payload padded to 4). ``produce``/``consume`` depend on
+    which side of the pair we are."""
 
     def __init__(self, mm: mmap.mmap, base: int):
         self.mm, self.base = mm, base
@@ -125,32 +133,35 @@ class _Ring:
     def _set_cursor(self, off: int, value: int):
         struct.pack_into("<I", self.mm, self.base + off, value & 0xFFFFFFFF)
 
-    def push(self, packet: bytes) -> bool:
+    def push(self, packet: bytes, peer: int = DEFAULT_PEER) -> bool:
         head, tail = self._cursor(0), self._cursor(4)
         padded = (len(packet) + 3) // 4 * 4
-        total = 4 + padded
+        total = _FRAME_HEADER + padded
         if not packet or total > _RING_CAPACITY:
             return False
         if _RING_CAPACITY - ((head - tail) & 0xFFFFFFFF) < total:
             return False  # backpressure: retry later
-        self._write(head, struct.pack("<I", len(packet)))
-        self._write(head + 4, packet)
+        self._write(head, struct.pack("<II", len(packet), peer))
+        self._write(head + _FRAME_HEADER, packet)
         self._set_cursor(0, head + total)  # publish last
         return True
 
-    def pop(self) -> bytes | None:
+    def pop(self) -> "tuple[int, bytes] | None":
+        """The next frame as ``(peer, packet)``, or ``None`` when the ring is
+        empty. ``peer`` is who authored it (inbound) or who it is for
+        (outbound)."""
         head, tail = self._cursor(0), self._cursor(4)
         used = (head - tail) & 0xFFFFFFFF
         if used == 0:
             return None
-        (length,) = struct.unpack("<I", self._read(tail, 4))
-        total = 4 + (length + 3) // 4 * 4
+        length, peer = struct.unpack("<II", self._read(tail, _FRAME_HEADER))
+        total = _FRAME_HEADER + (length + 3) // 4 * 4
         if length == 0 or total > used:
             self._set_cursor(4, head)  # resync: drop garbage
             return None
-        packet = self._read(tail + 4, length)
+        packet = self._read(tail + _FRAME_HEADER, length)
         self._set_cursor(4, tail + total)
-        return packet
+        return peer, packet
 
     def _write(self, at: int, data: bytes):
         start = at % _RING_CAPACITY
@@ -246,10 +257,31 @@ class ShmClient:
 
     # -- command plane: OSC packets through the ring --
 
-    def send(self, packet: bytes) -> bool:
-        return self._c2s.push(packet)
+    def send(self, packet: bytes, peer: int = DEFAULT_PEER) -> bool:
+        """Pushes one OSC packet, authored by `peer`. The tag is the caller's to
+        assign — the server only has to tell its clients apart, not name them —
+        and a client that never picks one is the single client a segment used to
+        have (`DEFAULT_PEER`)."""
+        return self._c2s.push(packet, peer)
 
-    def poll(self) -> bytes | None:
+    def poll(self, peer: int = DEFAULT_PEER) -> bytes | None:
+        """The next reply addressed to `peer`, or ``None``.
+
+        Popping advances the one shared cursor, so a frame for a *different*
+        peer is dropped here rather than left for its owner: a process holding
+        several clients over one segment reads with `poll_any` and routes,
+        which is what the browser page does. With one client -- what a Python
+        process has -- there is nothing to route and this is the whole story.
+        """
+        frame = self._s2c.pop()
+        if frame is None:
+            return None
+        to, packet = frame
+        return packet if to == peer else None
+
+    def poll_any(self) -> "tuple[int, bytes] | None":
+        """The next reply as ``(peer, packet)``, whoever it is for — the door a
+        process holding several clients over one segment routes with."""
         return self._s2c.pop()
 
     def request(self, packet: bytes, timeout: float = 2.0) -> bytes:

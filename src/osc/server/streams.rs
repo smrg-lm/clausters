@@ -242,7 +242,7 @@ impl OscServer {
         // datagram-bounded one keeps the 32 KB blob cap.
         let transport_cap = match from {
             ClientId::Tcp(_) | ClientId::Ws(_) => self.max_frame.saturating_sub(256) / 4,
-            ClientId::Udp(_) | ClientId::Ring => MAX_TAP_WINDOW,
+            ClientId::Udp(_) | ClientId::Ring(_) => MAX_TAP_WINDOW,
         };
         let frames = (*frames).max(1) as usize;
         let frames = frames.min(transport_cap).min(segment.tap_frames() / 2);

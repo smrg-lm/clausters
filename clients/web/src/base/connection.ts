@@ -163,18 +163,23 @@ export async function pageConnection(
 ): Promise<Connection> {
     const engine = await (target ?? server());
     const mine = new Set<(packet: Uint8Array) => void>();
+    // This connection is one client of the engine, and says so: the server
+    // keeps a subscription and a reply queue per client, so two connections
+    // over one engine -- or a connection beside the page's GUI host -- must not
+    // share a tag or they overwrite each other's `/bus_stream`.
+    const peer = engine.claimPeer();
     return {
-        send: (packet) => engine.send(packet),
+        send: (packet) => engine.send(packet, peer),
         addReply: (listener) => {
             mine.add(listener);
-            engine.addReply(listener);
+            engine.addReply(listener, peer);
         },
         removeReply: (listener) => {
             mine.delete(listener);
-            engine.removeReply(listener);
+            engine.removeReply(listener, peer);
         },
         close: () => {
-            for (const listener of mine) engine.removeReply(listener);
+            for (const listener of mine) engine.removeReply(listener, peer);
             mine.clear();
         },
         bulkLoad: async (bufnum, channels, sampleRate, samples) => {

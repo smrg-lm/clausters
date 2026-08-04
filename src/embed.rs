@@ -220,14 +220,36 @@ impl ClaustersHeadless {
     /// Delivers one complete OSC packet (message or bundle) through the
     /// command ring; it takes effect on the next [`Self::process_block`].
     /// Returns `false` when the ring is momentarily full (backpressure).
+    ///
+    /// Sends as [`ipc::DEFAULT_PEER`](crate::server::ipc::DEFAULT_PEER) — the
+    /// single client a segment used to have. An embedder carrying **several**
+    /// independent clients (a page whose script and GUI host share one engine)
+    /// gives each its own tag with [`Self::send_as`], which is what keeps their
+    /// subscriptions and their replies apart.
     pub fn send(&self, packet: &[u8]) -> bool {
-        self.peer.push(packet)
+        self.send_as(crate::server::ipc::DEFAULT_PEER, packet)
+    }
+
+    /// [`Self::send`], authored by `peer`. The tag is the embedder's to assign:
+    /// there is no handshake on the ring and none is needed — the server only
+    /// has to tell its clients apart, not name them.
+    pub fn send_as(&self, peer: u32, packet: &[u8]) -> bool {
+        self.peer.push(peer, packet)
     }
 
     /// Pops one pending reply into `buf`, returning its length, or `None`
     /// when none is pending. A reply larger than `buf` is dropped (use
     /// 64 KiB).
     pub fn poll_into(&self, buf: &mut [u8]) -> Option<usize> {
+        self.poll_from(buf).map(|(_, len)| len)
+    }
+
+    /// [`Self::poll_into`], also reporting **who the reply is for**: the peer
+    /// tag of the client that asked. An embedder with one client can ignore
+    /// it; one with several routes on it, which is the whole point of the tag.
+    /// A notification that reaches several clients arrives as several replies,
+    /// one per tag, so the router never has to fan anything out itself.
+    pub fn poll_from(&self, buf: &mut [u8]) -> Option<(u32, usize)> {
         self.peer.try_pop(buf)
     }
 
@@ -401,13 +423,28 @@ impl Clausters {
 
     /// Delivers one complete OSC packet (message or bundle) through the command
     /// ring. Returns `false` when the ring is momentarily full (backpressure).
+    ///
+    /// Sends as [`ipc::DEFAULT_PEER`](crate::server::ipc::DEFAULT_PEER); see
+    /// `LiveEngine::send_as` for why an embedder would want another tag (that
+    /// type is behind the `embed` feature, so it is named rather than linked).
     pub fn send(&self, packet: &[u8]) -> bool {
-        self.peer.push(packet)
+        self.send_as(crate::server::ipc::DEFAULT_PEER, packet)
+    }
+
+    /// [`Self::send`], authored by `peer`.
+    pub fn send_as(&self, peer: u32, packet: &[u8]) -> bool {
+        self.peer.push(peer, packet)
     }
 
     /// Pops one pending reply into `buf`, returning its length, or `None` when
     /// none is pending. A reply larger than `buf` is dropped (use 64 KiB).
     pub fn poll_into(&self, buf: &mut [u8]) -> Option<usize> {
+        self.poll_from(buf).map(|(_, len)| len)
+    }
+
+    /// [`Self::poll_into`], also reporting who the reply is for (see
+    /// `LiveEngine::poll_from`, behind the `embed` feature).
+    pub fn poll_from(&self, buf: &mut [u8]) -> Option<(u32, usize)> {
         self.peer.try_pop(buf)
     }
 }
@@ -423,7 +460,7 @@ impl Drop for Clausters {
             args: vec![],
         }))
         .expect("static /server_quit message encodes");
-        let _ = self.peer.push(&quit);
+        let _ = self.peer.push(crate::server::ipc::DEFAULT_PEER, &quit);
         if let Some(thread) = self.server.take() {
             let _ = thread.join();
         }

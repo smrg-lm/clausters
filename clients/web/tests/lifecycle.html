@@ -52,7 +52,7 @@
     -->
     <script type="module">
       import "/examples/graph-controls/bundle/index.js";  // <fm-trem>
-      import { startPage, server, guiHost, pagePools } from "/dist/runtime.js";
+      import { startPage, server, guiHost, pagePools, ANY_PEER } from "/dist/runtime.js";
       import { loadOsc, decodePacket, encodeMessage } from "/dist/base/osc.js";
 
       const CYCLES = 100;
@@ -125,7 +125,7 @@
                     resolve(args);
                 }
             };
-            engine.addReply(watch);
+            engine.addReply(watch, ANY_PEER);
             engine.send(encodeMessage("/group_queryTree", [["i", 0], ["i", 0]]));
         });
         const ids = new Set();
@@ -187,7 +187,7 @@
                 }
             }
         };
-        engine.addReply(watch);
+        engine.addReply(watch, ANY_PEER);
         const values = (bus) => seen.get(bus)?.size ?? 0;
 
         const kept = { ...keep.symbols, def: keep.defId };

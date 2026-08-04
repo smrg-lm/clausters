@@ -376,12 +376,14 @@ impl OscServer {
             // No WebSocket hub exists on wasm32; the variant is unreachable.
             #[cfg(target_arch = "wasm32")]
             ClientId::Ws(_) => {}
-            ClientId::Ring => {
+            ClientId::Ring(peer) => {
+                // Tagged for the peer that asked, so the embedder's demux hands
+                // it to that client and not to whoever else shares the segment.
                 // Backpressure, not loss: a full reply ring means the client
                 // stopped draining; dropping the reply is all we can do
                 // without blocking the server.
                 if let Some(ipc) = &self.ipc
-                    && !ipc.push(&bytes)
+                    && !ipc.push(peer, &bytes)
                 {
                     warn!("reply ring full: dropping {addr}");
                 }

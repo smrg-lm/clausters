@@ -24,5 +24,5 @@ export { newPools, pagePools } from "./base/pool.ts";
 export type { Pool, Pools } from "./base/pool.ts";
 export { guiHost } from "./gui/page.ts";
 export type { ClaustersGui } from "./gui/page.ts";
-export { server } from "./engine/server.ts";
+export { server, ANY_PEER, DEFAULT_PEER } from "./engine/server.ts";
 export type { ClaustersServer } from "./engine/server.ts";
