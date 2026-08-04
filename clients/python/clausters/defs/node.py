@@ -16,6 +16,7 @@ from an id a responder or a query reported, use `Synth.from_id` /
 from enum import IntEnum
 
 from .. import _native
+from ..base.ids import share_of
 from .info import NodeInfo, parse_n_info
 from ._wire import resolve as _resolve
 
@@ -489,7 +490,13 @@ class NodeIdAllocator:
     the `Server` sizes it from its ``ServerOptions`` via
     ``_native.node_id_partition``, the same formula the server applies."""
 
-    def __init__(self, base: int, capacity: "int | None"):
+    def __init__(self, base: int, capacity: "int | None", share=None):
+        #: A ``share`` takes one slice of the range instead of all of it, for a
+        #: server with more than one client on it (`clausters.base.IdShare`).
+        #: The unbounded (score) registry ignores it: an offline score has one
+        #: author by construction.
+        if capacity is not None:
+            base, capacity = share_of(base, capacity, share)
         self._registry = _native.Registry(base, capacity)
 
     def alloc(self) -> int:

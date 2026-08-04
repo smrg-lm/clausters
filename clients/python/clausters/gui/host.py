@@ -40,6 +40,11 @@ class GuiHost:
     ceiling) or ``"udp"`` (each message must fit a datagram; for constrained
     setups or a host started with ``--no-tcp``).
 
+    ``share`` takes one slice of the widget-id space instead of all of it, for
+    a host with more than one client naming widgets on it — the same
+    arrangement, and the same arithmetic, as the audio
+    `clausters.defs.Server`'s (`clausters.base.IdShare`).
+
     ``interface`` supplies an already-built `clausters.base.OscInterface`
     instead, and then ``transport`` is not consulted — the same seam
     `clausters.defs.Server` has, for a carrier this module does not know
@@ -62,7 +67,7 @@ class GuiHost:
     local_files = True
 
     def __init__(self, host: str = "127.0.0.1", port: int = DEFAULT_PORT,
-                 transport: str = "tcp", interface=None):
+                 transport: str = "tcp", interface=None, share=None):
         self.target = (host, port)
         if interface is not None:
             self._osc = interface
@@ -77,7 +82,7 @@ class GuiHost:
         #: the one widget-id namespace for this host client — recycling, so a
         #: freed subtree's ids return to the pool (the GUI sibling of the audio
         #: server's `NodeIdAllocator`). Windows and widgets share it.
-        self._alloc = GuiIdAllocator()
+        self._alloc = GuiIdAllocator(share=share)
         #: id -> its child ids, for every widget this client defined — the
         #: subtree `free` walks to return the whole branch's ids to the pool.
         self._children: dict[int, list[int]] = {}

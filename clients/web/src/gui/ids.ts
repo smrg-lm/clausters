@@ -17,7 +17,8 @@
 //   subtree first).
 
 import { AllocationError } from "../errors.ts";
-import { Registry } from "../base/core.ts";
+import { Registry, shareOf } from "../base/core.ts";
+import type { IdShare } from "../base/core.ts";
 
 /**
  * The first id the allocator hands out. Hand-picked ids below this never
@@ -43,8 +44,17 @@ export const CAPACITY = 1 << 20;
 export class GuiIdAllocator {
     private registry: Registry;
 
-    constructor(base: number = BASE_ID, capacity: number = CAPACITY) {
-        this.registry = new Registry(base, capacity);
+    /**
+     * Over `[base, base + capacity)`, or one slice of it when a host has more
+     * than one client naming widgets on it (`IdShare`) — a notebook kernel
+     * drawing into a page that holds a client of the same host.
+     */
+    constructor(
+        base: number = BASE_ID,
+        capacity: number = CAPACITY,
+        share?: IdShare,
+    ) {
+        this.registry = new Registry(...shareOf(base, capacity, share));
     }
 
     /**

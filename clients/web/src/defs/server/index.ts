@@ -56,6 +56,8 @@ import type { TempoClock } from "../../base/clock.ts";
 import type { Event } from "../../seq/event.ts";
 import { CommandError, ReplyTimeout } from "../../errors.ts";
 import { NodeIdAllocator } from "../node.ts";
+import { WHOLE_SHARE } from "../../base/core.ts";
+import type { IdShare } from "../../base/core.ts";
 import { AudioBusAllocator, ControlBusAllocator } from "../bus.ts";
 import { BufferAllocator } from "../buffer.ts";
 import {
@@ -111,6 +113,11 @@ export interface Server extends ServerQueries, ServerStreams, ServerTransport {}
 
 export class Server {
     readonly connection: Connection;
+    /**
+     * The slice of the server's client id space this handle allocates from —
+     * the whole of it unless a second client shares the server (`IdShare`).
+     */
+    readonly share: IdShare;
     /** The sizes this client's allocators were built against. */
     readonly sizing: ServerSizing;
     readonly nodes: NodeIdAllocator;
@@ -161,20 +168,26 @@ export class Server {
     readonly receiver: OscReceiver;
     private readonly listener: OscHandler;
 
-    private constructor(connection: Connection, sizing: ServerSizing, timeout: number) {
+    private constructor(
+        connection: Connection,
+        sizing: ServerSizing,
+        timeout: number,
+        share: IdShare = WHOLE_SHARE,
+    ) {
         this.connection = connection;
         this.sizing = sizing;
         this.timeout = timeout;
+        this.share = share;
         // An offline score has no `/node_end` stream to recycle from and no
         // real-time bound on how many ids its length needs, so the registry is
         // unbounded there — the reference client's rule.
         this.nodes = this.scoring
             ? NodeIdAllocator.unbounded(sizing.maxNodes)
-            : NodeIdAllocator.forMaxNodes(sizing.maxNodes);
+            : NodeIdAllocator.forMaxNodes(sizing.maxNodes, share);
         if (this.scoring) this.latency = 0.0;
-        this.audioBuses = new AudioBusAllocator(sizing.audioBuses, sizing.channels);
-        this.controlBuses = new ControlBusAllocator(sizing.controlBuses);
-        this.buffers = new BufferAllocator(sizing.maxBuffers);
+        this.audioBuses = new AudioBusAllocator(sizing.audioBuses, sizing.channels, share);
+        this.controlBuses = new ControlBusAllocator(sizing.controlBuses, share);
+        this.buffers = new BufferAllocator(sizing.maxBuffers, share);
         this.receiver = new OscReceiver(connection);
         this.listener = (addr, args) => this.dispatch({ addr, args });
         this.receiver.add(this.listener);
@@ -200,10 +213,21 @@ export class Server {
             sizing,
             notify = true,
             timeout = DEFAULT_TIMEOUT,
+            share = WHOLE_SHARE,
         }: {
             sizing?: Partial<ServerSizing>;
             notify?: boolean;
             timeout?: number;
+            /**
+             * The slice of the server's client id space this handle allocates
+             * from, when the server has **more than one client** — a notebook
+             * kernel authoring beside its own page, an embedder holding two.
+             * Each client is given its own index over the same `of`, and the
+             * slices are disjoint by arithmetic (see `IdShare`). The default
+             * takes the whole space, which is right for a server's only
+             * client.
+             */
+            share?: IdShare;
         } = {},
     ): Promise<Server> {
         const defaults: ServerSizing = {
@@ -239,7 +263,7 @@ export class Server {
             }
         }
         probe.close();
-        const server = new Server(connection, resolved, timeout);
+        const server = new Server(connection, resolved, timeout, share);
         if (notify) await server.notify(true, timeout);
         return server;
     }

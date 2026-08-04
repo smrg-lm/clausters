@@ -30,6 +30,7 @@ from .absobject import AbstractObject
 from .clock import TempoClock
 from .destination import Destination, OscDestination
 from .environment import Environment, RandomContext
+from .ids import IdShare, WHOLE as WHOLE_SHARE, share_of
 from .main import Main, main
 from .moment import Moment
 from .netaddr import NetAddr
@@ -63,6 +64,9 @@ __all__ = [
     "SampleClockTimebase",
     "Environment",
     "RandomContext",
+    "IdShare",
+    "WHOLE_SHARE",
+    "share_of",
     "Main",
     "main",
     "Moment",

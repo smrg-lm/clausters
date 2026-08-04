@@ -23,6 +23,7 @@ below 1000 never collide with assigned ones.
 """
 
 from .. import _native
+from ..base.ids import share_of
 
 #: The first id the allocator hands out. Hand-picked ids below this never
 #: collide with assigned ones (the documented `/gui_def` id convention).
@@ -43,8 +44,11 @@ class GuiIdAllocator:
     bound.
     """
 
-    def __init__(self, base: int = BASE_ID, capacity: int = CAPACITY):
-        self._registry = _native.Registry(base, capacity)
+    def __init__(self, base: int = BASE_ID, capacity: int = CAPACITY, share=None):
+        #: A ``share`` takes one slice of the window instead of all of it, for
+        #: a host with more than one client naming widgets on it — the same
+        #: arithmetic as the audio server's (`clausters.base.IdShare`).
+        self._registry = _native.Registry(*share_of(base, capacity, share))
 
     def alloc(self) -> int:
         """A fresh id, unique across everything this allocator names. Raises

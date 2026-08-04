@@ -292,8 +292,11 @@ class Session(Environment):
         server_addr = f"{self.server.target.host}:{self.server.target.port}"
         from .gui.host import DEFAULT_PORT
 
+        # The session's share governs both legs: a session that is one of two
+        # clients on a server is one of two on its host as well.
         self._gui = GuiHost(
             port=DEFAULT_PORT if port is None else port, transport=transport,
+            share=self.server.share,
         ).boot(
             server=server_addr, shm=self.server.shm, verbose=verbose,
             data_dir=data_dir, extra_args=extra_args, ready_timeout=ready_timeout,

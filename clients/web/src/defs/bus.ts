@@ -23,7 +23,8 @@
 // whose they are — one per client.
 
 import { AllocationError } from "../errors.ts";
-import { Registry, graphBusReserved } from "../base/core.ts";
+import { Registry, graphBusReserved, shareOf } from "../base/core.ts";
+import type { IdShare } from "../base/core.ts";
 import type { Server } from "./server/index.ts";
 import { resolveServer } from "./wire.ts";
 
@@ -129,12 +130,17 @@ class Allocator {
         size: number,
         reserved: number,
         graphReserved: number,
+        share?: IdShare,
     ) {
         this.rate = rate;
         this.size = size;
         const top = size - Math.min(graphReserved, size);
         const span = Math.max(0, top - reserved);
-        this.registry = span > 0 ? new Registry(reserved, span) : null;
+        // The share is taken of what is left after the reservations, which are
+        // the server's and belong to no client: two clients splitting the space
+        // both stay clear of the output buses and of the GraphDef window.
+        const [from, width] = shareOf(reserved, span, share);
+        this.registry = width > 0 ? new Registry(from, width) : null;
     }
 
     /**
@@ -174,14 +180,14 @@ class Allocator {
  * the GraphDef private range. `size` is the server's audio-bus count.
  */
 export class AudioBusAllocator extends Allocator {
-    constructor(size: number, reserved = 2) {
-        super("audio", size, reserved, graphBusReserved()[0]);
+    constructor(size: number, reserved = 2, share?: IdShare) {
+        super("audio", size, reserved, graphBusReserved()[0], share);
     }
 }
 
 /** `size` is the server's control-bus count. */
 export class ControlBusAllocator extends Allocator {
-    constructor(size: number) {
-        super("control", size, 0, graphBusReserved()[1]);
+    constructor(size: number, share?: IdShare) {
+        super("control", size, 0, graphBusReserved()[1], share);
     }
 }

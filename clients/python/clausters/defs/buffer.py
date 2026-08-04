@@ -16,6 +16,7 @@ wrapping. The `Server` sizes it from its `ServerOptions` (``max_buffers``).
 from array import array
 
 from .. import _native
+from ..base.ids import share_of
 from ..base.bulk import blob_to_samples, samples_to_blob
 from ..errors import CommandError, CommandRingFull
 from .info import BufferInfo, parse_buffer_list
@@ -383,9 +384,9 @@ class Buffer:
 
 
 class BufferAllocator:
-    def __init__(self, size: int = NUM_BUFFERS):
+    def __init__(self, size: int = NUM_BUFFERS, share=None):
         self.size = size
-        self._registry = _native.Registry(0, size)
+        self._registry = _native.Registry(*share_of(0, size, share))
 
     def alloc(self) -> int:
         """A free buffer index; raises when the pool is exhausted."""

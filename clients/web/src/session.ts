@@ -37,6 +37,7 @@ import type { Connection } from "./base/connection.ts";
 import { OscDestination } from "./base/destination.ts";
 import { Environment } from "./base/environment.ts";
 import { main } from "./base/main.ts";
+import type { IdShare } from "./base/core.ts";
 import { loadOsc } from "./base/osc.ts";
 import type { RenderOptions, RenderStats } from "./render.ts";
 import { Server } from "./defs/server/index.ts";
@@ -63,6 +64,16 @@ export interface SessionOptions {
     latency?: number;
     /** How long a reply is waited for when a call does not say. */
     timeout?: number;
+    /**
+     * The slice of the server's client id space this session allocates from,
+     * when the engine underneath has **more than one client** — the case a
+     * notebook is: the kernel authors over its comm while the page holds a
+     * session of its own. Both legs take it, the audio server's node, bus and
+     * buffer ids and the GUI host's widget ids alike, so a session is one
+     * share of everything rather than of one space. See `IdShare`; the
+     * default takes the whole space.
+     */
+    share?: IdShare;
 }
 
 /**
@@ -156,6 +167,7 @@ export class Session extends Environment {
         timebase,
         latency,
         timeout,
+        share,
     }: SessionOptions & {
         own?: boolean;
         engine?: ClaustersServer;
@@ -167,7 +179,7 @@ export class Session extends Environment {
         await audio.resume();
         const session = await Session.over(
             await pageConnection(audio),
-            { tempo, timebase, latency, timeout },
+            { tempo, timebase, latency, timeout, share },
         );
         // Only an engine this call opened is this session's to close.
         if (!engine && own) session.ownedEngine = audio;
@@ -182,20 +194,20 @@ export class Session extends Environment {
      */
     static async connect(
         url = "ws://127.0.0.1:57120",
-        { tempo = 1.0, timebase, latency, timeout }: SessionOptions = {},
+        { tempo = 1.0, timebase, latency, timeout, share }: SessionOptions = {},
     ): Promise<Session> {
         await loadOsc();
         return Session.over(await WsConnection.open(url), {
-            tempo, timebase, latency, timeout,
+            tempo, timebase, latency, timeout, share,
         });
     }
 
     /** Opens a server over `connection` and builds the session around it. */
     private static async over(
         connection: Connection,
-        { tempo, timebase, latency, timeout }: SessionOptions,
+        { tempo, timebase, latency, timeout, share }: SessionOptions,
     ): Promise<Session> {
-        const server = await Server.open(connection, { timeout });
+        const server = await Server.open(connection, { timeout, share });
         if (latency !== undefined) server.latency = latency;
         const session = new Session(server, new TempoClock(tempo, { timebase }));
         // With no explicit timebase, anchor to the server's own sample clock:
@@ -231,9 +243,12 @@ export class Session extends Environment {
 
     async gui(): Promise<GuiHost> {
         if (this.gui_) return this.gui_;
+        // The session's share governs both legs: a session that is one of two
+        // clients on an engine is one of two on its host as well.
+        const share = this.server.share;
         this.gui_ = this.ownedEngine
-            ? await GuiHost.page(newGuiHost({ engine: this.ownedEngine }))
-            : await GuiHost.page();
+            ? await GuiHost.page(newGuiHost({ engine: this.ownedEngine }), { share })
+            : await GuiHost.page(undefined, { share });
         return this.gui_;
     }
 

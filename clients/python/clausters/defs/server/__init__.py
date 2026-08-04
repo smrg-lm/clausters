@@ -35,6 +35,7 @@ from ...base.timebase import SampleClockTimebase
 from ..bus import AudioBusAllocator, ControlBusAllocator
 from ..buffer import BufferAllocator
 from ..node import NodeIdAllocator
+from ...base.ids import WHOLE as WHOLE_SHARE
 from .options import (
     DEFAULT_AUDIO_BUSES,
     DEFAULT_CONTROL_BUSES,
@@ -77,7 +78,8 @@ __all__ = [
 class Server(ServerQueries, ServerStreams, ServerTransport):
     def __init__(self, host: "str | None" = None, port: "int | None" = None, interface=None,
                  latency: "float | None" = None, options: "ServerOptions | None" = None,
-                 transport: "str | None" = None, timeout: float = 5.0):
+                 transport: "str | None" = None, timeout: float = 5.0,
+                 share=None):
         # An explicit argument wins; otherwise the config file's ``[client]``
         # section provides the default, then the built-in fallback. This is the
         # client end of the same config the server reads.
@@ -139,13 +141,21 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         # (`--max-nodes` scales every range); in score (NRT) mode it is
         # unbounded — an offline render has no live `/node_end` stream to recycle
         # from, and no real-time bound on ids over the score's length.
+        #: which slice of the server's client id space this handle allocates
+        #: from — the whole of it unless a second client shares the server
+        #: (`clausters.base.IdShare`). Every space is sliced the same way, so a
+        #: handle is one share of everything rather than of one pool.
+        self.share = WHOLE_SHARE if share is None else share
         part = _native.node_id_partition(self.options.max_nodes)
         score = getattr(self.interface, "time_mode", "unix") == "score"
         self.nodes = NodeIdAllocator(
-            part["client_base"], None if score else part["client_capacity"])
-        self.audio_buses = AudioBusAllocator(size=self.options.audio_buses)
-        self.control_buses = ControlBusAllocator(size=self.options.control_buses)
-        self.buffers = BufferAllocator(size=self.options.max_buffers)
+            part["client_base"], None if score else part["client_capacity"],
+            self.share)
+        self.audio_buses = AudioBusAllocator(size=self.options.audio_buses,
+                                             share=self.share)
+        self.control_buses = ControlBusAllocator(size=self.options.control_buses,
+                                                 share=self.share)
+        self.buffers = BufferAllocator(size=self.options.max_buffers, share=self.share)
         #: the `/node_end` side-channel that returns node ids to the registry
         #: (an `OscReceiver` + `/server_notify`), started lazily by `_ensure_recycler`.
         self._recycler = None

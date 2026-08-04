@@ -15,7 +15,8 @@
 // of wrapping. The `Server` sizes it from its options (`maxBuffers`).
 
 import { AllocationError, CommandError } from "../errors.ts";
-import { Registry } from "../base/core.ts";
+import { Registry, shareOf } from "../base/core.ts";
+import type { IdShare } from "../base/core.ts";
 import { blobToSamples, samplesToBlob } from "../base/bulk.ts";
 import { fetchAudio, interleave } from "../data/samples.ts";
 import type { MsgArg } from "../base/osc.ts";
@@ -502,9 +503,9 @@ export class BufferAllocator {
     readonly size: number;
     private registry: Registry;
 
-    constructor(size = NUM_BUFFERS) {
+    constructor(size = NUM_BUFFERS, share?: IdShare) {
         this.size = size;
-        this.registry = new Registry(0, size);
+        this.registry = new Registry(...shareOf(0, size, share));
     }
 
     /** A free buffer index; throws when the pool is exhausted. */

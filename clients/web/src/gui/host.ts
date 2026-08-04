@@ -30,6 +30,7 @@ import { ReplyTimeout } from "../errors.ts";
 import { toJson } from "./guidef.ts";
 import type { GuiNode } from "./guidef.ts";
 import { GuiIdAllocator } from "./ids.ts";
+import type { IdShare } from "../base/core.ts";
 import { WidgetHandle, WindowHandle } from "./handle.ts";
 import type { EventArgs } from "./handle.ts";
 import { guiHost, pageGuiConnection } from "./page.ts";
@@ -98,7 +99,7 @@ export class GuiHost {
      * The one widget-id namespace for this host client — recycling, so a
      * freed subtree's ids return to the pool. Windows and widgets share it.
      */
-    private readonly alloc = new GuiIdAllocator();
+    private readonly alloc: GuiIdAllocator;
     /** The window ids opened through `open` and not yet closed. */
     private readonly opened = new Set<number>();
     /**
@@ -115,9 +116,15 @@ export class GuiHost {
     /**
      * Drives the host behind `connection`. The core wasm must be loaded first
      * (`await loadOsc()`), as for the audio `Server`.
+     *
+     * `share` takes one slice of the widget-id space instead of all of it,
+     * for a host with more than one client naming widgets on it — the same
+     * arrangement, and the same arithmetic, as the audio `Server`'s (see
+     * `IdShare`).
      */
-    constructor(connection: Connection) {
+    constructor(connection: Connection, { share }: { share?: IdShare } = {}) {
         this.connection = connection;
+        this.alloc = new GuiIdAllocator(undefined, undefined, share);
         this.listener = (packet) => this.dispatch(packet);
         connection.addReply(this.listener);
     }
@@ -127,9 +134,16 @@ export class GuiHost {
      * the carrier that needs no process and no socket. Pass an instance built
      * by `newGuiHost` to drive one of its own instead, which is how a
      * `Session` with its own engine gets a GUI leg wired to that engine.
+     *
+     * `share` splits the widget-id space with another client of the same
+     * host; a `Session` passes its own share, so both of its legs are sliced
+     * the same way.
      */
-    static async page(target?: Promise<ClaustersGui> | ClaustersGui): Promise<GuiHost> {
-        return new GuiHost(await pageGuiConnection(target));
+    static async page(
+        target?: Promise<ClaustersGui> | ClaustersGui,
+        { share }: { share?: IdShare } = {},
+    ): Promise<GuiHost> {
+        return new GuiHost(await pageGuiConnection(target), { share });
     }
 
     /**

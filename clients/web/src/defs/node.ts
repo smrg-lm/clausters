@@ -21,7 +21,8 @@
 // it stays; reach for `globalThis.Node` in the rare page that needs both.)
 
 import { AllocationError } from "../errors.ts";
-import { Registry, nodeIdPartition } from "../base/core.ts";
+import { Registry, nodeIdPartition, shareOf } from "../base/core.ts";
+import type { IdShare } from "../base/core.ts";
 import { busIndex } from "./bus.ts";
 import type { BusLike } from "./bus.ts";
 import { parseNodeInfo } from "./info.ts";
@@ -370,10 +371,15 @@ export class NodeIdAllocator {
             : new Registry(base, capacity);
     }
 
-    /** The allocator for a server whose node table holds `maxNodes` slots. */
-    static forMaxNodes(maxNodes: number): NodeIdAllocator {
+    /**
+     * The allocator for a server whose node table holds `maxNodes` slots.
+     *
+     * `share` takes one slice of the client range instead of all of it, for a
+     * server with more than one client on it (see `IdShare`).
+     */
+    static forMaxNodes(maxNodes: number, share?: IdShare): NodeIdAllocator {
         const p = nodeIdPartition(maxNodes);
-        return new NodeIdAllocator(p.clientBase, p.clientCapacity);
+        return new NodeIdAllocator(...shareOf(p.clientBase, p.clientCapacity, share));
     }
 
     /**

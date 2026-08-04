@@ -21,6 +21,7 @@ counts can be read back with `query_info`.
 """
 
 from .. import _native
+from ..base.ids import share_of
 from ._wire import resolve as _resolve
 
 
@@ -159,7 +160,8 @@ class Bus:
 
 
 class _Allocator:
-    def __init__(self, rate: str, size: int, reserved: int, graph_reserved: int):
+    def __init__(self, rate: str, size: int, reserved: int, graph_reserved: int,
+                 share=None):
         self.rate = rate
         self.size = size
         # The private GraphDef range sits at the top of the space, clamped the
@@ -168,7 +170,11 @@ class _Allocator:
         # reports exhaustion from the first call.
         top = size - min(graph_reserved, size)
         span = max(0, top - reserved)
-        self._registry = _native.Registry(reserved, span) if span > 0 else None
+        # The share is taken of what is left after the reservations, which are
+        # the server's and belong to no client: two clients splitting the space
+        # both stay clear of the output buses and of the GraphDef window.
+        start, width = share_of(reserved, span, share)
+        self._registry = _native.Registry(start, width) if width > 0 else None
 
     def alloc(self, channels: int = 1, server=None) -> Bus:
         """A run of ``channels`` contiguous buses, stamped with the ``server``
@@ -199,13 +205,14 @@ class AudioBusAllocator(_Allocator):
     below the GraphDef private range. ``size`` is the server's audio-bus count
     (from ``ServerOptions``/``query_info``)."""
 
-    def __init__(self, size: int, reserved: int = 2):
-        super().__init__("audio", size, reserved, _native.graph_bus_reserved()[0])
+    def __init__(self, size: int, reserved: int = 2, share=None):
+        super().__init__("audio", size, reserved, _native.graph_bus_reserved()[0],
+                         share)
 
 
 class ControlBusAllocator(_Allocator):
     """``size`` is the server's control-bus count (from
     ``ServerOptions``/``query_info``)."""
 
-    def __init__(self, size: int):
-        super().__init__("control", size, 0, _native.graph_bus_reserved()[1])
+    def __init__(self, size: int, share=None):
+        super().__init__("control", size, 0, _native.graph_bus_reserved()[1], share)
