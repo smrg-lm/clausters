@@ -29,7 +29,7 @@ const connection = await WsConnection.open(url);         // a `--ws` server
 
 `pageConnection()` wraps the page's engine — the server compiled to wasm in this tab's AudioWorklet — and `WsConnection` a browser (or node) `WebSocket`. Both carry raw OSC in both directions and nothing else, so **no layer above them names a transport**. Swapping carriers is a one-line edit in a program of any size, which is exactly the property the examples demonstrate by offering a radio button.
 
-That engine is reachable directly when a page needs the browser-specific parts: `server()` gives `send`/`addReply`, its `clock()`, `bLoad(...)` (the browser's `/buffer_allocRead`, over `fetch` and `decodeAudioData`) and `resume()`/`suspend()`. Every component and script in the tab gets that same engine, so they meet in one node, bus and buffer namespace.
+That engine is reachable directly when a page needs the browser-specific parts: `server()` gives `send`/`addReply`, its `clock()`, `bufferLoad(...)` (the browser's `/buffer_allocRead`, over `fetch` and `decodeAudioData`) and `resume()`/`suspend()`. Every component and script in the tab gets that same engine, so they meet in one node, bus and buffer namespace.
 
 ### More than one of either
 

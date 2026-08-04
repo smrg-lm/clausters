@@ -350,7 +350,7 @@ export async function startBundle(mounted: Mounted): Promise<void> {
         loadedBuffers.add(full);
         const bytes = await fetchBytes(full);
         const decoded = await engine.context.decodeAudioData(bytes.buffer as ArrayBuffer);
-        await engine.bLoad(bufnum, decoded.numberOfChannels, decoded.sampleRate, interleave(decoded));
+        await engine.bufferLoad(bufnum, decoded.numberOfChannels, decoded.sampleRate, interleave(decoded));
     }
 
     // The same bracket the native data-dir boot gets implicitly: the first

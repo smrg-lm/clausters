@@ -19,20 +19,20 @@ import { initSync, WebServer } from "./clausters_web.js";
 // Port protocol, both directions tagged by `type`:
 //   main -> worklet: {type:"osc", data}   one complete OSC packet (bytes)
 //                    {type:"clock"}       ask for the sample clock
-//                    {type:"b_load", index, channels, sampleRate, data}
+//                    {type:"buffer_load", index, channels, sampleRate, data}
 //                        install host-decoded samples as buffer `index` (the
 //                        browser's /buffer_allocRead: fetch + decodeAudioData on
 //                        the main thread, interleaved floats in here)
 //   worklet -> main: {type:"osc", data}   one reply packet (bytes)
 //                    {type:"clock", clock, frame, epoch}
-//                    {type:"b_load", index, ok, message?}  the install's ack
+//                    {type:"buffer_load", index, ok, message?}  the install's ack
 //                    {type:"quit"}        a /server_quit arrived; processor stops
 //                    {type:"error", message}  fatal; processor stops
 type InMessage =
     | { type: "osc"; data: ArrayBuffer }
     | { type: "clock" }
     | {
-          type: "b_load";
+          type: "buffer_load";
           index: number;
           channels: number;
           sampleRate: number;
@@ -81,24 +81,24 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                 frame: currentFrame,
                 epoch: this.epoch,
             });
-        } else if (msg.type === "b_load") {
+        } else if (msg.type === "buffer_load") {
             // Runs between quanta on this thread — the same inline install
             // the native headless embed mode performs (see ClaustersHeadless).
             try {
-                this.server.b_load(
+                this.server.buffer_load(
                     msg.index,
                     msg.channels,
                     msg.sampleRate,
                     new Float32Array(msg.data),
                 );
                 this.port.postMessage({
-                    type: "b_load",
+                    type: "buffer_load",
                     index: msg.index,
                     ok: true,
                 });
             } catch (e) {
                 this.port.postMessage({
-                    type: "b_load",
+                    type: "buffer_load",
                     index: msg.index,
                     ok: false,
                     message: String(e),

@@ -12,14 +12,14 @@ export class WebServer {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Installs host-decoded samples as buffer `index` (the browser's
-     * `/buffer_allocRead` replacement: fetch + `decodeAudioData`, then this).
-     */
-    b_load(index: number, channels: number, sample_rate: number, data: Float32Array): void;
-    /**
      * The engine block size in frames (the granularity `process` needs).
      */
     block_frames(): number;
+    /**
+     * Installs host-decoded samples as buffer `index` (the browser's
+     * `/buffer_allocRead` replacement: fetch + `decodeAudioData`, then this).
+     */
+    buffer_load(index: number, channels: number, sample_rate: number, data: Float32Array): void;
     /**
      * The engine's sample counter (block-accurate; exact in an f64 for the
      * first 2^53 samples — thousands of years of audio).
@@ -86,8 +86,8 @@ export interface InitOutput {
     readonly clausters_abi_version: () => number;
     readonly __wbg_webserver_free: (a: number, b: number) => void;
     readonly render: (a: number, b: number, c: number, d: number, e: number, f: bigint) => [number, number, number, number];
-    readonly webserver_b_load: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly webserver_block_frames: (a: number) => number;
+    readonly webserver_buffer_load: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly webserver_clock: (a: number) => number;
     readonly webserver_ctl_get: (a: number, b: number) => number;
     readonly webserver_ctl_set: (a: number, b: number, c: number) => void;

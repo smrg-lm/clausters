@@ -178,7 +178,7 @@ export async function pageConnection(
             mine.clear();
         },
         bulkLoad: async (bufnum, channels, sampleRate, samples) => {
-            await engine.bLoad(bufnum, channels, sampleRate, samples);
+            await engine.bufferLoad(bufnum, channels, sampleRate, samples);
         },
         // One round trip pairs the engine's counter with the context's frame
         // counter; their difference is a fixed integer (the engine advances

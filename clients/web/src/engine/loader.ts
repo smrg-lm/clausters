@@ -36,7 +36,7 @@ export interface ClaustersEngine {
      * Installs host-decoded samples as buffer `index` (the browser's
      * /buffer_allocRead). `samples` is interleaved and transferred.
      */
-    bLoad(
+    bufferLoad(
         index: number,
         channels: number,
         sampleRate: number,
@@ -64,7 +64,7 @@ export interface BootOptions {
 type WorkletReply =
     | { type: "osc"; data: ArrayBuffer }
     | { type: "clock"; clock: number; frame: number; epoch: number }
-    | { type: "b_load"; index: number; ok: boolean; message?: string }
+    | { type: "buffer_load"; index: number; ok: boolean; message?: string }
     | { type: "quit" }
     | { type: "error"; message: string };
 
@@ -116,12 +116,12 @@ export async function bootClausters({
                 node.port.postMessage({ type: "clock" });
             });
         },
-        bLoad(index, channels, sampleRate, samples) {
+        bufferLoad(index, channels, sampleRate, samples) {
             return new Promise((resolve, reject) => {
                 loadWaiters.push({ resolve, reject });
                 node.port.postMessage(
                     {
-                        type: "b_load",
+                        type: "buffer_load",
                         index,
                         channels,
                         sampleRate,
@@ -148,7 +148,7 @@ export async function bootClausters({
                 epoch: msg.epoch,
             });
         }
-        else if (msg.type === "b_load") {
+        else if (msg.type === "buffer_load") {
             const waiter = loadWaiters.shift();
             if (msg.ok) waiter?.resolve(msg.index);
             else waiter?.reject(new Error(msg.message));

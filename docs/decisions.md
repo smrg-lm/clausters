@@ -1366,7 +1366,7 @@ engine serves strictly in order, so the trailing `/server_sync.reply` is the pag
   native store lists it. It is generated (`web/bundle-manifest.py`), never
   hand-maintained, and also carries the one genuinely browser-side mapping:
   which audio URL feeds which server buffer (fetch + `decodeAudioData` →
-  the engine's `b_load` — the browser's `/buffer_allocRead`, decoded by the host
+  the engine's `buffer_load` — the browser's `/buffer_allocRead`, decoded by the host
   page because the wasm engine has no sndfile).
 - **The in-page leg is one more `ServerLink` variant, not a new protocol.**
   `ServerLink::Page` hands outbound packets to a page-registered callback and

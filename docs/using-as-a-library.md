@@ -99,7 +99,7 @@ Three properties define the mode:
   constructor argument), not the wall clock — so an offline or faster-than-
   real-time drive stays deterministic, and a paused callback pauses time.
 - **NRT work runs inline.** `/buffer_alloc` and friends execute on the calling
-  thread in submission order; `b_load(index, channels, sample_rate, samples)`
+  thread in submission order; `buffer_load(index, channels, sample_rate, samples)`
   installs host-decoded samples directly — the `/buffer_allocRead` replacement for
   hosts without a filesystem (a browser page decodes with `decodeAudioData`
   and hands the engine the floats).

@@ -175,7 +175,7 @@ impl WebServer {
 
     /// Installs host-decoded samples as buffer `index` (the browser's
     /// `/buffer_allocRead` replacement: fetch + `decodeAudioData`, then this).
-    pub fn b_load(
+    pub fn buffer_load(
         &mut self,
         index: u32,
         channels: u32,
@@ -183,7 +183,7 @@ impl WebServer {
         data: &[f32],
     ) -> Result<(), JsErrorish> {
         self.inner
-            .b_load(index as usize, channels as usize, sample_rate, data)
+            .buffer_load(index as usize, channels as usize, sample_rate, data)
             .map_err(err)
     }
 }

@@ -282,7 +282,7 @@ impl ClaustersHeadless {
     /// `decodeAudioData`), then hands the engine the samples. Runs on the
     /// calling thread through the same install path as the async `/buffer_*`
     /// commands, so `/buffer_query` and the def machinery see it identically.
-    pub fn b_load(
+    pub fn buffer_load(
         &mut self,
         index: usize,
         channels: usize,

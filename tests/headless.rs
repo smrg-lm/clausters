@@ -178,10 +178,10 @@ fn timed_bundle_lands_on_its_exact_sample() {
 }
 
 #[test]
-fn b_load_installs_and_b_query_reports() {
+fn buffer_load_installs_and_query_reports() {
     let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
     let data: Vec<f32> = (0..800).map(|i| (i as f32 / 100.0).sin()).collect();
-    server.b_load(7, 2, 44_100.0, &data).unwrap();
+    server.buffer_load(7, 2, 44_100.0, &data).unwrap();
     assert!(server.send(&msg("/buffer_query", vec![OscType::Int(7)])));
     pull(&mut server, 1);
     let info = replies(&server)

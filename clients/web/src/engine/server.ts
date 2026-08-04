@@ -44,7 +44,7 @@ export interface ClaustersServer {
      * Installs host-decoded samples as buffer `index` (the browser's
      * /buffer_allocRead); `samples` is interleaved and transferred.
      */
-    bLoad(
+    bufferLoad(
         index: number,
         channels: number,
         sampleRate: number,
@@ -112,8 +112,8 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
         removeReply: (listener) => listeners.delete(listener),
         clock: () => raw.clock(),
         clockAnchor: () => raw.clockAnchor(),
-        bLoad: (index, channels, sampleRate, samples) =>
-            raw.bLoad(index, channels, sampleRate, samples),
+        bufferLoad: (index, channels, sampleRate, samples) =>
+            raw.bufferLoad(index, channels, sampleRate, samples),
         resume: () => raw.context.resume(),
         suspend: () => raw.context.suspend(),
         close: async () => {

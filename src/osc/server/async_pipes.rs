@@ -204,7 +204,7 @@ impl OscServer {
     /// the mirror, and sends the async `/done cmd bufnum` / `/fail` replies.
     /// Installs a host-built buffer at `index`: the network-side mirror and
     /// the engine swap, exactly the `NrtAction::Install` path minus the OSC
-    /// reply. The embed `b_load` door: a headless host hands the server
+    /// reply. The embed `buffer_load` door: a headless host hands the server
     /// samples it decoded itself (the browser's `/buffer_allocRead` replacement,
     /// where there is no filesystem).
     pub fn install_buffer(
