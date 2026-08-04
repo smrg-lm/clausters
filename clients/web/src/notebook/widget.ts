@@ -1024,6 +1024,12 @@ export default {
         // audio is counted here at all.
         return () => {
             heard(session, -1);
+            // The kernel is told, because it cannot see this: a comm stays
+            // open with no view on it, and anything sent into one is dropped
+            // by the front end without a trace. It is the counterpart of the
+            // "ready" below -- that one says this cell is listening, this one
+            // says it stopped.
+            model.send({ ch: "gone" });
             shared(session).reboot.delete(reset);
             booted?.gui.removeEvent(up.gui);
             booted?.engine?.removeReply(up.server, booted.kernelPeer);

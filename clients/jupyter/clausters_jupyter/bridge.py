@@ -123,6 +123,26 @@ class Bridge:
         self._ready.add(widget)
         self._drain_audio(widget)
 
+    def widget_gone(self, widget):
+        """One widget's view is gone from the page, and its cell is listening
+        no longer.
+
+        The mirror of `widget_ready`, and it has to exist because a comm
+        outlives the view on it: re-running a cell clears its output and
+        disposes the view, while the model stays alive and the kernel goes on
+        sending into it -- and a message with no `render` at the other end is
+        dropped by the front end without a trace. What that looked like is a
+        notebook run a second time, from the top, in silence: every packet
+        addressed to the audio cell of the *first* run.
+
+        The audio cell is dropped rather than merely un-readied, since it is
+        memoized (`audio_widget`): forgetting it is what lets `showing` answer
+        no again, so the next thing with audio to send puts a live cell up.
+        """
+        self._ready.discard(widget)
+        if widget is self._audio:
+            self._audio = None
+
     def showing(self) -> bool:
         """Whether any cell is showing a widget of this bridge.
 
@@ -211,7 +231,7 @@ class Bridge:
             return
         widget.send_packet(channel, payload)
 
-    def start_audio_cell(self):
+    def start_audio_cell(self, asked: bool = False):
         """Put the engine's own cell on screen, because something needs it.
 
         **A synth sounds when it is created**, and nothing about a window
@@ -232,17 +252,32 @@ class Bridge:
         writes to whatever cell is executing, and a routine sending from the
         clock thread has none. There the packet waits, and the next displayed
         anything delivers it.
+
+        ``asked`` is the difference between a caller saying ``server.boot()``
+        and this package deciding a packet needs somewhere to go. The guard
+        below is for the second: it keeps "Run All" from putting an empty box
+        under every cell that starts a synth right after opening a window. A
+        caller who *asks* gets a cell, because the one state where the guard is
+        wrong is the one where asking matters — a notebook being run a second
+        time, whose cells the kernel has not yet been told are gone. Those
+        messages queue behind the running cell (ipykernel holds the shell),
+        so during the re-run of the first cell this still believes the *first*
+        run's cells are on screen.
         """
         # `showing` and not "nothing is ready": a window already displayed
         # whose module has not announced itself yet needs no second cell -- its
         # own will deliver this the moment it mounts. Asking the narrower
         # question would put an empty box under every cell that starts a synth
         # right after opening a window, which "Run All" does every time.
-        if self.showing():
+        if not asked and self.showing():
             return
         display = _cell_display()
         if display is None:
             return
+        if asked:
+            # An explicit ask gets a *live* cell, not the memo of one whose
+            # view may already be gone.
+            self._audio = None
         display(self.audio_widget())
 
     def _drain_audio(self, widget):

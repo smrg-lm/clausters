@@ -51,7 +51,10 @@ gui = session.gui()      # the in-page host the import installed
 # it is giving it a cell to run in, since the page executes nothing until some
 # cell has an output. That empty box below is it. From here a synth sounds when
 # it is created, as it does against any other server.
-server.boot()
+#
+# `boot` returns the same handle; the assignment is what keeps the cell showing
+# the box alone, instead of the box and a repr under it.
+server = server.boot()
 
 # %% [markdown]
 # ## Something to drive
@@ -135,3 +138,9 @@ win.close()
 synth.free()
 server.quit()                      # the engine in the page, booted with it
 print("window closed, node freed, engine stopped")
+
+# %%
+
+# %%
+
+# %%

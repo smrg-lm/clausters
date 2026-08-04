@@ -104,6 +104,13 @@ class ClaustersWidget(anywidget.AnyWidget):
         if channel == "ready":
             self._on_ready(content.get("have"))
             return
+        if channel == "gone":
+            # The front end's view was disposed: the cell was re-run, its
+            # output cleared, the notebook closed. The comm is still open and
+            # still useless -- anything sent now is dropped in the page.
+            if self.bridge is not None:
+                self.bridge.widget_gone(self)
+            return
         if self.bridge is not None:
             for buffer in buffers:
                 self.bridge.inbound(channel, bytes(buffer))

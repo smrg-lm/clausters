@@ -182,3 +182,79 @@ def test_a_freed_window_stops_being_a_cell():
     bridge.widget_for(int(other))
     other["b"].free()
     assert int(other) in bridge._widgets
+
+
+def test_a_cell_that_stops_listening_stops_receiving():
+    """A comm outlives the view on it.
+
+    Re-running a cell clears its output and disposes the front end's view,
+    while the model stays alive -- so the kernel goes on sending into a widget
+    whose ``render`` is gone, and the front end drops every one of those
+    without a trace. What it looked like is the second run of a notebook, from
+    the top, in silence.
+    """
+    from clausters_jupyter.carrier import SERVER_CHANNEL
+
+    host, bridge, _ = _host()
+    audio = bridge.carrier(SERVER_CHANNEL)
+    win = host.open(_win("a"))
+    widget = bridge.widget_for(int(win))
+    bridge.widget_ready(widget)
+    audio.send_msg(None, "/def_send", "synth", b"...")
+    assert widget.addrs() == ["/def_send"]
+
+    bridge.widget_gone(widget)               # the cell was re-run
+    audio.send_msg(None, "/synth_new", "voice", 1000, 1, 0)
+    assert widget.addrs() == ["/def_send"], "sent into a view that is gone"
+
+
+def test_running_the_whole_notebook_again_gets_a_live_audio_cell():
+    """The sequence a notebook is put through every time: run it to the end,
+    close what it opened, then run it again.
+
+    The audio cell is memoized, so once one had been made the bridge believed
+    something was on screen for the rest of the kernel's life -- and the second
+    run's def, synth and everything after went to the cell of the first, which
+    the re-run had disposed. Nothing said so at either end.
+    """
+    from clausters_jupyter.carrier import SERVER_CHANNEL
+
+    host, bridge, made = _host()
+    audio = bridge.carrier(SERVER_CHANNEL)
+
+    # ---- the first run: a window, some audio, and then the teardown the
+    # examples end with.
+    win = host.open(_win("a"))
+    first = bridge.widget_for(int(win))
+    bridge.widget_ready(first)
+    audio.send_msg(None, "/def_send", "synth", b"...")
+    assert first.addrs() == ["/def_send"]
+    host.free(int(win))                      # win.close()
+    bridge.widget_gone(first)                # its cell was re-run
+    assert not bridge.showing(), "nothing is on screen after the notebook ran"
+
+    # ---- the second run, before any cell displays anything: the audio has to
+    # find a cell of its own again.
+    audio.send_msg(None, "/def_send", "synth", b"...")
+    cell = bridge.audio_widget()
+    bridge.widget_ready(cell)
+    assert cell.addrs() == ["/def_send"], "the second run reached no engine"
+    assert cell is not first
+
+
+def test_the_audio_cell_is_forgotten_when_its_view_goes():
+    """The audio cell is memoized, and that memo is what went stale.
+
+    `showing` answers with it, and `_send_audio` prefers it -- so a disposed
+    audio cell made the bridge believe both that something was on screen and
+    that it had somewhere to send. Forgetting it is what lets the next thing
+    with audio to send put a live cell up.
+    """
+    _, bridge, _ = _host()
+    cell = bridge.audio_widget()
+    bridge.widget_ready(cell)
+    assert bridge.showing()
+
+    bridge.widget_gone(cell)
+    assert not bridge.showing(), "a disposed cell is not a cell on screen"
+    assert bridge.audio_widget() is not cell
