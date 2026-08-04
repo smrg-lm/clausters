@@ -264,3 +264,29 @@ def test_the_audio_cell_is_forgotten_when_its_view_goes():
     bridge.widget_gone(cell)
     assert not bridge.showing(), "a disposed cell is not a cell on screen"
     assert bridge.audio_widget() is not cell
+
+
+def test_the_teardown_reaches_the_engine_after_the_windows_are_closed(recwarn):
+    """The last cell of every notebook, in the order the examples write it:
+    free the node, close the windows, stop the engine.
+
+    Closing a window drops its route here -- a later window reusing the id must
+    not reach a canvas nobody can see -- but the *cell* that held it is still
+    on screen and still listening. Looking for a window rather than for a
+    listener left `/server_quit` queued with nowhere to go: the engine it was
+    meant to stop kept running, and the notebook was told to display a cell so
+    that its teardown could sound.
+    """
+    from clausters_jupyter.carrier import SERVER_CHANNEL
+
+    host, bridge, _ = _host()
+    audio = bridge.carrier(SERVER_CHANNEL)
+    win = host.open(_win("a"))
+    widget = bridge.widget_for(int(win))
+    bridge.widget_ready(widget)
+
+    host.free(int(win))                      # session.gui().close_all()
+    audio.send_msg(None, "/server_quit")     # server.quit()
+
+    assert widget.addrs()[-1] == "/server_quit", "the engine was never told"
+    assert not recwarn.list, "a teardown is not a notebook that needs a cell"

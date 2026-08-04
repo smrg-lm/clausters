@@ -124,3 +124,5 @@ synth.free()
 session.gui().close_all()          # the two plots and the scope
 server.quit()                      # and the engine in the page
 print("node freed, windows closed, engine stopped")
+
+# %%

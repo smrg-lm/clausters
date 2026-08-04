@@ -824,14 +824,62 @@ function bootShared(
 
 export default {
     async render({ model, el }: RenderContext) {
+        // A cell of this notebook shows one of two things, and never nothing.
+        //
+        // A window's cell shows its canvas. The **engine's** cell has no window
+        // and never will: it exists because the page runs nothing until some
+        // cell has an output, so it is what a browser gives this notebook a
+        // wasm host and an AudioContext for. That is a real thing to say, and
+        // it used to be said with an empty box -- which reads as a bug, and
+        // hides the one fact a reader needs at that moment, that a browser
+        // starts no audio until the page is clicked.
+        //
+        // So the cell says what it is until a window takes it over.
+        const status = document.createElement("div");
+        status.style.font = "var(--jp-ui-font-size1) var(--jp-ui-font-family)";
+        status.style.color = "var(--jp-ui-font-color2)";
+        status.style.padding = "0.4em 0";
+        status.textContent = "clausters: starting the engine in this page...";
+        el.append(status);
+
         const canvas = document.createElement("canvas");
-        canvas.style.display = "block";
+        // Hidden until a def is attached to it: a canvas with nothing in it is
+        // the empty box this cell is not.
+        canvas.style.display = "none";
         canvas.style.width = "100%";
         // A CSS height too, or the element's box is zero high -- a canvas has
         // no intrinsic size, so measuring it before this yields the 1x1
         // surface the host then draws nothing into.
         canvas.style.height = `${model.get("height") as number}px`;
         el.append(canvas);
+
+        /** This cell is a window's now: the canvas replaces what it said. */
+        const shows = () => {
+            status.remove();
+            canvas.style.display = "block";
+        };
+
+        /**
+         * What the engine's cell says while it is the engine's.
+         *
+         * The state is the browser's own (`AudioContext.state`), and the one
+         * that matters is `suspended`: a browser starts no audio until
+         * something in the page is clicked, and until then a piece that is
+         * "playing" is inaudible with nothing to explain it.
+         */
+        const tell = (engine: ClaustersServer | null) => {
+            if (!status.isConnected) return;
+            if (engine === null) {
+                status.textContent =
+                    "clausters: this notebook's audio runs on the kernel's "
+                    + "machine, not in this page";
+                return;
+            }
+            const rate = `${Math.round(engine.context.sampleRate / 100) / 10} kHz`;
+            status.textContent = engine.context.state === "running"
+                ? `clausters: engine running at ${rate}`
+                : `clausters: engine ready at ${rate} - click anywhere to start the audio`;
+        };
 
         // Which notebook this cell belongs to. One per kernel, so the runtime
         // below is this notebook's and not the Lab tab's.
@@ -919,6 +967,7 @@ export default {
                 const id = args[0];
                 if (typeof id !== "number") continue;
                 if (addr === "/gui_def" && !attached.has(id)) {
+                    shows();
                     here.gui.attach(id, canvas);
                     attached.add(id);
                     const { width, height, scale } = here.client.canvasBox(canvas);
@@ -929,7 +978,7 @@ export default {
                     // carrier detaches); what is left is the element, which
                     // would otherwise stay behind holding its last frame --
                     // what made `win.close()` look like it did nothing.
-                    queueMicrotask(() => canvas.remove());
+                    queueMicrotask(emptied);
                 }
             }
             here.host.connection.send(packet);
@@ -993,6 +1042,11 @@ export default {
             attached.clear();
         };
 
+        /** Every kind's teardown: the canvas element leaves the cell. */
+        const emptied = () => {
+            canvas.remove();
+        };
+
         const ready = (live: Booted) => {
             if (booted === live) return;            // this view already has it
             const again = booted === null && attached.size === 0 && drew;
@@ -1013,6 +1067,11 @@ export default {
             // the host fans out to every listener, so a view that stayed
             // subscribed would send the kernel one copy per cell re-run.
             live.gui.addEvent(up.gui);
+            // What this cell says, until a window takes it over. The context's
+            // own event is what turns "click to start" into "running", so the
+            // first gesture updates every cell that is still saying it.
+            tell(live.engine);
+            live.engine?.context.addEventListener("statechange", () => tell(live.engine));
             // The engine answers the kernel too (a /server_sync's /synced, a
             // query's reply), under the kernel's own tag -- the host's leg is
             // a different client and is already wired to it.

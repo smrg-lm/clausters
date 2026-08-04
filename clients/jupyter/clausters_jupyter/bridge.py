@@ -152,8 +152,13 @@ class Bridge:
         Until one is, nothing of the browser half has happened — no comm, no
         wasm, no engine — which is what makes an auto-wired session cheap to
         throw away (`clausters_jupyter.session.notebook`).
+
+        A cell that is *listening* counts even when it is showing no window of
+        its own: its window may have been freed while its output area stayed,
+        and what the question is really asking is whether this bridge has
+        reached the page at all.
         """
-        return bool(self._widgets) or self._audio is not None
+        return bool(self._widgets) or self._audio is not None or bool(self._ready)
 
     def replay_for(self, widget) -> list:
         """The packets that rebuild, on a fresh front end, the window this
@@ -226,8 +231,14 @@ class Bridge:
         """
         widget = self._audio if self._audio in self._ready else None
         if widget is None:
-            widget = next((w for w in self._widgets.values()
-                           if w in self._ready), None)
+            # Whatever is listening, which is what `_ready` *is* -- not what is
+            # routing a window. The two came apart at the end of every
+            # notebook: closing a window drops its entry here (a later window
+            # reusing the id must not reach a canvas nobody can see), while the
+            # cell that held it is still on screen and still perfectly able to
+            # carry a packet. Looking for a window left `server.quit()` with
+            # nowhere to go, so the engine it was meant to stop kept running.
+            widget = next(iter(self._ready), None)
         if widget is None:
             self._pending.append((channel, payload))
             self.wants_a_cell()
