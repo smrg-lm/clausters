@@ -4389,3 +4389,42 @@ would use. They had each grown their own address test inside a raw subscription,
 which is the shape a responder exists to remove. `Server.onReply` stays under
 them as the unmatched seam, because a decoder that wants everything in arrival
 order is a real caller and not a responder.
+
+## A buffer write is a copy that replaces the buffer, and it refuses what a read clamps
+
+Context: the `/buffer_*` family could read samples (`/buffer_get`,
+`/buffer_getRange`) and never put any back, so a client could show a buffer but
+not edit one — the read → edit → write cycle an editor view is made of had no
+last step, and the only way to install samples was the embed door
+(`buffer_load`), which needs to share the process.
+
+Decision: `/buffer_set` and `/buffer_setRange`, named and shaped as the mirror
+image of the two reads (flat interleaved indices, single samples and runs), on
+the same NRT queue as the rest of the writing family.
+
+- **Copy-and-swap, not mutation, and it costs nothing to choose.** Buffers are
+  immutable and the engine holds a clone of the network side's `Arc`, so every
+  job here already builds a replacement and installs it whole — `/buffer_read`
+  and `/buffer_zero` do exactly this. A write is one more of those: the samples
+  land in a copy that swaps in, the old `Arc` leaves through the garbage FIFO,
+  and the audio thread cannot observe a half-written buffer. The alternative —
+  writing into the live buffer under a lock — would have been the first lock on
+  that path and the first way to tear a buffer mid-block, to save a memcpy on a
+  command that is already asynchronous.
+- **A write past the end fails; a read past the end clamps.** The asymmetry is
+  deliberate and is about what the caller believes afterwards. A short read
+  hands back fewer samples than were asked for and says so in the reply's
+  `count`, so nothing is lost. A short write would leave the caller believing it
+  stored samples the server dropped, which is data loss reported as success.
+- **No chunking in the protocol and no change notification.** A multi-megabyte
+  edit is several messages the client sizes against the `--max-frame` ceiling
+  `/server_query` advertises, symmetrically with how `/buffer_getRange` is
+  chunked coming back; adding a second, command-specific chunking mechanism
+  would duplicate the one the transport already has. And nothing is told that a
+  buffer changed: it would be the family's first push notification, the mirror
+  is authoritative, and no reader has asked for one.
+
+What this does **not** solve is the other half of why a client cannot own its
+data paths: over the shared-memory ring every peer is one client, so two of them
+still fight over a `/bus_stream` subscription. That is a segment-layout change
+and is recorded with the ring's own identity work.

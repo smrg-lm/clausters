@@ -10,7 +10,10 @@ use super::*;
 /// Parses one `/buffer_*` command (except the synchronous `/buffer_query`) into the
 /// buffer index and the NRT job that performs it. `mirror` is the
 /// network-side pool: commands that keep or reuse the current contents
-/// (`/buffer_read`, `/buffer_write`, `/buffer_zero`) read shape and data from it.
+/// (`/buffer_read`, `/buffer_write`, `/buffer_zero`, `/buffer_set` and
+/// `/buffer_setRange`) read shape and data from it — which is state as of the
+/// last *completed* command, so one of those right after a `/buffer_alloc`
+/// needs a `/server_sync` between them, exactly as `/buffer_gen` does.
 pub fn parse_buffer_msg(
     addr: &str,
     args: &[OscType],
@@ -116,6 +119,38 @@ pub fn parse_buffer_msg(
                     sample_rate: current.sample_rate(),
                 },
             )
+        }
+        // The write half of the read pair: `/buffer_set` takes (index, value)
+        // pairs, `/buffer_setRange` takes (start, count, value...) runs. Both
+        // address samples flat and interleaved, exactly as `/buffer_get` and
+        // `/buffer_getRange` read them back.
+        "/buffer_set" | "/buffer_setRange" => {
+            let Some(OscType::Int(index)) = args.first() else {
+                return Err("expected a buffer index".into());
+            };
+            let Some(current) = mirror_buffer(mirror, *index) else {
+                return Err(format!("no buffer allocated at {index}"));
+            };
+            let writes = if addr == "/buffer_set" {
+                parse_set_pairs(&args[1..])?
+            } else {
+                parse_set_runs(&args[1..])?
+            };
+            // Writing past the end would silently drop samples, so it fails
+            // rather than clamping the way the reads do: a short read hands
+            // back less than was asked for, a short write loses data the
+            // caller believes it stored.
+            let len = current.data().len();
+            for (at, values) in &writes {
+                if at.saturating_add(values.len()) > len {
+                    return Err(format!(
+                        "sample range {}..{} is past the end of buffer {index} ({len} samples)",
+                        at,
+                        at + values.len()
+                    ));
+                }
+            }
+            (*index, NrtJob::Set { current, writes })
         }
         "/buffer_free" => {
             let Some(OscType::Int(index)) = args.first() else {
@@ -255,6 +290,56 @@ pub fn parse_buffer_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, N
             cmd: command,
         },
     ))
+}
+
+/// `/buffer_set`'s `(index, value)...` tail: each pair becomes a run of one,
+/// so both write commands hand the NRT job the same shape.
+fn parse_set_pairs(args: &[OscType]) -> Result<Vec<(usize, Vec<f32>)>, String> {
+    if args.is_empty() || !args.len().is_multiple_of(2) {
+        return Err("expected: bufnum, then (index, value) pairs".into());
+    }
+    args.chunks_exact(2)
+        .map(|pair| {
+            let (OscType::Int(index), Some(value)) = (&pair[0], float_value(&pair[1])) else {
+                return Err("expected: bufnum, then (index, value) pairs".into());
+            };
+            let at =
+                usize::try_from(*index).map_err(|_| format!("negative sample index {index}"))?;
+            Ok((at, vec![value]))
+        })
+        .collect()
+}
+
+/// `/buffer_setRange`'s `(start, count, value...)...` tail. `count` says how
+/// many values belong to the run, so several runs pack into one message and a
+/// truncated one is an error rather than a silent partial write.
+fn parse_set_runs(args: &[OscType]) -> Result<Vec<(usize, Vec<f32>)>, String> {
+    let mut writes = Vec::new();
+    let mut rest = args;
+    while !rest.is_empty() {
+        let [OscType::Int(start), OscType::Int(count), tail @ ..] = rest else {
+            return Err("expected: bufnum, then (start, count, value...) runs".into());
+        };
+        let at = usize::try_from(*start).map_err(|_| format!("negative sample index {start}"))?;
+        let count =
+            usize::try_from(*count).map_err(|_| format!("negative sample count {count}"))?;
+        if tail.len() < count {
+            return Err(format!(
+                "run at {at} declares {count} values and carries {}",
+                tail.len()
+            ));
+        }
+        let values = tail[..count]
+            .iter()
+            .map(|a| float_value(a).ok_or_else(|| "sample values must be numbers".to_string()))
+            .collect::<Result<Vec<f32>, _>>()?;
+        writes.push((at, values));
+        rest = &tail[count..];
+    }
+    if writes.is_empty() {
+        return Err("expected: bufnum, then (start, count, value...) runs".into());
+    }
+    Ok(writes)
 }
 
 fn mirror_buffer(mirror: &BufferPool, index: i32) -> Option<Arc<Buffer>> {

@@ -422,6 +422,76 @@ fn zero_length_score_is_an_error() {
     assert!(err.contains("empty render"), "got: {err}");
 }
 
+/// M31(a): a score writes its own samples. The `/buffer_*` family is legal in
+/// a score and completes synchronously before time advances, so the write half
+/// composes with the rest without a barrier — `PlayBuf` reads back exactly what
+/// `/buffer_setRange` laid down.
+#[cfg(feature = "synth")]
+#[test]
+fn a_score_writes_samples_and_plays_them_back() {
+    let def = serde_json::json!({
+        "name": "player",
+        "ugens": [
+            {"kind": "PlayBuf", "inputs": [
+                {"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0}
+            ]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    });
+    let score = Score::new([
+        (
+            0.0,
+            vec![
+                msg(
+                    "/buffer_alloc",
+                    vec![OscType::Int(0), OscType::Int(4), OscType::Int(1)],
+                ),
+                msg(
+                    "/buffer_setRange",
+                    vec![
+                        OscType::Int(0),
+                        OscType::Int(0),
+                        OscType::Int(4),
+                        OscType::Float(0.25),
+                        OscType::Float(0.5),
+                        OscType::Float(-0.25),
+                        OscType::Float(-0.5),
+                    ],
+                ),
+                msg(
+                    "/def_send",
+                    vec![
+                        OscType::String("synth".into()),
+                        OscType::Blob(serde_json::to_vec(&def).unwrap()),
+                    ],
+                ),
+                msg(
+                    "/synth_new",
+                    vec![
+                        OscType::String("player".into()),
+                        OscType::Int(1),
+                        OscType::Int(0),
+                        OscType::Int(0),
+                    ],
+                ),
+            ],
+        ),
+        (
+            8.0 / 48000.0,
+            vec![msg("/node_free", vec![OscType::Int(1)])],
+        ),
+    ])
+    .unwrap();
+    let (out, _) = render_to_vec(&score, &RenderConfig::default()).unwrap();
+    let channels = RenderConfig::default().channels;
+    let left: Vec<f32> = out.iter().step_by(channels).take(4).copied().collect();
+    assert_eq!(
+        left,
+        vec![0.25, 0.5, -0.25, -0.5],
+        "the score's own write is what sounds"
+    );
+}
+
 #[test]
 fn unsupported_command_in_score_is_an_error() {
     let score = Score::new([

@@ -10,6 +10,7 @@ use std::time::Duration;
 use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::buffer::Buffer;
 use clausters::node::{AddAction, ROOT_NODE_ID};
+use clausters::rosc::OscType;
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, engine_pair};
 use clausters::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtThread};
 use clausters::synthdef::SynthDefSpec;
@@ -406,6 +407,175 @@ fn replaced_buffer_leaves_through_the_garbage_fifo() {
         .unwrap();
     render_channel(&mut engine, 1, 0);
     assert_eq!(handle.collect_garbage(), 2, "replace + free ship both out");
+}
+
+// ---- The write half: /buffer_set and /buffer_setRange ----
+
+/// The parse takes a mirror pool; these tests build a one-slot one.
+fn mirror_of(buffer: Arc<Buffer>) -> clausters::dsp::buffer::BufferPool {
+    vec![Some(buffer)]
+}
+
+fn parse_set(
+    addr: &str,
+    args: Vec<OscType>,
+    mirror: &clausters::dsp::buffer::BufferPool,
+) -> Result<NrtJob, String> {
+    clausters::osc::translate::parse_buffer_msg(addr, &args, mirror, SR as f64).map(|(_, job)| job)
+}
+
+/// The refusal a malformed or out-of-bounds write parses into. (`NrtJob` is
+/// not `Debug`, so the `Ok` side cannot be unwrapped away.)
+fn set_error(
+    addr: &str,
+    args: Vec<OscType>,
+    mirror: &clausters::dsp::buffer::BufferPool,
+) -> String {
+    match parse_set(addr, args, mirror) {
+        Err(e) => e,
+        Ok(_) => panic!("{addr} should have been refused"),
+    }
+}
+
+#[test]
+fn set_writes_runs_into_a_replacement_keeping_the_shape() {
+    let mirror = mirror_of(Arc::new(Buffer::zeroed(8, 2, 44_100.0)));
+    let job = parse_set(
+        "/buffer_setRange",
+        vec![
+            OscType::Int(0),
+            OscType::Int(4),
+            OscType::Int(3),
+            OscType::Float(1.0),
+            OscType::Float(2.0),
+            OscType::Float(3.0),
+            // A second run in the same message, to prove they pack.
+            OscType::Int(12),
+            OscType::Int(1),
+            OscType::Float(9.0),
+        ],
+        &mirror,
+    )
+    .expect("a well-formed setRange parses");
+
+    let written = installed(run_nrt(job));
+    assert_eq!(
+        (written.frames(), written.channels()),
+        (8, 2),
+        "a write keeps the buffer's shape"
+    );
+    assert_eq!(
+        written.sample_rate(),
+        44_100.0,
+        "and its sample rate: a write is not a re-allocation"
+    );
+    let mut expected = [0.0f32; 16];
+    expected[4..7].copy_from_slice(&[1.0, 2.0, 3.0]);
+    expected[12] = 9.0;
+    assert_eq!(written.data(), &expected[..]);
+}
+
+#[test]
+fn set_writes_single_samples_by_flat_index() {
+    let mirror = mirror_of(Arc::new(Buffer::zeroed(4, 2, SR as f64)));
+    let job = parse_set(
+        "/buffer_set",
+        vec![
+            OscType::Int(0),
+            OscType::Int(1),
+            OscType::Float(0.25),
+            OscType::Int(6),
+            OscType::Float(-0.5),
+        ],
+        &mirror,
+    )
+    .expect("a well-formed set parses");
+
+    let written = installed(run_nrt(job));
+    let mut expected = [0.0f32; 8];
+    expected[1] = 0.25;
+    expected[6] = -0.5;
+    assert_eq!(
+        written.data(),
+        &expected[..],
+        "indices are flat across channels, as the reads are"
+    );
+}
+
+#[test]
+fn a_write_past_the_end_fails_rather_than_being_clamped() {
+    let mirror = mirror_of(Arc::new(Buffer::zeroed(4, 1, SR as f64)));
+    // The read side clamps; the write side must not, or the caller believes it
+    // stored samples the server dropped.
+    let err = set_error(
+        "/buffer_setRange",
+        vec![
+            OscType::Int(0),
+            OscType::Int(2),
+            OscType::Int(4),
+            OscType::Float(1.0),
+            OscType::Float(1.0),
+            OscType::Float(1.0),
+            OscType::Float(1.0),
+        ],
+        &mirror,
+    );
+    assert!(err.contains("past the end"), "unexpected message: {err}");
+
+    let err = set_error(
+        "/buffer_set",
+        vec![OscType::Int(0), OscType::Int(4), OscType::Float(1.0)],
+        &mirror,
+    );
+    assert!(err.contains("past the end"), "unexpected message: {err}");
+}
+
+#[test]
+fn a_malformed_write_is_refused_before_it_reaches_the_queue() {
+    let mirror = mirror_of(Arc::new(Buffer::zeroed(8, 1, SR as f64)));
+    // A run that declares more values than it carries: a partial write would
+    // be worse than a refusal.
+    let err = set_error(
+        "/buffer_setRange",
+        vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int(3),
+            OscType::Float(1.0),
+        ],
+        &mirror,
+    );
+    assert!(err.contains("carries 1"), "unexpected message: {err}");
+
+    // An odd tail on the pair form.
+    set_error(
+        "/buffer_set",
+        vec![OscType::Int(0), OscType::Int(1)],
+        &mirror,
+    );
+
+    // No values at all.
+    // A write with nothing to write is a mistake, not a no-op.
+    set_error("/buffer_set", vec![OscType::Int(0)], &mirror);
+
+    // A negative index.
+    // Sample indices are non-negative.
+    set_error(
+        "/buffer_set",
+        vec![OscType::Int(0), OscType::Int(-1), OscType::Float(1.0)],
+        &mirror,
+    );
+}
+
+#[test]
+fn a_write_needs_an_allocated_buffer() {
+    let empty: clausters::dsp::buffer::BufferPool = vec![None];
+    let err = set_error(
+        "/buffer_set",
+        vec![OscType::Int(0), OscType::Int(0), OscType::Float(1.0)],
+        &empty,
+    );
+    assert!(err.contains("no buffer allocated"), "unexpected: {err}");
 }
 
 // ---- NRT thread: WAV round trips ----
@@ -891,5 +1061,178 @@ mod osc {
         recv_until("/done");
         server_thread.join().unwrap().unwrap();
         std::fs::remove_file(&path).ok();
+    }
+
+    /// M31(a): the read → edit → write cycle an editor view needs. What a
+    /// client writes with `/buffer_set`/`/buffer_setRange` is exactly what
+    /// `/buffer_getRange` reads back, and the engine plays the edited samples.
+    #[test]
+    fn written_samples_read_back_and_sound() {
+        let (mut engine, engine_handle) = engine_pair(SR, CHANNELS);
+        let info = ServerInfo {
+            nominal_sample_rate: SR as f64,
+            actual_sample_rate: SR as f64,
+        };
+        let mut server = OscServer::bind(("127.0.0.1", 0), info, engine_handle).unwrap();
+        let addr = server.local_addr().unwrap();
+        let server_thread = std::thread::spawn(move || server.run());
+        let client = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        client.set_read_timeout(Some(NRT_DEADLINE)).unwrap();
+
+        let send = |addr_str: &str, args: Vec<OscType>| {
+            let packet = OscPacket::Message(OscMessage {
+                addr: addr_str.into(),
+                args,
+            });
+            client
+                .send_to(&encoder::encode(&packet).unwrap(), addr)
+                .unwrap();
+        };
+        let recv_until = |want: &str| -> OscMessage {
+            let mut buf = [0u8; 65536];
+            for _ in 0..100 {
+                let (len, _) = client.recv_from(&mut buf).expect("reply timed out");
+                if let (_, OscPacket::Message(msg)) = decoder::decode_udp(&buf[..len]).unwrap()
+                    && msg.addr == want
+                {
+                    return msg;
+                }
+            }
+            panic!("never received {want}");
+        };
+
+        // A write reads the shape from the mirror, so the alloc has to have
+        // completed: the /done is that barrier.
+        send("/buffer_alloc", vec![OscType::Int(2), OscType::Int(8)]);
+        assert_eq!(
+            recv_until("/done").args[0],
+            OscType::String("/buffer_alloc".into())
+        );
+
+        // Two runs in one message, plus two single samples.
+        let mut args = vec![
+            OscType::Int(2),
+            OscType::Int(0),
+            OscType::Int(3),
+            OscType::Float(0.1),
+            OscType::Float(0.2),
+            OscType::Float(0.3),
+            OscType::Int(6),
+            OscType::Int(2),
+            OscType::Float(0.7),
+            OscType::Float(0.8),
+        ];
+        send("/buffer_setRange", std::mem::take(&mut args));
+        assert_eq!(
+            recv_until("/done").args[0],
+            OscType::String("/buffer_setRange".into())
+        );
+        send(
+            "/buffer_set",
+            vec![
+                OscType::Int(2),
+                OscType::Int(4),
+                OscType::Float(0.5),
+                OscType::Int(5),
+                OscType::Float(0.6),
+            ],
+        );
+        assert_eq!(
+            recv_until("/done").args[0],
+            OscType::String("/buffer_set".into())
+        );
+
+        // The read half sees every write, and the untouched slot stayed zero.
+        send(
+            "/buffer_getRange",
+            vec![OscType::Int(2), OscType::Int(0), OscType::Int(8)],
+        );
+        let read = recv_until("/buffer_getRange.reply");
+        let values: Vec<f32> = read.args[3..]
+            .iter()
+            .map(|a| match a {
+                OscType::Float(f) => *f,
+                other => panic!("expected a float, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            values,
+            vec![0.1, 0.2, 0.3, 0.0, 0.5, 0.6, 0.7, 0.8],
+            "what was written is what is read back"
+        );
+
+        // A write past the end is refused rather than clamped, and refusing it
+        // leaves the buffer as it was.
+        send(
+            "/buffer_setRange",
+            vec![
+                OscType::Int(2),
+                OscType::Int(7),
+                OscType::Int(4),
+                OscType::Float(1.0),
+                OscType::Float(1.0),
+                OscType::Float(1.0),
+                OscType::Float(1.0),
+            ],
+        );
+        assert_eq!(
+            recv_until("/fail").args[0],
+            OscType::String("/buffer_setRange".into())
+        );
+        send(
+            "/buffer_getRange",
+            vec![OscType::Int(2), OscType::Int(7), OscType::Int(1)],
+        );
+        assert_eq!(
+            recv_until("/buffer_getRange.reply").args[3],
+            OscType::Float(0.8),
+            "a refused write changes nothing"
+        );
+
+        // And the engine plays the edited buffer: the write reached the audio
+        // side, not only the network-side mirror.
+        let def = serde_json::to_string(&json!({
+            "name": "player",
+            "ugens": [
+                {"kind": "PlayBuf", "inputs": [
+                    {"const": 2.0}, {"const": 0.0}, {"const": 1.0}, {"const": 1.0}
+                ]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+            ]
+        }))
+        .unwrap();
+        send(
+            "/def_send",
+            vec![
+                OscType::String("synth".into()),
+                OscType::Blob(def.into_bytes()),
+            ],
+        );
+        recv_until("/done");
+        send(
+            "/synth_new",
+            vec![
+                OscType::String("player".into()),
+                OscType::Int(1000),
+                OscType::Int(0),
+                OscType::Int(0),
+            ],
+        );
+        let expected = [0.1f32, 0.2, 0.3, 0.0, 0.5, 0.6, 0.7, 0.8];
+        let mut heard = false;
+        for _ in 0..100 {
+            let left = render_channel(&mut engine, 2, 0);
+            heard = left.iter().enumerate().all(|(i, s)| *s == expected[i % 8]);
+            if heard && left[1] != 0.0 {
+                break;
+            }
+        }
+        assert!(heard, "the engine must play the written samples");
+
+        send("/node_free", vec![OscType::Int(1000)]);
+        render_channel(&mut engine, 2, 0);
+        send("/server_quit", vec![]);
+        recv_until("/done");
+        server_thread.join().unwrap().unwrap();
     }
 }

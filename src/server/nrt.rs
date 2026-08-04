@@ -65,6 +65,14 @@ pub enum NrtJob {
         current: Arc<Buffer>,
         cmd: crate::dsp::wavetable::GenCommand,
     },
+    /// `/buffer_set` and `/buffer_setRange`: write client-supplied samples into
+    /// a copy of the current contents, keeping the buffer's shape. Each write
+    /// is a flat (interleaved) start index and the run of values to lay down
+    /// there, so the single-sample form is just a run of one.
+    Set {
+        current: Arc<Buffer>,
+        writes: Vec<(usize, Vec<f32>)>,
+    },
     /// `/buffer_free`: ordered behind the other jobs (see module docs).
     Free,
 }
@@ -270,6 +278,24 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             Ok(NrtAction::None)
         }
         NrtJob::Gen { current, cmd } => Ok(NrtAction::Install(Arc::new(cmd.apply(&current)))),
+        NrtJob::Set { current, writes } => {
+            // Copy-and-swap, like every other job here: buffers are immutable
+            // and the engine holds a clone of this very `Arc`, so the samples
+            // are laid into a copy that replaces it whole. The audio thread
+            // therefore never sees a half-written buffer, and no write of any
+            // size needs a lock. The parse already bounded every run against
+            // the buffer's length.
+            let mut data = current.data().to_vec();
+            for (at, values) in writes {
+                data[at..at + values.len()].copy_from_slice(&values);
+            }
+            Ok(NrtAction::Install(Arc::new(Buffer::new(
+                data,
+                current.channels(),
+                current.frames(),
+                current.sample_rate(),
+            ))))
+        }
         NrtJob::Free => Ok(NrtAction::Clear),
     }
 }

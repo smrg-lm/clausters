@@ -336,6 +336,14 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_buffer_cmd(addr, m, f);
         Ok(())
     }),
+    ("/buffer_set", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
+    ("/buffer_setRange", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
     ("/buffer_write", |s, addr, m, f| {
         s.handle_buffer_cmd(addr, m, f);
         Ok(())
