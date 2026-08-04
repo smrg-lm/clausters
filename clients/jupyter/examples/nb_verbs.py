@@ -71,7 +71,10 @@ plot([(i / 200) % 1.0 - 0.5 for i in range(1200)], label="a ramp")
 # %%
 session = clausters_jupyter.current()
 server = session.server
-server.boot()            # the engine, in a cell of its own -- see nb_widgets
+# No cell for the engine here: the plot below displays a window, and any
+# displayed window carries the same leg to the same engine. A notebook that
+# only sounds -- nothing on screen -- is the one that needs
+# `clausters_jupyter.audio()` in a cell of its own; see nb_widgets.
 
 
 def tone(name: str = "notebook_tone") -> SynthDef:

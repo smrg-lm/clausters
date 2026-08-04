@@ -208,22 +208,23 @@ def test_a_cell_that_stops_listening_stops_receiving():
     assert widget.addrs() == ["/def_send"], "sent into a view that is gone"
 
 
-def test_running_the_whole_notebook_again_gets_a_live_audio_cell():
+def test_running_the_whole_notebook_again_finds_a_live_cell(recwarn):
     """The sequence a notebook is put through every time: run it to the end,
     close what it opened, then run it again.
 
+    Two things had to be true for the second run to sound, and neither was.
     The audio cell is memoized, so once one had been made the bridge believed
     something was on screen for the rest of the kernel's life -- and the second
-    run's def, synth and everything after went to the cell of the first, which
-    the re-run had disposed. Nothing said so at either end.
+    run's packets went to the cell of the first, which the re-run had disposed.
+    And nothing said so: the notebook simply ran in silence.
     """
     from clausters_jupyter.carrier import SERVER_CHANNEL
 
-    host, bridge, made = _host()
+    host, bridge, _ = _host()
     audio = bridge.carrier(SERVER_CHANNEL)
 
-    # ---- the first run: a window, some audio, and then the teardown the
-    # examples end with.
+    # ---- the first run: a window, some audio, and the teardown the examples
+    # end with.
     win = host.open(_win("a"))
     first = bridge.widget_for(int(win))
     bridge.widget_ready(first)
@@ -233,13 +234,18 @@ def test_running_the_whole_notebook_again_gets_a_live_audio_cell():
     bridge.widget_gone(first)                # its cell was re-run
     assert not bridge.showing(), "nothing is on screen after the notebook ran"
 
-    # ---- the second run, before any cell displays anything: the audio has to
-    # find a cell of its own again.
+    # ---- the second run, before any cell displays anything. The packet waits
+    # and the notebook is *told*, rather than an output appearing in whatever
+    # cell the kernel happened to be answering.
     audio.send_msg(None, "/def_send", "synth", b"...")
+    assert [str(w.message) for w in recwarn.list], "silence with no explanation"
+    assert first.addrs().count("/def_send") == 1, "sent into a view that is gone"
+
+    # ---- and the cell the notebook displays is what delivers it.
     cell = bridge.audio_widget()
     bridge.widget_ready(cell)
-    assert cell.addrs() == ["/def_send"], "the second run reached no engine"
     assert cell is not first
+    assert cell.addrs() == ["/def_send"], "the waiting packet never arrived"
 
 
 def test_the_audio_cell_is_forgotten_when_its_view_goes():
@@ -258,41 +264,3 @@ def test_the_audio_cell_is_forgotten_when_its_view_goes():
     bridge.widget_gone(cell)
     assert not bridge.showing(), "a disposed cell is not a cell on screen"
     assert bridge.audio_widget() is not cell
-
-
-def test_nothing_is_displayed_outside_a_running_cell(monkeypatch):
-    """`display` writes into whatever message is the kernel's parent, and on
-    the kernel's own thread that is not always a cell: a comm message is
-    handled there too, between executions, and its parent is the widget's comm
-    -- whose own parent is some cell that finished long ago. An output would
-    land in it, which is this package editing a notebook the reader is not
-    running. Nothing may do that.
-    """
-    from clausters_jupyter import bridge as bridge_module
-
-    class FakeKernel:
-        def __init__(self, msg_type):
-            self.msg_type = msg_type
-
-        def get_parent(self, _channel=None):
-            return {"header": {"msg_type": self.msg_type}}
-
-    class FakeShell:
-        def __init__(self, msg_type):
-            self.kernel = FakeKernel(msg_type)
-
-    def shell_of(msg_type):
-        monkeypatch.setattr(bridge_module, "threading", threading_stub, raising=False)
-        return FakeShell(msg_type)
-
-    import threading as threading_stub          # the real one; main thread here
-
-    import IPython
-    monkeypatch.setattr(IPython, "get_ipython", lambda: shell_of("comm_msg"))
-    assert bridge_module._cell_display() is None, "a comm message is not a cell"
-
-    monkeypatch.setattr(IPython, "get_ipython", lambda: shell_of("execute_request"))
-    assert bridge_module._cell_display() is not None, "a running cell may draw"
-
-    monkeypatch.setattr(IPython, "get_ipython", lambda: None)
-    assert bridge_module._cell_display() is None, "no kernel, no cell"

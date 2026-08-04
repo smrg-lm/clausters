@@ -4562,3 +4562,52 @@ own, both because they are loaded by URL into a scope of their own: the audio
 worklet, and the clock's tick worker — which is why `setTickWorkerUrl` exists.
 A client that cannot name that worker falls back to the page timer and says so
 once, rather than throwing on `new URL` as it did the first time this was tried.
+
+## In a notebook, a view decides what is drawn and the kernel decides what exists
+
+The notebook front end had grown its own answers to questions Jupyter has
+conventions for, and every one of them was defensible in isolation and wrong
+together. The engine was suspended when no cell of the notebook was mounted and
+resumed when one was; the bridge remembered forever that a cell had announced
+itself; and a packet with nowhere to go made the package `display` a cell to
+put it in. What that produced, in order: reopening a tab started audio nobody
+asked to restart, the second run of a notebook was silent because every packet
+was addressed to the cells of the first, and an output could land in whatever
+cell the kernel's current message happened to belong to — which on a comm
+message is one that finished long ago.
+
+The rule they were missing is one line: **a view decides what is drawn; the
+kernel decides what exists.** A view is the most ephemeral thing in a notebook
+— a cell re-run disposes one, a cleared output disposes one, a closed tab
+disposes them all — while the kernel is what the notebook *is*. So the sound
+and the wasm follow the comm (a kernel shut down frees them, `/server_quit`
+stops the audio, closing a tab does neither), and visibility is consulted for
+frames and for nothing else.
+
+This is what the ecosystem does, and the parts of it worth citing:
+
+- **View presence is synced state, not a message.** `ipywidgets` carries
+  `_view_count` for it — "the number of views of the model displayed in the
+  frontend … `None` signifies that views will not be tracked; set this to 0 to
+  start tracking view creation/deletion" — incremented by the front end on
+  `displayed` and decremented on `remove`. It is marked experimental, and
+  `jupyter_rfb` keeps a synced `Bool` of its own instead; both are the same
+  shape, and the shape is what matters. We had invented a `gone` message, which
+  answers a question about *state* with an event.
+- **Visibility gates drawing.** `jupyter_rfb` — the closest thing to this
+  package in the ecosystem, a canvas widget streaming frames — computes
+  `should_draw` from `self._has_visible_views`, and never uses it to decide
+  what to keep alive.
+- **A library does not display.** Widget libraries hand you an object and let
+  the cell show it; `jupyter_rfb`'s own `display` calls are for an output
+  context, not for its widget. So `clausters_jupyter.audio()` returns the
+  engine's cell and *you* display it, and a notebook that sends audio with
+  nothing on screen is told which line to add rather than having one written
+  into it.
+
+The cost is one thing the old model gave for free: a notebook left open with
+something playing keeps playing when the tab is closed. That is correct — a
+script whose terminal is hidden keeps running — and it is the reason
+`server.quit()` had to become recoverable rather than terminal (see the entry
+above), because stopping is now something you *ask* for rather than something
+that happens when you look away.

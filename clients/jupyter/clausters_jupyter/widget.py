@@ -85,6 +85,17 @@ class ClaustersWidget(anywidget.AnyWidget):
         self.bridge = None
         self._kernel_thread = threading.current_thread()
         self.on_msg(self._on_msg)
+        # Start tracking views. `_view_count` is ipywidgets' own answer to "is
+        # anything showing this?" -- the front end increments it when a view is
+        # displayed and decrements it when one is removed, and `None`, the
+        # default, means it is not tracked at all. It is the state a comm
+        # cannot carry: a comm outlives every view on it, so without this the
+        # kernel goes on sending into a cell whose output was cleared, and the
+        # front end drops it with no `render` at the other end. (Marked
+        # experimental upstream since ipywidgets 7; `jupyter_rfb` keeps a
+        # synced Bool of its own for the same question. Either way the answer
+        # is *state*, not a message of ours.)
+        self._view_count = 0
 
     # ---- the bridge's end ----
 
@@ -96,6 +107,22 @@ class ClaustersWidget(anywidget.AnyWidget):
         """
         self._post({"ch": channel}, [payload])
 
+    @traitlets.observe("_view_count")
+    def _views_changed(self, change):
+        """The last view of this cell went away: the cell was re-run, its
+        output cleared, the notebook closed.
+
+        Only the fall to zero is acted on, and only from above it. A front end
+        that never increments the count (one whose views do not emit
+        ``displayed``) leaves it at zero forever, and reading that as "gone"
+        would silence every notebook under it -- so the transition is what
+        counts, never the value alone.
+        """
+        if self.bridge is None:
+            return
+        if change["new"] == 0 and (change["old"] or 0) > 0:
+            self.bridge.widget_gone(self)
+
     # ---- the front end ----
 
     def _on_msg(self, _widget, content, buffers):
@@ -103,13 +130,6 @@ class ClaustersWidget(anywidget.AnyWidget):
         channel = content.get("ch")
         if channel == "ready":
             self._on_ready(content.get("have"))
-            return
-        if channel == "gone":
-            # The front end's view was disposed: the cell was re-run, its
-            # output cleared, the notebook closed. The comm is still open and
-            # still useless -- anything sent now is dropped in the page.
-            if self.bridge is not None:
-                self.bridge.widget_gone(self)
             return
         if self.bridge is not None:
             for buffer in buffers:

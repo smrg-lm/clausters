@@ -122,27 +122,21 @@ class CommInterface(OscInterface):
         """Start the peer this carrier talks to — what `clausters.defs.Server.boot`
         calls on the instance it is called from.
 
-        The engine is in the browser, so starting it is not launching a process
-        but giving it somewhere to run: the page executes nothing until some
-        cell has an output, since the front end is served as a widget's module.
-        So this puts the engine's own cell on screen (`Bridge.start_audio_cell`)
-        — an empty box that draws nothing and only has to exist — and from then
-        on a synth sounds when it is created, as it does anywhere else.
+        The engine is in the browser, so starting it is not launching a
+        process, and it is not this call's to start either: the page runs
+        nothing until a cell has an output, and **which cell that is belongs to
+        whoever is writing the notebook**. So this checks rather than acts --
+        if nothing is showing the engine yet it says so, naming
+        `clausters_jupyter.audio`, and the first cell that appears delivers
+        whatever was waiting.
 
         It does nothing at all on the GUI channel, whose peer is the host
-        rather than the engine. On the audio channel it puts a cell up **every
-        time it is asked**, which is not the same as idempotent and is
-        deliberate: the kernel cannot see whether the last one is still on
-        screen. Re-running a notebook disposes its cells' views, and the
-        messages saying so queue behind the cell that is running (ipykernel
-        holds the shell channel), so during a second run this would otherwise
-        hand the engine a cell that no longer exists -- which is a notebook
-        that runs, draws, and is silent. Calling it twice in one cell is the
-        only way to get two boxes, and that is a thing you would have to write.
+        rather than the engine.
         """
         if self.channel == GUI_CHANNEL:
             return
-        self.link.start_audio_cell(asked=True)
+        if not self.link.showing():
+            self.link.wants_a_cell()
 
 
     def send_msg(self, target, addr, *args):

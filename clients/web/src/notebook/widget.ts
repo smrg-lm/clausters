@@ -594,8 +594,6 @@ function resumeOnGesture(engine: ClaustersServer): void {
  */
 interface Shared {
     runtime: Promise<Booted> | null;
-    /** Mounted canvases, counted so the audio can follow them (`heard`). */
-    views: number;
     /**
      * Packets for a runtime that is still coming up, in order.
      *
@@ -614,11 +612,21 @@ interface Shared {
      */
     toEngine: Uint8Array[];
     /**
-     * What a live view does when the runtime under it is freed: forget it, and
-     * ask the kernel to draw again. A view holds its `Booted` directly, so
-     * something has to tell it that reference is dead — see `engineQuit`.
+     * What a live view does when the runtime under it is freed: forget it. A
+     * view holds its `Booted` directly, so something has to tell it that
+     * reference is dead — see `freeRuntime`.
      */
     reboot: Set<() => void>;
+    /**
+     * What a live view does when a runtime comes up: take it, and draw again.
+     *
+     * It is a set rather than each view chaining its own `.then`, because the
+     * view that asks for a runtime is not always the view that needs one — a
+     * cell re-running after a quit boots it for every cell of the notebook,
+     * and the others would otherwise sit holding a stale frame until they were
+     * re-run too.
+     */
+    arrived: Set<(booted: Booted) => void>;
     /** Live models of this session, so the last one out can close it. */
     models: number;
     /** A teardown already scheduled, so a flurry of events costs only one. */
@@ -645,7 +653,8 @@ function shared(session: string): Shared {
     const scope = globalThis as unknown as Record<string, Record<string, Shared>>;
     scope[KEY] ??= {};
     scope[KEY][session] ??= {
-        runtime: null, views: 0, toEngine: [], reboot: new Set(), models: 0,
+        runtime: null, toEngine: [], reboot: new Set(), arrived: new Set(),
+        models: 0,
         closing: null, kernel: null, orphaned: false,
     };
     return scope[KEY][session];
@@ -764,33 +773,27 @@ function setStaged(value: Staged): void {
 }
 
 /**
- * Suspend the audio when nothing of this notebook is on screen, resume it when
- * something is again.
+ * **Why there is nothing here that follows the audio to the screen.**
  *
- * The engine lives on the page, not in a widget and not in the kernel, so
- * nothing about closing a notebook reaches it: the tab is still open, the
- * AudioContext is still running, and a synth started an hour ago keeps
- * sounding with no visible source. Counting mounted views is what ties the two
- * together — close the notebook and it goes quiet, reopen it and it comes
- * back, because the engine still holds what was playing.
+ * There was: the engine was suspended when no cell of the notebook was
+ * mounted and resumed when one was, so closing the notebook went quiet and
+ * reopening it came back. It reads well and it is the wrong model. A view is
+ * the most ephemeral thing in a notebook — a cell re-run disposes one, a
+ * cleared output disposes one, a closed tab disposes them all — while the
+ * kernel, which is what a notebook *is*, carries on. Tying the sound to views
+ * made reopening a tab start audio nobody asked to restart, and made a cell
+ * re-run a momentary silence.
  *
- * Deferred by a beat, because re-running a cell unmounts and remounts: without
- * that, every edit would drop the audio for a frame.
+ * What the widget libraries do is the split this now follows: `jupyter_rfb`
+ * keeps a synced flag of whether it has visible views and consults it to
+ * decide **whether to draw a frame** — never to decide what exists. Here the
+ * drawing gate is the same idea, and it is already in place per window: a view
+ * that unmounts detaches its def, and a def with no canvas is not rendered.
+ *
+ * So the sound follows the **kernel**: `/server_quit` stops it, a comm that
+ * closes (a kernel shut down) frees the whole runtime, and closing a tab does
+ * neither — exactly as a script whose terminal is hidden keeps playing.
  */
-function heard(session: string, delta: number): void {
-    const state = shared(session);
-    state.views += delta;
-    setTimeout(() => {
-        void state.runtime?.then(({ engine }) => {
-            if (engine === null) return;
-            // Both reject on a context that `closeSession` has already
-            // closed, which is a race this does not need to win: a session
-            // being torn down has nothing left to suspend.
-            const settled = state.views > 0 ? engine.resume() : engine.suspend();
-            void settled.catch(() => {});
-        });
-    }, 100);
-}
 
 /** Boot (or join) this session's runtime, and drain what waited for it. */
 function bootShared(
@@ -805,6 +808,8 @@ function bootShared(
         // session: the kernel is still there, and the next thing it sends
         // gets a new one (`freeRuntime`).
         booted.engine?.onQuit(() => freeRuntime(session));
+        // Every live view, not only the one that asked.
+        for (const take of [...state.arrived]) take(booted);
         // Whatever the kernel sent while this was coming up. Dropped rather
         // than held when there is no engine (the native backend sends nothing
         // here, but a queue that only grows is worse than one that empties).
@@ -836,6 +841,8 @@ export default {
         trackModel(session, model);
 
         let booted: Booted | null = null;
+        /** Whether this view has ever had a runtime (so a later one is a *re*boot). */
+        let drew = false;
         const pending: Uint8Array[] = [];
         const attached = new Set<number>();
 
@@ -987,8 +994,18 @@ export default {
         };
 
         const ready = (live: Booted) => {
+            if (booted === live) return;            // this view already has it
+            const again = booted === null && attached.size === 0 && drew;
             booted = live;
+            drew = true;
             shared(session).reboot.add(reset);
+            // A runtime that arrived *after* this view had drawn is a second
+            // one: the first was freed under it (a quit), and what this cell
+            // was showing lives in the kernel's journal. Asking for the replay
+            // is how a view re-renders from state, rather than keeping a
+            // picture of a host that is gone.
+            if (again) model.send({ ch: "ready", have: staged()?.digest ?? null });
+            shared(session).arrived.add(ready);
             live.client.onScaleChange(fit);
             fit();
             // The host's outbound events, and the engine's replies to the
@@ -1018,19 +1035,13 @@ export default {
             model.send({ ch: "ready", have: cached?.digest ?? null });
         }
 
-        heard(session, +1);
         // anywidget calls this when the view goes: the cell was re-run, its
-        // output cleared, or the notebook closed. The last one is why the
-        // audio is counted here at all.
+        // output cleared, or the notebook closed. What it takes away is this
+        // view's *drawing* — its canvases and its subscriptions — and nothing
+        // else: what exists follows the kernel, not the screen.
         return () => {
-            heard(session, -1);
-            // The kernel is told, because it cannot see this: a comm stays
-            // open with no view on it, and anything sent into one is dropped
-            // by the front end without a trace. It is the counterpart of the
-            // "ready" below -- that one says this cell is listening, this one
-            // says it stopped.
-            model.send({ ch: "gone" });
             shared(session).reboot.delete(reset);
+            shared(session).arrived.delete(ready);
             booted?.gui.removeEvent(up.gui);
             booted?.engine?.removeReply(up.server, booted.kernelPeer);
             for (const id of attached) booted?.gui.detach(id);

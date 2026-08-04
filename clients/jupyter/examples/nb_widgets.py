@@ -47,14 +47,14 @@ session = clausters_jupyter.current()
 server = session.server
 gui = session.gui()      # the in-page host the import installed
 
-# The engine is in the browser tab, so booting it is not launching a process:
+# The engine is in the browser tab, so starting it is not launching a process:
 # it is giving it a cell to run in, since the page executes nothing until some
-# cell has an output. That empty box below is it. From here a synth sounds when
-# it is created, as it does against any other server.
-#
-# `boot` returns the same handle; the assignment is what keeps the cell showing
-# the box alone, instead of the box and a repr under it.
-server = server.boot()
+# cell has an output. `audio()` is that cell -- an empty box that draws nothing
+# and only has to exist -- and it is *displayed* here, as the last expression,
+# the way every widget library hands you an object and lets the cell show it.
+# From here a synth sounds when it is created, as it does against any other
+# server.
+clausters_jupyter.audio()
 
 # %% [markdown]
 # ## Something to drive

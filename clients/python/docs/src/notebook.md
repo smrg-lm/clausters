@@ -89,13 +89,21 @@ itself. Its audio is its own — a separate `AudioContext` for the in-page
 backend — which browsers cap (Chrome at six), and that is the ceiling on how
 many sounding notebooks one tab holds.
 
-## The sound follows what is on screen
+## What a view decides, and what it does not
 
-The engine lives in the page, not in the kernel and not in a widget, so nothing
-about closing a notebook would otherwise reach it: a synth started an hour ago
-would keep sounding with no visible source. Instead the audio follows the
-cells — with nothing of the notebook displayed it is suspended, and it comes
-back when something is shown again, still holding what was playing.
+A **view** is the most ephemeral thing in a notebook: re-running a cell
+disposes one, clearing an output disposes one, closing the tab disposes them
+all — while the kernel, which is what a notebook *is*, carries on. So a view
+decides what is **drawn** and nothing else. A cell whose output is gone stops
+its window's frames, and that is the whole of it; the host, the engine and the
+sound follow the kernel.
+
+That is the same split the widget libraries make — `jupyter_rfb` keeps a synced
+flag of whether it has visible views and consults it to decide whether to draw
+a frame, never to decide what exists — and it is worth stating because the
+other model is so tempting: an engine that suspends when the notebook is not on
+screen sounds tidy, and it means reopening a tab starts audio nobody asked to
+restart, and a re-run of one cell is a hole in the sound.
 
 ## What lives as long as what
 
@@ -105,7 +113,9 @@ none of the obvious guesses is right:
 
 - **Closing the notebook's tab frees nothing**, and should not: JupyterLab
   leaves the kernel running, so reopening the tab reattaches to it and finds its
-  windows and its sound where they were.
+  windows and its sound where they were. It also does not *stop* anything —
+  a piece playing when you close the tab is still playing, exactly as a script
+  whose terminal you hid is still running. `server.quit()` is what stops it.
 - **Restarting the kernel silences it immediately** — a synth left running has
   nothing that could stop it once the kernel that knew its id is gone — but
   keeps the host until you come back. The first cell you run afterwards is what
@@ -124,22 +134,32 @@ session.gui().close_all()
 server.quit()
 ```
 
+Quitting the in-page engine stops the audio thread and discards what the server
+held — its defs, its buffers, its nodes. Nothing restarts it, so the page lets
+the whole runtime go and the *next* thing the notebook sends brings up a fresh
+one: running the cells again is what fills it, since the client sends its defs
+every time. You do not reload the tab.
+
 ## Sound needs a click
 
 A browser starts no audio until something in the page is clicked. Any click,
 key or touch anywhere in the notebook does it, once — but until then the engine
 runs silently, which looks exactly like a piece that has not started.
 
-What it does not need is a window. A synth sounds when it is created, here as
-anywhere; the engine simply needs *a* cell, because the page runs nothing at
-all until some cell has an output. So the first time a notebook has audio to
-send and nothing of it is on screen, it gives the engine a cell of its own — an
-empty box that draws nothing and only has to exist. The same cell can be asked
-for by hand, which is worth doing when you want it somewhere particular:
+What it does need is *a cell*, because the page runs nothing at all until some
+cell has an output — the front end is served as a widget's module, so with
+nothing displayed there is no comm, no wasm and no `AudioContext`. A window is
+one; a notebook that only sounds has none, and asks for the engine's own:
 
 ```python
 clausters_jupyter.audio()
 ```
+
+An empty box that draws nothing and only has to exist. **You display it**, as
+the last expression of a cell, the way every widget library hands you an object
+and lets the cell show it — this package puts no output in a notebook you did
+not ask it to write into. Send audio with nothing on screen and it does not
+appear by itself: the packet waits, and you are told, once, which line to add.
 
 ## A bound widget does not involve the kernel
 

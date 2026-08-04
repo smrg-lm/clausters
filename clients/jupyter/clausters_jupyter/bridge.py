@@ -25,6 +25,7 @@ all feed the one `CommInterface`, which is what the `GuiHost` reads.
 """
 
 import threading
+import warnings
 import uuid
 import weakref
 
@@ -67,6 +68,8 @@ class Bridge:
         #: engine lives in the page, so its packets need *a* cell open; a
         #: notebook that only plays has no window to ride along with.
         self._audio = None
+        #: whether `wants_a_cell` has already said so.
+        self._warned_no_cell = False
         #: The widgets whose module in the page has announced itself. A widget
         #: object exists from the moment its window is displayed, but nothing
         #: in the page is listening until it mounts and registers its handler,
@@ -227,58 +230,42 @@ class Bridge:
                            if w in self._ready), None)
         if widget is None:
             self._pending.append((channel, payload))
-            self.start_audio_cell()
+            self.wants_a_cell()
             return
         widget.send_packet(channel, payload)
 
-    def start_audio_cell(self, asked: bool = False):
-        """Put the engine's own cell on screen, because something needs it.
+    def wants_a_cell(self):
+        """Say, once, that the engine has nothing to run in.
 
-        **A synth sounds when it is created**, and nothing about a window
-        should come into that. The engine, though, runs in the *page*, and the
-        page runs nothing at all until some cell has an output: anywidget
-        serves the module as a widget's, so with no widget displayed there is
-        no comm, no wasm and no `AudioContext` — the packet has nowhere to go
-        and waits in `_pending`.
+        **The page runs nothing until some cell has an output.** anywidget
+        serves the front end as a widget's module, so with no widget displayed
+        there is no comm, no wasm and no ``AudioContext``: a synth created now
+        has nowhere to sound, and its packet waits in ``_pending`` for the
+        first cell that appears.
 
-        The way out is not to make the caller display something. It is to
-        display the one cell whose only job is to exist — the same cell
-        `clausters_jupyter.audio` hands over by hand — the first time the
-        notebook has audio to send. So the cell that starts a synth is the
-        cell that starts sounding, which is what the client's semantics say
-        everywhere else.
+        This used to `display` that cell itself, which is the tempting move and
+        the wrong one. **A library does not put outputs in a notebook nobody
+        asked to write into**: the widget libraries hand you an object and let
+        the cell display it -- `ipywidgets`' whole surface is objects, and
+        `jupyter_rfb` reserves its own `display` for an output context. Doing
+        it from here meant an output could land in whatever cell the kernel's
+        current message happened to belong to, which on a comm message is some
+        cell that finished long ago.
 
-        Only from the kernel's own thread and only inside a cell: `display`
-        writes to whatever cell is executing, and a routine sending from the
-        clock thread has none. There the packet waits, and the next displayed
-        anything delivers it.
-
-        ``asked`` is the difference between a caller saying ``server.boot()``
-        and this package deciding a packet needs somewhere to go. The guard
-        below is for the second: it keeps "Run All" from putting an empty box
-        under every cell that starts a synth right after opening a window. A
-        caller who *asks* gets a cell, because the one state where the guard is
-        wrong is the one where asking matters — a notebook being run a second
-        time, whose cells the kernel has not yet been told are gone. Those
-        messages queue behind the running cell (ipykernel holds the shell),
-        so during the re-run of the first cell this still believes the *first*
-        run's cells are on screen.
+        So it says so instead, and names the one line that fixes it. Once per
+        bridge: a notebook that never displays anything would otherwise repeat
+        it per packet.
         """
-        # `showing` and not "nothing is ready": a window already displayed
-        # whose module has not announced itself yet needs no second cell -- its
-        # own will deliver this the moment it mounts. Asking the narrower
-        # question would put an empty box under every cell that starts a synth
-        # right after opening a window, which "Run All" does every time.
-        if not asked and self.showing():
+        if self._warned_no_cell:
             return
-        display = _cell_display()
-        if display is None:
-            return
-        if asked:
-            # An explicit ask gets a *live* cell, not the memo of one whose
-            # view may already be gone.
-            self._audio = None
-        display(self.audio_widget())
+        self._warned_no_cell = True
+        warnings.warn(
+            "clausters: nothing in this notebook is showing the audio engine, "
+            "so it has not started and what you just sent is waiting. The "
+            "engine runs in the page, and the page runs nothing until a cell "
+            "has an output: put `clausters_jupyter.audio()` in a cell (or "
+            "display any window) and it will sound.",
+            RuntimeWarning, stacklevel=2)
 
     def _drain_audio(self, widget):
         """Hand the first widget to appear whatever the audio leg could not
@@ -309,51 +296,6 @@ class Bridge:
         if self._gui is None or self._gui.journal is None:
             return None
         return self._gui.journal.root_of(packet)
-
-
-def _cell_display():
-    """IPython's `display`, but only when a cell is genuinely running.
-
-    Three conditions, and each rules out a way of writing into a notebook
-    nobody asked to be written into.
-
-    Outside a kernel (a test, a plain REPL) there is no cell to draw in at all.
-    Off the kernel's thread — a routine on the clock's — `display` would
-    attribute its output to whichever cell happens to be executing, which is
-    nobody's intent; those packets wait instead, and the notebook's next output
-    delivers them.
-
-    And on the kernel's own thread, **not every moment is a cell**: a comm
-    message is handled there too, between executions, and `display` called
-    then attributes its output to the parent of *that* message — a widget's
-    comm, whose parent is some cell that finished long ago. The output lands in
-    it. Nothing this package does may edit a notebook the reader is not running,
-    so the parent message has to be an ``execute_request`` and nothing else.
-    """
-    if threading.current_thread() is not threading.main_thread():
-        return None
-    try:
-        from IPython import get_ipython
-        from IPython.display import display
-    except ImportError:
-        return None
-    shell = get_ipython()
-    if shell is None:
-        return None
-    kernel = getattr(shell, "kernel", None)
-    if kernel is None:
-        return None
-    try:
-        parent = kernel.get_parent("shell")
-    except Exception:                       # noqa: BLE001  (an older kernel)
-        parent = getattr(kernel, "_parent_header", None)
-    if not isinstance(parent, dict):
-        return None
-    if parent.get("header", {}).get("msg_type") != "execute_request":
-        return None
-    return display
-
-
 def _frees(packet: bytes, root: int) -> bool:
     """Whether ``packet`` is the ``/gui_free`` of ``root`` itself, as opposed
     to one of a widget inside it (which leaves the window standing)."""
