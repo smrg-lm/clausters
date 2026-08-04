@@ -77,7 +77,7 @@ The repo-wide posture — minimal, user-space, reproducible — applied to the J
 
 - **node LTS under `~/.local`, no sudo** — the same pattern as libfaust. The recipe (kept current in `clients/web/BUILD.md` once W0 lands): download the `linux-x64.tar.xz` of the newest LTS from nodejs.org/dist, verify against `SHASUMS256.txt`, extract to `~/.local/lib/`, symlink the versioned dir to `~/.local/lib/node`, and symlink `node`/`npm`/`npx`/`corepack` into `~/.local/bin` (already on `PATH`). Installed 2026-07-18: v24.18.0 (npm 11.16.0).
 - **`typescript` is the only package dependency** (dev-only; v7, the native compiler — a single package, no transitive deps; `@types/node` rides along for the test files, type declarations only). `tsc` does both jobs: **type-checking** (`tsconfig.json`, src + tests, no emit) and **emitting** (`tsconfig.build.json`: `src/` → `dist/` module-per-module, with declarations and source/declaration maps — the browser interface is JS with a type map). Imports between our modules are written with `.ts` extensions and rewritten on emit (`rewriteRelativeImportExtensions`), which is what lets node run the sources directly; the output is the same plain servable ESM the B4 modules were. The dev loop is `tsc -p tsconfig.build.json --watch` + `python3 -m http.server`.
-- **No bundler.** Nothing here needs one: the package ships unbundled, the wasm bundles and the worklet module must stay static assets anyway (`AudioWorklet.addModule` and bundlers are a known friction), and the browser loads bare ESM natively. Evaluated and not adopted: **vite** (a dev server with HMR plus rollup/esbuild underneath — tens of MB of dev machinery whose two roles are already covered by `http.server` and `tsc --watch`; revisit only if HMR-grade DX is genuinely missed), **esbuild** (only earns its place when bundling), **vitest** (pulls vite in as its platform).
+- **No bundler for the package.** Nothing a page loads needs one: the package ships unbundled, the wasm bundles and the worklet module must stay static assets anyway (`AudioWorklet.addModule` and bundlers are a known friction), and the browser loads bare ESM natively. Evaluated and not adopted: **vite** (a dev server with HMR plus rollup/esbuild underneath — tens of MB of dev machinery whose two roles are already covered by `http.server` and `tsc --watch`; revisit only if HMR-grade DX is genuinely missed), **vitest** (pulls vite in as its platform). **`esbuild` was adopted 2026-08-04, for exactly one artifact** — the condition this bullet always named, "only earns its place when bundling", turned out to be met by one carrier: the Jupyter front end is handed the client over a kernel comm and imports it from `blob:` URLs, which have no path, so a module graph with cycles cannot be loaded at all there (the client has three). `build.sh` bundles `src/notebook/client.ts` into `dist/notebook-client.js`; `dist/` is otherwise still the `src/` tree emitted 1:1, and nothing a served page loads goes through a bundler. Rationale in `docs/decisions.md`.
 - **Tests: `node:test`, built into node — zero dependencies.** Node runs `.ts` directly (native type stripping, default since 23.6), so pure-logic tests (codec parity, clock arithmetic, builders) run straight from source with `node --test`, no compile step, no runner package. Browser-only behavior (audio, canvas, the elements) keeps the B-track posture: headless-Chrome smoke scripts with the access-log beacon.
 - `typedoc` (the W5 API-reference generator) gets evaluated under this same lens when W5 starts.
 - The **Emscripten SDK** (`emcc`, user-space via `emsdk`) is the one heavy addition this lens admits, and it is **W7's**, not the toolchain's baseline: it builds `libfaust-wasm` so a Faust def compiles in the page (`third_party/BUILD-FAUST.md`, "WebAssembly parts" — documented, never built here). It stays out of the JS toolchain proper — nothing in `src/` or the test loop touches it, `build.sh` only stages its output as static assets, and the slim run-time entry never loads them. Evaluated under the same lens when W7 starts, decision recorded then.
@@ -1521,6 +1521,46 @@ named and yielding to a registered host. Example: `examples/scoping.html`, the
 port of `scoping.py` — where the Python one is a timed tour that opens each
 window alone, the page puts the three side by side and leaves the knobs under
 the reader's hand. Book: the verbs chapter is `play, plot, scope, render` now.
+
+### ✅ W25 - The notebook front end is a client of the package *(done 2026-08-04)*
+
+The half of the `Session` port that lives in the browser. W18 gave the page a
+`Session`; `src/notebook/widget.ts` was written before it and had never used
+it, so a notebook's page held a hand-wired host and engine and tore them down
+in an order of its own — a second implementation of what the client does, of
+the kind nothing type-checks.
+
+- **`src/notebook/client.ts`** — the entry the front end is written against,
+  and the list of what it may use. The widget now boots through `newGuiHost`,
+  starts the engine through `engine()`, holds a `Session` that owns both, and
+  feeds the kernel's packets in through the host client's own carrier, so the
+  canvas policy (attach, and detach on `/gui_free`) is the client's. Teardown
+  is `session.close()`. The hand-rolled OSC id walk went with it: the front end
+  has the codec now.
+- **Bundled, and only this one file** — `dist/notebook-client.js` (esbuild,
+  from `build.sh`). A blob URL has no path, so a module graph with cycles
+  cannot be imported over the comm at all; see the tooling section and
+  `docs/decisions.md`. The worklet and the clock's tick worker stay modules of
+  their own, being loaded by URL into scopes of their own — hence
+  `setTickWorkerUrl`, and the page-timer fallback for a client that cannot name
+  it.
+- **The seams it needed, all of them general**: `newGuiHost({wasm})` (a host
+  booted on bytes rather than on a URL beside its glue), `newGuiHost({engine:
+  null})` (a host whose audio leg is a native server, which is what the
+  `native` backend's page holds), `ClaustersGui.close()` and an `attach` that
+  is idempotent per def and remembers on the host, `Session.adoptGui(host, {
+  page })`, and `Session.page({ engine, own: true })` meaning the engine is the
+  session's to close. Two leaks closed on the way: a session with its own
+  engine used to leave its wasm host and GPU device behind on `close()`, and
+  `guiHost()`'s drain interval had no disposer.
+- **The id share** (`IdShare`, both clients): the kernel and the page author
+  against one engine, so they take one half of every client-side space each —
+  the kernel index 0, the page index 1. Without it both allocators start at the
+  same base.
+- Tests: `tests/share.test.ts` and `clients/python/tests/test_id_share.py` (the
+  arithmetic, assertion for assertion), the adoption test in
+  `tests/session.test.ts`, and `tests/notebook.html`, which is what proves the
+  front end boots at all.
 
 ### W24 - The completeness pass
 

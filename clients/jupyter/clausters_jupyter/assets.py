@@ -18,8 +18,8 @@ which is what wasm-bindgen's ``init`` takes anyway (``__wbg_init(bytes)``), so
 nothing in the page ever fetches a URL.
 
 That costs one transfer of a few megabytes per kernel, which is why `bundle`
-sends only what the chosen backend needs: the GUI host always, the engine only
-for the in-page one.
+sends only what the chosen backend needs: the client and the GUI host always,
+the engine only for the in-page one.
 """
 
 import hashlib
@@ -31,30 +31,37 @@ __all__ = ["dist_dir", "bundle", "digest", "GUI_ASSETS", "ENGINE_ASSETS"]
 #: The vendored copy, staged by ``scripts/refresh-web.sh``.
 _VENDORED = pathlib.Path(__file__).parent / "_web"
 
-#: Relative to `dist_dir`: what any backend needs — the host's glue and wasm,
-#: the shared core, and the page-side driver the widget's module imports.
+#: Relative to `dist_dir`: what any backend needs — the client itself as one
+#: bundled module, and the two wasm modules it is handed the bytes of.
+#:
+#: The client travels **bundled** (`dist/notebook-client.js`, written by
+#: `clients/web/build.sh`) rather than as the module tree a served page loads.
+#: The reason is the carrier: a module that arrives over the comm is imported
+#: from a blob URL, a blob URL has no path, and so every relative import has to
+#: be rewritten to the blob URL of what it names — which works for a tree and
+#: cannot work for a cycle, since rewriting A's import of B needs B's URL. The
+#: client has three ordinary ESM cycles. One file has none, and carries only
+#: the part of the package the front end uses.
 GUI_ASSETS = (
-    "gui-host/clausters_gui.js",
+    "notebook-client.js",
+    # The clock's wake-up worker. Not in the bundle and it cannot be: a worker
+    # is loaded by URL into a scope of its own, so it stays a module, and the
+    # front end tells the client where it staged it.
+    "base/tick-worker.js",
     "gui-host/clausters_gui_bg.wasm",
-    "core/clausters_core_web.js",
     "core/clausters_core_web_bg.wasm",
-    # The canvas measuring the widget shares with a served page. It rides the
-    # comm like everything else rather than being imported: anywidget serves
-    # the widget's own module and nothing beside it, so a static import of a
-    # sibling fails to resolve in the page.
-    "gui/canvasbox.js",
 )
 
-#: Extra for ``backend="page"``: the server compiled to wasm, the worklet it
-#: runs in and the loader that puts the two together. The worklet is loaded
-#: into the audio thread's own scope by URL, so it is a blob like the rest —
-#: and it imports the glue and the shim, which is why they ride too.
+#: Extra for ``backend="page"``: the server compiled to wasm, and the worklet
+#: that runs it. The worklet is **not** in the bundle and cannot be: it is
+#: loaded by URL into the audio thread's own scope, so it stays a module of its
+#: own — and it imports the glue and the shim, which is why those ride too.
+#: That little graph has no cycles, so the blob rewrite handles it.
 ENGINE_ASSETS = (
     "engine/clausters_web.js",
     "engine/clausters_web_bg.wasm",
     "engine/worklet.js",
     "engine/worklet-shim.js",
-    "engine/loader.js",
 )
 
 
@@ -87,8 +94,10 @@ def dist_dir() -> pathlib.Path:
 def bundle(*, engine: bool) -> dict:
     """The assets to hand the front end: relative path -> bytes.
 
-    ``engine`` includes the in-page server; a native backend does not need it
-    and does not pay for it.
+    ``engine`` includes the in-page server's wasm and its worklet; a native
+    backend does not need them and does not pay for them. The client bundle
+    travels either way — it is what the front end is written against, and its
+    engine half simply never boots anything under a native backend.
     """
     root = dist_dir()
     names = GUI_ASSETS + (ENGINE_ASSETS if engine else ())

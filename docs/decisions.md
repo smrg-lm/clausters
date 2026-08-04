@@ -4514,3 +4514,51 @@ outbound one — and `ClientId::Ring` becomes `ClientId::Ring(u32)`.
 Versioning: the framing changed, so `ABI_VERSION` moves 6 → 7 and, by the
 linkage rule, drags the SemVer breaking tier with it. Nothing else about the
 segment moved.
+
+## The notebook front end is a client, and one bundled file is what makes that possible
+
+The Jupyter front end used to be a small reimplementation. It booted the wasm
+GUI host with its own copy of `gui/page.ts`'s boot, started the engine with its
+own copy of the loader call, wired the audio leg by hand, read a `/gui_def`'s id
+by counting bytes past the type tags because it had no codec, and tore the pair
+down in an order it had worked out itself. None of that was wrong, and all of it
+was a second implementation of things the client already does — the kind that
+drifts silently, since nothing type-checks a page against a package.
+
+It is now a client of the package: `newGuiHost` brings the host up, `engine()`
+the engine, a `Session` owns the two and `close()` is the whole teardown, and a
+packet from the kernel enters through the host client's own carrier, which
+attaches the canvas and detaches it on `/gui_free`. What the front end still
+supplies is only what is genuinely the notebook's — which canvas a window draws
+into, and the comm the kernel authors over.
+
+**Why that needed a bundler.** anywidget serves the widget's one module and
+nothing beside it, so the package cannot be imported by URL: it arrives over the
+kernel's comm as bytes, and the page turns each module into a `blob:` URL. A
+blob URL has no path, so a module loaded from one cannot resolve a relative
+specifier — every import has to be rewritten to the blob URL of the module it
+names, which means the blobs are made leaf-first. That works for a tree and
+**cannot work for a cycle**: to rewrite A's import of B you need B's URL, and in
+a cycle it does not exist yet. The client has three ordinary ESM cycles
+(`base/main` ↔ `environment` ↔ `rand`, `clock` ↔ `stream` ↔ `main`,
+`defs/server` ↔ `render` ↔ `session`), all of them fine anywhere a URL has a
+path.
+
+So `build.sh` bundles one entry, `src/notebook/client.ts`, into
+`dist/notebook-client.js` with esbuild. The alternatives were worse in ways
+worth naming: breaking the three cycles would be restructuring the client's core
+to satisfy a transport, and the cycles are legitimate (the ambient registry is
+one of them); an import map cannot help, because relative specifiers are
+resolved before a map applies; a service worker cannot be registered from a
+blob. The bundle also costs less than the tree it replaces — 160 KB against the
+700 KB of modules the front end would otherwise be handed, of which it uses a
+fraction.
+
+**The bundler is scoped to that one file, deliberately.** `dist/` stays the
+`src/` tree emitted 1:1, because what a page imports should be what was
+written; `notebook-client.js` sits beside it as the one artifact whose carrier
+cannot load a tree. Two things do not fit in a bundle and stay modules of their
+own, both because they are loaded by URL into a scope of their own: the audio
+worklet, and the clock's tick worker — which is why `setTickWorkerUrl` exists.
+A client that cannot name that worker falls back to the page timer and says so
+once, rather than throwing on `new URL` as it did the first time this was tried.

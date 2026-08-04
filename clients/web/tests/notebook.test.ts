@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-    asBytes, assetOrder, definedId, freedId, importsOf, resolvePath,
+    asBytes, assetOrder, importsOf, resolvePath,
     rewriteImports,
 } from "../src/notebook/widget.ts";
 
@@ -135,40 +135,4 @@ test("the widget module has no value imports of its own", async () => {
     const values = statics.filter(([, clause]) => !clause.startsWith("type"));
     assert.deepEqual(values.map(([, , spec]) => spec), [],
         "these must become dynamic imports of a staged asset");
-});
-
-/** One OSC message, the way `_osclib.message` builds it. */
-function osc(address: string, tags: string, ...ints: number[]): Uint8Array {
-    const pad = (n: number) => (n + 4) & ~3;
-    const head = pad(address.length);
-    const tagged = pad(tags.length);
-    const out = new Uint8Array(head + tagged + ints.length * 4);
-    out.set(new TextEncoder().encode(address), 0);
-    out.set(new TextEncoder().encode(tags), head);
-    const view = new DataView(out.buffer);
-    ints.forEach((v, i) => view.setInt32(head + tagged + i * 4, v, false));
-    return out;
-}
-
-test("a /gui_def id is read past the tags, whatever their length", () => {
-    // ",is" pads to 4 and puts the id at 16; ",isb" -- the same message
-    // carrying a blob -- pads to 8 and puts it at 20. A fixed offset reads the
-    // tail of the tag string instead: zeros, i.e. a plausible-looking def 0,
-    // which then takes the canvas the real window wanted.
-    assert.equal(definedId(osc("/gui_def", ",is", 1001)), 1001);
-    assert.equal(definedId(osc("/gui_def", ",isb", 1001)), 1001);
-    assert.equal(definedId(osc("/gui_def", ",isbb", 1001)), 1001);
-});
-
-test("only a /gui_def names a window", () => {
-    assert.equal(definedId(osc("/gui_set", ",if", 1001)), undefined);
-    assert.equal(definedId(osc("/gui_free", ",i", 1001)), undefined);
-});
-
-test("a /gui_free names the window whose cell is emptied", () => {
-    // The cell removes its canvas on this one; mistaking a /gui_def for it
-    // would empty the cell the moment it drew.
-    assert.equal(freedId(osc("/gui_free", ",i", 1000)), 1000);
-    assert.equal(freedId(osc("/gui_def", ",is", 1000)), undefined);
-    assert.equal(definedId(osc("/gui_free", ",i", 1000)), undefined);
 });

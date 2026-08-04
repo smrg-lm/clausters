@@ -99,20 +99,20 @@
       };
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-      // The list `clausters_jupyter.assets` sends for backend="page", in its
+      // What `clausters_jupyter.assets` sends for backend="page", in its
       // order. Kept here by hand because the page has no Python to ask; a name
-      // that drifts fails this loudly, which is the point.
+      // that drifts fails this loudly, which is the point. It is short because
+      // the client arrives bundled -- one module, since a blob URL cannot
+      // express the package's import cycles (see src/notebook/client.ts).
       const ASSETS = [
-        "gui-host/clausters_gui.js",
+        "notebook-client.js",
+        "base/tick-worker.js",
         "gui-host/clausters_gui_bg.wasm",
-        "core/clausters_core_web.js",
         "core/clausters_core_web_bg.wasm",
-        "gui/canvasbox.js",
         "engine/clausters_web.js",
         "engine/clausters_web_bg.wasm",
         "engine/worklet.js",
         "engine/worklet-shim.js",
-        "engine/loader.js",
       ];
 
       async function fetchAssets() {

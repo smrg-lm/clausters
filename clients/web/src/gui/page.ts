@@ -110,8 +110,13 @@ export interface ClaustersGui {
      * `guiHost`, its own under `newGuiHost`. Exposed because a caller holding
      * an instance needs exactly this to open a `Server` on it, and asking for
      * it again by name would hand back the page's.
+     *
+     * `null` for a host built with `engine: null`: one whose audio leg is not
+     * an in-page engine at all but a **native** server over its `--ws` port
+     * (`bridge.connect_server(url)`), which is what a notebook cell drawing a
+     * server that runs on the kernel's machine holds.
      */
-    engine: ClaustersServer;
+    engine: ClaustersServer | null;
     /**
      * Releases this host: its wasm instance, its GPU device, its event drain.
      * The engine is **not** closed — a host is one client of it, and the page
@@ -165,17 +170,23 @@ export function guiHost(): Promise<ClaustersGui> {
  * with `bridge.close()`.
  */
 export async function newGuiHost(
-    options: { engine?: ClaustersServer; wasm?: BufferSource } = {},
+    options: { engine?: ClaustersServer | null; wasm?: BufferSource } = {},
 ): Promise<ClaustersGui> {
-    return boot(options.engine ?? await engineInstance(), options.wasm);
+    // `undefined` means "one of my own"; `null` means "none, I will wire the
+    // audio leg myself" — the two are not the same wish, and only the explicit
+    // null keeps this from starting an AudioContext the caller does not want.
+    const audio = options.engine === null
+        ? null
+        : options.engine ?? await engineInstance();
+    return boot(audio, options.wasm);
 }
 
 async function boot(
-    audio?: ClaustersServer,
+    audio?: ClaustersServer | null,
     wasm?: BufferSource,
 ): Promise<ClaustersGui> {
     const { default: init, start } = await import("../gui-host/clausters_gui.js");
-    const engine = audio ?? await server();
+    const engine = audio === null ? null : audio ?? await server();
     // With no bytes, wasm-bindgen locates the `.wasm` next to its glue. That
     // is right for a served page and impossible for a caller whose modules
     // came over a wire and live at blob URLs, where "next to" names nothing —
@@ -203,9 +214,14 @@ async function boot(
     // and the server keeps one `/bus_stream` subscription per client: sharing a
     // tag is what used to make the two take the stream from each other, leaving
     // the host's meters frozen until a widget was added or removed.
-    const peer = engine.claimPeer();
-    engine.addReply((bytes) => bridge.server_reply(bytes), peer);
-    bridge.connect_page((bytes: Uint8Array) => engine.send(bytes, peer));
+    //
+    // A host with no engine has no leg to wire here: its caller connects it to
+    // a native server instead, which is the one other thing that end can be.
+    if (engine !== null) {
+        const peer = engine.claimPeer();
+        engine.addReply((bytes) => bridge.server_reply(bytes), peer);
+        bridge.connect_page((bytes: Uint8Array) => engine.send(bytes, peer));
+    }
 
     // Drain the host's outbound events to the page's listeners.
     const listeners = new Set<EventListener>();

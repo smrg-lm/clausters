@@ -52,6 +52,7 @@ whose meters never move.
 import dataclasses
 
 from clausters import Session, gui as gui_module
+from clausters.base import IdShare
 from clausters.defs import Server, ServerOptions
 
 from . import formatters
@@ -65,6 +66,17 @@ __all__ = ["notebook", "current", "audio"]
 #: backend's host opens its audio leg here, from the *browser*, so the two ends
 #: have to agree on a number nobody typed.
 DEFAULT_WS_PORT = 57120
+
+#: The kernel's half of the id space, the page holding the other.
+#:
+#: Both ends author against one engine here -- the kernel sends the defs and
+#: the nodes over its comm, and the page holds a `clausters.Session` on the
+#: very same in-page engine -- so their allocators would otherwise start at the
+#: same base and hand out the same first id. The split needs no agreement
+#: beyond the index each side is given: the kernel takes 0, and the page's
+#: front end takes 1 (`PAGE_SHARE` in `notebook/widget.ts`). It costs half the
+#: range of each space, which is thousands of live nodes either way.
+KERNEL_SHARE = IdShare(0, 2)
 
 #: The session `notebook` last built, so a second call is a no-op rather than a
 #: second host over the same page.
@@ -163,7 +175,11 @@ def notebook(backend: str = "page", *, width: int = 480, height: int = 420,
     bridge = Bridge(lambda: ClaustersWidget(
         engine=engine, server_url=server_url, session=bridge.session,
         width=width, height=height), engine=engine)
-    host = gui_module.GuiHost(interface=bridge.carrier())
+    # The page holds a host client of its own over the same wasm host, so the
+    # widget ids are split even under the native backend, where the audio ids
+    # are not (there the kernel's server is a process the page never authors
+    # against).
+    host = gui_module.GuiHost(interface=bridge.carrier(), share=KERNEL_SHARE)
     # The page shares no filesystem with the kernel, so a bulk payload cannot
     # ride as a path the host maps -- it travels as a blob beside the message.
     # With a remote kernel this is not a nicety but the only truth available.
@@ -172,7 +188,8 @@ def notebook(backend: str = "page", *, width: int = 480, height: int = 420,
     host.local_files = False
 
     if server is None:
-        server = Server(interface=bridge.carrier(SERVER_CHANNEL))
+        server = Server(interface=bridge.carrier(SERVER_CHANNEL),
+                        share=KERNEL_SHARE)
 
     session = Session(server, **session_kw)
     session.adopt_gui(host)               # the host is built; nothing to boot

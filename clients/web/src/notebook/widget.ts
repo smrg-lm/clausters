@@ -3,22 +3,33 @@
 // This module is loaded by anywidget as the widget's `_esm`, and it is the one
 // browser artifact of the `clausters-jupyter` Python package. Its job is small
 // and entirely about *carrying*: announce that the cell's output exists, take
-// the package's assets over the comm, boot the wasm GUI host on them, and then
-// move OSC packets in both directions. It decides nothing about what to draw.
+// the package's assets over the comm, open a `Session` on them, and then move
+// OSC packets in both directions. It decides nothing about what to draw.
+//
+// **It is a client of this package, not a copy of it.** The client arrives
+// with the assets (`./client.ts`, bundled), so the host comes up through
+// `newGuiHost`,
+// the engine through `engine()`, and what owns the pair per notebook is a
+// `Session` — the same handle a served page holds. This module supplies only
+// what is genuinely the notebook's: which canvas a window draws into, and the
+// comm the kernel authors over. Everything it used to do by hand beside that
+// (booting the wasm, wiring the audio leg, tearing the two down in the right
+// order, reading an id out of a packet by counting bytes) is the client's, and
+// is done here by calling it.
 //
 // **Why the assets arrive over the comm.** anywidget serves this module and
 // nothing beside it, and a remote kernel (JupyterHub, Colab, VS Code) has no
 // static route to add the rest to. So the Python side sends the built `dist/`
 // as binary buffers and this module turns them into blob URLs — which is also
-// why the imports below are dynamic. wasm-bindgen's `init` takes bytes
-// directly, so no `.wasm` is ever fetched from a URL either.
+// why the imports below are dynamic. The wasm arrives as bytes, which is what
+// wasm-bindgen's `init` takes anyway, so no `.wasm` is ever fetched by URL.
 //
 // **Why the module text is rewritten.** A module loaded from a blob URL
 // resolves its relative imports against the blob's origin, where nothing
-// lives, so `clausters_gui.js`'s own imports would fail. Before each blob is
-// made, its import specifiers are resolved against the *name* the asset came
-// with and swapped for the blob URL of that asset. Blobs are therefore made
-// leaf-first, which `assetOrder` fixes.
+// lives, so the worklet's own imports would fail. Before each blob is made, its
+// import specifiers are resolved against the *name* the asset came with and
+// swapped for the blob URL of that asset. Blobs are therefore made leaf-first,
+// which `assetOrder` fixes.
 //
 // **Why "ready" is announced rather than awaited.** A cell's output renders
 // after the cell's code has run, so by the time this module executes the
@@ -27,24 +38,27 @@
 // replay. The same message is what rebuilds the view after a page reload or a
 // moved output, so there is one path, not a special case.
 
-import type { CanvasBox } from "../gui/canvasbox.ts";
-
-/**
- * The two clients this notebook's engine serves, by the tag their ring frames
- * carry: the GUI host in the page, and the kernel's `Server` at the far end of
- * the comm. The server keeps one `/bus_stream` subscription per client, so
- * these must differ — sharing a tag is what used to make a meter and a script
- * reading a bus take the stream from each other. Fixed rather than claimed
- * because each notebook boots an engine of its own, so there is nobody else to
- * collide with (see `docs/ipc.md`).
- */
-const GUI_PEER = 1;
-const KERNEL_PEER = 2;
-
 // Type-only, and that is load-bearing: anywidget serves this module and
 // nothing beside it, so a *value* import of a sibling is a specifier the page
-// cannot resolve. Everything this module runs arrives over the comm and is
-// imported from a blob URL, the measuring helpers included.
+// cannot resolve. `Client` is `./client.ts` — the entry this front end is
+// written against, which arrives bundled — as a type, which costs nothing at
+// run time and types the one dynamic import everything else comes from.
+type Client = typeof import("./client.ts");
+type ClaustersGui = import("./client.ts").ClaustersGui;
+type ClaustersServer = import("./client.ts").ClaustersServer;
+type Session = InstanceType<Client["Session"]>;
+type GuiHostClient = InstanceType<Client["GuiHost"]>;
+
+/**
+ * The share of the id space this page takes, the kernel holding the other.
+ *
+ * Both ends author against one engine — the kernel sends the defs and the
+ * nodes, the page holds a `Session` on the same engine — and their allocators
+ * would otherwise start at the same base and hand out the same first id. The
+ * split is by arithmetic and needs no agreement beyond the index each side is
+ * given: the kernel is 0 (`clausters_jupyter.session`), the page is 1.
+ */
+const PAGE_SHARE = { index: 1, of: 2 };
 
 /** The two peers behind one comm, matching `clausters_jupyter.carrier`. */
 const GUI = "gui";
@@ -206,8 +220,8 @@ function scheduleClose(session: string): void {
  * question, and `orphan` is the one that keeps it open.
  */
 function silence(session: string): void {
-    void shared(session).engine?.then(
-        (engine) => engine?.suspend().catch(() => {}));
+    void shared(session).runtime?.then(
+        ({ engine }) => engine?.suspend().catch(() => {}));
 }
 
 /**
@@ -374,103 +388,144 @@ function stageAssets(
 }
 
 /**
- * Boot the wasm GUI host on staged assets and return the page-side surface.
+ * What one notebook holds in this page, once its assets have arrived.
  *
- * This is the notebook's own small copy of what `gui/page.ts` does for a
- * served page: the same `GuiBridge`, started the same way, but on modules that
- * came over the comm. It stays here rather than being folded into `page.ts`
- * because that function's boot path also starts the in-page engine and appends
- * a canvas to `document.body`, neither of which a cell wants.
+ * Everything here is the client's own: the package imported from blob URLs,
+ * the host `newGuiHost` booted on the host wasm, the engine `engine()` booted
+ * on the engine wasm, and the `Session` that owns the two. What this module
+ * adds is the last field — the tag the kernel's packets travel under, which is
+ * the one client of this engine that lives in another process.
  */
-async function bootHost(
+interface Booted {
+    client: Client;
+    gui: ClaustersGui;
+    /** The host client the kernel's packets are fed through. */
+    host: GuiHostClient;
+    /** `null` under the native backend: the audio is on the kernel's machine. */
+    engine: ClaustersServer | null;
+    /** `null` under the native backend, which gives this page no server. */
+    session: Session | null;
+    /** The kernel's client tag on this engine (`-1` when there is none). */
+    kernelPeer: number;
+}
+
+/**
+ * Bring one notebook's runtime up on staged assets.
+ *
+ * The whole of it is calls into the client, which is the point: a served page
+ * boots the same host through the same `newGuiHost` and holds the same
+ * `Session`. Two things are the notebook's own and are passed in rather than
+ * discovered — the wasm arrives as *bytes* (a blob URL has no "next to the
+ * glue" to look in), and the engine is booted from the URLs the assets were
+ * staged at.
+ *
+ * The two backends differ here and nowhere else. With the engine's assets
+ * present the page holds an engine and a `Session` on it; without them the
+ * host's audio leg is opened to a native server's `--ws` port instead, and
+ * this page has no server of its own to hold a session over — the kernel's
+ * server is a process on another machine.
+ */
+async function bootRuntime(
     urls: Map<string, string>,
     wasm: Map<string, Uint8Array>,
+    serverUrl: string,
 ): Promise<Booted> {
-    const glue = urls.get("gui-host/clausters_gui.js");
-    const binary = wasm.get("gui-host/clausters_gui_bg.wasm");
-    const measuring = urls.get("gui/canvasbox.js");
-    if (glue === undefined || binary === undefined || measuring === undefined) {
-        throw new Error("the GUI host's assets did not arrive");
+    const clientUrl = urls.get("notebook-client.js");
+    const hostWasm = wasm.get("gui-host/clausters_gui_bg.wasm");
+    const coreWasm = wasm.get("core/clausters_core_web_bg.wasm");
+    if (clientUrl === undefined || hostWasm === undefined || coreWasm === undefined) {
+        throw new Error("the client's assets did not arrive");
     }
-    const measure = (await import(/* @vite-ignore */ measuring)) as Measuring;
-    const mod = (await import(/* @vite-ignore */ glue)) as {
-        default: (init: { module_or_path: Uint8Array }) => Promise<unknown>;
-        start: () => GuiBridgeLike;
-    };
-    // The single-object form; passing the bytes bare is the deprecated one.
-    await mod.default({ module_or_path: binary });
-    const bridge = mod.start();
-    console.info("clausters: GUI host up in this page");
+    const client = (await import(/* @vite-ignore */ clientUrl)) as Client;
+    // The codec, from the bytes that came with it — every decode below, and
+    // everything the `Session` encodes, goes through this one core instance.
+    await client.loadOsc(coreWasm.slice().buffer as ArrayBuffer);
+    // The clock's wake-up. A worker is named by URL, and a bundle running from
+    // a blob has no base to resolve one against — but this module was handed
+    // the worker with everything else, so it says where it staged it. Without
+    // this the clock silently falls back to the page timer, which a background
+    // tab throttles to about a second.
+    const tick = urls.get("base/tick-worker.js");
+    if (tick !== undefined) client.setTickWorkerUrl(tick);
+
+    // The engine, if this backend has one. Its loader already takes the two
+    // URLs it needs, so the blobs go straight in and nothing is fetched.
+    const engineWasm = urls.get("engine/clausters_web_bg.wasm");
+    const workletUrl = urls.get("engine/worklet.js");
+    const engine = engineWasm !== undefined && workletUrl !== undefined
+        ? await client.engine({ wasmUrl: engineWasm, workletUrl })
+        : null;
+    if (engine === null) {
+        console.info(
+            "clausters: no in-page engine (the assets for one did not arrive). "
+            + "Expected under backend='native', where the audio comes out of "
+            + "the kernel's machine; under backend='page' it means the build "
+            + "is incomplete - re-run scripts/refresh-web.sh.");
+    } else {
+        console.info(
+            `clausters: engine up at ${engine.context.sampleRate} Hz, `
+            + `AudioContext ${engine.context.state} (a browser starts no audio `
+            + "until the page is clicked)");
+        resumeOnGesture(engine);
+    }
+
     // No canvas here: one is attached per `window`-rooted def, by the widget
-    // that draws it (`feed` below).
-    return { bridge, drain: () => bridge.poll(), ...measure };
-}
+    // that draws it. `newGuiHost` appends none either, which is exactly why
+    // this is the instance door and not the page's `guiHost()`.
+    const gui = await client.newGuiHost({
+        engine,
+        wasm: hostWasm.slice().buffer as ArrayBuffer,
+    });
+    console.info("clausters: GUI host up in this page");
+    // The host's audio leg. In the page it was wired to the engine by
+    // `newGuiHost`; against a native server it is a socket opened from the
+    // browser, and therefore local-only. Either way the kernel is not in the
+    // path: a bound widget's value reaches the audio at frame rate, as it does
+    // on a served page and on the desktop.
+    if (engine === null && serverUrl !== "") gui.bridge.connect_server(serverUrl);
 
-/** What `gui/canvasbox.js` provides, once imported from its blob URL. */
-interface Measuring {
-    canvasBox(element: Element): CanvasBox;
-    onScaleChange(apply: () => void): () => void;
-}
-
-type Booted = Measuring & {
-    bridge: GuiBridgeLike;
-    drain: () => Uint8Array | undefined;
-};
-
-/** As much of the wasm bridge as this module touches. */
-interface GuiBridgeLike {
-    feed(packet: Uint8Array): void;
-    poll(): Uint8Array | undefined;
-    attach(defId: number, canvas: HTMLCanvasElement): void;
-    /** Give up this def's canvas: its surface, its GPU slots, its state. */
-    detach(defId: number): void;
-    /** Give up the whole instance, leaving the page's other hosts alone. */
-    close(): void;
-    resize(defId: number, width: number, height: number, scale: number): void;
-    /** The host's audio-server leg: its outbound, and the replies back in. */
-    connect_page(send: (bytes: Uint8Array) => void): void;
-    /** The same leg, to a native server's `--ws` port instead. */
-    connect_server(url: string): void;
-    server_reply(packet: Uint8Array): void;
-}
-
-/**
- * The `/gui_def` id in an outbound packet, or `undefined` if it is not one.
- *
- * The offsets have to be walked, not assumed. OSC pads the address and the
- * type-tag string to four bytes each, so where the arguments begin depends on
- * how many tags there are: `,is` pads to 4 and puts the id at 16, while
- * `,isb` -- the same message carrying a blob -- pads to 8 and puts it at 20.
- * Reading a fixed 16 gets the tail of the tag string instead, which is zeros,
- * which is a perfectly plausible-looking def id 0.
- */
-export function definedId(packet: Uint8Array): number | undefined {
-    return firstIdOf(packet, "/gui_def");
-}
-
-/** The id of a `/gui_free`, the packet that closes a window. */
-export function freedId(packet: Uint8Array): number | undefined {
-    return firstIdOf(packet, "/gui_free");
-}
-
-/** The leading int argument of ``address``, or `undefined` for anything else. */
-function firstIdOf(packet: Uint8Array, address: string): number | undefined {
-    const end = (from: number) => {
-        let i = from;
-        while (i < packet.length && packet[i] !== 0) i += 1;
-        return (i + 4) & ~3;        // past the null, rounded up to four
+    const share = PAGE_SHARE;
+    const host = await client.GuiHost.page(gui, { share });
+    let session: Session | null = null;
+    if (engine !== null) {
+        session = await client.Session.page({ own: true, engine, share });
+        // The host is built, not booted, so this is the adopting door — and
+        // the wasm instance goes with it, so `close()` releases the GPU device
+        // and the drain loop as well as the client.
+        session.adoptGui(host, { page: gui });
+    }
+    return {
+        client,
+        gui,
+        host,
+        engine,
+        session,
+        kernelPeer: engine === null ? -1 : engine.claimPeer(),
     };
-    const addr = new TextDecoder().decode(packet.subarray(0, end(0) - 1))
-        .replace(/\0+$/, "");
-    if (addr !== address) return undefined;
-    const tags = end(0);
-    const args = end(tags);
-    if (args + 4 > packet.length) return undefined;
-    return new DataView(packet.buffer, packet.byteOffset).getInt32(args, false);
 }
 
 /**
- * The one wasm GUI host of **one notebook**, shared by every cell of it.
+ * Resume the audio context on the first gesture anywhere in the document.
+ *
+ * A browser will not start audio without one, and a notebook offers no obvious
+ * place to put a "start audio" button — so any click, key or touch does it,
+ * once. Until then the engine runs silently, which is also what it does with
+ * nothing playing, so nothing looks broken while the page waits.
+ */
+function resumeOnGesture(engine: ClaustersServer): void {
+    const go = () => {
+        void engine.resume();
+        for (const kind of ["pointerdown", "keydown", "touchstart"]) {
+            document.removeEventListener(kind, go, true);
+        }
+    };
+    for (const kind of ["pointerdown", "keydown", "touchstart"]) {
+        document.addEventListener(kind, go, true);
+    }
+}
+
+/**
+ * The one runtime of **one notebook**, shared by every cell of it.
  *
  * Two scopes are wrong here and the right one is in between.
  *
@@ -486,54 +541,47 @@ function firstIdOf(packet: Uint8Array, address: string): number | undefined {
  * second notebook's `/gui_def 1000` redefine the first one's window, and its
  * `/synth_new 1000` collide with the first one's node. So the state is keyed
  * by **session**, one per `clausters_jupyter.bridge.Bridge`, which is one per
- * kernel: independent id spaces get independent hosts.
+ * kernel: independent id spaces get independent runtimes.
  *
- * That is a real host each, not a partitioned share of one. The wasm exports
- * an instance per `start()` — they share the page's one winit event loop and
- * nothing else — so two notebooks may hold the very same widget and node ids
- * without seeing each other, which is the only arrangement that works when the
- * two kernels are separate processes with no channel to agree on a range over.
+ * That is a real host and a real engine each, not a partitioned share of one.
+ * The wasm exports an instance per `start()` — they share the page's one winit
+ * event loop and nothing else — so two notebooks may hold the very same widget
+ * and node ids without seeing each other, which is the only arrangement that
+ * works when the two kernels are separate processes with no channel to agree
+ * on a range over.
+ *
+ * (Inside *one* notebook the two ends do share an engine, and there the ids
+ * would collide: the kernel and this page both author against it. That is what
+ * `PAGE_SHARE` settles.)
  *
  * The assets are the exception, and are cached across sessions (`STAGED`):
  * they are the same bytes, they are immutable, and they are the expensive
- * part. A second notebook boots its own host on the first one's blob URLs, and
- * its wasm module is the one already compiled.
- *
- * `outbound` is where drained events go: whichever widget booted the host owns
- * the drain loop, and the packets it reads may belong to any window *of that
- * session*, so they leave through every comm of it. The kernel fans them back
- * into one carrier regardless of which widget carried them up.
+ * part. A second notebook boots its own runtime on the first one's blob URLs,
+ * and its wasm module is the one already compiled.
  */
 interface Shared {
-    host: Promise<Booted> | null;
-    engine: Promise<Engine | null> | null;
-    outbound: Set<(packet: Uint8Array) => void>;
-    /** The engine's replies, fanned out the same way and for the same reason. */
-    replies: Set<(packet: Uint8Array) => void>;
+    runtime: Promise<Booted> | null;
     /** Mounted canvases, counted so the audio can follow them (`heard`). */
     views: number;
     /**
-     * Packets for an engine that is still booting, in order.
+     * Packets for a runtime that is still coming up, in order.
      *
      * The GUI channel has had this since the beginning (`pending`, per view)
-     * and the server channel had nothing: a packet arriving before
-     * `engine` was assigned went to `undefined?.then(...)` and was dropped
-     * without a trace. That window is not an edge case, it is the opening of
-     * every notebook -- the cell that displays a window is usually the cell
-     * that sent the def and the `/synth_new`, and the wasm takes about a
-     * second to come up behind it. What it looked like: a notebook that drew
-     * correctly and made no sound, with nothing logged at either end.
+     * and the server channel had nothing: a packet arriving before the engine
+     * existed went to `undefined?.then(...)` and was dropped without a trace.
+     * That window is not an edge case, it is the opening of every notebook --
+     * the cell that displays a window is usually the cell that sent the def
+     * and the `/synth_new`, and the wasm takes about a second to come up
+     * behind it. What it looked like: a notebook that drew correctly and made
+     * no sound, with nothing logged at either end.
      *
-     * Drained once, when the engine resolves; after that `engine` is non-null
-     * and a send goes straight out. Order is kept either way -- a callback
-     * registered on the resolved promise runs after this drain, which was
-     * registered first.
+     * Drained once, when the runtime resolves; after that a send goes straight
+     * out. Order is kept either way -- a callback registered on the resolved
+     * promise runs after this drain, which was registered first.
      */
     toEngine: Uint8Array[];
     /** Live models of this session, so the last one out can close it. */
     models: number;
-    /** The drain loop's timer, so closing the session can stop it. */
-    drain: ReturnType<typeof setInterval> | null;
     /** A teardown already scheduled, so a flurry of events costs only one. */
     closing: ReturnType<typeof setTimeout> | null;
     /** The kernel this session belongs to, which survives that kernel's
@@ -558,8 +606,7 @@ function shared(session: string): Shared {
     const scope = globalThis as unknown as Record<string, Record<string, Shared>>;
     scope[KEY] ??= {};
     scope[KEY][session] ??= {
-        host: null, engine: null, outbound: new Set(), replies: new Set(),
-        views: 0, toEngine: [], models: 0, drain: null, closing: null,
+        runtime: null, views: 0, toEngine: [], models: 0, closing: null,
         kernel: null, orphaned: false,
     };
     return scope[KEY][session];
@@ -573,9 +620,15 @@ function shared(session: string): Shared {
 const CLOSE_AFTER_SIGNAL = 5_000;
 
 /**
- * Close a session: its wasm host, its AudioContext, its drain loop, its entry.
+ * Close a session: its runtime, and its entry in the page's registry.
  *
- * The counterpart of `bootShared`, and the reason it can exist at all is that
+ * One call does it, because a `Session` owns what it opened: its engine (and
+ * so the `AudioContext`), its host client and the wasm host under it, its
+ * server client and its clock. What a browser caps is how many contexts
+ * *exist*, so this closes rather than suspends — one left suspended is one the
+ * next notebook cannot have.
+ *
+ * The counterpart of `bootRuntime`, and the reason it can exist at all is that
  * a host is an instance rather than the page's one thing — closing this one
  * leaves every other notebook in the tab drawing and sounding.
  *
@@ -589,15 +642,17 @@ function closeSession(session: string): void {
     const state = scope[KEY]?.[session];
     if (state === undefined) return;
     delete scope[KEY][session];
-    if (state.drain !== null) clearInterval(state.drain);
     if (state.closing !== null) clearTimeout(state.closing);
-    state.outbound.clear();
-    state.replies.clear();
     state.toEngine.length = 0;
-    void state.host?.then((booted) => booted.bridge.close());
-    // The context, not just a suspend: what a browser caps is how many exist,
-    // so one left suspended is one the next notebook cannot have.
-    void state.engine?.then((engine) => engine?.context.close().catch(() => {}));
+    void state.runtime?.then((booted) => {
+        // Under the native backend there is no session to own the host, so the
+        // host is released directly; under the page one `close()` covers it.
+        if (booted.session !== null) booted.session.close();
+        else {
+            booted.host.stop();
+            booted.gui.close();
+        }
+    });
 }
 
 /** The sessions this page is holding, for the acceptance to look at. */
@@ -640,7 +695,7 @@ function heard(session: string, delta: number): void {
     const state = shared(session);
     state.views += delta;
     setTimeout(() => {
-        void state.engine?.then((engine) => {
+        void state.runtime?.then(({ engine }) => {
             if (engine === null) return;
             // Both reject on a context that `closeSession` has already
             // closed, which is a race this does not need to win: a session
@@ -651,6 +706,7 @@ function heard(session: string, delta: number): void {
     }, 100);
 }
 
+/** Boot (or join) this session's runtime, and drain what waited for it. */
 function bootShared(
     session: string,
     urls: Map<string, string>,
@@ -658,131 +714,17 @@ function bootShared(
     serverUrl: string,
 ): Promise<Booted> {
     const state = shared(session);
-    state.host ??= bootHost(urls, wasm).then((booted) => {
-        // The host has one audio leg and each backend gives it one server. The
-        // in-page engine is wired to it directly (`bootEngine`); a native
-        // server is reached over its `--ws` port, opened from the browser and
-        // therefore local-only. Either way the kernel is not in the path: a
-        // bound widget's value reaches the audio at frame rate, as it does on
-        // a served page and on the desktop.
-        if (serverUrl !== "") booted.bridge.connect_server(serverUrl);
-        // The engine, if this backend wants one: the assets say so by being
-        // there, so the native backend pays nothing for a leg it does not use.
-        state.engine ??= bootEngine(session, urls, booted.bridge).then((engine) => {
-            if (engine !== null) resumeOnGesture(engine);
-            // Whatever the kernel sent while this was coming up. Dropped
-            // rather than held when there is no engine (the native backend
-            // sends nothing here, but a queue that only grows is worse than
-            // one that empties).
-            const queued = state.toEngine.splice(0);
-            if (engine !== null) {
-                for (const packet of queued) engine.send(packet, KERNEL_PEER);
-            }
-            return engine;
-        });
-        state.drain = setInterval(() => {
-            let packet: Uint8Array | undefined;
-            while ((packet = booted.drain()) !== undefined) {
-                for (const send of [...state.outbound]) send(packet);
-            }
-        }, 33);
+    state.runtime ??= bootRuntime(urls, wasm, serverUrl).then((booted) => {
+        // Whatever the kernel sent while this was coming up. Dropped rather
+        // than held when there is no engine (the native backend sends nothing
+        // here, but a queue that only grows is worse than one that empties).
+        const queued = state.toEngine.splice(0);
+        if (booted.engine !== null) {
+            for (const packet of queued) booted.engine.send(packet, booted.kernelPeer);
+        }
         return booted;
     });
-    return state.host;
-}
-
-/** The in-page engine, once per page, beside the host. */
-interface Engine {
-    /** One OSC packet, tagged with which of this engine's clients sent it. */
-    send(bytes: Uint8Array, peer: number): void;
-    /** Every reply, with the tag of the client it is for. */
-    onReply: ((packet: Uint8Array, peer: number) => void) | null;
-    resume(): Promise<void>;
-    suspend(): Promise<void>;
-    /** The engine's own AudioContext — what `closeSession` actually releases. */
-    context: AudioContext;
-}
-
-/**
- * Boot the wasm audio engine in an AudioWorklet, on staged assets.
- *
- * The loader already takes the two URLs it needs, so nothing here reaches
- * around it — the worklet module and the wasm are blobs like everything else.
- * The worklet's own imports were rewritten before it became one, which is why
- * the shim and the glue are staged alongside it.
- *
- * **The engine and the host are wired to each other, not through Python.** A
- * bound widget's value reaches the engine inside the page, at frame rate, the
- * same way it does on a served page and on the desktop; the kernel is an
- * author, never a relay.
- */
-async function bootEngine(
-    session: string,
-    urls: Map<string, string>,
-    bridge: GuiBridgeLike,
-): Promise<Engine | null> {
-    const loaderUrl = urls.get("engine/loader.js");
-    const wasmUrl = urls.get("engine/clausters_web_bg.wasm");
-    const workletUrl = urls.get("engine/worklet.js");
-    if (!loaderUrl || !wasmUrl || !workletUrl) {
-        // Absent by design under the native backend, which sends the GUI
-        // assets alone -- so this is not an error, but it *is* the difference
-        // between a notebook that sounds and one that does not, and until now
-        // the two were indistinguishable from the page. Anything the kernel
-        // sends on the server channel from here on goes nowhere.
-        console.info(
-            "clausters: no in-page engine (the assets for one did not arrive). "
-            + "Expected under backend='native', where the audio comes out of "
-            + "the kernel's machine; under backend='page' it means the build "
-            + "is incomplete - re-run scripts/refresh-web.sh.");
-        return null;
-    }
-    const mod = (await import(/* @vite-ignore */ loaderUrl)) as {
-        bootClausters(options: {
-            wasmUrl: string;
-            workletUrl: string;
-        }): Promise<Engine>;
-    };
-    const engine = await mod.bootClausters({ wasmUrl, workletUrl });
-    // Both booted lines are here for the same reason the "no engine" one
-    // below is: a page that loads nine megabytes of wasm and starts an audio
-    // thread should say so once. Silence at this point is indistinguishable
-    // from a notebook that never got a cell to run in, and the two want very
-    // different things done about them.
-    console.info(
-        `clausters: engine up at ${engine.context.sampleRate} Hz, `
-        + `AudioContext ${engine.context.state} (a browser starts no audio `
-        + "until the page is clicked)");
-    // Set **once**, here, and fanned out to whoever is listening. Chaining a
-    // new onReply per mounted view instead would grow a linked list one link
-    // per cell re-run, send the kernel one copy of every reply per link, and
-    // hold every dead model alive behind it.
-    engine.onReply = (bytes, peer) => {
-        if (peer === GUI_PEER) bridge.server_reply(bytes);
-        else for (const send of [...shared(session).replies]) send(bytes);
-    };
-    bridge.connect_page((bytes: Uint8Array) => engine.send(bytes, GUI_PEER));
-    return engine;
-}
-
-/**
- * Resume the audio context on the first gesture anywhere in the document.
- *
- * A browser will not start audio without one, and a notebook offers no obvious
- * place to put a "start audio" button — so any click, key or touch does it,
- * once. Until then the engine runs silently, which is also what it does with
- * nothing playing, so nothing looks broken while the page waits.
- */
-function resumeOnGesture(engine: Engine): void {
-    const go = () => {
-        void engine.resume();
-        for (const kind of ["pointerdown", "keydown", "touchstart"]) {
-            document.removeEventListener(kind, go, true);
-        }
-    };
-    for (const kind of ["pointerdown", "keydown", "touchstart"]) {
-        document.addEventListener(kind, go, true);
-    }
+    return state.runtime;
 }
 
 export default {
@@ -796,22 +738,22 @@ export default {
         canvas.style.height = `${model.get("height") as number}px`;
         el.append(canvas);
 
-        // Which notebook this cell belongs to. One per kernel, so the wasm
-        // host and the engine below are this notebook's and not the Lab tab's.
+        // Which notebook this cell belongs to. One per kernel, so the runtime
+        // below is this notebook's and not the Lab tab's.
         const session = model.get("session") as string;
         // Before anything else: this front end is what keeps the session's
-        // host and engine on the page, and its death is what releases them.
+        // runtime on the page, and its death is what releases it.
         trackModel(session, model);
 
-        let host: Booted | null = null;
+        let booted: Booted | null = null;
         const pending: Uint8Array[] = [];
         const attached = new Set<number>();
 
         // This view's two ways up, held by identity so the cleanup can take
         // them off again. A view that subscribes and never unsubscribes is
-        // not a small leak: the drain loop then sends the kernel one copy of
-        // every event per cell re-run, at thirty a second while a knob is
-        // moving, through models that were disposed hours ago.
+        // not a small leak: the host then sends the kernel one copy of every
+        // event per cell re-run, at thirty a second while a knob is moving,
+        // through models that were disposed hours ago.
         const up = {
             gui: (packet: Uint8Array) => model.send({ ch: GUI }, undefined, [
                 packet.slice().buffer as ArrayBuffer,
@@ -822,11 +764,11 @@ export default {
         };
 
         /**
-         * Boot (or join) this session's host on staged assets.
+         * Boot (or join) this session's runtime on staged assets.
          *
-         * Another notebook already holding a host in this tab is not a
-         * condition to check for: this one boots an instance of its own beside
-         * it, sharing the page's event loop and none of its ids.
+         * Another notebook already holding one in this tab is not a condition
+         * to check for: this one boots an instance of its own beside it,
+         * sharing the page's event loop and none of its ids.
          */
         const boot = (urls: Map<string, string>, wasm: Map<string, Uint8Array>) => {
             void bootShared(session, urls, wasm, model.get("server_url") as string)
@@ -838,34 +780,47 @@ export default {
         // told on every change -- of the box, and of the display scale, which
         // move independently and so need two triggers.
         // Both observers are armed at mount but measure nothing until the
-        // host is up: the helpers that do the measuring arrive with it.
+        // runtime is up: the helpers that do the measuring arrive with it.
         const fit = () => {
-            if (host === null) return;
-            const { width, height, scale } = host.canvasBox(canvas);
+            if (booted === null) return;
+            const { width, height, scale } = booted.client.canvasBox(canvas);
             canvas.width = width;
             canvas.height = height;
-            for (const id of attached) host.bridge.resize(id, width, height, scale);
+            for (const id of attached) booted.gui.bridge.resize(id, width, height, scale);
         };
         new ResizeObserver(fit).observe(canvas);
 
+        /**
+         * One packet from the kernel into this notebook's host.
+         *
+         * It goes in through the host client's own carrier, the same door a
+         * page's own `GuiHost` sends through — so the canvas policy, the
+         * attach and the detach on a freed window are the client's rather than
+         * this module's. What is this module's is *which* canvas: a cell owns
+         * where its window draws, so it claims one for the def before the
+         * packet is sent, and `attach` is idempotent precisely so that claim
+         * stands against the carrier's default.
+         */
         const feed = (packet: Uint8Array) => {
-            const id = definedId(packet);
-            if (id !== undefined && !attached.has(id)) {
-                host!.bridge.attach(id, canvas);
-                attached.add(id);
-                const { width, height, scale } = host!.canvasBox(canvas);
-                host!.bridge.resize(id, width, height, scale);
+            const here = booted!;
+            for (const { addr, args } of here.client.decodePacket(packet)) {
+                const id = args[0];
+                if (typeof id !== "number") continue;
+                if (addr === "/gui_def" && !attached.has(id)) {
+                    here.gui.attach(id, canvas);
+                    attached.add(id);
+                    const { width, height, scale } = here.client.canvasBox(canvas);
+                    here.gui.bridge.resize(id, width, height, scale);
+                } else if (addr === "/gui_free" && attached.delete(id)) {
+                    // Closing a window empties the cell that was showing it.
+                    // The host gives the surface up on the same packet (the
+                    // carrier detaches); what is left is the element, which
+                    // would otherwise stay behind holding its last frame --
+                    // what made `win.close()` look like it did nothing.
+                    queueMicrotask(() => canvas.remove());
+                }
             }
-            host!.bridge.feed(packet);
-            // Closing a window empties the cell that was showing it. Freeing
-            // the def alone would leave the canvas behind holding its last
-            // frame -- a picture of a window that no longer exists, which is
-            // what made `win.close()` look like it did nothing.
-            const freed = freedId(packet);
-            if (freed !== undefined && attached.delete(freed)) {
-                host!.bridge.detach(freed);
-                canvas.remove();
-            }
+            here.host.connection.send(packet);
         };
 
         model.on("msg:custom", (
@@ -881,7 +836,7 @@ export default {
             if (content.ch === GUI) {
                 for (const buffer of buffers) {
                     const packet = asBytes(buffer);
-                    if (host === null) pending.push(packet);
+                    if (booted === null) pending.push(packet);
                     else feed(packet);
                 }
             }
@@ -889,28 +844,31 @@ export default {
                 const state = shared(session);
                 for (const buffer of buffers) {
                     const packet = asBytes(buffer);
-                    // `engine` is null until the boot assigns it, and the
+                    // The runtime is null until the boot assigns it, and the
                     // kernel does not wait -- see `Shared.toEngine`.
-                    if (state.engine === null) state.toEngine.push(packet);
+                    if (state.runtime === null) state.toEngine.push(packet);
                     else {
-                        void state.engine.then((engine) =>
-                            engine?.send(packet, KERNEL_PEER),
+                        void state.runtime.then((live) =>
+                            live.engine?.send(packet, live.kernelPeer),
                         );
                     }
                 }
             }
         });
 
-        const ready = (booted: Booted) => {
-            host = booted;
-            booted.onScaleChange(fit);
+        const ready = (live: Booted) => {
+            booted = live;
+            live.client.onScaleChange(fit);
             fit();
-            const state = shared(session);
-            state.outbound.add(up.gui);
+            // The host's outbound events, and the engine's replies to the
+            // kernel. Both are per view and both come off again on unmount:
+            // the host fans out to every listener, so a view that stayed
+            // subscribed would send the kernel one copy per cell re-run.
+            live.gui.addEvent(up.gui);
             // The engine answers the kernel too (a /server_sync's /synced, a
-            // query's reply). Its own onReply already feeds the host's server
-            // leg; this is the kernel's copy, and both ends want them.
-            state.replies.add(up.server);
+            // query's reply), under the kernel's own tag -- the host's leg is
+            // a different client and is already wired to it.
+            live.engine?.addReply(up.server, live.kernelPeer);
             for (const packet of pending.splice(0)) feed(packet);
         };
 
@@ -918,8 +876,8 @@ export default {
         // for the replay. `have` is the digest of the assets this *page* has
         // staged, if any: the kernel sends the nine megabytes only when they
         // are not the ones it would send. A second notebook in the same Lab
-        // tab therefore boots its own host on the first one's blob URLs.
-        const already = shared(session).host;
+        // tab therefore boots its own runtime on the first one's blob URLs.
+        const already = shared(session).runtime;
         if (already !== null) {
             void already.then(ready);
             model.send({ ch: "ready", have: staged()?.digest ?? null });
@@ -935,10 +893,9 @@ export default {
         // audio is counted here at all.
         return () => {
             heard(session, -1);
-            const state = shared(session);
-            state.outbound.delete(up.gui);
-            state.replies.delete(up.server);
-            for (const id of attached) host?.bridge.detach(id);
+            booted?.gui.removeEvent(up.gui);
+            booted?.engine?.removeReply(up.server, booted.kernelPeer);
+            for (const id of attached) booted?.gui.detach(id);
         };
     },
 };

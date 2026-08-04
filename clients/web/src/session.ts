@@ -45,6 +45,7 @@ import type { ClaustersServer } from "./engine/server.ts";
 import { engine as engineInstance, server as pageEngine } from "./engine/server.ts";
 import { GuiHost } from "./gui/host.ts";
 import { newGuiHost } from "./gui/page.ts";
+import type { ClaustersGui } from "./gui/page.ts";
 import type { EventDestination } from "./seq/event.ts";
 import type { EventStreamPlayer } from "./seq/eventstream.ts";
 import type { Pattern } from "./seq/pattern.ts";
@@ -106,6 +107,12 @@ export class Session extends Environment {
     readonly clock: TempoClock;
 
     private gui_: GuiHost | null = null;
+    /**
+     * The page host `gui()` booted, if it booted one — the wasm instance
+     * behind the client, which nothing else on the page holds and which
+     * therefore has to be released with the session.
+     */
+    private ownedGui: ClaustersGui | null = null;
     private ownedEngine: ClaustersServer | null = null;
     private readonly destinations: { dest: OscDestination; connection: Connection }[] = [];
 
@@ -181,8 +188,10 @@ export class Session extends Environment {
             await pageConnection(audio),
             { tempo, timebase, latency, timeout, share },
         );
-        // Only an engine this call opened is this session's to close.
-        if (!engine && own) session.ownedEngine = audio;
+        // `own` is what makes the engine this session's to close — whether it
+        // opened one or was handed one that belongs to it. The page's shared
+        // engine is never anyone's to stop, and that is the default.
+        if (own) session.ownedEngine = audio;
         return session;
     }
 
@@ -246,9 +255,14 @@ export class Session extends Environment {
         // The session's share governs both legs: a session that is one of two
         // clients on an engine is one of two on its host as well.
         const share = this.server.share;
-        this.gui_ = this.ownedEngine
-            ? await GuiHost.page(newGuiHost({ engine: this.ownedEngine }), { share })
-            : await GuiHost.page(undefined, { share });
+        if (this.ownedEngine) {
+            // A host of this session's own, wired to this session's engine —
+            // and this session's to close, unlike the page's shared one.
+            this.ownedGui = await newGuiHost({ engine: this.ownedEngine });
+            this.gui_ = await GuiHost.page(this.ownedGui, { share });
+        } else {
+            this.gui_ = await GuiHost.page(undefined, { share });
+        }
         return this.gui_;
     }
 
@@ -265,10 +279,21 @@ export class Session extends Environment {
      * host is the session's afterwards — `close` stops it, as it stops one
      * `gui()` opened.
      *
+     * `page` is the wasm host the client was built over (`newGuiHost`), when
+     * there is one: adopting the client alone would leave that instance — a
+     * GPU device and a drain loop — with no owner, since only the caller that
+     * booted it can know it is not the page's shared one. It is adopted with
+     * the client, and released by `close`. This has no counterpart in the
+     * Python client because it has nothing to name: there a `GuiHost` *is* the
+     * whole thing, its process included.
+     *
      * Returns the host now in force: the one passed, or the incumbent.
      */
-    adoptGui(host: GuiHost): GuiHost {
-        this.gui_ ??= host;
+    adoptGui(host: GuiHost, { page }: { page?: ClaustersGui } = {}): GuiHost {
+        if (this.gui_ === null) {
+            this.gui_ = host;
+            this.ownedGui = page ?? null;
+        }
         return this.gui_;
     }
 
@@ -445,14 +470,19 @@ export class Session extends Environment {
     }
 
     /**
-     * Releases everything this session owns: its GUI host, its destinations,
-     * its clock, its server client — and an engine it opened for itself (the
-     * page's shared one is not this session's to stop). If it had adopted the
-     * default slots, it gives them up.
+     * Releases everything this session owns: its GUI host — the client, and
+     * the wasm host under it when `gui()` booted one — its destinations, its
+     * clock, its server client, and an engine it opened for itself (the page's
+     * shared host and engine are not this session's to stop). If it had
+     * adopted the default slots, it gives them up.
      */
     close(): void {
         this.gui_?.stop();
         this.gui_ = null;
+        // The client detaches; the wasm host itself is released only when this
+        // session is the one that booted it (the page's is shared page state).
+        this.ownedGui?.close();
+        this.ownedGui = null;
         for (const { connection } of this.destinations) connection.close();
         this.destinations.length = 0;
         this.clock.close();
