@@ -105,3 +105,53 @@ def test_zero_and_free_go_through_the_buffer():
     assert max(abs(v) for v in buf.get_samples(0, 8)) == 0.0
     buf.free()
     assert server.buffers.in_use == 0
+
+
+def test_written_samples_read_back():
+    """The read -> edit -> write cycle: what `set_samples` writes is what
+    `get_samples` reads, and a scattered touch-up lands too."""
+    _embed_or_skip()
+    try:
+        from clausters import Session
+        session = Session.embed()
+    except (OSError, RuntimeError) as e:
+        pytest.skip(f"embedded server unavailable: {e}")
+
+    server = session.server
+    buf = Buffer.alloc(8, 1, server=server)
+
+    buf.set_samples([0.1, 0.2, 0.3, 0.4], start=2)
+    buf.set_sample(0, -0.5)
+    assert list(buf.get_samples(0, 8)) == pytest.approx(
+        [-0.5, 0.0, 0.1, 0.2, 0.3, 0.4, 0.0, 0.0], abs=1e-6)
+
+    # Read, edit, write back: the round trip an editor view makes.
+    edited = [v * 2 for v in buf.get_samples(0, 8)]
+    buf.set_samples(edited)
+    assert list(buf.get_samples(0, 8)) == pytest.approx(
+        [-1.0, 0.0, 0.2, 0.4, 0.6, 0.8, 0.0, 0.0], abs=1e-6)
+
+    # Chunking is transparent: several round trips, one result.
+    buf.set_samples([1.0] * 8, chunk=3)
+    assert list(buf.get_samples(0, 8)) == pytest.approx([1.0] * 8, abs=1e-6)
+
+    buf.free()
+
+
+def test_a_write_past_the_end_is_refused():
+    """Unlike a read, which clamps: a short write would lose samples the
+    caller believes it stored."""
+    _embed_or_skip()
+    try:
+        from clausters import Session
+        from clausters.errors import CommandError
+        session = Session.embed()
+    except (OSError, RuntimeError) as e:
+        pytest.skip(f"embedded server unavailable: {e}")
+
+    buf = Buffer.alloc(4, 1, server=session.server)
+    with pytest.raises(CommandError):
+        buf.set_samples([1.0, 1.0, 1.0], start=2)
+    # And the refusal left the buffer alone.
+    assert max(abs(v) for v in buf.get_samples(0, 4)) == 0.0
+    buf.free()

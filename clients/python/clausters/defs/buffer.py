@@ -4,7 +4,9 @@ The server's buffer pool is a finite boot-time resource (``--max-buffers``,
 4096 by default), indices allocated by the client (like scsynth). A `Buffer`
 holds an index and the server it lives on, and owns the ``/buffer_*`` commands
 addressed to it: `Buffer.alloc` and `Buffer.read` create one, and `Buffer.gen`,
-`Buffer.write`, `Buffer.query`, `Buffer.get_samples` and `Buffer.free` drive it.
+`Buffer.write`, `Buffer.query`, `Buffer.get_samples`, `Buffer.set_samples` and
+`Buffer.free` drive it. The read and write pair is what an editor view needs:
+samples come back client-side, are edited there, and go back into the buffer.
 
 The allocator is a **registry** (the core's occupancy map): a freed slot is
 always reusable, a double free is refused loudly, exhaustion raises instead of
@@ -68,6 +70,7 @@ class Buffer:
     n = Synth("player", {"bufnum": b.bufnum}, server=s)
 
     head = b.get_samples(0, 64)                  # the first 64 frames, client-side
+    b.set_samples([v * 0.5 for v in head])       # edited, and written back
     n.free()
     b.free()                                     # the slot returns to the pool
     ```
@@ -280,6 +283,62 @@ class Buffer:
             out.extend(float(v) for v in args[3:3 + int(args[2])])
             got += n
         return out
+
+    def set_samples(self, samples, start: int = 0, *, chunk: "int | None" = None,
+                    wait: bool = True, timeout: "float | None" = None):
+        """Write interleaved samples into this buffer (``/buffer_setRange``), in
+        chunks — the write half of `get_samples`, and the step that closes an
+        editor's read → edit → write cycle.
+
+        ``samples`` is any sequence of numbers (a list, an ``array('f')``, what
+        `get_samples` returned) laid down from flat index ``start``. Indices are
+        flat across channels, so a stereo buffer is written interleaved
+        ``L R L R ...``, exactly as it reads back.
+
+        The buffer must already exist and keeps its shape: writing past its end
+        raises rather than being clamped, since a short write would lose samples
+        you believe you stored. The shape is read from the server's mirror, so a
+        write immediately after `alloc` needs the alloc to have completed —
+        which ``wait=True`` (the default) on that call already guarantees.
+
+        ``chunk`` sizes each round trip and defaults to the transport's bound,
+        exactly as in `get_samples`. NRT scores at time 0; RT ``wait=True``
+        blocks on each chunk's ``/done``.
+        """
+        srv = self._server()
+        values = [float(s) for s in samples]
+        if not values:
+            return
+        if chunk is None:
+            chunk = srv._bulk_chunk(timeout)
+        scored = self._scored()
+        for at in range(0, len(values), chunk):
+            run = values[at:at + chunk]
+            args = [self.bufnum, start + at, len(run), *run]
+            if scored or not wait:
+                srv.send_msg("/buffer_setRange", *args)
+                continue
+            addr, rargs = srv.request("/buffer_setRange", *args, timeout=timeout,
+                                      expect=("/done", "/fail"))
+            if addr == "/fail":
+                raise CommandError(
+                    f"/buffer_setRange {self.bufnum} at {start + at} failed: {rargs}")
+
+    def set_sample(self, index: int, value: float, *, wait: bool = True,
+                   timeout: "float | None" = None):
+        """Write one sample by flat index (``/buffer_set``) — the single-sample
+        counterpart of `get_samples`' range form, for a touch-up that does not
+        deserve a run. NRT scores at time 0; RT ``wait=True`` blocks on
+        ``/done``."""
+        srv = self._server()
+        args = [self.bufnum, int(index), float(value)]
+        if self._scored() or not wait:
+            srv.send_msg("/buffer_set", *args)
+            return
+        addr, rargs = srv.request("/buffer_set", *args, timeout=timeout,
+                                  expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/buffer_set {self.bufnum} at {index} failed: {rargs}")
 
     def free(self):
         """Free this buffer on the server (``/buffer_free``) and return its slot to

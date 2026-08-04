@@ -16,6 +16,7 @@ uv.lock
 # Where scripts/render-all.sh drops its WAVs by default (a bench, not a fixture)
 /render
 # Personal scratch files (nombre.notrack.md): never committed.
+*.notrack/
 *.notrack.md
 # Working design notes and implementation plans (local only). What shipped is
 # the git history and the PLAN.md roadmaps; a spec is scaffolding, not a record.
