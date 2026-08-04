@@ -138,15 +138,18 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/buffer_getRange bufnum [start count]...` → `/buffer_getRange.reply bufnum start count value...`:
-    /// read ranges of samples (flat, interleaved) from the buffer mirror — the
-    /// client-side counterpart of `/buffer_getRange.reply`, and how a GUI client pulls a buffer
-    /// to display it. `count` is clamped to what the buffer holds from `start`,
-    /// so a request past the end returns only the available samples (none for an
-    /// unallocated buffer). Large buffers are read in client-chosen chunks,
-    /// sized to the client's transport: a stream client (TCP/WS) may ask for
-    /// up to the `/server_query` frame ceiling per reply, a UDP client must
-    /// stay under the datagram cap. The shm bulk path is future work.
+    /// `/buffer_getRange bufnum [start count]...` → `/buffer_getRange.reply bufnum [start blob]...`:
+    /// read ranges of samples (flat, interleaved) from the buffer mirror — how a
+    /// GUI client pulls a buffer to display it, and the read half of
+    /// `/buffer_setRange`. The request asks in samples; the reply carries each
+    /// range as one **little-endian `f32` blob**, so its length is what actually
+    /// came back and no declared count can disagree with it. `count` is clamped
+    /// to what the buffer holds from `start`, so a request past the end returns
+    /// only the available samples (an empty blob for an unallocated buffer).
+    /// Large buffers are read in client-chosen chunks, sized to the client's
+    /// transport: a stream client (TCP/WS) may ask for up to the `/server_query`
+    /// frame ceiling per reply, a UDP client must stay under the datagram cap.
+    /// The shm bulk path is future work.
     pub(in crate::osc::server) fn handle_buffer_get_range(
         &mut self,
         mut args: Args,
@@ -162,9 +165,12 @@ impl OscServer {
             let count = args.int()?.max(0) as usize;
             let end = start.saturating_add(count).min(data.len());
             let slice = data.get(start..end).unwrap_or(&[]);
+            let mut blob = Vec::with_capacity(slice.len() * 4);
+            for s in slice {
+                blob.extend_from_slice(&s.to_le_bytes());
+            }
             out.push(OscType::Int(start as i32));
-            out.push(OscType::Int(slice.len() as i32));
-            out.extend(slice.iter().map(|s| OscType::Float(*s)));
+            out.push(OscType::Blob(blob));
         }
         self.reply(from, "/buffer_getRange.reply", out);
         Ok(())

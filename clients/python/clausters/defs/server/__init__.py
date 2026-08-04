@@ -487,6 +487,25 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         _, args = self.request("/server_status", timeout=timeout, expect=("/server_status.reply",))
         return args
 
+    def _barrier(self, timeout: "float | None" = None) -> None:
+        """`sync`, but a ``/fail`` from the work being waited on ends the wait
+        instead of being dropped.
+
+        This is what a **batched** async send needs. Waiting for each command's
+        own ``/done`` costs one round trip per command, which is what makes a
+        chunked bulk write (`clausters.defs.Buffer.set_samples`) slow in
+        proportion to its length rather than to its size; firing the batch and
+        closing it with one barrier costs one round trip for the whole of it.
+        What that would otherwise give up is the error, since a chunk's
+        ``/fail`` arrives while nobody is listening — so the barrier listens for
+        both, and the first one wins.
+        """
+        self._sync_counter += 1
+        addr, args = self.request("/server_sync", self._sync_counter, timeout=timeout,
+                                  expect=("/server_sync.reply", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"{args[0] if args else 'a command'} failed: {args[1:]}")
+
     def sync(self, timeout: "float | None" = None) -> int:
         """The async barrier (scsynth ``/server_sync``): sends ``/server_sync id`` and blocks
         until the server answers ``/server_sync.reply id``, which it does only once every

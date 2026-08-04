@@ -4424,6 +4424,46 @@ the same NRT queue as the rest of the writing family.
   buffer changed: it would be the family's first push notification, the mirror
   is authoritative, and no reader has asked for one.
 
+**Bulk samples ride as a blob, on both sides, and that is a protocol rule.**
+`/buffer_setRange` first shipped taking its samples as float arguments, which is
+what the rest of the family looks like — and it was wrong by three orders of
+magnitude. Encoding 200k samples as 200k typed arguments took 2.7 s in the
+Python client's encoder against 0.1 ms for the same samples as one blob, because
+N arguments is N type tags and N encode steps at each end; it is also wider on
+the wire (5 bytes per sample against 4). So `/buffer_setRange` carries each run
+as one little-endian `f32` blob and `/buffer_getRange.reply` answers with one,
+which also removes the declared `count` that could disagree with what arrived.
+
+The protocol already worked this way and the new command was the outlier:
+`/bus_tapStream.reply` sends its windows as blobs and `/buffer_export` writes
+the same bytes to a file. The rule is therefore written down rather than
+re-derived: **a payload whose length scales with the audio is a blob; a payload
+whose length scales with the parameters is typed arguments** — which is why
+`/buffer_set`'s scattered indices and `/bus_getRange.reply`'s control values
+stay as they are. Each client gets one function for the pack and one for the
+unpack (`clausters.base.bulk`, `src/base/bulk.ts`), so the endianness check —
+a `Float32Array` and an `array('f')` are host-endian, and silently wrong on a
+big-endian host — has one owner instead of one per call site.
+
+**The queue is what "the current contents" means, not the mirror.** A job that
+rebuilds a buffer from what it holds (`/buffer_read`, `/buffer_setRange`)
+snapshots it at *parse* time, from the network-side mirror. That is correct for
+one command and wrong for a batch: a chunked write submits every chunk before
+any of them completes, so each would copy the same pre-batch contents and the
+last one installed would erase the rest — which is exactly what a client's
+`set_samples` sends. The NRT queue is the serialization point for buffer
+mutation, so it keeps its own view of what it last produced per index and a job
+builds on that. It is consulted only while the submitter still has work in
+flight for that index, since with nothing in flight the mirror has caught up and
+is the authority — which is also what keeps a buffer installed *outside* the
+queue (the embed door's `install_buffer`) from being undone by a stale entry.
+
+That in turn is what makes the batch worth sending: the chunks go out together
+and close with **one** `/server_sync`, so a long write costs one round trip
+instead of one per chunk. Both clients grew a barrier that watches for `/fail`
+as well as the sync reply, because a batched send otherwise drops the error
+that a per-command `/done` would have raised.
+
 What this does **not** solve is the other half of why a client cannot own its
 data paths: over the shared-memory ring every peer is one client, so two of them
 still fight over a `/bus_stream` subscription. That is a segment-layout change

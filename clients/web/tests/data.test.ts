@@ -24,6 +24,7 @@ import { loadCore } from "../src/base/core.ts";
 import { decodePacket, encodeMessage, loadOsc } from "../src/base/osc.ts";
 import type { Connection } from "../src/base/connection.ts";
 import { Buffer } from "../src/defs/buffer.ts";
+import { samplesToBlob } from "../src/base/bulk.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { BusStream, TapStream } from "../src/data/index.ts";
 import {
@@ -448,7 +449,8 @@ test("reading a buffer chunks by the transport's frame ceiling", async () => {
         const [bufnum, start, count] = msg.args.map(Number);
         requests.push([start, count]);
         const values = Array.from({ length: count }, (_, i) => (start + i) / 1000);
-        carrier.reply("/buffer_getRange.reply", [bufnum, start, count, ...values]);
+        // The reply carries its range as one little-endian f32 blob.
+        carrier.reply("/buffer_getRange.reply", [bufnum, start, samplesToBlob(values)]);
     });
 
     const samples = await new Buffer(3, 0, 1, 0, server)
@@ -474,7 +476,7 @@ test("a read past the end returns what the buffer holds", async () => {
         // The server clamps: only 10 samples exist from `start`.
         const count = start === 0 ? 10 : 0;
         const values = Array.from({ length: count }, () => 0.5);
-        carrier.reply("/buffer_getRange.reply", [bufnum, start, count, ...values]);
+        carrier.reply("/buffer_getRange.reply", [bufnum, start, samplesToBlob(values)]);
     });
     const samples = await new Buffer(1, 0, 1, 0, server)
         .getSamples({ start: 0, count: 50, chunk: 32 });

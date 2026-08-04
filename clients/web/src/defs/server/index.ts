@@ -521,6 +521,37 @@ export class Server {
     }
 
     /**
+     * `sync`, but a `/fail` from the work being waited on ends the wait instead
+     * of being dropped.
+     *
+     * This is what a **batched** async send needs. Awaiting each command's own
+     * `/done` costs one round trip per command, which is what makes a chunked
+     * bulk write (`Buffer.setSamples`) slow in proportion to its length rather
+     * than its size; firing the batch and closing it with one barrier costs one
+     * round trip for the whole of it. What that would otherwise give up is the
+     * error, since a chunk's `/fail` arrives while nobody is listening — so the
+     * barrier listens for both, and the first one wins.
+     */
+    async barrier(timeout?: number): Promise<void> {
+        const id = ++this.syncCounter;
+        if (this.scoring) return;
+        const reply = this.awaitReply(
+            (msg) =>
+                msg.addr === "/fail" ||
+                (msg.addr === "/server_sync.reply" && msg.args[0] === id),
+            timeout,
+            `/server_sync.reply ${id}`,
+        );
+        this.sendMsg("/server_sync", ["i", id]);
+        const msg = await reply;
+        if (msg.addr === "/fail") {
+            throw new CommandError(
+                `${msg.args[0] ?? "a command"} failed: ${msg.args.slice(1).join(" ")}`,
+            );
+        }
+    }
+
+    /**
      * The async barrier (scsynth `/server_sync`): resolves only once every async
      * command sent earlier — def compiles, buffer jobs — has completed.
      * Returns the id used.

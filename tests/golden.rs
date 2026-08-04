@@ -451,11 +451,12 @@ fn a_score_writes_samples_and_plays_them_back() {
                     vec![
                         OscType::Int(0),
                         OscType::Int(0),
-                        OscType::Int(4),
-                        OscType::Float(0.25),
-                        OscType::Float(0.5),
-                        OscType::Float(-0.25),
-                        OscType::Float(-0.5),
+                        OscType::Blob(
+                            [0.25f32, 0.5, -0.25, -0.5]
+                                .iter()
+                                .flat_map(|v| v.to_le_bytes())
+                                .collect(),
+                        ),
                     ],
                 ),
                 msg(

@@ -16,7 +16,8 @@ wrapping. The `Server` sizes it from its `ServerOptions` (``max_buffers``).
 from array import array
 
 from .. import _native
-from ..errors import CommandError
+from ..base.bulk import blob_to_samples, samples_to_blob
+from ..errors import CommandError, CommandRingFull
 from .info import BufferInfo, parse_buffer_list
 from ._wire import resolve as _resolve
 
@@ -279,8 +280,12 @@ class Buffer:
             n = min(chunk, count - got)
             _, args = srv.request("/buffer_getRange", self.bufnum, start + got, n,
                                   timeout=timeout, expect=("/buffer_getRange.reply",))
-            # /buffer_getRange.reply: bufnum, start, count, value...
-            out.extend(float(v) for v in args[3:3 + int(args[2])])
+            # /buffer_getRange.reply: bufnum, start, blob -- the samples arrive
+            # as bytes and are unpacked in one C call, never per sample.
+            run = blob_to_samples(args[2])
+            out.extend(run)
+            if len(run) < n:
+                break                      # past the end: the server has no more
             got += n
         return out
 
@@ -293,7 +298,10 @@ class Buffer:
         ``samples`` is any sequence of numbers (a list, an ``array('f')``, what
         `get_samples` returned) laid down from flat index ``start``. Indices are
         flat across channels, so a stereo buffer is written interleaved
-        ``L R L R ...``, exactly as it reads back.
+        ``L R L R ...``, exactly as it reads back. The samples cross as one
+        little-endian ``f32`` blob per chunk rather than as float arguments —
+        the protocol's rule for bulk data, and what makes writing a
+        multi-megabyte edit a byte copy instead of a per-sample encode.
 
         The buffer must already exist and keeps its shape: writing past its end
         raises rather than being clamped, since a short write would lose samples
@@ -301,28 +309,41 @@ class Buffer:
         write immediately after `alloc` needs the alloc to have completed —
         which ``wait=True`` (the default) on that call already guarantees.
 
-        ``chunk`` sizes each round trip and defaults to the transport's bound,
-        exactly as in `get_samples`. NRT scores at time 0; RT ``wait=True``
-        blocks on each chunk's ``/done``.
+        ``chunk`` sizes each message and defaults to the transport's bound,
+        exactly as in `get_samples`; the chunks are sent as a batch and closed
+        with **one** ``/server_sync`` barrier, so a long write costs one round
+        trip rather than one per chunk (over a shared-memory carrier a batch
+        long enough to fill the command ring barriers early and continues, which
+        is backpressure rather than a failure). NRT scores at time 0; RT
+        ``wait=True`` blocks on that barrier, and a chunk that fails raises
+        from it.
         """
         srv = self._server()
-        values = [float(s) for s in samples]
-        if not values:
+        values = samples if isinstance(samples, array) else array("f", samples)
+        if not len(values):
             return
         if chunk is None:
             chunk = srv._bulk_chunk(timeout)
         scored = self._scored()
         for at in range(0, len(values), chunk):
-            run = values[at:at + chunk]
-            args = [self.bufnum, start + at, len(run), *run]
-            if scored or not wait:
+            # One C-speed pack per chunk: the samples cross as bytes, so nothing
+            # here or in the OSC encoder touches them one at a time.
+            args = (self.bufnum, start + at, samples_to_blob(values[at:at + chunk]))
+            try:
                 srv.send_msg("/buffer_setRange", *args)
-                continue
-            addr, rargs = srv.request("/buffer_setRange", *args, timeout=timeout,
-                                      expect=("/done", "/fail"))
-            if addr == "/fail":
-                raise CommandError(
-                    f"/buffer_setRange {self.bufnum} at {start + at} failed: {rargs}")
+            except CommandRingFull:
+                # The shared-memory carrier's ring is a fixed size, and a batch
+                # this long can outrun the server draining it. Backpressure is
+                # not an error there -- nothing was sent, and the barrier both
+                # waits for the queue and empties the ring, so the retry fits.
+                srv._barrier(timeout)
+                srv.send_msg("/buffer_setRange", *args)
+        # One barrier for the whole batch rather than a /done per chunk: the
+        # queue completes them in order anyway, so waiting per chunk would cost
+        # a round trip per chunk -- time proportional to the edit's *length*
+        # instead of its size.
+        if wait and not scored:
+            srv._barrier(timeout)
 
     def set_sample(self, index: int, value: float, *, wait: bool = True,
                    timeout: "float | None" = None):

@@ -142,6 +142,14 @@ impl OscServer {
     pub(in crate::osc::server) fn collect_nrt_results(&mut self) {
         while let Some(result) = self.nrt.try_result() {
             self.nrt_drained += 1;
+            if let std::collections::hash_map::Entry::Occupied(mut e) =
+                self.nrt_in_flight.entry(result.index)
+            {
+                *e.get_mut() -= 1;
+                if *e.get() == 0 {
+                    e.remove();
+                }
+            }
             let action = match result.outcome {
                 Ok(action) => action,
                 Err(error) => {
@@ -187,16 +195,24 @@ impl OscServer {
         from: ClientId,
         job: NrtJob,
     ) {
+        // A job that rebuilds a buffer from its current contents must build on
+        // what the *queue* last produced, not on the snapshot its parse took
+        // from the mirror -- but only while the queue still owes work on that
+        // index, since with nothing in flight the mirror has caught up and is
+        // the authority (see `NrtChain`). That is exactly what this count says.
+        let chained = *self.nrt_in_flight.get(&index).unwrap_or(&0) > 0;
         let request = NrtRequest {
             cmd,
             index,
             client: from,
+            chained,
             job,
         };
         if self.nrt.submit(request).is_err() {
             self.fail(from, cmd, "NRT thread is down");
         } else {
             self.nrt_submitted += 1;
+            *self.nrt_in_flight.entry(index).or_insert(0) += 1;
         }
     }
 

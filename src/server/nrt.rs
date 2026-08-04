@@ -69,8 +69,14 @@ pub enum NrtJob {
     /// a copy of the current contents, keeping the buffer's shape. Each write
     /// is a flat (interleaved) start index and the run of values to lay down
     /// there, so the single-sample form is just a run of one.
+    ///
+    /// `base` is what the *parse* saw, and it is only a fallback: a batch of
+    /// writes to one buffer is submitted before any of them completes, so every
+    /// one of them would otherwise copy the same pre-batch contents and the last
+    /// installed would silently erase the rest. The runner therefore chains
+    /// them — see [`NrtChain`].
     Set {
-        current: Arc<Buffer>,
+        base: Arc<Buffer>,
         writes: Vec<(usize, Vec<f32>)>,
     },
     /// `/buffer_free`: ordered behind the other jobs (see module docs).
@@ -83,6 +89,11 @@ pub struct NrtRequest {
     pub index: i32,
     /// Who asked: the async reply goes back to this client.
     pub client: ClientId,
+    /// Whether this job must build on what the **queue** last produced for
+    /// `index` rather than on the snapshot its parse took. True exactly when
+    /// the submitter still has work in flight for that buffer, which is when
+    /// the network-side mirror is behind (see [`NrtChain`]).
+    pub chained: bool,
     pub job: NrtJob,
 }
 
@@ -102,6 +113,48 @@ pub struct NrtResult {
     pub outcome: Result<NrtAction, String>,
 }
 
+/// What the queue has most recently produced per buffer index.
+///
+/// The queue is the serialization point for buffer mutation, so "the current
+/// contents" of a buffer means *current in the queue*, not current in the
+/// network-side mirror — the mirror only catches up when results are drained,
+/// which happens after a whole batch has been submitted. A job that builds a
+/// replacement from the existing contents ([`NrtJob::Set`]) therefore takes its
+/// base from here when the queue has already produced one.
+///
+/// The chain is consulted **only while the queue still owes work on that
+/// index**, which the submitter says with [`NrtRequest::chained`]. With nothing
+/// in flight the network-side mirror has caught up and its snapshot is the
+/// authority — which is also what keeps a buffer installed outside the queue
+/// (the embed door's `install_buffer`) from being undone by a stale entry.
+#[derive(Default)]
+pub struct NrtChain(std::collections::HashMap<i32, Arc<Buffer>>);
+
+impl NrtChain {
+    /// Swaps in the queue's own view of the buffer this job builds on, and
+    /// records what the job produced for the next one.
+    fn run(&mut self, index: i32, chained: bool, job: NrtJob) -> Result<NrtAction, String> {
+        let job = match job {
+            NrtJob::Set { base, writes } if chained => NrtJob::Set {
+                base: self.0.get(&index).cloned().unwrap_or(base),
+                writes,
+            },
+            other => other,
+        };
+        let outcome = run_job(job);
+        match &outcome {
+            Ok(NrtAction::Install(buffer)) => {
+                self.0.insert(index, Arc::clone(buffer));
+            }
+            Ok(NrtAction::Clear) => {
+                self.0.remove(&index);
+            }
+            _ => {}
+        }
+        outcome
+    }
+}
+
 pub struct NrtThread {
     /// `Option` so `Drop` can close the channel before joining.
     requests: Option<mpsc::Sender<NrtRequest>>,
@@ -116,12 +169,13 @@ impl NrtThread {
         let handle = std::thread::Builder::new()
             .name("nrt".into())
             .spawn(move || {
+                let mut chain = NrtChain::default();
                 while let Ok(req) = req_rx.recv() {
                     let result = NrtResult {
                         cmd: req.cmd,
                         index: req.index,
                         client: req.client,
-                        outcome: run_job(req.job),
+                        outcome: chain.run(req.index, req.chained, req.job),
                     };
                     if res_tx.send(result).is_err() {
                         break; // receiver gone: we are shutting down
@@ -178,7 +232,7 @@ impl Drop for NrtThread {
 pub enum NrtRunner {
     Thread(NrtThread),
     /// Results of inline-executed jobs, drained like the thread's queue.
-    Inline(std::collections::VecDeque<NrtResult>),
+    Inline(std::collections::VecDeque<NrtResult>, NrtChain),
 }
 
 impl NrtRunner {
@@ -187,7 +241,7 @@ impl NrtRunner {
     }
 
     pub fn inline() -> Self {
-        NrtRunner::Inline(std::collections::VecDeque::new())
+        NrtRunner::Inline(std::collections::VecDeque::new(), NrtChain::default())
     }
 
     /// Queues a job (thread mode) or runs it right now (inline mode). Fails
@@ -196,12 +250,12 @@ impl NrtRunner {
     pub fn submit(&mut self, request: NrtRequest) -> Result<(), NrtRequest> {
         match self {
             NrtRunner::Thread(t) => t.submit(request),
-            NrtRunner::Inline(results) => {
+            NrtRunner::Inline(results, chain) => {
                 results.push_back(NrtResult {
                     cmd: request.cmd,
                     index: request.index,
                     client: request.client,
-                    outcome: run_job(request.job),
+                    outcome: chain.run(request.index, request.chained, request.job),
                 });
                 Ok(())
             }
@@ -212,7 +266,7 @@ impl NrtRunner {
     pub fn try_result(&mut self) -> Option<NrtResult> {
         match self {
             NrtRunner::Thread(t) => t.try_result(),
-            NrtRunner::Inline(results) => results.pop_front(),
+            NrtRunner::Inline(results, _) => results.pop_front(),
         }
     }
 }
@@ -278,7 +332,10 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             Ok(NrtAction::None)
         }
         NrtJob::Gen { current, cmd } => Ok(NrtAction::Install(Arc::new(cmd.apply(&current)))),
-        NrtJob::Set { current, writes } => {
+        NrtJob::Set {
+            base: current,
+            writes,
+        } => {
             // Copy-and-swap, like every other job here: buffers are immutable
             // and the engine holds a clone of this very `Arc`, so the samples
             // are laid into a copy that replaces it whole. The audio thread

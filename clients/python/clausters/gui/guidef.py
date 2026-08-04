@@ -95,6 +95,7 @@ strip) are that same widget configured down.
 import array
 import json
 import sys
+from ..base.bulk import samples_to_blob as _samples_to_blob
 from ..defs.ugens import env_to_points, points_to_env  # re-exported; shared with seq.automation
 
 __all__ = [
@@ -1235,14 +1236,12 @@ def _strip_names(node: dict) -> dict:
     return out
 
 
-def samples_to_blob(samples) -> bytes:
-    """Packs an iterable of floats into a little-endian ``f32`` blob, the bulk
-    form a ``waveform`` reads via ``blob``. Flat bytes at the boundary — the same
-    rule the rest of the client follows."""
-    buf = array.array("f", samples)
-    if sys.byteorder != "little":
-        buf.byteswap()
-    return buf.tobytes()
+#: Packs an iterable of floats into a little-endian ``f32`` blob, the bulk form
+#: a ``waveform`` reads via ``blob``. Re-exported from `clausters.base.bulk`,
+#: which is where the convention lives: every path carrying samples uses the
+#: same pack, so a ``waveform``'s blob and a ``/buffer_setRange`` run cannot
+#: disagree about byte order.
+samples_to_blob = _samples_to_blob
 
 
 def samples_to_file(samples, path: str) -> str:
@@ -1251,11 +1250,8 @@ def samples_to_file(samples, path: str) -> str:
     (which rides the ``/gui_def`` message and so must fit a datagram), a file has
     no size limit: this is how a multi-megabyte buffer reaches the host without
     OSC. Returns `path`."""
-    buf = array.array("f", samples)
-    if sys.byteorder != "little":
-        buf.byteswap()
     with open(path, "wb") as f:
-        f.write(buf.tobytes())
+        f.write(samples_to_blob(samples))
     return path
 
 

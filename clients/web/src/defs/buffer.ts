@@ -4,7 +4,7 @@
 // indices allocated by the client (like scsynth). A `Buffer` holds an index
 // and the server it lives on, and owns the `/buffer_*` commands addressed to it:
 // `Buffer.alloc`, `Buffer.read` and `Buffer.load` create one, and `gen`,
-// `zero`, `info`, `getSamples` and `free` drive it.
+// `zero`, `info`, `getSamples`, `setSamples` and `free` drive it.
 //
 // The handle keeps the `BufferInfo` the server last reported and reads its
 // shape off it: a buffer only changes when a command of yours changes it, so
@@ -16,6 +16,7 @@
 
 import { AllocationError, CommandError } from "../errors.ts";
 import { Registry } from "../base/core.ts";
+import { blobToSamples, samplesToBlob } from "../base/bulk.ts";
 import { fetchAudio, interleave } from "../data/samples.ts";
 import type { MsgArg } from "../base/osc.ts";
 import { parseBufferList } from "./info.ts";
@@ -149,10 +150,11 @@ export class Buffer {
      * returned handle carries the decoded shape, so a view can lay out its
      * axis before reading a sample.
      *
-     * **In-page only.** A socket carrier would have to write the samples
-     * over the wire, and the server has no buffer-write command to write them
-     * with; over a `--ws` server, load the file server-side with `read`
-     * (`/buffer_allocRead`) instead.
+     * **In-page only**, now by cost rather than by impossibility: a socket
+     * carrier would have to push every decoded sample over the wire in
+     * `setSamples` chunks, where the server can read the file itself in one
+     * command. Over a `--ws` server, load it server-side with `read`
+     * (`/buffer_allocRead`).
      */
     static async load(
         url: string,
@@ -193,8 +195,9 @@ export class Buffer {
      * memory shared with the engine, so the samples go in directly.
      *
      * **In-page only**, for the same reason `load` is: a socket carrier would
-     * have to write every sample over the wire, and the server has no
-     * buffer-write command to write them with.
+     * have to push every sample over the wire in `setSamples` chunks, which
+     * is what to reach for when the samples exist only in the page and the
+     * server is remote.
      */
     static async fromSamples(
         samples: Float32Array,
@@ -207,8 +210,8 @@ export class Buffer {
         if (!bulkLoad) {
             throw new CommandError(
                 "Buffer.fromSamples needs a carrier that shares memory with the "
-                    + "server (the in-page engine); over a socket there is no way "
-                    + "to write samples into a buffer",
+                    + "server (the in-page engine); over a socket, allocate the "
+                    + "buffer and write the samples with setSamples",
             );
         }
         const rate = sampleRate > 0
@@ -365,9 +368,7 @@ export class Buffer {
      * a stream carrier. This is the path a waveform view is built from; feed
      * the result to `Peaks.build` and draw the columns.
      *
-     * Reading is the only direction there is: the server has no buffer-write
-     * command at all, so samples reach a buffer by `gen`, by `read` on a native
-     * server, or by `load` in the page.
+     * `setSamples` is the way back, so an editor view can read, edit and write.
      */
     async getSamples({
         start = 0,
@@ -392,15 +393,82 @@ export class Buffer {
                 [["i", this.bufnum], ["i", start + got], ["i", n]],
                 { expect: ["/buffer_getRange.reply"], timeout },
             );
-            // /buffer_getRange.reply: bufnum, start, count, value...
-            const returned = Number(msg.args[2]);
-            if (returned <= 0) break; // past the end: the server has no more
-            for (let i = 0; i < returned; i++) {
-                out[got + i] = Number(msg.args[3 + i]);
-            }
-            got += returned;
+            // /buffer_getRange.reply: bufnum, start, blob -- the samples arrive
+            // as bytes and are unpacked in one native call, never per sample.
+            const run = blobToSamples(msg.args[2] as Uint8Array);
+            if (run.length === 0) break; // past the end: the server has no more
+            out.set(run.subarray(0, Math.min(run.length, total - got)), got);
+            got += run.length;
         }
         return got === total ? out : out.subarray(0, got);
+    }
+
+    /**
+     * Writes interleaved samples into this buffer (`/buffer_setRange`), in
+     * chunks — the write half of `getSamples`, and the step that closes an
+     * editor's read → edit → write cycle.
+     *
+     * `samples` is laid down from flat index `start`, so a stereo buffer is
+     * written interleaved `L R L R …`, exactly as it reads back. The samples
+     * cross as one little-endian `f32` blob per chunk rather than as float
+     * arguments — the protocol's rule for bulk data, and what makes writing a
+     * multi-megabyte edit a byte copy instead of a per-sample encode. The buffer
+     * must already exist and keeps its shape: writing past its end rejects
+     * rather than being clamped, since a short write would lose samples the
+     * caller believes it stored.
+     *
+     * The shape comes from the server's mirror, so a write immediately after
+     * `alloc` needs that alloc to have completed — which awaiting it already
+     * guarantees. `chunk` sizes each round trip and defaults to the
+     * transport's bound, exactly as in `getSamples`.
+     */
+    async setSamples(
+        samples: ArrayLike<number>,
+        {
+            start = 0,
+            chunk,
+            wait = true,
+            timeout,
+        }: { start?: number; chunk?: number; wait?: boolean; timeout?: number } = {},
+    ): Promise<void> {
+        if (samples.length === 0) return;
+        const server = this.srv();
+        const step = chunk ?? (await server.bulkChunk(timeout));
+        const floats = samples instanceof Float32Array
+            ? samples
+            : Float32Array.from(samples as ArrayLike<number>);
+        for (let at = 0; at < floats.length; at += step) {
+            // One native pack per chunk: the samples cross as bytes, so nothing
+            // here or in the OSC encoder touches them one at a time.
+            server.sendMsg(
+                "/buffer_setRange",
+                ["i", this.bufnum],
+                ["i", start + at],
+                samplesToBlob(floats.subarray(at, at + step)),
+            );
+        }
+        // One barrier for the whole batch rather than a /done per chunk: the
+        // queue completes them in order anyway, so awaiting per chunk would
+        // cost a round trip per chunk -- time proportional to the edit's
+        // *length* instead of its size.
+        if (wait) await server.barrier(timeout);
+    }
+
+    /**
+     * Writes one sample by flat index (`/buffer_set`) — the single-sample
+     * counterpart of `setSamples`, for a touch-up that does not deserve a run.
+     */
+    async setSample(
+        index: number,
+        value: number,
+        { wait = true, timeout }: { wait?: boolean; timeout?: number } = {},
+    ): Promise<void> {
+        const args: MsgArg[] = [["i", this.bufnum], ["i", index], ["f", value]];
+        if (!wait) {
+            this.srv().sendMsg("/buffer_set", ...args);
+            return;
+        }
+        await this.srv().command("/buffer_set", args, timeout);
     }
 
     /** Frees this buffer on the server and returns its index to the pool. */

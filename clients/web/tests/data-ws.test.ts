@@ -150,8 +150,8 @@ test("a tap carries the samples a synth is writing", { skip: !hasServer }, async
 
 test("a generated buffer reads back in chunks, and reduces", { skip: !hasServer }, async () => {
     await withServer(async (server) => {
-        // The buffer is filled by the server (`/buffer_gen`), since a client has no
-        // way to write one: the read direction is the whole of the bulk path.
+        // Filled by the server (`/buffer_gen`); the write direction is covered
+        // by the read/edit/write test below.
         const frames = 5000;
         const buffer = await Buffer.alloc(frames, 1, { server });
         await buffer.gen("sine1", [["i", 7], 1.0]);
@@ -178,6 +178,40 @@ test("a generated buffer reads back in chunks, and reduces", { skip: !hasServer 
         const { min, max } = peaks.columns(0, { width: 10 });
         assert.ok(Math.max(...max) > 0.9 && Math.min(...min) < -0.9);
         peaks.free();
+
+        buffer.free();
+    });
+});
+
+test("a client writes samples and reads back exactly what it wrote", { skip: !hasServer }, async () => {
+    await withServer(async (server) => {
+        const buffer = await Buffer.alloc(8, 1, { server });
+
+        await buffer.setSamples([0.1, 0.2, 0.3, 0.4], { start: 2 });
+        await buffer.setSample(0, -0.5);
+        const read = Array.from(await buffer.getSamples());
+        const expected = [-0.5, 0, 0.1, 0.2, 0.3, 0.4, 0, 0];
+        for (let i = 0; i < expected.length; i++) {
+            assert.ok(Math.abs(read[i]! - expected[i]!) < 1e-6, `sample ${i}: ${read[i]}`);
+        }
+
+        // Read, edit, write back -- the cycle an editor view makes.
+        await buffer.setSamples(read.map((v) => v * 2));
+        const again = await buffer.getSamples();
+        for (let i = 0; i < expected.length; i++) {
+            assert.ok(Math.abs(again[i]! - expected[i]! * 2) < 1e-6, `edited ${i}`);
+        }
+
+        // Chunking is transparent: several round trips, one result.
+        await buffer.setSamples(new Float32Array(8).fill(1), { chunk: 3 });
+        const filled = await buffer.getSamples();
+        assert.ok(filled.every((v) => Math.abs(v - 1) < 1e-6), "chunked write landed whole");
+
+        // A write past the end is refused, and refusing it changes nothing.
+        await assert.rejects(
+            buffer.setSamples([1, 1, 1], { start: 6 }),
+            "a write past the end must not be clamped",
+        );
 
         buffer.free();
     });

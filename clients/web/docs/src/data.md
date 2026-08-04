@@ -131,16 +131,33 @@ const slice = await buffer.getSamples({ start: 0, count: 1024 });
 The samples are interleaved (`frame * channels + channel`), so a stereo buffer
 reads `L R L R …`; `data.deinterleave(samples, buffer.channels)` splits it.
 
-**Reading is the only direction.** The server has no buffer-write command at
-all — `/buffer_getRange` reads, and nothing writes back — so samples get *into* a buffer
-another way: `buffer.gen` (the server computes them), `Buffer.read`
-(a native server reads a file), or — in the page, where the carrier shares
-memory with the engine — `Buffer.load(server, url)`, which fetches and decodes
-with the browser's own decoder:
+**Writing is the other direction**, and it closes the cycle an editor view
+makes: read a buffer, edit the samples client-side, write them back.
+
+```js
+const samples = await buffer.getSamples();
+await buffer.setSamples(samples.map((v) => v * 0.5));   // half as loud
+await buffer.setSample(0, 0);                           // one sample
+```
+
+`setSamples` chunks against the same carrier bound `getSamples` reads with, and
+lays its samples down from a flat index, so the two are mirror images. One rule
+differs: writing past the end **rejects** rather than being clamped the way a
+read is — a short read hands back less than was asked for and says so, a short
+write would lose samples you believe you stored.
+
+Samples also get into a buffer without being sent at all: `buffer.gen` has the
+server compute them, `Buffer.read` has a native server read a file, and — in the
+page, where the carrier shares memory with the engine — `Buffer.load(server,
+url)` fetches and decodes with the browser's own decoder:
 
 ```js
 const buffer = await Buffer.load(server, "./kick.wav");   // in-page carrier only
 ```
+
+That last one stays in-page by cost rather than by impossibility: over a socket
+the same file would travel sample by sample through `setSamples`, where a native
+server reads it in one command.
 
 ### The peak pyramid
 

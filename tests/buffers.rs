@@ -38,6 +38,7 @@ fn run_nrt(job: NrtJob) -> Result<NrtAction, String> {
         cmd: "/b_test",
         index: 0,
         client: clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap()),
+        chained: false,
         job,
     })
     .ok()
@@ -411,6 +412,11 @@ fn replaced_buffer_leaves_through_the_garbage_fifo() {
 
 // ---- The write half: /buffer_set and /buffer_setRange ----
 
+/// Bulk samples ride as one little-endian f32 blob (docs/schemas.md).
+fn blob(values: &[f32]) -> OscType {
+    OscType::Blob(values.iter().flat_map(|v| v.to_le_bytes()).collect())
+}
+
 /// The parse takes a mirror pool; these tests build a one-slot one.
 fn mirror_of(buffer: Arc<Buffer>) -> clausters::dsp::buffer::BufferPool {
     vec![Some(buffer)]
@@ -445,14 +451,10 @@ fn set_writes_runs_into_a_replacement_keeping_the_shape() {
         vec![
             OscType::Int(0),
             OscType::Int(4),
-            OscType::Int(3),
-            OscType::Float(1.0),
-            OscType::Float(2.0),
-            OscType::Float(3.0),
+            blob(&[1.0, 2.0, 3.0]),
             // A second run in the same message, to prove they pack.
             OscType::Int(12),
-            OscType::Int(1),
-            OscType::Float(9.0),
+            blob(&[9.0]),
         ],
         &mirror,
     )
@@ -509,15 +511,7 @@ fn a_write_past_the_end_fails_rather_than_being_clamped() {
     // stored samples the server dropped.
     let err = set_error(
         "/buffer_setRange",
-        vec![
-            OscType::Int(0),
-            OscType::Int(2),
-            OscType::Int(4),
-            OscType::Float(1.0),
-            OscType::Float(1.0),
-            OscType::Float(1.0),
-            OscType::Float(1.0),
-        ],
+        vec![OscType::Int(0), OscType::Int(2), blob(&[1.0; 4])],
         &mirror,
     );
     assert!(err.contains("past the end"), "unexpected message: {err}");
@@ -533,19 +527,25 @@ fn a_write_past_the_end_fails_rather_than_being_clamped() {
 #[test]
 fn a_malformed_write_is_refused_before_it_reaches_the_queue() {
     let mirror = mirror_of(Arc::new(Buffer::zeroed(8, 1, SR as f64)));
-    // A run that declares more values than it carries: a partial write would
-    // be worse than a refusal.
+    // A blob that is not a whole number of f32s: a partial sample would be
+    // worse than a refusal.
     let err = set_error(
         "/buffer_setRange",
         vec![
             OscType::Int(0),
             OscType::Int(0),
-            OscType::Int(3),
-            OscType::Float(1.0),
+            OscType::Blob(vec![0, 1, 2]),
         ],
         &mirror,
     );
-    assert!(err.contains("carries 1"), "unexpected message: {err}");
+    assert!(err.contains("multiple of 4"), "unexpected message: {err}");
+
+    // Float arguments are the single-sample form's shape, not this one's.
+    set_error(
+        "/buffer_setRange",
+        vec![OscType::Int(0), OscType::Int(0), OscType::Float(1.0)],
+        &mirror,
+    );
 
     // An odd tail on the pair form.
     set_error(
@@ -1063,6 +1063,83 @@ mod osc {
         std::fs::remove_file(&path).ok();
     }
 
+    /// A batch of writes to one buffer, submitted before any of them completes.
+    /// Each job's parse snapshots the buffer from the network-side mirror, and
+    /// the mirror is behind until results are drained — so without the queue
+    /// chaining them every chunk would rebuild the *pre-batch* contents and the
+    /// last one installed would erase the rest. This is the shape a client's
+    /// chunked `set_samples` sends, so it is the regression that matters most.
+    #[test]
+    fn a_batch_of_writes_does_not_erase_itself() {
+        // The engine is never ticked here: this is about what the queue
+        // installs, which the mirror answers for.
+        let (_engine, engine_handle) = engine_pair(SR, CHANNELS);
+        let info = ServerInfo {
+            nominal_sample_rate: SR as f64,
+            actual_sample_rate: SR as f64,
+        };
+        let mut server = OscServer::bind(("127.0.0.1", 0), info, engine_handle).unwrap();
+        let addr = server.local_addr().unwrap();
+        let server_thread = std::thread::spawn(move || server.run());
+        let client = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        client.set_read_timeout(Some(NRT_DEADLINE)).unwrap();
+
+        let send = |addr_str: &str, args: Vec<OscType>| {
+            let packet = OscPacket::Message(OscMessage {
+                addr: addr_str.into(),
+                args,
+            });
+            client
+                .send_to(&encoder::encode(&packet).unwrap(), addr)
+                .unwrap();
+        };
+        let recv_until = |want: &str| -> OscMessage {
+            let mut buf = [0u8; 65536];
+            for _ in 0..200 {
+                let (len, _) = client.recv_from(&mut buf).expect("reply timed out");
+                if let (_, OscPacket::Message(msg)) = decoder::decode_udp(&buf[..len]).unwrap()
+                    && msg.addr == want
+                {
+                    return msg;
+                }
+            }
+            panic!("never received {want}");
+        };
+
+        send("/buffer_alloc", vec![OscType::Int(1), OscType::Int(9)]);
+        recv_until("/done");
+
+        // Three writes fired back to back, no barrier between them, each on a
+        // different third of the buffer.
+        for (i, run) in [[1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]
+            .iter()
+            .enumerate()
+        {
+            send(
+                "/buffer_setRange",
+                vec![OscType::Int(1), OscType::Int(i as i32 * 3), blob(run)],
+            );
+        }
+        // One barrier for the batch, the way a chunked client write closes.
+        send("/server_sync", vec![OscType::Int(1)]);
+        recv_until("/server_sync.reply");
+
+        send(
+            "/buffer_getRange",
+            vec![OscType::Int(1), OscType::Int(0), OscType::Int(9)],
+        );
+        let read = recv_until("/buffer_getRange.reply");
+        assert_eq!(
+            read.args[2],
+            blob(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]),
+            "every chunk of the batch survived"
+        );
+
+        send("/server_quit", vec![]);
+        recv_until("/done");
+        server_thread.join().unwrap().unwrap();
+    }
+
     /// M31(a): the read → edit → write cycle an editor view needs. What a
     /// client writes with `/buffer_set`/`/buffer_setRange` is exactly what
     /// `/buffer_getRange` reads back, and the engine plays the edited samples.
@@ -1110,19 +1187,16 @@ mod osc {
         );
 
         // Two runs in one message, plus two single samples.
-        let mut args = vec![
-            OscType::Int(2),
-            OscType::Int(0),
-            OscType::Int(3),
-            OscType::Float(0.1),
-            OscType::Float(0.2),
-            OscType::Float(0.3),
-            OscType::Int(6),
-            OscType::Int(2),
-            OscType::Float(0.7),
-            OscType::Float(0.8),
-        ];
-        send("/buffer_setRange", std::mem::take(&mut args));
+        send(
+            "/buffer_setRange",
+            vec![
+                OscType::Int(2),
+                OscType::Int(0),
+                blob(&[0.1, 0.2, 0.3]),
+                OscType::Int(6),
+                blob(&[0.7, 0.8]),
+            ],
+        );
         assert_eq!(
             recv_until("/done").args[0],
             OscType::String("/buffer_setRange".into())
@@ -1148,13 +1222,14 @@ mod osc {
             vec![OscType::Int(2), OscType::Int(0), OscType::Int(8)],
         );
         let read = recv_until("/buffer_getRange.reply");
-        let values: Vec<f32> = read.args[3..]
-            .iter()
-            .map(|a| match a {
-                OscType::Float(f) => *f,
-                other => panic!("expected a float, got {other:?}"),
-            })
-            .collect();
+        // The reply carries each range as one little-endian f32 blob.
+        let values = match &read.args[2] {
+            OscType::Blob(bytes) => bytes
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect::<Vec<f32>>(),
+            other => panic!("expected a blob, got {other:?}"),
+        };
         assert_eq!(
             values,
             vec![0.1, 0.2, 0.3, 0.0, 0.5, 0.6, 0.7, 0.8],
@@ -1165,15 +1240,7 @@ mod osc {
         // leaves the buffer as it was.
         send(
             "/buffer_setRange",
-            vec![
-                OscType::Int(2),
-                OscType::Int(7),
-                OscType::Int(4),
-                OscType::Float(1.0),
-                OscType::Float(1.0),
-                OscType::Float(1.0),
-                OscType::Float(1.0),
-            ],
+            vec![OscType::Int(2), OscType::Int(7), blob(&[1.0; 4])],
         );
         assert_eq!(
             recv_until("/fail").args[0],
@@ -1184,8 +1251,8 @@ mod osc {
             vec![OscType::Int(2), OscType::Int(7), OscType::Int(1)],
         );
         assert_eq!(
-            recv_until("/buffer_getRange.reply").args[3],
-            OscType::Float(0.8),
+            recv_until("/buffer_getRange.reply").args[2],
+            blob(&[0.8]),
             "a refused write changes nothing"
         );
 

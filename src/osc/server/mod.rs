@@ -173,6 +173,10 @@ pub struct OscServer {
     /// current submitted counts as its targets and is answered with `/server_sync.reply`
     /// once both drained counts have caught up. See [`Self::handle_server_sync`].
     nrt_submitted: u64,
+    /// Jobs submitted to the NRT queue and not yet drained, per buffer index.
+    /// Non-zero means the network-side mirror is behind the queue for that
+    /// buffer, which is what `NrtChain` needs to know (see `submit_nrt`).
+    nrt_in_flight: std::collections::HashMap<i32, u32>,
     nrt_drained: u64,
     faust_submitted: u64,
     faust_drained: u64,

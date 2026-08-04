@@ -50,6 +50,7 @@ impl OscServer {
             #[cfg(feature = "faust")]
             faust_compiler: CompilerThread::spawn(),
             nrt_submitted: 0,
+            nrt_in_flight: Default::default(),
             nrt_drained: 0,
             faust_submitted: 0,
             faust_drained: 0,
@@ -107,6 +108,7 @@ impl OscServer {
             #[cfg(feature = "faust")]
             faust_compiler: CompilerThread::spawn(),
             nrt_submitted: 0,
+            nrt_in_flight: Default::default(),
             nrt_drained: 0,
             faust_submitted: 0,
             faust_drained: 0,

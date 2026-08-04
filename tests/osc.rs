@@ -13,6 +13,18 @@ use std::time::Duration;
 use clausters::dsp::Limits;
 use clausters::osc::server::{OscServer, ServerInfo};
 use clausters::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
+
+/// The samples in a `/buffer_getRange.reply` range: one little-endian f32 blob
+/// (docs/schemas.md, "bulk samples travel as a blob").
+fn range_samples(arg: &OscType) -> Vec<f32> {
+    match arg {
+        OscType::Blob(bytes) => bytes
+            .chunks_exact(4)
+            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .collect(),
+        other => panic!("expected a sample blob, got {other:?}"),
+    }
+}
 use clausters::server::engine::{BLOCK_SIZE, Engine, engine_pair, engine_pair_full};
 use clausters::server::ipc::Segment;
 
@@ -785,14 +797,8 @@ fn b_getn_and_b_get_read_buffer_samples() {
     let reply = server.recv_until("/buffer_getRange.reply");
     assert_eq!(reply.args[0], OscType::Int(0)); // bufnum
     assert_eq!(reply.args[1], OscType::Int(0)); // start
-    assert_eq!(reply.args[2], OscType::Int(6)); // count, clamped
-    let got: Vec<f32> = reply.args[3..]
-        .iter()
-        .map(|a| match a {
-            OscType::Float(f) => *f,
-            other => panic!("expected float, got {other:?}"),
-        })
-        .collect();
+    let got = range_samples(&reply.args[2]); // the blob's length is the count
+    assert_eq!(got.len(), 6, "clamped to what the buffer holds");
     assert_eq!(got, samples);
 
     // A mid-range slice.
@@ -802,10 +808,9 @@ fn b_getn_and_b_get_read_buffer_samples() {
     );
     let reply = server.recv_until("/buffer_getRange.reply");
     assert_eq!(reply.args[1], OscType::Int(2));
-    assert_eq!(reply.args[2], OscType::Int(3));
-    // args = [bufnum, start, count, samples[2], samples[3], samples[4]]
-    assert_eq!(reply.args[3], OscType::Float(0.2));
-    assert_eq!(reply.args[5], OscType::Float(0.4));
+    // args = [bufnum, start, blob(samples[2..5])]
+    let slice = range_samples(&reply.args[2]);
+    assert_eq!(slice, vec![0.2, 0.3, 0.4]);
 
     // Indexed reads; an out-of-range index reads as 0.0.
     server.send(
@@ -826,7 +831,10 @@ fn b_getn_and_b_get_read_buffer_samples() {
     );
     let reply = server.recv_until("/buffer_getRange.reply");
     assert_eq!(reply.args[0], OscType::Int(7));
-    assert_eq!(reply.args[2], OscType::Int(0));
+    assert!(
+        range_samples(&reply.args[2]).is_empty(),
+        "empty blob, not an error"
+    );
 
     let _ = std::fs::remove_file(&path);
     server.quit();
@@ -861,14 +869,8 @@ fn b_gen_fills_a_wavetable_then_reads_it_back() {
         vec![OscType::Int(0), OscType::Int(0), OscType::Int(256)],
     );
     let reply = server.recv_until("/buffer_getRange.reply");
-    assert_eq!(reply.args[2], OscType::Int(256));
-    let table: Vec<f32> = reply.args[3..]
-        .iter()
-        .map(|a| match a {
-            OscType::Float(f) => *f,
-            other => panic!("expected float, got {other:?}"),
-        })
-        .collect();
+    let table = range_samples(&reply.args[2]);
+    assert_eq!(table.len(), 256);
     let points = table.len() / 2;
     for k in 0..points {
         let expect = (std::f32::consts::TAU * k as f32 / points as f32).sin();
@@ -1698,12 +1700,10 @@ fn tcp_carries_frames_larger_than_a_datagram() {
         vec![OscType::Int(0), OscType::Int(0), OscType::Int(N as i32)],
     );
     let reply = client.recv_until("/buffer_getRange.reply");
-    assert_eq!(reply.args.len(), 3 + N, "one reply frame carries it whole");
-    assert_eq!(reply.args[2], OscType::Int(N as i32));
+    let samples = range_samples(&reply.args[2]);
+    assert_eq!(samples.len(), N, "one reply frame carries it whole");
     // The ramp's tail sits at the last segment's level.
-    let OscType::Float(last) = reply.args[3 + N - 1] else {
-        panic!("expected float samples");
-    };
+    let last = samples[N - 1];
     assert!((last - SEGS as f32).abs() < 2.0, "ramp tail, got {last}");
 }
 

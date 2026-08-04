@@ -121,9 +121,11 @@ pub fn parse_buffer_msg(
             )
         }
         // The write half of the read pair: `/buffer_set` takes (index, value)
-        // pairs, `/buffer_setRange` takes (start, count, value...) runs. Both
-        // address samples flat and interleaved, exactly as `/buffer_get` and
-        // `/buffer_getRange` read them back.
+        // pairs, `/buffer_setRange` takes (start, blob) runs — bulk samples ride
+        // as one little-endian f32 blob, the convention `/bus_tapStream.reply`
+        // and `/buffer_export` already follow. Both address samples flat and
+        // interleaved, exactly as `/buffer_get` and `/buffer_getRange` read them
+        // back.
         "/buffer_set" | "/buffer_setRange" => {
             let Some(OscType::Int(index)) = args.first() else {
                 return Err("expected a buffer index".into());
@@ -150,7 +152,13 @@ pub fn parse_buffer_msg(
                     ));
                 }
             }
-            (*index, NrtJob::Set { current, writes })
+            (
+                *index,
+                NrtJob::Set {
+                    base: current,
+                    writes,
+                },
+            )
         }
         "/buffer_free" => {
             let Some(OscType::Int(index)) = args.first() else {
@@ -310,36 +318,40 @@ fn parse_set_pairs(args: &[OscType]) -> Result<Vec<(usize, Vec<f32>)>, String> {
         .collect()
 }
 
-/// `/buffer_setRange`'s `(start, count, value...)...` tail. `count` says how
-/// many values belong to the run, so several runs pack into one message and a
-/// truncated one is an error rather than a silent partial write.
+/// `/buffer_setRange`'s `(start, blob)...` tail: each run's samples ride as one
+/// little-endian `f32` blob, so several runs pack into one message and the run
+/// length is the blob's — there is no declared count that could disagree with
+/// what arrived.
+///
+/// The blob is why this is the *bulk* form. A run of N samples as N float args
+/// costs N type tags and N encode steps at both ends, which is what made the
+/// per-sample argument list unusable for the multi-megabyte edit the command
+/// exists for; as bytes it is one copy. Same shape `/bus_tapStream.reply` sends
+/// its windows in and `/buffer_export` writes its files in.
 fn parse_set_runs(args: &[OscType]) -> Result<Vec<(usize, Vec<f32>)>, String> {
-    let mut writes = Vec::new();
-    let mut rest = args;
-    while !rest.is_empty() {
-        let [OscType::Int(start), OscType::Int(count), tail @ ..] = rest else {
-            return Err("expected: bufnum, then (start, count, value...) runs".into());
-        };
-        let at = usize::try_from(*start).map_err(|_| format!("negative sample index {start}"))?;
-        let count =
-            usize::try_from(*count).map_err(|_| format!("negative sample count {count}"))?;
-        if tail.len() < count {
-            return Err(format!(
-                "run at {at} declares {count} values and carries {}",
-                tail.len()
-            ));
-        }
-        let values = tail[..count]
-            .iter()
-            .map(|a| float_value(a).ok_or_else(|| "sample values must be numbers".to_string()))
-            .collect::<Result<Vec<f32>, _>>()?;
-        writes.push((at, values));
-        rest = &tail[count..];
+    if args.is_empty() || !args.len().is_multiple_of(2) {
+        return Err("expected: bufnum, then (start, blob) runs".into());
     }
-    if writes.is_empty() {
-        return Err("expected: bufnum, then (start, count, value...) runs".into());
-    }
-    Ok(writes)
+    args.chunks_exact(2)
+        .map(|run| {
+            let (OscType::Int(start), OscType::Blob(bytes)) = (&run[0], &run[1]) else {
+                return Err("expected: bufnum, then (start, blob) runs".into());
+            };
+            let at =
+                usize::try_from(*start).map_err(|_| format!("negative sample index {start}"))?;
+            if !bytes.len().is_multiple_of(4) {
+                return Err(format!(
+                    "a sample blob is little-endian f32: {} bytes is not a multiple of 4",
+                    bytes.len()
+                ));
+            }
+            let values = bytes
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            Ok((at, values))
+        })
+        .collect()
 }
 
 fn mirror_buffer(mirror: &BufferPool, index: i32) -> Option<Arc<Buffer>> {

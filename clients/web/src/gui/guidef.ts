@@ -1301,18 +1301,4 @@ function stripNames(tree: GuiNode): GuiNode {
  * reads through `blob`. Flat bytes at the boundary, the rule the rest of the
  * client follows.
  */
-export function samplesToBlob(samples: Iterable<number>): Uint8Array {
-    const floats = Float32Array.from(samples);
-    const bytes = new Uint8Array(floats.buffer, floats.byteOffset, floats.byteLength);
-    if (LITTLE_ENDIAN) return bytes;
-    const view = new DataView(bytes.buffer.slice(0));
-    for (let i = 0; i < floats.length; i++) view.setFloat32(i * 4, floats[i]!, true);
-    return new Uint8Array(view.buffer);
-}
-
-/**
- * Whether this runtime's typed arrays are already little-endian (every
- * browser and node target in practice; the check keeps the blob correct
- * wherever they are not).
- */
-const LITTLE_ENDIAN = new Uint8Array(Uint16Array.of(1).buffer)[0] === 1;
+export { samplesToBlob } from "../base/bulk.ts";
