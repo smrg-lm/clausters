@@ -10,10 +10,19 @@ build already needs:
 - **typescript** (dev-only, via `npm install` here) — `tsc` is both the
   type-checker and the emitter. `@types/node` rides along for the test files'
   `node:*` imports; it is type declarations only, nothing at runtime.
+- **esbuild** (dev-only, same `npm install`) — for **one** output file, not for
+  the package: `dist/notebook-client.js`, the copy of the client the Jupyter
+  front end is handed over a kernel comm. Without it `build.sh` still produces
+  a complete, servable `dist/` and says which artifact is missing; only the
+  notebook front end fails to load.
 
-There is deliberately **no bundler** (no vite/esbuild/webpack): the package
-ships unbundled ES modules, the wasm bundles and the AudioWorklet module must
-stay static assets anyway, and the browser loads bare ESM natively.
+The package itself ships **unbundled** ES modules — what a page imports is what
+was written, the wasm bundles and the AudioWorklet module have to stay static
+assets anyway, and the browser loads bare ESM natively. The one bundled file is
+there because its carrier cannot load a module tree at all: it arrives as bytes
+over a comm and is imported from `blob:` URLs, which have no path to resolve a
+relative specifier against, and rewriting each import to a blob URL cannot
+express an import cycle. See `src/notebook/client.ts` and `docs/decisions.md`.
 
 ## Installing wasm-bindgen-cli (pinned to the lockfiles)
 
@@ -73,7 +82,7 @@ the browser's `_bin`/`_libs`). Pages live in `examples/` and `tests/` and
 import from `../dist/`.
 
 ```sh
-npm install       # once: typescript + @types/node into node_modules/
+npm install       # once: typescript + @types/node + esbuild into node_modules/
 ./build.sh        # cargo-builds the three wasm crates, wasm-bindgens them
                   # into dist/, then `npm run build` (tsc emit src/ -> dist/)
 ./test.sh         # the full acceptance: type-check + node suites + the

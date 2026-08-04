@@ -565,9 +565,19 @@ a plain REPL carries none of it.
 
 It builds nothing. The browser half is the **web client's own `dist/`**, staged
 into the package by `scripts/refresh-web.sh` (which runs `clients/web/build.sh`
-and copies) — the wasm GUI host, the wasm engine, the shared core, and one
-module of its own, `clients/web/src/notebook/widget.ts`, which lives with the
-rest of the TypeScript rather than inside the Python package.
+and copies) — the wasm GUI host, the wasm engine, the shared core, and two
+modules of its own, `clients/web/src/notebook/widget.ts` and the entry it is
+written against, `client.ts`, both living with the rest of the TypeScript
+rather than inside the Python package.
+
+**The front end is a client of the web package, not a second implementation of
+it.** It boots the host through `newGuiHost`, the engine through `engine()`,
+holds a `Session` that owns both, feeds the kernel's packets in through the
+host client's carrier and tears the whole thing down with `session.close()`.
+What it supplies is what is genuinely the notebook's: which canvas a window
+draws into, and the comm the kernel authors over. Both ends author against one
+engine, so they take an **id share** each — the kernel index 0, the page index
+1 (see "Ids over the pools" above).
 
 | Path | Contents |
 |---|---|
@@ -583,11 +593,16 @@ Three constraints shape all of it, and each is a property of where it runs:
 
 - **The assets travel over the comm.** anywidget serves one module — the
   widget's own `_esm` — and a remote kernel has no static route to add the rest
-  to. So the modules arrive as buffers and become blob URLs, with their
-  relative import specifiers rewritten to those URLs (a blob module resolves
-  relatives against the blob's origin, where nothing lives) in an order
-  topologically sorted over the import graph. The `.wasm` arrives as bytes,
-  which is what wasm-bindgen's `init` takes.
+  to. So they arrive as buffers and become blob URLs, with their relative
+  import specifiers rewritten to those URLs (a blob module resolves relatives
+  against the blob's origin, where nothing lives) in an order topologically
+  sorted over the import graph. The `.wasm` arrives as bytes, which is what
+  wasm-bindgen's `init` takes. The **client itself arrives bundled** — one
+  file, `dist/notebook-client.js` — because that rewrite works for a tree and
+  cannot work for a cycle: rewriting A's import of B needs B's URL, and the
+  client has three ordinary ESM cycles. What stays a module of its own is what
+  is loaded by URL into a scope of its own: the audio worklet, and the clock's
+  tick worker (`setTickWorkerUrl`).
 - **A reply cannot arrive while a cell runs.** ipykernel holds an asyncio lock
   across the whole `execute_request` so cells run in order, and a `comm_msg` is
   a shell message. There is no loop to pump (ipykernel 7 removed
