@@ -83,7 +83,7 @@
       const { loadOsc } = await import("../dist/index.js");
       const { decodePacket, encodeMessage } = await import("../dist/base/osc.js");
       const mod = await import("../dist/notebook/widget.js");
-      const { default: widget, asBytes, liveSessions } = mod;
+      const { default: widget, asBytes, liveSessions, runtimeUp } = mod;
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const lines = [];
@@ -266,6 +266,40 @@
           throw new Error("the second notebook's engine never answered");
         }
         log("a second session booted on the staged assets and answered");
+
+        // ---- the notebook that ends the way a script does, and then starts
+        // again. `server.quit()` is an ordinary command the kernel sends, and
+        // what it stops is the audio thread *in this page*, which nothing
+        // restarts. Before the runtime was freed on it, everything downstream
+        // carried on against a dead engine: the cells still drew, and nothing
+        // ever sounded again short of reloading the tab.
+        a.model.deliver({ ch: "server" },
+                        [encodeMessage("/server_quit", [])]);
+        await sleep(400);
+        if (runtimeUp("session-a")) {
+          throw new Error(
+            "/server_quit left the runtime up - the page keeps a host and a " +
+            "session over an engine that has stopped");
+        }
+        log("/server_quit freed the runtime, session still tracked");
+
+        // The next thing the kernel sends is what asks for a new one: no
+        // remount, no reload, exactly what re-running the cells looks like.
+        if (!await reaches(a.model, 91)) {
+          throw new Error(
+            "nothing came back after /server_quit - the notebook cannot start " +
+            "again without reloading the tab");
+        }
+        if (!runtimeUp("session-a")) {
+          throw new Error("the engine answered but no runtime is recorded");
+        }
+        log("a packet after the quit brought a fresh engine up");
+
+        // And the second notebook was not touched by any of it.
+        if (!await reaches(b.model, 3)) {
+          throw new Error("the other notebook's engine died with this one's");
+        }
+        log("the other notebook kept its own engine through the quit");
 
         // ---- teardown, signal one: the kernel's comm closes (a kernel shut
         // down, a widget closed from Python). A session outlives its cells but

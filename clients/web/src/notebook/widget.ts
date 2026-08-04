@@ -182,6 +182,7 @@ function trackModel(session: string, model: Model): void {
             // one the notebook has come back from. Free it.
             adopt(session, kernel.id);
         }
+        if (kernel?.statusChanged?.connect === undefined) degraded("status");
         kernel?.statusChanged?.connect((_sender, status) => {
             if (KERNEL_RESTARTING.includes(status)) orphan(session);
             else if (status === KERNEL_DEAD) scheduleClose(session);
@@ -190,7 +191,39 @@ function trackModel(session: string, model: Model): void {
         // A front end whose manager is shaped differently: no kernel id, no
         // status. A closed comm still frees this session; a restart under such
         // a front end leaves it silenced until the page is reloaded.
+        degraded("both");
     }
+    if (state.kernel === null) degraded("id");
+}
+
+/**
+ * Say once that this front end cannot see its kernel's life, and what that
+ * costs.
+ *
+ * The two signals a session is freed by are the comm closing and the kernel's
+ * own status, and both come from the front end's manager — whose internals are
+ * not part of the widget protocol, so JupyterLab, VS Code and Colab do not
+ * have to agree on them. Where they are missing this degrades rather than
+ * fails, which is right, and used to do it in silence, which is not: what a
+ * reader sees is hosts piling up in a tab across kernel restarts, with nothing
+ * anywhere saying why. A restart is the case that needs the signal — it closes
+ * no comm at all.
+ */
+const degradedOnce = new Set<string>();
+
+function degraded(missing: "id" | "status" | "both"): void {
+    if (degradedOnce.has(missing)) return;
+    degradedOnce.add(missing);
+    const what = missing === "id"
+        ? "this front end reports no kernel id"
+        : missing === "status"
+        ? "this front end reports no kernel status"
+        : "this front end exposes no kernel at all";
+    console.warn(
+        `clausters: ${what}, so a kernel *restart* cannot be detected here. `
+        + "The host and engine of the notebook you restarted stay on the page "
+        + "until it is reloaded (a kernel that is shut down still frees them, "
+        + "since its comm closes). Reload the tab to clear them.");
 }
 
 /**
@@ -580,6 +613,12 @@ interface Shared {
      * promise runs after this drain, which was registered first.
      */
     toEngine: Uint8Array[];
+    /**
+     * What a live view does when the runtime under it is freed: forget it, and
+     * ask the kernel to draw again. A view holds its `Booted` directly, so
+     * something has to tell it that reference is dead — see `engineQuit`.
+     */
+    reboot: Set<() => void>;
     /** Live models of this session, so the last one out can close it. */
     models: number;
     /** A teardown already scheduled, so a flurry of events costs only one. */
@@ -606,8 +645,8 @@ function shared(session: string): Shared {
     const scope = globalThis as unknown as Record<string, Record<string, Shared>>;
     scope[KEY] ??= {};
     scope[KEY][session] ??= {
-        runtime: null, views: 0, toEngine: [], models: 0, closing: null,
-        kernel: null, orphaned: false,
+        runtime: null, views: 0, toEngine: [], reboot: new Set(), models: 0,
+        closing: null, kernel: null, orphaned: false,
     };
     return scope[KEY][session];
 }
@@ -653,6 +692,53 @@ function closeSession(session: string): void {
             booted.gui.close();
         }
     });
+}
+
+/**
+ * Release this session's runtime, but not the session: its kernel is still
+ * there and may ask for more.
+ *
+ * The engine stopping is what this is for. `/server_quit` is a command the
+ * kernel sends like any other — a notebook ends the way a script does — and
+ * what it stops is the audio thread *in this page*, which nothing restarts.
+ * Before this, everything downstream carried on: the host kept drawing, the
+ * `Session` kept a server client over a dead engine, and every later note went
+ * into a thread that had stopped. What that looked like is the worst kind of
+ * failure this package can have — a notebook that draws correctly and is
+ * silent, with one warning in a console nobody had open.
+ *
+ * So the runtime goes, all of it, and the next thing the kernel sends builds
+ * another (`bootShared` is keyed on this being null). That is recovery rather
+ * than repair: a quit discards the server's whole state — its defs, buffers
+ * and nodes — so pretending the old one survived would be a lie the first
+ * `/synth_new` exposes. Re-running the cells is what fills a fresh engine, and
+ * the client sends its defs every time, so re-running is all it takes.
+ */
+function freeRuntime(session: string): void {
+    const state = shared(session);
+    const runtime = state.runtime;
+    state.runtime = null;
+    void runtime?.then((booted) => {
+        if (booted.session !== null) booted.session.close();
+        else {
+            booted.host.stop();
+            booted.gui.close();
+        }
+    });
+    // The live views hold that `Booted` directly; tell them it is gone before
+    // one of them feeds a packet into it.
+    for (const reset of [...state.reboot]) reset();
+}
+
+/**
+ * Whether this session has a runtime up right now — for the acceptance, which
+ * has to see the difference between "the engine stopped" and "the engine
+ * stopped and one just like it came back", and cannot tell them apart from a
+ * reply.
+ */
+export function runtimeUp(session: string): boolean {
+    const scope = globalThis as unknown as Record<string, Record<string, Shared>>;
+    return (scope[KEY]?.[session]?.runtime ?? null) !== null;
 }
 
 /** The sessions this page is holding, for the acceptance to look at. */
@@ -715,6 +801,10 @@ function bootShared(
 ): Promise<Booted> {
     const state = shared(session);
     state.runtime ??= bootRuntime(urls, wasm, serverUrl).then((booted) => {
+        // An engine that stops is the end of this runtime, not of this
+        // session: the kernel is still there, and the next thing it sends
+        // gets a new one (`freeRuntime`).
+        booted.engine?.onQuit(() => freeRuntime(session));
         // Whatever the kernel sent while this was coming up. Dropped rather
         // than held when there is no engine (the native backend sends nothing
         // here, but a queue that only grows is worse than one that empties).
@@ -773,6 +863,21 @@ export default {
         const boot = (urls: Map<string, string>, wasm: Map<string, Uint8Array>) => {
             void bootShared(session, urls, wasm, model.get("server_url") as string)
                 .then(ready);
+        };
+
+        /**
+         * The kernel wants something: make sure a runtime is coming.
+         *
+         * A no-op except in one state — after a `/server_quit` freed this
+         * session's runtime, when nothing else would ever boot another (a
+         * mount is what normally does, and the cells are already mounted). A
+         * queue nothing drains is how a notebook that quit its engine went
+         * quiet for good.
+         */
+        const wanted = () => {
+            if (shared(session).runtime !== null) return;
+            const cached = staged();
+            if (cached !== null) boot(cached.urls, cached.wasm);
         };
 
         // The same rule a served page follows (`gui/page.ts`'s `fit`): the
@@ -834,6 +939,10 @@ export default {
                 return;
             }
             if (content.ch === GUI) {
+                // A cell drawing again after the engine was quit: no mount is
+                // coming, so the packet itself asks for a runtime. Held in
+                // `pending` until it is up, as during the first boot.
+                wanted();
                 for (const buffer of buffers) {
                     const packet = asBytes(buffer);
                     if (booted === null) pending.push(packet);
@@ -842,6 +951,7 @@ export default {
             }
             if (content.ch === SERVER) {
                 const state = shared(session);
+                wanted();
                 for (const buffer of buffers) {
                     const packet = asBytes(buffer);
                     // The runtime is null until the boot assigns it, and the
@@ -856,8 +966,29 @@ export default {
             }
         });
 
+        /**
+         * Forget the runtime under this view, which has been freed.
+         *
+         * It does **not** ask for another. A quit is the kernel saying stop,
+         * and booting a replacement on the spot would spend an AudioContext
+         * (a browser allows about six) on a notebook whose last cell has just
+         * run, and would make `server.quit()` look like it did nothing. The
+         * next thing the kernel sends is what asks — see the `msg:custom`
+         * handler — so re-running a cell is what brings the sound back, and
+         * doing nothing leaves nothing running.
+         *
+         * The canvas keeps its last frame until its own cell is re-run. That
+         * is a picture of what the notebook had when it stopped, which is what
+         * stopping looks like.
+         */
+        const reset = () => {
+            booted = null;
+            attached.clear();
+        };
+
         const ready = (live: Booted) => {
             booted = live;
+            shared(session).reboot.add(reset);
             live.client.onScaleChange(fit);
             fit();
             // The host's outbound events, and the engine's replies to the
@@ -893,6 +1024,7 @@ export default {
         // audio is counted here at all.
         return () => {
             heard(session, -1);
+            shared(session).reboot.delete(reset);
             booted?.gui.removeEvent(up.gui);
             booted?.engine?.removeReply(up.server, booted.kernelPeer);
             for (const id of attached) booted?.gui.detach(id);
