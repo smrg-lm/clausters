@@ -137,6 +137,8 @@ b.use(() => new Synth("beep"));   // reaches b, whatever the page's default is
 
 `s.gui()` opens the session's host once and wires it to **this session's** engine, so a bound widget reaches this server and not the page's — the browser parallel of the Python client's `session.gui()`, which boots a `clausters-gui` process pointed at its session's server. `s.connectGui(url)` drives a native `--ws` host instead.
 
+A host the session could not have opened itself — one booted on modules that arrived over a wire, one over a carrier you built — is installed with `s.adoptGui(host)`, the counterpart of the Python client's `session.adopt_gui(host)`. Adoption is **first wins**: a session that already has a host keeps it and hands it back to the loser, and an adopted host is the session's afterwards, so `close()` stops it. `s.guiHost` reads back what the session has without opening anything.
+
 ## Driving the GUI host
 
 `GuiHost` is the same seam again — a connection and a name:

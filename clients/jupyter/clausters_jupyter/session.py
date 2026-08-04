@@ -15,14 +15,22 @@ added — because the notebook changes only *where the bytes go*. Patterns,
 routines, `render`, the `TempoClock` and the `with` block are untouched, and a
 script written against a desktop host runs here unchanged.
 
-What it actually does is three registrations:
+What it actually does is four registrations, and every one of them goes through
+a seam the ordinary client already has — there is no notebook-shaped hole in
+`clausters.Session` and nothing here reaches into one:
 
 - builds a `clausters_jupyter.bridge.Bridge` and takes its carriers,
 - hands them to a `clausters.gui.GuiHost` (and, for the in-page backend, to a
   `clausters.defs.Server`) through the ``interface=`` seam those two already
   have,
-- registers the host with `clausters.gui.set_ambient_host`, which is what makes
-  `plot` and `scope` resolve it instead of booting a desktop process.
+- installs that host on the session with `clausters.Session.adopt_gui` — the
+  seam for a host the session could not have booted itself, this one living at
+  the far end of a kernel's comm — and registers it with
+  `clausters.gui.set_ambient_host`, which is what makes `plot` and `scope`
+  resolve it instead of booting a desktop process,
+- makes the session ambient with `clausters.Session.activate`, since a
+  notebook's cells each run on their own and there is no ``with`` block for
+  them to be inside of.
 
 **The two backends differ in capability, not in comfort.** `page` runs the GUI
 host and the engine in the cell as wasm: it works with a remote kernel and
@@ -167,12 +175,13 @@ def notebook(backend: str = "page", *, width: int = 480, height: int = 420,
         server = Server(interface=bridge.carrier(SERVER_CHANNEL))
 
     session = Session(server, **session_kw)
-    session._gui = host
+    session.adopt_gui(host)               # the host is built; nothing to boot
     gui_module.set_ambient_host(host)
     formatters.unregister()               # a replaced session leaves none behind
     formatters.register(bridge)
-    from clausters.base.main import main
-    main.current_session = session
+    # Ambient for good, not for a block: a notebook's cells each run on their
+    # own, so there is no `with` to be inside of.
+    session.activate()
     _current, _bridge, _autowired = session, bridge, _autowiring
     return session
 
@@ -212,8 +221,9 @@ def audio():
 
     A browser still starts no audio until something in the page is clicked.
     """
-    session = _current if _current is not None else notebook()
-    link = session._gui._osc.link
+    if _current is None:
+        notebook()
+    link = _bridge
     if not link.has_engine:
         raise RuntimeError(
             "backend='native' has no in-page engine to carry: the audio comes "

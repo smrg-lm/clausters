@@ -245,6 +245,87 @@ def test_quant_on_a_joined_wall_clock_transport():
     assert 1.8 < clock._quant_delay(4) < 2.2
 
 
+# ---- adopting a host, and being the ambient session without a block ----
+
+
+class _FakeHost:
+    """As much of a GuiHost as the seams below touch."""
+
+    def __init__(self):
+        self.stopped = False
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_gui_host_is_none_until_the_session_has_one():
+    # The read-only half of gui(): it answers without launching anything, which
+    # is the whole reason a caller that must not boot a process asks it.
+    s = Session.nrt()
+    assert s.gui_host is None
+    s.close()
+
+
+def test_adopt_gui_installs_a_host_the_session_could_not_have_booted():
+    s = Session.nrt()
+    host = _FakeHost()
+    assert s.adopt_gui(host) is host
+    assert s.gui_host is host
+    s.close()
+    assert host.stopped               # an adopted host is the session's to stop
+
+
+def test_adopt_gui_is_first_wins():
+    # Two callers racing to install one must not leave the session drawing on a
+    # host nobody else holds: the first one stands and the second is returned
+    # the incumbent, not its own.
+    s = Session.nrt()
+    first, second = _FakeHost(), _FakeHost()
+    s.adopt_gui(first)
+    assert s.adopt_gui(second) is first
+    assert s.gui_host is first
+    s.close()
+    assert first.stopped and not second.stopped
+
+
+def test_activate_makes_the_session_ambient_without_a_block():
+    from clausters import main
+
+    s = Session.nrt()
+    assert main.current_session is None
+    assert s.activate() is s
+    assert main.current_session is s
+    assert s.deactivate() is s
+    assert main.current_session is None
+    s.close()
+
+
+def test_deactivate_leaves_another_sessions_slot_alone():
+    from clausters import main
+
+    mine, theirs = Session.nrt(), Session.nrt()
+    theirs.activate()
+    mine.deactivate()                 # never held it: this must not unseat theirs
+    assert main.current_session is theirs
+    theirs.close()
+    assert main.current_session is None    # closing gives the slot up
+    mine.close()
+
+
+def test_a_with_block_survives_an_activated_session():
+    # `with` saves and restores, so the block is nested inside the ambient
+    # session rather than replacing it -- what a notebook needs, where the
+    # session is ambient for the kernel's life and a cell may still open one.
+    from clausters import main
+
+    ambient, inner = Session.nrt(), Session.nrt()
+    ambient.activate()
+    with inner:
+        assert main.current_session is inner
+    assert main.current_session is ambient
+    ambient.close()
+
+
 if __name__ == "__main__":
     import traceback
 

@@ -238,13 +238,33 @@ export class Session extends Environment {
     }
 
     /**
+     * Adopts an already-built `GuiHost` as this session's — the counterpart of
+     * the Python client's `session.adopt_gui(host)`, and the seam for a host
+     * this session could not have opened itself: one at the far end of a
+     * notebook kernel's comm, one booted on assets that arrived over a wire,
+     * one a caller built and configured.
+     *
+     * **First wins**, as it does there: a session that already has a host keeps
+     * it and the argument is left alone, so two callers racing to install one
+     * cannot leave the session drawing on a host nobody else holds. An adopted
+     * host is the session's afterwards — `close` stops it, as it stops one
+     * `gui()` opened.
+     *
+     * Returns the host now in force: the one passed, or the incumbent.
+     */
+    adoptGui(host: GuiHost): GuiHost {
+        this.gui_ ??= host;
+        return this.gui_;
+    }
+
+    /**
      * A `GuiHost` driving a **native** `clausters-gui --ws` host instead, for
      * a session whose windows belong on the desktop. Adopted as this
      * session's host when it has none yet, so `gui()` returns it afterwards.
      */
     async connectGui(url?: string): Promise<GuiHost> {
         const host = await GuiHost.connect(url);
-        this.gui_ ??= host;
+        this.adoptGui(host);
         return host;
     }
 

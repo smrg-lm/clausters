@@ -50,8 +50,22 @@ export interface ClaustersGui {
      * Gives a `window`-rooted def a canvas to draw into, before its
      * `/gui_def` is fed. The host holds one canvas per def, so a document can
      * show several at once; omit `canvas` to use the page's default one.
+     *
+     * **Idempotent per def**: a def that already has a canvas keeps it, and a
+     * second call is ignored. That is what lets a caller that owns where a
+     * window draws — a notebook cell, a component — attach its own canvas
+     * before the def is fed, without a carrier's default policy
+     * (`pageGuiConnection`) taking it back.
      */
     attach(defId: number, canvas?: HTMLCanvasElement): void;
+    /** Whether this def already has a canvas (`attach`'s memory). */
+    attached(defId: number): boolean;
+    /**
+     * Gives up this def's canvas, so a later `attach` may give it another —
+     * what closing a window does, and what a cell does when its output is
+     * cleared.
+     */
+    detach(defId: number): void;
     /**
      * Binds a def's canvas to an element's box, so the drawing is as wide as
      * the **document** makes it — full width on a phone, whatever the layout
@@ -98,6 +112,17 @@ export interface ClaustersGui {
      * it again by name would hand back the page's.
      */
     engine: ClaustersServer;
+    /**
+     * Releases this host: its wasm instance, its GPU device, its event drain.
+     * The engine is **not** closed — a host is one client of it, and the page
+     * or the `Session` that opened the engine is what stops it.
+     *
+     * Only an instance from `newGuiHost` is anyone's to close; the page's own
+     * (`guiHost`) is shared page state. Closing one leaves every other host on
+     * the page drawing, which is what makes several notebooks in one tab
+     * possible.
+     */
+    close(): void;
 }
 
 let instance: Promise<ClaustersGui> | null = null;
@@ -140,15 +165,22 @@ export function guiHost(): Promise<ClaustersGui> {
  * with `bridge.close()`.
  */
 export async function newGuiHost(
-    options: { engine?: ClaustersServer } = {},
+    options: { engine?: ClaustersServer; wasm?: BufferSource } = {},
 ): Promise<ClaustersGui> {
-    return boot(options.engine ?? await engineInstance());
+    return boot(options.engine ?? await engineInstance(), options.wasm);
 }
 
-async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
+async function boot(
+    audio?: ClaustersServer,
+    wasm?: BufferSource,
+): Promise<ClaustersGui> {
     const { default: init, start } = await import("../gui-host/clausters_gui.js");
     const engine = audio ?? await server();
-    await init();
+    // With no bytes, wasm-bindgen locates the `.wasm` next to its glue. That
+    // is right for a served page and impossible for a caller whose modules
+    // came over a wire and live at blob URLs, where "next to" names nothing —
+    // so those pass the bytes they already have.
+    await init(wasm === undefined ? undefined : { module_or_path: wasm });
     const bridge = start();
 
     // The page makes the canvas and hands it over, rather than waiting for one
@@ -180,16 +212,37 @@ async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
     const deliver = (packet: Uint8Array) => {
         for (const listener of [...listeners]) listener(packet);
     };
-    setInterval(() => {
+    const drain = setInterval(() => {
         let packet: Uint8Array | undefined;
         while ((packet = bridge.poll()) !== undefined) deliver(packet);
     }, 33);
+
+    // Which defs already have a canvas. It lives here rather than in whoever
+    // calls `attach`, because the question is about the *host* — two carriers
+    // over one host each keeping their own answer is how a def gets attached
+    // twice, the second canvas taking the window off the first.
+    const canvases = new Set<number>();
 
     return {
         bridge,
         canvas,
         engine,
-        attach: (defId, element) => bridge.attach(defId, element ?? canvas),
+        attach: (defId, element) => {
+            if (canvases.has(defId)) return;
+            canvases.add(defId);
+            bridge.attach(defId, element ?? canvas);
+        },
+        attached: (defId) => canvases.has(defId),
+        detach: (defId) => {
+            if (!canvases.delete(defId)) return;
+            bridge.detach(defId);
+        },
+        close: () => {
+            clearInterval(drain);
+            listeners.clear();
+            canvases.clear();
+            bridge.close();
+        },
         fit: (defId, element, target) => {
             const surface = target ?? canvas;
             const apply = () => {
@@ -238,17 +291,24 @@ export async function pageGuiConnection(
 ): Promise<Connection> {
     const gui = await (target ?? guiHost());
     const mine = new Set<EventListener>();
-    const attached = new Set<number>();
     return {
         send: (packet) => {
+            const freed: number[] = [];
             for (const { addr, args } of decodePacket(packet)) {
-                if (addr !== "/gui_def" || typeof args[0] !== "number") continue;
-                if (!attached.has(args[0])) {
-                    attached.add(args[0]);
-                    gui.attach(args[0]);
-                }
+                if (typeof args[0] !== "number") continue;
+                // Idempotent on the host, so a def whose canvas the caller
+                // already chose keeps it: this is the *default* policy, not an
+                // override of one.
+                if (addr === "/gui_def") gui.attach(args[0]);
+                else if (addr === "/gui_free") freed.push(args[0]);
             }
             gui.bridge.feed(packet);
+            // After the feed, not before: the host frees the window on the
+            // packet, and taking its surface away first would be pulling the
+            // canvas out from under the thing still being freed. A surface
+            // left attached to a freed def holds its last frame — a picture of
+            // a window that no longer exists.
+            for (const id of freed) gui.detach(id);
         },
         addReply: (listener) => {
             mine.add(listener);

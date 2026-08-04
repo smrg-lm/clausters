@@ -265,7 +265,9 @@ class Session(Environment):
         on `close` (or interpreter exit).
 
         Idempotent: repeated calls return the same `GuiHost` (the ``port`` and
-        other options of the first call stand).
+        other options of the first call stand) — and a host installed with
+        `adopt_gui` is the session's host, so this returns that one and
+        launches nothing.
 
         Args:
             port: the GUI host's own port (script -> host, UDP and TCP alike);
@@ -297,6 +299,73 @@ class Session(Environment):
             data_dir=data_dir, extra_args=extra_args, ready_timeout=ready_timeout,
         )
         return self._gui
+
+    @property
+    def gui_host(self):
+        """The GUI host this session drives, or ``None`` when it has none yet.
+
+        The read-only half of `gui`: it says what the session already has
+        without opening anything, which is what a caller that must not launch a
+        process asks. `gui` is the verb that builds one.
+        """
+        return self._gui
+
+    def adopt_gui(self, host):
+        """Adopt an already-built `clausters.gui.GuiHost` as this session's.
+
+        The seam for a host this session could not have booted itself — one
+        living at the far end of a notebook kernel's comm, one a test double
+        collects packets through, one the caller built and configured. `gui`
+        covers the ordinary case by *launching* a ``clausters-gui`` process and
+        pointing it at this session's server; there is nothing to launch here,
+        and the host is already wired.
+
+        **First wins**, like every adoption in this client: a session that
+        already has a host keeps it and the argument is left alone, so two
+        callers racing to install one cannot leave the session drawing on a
+        host nobody else holds. An adopted host is owned by the session
+        afterwards — `close` stops it, as it stops one `gui` built.
+
+        Args:
+            host: the `clausters.gui.GuiHost` to install.
+
+        Returns:
+            The host now in force — the one passed, or the one already there.
+        """
+        if self._gui is None:
+            self._gui = host
+        return self._gui
+
+    def activate(self):
+        """Make this the ambient session on the calling thread, and leave it
+        there; returns ``self``.
+
+        The unscoped form of ``with session:``. A block is the right shape when
+        the session's life is the block's, and the wrong one for an environment
+        that outlives every statement that uses it — a REPL, a notebook whose
+        cells each run on their own — where there is no block to be inside of.
+        After this, material created with no session named (`clausters.play`, a
+        bare `clausters.Synth`) resolves to *this* session's server, clock and
+        random root.
+
+        Thread-local, like the ambient session itself: another thread is
+        unaffected, and so is a ``with`` block on this one, which saves and
+        restores whatever was in force around it.
+        """
+        main.current_session = self
+        return self
+
+    def deactivate(self):
+        """Give up being the ambient session on the calling thread; returns
+        ``self``.
+
+        The counterpart of `activate`, and a no-op when some *other* session is
+        ambient — giving up a slot one does not hold would silently unseat the
+        session that does.
+        """
+        if main.current_session is self:
+            main.current_session = None
+        return self
 
     # ---- driving ----
 
@@ -437,6 +506,7 @@ class Session(Environment):
         and, if `live` launched a server, that process too — so nothing is left
         running. Done automatically when the session is used as a context manager
         and, for launched processes, on interpreter exit."""
+        self.deactivate()      # a closed session is nobody's ambient one
         if self._gui is not None:
             self._gui.stop()   # stops its clausters-gui process too
             self._gui = None

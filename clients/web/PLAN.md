@@ -1536,13 +1536,17 @@ as some other milestone has a better claim on it.
   `{boxes, cords}`, plus the `PatchWindow` handle. W21's inventory listed
   `defs/patch.py` as unclaimed and it still is; it lands here unless the def
   layer is opened for something else first.
-- **`Session.connectGui(url)` is a verb this client invented**, and it should
-  not survive on those terms. W18 added it so a session could adopt a native
-  `clausters-gui --ws` host; the Python `Session` has no counterpart — there,
-  a native host that the session did not boot is built directly and stays the
-  caller's. Resolve it in one direction: drop it here, or add the verb to the
-  reference client first and keep it. The standing rule says the reference
-  leads, so the default is to drop it.
+- **`Session.connectGui(url)` is a verb this client invented**, and half of it
+  has since been settled. W18 added it so a session could adopt a native
+  `clausters-gui --ws` host, and it did two things at once: *connect* and
+  *adopt*. The adopting half is now the reference's — `session.adopt_gui(host)`
+  exists in the Python client and `adoptGui` here ports it — so what is still
+  invented is only the convenience of opening the socket in the same call, on a
+  verb whose return (the host connected, not the incumbent) differs from
+  `adoptGui`'s for that reason. Resolve *that* in one direction: drop it and
+  let a caller write `session.adoptGui(await GuiHost.connect(url))`, or add the
+  shortcut to the reference client. The standing rule says the reference leads,
+  so the default is to drop it.
 - **Two names the sweep of 2026-08-03 left over**, each too small to own a
   milestone and neither a difference with a reason: `Routine.run(func, clock,
   quant)`, the classmethod that constructs and starts in one call (the instance

@@ -66,4 +66,4 @@ def test_unregistering_restores_the_plain_repr(shell):
 def _bridge():
     import clausters_jupyter
 
-    return clausters_jupyter.current()._gui._osc.link
+    return clausters_jupyter.current().gui_host._osc.link

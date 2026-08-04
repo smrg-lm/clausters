@@ -35,7 +35,7 @@ def _attached() -> Server:
 
 def test_the_page_backend_has_the_engine_and_no_url():
     session = notebook("page")
-    bridge = session._gui._osc.link
+    bridge = session.gui_host._osc.link
     assert bridge.has_engine
     widget_engine, widget_url = _traits(bridge)
     assert widget_engine is True
@@ -44,7 +44,7 @@ def test_the_page_backend_has_the_engine_and_no_url():
 
 def test_the_native_backend_points_the_host_at_the_ws_port():
     session = notebook("native", server=_attached())
-    bridge = session._gui._osc.link
+    bridge = session.gui_host._osc.link
     assert not bridge.has_engine
     widget_engine, widget_url = _traits(bridge)
     assert widget_engine is False, "the engine's assets are not worth sending"
@@ -53,7 +53,7 @@ def test_the_native_backend_points_the_host_at_the_ws_port():
 
 def test_the_native_leg_can_be_declined():
     session = notebook("native", server=_attached(), server_url="")
-    _, widget_url = _traits(session._gui._osc.link)
+    _, widget_url = _traits(session.gui_host._osc.link)
     assert widget_url == ""
 
 
@@ -96,7 +96,7 @@ def test_a_chosen_ws_port_reaches_the_page():
         session = notebook("native", options=ServerOptions(ws=9000))
     finally:
         Server.boot = original
-    assert _traits(session._gui._osc.link)[1] == "ws://127.0.0.1:9000"
+    assert _traits(session.gui_host._osc.link)[1] == "ws://127.0.0.1:9000"
 
 
 def _traits(bridge):
@@ -120,7 +120,7 @@ def test_an_explicit_backend_replaces_the_one_the_import_wired():
     session = notebook("native", server=_attached())
     assert session is session_module.current()
     assert not session_module._bridge.has_engine
-    assert _traits(session._gui._osc.link)[1] == "ws://127.0.0.1:57120"
+    assert _traits(session.gui_host._osc.link)[1] == "ws://127.0.0.1:57120"
 
 
 def test_a_backend_cannot_change_under_a_cell_that_is_showing_one():
@@ -138,6 +138,6 @@ def test_an_explicit_call_is_not_replaced_by_a_later_one():
 
 def test_the_widgets_of_one_notebook_share_its_session_id():
     session = notebook("page")
-    bridge = session._gui._osc.link
+    bridge = session.gui_host._osc.link
     first, second = bridge._factory(), bridge._factory()
     assert first.session == second.session == bridge.session
