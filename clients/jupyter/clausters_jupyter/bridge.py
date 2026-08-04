@@ -312,13 +312,23 @@ class Bridge:
 
 
 def _cell_display():
-    """IPython's `display`, but only when a cell is running on this thread.
+    """IPython's `display`, but only when a cell is genuinely running.
 
-    Two conditions, and both matter. Outside a kernel (a test, a plain REPL)
-    there is no cell to draw in at all. Off the kernel's thread — a routine on
-    the clock's — `display` would attribute its output to whichever cell
-    happens to be executing, which is nobody's intent; those packets wait
-    instead, and the notebook's next output delivers them.
+    Three conditions, and each rules out a way of writing into a notebook
+    nobody asked to be written into.
+
+    Outside a kernel (a test, a plain REPL) there is no cell to draw in at all.
+    Off the kernel's thread — a routine on the clock's — `display` would
+    attribute its output to whichever cell happens to be executing, which is
+    nobody's intent; those packets wait instead, and the notebook's next output
+    delivers them.
+
+    And on the kernel's own thread, **not every moment is a cell**: a comm
+    message is handled there too, between executions, and `display` called
+    then attributes its output to the parent of *that* message — a widget's
+    comm, whose parent is some cell that finished long ago. The output lands in
+    it. Nothing this package does may edit a notebook the reader is not running,
+    so the parent message has to be an ``execute_request`` and nothing else.
     """
     if threading.current_thread() is not threading.main_thread():
         return None
@@ -327,7 +337,21 @@ def _cell_display():
         from IPython.display import display
     except ImportError:
         return None
-    return display if get_ipython() is not None else None
+    shell = get_ipython()
+    if shell is None:
+        return None
+    kernel = getattr(shell, "kernel", None)
+    if kernel is None:
+        return None
+    try:
+        parent = kernel.get_parent("shell")
+    except Exception:                       # noqa: BLE001  (an older kernel)
+        parent = getattr(kernel, "_parent_header", None)
+    if not isinstance(parent, dict):
+        return None
+    if parent.get("header", {}).get("msg_type") != "execute_request":
+        return None
+    return display
 
 
 def _frees(packet: bytes, root: int) -> bool:

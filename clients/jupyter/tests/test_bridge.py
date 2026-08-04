@@ -258,3 +258,41 @@ def test_the_audio_cell_is_forgotten_when_its_view_goes():
     bridge.widget_gone(cell)
     assert not bridge.showing(), "a disposed cell is not a cell on screen"
     assert bridge.audio_widget() is not cell
+
+
+def test_nothing_is_displayed_outside_a_running_cell(monkeypatch):
+    """`display` writes into whatever message is the kernel's parent, and on
+    the kernel's own thread that is not always a cell: a comm message is
+    handled there too, between executions, and its parent is the widget's comm
+    -- whose own parent is some cell that finished long ago. An output would
+    land in it, which is this package editing a notebook the reader is not
+    running. Nothing may do that.
+    """
+    from clausters_jupyter import bridge as bridge_module
+
+    class FakeKernel:
+        def __init__(self, msg_type):
+            self.msg_type = msg_type
+
+        def get_parent(self, _channel=None):
+            return {"header": {"msg_type": self.msg_type}}
+
+    class FakeShell:
+        def __init__(self, msg_type):
+            self.kernel = FakeKernel(msg_type)
+
+    def shell_of(msg_type):
+        monkeypatch.setattr(bridge_module, "threading", threading_stub, raising=False)
+        return FakeShell(msg_type)
+
+    import threading as threading_stub          # the real one; main thread here
+
+    import IPython
+    monkeypatch.setattr(IPython, "get_ipython", lambda: shell_of("comm_msg"))
+    assert bridge_module._cell_display() is None, "a comm message is not a cell"
+
+    monkeypatch.setattr(IPython, "get_ipython", lambda: shell_of("execute_request"))
+    assert bridge_module._cell_display() is not None, "a running cell may draw"
+
+    monkeypatch.setattr(IPython, "get_ipython", lambda: None)
+    assert bridge_module._cell_display() is None, "no kernel, no cell"
