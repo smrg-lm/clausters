@@ -2,9 +2,9 @@
 that keeps them apart.
 
 The client range is one range, and every client allocates from it — exact
-while a server has one client, a fiction the moment it has two. A notebook is
-the case that makes it two: the kernel authors over its comm while the page
-holds a client of the very same in-page engine.
+while a server has one client, a fiction the moment it has two -- two
+processes driving one server, a script authoring beside a page on the same
+engine.
 
 What makes it work without a negotiation is that there is nothing to
 negotiate: equal slices in a fixed order, so ``IdShare(0, 2)`` and

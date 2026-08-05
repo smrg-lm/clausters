@@ -23,15 +23,3 @@ uv.lock
 /specs/
 # Subagent-driven-development scratch (ledgers, briefs, review packages).
 /.superpowers/
-# The web client staged into the Jupyter package (built, not authored).
-/clients/jupyter/clausters_jupyter/_web/
-/clients/jupyter/clausters_jupyter/static/
-# What a Jupyter session leaves in the working tree while the notebook
-# package is tested from here: a scratch notebook and its checkpoints.
-/Untitled*.ipynb
-.ipynb_checkpoints/
-# The notebook examples are authored as `# %%` files, like every other example
-# in this project, and jupytext pairs each with an .ipynb so JupyterLab can
-# open it (see clients/jupyter/examples/jupytext.toml). The notebook is the
-# generated half -- regenerate it with `jupytext --sync`, do not commit it.
-/clients/jupyter/examples/*.ipynb

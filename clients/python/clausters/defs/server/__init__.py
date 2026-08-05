@@ -182,9 +182,6 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
           answers, at **this handle's own address** — it does not move, and a
           handle pointing where a booted server cannot be raises rather than
           launching one elsewhere;
-        - a carrier that knows how to start its own peer is asked to (a
-          notebook's, whose engine is in the browser and needs a cell rather
-          than a process);
         - an offline or in-process carrier has nothing to start, and this is a
           no-op rather than an error — an NRT score is already "up".
 
@@ -211,10 +208,6 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
 
         Returns: ``self``, so ``Server(...).boot()`` reads as one expression.
         """
-        starter = getattr(self.interface, "boot", None)
-        if starter is not None:
-            starter()
-            return self
         if not self._own_carrier:
             return self                  # an offline or in-process carrier
         from ...launch import ServerProcess
@@ -543,8 +536,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         process this handle booted.
 
         What getting another one costs depends on where it was: a launched
-        process is booted again from here, while a notebook's in-page engine
-        comes with the page and is therefore back on a reload.
+        process is booted again from here.
         """
         self.send_msg("/server_quit")
 

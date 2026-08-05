@@ -8,7 +8,7 @@
 //
 // The registry's reason to exist is the first rung, and it is the same one the
 // reference client has: a front this module can neither open nor point
-// elsewhere — a notebook cell's canvas over a kernel comm, a test double
+// elsewhere — a canvas over a carrier of the caller's own, a test double
 // collecting packets — is registered by whoever built it, and wins outright.
 
 import type { GuiHost } from "./host.ts";

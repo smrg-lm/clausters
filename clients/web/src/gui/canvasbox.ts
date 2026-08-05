@@ -2,7 +2,7 @@
 // scale, kept apart.
 //
 // A leaf on purpose. This is the arithmetic every canvas host needs -- the
-// page's own `guiHost`, and the notebook widget, which cannot import
+// page's own `guiHost`, and an embedder holding its own canvas, which cannot import
 // `./page.ts` because that module boots the in-page engine and a cell wants
 // only the GUI host. So the shared half lives here, with no imports of its
 // own, and `./page.ts` re-exports it to keep its public surface unchanged.

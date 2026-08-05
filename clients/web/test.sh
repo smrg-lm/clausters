@@ -168,7 +168,6 @@ run_page plot.html     # the plot verb: its six kinds, each in its own window
 run_page scope.html    # the scope verb: its three views on live buses
 run_page responders.html # OscFunc over the engine's own notifications
 run_page catalogue.html # the filled-out UGen families, measured on the output
-run_page notebook.html # the notebook cell's front end: audio through the boot, teardown
 run_page ring-peers.html # a host meter and a script bus stream, both over one ring
 
 # The components and lifecycle acceptances mount the example bundles, which are build

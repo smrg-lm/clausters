@@ -186,16 +186,7 @@ def scope(bus=0, *, view: str = "signal", channels: int | None = None,
         raise ValueError(f"channels must be >= 1, got {channels}")
     server = main.resolve_server(server)
     if host is None:
-        from .gui import ambient_host
-
-        # A *registered* host answers this for itself. The demand below is
-        # about the host this module would otherwise boot -- a native one,
-        # which reads the taps out of the server's segment. A host someone
-        # else registered may have another way in (the browser host streams
-        # them over its own server leg, having no segment to map), and it is
-        # not this module's to reason about: it cannot boot it, reconnect it
-        # or point it elsewhere, which is why it was registered.
-        if ambient_host() is None and server.shm is None:
+        if server.shm is None:
             raise RuntimeError(
                 "scope reads the server's audio buses from its shared-memory "
                 "segment, and this server handle has none: boot with the "

@@ -67,9 +67,9 @@ export interface SessionOptions {
     timeout?: number;
     /**
      * The slice of the server's client id space this session allocates from,
-     * when the engine underneath has **more than one client** — the case a
-     * notebook is: the kernel authors over its comm while the page holds a
-     * session of its own. Both legs take it, the audio server's node, bus and
+     * when the engine underneath has **more than one client** — one client
+     * authoring over a carrier of its own while the page holds a session on
+     * that same engine. Both legs take it, the audio server's node, bus and
      * buffer ids and the GUI host's widget ids alike, so a session is one
      * share of everything rather than of one space. See `IdShare`; the
      * default takes the whole space.
@@ -267,44 +267,15 @@ export class Session extends Environment {
     }
 
     /**
-     * Adopts an already-built `GuiHost` as this session's — the counterpart of
-     * the Python client's `session.adopt_gui(host)`, and the seam for a host
-     * this session could not have opened itself: one at the far end of a
-     * notebook kernel's comm, one booted on assets that arrived over a wire,
-     * one a caller built and configured.
-     *
-     * **First wins**, as it does there: a session that already has a host keeps
-     * it and the argument is left alone, so two callers racing to install one
-     * cannot leave the session drawing on a host nobody else holds. An adopted
-     * host is the session's afterwards — `close` stops it, as it stops one
-     * `gui()` opened.
-     *
-     * `page` is the wasm host the client was built over (`newGuiHost`), when
-     * there is one: adopting the client alone would leave that instance — a
-     * GPU device and a drain loop — with no owner, since only the caller that
-     * booted it can know it is not the page's shared one. It is adopted with
-     * the client, and released by `close`. This has no counterpart in the
-     * Python client because it has nothing to name: there a `GuiHost` *is* the
-     * whole thing, its process included.
-     *
-     * Returns the host now in force: the one passed, or the incumbent.
-     */
-    adoptGui(host: GuiHost, { page }: { page?: ClaustersGui } = {}): GuiHost {
-        if (this.gui_ === null) {
-            this.gui_ = host;
-            this.ownedGui = page ?? null;
-        }
-        return this.gui_;
-    }
-
-    /**
      * A `GuiHost` driving a **native** `clausters-gui --ws` host instead, for
-     * a session whose windows belong on the desktop. Adopted as this
-     * session's host when it has none yet, so `gui()` returns it afterwards.
+     * a session whose windows belong on the desktop. Installed as this
+     * session's host when it has none yet, so `gui()` returns it afterwards;
+     * a session that already has one keeps it, and the connected host is
+     * returned all the same.
      */
     async connectGui(url?: string): Promise<GuiHost> {
         const host = await GuiHost.connect(url);
-        this.adoptGui(host);
+        this.gui_ ??= host;
         return host;
     }
 

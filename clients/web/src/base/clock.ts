@@ -127,50 +127,12 @@ export function manualTicker(): ManualTicker {
  * would buy nothing: the work is a `setTimeout`).
  */
 let sharedWorker: Worker | null = null;
-let warnedNoWorker = false;
 let nextTickerId = 1;
 const tickCallbacks = new Map<number, () => void>();
 
-/** Where `tick-worker.js` is, when this build cannot work it out itself. */
-let tickWorkerUrl: string | null = null;
-
-/**
- * Names the tick worker's module, for a page that loaded this client from
- * somewhere a relative URL cannot be resolved against.
- *
- * The worker is normally located next to this module (`import.meta.url`), which
- * is right wherever the client was served — and impossible where it was *not*:
- * a client that arrived over a wire and runs from a `blob:` URL has no path to
- * resolve against, and `new URL("./tick-worker.js", …)` throws there. A caller
- * in that position already holds the worker's bytes (it was handed them along
- * with everything else) and says so here, before the first clock is made.
- *
- * Unset, and unresolvable, the clock falls back to the page timer — correct,
- * but throttled to about a second in a background tab, which a sequence hears.
- */
-export function setTickWorkerUrl(url: string): void {
-    tickWorkerUrl = url;
-}
-
-/**
- * The worker's module URL, or `null` where this build cannot name it — see
- * `setTickWorkerUrl`. Never throws: an unresolvable base is a fallback, not a
- * failure, and a clock that cannot have a worker still has to tick.
- */
-function tickWorkerSource(): string | null {
-    if (tickWorkerUrl !== null) return tickWorkerUrl;
-    try {
-        return new URL("./tick-worker.js", import.meta.url).href;
-    } catch {
-        return null;
-    }
-}
-
-function tickWorker(): Worker | null {
+function tickWorker(): Worker {
     if (sharedWorker === null) {
-        const source = tickWorkerSource();
-        if (source === null) return null;
-        sharedWorker = new Worker(source, {
+        sharedWorker = new Worker(new URL("./tick-worker.js", import.meta.url), {
             type: "module",
         });
         sharedWorker.onmessage = (event: MessageEvent<TickReply>) => {
@@ -188,20 +150,6 @@ function tickWorker(): Worker | null {
  */
 export function workerTicker(): Ticker {
     const worker = tickWorker();
-    // A build that cannot name the worker gets the page timer instead, once
-    // and out loud: the schedule still runs, and a background tab will stutter
-    // it. `setTickWorkerUrl` is how a caller holding the module says where.
-    if (worker === null) {
-        if (!warnedNoWorker) {
-            warnedNoWorker = true;
-            console.warn(
-                "clausters: no tick worker (this client's modules have no "
-                + "resolvable base). The clock falls back to the page timer, "
-                + "which a background tab throttles; setTickWorkerUrl(url) "
-                + "takes the worker's module URL.");
-        }
-        return timerTicker();
-    }
     const id = nextTickerId++;
     const post = (msg: TickRequest) => worker.postMessage(msg);
     return {

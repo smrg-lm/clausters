@@ -70,13 +70,12 @@ wasm-bindgen --target web --out-dir dist/core \
 # The src/ stubs: .d.ts for type-checking everywhere; the core and the engine
 # also get the glue .js, because node runs those sources directly (the codec in
 # src/base/osc.ts, the offline renderer in src/engine/render.ts) and the tests
-# need no build step to reach them.
+# need no build step to reach them. The GUI host needs no .js here: its glue is
+# imported dynamically, inside a boot that only ever runs in a browser, and
+# there it resolves against dist/.
 mkdir -p src/core src/gui-host
 cp dist/core/clausters_core_web.js dist/core/clausters_core_web.d.ts src/core/
-# The GUI host's glue .js comes along for a third reason: esbuild bundles the
-# notebook entry from src/, and `gui/page.ts` imports this glue by that
-# specifier. tsc is happy with the .d.ts alone; a bundler needs the module.
-cp dist/gui-host/clausters_gui.js dist/gui-host/clausters_gui.d.ts src/gui-host/
+cp dist/gui-host/clausters_gui.d.ts src/gui-host/
 cp dist/engine/clausters_web.js dist/engine/clausters_web.d.ts src/engine/
 
 # Type-check + emit the package into dist/ (js + d.ts + maps).
@@ -84,26 +83,6 @@ if [ -d node_modules ]; then
     npm run --silent build
 else
     echo "note: node_modules missing — run 'npm install' then 'npm run build'" >&2
-fi
-
-# The notebook front end's copy of the client, as **one** module.
-#
-# It is loaded alone by anywidget and takes the package over a kernel comm, so
-# every module reaches it as a blob URL -- and a blob URL has no path, so a
-# module loaded from one cannot resolve a relative specifier. Each import is
-# therefore rewritten to the blob URL of what it names, leaf-first, which works
-# for a tree and cannot work for a cycle: to rewrite A's import of B you need
-# B's URL, and in a cycle it does not exist yet. The client has three cycles,
-# all ordinary ESM. Bundling `src/notebook/client.ts` turns those edges into
-# references inside one file, and carries only the fraction of the package the
-# front end actually uses.
-if [ -x node_modules/.bin/esbuild ]; then
-    node_modules/.bin/esbuild src/notebook/client.ts --bundle --format=esm \
-        --platform=browser --target=es2022 --log-level=warning \
-        ${flag:+--minify} --outfile=dist/notebook-client.js
-else
-    echo "note: esbuild missing -- run 'npm install'; the notebook front end" >&2
-    echo "      has no dist/notebook-client.js and will not load" >&2
 fi
 
 echo "package staged: dist/ (modules + engine/ gui-host/ core/ wasm bundles)"

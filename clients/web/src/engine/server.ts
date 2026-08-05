@@ -88,19 +88,6 @@ export interface ClaustersServer {
     resume(): Promise<void>;
     suspend(): Promise<void>;
     /**
-     * Subscribes to this engine **stopping on its own** — a `/server_quit`
-     * reached it, and the audio thread is done. Returns the unsubscribe.
-     *
-     * It is not the same event as `close()`, which is the page deciding: this
-     * one is the *server* deciding, and it arrives after the fact. Nothing
-     * restarts an engine that has quit, so a holder of one either boots a
-     * replacement or tells someone. Without a seam here the only trace was a
-     * console warning, and a page went on drawing windows and sending notes to
-     * a thread that had stopped — which looks exactly like a notebook that
-     * draws and has gone silent for no reason.
-     */
-    onQuit(listener: () => void): () => void;
-    /**
      * Releases this engine: the `AudioContext` and with it the worklet, the
      * audio device and the browser's per-page context slot. Nothing restarts
      * it. The sibling of `GuiBridge.close()` on the GUI side, and for the
@@ -132,7 +119,7 @@ export function server(options: BootOptions = {}): Promise<ClaustersServer> {
  * The default is one engine per page, as {@link server} gives, because
  * components on one page belong to one mix. But the count is a property of the
  * caller, not of the page: a document hosting several independent clients —
- * notebooks in one tab, isolated demos side by side — needs each to have its
+ * isolated demos side by side, an editor beside a player — needs each to have its
  * own node ids, its own buses and its own buffers, and that is exactly what a
  * separate engine gives without partitioning anything.
  *
@@ -157,11 +144,7 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
         if (observers) for (const listener of [...observers]) listener(bytes);
     };
     raw.onError = (message) => console.error(`clausters engine: ${message}`);
-    const quitListeners = new Set<() => void>();
-    raw.onQuit = () => {
-        console.warn("clausters engine: /server_quit — engine stopped");
-        for (const listener of [...quitListeners]) listener();
-    };
+    raw.onQuit = () => console.warn("clausters engine: /server_quit — engine stopped");
     return {
         context: raw.context,
         node: raw.node,
@@ -181,13 +164,8 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
             raw.bufferLoad(index, channels, sampleRate, samples),
         resume: () => raw.context.resume(),
         suspend: () => raw.context.suspend(),
-        onQuit: (listener) => {
-            quitListeners.add(listener);
-            return () => quitListeners.delete(listener);
-        },
         close: async () => {
             listeners.clear();
-            quitListeners.clear();
             await raw.context.close();
         },
     };

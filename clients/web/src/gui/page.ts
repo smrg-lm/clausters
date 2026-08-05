@@ -21,7 +21,7 @@ import { decodePacket } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
 import { canvasBox, onScaleChange } from "./canvasbox.ts";
 
-// Measuring an element stayed a leaf so the notebook widget can use it
+// Measuring an element stayed a leaf so an embedder can use it
 // without booting an engine; re-exported here, where callers expect it.
 export { canvasBox, onScaleChange };
 export type { CanvasBox } from "./canvasbox.ts";
@@ -53,17 +53,15 @@ export interface ClaustersGui {
      *
      * **Idempotent per def**: a def that already has a canvas keeps it, and a
      * second call is ignored. That is what lets a caller that owns where a
-     * window draws — a notebook cell, a component — attach its own canvas
-     * before the def is fed, without a carrier's default policy
+     * window draws — a component, an embedder — attach its own canvas before
+     * the def is fed, without a carrier's default policy
      * (`pageGuiConnection`) taking it back.
      */
     attach(defId: number, canvas?: HTMLCanvasElement): void;
-    /** Whether this def already has a canvas (`attach`'s memory). */
-    attached(defId: number): boolean;
     /**
      * Gives up this def's canvas, so a later `attach` may give it another —
-     * what closing a window does, and what a cell does when its output is
-     * cleared.
+     * what closing a window does, and what a component does when it is
+     * removed from the page.
      */
     detach(defId: number): void;
     /**
@@ -110,13 +108,8 @@ export interface ClaustersGui {
      * `guiHost`, its own under `newGuiHost`. Exposed because a caller holding
      * an instance needs exactly this to open a `Server` on it, and asking for
      * it again by name would hand back the page's.
-     *
-     * `null` for a host built with `engine: null`: one whose audio leg is not
-     * an in-page engine at all but a **native** server over its `--ws` port
-     * (`bridge.connect_server(url)`), which is what a notebook cell drawing a
-     * server that runs on the kernel's machine holds.
      */
-    engine: ClaustersServer | null;
+    engine: ClaustersServer;
     /**
      * Releases this host: its wasm instance, its GPU device, its event drain.
      * The engine is **not** closed — a host is one client of it, and the page
@@ -124,8 +117,7 @@ export interface ClaustersGui {
      *
      * Only an instance from `newGuiHost` is anyone's to close; the page's own
      * (`guiHost`) is shared page state. Closing one leaves every other host on
-     * the page drawing, which is what makes several notebooks in one tab
-     * possible.
+     * the page drawing.
      */
     close(): void;
 }
@@ -157,8 +149,8 @@ export function guiHost(): Promise<ClaustersGui> {
  * any number of windows, so instances share it and nothing else. Two of them
  * may hold the very same window and widget ids without seeing each other,
  * which is the only arrangement that works for clients that allocate ids
- * independently and have no channel to agree on a range over — notebooks open
- * in one JupyterLab tab, isolated demos side by side.
+ * independently and have no channel to agree on a range over — isolated
+ * demos side by side, an editor beside a player.
  *
  * Two differences from `guiHost`, both because this host is not the page's:
  * it appends no canvas (the caller owns where its windows draw, and passes one
@@ -170,28 +162,15 @@ export function guiHost(): Promise<ClaustersGui> {
  * with `bridge.close()`.
  */
 export async function newGuiHost(
-    options: { engine?: ClaustersServer | null; wasm?: BufferSource } = {},
+    options: { engine?: ClaustersServer } = {},
 ): Promise<ClaustersGui> {
-    // `undefined` means "one of my own"; `null` means "none, I will wire the
-    // audio leg myself" — the two are not the same wish, and only the explicit
-    // null keeps this from starting an AudioContext the caller does not want.
-    const audio = options.engine === null
-        ? null
-        : options.engine ?? await engineInstance();
-    return boot(audio, options.wasm);
+    return boot(options.engine ?? await engineInstance());
 }
 
-async function boot(
-    audio?: ClaustersServer | null,
-    wasm?: BufferSource,
-): Promise<ClaustersGui> {
+async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
     const { default: init, start } = await import("../gui-host/clausters_gui.js");
-    const engine = audio === null ? null : audio ?? await server();
-    // With no bytes, wasm-bindgen locates the `.wasm` next to its glue. That
-    // is right for a served page and impossible for a caller whose modules
-    // came over a wire and live at blob URLs, where "next to" names nothing —
-    // so those pass the bytes they already have.
-    await init(wasm === undefined ? undefined : { module_or_path: wasm });
+    const engine = audio ?? await server();
+    await init();
     const bridge = start();
 
     // The page makes the canvas and hands it over, rather than waiting for one
@@ -215,13 +194,9 @@ async function boot(
     // tag is what used to make the two take the stream from each other, leaving
     // the host's meters frozen until a widget was added or removed.
     //
-    // A host with no engine has no leg to wire here: its caller connects it to
-    // a native server instead, which is the one other thing that end can be.
-    if (engine !== null) {
-        const peer = engine.claimPeer();
-        engine.addReply((bytes) => bridge.server_reply(bytes), peer);
-        bridge.connect_page((bytes: Uint8Array) => engine.send(bytes, peer));
-    }
+    const peer = engine.claimPeer();
+    engine.addReply((bytes) => bridge.server_reply(bytes), peer);
+    bridge.connect_page((bytes: Uint8Array) => engine.send(bytes, peer));
 
     // Drain the host's outbound events to the page's listeners.
     const listeners = new Set<EventListener>();
@@ -248,7 +223,6 @@ async function boot(
             canvases.add(defId);
             bridge.attach(defId, element ?? canvas);
         },
-        attached: (defId) => canvases.has(defId),
         detach: (defId) => {
             if (!canvases.delete(defId)) return;
             bridge.detach(defId);

@@ -3,9 +3,9 @@
 //
 // The server partitions node ids into a client range, its own auto range and
 // its MIDI range, and every client allocates from that one client range —
-// exact while a server has one client, a fiction the moment it has two. A
-// notebook is the case that makes it two: the kernel authors over its comm
-// while the page holds a session on the very same in-page engine.
+// exact while a server has one client, a fiction the moment it has two: two
+// processes driving one server, or a script authoring beside a page that holds
+// a session on the very same in-page engine.
 //
 // What makes it work without a negotiation is that there is nothing to
 // negotiate: equal slices in a fixed order, so `{index: 0, of: 2}` and

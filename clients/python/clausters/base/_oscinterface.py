@@ -142,18 +142,6 @@ class OscInterface:
     #: heard of answers the question for itself.
     stream = False
 
-    #: Whether the caller may block for a reply on this carrier. A socket
-    #: always can. A carrier whose inbound half is driven by the same loop as
-    #: the caller cannot — in a Jupyter kernel a ``comm_msg`` is queued behind
-    #: the running cell, so a wait inside that cell can only expire. Read by
-    #: `clausters.defs._wire.send_def`, which drops the confirmation rather
-    #: than the send: `/def_send` is ordered ahead of the `/synth_new` that
-    #: needs it on any carrier that keeps order, so the wait was a
-    #: confirmation, not a barrier. Anything that wants the *answer* itself
-    #: (a query, a buffer fetch) still has to ask from somewhere the reply can
-    #: reach — the next cell, another thread.
-    awaitable = True
-
     def send_msg(self, target, addr, *args):
         raise NotImplementedError(f"{type(self).__name__}.send_msg")
 

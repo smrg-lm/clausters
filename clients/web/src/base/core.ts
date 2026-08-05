@@ -72,7 +72,7 @@ export function nodeIdPartition(maxNodes: number): NodeIdPartition {
  * Two clients that cannot talk to each other can still agree here, because
  * there is nothing to negotiate: the shares are equal slices of the range in a
  * fixed order, so `{index: 0, of: 2}` and `{index: 1, of: 2}` are disjoint by
- * arithmetic. Whoever arranges the two — a notebook kernel and its page, a
+ * arithmetic. Whoever arranges the two — a driving client and its page, a
  * host embedding a second client — hands each its own index.
  *
  * It costs range, not capability: a share of two halves what either client may

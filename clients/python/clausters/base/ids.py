@@ -12,9 +12,7 @@ GUI host, widget ids.
 An `IdShare` is how two clients that cannot talk to each other still agree,
 and it works because there is nothing to negotiate: the shares are **equal
 slices in a fixed order**, so ``IdShare(0, 2)`` and ``IdShare(1, 2)`` are
-disjoint by arithmetic. Whoever arranges the two hands each its index — for a
-notebook that is `clausters_jupyter`, which authors from the kernel while the
-page holds a client of the very same engine.
+disjoint by arithmetic. Whoever arranges the two hands each its index.
 
 It costs range, not capability: a share of two halves what either client may
 hold live at once, which is why the default everywhere is `WHOLE`, the whole

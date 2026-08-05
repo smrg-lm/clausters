@@ -4163,60 +4163,12 @@ three pairings, and `#[inline(never)]` on two hot bus accessors turns eleven
 gated rows red at once (`default/1` −10.8%, `sine/ugen/1` −16.2%, the aligned
 512-voice peak −49.5%).
 
-## The notebook is a package of its own, and it relays nothing
-
-Two decisions, taken together because each is the reason the other is
-affordable.
-
-**Notebook support ships as `clausters-jupyter`, not as an extra of
-`clausters`.** The alternative — `_repr_mimebundle_` on `PlotWindow`, an
-`IPython` import guarded by a `try`, a `notebook=True` somewhere in `Session` —
-is what several audio libraries did and it is why their core carries display
-logic in a dozen files. The cost of that is not size, it is that every change
-to the core is a change to the notebook path, forever.
-
-What made the split cheap is that nothing new was needed in the core to enable
-it. Three small seams did it, and each is useful on its own: `GuiHost` and
-`Server` already took an `interface=`, so the comm carrier plugs in where TCP
-does; `OscInterface.stream` became a *capability* the bulk chunker reads rather
-than a transport check; `GuiHost.local_files` became a second one, so a host
-that shares no filesystem gets the samples instead of a path — which is also
-the honest answer for a remote kernel, and would have been the right shape for
-the browser host regardless. IPython's own `for_type` registers a formatter for
-a class **from outside it**, which is the mechanism this situation was invented
-for, so `clausters` gained no display hook at all.
-
-**The audio leg never passes through Python.** A GUI host in the page and a
-server somewhere are two peers, and the tempting shape is to route their
-traffic through the kernel that authored both — it already has a carrier to the
-page, and it would be one code path instead of two. It is also the wrong one: a
-bound knob would then deliver its value at the kernel's convenience, which
-during a running cell is *never*, because ipykernel holds the shell channel
-until the cell ends. A bound widget that stops responding while you run
-something is not a slow widget, it is a broken one.
-
-So each backend gives the host a direct wire and the kernel stays an author:
-the in-page engine is handed to the host inside the tab
-(`GuiBridge::connect_page`), and a native server is reached by the page opening
-its own WebSocket to the server's `--ws` port (`connect_server`). The second
-one is why the native backend forces `ws` on rather than defaulting it, and why
-it is local-only twice over — the sound comes out of the kernel's machine, and
-the socket is opened from the browser. Neither is detectable from inside the
-kernel, so that one is documented rather than checked.
-
-The consequence to accept: the one thing that *does* need the kernel — an
-unbound widget's `/gui_event`, a `/gui_query` reply — cannot be awaited from a
-running cell at all. `CommInterface.recv` raises `RoundTripInCell` there
-instead of blocking until a timeout that would always expire, because a
-diagnosis is worth more than a hang. A zero timeout still polls, which is what
-`GuiHost.pump` does, and reading widgets back between cells is the ordinary
-notebook posture anyway.
 ## A page holds one host because it wants one, not because it can hold one
 
 `start()` used to be a page-wide singleton: a second call reached winit's
 `EventLoop::build`, which answers `RecreationAttempt` — a panic inside the wasm,
-not an error a caller could catch — so the notebook front end refused a second
-client with a sentence in the cell rather than a stack trace.
+not an error a caller could catch — so an embedder wanting a second client had
+to refuse it rather than hand back a stack trace.
 
 The refusal was reasoning from the wrong constraint. **The event loop is what a
 page can hold one of; the host is not.** That loop already drives any number of
@@ -4231,9 +4183,9 @@ widget ids land in one namespace, so the ranges have to be partitioned — and t
 allocating clients are *separate processes with no channel between them*. The
 only arbiter that can see who shares a tab is the page, which appears late, after
 the first `plot()` has already assigned ids. Every escape from that is bad in its
-own way: a slot derived from a session key collides silently, a claim file in the
-Jupyter runtime directory puts protocol state on a disk the client may not share,
-and rebasing an already-built journal onto a slot learned at mount is correct but
+own way: a slot derived from a session key collides silently, a claim file in a
+runtime directory puts protocol state on a disk the client may not share, and
+rebasing an already-built tree onto a slot learned at mount is correct but
 fiddly. A second host instance makes the question not arise: independent id
 spaces by construction.
 
@@ -4253,7 +4205,7 @@ beside it for the caller who needs an instance.
 
 That second function was not there at first, on the reading that such a caller
 could go one layer down to the binding surface. That reading was wrong, and the
-evidence was in the tree: the notebook front end went down there, importing
+evidence was in the tree: the front end that needed it went down there, importing
 `clausters_gui.js` and calling `start()` itself, because the client offered
 nothing else. A capability the client has and does not expose is a capability
 every consumer re-implements. `newPools()` came with it for the same reason —
@@ -4514,100 +4466,3 @@ outbound one — and `ClientId::Ring` becomes `ClientId::Ring(u32)`.
 Versioning: the framing changed, so `ABI_VERSION` moves 6 → 7 and, by the
 linkage rule, drags the SemVer breaking tier with it. Nothing else about the
 segment moved.
-
-## The notebook front end is a client, and one bundled file is what makes that possible
-
-The Jupyter front end used to be a small reimplementation. It booted the wasm
-GUI host with its own copy of `gui/page.ts`'s boot, started the engine with its
-own copy of the loader call, wired the audio leg by hand, read a `/gui_def`'s id
-by counting bytes past the type tags because it had no codec, and tore the pair
-down in an order it had worked out itself. None of that was wrong, and all of it
-was a second implementation of things the client already does — the kind that
-drifts silently, since nothing type-checks a page against a package.
-
-It is now a client of the package: `newGuiHost` brings the host up, `engine()`
-the engine, a `Session` owns the two and `close()` is the whole teardown, and a
-packet from the kernel enters through the host client's own carrier, which
-attaches the canvas and detaches it on `/gui_free`. What the front end still
-supplies is only what is genuinely the notebook's — which canvas a window draws
-into, and the comm the kernel authors over.
-
-**Why that needed a bundler.** anywidget serves the widget's one module and
-nothing beside it, so the package cannot be imported by URL: it arrives over the
-kernel's comm as bytes, and the page turns each module into a `blob:` URL. A
-blob URL has no path, so a module loaded from one cannot resolve a relative
-specifier — every import has to be rewritten to the blob URL of the module it
-names, which means the blobs are made leaf-first. That works for a tree and
-**cannot work for a cycle**: to rewrite A's import of B you need B's URL, and in
-a cycle it does not exist yet. The client has three ordinary ESM cycles
-(`base/main` ↔ `environment` ↔ `rand`, `clock` ↔ `stream` ↔ `main`,
-`defs/server` ↔ `render` ↔ `session`), all of them fine anywhere a URL has a
-path.
-
-So `build.sh` bundles one entry, `src/notebook/client.ts`, into
-`dist/notebook-client.js` with esbuild. The alternatives were worse in ways
-worth naming: breaking the three cycles would be restructuring the client's core
-to satisfy a transport, and the cycles are legitimate (the ambient registry is
-one of them); an import map cannot help, because relative specifiers are
-resolved before a map applies; a service worker cannot be registered from a
-blob. The bundle also costs less than the tree it replaces — 160 KB against the
-700 KB of modules the front end would otherwise be handed, of which it uses a
-fraction.
-
-**The bundler is scoped to that one file, deliberately.** `dist/` stays the
-`src/` tree emitted 1:1, because what a page imports should be what was
-written; `notebook-client.js` sits beside it as the one artifact whose carrier
-cannot load a tree. Two things do not fit in a bundle and stay modules of their
-own, both because they are loaded by URL into a scope of their own: the audio
-worklet, and the clock's tick worker — which is why `setTickWorkerUrl` exists.
-A client that cannot name that worker falls back to the page timer and says so
-once, rather than throwing on `new URL` as it did the first time this was tried.
-
-## In a notebook, a view decides what is drawn and the kernel decides what exists
-
-The notebook front end had grown its own answers to questions Jupyter has
-conventions for, and every one of them was defensible in isolation and wrong
-together. The engine was suspended when no cell of the notebook was mounted and
-resumed when one was; the bridge remembered forever that a cell had announced
-itself; and a packet with nowhere to go made the package `display` a cell to
-put it in. What that produced, in order: reopening a tab started audio nobody
-asked to restart, the second run of a notebook was silent because every packet
-was addressed to the cells of the first, and an output could land in whatever
-cell the kernel's current message happened to belong to — which on a comm
-message is one that finished long ago.
-
-The rule they were missing is one line: **a view decides what is drawn; the
-kernel decides what exists.** A view is the most ephemeral thing in a notebook
-— a cell re-run disposes one, a cleared output disposes one, a closed tab
-disposes them all — while the kernel is what the notebook *is*. So the sound
-and the wasm follow the comm (a kernel shut down frees them, `/server_quit`
-stops the audio, closing a tab does neither), and visibility is consulted for
-frames and for nothing else.
-
-This is what the ecosystem does, and the parts of it worth citing:
-
-- **View presence is synced state, not a message.** `ipywidgets` carries
-  `_view_count` for it — "the number of views of the model displayed in the
-  frontend … `None` signifies that views will not be tracked; set this to 0 to
-  start tracking view creation/deletion" — incremented by the front end on
-  `displayed` and decremented on `remove`. It is marked experimental, and
-  `jupyter_rfb` keeps a synced `Bool` of its own instead; both are the same
-  shape, and the shape is what matters. We had invented a `gone` message, which
-  answers a question about *state* with an event.
-- **Visibility gates drawing.** `jupyter_rfb` — the closest thing to this
-  package in the ecosystem, a canvas widget streaming frames — computes
-  `should_draw` from `self._has_visible_views`, and never uses it to decide
-  what to keep alive.
-- **A library does not display.** Widget libraries hand you an object and let
-  the cell show it; `jupyter_rfb`'s own `display` calls are for an output
-  context, not for its widget. So `clausters_jupyter.audio()` returns the
-  engine's cell and *you* display it, and a notebook that sends audio with
-  nothing on screen is told which line to add rather than having one written
-  into it.
-
-The cost is one thing the old model gave for free: a notebook left open with
-something playing keeps playing when the tab is closed. That is correct — a
-script whose terminal is hidden keeps running — and it is the reason
-`server.quit()` had to become recoverable rather than terminal (see the entry
-above), because stopping is now something you *ask* for rather than something
-that happens when you look away.

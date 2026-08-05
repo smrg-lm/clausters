@@ -10,13 +10,6 @@ three directories of them —
 - `examples/` at the repository root — the lower-level demos: the transports,
   the raw OSC helpers, the audible tours of the UGen families. Those use a
   `sys.path` shim, so they run from a checkout with no install.
-- `clients/jupyter/examples/` — the notebook ones, which need
-  `clausters-jupyter` and a browser and are opened in Jupyter rather than run
-  from a terminal (see [Notebooks: the GUI in a cell](notebook.md)). What the
-  repository carries there is the `# %%` **`.py`** of each: a `.ipynb` records
-  its own output, so the notebook is generated beside it with `jupytext --sync
-  nb_*.py` and the two stay in step from then on. The directory's README has
-  the commands.
 
 Run them after installing the package (see [Getting started](getting-started.md)):
 

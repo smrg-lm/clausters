@@ -29,7 +29,6 @@
   - [Bouncing: the piece as a file](composing/bounce.md)
   - [Glossary](composing/glossary.md)
 - [Bundles: an instrument you can hand to a page](bundles.md)
-- [Notebooks: the GUI in a cell](notebook.md)
 - [Receiving OSC and MIDI](responders.md)
 - [Examples](examples.md)
 

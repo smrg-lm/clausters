@@ -209,21 +209,9 @@ session.close()                          # stops whatever the session started; l
 
 The visual server binary ships **bundled in the same package** as the audio server (built from the independent `clients/gui` workspace, stripped), so there is nothing extra to install — the launcher finds it out of the box. In a source checkout a binary built under `clients/gui/target` is used, and `CLAUSTERS_GUI_BIN` overrides the lookup. See [Getting started](getting-started.md#the-visual-server-gui) for building a lighter, server-only install.
 
-### A host the session cannot boot: `adopt_gui`
-
-`session.gui()` covers the ordinary case by *launching* a process. Some hosts cannot be launched: one drawing in a notebook cell lives at the far end of the kernel's comm, and one a test collects packets through was never a process at all. `session.adopt_gui(host)` installs such a host as the session's, and `session.gui_host` reads back what the session already has without opening anything. Adoption is **first wins** — a session that already has a host keeps it, and the incumbent is what you are handed back — and an adopted host is the session's afterwards, so `close` stops it exactly as it stops one `gui()` launched.
-
-```python
-session = Session.live()
-host = GuiHost(interface=my_carrier)   # built and wired elsewhere
-session.adopt_gui(host)                # now session.gui_host is host
-```
-
-This is the seam `clausters-jupyter` installs its in-page host through; see [In a notebook](notebook.md).
-
 ### Ambient for good: `activate`
 
-`with session:` makes a session ambient for a block, which is the right shape when the session's life *is* the block's. A REPL and a notebook have no block to be inside of — each statement, each cell, runs on its own — so `session.activate()` makes it ambient and leaves it there, and `session.deactivate()` gives the slot up (closing the session does too). After it, everything that names no session (`play(...)`, a bare `Synth(...)`) resolves to this one's server, clock and random root.
+`with session:` makes a session ambient for a block, which is the right shape when the session's life *is* the block's. A REPL has no block to be inside of — each statement runs on its own — so `session.activate()` makes it ambient and leaves it there, and `session.deactivate()` gives the slot up (closing the session does too). After it, everything that names no session (`play(...)`, a bare `Synth(...)`) resolves to this one's server, clock and random root.
 
 Both are thread-local, like the ambient session itself: another thread is unaffected, and a `with` block nests inside an activated session rather than replacing it — it restores what was in force when it ends.
 

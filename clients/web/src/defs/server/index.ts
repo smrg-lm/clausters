@@ -220,8 +220,8 @@ export class Server {
             timeout?: number;
             /**
              * The slice of the server's client id space this handle allocates
-             * from, when the server has **more than one client** — a notebook
-             * kernel authoring beside its own page, an embedder holding two.
+             * from, when the server has **more than one client** — a script
+             * authoring beside a page of its own, an embedder holding two.
              * Each client is given its own index over the same `of`, and the
              * slices are disjoint by arithmetic (see `IdShare`). The default
              * takes the whole space, which is right for a server's only

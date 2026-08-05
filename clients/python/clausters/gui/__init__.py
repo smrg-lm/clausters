@@ -106,8 +106,8 @@ def set_ambient_host(host):
     one: the current session's, else a ``clausters-gui`` process they boot and
     own. That fallback assumes the host is a local process, which is the one
     assumption an out-of-process front cannot meet — a host living somewhere
-    this module knows nothing about (a browser canvas reached over a notebook
-    kernel's comm, a test double collecting packets) has no process to boot.
+    this module knows nothing about (a canvas reached over a carrier of the
+    caller's own, a test double collecting packets) has no process to boot.
     Registering one here puts it ahead of the fallback, so the verbs keep
     working unchanged and neither they nor `GuiHost` learn where it runs.
 

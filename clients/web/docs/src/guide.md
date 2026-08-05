@@ -33,7 +33,7 @@ That engine is reachable directly when a page needs the browser-specific parts: 
 
 ### More than one of either
 
-One engine and one GUI host per page is the **default, not a limit**: it is what a page wants, since its components belong to one mix. A document embedding several *independent* clients — notebooks open in one tab, isolated demos side by side — needs each to keep its own node, bus, buffer and widget ids, and asks for its own of each:
+One engine and one GUI host per page is the **default, not a limit**: it is what a page wants, since its components belong to one mix. A document embedding several *independent* clients — isolated demos side by side, an editor beside a player — needs each to keep its own node, bus, buffer and widget ids, and asks for its own of each:
 
 ```ts
 import { engine, pageConnection, Server } from "clausters";
@@ -54,7 +54,7 @@ gui.attach(windowId, myCanvas);                   // and it appends no canvas
 
 Instances share the browser tab and nothing else, so two of them may use the very same window, widget and node ids without colliding — which is the point, since clients that allocate ids independently have no way to agree on a range. Take `newPools()` along with the host: the page's pools are shared by everything that shares the page's engine, and an independent client wants an id space of its own. A second host costs neither a download nor a GPU device; a second engine is a second `AudioContext`, and browsers cap those (Chrome at six). `gui.close()` releases one — its wasm instance, its GPU device and its event drain, leaving every other host on the page drawing.
 
-Two clients on the **same** engine are the other arrangement, and there the ids do collide: both allocators start at the same base. They split the space instead, each taking one slice of it — `Session.page({ share: { index: 1, of: 2 } })`, with the other client given index 0. The slices are equal and in a fixed order, so they are disjoint by arithmetic and the two clients need no channel to agree; a session's share governs both of its legs, the server's node, bus and buffer ids and its host's widget ids alike. The case it exists for is a notebook, whose kernel authors over its comm while the page holds a session on that same in-page engine.
+Two clients on the **same** engine are the other arrangement, and there the ids do collide: both allocators start at the same base. They split the space instead, each taking one slice of it — `Session.page({ share: { index: 1, of: 2 } })`, with the other client given index 0. The slices are equal and in a fixed order, so they are disjoint by arithmetic and the two clients need no channel to agree; a session's share governs both of its legs, the server's node, bus and buffer ids and its host's widget ids alike.
 
 What each pair differs in is only what a page wants by default. `guiHost()` and `server()` are memoized and come with the page's default canvas; `newGuiHost()` and `engine()` are neither, since a host that is not the page's has no business appending a canvas to `<body>`. `examples/two-hosts.html` shows the whole arrangement end to end.
 
@@ -139,7 +139,7 @@ b.use(() => new Synth("beep"));   // reaches b, whatever the page's default is
 
 `s.gui()` opens the session's host once and wires it to **this session's** engine, so a bound widget reaches this server and not the page's — the browser parallel of the Python client's `session.gui()`, which boots a `clausters-gui` process pointed at its session's server. `s.connectGui(url)` drives a native `--ws` host instead.
 
-A host the session could not have opened itself — one booted on modules that arrived over a wire, one over a carrier you built — is installed with `s.adoptGui(host)`, the counterpart of the Python client's `session.adopt_gui(host)`. Adoption is **first wins**: a session that already has a host keeps it and hands it back to the loser, and an adopted host is the session's afterwards, so `close()` stops it. `s.guiHost` reads back what the session has without opening anything.
+`s.guiHost` reads back what the session has without opening anything.
 
 ## Driving the GUI host
 

@@ -50,12 +50,8 @@ const required = [
     "dist/gui-host/clausters_gui_bg.wasm",
     "dist/core/clausters_core_web.js",
     "dist/core/clausters_core_web_bg.wasm",
-    // The Jupyter front end's copy of the client, bundled, and the clock's
-    // tick worker beside it -- the two things the notebook is handed over a
-    // kernel comm. The bundle is the one artifact a missing esbuild silently
-    // omits, and the failure would land in a notebook rather than here.
-    "dist/notebook-client.js",
-    "dist/notebook/widget.js",
+    // The clock's tick worker: loaded by URL into a scope of its own, so it is
+    // never reached through the module graph a package check would follow.
     "dist/base/tick-worker.js",
     // The licence travels with the code.
     "COPYING",

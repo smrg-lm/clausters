@@ -24,7 +24,6 @@ import { main } from "../src/base/main.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Group, Synth } from "../src/defs/node.ts";
 import { Server } from "../src/defs/server/index.ts";
-import { GuiHost } from "../src/gui/host.ts";
 import { Session } from "../src/session.ts";
 import { play } from "../src/play.ts";
 import { Event } from "../src/seq/event.ts";
@@ -266,25 +265,4 @@ test("a session's clock names it, which is how a routine finds its server", () =
         assert.deepEqual(addrs(a.packets), []);
         a.session.close();
         b.session.close();
-    }));
-
-test("a session adopts a GUI host it could not have opened itself, first-wins", () =>
-    withCleanDefault(async () => {
-        const { session } = await fakeSession();
-        assert.equal(session.guiHost, null, "no host until one is opened or adopted");
-
-        // A host over a carrier of the caller's own — the shape a notebook
-        // kernel's comm and a test double both take. Nothing is booted here.
-        const first = new GuiHost(recorder());
-        const second = new GuiHost(recorder());
-        assert.equal(session.adoptGui(first), first);
-        assert.equal(session.guiHost, first);
-        // The incumbent stands, and is what the loser is handed back — so two
-        // callers racing cannot leave the session drawing on a host nobody
-        // else holds.
-        assert.equal(session.adoptGui(second), first);
-        assert.equal(session.guiHost, first);
-
-        session.close();
-        assert.equal(session.guiHost, null, "an adopted host is the session's to stop");
     }));

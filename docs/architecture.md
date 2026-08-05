@@ -164,7 +164,7 @@ Who holds which registry, and when ids come back:
 - **`CmdTranslator.auto_ids`** (network thread) — the auto range. Released when the node's `End` event (or `Rejected*` garbage) drains in `OscServer::collect_garbage` / the NRT renderer's `collect`, both via `CmdTranslator::release_node_id`, which routes the id to the auto or MIDI registry by range.
 - **`MidiBindings.ids`** (network thread) — the MIDI voice range, released through the same path as voices die.
 - **GraphDef private buses** (`graph_audio_buses`/`graph_control_buses`) — reclaimed when the instance is freed; a refused release there is logged, because it means an instance lost track of a bus.
-- **Clients** hold the client range plus their bus/buffer registries (the Python allocators wrap the same core `Registry` over ctypes) and recycle node ids from the `/node_end` notifications — which is why an engine rejection also broadcasts a `/fail` carrying the id: no `/node_end` will ever come for it. Several clients on one server split every client-side space between them by taking equal slices in a fixed order (an *id share*: client `i` of `n`, the last taking the remainder), which is disjoint by arithmetic and so needs no channel between them — see `schemas.md`; a notebook is what it is for, its kernel authoring while its page holds a client of the same engine.
+- **Clients** hold the client range plus their bus/buffer registries (the Python allocators wrap the same core `Registry` over ctypes) and recycle node ids from the `/node_end` notifications — which is why an engine rejection also broadcasts a `/fail` carrying the id: no `/node_end` will ever come for it. Several clients on one server split every client-side space between them by taking equal slices in a fixed order (an *id share*: client `i` of `n`, the last taking the remainder), which is disjoint by arithmetic and so needs no channel between them — see `schemas.md`.
 
 NRT is the sanctioned exception: an offline score has no real-time bound on ids over its length and no live `/node_end` stream, so a score client's node-id registry is unbounded (`Registry::unbounded`); the server-side ranges recycle in NRT exactly as live (the renderer drains the same events). `tests/registry.rs` pins the recycling, the explicit exhaustion and the no-leak rollback of failed instantiations; the rationale for the model is in `docs/decisions.md`.
 
@@ -555,74 +555,6 @@ business, not the host's: it lands in `clients/python/clausters/form/`, and it
 reaches the screen through the editor driver (`clausters/gui/editor.py`), which is
 the only module that knows both the arrangement and the widget tree. The Python
 book's composition chapter is its user documentation.
-
-## The notebook package: where it lives
-
-`clients/jupyter` (`clausters-jupyter` on PyPI) puts the GUI in a Jupyter cell.
-It is a **separate distribution on purpose**: `clausters` keeps no IPython
-logic, no display hooks and no optional notebook import, so a script, a test or
-a plain REPL carries none of it.
-
-It builds nothing. The browser half is the **web client's own `dist/`**, staged
-into the package by `scripts/refresh-web.sh` (which runs `clients/web/build.sh`
-and copies) — the wasm GUI host, the wasm engine, the shared core, and two
-modules of its own, `clients/web/src/notebook/widget.ts` and the entry it is
-written against, `client.ts`, both living with the rest of the TypeScript
-rather than inside the Python package.
-
-**The front end is a client of the web package, not a second implementation of
-it.** It boots the host through `newGuiHost`, the engine through `engine()`,
-holds a `Session` that owns both, feeds the kernel's packets in through the
-host client's carrier and tears the whole thing down with `session.close()`.
-What it supplies is what is genuinely the notebook's: which canvas a window
-draws into, and the comm the kernel authors over. Both ends author against one
-engine, so they take an **id share** each — the kernel index 0, the page index
-1 (see "Ids over the pools" above).
-
-| Path | Contents |
-|---|---|
-| `clausters_jupyter/carrier.py` | `CommInterface`: an `OscInterface` over the kernel's comm, so `GuiHost(interface=…)` and `Server(interface=…)` take it through the seam they already had |
-| `clausters_jupyter/journal.py` | `Journal` — the outbound GUI traffic reduced to **state, not history** (a `/gui_set` coalesced per widget+prop, a `/gui_free` dropping a subtree), which is what a mount replays |
-| `clausters_jupyter/bridge.py` | The routing: one carrier fanned out to one widget per `window`-rooted def, and the events merged back. It asks the journal which root a packet edits |
-| `clausters_jupyter/widget.py` | `ClaustersWidget`, the anywidget — the only file that imports it. Moves tagged OSC in both directions and hands the front end its assets on mount |
-| `clausters_jupyter/formatters.py` | `for_type` registrations, so a window displays as its canvas without any `clausters` class knowing |
-| `clausters_jupyter/session.py` | `notebook()`: the one function that knows a notebook is involved, and the backend choice |
-| `clausters_jupyter/assets.py` | Where the staged `dist/` comes from, and which files each backend needs |
-
-Three constraints shape all of it, and each is a property of where it runs:
-
-- **The assets travel over the comm.** anywidget serves one module — the
-  widget's own `_esm` — and a remote kernel has no static route to add the rest
-  to. So they arrive as buffers and become blob URLs, with their relative
-  import specifiers rewritten to those URLs (a blob module resolves relatives
-  against the blob's origin, where nothing lives) in an order topologically
-  sorted over the import graph. The `.wasm` arrives as bytes, which is what
-  wasm-bindgen's `init` takes. The **client itself arrives bundled** — one
-  file, `dist/notebook-client.js` — because that rewrite works for a tree and
-  cannot work for a cycle: rewriting A's import of B needs B's URL, and the
-  client has three ordinary ESM cycles. What stays a module of its own is what
-  is loaded by URL into a scope of its own: the audio worklet, and the clock's
-  tick worker (`setTickWorkerUrl`).
-- **A reply cannot arrive while a cell runs.** ipykernel holds an asyncio lock
-  across the whole `execute_request` so cells run in order, and a `comm_msg` is
-  a shell message. There is no loop to pump (ipykernel 7 removed
-  `do_one_iteration`) and awaiting does not help. `CommInterface.recv` therefore
-  raises `RoundTripInCell` rather than hanging — except at a zero timeout, which
-  is a poll of what already arrived and is how `GuiHost.pump` reads events back.
-- **A host per notebook, and the page holds them by session.** anywidget
-  instantiates the ESM per widget, so a module-scope singleton is one 5.4 MB
-  wasm host *per cell*; the state lives on `globalThis` instead, keyed by the
-  kernel's session id. Not one *per page* either: JupyterLab is a single-page
-  application, and two notebooks sharing a `globalThis` allocate ids from the
-  same bases, so each boots an instance of its own and they share only the
-  windowing event loop.
-
-The audio leg never passes through Python. Under the default `page` backend the
-in-page engine is wired to the host in the tab (`GuiBridge::connect_page`);
-under `native` the host opens its own WebSocket to the server's `--ws` port
-(`connect_server`), which is why that backend forces `ws` on and is local-only.
-Either way a bound widget reaches the audio at frame rate while the kernel is
-busy — the same wire a served page and the desktop use.
 
 ## Extending the server: the plugin question
 

@@ -77,7 +77,7 @@ The repo-wide posture — minimal, user-space, reproducible — applied to the J
 
 - **node LTS under `~/.local`, no sudo** — the same pattern as libfaust. The recipe (kept current in `clients/web/BUILD.md` once W0 lands): download the `linux-x64.tar.xz` of the newest LTS from nodejs.org/dist, verify against `SHASUMS256.txt`, extract to `~/.local/lib/`, symlink the versioned dir to `~/.local/lib/node`, and symlink `node`/`npm`/`npx`/`corepack` into `~/.local/bin` (already on `PATH`). Installed 2026-07-18: v24.18.0 (npm 11.16.0).
 - **`typescript` is the only package dependency** (dev-only; v7, the native compiler — a single package, no transitive deps; `@types/node` rides along for the test files, type declarations only). `tsc` does both jobs: **type-checking** (`tsconfig.json`, src + tests, no emit) and **emitting** (`tsconfig.build.json`: `src/` → `dist/` module-per-module, with declarations and source/declaration maps — the browser interface is JS with a type map). Imports between our modules are written with `.ts` extensions and rewritten on emit (`rewriteRelativeImportExtensions`), which is what lets node run the sources directly; the output is the same plain servable ESM the B4 modules were. The dev loop is `tsc -p tsconfig.build.json --watch` + `python3 -m http.server`.
-- **No bundler for the package.** Nothing a page loads needs one: the package ships unbundled, the wasm bundles and the worklet module must stay static assets anyway (`AudioWorklet.addModule` and bundlers are a known friction), and the browser loads bare ESM natively. Evaluated and not adopted: **vite** (a dev server with HMR plus rollup/esbuild underneath — tens of MB of dev machinery whose two roles are already covered by `http.server` and `tsc --watch`; revisit only if HMR-grade DX is genuinely missed), **vitest** (pulls vite in as its platform). **`esbuild` was adopted 2026-08-04, for exactly one artifact** — the condition this bullet always named, "only earns its place when bundling", turned out to be met by one carrier: the Jupyter front end is handed the client over a kernel comm and imports it from `blob:` URLs, which have no path, so a module graph with cycles cannot be loaded at all there (the client has three). `build.sh` bundles `src/notebook/client.ts` into `dist/notebook-client.js`; `dist/` is otherwise still the `src/` tree emitted 1:1, and nothing a served page loads goes through a bundler. Rationale in `docs/decisions.md`.
+- **No bundler for the package.** Nothing a page loads needs one: the package ships unbundled, the wasm bundles and the worklet module must stay static assets anyway (`AudioWorklet.addModule` and bundlers are a known friction), and the browser loads bare ESM natively. Evaluated and not adopted: **vite** (a dev server with HMR plus rollup/esbuild underneath — tens of MB of dev machinery whose two roles are already covered by `http.server` and `tsc --watch`; revisit only if HMR-grade DX is genuinely missed), **vitest** (pulls vite in as its platform). **`esbuild` was adopted 2026-08-04 for one artifact and dropped again on 2026-08-05** with the notebook front end that needed it: a client handed over a carrier and imported from `blob:` URLs cannot load a module graph with cycles (this one has three), which is the one condition this bullet always named. Nothing in `dist/` is bundled now — it is the `src/` tree emitted 1:1 — and the carrier that wanted it lives on the `jupyter` branch.
 - **Tests: `node:test`, built into node — zero dependencies.** Node runs `.ts` directly (native type stripping, default since 23.6), so pure-logic tests (codec parity, clock arithmetic, builders) run straight from source with `node --test`, no compile step, no runner package. Browser-only behavior (audio, canvas, the elements) keeps the B-track posture: headless-Chrome smoke scripts with the access-log beacon.
 - `typedoc` (the W5 API-reference generator) gets evaluated under this same lens when W5 starts.
 - The **Emscripten SDK** (`emcc`, user-space via `emsdk`) is the one heavy addition this lens admits, and it is **W7's**, not the toolchain's baseline: it builds `libfaust-wasm` so a Faust def compiles in the page (`third_party/BUILD-FAUST.md`, "WebAssembly parts" — documented, never built here). It stays out of the JS toolchain proper — nothing in `src/` or the test loop touches it, `build.sh` only stages its output as static assets, and the slim run-time entry never loads them. Evaluated under the same lens when W7 starts, decision recorded then.
@@ -1130,19 +1130,22 @@ ephemeral-def wrapper, **W13**'s `asdef`), an `Automation` (**W11**), and the
 two chaining verbs the Python `Session` has and this one does not —
 `joinTransport` (**W12**) and `nrt`/`render` (**W13**).
 
-### ✅ W19 - The notebook front end (`src/notebook/widget.ts`)
+### W19 - The notebook front end - moved to the `jupyter` branch
 
-Shipped 2026-08-03, with the `clausters-jupyter` Python package that stages it
-(server-side plan: `clients/python/PLAN.md`, C38). This package owns the
-browser half of a Clausters notebook: the module anywidget loads as the
-widget's `_esm`, which takes this package's built `dist/` over the kernel's
-comm and boots the wasm GUI host — and, for the in-page backend, the engine —
-inside the cell.
+Shipped 2026-08-03 and taken off `main` on 2026-08-05, with the
+`clausters-jupyter` package it belonged to. `src/notebook/` was never a
+directory beside this package: it was built by a dedicated esbuild step,
+asserted into the npm tarball, exercised by its own test page, and fronted by a
+re-export entry that constrained what the rest of `src/` could be renamed to —
+so every consumer of this package shipped a notebook front end. The audit and
+the plan for bringing it back are in `clients/jupyter/ISOLATION.md` on that
+branch.
 
-- `src/notebook/widget.ts`: the cell's end of the comm. It carries bytes and decides nothing about what to draw. Its substance is the staging: the assets arrive as buffers (anywidget serves one module, and a remote kernel has no static route to add the rest to), become blob URLs in an order topologically sorted over their import graph, and have their relative specifiers rewritten to those URLs — a blob module resolves relatives against the blob's origin, where nothing lives. The scanner and the rewriter must count exactly the same things as imports; a side-effect `import "./x.js"` (no `from`) once ordered correctly and then went unrewritten, which killed the audio thread.
-- `src/gui/canvasbox.ts`: `CanvasBox`, `canvasBox` and `onScaleChange` split out of `gui/page.ts` as a leaf, so the notebook shares the *real* measuring instead of a second copy. `page.ts` re-exports them.
-- The host and the engine are wired to **each other** in the page, and the singleton lives on `globalThis`, not in module scope: anywidget instantiates the ESM per widget, so a module-level one is a 5.4 MB wasm host per cell.
-- Tests: `clients/web/tests/notebook.test.ts` — the byte view (`DataView`, which `new Uint8Array(view)` silently empties), the import scan/rewrite agreement, the topological order, the OSC padding walk for a def id, and the type-only-import rule for the sibling module.
+Three seams here left with it, each having had exactly one caller:
+`newGuiHost`'s `engine: null` (which is what widened `ClaustersGui.engine` to
+`| null`), its `wasm` option, `setTickWorkerUrl` and `ClaustersServer.onQuit`.
+What stayed, on its own merits: `newGuiHost`/`newPools` themselves, `IdShare`,
+per-instance hosts, and `ClaustersGui.close`/`detach`.
 
 ### ✅ W20 - Host and engine instances: the page is not the unit *(done 2026-08-03)*
 
@@ -1522,45 +1525,22 @@ port of `scoping.py` — where the Python one is a timed tour that opens each
 window alone, the page puts the three side by side and leaves the knobs under
 the reader's hand. Book: the verbs chapter is `play, plot, scope, render` now.
 
-### ✅ W25 - The notebook front end is a client of the package *(done 2026-08-04)*
+### W25 - The notebook front end is a client of the package - moved with W19
 
-The half of the `Session` port that lives in the browser. W18 gave the page a
-`Session`; `src/notebook/widget.ts` was written before it and had never used
-it, so a notebook's page held a hand-wired host and engine and tore them down
-in an order of its own — a second implementation of what the client does, of
-the kind nothing type-checks.
+Landed 2026-08-04 and left with the rest of the notebook track on 2026-08-05.
+Its lasting result stayed: a front end embedding this package boots through
+`newGuiHost`, starts the engine through `engine()`, holds a `Session` that owns
+both, and lets the client own the canvas policy — rather than hand-wiring the
+pair and tearing them down in an order of its own. Two leaks it closed stayed
+too: a session with its own engine used to leave its wasm host and GPU device
+behind on `close()`, and `guiHost()`'s drain interval had no disposer.
 
-- **`src/notebook/client.ts`** — the entry the front end is written against,
-  and the list of what it may use. The widget now boots through `newGuiHost`,
-  starts the engine through `engine()`, holds a `Session` that owns both, and
-  feeds the kernel's packets in through the host client's own carrier, so the
-  canvas policy (attach, and detach on `/gui_free`) is the client's. Teardown
-  is `session.close()`. The hand-rolled OSC id walk went with it: the front end
-  has the codec now.
-- **Bundled, and only this one file** — `dist/notebook-client.js` (esbuild,
-  from `build.sh`). A blob URL has no path, so a module graph with cycles
-  cannot be imported over the comm at all; see the tooling section and
-  `docs/decisions.md`. The worklet and the clock's tick worker stay modules of
-  their own, being loaded by URL into scopes of their own — hence
-  `setTickWorkerUrl`, and the page-timer fallback for a client that cannot name
-  it.
-- **The seams it needed, all of them general**: `newGuiHost({wasm})` (a host
-  booted on bytes rather than on a URL beside its glue), `newGuiHost({engine:
-  null})` (a host whose audio leg is a native server, which is what the
-  `native` backend's page holds), `ClaustersGui.close()` and an `attach` that
-  is idempotent per def and remembers on the host, `Session.adoptGui(host, {
-  page })`, and `Session.page({ engine, own: true })` meaning the engine is the
-  session's to close. Two leaks closed on the way: a session with its own
-  engine used to leave its wasm host and GPU device behind on `close()`, and
-  `guiHost()`'s drain interval had no disposer.
-- **The id share** (`IdShare`, both clients): the kernel and the page author
-  against one engine, so they take one half of every client-side space each —
-  the kernel index 0, the page index 1. Without it both allocators start at the
-  same base.
-- Tests: `tests/share.test.ts` and `clients/python/tests/test_id_share.py` (the
-  arithmetic, assertion for assertion), the adoption test in
-  `tests/session.test.ts`, and `tests/notebook.html`, which is what proves the
-  front end boots at all.
+What went with it: `src/notebook/client.ts` and the esbuild bundle behind it,
+`newGuiHost`'s `wasm` and `engine: null` options, `setTickWorkerUrl`,
+`ClaustersServer.onQuit`, `Session.adoptGui` and `tests/notebook.html`. The id
+share stayed, being a property of the server's id model rather than of this
+carrier — `tests/share.test.ts` and `clients/python/tests/test_id_share.py`
+still pin it. See `clients/jupyter/ISOLATION.md` on the `jupyter` branch.
 
 ### W24 - The completeness pass
 
@@ -1576,17 +1556,14 @@ as some other milestone has a better claim on it.
   `{boxes, cords}`, plus the `PatchWindow` handle. W21's inventory listed
   `defs/patch.py` as unclaimed and it still is; it lands here unless the def
   layer is opened for something else first.
-- **`Session.connectGui(url)` is a verb this client invented**, and half of it
-  has since been settled. W18 added it so a session could adopt a native
-  `clausters-gui --ws` host, and it did two things at once: *connect* and
-  *adopt*. The adopting half is now the reference's — `session.adopt_gui(host)`
-  exists in the Python client and `adoptGui` here ports it — so what is still
-  invented is only the convenience of opening the socket in the same call, on a
-  verb whose return (the host connected, not the incumbent) differs from
-  `adoptGui`'s for that reason. Resolve *that* in one direction: drop it and
-  let a caller write `session.adoptGui(await GuiHost.connect(url))`, or add the
-  shortcut to the reference client. The standing rule says the reference leads,
-  so the default is to drop it.
+- **`Session.connectGui(url)` is a verb this client invented**, and it does two
+  things at once: *connect* and *adopt*. Its adopting half briefly had a
+  reference counterpart (`session.adopt_gui` / `adoptGui`), which left with the
+  notebook track that was its only caller, so the whole verb is invented again
+  and the question is back to one: does the reference client want a session to
+  install a host it did not open? Answer that first — the standing rule says
+  the reference leads — and `connectGui` follows from it, either dropped in
+  favour of the explicit pair or matched by a shortcut there.
 - **Two names the sweep of 2026-08-03 left over**, each too small to own a
   milestone and neither a difference with a reason: `Routine.run(func, clock,
   quant)`, the classmethod that constructs and starts in one call (the instance

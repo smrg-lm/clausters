@@ -42,7 +42,7 @@ export type { ClaustersServer, ReplyListener } from "./engine/server.ts";
 export type { BootOptions, ClockAnchor } from "./engine/loader.ts";
 export { GuiHost, guiHost, newGuiHost, pageGuiConnection } from "./gui/host.ts";
 // Measuring an element against the display, which a page needs wherever it
-// sizes a canvas itself -- a component, a notebook cell.
+// sizes a canvas itself -- a component, an embedder's own element.
 export { canvasBox, onScaleChange } from "./gui/page.ts";
 export type { CanvasBox } from "./gui/page.ts";
 export type { ClaustersGui } from "./gui/host.ts";

@@ -46,7 +46,7 @@ export class GuiIdAllocator {
 
     /**
      * Over `[base, base + capacity)`, or one slice of it when a host has more
-     * than one client naming widgets on it (`IdShare`) — a notebook kernel
+     * than one client naming widgets on it (`IdShare`) — a driving client
      * drawing into a page that holds a client of the same host.
      */
     constructor(

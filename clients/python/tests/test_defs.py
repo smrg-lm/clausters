@@ -258,21 +258,6 @@ def test_faustdef_send_waits_for_done_and_raises_on_fail():
     assert iface.sent[-1][0] == "/def_send"
 
 
-def test_a_carrier_that_cannot_be_waited_on_sends_without_confirming():
-    """A Jupyter comm queues its reply behind the cell that would wait for it,
-    so the wait can only expire. The send still happens: an ordered carrier
-    delivers the def ahead of what instances it, which is what the wait was
-    standing in for."""
-    iface = _FakeInterface()
-    iface.awaitable = False
-    srv = Server(interface=iface)
-
-    # No reply queued, and none asked for -- with awaitable left alone this
-    # would block until the timeout.
-    assert FaustDef.from_source("ok", "process = _;").send(srv) == "ok"
-    assert iface.sent[-1][0] == "/def_send"
-
-
 def test_server_sync_round_trips_synced_id():
     iface = _FakeInterface()
     srv = Server(interface=iface)

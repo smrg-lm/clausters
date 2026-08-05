@@ -245,7 +245,8 @@ def test_plot_renders_a_graphdef_offline():
 
 
 def test_a_registered_ambient_host_wins_over_booting_one():
-    """The seam an out-of-process front (a notebook cell, a test double) comes
+    """The seam an out-of-process front (a canvas over a carrier of the
+    caller's own, a test double) comes
     in through: `plot` with no `host=` resolves the registered one instead of
     booting a `clausters-gui` process, and the verb itself is unchanged."""
     from clausters.gui import ambient_host, set_ambient_host
@@ -276,23 +277,8 @@ def test_unregistering_restores_the_ordinary_resolution():
     assert ambient_host() is None
 
 
-def test_bulk_rides_a_blob_when_the_host_shares_no_filesystem():
-    """A host that cannot read what this process writes (`local_files`) gets
-    the samples beside the message instead of a path to map — the browser
-    canvas a notebook draws in, or any host on another machine."""
+def test_bulk_maps_a_file_the_host_can_read():
     host = FakeHost()
-    host.local_files = False
-    samples = [i / 5000.0 for i in range(5000)]
-    plot(samples, n=len(samples), sample_rate=SR, host=host)
-    widget = _plot_widget(host.opened[0])
-    assert widget["blob"] == 0
-    assert "path" not in widget
-    (blobs,) = host.blobs
-    assert len(blobs) == 1 and len(blobs[0]) == len(samples) * 4
-
-
-def test_bulk_still_maps_a_file_for_a_host_that_can_read_it():
-    host = FakeHost()                      # local_files defaults to True
     samples = [i / 5000.0 for i in range(5000)]
     plot(samples, n=len(samples), sample_rate=SR, host=host)
     widget = _plot_widget(host.opened[0])

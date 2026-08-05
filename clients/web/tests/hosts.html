@@ -46,8 +46,8 @@
       A page held one host for as long as winit's one EventLoop was mistaken
       for one host. It is not: the loop drives any number of windows, so the
       instances share it and nothing else. What this asserts is the "nothing
-      else", which is what lets independent clients -- notebooks in a
-      JupyterLab tab, isolated demos side by side -- live in one document
+      else", which is what lets independent clients -- isolated demos side
+      by side, an editor beside a player -- live in one document
       without partitioning an id range between them:
 
         - both hosts draw, each into its own canvas;
