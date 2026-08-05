@@ -79,6 +79,9 @@ notebook uses them. They are where the design needs work.
 | `Session.adopt_gui` / `Session.adoptGui(host, {page})` | `session.py:316`, `session.ts:292` | `session.py:195` |
 | `scope()` waiving its shared-memory requirement for a registered host | `scope.py:189` | the notebook's host |
 | `setTickWorkerUrl` | `base/clock.ts:151` | `widget.ts:482` |
+| `newGuiHost({ engine: null })` — the tri-state | `gui/page.ts:114,178,220` | `widget.ts:491,518` |
+| `newGuiHost({ wasm })` — the module's bytes instead of its location | `gui/page.ts` (`boot`) | `widget.ts:510` |
+| `ClaustersServer.onQuit(listener)` | `engine/server.ts:102,161,184` | `widget.ts:810` |
 
 ### What is actually wrong
 
@@ -100,9 +103,36 @@ drain loop) is a separate object that would be orphaned. `clients/web/PLAN.md`
 (1580–1590) already records the surrounding tangle, including `connectGui`,
 which that file proposes dropping. The two should be settled together.
 
+**The `engine: null` tri-state widened a public type for one call site.**
+`newGuiHost` now reads `undefined` as "one of my own", an instance as "this one"
+and `null` as "none — I will wire the audio leg myself". Only the notebook's
+`native` backend wants the third: it passes `null` and then points the host at a
+server's `--ws` port with `gui.bridge.connect_server(url)`. Nothing else in
+`src/`, `examples/` or `tests/` passes it. The cost is not the branch but the
+signature — `ClaustersGui.engine` went from `ClaustersServer` to
+`ClaustersServer | null`, so every consumer of the public interface has to narrow
+it. If the tri-state stays, it should be because a host with an external audio
+leg is a shape the client wants in general, not because one backend needed it.
+
+**`newGuiHost({ wasm })` and `setTickWorkerUrl` are the same problem twice** —
+modules that arrived over a wire and run from `blob:` URLs, where "next to this
+module" names nothing, so the caller supplies what wasm-bindgen and `new Worker`
+would otherwise locate. Both have exactly one caller. They should be settled
+together, as one answer to "this client was not served from anywhere", rather
+than as two unrelated escape hatches.
+
 **`awaitable` and `local_files` default to `True`**, so removing only their
 consumers leaves dead branches rather than breakage. That makes them the
 cheapest to defer.
+
+### Dead on arrival: `ClaustersGui.attached(defId)`
+
+Declared at `gui/page.ts:62` and implemented at `:251`, and **called from
+nowhere** — not from the web client, not from its tests or examples, not from
+the notebook front end that it landed with (`2dabad7`, beside `detach` and
+`close`, which do have callers). It is not a hook to decide about: it is dead
+public API, and it can be deleted from `main` now, independently of this whole
+plan.
 
 ---
 
@@ -145,6 +175,15 @@ notebook code.
   General, an improvement on its own, and load-bearing for everything since.
 - **`set_ambient_host` / `ambient_host`** predate this work (`43edc80`,
   2026-08-02). Only the waiver in `scope.py:189` is the notebook's.
+- **`Server.boot` losing `transport=`, `latency=` and `options=`** (moved to the
+  constructor) and `_adopt_default` becoming the public `adopt_default`. The
+  second looks notebook-driven, since `clausters_jupyter` calls
+  `boot(adopt_default=False)` — but `Session.__init__` already needed it
+  (`session.py:187`), and the private name was the anomaly.
+- **`ClaustersGui.close()` and `detach()`, and `attach()`'s idempotence.** They
+  arrived with the notebook and have general callers: `Session.close()`
+  (`session.ts:484`), `bundle.ts:435`, `gui/page.ts:327`. Only their sibling
+  `attached()` is dead — see section 3.
 - Everything in `eb97adf`, `531836e`, `80500b3`, `c423ffe`, `85bc723` — the
   buffer and shared-memory track.
 
@@ -175,34 +214,44 @@ Ordered so that each step leaves `main` green on its own.
    `clients/web` (it must pass with `notebook.html` and the esbuild step gone),
    `pytest` from the root, and a docs build for the two book pages that lose an
    entry.
-2. **Revert the hooks one commit per hook**, in this order — cheapest and least
-   entangled first, so the hard one is faced alone:
-   1. `setTickWorkerUrl`
-   2. `scope()`'s waiver
-   3. `awaitable` (+ the `send_def` branch, + `test_defs.py:262`)
-   4. `local_files` (+ the `plot.py` branch selection, + `test_plot.py`) —
+2. **Delete `ClaustersGui.attached()` from `main`.** Dead public API with no
+   callers; it needs no branch and no decision.
+3. **Revert the hooks one commit per hook**, in this order — cheapest and least
+   entangled first, so the hard ones are faced alone:
+   1. `ClaustersServer.onQuit`
+   2. `setTickWorkerUrl` **and** `newGuiHost({ wasm })` together — one answer to
+      "this client was not served from anywhere", not two
+   3. `scope()`'s waiver
+   4. `awaitable` (+ the `send_def` branch, + `test_defs.py:262`)
+   5. `local_files` (+ the `plot.py` branch selection, + `test_plot.py`) —
       **keeping `base/bulk.py` and the blob path itself**
-   5. `adopt_gui` / `adoptGui` (+ their tests), together with a decision on
+   6. `newGuiHost`'s `engine: null` — which is what narrows `ClaustersGui.engine`
+      back to `ClaustersServer` and lifts the `| null` off every consumer
+   7. `adopt_gui` / `adoptGui` (+ their tests), together with a decision on
       `connectGui` per `clients/web/PLAN.md`
-   6. `interface.boot()` — remove the `getattr` from `Server.boot`
-3. **Reword the prose that names the notebook as the motivating case** for
+   8. `interface.boot()` — remove the `getattr` from `Server.boot`
+4. **Reword the prose that names the notebook as the motivating case** for
    something that stays: `docs/schemas.md:57`, `base/ids.py:16`,
    `test_id_share.py:5`, `docs/architecture.md:167`. Each should state the
    general configuration (two clients on one server) and drop the example that
    is no longer in the tree.
-4. **Leave a note where the roadmaps lose their entries.** C38/C39 and W19
+5. **Leave a note where the roadmaps lose their entries.** C38/C39 and W19
    should say the track moved and where, rather than disappearing — otherwise
    the next reader re-derives the whole design from the git log.
-5. **On the branch, rework rather than re-apply.** The two that should be
-   redesigned before they come back are `interface.boot()` (a carrier that
-   cannot start its peer needs to say so, not to warn from inside a boot) and
-   the `adoptGui` `page` asymmetry. Note that the branch will be the only
-   consumer of `IdShare` and of the blob bulk path, both of which stay on
+6. **On the branch, rework rather than re-apply.** Four things should be
+   redesigned before they come back: `interface.boot()` (a carrier that cannot
+   start its peer needs to say so, not to warn from inside a boot), the
+   `adoptGui` `page` asymmetry, the pair of blob-URL escape hatches
+   (`setTickWorkerUrl` + `wasm`) as one capability, and `engine: null` as a
+   deliberate shape rather than a third case. Note that the branch will be the
+   only consumer of `IdShare` and of the blob bulk path, both of which stay on
    `main`: it consumes them, it does not carry them.
 
 ### Not verified
 
 The claim that step 1 breaks nothing comes from reading importers, not from
-running the suites with the files removed. Steps 2.3 and 2.4 are asserted to be
+running the suites with the files removed. Steps 3.4 and 3.5 are asserted to be
 dead-branch removals on the basis that both flags default to `True`; neither was
-executed with the flag gone.
+executed with the flag gone. Step 3.6 will not be a dead-branch removal — it
+changes a public type, and every narrowing site of `ClaustersGui.engine` has to
+come out with it.
