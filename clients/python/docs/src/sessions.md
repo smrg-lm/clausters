@@ -255,7 +255,7 @@ server.quit()                          # or stop it altogether
 
 Ownership is what separates them, all the way down. An attached handle did not start the process, so `close()` releases the connection and leaves the server standing; stopping it is `quit()`, which the server obeys over the wire. Unlike a bare `Server(...)`, `attach()` verifies: a handle pointing where nobody answers raises there and then, rather than dropping every later message into a UDP void that reports nothing back. It also **reconciles** — a server this client did not launch may have been booted with other flags, so the handle re-reads the real capacities (`query_info`) and resizes its allocators to them instead of trusting its own `options`.
 
-From a terminal, the same three verbs need no script:
+From a terminal, the same three verbs need no script (see [the command line](cli.md)):
 
 ```sh
 clausters status --port 57130   # is anyone there, and how is it configured

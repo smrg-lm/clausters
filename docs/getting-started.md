@@ -40,7 +40,10 @@ It opens the audio device and listens for OSC on UDP `127.0.0.1:57110`, printing
 ```sh
 cargo run --release -- --workers 3        # DSP threads for /group_parallel groups
 cargo run --release -- --shm /dev/shm/clausters   # shared-memory transport
+cargo run --release -- --port 57130       # a second server, beside the first
 ```
+
+Every flag is in the [command-line reference](cli.md).
 
 ## Play a sound
 
@@ -73,7 +76,7 @@ python3 examples/json_client.py score    # writes /tmp/clausters_score.osc
 cargo run --release -- --nrt /tmp/clausters_score.osc /tmp/out.wav
 ```
 
-A score is the scsynth binary format: length-prefixed OSC bundles whose timetags count seconds from the start of the render. Options: `--rate`, `--channels`, `--format int16|int24|float`, `--workers`. See the *NRT mode* section of [Defs, UGens & the OSC protocol](schemas.md).
+A score is the scsynth binary format: length-prefixed OSC bundles whose timetags count seconds from the start of the render. Options: `--rate`, `--channels`, `--format int16|int24|float`, `--seed`, `--workers` (all in the [command-line reference](cli.md)). See the *NRT mode* section of [Defs, UGens & the OSC protocol](schemas.md) for what a score is.
 
 ## Where to go next
 

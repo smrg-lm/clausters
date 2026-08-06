@@ -6,6 +6,7 @@
 
 - [Getting started](getting-started.md)
 - [Configuration](configuration.md)
+- [Command-line reference](cli.md)
 - [Defs, UGens & the OSC protocol](schemas.md)
 - [The GUI protocol](gui-protocol.md)
 - [Timed bundles & the sample clock](sample-clock.md)

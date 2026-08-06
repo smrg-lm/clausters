@@ -34,4 +34,5 @@
 
 # Reference
 
+- [Command line](cli.md)
 - [API reference](api.md)

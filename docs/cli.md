@@ -1,0 +1,133 @@
+# Command-line reference
+
+Two binaries, both built by the workspace (`cargo build --release`, into
+`target/release/`) and both bundled in the Python wheel, which puts them on your
+`PATH`:
+
+| Binary | What it is |
+| --- | --- |
+| `clausters` | The audio server. Real time by default; `--nrt` renders a score offline instead. |
+| `clausters-gui` | The GUI host — the visual server that owns the windows and draws the widgets. |
+
+Every flag below defaults to the configuration file, and a flag on the command
+line wins over it; the keys, the file's locations and the merge order are in
+[Configuration](configuration.md). `--help` prints the same tables the binary
+carries.
+
+The Python package installs a console script also called `clausters`, which runs
+the bundled binary with whatever you pass it — so everything here applies —
+**and adds three client-side verbs of its own** (`stop`, `panic`, `status`),
+documented in [the Python client book](https://clausters-python.readthedocs.io/).
+
+## `clausters` — the real-time server
+
+```
+clausters [--port <n>] [--workers <n>] [--shm <path>] [--data-dir <dir>]
+          [--no-persist] [--udp [port]] [--tcp [port] | --no-tcp] [--ws [port]]
+          [--midi [name]] [--sample-rate <hz>]
+```
+
+### Ports and transports
+
+One **base** port carries the server: UDP binds it, TCP follows it, WebSocket
+sits ten above. Moving that one number moves the whole server, which is what
+lets several run side by side on one machine — see
+[Configuration](configuration.md#schema) for the rule in full.
+
+| Flag | Value | Default | What it does |
+| --- | --- | --- | --- |
+| `--port` | port | `57110` | The base OSC port. |
+| `--udp` | port (optional) | the base port | Moves the UDP front alone. UDP cannot be turned off: it is the door a client probes to find the server. |
+| `--tcp` | port (optional) | the base port | Length-prefixed OSC over TCP — the command plane, on by default. Bare, it follows the base port. |
+| `--no-tcp` | — | — | Disables TCP entirely (a UDP-only server). |
+| `--ws` | port (optional) | the base port + 10 | Also accept OSC over WebSocket (`ws://host:port/`), reachable from a browser. Off unless asked for. |
+| `--max-frame` | bytes | `16777216` | Largest OSC frame on the stream transports. A denial-of-service ceiling, not a protocol limit; UDP keeps its ~64 KB datagram cap regardless. |
+| `--max-clients` | count | `64` | Concurrent stream clients, TCP and WebSocket combined. A connection past the ceiling is dropped at accept; UDP is connectionless and unaffected. |
+
+### Audio
+
+| Flag | Value | Default | What it does |
+| --- | --- | --- | --- |
+| `--sample-rate` | Hz | `48000` | The output rate the server imposes on the backend; `0` follows the device. |
+| `--outputs` | count | the device's | Hardware output channels. Audio buses `0..outputs` are the hardware outs. |
+| `--inputs` | count | `0` | Hardware input channels; above zero it opens the default input device, readable with `In` on buses `outputs..outputs+inputs`. |
+| `--workers` | count | `0` | DSP worker threads for [parallel groups](parallel.md); `0` lets the server choose. Also accepted by `--nrt`. |
+| `--pin` | cpu[,cpu…] | off | CPU affinity: the first for the audio callback thread, the rest round-robin over the workers. Linux, experimental, and only in a build with the `rtprio` feature. |
+
+### Boot-time capacities
+
+Each is a slab built once at startup, not a live limit. A client sizes its own
+allocators from these, so a server launched with other numbers is worth
+[querying](schemas.md) rather than assuming.
+
+| Flag | Value | Default | What it does |
+| --- | --- | --- | --- |
+| `--audio-buses` | count | `128` | Audio buses; also the hard maximum. |
+| `--control-buses` | count | `16384` | Control buses. |
+| `--max-nodes` | count | `8192` | Node slab capacity, the root group included. It also scales the node-id partition every client allocates from. |
+| `--max-buffers` | count | `4096` | Buffer pool size. |
+| `--max-graph-children` | count | `512` | Per-group child capacity. |
+| `--max-ugen-inputs` | count | `32` | Accepted inputs per UGen when a def is compiled; also the maximum. |
+| `--taps` | count | `8` | Audio-tap rings for oscilloscopes; `0` disables the tap region. `/bus_tap` routes an audio bus into one. |
+| `--tap-frames` | samples | `16384` | Per-tap ring capacity, rounded up to a power of two. |
+
+### Storage, MIDI and logging
+
+| Flag | Value | Default | What it does |
+| --- | --- | --- | --- |
+| `--shm` | path | off | The shared-memory segment local clients map — put it on `/dev/shm`. See [Local transports & embedding](ipc.md). |
+| `--data-dir` | dir | the XDG data dir | Where defs are persisted and reloaded. Several servers may share one. |
+| `--no-persist` | — | — | Disables def persistence for this run. |
+| `--midi` | name (optional) | `clausters` | Opens a virtual MIDI input port. A server off the default OSC port carries the port in the default name (`clausters:57130`), so two on one machine stay distinguishable. |
+| `-v`, `-vv`, `-vvv` | — | warn | Log verbosity: info, debug, trace. `-q` for errors only; `RUST_LOG` overrides both (`RUST_LOG=clausters::osc=trace`). A client retunes it live with `/server_verbosity` and `/server_dumpOsc`. Logs go to stderr. |
+
+A running server stops on `/server_quit` or Ctrl-C.
+
+## `clausters --nrt` — the offline render
+
+```
+clausters --nrt <score.osc> <out.wav> [options]
+```
+
+The score is the scsynth binary format: OSC packets back to back, each preceded
+by its byte count as a big-endian `int32`, with timetags counting seconds from
+the start of the render. The render ends at the **last** bundle, so close every
+score with one that makes no sound (a final `/node_free`) to set the duration.
+
+| Flag | Value | Default | What it does |
+| --- | --- | --- | --- |
+| `--rate` | Hz | `48000` | Sample rate. |
+| `--channels` | count | `2` | Output channels. |
+| `--format` | `int16`, `int24`, `float` | `float` | Output sample format. |
+| `--seed` | integer | a fresh one each run | Starting seed for the noise UGens. The seed used is reported, so passing it back replays that exact take. |
+| `--stats` | — | — | Print the render's statistics as one JSON line instead of the human summary — for a client driving `--nrt`. |
+| `--workers` | count | `0` | DSP threads for parallel groups. Bit-identical output, only faster. |
+
+## `clausters-gui` — the GUI host
+
+```
+clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
+              [--tcp [port] | --no-tcp] [--ws [port]] [--max-frame <bytes>]
+              [--data-dir <dir>] [--standalone [name]] [--config <path>]
+              [--theme <path>]
+```
+
+The host has two legs: a **server front** a script sends `/gui_*` to, and an
+optional **client leg** into a running audio server. What travels over each is
+[The GUI protocol](gui-protocol.md).
+
+| Flag | Value | Default | What it does |
+| --- | --- | --- | --- |
+| `--port` | port | `57210` | The host's own base port for the script-facing front (UDP and TCP). |
+| `--tcp` | port (optional) | the host port | The front's TCP leg, on by default; the flag only moves it. |
+| `--no-tcp` | — | — | Disables the TCP leg (a UDP-only front). |
+| `--ws` | port (optional) | the host port + 10 | Also accept `/gui_*` over WebSocket, reachable from a browser. |
+| `--max-frame` | bytes | `16777216` | Largest OSC frame on the stream legs. |
+| `--server` | host:port | off | Also attach the client leg to a running audio server. Needed for widgets that reference a server buffer number, and for bound widgets (`/gui_bind`) to forward their value. |
+| `--shm` | path | off | Map the audio server's shared-memory segment (its own `--shm` path) for meters and scopes with no per-frame messages. Unix only. |
+| `--data-dir` | dir | the XDG data dir | The GuiDef store: named GuiDefs persist there and `/gui_load` reads from it. |
+| `--standalone` | name (optional) | — | Boot the saved GuiDef against an **embedded** audio server — no separate server, no language client. With no name, `[standalone].gui` from the configuration is used. |
+| `--config` | path | the user+project chain | Read the configuration from this TOML file instead. |
+| `--theme` | path | — | Read the color theme from this TOML file, laid over `[gui.theme]`. A flat, partial table of `role = "#rrggbb[aa]"`. |
+| `--headless` | — | — | Run the protocol with no display, for tests and machines with no GPU. The default opens windows. |
+| `-v`, `-vv`, `-vvv` | — | warn | Log verbosity, as the server's. |
