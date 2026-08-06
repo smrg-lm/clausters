@@ -67,6 +67,6 @@ class Environment(RandomContext):
     def __init__(self):
         super().__init__()
         #: the environment's server; ``None`` until one is set (the default
-        #: session adopts one via a free-standing ``Server.boot()``; a `Session`
+        #: session adopts one via a free-standing ``Server().boot()``; a `Session`
         #: is built around one).
         self.server = None

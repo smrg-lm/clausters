@@ -57,7 +57,7 @@ class FaustDef:
     from clausters import FaustDef, Server, Synth
     from clausters.defs import boxes as box, signals as S
 
-    s = Server.boot()
+    s = Server().boot()
 
     # signals: the phasor written out, one sample of feedback
     freq = S.hslider("freq", 440.0, 20.0, 20000.0, 0.01)

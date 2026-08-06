@@ -19,7 +19,7 @@ This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
 
 Run it cell by cell (Shift+Enter), or as a plain script --
 ``python clients/python/examples/gui_plot.py``. It renders offline with
-`Session.nrt` and self-launches the windowed host with `GuiHost.boot()`; by hand
+`Session.nrt` and self-launches the windowed host with `GuiHost().boot()`; by hand
 the host is ``clausters-gui`` (no ``--server`` needed). Needs a display and a GPU
 adapter.
 """
@@ -60,11 +60,11 @@ print(f"wrote {os.path.getsize(path)} B of raw f32; the host maps it (no OSC)")
 
 # %% [markdown]
 # ## Launch the GUI host and plot the file
-# `GuiHost.boot()` starts a windowed host (no server needed); the plot maps the
+# `GuiHost().boot()` starts a windowed host (no server needed); the plot maps the
 # rendered file. Named, so `open` resolves it.
 
 # %%
-gui = GuiHost.boot()
+gui = GuiHost().boot()
 win = gui.open(window(
     plot(name="render", path=path, min=-1.0, max=1.0, label="NRT render (mono)"),
     title="Plot of an NRT render", w=720, h=300))

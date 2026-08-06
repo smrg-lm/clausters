@@ -140,7 +140,7 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
   processes. `Session.live()` connects to a running server or starts one if none
   is up (choosing a shared-memory segment); `Session.gui()` starts the visual
   server (`clausters-gui`) wired to it; both stop when the session closes or the
-  interpreter exits. Without a `Session`, `Server.boot()` / `GuiHost.boot()` do
+  interpreter exits. Without a `Session`, `Server().boot()` / `GuiHost().boot()` do
   the same at the object level. Both binaries are bundled in the wheel.
 
 The TypeScript client sits on the same core and the same OSC contract, in the

@@ -132,7 +132,7 @@ def on_view(name: str):
 # the process on exit.
 
 # %%
-gui = GuiHost.boot()
+gui = GuiHost().boot()
 win = gui.open(workspace())
 print("drag and wheel over each pane; navigation events print here")
 print("('reset view' puts the plane back at the origin, at its default zoom)")

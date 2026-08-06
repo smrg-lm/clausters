@@ -15,7 +15,7 @@ This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
 
 Run it cell by cell (Shift+Enter), or as a plain script --
 ``python clients/python/examples/gui_panel.py``. It self-launches the windowed
-host with `GuiHost.boot()`; by hand that is ``clausters-gui``. Needs a display
+host with `GuiHost().boot()`; by hand that is ``clausters-gui``. Needs a display
 and a GPU adapter.
 """
 
@@ -30,11 +30,11 @@ CONTROLS = ("cutoff", "res", "gain", "mix", "bypass", "reset", "wave")
 
 # %% [markdown]
 # ## Launch the GUI host
-# `GuiHost.boot()` starts a windowed `clausters-gui` process and returns a host
+# `GuiHost().boot()` starts a windowed `clausters-gui` process and returns a host
 # connected to it (stopped by `stop`, or on interpreter exit).
 
 # %%
-gui = GuiHost.boot()
+gui = GuiHost().boot()
 
 # %% [markdown]
 # ## The panel

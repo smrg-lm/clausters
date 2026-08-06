@@ -37,7 +37,7 @@ class AddAction(IntEnum):
     from clausters import AddAction, Bus, Group, Server, Synth, SynthDef
     from clausters.defs import control, in_, out, sine
 
-    s = Server.boot()
+    s = Server().boot()
     SynthDef("voice",
              out(control("bus", 0.0), sine(control("freq", 440.0)) * 0.1)).send(s)
     SynthDef("wash", out(0, in_(control("bus", 0.0)) * 0.5)).send(s)
@@ -128,7 +128,7 @@ class Node:
     from clausters import Group, Server, Synth, SynthDef
     from clausters.defs import control, out, sine
 
-    s = Server.boot()
+    s = Server().boot()
     d = SynthDef("beep", out(0, sine(control("freq", 440.0)) * 0.2))
     d.send(s)
 
@@ -257,7 +257,7 @@ class Synth(Node):
     from clausters.defs import (DoneAction, Env, boxes as box, control,
                                 env_gen, out, sine)
 
-    s = Server.boot()
+    s = Server().boot()
 
     # a UGen graph
     SynthDef("note",
@@ -365,7 +365,7 @@ class Group(Node):
     from clausters import AddAction, Bus, Group, Server, Synth, SynthDef
     from clausters.defs import control, in_, out, sine
 
-    s = Server.boot()
+    s = Server().boot()
     SynthDef("voice",
              out(control("bus", 0.0), sine(control("freq", 440.0)) * 0.2)).send(s)
     SynthDef("wash",

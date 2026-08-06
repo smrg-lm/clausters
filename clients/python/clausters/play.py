@@ -38,7 +38,7 @@ Everything resolves against the ambient environment (the running session, else
 the default session `clausters.default_session`): ``server`` defaults to the
 booted default server and ``clock`` to the running routine's clock or, outside
 one, the default session's clock (created and started on first use). So after a
-single ``Server.boot()``:
+single ``Server().boot()``:
 
 ```python
 from clausters import play

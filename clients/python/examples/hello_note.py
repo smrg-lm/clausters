@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The simplest possible sound: boot a server, play a note.
 
-No `Session`, no clock wiring. ``Server.boot()`` launches a server and adopts it
+No `Session`, no clock wiring. ``Server().boot()`` launches a server and adopts it
 as the **default session**, so ``Event().play()`` and the free-standing
 ``play`` find it on their own. A bare event outside any clock plays immediately
 and frees itself after its sustain.
@@ -27,7 +27,7 @@ from clausters.seq import Pbind, Pseq
 # (and the process stopped) on interpreter exit.
 
 # %%
-server = Server.boot()
+server = Server().boot()
 
 # %% [markdown]
 # ## One note, right now

@@ -20,7 +20,7 @@ The default session and a named `Session` are literally *the same kind of thing*
 from clausters import Server, Event, play
 from clausters.seq import Pbind, Pseq
 
-Server.boot()                 # -> clausters.default_session.server (first-wins)
+Server().boot()               # -> clausters.default_session.server (first-wins)
 play(Event(degree=0))         # one note now, no clock — resolves the default server
 play(Pbind(degree=Pseq([0, 2, 4]), dur=0.5))   # on the default session's clock
 ```
@@ -217,14 +217,14 @@ Both are thread-local, like the ambient session itself: another thread is unaffe
 
 ### Without a Session: `Server.boot` and `GuiHost.boot`
 
-If you are not using a `Session`, the server and the GUI host each carry their own launch and teardown, so you don't juggle a separate process object. `Server.boot()` starts a server process and returns a connected `Server` that owns it (its `close()` stops the process); `GuiHost.boot()` does the same for the visual server, returning a started `GuiHost` (its `stop()` stops the process). Both also die with the interpreter.
+If you are not using a `Session`, the server and the GUI host each carry their own launch and teardown, so you don't juggle a separate process object. `Server().boot()` starts a server process and returns a connected `Server` that owns it (its `close()` stops the process); `GuiHost().boot()` does the same for the visual server, returning a started `GuiHost` (its `stop()` stops the process). Both also die with the interpreter.
 
 ```python
 from clausters.defs import Server
 from clausters.gui import GuiHost, window, label
 
-server = Server.boot()                                    # a server process starts
-gui = GuiHost.boot(server=f"{server.target.host}:{server.target.port}", shm=server.shm)
+server = Server().boot()                                  # a server process starts
+gui = GuiHost().boot(server=f"{server.target.host}:{server.target.port}", shm=server.shm)
 
 gui.open(window(label(name="greeting", text="hi"), title="Panel", w=320, h=120))
 # ...
@@ -307,7 +307,7 @@ win.close()
 ```python
 from clausters import Server, scope
 
-server = Server.boot()
+server = Server().boot()
 # ... play something ...
 win = scope()                        # hardware out 0, oscilloscope
 win = scope(0, channels=2)           # outs 0/1, one lane per channel

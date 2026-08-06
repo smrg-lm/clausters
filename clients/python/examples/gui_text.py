@@ -79,7 +79,7 @@ def controls() -> dict:
 # ## Launch the host and open the window
 
 # %%
-gui = GuiHost.boot()
+gui = GuiHost().boot()
 win = gui.open(window(
     label(name="title", text="title", text_size=3.0, align="center", h=40.0),
     sizes(), alignments(), controls(),

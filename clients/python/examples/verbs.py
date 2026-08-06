@@ -33,7 +33,7 @@ from clausters.seq.timeline import Timeline
 from clausters import Server
 from clausters.defs import Buffer
 
-server = Server.boot()
+server = Server().boot()
 
 #: Seconds between audible steps.
 PAUSE = 1.2

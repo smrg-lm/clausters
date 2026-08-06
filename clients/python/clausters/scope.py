@@ -12,7 +12,7 @@ it draws — you name a bus, nothing else.
 ```python
 from clausters import Server, scope
 
-server = Server.boot()
+server = Server().boot()
 # ... play something ...
 win = scope()                        # hardware out 0, oscilloscope
 win = scope(0, channels=2)           # outs 0/1, one lane per channel
@@ -192,7 +192,7 @@ def scope(bus=0, *, view: str = "signal", channels: int | None = None,
                 "segment, and this server handle has none: boot with the "
                 "default shm='auto' (Server.boot / Session.live), or pass "
                 "host= pointed at a GUI host with its own segment (e.g. "
-                "GuiHost.boot(server=..., shm=...) for a server you attached "
+                "GuiHost().boot(server=..., shm=...) for a server you attached "
                 "to)")
         host = _ambient_host(server)
 

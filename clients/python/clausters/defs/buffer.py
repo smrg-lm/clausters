@@ -60,7 +60,7 @@ class Buffer:
     from clausters import Buffer, Server, Synth, SynthDef
     from clausters.defs import control, out, play_buf
 
-    s = Server.boot()
+    s = Server().boot()
     d = SynthDef("player",
                  out(0, play_buf(control("bufnum", 0.0), 0.0,
                                  control("rate", 1.0)) * 0.5))

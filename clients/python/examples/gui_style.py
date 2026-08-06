@@ -81,7 +81,7 @@ def controls(tag: str) -> dict:
 # %%
 theme_file = Path(tempfile.mkdtemp(prefix="clausters-style-")) / "warm.toml"
 theme_file.write_text(HOST_THEME)
-gui = GuiHost.boot(extra_args=("--theme", str(theme_file)))
+gui = GuiHost().boot(extra_args=("--theme", str(theme_file)))
 
 win = gui.open(window(
     controls("host theme (file)"),

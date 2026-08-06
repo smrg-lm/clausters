@@ -51,7 +51,7 @@ class SynthDef:
     from clausters import Server, Synth, SynthDef
     from clausters.defs import Env, DoneAction, control, env_gen, out, sine
 
-    s = Server.boot()
+    s = Server().boot()
 
     freq = control("freq", 440.0)               # a named control: /node_set reaches it
     env = env_gen(Env.perc(), done_action=DoneAction.FREE_SELF)

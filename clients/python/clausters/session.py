@@ -9,7 +9,7 @@ live RT one — in the same script without touching each other.
 The counterpart is the **default session**, `clausters.default_session` (the
 `clausters.base.main.Main` singleton, also reachable as ``main``): the ambient
 environment used whenever no session was named. Booting a server free-standing
-(``Server.boot()``) adopts it there, so ``Event().play()`` and `clausters.play`
+(``Server().boot()``) adopts it there, so ``Event().play()`` and `clausters.play`
 work with no `Session` at all. An explicit `Session` is simply a *named*
 environment that never touches the default one.
 

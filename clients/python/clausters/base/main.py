@@ -10,7 +10,7 @@ one line:
 `main` is an `clausters.base.environment.Environment` — the same base a
 `clausters.Session` extends — so it *is* a session, the default one. It owns what
 used to be scattered "globals": the default `server` (set first-wins by a
-free-standing `Server.boot()`), an opt-in `default_clock`, and the random
+free-standing `Server().boot()`), an opt-in `default_clock`, and the random
 context (`rng`). It is exported as ``clausters.default_session`` too; ``main`` is
 just its historical short name.
 
@@ -46,7 +46,7 @@ class Main(Environment):
     the resolution authority — `resolve_server` / `resolve_clock` implement the
     single rule shared with the free `clausters.play` and every playable's
     ambient ``.play()``. It also keeps an opt-in `default_clock`. The default
-    `server` is adopted first-wins by a free-standing ``Server.boot()``.
+    `server` is adopted first-wins by a free-standing ``Server().boot()``.
     """
 
     def __init__(self):
@@ -103,7 +103,7 @@ class Main(Environment):
         if self.server is not None:
             return self.server
         raise RuntimeError(
-            "no server to play on: boot one with Server.boot() (or open a "
+            "no server to play on: boot one with Server().boot() (or open a "
             "Session.live()/embed()), or pass server=..."
         )
 

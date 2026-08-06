@@ -60,14 +60,14 @@ The shortest path to sound is two lines — boot a server and play something:
 from clausters import Server, Event, play
 from clausters.defs import sine
 
-Server.boot()          # launches a server and becomes the default session
+Server().boot()        # launches a server and becomes the default session
 play(Event(degree=0))  # one note, now — or: Event(degree=0).play()
 
 node = play(sine(440.0) * 0.2)   # a bare signal, sounding now...
 node.free()                         # ...until you free it
 ```
 
-`Server.boot()` adopts the server it starts as the **default session**, so a bare `Event().play()` (or the free-standing `play`, which plays anything — an event, a `Pbind`, a routine, a bare signal expression like the `sine` above; see [The ambient verbs](verbs.md)) finds it with no wiring. A note played outside a clock sounds immediately and frees itself after its sustain. That is all you need for a quick sound; a `Session` (below) is for when you want to name and isolate an environment — several at once, offline next to live.
+`Server().boot()` adopts the server it starts as the **default session**, so a bare `Event().play()` (or the free-standing `play`, which plays anything — an event, a `Pbind`, a routine, a bare signal expression like the `sine` above; see [The ambient verbs](verbs.md)) finds it with no wiring. A note played outside a clock sounds immediately and frees itself after its sustain. That is all you need for a quick sound; a `Session` (below) is for when you want to name and isolate an environment — several at once, offline next to live.
 
 Start a session. `Session.live()` attaches to a running server, or starts one for you if none is up:
 

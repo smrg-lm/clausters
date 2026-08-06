@@ -58,7 +58,7 @@ class Bus:
     from clausters import Bus, Group, Server, Synth, SynthDef
     from clausters.defs import control, out, sine
 
-    s = Server.boot()
+    s = Server().boot()
     d = SynthDef("voice",
                  out(0, sine(control("freq", 440.0)) * control("amp", 0.1)))
     d.send(s)

@@ -146,7 +146,7 @@ class Event(dict):
 
         ``destination`` is optional: omitted, it resolves to the ambient server
         (the running session's, else the default session's — booted with
-        ``Server.boot()``), so ``Event().play()`` sounds a note with no `Session`
+        ``Server().boot()``), so ``Event().play()`` sounds a note with no `Session`
         wiring. Outside a clock the note plays immediately; inside a routine it
         emits at the routine's logical beat."""
         if destination is None:

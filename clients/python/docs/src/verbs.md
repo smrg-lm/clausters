@@ -10,7 +10,7 @@ quick take never spells out a server, a clock or a GUI host:
 from clausters import Server, play, plot, render
 from clausters.defs import sine
 
-Server.boot()
+Server().boot()
 node = play(sine(440.0) * 0.2)       # a bare expression, sounding now
 node.free()                             # ...and gone
 plot(sine(440.0) * 0.2, dur=0.02)    # the same signal, on screen
@@ -97,7 +97,7 @@ reach no file, so it raises and names the fix (`render(dup(sig, 4),
 channels=4)`) instead of quietly returning half the take.
 
 Ambient resolution is uniform: `server=None` takes the running session's
-server, else the booted default (`Server.boot()`); `clock=None` takes the
+server, else the booted default (`Server().boot()`); `clock=None` takes the
 running routine's clock or, outside one, the default session's, created and
 started on first use. Passing `server=` / `clock=` explicitly overrides
 per call — see [Sessions](sessions.md) for how sessions scope this.

@@ -133,7 +133,7 @@ def show(host, a_def, kind: str) -> None:
 
 if __name__ == "__main__":
     try:
-        with GuiHost.boot() as gui:      # no server: the Def-view needs none
+        with GuiHost().boot() as gui:      # no server: the Def-view needs none
             show(gui, synth_def, "SynthDef")
             show(gui, faust_def, "FaustDef")
     except (OSError, RuntimeError, ConnectionError) as e:

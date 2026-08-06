@@ -18,7 +18,7 @@ This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
 
 Run it cell by cell (Shift+Enter), or as a plain script --
 ``python clients/python/examples/gui_window.py``. It self-launches the windowed
-host with `GuiHost.boot()`; by hand that is ``clausters-gui``. Needs a display
+host with `GuiHost().boot()`; by hand that is ``clausters-gui``. Needs a display
 and a GPU adapter.
 
 The signal is kept small enough that the whole def (JSON + blob) fits one UDP
@@ -35,11 +35,11 @@ from clausters.gui import GuiHost, label, samples_to_blob, waveform, window
 
 # %% [markdown]
 # ## Launch the GUI host
-# `GuiHost.boot()` starts a windowed `clausters-gui` process and returns a host
+# `GuiHost().boot()` starts a windowed `clausters-gui` process and returns a host
 # connected to it (stopped by `stop`, or on interpreter exit).
 
 # %%
-gui = GuiHost.boot()
+gui = GuiHost().boot()
 
 # %% [markdown]
 # ## A small signal, shipped as a blob in the def

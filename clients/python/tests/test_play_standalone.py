@@ -44,7 +44,7 @@ def test_resolve_server_raises_when_unbooted(clean_default):
 
 
 def test_plain_server_does_not_adopt_default(clean_default):
-    # Only a free-standing Server.boot() adopts the default session; a plain
+    # Only a free-standing Server().boot() adopts the default session; a plain
     # constructor (as Session.nrt/embed use) must not.
     _nrt_server()
     assert main.server is None

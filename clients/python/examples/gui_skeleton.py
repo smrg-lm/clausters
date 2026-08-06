@@ -16,7 +16,7 @@ This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
 
 Run it cell by cell (Shift+Enter), or as a plain script --
 ``python clients/python/examples/gui_skeleton.py``. It self-launches the host
-**headless** (`GuiHost.boot(extra_args=("--headless",))`); by hand that is
+**headless** (`GuiHost().boot(extra_args=("--headless",))`); by hand that is
 ``clausters-gui --headless``. No display or GPU needed.
 """
 
@@ -31,7 +31,7 @@ from clausters.gui import GuiHost, knob, slider, waveform, window
 # window, so this exercises the pure protocol path.
 
 # %%
-gui = GuiHost.boot(extra_args=("--headless",))
+gui = GuiHost().boot(extra_args=("--headless",))
 
 # %% [markdown]
 # ## Build a small panel and open it

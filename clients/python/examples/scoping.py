@@ -33,7 +33,7 @@ from clausters.defs import Synth
 #: Seconds each visual step stays on screen.
 PAUSE = 4.0
 
-server = Server.boot()
+server = Server().boot()
 
 # Left is a plain sine; right crossfades (with `spread`) from a copy of the
 # left (mono — a phasescope draws a vertical line) to a detuned sine

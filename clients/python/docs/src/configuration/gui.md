@@ -4,7 +4,7 @@ Every key the **`clausters-gui`** host reads: the `[gui]` section (its ports and
 its two legs), the `[gui.theme]` and `[gui.metrics]` role tables (its whole
 look and its whole sizing) and the `[standalone]` section (the self-contained
 app). The reader is the host binary — including the one `Session.gui()` or
-`GuiHost.boot()` launches — so a look you set here is the look your script's
+`GuiHost().boot()` launches — so a look you set here is the look your script's
 windows open with, with nothing to say in the script.
 
 Where the file lives and how the user and project layers merge are on the

@@ -49,7 +49,7 @@ class Pattern:
         session, else the default session): ``server=None`` takes the booted
         default server, and ``clock=None`` takes the running routine's clock or,
         outside one, the default session's clock — created and started on first
-        use. So ``Pbind(...).play()`` sounds with only a ``Server.boot()`` and no
+        use. So ``Pbind(...).play()`` sounds with only a ``Server().boot()`` and no
         `Session`."""
         from ..base.main import main
         from .eventstream import EventStreamPlayer
