@@ -38,10 +38,22 @@ function silent(url?: string): Connection & { packets: Uint8Array[] } {
 }
 
 test("a silent carrier still opens, sized from the defaults", async () => {
-    const server = await Server.open(silent(), { notify: false, timeout: 0.2 });
+    // The warning is the point of the default path, so it is asserted rather
+    // than left to print: this is the one test that provokes it, and a console
+    // line in the suite's output is noise nobody reads twice.
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (message: string) => warnings.push(message);
+    let server: Server;
+    try {
+        server = await Server.open(silent(), { notify: false, timeout: 0.2 });
+    } finally {
+        console.warn = warn;
+    }
     try {
         // The page is not stopped by a server that has not answered yet.
         assert.equal(server.sizing.audioBuses, 128);
+        assert.match(warnings.join("\n"), /no \/server_query reply/);
     } finally {
         server.close();
     }
