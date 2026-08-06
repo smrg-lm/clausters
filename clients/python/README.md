@@ -141,7 +141,10 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
   is up (choosing a shared-memory segment); `Session.gui()` starts the visual
   server (`clausters-gui`) wired to it; both stop when the session closes or the
   interpreter exits. Without a `Session`, `Server().boot()` / `GuiHost().boot()` do
-  the same at the object level. Both binaries are bundled in the wheel.
+  the same at the object level, one server per port; `Server(port=…).attach()`
+  takes a handle on one that is already running without owning it, and
+  `clausters stop|panic|status` does the same from a terminal. Both binaries are
+  bundled in the wheel.
 
 The TypeScript client sits on the same core and the same OSC contract, in the
 browser (see [`../web/PLAN.md`](../web/PLAN.md)); the design both share is in

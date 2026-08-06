@@ -6,8 +6,10 @@ audio thread out of Python) and the visual server (`clausters-gui`) beside it �
 without opening three terminals or spelling out a shared-memory path. This module
 starts and owns those processes from Python:
 
-- `ServerProcess` — spawns ``clausters --shm <auto> [server flags]`` and waits
-  until it answers, choosing the shared-memory segment for you.
+- `ServerProcess` — spawns ``clausters --port <n> --shm <auto> [server flags]``
+  and waits until it answers, choosing the shared-memory segment for you. One
+  instance per process launched: several servers run side by side, each on its
+  own port and its own segment.
 - `GuiProcess` — spawns ``clausters-gui --server <addr> --shm <same segment>``,
   wired to the server by construction.
 
@@ -250,23 +252,27 @@ class ServerProcess(_Process):
             without a segment (the meters/scopes then use the network fallback).
         verbose: server log verbosity — ``1``/``2``/``3`` for ``-v``/``-vv``/
             ``-vvv``, negative for ``-q`` (quiet).
+        port: the server's base OSC port (``--port``, UDP and TCP alike);
+            default 57110. Several servers run side by side on one machine, each
+            on its own port.
         data_dir: ``--data-dir`` for the server's def store; ``None`` uses its
-            default location.
+            default location. Sharing one directory between servers is fine —
+            they read and write it concurrently.
         extra_args: extra CLI tokens appended verbatim (e.g. ``["--tcp"]``).
         binary: an explicit server-binary path; ``None`` locates it.
-
-    The UDP port is the fixed server default (57110) — the binary does not take a
-    port flag — so one machine runs one such server at a time.
     """
 
     kind = "clausters server"
     host = "127.0.0.1"
-    port = DEFAULT_PORT
 
     def __init__(self, options=None, *, shm="auto", verbose: int = 0,
-                 data_dir=None, extra_args=(), binary=None, ready_timeout: float = 10.0):
+                 port: int = DEFAULT_PORT, data_dir=None, extra_args=(),
+                 binary=None, ready_timeout: float = 10.0):
         super().__init__()
         self.options = options
+        #: the base OSC port this process is told to bind (`_probe_port_free`
+        #: checks it before spawning, `_wait_ready` polls it after).
+        self.port = port
         self.shm = default_shm_path() if shm == "auto" else shm
         self._verbose = verbose
         self._data_dir = data_dir
@@ -275,7 +281,7 @@ class ServerProcess(_Process):
         self.ready_timeout = ready_timeout
 
     def _argv(self) -> "list[str]":
-        argv = [self._binary or _cli.server_path()]
+        argv = [self._binary or _cli.server_path(), "--port", str(self.port)]
         if self.options is not None:
             argv += self.options.args()
         if self.shm:

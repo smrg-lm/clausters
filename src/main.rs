@@ -2,8 +2,11 @@ use clausters::server::render::{RenderConfig, Score, render_to_wav};
 
 const USAGE: &str = "\
 usage:
-  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--tcp [port] | --no-tcp] [--ws [port]] [--midi [name]] [--sample-rate <hz>]
+  clausters [--port <n>] [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--udp [port]] [--tcp [port] | --no-tcp] [--ws [port]] [--midi [name]] [--sample-rate <hz>]
                                                real-time server (OSC on UDP + TCP 57110)
+      --port <n>           the base OSC port, default 57110: UDP binds it and
+                           TCP follows it, so one flag moves the whole server
+                           and several can run side by side
       --sample-rate <hz>   imposed output rate, default 48000; 0 follows the
                            device (PipeWire honors it per-app; other hosts fall
                            back to the device rate if unsupported)
@@ -23,8 +26,10 @@ usage:
       --max-buffers <n>        buffer pool size (default 4096)
       --max-graph-children <n> per-group child capacity (default 512)
       --max-ugen-inputs <n>    accepted inputs per UGen (default 32, the max)
+      --udp [port]         move the UDP front alone, off the base port. UDP is
+                           always on: it is the door a client boots against
       --tcp [port]         length-prefixed OSC over TCP — on by default at the
-                           OSC port (57110); the flag only moves it (RT only)
+                           base port; the flag only moves it (RT only)
       --no-tcp             disable the TCP transport (UDP-only server)
       --max-frame <bytes>  largest OSC frame on the stream transports (TCP and
                            WebSocket; default 16 MiB). A DoS ceiling, not a
@@ -33,7 +38,8 @@ usage:
                            (default 64); a connection past the ceiling is
                            dropped at accept. UDP is connectionless, unaffected
       --ws [port]          also accept OSC over WebSocket, reachable from a
-                           browser (RT only; default port 57120; ws://host:port/)
+                           browser (RT only; default the base port + 10, so
+                           57120; ws://host:port/)
       --midi [name]        open a virtual MIDI input port (RT only; default
                            name \"clausters\"; connect with aconnect/qpwgraph)
       --pin <cpu[,cpu..]>  CPU affinity (Linux, experimental; needs a build
@@ -104,6 +110,64 @@ fn main() {
 
 fn parse_workers(value: &str) -> Result<usize, String> {
     value.parse().map_err(|e| format!("--workers: {e}"))
+}
+
+/// How far the WebSocket front sits from the base OSC port when it is not given
+/// a number of its own. It shares TCP's namespace, so it cannot share TCP's
+/// number.
+#[cfg(feature = "realtime")]
+const WS_PORT_OFFSET: u16 = 10;
+
+/// What a transport was asked to do with its port, before the base port is
+/// known. A flag can name a number, ask to follow the base, or turn the
+/// transport off, and `--tcp` may be read before the `--port` it follows — so
+/// the answer is recorded here and resolved once the whole line is in.
+#[cfg(feature = "realtime")]
+#[derive(Clone, Copy)]
+enum PortChoice {
+    /// Bind the base port (offset by the transport's own, for WebSocket).
+    Follow,
+    /// Bind this number, wherever the base ended up.
+    At(u16),
+    /// Do not bind at all.
+    Off,
+}
+
+#[cfg(feature = "realtime")]
+impl From<clausters_core::config::PortSetting> for PortChoice {
+    fn from(setting: clausters_core::config::PortSetting) -> Self {
+        use clausters_core::config::PortSetting;
+        match setting {
+            PortSetting::Enabled(true) => PortChoice::Follow,
+            PortSetting::Enabled(false) => PortChoice::Off,
+            PortSetting::Port(p) => PortChoice::At(p),
+        }
+    }
+}
+
+#[cfg(feature = "realtime")]
+impl PortChoice {
+    /// The port to bind, or `None` when this transport stays off. `base` is what
+    /// `Follow` means for this transport.
+    fn resolve(self, base: u16) -> Option<u16> {
+        match self {
+            PortChoice::Follow => Some(base),
+            PortChoice::At(port) => Some(port),
+            PortChoice::Off => None,
+        }
+    }
+}
+
+/// The virtual MIDI port's default name. A server off the default OSC port
+/// carries the port in the name, so two servers on one machine open two
+/// distinguishable ports instead of two both called "clausters".
+#[cfg(feature = "realtime")]
+fn default_midi_name(port: u16) -> String {
+    if port == clausters::osc::server::DEFAULT_PORT {
+        "clausters".to_string()
+    } else {
+        format!("clausters:{port}")
+    }
 }
 
 /// Offline render; works with or without the `realtime` feature (no cpal).
@@ -193,6 +257,7 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
 #[cfg(feature = "realtime")]
 fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use clausters::osc::server::{DEFAULT_PORT, OscServer, ServerInfo};
+    use clausters_core::config::MidiSetting;
 
     use clausters::dsp::Limits;
     use clausters::server::defstore::{DefStore, resolve_data_dir};
@@ -209,18 +274,27 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // `persist = false` in config is the same as `--no-persist`; the flag can
     // still force it off, there is no flag to force it back on.
     let mut no_persist = cfg.persist == Some(false);
+    // The base OSC port, which UDP binds and the other transports follow. Every
+    // transport's port is settled in two steps — the config and the flags record
+    // *what was asked for* (follow the base, sit at a number, stay off) and the
+    // base is only known once the whole line is read, since `--tcp` may come
+    // before `--port` on it.
+    let mut base_port: u16 = cfg.port.unwrap_or(DEFAULT_PORT);
+    // `--udp <port>`: the UDP front alone, off the base. There is no way to turn
+    // it off — it is the door `/server_status` answers on, so a client can find
+    // this server at all.
+    let mut udp_at: Option<u16> = None;
     // TCP is on by default (the command plane for large payloads); the
     // config's `tcp = false` — or `--no-tcp` below — turns it off.
-    let mut tcp_port: Option<u16> = match cfg.tcp {
-        Some(setting) => setting.resolve(DEFAULT_PORT),
-        None => Some(DEFAULT_PORT),
-    };
+    let mut tcp_choice = cfg.tcp.map_or(PortChoice::Follow, PortChoice::from);
     let mut max_frame: usize = cfg.max_frame.unwrap_or(clausters::osc::DEFAULT_MAX_FRAME);
     let mut max_clients: usize = cfg
         .max_clients
         .unwrap_or(clausters::osc::DEFAULT_MAX_CLIENTS);
-    let mut ws_port: Option<u16> = cfg.ws.and_then(|w| w.resolve(DEFAULT_PORT + 10));
-    let mut midi_port: Option<String> = cfg.midi.as_ref().and_then(|m| m.resolve("clausters"));
+    let mut ws_choice = cfg.ws.map_or(PortChoice::Off, PortChoice::from);
+    // Enabled-ness now, the name later: the default name carries the port (see
+    // `default_midi_name`), which the loop below can still move.
+    let mut midi_setting = cfg.midi.clone();
     // The server imposes 48 kHz by default (PipeWire honors it per-app); `0`
     // means "follow the device's default rate". `None` => follow the device.
     let mut sample_rate: Option<u32> = match cfg.sample_rate {
@@ -261,18 +335,31 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
-            "--tcp" => {
-                // Optional port; defaults to the UDP port (separate namespace).
-                let mut port = DEFAULT_PORT;
+            "--port" => {
+                let value = it.next().ok_or(format!("--port needs a port\n{USAGE}"))?;
+                base_port = value.parse().map_err(|e| format!("--port: {e}"))?;
+            }
+            "--udp" => {
+                // Optional port, like --tcp; bare, UDP stays on the base port.
                 if let Some(next) = it.clone().next()
                     && let Ok(p) = next.parse::<u16>()
                 {
-                    port = p;
+                    udp_at = Some(p);
                     it.next();
                 }
-                tcp_port = Some(port);
             }
-            "--no-tcp" => tcp_port = None,
+            "--tcp" => {
+                // Optional port; bare, it follows the base port (a separate
+                // namespace from UDP's, so sharing the number is fine).
+                tcp_choice = PortChoice::Follow;
+                if let Some(next) = it.clone().next()
+                    && let Ok(p) = next.parse::<u16>()
+                {
+                    tcp_choice = PortChoice::At(p);
+                    it.next();
+                }
+            }
+            "--no-tcp" => tcp_choice = PortChoice::Off,
             "--max-frame" => {
                 let value = it
                     .next()
@@ -286,27 +373,28 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 max_clients = value.parse().map_err(|e| format!("--max-clients: {e}"))?;
             }
             "--ws" => {
-                // Optional port; defaults away from --tcp's, since both bind a
-                // TCP listener and would collide on the same port.
-                let mut port = DEFAULT_PORT + 10;
+                // Optional port; bare, it follows the base port offset by
+                // WS_PORT_OFFSET, since both it and --tcp bind a TCP listener
+                // and would collide on the same number.
+                ws_choice = PortChoice::Follow;
                 if let Some(next) = it.clone().next()
                     && let Ok(p) = next.parse::<u16>()
                 {
-                    port = p;
+                    ws_choice = PortChoice::At(p);
                     it.next();
                 }
-                ws_port = Some(port);
             }
             "--midi" => {
                 // Optional virtual-port name; the next token unless it's a flag.
-                let mut name = "clausters".to_string();
+                // Bare, the name is filled in once the port is known.
+                let mut setting = MidiSetting::Enabled(true);
                 if let Some(next) = it.clone().next()
                     && !next.starts_with("--")
                 {
-                    name = next.clone();
+                    setting = MidiSetting::Name(next.clone());
                     it.next();
                 }
-                midi_port = Some(name);
+                midi_setting = Some(setting);
             }
             "--workers" => {
                 let value = it
@@ -413,6 +501,12 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Every flag is in: settle the ports against the base the line ended with.
+    let udp_port = udp_at.unwrap_or(base_port);
+    let tcp_port = tcp_choice.resolve(base_port);
+    let ws_port = ws_choice.resolve(base_port.saturating_add(WS_PORT_OFFSET));
+    let midi_port = midi_setting.and_then(|m| m.resolve(&default_midi_name(udp_port)));
+
     // The ring must be a power of two of at least one block; round up quietly.
     let tap_frames = tap_frames.max(clausters::server::engine::BLOCK_SIZE);
     let tap_frames = tap_frames.next_power_of_two();
@@ -476,7 +570,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             backend.sample_rate
         );
     }
-    let mut osc = OscServer::bind(("127.0.0.1", DEFAULT_PORT), info, handle)?;
+    let mut osc = OscServer::bind(("127.0.0.1", udp_port), info, handle)?;
     // Before the listeners: the TCP/WS hubs capture the ceiling when they bind.
     osc.set_max_frame(max_frame);
     osc.set_max_clients(max_clients);

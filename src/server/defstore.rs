@@ -32,6 +32,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Name prefix marking a def as **ephemeral**: built to carry an expression
 /// rather than named by anyone, so it has no business outliving the process
@@ -252,12 +253,30 @@ pub fn sanitize_name(name: &str) -> String {
     out
 }
 
-/// Writes `bytes` to `path` atomically: a sibling `*.tmp` then a rename, so a
+/// A temporary sibling of `path`, for the write-then-rename dance. The name
+/// carries this process's pid and a counter, so **two servers sharing a data
+/// dir never pick the same one**: with a single `<stem>.tmp` per target, the
+/// first to finish renames the file out from under the second, whose own rename
+/// then fails with ENOENT. It ends in `.tmp`, which the `*.json` loaders skip.
+pub fn temp_sibling(path: &Path) -> PathBuf {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let stem = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    path.with_file_name(format!(".{stem}.{}.{n}.tmp", std::process::id()))
+}
+
+/// Writes `bytes` to `path` atomically: a temporary sibling then a rename, so a
 /// crash mid-write cannot leave a torn file at `path`.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let tmp = path.with_extension("tmp");
+    let tmp = temp_sibling(path);
     std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path)
+    std::fs::rename(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
 }
 
 /// Reads all `*.json` files in `dir` as `(path, bytes)`, skipping unreadable

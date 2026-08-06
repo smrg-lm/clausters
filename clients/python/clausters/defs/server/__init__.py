@@ -21,11 +21,12 @@ grid) and `streams` (the subscriptions the server pushes).
 """
 
 import time
+from dataclasses import replace
 
 from ... import _native
 from ...config import client_config
 from ...base import _osclib
-from ...errors import CommandError, ReplyTimeout
+from ...errors import CommandError, ReplyTimeout, ServerError
 from ...base.main import main
 from ...base.moment import Moment
 from ...base.netaddr import NetAddr
@@ -34,7 +35,7 @@ from ...base._oscinterface import (OscNrtInterface, OscTcpInterface, OscUdpInter
 from ...base.timebase import SampleClockTimebase
 from ..bus import AudioBusAllocator, ControlBusAllocator
 from ..buffer import BufferAllocator
-from ..node import NodeIdAllocator
+from ..node import NodeIdAllocator, ROOT_NODE_ID
 from ...base.ids import WHOLE as WHOLE_SHARE
 from .options import (
     DEFAULT_AUDIO_BUSES,
@@ -178,12 +179,16 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         and what that means is the carrier's to say —
 
         - the default carriers (TCP/UDP/WS) have a process behind them, so this
-          spawns the standalone ``clausters`` server and waits until it
-          answers, at **this handle's own address** — it does not move, and a
-          handle pointing where a booted server cannot be raises rather than
-          launching one elsewhere;
+          spawns the standalone ``clausters`` server and waits until it answers,
+          at **this handle's own address** — the process is told to bind it, so
+          several servers run side by side, one per port;
         - an offline or in-process carrier has nothing to start, and this is a
           no-op rather than an error — an NRT score is already "up".
+
+        Booting is for a server that is **not there yet**: if something already
+        answers on the port, this raises rather than adopting it, because a
+        handle that did not start a process must not stop one either. `attach`
+        is the verb for a server already running.
 
         Pair it with `close`, which stops a process this booted. The server's
         *configuration* belongs to the constructor (``options=``), since it
@@ -212,27 +217,98 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
             return self                  # an offline or in-process carrier
         from ...launch import ServerProcess
 
-        # The address this handle was built with is the address it keeps: the
-        # server binary takes no port flag and always listens on the default,
-        # so a handle pointing anywhere else names a server that a boot cannot
-        # produce. Saying so beats launching one somewhere the caller did not
-        # ask for and quietly moving the handle to meet it.
-        if (self.target.host, self.target.port) != (ServerProcess.host, ServerProcess.port):
+        # The address this handle was built with is the address it keeps, and the
+        # process is told to bind it (`--port`). The host is the half that cannot
+        # be honored: booting starts a process *here*, so a handle pointing at
+        # another machine names a server no boot of ours can produce.
+        if self.target.host != ServerProcess.host:
             raise ValueError(
-                f"this handle points at {self.target.host}:{self.target.port}, "
-                f"and a booted server always listens on {ServerProcess.host}:"
-                f"{ServerProcess.port} (the binary takes no port flag, so one "
-                "machine runs one at a time). Build the handle without an "
-                "address to boot one, or connect to the server already running "
-                "there.")
+                f"this handle points at {self.target.host}, and booting starts a "
+                f"process on this machine ({ServerProcess.host}). Point the handle "
+                "at a local port to boot one, or `attach()` to the server already "
+                "running there.")
         extra = list(server_args)
         if workers is not None:
             extra = ["--workers", str(workers)] + extra
         self._process = ServerProcess(
-            self.options, shm=shm, verbose=verbose, data_dir=data_dir,
-            extra_args=extra, ready_timeout=ready_timeout).start()
+            self.options, shm=shm, verbose=verbose, port=self.target.port,
+            data_dir=data_dir, extra_args=extra, ready_timeout=ready_timeout).start()
         if adopt_default and main.server is None:
             main.server = self
+        return self
+
+    def attach(self, *, timeout: float = 0.3, reconcile: bool = True,
+               adopt_default: bool = True) -> "Server":
+        """Connect this handle to a server **already running** at its address,
+        and return ``self``.
+
+        The other half of `boot`, for the server nobody here started: one left
+        behind by a client that crashed (still holding the audio device, quite
+        possibly still sounding), one launched from a terminal, one another
+        process owns. Ownership is the difference, and it runs through the whole
+        pair — this handle did not start the process, so `close` releases the
+        connection and leaves the server standing. Stopping it is `quit`, which
+        the server obeys over the wire, and cutting only its sound is `free_all`.
+
+        Unlike a bare `Server(...)`, this **verifies**. A handle pointing where
+        nobody answers raises here, instead of dropping every later message into
+        a UDP void that reports nothing back.
+
+        Args:
+            timeout: seconds to wait for the ``/server_status`` probe.
+            reconcile: resize this handle's allocators from the server's own
+                capacities (`query_info`). Worth leaving on: a server this client
+                did not launch may have been booted with other flags, and
+                allocators sized from the wrong numbers hand out node ids and
+                buses the server does not have.
+            adopt_default: make this the default session's server when there is
+                none, exactly as `boot` does.
+
+        Returns: ``self``, so ``Server(...).attach()`` reads as one expression.
+        """
+        from ...launch import server_is_up
+
+        if not self._own_carrier:
+            return self                  # an offline or in-process carrier
+        if not server_is_up(self.target.host, self.target.port, timeout=timeout):
+            raise ServerError(
+                f"no server answers at {self.target.host}:{self.target.port} — "
+                "`boot()` one there, or point this handle where one is running")
+        if reconcile:
+            self.reconcile(timeout=max(timeout, 1.0))
+        if adopt_default and main.server is None:
+            main.server = self
+        return self
+
+    def reconcile(self, timeout: "float | None" = None) -> "Server":
+        """Resize this handle's allocators from what the running server reports
+        (`query_info`), and return ``self``.
+
+        The constructor sizes them from `options`, which is the client's *own*
+        picture of the server — right by construction for a server this handle
+        booted, a guess for any other. This replaces the guess with the answer.
+        `attach` calls it for you.
+        """
+        info = self.query_info(timeout=timeout)
+        self.options = replace(
+            self.options,
+            audio_buses=info.audio_buses,
+            control_buses=info.control_buses,
+            max_nodes=info.max_nodes,
+            max_buffers=info.max_buffers,
+            max_graph_children=info.max_graph_children,
+            max_ugen_inputs=info.max_ugen_inputs,
+            taps=info.taps,
+            tap_frames=info.tap_frames,
+            outputs=info.channels,
+            inputs=info.input_channels,
+        )
+        part = _native.node_id_partition(self.options.max_nodes)
+        self.nodes = NodeIdAllocator(part["client_base"], part["client_capacity"], self.share)
+        self.audio_buses = AudioBusAllocator(size=self.options.audio_buses, share=self.share)
+        self.control_buses = ControlBusAllocator(size=self.options.control_buses,
+                                                 share=self.share)
+        self.buffers = BufferAllocator(size=self.options.max_buffers, share=self.share)
         return self
 
     @property
@@ -527,6 +603,16 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         sync_id = self._sync_counter
         self.request("/server_sync", sync_id, timeout=timeout, expect=("/server_sync.reply",))
         return sync_id
+
+    def free_all(self):
+        """Free every node on the server, leaving it running and empty
+        (``/group_deepFree`` on the root group) — sclang's ``CmdPeriod``.
+
+        The panic button, and the one that keeps the most: whatever is sounding
+        stops, while the server holds on to its defs, buffers and MIDI bindings.
+        `quit` is the heavier one (the server stops), `close` the client-side one
+        (this end lets go)."""
+        self.send_msg("/group_deepFree", ROOT_NODE_ID)
 
     def quit(self):
         """Stop the server (``/server_quit``).

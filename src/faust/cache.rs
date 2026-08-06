@@ -38,7 +38,10 @@ pub fn faust_version() -> String {
 /// crash mid-write never leaves a torn `.bc`. Best-effort: returns whether it
 /// succeeded; the caller treats failure as "no cache written".
 pub fn write_bitcode(factory: &FaustFactory, path: &Path) -> bool {
-    let tmp = path.with_extension("bc.tmp");
+    // Unique per process, like every other temp here: two servers sharing a data
+    // dir recompile the same defs at startup and would otherwise fight over one
+    // temp name (see `defstore::temp_sibling`).
+    let tmp = crate::server::defstore::temp_sibling(path);
     let Ok(tmp_c) = CString::new(tmp.as_os_str().as_encoded_bytes()) else {
         return false;
     };

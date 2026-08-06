@@ -40,6 +40,7 @@ import {
     toBundle,
 } from "../../base/osc.ts";
 import type { MsgArg, OscMessage, TimedMessage } from "../../base/osc.ts";
+import { ROOT_NODE_ID } from "../node.ts";
 export type { TimedMessage } from "../../base/osc.ts";
 import type { Connection } from "../../base/connection.ts";
 import { ScoreConnection } from "../../base/connection.ts";
@@ -763,6 +764,19 @@ export class Server {
      */
     get clockDriftPpm(): number | null {
         return this.clock?.driftPpm ?? null;
+    }
+
+    /**
+     * Frees every node on the server, leaving it running and empty
+     * (`/group_deepFree` on the root group) — sclang's `CmdPeriod`.
+     *
+     * The panic button, and the one that keeps the most: whatever is sounding
+     * stops, while the server holds on to its defs and buffers. {@link quit} is
+     * the heavier one (the server stops), {@link close} the client-side one
+     * (this end lets go).
+     */
+    freeAll(): void {
+        this.sendMsg("/group_deepFree", ROOT_NODE_ID);
     }
 
     /**

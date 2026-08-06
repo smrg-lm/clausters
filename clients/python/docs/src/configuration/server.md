@@ -21,6 +21,7 @@ newer build stays readable by an older one.
 
 | Key | Type | Default | Flag | What it sets |
 | --- | --- | --- | --- | --- |
+| `port` | integer | `57110` | `--port` | The base OSC port: UDP binds it and TCP follows it |
 | `workers` | integer | `0` (the server chooses) | `--workers` | DSP worker threads for `/group_parallel` groups |
 | `sample_rate` | integer (Hz) | `48000`; `0` follows the device | `--sample-rate` | The output rate the server imposes on the audio backend |
 | `audio_buses` | integer | `128` (also the hard maximum) | `--audio-buses` | Audio bus count; buses `0..outputs` are the hardware outs |
@@ -36,8 +37,8 @@ newer build stays readable by an older one.
 | `persist` | boolean | `true` | `--no-persist` | Reload the def store on boot and write new defs to it |
 | `data_dir` | string (path) | `$CLAUSTERS_DATA_DIR`, else the XDG data dir | `--data-dir` | Where the def store (`defs/`, `midi.json`, `boot.json`) lives |
 | `shm` | string (path) | off | `--shm` | The shared-memory segment local clients map (put it on `/dev/shm`) |
-| `tcp` | boolean or port | `true` — on at `57110`, beside UDP | `--tcp [port]` / `--no-tcp` | Length-prefixed OSC over TCP |
-| `ws` | boolean or port | off; `true` means `57120` | `--ws [port]` | OSC over WebSocket, reachable from a browser |
+| `tcp` | boolean or port | `true` — on at the base `port`, beside UDP | `--tcp [port]` / `--no-tcp` | Length-prefixed OSC over TCP |
+| `ws` | boolean or port | off; `true` means the base `port` + 10 | `--ws [port]` | OSC over WebSocket, reachable from a browser |
 | `max_frame` | integer (bytes) | `16777216` (16 MiB) | `--max-frame` | Largest OSC frame on the stream transports (TCP and WebSocket) |
 | `max_clients` | integer | `64` | `--max-clients` | Concurrent stream clients, TCP and WebSocket combined |
 | `midi` | boolean or string | off; `true` means `"clausters"` | `--midi [name]` | Virtual MIDI input port, by name |
@@ -46,6 +47,14 @@ Three keys are **toggles that may carry a value** — `tcp`, `ws` and `midi`:
 `true` enables the transport at its default port (or name), `false` disables it,
 and a number (a string, for `midi`) enables it at that specific port (name). TCP
 is the one transport on by default, so its meaningful setting is `false`.
+
+`port` is the **base** the others are measured from, which is what lets several
+servers share a machine: one number moves UDP and TCP together, and WebSocket
+sits ten above it. UDP alone cannot be turned off — it is the door a client
+probes to find a server — and the virtual MIDI port's default name follows the
+port too, so a second server opens `clausters:<port>` instead of a second
+`clausters`. On the command line `--udp [port]` moves the UDP front by itself;
+in a file, write the base in `port` and give `tcp` a number of its own.
 
 Two keys size a **slab built once at boot** rather than a live limit:
 `max_nodes` and `max_buffers` fix what the server can hold for its whole run, and

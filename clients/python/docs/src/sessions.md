@@ -215,7 +215,7 @@ The visual server binary ships **bundled in the same package** as the audio serv
 
 Both are thread-local, like the ambient session itself: another thread is unaffected, and a `with` block nests inside an activated session rather than replacing it — it restores what was in force when it ends.
 
-### Without a Session: `Server.boot` and `GuiHost.boot`
+### Without a Session: `boot` and `attach`
 
 If you are not using a `Session`, the server and the GUI host each carry their own launch and teardown, so you don't juggle a separate process object. `Server().boot()` starts a server process and returns a connected `Server` that owns it (its `close()` stops the process); `GuiHost().boot()` does the same for the visual server, returning a started `GuiHost` (its `stop()` stops the process). Both also die with the interpreter.
 
@@ -233,6 +233,37 @@ server.close()    # stops the server process
 ```
 
 This is exactly what `Session.live`/`gui` use internally — the session just bundles them with a clock.
+
+### Several servers, and the one you did not start
+
+A handle keeps the address it was built with, and the process it boots is told to bind it, so **one machine runs as many servers as you give ports**:
+
+```python
+a = Server().boot()              # 57110, the default
+b = Server(port=57130).boot()    # a second, side by side
+```
+
+Each gets its own shared-memory segment, and they may share one def store — the store is written concurrently on purpose, so a def sent to one is on disk for the next. Only the audio device has to cooperate: PipeWire and CoreAudio mix several streams, an exclusive ALSA device does not, and there the second boot fails saying so.
+
+`boot()` is for a server that is **not there yet**. If something already answers on the port it raises instead of adopting it, because a handle that did not start a process must not stop one either. The other half is **`attach()`**, for a server already running — one launched from a terminal, one belonging to another process, or one left behind by a client that crashed while it was sounding:
+
+```python
+server = Server(port=57130).attach()   # raises if nobody answers there
+server.free_all()                      # cut the sound, keep the server
+server.quit()                          # or stop it altogether
+```
+
+Ownership is what separates them, all the way down. An attached handle did not start the process, so `close()` releases the connection and leaves the server standing; stopping it is `quit()`, which the server obeys over the wire. Unlike a bare `Server(...)`, `attach()` verifies: a handle pointing where nobody answers raises there and then, rather than dropping every later message into a UDP void that reports nothing back. It also **reconciles** — a server this client did not launch may have been booted with other flags, so the handle re-reads the real capacities (`query_info`) and resizes its allocators to them instead of trusting its own `options`.
+
+From a terminal, the same three verbs need no script:
+
+```sh
+clausters status --port 57130   # is anyone there, and how is it configured
+clausters panic --port 57130    # free every node; the server stays up
+clausters stop  --port 57130    # /server_quit
+```
+
+That is the answer to the stray server: a crashed client leaves a process holding the audio device, quite possibly still playing, and `kill` should not be the only way to end it.
 
 ### The raw processes
 

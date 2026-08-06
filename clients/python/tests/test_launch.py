@@ -60,3 +60,41 @@ def test_the_child_dies_with_a_killed_interpreter():
     finally:
         if child.poll() is None:
             child.kill()
+
+
+def test_the_process_is_told_which_port_to_bind():
+    # The handle's address is the one the process binds, which is what lets
+    # several servers share a machine. Argv only — nothing is spawned.
+    from clausters.launch import ServerProcess
+
+    argv = ServerProcess(port=57130)._argv()
+    assert argv[1:3] == ["--port", "57130"]
+    assert ServerProcess()._argv()[1:3] == ["--port", "57110"]
+
+
+def test_boot_refuses_a_handle_pointing_at_another_machine():
+    # Booting starts a process *here*; a handle aimed elsewhere names a server
+    # no boot of ours can produce. The port half is no longer pinned — that was
+    # a lock on a binary that took no port flag.
+    from clausters.defs import Server
+
+    with pytest.raises(ValueError, match="this machine"):
+        Server(host="192.168.1.9", transport="udp").boot(adopt_default=False)
+
+
+def test_attach_raises_where_nobody_answers():
+    # A bare `Server(...)` reaches nothing and says nothing; `attach` is the
+    # verb that verifies, so a wrong address fails here instead of silently
+    # dropping every later message into a UDP void.
+    from clausters.defs import Server
+
+    free = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    free.bind(("127.0.0.1", 0))
+    port = free.getsockname()[1]
+    free.close()
+    server = Server(port=port, transport="udp")
+    try:
+        with pytest.raises(ServerError, match="no server answers"):
+            server.attach(timeout=0.2)
+    finally:
+        server.interface.close()

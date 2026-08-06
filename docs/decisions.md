@@ -4466,3 +4466,51 @@ outbound one — and `ClientId::Ring` becomes `ClientId::Ring(u32)`.
 Versioning: the framing changed, so `ABI_VERSION` moves 6 → 7 and, by the
 linkage rule, drags the SemVer breaking tier with it. Nothing else about the
 segment moved.
+
+## The port is a parameter, and that is what makes a handle worth attaching to
+
+The server binary bound 57110 and nothing else: `--tcp [port]` and `--ws [port]`
+moved their own listeners, but the UDP front — the one a client probes to find
+a server at all — was a constant. So one machine ran one server, and the client
+had to say so: `Server.boot` refused any handle whose address was not the
+launcher's fixed one, because booting could only ever produce a server at 57110
+and moving the handle to meet it would hand back a server nobody asked for.
+
+`--port` makes it a parameter. It is the **base**: UDP binds it, TCP follows it,
+WebSocket sits ten above, so one number moves the whole server and `--udp`/
+`--tcp`/`--ws` only exist to pull a transport off that base deliberately. UDP is
+the one that cannot be turned off, being the discovery door. In the client, the
+handle's own address is passed through to the process, and the refusal shrinks
+to the half that is not a limitation but a fact: booting starts a process *here*,
+so a handle aimed at another machine still raises.
+
+- **Ownership is the axis the API turns on**, and it was already implicit in
+  `boot`/`close`. Making it explicit gave `attach` its shape: a verb for a server
+  this handle did not start, which therefore does not stop it either — `close`
+  lets go, `quit` stops it over the wire, `free_all` cuts only its sound. And
+  `boot` refuses a port that already answers rather than adopting it, so
+  ownership is never acquired by accident.
+- **`attach` verifies and reconciles**, which a bare `Server(...)` cannot. A
+  handle pointing where nobody answers used to drop every message into a UDP
+  void that reports nothing; now that is an error at the verb. And since a
+  server this client did not launch may have been booted with other flags, the
+  handle re-reads the real capacities (`/server_query`) and sizes its allocators
+  from the answer instead of from its own `options`, which for an attached server
+  are a guess.
+- **The stray server needed a terminal, not an API.** A client that crashes
+  leaves a process holding the audio device, quite possibly still sounding, and
+  `kill` was the only way out. `clausters stop|panic|status` are client-side
+  words on the same console script; every server flag starts with a dash, so a
+  leading word is unambiguously ours and everything else still reaches the
+  binary untouched.
+- **Two servers sharing a def store raced on one temp name.** Both recompile the
+  persisted defs at startup and both wrote `<name>.tmp` before renaming, so the
+  loser's rename hit ENOENT. The temp name now carries the pid and a counter,
+  which is what makes a shared `--data-dir` a feature (a def sent to one server
+  is on disk for the next) rather than a hazard. The MIDI port's default name
+  follows the port for the same reason: two `clausters` ports are indistinguishable
+  to whoever is patching them.
+
+What is *not* solved here is the audio device: two servers open two streams, so
+this works wherever the host mixes (PipeWire, CoreAudio) and fails on an
+exclusive ALSA device, where the second boot reports it and stops.

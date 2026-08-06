@@ -1165,6 +1165,23 @@ instances share the loop and nothing else.
 
 ## Parity gaps carried from the Python client
 
+- **`boot`/`attach` and the port, ported only as far as the browser has the
+  concepts** (2026-08-05). The audio server takes `--port` now — the base the
+  UDP front binds and TCP follows — so a machine runs several servers and the
+  Python client grew the pair of verbs that reach one: `boot` (starts a process
+  and owns it, refusing a port that already answers) and `attach` (verifies a
+  server is there, reconciles the handle's allocators from `/server_query`, and
+  takes no ownership, so `close` lets go while `quit` stops it). `freeAll` came
+  across in the same pass and is here. The other two did not, and the shape the
+  port must follow is the browser's own: **there is no process to spawn**, so
+  `boot` has no counterpart, while `attach` has a real one — a page pointed at a
+  remote `--ws` server today discovers it is not there on the first silent send.
+  The verb to port is the *verification and reconciliation* half: probe, read
+  the capacities back, size the allocators from the answer instead of from the
+  page's `ServerOptions`. Where it belongs is `Session.connect`/`Server` in
+  `src/defs/server/index.ts`, and the terminal verbs (`clausters stop|panic|
+  status`) have no browser analogue at all — a page cannot outlive its client.
+
 - **The introspection records print as data, not as lines.** `Tree` here has a
   `toString()` that draws the tree, and the Python client now gives the same
   treatment to every other record: `NodeInfo`, `BufferInfo`, `DefInfo`,

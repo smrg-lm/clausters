@@ -89,10 +89,11 @@ def test_boot_workers_becomes_the_cli_flag(monkeypatch):
     captured = {}
 
     class FakeProcess:
-        # The address is a class attribute, as the real launcher's is: the
-        # binary takes no port flag, and `boot` reads it off the class to
-        # refuse a handle pointing where a booted server cannot be.
-        host, port = "127.0.0.1", DEFAULT_PORT
+        # Only the host is a class attribute, as the real launcher's is: a boot
+        # starts a process on this machine, and `boot` reads it off the class to
+        # refuse a handle pointing at another one. The port is per instance —
+        # it is passed through to `--port`.
+        host = "127.0.0.1"
 
         def __init__(self, options=None, **kwargs):
             captured.update(kwargs)
@@ -106,6 +107,8 @@ def test_boot_workers_becomes_the_cli_flag(monkeypatch):
         workers=3, server_args=("--tcp",), adopt_default=False)
     try:
         assert captured["extra_args"] == ["--workers", "3", "--tcp"]
+        # The handle's own port is what the process is told to bind.
+        assert captured["port"] == DEFAULT_PORT
     finally:
         server.interface.close()
     # None emits no flag: the server keeps its config-file default.

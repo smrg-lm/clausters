@@ -59,6 +59,7 @@ grouped by audience.
 
 ```toml
 [server]
+port = 57110             # base OSC port: UDP binds it, TCP follows it
 workers = 0              # DSP worker threads; 0 lets the server choose
 sample_rate = 48000      # imposed output rate in Hz; 0 follows the device
 audio_buses = 128        # audio bus count
@@ -68,9 +69,10 @@ tap_frames = 16384       # per-tap ring capacity in samples (a power of two)
 persist = true           # persist/reload defs; false is like --no-persist
 # data_dir = "/path"     # def store location (else the XDG data dir)
 # shm = "/clausters"     # shared-memory segment path for local clients
-# tcp = true             # TCP transport (on by default at the OSC port):
+# tcp = true             # TCP transport (on by default at the base port):
 #                        # false disables it, a port number moves it
-# ws = 57120             # WebSocket transport: true = default port, or a number
+# ws = 57120             # WebSocket transport: true = the base port + 10,
+#                        # or a number
 # max_frame = 16777216   # largest OSC frame on TCP/WebSocket, in bytes
 # max_clients = 64       # concurrent stream clients, TCP + WebSocket combined
 # midi = "clausters"     # virtual MIDI input: true = default name, or a name
@@ -127,17 +129,26 @@ boot = true              # run the GuiDef's boot messages and boot.json preset
 The `tcp`, `ws` and `midi` keys are toggles that may also carry a value:
 `true` enables the transport at the program's default port or name, `false`
 disables it, and a number (or, for `midi`, a string) enables it at that specific
-port or name. TCP is the one transport that is **on by default** (at the OSC
+port or name. TCP is the one transport that is **on by default** (at the base
 port, alongside UDP), so its `true` is the implicit state and `false` (or
 `--no-tcp`) is the meaningful override.
+
+`port` is the **base** the others are measured from: UDP binds it, TCP follows
+it and WebSocket sits ten above, so moving one number moves the whole server and
+several run side by side, one per port. A transport that should sit somewhere
+else says so with its own key (or `--udp`/`--tcp`/`--ws` on the command line);
+UDP is the one that cannot be turned off, since it is the door a client probes
+to find the server at all. The virtual MIDI port's default name follows too — a
+server off 57110 opens `clausters:<port>` rather than a second `clausters`.
 
 ## Per-program use
 
 - **Server** — the `[server]` section supplies the defaults for every flag of
-  `clausters` (`--workers`, `--sample-rate`, `--audio-buses`, `--control-buses`,
-  `--taps`, `--tap-frames`, `--tcp`/`--no-tcp`, `--ws`, `--max-frame`,
-  `--max-clients`, `--midi`, `--shm`, `--data-dir`, `--no-persist`). A flag on
-  the command line overrides the file.
+  `clausters` (`--port`, `--workers`, `--sample-rate`, `--audio-buses`,
+  `--control-buses`, `--taps`, `--tap-frames`, `--tcp`/`--no-tcp`, `--ws`,
+  `--max-frame`, `--max-clients`, `--midi`, `--shm`, `--data-dir`,
+  `--no-persist`). A flag on the command line overrides the file. `--udp` has no
+  key of its own: in a file, write the base in `port` and give `tcp` a number.
 - **GUI host** — the `[gui]` section supplies the defaults for `clausters-gui`
   (`--port`, `--tcp`/`--no-tcp`, `--max-frame`, `--server`, `--shm`,
   `--data-dir`, `--headless`); the `[standalone]`

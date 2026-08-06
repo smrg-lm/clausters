@@ -44,6 +44,10 @@ pub struct Config {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ServerConfig {
+    /// The base OSC port (`--port`), default 57110: UDP binds it and TCP
+    /// follows it. Moving UDP alone is a CLI matter (`--udp`) — in a config
+    /// file, write the base here and give `tcp` a number of its own.
+    pub port: Option<u16>,
     /// DSP worker threads (`--workers`); 0 lets the server choose.
     pub workers: Option<usize>,
     /// Imposed output rate in Hz (`--sample-rate`); 0 follows the device.
@@ -74,10 +78,11 @@ pub struct ServerConfig {
     pub data_dir: Option<String>,
     /// Shared-memory segment path (`--shm`).
     pub shm: Option<String>,
-    /// TCP transport (`--tcp`/`--no-tcp`): on by default at the OSC port;
+    /// TCP transport (`--tcp`/`--no-tcp`): on by default at the base `port`;
     /// `false` disables it, a number moves it.
     pub tcp: Option<PortSetting>,
-    /// WebSocket transport (`--ws`): `true` for the default port, or a number.
+    /// WebSocket transport (`--ws`): `true` for the base `port` + 10, or a
+    /// number.
     pub ws: Option<PortSetting>,
     /// Largest OSC frame accepted/sent on the stream transports (TCP and
     /// WebSocket), in bytes (`--max-frame`). A DoS guard, not a protocol
@@ -271,6 +276,7 @@ impl Config {
 impl ServerConfig {
     fn merge(self, h: ServerConfig) -> ServerConfig {
         ServerConfig {
+            port: pick(self.port, h.port),
             workers: pick(self.workers, h.workers),
             sample_rate: pick(self.sample_rate, h.sample_rate),
             audio_buses: pick(self.audio_buses, h.audio_buses),
