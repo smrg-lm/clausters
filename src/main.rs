@@ -112,52 +112,6 @@ fn parse_workers(value: &str) -> Result<usize, String> {
     value.parse().map_err(|e| format!("--workers: {e}"))
 }
 
-/// How far the WebSocket front sits from the base OSC port when it is not given
-/// a number of its own. It shares TCP's namespace, so it cannot share TCP's
-/// number.
-#[cfg(feature = "realtime")]
-const WS_PORT_OFFSET: u16 = 10;
-
-/// What a transport was asked to do with its port, before the base port is
-/// known. A flag can name a number, ask to follow the base, or turn the
-/// transport off, and `--tcp` may be read before the `--port` it follows — so
-/// the answer is recorded here and resolved once the whole line is in.
-#[cfg(feature = "realtime")]
-#[derive(Clone, Copy)]
-enum PortChoice {
-    /// Bind the base port (offset by the transport's own, for WebSocket).
-    Follow,
-    /// Bind this number, wherever the base ended up.
-    At(u16),
-    /// Do not bind at all.
-    Off,
-}
-
-#[cfg(feature = "realtime")]
-impl From<clausters_core::config::PortSetting> for PortChoice {
-    fn from(setting: clausters_core::config::PortSetting) -> Self {
-        use clausters_core::config::PortSetting;
-        match setting {
-            PortSetting::Enabled(true) => PortChoice::Follow,
-            PortSetting::Enabled(false) => PortChoice::Off,
-            PortSetting::Port(p) => PortChoice::At(p),
-        }
-    }
-}
-
-#[cfg(feature = "realtime")]
-impl PortChoice {
-    /// The port to bind, or `None` when this transport stays off. `base` is what
-    /// `Follow` means for this transport.
-    fn resolve(self, base: u16) -> Option<u16> {
-        match self {
-            PortChoice::Follow => Some(base),
-            PortChoice::At(port) => Some(port),
-            PortChoice::Off => None,
-        }
-    }
-}
-
 /// The virtual MIDI port's default name. A server off the default OSC port
 /// carries the port in the name, so two servers on one machine open two
 /// distinguishable ports instead of two both called "clausters".
@@ -257,7 +211,7 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
 #[cfg(feature = "realtime")]
 fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use clausters::osc::server::{DEFAULT_PORT, OscServer, ServerInfo};
-    use clausters_core::config::MidiSetting;
+    use clausters_core::config::{MidiSetting, PortChoice, WS_PORT_OFFSET};
 
     use clausters::dsp::Limits;
     use clausters::server::defstore::{DefStore, resolve_data_dir};
@@ -284,14 +238,15 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // it off — it is the door `/server_status` answers on, so a client can find
     // this server at all.
     let mut udp_at: Option<u16> = None;
-    // TCP is on by default (the command plane for large payloads); the
-    // config's `tcp = false` — or `--no-tcp` below — turns it off.
-    let mut tcp_choice = cfg.tcp.map_or(PortChoice::Follow, PortChoice::from);
+    // What the command line asks of each stream front, if it asks anything;
+    // `None` leaves the answer to the config and then to the default, which
+    // `PortChoice::pick` settles below in that order.
+    let mut cli_tcp: Option<PortChoice> = None;
     let mut max_frame: usize = cfg.max_frame.unwrap_or(clausters::osc::DEFAULT_MAX_FRAME);
     let mut max_clients: usize = cfg
         .max_clients
         .unwrap_or(clausters::osc::DEFAULT_MAX_CLIENTS);
-    let mut ws_choice = cfg.ws.map_or(PortChoice::Off, PortChoice::from);
+    let mut cli_ws: Option<PortChoice> = None;
     // Enabled-ness now, the name later: the default name carries the port (see
     // `default_midi_name`), which the loop below can still move.
     let mut midi_setting = cfg.midi.clone();
@@ -351,15 +306,16 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             "--tcp" => {
                 // Optional port; bare, it follows the base port (a separate
                 // namespace from UDP's, so sharing the number is fine).
-                tcp_choice = PortChoice::Follow;
+                let mut choice = PortChoice::Follow;
                 if let Some(next) = it.clone().next()
                     && let Ok(p) = next.parse::<u16>()
                 {
-                    tcp_choice = PortChoice::At(p);
+                    choice = PortChoice::At(p);
                     it.next();
                 }
+                cli_tcp = Some(choice);
             }
-            "--no-tcp" => tcp_choice = PortChoice::Off,
+            "--no-tcp" => cli_tcp = Some(PortChoice::Off),
             "--max-frame" => {
                 let value = it
                     .next()
@@ -376,13 +332,14 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 // Optional port; bare, it follows the base port offset by
                 // WS_PORT_OFFSET, since both it and --tcp bind a TCP listener
                 // and would collide on the same number.
-                ws_choice = PortChoice::Follow;
+                let mut choice = PortChoice::Follow;
                 if let Some(next) = it.clone().next()
                     && let Ok(p) = next.parse::<u16>()
                 {
-                    ws_choice = PortChoice::At(p);
+                    choice = PortChoice::At(p);
                     it.next();
                 }
+                cli_ws = Some(choice);
             }
             "--midi" => {
                 // Optional virtual-port name; the next token unless it's a flag.
@@ -503,8 +460,11 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
     // Every flag is in: settle the ports against the base the line ended with.
     let udp_port = udp_at.unwrap_or(base_port);
-    let tcp_port = tcp_choice.resolve(base_port);
-    let ws_port = ws_choice.resolve(base_port.saturating_add(WS_PORT_OFFSET));
+    // TCP is on by default (the command plane for large payloads); the config's
+    // `tcp = false` — or `--no-tcp` — turns it off. WebSocket is opt-in.
+    let tcp_port = PortChoice::pick(cli_tcp, cfg.tcp, PortChoice::Follow).resolve(base_port);
+    let ws_port = PortChoice::pick(cli_ws, cfg.ws, PortChoice::Off)
+        .resolve(base_port.saturating_add(WS_PORT_OFFSET));
     let midi_port = midi_setting.and_then(|m| m.resolve(&default_midi_name(udp_port)));
 
     // The ring must be a power of two of at least one block; round up quietly.

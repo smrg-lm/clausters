@@ -93,8 +93,8 @@ host_port = 57210        # port for the host's script-facing front (UDP + TCP)
 # tcp = true             # the front's TCP leg (on by default at host_port):
 #                        # false disables it, a port number moves it
 # ws = true              # the front's WebSocket leg (off by default): true for
-#                        # port 57220, or a port number — browser-reachable,
-#                        # the same toggle as the server's ws key
+#                        # host_port + 10 (57220), or a port number —
+#                        # browser-reachable, the same toggle as the server's
 # max_frame = 16777216   # largest OSC frame on the stream legs (TCP and
 #                        # WebSocket), in bytes
 # server = "127.0.0.1:57110"  # also attach the client leg to this audio server

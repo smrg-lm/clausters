@@ -13,7 +13,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use clausters_core::config::Config;
+use clausters_core::config::{Config, PortChoice, WS_PORT_OFFSET};
 use clausters_gui::host::metrics::Metrics;
 use clausters_gui::host::store::{self, GuiStore};
 use clausters_gui::host::theme::Theme;
@@ -45,8 +45,9 @@ usage:
                             host port; the flag only moves it
       --no-tcp              disable the TCP leg (UDP-only front)
       --ws [port]           also accept /gui_* over WebSocket, reachable from a
-                            browser (default port 57220; ws://host:port/) — the
-                            same flag the audio server takes
+                            browser (default the host port + 10, so 57220;
+                            ws://host:port/) — the same flag the audio server
+                            takes
       --max-frame <bytes>   largest OSC frame on the stream legs, TCP and
                             WebSocket alike (default 16 MiB). A DoS ceiling,
                             not a protocol limit; UDP keeps the ~64 KB
@@ -117,8 +118,11 @@ fn run(args: &[String]) -> Result<(), String> {
     // file (the compiled default is the last fallback). Precedence per option:
     // flag > project clausters.toml > user config.toml > default.
     let mut cli_port: Option<u16> = None;
-    let mut cli_tcp: Option<Option<u16>> = None; // None = unset, Some(None) = off
-    let mut cli_ws: Option<u16> = None;
+    // What each leg was asked for, if the line says anything; `None` leaves it
+    // to the config and then to the default. The base port may still be moved
+    // by a later `--port`, so nothing is resolved until the whole line is read.
+    let mut cli_tcp: Option<PortChoice> = None;
+    let mut cli_ws: Option<PortChoice> = None;
     let mut cli_max_frame: Option<usize> = None;
     let mut cli_server: Option<String> = None;
     let mut cli_shm: Option<String> = None;
@@ -139,27 +143,28 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             "--tcp" => {
                 // Optional port; without one, the TCP leg rides the host port.
-                let mut port = None;
+                let mut choice = PortChoice::Follow;
                 if let Some(next) = it.peek()
                     && let Ok(p) = next.parse::<u16>()
                 {
-                    port = Some(p);
+                    choice = PortChoice::At(p);
                     it.next();
                 }
-                cli_tcp = Some(port.or(Some(0))); // 0 = "the host port", resolved below
+                cli_tcp = Some(choice);
             }
-            "--no-tcp" => cli_tcp = Some(None),
+            "--no-tcp" => cli_tcp = Some(PortChoice::Off),
             "--ws" => {
-                // Optional port; defaults away from the host port, since the
-                // WS leg binds its own TCP listener (the server's pattern).
-                let mut port = DEFAULT_PORT + 10;
+                // Optional port; without one it follows the host port offset by
+                // WS_PORT_OFFSET, since the WS leg binds its own TCP listener
+                // and cannot share the TCP number (the audio server's pattern).
+                let mut choice = PortChoice::Follow;
                 if let Some(next) = it.peek()
                     && let Ok(p) = next.parse::<u16>()
                 {
-                    port = p;
+                    choice = PortChoice::At(p);
                     it.next();
                 }
-                cli_ws = Some(port);
+                cli_ws = Some(choice);
             }
             "--max-frame" => {
                 let v = it
@@ -223,22 +228,14 @@ fn run(args: &[String]) -> Result<(), String> {
     };
     let port = cli_port.or(cfg.gui.host_port).unwrap_or(DEFAULT_PORT);
     // The TCP leg is on by default at the host port; `--no-tcp` (or
-    // `tcp = false` in the config) turns it off, a port moves it. The CLI's
-    // port-0 sentinel means "--tcp with no port": ride the host port.
-    let tcp_port: Option<u16> = match cli_tcp {
-        Some(Some(0)) => Some(port),
-        Some(Some(p)) => Some(p),
-        Some(None) => None,
-        None => match cfg.gui.tcp {
-            Some(setting) => setting.resolve(port),
-            None => Some(port),
-        },
-    };
+    // `tcp = false` in the config) turns it off, a port moves it.
+    let tcp_port = PortChoice::pick(cli_tcp, cfg.gui.tcp, PortChoice::Follow).resolve(port);
     // The WebSocket leg is opt-in (`--ws`, or `ws = true`/a port in the
-    // config), the audio server's own semantics; its default port sits clear
-    // of the host port since both bind a TCP listener.
-    let ws_port: Option<u16> =
-        cli_ws.or_else(|| cfg.gui.ws.and_then(|w| w.resolve(DEFAULT_PORT + 10)));
+    // config), the audio server's own semantics; following the host port means
+    // a host moved off 57210 takes its WS leg along instead of leaving it on
+    // the default's neighbour.
+    let ws_port = PortChoice::pick(cli_ws, cfg.gui.ws, PortChoice::Off)
+        .resolve(port.saturating_add(WS_PORT_OFFSET));
     let max_frame = cli_max_frame
         .or(cfg.gui.max_frame)
         .unwrap_or(clausters_core::osc::DEFAULT_MAX_FRAME)

@@ -127,8 +127,9 @@ pub struct GuiConfig {
     /// TCP leg of the script front (`--tcp`/`--no-tcp`): on by default at the
     /// host port; `false` disables it, a number moves it.
     pub tcp: Option<PortSetting>,
-    /// WebSocket leg of the script front (`--ws`): `true` for the default
-    /// port, or a number. The browser's carrier into a native host.
+    /// WebSocket leg of the script front (`--ws`): `true` for `host_port` +
+    /// [`WS_PORT_OFFSET`], or a number. The browser's carrier into a native
+    /// host.
     pub ws: Option<PortSetting>,
     /// Largest OSC frame accepted on the stream legs (TCP and WebSocket), in
     /// bytes (`--max-frame`).
@@ -190,6 +191,71 @@ impl PortSetting {
             PortSetting::Enabled(false) => None,
             PortSetting::Port(p) => Some(p),
         }
+    }
+}
+
+/// How far a WebSocket front sits from its program's base port when it is given
+/// no number of its own. It shares the TCP namespace, so it cannot share the
+/// TCP number: 57110 → 57120 for the audio server, 57210 → 57220 for the GUI
+/// host.
+pub const WS_PORT_OFFSET: u16 = 10;
+
+/// What a transport was asked to do with its port, before the base port is
+/// known.
+///
+/// Both programs here bind several fronts around one **base** port — UDP or the
+/// script-facing front binds it, TCP follows it, WebSocket sits
+/// [`WS_PORT_OFFSET`] above — and both accept the same three answers per
+/// transport: follow the base, sit at a number, stay off. The answer cannot be
+/// turned into a port as it is read, because `--tcp` may come before the
+/// `--port` it follows, so it is recorded here and resolved once the whole
+/// command line (and the config beneath it) is in.
+///
+/// This is the shared half of what used to be two copies of the same rule, one
+/// per binary, the second of which encoded "follow the base" as a port-zero
+/// sentinel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PortChoice {
+    /// Bind the base port this transport is measured from.
+    Follow,
+    /// Bind this number, wherever the base ended up.
+    At(u16),
+    /// Do not bind at all.
+    Off,
+}
+
+impl From<PortSetting> for PortChoice {
+    fn from(setting: PortSetting) -> Self {
+        match setting {
+            PortSetting::Enabled(true) => PortChoice::Follow,
+            PortSetting::Enabled(false) => PortChoice::Off,
+            PortSetting::Port(port) => PortChoice::At(port),
+        }
+    }
+}
+
+impl PortChoice {
+    /// The port to bind, or `None` when this transport stays off. `base` is
+    /// what [`PortChoice::Follow`] means for *this* transport — the program's
+    /// base port, already offset for a WebSocket front.
+    pub fn resolve(self, base: u16) -> Option<u16> {
+        match self {
+            PortChoice::Follow => Some(base),
+            PortChoice::At(port) => Some(port),
+            PortChoice::Off => None,
+        }
+    }
+
+    /// The choice a transport ends up with, in the precedence every option
+    /// here follows: a command-line flag wins, else the config file's setting,
+    /// else `default` (what the program does when nobody says anything).
+    pub fn pick(
+        flag: Option<PortChoice>,
+        setting: Option<PortSetting>,
+        default: PortChoice,
+    ) -> Self {
+        flag.or_else(|| setting.map(PortChoice::from))
+            .unwrap_or(default)
     }
 }
 
@@ -459,6 +525,49 @@ pub use load::{find_project_config, read_config_file, read_theme_file, user_conf
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_transport_follows_the_base_port_it_is_measured_from() {
+        // The rule both binaries bind by: follow the base, sit at a number, or
+        // stay off -- and the WebSocket front's base is the program's, offset.
+        let base = 57130;
+        assert_eq!(PortChoice::Follow.resolve(base), Some(57130));
+        assert_eq!(PortChoice::At(57145).resolve(base), Some(57145));
+        assert_eq!(PortChoice::Off.resolve(base), None);
+        assert_eq!(
+            PortChoice::Follow.resolve(base + WS_PORT_OFFSET),
+            Some(57140)
+        );
+    }
+
+    #[test]
+    fn a_flag_wins_over_the_config_and_the_config_over_the_default() {
+        // The precedence every option here follows, in the one place that now
+        // states it for a port.
+        let off = Some(PortSetting::Enabled(false));
+        assert_eq!(
+            PortChoice::pick(Some(PortChoice::At(9)), off, PortChoice::Follow),
+            PortChoice::At(9)
+        );
+        assert_eq!(
+            PortChoice::pick(None, off, PortChoice::Follow),
+            PortChoice::Off
+        );
+        assert_eq!(
+            PortChoice::pick(None, None, PortChoice::Follow),
+            PortChoice::Follow
+        );
+        // A configured number and a configured `true` are the two other shapes
+        // the file can take.
+        assert_eq!(
+            PortChoice::pick(None, Some(PortSetting::Port(57145)), PortChoice::Off),
+            PortChoice::At(57145)
+        );
+        assert_eq!(
+            PortChoice::pick(None, Some(PortSetting::Enabled(true)), PortChoice::Off),
+            PortChoice::Follow
+        );
+    }
 
     #[test]
     fn gui_theme_table_parses_and_merges_per_key() {
