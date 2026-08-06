@@ -62,9 +62,12 @@ print("server binary:", BIN, "(ok)" if os.path.exists(BIN) else "(MISSING: cargo
 # %%
 # Tear down a previous run if this cell is re-executed in the same session.
 try:
-    server.quit()       # noqa: F821 (defined below on first run)
-    server.close()
-    proc.wait(timeout=5)  # noqa: F821
+    # Defined below, on the first run: re-executing this cell tears the
+    # previous one down. A checker reads the file top to bottom and cannot see
+    # that, hence the suppressions.
+    server.quit()       # noqa: F821  # pyright: ignore[reportUndefinedVariable]
+    server.close()      # pyright: ignore[reportUndefinedVariable]
+    proc.wait(timeout=5)  # noqa: F821  # pyright: ignore[reportUndefinedVariable]
 except Exception:
     pass
 

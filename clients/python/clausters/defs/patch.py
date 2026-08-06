@@ -326,9 +326,9 @@ def _rate_of(node) -> str:
     audio); a `Control` maps its type (unset -> control); a bare number is a
     constant (init)."""
     if isinstance(node, Ugen):
-        return _UGEN_RATE.get(node.rate, "audio")
+        return _UGEN_RATE.get(node.rate or "", "audio")
     if isinstance(node, Control):
-        return _CONTROL_RATE.get(node.rate, "control")
+        return _CONTROL_RATE.get(node.rate or "", "control")
     return "init"
 
 

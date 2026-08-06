@@ -117,6 +117,21 @@ is reproducible with the same line:
   `cargo run --release --example bench -- --json` and the same script. A change
   that knowingly trades speed for something else says `[no-bench]` in its head
   commit message and the gate steps aside.
+- **python types** — *not a CI job*: `pyright` in `clients/python`, configured
+  by `pyrightconfig.json` there. It is deliberately **not a type check**. Every
+  rule is off except the four that catch a **signature that moved out from
+  under a caller** — `reportCallIssue`, `reportIndexIssue`,
+  `reportMissingImports`, `reportUndefinedVariable` — because that is the one
+  defect class nothing else here catches: the examples are the manual test
+  surface and nothing runs them, so a renamed parameter or a method that
+  stopped being a `@classmethod` breaks them at a call site no build reaches.
+  The scope is what those call sites are: the package, the tests, and **both**
+  example directories, root included. The rules left off are not oversights —
+  `reportArgumentType` alone reports hundreds of hits on the def DSL (a
+  `SynthExpr` where a `float` is declared, which is what operator overloading
+  looks like to a checker) and has never caught one of these. The baseline is
+  zero; a suppression carries a comment saying why (a cell that redefines what
+  an earlier cell used, a call whose `TypeError` *is* the assertion).
 - **faust** — the default `cargo test` covers it, with libfaust built from
   source at the commit pinned in the workflow (the recipe in
   `third_party/BUILD-FAUST.md`) and cached; a cache hit makes the job cheap.

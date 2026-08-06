@@ -87,7 +87,7 @@ def test_the_id_is_never_positional():
 
     # A leaf takes no positional at all (its material is all keywords)...
     with pytest.raises(TypeError, match="positional"):
-        guidef.knob(7)
+        guidef.knob(7)  # pyright: ignore[reportCallIssue] - the point of the test
     # ...and a container's positionals are its children, so a stray id-shaped
     # placeholder is refused as the non-node it is.
     with pytest.raises(TypeError, match="must be a widget node"):

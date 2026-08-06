@@ -22,6 +22,10 @@ grid) and `streams` (the subscriptions the server pushes).
 
 import time
 from dataclasses import replace
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:                       # `render` returns one; importing it at
+    from ...render import RenderStats   # runtime would close an import cycle
 
 from ... import _native
 from ...config import client_config

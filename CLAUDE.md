@@ -94,7 +94,12 @@ on trust, so that is where drift accumulates:
   driving the server), not `clients/python/examples/` (including the GUI ones),
   not `clients/web/examples/`. CI runs none of them, and a Python signature
   change breaks them at a call site no build ever reaches. They are the manual
-  test surface, so run the ones the change touches, by hand.
+  test surface, so run the ones the change touches, by hand. **After changing
+  any Python signature, also run `pyright` in `clients/python`** — its
+  `pyrightconfig.json` turns every rule off but the four that catch exactly
+  this (it is a call-site check, not a type check), over the package, the tests
+  and both example directories. The baseline is zero, so anything it prints is
+  yours; `docs/contributing.md` explains the rule choice.
 - **The web package is typechecked against nothing else.** Its Python (the
   parity generators `clients/web/tests/gen-*-vectors.py`, the bundle authors
   `clients/web/examples/*/make_bundle.py`) imports the Python client; its pages

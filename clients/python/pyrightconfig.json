@@ -1,0 +1,17 @@
+{
+    "include": [
+        "clausters",
+        "tests",
+        "examples",
+        "../../examples"
+    ],
+    "extraPaths": [
+        "../../examples"
+    ],
+    "pythonVersion": "3.11",
+    "typeCheckingMode": "off",
+    "reportCallIssue": "error",
+    "reportIndexIssue": "error",
+    "reportMissingImports": "error",
+    "reportUndefinedVariable": "error"
+}

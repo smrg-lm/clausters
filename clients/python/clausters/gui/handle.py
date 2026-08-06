@@ -14,6 +14,11 @@ A name is stable; the assigned id is not (it recycles across redraws — see
 host resolves the current id underneath it.
 """
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:                       # the host imports this module, not the
+    from .host import GuiHost           # other way round: a name for typing only
+
 __all__ = ["WidgetHandle", "WindowHandle"]
 
 
@@ -27,6 +32,11 @@ class WidgetHandle:
     """
 
     __slots__ = ("_host", "id")
+
+    #: the host every method delegates to. Declared, not just assigned, so the
+    #: delegation type-checks: these handles are the one place the host's whole
+    #: surface is reached through an attribute rather than a parameter.
+    _host: "GuiHost"
 
     def __init__(self, host, wid: int):
         self._host = host
@@ -84,6 +94,10 @@ class WindowHandle(int):
     `WidgetHandle`. It carries the window's own widget ops too (`set`, `close`,
     `free`, `on_closed`).
     """
+
+    _host: "GuiHost"
+    #: widget name -> its current id, refreshed on every redraw.
+    _names: "dict[str, int]"
 
     def __new__(cls, host, wid: int, names: dict):
         obj = super().__new__(cls, wid)

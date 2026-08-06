@@ -107,6 +107,9 @@ class Automation:
         #: can interrupt the sweep early.
         self.node = None
         self._playing_on = None
+        #: the server `prepare` allocated the buffer and bus on, so `free` can
+        #: return them without being told where they came from.
+        self._server = None
 
     @classmethod
     def from_points(cls, points, target, *, name=None, frames: int = DEFAULT_FRAMES,
@@ -132,6 +135,7 @@ class Automation:
         at setup (blocking in RT; scored at time 0 in NRT). ``play`` self-prepares
         in NRT."""
         add_automation_def(server, wait=wait)
+        self._server = server
         if self.buf is None:
             self.buf = Buffer.alloc(self.frames, 1, wait=wait, server=server)
         self.buf.gen("env", *_env_gen_args(self.env), wait=wait)
@@ -188,11 +192,17 @@ class Automation:
             Node(self.node, self._playing_on).free()
         self.node = self._playing_on = None
 
-    def free(self, server):
-        """Return the buffer and bus to their allocators."""
+    def free(self, server=None):
+        """Return the buffer and bus to their allocators.
+
+        ``server`` defaults to the one `prepare` allocated them on — what this
+        object allocated, it can give back unaided — so this reads like every
+        other `free` in the client and a handle from `clausters.play` frees the
+        same way whatever it turned out to be."""
+        server = server if server is not None else self._server
         if self.buf is not None:
             self.buf.free()
             self.buf = None
-        if self.bus is not None:
+        if self.bus is not None and server is not None:
             server.control_buses.free(self.bus)
             self.bus = None
