@@ -32,6 +32,7 @@ group or resolves it), so it needs no protocol of its own.
 import itertools
 
 from .. import _native
+from .handle import WindowHandle
 from ..form.group import CONCRETE, LOGICAL, SIMULTANEOUS, Group
 from ..form.element import Buffer, Element
 from ..defs.ugens import points_to_env
@@ -275,9 +276,14 @@ class Editor:
         return scroll(view, id=self._new_id(),
                       content_w=content[0], content_h=content[1])
 
-    def open(self, host, id: int | None = None) -> int:
+    def open(self, host, id: int | None = None) -> "WindowHandle":
         """`draw` the composition and open it on ``host`` (a
-        `clausters.gui.host.GuiHost`). Returns the window id."""
+        `clausters.gui.host.GuiHost`).
+
+        Returns the **window handle** `clausters.gui.host.GuiHost.open` hands
+        back: it equals the window id, and it also resolves the tree's named
+        widgets, so the transport buttons are reachable by name
+        (``win["play"].on_event(...)``)."""
         self._host = self.transport.host = host
         self._mode = "multitrack"
         self._window = host.open(self.draw(), id=id)
@@ -313,7 +319,7 @@ class Editor:
         return window(roll, *self.extra, title=self.title,
                       w=self.size[0], h=self.size[1], layout="col")
 
-    def open_pianoroll(self, host, element=None, id: int | None = None) -> int:
+    def open_pianoroll(self, host, element=None, id: int | None = None) -> "WindowHandle":
         """`draw` a single events element as a **dedicated piano-roll** window
         and open it on ``host`` — the editor-grade note view (a keyboard, an
         editable note grid, a velocity lane, an OSC-event lane) of one MIDI/OSC
@@ -325,7 +331,9 @@ class Editor:
         its timeline. A **generator** (a `Pbind`/`Routine`) is forward-only, so its
         bounced notes are shown *read-only* (bounce it to a `Track` to edit). OSC
         events are shown but not edited back yet (a marker carries only its time
-        and address, not the full message). Returns the window id."""
+        and address, not the full message).
+
+        Returns the **window handle**, like `open`."""
         self._host = self.transport.host = host
         self._mode = "pianoroll"
         self._roll_element = self.element if element is None else element
