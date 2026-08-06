@@ -55,7 +55,7 @@ import { sampleClockFor } from "../clocksync.ts";
 import type { ServerSampleClock } from "../clocksync.ts";
 import type { TempoClock } from "../../base/clock.ts";
 import type { Event } from "../../seq/event.ts";
-import { CommandError, ReplyTimeout } from "../../errors.ts";
+import { CommandError, ReplyTimeout, ServerError } from "../../errors.ts";
 import { NodeIdAllocator } from "../node.ts";
 import { WHOLE_SHARE } from "../../base/core.ts";
 import type { IdShare } from "../../base/core.ts";
@@ -213,11 +213,26 @@ export class Server {
         {
             sizing,
             notify = true,
+            verify = false,
             timeout = DEFAULT_TIMEOUT,
             share = WHOLE_SHARE,
         }: {
             sizing?: Partial<ServerSizing>;
             notify?: boolean;
+            /**
+             * Require a server to actually answer, instead of falling back to
+             * the compiled sizing when it does not. This is the browser's half
+             * of the reference client's `Server.attach`: a carrier can be open
+             * with nothing behind it — a WebSocket endpoint that accepts but
+             * speaks no OSC, a port wired to an engine that never came up — and
+             * without this the handle is built anyway and every later command
+             * leaves without a trace. With it, that is a `ServerError` here.
+             *
+             * It forces the `/server_query` round trip even when `sizing` is
+             * given, since what is being verified is the server, not the
+             * numbers.
+             */
+            verify?: boolean;
             timeout?: number;
             /**
              * The slice of the server's client id space this handle allocates
@@ -244,26 +259,41 @@ export class Server {
         // it once the answer is in.
         const probe = new Server(connection, defaults, timeout);
         let resolved: ServerSizing = { ...defaults, ...sizing };
-        if (!sizing) {
+        // Whether the carrier is open with nothing answering behind it.
+        let silent = false;
+        if (!sizing || verify) {
             try {
                 const info = await probe.queryInfo(timeout);
-                resolved = {
-                    audioBuses: info.audioBuses,
-                    controlBuses: info.controlBuses,
-                    maxNodes: info.maxNodes,
-                    maxBuffers: info.maxBuffers,
-                    channels: info.channels,
-                    taps: info.taps,
-                };
+                // Explicit sizing still wins; the query was for the answer's
+                // existence, not its numbers.
+                if (!sizing) {
+                    resolved = {
+                        audioBuses: info.audioBuses,
+                        controlBuses: info.controlBuses,
+                        maxNodes: info.maxNodes,
+                        maxBuffers: info.maxBuffers,
+                        channels: info.channels,
+                        taps: info.taps,
+                    };
+                }
             } catch (error) {
                 if (!(error instanceof ReplyTimeout)) throw error;
-                console.warn(
-                    "clausters: no /server_query reply; sizing the allocators " +
-                        "from the compiled defaults",
-                );
+                silent = true;
             }
         }
         probe.close();
+        if (silent) {
+            if (verify) {
+                throw new ServerError(
+                    `no server answers on ${connection.url ?? "this carrier"} — ` +
+                        `nothing replied to /server_query within ${timeout}s`,
+                );
+            }
+            console.warn(
+                "clausters: no /server_query reply; sizing the allocators " +
+                    "from the compiled defaults",
+            );
+        }
         const server = new Server(connection, resolved, timeout, share);
         if (notify) await server.notify(true, timeout);
         return server;

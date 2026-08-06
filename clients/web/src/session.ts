@@ -66,6 +66,13 @@ export interface SessionOptions {
     /** How long a reply is waited for when a call does not say. */
     timeout?: number;
     /**
+     * Require the server to answer before the session is built, instead of
+     * carrying on against the compiled sizing when it does not (see
+     * `Server.open`'s `verify`). Worth passing on {@link Session.connect}: a
+     * WebSocket that connects proves a listener, not a server.
+     */
+    verify?: boolean;
+    /**
      * The slice of the server's client id space this session allocates from,
      * when the engine underneath has **more than one client** — one client
      * authoring over a carrier of its own while the page holds a session on
@@ -203,20 +210,20 @@ export class Session extends Environment {
      */
     static async connect(
         url = "ws://127.0.0.1:57120",
-        { tempo = 1.0, timebase, latency, timeout, share }: SessionOptions = {},
+        { tempo = 1.0, timebase, latency, timeout, share, verify }: SessionOptions = {},
     ): Promise<Session> {
         await loadOsc();
         return Session.over(await WsConnection.open(url), {
-            tempo, timebase, latency, timeout, share,
+            tempo, timebase, latency, timeout, share, verify,
         });
     }
 
     /** Opens a server over `connection` and builds the session around it. */
     private static async over(
         connection: Connection,
-        { tempo, timebase, latency, timeout, share }: SessionOptions,
+        { tempo, timebase, latency, timeout, share, verify }: SessionOptions,
     ): Promise<Session> {
-        const server = await Server.open(connection, { timeout, share });
+        const server = await Server.open(connection, { timeout, share, verify });
         if (latency !== undefined) server.latency = latency;
         const session = new Session(server, new TempoClock(tempo, { timebase }));
         // With no explicit timebase, anchor to the server's own sample clock:

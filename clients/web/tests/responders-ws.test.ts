@@ -28,7 +28,11 @@ import { impulse, out, sendReply, sendTrig, sine } from "../src/defs/ugens/index
 
 const here = new URL(".", import.meta.url);
 const serverBin = new URL("../../../target/debug/clausters", here).pathname;
-const wsPort = 57992; // its own port: the suites run one server at a time
+const wsPort = 57992; // out of the default range, one per suite
+// The server's own base OSC port (`--port`): UDP and TCP alike. Distinct
+// per suite, so these servers are independent processes rather than one
+// machine-wide singleton.
+const udpPort = 57892;
 
 const hasServer = await access(serverBin).then(() => true, () => false);
 
@@ -55,7 +59,8 @@ async function awaitEngine(server: Server): Promise<void> {
 }
 
 async function withServer(body: (server: Server) => Promise<void>): Promise<void> {
-    const child = spawnChild(serverBin, ["--ws", String(wsPort), "--no-tcp", "--no-persist"]);
+    const child = spawnChild(serverBin, ["--port", String(udpPort), "--ws", String(wsPort),
+        "--no-tcp", "--no-persist"]);
     let connection: WsConnection | null = null;
     let server: Server | null = null;
     try {

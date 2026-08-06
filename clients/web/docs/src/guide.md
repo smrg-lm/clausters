@@ -106,6 +106,14 @@ That one call opens the connection, opens the `Server`, builds a clock at that t
 
 `s.close()` releases what the session owns — its GUI host, its server client, its clock, and an engine it opened for itself. The page's shared engine is not a session's to stop.
 
+A carrier can be open with nothing behind it: a WebSocket that connects proves a listener, not a server, and a port wired to an engine that never came up looks the same from here. By default the session is built anyway, on the compiled sizing, so a page is not stopped by a server that may yet answer — and if it never does, every command leaves without a trace. Pass **`verify`** for the opposite reading, which is worth having on `connect`:
+
+```js
+const s = await Session.connect(url, { verify: true });   // ServerError if nothing answers
+```
+
+It also makes the handle's allocators match the server that is actually running rather than the page's defaults, which matters when you did not launch it. This is the browser's half of the Python client's `Server.attach`; the other half, `boot`, has no counterpart here — a page has no process to start.
+
 ### The default session
 
 Beside the named ones there is the **default session**, `defaultSession`: the ambient environment everything falls back to when no session was named. Lend a server to it and the ambient verbs work with nothing wired:

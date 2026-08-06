@@ -24,3 +24,12 @@ export class ReplyTimeout extends ClaustersError {}
  * handing out an id that may still be alive.
  */
 export class AllocationError extends ClaustersError {}
+
+/**
+ * No server is there. The carrier is open — a socket connected, a port is
+ * wired — but nothing behind it answers as a Clausters server, so every
+ * command would leave without a trace. Thrown by an opening that was asked to
+ * verify (`Server.open`'s `verify`), which is the browser's half of the
+ * reference client's `Server.attach`.
+ */
+export class ServerError extends ClaustersError {}

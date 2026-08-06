@@ -11,11 +11,12 @@
 // core wasm staged (`./build.sh`). Skips (does not fail) when the binary is
 // missing, so `npm test` stays runnable from a source tree without a build.
 //
-// Each test spawns its own server, and `--ws <port>` only moves the
-// WebSocket front: the OSC port (57110) is fixed, so two servers cannot run
-// at once. That is why `npm test` passes `--test-concurrency=1` — node would
-// otherwise run the suites that spawn servers in parallel, and the second
-// server would find the port taken.
+// Each test spawns its own server, on its own `--port` (the base OSC port,
+// UDP and TCP alike) as well as its own `--ws`, so the suites no longer
+// contend for a machine-wide 57110. `npm test` still passes
+// `--test-concurrency=1`: what remains shared is the audio device, which the
+// servers open one stream each into, and the wall-clock cost of spawning
+// several at once — not a port. Lifting it is a measurement, not a fix.
 
 import assert from "node:assert/strict";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
@@ -42,7 +43,11 @@ import {
 
 const here = new URL(".", import.meta.url);
 const serverBin = new URL("../../../target/debug/clausters", here).pathname;
-const wsPort = 57988; // out of the default range; parallel-test friendly
+const wsPort = 57988; // out of the default range, one per suite
+// The server's own base OSC port (`--port`): UDP and TCP alike. Distinct
+// per suite, so these servers are independent processes rather than one
+// machine-wide singleton.
+const udpPort = 57888;
 
 const hasServer = await access(serverBin).then(() => true, () => false);
 
@@ -56,7 +61,8 @@ await loadOsc(
  * per-invocation network isolation.
  */
 async function withServer(body: (server: Server) => Promise<void>): Promise<void> {
-    const child = spawnChild(serverBin, ["--ws", String(wsPort), "--no-tcp", "--no-persist"]);
+    const child = spawnChild(serverBin, ["--port", String(udpPort), "--ws", String(wsPort),
+        "--no-tcp", "--no-persist"]);
     let connection: WsConnection | null = null;
     let server: Server | null = null;
     try {
