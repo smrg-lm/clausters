@@ -870,16 +870,24 @@ impl Gestures {
                     out.push(GestureEffect::Redraw(def_id));
                 }
             }
-            WidgetKind::Track { snap, .. } => {
-                // A lane's element is the **clip** the renderer placed on its
-                // axis, not a widget the layout put there — so the lane looks it
-                // up on the time axis the hit resolved. Empty lane space and the
-                // ruler strip are not the element's: the press goes back to the
-                // chain, where the lane's plan locates the transport.
+            // A **clip** is the element now: the layout places it on its lane's
+            // axis, so the hit lands on it directly and the press reads the
+            // rectangle that was drawn. Empty lane space and the ruler strip
+            // are not a clip at all — the press falls back to the chain, where
+            // the lane's plan locates the transport.
+            WidgetKind::Clip { .. } => {
                 let Some(lane) = interact::time_of(chain) else {
                     return false;
                 };
-                if let Some(h) = interact::clip_hit(host, def_id, lane, cx, cy) {
+                // The lane's own grid, from the container the axis came from.
+                let snap = match host.window_def(def_id).and_then(|t| t.find(lane.0)) {
+                    Some(w) => match w.kind {
+                        WidgetKind::Track { snap, .. } => snap,
+                        _ => 0.0,
+                    },
+                    None => 0.0,
+                };
+                if let Some(h) = interact::clip_hit(host, def_id, lane, (id, rect), cx, cy) {
                     // An automation clip: a break-point wins over the clip body
                     // (as it wins over a segment in the `bpf` view), and Ctrl+click
                     // adds one - or removes the one under the cursor. The same

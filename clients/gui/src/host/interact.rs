@@ -14,7 +14,6 @@ use clausters_core::osc::OscType;
 use super::bpf;
 use super::layout::{self, Rect};
 use super::pianoroll;
-use super::timeline;
 use super::track;
 use super::widget::{GestureMap, ScrollView, Widget, WidgetKind};
 use super::{Host, controls};
@@ -173,7 +172,11 @@ pub(crate) fn hit(
 ) -> Option<Hit> {
     let tree = host.window_def(def_id)?;
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    let placed = layout::layout(area, tree, host.metrics_for(def_id));
+    // The same axis the renderer laid the clips out on: a clip is hit on the
+    // pixels it was drawn on.
+    let placed = layout::layout_on(area, tree, host.metrics_for(def_id), &|id, link| {
+        host.timelines().nav(super::timeline::group_key(id, link))
+    });
     let mut found = None;
     for (i, p) in placed.iter().enumerate() {
         if p.rect.contains(x, y)
@@ -208,7 +211,6 @@ fn chain_of(
     i: usize,
     lanes: &dyn Fn(i32, &WidgetKind) -> usize,
 ) -> Vec<Frame> {
-    let indents = timeline::placed_indents(placed);
     let mut chain = Vec::new();
     let mut at = Some(i);
     while let Some(j) = at {
@@ -218,14 +220,10 @@ fn chain_of(
             WidgetKind::Scroll { view, .. } => Some(Coords::Plane(*view)),
             WidgetKind::Patch { .. } => Some(Coords::Canvas),
             // Where the body begins is the **group's** call, not this widget's:
-            // every member of one axis starts it at the same x.
+            // every member of one axis starts it at the same x, and the layout
+            // already resolved it (`Placed::indent`).
             _ if p.widget.is_timeline() => {
-                let indent = p
-                    .widget
-                    .id
-                    .zip(p.widget.kind.editor())
-                    .map_or(0.0, |(id, e)| timeline::indent_for(&indents, id, e));
-                time_axis(host, def_id, &p, indent, lanes).map(Coords::Time)
+                time_axis(host, def_id, &p, p.indent, lanes).map(Coords::Time)
             }
             _ => None,
         };
@@ -770,53 +768,47 @@ pub(crate) struct ClipHit {
 /// The clip edge hit zone, device pixels.
 const CLIP_EDGE_PX: f32 = 6.0;
 
-/// The topmost `clip` under `(x, y)` on `lane` — its id, the body its samples
-/// map onto and the window they are seen through, all three taken off the hit's
-/// time axis ([`time_of`]), so the hit-test measures against the geometry the
-/// renderer drew rather than reconstructing it. `None` when the point is over
-/// the lane's header or ruler strip, or over no clip. Native-only, like the
-/// other edit-back gestures.
+/// The [`ClipHit`] of the `clip` the pointer landed on: the clip the layout
+/// **placed** (its id and its rectangle, straight off the hit) read against the
+/// lane's time axis, which is what the placement was computed from.
+///
+/// Nothing is re-derived here any more. The clip used to be found by walking
+/// the lane's children and re-running `clip_x_range` on each, because a clip
+/// was not a placed widget and there was nothing else to ask; now it is one, so
+/// the topmost-wins rule is the layout's (later children are placed later, and
+/// the hit takes the last match) and the rectangle is the one that was drawn.
+/// Native-only, like the other edit-back gestures.
 pub(crate) fn clip_hit(
     host: &Host,
     def_id: i32,
     lane: (i32, TimeAxis),
+    clip: (i32, Rect),
     x: f64,
     y: f64,
 ) -> Option<ClipHit> {
     let (lane_id, TimeAxis { body, nav, .. }) = lane;
-    if !body.contains(x, y) {
-        return None; // over the header or the ruler strip, not a clip
-    }
-    let widget = host.window_def(def_id)?.find(lane_id)?;
-    // Topmost clip wins: later children draw over earlier ones.
-    for c in widget.children.iter().rev() {
-        if let WidgetKind::Clip { offset, dur, .. } = c.kind
-            && let Some((x0, x1)) = track::clip_x_range(body, &nav, offset, dur)
-            && (x as f32) >= x0
-            && (x as f32) <= x1
-            && let Some(id) = c.id
-        {
-            let rect = track::clip_rect(body, x0, x1);
-            let drawn = track::clip_draw(c);
-            let has_curve = drawn.as_ref().is_some_and(|clip| !clip.points.is_empty());
-            let point = drawn.filter(|_| has_curve).and_then(|clip| {
-                track::curve_hit(&clip, rect, body, &nav, x, y, host.metrics_for(def_id))
-            });
-            return Some(ClipHit {
-                id,
-                lane: lane_id,
-                offset,
-                dur,
-                body,
-                rect,
-                nav,
-                part: clip_part(x0, x1, x as f32),
-                point,
-                has_curve,
-            });
-        }
-    }
-    None
+    let (id, rect) = clip;
+    let widget = host.window_def(def_id)?.find(id)?;
+    let WidgetKind::Clip { offset, dur, .. } = widget.kind else {
+        return None;
+    };
+    let drawn = track::clip_draw(widget);
+    let has_curve = drawn.as_ref().is_some_and(|clip| !clip.points.is_empty());
+    let point = drawn
+        .filter(|_| has_curve)
+        .and_then(|clip| track::curve_hit(&clip, rect, body, &nav, x, y, host.metrics_for(def_id)));
+    Some(ClipHit {
+        id,
+        lane: lane_id,
+        offset,
+        dur,
+        body,
+        rect,
+        nav,
+        part: clip_part(rect.x, rect.x + rect.w, x as f32),
+        point,
+        has_curve,
+    })
 }
 
 /// Which part of a clip spanning pixels `[x0, x1]` the pointer x fell on.
@@ -1554,72 +1546,41 @@ mod tests {
     }
 
     #[test]
-    fn clip_hit_finds_the_clip_and_the_part_under_the_cursor() {
+    fn the_hit_lands_on_the_placed_clip_and_names_the_part_under_the_cursor() {
         let host = track_host();
         let (fb_w, fb_h) = (1000, 200);
         let (body, nav) = geometry(&host, fb_w, fb_h);
-        // The lane a press lands on, off its own hit chain — and it is the
-        // geometry computed above, which is what the renderer draws through.
-        let lane = |x: f64, y: f64| {
+        // A press on a lane: the hit is the **clip** the layout placed there,
+        // and the chain still carries the lane's axis over it — the geometry
+        // computed above, which is what the renderer draws through.
+        let at = |x: f64, y: f64| {
             let h = hit(&host, 1, fb_w, fb_h, x, y, &mono).unwrap();
             let lane = time_of(&h.chain).unwrap();
             assert_eq!((lane.0, lane.1.body, lane.1.nav), (5, body, nav));
-            lane
+            (h, lane)
         };
         let (ax0, ax1) = track::clip_x_range(body, &nav, 0.0, 400.0).unwrap();
         let midy = (body.y + body.h / 2.0) as f64;
+        let part_at = |x: f64| {
+            let (h, lane) = at(x, midy);
+            let hit = clip_hit(&host, 1, lane, (h.id, h.rect), x, midy).unwrap();
+            (hit.id, hit.part)
+        };
 
-        // The body of clip A → a move on id 10.
-        let h = clip_hit(
-            &host,
-            1,
-            lane(((ax0 + ax1) / 2.0) as f64, midy),
-            ((ax0 + ax1) / 2.0) as f64,
-            midy,
-        )
-        .unwrap();
-        assert_eq!((h.id, h.part), (10, ClipPart::Body));
-        // Its left/right edges → resize.
-        let h = clip_hit(
-            &host,
-            1,
-            lane((ax0 + 2.0) as f64, midy),
-            (ax0 + 2.0) as f64,
-            midy,
-        )
-        .unwrap();
-        assert_eq!((h.id, h.part), (10, ClipPart::Start));
-        let h = clip_hit(
-            &host,
-            1,
-            lane((ax1 - 2.0) as f64, midy),
-            (ax1 - 2.0) as f64,
-            midy,
-        )
-        .unwrap();
-        assert_eq!((h.id, h.part), (10, ClipPart::End));
-        // Deeper into the lane → clip B.
+        // The body of clip A -> a move on id 10; its edges -> a resize.
+        assert_eq!(part_at(((ax0 + ax1) / 2.0) as f64), (10, ClipPart::Body));
+        assert_eq!(part_at((ax0 + 2.0) as f64), (10, ClipPart::Start));
+        assert_eq!(part_at((ax1 - 2.0) as f64), (10, ClipPart::End));
+        // Deeper into the lane -> clip B, and the hit itself says so.
         let (bx0, bx1) = track::clip_x_range(body, &nav, 400.0, 400.0).unwrap();
-        let h = clip_hit(
-            &host,
-            1,
-            lane(((bx0 + bx1) / 2.0) as f64, midy),
-            ((bx0 + bx1) / 2.0) as f64,
-            midy,
-        )
-        .unwrap();
+        let (h, _) = at(((bx0 + bx1) / 2.0) as f64, midy);
         assert_eq!(h.id, 11);
-        // Over the header strip → no clip.
-        assert!(
-            clip_hit(
-                &host,
-                1,
-                lane((body.x - 10.0) as f64, midy),
-                (body.x - 10.0) as f64,
-                midy
-            )
-            .is_none()
-        );
+        // The clip's rectangle is the layout's, not a re-derivation.
+        assert_eq!(h.rect, track::clip_rect(body, bx0, bx1));
+        // Over the header band: no clip is placed there, so the hit is the
+        // lane itself and the press falls through to its plan.
+        let (h, _) = at((body.x - 10.0) as f64, midy);
+        assert_eq!(h.id, 5);
     }
 
     #[test]

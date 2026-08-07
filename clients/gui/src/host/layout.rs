@@ -39,8 +39,13 @@
 //!
 //! [`ScrollView::zoom`]: super::widget::ScrollView::zoom
 
+use std::collections::HashMap;
+
+use crate::viewport::View;
+
 use super::metrics::Metrics;
 use super::scroll;
+use super::timeline::{self, GroupKey, group_key};
 use super::widget::{Flow, Layout, Place, Widget, WidgetKind};
 
 /// A rectangle in physical pixels, top-left origin.
@@ -178,12 +183,46 @@ pub struct Placed<'a> {
     /// layout measured it with, so a zoomed widget's parts keep their
     /// proportions instead of growing only where text is involved.
     pub metrics: Metrics,
+    /// Where this widget's navigation group starts its bodies inside a
+    /// member's rect — the shared gutter of the axis it is on, `0` for anything
+    /// that is not on one. Resolved once per window here, because the renderer
+    /// and the hit-test must agree on it and both read this vector.
+    pub indent: f32,
     /// The index of this widget's container in the returned vector, `None` for
     /// the root. The pass emits parent-before-child, so an ancestry is walked
     /// back from any placement without searching the tree for it: it is the
     /// containment the layout already knows, kept instead of thrown away.
     pub parent: Option<usize>,
     pub widget: &'a Widget,
+}
+
+/// Where a **time container** gets the window it places its contents through:
+/// a `track` places its clips on its navigation group's visible window, so the
+/// layout of a multitrack is a function of where the axis currently stands.
+///
+/// It is a seam rather than a lookup because the groups live on the `Host` and
+/// this pass is pure geometry; a caller with no groups (a test, a measurement)
+/// passes [`NoAxis`] and every time container falls back to its own content
+/// span, which is what an un-navigated lane shows anyway.
+pub trait AxisSource {
+    /// The visible window of the group member `id` belongs to.
+    fn nav(&self, id: i32, link: Option<i32>) -> Option<View>;
+}
+
+/// An axis source that knows nothing: every time container falls back to its
+/// own full content span.
+pub struct NoAxis;
+
+impl AxisSource for NoAxis {
+    fn nav(&self, _id: i32, _link: Option<i32>) -> Option<View> {
+        None
+    }
+}
+
+impl<F: Fn(i32, Option<i32>) -> Option<View>> AxisSource for F {
+    fn nav(&self, id: i32, link: Option<i32>) -> Option<View> {
+        self(id, link)
+    }
 }
 
 /// Lays out `root` into `area` (physical pixels), returning every widget with
@@ -193,17 +232,58 @@ pub struct Placed<'a> {
 /// `ui_scale` — pass the window's resolved table
 /// ([`Host::metrics_for`](super::Host::metrics_for)), not the logical one.
 pub fn layout<'a>(area: Rect, root: &'a Widget, metrics: &Metrics) -> Vec<Placed<'a>> {
+    layout_on(area, root, metrics, &NoAxis)
+}
+
+/// [`layout`] with the navigation windows its time containers place on — the
+/// form the renderer and the hit-test call, so a clip lands on the same pixels
+/// for drawing and for dragging.
+pub fn layout_on<'a>(
+    area: Rect,
+    root: &'a Widget,
+    metrics: &Metrics,
+    axis: &dyn AxisSource,
+) -> Vec<Placed<'a>> {
     let mut out = Vec::new();
+    let ctx = Ctx {
+        metrics,
+        axis,
+        // The shared gutter per group, from the tree: it is a fact about the
+        // *kinds* on an axis, so it is known before a single rectangle is.
+        indents: timeline::group_indents(root, metrics),
+    };
     place(
         area,
         root,
         None,
         Space::window(metrics),
-        metrics,
+        &ctx,
         None,
         &mut out,
     );
     out
+}
+
+/// What one layout pass carries besides its recursion state: the window's size
+/// table, where each navigation group starts its bodies, and the axis those
+/// groups currently stand at.
+struct Ctx<'x> {
+    metrics: &'x Metrics,
+    axis: &'x dyn AxisSource,
+    indents: HashMap<GroupKey, f32>,
+}
+
+impl Ctx<'_> {
+    /// The shared gutter of the group `widget` is on (0 when it is on none).
+    fn indent(&self, widget: &Widget) -> f32 {
+        let Some((id, editor)) = widget.id.zip(widget.kind.editor()) else {
+            return 0.0;
+        };
+        self.indents
+            .get(&group_key(id, editor.link))
+            .copied()
+            .unwrap_or(0.0)
+    }
 }
 
 #[allow(clippy::too_many_arguments)] // one recursion's state, all by value
@@ -212,7 +292,7 @@ fn place<'a>(
     widget: &'a Widget,
     clip: Option<Rect>,
     space: Space,
-    metrics: &Metrics,
+    ctx: &Ctx,
     parent: Option<usize>,
     out: &mut Vec<Placed<'a>>,
 ) {
@@ -222,6 +302,7 @@ fn place<'a>(
         clip,
         scale: space.unit,
         metrics: space.metrics,
+        indent: ctx.indent(widget),
         parent,
         widget,
     });
@@ -230,7 +311,12 @@ fn place<'a>(
             (layout, flow)
         }
         WidgetKind::Scroll { .. } => {
-            return place_scrolled(area, widget, clip, space, metrics, me, out);
+            return place_scrolled(area, widget, clip, space, ctx, me, out);
+        }
+        // The time containers: a lane places its clips on the shared axis, a
+        // clip places its bodies on its own local one.
+        WidgetKind::Track { .. } | WidgetKind::Clip { .. } => {
+            return place_on_time(area, widget, clip, space, ctx, me, out);
         }
         _ => return, // leaves have no children to place
     };
@@ -242,7 +328,63 @@ fn place<'a>(
         flow,
         space,
     )) {
-        place(rect, child, clip, space, metrics, Some(me), out);
+        place(rect, child, clip, space, ctx, Some(me), out);
+    }
+}
+
+/// Places the contents of a **time container**: the one place a coordinate
+/// system made of a visible window and a placement becomes rectangles.
+///
+/// A `track` puts each `clip` child at its `[offset, offset + dur]` span on the
+/// group's window, inside the lane body (which starts at the axis' shared
+/// indent, and reserves the lane's own ruler strip at the bottom). A `clip`
+/// gives each of its own children the whole clip rect: its bodies **layer** —
+/// a curve over the notes over the take — rather than dividing the box, and
+/// each reads the clip's local axis `[0, dur]`, which is why a clip lifted into
+/// another parent draws the same without re-deriving anything.
+///
+/// A clip outside the visible window is placed empty (zero width) rather than
+/// skipped: the tree and the placement vector stay parallel, so `Placed::parent`
+/// keeps meaning what it says.
+fn place_on_time<'a>(
+    area: Rect,
+    widget: &'a Widget,
+    clip: Option<Rect>,
+    space: Space,
+    ctx: &Ctx,
+    me: usize,
+    out: &mut Vec<Placed<'a>>,
+) {
+    let body = match &widget.kind {
+        WidgetKind::Track { editor, .. } => {
+            let ruler_on = editor.ruler != super::widget::Ruler::Off;
+            super::track::lane_body(area, ruler_on, ctx.indent(widget), &space.metrics)
+        }
+        // A clip's own box is the coordinate system its bodies fill.
+        _ => area,
+    };
+    let nav = match &widget.kind {
+        WidgetKind::Track { editor, .. } => widget
+            .id
+            .and_then(|id| ctx.axis.nav(id, editor.link))
+            .unwrap_or_else(|| super::track::window_nav(widget)),
+        // The clip's local axis: its own span, from sample 0.
+        WidgetKind::Clip { dur, .. } => View::full(dur.ceil().max(1.0) as usize),
+        _ => return,
+    };
+    for child in &widget.children {
+        let rect = match (&widget.kind, &child.kind) {
+            (WidgetKind::Track { .. }, WidgetKind::Clip { offset, dur, .. }) => {
+                match super::track::clip_x_range(body, &nav, *offset, *dur) {
+                    Some((x0, x1)) => super::track::clip_rect(body, x0, x1),
+                    None => Rect::new(body.x, body.y, 0.0, 0.0),
+                }
+            }
+            // Anything else a time container holds fills its body: a clip's
+            // layered bodies, and a lane's own non-clip chrome.
+            _ => body,
+        };
+        place(rect, child, clip, space, ctx, Some(me), out);
     }
 }
 
@@ -273,13 +415,14 @@ fn place_scrolled<'a>(
     widget: &'a Widget,
     clip: Option<Rect>,
     space: Space,
-    metrics: &Metrics,
+    ctx: &Ctx,
     me: usize,
     out: &mut Vec<Placed<'a>>,
 ) {
     let WidgetKind::Scroll { layout, flow, view } = widget.kind else {
         return;
     };
+    let metrics = ctx.metrics;
     let zoom = view.zoom(metrics);
     let (content_w, content_h) = scroll_content(widget, area, metrics);
     let slack = view.axis.slack();
@@ -304,7 +447,7 @@ fn place_scrolled<'a>(
             (r.w as f64 * zoom) as f32,
             (r.h as f64 * zoom) as f32,
         );
-        place(rect, child, clip, inside, metrics, Some(me), out);
+        place(rect, child, clip, inside, ctx, Some(me), out);
     }
 }
 

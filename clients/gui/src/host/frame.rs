@@ -32,7 +32,7 @@ use super::ruler::{self, TimeUnit};
 use super::signal::{self, Presentation};
 use super::spectrum::SpectrumState;
 use super::theme::{Theme, with_alpha};
-use super::timeline::{self, GroupState, TimelineGroups, group_key};
+use super::timeline::{GroupState, TimelineGroups, group_key};
 use super::widget::{EditorProps, Rate, Ruler, RulerY, Widget, WidgetKind};
 use super::{
     BusSource, bpf, controls, live, meters, patch, phasescope, piano, pianoroll, plot, spectrum,
@@ -209,6 +209,7 @@ fn signal_item(
     id: i32,
     el: &signal::SignalElement,
     rect: Rect,
+    indent: f32,
     clip: Option<Rect>,
     theme: Option<Arc<Theme>>,
     timelines: &mut Vec<TimelineItem>,
@@ -228,6 +229,7 @@ fn signal_item(
             timelines.push(TimelineItem {
                 id,
                 rect,
+                indent,
                 clip,
                 theme,
                 kind: if el.presentation == Presentation::TimeFrequency {
@@ -348,6 +350,9 @@ struct BpfItem {
 struct RulerItem {
     id: i32,
     rect: Rect,
+    /// Where this member's group starts its body inside `rect`
+    /// ([`layout::Placed::indent`]).
+    indent: f32,
     clip: Option<Rect>,
     theme: Option<Arc<Theme>>,
     editor: EditorProps,
@@ -356,6 +361,9 @@ struct RulerItem {
 struct TrackItem {
     id: i32,
     rect: Rect,
+    /// Where this member's group starts its body inside `rect`
+    /// ([`layout::Placed::indent`]).
+    indent: f32,
     clip: Option<Rect>,
     theme: Option<Arc<Theme>>,
     label: Option<String>,
@@ -374,6 +382,9 @@ struct TrackItem {
 struct PianoRollItem {
     id: i32,
     rect: Rect,
+    /// Where this member's group starts its body inside `rect`
+    /// ([`layout::Placed::indent`]).
+    indent: f32,
     clip: Option<Rect>,
     theme: Option<Arc<Theme>>,
     notes: Vec<pianoroll::Note>,
@@ -487,6 +498,9 @@ enum TimelineKind {
 struct TimelineItem {
     id: i32,
     rect: Rect,
+    /// Where this member's group starts its body inside `rect`
+    /// ([`layout::Placed::indent`]).
+    indent: f32,
     clip: Option<Rect>,
     theme: Option<Arc<Theme>>,
     kind: TimelineKind,
@@ -970,17 +984,6 @@ struct Collected {
     pianoroll_items: Vec<PianoRollItem>,
     nodetree_rects: Vec<NodeTreeItem>,
     canvas_frames: Vec<CanvasFrame>,
-    /// Where each navigation group's shared time axis begins inside a member's
-    /// rect — resolved once per frame from the placements, and read by every
-    /// pass that draws a body ([`timeline::placed_indents`]).
-    indents: HashMap<timeline::GroupKey, f32>,
-}
-
-impl Collected {
-    /// The indent of the group a timeline member belongs to.
-    fn indent_of(&self, id: i32, editor: &EditorProps) -> f32 {
-        timeline::indent_for(&self.indents, id, editor)
-    }
 }
 
 /// One immutable pass over the placed widgets: the flat widgets (labels,
@@ -1059,6 +1062,7 @@ fn collect_widgets(
                         id,
                         el,
                         p.rect,
+                        p.indent,
                         p.clip,
                         p.widget.theme.clone(),
                         &mut timeline_items,
@@ -1130,6 +1134,7 @@ fn collect_widgets(
                 ruler_items.push(RulerItem {
                     id: p.widget.id.unwrap_or(-1),
                     rect: p.rect,
+                    indent: p.indent,
                     clip: p.clip,
                     theme: p.widget.theme.clone(),
                     editor: editor.clone(),
@@ -1148,6 +1153,7 @@ fn collect_widgets(
                 track_items.push(TrackItem {
                     id: p.widget.id.unwrap_or(-1),
                     rect: p.rect,
+                    indent: p.indent,
                     clip: p.clip,
                     theme: p.widget.theme.clone(),
                     label: label.clone(),
@@ -1171,6 +1177,7 @@ fn collect_widgets(
                     pianoroll_items.push(PianoRollItem {
                         id,
                         rect: p.rect,
+                        indent: p.indent,
                         clip: p.clip,
                         theme: p.widget.theme.clone(),
                         notes: notes.clone(),
@@ -1311,7 +1318,6 @@ fn collect_widgets(
         pianoroll_items,
         nodetree_rects,
         canvas_frames,
-        indents: timeline::placed_indents(placed),
     }
 }
 
@@ -1453,12 +1459,7 @@ fn draw_timeline_meshes(
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let body = timeline_body(
-            item.rect,
-            &item.editor,
-            collected.indent_of(item.id, &item.editor),
-            m,
-        );
+        let body = timeline_body(item.rect, &item.editor, item.indent, m);
         mesh.rect(body, th.view_field);
         match &item.kind {
             TimelineKind::Waveform { overlay: overlaid } => {
@@ -1580,7 +1581,6 @@ fn draw_static_meshes(
     // Where the shared time axis begins, per navigation group: a lane, a roll
     // and a free-standing ruler on one axis agree on it, whatever gutter each
     // would have reserved alone (see `timeline::group_indents`).
-    let indent_of = |id: i32, editor: &EditorProps| collected.indent_of(id, editor);
     // Static plots draw from their (already mapped) samples; node trees draw from
     // the model last read off the client leg. Both are pure mesh work with the
     // host-tree borrow already released.
@@ -1647,7 +1647,7 @@ fn draw_static_meshes(
         // The strip is indented by its **group's** gutter, so its ticks stand
         // over the samples they label whatever it is stacked with -- the whole
         // point of a ruler that is not inside one.
-        let body = ruler_strip_body(item.rect, indent_of(item.id, &item.editor));
+        let body = ruler_strip_body(item.rect, item.indent);
         draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, m, th);
     }
     if !collected.track_items.is_empty() {
@@ -1662,7 +1662,7 @@ fn draw_static_meshes(
             let chrome = chrome_for(inputs, item.id, &item.editor, || full);
             let nav = chrome.nav;
             let ruler_on = item.editor.ruler != Ruler::Off;
-            let indent = indent_of(item.id, &item.editor);
+            let indent = item.indent;
             track::draw(
                 &mut *mesh,
                 item.rect,
@@ -1726,7 +1726,7 @@ fn draw_static_meshes(
             rate,
             inputs.sample_clock,
             inputs.cursor,
-            indent_of(item.id, &item.editor),
+            item.indent,
             m,
             th,
         );
@@ -1757,7 +1757,11 @@ pub(crate) fn render(
     let m = inputs.metrics;
     let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    let placed = layout::layout(area, tree, inputs.metrics);
+    // The lanes' clips are placed on the axis their group currently stands at,
+    // so the layout of a multitrack follows the zoom and the pan.
+    let placed = layout::layout_on(area, tree, inputs.metrics, &|id, link| {
+        inputs.timelines.nav(group_key(id, link))
+    });
     let mut mesh = Mesh::new();
     let mut over = Mesh::new();
     let collected = collect_widgets(&placed, &mut mesh, inputs, theme);
@@ -1787,12 +1791,7 @@ pub(crate) fn render(
     painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);
     overlay.upload(&gpu.device, &gpu.queue, &over, fb_w, fb_h);
     for item in &collected.timeline_items {
-        let body = timeline_body(
-            item.rect,
-            &item.editor,
-            collected.indent_of(item.id, &item.editor),
-            m,
-        );
+        let body = timeline_body(item.rect, &item.editor, item.indent, m);
         match &item.kind {
             TimelineKind::Waveform { .. } => {
                 if let Some(slot) = waveforms.get_mut(&item.id) {
@@ -1898,12 +1897,7 @@ pub(crate) fn render(
         });
         painter.draw(&mut pass);
         for item in &collected.timeline_items {
-            let body = timeline_body(
-                item.rect,
-                &item.editor,
-                collected.indent_of(item.id, &item.editor),
-                m,
-            );
+            let body = timeline_body(item.rect, &item.editor, item.indent, m);
             if body.w < 1.0 || body.h < 1.0 {
                 continue;
             }

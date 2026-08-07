@@ -178,31 +178,28 @@ pub(crate) fn own_gutter(kind: &WidgetKind, metrics: &Metrics) -> f32 {
 ///
 /// A group with one member is its own gutter, which is why a solo view is
 /// exactly where it always was.
-/// The shared indent of every group in one laid-out window, over the
-/// **placements** rather than the tree: a placement carries the size table it
-/// was measured with (a member inside a zoomed workspace has its own), so the
-/// gutter a member asks for is read at the scale it is drawn at.
+/// The shared indent of every navigation group in one window's tree.
 ///
-/// The renderer and the hit-test both call this, which is the point — a clip
-/// is dragged on the pixels it was drawn on.
-pub(crate) fn placed_indents(placed: &[super::layout::Placed]) -> HashMap<GroupKey, f32> {
-    let mut out = HashMap::new();
-    for p in placed {
-        if let (Some(id), Some(editor)) = (p.widget.id, p.widget.kind.editor()) {
+/// It is read from the **tree** rather than from the placements because it is a
+/// fact about the *kinds* on an axis — which of them wants a header, a keyboard
+/// or a value ruler — so it is known before a single rectangle is, which is
+/// what lets the layout pass place a lane's clips with it. The layout stamps
+/// the answer on every placement ([`super::layout::Placed::indent`]), and the
+/// renderer and the hit-test read it from there, so a clip is dragged on the
+/// pixels it was drawn on.
+pub(crate) fn group_indents(tree: &Widget, metrics: &Metrics) -> HashMap<GroupKey, f32> {
+    fn walk(widget: &Widget, metrics: &Metrics, out: &mut HashMap<GroupKey, f32>) {
+        if let (Some(id), Some(editor)) = (widget.id, widget.kind.editor()) {
             let slot = out.entry(group_key(id, editor.link)).or_insert(0.0f32);
-            *slot = slot.max(own_gutter(&p.widget.kind, &p.metrics));
+            *slot = slot.max(own_gutter(&widget.kind, metrics));
+        }
+        for child in &widget.children {
+            walk(child, metrics, out);
         }
     }
+    let mut out = HashMap::new();
+    walk(tree, metrics, &mut out);
     out
-}
-
-/// The indent of the group a placed member belongs to, from the map
-/// [`placed_indents`] built for its window.
-pub(crate) fn indent_for(indents: &HashMap<GroupKey, f32>, id: i32, editor: &EditorProps) -> f32 {
-    indents
-        .get(&group_key(id, editor.link))
-        .copied()
-        .unwrap_or(0.0)
 }
 
 /// The chrome band of a member: everything left of the shared body, full
@@ -1630,14 +1627,12 @@ mod indent_tests {
         );
         let m = Metrics::default();
         let placed = layout::layout(Rect::new(0.0, 0.0, 800.0, 400.0), &root, &m);
-        let indents = placed_indents(&placed);
-        let shared = indents[&GroupKey::Link(7)];
-        // The widest wish wins, and every member takes it.
+        // The widest wish wins, and the layout stamps it on every member.
         let widest = m.header_w.max(super::super::pianoroll::KEYBOARD_W);
-        assert_eq!(shared, widest);
+        assert_eq!(group_indents(&root, &m)[&GroupKey::Link(7)], widest);
         for p in &placed {
-            if let (Some(id), Some(editor)) = (p.widget.id, p.widget.kind.editor()) {
-                assert_eq!(indent_for(&indents, id, editor), widest, "member {id}");
+            if p.widget.kind.editor().is_some() {
+                assert_eq!(p.indent, widest, "member {:?}", p.widget.id);
             }
         }
     }
@@ -1654,8 +1649,7 @@ mod indent_tests {
             ]}"#,
         );
         let m = Metrics::default();
-        let placed = layout::layout(Rect::new(0.0, 0.0, 800.0, 400.0), &root, &m);
-        let indents = placed_indents(&placed);
+        let indents = group_indents(&root, &m);
         // A lane auto-links into its window's group (`link_lanes`), so its
         // key is the root's, not its own.
         assert_eq!(indents[&GroupKey::Link(1)], m.header_w);
