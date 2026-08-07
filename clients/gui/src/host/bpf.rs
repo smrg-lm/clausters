@@ -135,10 +135,10 @@ pub fn value_at(points: &[BpfPoint], t: f64) -> f32 {
 pub fn value_fraction(value: f32, lo: f32, hi: f32, exp: bool) -> f32 {
     if exp && lo > 0.0 && hi > lo {
         ((value.max(lo) / lo).ln() / (hi / lo).ln()).clamp(0.0, 1.0)
-    } else if (hi - lo).abs() < f32::EPSILON {
-        0.0
     } else {
-        ((value - lo) / (hi - lo)).clamp(0.0, 1.0)
+        // The linear branch is the shared value axis; only the geometric one
+        // above is this widget's own.
+        super::meters::fraction(value, lo, hi)
     }
 }
 

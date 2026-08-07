@@ -1143,17 +1143,25 @@ impl Range {
         }
     }
 
+    /// This control's value axis — the range its handle travels.
+    fn axis(&self) -> crate::viewport::Axis {
+        crate::viewport::Axis::ranged(
+            self.min as f64,
+            self.max as f64,
+            crate::viewport::Unit::Norm,
+        )
+    }
+
     /// The value as a 0..1 fraction of the range (for rendering).
     pub fn fraction(&self) -> f32 {
-        if (self.max - self.min).abs() < f32::EPSILON {
-            0.0
-        } else {
-            ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
-        }
+        self.axis().fraction_clamped(self.value as f64) as f32
     }
 
     /// Sets the value from a 0..1 fraction of the range (for interaction).
     pub fn set_fraction(&mut self, t: f32) {
+        // Not `value_at_clamped`: a reversed range (`min > max`) is a legitimate
+        // control, and the axis normalizes its bounds, so the value is read off
+        // the declared ends rather than the sorted ones.
         self.value = self.min + t.clamp(0.0, 1.0) * (self.max - self.min);
     }
 }

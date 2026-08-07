@@ -84,6 +84,12 @@ impl View {
 /// display units `[0, 1]` rather than samples.
 pub const MIN_SPAN: f64 = 1e-3;
 
+/// The width under which a window is treated as degenerate — a range whose
+/// ends coincide, which maps every value to the bottom rather than dividing.
+/// `f32`'s epsilon because the values that reach these axes are `f32` widget
+/// props, and this is the guard each of them already carried.
+const DEGENERATE: f64 = f32::EPSILON as f64;
+
 /// What an axis's numbers mean. Names the *domain*, not the widget: two views
 /// measuring amplitude share [`Unit::Norm`] whatever they are.
 ///
@@ -332,15 +338,43 @@ impl Axis {
         self.window.start + fraction * self.window.len
     }
 
+    /// [`fraction_of`](Self::fraction_of) clamped into `0..1`, with a degenerate
+    /// window (a range whose ends coincide) reading `0` rather than dividing.
+    ///
+    /// This is the mapping every value-bearing widget wrote for itself — a
+    /// meter's column height, a slider's handle position, a break-point's y —
+    /// each with its own copy of the same guard.
+    pub fn fraction_clamped(&self, value: f64) -> f64 {
+        if self.window.len <= DEGENERATE {
+            return 0.0;
+        }
+        self.fraction_of(value).clamp(0.0, 1.0)
+    }
+
+    /// The domain value at `fraction` across the window, clamped into it.
+    pub fn value_at_clamped(&self, fraction: f64) -> f64 {
+        self.value_at(fraction.clamp(0.0, 1.0))
+    }
+
+    /// Sets the window to a **normalized slice** of the domain: `start` and
+    /// `len` in `0..1` of the whole extent, in the domain's own units.
+    ///
+    /// The composition a value axis and a display window make together — a
+    /// piano-roll's visible pitches are its `[min, max]` sliced by the vertical
+    /// view, and so are a curve's visible values.
+    pub fn slice_normalized(&mut self, start: f64, len: f64) {
+        self.set_span(self.origin + start * self.extent, len * self.extent);
+    }
+
     fn clamp(&mut self) {
         self.window.len = self
             .window
             .len
             .clamp(self.min_len.min(self.extent), self.extent);
-        self.window.start = self
-            .window
-            .start
-            .clamp(0.0, (self.extent - self.window.len).max(0.0));
+        // Against the domain's own bounds, not against zero: a value axis
+        // starts wherever its range does.
+        let last = self.origin + (self.extent - self.window.len).max(0.0);
+        self.window.start = self.window.start.clamp(self.origin, last);
     }
 }
 
@@ -541,6 +575,42 @@ mod tests {
         let flat = Axis::ranged(5.0, 5.0, Unit::Db);
         assert!(flat.extent() > 0.0);
         assert!(flat.fraction_of(5.0).is_finite());
+    }
+
+    /// The regression the piano-roll hit-test caught: clamping a value axis
+    /// against **zero** instead of against its own origin silently moved every
+    /// window to the bottom of the number line, so a roll over pitches 48..72
+    /// reported 0..24 and no note was ever under the cursor.
+    #[test]
+    fn a_value_axis_clamps_against_its_own_origin() {
+        let mut axis = Axis::ranged(48.0, 72.0, Unit::Pitch);
+        axis.slice_normalized(0.0, 1.0);
+        assert_eq!(axis.span(), (48.0, 24.0), "the whole range is the range");
+        // The top half of the display is the top half of the range.
+        axis.slice_normalized(0.5, 0.5);
+        assert_eq!(axis.span(), (60.0, 12.0));
+        // Panning and zooming stay inside the range, never sliding toward zero.
+        axis.pan(-99.0);
+        assert_eq!(axis.start(), 48.0);
+        axis.pan(99.0);
+        assert_eq!(axis.start() + axis.len(), 72.0);
+        axis.zoom(99.0, 0.5);
+        assert_eq!(axis.span(), (48.0, 24.0));
+        // A bipolar range behaves the same on the negative side.
+        let mut bip = Axis::ranged(-1.0, 1.0, Unit::Norm);
+        bip.slice_normalized(0.0, 0.5);
+        assert_eq!(bip.span(), (-1.0, 1.0));
+    }
+
+    /// The value mapping every widget used to carry, including its guard.
+    #[test]
+    fn a_value_axis_maps_and_guards_a_degenerate_range() {
+        let axis = Axis::ranged(0.0, 1.0, Unit::Norm);
+        assert_eq!(axis.fraction_clamped(0.5), 0.5);
+        assert_eq!(axis.fraction_clamped(-1.0), 0.0, "below min clamps");
+        assert_eq!(axis.fraction_clamped(2.0), 1.0, "above max clamps");
+        let flat = Axis::ranged(3.0, 3.0, Unit::Norm);
+        assert_eq!(flat.fraction_clamped(5.0), 0.0, "min == max maps to 0");
     }
 
     #[test]

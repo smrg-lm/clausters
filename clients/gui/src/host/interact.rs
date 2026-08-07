@@ -672,11 +672,11 @@ pub(crate) struct PianoRollHit {
 /// the renderer's `pitch_window` uses so the hit-test matches the pixels.
 fn pitch_window(editor: &super::widget::EditorProps, min: f32, max: f32) -> (f32, f32) {
     let (y0, yl) = editor.y_view();
-    let span = (max - min) as f64;
-    (
-        (min as f64 + y0 * span) as f32,
-        (min as f64 + (y0 + yl) * span) as f32,
-    )
+    let mut axis =
+        crate::viewport::Axis::ranged(min as f64, max as f64, crate::viewport::Unit::Pitch);
+    axis.slice_normalized(y0, yl);
+    let (start, len) = axis.span();
+    (start as f32, (start + len) as f32)
 }
 
 /// The content extent (samples) of a piano-roll's notes and OSC events — the

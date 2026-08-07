@@ -20,15 +20,16 @@ use super::metrics::Metrics;
 use super::paint::{Color, Mesh};
 use super::ruler;
 use super::theme::Theme;
+use crate::viewport::{Axis, Unit};
 
 /// The 0..1 position of `value` in `[min, max]`, clamped. A degenerate range
 /// (min == max) maps to 0.
+///
+/// The value axis this expresses is a [`Axis::ranged`]; this stays as the
+/// `f32` door the drawing code calls, so a paint site keeps naming a range
+/// rather than building an axis per mark.
 pub fn fraction(value: f32, min: f32, max: f32) -> f32 {
-    if (max - min).abs() < f32::EPSILON {
-        0.0
-    } else {
-        ((value - min) / (max - min)).clamp(0.0, 1.0)
-    }
+    Axis::ranged(min as f64, max as f64, Unit::Norm).fraction_clamped(value as f64) as f32
 }
 
 /// Draws a vertical level meter: a framed field with a green column rising from
