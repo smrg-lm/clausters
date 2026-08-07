@@ -32,7 +32,7 @@ use super::ruler::{self, TimeUnit};
 use super::signal::{self, Presentation};
 use super::spectrum::SpectrumState;
 use super::theme::{Theme, with_alpha};
-use super::timeline::{GroupState, TimelineGroups, group_key};
+use super::timeline::{self, GroupState, TimelineGroups, group_key};
 use super::widget::{EditorProps, Rate, Ruler, RulerY, Widget, WidgetKind};
 use super::{
     BusSource, bpf, controls, live, meters, patch, phasescope, piano, pianoroll, plot, spectrum,
@@ -134,18 +134,24 @@ pub(crate) fn deinterleave(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
 }
 
 /// The body a timeline view draws into: its rect minus the time-ruler strip
-/// under it (when the x ruler is on) and the vertical-ruler strip to its left
-/// (when the y ruler is on) — each ruler gets its own space instead of
-/// overlaying the view.
-pub(crate) fn timeline_body(rect: Rect, editor: &EditorProps, metrics: &Metrics) -> Rect {
+/// under it (when the x ruler is on) and the gutter band to its left — each
+/// ruler gets its own space instead of overlaying the view.
+/// `indent` is the **group's** gutter, not this view's own `ruler_w`: a
+/// waveform sharing an axis with a lane or a roll starts its trace where they
+/// start their body, and draws its value ruler into the whole band.
+pub(crate) fn timeline_body(
+    rect: Rect,
+    editor: &EditorProps,
+    indent: f32,
+    metrics: &Metrics,
+) -> Rect {
     let (mut x, mut w, mut h) = (rect.x, rect.w, rect.h);
     if editor.ruler != Ruler::Off {
         h = (h - metrics.ruler_h).max(0.0);
     }
-    if editor.ruler_y != RulerY::Off {
-        x += metrics.ruler_w.min(w);
-        w = (w - metrics.ruler_w).max(0.0);
-    }
+    let indent = indent.min(w);
+    x += indent;
+    w = (w - indent).max(0.0);
     Rect::new(x, rect.y, w, h)
 }
 
@@ -675,11 +681,12 @@ fn draw_time_ruler(
 }
 
 /// The pixel domain a free-standing `timeruler` labels: its own rect, indented
-/// on the left by a lane's header width so the ticks line up with the clips of
-/// the lanes it is stacked with. Zero height, so [`draw_time_ruler`] lays the
-/// strip over the widget's whole box.
-pub(super) fn ruler_strip_body(rect: Rect, metrics: &Metrics) -> Rect {
-    let hw = metrics.header_w.min(rect.w);
+/// on the left by its **group's** gutter so the ticks line up with the bodies
+/// of whatever it is stacked with — a lane's clips, a roll's grid, a heavy
+/// view's trace. Zero height, so [`draw_time_ruler`] lays the strip over the
+/// widget's whole box.
+pub(super) fn ruler_strip_body(rect: Rect, indent: f32) -> Rect {
+    let hw = indent.min(rect.w);
     Rect::new(rect.x + hw, rect.y, (rect.w - hw).max(0.0), 0.0)
 }
 
@@ -708,12 +715,20 @@ fn draw_pianoroll_item(
     rate: f64,
     sample_clock: f64,
     cursor: Option<(f64, f64)>,
+    indent: f32,
     m: &Metrics,
     theme: &Theme,
 ) {
     let nav = &chrome.nav;
     let ruler_on = item.editor.ruler != Ruler::Off;
-    let r = pianoroll::regions(item.rect, ruler_on, item.osc_lane, item.velocity_lane, m);
+    let r = pianoroll::regions(
+        item.rect,
+        ruler_on,
+        item.osc_lane,
+        item.velocity_lane,
+        indent,
+        m,
+    );
     let (lo, hi) = pitch_window(item);
     pianoroll::draw_grid_background(mesh, r.grid, lo, hi, m, theme);
     pianoroll::draw_notes(
@@ -955,6 +970,17 @@ struct Collected {
     pianoroll_items: Vec<PianoRollItem>,
     nodetree_rects: Vec<NodeTreeItem>,
     canvas_frames: Vec<CanvasFrame>,
+    /// Where each navigation group's shared time axis begins inside a member's
+    /// rect — resolved once per frame from the placements, and read by every
+    /// pass that draws a body ([`timeline::placed_indents`]).
+    indents: HashMap<timeline::GroupKey, f32>,
+}
+
+impl Collected {
+    /// The indent of the group a timeline member belongs to.
+    fn indent_of(&self, id: i32, editor: &EditorProps) -> f32 {
+        timeline::indent_for(&self.indents, id, editor)
+    }
 }
 
 /// One immutable pass over the placed widgets: the flat widgets (labels,
@@ -1285,6 +1311,7 @@ fn collect_widgets(
         pianoroll_items,
         nodetree_rects,
         canvas_frames,
+        indents: timeline::placed_indents(placed),
     }
 }
 
@@ -1411,7 +1438,7 @@ fn draw_live_meshes(
 fn draw_timeline_meshes(
     mesh: &mut Mesh,
     over: &mut Mesh,
-    timeline_items: &[TimelineItem],
+    collected: &Collected,
     waveforms: &HashMap<i32, WaveformSlot>,
     spectrograms: &HashMap<i32, SpectrogramSlot>,
     inputs: &FrameInputs,
@@ -1422,11 +1449,16 @@ fn draw_timeline_meshes(
     // vertical-ruler strip go into the base mesh (under the GPU view); the
     // border, lane dividers, selection, playhead and cursor readout into the
     // overlay mesh (over it).
-    for item in timeline_items {
+    for item in &collected.timeline_items {
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let body = timeline_body(item.rect, &item.editor, m);
+        let body = timeline_body(
+            item.rect,
+            &item.editor,
+            collected.indent_of(item.id, &item.editor),
+            m,
+        );
         mesh.rect(body, th.view_field);
         match &item.kind {
             TimelineKind::Waveform { overlay: overlaid } => {
@@ -1545,6 +1577,10 @@ fn draw_static_meshes(
     tree: &Widget,
 ) {
     let m = inputs.metrics;
+    // Where the shared time axis begins, per navigation group: a lane, a roll
+    // and a free-standing ruler on one axis agree on it, whatever gutter each
+    // would have reserved alone (see `timeline::group_indents`).
+    let indent_of = |id: i32, editor: &EditorProps| collected.indent_of(id, editor);
     // Static plots draw from their (already mapped) samples; node trees draw from
     // the model last read off the client leg. Both are pure mesh work with the
     // host-tree borrow already released.
@@ -1608,10 +1644,10 @@ fn draw_static_meshes(
         } else {
             inputs.sample_rate
         };
-        // The strip is indented by a lane's header width, so its ticks stand
-        // over the samples they label when it is stacked with the lanes -- the
-        // whole point of a ruler that is not inside one.
-        let body = ruler_strip_body(item.rect, m);
+        // The strip is indented by its **group's** gutter, so its ticks stand
+        // over the samples they label whatever it is stacked with -- the whole
+        // point of a ruler that is not inside one.
+        let body = ruler_strip_body(item.rect, indent_of(item.id, &item.editor));
         draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, m, th);
     }
     if !collected.track_items.is_empty() {
@@ -1626,6 +1662,7 @@ fn draw_static_meshes(
             let chrome = chrome_for(inputs, item.id, &item.editor, || full);
             let nav = chrome.nav;
             let ruler_on = item.editor.ruler != Ruler::Off;
+            let indent = indent_of(item.id, &item.editor);
             track::draw(
                 &mut *mesh,
                 item.rect,
@@ -1633,10 +1670,11 @@ fn draw_static_meshes(
                 item.label.as_deref(),
                 &item.clips,
                 ruler_on,
+                indent,
                 m,
                 th,
             );
-            let body = track::lane_body(item.rect, ruler_on, m);
+            let body = track::lane_body(item.rect, ruler_on, indent, m);
             // The lane's own time ruler, in the strip the lane body reserved —
             // the same tick math the timeline views use, over the shared axis.
             if ruler_on {
@@ -1688,6 +1726,7 @@ fn draw_static_meshes(
             rate,
             inputs.sample_clock,
             inputs.cursor,
+            indent_of(item.id, &item.editor),
             m,
             th,
         );
@@ -1735,7 +1774,7 @@ pub(crate) fn render(
     draw_timeline_meshes(
         &mut mesh,
         &mut over,
-        &collected.timeline_items,
+        &collected,
         waveforms,
         spectrograms,
         inputs,
@@ -1748,7 +1787,12 @@ pub(crate) fn render(
     painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);
     overlay.upload(&gpu.device, &gpu.queue, &over, fb_w, fb_h);
     for item in &collected.timeline_items {
-        let body = timeline_body(item.rect, &item.editor, m);
+        let body = timeline_body(
+            item.rect,
+            &item.editor,
+            collected.indent_of(item.id, &item.editor),
+            m,
+        );
         match &item.kind {
             TimelineKind::Waveform { .. } => {
                 if let Some(slot) = waveforms.get_mut(&item.id) {
@@ -1854,7 +1898,12 @@ pub(crate) fn render(
         });
         painter.draw(&mut pass);
         for item in &collected.timeline_items {
-            let body = timeline_body(item.rect, &item.editor, m);
+            let body = timeline_body(
+                item.rect,
+                &item.editor,
+                collected.indent_of(item.id, &item.editor),
+                m,
+            );
             if body.w < 1.0 || body.h < 1.0 {
                 continue;
             }
@@ -1991,28 +2040,30 @@ mod tests {
     }
 
     #[test]
-    fn timeline_body_reserves_the_ruler_strips() {
+    fn timeline_body_reserves_the_ruler_strip_and_the_group_gutter() {
         let rect = Rect::new(10.0, 10.0, 400.0, 200.0);
-        // Both rulers on: the body loses the bottom strip and the left strip.
-        let body = timeline_body(
-            rect,
-            &editor(Ruler::Time, RulerY::Norm),
-            &Metrics::default(),
-        );
-        assert_eq!(body.h, 200.0 - Metrics::default().ruler_h);
-        assert_eq!(body.x, 10.0 + Metrics::default().ruler_w);
-        assert_eq!(body.w, 400.0 - Metrics::default().ruler_w);
-        // Each ruler is independently optional.
-        let x_only = timeline_body(rect, &editor(Ruler::Time, RulerY::Off), &Metrics::default());
+        let m = Metrics::default();
+        // The x ruler takes the bottom strip; the gutter is the group's, so a
+        // view alone with its value ruler indents by that ruler's width.
+        let body = timeline_body(rect, &editor(Ruler::Time, RulerY::Norm), m.ruler_w, &m);
+        assert_eq!(body.h, 200.0 - m.ruler_h);
+        assert_eq!(body.x, 10.0 + m.ruler_w);
+        assert_eq!(body.w, 400.0 - m.ruler_w);
+        // Each is independently optional.
+        let x_only = timeline_body(rect, &editor(Ruler::Time, RulerY::Off), 0.0, &m);
         assert_eq!((x_only.x, x_only.w), (10.0, 400.0));
-        assert_eq!(x_only.h, 200.0 - Metrics::default().ruler_h);
-        let y_only = timeline_body(rect, &editor(Ruler::Off, RulerY::Hz), &Metrics::default());
+        assert_eq!(x_only.h, 200.0 - m.ruler_h);
+        let y_only = timeline_body(rect, &editor(Ruler::Off, RulerY::Hz), m.ruler_w, &m);
         assert_eq!(y_only.h, 200.0);
-        assert_eq!(y_only.x, 10.0 + Metrics::default().ruler_w);
+        assert_eq!(y_only.x, 10.0 + m.ruler_w);
         assert_eq!(
-            timeline_body(rect, &editor(Ruler::Off, RulerY::Off), &Metrics::default()),
+            timeline_body(rect, &editor(Ruler::Off, RulerY::Off), 0.0, &m),
             rect
         );
+        // Sharing an axis with a lane, the same view starts its trace where the
+        // lane starts its clips — the indent is the axis', not the widget's.
+        let shared = timeline_body(rect, &editor(Ruler::Off, RulerY::Norm), m.header_w, &m);
+        assert_eq!(shared.x, 10.0 + m.header_w);
     }
 
     #[test]

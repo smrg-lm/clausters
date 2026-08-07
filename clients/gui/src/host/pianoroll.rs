@@ -67,7 +67,10 @@ pub struct OscMark {
 
 // --- Layout ---------------------------------------------------------------
 
-/// The keyboard gutter width, device pixels.
+/// The keyboard gutter a roll asks for, device pixels — its *own* structural
+/// geometry. What it actually gets is its navigation group's shared indent
+/// (`super::timeline::group_indent`), which is this when the roll is alone on
+/// its axis and wider when it shares one with a lane.
 pub const KEYBOARD_W: f32 = 44.0;
 /// The velocity lane height, device pixels.
 pub const VELOCITY_H: f32 = 52.0;
@@ -92,8 +95,17 @@ pub struct Regions {
 
 /// Split a widget rect into its piano-roll regions. `osc`/`velocity` reserve
 /// their strips only when on; `ruler_on` reserves the bottom time strip.
-pub fn regions(rect: Rect, ruler_on: bool, osc_on: bool, vel_on: bool, m: &Metrics) -> Regions {
-    let kw = KEYBOARD_W.min(rect.w);
+/// `indent` is the group's shared gutter — the keyboard fills it, so the grid
+/// starts where every other member of the axis starts its body.
+pub fn regions(
+    rect: Rect,
+    ruler_on: bool,
+    osc_on: bool,
+    vel_on: bool,
+    indent: f32,
+    m: &Metrics,
+) -> Regions {
+    let kw = indent.min(rect.w);
     let rh = if ruler_on { m.ruler_h.min(rect.h) } else { 0.0 };
     let vh = if vel_on { VELOCITY_H } else { 0.0 };
     let oh = if osc_on { OSC_H } else { 0.0 };
@@ -784,12 +796,12 @@ mod tests {
     #[test]
     fn regions_reserve_only_enabled_strips() {
         let r = Rect::new(0.0, 0.0, 500.0, 400.0);
-        let full = regions(r, true, true, true, &Metrics::default());
+        let full = regions(r, true, true, true, KEYBOARD_W, &Metrics::default());
         assert_eq!(full.keyboard.w, KEYBOARD_W);
         assert!(full.ruler.h > 0.0 && full.osc.h == OSC_H && full.velocity.h == VELOCITY_H);
         // The grid takes what the strips leave.
         assert!((full.grid.h - (400.0 - full.ruler.h - OSC_H - VELOCITY_H)).abs() < 1e-3);
-        let bare = regions(r, false, false, false, &Metrics::default());
+        let bare = regions(r, false, false, false, KEYBOARD_W, &Metrics::default());
         assert_eq!(bare.ruler.h, 0.0);
         assert_eq!(bare.osc.h, 0.0);
         assert_eq!(bare.velocity.h, 0.0);

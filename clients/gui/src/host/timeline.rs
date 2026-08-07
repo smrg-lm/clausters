@@ -38,7 +38,9 @@ use serde_json::Value;
 
 use crate::viewport::View;
 
-use super::widget::{EditorProps, Widget};
+use super::layout::Rect;
+use super::metrics::Metrics;
+use super::widget::{EditorProps, RulerY, Widget, WidgetKind};
 use super::{Host, HostEffect};
 
 /// The navigation group a timeline widget belongs to.
@@ -145,6 +147,70 @@ impl GroupState {
         (self.playhead_loop_len > 0.0)
             .then_some((self.playhead_loop_start.max(0.0), self.playhead_loop_len))
     }
+}
+
+/// What a timeline member would reserve **left of its body** for chrome of its
+/// own: a lane's header, a piano-roll's keyboard gutter, a heavy view's value
+/// ruler. A `timeruler` asks for nothing — it has no chrome, it only labels
+/// whatever axis it follows.
+///
+/// This is the member's *wish*, not where its body actually begins: that is
+/// [`Host::group_indent`], the group's own. See it for why.
+pub(crate) fn own_gutter(kind: &WidgetKind, metrics: &Metrics) -> f32 {
+    match kind {
+        WidgetKind::Track { .. } => metrics.header_w,
+        WidgetKind::PianoRoll { .. } => super::pianoroll::KEYBOARD_W,
+        WidgetKind::Signal(el) if el.editor.ruler_y != RulerY::Off => metrics.ruler_w,
+        _ => 0.0,
+    }
+}
+
+/// The x offset, inside a member's own rect, where the shared time axis begins
+/// — and therefore where every member of the group draws its body.
+///
+/// It is the **widest** gutter any member of the group asks for, because the
+/// alternative is what the catalog did until now: each widget indented by its
+/// own idea of a gutter, so a lane, a roll and a ruler stacked on one axis
+/// started that axis at three different x and the same sample sat at three
+/// different pixels. The indent is a property of the axis, not of the widget
+/// beside it. A member whose own chrome is narrower than the shared indent
+/// simply draws it into the wider band.
+///
+/// A group with one member is its own gutter, which is why a solo view is
+/// exactly where it always was.
+/// The shared indent of every group in one laid-out window, over the
+/// **placements** rather than the tree: a placement carries the size table it
+/// was measured with (a member inside a zoomed workspace has its own), so the
+/// gutter a member asks for is read at the scale it is drawn at.
+///
+/// The renderer and the hit-test both call this, which is the point — a clip
+/// is dragged on the pixels it was drawn on.
+pub(crate) fn placed_indents(placed: &[super::layout::Placed]) -> HashMap<GroupKey, f32> {
+    let mut out = HashMap::new();
+    for p in placed {
+        if let (Some(id), Some(editor)) = (p.widget.id, p.widget.kind.editor()) {
+            let slot = out.entry(group_key(id, editor.link)).or_insert(0.0f32);
+            *slot = slot.max(own_gutter(&p.widget.kind, &p.metrics));
+        }
+    }
+    out
+}
+
+/// The indent of the group a placed member belongs to, from the map
+/// [`placed_indents`] built for its window.
+pub(crate) fn indent_for(indents: &HashMap<GroupKey, f32>, id: i32, editor: &EditorProps) -> f32 {
+    indents
+        .get(&group_key(id, editor.link))
+        .copied()
+        .unwrap_or(0.0)
+}
+
+/// The chrome band of a member: everything left of the shared body, full
+/// height. A lane draws its header here, a roll its keys, a heavy view its
+/// value ruler — each into the whole band, so the band's right edge (which is
+/// the axis' left edge) is the one they agree on.
+pub(crate) fn gutter_band(rect: Rect, indent: f32) -> Rect {
+    Rect::new(rect.x, rect.y, indent.min(rect.w), rect.h)
 }
 
 /// The host-owned store of every navigation group, plus the per-widget data
@@ -1534,5 +1600,67 @@ mod tests {
         }
         let (nav, total) = host.timeline_nav(10).unwrap();
         assert_eq!(nav.len, total as f64);
+    }
+}
+
+#[cfg(test)]
+mod indent_tests {
+    use super::*;
+    use crate::host::guidef::GuiNode;
+    use crate::host::layout::{self, Rect};
+
+    fn tree(json: &str) -> Widget {
+        Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap()
+    }
+
+    /// The bug this rule exists for: a lane, a piano-roll and a free-standing
+    /// ruler stacked on **one** navigation group used to start their bodies at
+    /// three different x — a lane's header, the roll's keyboard, the ruler's
+    /// copy of the lane's header — so the same sample sat at three places.
+    /// They agree now, on the widest gutter any of them asks for.
+    #[test]
+    fn one_group_starts_its_body_at_one_x() {
+        let root = tree(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"timeruler","link":7},
+                {"id":2,"type":"track","link":7},
+                {"id":3,"type":"pianoroll","link":7},
+                {"id":4,"type":"waveform","data":[0.0,1.0],"link":7}
+            ]}"#,
+        );
+        let m = Metrics::default();
+        let placed = layout::layout(Rect::new(0.0, 0.0, 800.0, 400.0), &root, &m);
+        let indents = placed_indents(&placed);
+        let shared = indents[&GroupKey::Link(7)];
+        // The widest wish wins, and every member takes it.
+        let widest = m.header_w.max(super::super::pianoroll::KEYBOARD_W);
+        assert_eq!(shared, widest);
+        for p in &placed {
+            if let (Some(id), Some(editor)) = (p.widget.id, p.widget.kind.editor()) {
+                assert_eq!(indent_for(&indents, id, editor), widest, "member {id}");
+            }
+        }
+    }
+
+    /// A group of one is its own gutter — which is why every view that was
+    /// alone on its axis is exactly where it always was.
+    #[test]
+    fn a_solo_member_keeps_its_own_gutter() {
+        let root = tree(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"track"},
+                {"id":2,"type":"waveform","data":[0.0,1.0]},
+                {"id":3,"type":"waveform","data":[0.0,1.0],"ruler_y":"off"}
+            ]}"#,
+        );
+        let m = Metrics::default();
+        let placed = layout::layout(Rect::new(0.0, 0.0, 800.0, 400.0), &root, &m);
+        let indents = placed_indents(&placed);
+        // A lane auto-links into its window's group (`link_lanes`), so its
+        // key is the root's, not its own.
+        assert_eq!(indents[&GroupKey::Link(1)], m.header_w);
+        assert_eq!(indents[&GroupKey::Solo(2)], m.ruler_w);
+        // No value ruler, no gutter: the trace fills the widget.
+        assert_eq!(indents[&GroupKey::Solo(3)], 0.0);
     }
 }

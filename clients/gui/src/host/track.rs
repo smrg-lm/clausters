@@ -29,6 +29,7 @@ use super::signal::{
     trace::{Trace, TraceStyle},
 };
 use super::theme::Theme;
+use super::timeline;
 use super::widget::{Widget, WidgetKind};
 use crate::viewport::View;
 use crate::waveform::WaveformData;
@@ -91,13 +92,17 @@ pub fn window_nav(tree: &Widget) -> View {
     View::full(clips_span(tree).ceil().max(1.0) as usize)
 }
 
-/// The lane body of a track's `rect`: the part right of the header strip, and
+/// The lane body of a track's `rect`: the part right of the header band, and
 /// above the time-ruler strip when the lane draws one (`ruler`). The renderer
 /// and the hit-test both call this, so a clip occupies the same pixels either
 /// way — pass the same flag (a lane with `Ruler::Off` reserves no strip, which
 /// is the un-rulered default).
-pub fn lane_body(rect: Rect, ruler: bool, m: &Metrics) -> Rect {
-    let hw = m.header_w.min(rect.w);
+///
+/// `indent` is the **group's**, not the lane's own header width (see
+/// [`super::timeline::group_indent`]): a lane sharing an axis with a roll or a
+/// ruler starts its body where they all do.
+pub fn lane_body(rect: Rect, ruler: bool, indent: f32, m: &Metrics) -> Rect {
+    let hw = indent.min(rect.w);
     let rh = if ruler { m.ruler_h.min(rect.h) } else { 0.0 };
     Rect::new(
         rect.x + hw,
@@ -192,11 +197,13 @@ pub fn draw(
     label: Option<&str>,
     clips: &[ClipDraw],
     ruler: bool,
+    indent: f32,
     m: &Metrics,
     theme: &Theme,
 ) {
-    // Header strip on the left, naming the track.
-    let header = Rect::new(rect.x, rect.y, m.header_w.min(rect.w), rect.h);
+    // The header band on the left, naming the track — the group's indent, so
+    // every member of the axis starts its body at the same x.
+    let header = timeline::gutter_band(rect, indent);
     mesh.rect(header, theme.header);
     if let Some(t) = label {
         font::text(
@@ -208,7 +215,7 @@ pub fn draw(
             theme.text,
         );
     }
-    let body = lane_body(rect, ruler, m);
+    let body = lane_body(rect, ruler, indent, m);
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
@@ -455,7 +462,12 @@ mod tests {
 
     #[test]
     fn lane_body_reserves_the_header_strip() {
-        let body = lane_body(lane(), false, &Metrics::default());
+        let body = lane_body(
+            lane(),
+            false,
+            Metrics::default().header_w,
+            &Metrics::default(),
+        );
         assert_eq!(
             (body.x, body.w),
             (
@@ -472,7 +484,12 @@ mod tests {
 
     #[test]
     fn lane_body_reserves_the_ruler_strip_when_the_lane_has_one() {
-        let ruled = lane_body(lane(), true, &Metrics::default());
+        let ruled = lane_body(
+            lane(),
+            true,
+            Metrics::default().header_w,
+            &Metrics::default(),
+        );
         assert_eq!(ruled.h, lane().h - Metrics::default().ruler_h);
         // The header is unaffected: the strip comes off the bottom.
         assert_eq!(
@@ -486,7 +503,12 @@ mod tests {
 
     #[test]
     fn playhead_x_places_the_clock_on_the_shared_axis() {
-        let body = lane_body(lane(), false, &Metrics::default());
+        let body = lane_body(
+            lane(),
+            false,
+            Metrics::default().header_w,
+            &Metrics::default(),
+        );
         let nav = View::full(400);
         // Halfway through the timeline: halfway across the lane body.
         let x = playhead_x(body, &nav, 200.0).unwrap();
@@ -497,7 +519,12 @@ mod tests {
 
     #[test]
     fn clip_x_range_places_the_clip_by_offset_and_duration() {
-        let body = lane_body(lane(), false, &Metrics::default());
+        let body = lane_body(
+            lane(),
+            false,
+            Metrics::default().header_w,
+            &Metrics::default(),
+        );
         let nav = View::full(400); // 1 sample per pixel over the 404-wide body-ish
         // A clip at [100, 200): starts a quarter in, one-quarter wide.
         let (x0, x1) = clip_x_range(body, &nav, 100.0, 100.0).unwrap();
@@ -508,7 +535,12 @@ mod tests {
 
     #[test]
     fn clip_x_range_clips_to_the_body_and_drops_the_invisible() {
-        let body = lane_body(lane(), false, &Metrics::default());
+        let body = lane_body(
+            lane(),
+            false,
+            Metrics::default().header_w,
+            &Metrics::default(),
+        );
         let nav = View {
             start: 150.0,
             len: 100.0,
@@ -564,6 +596,7 @@ mod tests {
             Some("drums"),
             &clips,
             false,
+            Metrics::default().header_w,
             &Metrics::default(),
             &Theme::default(),
         );
@@ -601,13 +634,19 @@ mod tests {
             None,
             std::slice::from_ref(&clip),
             false,
+            Metrics::default().header_w,
             &Metrics::default(),
             &Theme::default(),
         );
         assert!(!m.is_empty(), "the take draws a body");
         // One min/max column per pixel of the clip rect, not one per sample: the
         // 100k-sample take costs the same as the lane is wide.
-        let body = lane_body(lane(), false, &Metrics::default());
+        let body = lane_body(
+            lane(),
+            false,
+            Metrics::default().header_w,
+            &Metrics::default(),
+        );
         let (x0, x1) = clip_x_range(body, &View::full(400), 0.0, 400.0).unwrap();
         let cols = (x1 - x0) as usize;
         let mut bare = Mesh::new();
@@ -621,6 +660,7 @@ mod tests {
                 ..clip.clone()
             }],
             false,
+            Metrics::default().header_w,
             &Metrics::default(),
             &Theme::default(),
         );
@@ -670,6 +710,7 @@ mod tests {
             None,
             std::slice::from_ref(&clip),
             false,
+            Metrics::default().header_w,
             &Metrics::default(),
             &Theme::default(),
         );
@@ -684,6 +725,7 @@ mod tests {
                 ..clip.clone()
             }],
             false,
+            Metrics::default().header_w,
             &Metrics::default(),
             &Theme::default(),
         );
@@ -695,7 +737,12 @@ mod tests {
 
     #[test]
     fn a_curve_point_is_hit_where_it_is_drawn_and_maps_back_through_the_axis() {
-        let body = lane_body(lane(), false, &Metrics::default());
+        let body = lane_body(
+            lane(),
+            false,
+            Metrics::default().header_w,
+            &Metrics::default(),
+        );
         let nav = View::full(400);
         // The clip sits at 100 on the axis, so its point at t=100 is at 200.
         let clip = ClipDraw {
@@ -737,7 +784,12 @@ mod tests {
         // The bug this pins: a partially visible clip must draw the *part of its
         // take that is on screen*, not squash the whole take into the visible
         // sliver — so a pixel maps back through the axis to the source.
-        let body = lane_body(lane(), false, &Metrics::default());
+        let body = lane_body(
+            lane(),
+            false,
+            Metrics::default().header_w,
+            &Metrics::default(),
+        );
         let clip = ClipDraw {
             offset: 0.0,
             dur: 400.0,
@@ -789,6 +841,7 @@ mod tests {
             None,
             std::slice::from_ref(&layered),
             false,
+            Metrics::default().header_w,
             &Metrics::default(),
             &Theme::default(),
         );
@@ -803,6 +856,7 @@ mod tests {
                 ..layered.clone()
             }],
             false,
+            Metrics::default().header_w,
             &Metrics::default(),
             &Theme::default(),
         );
@@ -813,7 +867,12 @@ mod tests {
 
         // The curve's points sit on the curve's range: its 200 Hz start is near the
         // bottom of the clip, not off the pitch axis.
-        let body = lane_body(lane(), false, &Metrics::default());
+        let body = lane_body(
+            lane(),
+            false,
+            Metrics::default().header_w,
+            &Metrics::default(),
+        );
         let nav = View::full(400);
         let (x0, x1) = clip_x_range(body, &nav, layered.offset, layered.dur).unwrap();
         let cr = clip_rect(body, x0, x1);
@@ -847,6 +906,7 @@ mod tests {
             None,
             std::slice::from_ref(&clip),
             false,
+            Metrics::default().header_w,
             &Metrics::default(),
             &Theme::default(),
         );
@@ -863,6 +923,7 @@ mod tests {
             None,
             std::slice::from_ref(&bare),
             false,
+            Metrics::default().header_w,
             &Metrics::default(),
             &Theme::default(),
         );

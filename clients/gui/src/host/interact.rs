@@ -14,6 +14,7 @@ use clausters_core::osc::OscType;
 use super::bpf;
 use super::layout::{self, Rect};
 use super::pianoroll;
+use super::timeline;
 use super::track;
 use super::widget::{GestureMap, ScrollView, Widget, WidgetKind};
 use super::{Host, controls};
@@ -207,6 +208,7 @@ fn chain_of(
     i: usize,
     lanes: &dyn Fn(i32, &WidgetKind) -> usize,
 ) -> Vec<Frame> {
+    let indents = timeline::placed_indents(placed);
     let mut chain = Vec::new();
     let mut at = Some(i);
     while let Some(j) = at {
@@ -215,7 +217,16 @@ fn chain_of(
             WidgetKind::Window { .. } | WidgetKind::Panel { .. } => Some(Coords::Layout),
             WidgetKind::Scroll { view, .. } => Some(Coords::Plane(*view)),
             WidgetKind::Patch { .. } => Some(Coords::Canvas),
-            _ if p.widget.is_timeline() => time_axis(host, def_id, &p, lanes).map(Coords::Time),
+            // Where the body begins is the **group's** call, not this widget's:
+            // every member of one axis starts it at the same x.
+            _ if p.widget.is_timeline() => {
+                let indent = p
+                    .widget
+                    .id
+                    .zip(p.widget.kind.editor())
+                    .map_or(0.0, |(id, e)| timeline::indent_for(&indents, id, e));
+                time_axis(host, def_id, &p, indent, lanes).map(Coords::Time)
+            }
             _ => None,
         };
         if let Some(coords) = coords {
@@ -241,6 +252,7 @@ fn time_axis(
     host: &Host,
     def_id: i32,
     p: &layout::Placed,
+    indent: f32,
     lanes: &dyn Fn(i32, &WidgetKind) -> usize,
 ) -> Option<TimeAxis> {
     let metrics = host.metrics_for(def_id);
@@ -248,9 +260,13 @@ fn time_axis(
     // The body samples map onto, whether the axis has a vertical gesture
     // surface, and the vertical axis' own window when it measures something.
     let (body, y_surface, window) = match &p.widget.kind {
-        WidgetKind::Track { .. } => (track::lane_body(p.rect, ruler_on, metrics), false, None),
+        WidgetKind::Track { .. } => (
+            track::lane_body(p.rect, ruler_on, indent, metrics),
+            false,
+            None,
+        ),
         WidgetKind::TimeRuler { .. } => {
-            (super::frame::ruler_strip_body(p.rect, metrics), false, None)
+            (super::frame::ruler_strip_body(p.rect, indent), false, None)
         }
         WidgetKind::PianoRoll {
             osc_lane,
@@ -262,8 +278,15 @@ fn time_axis(
         } => {
             let (lo, hi) = pitch_window(editor, *min, *max);
             (
-                super::pianoroll::regions(p.rect, ruler_on, *osc_lane, *velocity_lane, metrics)
-                    .grid,
+                super::pianoroll::regions(
+                    p.rect,
+                    ruler_on,
+                    *osc_lane,
+                    *velocity_lane,
+                    indent,
+                    metrics,
+                )
+                .grid,
                 // The keyboard gutter is the roll's vertical axis surface,
                 // always drawn (there is no `ruler_y: off` for a piano-roll).
                 true,
@@ -273,7 +296,7 @@ fn time_axis(
             )
         }
         kind => (
-            super::frame::timeline_body(p.rect, kind.editor()?, metrics),
+            super::frame::timeline_body(p.rect, kind.editor()?, indent, metrics),
             kind.editor()?.ruler_y != super::widget::RulerY::Off,
             None,
         ),
@@ -933,6 +956,9 @@ pub(crate) fn pianoroll_hit(
         ruler_on,
         *osc_lane,
         *velocity_lane,
+        // The band the hit already resolved: a roll's keyboard fills its
+        // group's indent, so the strip beside the grid *is* that indent.
+        axis.y.map_or(0.0, |y| y.strip.w),
         host.metrics_for(def_id),
     );
     let nav = axis.nav;
@@ -1399,7 +1425,12 @@ mod tests {
             .unwrap()
             .rect;
         (
-            track::lane_body(track_rect, false, host.metrics_for(1)),
+            track::lane_body(
+                track_rect,
+                false,
+                host.metrics_for(1).header_w,
+                host.metrics_for(1),
+            ),
             nav,
         )
     }
@@ -1640,7 +1671,14 @@ mod tests {
         .find(|p| matches!(p.widget.kind, WidgetKind::PianoRoll { .. }))
         .unwrap()
         .rect;
-        let r = pianoroll::regions(rect, true, false, true, host.metrics_for(1));
+        let r = pianoroll::regions(
+            rect,
+            true,
+            false,
+            true,
+            pianoroll::KEYBOARD_W,
+            host.metrics_for(1),
+        );
         let cy = pianoroll::pitch_to_y(60.0, 48.0, 72.0, r.grid) as f64;
         let cx = (r.grid.x + r.grid.w * 0.5) as f64;
 
