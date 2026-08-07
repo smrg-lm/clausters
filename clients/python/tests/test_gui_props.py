@@ -35,6 +35,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 GUIDEF_TS = ROOT / "clients/web/src/gui/guidef.ts"
 WIDGET_DIR = ROOT / "clients/gui/src/host/widget"
+#: The signal element's model — where the six wire names it presets are listed.
+SIGNAL_MOD = ROOT / "clients/gui/src/host/signal/mod.rs"
 MANIFEST = ROOT / "docs/gui-props.md"
 
 sys.path.insert(0, str(ROOT / "clients/python"))
@@ -197,6 +199,10 @@ def _helper_keys() -> dict:
         while end < len(lines) and lines[end] != closer:
             end += 1
         body = "\n".join(lines[i:end])
+        # `Self::other(...)` inside an inherent method is a call to this type's
+        # own helper, and the resolver below keys those as `Type::method`.
+        if impl_type and indent:
+            body = body.replace("Self::", f"{impl_type}::")
         name = fm.group(1)
         # An inherent method is keyed only as `Type::method`: several types have
         # a `parse`, and a bare `parse` would both collide between them and be
@@ -204,9 +210,11 @@ def _helper_keys() -> dict:
         bodies[f"{impl_type}::{name}" if impl_type and indent else name] = body
 
     direct = {n: _literal_keys(b) for n, b in bodies.items()}
-    # `apply` implementations declare their keys as match arms, not as reads.
+    # `apply` implementations declare their keys as match arms, not as reads —
+    # `WidgetKind::apply` itself and the per-family helpers it delegates to
+    # (`apply_signal`).
     for name, body in bodies.items():
-        if name.endswith("apply"):
+        if "apply" in name:
             direct[name] |= _match_arm_keys(body)
 
     # Resolve one helper calling another, to a fixed point.
@@ -267,6 +275,23 @@ def generic_props() -> set:
     return keys - NOT_A_PROP
 
 
+def signal_presets() -> list:
+    """The wire names `host::signal::preset` answers to.
+
+    `waveform`, `plot`, `scope`, `spectrum`, `spectrogram` and `phasescope` are
+    six **presets of one element**, so the schema parses them in a single
+    guarded arm (`name if signal::preset(name).is_some()`) rather than six named
+    ones. The names therefore live in the preset table, not in the wire pass —
+    which is exactly the place to read them from, since a seventh preset would
+    otherwise reach the wire with nothing checking its props.
+    """
+    table = SIGNAL_MOD.read_text()
+    body = table.split("pub fn preset(", 1)[1]
+    names = re.findall(r'^\s{8}"([a-z]+)" =>', body, re.M)
+    assert len(names) >= 6, f"the preset table stopped listing its names: {names}"
+    return names
+
+
 def host_props() -> dict:
     """``{widget kind: {prop}}`` from the schema's construction and set passes."""
     helpers = _helper_keys()
@@ -281,7 +306,7 @@ def host_props() -> dict:
         return keys
 
     out = {}
-    # Construction: `"waveform" | "wave" => WidgetKind::Waveform { … }`.
+    # Construction: `"panel" | "box" => WidgetKind::Panel { … }`.
     variant_of = {}
     for m, body in _arms(build, r'\s{8}("[a-z]+"(?:\s*\|\s*"[a-z]+")*)\s*=>'):
         kinds = re.findall(r'"([a-z]+)"', m.group(1))
@@ -292,6 +317,16 @@ def host_props() -> dict:
             out[kind] |= keys
             if variant:
                 variant_of.setdefault(variant.group(1), []).append(kind)
+
+    # ...and the one **guarded** arm: the signal element's six presets share
+    # `build_signal`, so they share its props, and the names come from the
+    # preset table itself.
+    for m, body in _arms(build, r"\s{8}name if signal::preset"):
+        keys = keys_in(body)
+        for kind in signal_presets():
+            out.setdefault(kind, set())
+            out[kind] |= keys
+            variant_of.setdefault("Signal", []).append(kind)
 
     # Mutation: `WidgetKind::Waveform { … } => match key { … }`.
     for m, body in _arms(apply, r"\s{8}WidgetKind::(\w+)"):

@@ -80,8 +80,11 @@ def test_a_musical_quant_becomes_the_lanes_drag_grid():
 def test_each_root_member_becomes_a_lane_named_after_its_material():
     tree = editor().draw()
     assert [lane["label"] for lane in lanes(tree)] == ["audio", "lead"]
-    # The bottom lane rules the shared axis (one ruler under the stack).
-    assert lanes(tree)[-1]["ruler"] == "beats"
+    # The shared axis is ruled by a free-standing strip under the stack, not by
+    # the bottom lane's own `ruler` - which would be reserved out of that lane's
+    # height, costing it a strip of itself.
+    assert [c["type"] for c in tree["children"]][-1] == "timeruler"
+    assert all("ruler" not in lane for lane in lanes(tree))
     assert "ruler" not in lanes(tree)[0]
 
 
@@ -603,9 +606,11 @@ def test_a_logical_group_among_concrete_lanes_draws_as_a_patch_lane():
     tree = Editor(root, sample_rate=SR, tempo=TEMPO).draw()
     kinds = [c["type"] for c in tree["children"]]
     assert "track" in kinds and "scroll" in kinds
-    # The ruler rides the bottom *track* lane, never the graph.
-    tracks = [c for c in tree["children"] if c["type"] == "track"]
-    assert tracks[-1].get("ruler") == "beats"
+    # The ruler is its own strip under the stack; a patch lane has no time axis,
+    # so a window that drew *only* one gets no ruler at all.
+    assert kinds[-1] == "timeruler"
+    assert [c["type"] for c in Editor(fx_chain(), sample_rate=SR).draw()["children"]] \
+        == ["scroll"]
 
 
 def test_a_wire_edit_rewrites_the_members_controls_onto_a_shared_bus():

@@ -74,8 +74,6 @@ measured, so a row that becomes half-true fails rather than rotting.
 
 | widget | prop | surfaces | verdict |
 |---|---|---|---|
-| `plot` | `buffer` | web | **gap** — the web builder's `plot` takes `SourceOptions`, which carries the two bulk sources; the host's `plot` reads neither, so the option lands nowhere. Either the host grows them (the heavy views have them) or the option type stops claiming them |
-| `plot` | `cache` | web | **gap** — as above |
 | `timeruler` | `playhead` | host web | **idiom** — a ruler draws an axis and nothing else: it parses the whole chrome only because it shares the host's `EditorProps` bundle, and the frame pass gives it a ruler strip with no playhead, selection or vertical window. The web client declares that bundle once (`TimelineOptions`) and so offers the inert members too; the Python builder names props widget by widget and names only the ones the ruler acts on (`ruler`, `tempo`, `beat_at`, `quant`, `sample_rate`, `link`) |
 | `timeruler` | `playhead_at` | host web | **idiom** — as above |
 | `timeruler` | `playhead_loop_len` | host web | **idiom** — as above |
@@ -100,14 +98,10 @@ some of them. That is closed: `waveform`, `spectrogram`, `pianoroll`, `track`
 and `score` name the whole chrome they act on, and the web client gained the
 `log_freq` alias and `score`'s loop region in the same pass.
 
-What is left is two kinds of row, and neither is work:
+What is left is one kind of row, and it is not work:
 
 - **Twelve `idiom` rows on `timeruler` and `track`** — props the host parses
   for those two only because both embed the shared `EditorProps` bundle, and
   then draws nothing with. The web client declares the bundle once and inherits
   them; Python names them per widget and does not. Naming an inert prop is
   worse than not naming it, so this asymmetry is the correct one.
-- **`plot`'s `buffer` and `cache`** — the one direction that still points the
-  other way: the web client offers two options the host does not read. That is
-  the more urgent kind, because a script that passes them gets no error and no
-  effect.

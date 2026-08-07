@@ -741,7 +741,8 @@ def _flat_osc(osc) -> list:
 
 
 def plot(*, data=None, blob: int | None = None,
-                 path: str | None = None, channels: int | None = None, view: str | None = None,
+                 path: str | None = None, cache: str | None = None,
+                 buffer: int | None = None, channels: int | None = None, view: str | None = None,
                  overlay: bool | None = None, sample_rate: float | None = None,
                  min: float | None = None, max: float | None = None, ruler: str | None = None,
                  ruler_y: str | None = None, fft_size: int | None = None,
@@ -757,6 +758,10 @@ def plot(*, data=None, blob: int | None = None,
       an NRT render written out) the host memory-maps; the **bulk path**, no
       OSC. ``channels`` (default 1) de-interleaves it — **every** channel is
       drawn, as stacked lanes or as ``overlay=True`` per-color traces.
+    - ``cache`` — a peaks cache written beside the take, and ``buffer`` — a
+      server buffer the host fetches over its own leg. The same two sources the
+      `waveform` reads: a plot and a waveform are one element seen with and
+      without navigation, so they take the same sources.
     - ``data`` — a small list of floats inline in the JSON;
     - ``blob`` — the index of a binary blob carried beside the JSON (see
       `samples_to_blob` and `GuiHost.define`).
@@ -787,7 +792,8 @@ def plot(*, data=None, blob: int | None = None,
     the bin's frequency (per the scale) and level in dB on the spectrum view.
     """
     extra = _drop_none(data=list(data) if data is not None else None,
-                       blob=blob, path=path, channels=channels, view=view,
+                       blob=blob, path=path, cache=cache, buffer=buffer,
+                       channels=channels, view=view,
                        sample_rate=sample_rate, min=min, max=max,
                        ruler=ruler, ruler_y=ruler_y, fft_size=fft_size,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
