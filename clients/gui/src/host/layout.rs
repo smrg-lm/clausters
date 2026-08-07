@@ -178,6 +178,11 @@ pub struct Placed<'a> {
     /// layout measured it with, so a zoomed widget's parts keep their
     /// proportions instead of growing only where text is involved.
     pub metrics: Metrics,
+    /// The index of this widget's container in the returned vector, `None` for
+    /// the root. The pass emits parent-before-child, so an ancestry is walked
+    /// back from any placement without searching the tree for it: it is the
+    /// containment the layout already knows, kept instead of thrown away.
+    pub parent: Option<usize>,
     pub widget: &'a Widget,
 }
 
@@ -189,23 +194,35 @@ pub struct Placed<'a> {
 /// ([`Host::metrics_for`](super::Host::metrics_for)), not the logical one.
 pub fn layout<'a>(area: Rect, root: &'a Widget, metrics: &Metrics) -> Vec<Placed<'a>> {
     let mut out = Vec::new();
-    place(area, root, None, Space::window(metrics), metrics, &mut out);
+    place(
+        area,
+        root,
+        None,
+        Space::window(metrics),
+        metrics,
+        None,
+        &mut out,
+    );
     out
 }
 
+#[allow(clippy::too_many_arguments)] // one recursion's state, all by value
 fn place<'a>(
     area: Rect,
     widget: &'a Widget,
     clip: Option<Rect>,
     space: Space,
     metrics: &Metrics,
+    parent: Option<usize>,
     out: &mut Vec<Placed<'a>>,
 ) {
+    let me = out.len();
     out.push(Placed {
         rect: area,
         clip,
         scale: space.unit,
         metrics: space.metrics,
+        parent,
         widget,
     });
     let (layout, flow) = match widget.kind {
@@ -213,7 +230,7 @@ fn place<'a>(
             (layout, flow)
         }
         WidgetKind::Scroll { .. } => {
-            return place_scrolled(area, widget, clip, space, metrics, out);
+            return place_scrolled(area, widget, clip, space, metrics, me, out);
         }
         _ => return, // leaves have no children to place
     };
@@ -225,7 +242,7 @@ fn place<'a>(
         flow,
         space,
     )) {
-        place(rect, child, clip, space, metrics, out);
+        place(rect, child, clip, space, metrics, Some(me), out);
     }
 }
 
@@ -250,12 +267,14 @@ fn margin(flow: Flow, space: Space) -> f32 {
 /// The plane's own coordinates are **content units** ([`Space::plane`]): its
 /// content extent, its pan and its children's declared positions are the units
 /// the gesture machine pans in, not the window's logical ones.
+#[allow(clippy::too_many_arguments)] // one recursion's state, all by value
 fn place_scrolled<'a>(
     area: Rect,
     widget: &'a Widget,
     clip: Option<Rect>,
     space: Space,
     metrics: &Metrics,
+    me: usize,
     out: &mut Vec<Placed<'a>>,
 ) {
     let WidgetKind::Scroll { layout, flow, view } = widget.kind else {
@@ -285,7 +304,7 @@ fn place_scrolled<'a>(
             (r.w as f64 * zoom) as f32,
             (r.h as f64 * zoom) as f32,
         );
-        place(rect, child, clip, inside, metrics, out);
+        place(rect, child, clip, inside, metrics, Some(me), out);
     }
 }
 

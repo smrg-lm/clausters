@@ -19,7 +19,7 @@ use std::collections::HashMap;
 
 use clausters_core::osc::OscType;
 
-use super::interact::{self, slider_t, value_of};
+use super::interact::{self, Hit, slider_t, value_of};
 use super::layout::Rect;
 use super::widget::{Axis, Ruler, RulerY, ScrollView, Widget, WidgetKind};
 use super::{Host, bpf, controls, frame, patch, piano, pianoroll, scroll, track};
@@ -526,7 +526,14 @@ impl Gestures {
         grab: &mut dyn FnMut() -> bool,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
-        let Some((id, rect, scale, kind)) = hit(host, ctx, cx, cy) else {
+        let Some(Hit {
+            id,
+            rect,
+            scale,
+            kind,
+            chain,
+        }) = hit(host, ctx, cx, cy)
+        else {
             // A press on empty space drops the text focus (the caret disappears).
             if let Some(old) = host.clear_text_focus() {
                 out.push(GestureEffect::Redraw(old));
@@ -990,8 +997,7 @@ impl Gestures {
         // `scroll` itself; one on a non-interactive child falls through here).
         if self.drag.is_none()
             && out.is_empty()
-            && let Some((sid, area)) = scroll_hit(host, ctx, cx, cy)
-            && let Some(view) = scroll_view(host, def_id, sid)
+            && let Some((sid, area, view)) = interact::plane_of(&chain)
         {
             self.drag = Some(Drag::ScrollPan {
                 id: sid,
@@ -1578,22 +1584,27 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
+        let Some(Hit {
+            id,
+            rect,
+            kind,
+            chain,
+            ..
+        }) = hit(host, ctx, cx, cy)
+        else {
+            return out;
+        };
         // The piano navigates its own MIDI range, not a timeline group: wheel
         // over the overview strip zooms the range (anchored at the cursor's
         // key), over the keys it pans by whole white keys. Both gated by `pan`.
-        if let Some((
-            id,
-            rect,
-            _,
-            WidgetKind::Piano {
-                min,
-                max,
-                pan,
-                overview,
-                ref label,
-                ..
-            },
-        )) = hit(host, ctx, cx, cy)
+        if let WidgetKind::Piano {
+            min,
+            max,
+            pan,
+            overview,
+            ref label,
+            ..
+        } = kind
         {
             if pan {
                 let l = piano::layout(
@@ -1615,9 +1626,7 @@ impl Gestures {
             }
             return out;
         }
-        if let Some((id, rect, _, kind)) = hit(host, ctx, cx, cy)
-            && let Some(editor) = kind.editor()
-        {
+        if let Some(editor) = kind.editor() {
             let factor = 0.85f64.powf(steps);
             // The piano-roll's vertical axis is the keyboard gutter, not a
             // y-ruler strip: wheel over it zooms the pitch window, wheel
@@ -1690,9 +1699,7 @@ impl Gestures {
         // with zoom disabled it pans along the axis instead (Shift pans x in
         // a two-axis workspace) — the plain scroll view's wheel. A widget
         // with its own wheel (a timeline view, a piano) won above.
-        if let Some((id, area)) = scroll_hit(host, ctx, cx, cy)
-            && let Some(view) = scroll_view(host, def_id, id)
-        {
+        if let Some((id, area, view)) = interact::plane_of(&chain) {
             let zoom = view.zoom(host.metrics_for(def_id));
             let next = if view.zoom_enabled {
                 let factor = 0.85f64.powf(-steps); // wheel up zooms in
@@ -2133,7 +2140,11 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
-        let Some((id, _rect, _, WidgetKind::PianoRoll { snap, .. })) = hit(host, ctx, cx, cy)
+        let Some(Hit {
+            id,
+            kind: WidgetKind::PianoRoll { snap, .. },
+            ..
+        }) = hit(host, ctx, cx, cy)
         else {
             return out;
         };
@@ -2164,7 +2175,12 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
-        let Some((id, _rect, _, WidgetKind::PianoRoll { .. })) = hit(host, ctx, cx, cy) else {
+        let Some(Hit {
+            id,
+            kind: WidgetKind::PianoRoll { .. },
+            ..
+        }) = hit(host, ctx, cx, cy)
+        else {
             return out;
         };
         let copied = interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
@@ -2208,7 +2224,12 @@ impl Gestures {
         let Some(h) = interact::pianoroll_hit(host, def_id, ctx.fb_w, ctx.fb_h, cx, cy) else {
             return out;
         };
-        let Some((id, _rect, _, WidgetKind::PianoRoll { .. })) = hit(host, ctx, cx, cy) else {
+        let Some(Hit {
+            id,
+            kind: WidgetKind::PianoRoll { .. },
+            ..
+        }) = hit(host, ctx, cx, cy)
+        else {
             return out;
         };
         let nav = View {
@@ -2237,7 +2258,12 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
-        let Some((id, _rect, _, WidgetKind::PianoRoll { .. })) = hit(host, ctx, cx, cy) else {
+        let Some(Hit {
+            id,
+            kind: WidgetKind::PianoRoll { .. },
+            ..
+        }) = hit(host, ctx, cx, cy)
+        else {
             return out;
         };
         let removed = interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
@@ -2290,18 +2316,14 @@ pub(crate) fn corner_rect(a: (f64, f64), b: (f64, f64)) -> Rect {
     Rect::new(x0 as f32, y0 as f32, (x1 - x0) as f32, (y1 - y0) as f32)
 }
 
-/// The deepest widget under `(x, y)`: its id, rect, workspace zoom and a
-/// clone of its kind.
-fn hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<(i32, Rect, f32, WidgetKind)> {
+/// The deepest widget under `(x, y)` and the containers over it.
+fn hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<Hit> {
     interact::hit(host, ctx.def_id, ctx.fb_w, ctx.fb_h, x, y)
 }
 
-/// The innermost `scroll` workspace under the cursor, if any.
-fn scroll_hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<(i32, Rect)> {
-    interact::scroll_at(host, ctx.def_id, ctx.fb_w, ctx.fb_h, x, y)
-}
-
-/// A `scroll` widget's current view state and configuration.
+/// A `scroll` widget's **current** view state and configuration. A drag reads
+/// it every step: the plane it is panning moves under it, so the chain's
+/// press-time snapshot would be one frame stale by the second step.
 fn scroll_view(host: &Host, def_id: i32, id: i32) -> Option<ScrollView> {
     match &host.window_def(def_id)?.find(id)?.kind {
         WidgetKind::Scroll { view, .. } => Some(*view),

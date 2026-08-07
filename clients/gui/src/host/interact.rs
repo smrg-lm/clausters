@@ -15,70 +15,126 @@ use super::bpf;
 use super::layout::{self, Rect};
 use super::pianoroll;
 use super::track;
-use super::widget::{Widget, WidgetKind};
+use super::widget::{ScrollView, Widget, WidgetKind};
 use super::{Host, controls};
 use crate::viewport::View;
 
-/// The deepest interactive widget under `(x, y)` in window `def_id`: its id, its
-/// laid-out rect, its accumulated workspace zoom ([`Placed::scale`], which the
-/// control hit-math shares with the drawing) and a clone of its kind. Containers
-/// (`window`/`panel`) are not hit targets — except `scroll`, whose empty area is
-/// the pan gesture's surface (its children, laid out through its view transform,
-/// still win over it). A widget scrolled out of its container's window (outside
-/// its clip) is not hit. `fb_w`/`fb_h` is the window's framebuffer size in
-/// device pixels.
+/// The coordinate system a container gives its contents.
+///
+/// A widget's geometry means nothing on its own: `x: 400` is a window pixel
+/// inside a `panel` and a content coordinate inside a `scroll`, and a clip's
+/// `offset` is a *sample* on its lane's time axis. The system is the
+/// container's property, not the child's, so it is named here once and read off
+/// the chain rather than re-derived by each gesture from the kind it happens to
+/// have hit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Coords {
+    /// Rows, columns and grids of the window's own pixels: `window`, `panel`.
+    Layout,
+    /// A pannable, zoomable plane in content units: `scroll`.
+    Plane(ScrollView),
+}
+
+/// One container over a hit, with the rectangle its coordinate system occupies
+/// on screen — the chain's link.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Frame {
+    /// The container's widget id, when it has one (a `/gui_set` target).
+    pub id: Option<i32>,
+    /// Where the container sits, in window pixels.
+    pub rect: Rect,
+    pub coords: Coords,
+}
+
+/// What a press, a wheel or a move landed on: the deepest interactive widget
+/// under the point, plus the **chain** of containers over it — outermost first,
+/// ending with the widget itself when it is one.
+///
+/// The chain is the point of doing this in one pass. A gesture needs more than
+/// the widget it hit: the plane to pan, the axis to zoom, the transform its
+/// coordinates mean something in. Each of those used to be a second search of
+/// the tree by id, which asks the layout to place the whole window again to
+/// recover containment the first pass already had.
+pub(crate) struct Hit {
+    pub id: i32,
+    pub rect: Rect,
+    /// The accumulated workspace zoom ([`Placed::scale`], which the control
+    /// hit-math shares with the drawing).
+    pub scale: f32,
+    pub kind: WidgetKind,
+    pub chain: Vec<Frame>,
+}
+
+/// The innermost plane in `chain`: its id, its rectangle and its view state.
+/// The wheel and the fall-through pan address the workspace itself, whether the
+/// point is over its empty area (the `scroll` is the hit) or over a child that
+/// consumed nothing (the `scroll` is over it).
+pub(crate) fn plane_of(chain: &[Frame]) -> Option<(i32, Rect, ScrollView)> {
+    chain.iter().rev().find_map(|f| match f.coords {
+        Coords::Plane(view) => Some((f.id?, f.rect, view)),
+        _ => None,
+    })
+}
+
+/// The [`Hit`] under `(x, y)` in window `def_id`. Containers (`window`/`panel`)
+/// are not hit targets — except `scroll`, whose empty area is the pan gesture's
+/// surface (its children, laid out through its view transform, still win over
+/// it). A widget scrolled out of its container's window (outside its clip) is
+/// not hit. `fb_w`/`fb_h` is the window's framebuffer size in device pixels.
 ///
 /// [`Placed::scale`]: super::layout::Placed::scale
-pub(crate) fn hit(
-    host: &Host,
-    def_id: i32,
-    fb_w: u32,
-    fb_h: u32,
-    x: f64,
-    y: f64,
-) -> Option<(i32, Rect, f32, WidgetKind)> {
+pub(crate) fn hit(host: &Host, def_id: i32, fb_w: u32, fb_h: u32, x: f64, y: f64) -> Option<Hit> {
     let tree = host.window_def(def_id)?;
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    let placed = layout::layout(area, tree, host.metrics_for(def_id));
     let mut found = None;
-    for p in layout::layout(area, tree, host.metrics_for(def_id)) {
+    for (i, p) in placed.iter().enumerate() {
         if p.rect.contains(x, y)
             && p.clip.is_none_or(|c| c.contains(x, y))
-            && let Some(id) = p.widget.id
+            && p.widget.id.is_some()
             && !matches!(
                 p.widget.kind,
                 WidgetKind::Window { .. } | WidgetKind::Panel { .. }
             )
         {
-            found = Some((id, p.rect, p.scale, p.widget.kind.clone()));
+            found = Some(i);
         }
     }
-    found
+    let i = found?;
+    let p = placed[i];
+    Some(Hit {
+        id: p.widget.id?,
+        rect: p.rect,
+        scale: p.scale,
+        kind: p.widget.kind.clone(),
+        chain: chain_of(&placed, i),
+    })
 }
 
-/// The innermost `scroll` container under `(x, y)`: its id and laid-out rect.
-/// The wheel and the empty-area pan drag address the workspace itself even
-/// when the cursor sits over a scrolled child that consumed nothing.
-pub(crate) fn scroll_at(
-    host: &Host,
-    def_id: i32,
-    fb_w: u32,
-    fb_h: u32,
-    x: f64,
-    y: f64,
-) -> Option<(i32, Rect)> {
-    let tree = host.window_def(def_id)?;
-    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    let mut found = None;
-    for p in layout::layout(area, tree, host.metrics_for(def_id)) {
-        if p.rect.contains(x, y)
-            && p.clip.is_none_or(|c| c.contains(x, y))
-            && matches!(p.widget.kind, WidgetKind::Scroll { .. })
-            && let Some(id) = p.widget.id
-        {
-            found = Some((id, p.rect));
+/// The containers from the window down to `i`, `i` itself included when it is
+/// one — walked back through [`Placed::parent`], which is the containment the
+/// layout pass already resolved.
+fn chain_of(placed: &[layout::Placed], i: usize) -> Vec<Frame> {
+    let mut chain = Vec::new();
+    let mut at = Some(i);
+    while let Some(j) = at {
+        let p = placed[j];
+        let coords = match p.widget.kind {
+            WidgetKind::Window { .. } | WidgetKind::Panel { .. } => Some(Coords::Layout),
+            WidgetKind::Scroll { view, .. } => Some(Coords::Plane(view)),
+            _ => None,
+        };
+        if let Some(coords) = coords {
+            chain.push(Frame {
+                id: p.widget.id,
+                rect: p.rect,
+                coords,
+            });
         }
+        at = p.parent;
     }
-    found
+    chain.reverse();
+    chain
 }
 
 /// Sets a `scroll`'s view state (clamped against its content in `area`),
@@ -1169,6 +1225,81 @@ mod tests {
             track::lane_body(track_rect, false, host.metrics_for(1)),
             nav,
         )
+    }
+
+    /// A window (id 1) holding a panel (id 2) with a knob (id 3), beside a
+    /// `scroll` workspace (id 4) whose child is a second scroll (id 5) with a
+    /// knob (id 6) in it — two planes, one nested in the other.
+    fn nested_host() -> Host {
+        let json = r#"{"type":"window","layout":"row","children":[
+            {"id":2,"type":"panel","children":[{"id":3,"type":"knob"}]},
+            {"id":4,"type":"scroll","children":[
+                {"id":5,"type":"scroll","children":[{"id":6,"type":"knob"}]}
+            ]}
+        ]}"#;
+        let mut host = Host::new();
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_DEF.into(),
+                args: vec![OscType::Int(1), OscType::String(json.into())],
+            }),
+            from(),
+        );
+        host
+    }
+
+    /// The chain is the containment the layout already resolved: outermost
+    /// first, the window included, every container over the hit and none that
+    /// is not over it.
+    #[test]
+    fn the_hit_carries_the_containers_over_it() {
+        let host = nested_host();
+        let (fb_w, fb_h) = (800, 400);
+        let at = |x: f64, y: f64| hit(&host, 1, fb_w, fb_h, x, y);
+        // The knob in the panel: window → panel, both layout containers, and
+        // no plane to pan.
+        let h = at(100.0, 50.0).unwrap();
+        assert_eq!(h.id, 3);
+        assert_eq!(
+            h.chain.iter().map(|f| f.id).collect::<Vec<_>>(),
+            vec![Some(1), Some(2)]
+        );
+        assert!(h.chain.iter().all(|f| f.coords == Coords::Layout));
+        assert!(plane_of(&h.chain).is_none(), "a panel is not a plane");
+        // The knob in the nested workspace: both planes are over it, and the
+        // **innermost** is the one a wheel or a pan addresses.
+        let h = at(600.0, 200.0).unwrap();
+        assert_eq!(h.id, 6);
+        assert_eq!(
+            h.chain.iter().map(|f| f.id).collect::<Vec<_>>(),
+            vec![Some(1), Some(4), Some(5)]
+        );
+        let (id, rect, _) = plane_of(&h.chain).unwrap();
+        assert_eq!(id, 5);
+        assert!(rect.contains(600.0, 200.0));
+    }
+
+    /// A press on a workspace's own empty area addresses that workspace: the
+    /// `scroll` is the hit, so the chain has to end with it rather than stop
+    /// at its parent.
+    #[test]
+    fn a_workspace_is_its_own_plane_when_the_press_lands_on_it() {
+        let json = r#"{"type":"window","children":[
+            {"id":4,"type":"scroll","layout":"free","children":[
+                {"id":6,"type":"knob","x":0.0,"y":0.0,"w":20.0,"h":20.0}
+            ]}
+        ]}"#;
+        let mut host = Host::new();
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_DEF.into(),
+                args: vec![OscType::Int(1), OscType::String(json.into())],
+            }),
+            from(),
+        );
+        let h = hit(&host, 1, 800, 400, 700.0, 380.0).unwrap();
+        assert_eq!(h.id, 4, "empty plane area hits the workspace itself");
+        assert_eq!(plane_of(&h.chain).map(|(id, ..)| id), Some(4));
     }
 
     #[test]
