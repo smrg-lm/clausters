@@ -86,7 +86,12 @@ fn bench(name: &str, iters: u32, mut f: impl FnMut()) -> f64 {
     mean
 }
 
+// A measurement, not an assertion about the code: an unoptimized build spends
+// its time somewhere else entirely, so the share it reports is meaningless and
+// the threshold below would fail for no reason. Run it deliberately:
+// `cargo test --release --test gpu_slot_cost -- --ignored --nocapture`.
 #[test]
+#[ignore = "timing: only meaningful under --release"]
 fn the_column_computation_dominates_the_per_frame_cost() {
     println!("\n{FRAMES} frames x {CHANNELS} ch, base_bucket {BASE_BUCKET}");
     let data = build_data();

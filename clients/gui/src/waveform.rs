@@ -29,7 +29,7 @@ use std::sync::Arc;
 
 use crate::peaks::{self, MultiPyramid, Pyramid};
 use crate::view::{Renderers, TimelineView};
-use crate::viewport::View;
+use crate::viewport::{Axis, Unit, View};
 
 /// At or below this many samples per pixel, draw the raw sample polyline rather
 /// than min/max columns.
@@ -499,10 +499,10 @@ impl WaveformRenderer {
 pub struct WaveformView {
     data: WaveformData,
     geometry: WaveformGeometry,
-    /// Visible window of the vertical display axis, normalized (`0, 1` =
-    /// no zoom) — the amplitude analogue of the spectrogram's frequency view.
-    amp_window: (f64, f64),
-    /// `amp_window.0` snapshot for absolute drag panning.
+    /// The vertical display axis: the visible slice of amplitude, normalized
+    /// (`0, 1` = no zoom).
+    amp: Axis,
+    /// The amplitude window's start, snapshotted for absolute drag panning.
     drag_amp_start: f64,
 }
 
@@ -511,7 +511,7 @@ impl WaveformView {
         Self {
             data,
             geometry: WaveformGeometry::new(device),
-            amp_window: (0.0, 1.0),
+            amp: Axis::normalized(Unit::Norm),
             drag_amp_start: 0.0,
         }
     }
@@ -524,7 +524,7 @@ impl WaveformView {
     /// Sets the visible vertical display window (normalized; clamped) — the
     /// live `y_start`/`y_len` props of the editor-grade widget.
     pub fn set_amp_window(&mut self, start: f64, len: f64) {
-        self.amp_window = crate::viewport::clamp_span(start, len);
+        self.amp.set_span(start, len);
     }
 
     /// Record one channel's draw (see [`WaveformRenderer::draw_channel`]).
@@ -563,7 +563,7 @@ impl TimelineView for WaveformView {
             &self.data,
             view,
             render_width_px,
-            self.amp_window,
+            self.amp.span(),
         );
     }
 
@@ -572,20 +572,19 @@ impl TimelineView for WaveformView {
     }
 
     fn on_vertical_zoom(&mut self, factor: f64, anchor: f64) -> bool {
-        let (start, len) = self.amp_window;
-        self.amp_window = crate::viewport::zoom_span(start, len, factor, anchor);
+        self.amp.zoom(factor, anchor);
         true
     }
 
     fn on_vertical_drag_begin(&mut self) {
-        self.drag_amp_start = self.amp_window.0;
+        self.drag_amp_start = self.amp.start();
     }
 
     fn on_vertical_drag(&mut self, total: f64) -> bool {
         // Dragging down (total > 0) moves the window down with the cursor.
         // Absolute from the snapshot.
-        let len = self.amp_window.1;
-        self.amp_window = crate::viewport::clamp_span(self.drag_amp_start + total * len, len);
+        self.amp
+            .set_start(self.drag_amp_start + total * self.amp.len());
         true
     }
 }

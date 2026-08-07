@@ -2699,7 +2699,9 @@ fn set_y_view(
     start: f64,
     len: f64,
 ) {
-    let (start, len) = crate::viewport::clamp_span(start, len);
+    let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
+    axis.set_span(start, len);
+    let (start, len) = axis.span();
     if let Some(editor) = host
         .window_def_mut(def_id)
         .and_then(|t| t.find_mut(id))
@@ -2738,7 +2740,10 @@ fn zoom_timeline_y(
     else {
         return;
     };
-    let (start, len) = crate::viewport::zoom_span(y0, ylen, factor, anchor);
+    let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
+    axis.set_span(y0, ylen);
+    axis.zoom(factor, anchor);
+    let (start, len) = axis.span();
     set_y_view(host, out, def_id, id, start, len);
 }
 

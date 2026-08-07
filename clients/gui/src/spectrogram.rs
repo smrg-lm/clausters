@@ -14,7 +14,7 @@ use std::sync::Arc;
 use clausters_core::{bytes, fft};
 
 use crate::view::{Renderers, TimelineView};
-use crate::viewport::View;
+use crate::viewport::{Axis, Unit, View};
 
 const MAGIC: &[u8; 4] = b"CLSG";
 const VERSION: u32 = 2;
@@ -443,15 +443,15 @@ impl SpectrogramRenderer {
 pub struct SpectrogramView {
     stft: Arc<Stft>,
     texture: SpectrogramTexture,
-    /// Visible frequency window, in display coordinates (reuses the navigation
-    /// `View` over `n_bins` so `start/n_bins` is the bottom of the axis).
-    freq_view: View,
+    /// The vertical display axis: the visible slice of the frequency display
+    /// coordinate, normalized (`0, 1` = the whole axis).
+    freq: Axis,
     scale: FreqScale,
     db_floor: f32,
     db_ceil: f32,
     /// 0 = viridis, 1 = magma, 2 = grayscale.
     colormap: u32,
-    /// `freq_view.start` snapshot for absolute drag panning.
+    /// The frequency window's start, snapshotted for absolute drag panning.
     drag_freq_start: f64,
 }
 
@@ -463,11 +463,10 @@ impl SpectrogramView {
         stft: Arc<Stft>,
     ) -> Self {
         let texture = SpectrogramTexture::new(device, queue, renderer, &stft);
-        let freq_view = View::full(stft.n_bins());
         Self {
             stft,
             texture,
-            freq_view,
+            freq: Axis::normalized(Unit::Hz),
             scale: FreqScale::Log,
             db_floor: -90.0,
             db_ceil: 0.0,
@@ -505,12 +504,7 @@ impl SpectrogramView {
     /// keeps the display-coordinate convention (scaled by `n_bins`), so the
     /// shader's display→bin mapping is untouched.
     pub fn set_freq_window(&mut self, start: f64, len: f64) {
-        let (start, len) = crate::viewport::clamp_span(start, len);
-        let nb = self.stft.n_bins().max(1) as f64;
-        self.freq_view = View {
-            start: start * nb,
-            len: len * nb,
-        };
+        self.freq.set_span(start, len);
     }
 
     /// Build the GPU uniforms from the current time `view` and display state.
@@ -523,9 +517,10 @@ impl SpectrogramView {
     fn uniforms(&self, view: &View) -> Uniforms {
         let (start, len) = self.stft.time_fraction(view);
 
-        let nb = self.stft.n_bins().max(1) as f64;
-        let d0 = (self.freq_view.start / nb) as f32;
-        let d1 = ((self.freq_view.start + self.freq_view.len) / nb) as f32;
+        let (d0, d1) = (
+            self.freq.start() as f32,
+            (self.freq.start() + self.freq.len()) as f32,
+        );
         // Bottom of the log axis (~20 Hz), normalized to Nyquist.
         let f_lo = (20.0 / self.stft.nyquist()).clamp(1e-5, 0.5);
 
@@ -587,19 +582,19 @@ impl TimelineView for SpectrogramView {
     }
 
     fn on_vertical_zoom(&mut self, factor: f64, anchor: f64) -> bool {
-        self.freq_view.zoom(factor, anchor, self.stft.n_bins());
+        self.freq.zoom(factor, anchor);
         true
     }
 
     fn on_vertical_drag_begin(&mut self) {
-        self.drag_freq_start = self.freq_view.start;
+        self.drag_freq_start = self.freq.start();
     }
 
     fn on_vertical_drag(&mut self, total: f64) -> bool {
         // Low frequency is at the bottom, so dragging down (total > 0) moves the
         // window down with the cursor. Absolute from the snapshot.
-        let start = self.drag_freq_start + total * self.freq_view.len;
-        self.freq_view.set_start(start, self.stft.n_bins());
+        self.freq
+            .set_start(self.drag_freq_start + total * self.freq.len());
         true
     }
 }

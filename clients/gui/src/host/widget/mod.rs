@@ -320,11 +320,9 @@ impl EditorProps {
     /// (`y_start` would clamp against the *old* `y_len` before the new one
     /// lands).
     pub fn y_view(&self) -> (f64, f64) {
-        if self.y_len <= 0.0 {
-            (0.0, 1.0)
-        } else {
-            crate::viewport::clamp_span(self.y_start, self.y_len)
-        }
+        let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
+        axis.set_span(self.y_start, self.y_len);
+        axis.span()
     }
 
     /// The selection as `(start, len)` in samples, if one is active.
