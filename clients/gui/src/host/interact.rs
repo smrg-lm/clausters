@@ -33,6 +33,11 @@ pub(crate) enum Coords {
     Layout,
     /// A pannable, zoomable plane in content units: `scroll`.
     Plane(ScrollView),
+    /// Time along x: a `track` lane, whose children are placed by *when* they
+    /// are. `body` is the rectangle its samples map onto — the lane minus the
+    /// header and the ruler strip, exactly what the renderer drew through —
+    /// and `nav` the window of the navigation group it is seen at.
+    Time { body: Rect, nav: View },
 }
 
 /// One container over a hit, with the rectangle its coordinate system occupies
@@ -76,6 +81,17 @@ pub(crate) fn plane_of(chain: &[Frame]) -> Option<(i32, Rect, ScrollView)> {
     })
 }
 
+/// The innermost time axis in `chain`: the lane's id, the body its samples map
+/// onto and the window it is seen through. Every gesture on a lane — locating,
+/// panning, grabbing a clip — measures against this one, so they cannot drift
+/// from each other or from the frame the renderer drew.
+pub(crate) fn time_of(chain: &[Frame]) -> Option<(i32, Rect, View)> {
+    chain.iter().rev().find_map(|f| match f.coords {
+        Coords::Time { body, nav } => Some((f.id?, body, nav)),
+        _ => None,
+    })
+}
+
 /// The [`Hit`] under `(x, y)` in window `def_id`. Containers (`window`/`panel`)
 /// are not hit targets — except `scroll`, whose empty area is the pan gesture's
 /// surface (its children, laid out through its view transform, still win over
@@ -107,21 +123,42 @@ pub(crate) fn hit(host: &Host, def_id: i32, fb_w: u32, fb_h: u32, x: f64, y: f64
         rect: p.rect,
         scale: p.scale,
         kind: p.widget.kind.clone(),
-        chain: chain_of(&placed, i),
+        chain: chain_of(host, def_id, &placed, i),
     })
 }
 
 /// The containers from the window down to `i`, `i` itself included when it is
 /// one — walked back through [`Placed::parent`], which is the containment the
 /// layout pass already resolved.
-fn chain_of(placed: &[layout::Placed], i: usize) -> Vec<Frame> {
+fn chain_of(host: &Host, def_id: i32, placed: &[layout::Placed], i: usize) -> Vec<Frame> {
     let mut chain = Vec::new();
     let mut at = Some(i);
     while let Some(j) = at {
         let p = placed[j];
-        let coords = match p.widget.kind {
+        let coords = match &p.widget.kind {
             WidgetKind::Window { .. } | WidgetKind::Panel { .. } => Some(Coords::Layout),
-            WidgetKind::Scroll { view, .. } => Some(Coords::Plane(view)),
+            WidgetKind::Scroll { view, .. } => Some(Coords::Plane(*view)),
+            WidgetKind::Track { editor, .. } => Some(Coords::Time {
+                // The body the renderer drew (its ruler strip reserved), seen
+                // through the lane's *group* window, so a zoomed or panned axis
+                // is grabbed where it looks.
+                body: track::lane_body(
+                    p.rect,
+                    editor.ruler != super::widget::Ruler::Off,
+                    host.metrics_for(def_id),
+                ),
+                nav: p
+                    .widget
+                    .id
+                    .and_then(|id| host.timeline_nav(id))
+                    .map_or_else(
+                        || {
+                            host.window_def(def_id)
+                                .map_or(View::full(1), track::window_nav)
+                        },
+                        |(nav, _total)| nav,
+                    ),
+            }),
             _ => None,
         };
         if let Some(coords) = coords {
@@ -563,81 +600,51 @@ pub(crate) struct ClipHit {
 /// The clip edge hit zone, device pixels.
 const CLIP_EDGE_PX: f32 = 6.0;
 
-/// The topmost `clip` under `(x, y)`, if the point is over a track's lane body
-/// (not its header) and inside a clip. Reconstructs the shared time axis
-/// ([`track::window_nav`]) so it hit-tests against the same geometry the
-/// renderer drew. Native-only, like the other edit-back gestures.
+/// The topmost `clip` under `(x, y)` on `lane` — its id, the body its samples
+/// map onto and the window they are seen through, all three taken off the hit's
+/// time axis ([`time_of`]), so the hit-test measures against the geometry the
+/// renderer drew rather than reconstructing it. `None` when the point is over
+/// the lane's header or ruler strip, or over no clip. Native-only, like the
+/// other edit-back gestures.
 pub(crate) fn clip_hit(
     host: &Host,
     def_id: i32,
-    fb_w: u32,
-    fb_h: u32,
+    lane: (i32, Rect, View),
     x: f64,
     y: f64,
 ) -> Option<ClipHit> {
-    let tree = host.window_def(def_id)?;
-    let full = track::window_nav(tree);
-    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    for p in layout::layout(area, tree, host.metrics_for(def_id)) {
-        let WidgetKind::Track { editor, .. } = &p.widget.kind else {
-            continue;
-        };
-        if !p.rect.contains(x, y) {
-            continue;
-        }
-        // The lane's *group* window — the same one the renderer drew through, so
-        // a zoomed or panned axis hit-tests where it looks.
-        let nav = p
-            .widget
-            .id
-            .and_then(|id| host.timeline_nav(id))
-            .map_or(full, |(nav, _total)| nav);
-        // The same body the renderer drew (its ruler strip reserved), so the
-        // pixels a clip occupies are the pixels it is grabbed by.
-        let body = track::lane_body(
-            p.rect,
-            editor.ruler != super::widget::Ruler::Off,
-            host.metrics_for(def_id),
-        );
-        if !body.contains(x, y) {
-            return None; // over the header or the ruler strip, not a clip
-        }
-        // Topmost clip wins: later children draw over earlier ones.
-        for c in p.widget.children.iter().rev() {
-            if let WidgetKind::Clip { offset, dur, .. } = c.kind
-                && let Some((x0, x1)) = track::clip_x_range(body, &nav, offset, dur)
-                && (x as f32) >= x0
-                && (x as f32) <= x1
-                && let Some(id) = c.id
-            {
-                let rect = track::clip_rect(body, x0, x1);
-                let point = track::clip_draw(c).and_then(|clip| {
-                    (!clip.points.is_empty())
-                        .then(|| {
-                            track::curve_hit(
-                                &clip,
-                                rect,
-                                body,
-                                &nav,
-                                x,
-                                y,
-                                host.metrics_for(def_id),
-                            )
-                        })
-                        .flatten()
-                });
-                return Some(ClipHit {
-                    id,
-                    lane: p.widget.id.unwrap_or(id),
-                    offset,
-                    dur,
-                    body,
-                    rect,
-                    nav,
-                    part: clip_part(x0, x1, x as f32),
-                    point,
-                });
-            }
+    let (lane_id, body, nav) = lane;
+    if !body.contains(x, y) {
+        return None; // over the header or the ruler strip, not a clip
+    }
+    let widget = host.window_def(def_id)?.find(lane_id)?;
+    // Topmost clip wins: later children draw over earlier ones.
+    for c in widget.children.iter().rev() {
+        if let WidgetKind::Clip { offset, dur, .. } = c.kind
+            && let Some((x0, x1)) = track::clip_x_range(body, &nav, offset, dur)
+            && (x as f32) >= x0
+            && (x as f32) <= x1
+            && let Some(id) = c.id
+        {
+            let rect = track::clip_rect(body, x0, x1);
+            let point = track::clip_draw(c).and_then(|clip| {
+                (!clip.points.is_empty())
+                    .then(|| {
+                        track::curve_hit(&clip, rect, body, &nav, x, y, host.metrics_for(def_id))
+                    })
+                    .flatten()
+            });
+            return Some(ClipHit {
+                id,
+                lane: lane_id,
+                offset,
+                dur,
+                body,
+                rect,
+                nav,
+                part: clip_part(x0, x1, x as f32),
+                point,
+            });
         }
     }
     None
@@ -748,85 +755,75 @@ fn pianoroll_span(notes: &[pianoroll::Note], osc: &[pianoroll::OscMark]) -> f64 
     span
 }
 
-/// Hit-test a press against the `pianoroll` under `(x, y)`, reconstructing the
-/// same regions and navigation window the renderer drew. Native-only, the
-/// edit-back gesture posture.
+/// Hit-test a press against the `pianoroll` `roll` — its id and the rectangle
+/// the hit placed it at — resolving the same regions and navigation window the
+/// renderer drew. Native-only, the edit-back gesture posture.
 pub(crate) fn pianoroll_hit(
     host: &Host,
     def_id: i32,
-    fb_w: u32,
-    fb_h: u32,
+    roll: (i32, Rect),
     x: f64,
     y: f64,
 ) -> Option<PianoRollHit> {
-    let tree = host.window_def(def_id)?;
-    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    for p in layout::layout(area, tree, host.metrics_for(def_id)) {
-        let WidgetKind::PianoRoll {
-            notes,
-            osc,
-            min,
-            max,
-            snap,
-            velocity_lane,
-            osc_lane,
-            editor,
-            ..
-        } = &p.widget.kind
-        else {
-            continue;
-        };
-        if !p.rect.contains(x, y) {
-            continue;
-        }
-        let id = p.widget.id?;
-        let ruler_on = editor.ruler != super::widget::Ruler::Off;
-        let r = pianoroll::regions(
-            p.rect,
-            ruler_on,
-            *osc_lane,
-            *velocity_lane,
-            host.metrics_for(def_id),
-        );
-        let nav = host
-            .timeline_nav(id)
-            .map(|(nav, _)| nav)
-            .unwrap_or_else(|| View::full(pianoroll_span(notes, osc).ceil().max(1.0) as usize));
-        let (lo, hi) = pitch_window(editor, *min, *max);
-        let (fx, fy) = (x as f32, y as f32);
-        let (region, note, osc_index) = if *osc_lane && r.osc.contains(x, y) {
-            (PrRegion::Osc, None, nearest_osc(r.osc, &nav, osc, fx))
-        } else if *velocity_lane && r.velocity.contains(x, y) {
-            // A velocity-lane press picks the note whose bar it is nearest; the
-            // hit rides in `note` as a body hit so the caller reads its index.
-            let picked =
-                nearest_note(r.velocity, &nav, notes, fx).map(|index| pianoroll::NoteHit {
-                    index,
-                    part: pianoroll::NotePart::Body,
-                });
-            (PrRegion::Velocity, picked, None)
-        } else {
-            let note = pianoroll::note_hit(r.grid, &nav, 0.0, notes, lo, hi, fx, fy);
-            (PrRegion::Grid, note, None)
-        };
-        let region_rect = match region {
-            PrRegion::Grid => r.grid,
-            PrRegion::Velocity => r.velocity,
-            PrRegion::Osc => r.osc,
-        };
-        return Some(PianoRollHit {
-            grid: r.grid,
-            region_rect,
-            nav,
-            lo,
-            hi,
-            snap: *snap,
-            region,
-            note,
-            osc_index,
+    let (id, rect) = roll;
+    let WidgetKind::PianoRoll {
+        notes,
+        osc,
+        min,
+        max,
+        snap,
+        velocity_lane,
+        osc_lane,
+        editor,
+        ..
+    } = &host.window_def(def_id)?.find(id)?.kind
+    else {
+        return None;
+    };
+    let ruler_on = editor.ruler != super::widget::Ruler::Off;
+    let r = pianoroll::regions(
+        rect,
+        ruler_on,
+        *osc_lane,
+        *velocity_lane,
+        host.metrics_for(def_id),
+    );
+    let nav = host
+        .timeline_nav(id)
+        .map(|(nav, _)| nav)
+        .unwrap_or_else(|| View::full(pianoroll_span(notes, osc).ceil().max(1.0) as usize));
+    let (lo, hi) = pitch_window(editor, *min, *max);
+    let (fx, fy) = (x as f32, y as f32);
+    let (region, note, osc_index) = if *osc_lane && r.osc.contains(x, y) {
+        (PrRegion::Osc, None, nearest_osc(r.osc, &nav, osc, fx))
+    } else if *velocity_lane && r.velocity.contains(x, y) {
+        // A velocity-lane press picks the note whose bar it is nearest; the
+        // hit rides in `note` as a body hit so the caller reads its index.
+        let picked = nearest_note(r.velocity, &nav, notes, fx).map(|index| pianoroll::NoteHit {
+            index,
+            part: pianoroll::NotePart::Body,
         });
-    }
-    None
+        (PrRegion::Velocity, picked, None)
+    } else {
+        let note = pianoroll::note_hit(r.grid, &nav, 0.0, notes, lo, hi, fx, fy);
+        (PrRegion::Grid, note, None)
+    };
+    let region_rect = match region {
+        PrRegion::Grid => r.grid,
+        PrRegion::Velocity => r.velocity,
+        PrRegion::Osc => r.osc,
+    };
+    Some(PianoRollHit {
+        grid: r.grid,
+        region_rect,
+        nav,
+        lo,
+        hi,
+        snap: *snap,
+        region,
+        note,
+        osc_index,
+    })
 }
 
 /// The index of the note whose start is nearest the cursor x (within a small
@@ -1350,23 +1347,68 @@ mod tests {
         let host = track_host();
         let (fb_w, fb_h) = (1000, 200);
         let (body, nav) = geometry(&host, fb_w, fb_h);
+        // The lane a press lands on, off its own hit chain — and it is the
+        // geometry computed above, which is what the renderer draws through.
+        let lane = |x: f64, y: f64| {
+            let h = hit(&host, 1, fb_w, fb_h, x, y).unwrap();
+            let lane = time_of(&h.chain).unwrap();
+            assert_eq!((lane.0, lane.1, lane.2), (5, body, nav));
+            lane
+        };
         let (ax0, ax1) = track::clip_x_range(body, &nav, 0.0, 400.0).unwrap();
         let midy = (body.y + body.h / 2.0) as f64;
 
         // The body of clip A → a move on id 10.
-        let h = clip_hit(&host, 1, fb_w, fb_h, ((ax0 + ax1) / 2.0) as f64, midy).unwrap();
+        let h = clip_hit(
+            &host,
+            1,
+            lane(((ax0 + ax1) / 2.0) as f64, midy),
+            ((ax0 + ax1) / 2.0) as f64,
+            midy,
+        )
+        .unwrap();
         assert_eq!((h.id, h.part), (10, ClipPart::Body));
         // Its left/right edges → resize.
-        let h = clip_hit(&host, 1, fb_w, fb_h, (ax0 + 2.0) as f64, midy).unwrap();
+        let h = clip_hit(
+            &host,
+            1,
+            lane((ax0 + 2.0) as f64, midy),
+            (ax0 + 2.0) as f64,
+            midy,
+        )
+        .unwrap();
         assert_eq!((h.id, h.part), (10, ClipPart::Start));
-        let h = clip_hit(&host, 1, fb_w, fb_h, (ax1 - 2.0) as f64, midy).unwrap();
+        let h = clip_hit(
+            &host,
+            1,
+            lane((ax1 - 2.0) as f64, midy),
+            (ax1 - 2.0) as f64,
+            midy,
+        )
+        .unwrap();
         assert_eq!((h.id, h.part), (10, ClipPart::End));
         // Deeper into the lane → clip B.
         let (bx0, bx1) = track::clip_x_range(body, &nav, 400.0, 400.0).unwrap();
-        let h = clip_hit(&host, 1, fb_w, fb_h, ((bx0 + bx1) / 2.0) as f64, midy).unwrap();
+        let h = clip_hit(
+            &host,
+            1,
+            lane(((bx0 + bx1) / 2.0) as f64, midy),
+            ((bx0 + bx1) / 2.0) as f64,
+            midy,
+        )
+        .unwrap();
         assert_eq!(h.id, 11);
         // Over the header strip → no clip.
-        assert!(clip_hit(&host, 1, fb_w, fb_h, (body.x - 10.0) as f64, midy).is_none());
+        assert!(
+            clip_hit(
+                &host,
+                1,
+                lane((body.x - 10.0) as f64, midy),
+                (body.x - 10.0) as f64,
+                midy
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -1422,13 +1464,13 @@ mod tests {
         let cy = pianoroll::pitch_to_y(60.0, 48.0, 72.0, r.grid) as f64;
         let cx = (r.grid.x + r.grid.w * 0.5) as f64;
 
-        let h = pianoroll_hit(&host, 1, fb_w, fb_h, cx, cy).unwrap();
+        let h = pianoroll_hit(&host, 1, (5, rect), cx, cy).unwrap();
         assert_eq!(h.region, PrRegion::Grid);
         assert_eq!(h.note.unwrap().index, 0);
         // A press in the velocity lane picks the note under it (its bar sits at
         // the note's start, x ~ grid.x).
         let vy = (r.velocity.y + r.velocity.h * 0.5) as f64;
-        let hv = pianoroll_hit(&host, 1, fb_w, fb_h, (r.grid.x + 1.0) as f64, vy).unwrap();
+        let hv = pianoroll_hit(&host, 1, (5, rect), (r.grid.x + 1.0) as f64, vy).unwrap();
         assert_eq!(hv.region, PrRegion::Velocity);
         assert_eq!(hv.note.unwrap().index, 0);
     }

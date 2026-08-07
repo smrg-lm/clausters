@@ -743,23 +743,23 @@ impl Gestures {
             WidgetKind::Track {
                 snap, ref editor, ..
             } => {
+                // The lane *is* the time axis: its body and its window come off
+                // the hit's own chain, so the locate, the pan and the clip grab
+                // below all measure against the one the renderer drew.
+                let Some((_, body, lane_nav)) = interact::time_of(&chain) else {
+                    return out;
+                };
+                let lane = (id, body, lane_nav);
                 // Shift+drag pans the shared axis (the same gesture the heavy
                 // views use), so panning stays available where every plain drag
                 // grabs a clip.
                 if ctx.shift {
-                    let body = track::lane_body(
-                        rect,
-                        editor.ruler != Ruler::Off,
-                        host.metrics_for(def_id),
-                    );
-                    if let Some((start, _len, _total)) = nav(host, id) {
-                        self.drag = Some(Drag::Pan {
-                            id,
-                            origin_x: cx,
-                            start,
-                            body_w: body.w.max(1.0) as f64,
-                        });
-                    }
+                    self.drag = Some(Drag::Pan {
+                        id,
+                        origin_x: cx,
+                        start: lane_nav.start,
+                        body_w: body.w.max(1.0) as f64,
+                    });
                     return out;
                 }
                 // A press on the lane's **time ruler**, or on empty lane space,
@@ -767,10 +767,8 @@ impl Gestures {
                 // point, which is the one gesture a timeline view cannot do
                 // without. (Over a clip, the clip's own gestures win.)
                 let ruler_on = editor.ruler != Ruler::Off;
-                let body = track::lane_body(rect, ruler_on, host.metrics_for(def_id));
                 let on_ruler = ruler_on && cy > body.y as f64 + body.h as f64;
-                let over_clip =
-                    interact::clip_hit(host, def_id, ctx.fb_w, ctx.fb_h, cx, cy).is_some();
+                let over_clip = interact::clip_hit(host, def_id, lane, cx, cy).is_some();
                 if on_ruler || (!over_clip && body.contains(cx, cy)) {
                     locate_timeline(host, &mut out, def_id, id, body, cx);
                     return out;
@@ -778,7 +776,7 @@ impl Gestures {
                 // A track is the hit target (its clips are placed by the
                 // renderer, not the layout engine); find the clip under the
                 // cursor and start a move (body) or resize (edge) drag.
-                if let Some(h) = interact::clip_hit(host, def_id, ctx.fb_w, ctx.fb_h, cx, cy) {
+                if let Some(h) = interact::clip_hit(host, def_id, lane, cx, cy) {
                     // An automation clip: a break-point wins over the clip body
                     // (as it wins over a segment in the `bpf` view), and Ctrl+click
                     // adds one - or removes the one under the cursor. The same
@@ -913,8 +911,7 @@ impl Gestures {
                 }
             }
             WidgetKind::PianoRoll { .. } => {
-                let Some(h) = interact::pianoroll_hit(host, def_id, ctx.fb_w, ctx.fb_h, cx, cy)
-                else {
+                let Some(h) = interact::pianoroll_hit(host, def_id, (id, rect), cx, cy) else {
                     return out;
                 };
                 // A press on the keyboard gutter (left of the grid) pans the pitch
@@ -2221,15 +2218,16 @@ impl Gestures {
         if clipboard.is_empty() {
             return out;
         }
-        let Some(h) = interact::pianoroll_hit(host, def_id, ctx.fb_w, ctx.fb_h, cx, cy) else {
-            return out;
-        };
         let Some(Hit {
             id,
+            rect,
             kind: WidgetKind::PianoRoll { .. },
             ..
         }) = hit(host, ctx, cx, cy)
         else {
+            return out;
+        };
+        let Some(h) = interact::pianoroll_hit(host, def_id, (id, rect), cx, cy) else {
             return out;
         };
         let nav = View {
