@@ -120,6 +120,11 @@ struct Space {
     zooms: f32,
     /// The size table at [`Space::unit`].
     metrics: Metrics,
+    /// The **time window** the container placed this widget on, when it is a
+    /// time container's contents: a clip gets the slice of its own `[0, dur]`
+    /// its (clamped) rectangle shows. `None` everywhere else — most of a window
+    /// is not on a time axis at all.
+    time: Option<View>,
 }
 
 impl Space {
@@ -129,6 +134,7 @@ impl Space {
             unit: metrics.ui_scale,
             zooms: 1.0,
             metrics: *metrics,
+            time: None,
         }
     }
 
@@ -140,6 +146,7 @@ impl Space {
             unit: 1.0,
             zooms: self.zooms,
             metrics: self.metrics.at(1.0),
+            time: self.time,
         }
     }
 
@@ -152,6 +159,17 @@ impl Space {
             unit: zooms,
             zooms,
             metrics: self.metrics.at(zooms),
+            time: self.time,
+        }
+    }
+
+    /// The same space on a time axis: the window a time container placed this
+    /// widget on. What makes a clip's contents a coordinate system — they read
+    /// this and their rectangle, never the lane's gutter or the group's window.
+    fn on_time(self, view: View) -> Self {
+        Self {
+            time: Some(view),
+            ..self
         }
     }
 
@@ -188,6 +206,13 @@ pub struct Placed<'a> {
     /// that is not on one. Resolved once per window here, because the renderer
     /// and the hit-test must agree on it and both read this vector.
     pub indent: f32,
+    /// The visible window of the **time axis this placement's rectangle spans**,
+    /// when its container placed it on one: a clip carries the slice of its own
+    /// `[0, dur]` that its (clamped) rectangle shows, so everything drawn or hit
+    /// inside it maps through `(rect, time)` alone. `None` for anything not on a
+    /// time axis. Resolved here because the renderer and the hit-test must agree
+    /// on it and both read this vector.
+    pub time: Option<View>,
     /// The index of this widget's container in the returned vector, `None` for
     /// the root. The pass emits parent-before-child, so an ancestry is walked
     /// back from any placement without searching the tree for it: it is the
@@ -303,6 +328,7 @@ fn place<'a>(
         scale: space.unit,
         metrics: space.metrics,
         indent: ctx.indent(widget),
+        time: space.time,
         parent,
         widget,
     });
@@ -368,23 +394,32 @@ fn place_on_time<'a>(
             .id
             .and_then(|id| ctx.axis.nav(id, editor.link))
             .unwrap_or_else(|| super::track::window_nav(widget)),
-        // The clip's local axis: its own span, from sample 0.
-        WidgetKind::Clip { dur, .. } => View::full(dur.ceil().max(1.0) as usize),
+        // The clip's own axis: the slice of its span its rectangle shows,
+        // handed down by the lane that placed it (its whole span when nothing
+        // did — a clip outside a lane, or a measurement pass with no groups).
+        WidgetKind::Clip { dur, .. } => space
+            .time
+            .unwrap_or_else(|| View::full(dur.ceil().max(1.0) as usize)),
         _ => return,
     };
     for child in &widget.children {
-        let rect = match (&widget.kind, &child.kind) {
+        let (rect, inner) = match (&widget.kind, &child.kind) {
             (WidgetKind::Track { .. }, WidgetKind::Clip { offset, dur, .. }) => {
-                match super::track::clip_x_range(body, &nav, *offset, *dur) {
+                let rect = match super::track::clip_x_range(body, &nav, *offset, *dur) {
                     Some((x0, x1)) => super::track::clip_rect(body, x0, x1),
                     None => Rect::new(body.x, body.y, 0.0, 0.0),
-                }
+                };
+                // The lane hands the clip its own axis here, and that is the
+                // last time the lane's window is mentioned: from the clip
+                // inwards everything reads `(rect, time)`.
+                let local = super::track::clip_local_view(body, &nav, *offset, *dur, rect);
+                (rect, space.on_time(local))
             }
             // Anything else a time container holds fills its body: a clip's
             // layered bodies, and a lane's own non-clip chrome.
-            _ => body,
+            _ => (body, space.on_time(nav)),
         };
-        place(rect, child, clip, space, ctx, Some(me), out);
+        place(rect, child, clip, inner, ctx, Some(me), out);
     }
 }
 
@@ -651,6 +686,40 @@ mod tests {
 
     fn area() -> Rect {
         Rect::new(0.0, 0.0, 600.0, 400.0)
+    }
+
+    #[test]
+    fn a_clip_is_placed_with_its_own_axis_and_keeps_it_when_it_is_half_off_screen() {
+        // One lane, one clip spanning [0, 400] of a 400-long timeline.
+        let w = tree(
+            r#"{"type":"window","children":[
+            {"id":5,"type":"track","children":[
+                {"id":10,"type":"clip","offset":0,"dur":400}]}]}"#,
+        );
+        let m = Metrics::default();
+
+        // Fully visible: the clip's own window is its whole span.
+        let placed = layout(area(), &w, &m);
+        let clip = placed.iter().find(|p| p.widget.id == Some(10)).unwrap();
+        let local = clip.time.expect("a placed clip carries its axis");
+        assert!(local.start.abs() < 0.5 && (local.len - 400.0).abs() < 1.0);
+
+        // Scrolled to the clip's second half: the rectangle shrinks to what is
+        // on screen, and the axis says *which* half that is - the fact a body
+        // needs to draw the right samples, resolved here instead of by each
+        // renderer from the lane's window.
+        let half = View {
+            start: 200.0,
+            len: 200.0,
+        };
+        let placed = layout_on(area(), &w, &m, &|_, _| Some(half));
+        let clip = placed.iter().find(|p| p.widget.id == Some(10)).unwrap();
+        let local = clip.time.unwrap();
+        assert!((local.start - 200.0).abs() < 1.0 && (local.len - 200.0).abs() < 1.0);
+
+        // The lane above it stays on the *group's* window, not the clip's.
+        let lane = placed.iter().find(|p| p.widget.id == Some(5)).unwrap();
+        assert_eq!(lane.time, None);
     }
 
     #[test]

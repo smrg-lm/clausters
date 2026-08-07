@@ -217,11 +217,12 @@ enum Drag {
     ClipPoint {
         id: i32,
         index: usize,
+        /// The clip's own axis: the rectangle it was drawn in and the window of
+        /// its `[0, dur]` span that rectangle shows. The lane's gutter and the
+        /// group's window play no part in a curve edit.
         rect: Rect,
-        body: Rect,
         nav_start: f64,
         nav_len: f64,
-        offset: f64,
     },
     /// Dragging a piano-roll note: the body moves it in time and pitch, an edge
     /// resizes its duration. The cursor maps to a region-relative time through
@@ -887,7 +888,12 @@ impl Gestures {
                     },
                     None => 0.0,
                 };
-                if let Some(h) = interact::clip_hit(host, def_id, lane, (id, rect), cx, cy) {
+                // The clip's own axis, resolved by the layout and carried down
+                // the hit chain — not re-derived from the lane's window here.
+                let Some(local) = interact::local_time_of(chain) else {
+                    return false;
+                };
+                if let Some(h) = interact::clip_hit(host, def_id, lane, local, cx, cy) {
                     // An automation clip: a break-point wins over the clip body
                     // (as it wins over a segment in the `bpf` view), and Ctrl+click
                     // adds one - or removes the one under the cursor. The same
@@ -895,8 +901,7 @@ impl Gestures {
                     if h.point.is_some() || (ctx.ctrl && h.has_curve) {
                         if ctx.ctrl {
                             if interact::clip_point_edit(
-                                host, def_id, h.id, h.point, h.rect, h.body, &h.nav, h.offset, cx,
-                                cy,
+                                host, def_id, h.id, h.point, h.rect, &h.local, cx, cy,
                             ) {
                                 emit_points(host, out, def_id, h.id);
                                 out.push(GestureEffect::Redraw(def_id));
@@ -906,10 +911,8 @@ impl Gestures {
                                 id: h.id,
                                 index,
                                 rect: h.rect,
-                                body: h.body,
-                                nav_start: h.nav.start,
-                                nav_len: h.nav.len,
-                                offset: h.offset,
+                                nav_start: h.local.start,
+                                nav_len: h.local.len,
                             });
                         }
                         return true;
@@ -1323,21 +1326,17 @@ impl Gestures {
                 id,
                 index,
                 rect,
-                body,
                 nav_start,
                 nav_len,
-                offset,
             } => {
                 // The curve of an automation clip, edited in place: the cursor maps
-                // back through the shared axis (time) and the clip's value range,
+                // back through the clip's own axis (time) and its value range,
                 // then the point moves with the `bpf` model's own semantics.
-                let nav = View {
+                let local = View {
                     start: nav_start,
                     len: nav_len,
                 };
-                if interact::clip_point_move(
-                    host, def_id, id, index, rect, body, &nav, offset, cx, cy,
-                ) {
+                if interact::clip_point_move(host, def_id, id, index, rect, &local, cx, cy) {
                     emit_points(host, &mut out, def_id, id);
                     out.push(GestureEffect::Redraw(def_id));
                 }

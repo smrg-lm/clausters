@@ -146,6 +146,43 @@ pub fn clip_rect(body: Rect, x0: f32, x1: f32) -> Rect {
     Rect::new(x0, body.y + 1.0, x1 - x0, (body.h - 2.0).max(0.0))
 }
 
+/// A clip's **own** time axis: the part of `[0, dur]` its drawn rectangle `cr`
+/// shows, in clip-local units. A clip rectangle is clamped to the lane body, so
+/// a clip half-scrolled off the left is drawn starting at some `t > 0` — this is
+/// that window.
+///
+/// It is what makes a clip a coordinate system rather than a rectangle the lane
+/// keeps redrawing: everything inside one (its bodies, its break-points, its
+/// notes) maps through `(cr, this)` alone, with no reference to the lane's
+/// gutter, the group's window or the clip's offset on it. Move the same clip to
+/// another lane, another window or another zoom and it draws the same.
+pub fn clip_local_view(body: Rect, nav: &View, offset: f64, dur: f64, cr: Rect) -> View {
+    if dur <= 0.0 || cr.w <= 0.0 {
+        return View::full(1);
+    }
+    // The lane's mapping, run once, at the two edges of the drawn rectangle:
+    // this is the last place a clip's contents look at the lane's window.
+    let at = |x: f32| {
+        let sample = nav.start + nav.len * ((x - body.x) as f64 / body.w.max(1.0) as f64);
+        (sample - offset).clamp(0.0, dur)
+    };
+    let (start, end) = (at(cr.x), at(cr.x + cr.w));
+    View {
+        start,
+        len: (end - start).max(f64::EPSILON),
+    }
+}
+
+/// The x pixel a clip-local time falls on inside the clip rect `cr`.
+fn local_x(cr: Rect, local: &View, t: f64) -> f32 {
+    (cr.x as f64 + (t - local.start) / local.len * cr.w as f64) as f32
+}
+
+/// The clip-local time an x pixel of `cr` falls on — the inverse of [`local_x`].
+fn local_t(cr: Rect, local: &View, x: f64) -> f64 {
+    local.start + local.len * (x - cr.x as f64) / cr.w.max(1.0) as f64
+}
+
 /// A `clip` widget copied out of the tree for drawing or hit-testing (`None` for
 /// anything else) — the one place the typed tree becomes a [`ClipDraw`], so the
 /// renderer and the interaction can never disagree about what a clip holds.
@@ -228,6 +265,9 @@ pub fn draw(
         let cr = clip_rect(body, x0, x1);
         mesh.rect(cr, theme.object_fill);
         mesh.border(cr, m.divider_w, theme.object_edge);
+        // Everything inside the clip is drawn against the clip's **own** axis:
+        // its rectangle and the slice of `[0, dur]` that rectangle shows.
+        let local = clip_local_view(body, nav, clip.offset, clip.dur, cr);
         // The bodies **layer**, back to front: the take, the events over it, the
         // envelope over both — an automation drawn on top of the material it
         // shapes is one clip, not two, and each body keeps its own value axis.
@@ -235,14 +275,13 @@ pub fn draw(
             // A loaded take (mapped file, peak cache or fetched buffer): decimated
             // through its pyramid, so a minutes-long clip costs the same as a
             // short one.
-            Some(data) => draw_body(mesh, cr, body, nav, clip, &Trace::Data(data), m, theme),
+            Some(data) => draw_body(mesh, cr, &local, clip, &Trace::Data(data), m, theme),
             // An **inline** sketch sent with the def: the same drawing, a
             // cheaper source.
             None => draw_body(
                 mesh,
                 cr,
-                body,
-                nav,
+                &local,
                 clip,
                 &Trace::samples(&clip.samples, 1),
                 m,
@@ -250,12 +289,11 @@ pub fn draw(
             ),
         }
         if !clip.notes.is_empty() {
-            // Notes placed on the same shared axis (so the whole roll moves when
-            // the clip does), pitch mapped over [min, max].
-            draw_piano_roll(mesh, cr, body, nav, clip, m, theme);
+            // Notes on the clip's own axis, pitch mapped over [min, max].
+            draw_piano_roll(mesh, cr, &local, clip, m, theme);
         }
         if !clip.points.is_empty() {
-            draw_curve(mesh, cr, body, nav, clip, m, theme);
+            draw_curve(mesh, cr, &local, clip, m, theme);
         }
         if let Some(t) = &clip.label {
             font::text(
@@ -270,12 +308,11 @@ pub fn draw(
     }
 }
 
-/// The clip-relative time (in timeline units) an x pixel falls on: the inverse
-/// of the shared axis mapping. The curve body's editing runs through this, so a
-/// point lands where the pointer is under any zoom.
-pub fn curve_time_at(body: Rect, nav: &View, clip_offset: f64, cx: f64) -> f64 {
-    let sample = nav.start + nav.len * ((cx - body.x as f64) / body.w.max(1.0) as f64);
-    (sample - clip_offset).max(0.0)
+/// The clip-local time an x pixel falls on inside the clip rect `cr`: the
+/// inverse of the clip's own axis. The curve body's editing runs through this,
+/// so a point lands where the pointer is under any zoom.
+pub fn curve_time_at(cr: Rect, local: &View, cx: f64) -> f64 {
+    local_t(cr, local, cx).max(0.0)
 }
 
 /// The value a y pixel falls on inside the clip rect `cr`, over `[min, max]`
@@ -291,8 +328,7 @@ pub fn curve_value_at(cr: Rect, min: f32, max: f32, exp: bool, cy: f64) -> f32 {
 pub fn curve_hit(
     clip: &ClipDraw,
     cr: Rect,
-    body: Rect,
-    nav: &View,
+    local: &View,
     cx: f64,
     cy: f64,
     m: &Metrics,
@@ -302,7 +338,7 @@ pub fn curve_hit(
     let radius = (m.point_radius + m.hit_slop).max(6.0) as f64;
     let mut best: Option<(usize, f64)> = None;
     for (i, p) in clip.points.iter().enumerate() {
-        let x = to_x(clip.offset + p.time, nav, body);
+        let x = local_x(cr, local, p.time) as f64;
         let y = curve_y(cr, p.value, clip.points_min, clip.points_max, clip.exp) as f64;
         let d = ((cx - x).powi(2) + (cy - y).powi(2)).sqrt();
         if d <= radius && best.is_none_or(|(_, bd)| d < bd) {
@@ -320,14 +356,13 @@ fn curve_y(cr: Rect, value: f32, min: f32, max: f32, exp: bool) -> f32 {
 /// Draws an automation clip's break-point curve inside `cr`: one column per
 /// pixel of the *visible* clip rect, each evaluated through the same envelope
 /// shape math the server's `EnvGen` plays (`bpf::value_at`) — so what is drawn
-/// is what is heard — plus a disc per breakpoint. Times map through the shared
-/// `nav`, exactly as the piano-roll's notes do, so the whole curve moves with
-/// the clip and stays put under zoom.
+/// is what is heard — plus a disc per breakpoint. Times map through the clip's
+/// own axis (`local`), exactly as the piano-roll's notes do, so the whole curve
+/// moves with the clip and stays put under zoom.
 fn draw_curve(
     mesh: &mut Mesh,
     cr: Rect,
-    body: Rect,
-    nav: &View,
+    local: &View,
     clip: &ClipDraw,
     m: &Metrics,
     theme: &Theme,
@@ -337,7 +372,7 @@ fn draw_curve(
     }
     let columns = cr.w.max(1.0) as usize;
     let y_at = |v: f32| curve_y(cr, v, clip.points_min, clip.points_max, clip.exp);
-    let time_at = |x: f32| curve_time_at(body, nav, clip.offset, x as f64);
+    let time_at = |x: f32| local_t(cr, local, x as f64);
     let mut prev = [cr.x, y_at(bpf::value_at(&clip.points, time_at(cr.x)))];
     for c in 1..=columns {
         let x = cr.x + c as f32;
@@ -346,7 +381,7 @@ fn draw_curve(
         prev = p;
     }
     for p in &clip.points {
-        let x = to_x(clip.offset + p.time, nav, body) as f32;
+        let x = local_x(cr, local, p.time);
         if x >= cr.x && x <= cr.x + cr.w {
             mesh.disc(x, y_at(p.value), m.point_radius, theme.point);
         }
@@ -354,16 +389,15 @@ fn draw_curve(
 }
 
 /// Draws a clip's notes as a compact piano-roll inside `cr`: the clip body is
-/// the grid, its `[min, max]` the pitch window, and the notes ride the shared
-/// `nav` time axis (so the whole roll moves when the clip does). The geometry is
+/// the grid, its `[min, max]` the pitch window, and the notes ride the clip's
+/// own time axis (so the whole roll moves when the clip does). The geometry is
 /// the shared [`super::pianoroll::draw_notes`] primitive — the same one the
 /// dedicated `pianoroll` view draws with, so a clip's roll and the editor never
 /// disagree. The clip body uses only that one layer (no keyboard/lanes).
 fn draw_piano_roll(
     mesh: &mut Mesh,
     cr: Rect,
-    body: Rect,
-    nav: &View,
+    local: &View,
     clip: &ClipDraw,
     m: &Metrics,
     theme: &Theme,
@@ -371,15 +405,14 @@ fn draw_piano_roll(
     // The compact pitch ruler: each C named at the clip's left edge (there is
     // no keyboard gutter here), only when the rows are tall enough to read.
     pianoroll::draw_pitch_labels(mesh, cr, clip.min, clip.max, m, theme);
-    // Notes map their x through the lane `body` (the shared nav's pixel domain,
-    // like `draw_curve`) and clamp to the clip rect `cr`, so they stay pinned to
-    // the clip under a pan/zoom instead of rescaling by the clip's own width.
+    // The clip rect is both the note primitive's pixel domain and its clamp:
+    // note times are clip-local, so there is no offset to subtract any more.
     pianoroll::draw_notes(
         mesh,
-        body,
         cr,
-        nav,
-        clip.offset,
+        cr,
+        local,
+        0.0,
         &clip.notes,
         clip.min,
         clip.max,
@@ -391,17 +424,16 @@ fn draw_piano_roll(
 }
 
 /// The **source** sample position an x pixel of a clip's body falls on: the
-/// pixel maps back through the shared axis to a timeline position, and that
+/// pixel maps back through the clip's own axis to a clip-local time, and that
 /// through the clip's span to a fraction of its data. This is the whole reason a
 /// waveform body scrolls and stretches *with* the view instead of squashing into
 /// whatever slice of the clip is on screen: it is drawn from the source, per
 /// visible pixel, exactly as the piano-roll and the curve are.
-pub fn clip_source_at(body: Rect, nav: &View, clip: &ClipDraw, total: f64, x: f32) -> f64 {
-    if clip.dur <= 0.0 {
+pub fn clip_source_at(cr: Rect, local: &View, dur: f64, total: f64, x: f32) -> f64 {
+    if dur <= 0.0 {
         return 0.0;
     }
-    let sample = nav.start + nav.len * ((x - body.x) as f64 / body.w.max(1.0) as f64);
-    ((sample - clip.offset) / clip.dur * total).clamp(0.0, total)
+    (local_t(cr, local, x as f64) / dur * total).clamp(0.0, total)
 }
 
 /// Draws a clip's signal body inside the *visible* part of the clip (`cr`),
@@ -410,16 +442,15 @@ pub fn clip_source_at(body: Rect, nav: &View, clip: &ClipDraw, total: f64, x: f3
 /// straight off its slice, and the drawing is the same either way.
 ///
 /// The body is drawn **from the source, per visible pixel**, mapped back
-/// through the shared axis, which is what makes it scroll and stretch with the
-/// view instead of squashing into whatever slice is on screen. Never resolves
-/// finer than the screen — the one graphics rule.
-// mesh + target/body rects + nav + clip + source + look: one body's draw.
+/// through the clip's own axis, which is what makes it scroll and stretch with
+/// the view instead of squashing into whatever slice is on screen. Never
+/// resolves finer than the screen — the one graphics rule.
+// mesh + rect + axis + clip + source + look: one body's draw.
 #[allow(clippy::too_many_arguments)]
 fn draw_body(
     mesh: &mut Mesh,
     cr: Rect,
-    body: Rect,
-    nav: &View,
+    local: &View,
     clip: &ClipDraw,
     trace: &Trace,
     m: &Metrics,
@@ -439,10 +470,10 @@ fn draw_body(
         cr,
         trace,
         0,
-        |x| clip_source_at(body, nav, clip, total, x),
+        |x| clip_source_at(cr, local, clip.dur, total, x),
         // The inverse placement: a source frame sits at its own fraction of the
-        // clip's span, seen through the navigation window.
-        |s| to_x(clip.offset + s / total * clip.dur, nav, body) as f32,
+        // clip's span, seen through the clip's visible window.
+        |s| local_x(cr, local, s / total * clip.dur),
         y_at,
         TraceStyle {
             color: theme.selection,
@@ -753,29 +784,25 @@ mod tests {
         let (x0, x1) = clip_x_range(body, &nav, clip.offset, clip.dur).unwrap();
         let cr = clip_rect(body, x0, x1);
 
+        // The clip's own axis - the whole clip is visible, so it is [0, dur].
+        let local = clip_local_view(body, &nav, clip.offset, clip.dur, cr);
+        assert!((local.start).abs() < 0.5 && (local.len - 200.0).abs() < 0.5);
+
         // The peak point (t=100, value=1 -> the top of the clip).
         let px = to_x(200.0, &nav, body);
         let py = cr.y as f64;
         assert_eq!(
-            curve_hit(&clip, cr, body, &nav, px, py, &Metrics::default()),
+            curve_hit(&clip, cr, &local, px, py, &Metrics::default()),
             Some(1)
         );
         // Away from any point: nothing (so the clip still moves by its body).
         assert_eq!(
-            curve_hit(
-                &clip,
-                cr,
-                body,
-                &nav,
-                px + 40.0,
-                py + 20.0,
-                &Metrics::default()
-            ),
+            curve_hit(&clip, cr, &local, px + 40.0, py + 20.0, &Metrics::default()),
             None
         );
 
         // The inverse mapping an edit uses: pixels -> clip-relative time, value.
-        assert!((curve_time_at(body, &nav, clip.offset, px) - 100.0).abs() < 1.0);
+        assert!((curve_time_at(cr, &local, px) - 100.0).abs() < 1.0);
         assert!((curve_value_at(cr, 0.0, 1.0, false, py) - 1.0).abs() < 0.05);
     }
 
@@ -800,17 +827,24 @@ mod tests {
         // Fully zoomed out: the clip's ends map to the take's ends.
         let full = View::full(400);
         let (x0, x1) = clip_x_range(body, &full, clip.offset, clip.dur).unwrap();
-        assert!(clip_source_at(body, &full, &clip, total, x0) < 1.0);
-        assert!(clip_source_at(body, &full, &clip, total, x1) > total - 1.0);
+        let cr = clip_rect(body, x0, x1);
+        let local = clip_local_view(body, &full, clip.offset, clip.dur, cr);
+        assert!(clip_source_at(cr, &local, clip.dur, total, x0) < 1.0);
+        assert!(clip_source_at(cr, &local, clip.dur, total, x1) > total - 1.0);
 
         // Zoomed into the clip's second half: the lane's left edge is now the
-        // middle of the take, and the visible span is the half after it.
+        // middle of the take, and the visible span is the half after it. The
+        // clip's own axis says so - it starts at t=200 of a 400-long clip.
         let zoomed = View {
             start: 200.0,
             len: 200.0,
         };
-        let left = clip_source_at(body, &zoomed, &clip, total, body.x);
-        let right = clip_source_at(body, &zoomed, &clip, total, body.x + body.w);
+        let (zx0, zx1) = clip_x_range(body, &zoomed, clip.offset, clip.dur).unwrap();
+        let zcr = clip_rect(body, zx0, zx1);
+        let zlocal = clip_local_view(body, &zoomed, clip.offset, clip.dur, zcr);
+        assert!((zlocal.start - 200.0).abs() < 1.0 && (zlocal.len - 200.0).abs() < 1.0);
+        let left = clip_source_at(zcr, &zlocal, clip.dur, total, body.x);
+        let right = clip_source_at(zcr, &zlocal, clip.dur, total, body.x + body.w);
         assert!(
             (left - 500.0).abs() < 5.0,
             "the left edge is mid-take, not 0"

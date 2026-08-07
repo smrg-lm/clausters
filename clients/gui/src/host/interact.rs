@@ -40,6 +40,16 @@ pub(crate) enum Coords {
     /// container: the axis is the surface the pan, the selection and the locate
     /// all measure against.
     Time(TimeAxis),
+    /// A **clip's own span**: its rectangle and the slice of `[0, dur]` that
+    /// rectangle shows, resolved by the layout ([`Placed::time`]). A clip is a
+    /// coordinate system — everything inside one is placed, drawn and hit
+    /// through this alone — but it is *not* a navigable axis: it is not a
+    /// navigation-group member, and a pan or a locate started over a clip still
+    /// measures against the lane under it. So it is a variant of its own, and
+    /// [`time_of`] keeps meaning the axis the groups move.
+    ///
+    /// [`Placed::time`]: super::layout::Placed::time
+    Local(TimeAxis),
     /// A `patch`'s own canvas: boxes and cords placed in canvas units, seen
     /// through the workspace `scale` the frame carries. Its elements are drawn,
     /// not laid out, so the canvas is what a marquee sweeps.
@@ -150,6 +160,16 @@ pub(crate) fn time_of(chain: &[Frame]) -> Option<(i32, TimeAxis)> {
     })
 }
 
+/// The innermost **clip** span in `chain`: the clip's id and its own axis. What
+/// a clip's contents are drawn and edited through — the lane's window is not
+/// mentioned past this point.
+pub(crate) fn local_time_of(chain: &[Frame]) -> Option<(i32, TimeAxis)> {
+    chain.iter().rev().find_map(|f| match f.coords {
+        Coords::Local(axis) => Some((f.id?, axis)),
+        _ => None,
+    })
+}
+
 /// The [`Hit`] under `(x, y)` in window `def_id`. Containers (`window`/`panel`)
 /// are not hit targets — except `scroll`, whose empty area is the pan gesture's
 /// surface (its children, laid out through its view transform, still win over
@@ -219,6 +239,16 @@ fn chain_of(
             WidgetKind::Window { .. } | WidgetKind::Panel { .. } => Some(Coords::Layout),
             WidgetKind::Scroll { view, .. } => Some(Coords::Plane(*view)),
             WidgetKind::Patch { .. } => Some(Coords::Canvas),
+            // A clip carries the axis the layout gave it, which is the whole
+            // point of the layout placing clips: the rectangle and the window
+            // are one fact, resolved once, read by the renderer and by this.
+            WidgetKind::Clip { .. } => p.time.map(|nav| {
+                Coords::Local(TimeAxis {
+                    body: p.rect,
+                    nav,
+                    y: None,
+                })
+            }),
             // Where the body begins is the **group's** call, not this widget's:
             // every member of one axis starts it at the same x, and the layout
             // already resolved it (`Placed::indent`).
@@ -670,9 +700,9 @@ fn clip_curve<R>(
 }
 
 /// Moves break-point `index` of an automation clip to the cursor: the time maps
-/// back through the **shared axis** (a clip's curve lives on the timeline, not on
-/// a widget-local domain) and the value through the clip's range, then the point
-/// is placed with the `bpf` model's own monotonic clamp. Returns whether it moved.
+/// back through the **clip's own axis** (`rect` and the window it shows) and the
+/// value through the clip's range, then the point is placed with the `bpf`
+/// model's own monotonic clamp. Returns whether it moved.
 #[allow(clippy::too_many_arguments)] // one display mapping, all scalars
 pub(crate) fn clip_point_move(
     host: &mut Host,
@@ -680,9 +710,7 @@ pub(crate) fn clip_point_move(
     clip_id: i32,
     index: usize,
     rect: Rect,
-    body: Rect,
-    nav: &View,
-    offset: f64,
+    local: &View,
     cx: f64,
     cy: f64,
 ) -> bool {
@@ -692,7 +720,7 @@ pub(crate) fn clip_point_move(
     let WidgetKind::Clip { dur, .. } = widget.kind else {
         return false;
     };
-    let t = track::curve_time_at(body, nav, offset, cx).min(dur);
+    let t = track::curve_time_at(rect, local, cx).min(dur);
     clip_curve(host, def_id, clip_id, |points, min, max, exp| {
         let value = track::curve_value_at(rect, min, max, exp, cy);
         bpf::place_point(points, index, t, value, dur.max(t));
@@ -709,13 +737,11 @@ pub(crate) fn clip_point_edit(
     clip_id: i32,
     hit: Option<usize>,
     rect: Rect,
-    body: Rect,
-    nav: &View,
-    offset: f64,
+    local: &View,
     cx: f64,
     cy: f64,
 ) -> bool {
-    let t = track::curve_time_at(body, nav, offset, cx);
+    let t = track::curve_time_at(rect, local, cx);
     clip_curve(host, def_id, clip_id, |points, min, max, exp| match hit {
         Some(i) => bpf::remove_point(points, i),
         None => {
@@ -753,6 +779,11 @@ pub(crate) struct ClipHit {
     /// drawn in, so its point edits map onto the pixels drawn).
     pub rect: Rect,
     pub nav: View,
+    /// The clip's **own** axis: the window of its `[0, dur]` span that `rect`
+    /// shows. Every edit inside the clip (a break-point today, its child
+    /// elements next) maps through `(rect, local)`; `body`/`nav` above are only
+    /// what the clip's *placement* on the lane is dragged through.
+    pub local: View,
     pub part: ClipPart,
     /// The break-point under the cursor on an automation clip: a point wins over
     /// the clip's body (as it wins over a segment in the `bpf` view), so the
@@ -782,21 +813,24 @@ pub(crate) fn clip_hit(
     host: &Host,
     def_id: i32,
     lane: (i32, TimeAxis),
-    clip: (i32, Rect),
+    clip: (i32, TimeAxis),
     x: f64,
     y: f64,
 ) -> Option<ClipHit> {
     let (lane_id, TimeAxis { body, nav, .. }) = lane;
-    let (id, rect) = clip;
+    let (id, local) = clip;
+    let rect = local.body;
     let widget = host.window_def(def_id)?.find(id)?;
     let WidgetKind::Clip { offset, dur, .. } = widget.kind else {
         return None;
     };
     let drawn = track::clip_draw(widget);
     let has_curve = drawn.as_ref().is_some_and(|clip| !clip.points.is_empty());
+    // A break-point is grabbed on the clip's **own** axis, the one it was drawn
+    // on — the lane's window below is only what the clip's placement drags in.
     let point = drawn
         .filter(|_| has_curve)
-        .and_then(|clip| track::curve_hit(&clip, rect, body, &nav, x, y, host.metrics_for(def_id)));
+        .and_then(|clip| track::curve_hit(&clip, rect, &local.nav, x, y, host.metrics_for(def_id)));
     Some(ClipHit {
         id,
         lane: lane_id,
@@ -805,6 +839,7 @@ pub(crate) fn clip_hit(
         body,
         rect,
         nav,
+        local: local.nav,
         part: clip_part(rect.x, rect.x + rect.w, x as f32),
         point,
         has_curve,
@@ -1563,7 +1598,10 @@ mod tests {
         let midy = (body.y + body.h / 2.0) as f64;
         let part_at = |x: f64| {
             let (h, lane) = at(x, midy);
-            let hit = clip_hit(&host, 1, lane, (h.id, h.rect), x, midy).unwrap();
+            // The clip's own axis rides the chain beside the lane's.
+            let local = local_time_of(&h.chain).unwrap();
+            assert_eq!((local.0, local.1.body), (h.id, h.rect));
+            let hit = clip_hit(&host, 1, lane, local, x, midy).unwrap();
             (hit.id, hit.part)
         };
 
