@@ -119,6 +119,9 @@ export { Event, rest } from "./seq/event.ts";
 export { Playhead, Timeline } from "./seq/timeline.ts";
 export * as data from "./data/index.ts";
 export { loadCore } from "./base/core.ts";
+// The id share every constructor that allocates ids accepts, for the same
+// reason the options bags below are exported: a public signature names it.
+export type { IdShare } from "./base/core.ts";
 export { Score, ScoreConnection, WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";
