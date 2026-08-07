@@ -490,10 +490,10 @@ updates this table in the same change** (step 8 of the recipe below).
 
 | Widget | Implementation | Fed by |
 |---|---|---|
-| `window`, `panel` | parse/layout only: `host/widget.rs`, `host/layout.rs` | the GuiDef |
+| `window`, `panel` | parse/layout only: `host/widget/`, `host/layout.rs` | the GuiDef |
 | `scroll` | `host/layout.rs` (the view transform + the content extents) over the pure navigation math in `host/scroll.rs`; the clip is geometric in `host/paint.rs` and a pass scissor in `host/frame.rs`; gestures in `host/gestures.rs` | the GuiDef and `/gui_set`; pan/zoom emits `"view"` |
 | `label`, `text` | `host/controls.rs` over `host/paint.rs` + `host/font.rs` | the GuiDef, `/gui_set` |
-| `slider`, `knob`, `number` | `host/controls.rs` (draw + the pure drag math); the shared `Range` payload in `host/widget.rs` | the script; value changes emit `/gui_event` (or a binding forwards) |
+| `slider`, `knob`, `number` | `host/controls.rs` (draw + the pure drag math); the shared `Range` payload in `host/widget/mod.rs` | the script; value changes emit `/gui_event` (or a binding forwards) |
 | `button`, `toggle`, `menu` | `host/controls.rs` | idem |
 | `meter` | `host/meters.rs`; bus plumbing in `host/live.rs` | a control bus — the shm segment (native) / `/bus_stream` snapshots (browser) |
 | `scope` | signal logic (window sizing, trigger) is `clausters-core::oscil`'s; history in `host/live.rs` | `bus` at `rate`: a control bus's rolling history, or an audio bus's recorded samples (shm / `/bus_tapStream.reply`) |
@@ -510,7 +510,7 @@ updates this table in the same change** (step 8 of the recipe below).
 | `pianoroll` | `host/pianoroll.rs` (the note core shared with `clip`) | the script's `notes`/`osc`; live MIDI in (native); edits emit `"notes"`/`"osc"` |
 | `piano` | `host/piano.rs` (proportional key layout, overview strip, voice messages — pure); host voices in `host/mod.rs`; `midi_to_hz` is `clausters-core::scale`'s | the pointer; presses emit MIDI-shaped `"note"` events (or a binding forwards them), pan/zoom emits `"range"`, and `voice` mode sends `/synth_new`/`gate 0` per held key over the server leg |
 | `score` | `host/score.rs` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon` | a display list engraved **client-side** (`clausters/gui/notation.py`, a shell over `clausters-notation`/`core` through the C ABI); the cursor follows `playhead_at` on the engine clock; a click emits `"element"`, a vertical drag `"transpose"` (diatonic steps), and `display_list` replaces the page after the client re-engraves |
-| `graph` | `host/graph.rs` | the GraphDef's members/buses/wires; rewiring emits `"wire"` |
+| `patch` | `host/patch.rs` (box/port geometry, the cords, hit-testing and the layered `solve` layout — pure), one implementation for both levels; the rate vocabulary is `clausters_core::patch`'s | the patch model a client compiled or decoded: a GraphDef's members and cord→bus wiring at level 1, a SynthDef/FaustDef's UGen graph at level 2; drawing a cord emits `"wire"`, dragging a box `"move"` |
 
 ### Adding a widget
 
