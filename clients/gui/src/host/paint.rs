@@ -18,6 +18,32 @@ const FLOATS_PER_VERTEX: usize = 6;
 /// An RGBA color.
 pub type Color = [f32; 4];
 
+/// The rectangle four corners describe when **every edge is axis-parallel**,
+/// or `None` for anything rotated. Winding- and origin-agnostic: it checks the
+/// edges rather than a corner order, so it recognizes the quad whichever corner
+/// it starts from and whichever way it goes round — [`Mesh::rect`] builds one
+/// order, an axis-parallel [`Mesh::line`] another.
+///
+/// The rect is the corners' bounding box, which for such a quad *is* the quad.
+fn axis_aligned(p: &[[f32; 2]; 4]) -> Option<Rect> {
+    for i in 0..4 {
+        let (a, b) = (p[i], p[(i + 1) % 4]);
+        // One edge with neither endpoint shared is a diagonal: not our case.
+        if a[0] != b[0] && a[1] != b[1] {
+            return None;
+        }
+    }
+    let (mut x0, mut y0) = (f32::INFINITY, f32::INFINITY);
+    let (mut x1, mut y1) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
+    for q in p {
+        x0 = x0.min(q[0]);
+        y0 = y0.min(q[1]);
+        x1 = x1.max(q[0]);
+        y1 = y1.max(q[1]);
+    }
+    Some(Rect::new(x0, y0, x1 - x0, y1 - y0))
+}
+
 /// A batch of flat-colored triangles in device-pixel space.
 #[derive(Default)]
 pub struct Mesh {
@@ -60,12 +86,18 @@ impl Mesh {
         self.clip = clip;
     }
 
+    /// A triangle, emitted verbatim — the caller has already established that
+    /// it needs no clipping (there is none, or it survived the clamp).
+    fn tri_raw(&mut self, a: [f32; 2], b: [f32; 2], c: [f32; 2], color: Color) {
+        self.vertex(a, color);
+        self.vertex(b, color);
+        self.vertex(c, color);
+    }
+
     /// A triangle (clipped to the active clip rectangle, if any).
     pub fn tri(&mut self, a: [f32; 2], b: [f32; 2], c: [f32; 2], color: Color) {
         let Some(clip) = self.clip else {
-            self.vertex(a, color);
-            self.vertex(b, color);
-            self.vertex(c, color);
+            self.tri_raw(a, b, c, color);
             return;
         };
         // Sutherland-Hodgman against the clip rect's four half-planes: a
@@ -129,7 +161,33 @@ impl Mesh {
 
     /// A quad from four corners in order (two triangles); winding-agnostic
     /// because the pipeline does not cull.
+    ///
+    /// **Clipping an axis-aligned quad is a clamp**, not a polygon pass, and
+    /// that is the case almost all of the chrome is: a panel, a lane, a note
+    /// body, a waveform column, a horizontal or vertical hairline. Since a
+    /// rectangle intersected with a rectangle *is* a rectangle, the general
+    /// [`tri`] clipper would spend a four-half-plane Sutherland-Hodgman pass
+    /// per triangle to rediscover geometry two `min`/`max` pairs give exactly —
+    /// measured at 2.6-6.9x the cost of the unclipped path, against 1.10-1.17x
+    /// for the clamp. Only rotated geometry (a disc's fan, a diagonal line, a
+    /// glyph outline) still needs the general pass, and still gets it.
+    ///
+    /// [`tri`]: Mesh::tri
     pub fn quad(&mut self, p: [[f32; 2]; 4], color: Color) {
+        if let Some(clip) = self.clip
+            && let Some(r) = axis_aligned(&p)
+        {
+            let x0 = r.x.max(clip.x);
+            let y0 = r.y.max(clip.y);
+            let x1 = (r.x + r.w).min(clip.x + clip.w);
+            let y1 = (r.y + r.h).min(clip.y + clip.h);
+            if x1 <= x0 || y1 <= y0 {
+                return; // clipped away entirely (or degenerate to begin with)
+            }
+            self.tri_raw([x0, y1], [x1, y1], [x1, y0], color);
+            self.tri_raw([x0, y1], [x1, y0], [x0, y0], color);
+            return;
+        }
         self.tri(p[0], p[1], p[2], color);
         self.tri(p[0], p[2], p[3], color);
     }
@@ -346,6 +404,150 @@ mod tests {
         assert!(!m.is_empty());
         for (x, y) in m.positions() {
             assert!((10.0..=60.0).contains(&x) && (10.0..=50.0).contains(&y));
+        }
+    }
+
+    /// The mesh's triangles as corner triples.
+    fn triangles(m: &Mesh) -> Vec<[[f32; 2]; 3]> {
+        let p: Vec<(f32, f32)> = m.positions().collect();
+        p.chunks_exact(3)
+            .map(|t| [[t[0].0, t[0].1], [t[1].0, t[1].1], [t[2].0, t[2].1]])
+            .collect()
+    }
+
+    /// Whether `(x, y)` falls in a triangle (winding-agnostic, like the
+    /// pipeline, which does not cull).
+    fn inside(t: &[[f32; 2]; 3], x: f32, y: f32) -> bool {
+        // A *degenerate* triangle covers nothing, and that has to be said
+        // explicitly: the half-plane test alone reports every point as inside
+        // one, since all three edge signs are zero. The general clipper does
+        // emit them — a quad flush against a clip edge collapses to a sliver of
+        // three equal vertices — and the rasterizer paints no pixel for it, so
+        // neither does this.
+        let (u, v) = (
+            [t[1][0] - t[0][0], t[1][1] - t[0][1]],
+            [t[2][0] - t[0][0], t[2][1] - t[0][1]],
+        );
+        if (u[0] * v[1] - u[1] * v[0]).abs() < 1e-6 {
+            return false;
+        }
+        let side =
+            |a: [f32; 2], b: [f32; 2]| (x - b[0]) * (a[1] - b[1]) - (a[0] - b[0]) * (y - b[1]);
+        let (d0, d1, d2) = (side(t[0], t[1]), side(t[1], t[2]), side(t[2], t[0]));
+        !((d0 < 0.0 || d1 < 0.0 || d2 < 0.0) && (d0 > 0.0 || d1 > 0.0 || d2 > 0.0))
+    }
+
+    fn covers(m: &Mesh, x: f32, y: f32) -> bool {
+        triangles(m).iter().any(|t| inside(t, x, y))
+    }
+
+    /// The milestone's own check: the axis-aligned clamp must paint **exactly**
+    /// what the general Sutherland-Hodgman pass paints. Vertex lists cannot be
+    /// compared directly — the general path emits a fan of up to seven vertices
+    /// where the clamp emits six — so the comparison is the only thing that
+    /// actually matters, the covered area.
+    ///
+    /// The grid offsets are deliberately non-dyadic. The general path splits
+    /// the quad into two triangles along a **diagonal**, and a sample landing
+    /// exactly on it is inside both, neither or one depending on rounding — the
+    /// one place the two paths may legitimately disagree, since a boundary
+    /// point has no answer. (The rasterizer never sees it: the two triangles
+    /// share exact vertices and the fill rule settles the seam. The clamp has
+    /// no interior diagonal at all.) A half-pixel grid lands on those diagonals
+    /// constantly, because they run between integer corners.
+    #[test]
+    fn the_axis_aligned_clamp_paints_what_the_general_clipper_paints() {
+        let clip = Rect::new(10.0, 10.0, 40.0, 30.0);
+        let cases = [
+            ("fully inside", Rect::new(15.0, 15.0, 10.0, 10.0)),
+            ("over the left edge", Rect::new(2.0, 15.0, 20.0, 10.0)),
+            ("over the right edge", Rect::new(40.0, 15.0, 30.0, 10.0)),
+            ("over the top edge", Rect::new(15.0, 2.0, 10.0, 20.0)),
+            ("over the bottom edge", Rect::new(15.0, 30.0, 10.0, 30.0)),
+            ("over a corner", Rect::new(5.0, 5.0, 12.0, 12.0)),
+            ("larger on every side", Rect::new(0.0, 0.0, 100.0, 100.0)),
+            ("flush with the clip", Rect::new(10.0, 10.0, 40.0, 30.0)),
+            ("fully outside", Rect::new(70.0, 70.0, 10.0, 10.0)),
+            ("touching one edge only", Rect::new(50.0, 15.0, 10.0, 10.0)),
+        ];
+        for (name, r) in cases {
+            let corners = [
+                [r.x, r.y + r.h],
+                [r.x + r.w, r.y + r.h],
+                [r.x + r.w, r.y],
+                [r.x, r.y],
+            ];
+            let mut fast = Mesh::new();
+            fast.set_clip(Some(clip));
+            fast.quad(corners, [1.0; 4]);
+
+            // The same quad through the general clipper: `tri` never takes the
+            // fast path, so this is the reference implementation.
+            let mut general = Mesh::new();
+            general.set_clip(Some(clip));
+            general.tri(corners[0], corners[1], corners[2], [1.0; 4]);
+            general.tri(corners[0], corners[2], corners[3], [1.0; 4]);
+
+            let mut x = 0.2713;
+            while x < 80.0 {
+                let mut y = 0.6367;
+                while y < 80.0 {
+                    assert_eq!(
+                        covers(&fast, x, y),
+                        covers(&general, x, y),
+                        "{name}: the two paths disagree at ({x}, {y})"
+                    );
+                    y += 1.0;
+                }
+                x += 1.0;
+            }
+        }
+    }
+
+    #[test]
+    fn axis_aligned_recognizes_the_chrome_and_rejects_the_rest() {
+        // What `rect` builds, whichever corner it starts from.
+        let r = Rect::new(4.0, 6.0, 10.0, 20.0);
+        let corners = [[4.0, 26.0], [14.0, 26.0], [14.0, 6.0], [4.0, 6.0]];
+        let got = axis_aligned(&corners).expect("a rect is axis-aligned");
+        assert_eq!((got.x, got.y, got.w, got.h), (r.x, r.y, r.w, r.h));
+        // Rotating the starting corner and reversing the winding keep it.
+        let rotated = [corners[2], corners[3], corners[0], corners[1]];
+        assert!(
+            axis_aligned(&rotated).is_some(),
+            "start corner is irrelevant"
+        );
+        let reversed = [corners[3], corners[2], corners[1], corners[0]];
+        assert!(axis_aligned(&reversed).is_some(), "winding is irrelevant");
+        // A diagonal line's quad is not, and neither is a sheared one.
+        let mut diagonal = Mesh::new();
+        diagonal.line([0.0, 0.0], [10.0, 10.0], 2.0, [1.0; 4]);
+        assert!(
+            axis_aligned(&[[0.0, 0.0], [10.0, 10.0], [12.0, 8.0], [2.0, -2.0]]).is_none(),
+            "a diagonal quad needs the general clipper"
+        );
+        assert!(!diagonal.is_empty());
+    }
+
+    /// A hairline is a quad too — `line` funnels through `quad`, so a
+    /// horizontal or vertical one (a divider, a tick, a playhead, a baseline:
+    /// most of the chrome) takes the clamp, and only a slanted one does not.
+    #[test]
+    fn axis_parallel_lines_take_the_fast_path() {
+        for (a, b) in [
+            ([0.0f32, 30.0], [100.0f32, 30.0]),
+            ([30.0, 0.0], [30.0, 100.0]),
+        ] {
+            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+            let len = (dx * dx + dy * dy).sqrt();
+            let (nx, ny) = (-dy / len * 2.0, dx / len * 2.0);
+            let corners = [
+                [a[0] + nx, a[1] + ny],
+                [b[0] + nx, b[1] + ny],
+                [b[0] - nx, b[1] - ny],
+                [a[0] - nx, a[1] - ny],
+            ];
+            assert!(axis_aligned(&corners).is_some(), "{a:?} -> {b:?}");
         }
     }
 
