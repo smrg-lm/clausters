@@ -133,13 +133,53 @@ pub fn row_height(lo: f32, hi: f32, grid: Rect) -> f32 {
     grid.h / rows
 }
 
-/// A pitch's y pixel (its row center): high pitch at the top. The axis spans
-/// `[lo - 0.5, hi + 0.5]`, so pitch `hi` centres half a row below the top edge
-/// and pitch `lo` half a row above the bottom — every row is fully visible.
-pub fn pitch_to_y(pitch: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
+/// The integer pitches whose rows show in the window `[lo - 0.5, hi + 0.5]` —
+/// what everything drawn *per row* iterates, so the bands, the dividers, the
+/// keys and the labels are the same set of rows.
+fn rows_in_view(lo: f32, hi: f32) -> std::ops::RangeInclusive<i32> {
+    lo.floor() as i32..=hi.ceil() as i32
+}
+
+/// The part of a bar of height `h` centred on `yc` that falls inside `grid`,
+/// as `(y, height)` — `None` when none of it does. The vertical counterpart of
+/// the note's horizontal clamp to the grid bounds.
+fn visible_band(yc: f32, h: f32, grid: Rect) -> Option<(f32, f32)> {
+    let y = (yc - h * 0.5).max(grid.y);
+    let bottom = (yc + h * 0.5).min(grid.y + grid.h);
+    (bottom > y).then_some((y, bottom - y))
+}
+
+/// Whether any part of pitch `p`'s row shows in the window `[lo - 0.5, hi + 0.5]`.
+///
+/// The row of `p` spans `[p - 0.5, p + 0.5]`, so it is in view while `p` is
+/// within **a whole row** of the window's ends — half of it is enough. Asking
+/// for the row's *centre* to be inside instead drops a note the moment it is
+/// half cut, which is exactly when it should still be half drawn.
+///
+/// The horizontal axis says this by construction — a note off the time window
+/// clamps to a zero-width span and is skipped — while the vertical one has to
+/// be asked.
+pub fn pitch_visible(p: f32, lo: f32, hi: f32) -> bool {
+    p > lo - 1.0 && p < hi + 1.0
+}
+
+/// A pitch's y pixel (its row centre), **unclamped**: a pitch outside the
+/// window maps above or below `grid` instead of onto its edge. Whatever is
+/// placed *on* a row — a note bar — wants this one and cuts itself against the
+/// grid, because a row leaving the view is cut, not slid back in.
+pub fn row_center(pitch: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
     let rows = (hi - lo + 1.0).max(1.0);
-    let frac = ((hi + 0.5 - pitch) / rows).clamp(0.0, 1.0);
-    grid.y + grid.h * frac
+    grid.y + grid.h * (hi + 0.5 - pitch) / rows
+}
+
+/// A pitch's y pixel (its row centre) **inside** `grid`: high pitch at the top.
+/// The axis spans `[lo - 0.5, hi + 0.5]`, so pitch `hi` centres half a row
+/// below the top edge and pitch `lo` half a row above the bottom — every row is
+/// fully visible. Clamped to the grid, which is what the chrome painted *per
+/// row* wants (the shaded bands, the keyboard keys, the C labels): those are
+/// drawn for the rows in view and must not bleed into the strip above or below.
+pub fn pitch_to_y(pitch: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
+    row_center(pitch, lo, hi, grid).clamp(grid.y, grid.y + grid.h)
 }
 
 /// The (fractional) pitch a y pixel maps to over the `[lo - 0.5, hi + 0.5]`
@@ -170,23 +210,26 @@ pub fn draw_grid_background(
     let rh = row_height(lo, hi, grid);
     // One shaded band per black-key semitone, plus a divider at each row and a
     // brighter one at each octave boundary (C). Iterate integer pitches in view.
-    let p0 = lo.floor() as i32;
-    let p1 = hi.ceil() as i32;
-    for p in p0..=p1 {
-        // The row band spans [p-0.5, p+0.5]; its top is the y of p+0.5.
-        let top = pitch_to_y(p as f32 + 0.5, lo, hi, grid);
-        if scale::is_black_key(p) && rh >= 1.0 {
-            mesh.rect(Rect::new(grid.x, top, grid.w, rh), theme.lane_alt);
+    for p in rows_in_view(lo, hi) {
+        let yc = row_center(p as f32, lo, hi, grid);
+        // The band is the row's own slice of the window, cut where the grid
+        // ends — never slid inside it, which would stack the rows above the
+        // window onto the top one and put the shading out of step with the keys.
+        if scale::is_black_key(p)
+            && rh >= 1.0
+            && let Some((y, h)) = visible_band(yc, rh, grid)
+        {
+            mesh.rect(Rect::new(grid.x, y, grid.w, h), theme.lane_alt);
         }
         // A divider under each row when the rows are tall enough to read, a
         // brighter one at each octave boundary (below C).
-        if rh >= 4.0 {
+        let ly = yc + rh * 0.5;
+        if rh >= 4.0 && ly >= grid.y && ly <= grid.y + grid.h {
             let line = if scale::pitch_class(p) == 0 {
                 theme.frame
             } else {
                 theme.grid_line
             };
-            let ly = pitch_to_y(p as f32 - 0.5, lo, hi, grid);
             mesh.rect(Rect::new(grid.x, ly, grid.w, m.divider_w), line);
         }
     }
@@ -234,11 +277,15 @@ pub fn draw_notes(
         let mut nx1 = to_x(offset + n.start + n.dur.max(0.0), nav, field) as f32;
         nx0 = nx0.clamp(x_lo, x_hi);
         nx1 = nx1.clamp(x_lo, x_hi);
-        if nx1 <= nx0 {
+        if nx1 <= nx0 || !pitch_visible(n.pitch, lo, hi) {
             continue;
         }
-        let yc = pitch_to_y(n.pitch, lo, hi, grid);
-        let y = (yc - h * 0.5).clamp(grid.y, grid.y + grid.h - h);
+        // The bar is **cut** by the grid's edge, never pushed inside it: a
+        // note on its way out of the pitch window has to leave, and one shoved
+        // back in would sit on a row that is not its own.
+        let Some((y, h)) = visible_band(row_center(n.pitch, lo, hi, grid), h, grid) else {
+            continue;
+        };
         let is_selected = selected.contains(&i);
         let fill = if is_selected {
             theme.selected_fill
@@ -284,11 +331,12 @@ pub fn draw_pitch_labels(
     if rh < font::height(m.micro_scale) + 2.0 {
         return;
     }
-    let p0 = lo.floor() as i32;
-    let p1 = hi.ceil() as i32;
-    for p in p0..=p1 {
+    for p in rows_in_view(lo, hi) {
         if scale::pitch_class(p) == 0 {
-            let top = pitch_to_y(p as f32 + 0.5, lo, hi, grid);
+            let top = row_center(p as f32, lo, hi, grid) - rh * 0.5;
+            if top < grid.y || top + rh > grid.y + grid.h {
+                continue; // the row is half out: its label would not fit in it
+            }
             font::text(
                 mesh,
                 &scale::note_name(p),
@@ -308,10 +356,10 @@ pub fn draw_keyboard(mesh: &mut Mesh, gutter: Rect, lo: f32, hi: f32, m: &Metric
         return;
     }
     let rh = row_height(lo, hi, gutter);
-    let p0 = lo.floor() as i32;
-    let p1 = hi.ceil() as i32;
-    for p in p0..=p1 {
-        let top = pitch_to_y(p as f32 + 0.5, lo, hi, gutter);
+    for p in rows_in_view(lo, hi) {
+        let Some((top, rh)) = visible_band(row_center(p as f32, lo, hi, gutter), rh, gutter) else {
+            continue;
+        };
         let color = if scale::is_black_key(p) {
             theme.key_black
         } else {
@@ -437,11 +485,17 @@ pub fn note_hit(
     let h = rh.clamp(NOTE_MIN_H, grid.h).max(NOTE_MIN_H);
     let mut found: Option<NoteHit> = None;
     for (i, n) in notes.iter().enumerate() {
+        if !pitch_visible(n.pitch, lo, hi) {
+            continue; // scrolled out of the pitch window: not drawn, not grabbable
+        }
         let nx0 = to_x(offset + n.start, nav, grid) as f32;
         let nx1 = to_x(offset + n.start + n.dur.max(0.0), nav, grid) as f32;
-        let yc = pitch_to_y(n.pitch, lo, hi, grid);
-        let ny = (yc - h * 0.5).clamp(grid.y, grid.y + grid.h - h);
-        if x >= nx0 && x <= nx1 && y >= ny && y <= ny + h {
+        // The band actually on screen, exactly as drawn: a half-cut note is
+        // grabbed by the half you can see.
+        let Some((ny, nh)) = visible_band(row_center(n.pitch, lo, hi, grid), h, grid) else {
+            continue;
+        };
+        if x >= nx0 && x <= nx1 && y >= ny && y <= ny + nh {
             let part = note_part(nx0, nx1, x);
             found = Some(NoteHit { index: i, part });
         }
@@ -749,6 +803,56 @@ mod tests {
         assert!(pitch_to_y(96.0, 24.0, 96.0, g) < pitch_to_y(24.0, 24.0, 96.0, g));
         let p = y_to_pitch(pitch_to_y(60.0, 24.0, 96.0, g), 24.0, 96.0, g);
         assert!((p - 60.0).abs() < 0.5, "got {p}");
+    }
+
+    /// A note outside the visible pitch window is *gone*, not flattened against
+    /// the edge — where a zoomed-in roll would stack every note above it into
+    /// one bar and let a press grab any of them at a pitch none of them has.
+    #[test]
+    fn a_note_outside_the_pitch_window_is_neither_drawn_nor_grabbable() {
+        let g = grid();
+        let nv = nav();
+        let notes = vec![Note::new(100.0, 400.0, 84.0)];
+        let x = (to_x(100.0, &nv, g) + to_x(500.0, &nv, g)) as f32 * 0.5;
+        // Inside a window holding it: the row is hit at its own y.
+        let yc = pitch_to_y(84.0, 72.0, 96.0, g);
+        assert!(note_hit(g, &nv, 0.0, &notes, 72.0, 96.0, x, yc).is_some());
+        // Zoomed onto 48..72, the note is a whole octave above the top row.
+        assert!(!pitch_visible(84.0, 48.0, 72.0));
+        for y in [g.y, g.y + 1.0, g.y + g.h * 0.5, g.y + g.h - 1.0] {
+            assert!(
+                note_hit(g, &nv, 0.0, &notes, 48.0, 72.0, x, y).is_none(),
+                "grabbed at y {y}"
+            );
+        }
+        // A row is in view while any of it is: half a row past each end.
+        assert!(pitch_visible(72.0, 48.0, 72.0) && pitch_visible(48.0, 48.0, 72.0));
+        assert!(pitch_visible(72.4, 48.0, 72.0), "half out is still half in");
+        assert!(!pitch_visible(73.0, 48.0, 72.0), "a whole row past the end");
+        // The chrome iterates exactly the rows that show, boundary included.
+        let rows: Vec<i32> = rows_in_view(48.2, 52.7).collect();
+        assert_eq!(rows, vec![48, 49, 50, 51, 52, 53]);
+    }
+
+    /// A row on its way out of the window is **cut** by the grid's edge. The
+    /// alternative — sliding the whole bar back inside, which is what clamping
+    /// its top did — draws the note on a row that is not its own, and the note
+    /// stops moving while the axis under it keeps going.
+    #[test]
+    fn a_row_leaving_the_view_is_cut_rather_than_pushed_back_in() {
+        let g = grid(); // y = 0, h = 300
+        // A bar of 40 px centred 10 px above the top edge: 10 px of it show,
+        // at the very top, and it never starts below `grid.y`.
+        let (y, h) = visible_band(g.y - 10.0, 40.0, g).unwrap();
+        assert_eq!((y, h), (g.y, 10.0));
+        // The same on the way out of the bottom.
+        let (y, h) = visible_band(g.y + g.h + 10.0, 40.0, g).unwrap();
+        assert_eq!((y, h), (g.y + g.h - 10.0, 10.0));
+        // Fully out: nothing to draw, on either side.
+        assert!(visible_band(g.y - 30.0, 40.0, g).is_none());
+        assert!(visible_band(g.y + g.h + 30.0, 40.0, g).is_none());
+        // Fully in: untouched.
+        assert_eq!(visible_band(g.y + 100.0, 40.0, g), Some((g.y + 80.0, 40.0)));
     }
 
     #[test]
