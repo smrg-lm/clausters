@@ -280,7 +280,7 @@ impl App {
                         hop,
                         rate,
                     );
-                    if let Some(slot) = frame::spectrogram_slot(stfts, &ws.gpu) {
+                    if let Some(slot) = frame::spectrogram_slot(stfts, &ws.gpu, &ws.renderers) {
                         ws.spectrograms.insert(want.widget_id, slot);
                     }
                 }

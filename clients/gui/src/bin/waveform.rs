@@ -16,9 +16,9 @@ fn main() {
     let samples: Arc<[f32]> = demo::sweep(SIGNAL_LEN).into();
     native::run(
         "Clausters - waveform (wheel: zoom, drag: pan, R: reset)",
-        Box::new(move |device, _queue, format| {
+        Box::new(move |device, _queue, _renderers| {
             let data = WaveformData::new(samples, BASE_BUCKET);
-            Box::new(WaveformView::new(device, format, data))
+            Box::new(WaveformView::new(device, data))
         }),
     );
 }

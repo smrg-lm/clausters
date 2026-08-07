@@ -32,6 +32,7 @@ use crate::host::paint::Painter;
 use crate::host::spectrum::SpectrumState;
 use crate::host::widget::{Widget, WidgetKind};
 use crate::host::{BusSource, ClientId, GUI_EVENT, Host, HostEffect};
+use crate::view::Renderers;
 
 use super::{FRAME, NODETREE_POLL, PLACEHOLDER_ORIGIN, UserEvent};
 
@@ -46,6 +47,9 @@ pub(super) struct WindowState {
     pub(super) spectrograms: HashMap<i32, SpectrogramSlot>,
     /// Per-`canvas` GPU resources (the compiled user shader + uniforms).
     pub(super) canvases: HashMap<i32, CanvasView>,
+    /// The heavy views' shared pipelines — one set per window, drawing every
+    /// waveform and spectrogram slot above.
+    pub(super) renderers: Renderers,
     pub(super) painter: Painter,
     /// The second mesh pass: editor chrome drawn over the heavy views
     /// (selection, playhead, rulers' overlay parts, cursor readout).
@@ -399,6 +403,7 @@ impl App {
         };
         frame::render(
             &mut ws.gpu,
+            &mut ws.renderers,
             &mut ws.painter,
             &mut ws.overlay,
             &mut ws.waveforms,

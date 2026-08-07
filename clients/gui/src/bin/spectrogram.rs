@@ -29,8 +29,13 @@ fn main() {
     ));
     native::run(
         "Clausters - spectrogram (wheel: time, Shift+wheel: freq, L: lin/log, [ ]: dB, /: color)",
-        Box::new(move |device, queue, format| {
-            Box::new(SpectrogramView::new(device, queue, format, stft))
+        Box::new(move |device, queue, renderers| {
+            Box::new(SpectrogramView::new(
+                device,
+                queue,
+                &renderers.spectrogram,
+                stft,
+            ))
         }),
     );
 }

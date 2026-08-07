@@ -39,6 +39,7 @@ use winit::window::{Window, WindowId};
 use crate::gpu::Gpu;
 use crate::peaks::MultiPyramid;
 use crate::spectrogram::Stft;
+use crate::view::Renderers;
 use crate::view::TimelineView;
 use crate::waveform::WaveformData;
 
@@ -301,6 +302,9 @@ enum BulkRequest {
 /// The per-canvas GPU resources.
 struct WindowRender {
     gpu: Gpu,
+    /// The heavy views' shared pipelines, one set per canvas — the browser twin
+    /// of the native front's per-window set.
+    renderers: Renderers,
     painter: Painter,
     /// The editor-chrome overlay pass (selection, playhead, rulers, readout).
     overlay: Painter,
@@ -1068,7 +1072,7 @@ impl WebApp {
                 render.waveforms.insert(widget_id, slot);
             }
             BulkData::Spectrogram(stfts) => {
-                if let Some(slot) = frame::spectrogram_slot(stfts, &render.gpu) {
+                if let Some(slot) = frame::spectrogram_slot(stfts, &render.gpu, &render.renderers) {
                     total = Some(slot.total_samples());
                     render.spectrograms.insert(widget_id, slot);
                 }
@@ -1158,7 +1162,13 @@ impl WebApp {
         };
         let mut waveforms = HashMap::new();
         let mut spectrograms = HashMap::new();
-        build_inline_timelines(tree, &render.gpu, &mut waveforms, &mut spectrograms);
+        build_inline_timelines(
+            tree,
+            &render.gpu,
+            &render.renderers,
+            &mut waveforms,
+            &mut spectrograms,
+        );
         // Each inline view's extent joins its navigation group.
         let mut totals: Vec<(i32, usize)> = Vec::new();
         totals.extend(
@@ -1222,6 +1232,7 @@ impl WebApp {
         let mut canvases = HashMap::new();
         frame::render(
             &mut render.gpu,
+            &mut render.renderers,
             &mut render.painter,
             &mut render.overlay,
             &mut render.waveforms,
@@ -1505,6 +1516,7 @@ impl WebApp {
                     slot.pending_size.unwrap_or((size.width, size.height))
                 };
                 gpu.resize(w, h);
+                let renderers = Renderers::new(&gpu.device, gpu.config.format);
                 let painter = Painter::new(&gpu.device, gpu.config.format);
                 let overlay = Painter::new(&gpu.device, gpu.config.format);
                 log(&format!(
@@ -1513,6 +1525,7 @@ impl WebApp {
                 ));
                 slot.render = Some(WindowRender {
                     gpu,
+                    renderers,
                     painter,
                     overlay,
                     waveforms: HashMap::new(),
@@ -1806,6 +1819,7 @@ fn web_proxy() -> Option<EventLoopProxy<HostEvent>> {
 fn build_inline_timelines(
     widget: &Widget,
     gpu: &Gpu,
+    renderers: &Renderers,
     waveforms: &mut HashMap<i32, WaveformSlot>,
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
 ) {
@@ -1834,7 +1848,7 @@ fn build_inline_timelines(
                     *hop,
                     *sample_rate,
                 );
-                if let Some(slot) = frame::spectrogram_slot(stfts, gpu) {
+                if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
                     spectrograms.insert(id, slot);
                 }
             }
@@ -1842,7 +1856,7 @@ fn build_inline_timelines(
         }
     }
     for child in &widget.children {
-        build_inline_timelines(child, gpu, waveforms, spectrograms);
+        build_inline_timelines(child, gpu, renderers, waveforms, spectrograms);
     }
 }
 

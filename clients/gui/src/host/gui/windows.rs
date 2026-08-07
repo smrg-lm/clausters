@@ -20,6 +20,7 @@ use crate::host::paint::Painter;
 use crate::host::widget::{Widget, WidgetKind};
 use crate::host::{BulkLoader, ClientId, GUI_CLOSED};
 use crate::spectrogram::Stft;
+use crate::view::Renderers;
 use crate::view::TimelineView;
 use crate::waveform::WaveformData;
 
@@ -73,10 +74,14 @@ impl App {
         let mut spectrograms = HashMap::new();
         let mut buffer_refs = Vec::new();
         let mut canvases = HashMap::new();
+        // The window's shared pipelines come first: a spectrogram slot binds its
+        // textures against their layout.
+        let renderers = Renderers::new(&gpu.device, gpu.config.format);
         if let Some(tree) = self.host.window_def(id) {
             collect_timelines(
                 tree,
                 &gpu,
+                &renderers,
                 &mut waveforms,
                 &mut spectrograms,
                 &mut buffer_refs,
@@ -103,6 +108,7 @@ impl App {
                 waveforms,
                 spectrograms,
                 canvases,
+                renderers,
                 painter,
                 overlay,
                 origin,
@@ -190,6 +196,7 @@ impl App {
 fn collect_timelines(
     widget: &Widget,
     gpu: &Gpu,
+    renderers: &Renderers,
     waveforms: &mut HashMap<i32, WaveformSlot>,
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
     buffer_refs: &mut Vec<(i32, i32)>,
@@ -248,7 +255,7 @@ fn collect_timelines(
                     .file_bytes(cache)
                     .and_then(|bytes| Stft::from_bytes(&bytes))
                 {
-                    if let Some(slot) = frame::spectrogram_slot(vec![stft], gpu) {
+                    if let Some(slot) = frame::spectrogram_slot(vec![stft], gpu, renderers) {
                         spectrograms.insert(id, slot);
                     }
                 } else {
@@ -260,7 +267,7 @@ fn collect_timelines(
             } else if let Some(path) = path {
                 if let Some(split) = MmapLoader.raw_channels(path, *channels) {
                     let stfts = frame::stft_lanes(split, *window_size, *hop, *sample_rate);
-                    if let Some(slot) = frame::spectrogram_slot(stfts, gpu) {
+                    if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
                         spectrograms.insert(id, slot);
                     }
                 }
@@ -273,7 +280,7 @@ fn collect_timelines(
                     *hop,
                     *sample_rate,
                 );
-                if let Some(slot) = frame::spectrogram_slot(stfts, gpu) {
+                if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
                     spectrograms.insert(id, slot);
                 }
             }
@@ -294,7 +301,7 @@ fn collect_timelines(
         _ => {}
     }
     for child in &widget.children {
-        collect_timelines(child, gpu, waveforms, spectrograms, buffer_refs);
+        collect_timelines(child, gpu, renderers, waveforms, spectrograms, buffer_refs);
     }
 }
 

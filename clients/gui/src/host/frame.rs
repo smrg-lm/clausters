@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use crate::gpu::Gpu;
 use crate::spectrogram::{FreqScale, SpectrogramView, Stft, hop_capped};
-use crate::view::TimelineView;
+use crate::view::{Renderers, TimelineView};
 use crate::viewport::View;
 use crate::waveform::{WaveformData, WaveformView};
 
@@ -57,7 +57,7 @@ pub(crate) struct WaveformSlot {
 
 /// A `WaveformSlot` (the GPU view) for ready data.
 pub(crate) fn waveform_slot(data: WaveformData, gpu: &Gpu) -> WaveformSlot {
-    let view = WaveformView::new(&gpu.device, gpu.config.format, data);
+    let view = WaveformView::new(&gpu.device, data);
     WaveformSlot { view }
 }
 
@@ -75,14 +75,23 @@ impl SpectrogramSlot {
 }
 
 /// A `SpectrogramSlot` from per-channel analyses (empty `stfts` yields none).
-pub(crate) fn spectrogram_slot(stfts: Vec<Stft>, gpu: &Gpu) -> Option<SpectrogramSlot> {
+pub(crate) fn spectrogram_slot(
+    stfts: Vec<Stft>,
+    gpu: &Gpu,
+    renderers: &Renderers,
+) -> Option<SpectrogramSlot> {
     if stfts.is_empty() {
         return None;
     }
     let views = stfts
         .into_iter()
         .map(|stft| {
-            SpectrogramView::new(&gpu.device, &gpu.queue, gpu.config.format, Arc::new(stft))
+            SpectrogramView::new(
+                &gpu.device,
+                &gpu.queue,
+                &renderers.spectrogram,
+                Arc::new(stft),
+            )
         })
         .collect();
     Some(SpectrogramSlot { views })
@@ -1686,6 +1695,7 @@ fn draw_static_meshes(
 #[allow(clippy::too_many_arguments)] // the per-window resource set, both fronts
 pub(crate) fn render(
     gpu: &mut Gpu,
+    renderers: &mut Renderers,
     painter: &mut Painter,
     overlay: &mut Painter,
     waveforms: &mut HashMap<i32, WaveformSlot>,
@@ -1742,8 +1752,13 @@ pub(crate) fn render(
                     let th = item.theme.as_deref().unwrap_or(theme);
                     slot.view
                         .set_palette([th.series_1, th.series_2, th.series_3, th.series_4]);
-                    slot.view
-                        .upload(&gpu.device, &gpu.queue, &nav, body.w.max(1.0) as u32);
+                    slot.view.upload(
+                        &gpu.device,
+                        &gpu.queue,
+                        renderers,
+                        &nav,
+                        body.w.max(1.0) as u32,
+                    );
                 }
             }
             TimelineKind::Spectrogram {
@@ -1763,7 +1778,13 @@ pub(crate) fn render(
                             (*colormap).max(0) as u32,
                         );
                         view.set_freq_window(item.editor.y_view().0, item.editor.y_view().1);
-                        view.upload(&gpu.device, &gpu.queue, &nav, body.w.max(1.0) as u32);
+                        view.upload(
+                            &gpu.device,
+                            &gpu.queue,
+                            renderers,
+                            &nav,
+                            body.w.max(1.0) as u32,
+                        );
                     }
                 }
             }
@@ -1837,7 +1858,7 @@ pub(crate) fn render(
                         let (x, y, w, h) = clamp_viewport(body, fb_w, fb_h);
                         if w >= 1.0 && h >= 1.0 {
                             pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                            slot.view.draw(&mut pass);
+                            slot.view.draw(&mut pass, renderers);
                         }
                     } else {
                         for ch in 0..lanes {
@@ -1845,7 +1866,7 @@ pub(crate) fn render(
                             let (x, y, w, h) = clamp_viewport(lane, fb_w, fb_h);
                             if w >= 1.0 && h >= 1.0 {
                                 pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                                slot.view.draw_channel(&mut pass, ch);
+                                slot.view.draw_channel(&mut pass, &renderers.waveform, ch);
                             }
                         }
                     }
@@ -1860,7 +1881,7 @@ pub(crate) fn render(
                         let (x, y, w, h) = clamp_viewport(lane, fb_w, fb_h);
                         if w >= 1.0 && h >= 1.0 {
                             pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                            view.draw(&mut pass);
+                            view.draw(&mut pass, renderers);
                         }
                     }
                 }

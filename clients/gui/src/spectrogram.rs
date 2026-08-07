@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use clausters_core::{bytes, fft};
 
-use crate::view::TimelineView;
+use crate::view::{Renderers, TimelineView};
 use crate::viewport::View;
 
 const MAGIC: &[u8; 4] = b"CLSG";
@@ -229,20 +229,38 @@ struct Uniforms {
     db: [f32; 4],
 }
 
-/// GPU renderer for an `Stft`: one full-screen quad samples the magnitude
-/// texture; `write_uniforms` sets the visible time/frequency window and dB
-/// scale; a colormap turns magnitude into colour in the shader.
+/// GPU renderer for spectrograms: the pipeline that samples a magnitude texture
+/// over a full-screen quad, plus the bind-group layout its textures are built
+/// against.
+///
+/// **One of these serves a whole window** — see [`Renderers`]. It carries
+/// nothing about any particular analysis; a spectrogram element's own state is
+/// a [`SpectrogramTexture`]. The split matters most here, because a
+/// spectrogram builds one view *per channel*: an eight-channel analysis used to
+/// compile eight shader modules and eight pipelines to draw eight textures that
+/// differ only in their contents.
+///
+/// [`Renderers`]: crate::view::Renderers
 pub struct SpectrogramRenderer {
     pipeline: wgpu::RenderPipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+}
+
+/// One spectrogram channel's GPU state: the magnitude texture, its sampler and
+/// the uniforms that place the visible time/frequency window and dB scale. Drawn
+/// through the window's shared [`SpectrogramRenderer`].
+pub struct SpectrogramTexture {
     bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
 }
 
-impl SpectrogramRenderer {
+impl SpectrogramTexture {
+    /// Uploads `stft`'s magnitudes as a texture and binds it against
+    /// `renderer`'s layout.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
+        renderer: &SpectrogramRenderer,
         stft: &Stft,
     ) -> Self {
         // Magnitudes -> a 2D texture: width = frames (time), height = bins
@@ -309,6 +327,38 @@ impl SpectrogramRenderer {
             mapped_at_creation: false,
         });
 
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("spectrogram bg"),
+            layout: &renderer.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+
+        Self {
+            bind_group,
+            uniform_buffer,
+        }
+    }
+
+    fn write_uniforms(&self, queue: &wgpu::Queue, u: &Uniforms) {
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(u));
+    }
+}
+
+impl SpectrogramRenderer {
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("spectrogram bgl"),
             entries: &[
@@ -340,25 +390,6 @@ impl SpectrogramRenderer {
                 },
             ],
         });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("spectrogram bg"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
-
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("spectrogram shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("spectrogram.wgsl").into()),
@@ -396,27 +427,22 @@ impl SpectrogramRenderer {
 
         Self {
             pipeline,
-            bind_group,
-            uniform_buffer,
+            bind_group_layout,
         }
     }
 
-    fn write_uniforms(&self, queue: &wgpu::Queue, u: &Uniforms) {
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(u));
-    }
-
-    fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+    fn draw(&self, pass: &mut wgpu::RenderPass<'_>, tex: &SpectrogramTexture) {
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.bind_group, &[]);
+        pass.set_bind_group(0, &tex.bind_group, &[]);
         pass.draw(0..3, 0..1);
     }
 }
 
-/// An `Stft` paired with its renderer and the display state (frequency window,
+/// An `Stft` paired with its GPU texture and the display state (frequency window,
 /// scale, dB window), satisfying [`TimelineView`].
 pub struct SpectrogramView {
     stft: Arc<Stft>,
-    renderer: SpectrogramRenderer,
+    texture: SpectrogramTexture,
     /// Visible frequency window, in display coordinates (reuses the navigation
     /// `View` over `n_bins` so `start/n_bins` is the bottom of the axis).
     freq_view: View,
@@ -433,14 +459,14 @@ impl SpectrogramView {
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
+        renderer: &SpectrogramRenderer,
         stft: Arc<Stft>,
     ) -> Self {
-        let renderer = SpectrogramRenderer::new(device, queue, format, &stft);
+        let texture = SpectrogramTexture::new(device, queue, renderer, &stft);
         let freq_view = View::full(stft.n_bins());
         Self {
             stft,
-            renderer,
+            texture,
             freq_view,
             scale: FreqScale::Log,
             db_floor: -90.0,
@@ -524,15 +550,16 @@ impl TimelineView for SpectrogramView {
         &mut self,
         _device: &wgpu::Device,
         queue: &wgpu::Queue,
+        _renderers: &mut Renderers,
         view: &View,
         _render_width_px: u32,
     ) {
         let u = self.uniforms(view);
-        self.renderer.write_uniforms(queue, &u);
+        self.texture.write_uniforms(queue, &u);
     }
 
-    fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
-        self.renderer.draw(pass);
+    fn draw(&self, pass: &mut wgpu::RenderPass<'_>, renderers: &Renderers) {
+        renderers.spectrogram.draw(pass, &self.texture);
     }
 
     /// `L` cycles the frequency scale (linear → log → mel → bark); `[` / `]`

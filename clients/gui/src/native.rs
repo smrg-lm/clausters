@@ -16,16 +16,19 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
-use crate::view::TimelineView;
+use crate::view::{Renderers, TimelineView};
 use crate::viewport::View;
 
-/// Builds the view once the GPU device exists (it needs the device, queue and
-/// surface format to create pipelines and upload data/textures).
+/// Builds the view once the GPU device exists (it needs the device and queue to
+/// upload its data, and the window's shared [`Renderers`] to bind against).
 pub type ViewFactory =
-    Box<dyn FnOnce(&wgpu::Device, &wgpu::Queue, wgpu::TextureFormat) -> Box<dyn TimelineView>>;
+    Box<dyn FnOnce(&wgpu::Device, &wgpu::Queue, &Renderers) -> Box<dyn TimelineView>>;
 
 struct State {
     gpu: Gpu,
+    /// The shared pipelines, as in the host's windows: the harness draws one
+    /// view, but the view does not own the machinery it draws through.
+    renderers: Renderers,
     view_obj: Box<dyn TimelineView>,
     view: View,
     cursor_x: f64,
@@ -42,10 +45,12 @@ struct State {
 
 impl State {
     fn new(gpu: Gpu, factory: ViewFactory) -> Self {
-        let view_obj = factory(&gpu.device, &gpu.queue, gpu.config.format);
+        let renderers = Renderers::new(&gpu.device, gpu.config.format);
+        let view_obj = factory(&gpu.device, &gpu.queue, &renderers);
         let view = View::full(view_obj.total_samples());
         Self {
             gpu,
+            renderers,
             view_obj,
             view,
             cursor_x: 0.0,
@@ -70,6 +75,7 @@ impl State {
         self.view_obj.upload(
             &self.gpu.device,
             &self.gpu.queue,
+            &mut self.renderers,
             &self.view,
             self.gpu.config.width,
         );
@@ -114,7 +120,7 @@ impl State {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            self.view_obj.draw(&mut pass);
+            self.view_obj.draw(&mut pass, &self.renderers);
         }
         self.gpu.queue.submit(std::iter::once(encoder.finish()));
         frame.present();

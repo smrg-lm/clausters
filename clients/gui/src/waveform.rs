@@ -28,7 +28,7 @@
 use std::sync::Arc;
 
 use crate::peaks::{self, MultiPyramid, Pyramid};
-use crate::view::TimelineView;
+use crate::view::{Renderers, TimelineView};
 use crate::viewport::View;
 
 /// At or below this many samples per pixel, draw the raw sample polyline rather
@@ -239,23 +239,64 @@ enum Mode {
 /// trace color (the same shape the flat-geometry painter uses).
 const FLOATS_PER_VERTEX: usize = 6;
 
-/// Backend-independent waveform renderer. Holds a triangle pipeline (min/max
-/// columns) and a line pipeline (raw sample polyline) sharing one shader and
-/// vertex buffer; `upload_geometry` selects the regime per frame and builds one
-/// vertex range per channel (each drawn into its own lane viewport when
-/// stacked, or all into one when overlaid).
+/// Backend-independent waveform renderer: a triangle pipeline (min/max columns)
+/// and a line pipeline (raw sample polyline) over one shader.
+///
+/// **One of these serves a whole window.** A pipeline is a pure function of the
+/// device and the target format, so it says nothing about *which* waveform is
+/// drawn — the per-element state is [`WaveformGeometry`], and one renderer
+/// draws any number of them. That split is what makes a slot cheap enough to
+/// give every element in a composition, instead of the shader module and two
+/// pipeline objects per widget this used to compile.
+///
+/// The build `scratch` is shared for the same reason: it is transient space for
+/// the frame's geometry, and elements upload one at a time.
 pub struct WaveformRenderer {
     column_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
+    scratch: Vec<f32>,
+}
+
+/// One waveform element's GPU geometry: the vertex buffer the renderer fills,
+/// the per-channel ranges within it, the regime those vertices were built for
+/// and the trace palette they were coloured with. Everything here genuinely
+/// belongs to the element; everything shared is in [`WaveformRenderer`].
+pub struct WaveformGeometry {
     vertex_buffer: wgpu::Buffer,
     capacity_vertices: u64,
     /// One `(first_vertex, count)` per channel.
     ranges: Vec<(u32, u32)>,
     mode: Mode,
-    scratch: Vec<f32>,
     /// Per-channel trace colors, cycled — [`CHANNEL_COLORS`] until a theme
     /// replaces them ([`Self::set_palette`]).
     palette: [[f32; 4]; 4],
+}
+
+impl WaveformGeometry {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let capacity_vertices = 8192 * 6;
+        Self {
+            vertex_buffer: new_vertex_buffer(device, capacity_vertices),
+            capacity_vertices,
+            ranges: Vec::new(),
+            mode: Mode::Columns,
+            palette: CHANNEL_COLORS,
+        }
+    }
+
+    /// Replaces the per-channel trace palette (the theme's series colors).
+    pub fn set_palette(&mut self, palette: [[f32; 4]; 4]) {
+        self.palette = palette;
+    }
+}
+
+fn new_vertex_buffer(device: &wgpu::Device, vertices: u64) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("waveform vertices"),
+        size: vertices * (FLOATS_PER_VERTEX * std::mem::size_of::<f32>()) as u64,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
 }
 
 impl WaveformRenderer {
@@ -322,29 +363,11 @@ impl WaveformRenderer {
             make_pipeline(wgpu::PrimitiveTopology::TriangleList, "waveform columns");
         let line_pipeline = make_pipeline(wgpu::PrimitiveTopology::LineStrip, "waveform line");
 
-        let capacity_vertices = 8192 * 6;
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("waveform vertices"),
-            size: capacity_vertices * (FLOATS_PER_VERTEX * std::mem::size_of::<f32>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         Self {
             column_pipeline,
             line_pipeline,
-            vertex_buffer,
-            capacity_vertices,
-            ranges: Vec::new(),
-            mode: Mode::Columns,
             scratch: Vec::new(),
-            palette: CHANNEL_COLORS,
         }
-    }
-
-    /// Replaces the per-channel trace palette (the theme's series colors).
-    pub fn set_palette(&mut self, palette: [[f32; 4]; 4]) {
-        self.palette = palette;
     }
 
     fn push_vertex(&mut self, x: f32, y: f32, color: [f32; 4]) {
@@ -352,15 +375,20 @@ impl WaveformRenderer {
             .extend_from_slice(&[x, y, color[0], color[1], color[2], color[3]]);
     }
 
-    /// Rebuild and upload the geometry for `view` at `render_width_px` device
+    /// Rebuild and upload `geom` for `view` at `render_width_px` device
     /// pixels, mapping amplitudes through the visible vertical display window
     /// `y_window` (`(0.0, 1.0)` = the full axis). O(render_width_px) per
     /// channel in the column regimes, O(visible samples) in the line regime -
     /// both bounded by the screen, never by the buffer.
+    // Everything the element used to hold is now passed in — which is the
+    // point of the split, and what makes the list long. Grouping it back into
+    // a struct would only re-create the object this milestone took apart.
+    #[allow(clippy::too_many_arguments)]
     pub fn upload_geometry(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        geom: &mut WaveformGeometry,
         data: &WaveformData,
         view: &View,
         render_width_px: u32,
@@ -371,17 +399,17 @@ impl WaveformRenderer {
         let total = data.total_samples();
         let (y0, y_len) = (y_window.0, y_window.1.max(crate::viewport::MIN_SPAN));
         self.scratch.clear();
-        self.ranges.clear();
+        geom.ranges.clear();
 
-        self.mode = if spp <= LINE_THRESHOLD && data.has_raw() {
+        geom.mode = if spp <= LINE_THRESHOLD && data.has_raw() {
             Mode::Line
         } else {
             Mode::Columns
         };
         for ch in 0..data.num_channels() {
-            let color = self.palette[ch % self.palette.len()];
+            let color = geom.palette[ch % geom.palette.len()];
             let first = (self.scratch.len() / FLOATS_PER_VERTEX) as u32;
-            match self.mode {
+            match geom.mode {
                 Mode::Line => {
                     let a = (view.start.floor().max(0.0) as usize).min(total);
                     let b = ((view.start + view.len).ceil() as usize).min(total);
@@ -411,41 +439,35 @@ impl WaveformRenderer {
                 }
             }
             let count = (self.scratch.len() / FLOATS_PER_VERTEX) as u32 - first;
-            self.ranges.push((first, count));
+            geom.ranges.push((first, count));
         }
 
         let needed = (self.scratch.len() / FLOATS_PER_VERTEX) as u64;
-        if needed > self.capacity_vertices {
-            self.capacity_vertices = needed.next_power_of_two();
-            self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("waveform vertices"),
-                size: self.capacity_vertices
-                    * (FLOATS_PER_VERTEX * std::mem::size_of::<f32>()) as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+        if needed > geom.capacity_vertices {
+            geom.capacity_vertices = needed.next_power_of_two();
+            geom.vertex_buffer = new_vertex_buffer(device, geom.capacity_vertices);
         }
-        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.scratch));
+        queue.write_buffer(&geom.vertex_buffer, 0, bytemuck::cast_slice(&self.scratch));
     }
 
-    fn bind(&self, pass: &mut wgpu::RenderPass<'_>) {
-        let pipeline = match self.mode {
+    fn bind(&self, pass: &mut wgpu::RenderPass<'_>, geom: &WaveformGeometry) {
+        let pipeline = match geom.mode {
             Mode::Columns => &self.column_pipeline,
             Mode::Line => &self.line_pipeline,
         };
         pass.set_pipeline(pipeline);
-        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        pass.set_vertex_buffer(0, geom.vertex_buffer.slice(..));
     }
 
     /// Record every channel's draw into an existing render pass (the overlaid
     /// form — all traces share the caller's viewport). One draw per channel so
     /// the line strips do not connect across channels.
-    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
-        if self.ranges.iter().all(|(_, count)| *count == 0) {
+    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, geom: &WaveformGeometry) {
+        if geom.ranges.iter().all(|(_, count)| *count == 0) {
             return;
         }
-        self.bind(pass);
-        for (first, count) in &self.ranges {
+        self.bind(pass, geom);
+        for (first, count) in &geom.ranges {
             if *count > 0 {
                 pass.draw(*first..*first + *count, 0..1);
             }
@@ -454,23 +476,29 @@ impl WaveformRenderer {
 
     /// Record one channel's draw (the stacked form — the caller sets that
     /// channel's lane viewport first).
-    pub fn draw_channel(&self, pass: &mut wgpu::RenderPass<'_>, ch: usize) {
-        let Some(&(first, count)) = self.ranges.get(ch) else {
+    pub fn draw_channel(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        geom: &WaveformGeometry,
+        ch: usize,
+    ) {
+        let Some(&(first, count)) = geom.ranges.get(ch) else {
             return;
         };
         if count == 0 {
             return;
         }
-        self.bind(pass);
+        self.bind(pass, geom);
         pass.draw(first..first + count, 0..1);
     }
 }
 
-/// A `WaveformData` paired with its renderer and its vertical (amplitude)
-/// display window, satisfying [`TimelineView`].
+/// A `WaveformData` paired with its GPU geometry and its vertical (amplitude)
+/// display window, satisfying [`TimelineView`]. The pipelines it draws through
+/// belong to the window ([`WaveformRenderer`]), not to this.
 pub struct WaveformView {
     data: WaveformData,
-    renderer: WaveformRenderer,
+    geometry: WaveformGeometry,
     /// Visible window of the vertical display axis, normalized (`0, 1` =
     /// no zoom) — the amplitude analogue of the spectrogram's frequency view.
     amp_window: (f64, f64),
@@ -479,11 +507,10 @@ pub struct WaveformView {
 }
 
 impl WaveformView {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, data: WaveformData) -> Self {
-        let renderer = WaveformRenderer::new(device, format);
+    pub fn new(device: &wgpu::Device, data: WaveformData) -> Self {
         Self {
             data,
-            renderer,
+            geometry: WaveformGeometry::new(device),
             amp_window: (0.0, 1.0),
             drag_amp_start: 0.0,
         }
@@ -501,13 +528,18 @@ impl WaveformView {
     }
 
     /// Record one channel's draw (see [`WaveformRenderer::draw_channel`]).
-    pub fn draw_channel(&self, pass: &mut wgpu::RenderPass<'_>, ch: usize) {
-        self.renderer.draw_channel(pass, ch);
+    pub fn draw_channel(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        renderer: &WaveformRenderer,
+        ch: usize,
+    ) {
+        renderer.draw_channel(pass, &self.geometry, ch);
     }
 
     /// Replaces the per-channel trace palette (the theme's series colors).
     pub fn set_palette(&mut self, palette: [[f32; 4]; 4]) {
-        self.renderer.set_palette(palette);
+        self.geometry.set_palette(palette);
     }
 }
 
@@ -520,12 +552,14 @@ impl TimelineView for WaveformView {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        renderers: &mut Renderers,
         view: &View,
         render_width_px: u32,
     ) {
-        self.renderer.upload_geometry(
+        renderers.waveform.upload_geometry(
             device,
             queue,
+            &mut self.geometry,
             &self.data,
             view,
             render_width_px,
@@ -533,8 +567,8 @@ impl TimelineView for WaveformView {
         );
     }
 
-    fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
-        self.renderer.draw(pass);
+    fn draw(&self, pass: &mut wgpu::RenderPass<'_>, renderers: &Renderers) {
+        renderers.waveform.draw(pass, &self.geometry);
     }
 
     fn on_vertical_zoom(&mut self, factor: f64, anchor: f64) -> bool {
