@@ -24,6 +24,10 @@ use super::meters::fraction;
 use super::metrics::Metrics;
 use super::paint::Mesh;
 use super::pianoroll;
+use super::signal::{
+    self,
+    trace::{Trace, TraceStyle},
+};
 use super::theme::Theme;
 use super::widget::{Widget, WidgetKind};
 use crate::viewport::View;
@@ -224,8 +228,19 @@ pub fn draw(
             // A loaded take (mapped file, peak cache or fetched buffer): decimated
             // through its pyramid, so a minutes-long clip costs the same as a
             // short one.
-            Some(data) => draw_take_body(mesh, cr, body, nav, clip, data, m, theme),
-            None => draw_clip_body(mesh, cr, body, nav, clip, m, theme),
+            Some(data) => draw_body(mesh, cr, body, nav, clip, &Trace::Data(data), m, theme),
+            // An **inline** sketch sent with the def: the same drawing, a
+            // cheaper source.
+            None => draw_body(
+                mesh,
+                cr,
+                body,
+                nav,
+                clip,
+                &Trace::samples(&clip.samples, 1),
+                m,
+                theme,
+            ),
         }
         if !clip.notes.is_empty() {
             // Notes placed on the same shared axis (so the whole roll moves when
@@ -382,28 +397,28 @@ pub fn clip_source_at(body: Rect, nav: &View, clip: &ClipDraw, total: f64, x: f3
     ((sample - clip.offset) / clip.dur * total).clamp(0.0, total)
 }
 
-/// Draws a waveform body inside the *visible* part of a clip (`cr`), reading the
-/// source through `column` (a min/max over a sample span) and `at` (one sample) —
-/// the two accessors a loaded take and an inline body both answer. One column per
-/// visible pixel, each mapped back to the source through the shared axis, so the
-/// body honours zoom and pan; when a column spans less than a couple of samples it
-/// draws the polyline instead (the zoomed-in regime). Never resolves finer than
-/// the screen — the one graphics rule.
-// mesh + target/body rects + nav + clip + total span + the two source accessors:
-// all distinct inputs to one wave-drawing pass, clearer flat than bundled.
+/// Draws a clip's signal body inside the *visible* part of the clip (`cr`),
+/// reading its samples through the one column source every signal view shares
+/// ([`Trace`]) — a loaded take answers from its peak pyramid, an inline sketch
+/// straight off its slice, and the drawing is the same either way.
+///
+/// The body is drawn **from the source, per visible pixel**, mapped back
+/// through the shared axis, which is what makes it scroll and stretch with the
+/// view instead of squashing into whatever slice is on screen. Never resolves
+/// finer than the screen — the one graphics rule.
+// mesh + target/body rects + nav + clip + source + look: one body's draw.
 #[allow(clippy::too_many_arguments)]
-fn draw_wave_body(
+fn draw_body(
     mesh: &mut Mesh,
     cr: Rect,
     body: Rect,
     nav: &View,
     clip: &ClipDraw,
-    total: f64,
-    column: impl Fn(f64, f64, f64) -> (f32, f32),
-    at: impl Fn(f64) -> f32,
+    trace: &Trace,
     m: &Metrics,
     theme: &Theme,
 ) {
+    let total = trace.frames() as f64;
     if total < 2.0 || cr.w < 1.0 || cr.h <= 0.0 {
         return;
     }
@@ -412,100 +427,20 @@ fn draw_wave_body(
         let y = y_at(0.0);
         mesh.line([cr.x, y], [cr.x + cr.w, y], m.divider_w, theme.baseline);
     }
-    let src = |x: f32| clip_source_at(body, nav, clip, total, x);
-    let cols = cr.w.max(1.0) as usize;
-    let per_px = (src(cr.x + 1.0) - src(cr.x)).max(0.0);
-    if per_px >= 2.0 {
-        // Zoomed out: a min/max column per pixel, read at the level the pyramid
-        // (or the slice) can answer cheaply.
-        for c in 0..cols {
-            let x = cr.x + c as f32;
-            let (s0, s1) = (src(x), src(x + 1.0));
-            let (lo, hi) = column(s0, s1, per_px);
-            mesh.line(
-                [x + 0.5, y_at(hi)],
-                [x + 0.5, y_at(lo)],
-                m.divider_w,
-                theme.selection,
-            );
-        }
-    } else {
-        // Zoomed in: fewer than a couple of samples per pixel — draw the trace.
-        let mut prev = [cr.x, y_at(at(src(cr.x)))];
-        for c in 1..=cols {
-            let x = cr.x + c as f32;
-            let p = [x, y_at(at(src(x)))];
-            mesh.line(prev, p, m.divider_w, theme.selection);
-            prev = p;
-        }
-    }
-}
-
-/// A **loaded take** as the clip's body: read through the take's peak pyramid
-/// (`clausters_core::peaks`, via [`WaveformData::column`] — the same LOD source
-/// and crossfade the heavy waveform view draws from), so a minutes-long file
-/// costs a screen's worth of columns, never its samples.
-#[allow(clippy::too_many_arguments)] // one body's draw: its rects, source, look
-fn draw_take_body(
-    mesh: &mut Mesh,
-    cr: Rect,
-    body: Rect,
-    nav: &View,
-    clip: &ClipDraw,
-    data: &WaveformData,
-    m: &Metrics,
-    theme: &Theme,
-) {
-    let total = data.total_samples() as f64;
-    draw_wave_body(
+    signal::trace::draw_channel(
         mesh,
         cr,
-        body,
-        nav,
-        clip,
-        total,
-        |s0, s1, per_px| data.column(0, per_px, s0, s1),
-        |s| data.column(0, 1.0, s, s + 1.0).0,
-        m,
-        theme,
-    );
-}
-
-/// A clip's **inline** body (a short sketch sent with the def), read straight off
-/// the sample slice — the same drawing, a cheaper source.
-fn draw_clip_body(
-    mesh: &mut Mesh,
-    cr: Rect,
-    body: Rect,
-    nav: &View,
-    clip: &ClipDraw,
-    m: &Metrics,
-    theme: &Theme,
-) {
-    let samples = &clip.samples;
-    let n = samples.len();
-    draw_wave_body(
-        mesh,
-        cr,
-        body,
-        nav,
-        clip,
-        n as f64,
-        |s0, s1, _per_px| {
-            // The last column can land exactly on the end: keep the span
-            // non-empty and inside the slice (a `clamp` with min > max panics).
-            let a = (s0.floor().max(0.0) as usize).min(n.saturating_sub(1));
-            let b = (s1.ceil() as usize).clamp(a + 1, n);
-            let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
-            for &v in &samples[a..b] {
-                lo = lo.min(v);
-                hi = hi.max(v);
-            }
-            (lo, hi)
+        trace,
+        0,
+        |x| clip_source_at(body, nav, clip, total, x),
+        // The inverse placement: a source frame sits at its own fraction of the
+        // clip's span, seen through the navigation window.
+        |s| to_x(clip.offset + s / total * clip.dur, nav, body) as f32,
+        y_at,
+        TraceStyle {
+            color: theme.selection,
+            width: m.divider_w,
         },
-        |s| samples[(s.round().max(0.0) as usize).min(n.saturating_sub(1))],
-        m,
-        theme,
     );
 }
 

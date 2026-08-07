@@ -39,6 +39,10 @@ use super::meters::fraction;
 use super::metrics::Metrics;
 use super::paint::Mesh;
 use super::ruler::{self, TimeUnit};
+use super::signal::{
+    self,
+    trace::{Trace, TraceStyle},
+};
 use super::theme::{Theme, with_alpha};
 use super::widget::Ruler;
 
@@ -293,41 +297,23 @@ fn draw_signal(mesh: &mut Mesh, g: &Geom, p: &PlotParams, m: &Metrics, theme: &T
         if n < 2 {
             continue;
         }
-        let color = theme.series(ch);
-        let y_at = |v: f32| lane.y + lane.h * (1.0 - fraction(v, lo, hi));
-        let at = |i: usize| p.samples[i * channels + ch];
-        let cols = lane.w.max(1.0) as usize;
-        if n <= cols * 2 {
-            // Few enough to draw every sample as a connected polyline.
-            let dx = lane.w / (n - 1) as f32;
-            let mut prev = [lane.x, y_at(at(0))];
-            for i in 1..n {
-                let pt = [lane.x + i as f32 * dx, y_at(at(i))];
-                mesh.line(prev, pt, m.trace_w, color);
-                prev = pt;
-            }
-        } else {
-            // Too many: one vertical min/max bar per pixel column (the
-            // envelope) — every sample contributes, so nothing aliases.
-            let cw = lane.w / cols as f32;
-            for c in 0..cols {
-                let s0 = c * n / cols;
-                let s1 = ((c + 1) * n / cols).max(s0 + 1).min(n);
-                let (mut vlo, mut vhi) = (f32::INFINITY, f32::NEG_INFINITY);
-                for i in s0..s1 {
-                    let v = at(i);
-                    vlo = vlo.min(v);
-                    vhi = vhi.max(v);
-                }
-                let x = lane.x + (c as f32 + 0.5) * cw;
-                mesh.line(
-                    [x, y_at(vhi)],
-                    [x, y_at(vlo)],
-                    m.trace_w.min(cw.max(1.0)),
-                    color,
-                );
-            }
-        }
+        // The whole sequence over the lane's width, through the one column
+        // source every signal view reads: a polyline while samples are wider
+        // than a couple of pixels, the min/max envelope once they are not.
+        let span = (n - 1) as f64;
+        signal::trace::draw_channel(
+            mesh,
+            lane,
+            &Trace::samples(p.samples, channels),
+            ch,
+            |x| (x - lane.x) as f64 / lane.w.max(1.0) as f64 * span,
+            |s| lane.x + (s / span) as f32 * lane.w,
+            |v| lane.y + lane.h * (1.0 - fraction(v, lo, hi)),
+            TraceStyle {
+                color: theme.series(ch),
+                width: m.trace_w,
+            },
+        );
     }
 }
 

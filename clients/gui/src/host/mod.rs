@@ -59,6 +59,7 @@ pub mod registry;
 pub mod ruler;
 pub mod score;
 pub mod scroll;
+pub mod signal;
 pub mod spectrum;
 pub mod textedit;
 pub mod theme;
