@@ -371,6 +371,7 @@ split, and every rule below falls out of it:
 | `src/host/metrics.rs` | The size roles: every chrome size as a named function (`pad`, `gap`, `control_h`, `track_thick`, `ruler_h`, `text_scale`, ...) in one `Metrics` per host — no layout or paint site names a number, the twin of `theme.rs`. Its defaults are **generated** by one quantized modular scale over the font cell (constant data, never arithmetic on a frame); one `scale` multiplier is the whole density surface. Overlaid from `[gui.metrics]` (native) or `GuiBridge.metrics` (browser). The host's table is **logical**; `Metrics::resolved` turns it into the physical table a window paints with, at that window's `ui_scale`, re-quantized per family — once per scale change, so HiDPI costs nothing per frame. `Host::metrics_for(def_id)` is the door every layout, paint and hit-test site reads; the shell writes the scale through `Host::set_ui_scale` (winit's `scale_factor`, the page's `devicePixelRatio`), because the agnostic core may not ask a platform |
 | `src/host/interact.rs` | Pointer logic over the typed tree — hit-test, value writes, the edit-back payloads — shared by both fronts. A hit carries the **chain** of containers over the point, each naming the coordinate system it gives its contents (`Coords`: layout for `window`/`panel`, a plane for `scroll`, a canvas for `patch`, a `TimeAxis` for every timeline view — its body, its navigation window and its vertical axis) and the **gesture table** it declares, so a gesture reads the plane it pans or the axis it locates on instead of laying the window out again to search for it |
 | `src/host/gestures.rs` | The one press → drag → release → wheel state machine **both fronts drive**: it mutates the `Host` through the `interact` doors and returns `GestureEffect`s (emit/redraw/release-pointer) for the front's own sinks, so every editing gesture behaves identically on either platform by construction. A press runs the **containers' plans** over the chain, innermost first (pan / select / locate / hand it to the element, each step free to decline and pass the press outward), so the axis' gestures exist once for the five timeline views instead of once per kind; the element step is where a widget's own behaviour lives |
+| `src/host/signal/` | The **signal element**: one model for every view of a signal — a *presentation* (the trace, a magnitude spectrum, the time-frequency texture, the phase of a stereo pair) of a *source* (random-access samples, or a bus read forward-only) with the *capabilities* the view offers over it, plus the table mapping each of the six wire names onto a point of that product. `signal/trace.rs` is the one min/max-per-column source every signal view reads, and the mesh half of that presentation's renderer |
 | `src/host/{track,pianoroll,bpf,plot,patch,score,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window. `pianoroll` is the note core (the notes, their mapping, drawing, hit-test, editing) **shared** by the dedicated `pianoroll` widget and the multitrack `clip`'s roll body, so the two never disagree — the `bpf::place_point` reuse move again |
 | `src/{waveform,spectrogram,viewport}.rs` | The heavy GPU views and the navigation window (`View`) |
 | `src/host/timeline.rs` | The navigation **groups**: the shared window/selection/playhead of linked views and of the multitrack's aligned lanes |
@@ -496,14 +497,14 @@ updates this table in the same change** (step 8 of the recipe below).
 | `slider`, `knob`, `number` | `host/controls.rs` (draw + the pure drag math); the shared `Range` payload in `host/widget/mod.rs` | the script; value changes emit `/gui_event` (or a binding forwards) |
 | `button`, `toggle`, `menu` | `host/controls.rs` | idem |
 | `meter` | `host/meters.rs`; bus plumbing in `host/live.rs` | a control bus — the shm segment (native) / `/bus_stream` snapshots (browser) |
-| `scope` | signal logic (window sizing, trigger) is `clausters-core::oscil`'s; history in `host/live.rs` | `bus` at `rate`: a control bus's rolling history, or an audio bus's recorded samples (shm / `/bus_tapStream.reply`) |
-| `phasescope` | `host/phasescope.rs` (Lissajous geometry + correlation, pure) | the audio bus pair `bus`/`bus + 1` |
-| `spectrum` | `host/spectrum.rs` keeps the across-frame smoothing; the per-frame curve (window, FFT, decibel scaling) is `clausters-core::spectrum`'s | `channels` adjacent audio buses |
+| `scope` | the **signal element** it configures (`host/signal/`); signal logic (window sizing, trigger) is `clausters-core::oscil`'s; history in `host/live.rs` | `bus` at `rate`: a control bus's rolling history, or an audio bus's recorded samples (shm / `/bus_tapStream.reply`) |
+| `phasescope` | idem, drawn by `host/phasescope.rs` (Lissajous geometry + correlation, pure) | the audio bus pair `bus`/`bus + 1` |
+| `spectrum` | idem; `host/spectrum.rs` keeps the across-frame smoothing, and the per-frame curve (window, FFT, decibel scaling) is `clausters-core::spectrum`'s | `channels` adjacent audio buses |
 | `nodetree` | `host/nodetree.rs` | `/group_queryTree` over the client leg + node notifications |
 | `canvas` | `host/canvas.rs` (a GPU slot: the user's WGSL over the widget area) | `/gui_set` params and/or control buses |
-| `waveform` | data + GPU renderer in `src/waveform.rs` over `src/viewport.rs`; chrome via `host/frame.rs` | `cache`/`path` (mapped or fetched), a server `buffer`, or inline `data`/`blob` — `host/{bulk,mapfile,fetch}.rs` |
-| `spectrogram` | `src/spectrogram.rs` (the STFT cache + texture renderer), same navigation | the same sources |
-| `plot` | `host/plot.rs` (pure; the spectrum view analyses once at mutation points) | inline `data`/`blob` or a mapped `path` |
+| `waveform` | idem; data + GPU renderer in `src/waveform.rs` over `src/viewport.rs`; chrome via `host/frame.rs` | `cache`/`path` (mapped or fetched), a server `buffer`, or inline `data`/`blob` — `host/{bulk,mapfile,fetch}.rs` |
+| `spectrogram` | idem, drawn by `src/spectrogram.rs` (the STFT cache + texture renderer), same navigation | the same sources |
+| `plot` | idem, drawn by `host/plot.rs` (pure; the spectral presentation analyses once at mutation points) | inline `data`/`blob` or a mapped `path` |
 | `bpf` | `host/bpf.rs`; the shape math is `clausters-core`'s (what `EnvGen` plays) | the script's `points`; edits emit `"points"` |
 | `timeruler` | `host/frame.rs` (the strip; the tick math is the shared `host/ruler.rs`); group navigation in `host/timeline.rs` | nothing of its own — it reads its `link` group's window |
 | `track`, `clip` | `host/track.rs`; a clip's roll body reuses `host/pianoroll.rs`, its curve body `host/bpf.rs`; group navigation in `host/timeline.rs` | a clip take: the waveform's sources; `notes`/`points` inline; edits emit `"clip"` |
@@ -514,7 +515,13 @@ updates this table in the same change** (step 8 of the recipe below).
 
 ### Adding a widget
 
-Take a hypothetical `meterbar`. The steps are always the same:
+Take a hypothetical `meterbar`. The steps are always the same.
+
+**First check that it is a widget at all.** A new view *of a signal* is
+usually not a kind but a configuration of the signal element — another
+presentation, another source, another capability — and lands as a preset in
+`host/signal/`, with no new variant, no new parse arm and no new apply arm.
+The steps below are for a widget that is genuinely something else.
 
 1. **The typed kind** — a `WidgetKind::MeterBar { … }` variant in
    `host/widget/mod.rs`, its arm in the JSON parse (`Widget::build`) and, for
