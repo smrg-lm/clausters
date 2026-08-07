@@ -20,12 +20,20 @@ value is an ordered plan of steps:
 - ``locate`` — put the transport's cursor under the pointer;
 - ``none`` — nothing.
 
-This window shows the same three views three ways. The **left** column keeps
-the defaults (``"element locate"`` / ``"pan"`` on a lane, ``"select"`` /
-``"pan"`` on a waveform); the **right** one is told to pan on a plain drag and
-select with Shift — the reversal, with no element's code involved. A menu
-switches the right column live through ``set(gestures=...)``, which starts again
-from the kind's defaults each time, so a table names only the chords it changes.
+This window shows the same views twice. The **left** column keeps the defaults
+(``"element locate"`` / ``"pan"`` on a lane, ``"select"`` / ``"pan"`` on a
+waveform); the **right** one is told to pan on a plain drag and select with
+Shift — the reversal, with no element's code involved. A menu switches the
+right column live through ``set(gestures=...)``, which starts again from the
+kind's defaults each time, so a table names only the chords it changes.
+
+**Two kinds of axis, and they do not share a navigation group.** A ``waveform``
+is bounded by its own content — its axis *is* the take — while a ``track`` lane
+and a ``pianoroll`` are open-ended surfaces you place things on and zoom past
+the end of. So the lanes, the rolls and the rulers share one group here, and
+each waveform navigates alone. Audio joins a multitrack the way it does in
+``gui_multitrack.py``: inside a ``clip``, which is what gives it a placement on
+the open axis. The lane below each ruler carries the very same take that way.
 
 Two gestures are deliberately *not* in the table, because they are not
 ambiguous: a press on a view's vertical strip (the waveform's ``ruler_y``, the
@@ -90,26 +98,30 @@ LANE_PANS = {"drag": "element pan", "shift": "locate"}
 
 # %% [markdown]
 # ## The window: the same views, two tables
-# Both columns join the same navigation group (``link=1``), so whichever one you
-# drive, the other follows — which makes the difference between them exactly the
-# gesture and nothing else.
+# The two open axes join one navigation group (``link=1``), so whichever column
+# you drive, the other follows — which makes the difference between them exactly
+# the gesture and nothing else. The two waveforms navigate on their own, each
+# bounded by the take it holds.
 
 # %%
 PRESETS = ["default", "drag pans", "lane: drag pans, shift locates"]
 
 
 def column(tag: str, gestures: dict | None):
-    """One column: a ruler over a waveform, a lane and a roll."""
+    """One column: the open axis (ruler over lane over roll) and, under it, the
+    same take as a standalone `waveform` navigating alone."""
     extra = {"gestures": gestures} if gestures else {}
     return panel(
         label(text=tag),
-        timeruler(link=1, h=18.0, sample_rate=SR, **extra),
-        waveform(name=f"{tag}-wave", path=raw_path, channels=1, sample_rate=SR,
-                 link=1, **extra),
-        track(clip(name=f"{tag}-clip", offset=0.0, dur=float(frames), label="take"),
-              name=f"{tag}-lane", label="lane", link=1, snap=beat, height=70.0, **extra),
+        timeruler(name=f"{tag}-ruler", link=1, h=18.0, sample_rate=SR, **extra),
+        track(clip(name=f"{tag}-clip", path=raw_path, channels=1,
+                   offset=0.0, dur=float(frames), label="take"),
+              name=f"{tag}-lane", label="audio", link=1, snap=beat, height=90.0, **extra),
         pianoroll(name=f"{tag}-roll", notes=NOTES, min=48, max=84, snap=beat / 2,
                   link=1, sample_rate=SR, **extra),
+        # No `link`: a waveform's axis is its own content, so it navigates by
+        # itself instead of sharing the open axis above.
+        waveform(name=f"{tag}-wave", path=raw_path, channels=1, sample_rate=SR, **extra),
         layout="col",
     )
 
@@ -126,8 +138,8 @@ session = Session.live()
 gui = session.gui()
 win = gui.open(scene)
 print(f"opened window {win}")
-print("left column:  drag a waveform selects, drag a lane locates, "
-      "drag a clip moves it, Shift+drag pans anywhere")
+print("left column:  drag a lane locates, drag its clip moves it, "
+      "drag the waveform selects, Shift+drag pans anywhere")
 print("right column: drag pans everywhere, Shift+drag selects")
 
 # %% [markdown]
@@ -142,7 +154,7 @@ _closed = False
 
 def on_preset(index):
     table = [{}, REVERSED, LANE_PANS][int(index)]
-    for tag in ("wave", "lane", "roll"):
+    for tag in ("ruler", "lane", "roll", "wave"):
         win[f"reversed-{tag}"].set(gestures=json.dumps(table))
     print(f"right column -> {PRESETS[int(index)]}: {table or 'the defaults'}")
 
@@ -154,7 +166,7 @@ def report(tag, *vals):
 
 win["preset"].on_event(on_preset)
 for side in ("default", "reversed"):
-    for tag in ("wave", "lane", "roll", "clip"):
+    for tag in ("ruler", "lane", "roll", "wave", "clip"):
         win[f"{side}-{tag}"].on_event(report)
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 
