@@ -781,7 +781,7 @@ impl Gestures {
                     // (as it wins over a segment in the `bpf` view), and Ctrl+click
                     // adds one - or removes the one under the cursor. The same
                     // gestures, now on a lane.
-                    if h.point.is_some() || (ctx.ctrl && clip_has_curve(host, def_id, h.id)) {
+                    if h.point.is_some() || (ctx.ctrl && h.has_curve) {
                         if ctx.ctrl {
                             if interact::clip_point_edit(
                                 host, def_id, h.id, h.point, h.rect, h.body, &h.nav, h.offset, cx,
@@ -2384,14 +2384,6 @@ fn score_steps(host: &Host, def_id: i32, id: i32, rect: Rect, dy: f64) -> Option
         WidgetKind::Score(data) => Some(data.steps_for(rect, dy as f32)),
         _ => None,
     }
-}
-
-/// Whether clip `id` carries a break-point curve (an automation clip).
-fn clip_has_curve(host: &Host, def_id: i32, id: i32) -> bool {
-    host.window_def(def_id)
-        .and_then(|t| t.find(id))
-        .and_then(track::clip_draw)
-        .is_some_and(|clip| !clip.points.is_empty())
 }
 
 /// Appends every timeline (waveform/spectrogram) widget id in the tree.

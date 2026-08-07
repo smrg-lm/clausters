@@ -595,6 +595,11 @@ pub(crate) struct ClipHit {
     /// the clip's body (as it wins over a segment in the `bpf` view), so the
     /// curve is edited in place while the clip still moves by its empty space.
     pub point: Option<usize>,
+    /// Whether the clip carries a curve at all (an automation clip), which is
+    /// what decides a Ctrl+press *adds* a point rather than doing nothing. The
+    /// hit knows it — it looked for a point on that curve — so the press does
+    /// not go back to the tree to ask.
+    pub has_curve: bool,
 }
 
 /// The clip edge hit zone, device pixels.
@@ -627,12 +632,10 @@ pub(crate) fn clip_hit(
             && let Some(id) = c.id
         {
             let rect = track::clip_rect(body, x0, x1);
-            let point = track::clip_draw(c).and_then(|clip| {
-                (!clip.points.is_empty())
-                    .then(|| {
-                        track::curve_hit(&clip, rect, body, &nav, x, y, host.metrics_for(def_id))
-                    })
-                    .flatten()
+            let drawn = track::clip_draw(c);
+            let has_curve = drawn.as_ref().is_some_and(|clip| !clip.points.is_empty());
+            let point = drawn.filter(|_| has_curve).and_then(|clip| {
+                track::curve_hit(&clip, rect, body, &nav, x, y, host.metrics_for(def_id))
             });
             return Some(ClipHit {
                 id,
@@ -644,6 +647,7 @@ pub(crate) fn clip_hit(
                 nav,
                 part: clip_part(x0, x1, x as f32),
                 point,
+                has_curve,
             });
         }
     }
