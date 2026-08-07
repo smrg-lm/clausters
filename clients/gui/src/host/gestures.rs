@@ -214,6 +214,9 @@ enum Drag {
     /// A break-point of an **automation clip** being dragged in place: the clip
     /// and the point, plus the geometry mapping the cursor back onto the shared
     /// axis and the clip's value range.
+    /// Dragging a lane header's level fader: the cursor's x over the fader's
+    /// rectangle is the value, so the press itself already sets it.
+    LaneLevel { id: i32, rect: Rect },
     ClipPoint {
         id: i32,
         index: usize,
@@ -871,6 +874,26 @@ impl Gestures {
                     out.push(GestureEffect::Redraw(def_id));
                 }
             }
+            // A lane's **header** is the element: the band beside the axis
+            // carries the controls, so a press there is a mute, a solo or a
+            // fader rather than a position. A press on the band's empty space
+            // still means nothing (it names no sample), which is what it has
+            // meant since the axis stopped locating from the header.
+            WidgetKind::Track { .. } => {
+                let Some((_, axis)) = interact::time_of(chain) else {
+                    return false;
+                };
+                let Some(h) = interact::header_hit(host, def_id, id, rect, axis.body.x, cx, cy)
+                else {
+                    return false;
+                };
+                interact::header_set(host, def_id, id, h.part, h.fader.map(|r| (r, cx)));
+                if let Some(r) = h.fader.filter(|_| h.part == interact::HeaderPart::Fader) {
+                    self.drag = Some(Drag::LaneLevel { id, rect: r });
+                }
+                emit_lane(host, out, def_id, id, h.part);
+                out.push(GestureEffect::Redraw(def_id));
+            }
             // A **clip** is the element now: the layout places it on its lane's
             // axis, so the hit lands on it directly and the press reads the
             // rectangle that was drawn. Empty lane space and the ruler strip
@@ -1321,6 +1344,12 @@ impl Gestures {
                     },
                     cx,
                 );
+            }
+            Drag::LaneLevel { id, rect } => {
+                let part = interact::HeaderPart::Fader;
+                interact::header_set(host, def_id, id, part, Some((rect, cx)));
+                emit_lane(host, &mut out, def_id, id, part);
+                out.push(GestureEffect::Redraw(def_id));
             }
             Drag::ClipPoint {
                 id,
@@ -2414,6 +2443,20 @@ fn emit_points(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id
     deliver_args(host, out, def_id, widget_id, args);
 }
 
+/// Delivers a lane header control's new value (`"mute"`/`"solo"`/`"level"`).
+fn emit_lane(
+    host: &Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    widget_id: i32,
+    part: interact::HeaderPart,
+) {
+    let args = host
+        .window_def(def_id)
+        .and_then(|t| interact::lane_event_args(t, widget_id, part));
+    deliver_args(host, out, def_id, widget_id, args);
+}
+
 /// Delivers a `clip`'s edited placement (`"clip" offset dur`).
 fn emit_clip(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
     let args = host
@@ -3431,6 +3474,64 @@ mod tests {
     }
 
     // --- multitrack lanes: the edge auto-scroll ---
+
+    /// The header band beside the axis is the lane's own element: its controls
+    /// take a press there, and the value leaves as an edit-back the way every
+    /// other host-owned edit does.
+    #[test]
+    fn a_press_on_the_lane_header_works_its_controls_and_edits_back() {
+        let mut host = host_from(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":70,"type":"track","label":"lane","mute":false,"level":0.0,
+                 "children":[{"id":71,"type":"clip","offset":0.0,"dur":1000.0}]}]}"#,
+        );
+        host.sync_track_totals();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 800, 200);
+        let (rect, body_x) = {
+            let h = interact::hit(&host, 1, 800, 200, 400.0, 100.0, &|_, _| 1).unwrap();
+            let lane = h.chain.iter().find(|f| f.id == Some(70)).unwrap();
+            (lane.rect, interact::time_of(&h.chain).unwrap().1.body.x)
+        };
+        let m = *host.metrics_for(1);
+        let band = crate::host::timeline::gutter_band(rect, body_x - rect.x);
+        let header = match &host.window_def(1).unwrap().find(70).unwrap().kind {
+            WidgetKind::Track { header, .. } => header.clone(),
+            other => panic!("not a lane: {other:?}"),
+        };
+        let parts = crate::host::track::header_parts(band, &header, &m);
+        let mid = |r: Rect| ((r.x + r.w / 2.0) as f64, (r.y + r.h / 2.0) as f64);
+
+        // The mute toggles and says so.
+        let (x, y) = mid(parts.mute.expect("the lane offers a mute"));
+        let effects = g.press(&mut host, &ctx, x, y, &mut || false);
+        assert!(has_emit_tag(&effects, 70, "mute"));
+        assert_eq!(lane_header_of(&host).mute, Some(true));
+
+        // The fader takes its value from where it was pressed, and keeps
+        // taking it while the drag runs.
+        let fader = parts.fader.expect("the lane offers a fader");
+        let (x, y) = mid(fader);
+        let effects = g.press(&mut host, &ctx, x, y, &mut || false);
+        assert!(has_emit_tag(&effects, 70, "level"));
+        assert!((lane_header_of(&host).level.unwrap() - 0.5).abs() < 0.05);
+        g.drag_to(&mut host, &ctx, (fader.x + fader.w) as f64, y);
+        assert!((lane_header_of(&host).level.unwrap() - 1.0).abs() < 0.01);
+        g.release(&mut host, &ctx, (fader.x + fader.w) as f64, y);
+
+        // The name row names no control: the press falls through to the lane,
+        // which names no position beside its axis either.
+        let (x, y) = mid(parts.label);
+        let effects = g.press(&mut host, &ctx, x, y, &mut || false);
+        assert!(!has_emit_tag(&effects, 70, "locate"));
+    }
+
+    fn lane_header_of(host: &Host) -> crate::host::track::Header {
+        match &host.window_def(1).unwrap().find(70).unwrap().kind {
+            WidgetKind::Track { header, .. } => header.clone(),
+            other => panic!("not a lane: {other:?}"),
+        }
+    }
 
     /// One lane, one short clip, on a long axis — so zooming in leaves most of
     /// the timeline off screen, which is the case the edge scroll exists for.

@@ -164,6 +164,22 @@ pub(super) fn build_kind(
             label: label(&node.props),
             height: number(&node.props, "height", 1.0).max(0.0),
             snap: number_f64(&node.props, "snap", 0.0).max(0.0),
+            // Presence-driven: a lane that names no `mute` offers no mute
+            // button, so a header stays the name strip it always was.
+            header: crate::host::track::Header {
+                w: node
+                    .props
+                    .get("header_w")
+                    .and_then(Value::as_f64)
+                    .map(|w| w as f32),
+                mute: node.props.get("mute").and_then(truthy),
+                solo: node.props.get("solo").and_then(truthy),
+                level: node
+                    .props
+                    .get("level")
+                    .and_then(Value::as_f64)
+                    .map(|v| (v as f32).clamp(0.0, 1.0)),
+            },
             editor: EditorProps::parse_lane(&node.props),
         },
         "pianoroll" => {

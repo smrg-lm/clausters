@@ -872,6 +872,8 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
 
 
 def track(*clips, label: str | None = None, height: float | None = None, snap: float | None = None,
+          header_w: float | None = None, mute: bool | None = None, solo: bool | None = None,
+          level: float | None = None,
           ruler: str | None = None, sample_rate: float | None = None, tempo: float | None = None,
           beat_at: float | None = None, quant: float | None = None,
           playhead_at: float | None = None, playhead: float | None = None,
@@ -899,7 +901,9 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
     - ``ruler`` — a time ruler under the lane (``"time"``, ``"samples"``,
       ``"beats"``, or the default ``"off"``: a lane reserves no ruler strip
       unless asked). ``sample_rate`` labels real time, and ``tempo``/``beat_at``/
-      ``quant`` label beats. One ruler under the bottom lane is the usual layout.
+      ``quant`` label beats. It is reserved out of *this lane's* height, so a
+      stack of lanes is usually ruled by a free-standing `timeruler` under
+      them, which costs no lane a pixel.
     - ``playhead_at`` — the engine sample-clock value at timeline position 0, so
       the playhead sweeps the clips as the composition plays (the same anchor the
       `waveform` uses; read the clock with ``Server.request("/clock_query")``). Set it
@@ -909,6 +913,19 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
       ``playhead_loop_start``/``playhead_loop_len`` wrap the sweep inside a
       looped region — all exactly as on the `waveform`.
 
+    **The header** is the band left of the axis, and it is sizeable: it holds
+    the ``label`` and, when asked for, the lane's controls. ``mute`` and
+    ``solo`` each add a toggle (pass their initial state); ``level`` adds a
+    fader over ``[0, 1]``. Working one sends a ``/gui_event`` naming the prop it
+    changed — ``"mute" 0|1``, ``"solo" 0|1``, ``"level" f`` — so a driver
+    mirrors the edit by echoing it back with ``GuiHost.set``. ``header_w``
+    overrides the width outright (logical pixels); without it the header sizes
+    itself to what it carries.
+
+    The header width is the **axis'**, not the lane's: every member of a
+    navigation group starts its body at the widest gutter any of them asks for,
+    so a wide lane header moves the piano-roll and the ruler stacked with it.
+
     Pass the clips positionally; ``name`` is what a script addresses a lane or a
     clip by::
 
@@ -916,7 +933,8 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
               clip(offset=4, dur=2, data=take_b, name="b"),
               label="drums", name="drums")
     """
-    extra = _drop_none(label=label, height=height, snap=snap, ruler=ruler,
+    extra = _drop_none(label=label, height=height, snap=snap, header_w=header_w,
+                       mute=mute, solo=solo, level=level, ruler=ruler,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
                        quant=quant, playhead_at=playhead_at, playhead=playhead,
                        playhead_loop_start=playhead_loop_start,
@@ -939,12 +957,15 @@ def timeruler(*, h: float = 20.0, ruler: str | None = None, sample_rate: float |
     lanes and no lane loses a pixel.
 
     It reads the axis of the navigation group named by ``link``, so it labels
-    exactly what those lanes show and moves with them — give it the lanes'
-    ``link`` id. ``ruler`` is the unit (``"time"`` the default, ``"samples"``,
+    exactly what those lanes show and moves with them. With **no** ``link`` it
+    joins the window's lanes on its own — a free-standing ruler exists to rule
+    them — so a ruler dropped under a stack needs nothing said; pass a ``link``
+    id only to follow a group that is not this window's lanes. ``ruler`` is the unit (``"time"`` the default, ``"samples"``,
     ``"beats"``), with ``sample_rate`` labelling real time and
     ``tempo``/``beat_at``/``quant`` labelling beats, exactly as on a lane. Its
-    ticks are indented by a lane's header width, so they stand over the samples
-    they label when it is stacked with the lanes. (``link`` names a navigation
+    ticks are indented by the **group's** gutter — the widest any member asks
+    for — so they stand over the samples they label when it is stacked with the
+    lanes. (``link`` names a navigation
     group, not a widget: it is its own small namespace, unrelated to the ids the
     host assigns.)
 

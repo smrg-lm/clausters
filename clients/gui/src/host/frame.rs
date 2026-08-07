@@ -367,6 +367,8 @@ struct TrackItem {
     clip: Option<Rect>,
     theme: Option<Arc<Theme>>,
     label: Option<String>,
+    /// The lane's gutter: its width and the controls it carries.
+    header: track::Header,
     clips: Vec<track::ClipDraw>,
     /// The lane's chrome: its time ruler (off by default), its playhead anchor
     /// and its `link` — the navigation group whose shared window it draws
@@ -1140,7 +1142,12 @@ fn collect_widgets(
                     editor: editor.clone(),
                 });
             }
-            WidgetKind::Track { label, editor, .. } => {
+            WidgetKind::Track {
+                label,
+                header,
+                editor,
+                ..
+            } => {
                 // A track carries its clips as children (not laid out by the
                 // layout engine — they are placed by offset/dur on the shared
                 // time axis in the overlay pass below).
@@ -1157,6 +1164,7 @@ fn collect_widgets(
                     clip: p.clip,
                     theme: p.widget.theme.clone(),
                     label: label.clone(),
+                    header: header.clone(),
                     clips,
                     editor: editor.clone(),
                 });
@@ -1668,6 +1676,7 @@ fn draw_static_meshes(
                 item.rect,
                 &nav,
                 item.label.as_deref(),
+                &item.header,
                 &item.clips,
                 ruler_on,
                 indent,

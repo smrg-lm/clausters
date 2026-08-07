@@ -13,14 +13,22 @@ This example lays out three tracks -- two audio takes whose bodies are **mapped
 files** (the bulk path: a real take is minutes long, so it never rides the wire
 as JSON; the host maps it and decimates it to the clip's pixel width through the
 peak pyramid), and one **piano-roll** lead whose clip carries ``(start, dur,
-pitch)`` note events drawn as bars (pitch on the vertical axis). The bottom lane
-draws a **time ruler**, and every lane shows a **playhead** anchored to the
-engine's sample clock, so the composition can be watched playing over its clips.
+pitch)`` note events drawn as bars (pitch on the vertical axis). A **time ruler**
+strip under the stack rules the shared axis, and every lane shows a **playhead**
+anchored to the engine's sample clock, so the composition can be watched playing
+over its clips.
 
 Dragging a clip (move) or its edge (resize) flows back as a ``"clip"`` event
 carrying the new ``offset``/``dur`` -- the edit-back pattern. Here each clip is
 *named*, so the script registers a per-clip ``on_event`` and drives placements by
 name (``win["fill"].set(offset=...)``) -- no widget ids.
+
+Each lane's **header** carries its controls: a mute, a solo and a level fader,
+all of them the same edit-back pattern (a ``"mute"``/``"solo"``/``"level"``
+event naming the prop that changed). The header sizes itself to what it carries,
+and its width belongs to the *axis* -- every member of the navigation group
+starts its body at the widest gutter any of them asks for, so the ruler's ticks
+stay over the samples they name.
 
 Run it as a script (``python gui_multitrack.py``) or cell by cell (``# %%``).
 Needs a display and a GPU adapter; the install bundles the GUI binary (see
@@ -35,7 +43,7 @@ import time
 from pathlib import Path
 
 from clausters import Session
-from clausters.gui import clip, label, samples_to_file, track, window
+from clausters.gui import clip, label, samples_to_file, timeruler, track, window
 
 # %%
 session = Session.live()
@@ -80,7 +88,10 @@ CLIPS = ("kick0", "kick1", "fill", "root", "turn", "theme")
 
 # The lane chrome: `snap` is the drag grid (a quarter beat), and the bottom lane
 # rules the shared axis in beats (`tempo` + `sample_rate` label the ticks).
-lane_chrome = dict(snap=BEAT / 4, sample_rate=SR, tempo=TEMPO)
+# A lane's header controls are presence-driven: naming `mute`/`solo`/`level`
+# adds them (at that initial value), and the header widens to hold them.
+lane_chrome = dict(snap=BEAT / 4, sample_rate=SR, tempo=TEMPO,
+                   mute=False, solo=False, level=0.8)
 
 win = gui.open(window(
     # A container's positional arguments are its children; everything else,
@@ -99,7 +110,12 @@ win = gui.open(window(
                       (2 * BEAT, BEAT, 67), (3 * BEAT, 2 * BEAT, 72),
                       (5 * BEAT, BEAT, 67)],
                label="theme"),
-          name="lead", label="lead", ruler="beats", **lane_chrome),
+          name="lead", label="lead", **lane_chrome),
+    # The shared axis' ruler, as a strip of its own under the stack: a lane's
+    # own `ruler` is reserved out of *that lane's* height, so ruling the stack
+    # this way costs no lane a pixel. Un-linked, it joins the lanes' navigation
+    # group and indents its ticks by the same gutter their bodies start at.
+    timeruler(ruler="beats", sample_rate=SR, tempo=TEMPO),
     label(name="caption", text="Multitrack: clips placed on one shared time axis"),
     title="Multitrack timeline", w=1000, h=520, layout="col",
 ))
@@ -124,8 +140,19 @@ def report(name):
     return handler
 
 
+def report_lane(name):
+    def handler(tag, *vals):
+        if tag in ("mute", "solo") and vals:
+            print(f"lane {name}: {tag} {'on' if int(vals[0]) else 'off'}")
+        elif tag == "level" and vals:
+            print(f"lane {name}: level {float(vals[0]):.2f}")
+    return handler
+
+
 for name in CLIPS:
     win[name].on_event(report(name))
+for name in LANES:
+    win[name].on_event(report_lane(name))
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]

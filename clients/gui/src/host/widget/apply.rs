@@ -241,11 +241,25 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             label,
             height,
             snap,
+            header,
             editor,
         } => match key {
             "label" => set_label(label, v),
             "height" => set_f(height, v),
             "snap" => v.as_f64().map(|x| *snap = x.max(0.0)).is_some(),
+            // The header: its width, and the controls it carries. Setting one
+            // of the controls also *adds* it to a lane that had none, which is
+            // how a script grows a header without rebuilding the def.
+            "header_w" => {
+                header.w = v.as_f64().map(|w| w as f32);
+                true
+            }
+            "mute" => truthy(v).map(|b| header.mute = Some(b)).is_some(),
+            "solo" => truthy(v).map(|b| header.solo = Some(b)).is_some(),
+            "level" => v
+                .as_f64()
+                .map(|x| header.level = Some((x as f32).clamp(0.0, 1.0)))
+                .is_some(),
             // The lane's chrome (`ruler`, `playhead_at`, the tick-label
             // props): a track is no timeline-group member, so these keys
             // land on the widget itself rather than routing through a group.

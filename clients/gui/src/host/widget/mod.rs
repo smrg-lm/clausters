@@ -1010,6 +1010,9 @@ pub enum WidgetKind {
         label: Option<String>,
         height: f32,
         snap: f64,
+        /// The lane's gutter: how wide it is and what it carries there (see
+        /// [`super::track::Header`]).
+        header: super::track::Header,
         editor: EditorProps,
     },
     /// A **free-standing time ruler**: the shared axis of a navigation group,
@@ -1286,13 +1289,22 @@ impl Widget {
         Ok(widget)
     }
 
-    /// Links every un-linked `track` of a window into one navigation group keyed
-    /// by the window root. The multitrack's promise is **one shared time axis**
-    /// (aligned lanes), and a navigation group is exactly that — so the lanes of
-    /// a window navigate as one by default, zooming and panning together, and
+    /// Links every un-linked `track` — and every un-linked free-standing
+    /// `timeruler` — of a window into one navigation group keyed by the window
+    /// root. The multitrack's promise is **one shared time axis** (aligned
+    /// lanes), and a navigation group is exactly that — so the lanes of a
+    /// window navigate as one by default, zooming and panning together, and
     /// only an explicit `link` splits them (or joins lanes across windows).
+    ///
+    /// The ruler is in for the same reason and not by analogy: a free-standing
+    /// ruler exists to rule the lanes beside it, so one dropped into a window
+    /// of lanes with nothing said is asking for *their* axis. Every other
+    /// timeline view stays out — a `waveform` in a window of lanes is showing
+    /// its own buffer, and joining it to the composition's axis would be a
+    /// guess.
     fn link_lanes(widget: &mut Widget, root_id: i32) {
-        if let WidgetKind::Track { editor, .. } = &mut widget.kind
+        if let WidgetKind::Track { editor, .. } | WidgetKind::TimeRuler { editor } =
+            &mut widget.kind
             && editor.link.is_none()
         {
             editor.link = Some(root_id);

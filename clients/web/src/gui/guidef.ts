@@ -972,9 +972,11 @@ export function piano(
  * then sits wherever that lane sits. This widget owns its box instead: put it
  * above the lanes and no lane loses a pixel.
  *
- * It reads the axis of the group named by `link` — give it the lanes' link id —
- * and its ticks are indented by a lane's header width, so they stand over the
- * samples they label. A press locates the transport, Shift+drag pans and the
+ * It reads the axis of the group named by `link`; with **no** `link` it joins
+ * the window's lanes on its own, since a free-standing ruler exists to rule
+ * them —
+ * and its ticks are indented by the **group's** gutter — the widest any member
+ * asks for — so they stand over the samples they label. A press locates the transport, Shift+drag pans and the
  * wheel zooms: you scrub on the ruler. `h` is its thickness in device pixels.
  */
 export function timeruler(options: TimelineOptions = {}): GuiNode {
@@ -988,24 +990,56 @@ export function timeruler(options: TimelineOptions = {}): GuiNode {
  * its lane weight, and `snap` is the drag grid a clip's move/resize rounds
  * to. The lanes of a window navigate as one (the same `link` group the heavy
  * views use), and the lane carries the same time chrome.
+ *
+ * The **header** is the band left of the axis, and it is sizeable: it holds
+ * the `label` and, when asked for, the lane's controls — `mute` and `solo` each
+ * add a toggle (pass the initial state), `level` adds a fader over `[0, 1]`.
+ * Working one sends a `/gui_event` naming the prop it changed (`"mute" 0|1`,
+ * `"solo" 0|1`, `"level" f`), so a driver mirrors the edit by echoing it back.
+ * `headerW` overrides the width outright; without it the header sizes itself to
+ * what it carries. That width is the **axis'**, not the lane's: every member of
+ * a navigation group starts its body at the widest gutter any of them asks for.
  */
 export function track(
     options: TimelineOptions & {
         label?: string;
         height?: number;
         snap?: number;
+        /** The header's width in logical pixels; omitted sizes it naturally. */
+        headerW?: number;
+        /** Offer a mute toggle, with this initial state. */
+        mute?: boolean;
+        /** Offer a solo toggle, with this initial state. */
+        solo?: boolean;
+        /** Offer a level fader, over `[0, 1]`, at this initial value. */
+        level?: number;
         theme?: Record<string, string>;
         children?: readonly GuiNode[];
     } = {},
     ...clips: GuiNode[]
 ): GuiNode {
-    const { label: text, height, snap, theme, children, ...timeline } = options;
+    const {
+        label: text,
+        height,
+        snap,
+        headerW,
+        mute,
+        solo,
+        level,
+        theme,
+        children,
+        ...timeline
+    } = options;
     return node("track", {
         ...timelineProps(timeline),
         ...drop([
             ["label", text],
             ["height", height],
             ["snap", snap],
+            ["header_w", headerW],
+            ["mute", mute],
+            ["solo", solo],
+            ["level", level],
             ["theme", theme],
         ]),
         children: [...(children ?? []), ...clips],

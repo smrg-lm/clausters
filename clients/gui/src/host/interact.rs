@@ -753,6 +753,103 @@ pub(crate) fn clip_point_edit(
     .unwrap_or(false)
 }
 
+/// Runs `f` over a lane's header in the host tree — the one door a header
+/// control's edit goes through, the sibling of [`clip_curve`].
+pub(crate) fn lane_header<R>(
+    host: &mut Host,
+    def_id: i32,
+    lane_id: i32,
+    f: impl FnOnce(&mut track::Header) -> R,
+) -> Option<R> {
+    let w = host.window_def_mut(def_id)?.find_mut(lane_id)?;
+    match &mut w.kind {
+        WidgetKind::Track { header, .. } => Some(f(header)),
+        _ => None,
+    }
+}
+
+/// A lane header control's edit-back payload: the control's own name plus its
+/// value (`"mute" 0|1`, `"solo" 0|1`, `"level" f`) — flat OSC primitives, the
+/// same shape as the clip's `"clip"` payload. The name is the **prop** the
+/// script would set, so a driver mirrors an edit by echoing it back.
+pub(crate) fn lane_event_args(
+    tree: &Widget,
+    id: i32,
+    part: track::HeaderPart,
+) -> Option<Vec<OscType>> {
+    let WidgetKind::Track { header, .. } = &tree.find(id)?.kind else {
+        return None;
+    };
+    let flag = |tag: &str, on: Option<bool>| {
+        Some(vec![OscType::String(tag.into()), OscType::Int(on? as i32)])
+    };
+    match part {
+        track::HeaderPart::Mute => flag("mute", header.mute),
+        track::HeaderPart::Solo => flag("solo", header.solo),
+        track::HeaderPart::Fader => Some(vec![
+            OscType::String("level".into()),
+            OscType::Float(header.level?),
+        ]),
+    }
+}
+
+/// A lane header's part, re-exported so the gesture machine names one without
+/// reaching into the lane's geometry module: the header is the lane's chrome,
+/// and this is the door onto it.
+pub(crate) use super::track::HeaderPart;
+
+/// A press on a lane's header: which control it landed on, and — for the fader
+/// — the rectangle the drag maps its value through.
+pub(crate) struct HeaderHit {
+    pub part: HeaderPart,
+    pub fader: Option<Rect>,
+}
+
+/// The header control under `(cx, cy)` on the placed lane `rect`, whose axis
+/// begins at `body_x` (so the band beside it is the header). `None` when the
+/// press is on the axis, or on the band's empty space — which names no sample
+/// and no control, and so means nothing.
+pub(crate) fn header_hit(
+    host: &Host,
+    def_id: i32,
+    lane_id: i32,
+    rect: Rect,
+    body_x: f32,
+    cx: f64,
+    cy: f64,
+) -> Option<HeaderHit> {
+    let WidgetKind::Track { header, .. } = &host.window_def(def_id)?.find(lane_id)?.kind else {
+        return None;
+    };
+    let band = super::timeline::gutter_band(rect, body_x - rect.x);
+    let m = host.metrics_for(def_id);
+    let part = track::header_hit(band, header, m, cx, cy)?;
+    Some(HeaderHit {
+        part,
+        fader: track::header_parts(band, header, m).fader,
+    })
+}
+
+/// Toggles a lane's mute or solo, or sets its level from a cursor x over the
+/// fader `rect` — the header's three writes, through the one door.
+pub(crate) fn header_set(
+    host: &mut Host,
+    def_id: i32,
+    lane_id: i32,
+    part: HeaderPart,
+    fader: Option<(Rect, f64)>,
+) {
+    lane_header(host, def_id, lane_id, |h| match part {
+        HeaderPart::Mute => h.mute = Some(h.mute != Some(true)),
+        HeaderPart::Solo => h.solo = Some(h.solo != Some(true)),
+        HeaderPart::Fader => {
+            if let Some((rect, cx)) = fader {
+                h.level = Some(track::level_at(rect, cx));
+            }
+        }
+    });
+}
+
 /// Which part of a clip a press landed on: its body (move) or one of its edges
 /// (resize). The edge zone is a few pixels at each end; a clip too narrow for
 /// two edge zones is all body.

@@ -40,7 +40,7 @@ from ..form.render import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from ..seq.timeline import MidiEvent, OscEvent, Timeline
-from .guidef import clip, patch, pianoroll, scroll, track, window
+from .guidef import clip, patch, pianoroll, scroll, timeruler, track, window
 from .transport import Transport
 
 __all__ = ["Editor"]
@@ -252,14 +252,15 @@ class Editor:
         else:
             lanes += self._lanes_for(root, float(root.onset or 0.0), None, None)
 
-        # The bottom **track** lane rules the shared axis (one ruler under the
-        # stack is the DAW convention); a patch lane has no time axis, so it is
-        # skipped when picking the ruler.
-        for lane in reversed(lanes):
-            if lane.get("type") == "track":
-                lane["ruler"] = "beats"
-                break
-        return window(*lanes, *self.extra, title=self.title,
+        # One ruler under the stack (the DAW convention), as a **free-standing**
+        # strip owning its own box: a lane's own `ruler` is reserved out of that
+        # lane's height, so ruling the stack used to cost the bottom lane a
+        # strip of itself. Un-linked, it joins the lanes' navigation group, so
+        # its ticks stand over the samples they name.
+        ruler = [timeruler(ruler="beats", sample_rate=self.sample_rate,
+                           tempo=self.tempo)] if any(
+            lane.get("type") == "track" for lane in lanes) else []
+        return window(*lanes, *ruler, *self.extra, title=self.title,
                       w=self.size[0], h=self.size[1], layout="col")
 
     def _patch_lane(self, group) -> dict:

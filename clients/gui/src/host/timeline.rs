@@ -158,7 +158,7 @@ impl GroupState {
 /// [`Host::group_indent`], the group's own. See it for why.
 pub(crate) fn own_gutter(kind: &WidgetKind, metrics: &Metrics) -> f32 {
     match kind {
-        WidgetKind::Track { .. } => metrics.header_w,
+        WidgetKind::Track { header, .. } => header.width(metrics),
         WidgetKind::PianoRoll { .. } => super::pianoroll::KEYBOARD_W,
         WidgetKind::Signal(el) if el.editor.ruler_y != RulerY::Off => metrics.ruler_w,
         _ => 0.0,
@@ -1633,6 +1633,48 @@ mod indent_tests {
         for p in &placed {
             if p.widget.kind.editor().is_some() {
                 assert_eq!(p.indent, widest, "member {:?}", p.widget.id);
+            }
+        }
+    }
+
+    /// The point of a *sizeable* header: what one lane reserves is a fact about
+    /// the axis, so widening one lane's gutter moves the roll and the ruler
+    /// stacked with it. Nothing else in the group has to be told.
+    #[test]
+    fn one_wide_lane_header_moves_the_whole_axis() {
+        let root = tree(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"timeruler","link":7},
+                {"id":2,"type":"track","link":7,"header_w":240},
+                {"id":3,"type":"pianoroll","link":7}
+            ]}"#,
+        );
+        let m = Metrics::default();
+        let placed = layout::layout(Rect::new(0.0, 0.0, 800.0, 400.0), &root, &m);
+        assert_eq!(group_indents(&root, &m)[&GroupKey::Link(7)], 240.0);
+        for p in &placed {
+            if p.widget.kind.editor().is_some() {
+                assert_eq!(p.indent, 240.0, "member {:?}", p.widget.id);
+            }
+        }
+    }
+
+    /// A free-standing ruler dropped among lanes joins **their** axis without
+    /// being told: it exists to rule them, so it starts its ticks where they
+    /// start their bodies and moves when they move.
+    #[test]
+    fn an_unlinked_timeruler_joins_the_windows_lanes() {
+        let root = tree(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"track","header_w":180},
+                {"id":2,"type":"timeruler"}
+            ]}"#,
+        );
+        let m = Metrics::default();
+        let placed = layout::layout(Rect::new(0.0, 0.0, 800.0, 400.0), &root, &m);
+        for p in &placed {
+            if p.widget.kind.editor().is_some() {
+                assert_eq!(p.indent, 180.0, "member {:?}", p.widget.id);
             }
         }
     }

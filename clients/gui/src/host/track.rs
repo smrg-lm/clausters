@@ -66,6 +66,189 @@ pub struct ClipDraw {
     pub label: Option<String>,
 }
 
+/// What a lane reserves **left of its axis**, and what it carries there.
+///
+/// A lane header used to be one number in the size table (`header_w`) holding
+/// one string. It is a strip of controls: a name, the mute/solo pair, a level
+/// fader — so its width follows what it carries, and a lane that carries more
+/// says so. The parts are presence-driven: a lane that names no `mute` prop
+/// offers no mute button, so a header stays exactly the name strip it was
+/// unless a script asks for more.
+///
+/// `w` overrides the whole calculation, because an explicit size always wins
+/// over a natural one (the layout's own rule) — and because the *shared* indent
+/// of a navigation group is the widest wish on it
+/// ([`super::timeline::group_indents`]), so one lane declaring a wide header
+/// moves the axis for the roll and the ruler stacked with it.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Header {
+    /// The declared width in **logical** pixels; `None` sizes it naturally.
+    pub w: Option<f32>,
+    /// The mute state, when the lane offers the toggle.
+    pub mute: Option<bool>,
+    /// The solo state, when the lane offers the toggle.
+    pub solo: Option<bool>,
+    /// The fader's value over `[0, 1]`, when the lane offers one.
+    pub level: Option<f32>,
+}
+
+impl Header {
+    /// Whether the header carries anything below its name row.
+    fn has_controls(&self) -> bool {
+        self.mute.is_some() || self.solo.is_some() || self.level.is_some()
+    }
+
+    /// The width this header **wants**, in the coordinates of `m`: the size
+    /// table's `header_w` for a name-only strip, widened to hold the control
+    /// row when it carries one. A declared `w` replaces it outright.
+    pub fn width(&self, m: &Metrics) -> f32 {
+        if let Some(w) = self.w {
+            return super::metrics::snap_px(w, m.ui_scale).max(0.0);
+        }
+        if !self.has_controls() {
+            return m.header_w;
+        }
+        let toggles = [self.mute, self.solo]
+            .iter()
+            .filter(|t| t.is_some())
+            .count();
+        let row = toggles as f32 * (m.box_side + m.pad)
+            + if self.level.is_some() {
+                MIN_FADER_W + m.pad
+            } else {
+                0.0
+            };
+        m.header_w.max(row + 2.0 * m.pad)
+    }
+}
+
+/// The narrowest a level fader is drawn at all: below this it is dropped rather
+/// than shown as a stub nobody can aim at.
+const MIN_FADER_W: f32 = 28.0;
+
+/// A header's parts, laid out inside its band. A part is `None` when the lane
+/// does not offer it **or** when the band is too small to draw it — a short
+/// lane keeps its name and drops the controls, the way a natural size degrades
+/// everywhere else.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HeaderParts {
+    pub label: Rect,
+    pub mute: Option<Rect>,
+    pub solo: Option<Rect>,
+    pub fader: Option<Rect>,
+}
+
+/// One of a header's interactive parts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeaderPart {
+    Mute,
+    Solo,
+    Fader,
+}
+
+/// Lays a header's parts out inside its `band`: the name on the top row, the
+/// controls on a row under it. The renderer and the hit-test both call this, so
+/// a button is pressed on the pixels it is drawn on.
+pub fn header_parts(band: Rect, header: &Header, m: &Metrics) -> HeaderParts {
+    let inner = Rect::new(
+        band.x + m.pad,
+        band.y + m.pad,
+        (band.w - 2.0 * m.pad).max(0.0),
+        (band.h - 2.0 * m.pad).max(0.0),
+    );
+    let name_h = font::height(m.text_scale);
+    let label = Rect::new(inner.x, inner.y, inner.w, name_h.min(inner.h));
+    let mut parts = HeaderParts {
+        label,
+        mute: None,
+        solo: None,
+        fader: None,
+    };
+    // The control row needs a row of its own under the name; a lane too short
+    // for both keeps the name.
+    let row_h = m.box_side.min(inner.h - name_h - m.pad);
+    if !header.has_controls() || row_h < m.box_side * 0.5 {
+        return parts;
+    }
+    let row_y = inner.y + name_h + m.pad;
+    let mut x = inner.x;
+    let right = inner.x + inner.w;
+    let square = |x: &mut f32| {
+        let r = Rect::new(*x, row_y, m.box_side, row_h);
+        (*x + m.box_side + m.pad <= right + m.pad).then(|| {
+            *x += m.box_side + m.pad;
+            r
+        })
+    };
+    if header.mute.is_some() {
+        parts.mute = square(&mut x);
+    }
+    if header.solo.is_some() {
+        parts.solo = square(&mut x);
+    }
+    if header.level.is_some() {
+        let w = right - x;
+        if w >= MIN_FADER_W {
+            parts.fader = Some(Rect::new(x, row_y, w, row_h));
+        }
+    }
+    parts
+}
+
+/// The header part under `(x, y)`, if any — the press's read of
+/// [`header_parts`].
+pub fn header_hit(band: Rect, header: &Header, m: &Metrics, x: f64, y: f64) -> Option<HeaderPart> {
+    let parts = header_parts(band, header, m);
+    let over = |r: Option<Rect>| r.is_some_and(|r| r.contains(x, y));
+    if over(parts.mute) {
+        Some(HeaderPart::Mute)
+    } else if over(parts.solo) {
+        Some(HeaderPart::Solo)
+    } else if over(parts.fader) {
+        Some(HeaderPart::Fader)
+    } else {
+        None
+    }
+}
+
+/// The level an x pixel of the fader `rect` names, clamped to `[0, 1]`.
+pub fn level_at(rect: Rect, x: f64) -> f32 {
+    (((x - rect.x as f64) / rect.w.max(1.0) as f64) as f32).clamp(0.0, 1.0)
+}
+
+/// Draws a header's controls into `band` (the name is drawn by [`draw`], which
+/// owns the ellipsis against the band it actually got).
+fn draw_header_controls(mesh: &mut Mesh, band: Rect, header: &Header, m: &Metrics, theme: &Theme) {
+    let parts = header_parts(band, header, m);
+    let mut toggle = |rect: Option<Rect>, on: bool, letter: &str, lit: super::paint::Color| {
+        let Some(r) = rect else { return };
+        mesh.rect(r, theme.track);
+        if on {
+            let inset = r.h.min(r.w) * 0.22;
+            mesh.rect(
+                Rect::new(
+                    r.x + inset,
+                    r.y + inset,
+                    r.w - 2.0 * inset,
+                    r.h - 2.0 * inset,
+                ),
+                lit,
+            );
+        }
+        font::text_centered(mesh, letter, r, m.caption_scale, theme.text);
+    };
+    toggle(parts.mute, header.mute == Some(true), "M", theme.warn);
+    toggle(parts.solo, header.solo == Some(true), "S", theme.hilite);
+    if let (Some(r), Some(level)) = (parts.fader, header.level) {
+        mesh.rect(r, theme.track);
+        let w = r.w * level.clamp(0.0, 1.0);
+        if w > 0.0 {
+            mesh.rect(Rect::new(r.x, r.y, w, r.h), theme.accent);
+        }
+        mesh.border(r, m.divider_w, theme.frame);
+    }
+}
+
 /// The span of a widget subtree in timeline units: the longest clip end
 /// (`offset + dur`) under it. A lane's extent (the "data" a lane registers with
 /// its navigation group) and, over a whole window, its full time axis. `0.0`
@@ -232,26 +415,31 @@ pub fn draw(
     rect: Rect,
     nav: &View,
     label: Option<&str>,
+    header: &Header,
     clips: &[ClipDraw],
     ruler: bool,
     indent: f32,
     m: &Metrics,
     theme: &Theme,
 ) {
-    // The header band on the left, naming the track — the group's indent, so
-    // every member of the axis starts its body at the same x.
-    let header = timeline::gutter_band(rect, indent);
-    mesh.rect(header, theme.header);
+    // The header band on the left — the group's indent, so every member of the
+    // axis starts its body at the same x. What the lane puts in that band is
+    // its own (a name, and the controls it offers).
+    let band = timeline::gutter_band(rect, indent);
+    mesh.rect(band, theme.header);
+    let parts = header_parts(band, header, m);
     if let Some(t) = label {
-        font::text(
+        font::text_ellipsis(
             mesh,
             t,
-            header.x + m.pad,
-            rect.y + m.pad,
+            parts.label.x,
+            parts.label.y,
+            parts.label.w,
             m.text_scale,
             theme.text,
         );
     }
+    draw_header_controls(mesh, band, header, m, theme);
     let body = lane_body(rect, ruler, indent, m);
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
@@ -492,6 +680,88 @@ mod tests {
     }
 
     #[test]
+    fn a_header_widens_for_what_it_carries_and_a_declared_width_wins() {
+        let m = Metrics::default();
+        // A name-only strip is exactly what it always was.
+        assert_eq!(Header::default().width(&m), m.header_w);
+        // The width a header asks for is the width its parts fit in: whatever
+        // it carries, asking is enough to be able to draw it.
+        let full = Header {
+            mute: Some(false),
+            solo: Some(false),
+            level: Some(0.8),
+            ..Header::default()
+        };
+        assert!(full.width(&m) >= m.header_w);
+        let band = Rect::new(0.0, 0.0, full.width(&m), 60.0);
+        let parts = header_parts(band, &full, &m);
+        assert!(parts.mute.is_some() && parts.solo.is_some() && parts.fader.is_some());
+        // ...and a compact table sizes it down, not the other way round: the
+        // roles move together, so the parts still fit.
+        let compact = Metrics::generated(0.8);
+        let band = Rect::new(0.0, 0.0, full.width(&compact), 60.0);
+        assert!(header_parts(band, &full, &compact).fader.is_some());
+        // An explicit width wins over both, even a narrow one.
+        let declared = Header {
+            w: Some(40.0),
+            ..full.clone()
+        };
+        assert_eq!(declared.width(&m), 40.0);
+    }
+
+    #[test]
+    fn a_header_drops_its_controls_before_its_name_when_the_band_is_small() {
+        let m = Metrics::default();
+        let header = Header {
+            mute: Some(true),
+            solo: Some(false),
+            level: Some(0.5),
+            ..Header::default()
+        };
+        let band = Rect::new(0.0, 0.0, header.width(&m), 60.0);
+        let parts = header_parts(band, &header, &m);
+        assert!(parts.mute.is_some() && parts.solo.is_some() && parts.fader.is_some());
+        // A lane too short for a second row keeps the name and nothing else.
+        let short = header_parts(Rect::new(0.0, 0.0, band.w, 16.0), &header, &m);
+        assert_eq!((short.mute, short.solo, short.fader), (None, None, None));
+        assert!(short.label.h > 0.0);
+        // ...and so does one too narrow for the fader, which is dropped rather
+        // than drawn as a stub.
+        let narrow = header_parts(Rect::new(0.0, 0.0, 60.0, 60.0), &header, &m);
+        assert!(narrow.mute.is_some() && narrow.fader.is_none());
+    }
+
+    #[test]
+    fn a_press_lands_on_the_control_it_is_drawn_on() {
+        let m = Metrics::default();
+        let header = Header {
+            mute: Some(false),
+            solo: Some(false),
+            level: Some(0.0),
+            ..Header::default()
+        };
+        let band = Rect::new(0.0, 0.0, header.width(&m), 60.0);
+        let parts = header_parts(band, &header, &m);
+        let mid = |r: Rect| ((r.x + r.w / 2.0) as f64, (r.y + r.h / 2.0) as f64);
+        for (rect, part) in [
+            (parts.mute.unwrap(), HeaderPart::Mute),
+            (parts.solo.unwrap(), HeaderPart::Solo),
+            (parts.fader.unwrap(), HeaderPart::Fader),
+        ] {
+            let (x, y) = mid(rect);
+            assert_eq!(header_hit(band, &header, &m, x, y), Some(part));
+        }
+        // The name row is not a control: a press there names nothing.
+        let (x, y) = mid(parts.label);
+        assert_eq!(header_hit(band, &header, &m, x, y), None);
+        // The fader reads its value off its own width.
+        let f = parts.fader.unwrap();
+        assert!((level_at(f, f.x as f64) - 0.0).abs() < 0.01);
+        assert!((level_at(f, (f.x + f.w) as f64) - 1.0).abs() < 0.01);
+        assert!((level_at(f, (f.x + f.w / 2.0) as f64) - 0.5).abs() < 0.02);
+    }
+
+    #[test]
     fn lane_body_reserves_the_header_strip() {
         let body = lane_body(
             lane(),
@@ -625,6 +895,7 @@ mod tests {
             lane(),
             &View::full(400),
             Some("drums"),
+            &Header::default(),
             &clips,
             false,
             Metrics::default().header_w,
@@ -663,6 +934,7 @@ mod tests {
             lane(),
             &View::full(400),
             None,
+            &Header::default(),
             std::slice::from_ref(&clip),
             false,
             Metrics::default().header_w,
@@ -686,6 +958,7 @@ mod tests {
             lane(),
             &View::full(400),
             None,
+            &Header::default(),
             &[ClipDraw {
                 data: None,
                 ..clip.clone()
@@ -739,6 +1012,7 @@ mod tests {
             lane(),
             &View::full(400),
             None,
+            &Header::default(),
             std::slice::from_ref(&clip),
             false,
             Metrics::default().header_w,
@@ -751,6 +1025,7 @@ mod tests {
             lane(),
             &View::full(400),
             None,
+            &Header::default(),
             &[ClipDraw {
                 points: Vec::new(),
                 ..clip.clone()
@@ -873,6 +1148,7 @@ mod tests {
             lane(),
             &View::full(400),
             None,
+            &Header::default(),
             std::slice::from_ref(&layered),
             false,
             Metrics::default().header_w,
@@ -885,6 +1161,7 @@ mod tests {
             lane(),
             &View::full(400),
             None,
+            &Header::default(),
             &[ClipDraw {
                 points: Vec::new(),
                 ..layered.clone()
@@ -938,6 +1215,7 @@ mod tests {
             lane(),
             &View::full(400),
             None,
+            &Header::default(),
             std::slice::from_ref(&clip),
             false,
             Metrics::default().header_w,
@@ -955,6 +1233,7 @@ mod tests {
             lane(),
             &View::full(400),
             None,
+            &Header::default(),
             std::slice::from_ref(&bare),
             false,
             Metrics::default().header_w,
