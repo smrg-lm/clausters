@@ -33,11 +33,48 @@ pub(crate) enum Coords {
     Layout,
     /// A pannable, zoomable plane in content units: `scroll`.
     Plane(ScrollView),
-    /// Time along x: a `track` lane, whose children are placed by *when* they
-    /// are. `body` is the rectangle its samples map onto — the lane minus the
-    /// header and the ruler strip, exactly what the renderer drew through —
-    /// and `nav` the window of the navigation group it is seen at.
-    Time { body: Rect, nav: View },
+    /// Time along x: every timeline view — a `track` lane placing its clips by
+    /// *when* they are, but equally a `waveform`, a `spectrogram`, a
+    /// `pianoroll` or a free-standing `timeruler`, whose contents are drawn on
+    /// the same axis rather than laid out on it. A view is its own time
+    /// container: the axis is the surface the pan, the selection and the locate
+    /// all measure against.
+    Time(TimeAxis),
+    /// A `patch`'s own canvas: boxes and cords placed in canvas units, seen
+    /// through the workspace `scale` the frame carries. Its elements are drawn,
+    /// not laid out, so the canvas is what a marquee sweeps.
+    Canvas,
+}
+
+/// The time axis a timeline container gives its contents: where its samples
+/// land, the window they are seen through, and — when the view has one — the
+/// vertical axis beside it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TimeAxis {
+    /// The rectangle the samples map onto, exactly what the renderer drew
+    /// through: a lane minus its header and ruler strip, a heavy view minus its
+    /// rulers, a piano-roll's note grid.
+    pub body: Rect,
+    /// The window of the navigation group the body is seen at.
+    pub nav: View,
+    /// The vertical axis, when the view has a surface for it.
+    pub y: Option<YAxis>,
+}
+
+/// A timeline view's vertical axis: the strip that is its gesture surface (a
+/// y-ruler, a piano-roll's keyboard gutter), the display window it stands at,
+/// and the pixels one window's worth spans.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct YAxis {
+    /// The band left of the body — a press there pans the axis, a wheel over it
+    /// zooms it.
+    pub strip: Rect,
+    /// The visible window (`EditorProps::y_view`) at the press.
+    pub start: f64,
+    pub len: f64,
+    /// How many pixels one window's worth spans: a **lane's** height, since one
+    /// vertical window is shared by every channel lane of a stacked view.
+    pub lane_h: f64,
 }
 
 /// One container over a hit, with the rectangle its coordinate system occupies
@@ -81,13 +118,13 @@ pub(crate) fn plane_of(chain: &[Frame]) -> Option<(i32, Rect, ScrollView)> {
     })
 }
 
-/// The innermost time axis in `chain`: the lane's id, the body its samples map
-/// onto and the window it is seen through. Every gesture on a lane — locating,
-/// panning, grabbing a clip — measures against this one, so they cannot drift
-/// from each other or from the frame the renderer drew.
-pub(crate) fn time_of(chain: &[Frame]) -> Option<(i32, Rect, View)> {
+/// The innermost time axis in `chain`: the container's id and the axis itself.
+/// Every gesture on a timeline — locating, panning, selecting, grabbing a clip
+/// — measures against this one, so they cannot drift from each other or from
+/// the frame the renderer drew.
+pub(crate) fn time_of(chain: &[Frame]) -> Option<(i32, TimeAxis)> {
     chain.iter().rev().find_map(|f| match f.coords {
-        Coords::Time { body, nav } => Some((f.id?, body, nav)),
+        Coords::Time(axis) => Some((f.id?, axis)),
         _ => None,
     })
 }
@@ -98,8 +135,20 @@ pub(crate) fn time_of(chain: &[Frame]) -> Option<(i32, Rect, View)> {
 /// it). A widget scrolled out of its container's window (outside its clip) is
 /// not hit. `fb_w`/`fb_h` is the window's framebuffer size in device pixels.
 ///
+/// `lanes` answers how many channel lanes a stacked heavy view draws — the one
+/// datum the host tree does not hold (it lives in the front's GPU slots), and
+/// the divisor a vertical axis is panned through.
+///
 /// [`Placed::scale`]: super::layout::Placed::scale
-pub(crate) fn hit(host: &Host, def_id: i32, fb_w: u32, fb_h: u32, x: f64, y: f64) -> Option<Hit> {
+pub(crate) fn hit(
+    host: &Host,
+    def_id: i32,
+    fb_w: u32,
+    fb_h: u32,
+    x: f64,
+    y: f64,
+    lanes: &dyn Fn(i32, &WidgetKind) -> usize,
+) -> Option<Hit> {
     let tree = host.window_def(def_id)?;
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
     let placed = layout::layout(area, tree, host.metrics_for(def_id));
@@ -123,14 +172,20 @@ pub(crate) fn hit(host: &Host, def_id: i32, fb_w: u32, fb_h: u32, x: f64, y: f64
         rect: p.rect,
         scale: p.scale,
         kind: p.widget.kind.clone(),
-        chain: chain_of(host, def_id, &placed, i),
+        chain: chain_of(host, def_id, &placed, i, lanes),
     })
 }
 
 /// The containers from the window down to `i`, `i` itself included when it is
 /// one — walked back through [`Placed::parent`], which is the containment the
 /// layout pass already resolved.
-fn chain_of(host: &Host, def_id: i32, placed: &[layout::Placed], i: usize) -> Vec<Frame> {
+fn chain_of(
+    host: &Host,
+    def_id: i32,
+    placed: &[layout::Placed],
+    i: usize,
+    lanes: &dyn Fn(i32, &WidgetKind) -> usize,
+) -> Vec<Frame> {
     let mut chain = Vec::new();
     let mut at = Some(i);
     while let Some(j) = at {
@@ -138,27 +193,8 @@ fn chain_of(host: &Host, def_id: i32, placed: &[layout::Placed], i: usize) -> Ve
         let coords = match &p.widget.kind {
             WidgetKind::Window { .. } | WidgetKind::Panel { .. } => Some(Coords::Layout),
             WidgetKind::Scroll { view, .. } => Some(Coords::Plane(*view)),
-            WidgetKind::Track { editor, .. } => Some(Coords::Time {
-                // The body the renderer drew (its ruler strip reserved), seen
-                // through the lane's *group* window, so a zoomed or panned axis
-                // is grabbed where it looks.
-                body: track::lane_body(
-                    p.rect,
-                    editor.ruler != super::widget::Ruler::Off,
-                    host.metrics_for(def_id),
-                ),
-                nav: p
-                    .widget
-                    .id
-                    .and_then(|id| host.timeline_nav(id))
-                    .map_or_else(
-                        || {
-                            host.window_def(def_id)
-                                .map_or(View::full(1), track::window_nav)
-                        },
-                        |(nav, _total)| nav,
-                    ),
-            }),
+            WidgetKind::Patch { .. } => Some(Coords::Canvas),
+            _ if p.widget.is_timeline() => time_axis(host, def_id, &p, lanes).map(Coords::Time),
             _ => None,
         };
         if let Some(coords) = coords {
@@ -172,6 +208,73 @@ fn chain_of(host: &Host, def_id: i32, placed: &[layout::Placed], i: usize) -> Ve
     }
     chain.reverse();
     chain
+}
+
+/// The [`TimeAxis`] of a placed timeline view — the geometry the renderer drew
+/// through, resolved once here rather than by each gesture from the kind it
+/// happens to have hit. The body is the strip samples map onto; the vertical
+/// axis is the band left of it, when the view has one.
+fn time_axis(
+    host: &Host,
+    def_id: i32,
+    p: &layout::Placed,
+    lanes: &dyn Fn(i32, &WidgetKind) -> usize,
+) -> Option<TimeAxis> {
+    let metrics = host.metrics_for(def_id);
+    let ruler_on = p.widget.kind.editor()?.ruler != super::widget::Ruler::Off;
+    let (body, y_surface) = match &p.widget.kind {
+        WidgetKind::Track { .. } => (track::lane_body(p.rect, ruler_on, metrics), false),
+        WidgetKind::TimeRuler { .. } => (super::frame::ruler_strip_body(p.rect, metrics), false),
+        WidgetKind::PianoRoll {
+            osc_lane,
+            velocity_lane,
+            ..
+        } => (
+            super::pianoroll::regions(p.rect, ruler_on, *osc_lane, *velocity_lane, metrics).grid,
+            // The keyboard gutter is the roll's vertical axis surface, always
+            // drawn (there is no `ruler_y: off` for a piano-roll).
+            true,
+        ),
+        kind => (
+            super::frame::timeline_body(p.rect, kind.editor()?, metrics),
+            kind.editor()?.ruler_y != super::widget::RulerY::Off,
+        ),
+    };
+    let (start, len) = p.widget.kind.editor()?.y_view();
+    Some(TimeAxis {
+        body,
+        nav: view_of(host, def_id, p, body),
+        y: y_surface.then(|| YAxis {
+            // The whole band left of the body, full height: the strip is where
+            // the axis is grabbed, and a press beside it at any height means the
+            // same axis.
+            strip: Rect::new(p.rect.x, p.rect.y, (body.x - p.rect.x).max(0.0), p.rect.h),
+            start,
+            len,
+            lane_h: (body.h as f64
+                / p.widget.id.map_or(1, |id| lanes(id, &p.widget.kind)).max(1) as f64)
+                .max(1.0),
+        }),
+    })
+}
+
+/// The navigation window a placed timeline view is seen through: its group's,
+/// or — while it is in none — the fallback its own contents imply, so a gesture
+/// on an ungrouped view still measures against something the renderer agrees
+/// with.
+fn view_of(host: &Host, def_id: i32, p: &layout::Placed, body: Rect) -> View {
+    if let Some((nav, _total)) = p.widget.id.and_then(|id| host.timeline_nav(id)) {
+        return nav;
+    }
+    match &p.widget.kind {
+        WidgetKind::Track { .. } => host
+            .window_def(def_id)
+            .map_or(View::full(1), track::window_nav),
+        WidgetKind::PianoRoll { notes, osc, .. } => {
+            View::full(pianoroll_span(notes, osc).ceil().max(1.0) as usize)
+        }
+        _ => View::full(body.w.max(1.0) as usize),
+    }
 }
 
 /// Sets a `scroll`'s view state (clamped against its content in `area`),
@@ -614,11 +717,11 @@ const CLIP_EDGE_PX: f32 = 6.0;
 pub(crate) fn clip_hit(
     host: &Host,
     def_id: i32,
-    lane: (i32, Rect, View),
+    lane: (i32, TimeAxis),
     x: f64,
     y: f64,
 ) -> Option<ClipHit> {
-    let (lane_id, body, nav) = lane;
+    let (lane_id, TimeAxis { body, nav, .. }) = lane;
     if !body.contains(x, y) {
         return None; // over the header or the ruler strip, not a clip
     }
@@ -759,17 +862,18 @@ fn pianoroll_span(notes: &[pianoroll::Note], osc: &[pianoroll::OscMark]) -> f64 
     span
 }
 
-/// Hit-test a press against the `pianoroll` `roll` — its id and the rectangle
-/// the hit placed it at — resolving the same regions and navigation window the
-/// renderer drew. Native-only, the edit-back gesture posture.
+/// Hit-test a press against the `pianoroll` `roll` — its id, the rectangle the
+/// hit placed it at and the time axis the hit resolved — against the same
+/// regions and navigation window the renderer drew. Native-only, the edit-back
+/// gesture posture.
 pub(crate) fn pianoroll_hit(
     host: &Host,
     def_id: i32,
-    roll: (i32, Rect),
+    roll: (i32, Rect, TimeAxis),
     x: f64,
     y: f64,
 ) -> Option<PianoRollHit> {
-    let (id, rect) = roll;
+    let (id, rect, axis) = roll;
     let WidgetKind::PianoRoll {
         notes,
         osc,
@@ -792,10 +896,7 @@ pub(crate) fn pianoroll_hit(
         *velocity_lane,
         host.metrics_for(def_id),
     );
-    let nav = host
-        .timeline_nav(id)
-        .map(|(nav, _)| nav)
-        .unwrap_or_else(|| View::full(pianoroll_span(notes, osc).ceil().max(1.0) as usize));
+    let nav = axis.nav;
     let (lo, hi) = pitch_window(editor, *min, *max);
     let (fx, fy) = (x as f32, y as f32);
     let (region, note, osc_index) = if *osc_lane && r.osc.contains(x, y) {
@@ -1191,6 +1292,11 @@ mod tests {
         )))
     }
 
+    /// The lane count of a single-channel front (the tests draw no GPU slots).
+    fn mono(_id: i32, _kind: &WidgetKind) -> usize {
+        1
+    }
+
     /// A window (id 1) with one track (id 5) holding two abutting clips: A
     /// (id 10) over [0, 400), B (id 11) over [400, 400), grid 100.
     fn track_host() -> Host {
@@ -1256,7 +1362,7 @@ mod tests {
     fn the_hit_carries_the_containers_over_it() {
         let host = nested_host();
         let (fb_w, fb_h) = (800, 400);
-        let at = |x: f64, y: f64| hit(&host, 1, fb_w, fb_h, x, y);
+        let at = |x: f64, y: f64| hit(&host, 1, fb_w, fb_h, x, y, &mono);
         // The knob in the panel: window → panel, both layout containers, and
         // no plane to pan.
         let h = at(100.0, 50.0).unwrap();
@@ -1298,7 +1404,7 @@ mod tests {
             }),
             from(),
         );
-        let h = hit(&host, 1, 800, 400, 700.0, 380.0).unwrap();
+        let h = hit(&host, 1, 800, 400, 700.0, 380.0, &mono).unwrap();
         assert_eq!(h.id, 4, "empty plane area hits the workspace itself");
         assert_eq!(plane_of(&h.chain).map(|(id, ..)| id), Some(4));
     }
@@ -1354,9 +1460,9 @@ mod tests {
         // The lane a press lands on, off its own hit chain — and it is the
         // geometry computed above, which is what the renderer draws through.
         let lane = |x: f64, y: f64| {
-            let h = hit(&host, 1, fb_w, fb_h, x, y).unwrap();
+            let h = hit(&host, 1, fb_w, fb_h, x, y, &mono).unwrap();
             let lane = time_of(&h.chain).unwrap();
-            assert_eq!((lane.0, lane.1, lane.2), (5, body, nav));
+            assert_eq!((lane.0, lane.1.body, lane.1.nav), (5, body, nav));
             lane
         };
         let (ax0, ax1) = track::clip_x_range(body, &nav, 0.0, 400.0).unwrap();
@@ -1468,13 +1574,23 @@ mod tests {
         let cy = pianoroll::pitch_to_y(60.0, 48.0, 72.0, r.grid) as f64;
         let cx = (r.grid.x + r.grid.w * 0.5) as f64;
 
-        let h = pianoroll_hit(&host, 1, (5, rect), cx, cy).unwrap();
+        // The roll's own time axis, off the hit's chain — the grid it draws
+        // through, which is what the note hit-test measures against.
+        let axis = |x: f64, y: f64| {
+            let h = hit(&host, 1, fb_w, fb_h, x, y, &mono).unwrap();
+            let (id, axis) = time_of(&h.chain).unwrap();
+            assert_eq!((id, axis.body), (5, r.grid), "the roll is its own axis");
+            axis
+        };
+
+        let h = pianoroll_hit(&host, 1, (5, rect, axis(cx, cy)), cx, cy).unwrap();
         assert_eq!(h.region, PrRegion::Grid);
         assert_eq!(h.note.unwrap().index, 0);
         // A press in the velocity lane picks the note under it (its bar sits at
         // the note's start, x ~ grid.x).
         let vy = (r.velocity.y + r.velocity.h * 0.5) as f64;
-        let hv = pianoroll_hit(&host, 1, (5, rect), (r.grid.x + 1.0) as f64, vy).unwrap();
+        let vx = (r.grid.x + 1.0) as f64;
+        let hv = pianoroll_hit(&host, 1, (5, rect, axis(vx, vy)), vx, vy).unwrap();
         assert_eq!(hv.region, PrRegion::Velocity);
         assert_eq!(hv.note.unwrap().index, 0);
     }

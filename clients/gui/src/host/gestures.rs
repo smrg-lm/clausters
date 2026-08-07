@@ -746,10 +746,11 @@ impl Gestures {
                 // The lane *is* the time axis: its body and its window come off
                 // the hit's own chain, so the locate, the pan and the clip grab
                 // below all measure against the one the renderer drew.
-                let Some((_, body, lane_nav)) = interact::time_of(&chain) else {
+                let Some((_, axis)) = interact::time_of(&chain) else {
                     return out;
                 };
-                let lane = (id, body, lane_nav);
+                let (body, lane_nav) = (axis.body, axis.nav);
+                let lane = (id, axis);
                 // Shift+drag pans the shared axis (the same gesture the heavy
                 // views use), so panning stays available where every plain drag
                 // grabs a clip.
@@ -911,7 +912,11 @@ impl Gestures {
                 }
             }
             WidgetKind::PianoRoll { .. } => {
-                let Some(h) = interact::pianoroll_hit(host, def_id, (id, rect), cx, cy) else {
+                let Some((_, axis)) = interact::time_of(&chain) else {
+                    return out;
+                };
+                let Some(h) = interact::pianoroll_hit(host, def_id, (id, rect, axis), cx, cy)
+                else {
                     return out;
                 };
                 // A press on the keyboard gutter (left of the grid) pans the pitch
@@ -2222,12 +2227,16 @@ impl Gestures {
             id,
             rect,
             kind: WidgetKind::PianoRoll { .. },
+            chain,
             ..
         }) = hit(host, ctx, cx, cy)
         else {
             return out;
         };
-        let Some(h) = interact::pianoroll_hit(host, def_id, (id, rect), cx, cy) else {
+        let Some((_, axis)) = interact::time_of(&chain) else {
+            return out;
+        };
+        let Some(h) = interact::pianoroll_hit(host, def_id, (id, rect, axis), cx, cy) else {
             return out;
         };
         let nav = View {
@@ -2314,9 +2323,12 @@ pub(crate) fn corner_rect(a: (f64, f64), b: (f64, f64)) -> Rect {
     Rect::new(x0 as f32, y0 as f32, (x1 - x0) as f32, (y1 - y0) as f32)
 }
 
-/// The deepest widget under `(x, y)` and the containers over it.
+/// The deepest widget under `(x, y)` and the containers over it — the lane
+/// counts the vertical axes are panned through coming off the front's context.
 fn hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<Hit> {
-    interact::hit(host, ctx.def_id, ctx.fb_w, ctx.fb_h, x, y)
+    interact::hit(host, ctx.def_id, ctx.fb_w, ctx.fb_h, x, y, &|id, kind| {
+        ctx.lanes(id, kind)
+    })
 }
 
 /// A `scroll` widget's **current** view state and configuration. A drag reads
