@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use clausters_core::oscil;
 
 use super::BusSource;
+use super::signal::Presentation;
 use super::timeline::{TimelineGroups, group_key};
 use super::widget::{Widget, WidgetKind};
 
@@ -30,11 +31,10 @@ pub(crate) const STREAM_PERIOD_MS: i32 = 33;
 /// so the frame tick can sample each one's bus into its rolling history (an
 /// audio-rate scope reads a tap window instead — see [`collect_tap_scopes`]).
 pub(crate) fn collect_scopes(widget: &Widget, out: &mut Vec<(i32, i32)>) {
-    if let WidgetKind::Scope { bus, rate, .. } = &widget.kind
-        && !rate.is_audio()
+    if let Some(bus) = widget.kind.live_bus()
         && let Some(id) = widget.id
     {
-        out.push((id, *bus));
+        out.push((id, bus));
     }
     for child in &widget.children {
         collect_scopes(child, out);
@@ -77,25 +77,19 @@ pub(crate) struct TapScope {
 
 /// Appends the [`TapScope`] of every audio-rate `scope` in the tree.
 pub(crate) fn collect_tap_scopes(widget: &Widget, out: &mut Vec<TapScope>) {
-    if let WidgetKind::Scope {
-        bus,
-        rate,
-        channels,
-        window_ms,
-        trigger,
-        hold,
-        ..
-    } = &widget.kind
-        && rate.is_audio()
+    if let Some(el) = widget.kind.signal()
+        && el.presentation == Presentation::Signal
+        && let Some(bus) = el.source.bus()
+        && bus.rate.is_audio()
         && let Some(id) = widget.id
     {
         out.push(TapScope {
             widget_id: id,
-            bus: *bus,
-            channels: *channels,
-            window_ms: *window_ms,
-            trigger: *trigger,
-            hold: *hold,
+            bus: bus.bus,
+            channels: bus.channels,
+            window_ms: bus.window_ms,
+            trigger: bus.trigger,
+            hold: bus.hold,
         });
     }
     for child in &widget.children {
@@ -239,20 +233,17 @@ pub(crate) struct PhaseScope {
 
 /// Appends the [`PhaseScope`] of every `phasescope` in the tree.
 pub(crate) fn collect_phase_scopes(widget: &Widget, out: &mut Vec<PhaseScope>) {
-    if let WidgetKind::Phasescope {
-        bus,
-        window_ms,
-        hold,
-        ..
-    } = &widget.kind
+    if let Some(el) = widget.kind.signal()
+        && el.presentation == Presentation::Phase
+        && let Some(bus) = el.source.bus()
         && let Some(id) = widget.id
     {
         out.push(PhaseScope {
             widget_id: id,
-            bus_l: *bus,
-            bus_r: *bus + 1,
-            window_ms: *window_ms,
-            hold: *hold,
+            bus_l: bus.bus,
+            bus_r: bus.bus + 1,
+            window_ms: bus.window_ms,
+            hold: bus.hold,
         });
     }
     for child in &widget.children {
@@ -316,23 +307,18 @@ pub(crate) struct SpectrumSpec {
 
 /// Appends the [`SpectrumSpec`] of every `spectrum` in the tree.
 pub(crate) fn collect_spectra(widget: &Widget, out: &mut Vec<SpectrumSpec>) {
-    if let WidgetKind::Spectrum {
-        bus,
-        channels,
-        fft_size,
-        averaging,
-        peak_hold,
-        ..
-    } = &widget.kind
+    if let Some(el) = widget.kind.signal()
+        && el.presentation == Presentation::Spectrum
+        && let Some(bus) = el.source.bus()
         && let Some(id) = widget.id
     {
         out.push(SpectrumSpec {
             widget_id: id,
-            bus: *bus,
-            channels: *channels,
-            fft_size: *fft_size,
-            averaging: *averaging,
-            peak_hold: *peak_hold,
+            bus: bus.bus,
+            channels: bus.channels,
+            fft_size: el.spectral.fft_size,
+            averaging: el.spectral.averaging,
+            peak_hold: el.spectral.peak_hold,
         });
     }
     for child in &widget.children {

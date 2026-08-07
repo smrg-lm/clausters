@@ -1398,10 +1398,11 @@ mod tests {
         let effects = host.handle_packet(msg, from());
         assert_eq!(opened(&effects), vec![2]);
         let tree = host.window_def(2).unwrap();
-        match &tree.children[0].kind {
-            widget::WidgetKind::Waveform { samples, .. } => assert_eq!(&samples[..], &[0.5, -0.5]),
-            other => panic!("expected a waveform, got {other:?}"),
-        }
+        let data = tree.children[0]
+            .signal()
+            .and_then(|el| el.source.data())
+            .expect("expected a waveform");
+        assert_eq!(&data.samples[..], &[0.5, -0.5]);
     }
 
     #[test]

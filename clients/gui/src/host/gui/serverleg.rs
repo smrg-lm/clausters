@@ -12,6 +12,7 @@ use tracing::{debug, info, warn};
 use crate::host::fetch::{FetchStep, WaveWant};
 use crate::host::frame;
 use crate::host::nodetree::NodeTree;
+use crate::host::signal::{self, Presentation};
 use crate::host::widget::{Widget, WidgetKind};
 use crate::waveform::WaveformData;
 
@@ -239,8 +240,14 @@ impl App {
                 continue;
             };
             match kind {
-                WidgetKind::Waveform { base_bucket, .. } => {
-                    let data = WaveformData::from_interleaved(&samples, channels, base_bucket);
+                WidgetKind::Signal(ref el)
+                    if el.presentation == Presentation::Signal && el.is_gpu_view() =>
+                {
+                    let bucket = el
+                        .source
+                        .data()
+                        .map_or(signal::DEFAULT_BASE_BUCKET, |d| d.base_bucket);
+                    let data = WaveformData::from_interleaved(&samples, channels, bucket);
                     let slot = frame::waveform_slot(data, &ws.gpu);
                     ws.waveforms.insert(want.widget_id, slot);
                 }
@@ -263,21 +270,18 @@ impl App {
                     }
                     continue; // no navigation group, no ruler rate: a lane owns those
                 }
-                WidgetKind::Spectrogram {
-                    window_size,
-                    hop,
-                    sample_rate: rate_prop,
-                    ..
-                } => {
-                    let rate = if rate_prop > 0.0 {
-                        rate_prop
+                WidgetKind::Signal(ref el)
+                    if el.presentation == Presentation::TimeFrequency && el.is_gpu_view() =>
+                {
+                    let rate = if el.editor.sample_rate > 0.0 {
+                        el.editor.sample_rate
                     } else {
                         sample_rate
                     };
                     let stfts = frame::stft_lanes(
                         frame::deinterleave(&samples, channels),
-                        window_size,
-                        hop,
+                        el.spectral.fft_size,
+                        el.spectral.hop,
                         rate,
                     );
                     if let Some(slot) = frame::spectrogram_slot(stfts, &ws.gpu, &ws.renderers) {

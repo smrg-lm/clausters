@@ -46,7 +46,8 @@ use super::guidef::GuiNode;
 // Sibling widget modules the wire matches reach via `super::` — re-imported here
 // so the `build`/`apply` child modules resolve the same paths (a descendant sees
 // the parent's private `use` items).
-use super::{bpf, piano, plot, score, textedit};
+use super::signal::{Presentation, SignalElement};
+use super::{bpf, piano, plot, score, signal, textedit};
 
 mod apply;
 mod build;
@@ -131,11 +132,26 @@ pub enum Ruler {
 
 impl Ruler {
     fn parse(props: &serde_json::Map<String, Value>) -> Ruler {
-        match props.get("ruler").and_then(Value::as_str) {
-            Some("samples") => Ruler::Samples,
-            Some("beats") => Ruler::Beats,
-            Some("off") | Some("none") => Ruler::Off,
-            _ => Ruler::Time,
+        Self::parse_with(props, Ruler::Time)
+    }
+
+    /// The `ruler` prop over a presentation's own default — absent keeps the
+    /// default, and a **boolean** switches the strip off or back on, which is
+    /// how the live views have always spelled it (their x unit is not
+    /// selectable, so only on/off was ever meaningful there).
+    pub(super) fn parse_with(props: &serde_json::Map<String, Value>, default: Ruler) -> Ruler {
+        match props.get("ruler") {
+            None => default,
+            Some(v) => match v.as_str() {
+                Some("samples") => Ruler::Samples,
+                Some("beats") => Ruler::Beats,
+                Some("off") | Some("none") => Ruler::Off,
+                Some(_) => Ruler::Time,
+                None => match truthy(v) {
+                    Some(false) => Ruler::Off,
+                    _ => Ruler::Time,
+                },
+            },
         }
     }
 
@@ -145,6 +161,11 @@ impl Ruler {
             Some("beats") => *self = Ruler::Beats,
             Some("off") | Some("none") => *self = Ruler::Off,
             Some("time") => *self = Ruler::Time,
+            // The live views' on/off spelling.
+            None => match truthy(v) {
+                Some(b) => *self = if b { Ruler::Time } else { Ruler::Off },
+                None => return false,
+            },
             _ => return false,
         }
         true
@@ -174,9 +195,17 @@ pub enum RulerY {
 
 impl RulerY {
     fn parse(props: &serde_json::Map<String, Value>, default: RulerY) -> RulerY {
-        match props.get("ruler_y").and_then(Value::as_str) {
-            Some(s) => Self::from_str(s).unwrap_or(default),
+        match props.get("ruler_y") {
             None => default,
+            Some(v) => match v.as_str() {
+                Some(s) => Self::from_str(s).unwrap_or(default),
+                // A boolean switches the strip off or back on — the live
+                // views' spelling, where the unit is the presentation's.
+                None => match truthy(v) {
+                    Some(false) => RulerY::Off,
+                    _ => default,
+                },
+            },
         }
     }
 
@@ -270,7 +299,7 @@ pub struct EditorProps {
 impl EditorProps {
     /// Parses the shared chrome; `default_y` is the view's own default
     /// vertical unit (`Norm` for the waveform, `Hz` for the spectrogram).
-    fn parse(props: &serde_json::Map<String, Value>, default_y: RulerY) -> EditorProps {
+    pub(super) fn parse(props: &serde_json::Map<String, Value>, default_y: RulerY) -> EditorProps {
         EditorProps {
             ruler: Ruler::parse(props),
             ruler_y: RulerY::parse(props, default_y),
@@ -567,7 +596,8 @@ impl GestureMap {
                 (&[Element, Select], &[Pan], &[Element, Select], &[Element])
             }
             WidgetKind::TimeRuler { .. } => (&[Locate], &[Pan], &[Locate], &[Locate]),
-            WidgetKind::Waveform { .. } | WidgetKind::Spectrogram { .. } => {
+            // A navigable signal element: a plain drag selects, Shift pans.
+            WidgetKind::Signal(el) if el.caps.navigable => {
                 (&[Select], &[Pan], &[Select], &[Select])
             }
             // The patcher: a plain drag on the empty canvas sweeps the box
@@ -849,56 +879,16 @@ pub enum WidgetKind {
         wrap: bool,
         align: Align,
     },
-    /// The heavy waveform view: its samples and the peak-pyramid bucket size.
-    /// The samples reach the view one of several ways, in precedence order:
-    /// `cache` (a prebuilt peak-pyramid file the host maps — the most compact
-    /// bulk path, raw samples never loaded), `path` (a file of raw little-endian
-    /// `f32` the host maps — the bulk path for a multi-megabyte buffer, no OSC),
-    /// `buffer` (an audio-server buffer number the windowed front fetches over
-    /// the client leg), or inline `data`/`blob`. `channels` is the interleaved
-    /// channel count of a multi-channel `path`/`data`/`blob` (default 1) —
-    /// **every** channel is kept and drawn, as stacked lanes sharing the time
-    /// axis by default or as `overlay` per-color traces. For `cache`/`path`/
-    /// `buffer`, `samples` starts empty and is filled when the resource is
-    /// mapped/fetched. `editor` carries the ruler/selection/playhead chrome.
-    Waveform {
-        samples: Arc<[f32]>,
-        base_bucket: usize,
-        buffer: Option<i32>,
-        path: Option<PathBuf>,
-        cache: Option<PathBuf>,
-        channels: usize,
-        overlay: bool,
-        editor: EditorProps,
-    },
-    /// The heavy STFT time-frequency view, host-wired like the waveform: its
-    /// samples come from a mapped `path` (raw interleaved `f32`), a prebuilt
-    /// single-channel `cache` (an `Stft` cache file), a server `buffer`, or
-    /// inline `data`/`blob`; `channels` de-interleaves them and each channel
-    /// gets its own analysis, drawn as stacked lanes. `window_size` (a
-    /// supported power of two) and `hop` shape the analysis (recompute-time
-    /// props, fixed at def time); the dB window, frequency scale
-    /// (`freq_scale`: linear/log/mel/bark; `log_freq` is the legacy boolean
-    /// alias) and colormap are live shader uniforms (`/gui_set`).
-    /// `sample_rate` places the frequency axis for `path`/inline sources (a
-    /// fetched `buffer` brings its own). `editor` adds the time ruler,
-    /// selection and playhead; the Hz ruler rides the left strip when
-    /// `ruler_y` is not off, its ticks placed by the active `freq_scale`.
-    Spectrogram {
-        samples: Arc<[f32]>,
-        channels: usize,
-        buffer: Option<i32>,
-        path: Option<PathBuf>,
-        cache: Option<PathBuf>,
-        window_size: usize,
-        hop: usize,
-        sample_rate: f64,
-        db_floor: f32,
-        db_ceil: f32,
-        freq_scale: FreqScale,
-        colormap: i32,
-        editor: EditorProps,
-    },
+    /// The **signal element**: every view of a signal, in one widget.
+    ///
+    /// A presentation (the trace, a magnitude spectrum, the time-frequency
+    /// texture, the phase of a stereo pair) of a source (addressable samples,
+    /// or a bus read forward-only), with the capabilities the view offers over
+    /// it — see [`super::signal`], which is where the model and the wire-name
+    /// presets live. The six names the catalog grew (`waveform`, `plot`,
+    /// `scope`, `spectrum`, `spectrogram`, `phasescope`) are six points of that
+    /// product, so this one arm answers for all of them.
+    Signal(Box<SignalElement>),
     /// A level meter reading bus `bus` from the shared-memory segment each
     /// frame (zero messages), shown as a bar over `[min, max]`. At `rate`
     /// audio (the default) it reads the bus's published block level, the
@@ -909,69 +899,6 @@ pub enum WidgetKind {
         rate: Rate,
         min: f32,
         max: f32,
-        label: Option<String>,
-    },
-    /// A time-domain scope over `[min, max]` of `channels` **adjacent** buses
-    /// starting at `bus`, in one of two rates. At audio rate (the default) it
-    /// is a real oscilloscope: a `window_ms` window of each bus's recorded
-    /// samples, re-read every frame and aligned on a rising crossing of
-    /// `trigger` found in the **first** channel, so the channels keep their
-    /// true relative phase (free-running when no crossing is found; a
-    /// lock/free read-out shows which). At control rate it plots the rolling
-    /// history of the control buses, one sample per frame tick. Channels draw
-    /// as stacked lanes, or as color-coded traces in one field with `overlay`;
-    /// `hold` freezes the trace. `ruler`/`ruler_y` (`"off"` to hide) are the
-    /// audio-rate form's axis strips: x in milliseconds of the window, y in
-    /// signal value over `[min, max]`.
-    Scope {
-        bus: i32,
-        rate: Rate,
-        channels: usize,
-        overlay: bool,
-        window_ms: f32,
-        trigger: f32,
-        hold: bool,
-        min: f32,
-        max: f32,
-        ruler: bool,
-        ruler_y: bool,
-        label: Option<String>,
-    },
-    /// A phase/goniometer view of a stereo pair of audio buses, drawn as the
-    /// 45°-rotated Lissajous figure (vertical = mid `(L+R)/√2`, horizontal =
-    /// side `(L−R)/√2`): mono reads vertical, anti-phase horizontal. `bus` is
-    /// the left channel and `bus + 1` the right, the adjacent-channel layout
-    /// the whole family uses; `window_ms` sizes the age-faded persistence
-    /// trail; `hold` freezes it. A correlation read-out (Pearson r over the
-    /// window) sits under the field. Audio rate only.
-    Phasescope {
-        bus: i32,
-        window_ms: f32,
-        hold: bool,
-        label: Option<String>,
-    },
-    /// A live FFT magnitude curve (spectroscope) over `channels` **adjacent**
-    /// audio buses starting at `bus`: one forward FFT per channel per frame of
-    /// the newest `fft_size` window, magnitudes in dB over
-    /// `[db_floor, db_ceil]`, the frequency axis on `freq_scale`
-    /// (linear/log/mel/bark; `log_freq` is the legacy boolean alias). The
-    /// channels overlay as color-coded curves in one field. `averaging`
-    /// (0..1) exponentially smooths each bin so the curve does not flicker;
-    /// `peak_hold` overlays a slowly decaying peak trace per channel.
-    /// `ruler`/`ruler_y` (`"off"` to hide) are the axis strips: x in hertz on
-    /// the active scale, y in dB. The analysis reuses the shared-core FFT +
-    /// Hann window, so it agrees with the spectrogram.
-    Spectrum {
-        bus: i32,
-        channels: usize,
-        fft_size: usize,
-        db_floor: f32,
-        db_ceil: f32,
-        freq_scale: FreqScale,
-        averaging: f32,
-        peak_hold: bool,
-        ruler: bool,
-        ruler_y: bool,
         label: Option<String>,
     },
     /// A live text view of the audio server's node tree rooted at `group`,
@@ -1010,43 +937,6 @@ pub enum WidgetKind {
         max: f32,
         duration: f64,
         exp: bool,
-        label: Option<String>,
-    },
-    /// The static plot of a signal — measurement without navigation. Its
-    /// samples arrive inline (`data`/`blob`) or — the bulk path for an NRT
-    /// render's output — from a mapped local `path` of raw little-endian
-    /// `f32`, filled when the host maps it; `channels` de-interleaves them and
-    /// **every** channel is drawn (stacked lanes, or `overlay` per-color
-    /// traces). `view` picks the presentation ([`super::plot::PlotView`], an
-    /// extensible enum): `signal` (value against time/index, decimated to the
-    /// pixel width so the whole sequence shows without visual aliasing) or
-    /// `spectrum` (the averaged magnitude spectrum in dB over `freq_scale` —
-    /// linear/log/mel/bark — analyzed once into `spectrum` at the widget's
-    /// mutation points, never per frame). `min`/`max` bound the signal view's
-    /// value axis; either side omitted (`None`) auto-fits to the data — the
-    /// arbitrary-range sequence case. `ruler`/`ruler_y` switch the x/y ruler
-    /// strips; `sample_rate` (0 = unknown) turns the x axis from sample counts
-    /// into clock time and places the spectral frequency axis. Hovering names
-    /// the exact sample (or bin) under the cursor. Unlike the heavy
-    /// `waveform`, it does not zoom, pan or edit.
-    Plot {
-        samples: Arc<[f32]>,
-        path: Option<PathBuf>,
-        channels: usize,
-        view: super::plot::PlotView,
-        overlay: bool,
-        sample_rate: f64,
-        min: Option<f32>,
-        max: Option<f32>,
-        ruler: Ruler,
-        ruler_y: bool,
-        fft_size: usize,
-        db_floor: f32,
-        db_ceil: f32,
-        freq_scale: FreqScale,
-        /// The cached spectral analysis (spectrum view; recomputed by
-        /// [`WidgetKind::refresh_plot_analysis`] whenever its inputs change).
-        spectrum: Option<Arc<super::plot::PlotSpectrum>>,
         label: Option<String>,
     },
     /// An engraved music-notation page. The rendering client (verovio, in the
@@ -1212,8 +1102,8 @@ pub enum WidgetKind {
     /// view. Interaction (drag to move `offset`, drag an edge to resize `dur`)
     /// writes back through the edit-back path. A leaf.
     ///
-    /// The waveform body reaches the clip the same ways the heavy [`Waveform`]
-    /// view's samples do, in the same precedence order — a real take is
+    /// The waveform body reaches the clip the same ways a navigable [`Signal`]
+    /// element's samples do, in the same precedence order — a real take is
     /// minutes long, so it must never ride the wire as JSON: `cache` (a prebuilt
     /// peak-pyramid file, raw samples never loaded), `path` (a file of raw
     /// little-endian `f32` the host maps — the bulk path, no OSC), `buffer` (a
@@ -1224,7 +1114,7 @@ pub enum WidgetKind {
     /// rule the editor views follow, with no GPU slot: a lane body is flat
     /// geometry, the static-view posture.
     ///
-    /// [`Waveform`]: WidgetKind::Waveform
+    /// [`Signal`]: WidgetKind::Signal
     Clip {
         offset: f64,
         dur: f64,
@@ -1329,8 +1219,8 @@ impl Range {
 
 /// The default window size when a GuiDef omits `w`/`h`.
 const DEFAULT_WINDOW: (u32, u32) = (640, 360);
-/// The default peak-pyramid bucket for an inline waveform.
-const DEFAULT_BASE_BUCKET: usize = 256;
+/// The default peak-pyramid bucket for an inline signal element.
+use super::signal::DEFAULT_BASE_BUCKET;
 
 /// A typed widget node: its id (the root's comes from the `/gui_def` argument),
 /// its kind, and its children (only containers have any).
@@ -1516,31 +1406,37 @@ impl Widget {
         true
     }
 
-    /// Whether this is the heavy waveform view (a convenience for the renderer).
-    pub fn is_waveform(&self) -> bool {
-        matches!(self.kind, WidgetKind::Waveform { .. })
+    /// The signal element this widget is, if it is one.
+    pub fn signal(&self) -> Option<&SignalElement> {
+        self.kind.signal()
     }
 
-    /// Whether this is one of the navigable timeline views (waveform or
-    /// spectrogram) — the widgets that zoom, pan, select and show a playhead.
+    /// Whether this is a navigable signal element — the view that zooms, pans,
+    /// selects and shows a playhead over its own samples.
+    pub fn is_nav_signal(&self) -> bool {
+        self.signal().is_some_and(|el| el.caps.navigable)
+    }
+
+    /// Whether this widget navigates the window's shared time axis: a navigable
+    /// signal element, or one of the containers placed on that axis.
     pub fn is_timeline(&self) -> bool {
-        matches!(
-            self.kind,
-            WidgetKind::Waveform { .. }
-                | WidgetKind::Spectrogram { .. }
-                | WidgetKind::Track { .. }
-                | WidgetKind::PianoRoll { .. }
-                | WidgetKind::TimeRuler { .. }
-        )
+        self.is_nav_signal()
+            || matches!(
+                self.kind,
+                WidgetKind::Track { .. }
+                    | WidgetKind::PianoRoll { .. }
+                    | WidgetKind::TimeRuler { .. }
+            )
     }
 
-    /// Whether this tree contains a widget whose overlay follows the pointer
-    /// — the cursor readout of the timeline views and the plot. The windowed
-    /// front asks on cursor motion: such a window needs a frame per move
-    /// (a fully static one, like a plot's, has no other frame source).
+    /// Whether this tree contains a widget whose overlay follows the pointer —
+    /// the cursor readout a signal element over *stored* samples draws, and the
+    /// timeline containers'. The windowed front asks on cursor motion: such a
+    /// window needs a frame per move (a fully static one, like a plot's, has no
+    /// other frame source; a live one is already redrawn every tick).
     pub fn has_hover_readout(&self) -> bool {
         self.is_timeline()
-            || matches!(self.kind, WidgetKind::Plot { .. })
+            || self.signal().is_some_and(|el| !el.is_live())
             || self.children.iter().any(Widget::has_hover_readout)
     }
 
@@ -1586,11 +1482,12 @@ impl WidgetKind {
     /// and [`Self::level_bus`].
     pub fn live_bus(&self) -> Option<i32> {
         match self {
-            WidgetKind::Meter { bus, rate, .. } | WidgetKind::Scope { bus, rate, .. }
-                if !rate.is_audio() =>
-            {
-                Some(*bus)
-            }
+            WidgetKind::Meter { bus, rate, .. } if !rate.is_audio() => Some(*bus),
+            WidgetKind::Signal(el) if el.presentation == Presentation::Signal => el
+                .source
+                .bus()
+                .filter(|b| !b.rate.is_audio())
+                .map(|b| b.bus),
             _ => None,
         }
     }
@@ -1612,23 +1509,15 @@ impl WidgetKind {
     /// sample consumers are covered uniformly. A meter is deliberately absent:
     /// its level costs no recording.
     pub fn audio_buses_read(&self, out: &mut Vec<i32>) {
-        match self {
-            WidgetKind::Scope {
-                bus,
-                rate,
-                channels,
-                ..
-            } if rate.is_audio() => {
-                out.extend((0..*channels as i32).map(|k| *bus + k));
-            }
-            WidgetKind::Spectrum { bus, channels, .. } => {
-                out.extend((0..*channels as i32).map(|k| *bus + k));
-            }
-            WidgetKind::Phasescope { bus, .. } => {
-                out.push(*bus);
-                out.push(*bus + 1);
-            }
-            _ => {}
+        let Some(el) = self.signal() else { return };
+        let Some(bus) = el.source.bus() else { return };
+        match el.presentation {
+            // The phase view is a stereo pair by construction: a bus and the
+            // one beside it, whatever `channels` says.
+            Presentation::Phase => out.extend([bus.bus, bus.bus + 1]),
+            // A control-rate trace is read as a bus value, not as samples.
+            Presentation::Signal if !bus.rate.is_audio() => {}
+            _ => out.extend((0..bus.channels as i32).map(|k| bus.bus + k)),
         }
     }
 
@@ -1639,9 +1528,8 @@ impl WidgetKind {
     /// chrome but navigates with the window's clip span.)
     pub fn editor(&self) -> Option<&EditorProps> {
         match self {
-            WidgetKind::Waveform { editor, .. }
-            | WidgetKind::Spectrogram { editor, .. }
-            | WidgetKind::Track { editor, .. }
+            WidgetKind::Signal(el) => Some(&el.editor),
+            WidgetKind::Track { editor, .. }
             | WidgetKind::PianoRoll { editor, .. }
             | WidgetKind::TimeRuler { editor, .. } => Some(editor),
             _ => None,
@@ -1652,9 +1540,8 @@ impl WidgetKind {
     /// through here).
     pub fn editor_mut(&mut self) -> Option<&mut EditorProps> {
         match self {
-            WidgetKind::Waveform { editor, .. }
-            | WidgetKind::Spectrogram { editor, .. }
-            | WidgetKind::Track { editor, .. }
+            WidgetKind::Signal(el) => Some(&mut el.editor),
+            WidgetKind::Track { editor, .. }
             | WidgetKind::PianoRoll { editor, .. }
             | WidgetKind::TimeRuler { editor, .. } => Some(editor),
             _ => None,
@@ -1672,31 +1559,31 @@ impl WidgetKind {
 
     /// Applies one `/gui_set` key/value to a live widget, returning whether it
     /// changed anything the renderer cares about.
-    /// Recomputes a `plot`'s cached spectral analysis from its current samples
-    /// and props — a no-op for every other widget, for the signal view and for
-    /// empty samples. Called at the widget's mutation points (parse, a bulk
+    /// The signal element this kind is, if it is one.
+    pub fn signal(&self) -> Option<&SignalElement> {
+        match self {
+            WidgetKind::Signal(el) => Some(el),
+            _ => None,
+        }
+    }
+
+    /// The signal element this kind is, mutably — a bulk load and a `/gui_set`
+    /// both write through here.
+    pub fn signal_mut(&mut self) -> Option<&mut SignalElement> {
+        match self {
+            WidgetKind::Signal(el) => Some(el),
+            _ => None,
+        }
+    }
+
+    /// Recomputes a stored spectrum's cached analysis from its current samples
+    /// and props — a no-op for every other widget and every other
+    /// presentation. Called at the element's mutation points (parse, a bulk
     /// load landing samples, a live `/gui_set` touching what the analysis
     /// reads), which keeps the per-frame render pure and allocation-light.
-    pub fn refresh_plot_analysis(&mut self) {
-        if let WidgetKind::Plot {
-            samples,
-            channels,
-            view,
-            sample_rate,
-            fft_size,
-            spectrum,
-            ..
-        } = self
-        {
-            *spectrum =
-                (*view == super::plot::PlotView::Spectrum && !samples.is_empty()).then(|| {
-                    Arc::new(super::plot::analyze(
-                        samples,
-                        *channels,
-                        *fft_size,
-                        *sample_rate,
-                    ))
-                });
+    pub fn refresh_analysis(&mut self) {
+        if let WidgetKind::Signal(el) = self {
+            el.refresh_analysis();
         }
     }
 
@@ -1892,19 +1779,13 @@ mod tests {
             other => panic!("expected window, got {other:?}"),
         }
         assert_eq!(w.children.len(), 1);
-        match &w.children[0].kind {
-            WidgetKind::Waveform {
-                samples,
-                base_bucket,
-                buffer,
-                ..
-            } => {
-                assert_eq!(&samples[..], &[0.0, 0.5, -0.5, 1.0]);
-                assert_eq!(*base_bucket, 2);
-                assert_eq!(*buffer, None);
-            }
-            other => panic!("expected waveform, got {other:?}"),
-        }
+        let data = w.children[0]
+            .signal()
+            .and_then(|el| el.source.data())
+            .expect("a waveform is a signal element over addressable samples");
+        assert_eq!(&data.samples[..], &[0.0, 0.5, -0.5, 1.0]);
+        assert_eq!(data.base_bucket, 2);
+        assert_eq!(data.buffer, None);
     }
 
     #[test]
@@ -2074,15 +1955,15 @@ mod tests {
     fn waveform_by_server_buffer_starts_empty_with_the_buffer_number() {
         let n = node(r#"{"type":"window","children":[{"id":3,"type":"waveform","buffer":7}]}"#);
         let w = Widget::from_node(1, &n, &[]).unwrap();
-        match &w.children[0].kind {
-            WidgetKind::Waveform {
-                samples, buffer, ..
-            } => {
-                assert!(samples.is_empty(), "no inline data yet — fetched later");
-                assert_eq!(*buffer, Some(7));
-            }
-            other => panic!("expected waveform, got {other:?}"),
-        }
+        let data = w.children[0]
+            .signal()
+            .and_then(|el| el.source.data())
+            .unwrap();
+        assert!(
+            data.samples.is_empty(),
+            "no inline data yet — fetched later"
+        );
+        assert_eq!(data.buffer, Some(7));
     }
 
     #[test]
@@ -2094,28 +1975,27 @@ mod tests {
             ]}"#,
         );
         let w = Widget::from_node(9, &n, &[]).unwrap();
-        match &w.children[0].kind {
-            WidgetKind::Waveform {
-                samples,
-                path,
-                channels,
-                ..
-            } => {
-                assert!(samples.is_empty(), "samples are mapped later, not inline");
-                assert_eq!(path.as_deref(), Some(std::path::Path::new("/tmp/buf.f32")));
-                assert_eq!(*channels, 2);
-            }
-            other => panic!("expected waveform, got {other:?}"),
-        }
-        match &w.children[1].kind {
-            WidgetKind::Waveform { cache, .. } => {
-                assert_eq!(
-                    cache.as_deref(),
-                    Some(std::path::Path::new("/tmp/buf.peaks"))
-                );
-            }
-            other => panic!("expected waveform, got {other:?}"),
-        }
+        let data = w.children[0]
+            .signal()
+            .and_then(|el| el.source.data())
+            .unwrap();
+        assert!(
+            data.samples.is_empty(),
+            "samples are mapped later, not inline"
+        );
+        assert_eq!(
+            data.path.as_deref(),
+            Some(std::path::Path::new("/tmp/buf.f32"))
+        );
+        assert_eq!(data.channels, 2);
+        let data = w.children[1]
+            .signal()
+            .and_then(|el| el.source.data())
+            .unwrap();
+        assert_eq!(
+            data.cache.as_deref(),
+            Some(std::path::Path::new("/tmp/buf.peaks"))
+        );
     }
 
     #[test]
@@ -2141,13 +2021,11 @@ mod tests {
             }
             other => panic!("expected meter, got {other:?}"),
         }
-        // The scope defaults to the bipolar [-1, 1] range.
-        match &w.children[1].kind {
-            WidgetKind::Scope { bus, min, max, .. } => {
-                assert_eq!((*bus, *min, *max), (6, -1.0, 1.0))
-            }
-            other => panic!("expected scope, got {other:?}"),
-        }
+        // The scope is a signal element over a forward-only source, and
+        // defaults to the bipolar [-1, 1] range.
+        let el = w.children[1].signal().expect("a scope is a signal element");
+        assert_eq!(el.source.bus().unwrap().bus, 6);
+        assert_eq!((el.value.min, el.value.max), (Some(-1.0), Some(1.0)));
         // An audio-rate meter reads a published level, not a control bus.
         assert_eq!(w.children[0].kind.live_bus(), None);
         assert_eq!(w.children[0].kind.level_bus(), Some(5));
@@ -2186,16 +2064,12 @@ mod tests {
         // A nodetree is non-interactive and reads no bus.
         assert_eq!(w.children[0].kind.event_value(), None);
         assert_eq!(w.children[0].kind.live_bus(), None);
-        match &w.children[1].kind {
-            WidgetKind::Plot {
-                samples, min, max, ..
-            } => {
-                assert_eq!(&samples[..], &[0.0, 1.0, -1.0]);
-                // An explicit side is kept; the omitted one auto-fits.
-                assert_eq!((*min, *max), (None, Some(2.0)));
-            }
-            other => panic!("expected plot, got {other:?}"),
-        }
+        let el = w.children[1].signal().expect("a plot is a signal element");
+        assert_eq!(&el.source.data().unwrap().samples[..], &[0.0, 1.0, -1.0]);
+        // An explicit side is kept; the omitted one auto-fits.
+        assert_eq!((el.value.min, el.value.max), (None, Some(2.0)));
+        // A plot is the point of the product with every capability off.
+        assert_eq!(el.caps, signal::Caps::default());
         // Live `/gui_set` retargets the tree's group and rescales the plot.
         assert!(w.find_mut(1).unwrap().kind.apply("group", &Value::from(0)));
         assert!(w.find_mut(2).unwrap().kind.apply("max", &Value::from(1.0)));
@@ -2212,55 +2086,35 @@ mod tests {
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
-        match &w.children[0].kind {
-            WidgetKind::Plot {
-                channels,
-                view,
-                overlay,
-                sample_rate,
-                fft_size,
-                freq_scale,
-                ruler,
-                ruler_y,
-                spectrum,
-                ..
-            } => {
-                assert_eq!(*channels, 2);
-                assert_eq!(*view, super::super::plot::PlotView::Spectrum);
-                assert!(*overlay);
-                assert_eq!(*sample_rate, 48_000.0);
-                assert_eq!(*fft_size, 1024);
-                assert_eq!(*freq_scale, FreqScale::Mel);
-                assert_eq!(*ruler, Ruler::Time);
-                assert!(!*ruler_y);
-                // The spectrum view analyzed its (inline) samples at parse.
-                let spec = spectrum.as_ref().expect("analysis cached at parse");
-                assert_eq!(spec.curves.len(), 2);
-                assert_eq!(spec.fft_size, 1024);
-            }
-            other => panic!("expected plot, got {other:?}"),
-        }
+        let el = w.children[0].signal().unwrap();
+        assert_eq!(el.channels(), 2);
+        assert_eq!(el.presentation, Presentation::Spectrum);
+        assert!(el.display.overlay);
+        assert_eq!(el.editor.sample_rate, 48_000.0);
+        assert_eq!(el.spectral.fft_size, 1024);
+        assert_eq!(el.spectral.freq_scale, FreqScale::Mel);
+        assert_eq!(el.editor.ruler, Ruler::Time);
+        assert_eq!(el.editor.ruler_y, RulerY::Off);
+        // The spectrum presentation analyzed its (inline) samples at parse.
+        let spec = el.analysis.as_ref().expect("analysis cached at parse");
+        assert_eq!(spec.curves.len(), 2);
+        assert_eq!(spec.fft_size, 1024);
         // Live `/gui_set`: back to the signal view drops the analysis; a
         // numeric `min` pins that side and the string "auto" releases it.
         let kind = &mut w.find_mut(1).unwrap().kind;
         assert!(kind.apply("view", &Value::from("signal")));
         assert!(kind.apply("min", &Value::from(-2.0)));
-        match kind {
-            WidgetKind::Plot { spectrum, min, .. } => {
-                assert!(spectrum.is_none(), "signal view holds no analysis");
-                assert_eq!(*min, Some(-2.0));
-            }
-            other => panic!("expected plot, got {other:?}"),
-        }
+        let el = kind.signal().unwrap();
+        assert!(
+            el.analysis.is_none(),
+            "the signal presentation holds no analysis"
+        );
+        assert_eq!(el.value.min, Some(-2.0));
         assert!(kind.apply("min", &Value::from("auto")));
         assert!(kind.apply("view", &Value::from("spectrum")));
-        match kind {
-            WidgetKind::Plot { spectrum, min, .. } => {
-                assert_eq!(*min, None);
-                assert!(spectrum.is_some(), "switching back re-analyzes");
-            }
-            other => panic!("expected plot, got {other:?}"),
-        }
+        let el = kind.signal().unwrap();
+        assert_eq!(el.value.min, None);
+        assert!(el.analysis.is_some(), "switching back re-analyzes");
         // An unknown view name is rejected (the prop keeps its value).
         assert!(!kind.apply("view", &Value::from("histogram")));
     }
@@ -2336,19 +2190,16 @@ mod tests {
             r#"{"type":"window","children":[{"id":3,"type":"plot","path":"/tmp/sig.f32","channels":2}]}"#,
         );
         let w = Widget::from_node(1, &n, &[]).unwrap();
-        match &w.children[0].kind {
-            WidgetKind::Plot {
-                samples,
-                path,
-                channels,
-                ..
-            } => {
-                assert!(samples.is_empty(), "mapped later, not inline");
-                assert_eq!(path.as_deref(), Some(std::path::Path::new("/tmp/sig.f32")));
-                assert_eq!(*channels, 2);
-            }
-            other => panic!("expected plot, got {other:?}"),
-        }
+        let data = w.children[0]
+            .signal()
+            .and_then(|el| el.source.data())
+            .unwrap();
+        assert!(data.samples.is_empty(), "mapped later, not inline");
+        assert_eq!(
+            data.path.as_deref(),
+            Some(std::path::Path::new("/tmp/sig.f32"))
+        );
+        assert_eq!(data.channels, 2);
     }
 
     #[test]
@@ -2359,10 +2210,11 @@ mod tests {
             .collect();
         let n = node(r#"{"type":"window","children":[{"id":2,"type":"waveform","blob":0}]}"#);
         let w = Widget::from_node(1, &n, &[blob]).unwrap();
-        match &w.children[0].kind {
-            WidgetKind::Waveform { samples, .. } => assert_eq!(&samples[..], &[1.0, -1.0]),
-            other => panic!("expected waveform, got {other:?}"),
-        }
+        let data = w.children[0]
+            .signal()
+            .and_then(|el| el.source.data())
+            .unwrap();
+        assert_eq!(&data.samples[..], &[1.0, -1.0]);
     }
 
     #[test]
@@ -2374,43 +2226,29 @@ mod tests {
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
-        match &w.children[0].kind {
-            WidgetKind::Phasescope {
-                bus,
-                window_ms,
-                hold,
-                ..
-            } => {
-                assert_eq!(*bus, 2, "the right channel is the next bus");
-                assert_eq!(*window_ms, 30.0);
-                assert!(!*hold);
-            }
-            other => panic!("expected phasescope, got {other:?}"),
-        }
+        let el = w.children[0].signal().unwrap();
+        assert_eq!(el.presentation, Presentation::Phase);
+        let bus = el.source.bus().unwrap();
+        assert_eq!(bus.bus, 2, "the right channel is the next bus");
+        assert_eq!(bus.window_ms, 30.0);
+        assert!(!bus.hold);
         // A phasescope reads both buses; it is not a single-bus widget.
         let mut buses = Vec::new();
         w.children[0].kind.audio_buses_read(&mut buses);
         assert_eq!(buses, vec![2, 3]);
         assert_eq!(w.children[0].kind.live_bus(), None);
-        match &w.children[1].kind {
-            WidgetKind::Spectrum {
-                bus,
-                fft_size,
-                db_floor,
-                db_ceil,
-                freq_scale,
-                ..
-            } => {
-                assert_eq!((*bus, *fft_size), (0, 1024));
-                assert_eq!((*db_floor, *db_ceil), (-100.0, 0.0));
-                assert_eq!(
-                    *freq_scale,
-                    FreqScale::Linear,
-                    "legacy log_freq: 0 reads as linear"
-                );
-            }
-            other => panic!("expected spectrum, got {other:?}"),
-        }
+        let el = w.children[1].signal().unwrap();
+        assert_eq!(el.presentation, Presentation::Spectrum);
+        assert_eq!(
+            (el.source.bus().unwrap().bus, el.spectral.fft_size),
+            (0, 1024)
+        );
+        assert_eq!((el.spectral.db_floor, el.spectral.db_ceil), (-100.0, 0.0));
+        assert_eq!(
+            el.spectral.freq_scale,
+            FreqScale::Linear,
+            "legacy log_freq: 0 reads as linear"
+        );
         // Live `/gui_set`: retarget a tap, resize the FFT (only a supported size
         // takes), reshape the frequency axis, retune the phasescope window and
         // freeze it.
@@ -2439,17 +2277,9 @@ mod tests {
                 .apply("freq_scale", &Value::from("nope"))
         );
         assert!(w.find_mut(1).unwrap().kind.apply("hold", &Value::from(1)));
-        match &w.find_mut(2).unwrap().kind {
-            WidgetKind::Spectrum {
-                fft_size,
-                freq_scale,
-                ..
-            } => {
-                assert_eq!(*fft_size, 2048);
-                assert_eq!(*freq_scale, FreqScale::Mel);
-            }
-            _ => unreachable!(),
-        }
+        let el = w.find_mut(2).unwrap().signal().unwrap();
+        assert_eq!(el.spectral.fft_size, 2048);
+        assert_eq!(el.spectral.freq_scale, FreqScale::Mel);
     }
 
     #[test]
@@ -2461,21 +2291,15 @@ mod tests {
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
-        match &w.children[0].kind {
-            WidgetKind::Scope {
-                channels,
-                overlay,
-                ruler,
-                ruler_y,
-                ..
-            } => {
-                assert_eq!(*channels, 2);
-                assert!(*overlay);
-                assert!(!*ruler, "\"off\" hides the x strip");
-                assert!(*ruler_y, "the y strip defaults on");
-            }
-            other => panic!("expected scope, got {other:?}"),
-        }
+        let el = w.children[0].signal().unwrap();
+        assert_eq!(el.channels(), 2);
+        assert!(el.display.overlay);
+        assert_eq!(el.editor.ruler, Ruler::Off, "\"off\" hides the x strip");
+        assert_eq!(
+            el.editor.ruler_y,
+            RulerY::Norm,
+            "the y strip defaults on, in the presentation's own unit"
+        );
         // Each consumer reads its whole adjacent run of buses.
         let mut buses = Vec::new();
         w.children[0].kind.audio_buses_read(&mut buses);
@@ -2494,15 +2318,9 @@ mod tests {
         buses.clear();
         w.find_mut(1).unwrap().kind.audio_buses_read(&mut buses);
         assert_eq!(buses, vec![4, 5, 6, 7]);
-        match &w.children[1].kind {
-            WidgetKind::Spectrum {
-                channels, ruler_y, ..
-            } => {
-                assert_eq!(*channels, 3);
-                assert!(!*ruler_y);
-            }
-            _ => unreachable!(),
-        }
+        let el = w.children[1].signal().unwrap();
+        assert_eq!(el.channels(), 3);
+        assert_eq!(el.editor.ruler_y, RulerY::Off);
     }
 
     #[test]
@@ -2515,22 +2333,13 @@ mod tests {
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
-        match &w.children[0].kind {
-            WidgetKind::Waveform {
-                channels,
-                overlay,
-                editor,
-                ..
-            } => {
-                assert_eq!(*channels, 2);
-                assert!(*overlay);
-                assert_eq!(editor.ruler, Ruler::Samples);
-                assert_eq!(editor.sample_rate, 48_000.0);
-                assert_eq!((editor.sel_start, editor.sel_len), (100.0, 50.0));
-                assert_eq!(editor.playhead_at, 1000.0);
-            }
-            other => panic!("expected waveform, got {other:?}"),
-        }
+        let el = w.children[0].signal().unwrap();
+        assert_eq!(el.channels(), 2);
+        assert!(el.display.overlay);
+        assert_eq!(el.editor.ruler, Ruler::Samples);
+        assert_eq!(el.editor.sample_rate, 48_000.0);
+        assert_eq!((el.editor.sel_start, el.editor.sel_len), (100.0, 50.0));
+        assert_eq!(el.editor.playhead_at, 1000.0);
         assert!(w.children[0].is_timeline());
         // The vertical ruler defaults to the normalized amplitude axis.
         assert_eq!(w.children[0].kind.editor().unwrap().ruler_y, RulerY::Norm);
@@ -2626,76 +2435,122 @@ mod tests {
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
-        match &w.children[0].kind {
-            WidgetKind::Spectrogram {
-                path,
-                channels,
-                window_size,
-                hop,
-                sample_rate,
-                db_floor,
-                db_ceil,
-                freq_scale,
-                colormap,
-                editor,
-                ..
-            } => {
-                assert_eq!(path.as_deref(), Some(std::path::Path::new("/tmp/a.f32")));
-                assert_eq!((*channels, *window_size, *hop), (2, 1024, 512));
-                assert_eq!(*sample_rate, 44_100.0);
-                assert_eq!((*db_floor, *db_ceil), (-90.0, 0.0));
-                assert_eq!(*freq_scale, FreqScale::Log, "log is the default scale");
-                assert_eq!(*colormap, 0);
-                assert_eq!(editor.ruler_y, RulerY::Hz, "the Hz ruler defaults on");
-            }
-            other => panic!("expected spectrogram, got {other:?}"),
-        }
+        let el = w.children[0].signal().unwrap();
+        assert_eq!(el.presentation, Presentation::TimeFrequency);
+        let data = el.source.data().unwrap();
+        assert_eq!(
+            data.path.as_deref(),
+            Some(std::path::Path::new("/tmp/a.f32"))
+        );
+        assert_eq!(
+            (data.channels, el.spectral.fft_size, el.spectral.hop),
+            (2, 1024, 512)
+        );
+        assert_eq!(el.editor.sample_rate, 44_100.0);
+        assert_eq!((el.spectral.db_floor, el.spectral.db_ceil), (-90.0, 0.0));
+        assert_eq!(
+            el.spectral.freq_scale,
+            FreqScale::Log,
+            "log is the default scale"
+        );
+        assert_eq!(el.spectral.colormap, 0);
+        assert_eq!(el.editor.ruler_y, RulerY::Hz, "the Hz ruler defaults on");
         // An unsupported window size degrades to the default.
-        match &w.children[1].kind {
-            WidgetKind::Spectrogram {
-                buffer,
-                window_size,
-                ..
-            } => {
-                assert_eq!(*buffer, Some(3));
-                assert_eq!(*window_size, 1024, "333 is not a supported FFT size");
-            }
-            other => panic!("expected spectrogram, got {other:?}"),
-        }
+        let el = w.children[1].signal().unwrap();
+        assert_eq!(el.source.data().unwrap().buffer, Some(3));
+        assert_eq!(
+            el.spectral.fft_size, 1024,
+            "333 is not a supported FFT size"
+        );
         // Live `/gui_set`: the display uniforms retune with zero recompute.
         let sg = w.find_mut(1).unwrap();
         assert!(sg.kind.apply("db_floor", &Value::from(-60.0)));
         assert!(sg.kind.apply("log_freq", &Value::from(0)), "legacy alias");
         assert!(sg.kind.apply("colormap", &Value::from(1)));
         assert!(sg.kind.apply("sel_start", &Value::from(10.0)));
-        match &sg.kind {
-            WidgetKind::Spectrogram {
-                db_floor,
-                freq_scale,
-                colormap,
-                editor,
-                ..
-            } => {
-                assert_eq!(*db_floor, -60.0);
-                assert_eq!(*freq_scale, FreqScale::Linear, "log_freq 0 -> linear");
-                assert_eq!(*colormap, 1);
-                assert_eq!(editor.sel_start, 10.0);
-            }
-            _ => unreachable!(),
-        }
+        let el = sg.signal().unwrap();
+        assert_eq!(el.spectral.db_floor, -60.0);
+        assert_eq!(
+            el.spectral.freq_scale,
+            FreqScale::Linear,
+            "log_freq 0 -> linear"
+        );
+        assert_eq!(el.spectral.colormap, 1);
+        assert_eq!(el.editor.sel_start, 10.0);
         // The four-scale prop wins over the legacy alias and applies live.
         assert!(sg.kind.apply("freq_scale", &Value::from("mel")));
         assert!(!sg.kind.apply("freq_scale", &Value::from("nonesuch")));
         assert!(sg.kind.apply("ruler_y", &Value::from("off")));
-        match &sg.kind {
-            WidgetKind::Spectrogram {
-                freq_scale, editor, ..
-            } => {
-                assert_eq!(*freq_scale, FreqScale::Mel);
-                assert_eq!(editor.ruler_y, RulerY::Off);
-            }
-            _ => unreachable!(),
-        }
+        let el = sg.signal().unwrap();
+        assert_eq!(el.spectral.freq_scale, FreqScale::Mel);
+        assert_eq!(el.editor.ruler_y, RulerY::Off);
+    }
+
+    /// The six wire names land on six configurations of one element. This is
+    /// the parse-level half of the preset table's own test: what the wire says
+    /// and what the model holds, in one place, so a name cannot quietly change
+    /// what it configures.
+    #[test]
+    fn the_six_names_parse_to_their_point_of_the_product() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"waveform","data":[0.0,1.0]},
+                {"id":2,"type":"spectrogram","data":[0.0,1.0]},
+                {"id":3,"type":"plot","data":[0.0,1.0]},
+                {"id":4,"type":"scope","bus":0},
+                {"id":5,"type":"spectrum","bus":0},
+                {"id":6,"type":"phasescope","bus":0}
+            ]}"#,
+        );
+        let w = Widget::from_node(9, &n, &[]).unwrap();
+        let point = |i: usize| {
+            let el = w.children[i].signal().expect("a signal element");
+            (el.presentation, el.is_live(), el.caps.navigable)
+        };
+        assert_eq!(point(0), (Presentation::Signal, false, true));
+        assert_eq!(point(1), (Presentation::TimeFrequency, false, true));
+        assert_eq!(point(2), (Presentation::Signal, false, false));
+        assert_eq!(point(3), (Presentation::Signal, true, false));
+        assert_eq!(point(4), (Presentation::Spectrum, true, false));
+        assert_eq!(point(5), (Presentation::Phase, true, false));
+        // Only the navigable ones join the window's time axis.
+        let timelines: Vec<bool> = (0..6).map(|i| w.children[i].is_timeline()).collect();
+        assert_eq!(timelines, [true, true, false, false, false, false]);
+    }
+
+    /// A `/gui_set` key lands on the part of the model it names, and is refused
+    /// where that part does not exist — the source keys on a stored element,
+    /// the analysis size under either of its two wire names.
+    #[test]
+    fn a_set_lands_on_the_part_of_the_model_it_names() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"waveform","data":[0.0,1.0]},
+                {"id":2,"type":"scope","bus":3}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        // A source key means nothing to an element that reads samples.
+        assert!(!w.find_mut(1).unwrap().kind.apply("bus", &Value::from(2)));
+        assert!(!w.find_mut(1).unwrap().kind.apply("hold", &Value::from(1)));
+        // It means everything to one that reads a bus.
+        assert!(w.find_mut(2).unwrap().kind.apply("bus", &Value::from(9)));
+        assert_eq!(w.children[1].signal().unwrap().source.bus().unwrap().bus, 9);
+        // One analysis size, under both of the names the wire has for it.
+        assert!(
+            w.find_mut(1)
+                .unwrap()
+                .kind
+                .apply("window_size", &Value::from(512))
+        );
+        assert_eq!(w.children[0].signal().unwrap().spectral.fft_size, 512);
+        assert!(
+            w.find_mut(1)
+                .unwrap()
+                .kind
+                .apply("fft_size", &Value::from(256))
+        );
+        assert_eq!(w.children[0].signal().unwrap().spectral.fft_size, 256);
     }
 
     #[test]
@@ -2707,19 +2562,15 @@ mod tests {
             ]}"#,
         );
         let w = Widget::from_node(9, &n, &[]).unwrap();
-        match &w.children[0].kind {
-            WidgetKind::Spectrogram { freq_scale, .. } => {
-                assert_eq!(*freq_scale, FreqScale::Bark)
-            }
-            other => panic!("expected spectrogram, got {other:?}"),
-        }
+        assert_eq!(
+            w.children[0].signal().unwrap().spectral.freq_scale,
+            FreqScale::Bark
+        );
         // freq_scale wins over the legacy log_freq when both are present.
-        match &w.children[1].kind {
-            WidgetKind::Spectrogram { freq_scale, .. } => {
-                assert_eq!(*freq_scale, FreqScale::Linear)
-            }
-            other => panic!("expected spectrogram, got {other:?}"),
-        }
+        assert_eq!(
+            w.children[1].signal().unwrap().spectral.freq_scale,
+            FreqScale::Linear
+        );
     }
 
     #[test]

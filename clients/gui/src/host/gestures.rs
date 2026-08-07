@@ -21,6 +21,7 @@ use clausters_core::osc::OscType;
 
 use super::interact::{self, Hit, slider_t, value_of};
 use super::layout::Rect;
+use super::signal::Presentation;
 use super::widget::{Axis, GestureStep, ScrollView, Widget, WidgetKind};
 use super::{Host, bpf, controls, patch, piano, pianoroll, scroll};
 use crate::viewport::View;
@@ -79,13 +80,14 @@ impl GestureCtx {
     /// The lane count a timeline view stacks on screen (overlaid waveform
     /// traces share one lane) — the divisor for lane-relative y gestures.
     fn lanes(&self, id: i32, kind: &WidgetKind) -> usize {
-        match kind {
-            WidgetKind::Waveform { overlay: true, .. } => 1,
-            WidgetKind::Waveform { .. } => self.wave_lanes.get(&id).copied().unwrap_or(1).max(1),
-            WidgetKind::Spectrogram { .. } => {
+        match kind.signal() {
+            // Overlaid traces share one lane, however many channels there are.
+            Some(el) if el.display.overlay => 1,
+            Some(el) if el.presentation == Presentation::TimeFrequency => {
                 self.spect_lanes.get(&id).copied().unwrap_or(1).max(1)
             }
-            _ => 1,
+            Some(_) => self.wave_lanes.get(&id).copied().unwrap_or(1).max(1),
+            None => 1,
         }
     }
 }
@@ -1657,8 +1659,8 @@ impl Gestures {
                 //   them show that band -- so anchoring at the cursor is both
                 //   meaningful and what the reader wants.
                 Some(y) => {
-                    let anchor = match kind {
-                        WidgetKind::Waveform { .. } => 0.5,
+                    let anchor = match kind.signal() {
+                        Some(el) if el.presentation == Presentation::Signal => 0.5,
                         _ => {
                             let lane_top = axis.body.y as f64
                                 + ((cy - axis.body.y as f64) / y.lane_h).floor() * y.lane_h;
@@ -2338,8 +2340,8 @@ fn score_steps(host: &Host, def_id: i32, id: i32, rect: Rect, dy: f64) -> Option
 
 /// Appends every timeline (waveform/spectrogram) widget id in the tree.
 fn collect_timeline_ids(widget: &Widget, out: &mut Vec<i32>) {
-    if let (WidgetKind::Waveform { .. } | WidgetKind::Spectrogram { .. }, Some(id)) =
-        (&widget.kind, widget.id)
+    if widget.is_nav_signal()
+        && let Some(id) = widget.id
     {
         out.push(id);
     }

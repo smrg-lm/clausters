@@ -29,6 +29,7 @@ use super::metrics::Metrics;
 use super::nodetree::{self, NodeTree};
 use super::paint::{Mesh, Painter};
 use super::ruler::{self, TimeUnit};
+use super::signal::{self, Presentation};
 use super::spectrum::SpectrumState;
 use super::theme::{Theme, with_alpha};
 use super::timeline::{GroupState, TimelineGroups, group_key};
@@ -188,6 +189,135 @@ impl PlotItem {
             freq_scale: self.freq_scale,
             label: self.label.as_deref(),
         }
+    }
+}
+
+/// Sorts one signal element into the item list of the renderer its
+/// presentation picks. This is the one place the model's product becomes a
+/// choice of destination — a navigable heavy view to the window's GPU slots, a
+/// forward-only source to its per-tick window, a stored non-navigable one to
+/// the mesh — and it is deliberately the *only* place, so nothing downstream
+/// has to ask what a view "is".
+#[allow(clippy::too_many_arguments)] // one element, six destinations
+fn signal_item(
+    id: i32,
+    el: &signal::SignalElement,
+    rect: Rect,
+    clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
+    timelines: &mut Vec<TimelineItem>,
+    waves: &mut Vec<WaveItem>,
+    scopes: &mut Vec<ScopeItem>,
+    phases: &mut Vec<PhaseItem>,
+    spectra: &mut Vec<SpectrumItem>,
+    plots: &mut Vec<PlotItem>,
+) {
+    let (min, max) = (el.value.min.unwrap_or(-1.0), el.value.max.unwrap_or(1.0));
+    let strip_x = el.editor.ruler != Ruler::Off;
+    let strip_y = el.editor.ruler_y != RulerY::Off;
+    match (el.presentation, &el.source) {
+        // The navigable heavy views: their geometry is built on the window's
+        // pipelines from the slot keyed by this id.
+        (Presentation::Signal | Presentation::TimeFrequency, _) if el.caps.navigable => {
+            timelines.push(TimelineItem {
+                id,
+                rect,
+                clip,
+                theme,
+                kind: if el.presentation == Presentation::TimeFrequency {
+                    TimelineKind::Spectrogram {
+                        db_floor: el.spectral.db_floor,
+                        db_ceil: el.spectral.db_ceil,
+                        freq_scale: el.spectral.freq_scale,
+                        colormap: el.spectral.colormap,
+                    }
+                } else {
+                    TimelineKind::Waveform {
+                        overlay: el.display.overlay,
+                    }
+                },
+                editor: el.editor.clone(),
+            });
+        }
+        // A forward-only trace: the audio-rate window the tick aligned, or the
+        // control bus's rolling history.
+        (Presentation::Signal, signal::Source::Bus(bus)) => {
+            if bus.rate.is_audio() {
+                waves.push(WaveItem {
+                    id,
+                    rect,
+                    clip,
+                    theme,
+                    min,
+                    max,
+                    window_ms: bus.window_ms,
+                    trigger: bus.trigger,
+                    overlay: el.display.overlay,
+                    ruler: strip_x,
+                    ruler_y: strip_y,
+                    label: el.display.label.clone(),
+                });
+            } else {
+                scopes.push(ScopeItem {
+                    id,
+                    rect,
+                    clip,
+                    theme,
+                    min,
+                    max,
+                    label: el.display.label.clone(),
+                });
+            }
+        }
+        (Presentation::Phase, _) => phases.push(PhaseItem {
+            id,
+            rect,
+            clip,
+            theme,
+            label: el.display.label.clone(),
+        }),
+        (Presentation::Spectrum, signal::Source::Bus(_)) => spectra.push(SpectrumItem {
+            id,
+            rect,
+            clip,
+            theme,
+            fft_size: el.spectral.fft_size,
+            db_floor: el.spectral.db_floor,
+            db_ceil: el.spectral.db_ceil,
+            freq_scale: el.spectral.freq_scale,
+            peak_hold: el.spectral.peak_hold,
+            ruler: strip_x,
+            ruler_y: strip_y,
+            label: el.display.label.clone(),
+        }),
+        // A stored signal nobody navigates: the mesh renderer, whichever of
+        // the two presentations it shows.
+        (_, signal::Source::Data(data)) => plots.push(PlotItem {
+            rect,
+            clip,
+            theme,
+            samples: Arc::clone(&data.samples),
+            channels: data.channels,
+            view: if el.presentation == Presentation::Spectrum {
+                plot::PlotView::Spectrum
+            } else {
+                plot::PlotView::Signal
+            },
+            overlay: el.display.overlay,
+            sample_rate: el.editor.sample_rate,
+            min: el.value.min,
+            max: el.value.max,
+            ruler: el.editor.ruler,
+            ruler_y: strip_y,
+            spectrum: el.analysis.clone(),
+            db_floor: el.spectral.db_floor,
+            db_ceil: el.spectral.db_ceil,
+            freq_scale: el.spectral.freq_scale,
+            label: el.display.label.clone(),
+        }),
+        // A live source with no live renderer for its presentation (a stored
+        // presentation over a bus): nothing to draw until it has one.
+        (_, signal::Source::Bus(_)) => {}
     }
 }
 
@@ -892,42 +1022,26 @@ fn collect_widgets(
                     th,
                 );
             }
-            WidgetKind::Waveform {
-                overlay, editor, ..
-            } => {
+            // Every signal element, sorted to the renderer its presentation
+            // picks: the two navigable heavy views to the GPU slots, the live
+            // ones to their per-tick windows, the stored non-navigable ones to
+            // the mesh plot. The element is one thing; only its destination
+            // differs.
+            WidgetKind::Signal(el) => {
                 if let Some(id) = p.widget.id {
-                    timeline_items.push(TimelineItem {
+                    signal_item(
                         id,
-                        rect: p.rect,
-                        clip: p.clip,
-                        theme: p.widget.theme.clone(),
-                        kind: TimelineKind::Waveform { overlay: *overlay },
-                        editor: editor.clone(),
-                    });
-                }
-            }
-            WidgetKind::Spectrogram {
-                db_floor,
-                db_ceil,
-                freq_scale,
-                colormap,
-                editor,
-                ..
-            } => {
-                if let Some(id) = p.widget.id {
-                    timeline_items.push(TimelineItem {
-                        id,
-                        rect: p.rect,
-                        clip: p.clip,
-                        theme: p.widget.theme.clone(),
-                        kind: TimelineKind::Spectrogram {
-                            db_floor: *db_floor,
-                            db_ceil: *db_ceil,
-                            freq_scale: *freq_scale,
-                            colormap: *colormap,
-                        },
-                        editor: editor.clone(),
-                    });
+                        el,
+                        p.rect,
+                        p.clip,
+                        p.widget.theme.clone(),
+                        &mut timeline_items,
+                        &mut wave_rects,
+                        &mut scope_rects,
+                        &mut phase_rects,
+                        &mut spectrum_rects,
+                        &mut plot_rects,
+                    );
                 }
             }
             WidgetKind::Meter {
@@ -946,58 +1060,6 @@ fn collect_widgets(
                 max: *max,
                 label: label.clone(),
             }),
-            WidgetKind::Scope {
-                rate,
-                overlay,
-                window_ms,
-                trigger,
-                min,
-                max,
-                ruler,
-                ruler_y,
-                label,
-                ..
-            } => {
-                if let Some(id) = p.widget.id {
-                    if rate.is_audio() {
-                        wave_rects.push(WaveItem {
-                            id,
-                            rect: p.rect,
-                            clip: p.clip,
-                            theme: p.widget.theme.clone(),
-                            min: *min,
-                            max: *max,
-                            window_ms: *window_ms,
-                            trigger: *trigger,
-                            overlay: *overlay,
-                            ruler: *ruler,
-                            ruler_y: *ruler_y,
-                            label: label.clone(),
-                        });
-                    } else {
-                        scope_rects.push(ScopeItem {
-                            id,
-                            rect: p.rect,
-                            clip: p.clip,
-                            theme: p.widget.theme.clone(),
-                            min: *min,
-                            max: *max,
-                            label: label.clone(),
-                        });
-                    }
-                }
-            }
-            WidgetKind::Phasescope { label, .. } => {
-                if let Some(id) = p.widget.id {
-                    phase_rects.push(PhaseItem {
-                        id,
-                        rect: p.rect,
-                        clip: p.clip,
-                        theme: p.widget.theme.clone(),
-                        label: label.clone(),
-                    });
-                }
-            }
             WidgetKind::Piano {
                 min,
                 max,
@@ -1020,69 +1082,6 @@ fn collect_widgets(
                 m,
                 th,
             ),
-            WidgetKind::Spectrum {
-                fft_size,
-                db_floor,
-                db_ceil,
-                freq_scale,
-                peak_hold,
-                ruler,
-                ruler_y,
-                label,
-                ..
-            } => {
-                if let Some(id) = p.widget.id {
-                    spectrum_rects.push(SpectrumItem {
-                        id,
-                        rect: p.rect,
-                        clip: p.clip,
-                        theme: p.widget.theme.clone(),
-                        fft_size: *fft_size,
-                        db_floor: *db_floor,
-                        db_ceil: *db_ceil,
-                        freq_scale: *freq_scale,
-                        peak_hold: *peak_hold,
-                        ruler: *ruler,
-                        ruler_y: *ruler_y,
-                        label: label.clone(),
-                    });
-                }
-            }
-            WidgetKind::Plot {
-                samples,
-                channels,
-                view,
-                overlay,
-                sample_rate,
-                min,
-                max,
-                ruler,
-                ruler_y,
-                spectrum,
-                db_floor,
-                db_ceil,
-                freq_scale,
-                label,
-                ..
-            } => plot_rects.push(PlotItem {
-                rect: p.rect,
-                clip: p.clip,
-                theme: p.widget.theme.clone(),
-                samples: Arc::clone(samples),
-                channels: *channels,
-                view: *view,
-                overlay: *overlay,
-                sample_rate: *sample_rate,
-                min: *min,
-                max: *max,
-                ruler: *ruler,
-                ruler_y: *ruler_y,
-                spectrum: spectrum.clone(),
-                db_floor: *db_floor,
-                db_ceil: *db_ceil,
-                freq_scale: *freq_scale,
-                label: label.clone(),
-            }),
             WidgetKind::Bpf {
                 points,
                 min,

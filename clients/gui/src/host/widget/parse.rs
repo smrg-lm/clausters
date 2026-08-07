@@ -175,18 +175,6 @@ pub(super) fn parse_ports(v: Option<&Value>) -> Vec<crate::host::patch::Port> {
         .unwrap_or_default()
 }
 
-/// A ruler-strip toggle property: shown by default, hidden with the string
-/// `"off"` (the plot/editor convention) or a falsy value.
-pub(super) fn strip_shown(props: &serde_json::Map<String, Value>, key: &str) -> bool {
-    match props.get(key) {
-        None => true,
-        Some(v) => match v.as_str() {
-            Some(s) => s != "off",
-            None => truthy(v).unwrap_or(true),
-        },
-    }
-}
-
 /// The `freq_scale` property (`"linear"`/`"log"`/`"mel"`/`"bark"`), falling
 /// back to the legacy `log_freq` boolean (default: log).
 pub(super) fn parse_freq_scale(props: &serde_json::Map<String, Value>) -> FreqScale {
@@ -231,18 +219,6 @@ pub(super) fn int_prop(props: &serde_json::Map<String, Value>, key: &str, defaul
         .and_then(Value::as_i64)
         .map(|n| n as i32)
         .unwrap_or(default)
-}
-
-/// The `fft_size` property snapped to a supported power-of-two FFT size, or the
-/// 2048 default when absent or unsupported (so an out-of-range value degrades to
-/// a sane size rather than failing the whole def).
-pub(super) fn fft_size(props: &serde_json::Map<String, Value>) -> usize {
-    props
-        .get("fft_size")
-        .and_then(Value::as_u64)
-        .map(|n| n as usize)
-        .filter(|n| clausters_core::fft::supports(*n))
-        .unwrap_or(2048)
 }
 
 /// An `f64` property, defaulted when absent or non-numeric — for sample
@@ -374,18 +350,6 @@ pub(super) fn set_f(slot: &mut f32, v: &Value) -> bool {
     }
 }
 
-/// Sets a ruler-strip toggle: the string `"off"` (or a falsy value) hides it,
-/// anything else shows it — the live counterpart of `strip_shown`.
-pub(super) fn set_strip(slot: &mut bool, v: &Value) -> bool {
-    match v.as_str() {
-        Some(s) => {
-            *slot = s != "off";
-            true
-        }
-        None => truthy(v).map(|b| *slot = b).is_some(),
-    }
-}
-
 /// Sets a data view's rate live (`/gui_set rate "control"`), so one widget can
 /// be retuned between watching an audio bus and a control bus.
 pub(super) fn set_rate(slot: &mut Rate, v: &Value) -> bool {
@@ -415,19 +379,6 @@ pub(super) fn set_opt_f(slot: &mut Option<f32>, v: &Value) -> bool {
             true
         }
         None => false,
-    }
-}
-
-/// The plot's default spectral analysis size.
-pub(super) const DEFAULT_PLOT_FFT: usize = 2048;
-
-/// Clamps a requested analysis size to a supported FFT size.
-pub(super) fn valid_fft_size(n: u64) -> usize {
-    let n = n as usize;
-    if clausters_core::fft::supports(n) {
-        n
-    } else {
-        DEFAULT_PLOT_FFT
     }
 }
 

@@ -17,6 +17,7 @@ use crate::host::bulk::MmapLoader;
 use crate::host::canvas::CanvasView;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
 use crate::host::paint::Painter;
+use crate::host::signal::Presentation;
 use crate::host::widget::{Widget, WidgetKind};
 use crate::host::{BulkLoader, ClientId, GUI_CLOSED};
 use crate::spectrogram::Stft;
@@ -202,54 +203,38 @@ fn collect_timelines(
     buffer_refs: &mut Vec<(i32, i32)>,
 ) {
     match (&widget.kind, widget.id) {
-        (
-            WidgetKind::Waveform {
-                samples,
-                base_bucket,
-                buffer,
-                path,
-                cache,
-                channels,
-                ..
-            },
-            Some(id),
-        ) => {
-            if cache.is_some() || path.is_some() {
-                // Bulk path: map a local resource (raw samples or a prebuilt
-                // cache) through the BulkLoader seam, then build the GPU slot.
-                if let Some(data) =
-                    MmapLoader.waveform(cache.as_deref(), path.as_deref(), *channels, *base_bucket)
-                {
-                    waveforms.insert(id, frame::waveform_slot(data, gpu));
+        (WidgetKind::Signal(el), Some(id)) if el.is_gpu_view() => {
+            let Some(data) = el.source.data() else {
+                return;
+            };
+            let (cache, path) = (data.cache.as_deref(), data.path.as_deref());
+            if el.presentation == Presentation::Signal {
+                if cache.is_some() || path.is_some() {
+                    // Bulk path: map a local resource (raw samples or a
+                    // prebuilt cache) through the BulkLoader seam, then build
+                    // the GPU slot.
+                    if let Some(loaded) =
+                        MmapLoader.waveform(cache, path, data.channels, data.base_bucket)
+                    {
+                        waveforms.insert(id, frame::waveform_slot(loaded, gpu));
+                    }
+                } else if let (Some(bufnum), true) = (data.buffer, data.samples.is_empty()) {
+                    // A server buffer with no inline data: fetch it over the leg.
+                    buffer_refs.push((id, bufnum));
+                } else {
+                    waveforms.insert(
+                        id,
+                        frame::waveform_slot(
+                            WaveformData::from_interleaved(
+                                &data.samples,
+                                data.channels,
+                                data.base_bucket,
+                            ),
+                            gpu,
+                        ),
+                    );
                 }
-            } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
-                // A server buffer with no inline data: fetch it over the leg.
-                buffer_refs.push((id, *bufnum));
-            } else {
-                waveforms.insert(
-                    id,
-                    frame::waveform_slot(
-                        WaveformData::from_interleaved(samples, *channels, *base_bucket),
-                        gpu,
-                    ),
-                );
-            }
-        }
-        (
-            WidgetKind::Spectrogram {
-                samples,
-                channels,
-                buffer,
-                path,
-                cache,
-                window_size,
-                hop,
-                sample_rate,
-                ..
-            },
-            Some(id),
-        ) => {
-            if let Some(cache) = cache {
+            } else if let Some(cache) = cache {
                 // A prebuilt (single-channel) STFT cache, parsed directly.
                 if let Some(stft) = MmapLoader
                     .file_bytes(cache)
@@ -265,20 +250,25 @@ fn collect_timelines(
                     );
                 }
             } else if let Some(path) = path {
-                if let Some(split) = MmapLoader.raw_channels(path, *channels) {
-                    let stfts = frame::stft_lanes(split, *window_size, *hop, *sample_rate);
+                if let Some(split) = MmapLoader.raw_channels(path, data.channels) {
+                    let stfts = frame::stft_lanes(
+                        split,
+                        el.spectral.fft_size,
+                        el.spectral.hop,
+                        el.editor.sample_rate,
+                    );
                     if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
                         spectrograms.insert(id, slot);
                     }
                 }
-            } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
-                buffer_refs.push((id, *bufnum));
-            } else if !samples.is_empty() {
+            } else if let (Some(bufnum), true) = (data.buffer, data.samples.is_empty()) {
+                buffer_refs.push((id, bufnum));
+            } else if !data.samples.is_empty() {
                 let stfts = frame::stft_lanes(
-                    frame::deinterleave(samples, *channels),
-                    *window_size,
-                    *hop,
-                    *sample_rate,
+                    frame::deinterleave(&data.samples, data.channels),
+                    el.spectral.fft_size,
+                    el.spectral.hop,
+                    el.editor.sample_rate,
                 );
                 if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
                     spectrograms.insert(id, slot);
@@ -318,24 +308,22 @@ fn collect_canvases(widget: &Widget, gpu: &Gpu, out: &mut HashMap<i32, CanvasVie
     }
 }
 
-/// Maps a `plot`'s local resource into its tree node: a `path` of raw
-/// little-endian `f32` mapped read-only, kept interleaved — every channel is
-/// drawn (the bulk path, no OSC). Walks children too. Already-loaded (inline)
-/// plots and plots without a path are left as they are. Landing samples also
-/// refreshes the plot's cached spectral analysis.
+/// Maps a **mesh-drawn** signal element's local resource into its tree node: a
+/// `path` of raw little-endian `f32` mapped read-only, kept interleaved — every
+/// channel is drawn (the bulk path, no OSC). Walks children too. An element
+/// that already has samples, one without a path, and the navigable heavy views
+/// (whose bulk lands on the GPU, above) are left as they are. Landing samples
+/// also refreshes the cached spectral analysis.
 fn load_plot_paths(widget: &mut Widget) {
-    if let WidgetKind::Plot {
-        samples,
-        path,
-        channels,
-        ..
-    } = &mut widget.kind
-        && samples.is_empty()
-        && let Some(p) = path.clone()
-        && let Some(loaded) = MmapLoader.plot_samples(&p, *channels)
+    if let Some(el) = widget.kind.signal_mut()
+        && !el.is_gpu_view()
+        && let Some(data) = el.source.data_mut()
+        && data.samples.is_empty()
+        && let Some(p) = data.path.clone()
+        && let Some(loaded) = MmapLoader.plot_samples(&p, data.channels)
     {
-        *samples = loaded;
-        widget.kind.refresh_plot_analysis();
+        data.samples = loaded;
+        widget.kind.refresh_analysis();
     }
     for child in &mut widget.children {
         load_plot_paths(child);

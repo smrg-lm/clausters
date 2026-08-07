@@ -27,34 +27,10 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
                 .is_some(),
             _ => view.apply(key, v) || flow.apply(key, v),
         },
-        WidgetKind::Waveform {
-            overlay, editor, ..
-        } => match key {
-            "overlay" => truthy(v).map(|b| *overlay = b).is_some(),
-            _ => editor.apply(key, v),
-        },
-        WidgetKind::Spectrogram {
-            db_floor,
-            db_ceil,
-            freq_scale,
-            colormap,
-            editor,
-            ..
-        } => match key {
-            "db_floor" => set_f(db_floor, v),
-            "db_ceil" => set_f(db_ceil, v),
-            "freq_scale" => v
-                .as_str()
-                .and_then(freq_scale_from_str)
-                .map(|s| *freq_scale = s)
-                .is_some(),
-            // Legacy boolean alias: 1 -> log, 0 -> linear.
-            "log_freq" => truthy(v)
-                .map(|b| *freq_scale = if b { FreqScale::Log } else { FreqScale::Linear })
-                .is_some(),
-            "colormap" => v.as_i64().map(|n| *colormap = n as i32).is_some(),
-            _ => editor.apply(key, v),
-        },
+        // Every signal element, in one arm: the props are the model's own —
+        // the source, the value axis, the spectral parameters, the chrome —
+        // and a key a presentation does not read is simply not one of them.
+        WidgetKind::Signal(el) => apply_signal(el, key, v),
         WidgetKind::Meter {
             bus,
             rate,
@@ -66,93 +42,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             "rate" => set_rate(rate, v),
             "min" => set_f(min, v),
             "max" => set_f(max, v),
-            "label" => set_label(label, v),
-            _ => false,
-        },
-        WidgetKind::Scope {
-            bus,
-            rate,
-            channels,
-            overlay,
-            window_ms,
-            trigger,
-            hold,
-            min,
-            max,
-            ruler,
-            ruler_y,
-            label,
-        } => match key {
-            "bus" => v.as_i64().map(|n| *bus = n as i32).is_some(),
-            "rate" => set_rate(rate, v),
-            "channels" => v
-                .as_i64()
-                .map(|n| *channels = (n as usize).max(1))
-                .is_some(),
-            "overlay" => truthy(v).map(|b| *overlay = b).is_some(),
-            "window_ms" => set_f(window_ms, v),
-            "trigger" => set_f(trigger, v),
-            "hold" => truthy(v).map(|b| *hold = b).is_some(),
-            "min" => set_f(min, v),
-            "max" => set_f(max, v),
-            "ruler" => set_strip(ruler, v),
-            "ruler_y" => set_strip(ruler_y, v),
-            "label" => set_label(label, v),
-            _ => false,
-        },
-        WidgetKind::Phasescope {
-            bus,
-            window_ms,
-            hold,
-            label,
-        } => match key {
-            "bus" => v.as_i64().map(|n| *bus = n as i32).is_some(),
-            "window_ms" => set_f(window_ms, v),
-            "hold" => truthy(v).map(|b| *hold = b).is_some(),
-            "label" => set_label(label, v),
-            _ => false,
-        },
-        WidgetKind::Spectrum {
-            bus,
-            channels,
-            fft_size,
-            db_floor,
-            db_ceil,
-            freq_scale,
-            averaging,
-            peak_hold,
-            ruler,
-            ruler_y,
-            label,
-        } => match key {
-            "bus" => v.as_i64().map(|n| *bus = n as i32).is_some(),
-            "channels" => v
-                .as_i64()
-                .map(|n| *channels = (n as usize).max(1))
-                .is_some(),
-            "ruler" => set_strip(ruler, v),
-            "ruler_y" => set_strip(ruler_y, v),
-            "fft_size" => v
-                .as_u64()
-                .filter(|n| clausters_core::fft::supports(*n as usize))
-                .map(|n| *fft_size = n as usize)
-                .is_some(),
-            "db_floor" => set_f(db_floor, v),
-            "db_ceil" => set_f(db_ceil, v),
-            "freq_scale" => v
-                .as_str()
-                .and_then(freq_scale_from_str)
-                .map(|s| *freq_scale = s)
-                .is_some(),
-            // Legacy boolean alias: 1 -> log, 0 -> linear.
-            "log_freq" => truthy(v)
-                .map(|b| *freq_scale = if b { FreqScale::Log } else { FreqScale::Linear })
-                .is_some(),
-            "averaging" => v
-                .as_f64()
-                .map(|x| *averaging = (x as f32).clamp(0.0, 0.99))
-                .is_some(),
-            "peak_hold" => truthy(v).map(|b| *peak_hold = b).is_some(),
             "label" => set_label(label, v),
             _ => false,
         },
@@ -191,62 +80,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             "label" => set_label(label, v),
             _ => false,
         },
-        WidgetKind::Plot {
-            view,
-            overlay,
-            sample_rate,
-            min,
-            max,
-            ruler,
-            ruler_y,
-            fft_size,
-            db_floor,
-            db_ceil,
-            freq_scale,
-            label,
-            ..
-        } => {
-            let handled = match key {
-                // `min`/`max` also accept the string `"auto"` to give a
-                // side back to the data fit.
-                "min" => set_opt_f(min, v),
-                "max" => set_opt_f(max, v),
-                "view" => v
-                    .as_str()
-                    .and_then(super::plot::PlotView::parse)
-                    .map(|k| *view = k)
-                    .is_some(),
-                "overlay" => truthy(v).map(|b| *overlay = b).is_some(),
-                "sample_rate" => set_f64(sample_rate, v),
-                "ruler" => ruler.set(v),
-                "ruler_y" => match v.as_str() {
-                    Some("off") | Some("none") => {
-                        *ruler_y = false;
-                        true
-                    }
-                    Some(_) => {
-                        *ruler_y = true;
-                        true
-                    }
-                    None => false,
-                },
-                "fft_size" => v.as_u64().map(|n| *fft_size = valid_fft_size(n)).is_some(),
-                "db_floor" => set_f(db_floor, v),
-                "db_ceil" => set_f(db_ceil, v),
-                "freq_scale" => v
-                    .as_str()
-                    .and_then(freq_scale_from_str)
-                    .map(|s| *freq_scale = s)
-                    .is_some(),
-                "label" => set_label(label, v),
-                _ => false,
-            };
-            // The analysis reads the view, size and rate: keep it current.
-            if handled && matches!(key, "view" | "fft_size" | "sample_rate") {
-                kind.refresh_plot_analysis();
-            }
-            handled
-        }
         WidgetKind::Canvas {
             shader,
             params,
@@ -568,4 +401,98 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         },
         _ => false,
     }
+}
+
+/// Applies one `/gui_set` key/value to a signal element. The keys are grouped
+/// the way the model is — source, value axis, spectral parameters, chrome —
+/// so a key lands wherever it means something, whatever the element's wire
+/// name was. The analysis inputs re-run the cached analysis at the end, which
+/// is the only mutation point a `/gui_set` can be.
+fn apply_signal(el: &mut signal::SignalElement, key: &str, v: &Value) -> bool {
+    let handled = match key {
+        // The source.
+        "bus" => match el.source.bus_mut() {
+            Some(b) => v.as_i64().map(|n| b.bus = n as i32).is_some(),
+            None => false,
+        },
+        "rate" => match el.source.bus_mut() {
+            Some(b) => set_rate(&mut b.rate, v),
+            None => false,
+        },
+        "window_ms" => match el.source.bus_mut() {
+            Some(b) => set_f(&mut b.window_ms, v),
+            None => false,
+        },
+        "trigger" => match el.source.bus_mut() {
+            Some(b) => set_f(&mut b.trigger, v),
+            None => false,
+        },
+        "hold" => match el.source.bus_mut() {
+            Some(b) => truthy(v).map(|x| b.hold = x).is_some(),
+            None => false,
+        },
+        "channels" => match v.as_i64() {
+            Some(n) => {
+                let n = (n as usize).max(1);
+                match &mut el.source {
+                    signal::Source::Bus(b) => b.channels = n,
+                    signal::Source::Data(d) => d.channels = n,
+                }
+                true
+            }
+            None => false,
+        },
+        // The presentation, where the element's name reads one.
+        "view" => v
+            .as_str()
+            .and_then(super::plot::PlotView::parse)
+            .map(|view| {
+                el.presentation = match view {
+                    super::plot::PlotView::Signal => Presentation::Signal,
+                    super::plot::PlotView::Spectrum => Presentation::Spectrum,
+                };
+            })
+            .is_some(),
+        // The value axis. Either side also accepts the string `"auto"`, giving
+        // it back to the data fit.
+        "min" => set_opt_f(&mut el.value.min, v),
+        "max" => set_opt_f(&mut el.value.max, v),
+        // The spectral parameters. The analysis size answers to both names —
+        // the spectral views say `fft_size`, the time-frequency one
+        // `window_size` — since one field is behind them.
+        "fft_size" | "window_size" => v
+            .as_u64()
+            .filter(|n| clausters_core::fft::supports(*n as usize))
+            .map(|n| el.spectral.fft_size = n as usize)
+            .is_some(),
+        "db_floor" => set_f(&mut el.spectral.db_floor, v),
+        "db_ceil" => set_f(&mut el.spectral.db_ceil, v),
+        "freq_scale" => v
+            .as_str()
+            .and_then(freq_scale_from_str)
+            .map(|s| el.spectral.freq_scale = s)
+            .is_some(),
+        // Legacy boolean alias: 1 -> log, 0 -> linear.
+        "log_freq" => truthy(v)
+            .map(|b| el.spectral.freq_scale = if b { FreqScale::Log } else { FreqScale::Linear })
+            .is_some(),
+        "averaging" => v
+            .as_f64()
+            .map(|x| el.spectral.averaging = (x as f32).clamp(0.0, 0.99))
+            .is_some(),
+        "peak_hold" => truthy(v).map(|b| el.spectral.peak_hold = b).is_some(),
+        "colormap" => v
+            .as_i64()
+            .map(|n| el.spectral.colormap = n as i32)
+            .is_some(),
+        // The chrome.
+        "overlay" => truthy(v).map(|b| el.display.overlay = b).is_some(),
+        "label" => set_label(&mut el.display.label, v),
+        _ => el.editor.apply(key, v),
+    };
+    // The cached analysis reads the presentation, the size and the rate.
+    if handled && matches!(key, "view" | "fft_size" | "window_size" | "sample_rate") {
+        el.refresh_analysis();
+    }
+    handled
 }

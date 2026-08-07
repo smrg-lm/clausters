@@ -74,128 +74,14 @@ pub(super) fn build_kind(
             wrap: node.props.get("wrap").and_then(truthy).unwrap_or(false),
             align: Align::parse(&node.props),
         },
-        "waveform" => WidgetKind::Waveform {
-            samples: inline_samples("waveform", id, &node.props, blobs)?,
-            base_bucket: node
-                .props
-                .get("base_bucket")
-                .and_then(Value::as_u64)
-                .map(|n| (n as usize).max(1))
-                .unwrap_or(DEFAULT_BASE_BUCKET),
-            buffer: node
-                .props
-                .get("buffer")
-                .and_then(Value::as_i64)
-                .map(|n| n as i32),
-            path: node
-                .props
-                .get("path")
-                .and_then(Value::as_str)
-                .map(PathBuf::from),
-            cache: node
-                .props
-                .get("cache")
-                .and_then(Value::as_str)
-                .map(PathBuf::from),
-            channels: node
-                .props
-                .get("channels")
-                .and_then(Value::as_u64)
-                .map(|n| (n as usize).max(1))
-                .unwrap_or(1),
-            overlay: node.props.get("overlay").and_then(truthy).unwrap_or(false),
-            editor: EditorProps::parse(&node.props, RulerY::Norm),
-        },
-        "spectrogram" => {
-            let window_size = node
-                .props
-                .get("window_size")
-                .and_then(Value::as_u64)
-                .map(|n| n as usize)
-                .filter(|n| clausters_core::fft::supports(*n))
-                .unwrap_or(1024);
-            WidgetKind::Spectrogram {
-                samples: inline_samples("spectrogram", id, &node.props, blobs)?,
-                channels: node
-                    .props
-                    .get("channels")
-                    .and_then(Value::as_u64)
-                    .map(|n| (n as usize).max(1))
-                    .unwrap_or(1),
-                buffer: node
-                    .props
-                    .get("buffer")
-                    .and_then(Value::as_i64)
-                    .map(|n| n as i32),
-                path: node
-                    .props
-                    .get("path")
-                    .and_then(Value::as_str)
-                    .map(PathBuf::from),
-                cache: node
-                    .props
-                    .get("cache")
-                    .and_then(Value::as_str)
-                    .map(PathBuf::from),
-                window_size,
-                hop: node
-                    .props
-                    .get("hop")
-                    .and_then(Value::as_u64)
-                    .map(|n| (n as usize).max(1))
-                    .unwrap_or(window_size / 2),
-                sample_rate: number_f64(&node.props, "sample_rate", 0.0),
-                db_floor: number(&node.props, "db_floor", -90.0),
-                db_ceil: number(&node.props, "db_ceil", 0.0),
-                freq_scale: parse_freq_scale(&node.props),
-                colormap: int_prop(&node.props, "colormap", 0),
-                editor: EditorProps::parse(&node.props, RulerY::Hz),
-            }
-        }
+        // Every signal element: the six wire names are presets of one
+        // element ([`super::signal::preset`]), so they parse in one arm.
+        name if signal::preset(name).is_some() => build_signal(id, name, node, blobs)?,
         "meter" => WidgetKind::Meter {
             bus: int_prop(&node.props, "bus", 0),
             rate: Rate::parse(node.props.get("rate").and_then(Value::as_str)),
             min: number(&node.props, "min", 0.0),
             max: number(&node.props, "max", 1.0),
-            label: label(&node.props),
-        },
-        "scope" => WidgetKind::Scope {
-            bus: int_prop(&node.props, "bus", 0),
-            rate: Rate::parse(node.props.get("rate").and_then(Value::as_str)),
-            channels: int_prop(&node.props, "channels", 1).max(1) as usize,
-            overlay: node.props.get("overlay").and_then(truthy).unwrap_or(false),
-            window_ms: number(&node.props, "window_ms", 20.0),
-            trigger: number(&node.props, "trigger", 0.0),
-            hold: node.props.get("hold").and_then(truthy).unwrap_or(false),
-            min: number(&node.props, "min", -1.0),
-            max: number(&node.props, "max", 1.0),
-            ruler: strip_shown(&node.props, "ruler"),
-            ruler_y: strip_shown(&node.props, "ruler_y"),
-            label: label(&node.props),
-        },
-        "phasescope" => WidgetKind::Phasescope {
-            // The right channel is the next bus, the adjacent-channel layout
-            // the whole family uses.
-            bus: int_prop(&node.props, "bus", 0),
-            window_ms: number(&node.props, "window_ms", 30.0),
-            hold: node.props.get("hold").and_then(truthy).unwrap_or(false),
-            label: label(&node.props),
-        },
-        "spectrum" => WidgetKind::Spectrum {
-            bus: int_prop(&node.props, "bus", 0),
-            channels: int_prop(&node.props, "channels", 1).max(1) as usize,
-            fft_size: fft_size(&node.props),
-            db_floor: number(&node.props, "db_floor", -100.0),
-            db_ceil: number(&node.props, "db_ceil", 0.0),
-            freq_scale: parse_freq_scale(&node.props),
-            averaging: number(&node.props, "averaging", 0.5).clamp(0.0, 0.99),
-            peak_hold: node
-                .props
-                .get("peak_hold")
-                .and_then(truthy)
-                .unwrap_or(false),
-            ruler: strip_shown(&node.props, "ruler"),
-            ruler_y: strip_shown(&node.props, "ruler_y"),
             label: label(&node.props),
         },
         "nodetree" => WidgetKind::NodeTree {
@@ -231,50 +117,6 @@ pub(super) fn build_kind(
                 exp: node.props.get("exp").and_then(truthy).unwrap_or(false),
                 label: label(&node.props),
             }
-        }
-        "plot" => {
-            let mut kind = WidgetKind::Plot {
-                samples: inline_samples("plot", id, &node.props, blobs)?,
-                path: node
-                    .props
-                    .get("path")
-                    .and_then(Value::as_str)
-                    .map(PathBuf::from),
-                channels: node
-                    .props
-                    .get("channels")
-                    .and_then(Value::as_u64)
-                    .map(|n| (n as usize).max(1))
-                    .unwrap_or(1),
-                view: node
-                    .props
-                    .get("view")
-                    .and_then(Value::as_str)
-                    .and_then(super::plot::PlotView::parse)
-                    .unwrap_or_default(),
-                overlay: node.props.get("overlay").and_then(truthy).unwrap_or(false),
-                sample_rate: number_f64(&node.props, "sample_rate", 0.0),
-                min: opt_number(&node.props, "min"),
-                max: opt_number(&node.props, "max"),
-                ruler: Ruler::parse(&node.props),
-                ruler_y: !matches!(
-                    node.props.get("ruler_y").and_then(Value::as_str),
-                    Some("off") | Some("none")
-                ),
-                fft_size: valid_fft_size(
-                    node.props
-                        .get("fft_size")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(DEFAULT_PLOT_FFT as u64),
-                ),
-                db_floor: number(&node.props, "db_floor", -100.0),
-                db_ceil: number(&node.props, "db_ceil", 0.0),
-                freq_scale: parse_freq_scale(&node.props),
-                spectrum: None,
-                label: label(&node.props),
-            };
-            kind.refresh_plot_analysis();
-            kind
         }
         "score" => WidgetKind::Score(super::score::ScoreData::parse(&node.props)),
         "slider" => WidgetKind::Slider {
@@ -450,4 +292,103 @@ pub(super) fn build_kind(
         },
         other => WidgetKind::Unknown(other.to_string()),
     })
+}
+
+/// Builds a [`WidgetKind::Signal`] from the wire node: the type name picks the
+/// [`preset`](signal::preset) — the point of the presentation × source ×
+/// capabilities product that name has always meant — and the props are read
+/// over it. One arm for all six names, because there is one element.
+fn build_signal(
+    id: Option<i32>,
+    name: &str,
+    node: &GuiNode,
+    blobs: &[Vec<u8>],
+) -> Result<WidgetKind, String> {
+    let props = &node.props;
+    let p = signal::preset(name).expect("caller matched a preset name");
+    let mut el = signal::SignalElement::from_preset(&p);
+
+    let channels = props
+        .get("channels")
+        .and_then(Value::as_u64)
+        .map(|n| (n as usize).max(1))
+        .unwrap_or(1);
+    el.source = if p.live {
+        signal::Source::Bus(signal::Bus {
+            bus: int_prop(props, "bus", 0),
+            rate: Rate::parse(props.get("rate").and_then(Value::as_str)),
+            channels,
+            window_ms: number(props, "window_ms", p.window_ms),
+            trigger: number(props, "trigger", 0.0),
+            hold: props.get("hold").and_then(truthy).unwrap_or(false),
+        })
+    } else {
+        signal::Source::Data(signal::Data {
+            samples: inline_samples(name, id, props, blobs)?,
+            channels,
+            buffer: props
+                .get("buffer")
+                .and_then(Value::as_i64)
+                .map(|n| n as i32),
+            path: props.get("path").and_then(Value::as_str).map(PathBuf::from),
+            cache: props
+                .get("cache")
+                .and_then(Value::as_str)
+                .map(PathBuf::from),
+            base_bucket: props
+                .get("base_bucket")
+                .and_then(Value::as_u64)
+                .map(|n| (n as usize).max(1))
+                .unwrap_or(DEFAULT_BASE_BUCKET),
+        })
+    };
+
+    // The `view` prop, where the name reads one: the static plot's
+    // signal/spectrum switch.
+    if p.view_prop
+        && let Some(view) = props.get("view").and_then(Value::as_str)
+        && let Some(view) = super::plot::PlotView::parse(view)
+    {
+        el.presentation = match view {
+            super::plot::PlotView::Signal => Presentation::Signal,
+            super::plot::PlotView::Spectrum => Presentation::Spectrum,
+        };
+    }
+
+    // The value axis: a named side wins, an unnamed one keeps the preset's
+    // (which is `None` — auto-fitted — only where the name meant that).
+    el.value = signal::ValueRange {
+        min: opt_number(props, "min").or(p.value.min),
+        max: opt_number(props, "max").or(p.value.max),
+    };
+
+    let size = props
+        .get(p.size_prop)
+        .and_then(Value::as_u64)
+        .map(|n| n as usize)
+        .filter(|n| clausters_core::fft::supports(*n))
+        .unwrap_or(p.spectral.fft_size);
+    el.spectral = signal::Spectral {
+        fft_size: size,
+        hop: props
+            .get("hop")
+            .and_then(Value::as_u64)
+            .map(|n| (n as usize).max(1))
+            .unwrap_or(size / 2),
+        db_floor: number(props, "db_floor", p.spectral.db_floor),
+        db_ceil: number(props, "db_ceil", p.spectral.db_ceil),
+        freq_scale: parse_freq_scale(props),
+        averaging: number(props, "averaging", p.spectral.averaging).clamp(0.0, 0.99),
+        peak_hold: props.get("peak_hold").and_then(truthy).unwrap_or(false),
+        colormap: int_prop(props, "colormap", p.spectral.colormap),
+    };
+
+    el.display = signal::Display {
+        overlay: props.get("overlay").and_then(truthy).unwrap_or(false),
+        label: label(props),
+    };
+    el.editor = EditorProps::parse(props, p.ruler_y);
+    el.editor.ruler = Ruler::parse_with(props, p.ruler);
+    el.refresh_analysis();
+    Ok(WidgetKind::Signal(Box::new(el)))
 }

@@ -49,6 +49,7 @@ use super::gestures::{GestureCtx, GestureEffect, Gestures, TextKey};
 use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
 use super::pianoroll;
+use super::signal::{self, Presentation};
 use super::spectrum::SpectrumState;
 use super::widget::{Widget, WidgetKind};
 use super::{BusSource, ClientId, GUI_EVENT, Host, HostEffect, ServerLink};
@@ -960,9 +961,14 @@ impl WebApp {
                         continue;
                     };
                     match kind {
-                        WidgetKind::Waveform { base_bucket, .. } => {
-                            let data =
-                                WaveformData::from_interleaved(&samples, channels, base_bucket);
+                        WidgetKind::Signal(ref el)
+                            if el.presentation == Presentation::Signal && el.is_gpu_view() =>
+                        {
+                            let bucket = el
+                                .source
+                                .data()
+                                .map_or(signal::DEFAULT_BASE_BUCKET, |d| d.base_bucket);
+                            let data = WaveformData::from_interleaved(&samples, channels, bucket);
                             self.place_bulk(want.def_id, want.widget_id, BulkData::Waveform(data));
                         }
                         WidgetKind::Clip { base_bucket, .. } => {
@@ -978,21 +984,19 @@ impl WebApp {
                             // `continue` here left the take sitting in the tree
                             // with the canvas still showing the frame before it.
                         }
-                        WidgetKind::Spectrogram {
-                            window_size,
-                            hop,
-                            sample_rate: rate_prop,
-                            ..
-                        } => {
-                            let rate = if rate_prop > 0.0 {
-                                rate_prop
+                        WidgetKind::Signal(ref el)
+                            if el.presentation == Presentation::TimeFrequency
+                                && el.is_gpu_view() =>
+                        {
+                            let rate = if el.editor.sample_rate > 0.0 {
+                                el.editor.sample_rate
                             } else {
                                 sample_rate
                             };
                             let stfts = frame::stft_lanes(
                                 frame::deinterleave(&samples, channels),
-                                window_size,
-                                hop,
+                                el.spectral.fft_size,
+                                el.spectral.hop,
                                 rate,
                             );
                             self.place_bulk(
@@ -1123,14 +1127,13 @@ impl WebApp {
             BulkData::Plot(samples) => {
                 if let Some(root) = self.host.window_def_mut(def)
                     && let Some(widget) = root.find_mut(widget_id)
-                    && let WidgetKind::Plot {
-                        samples: plot_samples,
-                        ..
-                    } = &mut widget.kind
+                    && let Some(el) = widget.kind.signal_mut()
+                    && let Some(data) = el.source.data_mut()
                 {
-                    *plot_samples = samples;
-                    // Landed samples feed the spectral view: refresh its cache.
-                    widget.kind.refresh_plot_analysis();
+                    data.samples = samples;
+                    // Landed samples feed the spectral presentation: refresh
+                    // its cached analysis.
+                    widget.kind.refresh_analysis();
                 }
             }
         }
@@ -1825,31 +1828,27 @@ fn build_inline_timelines(
 ) {
     if let Some(id) = widget.id {
         match &widget.kind {
-            WidgetKind::Waveform {
-                samples,
-                base_bucket,
-                channels,
-                ..
-            } if !samples.is_empty() => {
-                let data = WaveformData::from_interleaved(samples, *channels, *base_bucket);
-                waveforms.insert(id, frame::waveform_slot(data, gpu));
-            }
-            WidgetKind::Spectrogram {
-                samples,
-                channels,
-                window_size,
-                hop,
-                sample_rate,
-                ..
-            } if !samples.is_empty() => {
-                let stfts = frame::stft_lanes(
-                    frame::deinterleave(samples, *channels),
-                    *window_size,
-                    *hop,
-                    *sample_rate,
-                );
-                if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
-                    spectrograms.insert(id, slot);
+            WidgetKind::Signal(el) if el.is_gpu_view() => {
+                let Some(data) = el.source.data().filter(|d| !d.samples.is_empty()) else {
+                    return;
+                };
+                if el.presentation == Presentation::Signal {
+                    let loaded = WaveformData::from_interleaved(
+                        &data.samples,
+                        data.channels,
+                        data.base_bucket,
+                    );
+                    waveforms.insert(id, frame::waveform_slot(loaded, gpu));
+                } else {
+                    let stfts = frame::stft_lanes(
+                        frame::deinterleave(&data.samples, data.channels),
+                        el.spectral.fft_size,
+                        el.spectral.hop,
+                        el.editor.sample_rate,
+                    );
+                    if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
+                        spectrograms.insert(id, slot);
+                    }
                 }
             }
             _ => {}
@@ -1872,77 +1871,55 @@ fn collect_bulk(
 ) {
     if let Some(id) = widget.id {
         match &widget.kind {
-            WidgetKind::Waveform {
-                samples,
-                base_bucket,
-                buffer,
-                path,
-                cache,
-                channels,
-                ..
-            } => {
-                if let Some(cache) = cache {
-                    requests.push((id, BulkRequest::Cache(cache.to_string_lossy().into_owned())));
-                } else if let Some(path) = path {
+            WidgetKind::Signal(el) => {
+                let Some(data) = el.source.data() else { return };
+                let time_freq = el.presentation == Presentation::TimeFrequency;
+                if !el.is_gpu_view() {
+                    // A mesh-drawn element takes its samples straight into the
+                    // tree — no pyramid, no analysis cache to fetch.
+                    if data.samples.is_empty()
+                        && let Some(path) = &data.path
+                    {
+                        requests.push((
+                            id,
+                            BulkRequest::Plot {
+                                url: path.to_string_lossy().into_owned(),
+                                channels: data.channels,
+                            },
+                        ));
+                    }
+                } else if let Some(cache) = &data.cache {
+                    let url = cache.to_string_lossy().into_owned();
                     requests.push((
                         id,
-                        BulkRequest::Raw {
-                            url: path.to_string_lossy().into_owned(),
-                            channels: *channels,
-                            base_bucket: *base_bucket,
+                        if time_freq {
+                            BulkRequest::StftCache(url)
+                        } else {
+                            BulkRequest::Cache(url)
                         },
                     ));
-                } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
-                    buffer_refs.push((id, *bufnum));
-                }
-            }
-            WidgetKind::Spectrogram {
-                samples,
-                channels,
-                buffer,
-                path,
-                cache,
-                window_size,
-                hop,
-                sample_rate,
-                ..
-            } => {
-                if let Some(cache) = cache {
+                } else if let Some(path) = &data.path {
+                    let url = path.to_string_lossy().into_owned();
                     requests.push((
                         id,
-                        BulkRequest::StftCache(cache.to_string_lossy().into_owned()),
-                    ));
-                } else if let Some(path) = path {
-                    requests.push((
-                        id,
-                        BulkRequest::StftRaw {
-                            url: path.to_string_lossy().into_owned(),
-                            channels: *channels,
-                            window_size: *window_size,
-                            hop: *hop,
-                            sample_rate: *sample_rate,
+                        if time_freq {
+                            BulkRequest::StftRaw {
+                                url,
+                                channels: data.channels,
+                                window_size: el.spectral.fft_size,
+                                hop: el.spectral.hop,
+                                sample_rate: el.editor.sample_rate,
+                            }
+                        } else {
+                            BulkRequest::Raw {
+                                url,
+                                channels: data.channels,
+                                base_bucket: data.base_bucket,
+                            }
                         },
                     ));
-                } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
-                    buffer_refs.push((id, *bufnum));
-                }
-            }
-            WidgetKind::Plot {
-                samples,
-                path,
-                channels,
-                ..
-            } => {
-                if samples.is_empty()
-                    && let Some(path) = path
-                {
-                    requests.push((
-                        id,
-                        BulkRequest::Plot {
-                            url: path.to_string_lossy().into_owned(),
-                            channels: *channels,
-                        },
-                    ));
+                } else if let (Some(bufnum), true) = (data.buffer, data.samples.is_empty()) {
+                    buffer_refs.push((id, bufnum));
                 }
             }
             // A clip's take resolves exactly like a waveform's samples (cache →

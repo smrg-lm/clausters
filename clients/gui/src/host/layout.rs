@@ -1072,7 +1072,7 @@ mod tests {
         let placed = layout(area(), &w, &Metrics::default());
         // [window, panel, waveform]
         assert_eq!(placed.len(), 3);
-        assert!(placed[2].widget.is_waveform());
+        assert!(placed[2].widget.is_nav_signal());
         // The waveform sits inside the panel's rect.
         let (panel, wave) = (placed[1].rect, placed[2].rect);
         assert!(wave.x >= panel.x && wave.y >= panel.y);
