@@ -15,7 +15,7 @@ use super::bpf;
 use super::layout::{self, Rect};
 use super::pianoroll;
 use super::track;
-use super::widget::{ScrollView, Widget, WidgetKind};
+use super::widget::{GestureMap, ScrollView, Widget, WidgetKind};
 use super::{Host, controls};
 use crate::viewport::View;
 
@@ -61,6 +61,17 @@ pub(crate) struct TimeAxis {
     pub y: Option<YAxis>,
 }
 
+impl TimeAxis {
+    /// Whether the cursor is over the axis at all: within the body's **x**
+    /// span, whatever its height. The strips stacked under a body — a lane's
+    /// time ruler, a roll's velocity and OSC lanes — are on the same axis and
+    /// read the same position; a lane's header, beside it, is on no position at
+    /// all, which is why a locate or a sweep declines there.
+    pub fn spans(&self, cx: f64) -> bool {
+        cx >= self.body.x as f64 && cx <= (self.body.x + self.body.w) as f64
+    }
+}
+
 /// A timeline view's vertical axis: the strip that is its gesture surface (a
 /// y-ruler, a piano-roll's keyboard gutter), the display window it stands at,
 /// and the pixels one window's worth spans.
@@ -75,6 +86,10 @@ pub(crate) struct YAxis {
     /// How many pixels one window's worth spans: a **lane's** height, since one
     /// vertical window is shared by every channel lane of a stacked view.
     pub lane_h: f64,
+    /// The visible slice of the axis **in its own units**, when the axis has a
+    /// domain to measure in: a piano-roll's pitch window. A selection swept on
+    /// such an axis is a rectangle (time x value), not just a time span.
+    pub window: Option<(f64, f64)>,
 }
 
 /// One container over a hit, with the rectangle its coordinate system occupies
@@ -85,6 +100,12 @@ pub(crate) struct Frame {
     pub id: Option<i32>,
     /// Where the container sits, in window pixels.
     pub rect: Rect,
+    /// The accumulated workspace zoom the container is drawn at
+    /// ([`Placed::scale`]), which its own contents' geometry is measured at.
+    pub scale: f32,
+    /// What a press on this container does, by chord — the container's own
+    /// table, or the default its kind carries.
+    pub map: GestureMap,
     pub coords: Coords,
 }
 
@@ -201,6 +222,8 @@ fn chain_of(
             chain.push(Frame {
                 id: p.widget.id,
                 rect: p.rect,
+                scale: p.scale,
+                map: p.widget.gesture_map(),
                 coords,
             });
         }
@@ -222,22 +245,37 @@ fn time_axis(
 ) -> Option<TimeAxis> {
     let metrics = host.metrics_for(def_id);
     let ruler_on = p.widget.kind.editor()?.ruler != super::widget::Ruler::Off;
-    let (body, y_surface) = match &p.widget.kind {
-        WidgetKind::Track { .. } => (track::lane_body(p.rect, ruler_on, metrics), false),
-        WidgetKind::TimeRuler { .. } => (super::frame::ruler_strip_body(p.rect, metrics), false),
+    // The body samples map onto, whether the axis has a vertical gesture
+    // surface, and the vertical axis' own window when it measures something.
+    let (body, y_surface, window) = match &p.widget.kind {
+        WidgetKind::Track { .. } => (track::lane_body(p.rect, ruler_on, metrics), false, None),
+        WidgetKind::TimeRuler { .. } => {
+            (super::frame::ruler_strip_body(p.rect, metrics), false, None)
+        }
         WidgetKind::PianoRoll {
             osc_lane,
             velocity_lane,
+            min,
+            max,
+            editor,
             ..
-        } => (
-            super::pianoroll::regions(p.rect, ruler_on, *osc_lane, *velocity_lane, metrics).grid,
-            // The keyboard gutter is the roll's vertical axis surface, always
-            // drawn (there is no `ruler_y: off` for a piano-roll).
-            true,
-        ),
+        } => {
+            let (lo, hi) = pitch_window(editor, *min, *max);
+            (
+                super::pianoroll::regions(p.rect, ruler_on, *osc_lane, *velocity_lane, metrics)
+                    .grid,
+                // The keyboard gutter is the roll's vertical axis surface,
+                // always drawn (there is no `ruler_y: off` for a piano-roll).
+                true,
+                // ...and pitch is a domain, so a sweep on this axis picks notes
+                // by a rectangle rather than by a time span alone.
+                Some((lo as f64, hi as f64)),
+            )
+        }
         kind => (
             super::frame::timeline_body(p.rect, kind.editor()?, metrics),
             kind.editor()?.ruler_y != super::widget::RulerY::Off,
+            None,
         ),
     };
     let (start, len) = p.widget.kind.editor()?.y_view();
@@ -254,6 +292,7 @@ fn time_axis(
             lane_h: (body.h as f64
                 / p.widget.id.map_or(1, |id| lanes(id, &p.widget.kind)).max(1) as f64)
                 .max(1.0),
+            window,
         }),
     })
 }
@@ -986,6 +1025,37 @@ pub(crate) fn pianoroll_state_edit<R>(
         } => Some(f(notes, selected)),
         _ => None,
     }
+}
+
+/// The value a timeline container's **vertical** axis reads under the cursor,
+/// on the window `[lo, hi]` it is seen at. Discrete today (a piano-roll's
+/// pitch, whose rows are centred on whole semitones), which is the only ranged
+/// vertical axis there is; a continuous one lands here beside it.
+pub(crate) fn value_at(body: Rect, lo: f64, hi: f64, cy: f64) -> f64 {
+    pianoroll::y_to_pitch(cy as f32, lo as f32, hi as f32, body) as f64
+}
+
+/// Drops the element selection a container holds — the multi-note set of a
+/// piano-roll today. The sweep's opening move: a new marquee starts from
+/// nothing.
+pub(crate) fn clear_element_selection(host: &mut Host, def_id: i32, id: i32) {
+    pianoroll_state_edit(host, def_id, id, |_, sel| sel.clear());
+}
+
+/// Selects the container's elements inside the swept rectangle — time along the
+/// shared axis, value along the vertical one. The container decides what an
+/// element is: a piano-roll's notes today, and whatever a timeline container
+/// places on its axis next.
+pub(crate) fn select_elements_in_rect(
+    host: &mut Host,
+    def_id: i32,
+    id: i32,
+    time: (f64, f64),
+    value: (f64, f64),
+) {
+    pianoroll_state_edit(host, def_id, id, |notes, sel| {
+        *sel = pianoroll::notes_in_rect(notes, time.0, time.1, value.0 as f32, value.1 as f32);
+    });
 }
 
 /// Mutate a piano-roll's OSC-event list in the host tree.

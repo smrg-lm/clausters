@@ -90,6 +90,23 @@ strip) are that same widget configured down.
   TOML style file) overlaying the parent's theme for the whole subtree — a
   **theme group**, recursive by construction. On a window root it persists
   with a named def. An empty table clears the group.
+
+**A container also declares its gestures.** Panning, sweeping a selection and
+locating the transport belong to the coordinate system a container gives its
+contents, not to what is drawn in it — which is why Shift+drag pans the same
+way over a ``waveform``, a ``track`` lane, a ``pianoroll`` and a ``timeruler``.
+A ``gestures`` prop replaces that mapping, keyed by modifier chord (``drag``
+for the plain drag, ``shift``, ``ctrl``, ``alt``), each value an ordered plan
+of steps: ``element`` (hand the press to whatever is under the cursor — a clip,
+a note, a box — which may decline), ``pan``, ``select``, ``locate``, ``none``::
+
+    waveform(data=take, gestures={"drag": "pan", "shift": "select"})
+
+A plan that consumes nothing falls outward to the container around it. The
+defaults are per kind (``{"drag": "element locate", "shift": "pan"}`` on a
+lane, ``{"drag": "select", "shift": "pan"}`` on the heavy views), a table names
+only what it changes, and a press on a view's vertical strip always pans that
+axis. Live via ``set`` (as JSON, the ``theme`` convention).
 """
 
 import array

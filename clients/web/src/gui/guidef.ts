@@ -87,6 +87,22 @@ export interface WidgetOptions {
      * body. An empty string clears it.
      */
     color?: string;
+    /**
+     * A **container's** gesture table: what a drag on it does, by modifier
+     * chord (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value an
+     * ordered plan of steps — `element` (hand the press to whatever is under
+     * the cursor: a clip, a note, a box; it may decline), `pan`, `select`,
+     * `locate`, `none`.
+     *
+     * Panning, sweeping a selection and locating the transport belong to the
+     * coordinate system a container gives its contents, which is why
+     * Shift+drag pans the same way over a `waveform`, a `track` lane, a
+     * `pianoroll` and a `timeruler`. A plan that consumes nothing falls
+     * outward to the container around it; a table names only the chords it
+     * changes (`{ drag: "pan", shift: "select" }`), and the vertical strip of
+     * a view always pans that axis whatever the table says.
+     */
+    gestures?: Record<string, string>;
     [prop: string]: unknown;
 }
 

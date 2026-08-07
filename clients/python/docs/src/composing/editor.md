@@ -123,6 +123,13 @@ All lanes share one time axis, and they navigate as one:
 - **`r`** — reset the view to the whole piece;
 - **Escape** — close the window.
 
+Those belong to the **axis**, not to the lanes: the same wheel and the same
+Shift + drag navigate a waveform, a piano-roll or a free-standing ruler,
+because every view that carries a time axis owns them. Which chord does what
+is the container's own table and a view can be told to change it — a lane made
+to pan on a plain drag with `gestures={"drag": "pan"}` — but the defaults are
+what this page describes and the whole editor shares them.
+
 Zoom into the drums take: the waveform re-resolves as you go (the host keeps a
 peak pyramid per take and never resolves finer than the screen). Zoom far out:
 there is empty time to zoom out into, and the axis spans the longest clip end

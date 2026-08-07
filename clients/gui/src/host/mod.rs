@@ -794,7 +794,10 @@ impl Host {
                         // widget; everything else is the kind's own.
                         let style = widget.style_apply(k, v);
                         styled |= style;
-                        changed |= style || widget.place.apply(k, v) || widget.kind.apply(k, v);
+                        changed |= style
+                            || (k == "gestures" && widget.gestures_apply(v))
+                            || widget.place.apply(k, v)
+                            || widget.kind.apply(k, v);
                     }
                 }
             }

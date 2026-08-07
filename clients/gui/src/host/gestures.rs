@@ -21,8 +21,8 @@ use clausters_core::osc::OscType;
 
 use super::interact::{self, Hit, slider_t, value_of};
 use super::layout::Rect;
-use super::widget::{Axis, Ruler, RulerY, ScrollView, Widget, WidgetKind};
-use super::{Host, bpf, controls, frame, patch, piano, pianoroll, scroll, track};
+use super::widget::{Axis, GestureStep, ScrollView, Widget, WidgetKind};
+use super::{Host, bpf, controls, patch, piano, pianoroll, scroll};
 use crate::viewport::View;
 
 /// What a gesture asks of the front: everything the machine cannot do itself
@@ -119,13 +119,20 @@ enum Drag {
         start: f64,
         body_w: f64,
     },
-    /// Dragging a selection on a timeline view: `anchor` is the sample under
-    /// the press; the selection spans from it to the cursor's sample.
+    /// Sweeping a selection on a timeline container: `anchor` is the sample
+    /// under the press, and the selection spans from it to the cursor's sample.
+    /// On an axis that measures a **value** as well (a piano-roll's pitch,
+    /// `value` carrying its window and the value under the press) the sweep is
+    /// a rectangle: the time span still drives the shared selection every
+    /// linked view follows, and the elements inside the rectangle become the
+    /// container's own selection.
     Select {
         id: i32,
-        body_x: f64,
-        body_w: f64,
+        body: Rect,
+        nav_start: f64,
+        nav_len: f64,
         anchor: f64,
+        value: Option<(f64, f64, f64)>,
     },
     /// Panning a timeline view's **vertical** display window from a drag on
     /// its y-ruler strip: `y_start` is the window snapshot at the press,
@@ -245,22 +252,6 @@ enum Drag {
         nav_start: f64,
         nav_len: f64,
         snap: f64,
-    },
-    /// A marquee on the piano-roll's empty grid: the time span keeps driving the
-    /// **shared time selection** (linked views follow it, exactly as
-    /// [`Drag::Select`] does), and the notes inside the time × pitch rectangle
-    /// become the widget's multi-note selection.
-    SelectNotes {
-        id: i32,
-        grid: Rect,
-        nav_start: f64,
-        nav_len: f64,
-        lo: f32,
-        hi: f32,
-        /// The absolute sample under the press.
-        anchor: f64,
-        /// The (fractional) pitch under the press.
-        anchor_pitch: f32,
     },
     /// Dragging a **selected** note moves the whole selection rigidly in time
     /// and pitch. `orig` is the `(index, start, pitch)` snapshot at press time
@@ -514,9 +505,22 @@ impl Gestures {
         out
     }
 
-    /// Press on a widget: act by kind and possibly start a drag. `grab` is the
-    /// front's pointer-grab attempt for a knob/number drag (returns whether the
-    /// pointer was *locked*); a front without pointer lock returns `false`.
+    /// Press: run the **containers' gesture plans** over the hit, innermost
+    /// first, until one of their steps consumes it.
+    ///
+    /// The order is the containers', not the widget's. Each container over the
+    /// point declares what a chord does on it ([`super::widget::GestureMap`]) — pan its axis,
+    /// sweep a selection, locate the transport, or hand the press to the
+    /// element under the cursor — and a step that declines passes the press on,
+    /// outward through the chain. That is why Shift+drag pans the same way over
+    /// a waveform, a lane and a piano-roll (their axis claims it before any of
+    /// them sees it), and why Shift on a patcher's empty canvas still pans the
+    /// workspace *around* the patcher: the canvas declines and the plane
+    /// outside it takes over.
+    ///
+    /// `grab` is the front's pointer-grab attempt for a knob/number drag
+    /// (returns whether the pointer was *locked*); a front without pointer lock
+    /// returns `false`.
     pub fn press(
         &mut self,
         host: &mut Host,
@@ -526,27 +530,182 @@ impl Gestures {
         grab: &mut dyn FnMut() -> bool,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
-        let Some(Hit {
-            id,
-            rect,
-            scale,
-            kind,
-            chain,
-        }) = hit(host, ctx, cx, cy)
-        else {
+        let Some(hit) = hit(host, ctx, cx, cy) else {
             // A press on empty space drops the text focus (the caret disappears).
             if let Some(old) = host.clear_text_focus() {
                 out.push(GestureEffect::Redraw(old));
             }
             return out;
         };
-        let def_id = ctx.def_id;
         // A press on anything other than the focused text field defocuses it.
-        if !matches!(kind, WidgetKind::Text { .. })
+        if !matches!(hit.kind, WidgetKind::Text { .. })
             && let Some(old) = host.clear_text_focus()
         {
             out.push(GestureEffect::Redraw(old));
         }
+        // The vertical axis is grabbed on its own strip, before any chord: a
+        // press on a y-ruler or a piano-roll's keyboard gutter means *that*
+        // axis, whatever the container maps the drag to elsewhere.
+        if let Some((id, axis)) = interact::time_of(&hit.chain)
+            && let Some(y) = axis.y
+            && y.strip.contains(cx, cy)
+        {
+            self.drag = Some(Drag::PanY {
+                id,
+                origin_y: cy,
+                y_start: y.start,
+                lane_h: y.lane_h,
+            });
+            return out;
+        }
+        let mut element_ran = false;
+        for frame in hit.chain.iter().rev() {
+            for step in frame.map.plan(ctx.shift, ctx.ctrl, ctx.alt).steps() {
+                let consumed = match step {
+                    // The element gets exactly one turn, wherever the first
+                    // container that offers it sits.
+                    GestureStep::Element if !element_ran => {
+                        element_ran = true;
+                        self.element_press(host, ctx, &hit, cx, cy, grab, &mut out)
+                    }
+                    GestureStep::Element => false,
+                    action => self.container_press(host, ctx, frame, action, cx, cy, &mut out),
+                };
+                if consumed {
+                    return out;
+                }
+            }
+        }
+        out
+    }
+
+    /// One container-level step of a press: the gestures that belong to the
+    /// coordinate system rather than to what is drawn in it. Each reads the
+    /// frame the chain resolved — the axis' own body, window and view state —
+    /// so a pan is one implementation for the five timeline views and a plane
+    /// pan is one for every workspace. Returns whether the step consumed the
+    /// press; a step that has nothing to act on (a locate outside the axis'
+    /// body, a selection on a canvas with no marquee) declines, and the plan
+    /// goes on.
+    #[allow(clippy::too_many_arguments)] // one press: a container, a step, a cursor
+    fn container_press(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        frame: &interact::Frame,
+        step: GestureStep,
+        cx: f64,
+        cy: f64,
+        out: &mut Vec<GestureEffect>,
+    ) -> bool {
+        let def_id = ctx.def_id;
+        let Some(id) = frame.id else {
+            return false; // an unaddressable container navigates nothing
+        };
+        match (step, frame.coords) {
+            (GestureStep::Pan, interact::Coords::Time(axis)) => {
+                self.drag = Some(Drag::Pan {
+                    id,
+                    origin_x: cx,
+                    start: axis.nav.start,
+                    body_w: axis.body.w.max(1.0) as f64,
+                });
+                true
+            }
+            (GestureStep::Pan, interact::Coords::Plane(view)) => {
+                self.drag = Some(Drag::ScrollPan {
+                    id,
+                    area: frame.rect,
+                    origin_x: cx,
+                    origin_y: cy,
+                    x0: view.view_x,
+                    y0: view.view_y,
+                });
+                true
+            }
+            (GestureStep::Select, interact::Coords::Time(axis)) => {
+                if !axis.spans(cx) {
+                    return false;
+                }
+                // The press collapses the shared selection to the sample under
+                // it; the drag sweeps from there. On an axis that measures a
+                // value too (a roll's pitch), the sweep is a rectangle and the
+                // container's own elements inside it become its selection --
+                // but only when the press is on the body, since the strips
+                // under it (a velocity lane, a ruler) read the time axis alone.
+                let anchor = interact::sample_at(
+                    axis.nav.start,
+                    axis.nav.len,
+                    axis.body.x as f64,
+                    axis.body.w as f64,
+                    cx,
+                );
+                let window = axis
+                    .y
+                    .filter(|_| axis.body.contains(cx, cy))
+                    .and_then(|y| y.window);
+                if window.is_some() {
+                    // A fresh sweep drops the set the previous one left.
+                    interact::clear_element_selection(host, def_id, id);
+                }
+                let value =
+                    window.map(|(lo, hi)| (lo, hi, interact::value_at(axis.body, lo, hi, cy)));
+                set_selection(host, out, def_id, id, anchor, anchor);
+                self.drag = Some(Drag::Select {
+                    id,
+                    body: axis.body,
+                    nav_start: axis.nav.start,
+                    nav_len: axis.nav.len,
+                    anchor,
+                    value,
+                });
+                out.push(GestureEffect::Redraw(def_id));
+                true
+            }
+            (GestureStep::Select, interact::Coords::Canvas) => {
+                interact::graph_select(host, def_id, id, Vec::new());
+                self.drag = Some(Drag::Marquee {
+                    id,
+                    area: frame.rect,
+                    scale: frame.scale,
+                    origin: (cx, cy),
+                    cursor: (cx, cy),
+                });
+                out.push(GestureEffect::Redraw(def_id));
+                true
+            }
+            (GestureStep::Locate, interact::Coords::Time(axis)) => {
+                if !axis.spans(cx) {
+                    return false; // beside the axis (a lane's header): no position
+                }
+                locate_timeline(host, out, def_id, id, axis.body, cx);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The press the containers handed down: what the widget under the cursor
+    /// does with it — a control's value, a note, a break-point, a clip, a piano
+    /// key, a cord. Returns whether it was consumed; declining (empty space in
+    /// a lane, a patch's bare canvas) hands the press back to the chain.
+    #[allow(clippy::too_many_arguments)] // one press: a hit, the context, a cursor
+    fn element_press(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        hit: &Hit,
+        cx: f64,
+        cy: f64,
+        grab: &mut dyn FnMut() -> bool,
+        out: &mut Vec<GestureEffect>,
+    ) -> bool {
+        let Hit {
+            id, rect, scale, ..
+        } = *hit;
+        let (chain, kind) = (&hit.chain, hit.kind.clone());
+        let def_id = ctx.def_id;
+        let effects_before = out.len();
         match kind {
             WidgetKind::Slider { range: r, vertical } => {
                 // The track area, not the whole body: the grab has to agree with
@@ -560,7 +719,7 @@ impl Gestures {
                 );
                 let t = slider_t(body, cx, cy, vertical);
                 interact::set_fraction(host, def_id, id, t);
-                emit_value(host, &mut out, def_id, id);
+                emit_value(host, out, def_id, id);
                 self.drag = Some(Drag::Slider { id, body, vertical });
                 out.push(GestureEffect::Redraw(def_id));
             }
@@ -580,18 +739,18 @@ impl Gestures {
                 });
             }
             WidgetKind::Button { .. } => {
-                deliver(host, &mut out, def_id, id, OscType::Int(1));
+                deliver(host, out, def_id, id, OscType::Int(1));
                 self.drag = Some(Drag::Button { id });
                 out.push(GestureEffect::Redraw(def_id));
             }
             WidgetKind::Toggle { .. } => {
                 interact::flip_toggle(host, def_id, id);
-                emit_value(host, &mut out, def_id, id);
+                emit_value(host, out, def_id, id);
                 out.push(GestureEffect::Redraw(def_id));
             }
             WidgetKind::Menu { .. } => {
                 interact::cycle_menu(host, def_id, id);
-                emit_value(host, &mut out, def_id, id);
+                emit_value(host, out, def_id, id);
                 out.push(GestureEffect::Redraw(def_id));
             }
             WidgetKind::Text { .. } => {
@@ -653,7 +812,7 @@ impl Gestures {
                         if let Some(index) = added {
                             self.drag = Some(Drag::BpfPoint { id, index, body });
                         }
-                        emit_points(host, &mut out, def_id, id);
+                        emit_points(host, out, def_id, id);
                         out.push(GestureEffect::Redraw(def_id));
                     }
                 } else if let Some(index) = hit_pt {
@@ -674,10 +833,10 @@ impl Gestures {
             } => {
                 // A port wins: the cord drag. Then a box: select it and start a
                 // move (a press on an already-selected box keeps the set, so the
-                // drag moves the whole selection). On the empty canvas a plain
-                // drag sweeps the **marquee** selection; **Shift+drag pans** the
-                // enclosing `scroll` workspace — the same convention the heavy
-                // views use (Shift pans where a plain drag does the local thing).
+                // drag moves the whole selection). The empty canvas is not the
+                // element's: the press goes back to the canvas' own plan, which
+                // sweeps the marquee on a plain drag and leaves Shift to the
+                // workspace outside it.
                 if let Some(port) = patch::port_hit(rect, patch, cx, cy, scale) {
                     self.drag = Some(Drag::Wire {
                         id,
@@ -707,76 +866,17 @@ impl Gestures {
                         moved: false,
                     });
                     out.push(GestureEffect::Redraw(def_id));
-                } else if !ctx.shift {
-                    interact::graph_select(host, def_id, id, Vec::new());
-                    self.drag = Some(Drag::Marquee {
-                        id,
-                        area: rect,
-                        scale,
-                        origin: (cx, cy),
-                        cursor: (cx, cy),
-                    });
-                    out.push(GestureEffect::Redraw(def_id));
                 }
-                // else (Shift+empty): leave it unconsumed so the `scroll` pan
-                // fallback below grabs the workspace.
             }
-            // The free-standing ruler behaves like a lane's ruler strip: a
-            // press locates the transport, Shift+drag pans the shared axis.
-            // It is the DAW gesture -- you scrub on the ruler.
-            WidgetKind::TimeRuler { .. } => {
-                let body = frame::ruler_strip_body(rect, host.metrics_for(def_id));
-                if ctx.shift {
-                    if let Some((start, _len, _total)) = nav(host, id) {
-                        self.drag = Some(Drag::Pan {
-                            id,
-                            origin_x: cx,
-                            start,
-                            body_w: body.w.max(1.0) as f64,
-                        });
-                    }
-                    return out;
-                }
-                locate_timeline(host, &mut out, def_id, id, body, cx);
-                return out;
-            }
-            WidgetKind::Track {
-                snap, ref editor, ..
-            } => {
-                // The lane *is* the time axis: its body and its window come off
-                // the hit's own chain, so the locate, the pan and the clip grab
-                // below all measure against the one the renderer drew.
-                let Some((_, axis)) = interact::time_of(&chain) else {
-                    return out;
+            WidgetKind::Track { snap, .. } => {
+                // A lane's element is the **clip** the renderer placed on its
+                // axis, not a widget the layout put there — so the lane looks it
+                // up on the time axis the hit resolved. Empty lane space and the
+                // ruler strip are not the element's: the press goes back to the
+                // chain, where the lane's plan locates the transport.
+                let Some(lane) = interact::time_of(chain) else {
+                    return false;
                 };
-                let (body, lane_nav) = (axis.body, axis.nav);
-                let lane = (id, axis);
-                // Shift+drag pans the shared axis (the same gesture the heavy
-                // views use), so panning stays available where every plain drag
-                // grabs a clip.
-                if ctx.shift {
-                    self.drag = Some(Drag::Pan {
-                        id,
-                        origin_x: cx,
-                        start: lane_nav.start,
-                        body_w: body.w.max(1.0) as f64,
-                    });
-                    return out;
-                }
-                // A press on the lane's **time ruler**, or on empty lane space,
-                // *locates* the transport: the multitrack's cursor goes where you
-                // point, which is the one gesture a timeline view cannot do
-                // without. (Over a clip, the clip's own gestures win.)
-                let ruler_on = editor.ruler != Ruler::Off;
-                let on_ruler = ruler_on && cy > body.y as f64 + body.h as f64;
-                let over_clip = interact::clip_hit(host, def_id, lane, cx, cy).is_some();
-                if on_ruler || (!over_clip && body.contains(cx, cy)) {
-                    locate_timeline(host, &mut out, def_id, id, body, cx);
-                    return out;
-                }
-                // A track is the hit target (its clips are placed by the
-                // renderer, not the layout engine); find the clip under the
-                // cursor and start a move (body) or resize (edge) drag.
                 if let Some(h) = interact::clip_hit(host, def_id, lane, cx, cy) {
                     // An automation clip: a break-point wins over the clip body
                     // (as it wins over a segment in the `bpf` view), and Ctrl+click
@@ -788,7 +888,7 @@ impl Gestures {
                                 host, def_id, h.id, h.point, h.rect, h.body, &h.nav, h.offset, cx,
                                 cy,
                             ) {
-                                emit_points(host, &mut out, def_id, h.id);
+                                emit_points(host, out, def_id, h.id);
                                 out.push(GestureEffect::Redraw(def_id));
                             }
                         } else if let Some(index) = h.point {
@@ -802,7 +902,7 @@ impl Gestures {
                                 offset: h.offset,
                             });
                         }
-                        return out;
+                        return true;
                     }
                     let press_sample = interact::sample_at(
                         h.nav.start,
@@ -861,15 +961,15 @@ impl Gestures {
                             anchor: piano::overview_hit(strip, cx as f32),
                         });
                     }
-                    return out;
+                    return true;
                 }
                 // A press on a key plays it — inert outside the active range.
                 if let Some(p) = piano::hit(&l, cx as f32, cy as f32) {
                     if !(active_min..=active_max).contains(&p) {
-                        return out;
+                        return true;
                     }
                     let vel = velocity.unwrap_or_else(|| piano::velocity_at(&l, p, cy as f32));
-                    piano_note(host, &mut out, def_id, id, p, vel, 1, channel);
+                    piano_note(host, out, def_id, id, p, vel, 1, channel);
                     self.drag = Some(Drag::PianoKey {
                         id,
                         layout: l,
@@ -912,105 +1012,19 @@ impl Gestures {
                 }
             }
             WidgetKind::PianoRoll { .. } => {
-                let Some((_, axis)) = interact::time_of(&chain) else {
-                    return out;
+                let Some((_, axis)) = interact::time_of(chain) else {
+                    return false;
                 };
                 let Some(h) = interact::pianoroll_hit(host, def_id, (id, rect, axis), cx, cy)
                 else {
-                    return out;
+                    return false;
                 };
-                // A press on the keyboard gutter (left of the grid) pans the pitch
-                // window — the keyboard is the piano-roll's vertical axis surface,
-                // the counterpart of the heavy views' y-ruler strip.
-                if cx < h.grid.x as f64 {
-                    let y_start = host
-                        .window_def(def_id)
-                        .and_then(|t| t.find(id))
-                        .and_then(|w| w.kind.editor())
-                        .map_or(0.0, |e| e.y_view().0);
-                    self.drag = Some(Drag::PanY {
-                        id,
-                        origin_y: cy,
-                        y_start,
-                        lane_h: h.grid.h.max(1.0) as f64,
-                    });
-                    return out;
-                }
-                // Shift+drag pans the shared axis (the heavy-view gesture), so
-                // panning stays available where a plain drag edits notes/selects.
-                if ctx.shift {
-                    if let Some((start, _len, _total)) = nav(host, id) {
-                        self.drag = Some(Drag::Pan {
-                            id,
-                            origin_x: cx,
-                            start,
-                            body_w: h.grid.w.max(1.0) as f64,
-                        });
-                    }
-                    return out;
-                }
-                self.pianoroll_press(host, &mut out, ctx, id, &h, cx, cy);
-            }
-            WidgetKind::Waveform { ref editor, .. }
-            | WidgetKind::Spectrogram { ref editor, .. } => {
-                let body = frame::timeline_body(rect, editor, host.metrics_for(def_id));
-                // A press on the y-ruler strip left of the body starts a
-                // vertical pan of the display window (the strip is the y
-                // axis' gesture surface; wheel over it zooms).
-                if editor.ruler_y != RulerY::Off && cx < body.x as f64 {
-                    let lanes = ctx.lanes(id, &kind);
-                    self.drag = Some(Drag::PanY {
-                        id,
-                        origin_y: cy,
-                        y_start: editor.y_view().0,
-                        lane_h: (body.h as f64 / lanes.max(1) as f64).max(1.0),
-                    });
-                    return out;
-                }
-                if let Some((start, len, _)) = nav(host, id) {
-                    if ctx.shift {
-                        // Shift+drag pans the view (the pre-editor gesture).
-                        self.drag = Some(Drag::Pan {
-                            id,
-                            origin_x: cx,
-                            start,
-                            body_w: body.w.max(1.0) as f64,
-                        });
-                    } else {
-                        // Plain drag selects (the editor convention). The press
-                        // collapses the selection to the sample under it.
-                        let anchor =
-                            interact::sample_at(start, len, body.x as f64, body.w as f64, cx);
-                        set_selection(host, &mut out, def_id, id, anchor, anchor);
-                        self.drag = Some(Drag::Select {
-                            id,
-                            body_x: body.x as f64,
-                            body_w: body.w.max(1.0) as f64,
-                            anchor,
-                        });
-                        out.push(GestureEffect::Redraw(def_id));
-                    }
-                }
+                self.pianoroll_press(host, out, ctx, id, &h, cx, cy);
             }
             _ => {}
         }
-        // Nothing consumed the press: inside a `scroll` workspace, grab the
-        // plane and pan it (a press on the container's empty area hits the
-        // `scroll` itself; one on a non-interactive child falls through here).
-        if self.drag.is_none()
-            && out.is_empty()
-            && let Some((sid, area, view)) = interact::plane_of(&chain)
-        {
-            self.drag = Some(Drag::ScrollPan {
-                id: sid,
-                area,
-                origin_x: cx,
-                origin_y: cy,
-                x0: view.view_x,
-                y0: view.view_y,
-            });
-        }
-        out
+        // Nothing the element wanted: the press goes back to the chain.
+        self.drag.is_some() || out.len() > effects_before
     }
 
     /// Pointer moved while a drag is active: drive the dragged target. The drag
@@ -1237,15 +1251,30 @@ impl Gestures {
             }
             Drag::Select {
                 id,
-                body_x,
-                body_w,
+                body,
+                nav_start,
+                nav_len,
                 anchor,
+                value,
             } => {
-                let Some((start, len, _)) = nav(host, id) else {
-                    return out;
-                };
-                let cur = interact::sample_at(start, len, body_x, body_w, cx);
+                // Against the group's **current** window (the press-time one is
+                // the fallback for a view that is in no group): the axis may
+                // have moved under the sweep, and the anchor is already a
+                // timeline coordinate.
+                let (start, len) = nav(host, id).map_or((nav_start, nav_len), |(s, l, _)| (s, l));
+                let cur = interact::sample_at(start, len, body.x as f64, body.w as f64, cx);
                 set_selection(host, &mut out, def_id, id, anchor, cur);
+                if let Some((lo, hi, anchor_value)) = value {
+                    let v = interact::value_at(body, lo, hi, cy);
+                    interact::select_elements_in_rect(
+                        host,
+                        def_id,
+                        id,
+                        (anchor, cur),
+                        (anchor_value, v),
+                    );
+                    out.push(GestureEffect::Redraw(def_id));
+                }
             }
             Drag::Clip {
                 id,
@@ -1373,27 +1402,6 @@ impl Gestures {
                 });
                 host.sync_track_totals();
                 emit_osc(host, &mut out, def_id, id);
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            Drag::SelectNotes {
-                id,
-                grid,
-                nav_start,
-                nav_len,
-                lo,
-                hi,
-                anchor,
-                anchor_pitch,
-            } => {
-                // The marquee: the time span keeps driving the shared selection
-                // (linked views follow it), and the time × pitch rectangle
-                // fills the widget's multi-note selection.
-                let cur = interact::sample_at(nav_start, nav_len, grid.x as f64, grid.w as f64, cx);
-                set_selection(host, &mut out, def_id, id, anchor, cur);
-                let pitch = pianoroll::y_to_pitch(cy as f32, lo, hi, grid);
-                interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
-                    *sel = pianoroll::notes_in_rect(notes, anchor, cur, anchor_pitch, pitch);
-                });
                 out.push(GestureEffect::Redraw(def_id));
             }
             Drag::NoteBlock {
@@ -1628,47 +1636,13 @@ impl Gestures {
             }
             return out;
         }
-        if let Some(editor) = kind.editor() {
+        // A timeline view's wheel is its **axis'**, and the axis is on the
+        // chain: over the vertical strip it zooms the display window, anywhere
+        // else the shared time axis, both anchored at the cursor.
+        if let Some((tid, axis)) = interact::time_of(&chain) {
             let factor = 0.85f64.powf(steps);
-            // The piano-roll's vertical axis is the keyboard gutter, not a
-            // y-ruler strip: wheel over it zooms the pitch window, wheel
-            // over the grid zooms the shared time axis.
-            if let WidgetKind::PianoRoll {
-                osc_lane,
-                velocity_lane,
-                ..
-            } = &kind
-            {
-                let r = pianoroll::regions(
-                    rect,
-                    editor.ruler != Ruler::Off,
-                    *osc_lane,
-                    *velocity_lane,
-                    host.metrics_for(def_id),
-                );
-                if cx < r.grid.x as f64 {
-                    let rel = ((cy - r.grid.y as f64) / r.grid.h.max(1.0) as f64).clamp(0.0, 1.0);
-                    zoom_timeline_y(host, &mut out, def_id, id, factor, 1.0 - rel);
-                } else {
-                    zoom_timeline(host, &mut out, def_id, id, r.grid, cx, factor);
-                }
-                return out;
-            }
-            // A lane's body is the strip right of its header (and above
-            // its ruler); a heavy view's is its rect minus its rulers.
-            let body = match kind {
-                WidgetKind::Track { .. } => {
-                    track::lane_body(rect, editor.ruler != Ruler::Off, host.metrics_for(def_id))
-                }
-                // The free-standing ruler is all strip: no body to subtract.
-                WidgetKind::TimeRuler { .. } => {
-                    frame::ruler_strip_body(rect, host.metrics_for(def_id))
-                }
-                _ => frame::timeline_body(rect, editor, host.metrics_for(def_id)),
-            };
-            if editor.ruler_y != RulerY::Off && cx < body.x as f64 {
-                // Wheel over the y-ruler strip zooms the vertical display
-                // window. The anchor depends on what the axis measures,
+            match axis.y.filter(|y| y.strip.contains(cx, cy)) {
+                // The vertical anchor depends on what the axis *measures*,
                 // because one window is shared by every channel lane:
                 //
                 // - **Amplitude** (the waveform): the window keeps its own
@@ -1677,23 +1651,23 @@ impl Gestures {
                 //   taken from the cursor's height would be meaningless for
                 //   the other lanes, and any off-centre window pushes the
                 //   wave out of the lane and clips it.
-                // - **Frequency** (the spectrogram): the cursor's height,
-                //   which is the frequency under it. There the shared window
-                //   says the same thing in every lane — all of them show that
-                //   band — so anchoring at the cursor is both meaningful and
-                //   what the reader wants.
-                let anchor = match kind {
-                    WidgetKind::Waveform { .. } => 0.5,
-                    _ => {
-                        let lanes = ctx.lanes(id, &kind);
-                        let lane = frame::lane_rect(body, lanes, frame::lane_at(body, lanes, cy));
-                        let rel = ((cy - lane.y as f64) / lane.h.max(1.0) as f64).clamp(0.0, 1.0);
-                        1.0 - rel
-                    }
-                };
-                zoom_timeline_y(host, &mut out, def_id, id, factor, anchor);
-            } else {
-                zoom_timeline(host, &mut out, def_id, id, body, cx, factor);
+                // - **Frequency** (the spectrogram) and **pitch** (the roll):
+                //   the cursor's height, which is the value under it. There the
+                //   shared window says the same thing in every lane -- all of
+                //   them show that band -- so anchoring at the cursor is both
+                //   meaningful and what the reader wants.
+                Some(y) => {
+                    let anchor = match kind {
+                        WidgetKind::Waveform { .. } => 0.5,
+                        _ => {
+                            let lane_top = axis.body.y as f64
+                                + ((cy - axis.body.y as f64) / y.lane_h).floor() * y.lane_h;
+                            1.0 - ((cy - lane_top) / y.lane_h).clamp(0.0, 1.0)
+                        }
+                    };
+                    zoom_timeline_y(host, &mut out, def_id, tid, factor, anchor);
+                }
+                None => zoom_timeline(host, &mut out, def_id, tid, axis.body, cx, factor),
             }
             return out;
         }
@@ -1810,96 +1784,65 @@ impl Gestures {
                     out.push(GestureEffect::Redraw(def_id));
                     return;
                 }
-                match h.note {
-                    // Move (body) or resize (edge) the note under the cursor.
-                    // Grabbing the body of a **selected** note moves the whole
-                    // selection rigidly; grabbing an unselected one drops the
-                    // selection first (the single-note gesture, as before).
-                    Some(nh) => {
-                        let press_time = pianoroll::time_at(h.grid, &nav, 0.0, cx as f32);
-                        if nh.part == pianoroll::NotePart::Body {
-                            let orig =
-                                interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
-                                    if !sel.contains(&nh.index) {
-                                        sel.clear();
-                                        return Vec::new();
-                                    }
-                                    // The grabbed note's snapshot leads (the
-                                    // snap anchor).
-                                    let mut idx = sel.clone();
-                                    idx.retain(|&i| i != nh.index);
-                                    idx.insert(0, nh.index);
-                                    idx.iter()
-                                        .filter_map(|&i| {
-                                            notes.get(i).map(|n| (i, n.start, n.pitch))
-                                        })
-                                        .collect::<Vec<_>>()
-                                })
-                                .unwrap_or_default();
-                            if !orig.is_empty() {
-                                let press_pitch =
-                                    pianoroll::y_to_pitch(cy as f32, h.lo, h.hi, h.grid);
-                                self.drag = Some(Drag::NoteBlock {
-                                    id,
-                                    grid: h.grid,
-                                    nav_start: h.nav.start,
-                                    nav_len: h.nav.len,
-                                    lo: h.lo,
-                                    hi: h.hi,
-                                    press_time,
-                                    press_pitch,
-                                    snap: h.snap,
-                                    orig,
-                                });
-                                return;
-                            }
-                        }
-                        let (orig_start, orig_dur) =
-                            note_at(host, def_id, id, nh.index).unwrap_or((0.0, 0.0));
-                        self.drag = Some(Drag::Note {
-                            id,
-                            index: nh.index,
-                            part: nh.part,
-                            grid: h.grid,
-                            nav_start: h.nav.start,
-                            nav_len: h.nav.len,
-                            lo: h.lo,
-                            hi: h.hi,
-                            press_time,
-                            orig_start,
-                            orig_dur,
-                            snap: h.snap,
-                        });
-                    }
-                    // Empty grid: plain drag selects (the heavy-view
-                    // convention), and the marquee doubles as the note
-                    // selection — the time span restricted in pitch.
-                    None => {
-                        if let Some((start, len, _)) = nav_of(host, id) {
-                            let anchor = interact::sample_at(
-                                start,
-                                len,
-                                h.grid.x as f64,
-                                h.grid.w as f64,
-                                cx,
-                            );
-                            set_selection(host, out, def_id, id, anchor, anchor);
-                            let anchor_pitch = pianoroll::y_to_pitch(cy as f32, h.lo, h.hi, h.grid);
-                            // The marquee restarts: the previous set drops.
-                            interact::pianoroll_state_edit(host, def_id, id, |_, sel| sel.clear());
-                            self.drag = Some(Drag::SelectNotes {
+                // Move (body) or resize (edge) the note under the cursor.
+                // Grabbing the body of a **selected** note moves the whole
+                // selection rigidly; grabbing an unselected one drops the
+                // selection first (the single-note gesture, as before). Empty
+                // grid is nothing of the element's: the press goes back to the
+                // roll's own plan, whose plain drag sweeps the selection --
+                // the shared time span, restricted in pitch.
+                if let Some(nh) = h.note {
+                    let press_time = pianoroll::time_at(h.grid, &nav, 0.0, cx as f32);
+                    if nh.part == pianoroll::NotePart::Body {
+                        let orig =
+                            interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
+                                if !sel.contains(&nh.index) {
+                                    sel.clear();
+                                    return Vec::new();
+                                }
+                                // The grabbed note's snapshot leads (the
+                                // snap anchor).
+                                let mut idx = sel.clone();
+                                idx.retain(|&i| i != nh.index);
+                                idx.insert(0, nh.index);
+                                idx.iter()
+                                    .filter_map(|&i| notes.get(i).map(|n| (i, n.start, n.pitch)))
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        if !orig.is_empty() {
+                            let press_pitch = pianoroll::y_to_pitch(cy as f32, h.lo, h.hi, h.grid);
+                            self.drag = Some(Drag::NoteBlock {
                                 id,
                                 grid: h.grid,
-                                nav_start: start,
-                                nav_len: len,
+                                nav_start: h.nav.start,
+                                nav_len: h.nav.len,
                                 lo: h.lo,
                                 hi: h.hi,
-                                anchor,
-                                anchor_pitch,
+                                press_time,
+                                press_pitch,
+                                snap: h.snap,
+                                orig,
                             });
-                            out.push(GestureEffect::Redraw(def_id));
+                            return;
                         }
                     }
+                    let (orig_start, orig_dur) =
+                        note_at(host, def_id, id, nh.index).unwrap_or((0.0, 0.0));
+                    self.drag = Some(Drag::Note {
+                        id,
+                        index: nh.index,
+                        part: nh.part,
+                        grid: h.grid,
+                        nav_start: h.nav.start,
+                        nav_len: h.nav.len,
+                        lo: h.lo,
+                        hi: h.hi,
+                        press_time,
+                        orig_start,
+                        orig_dur,
+                        snap: h.snap,
+                    });
                 }
             }
             interact::PrRegion::Velocity => {
@@ -2374,11 +2317,6 @@ fn set_scroll_view(
 fn nav(host: &Host, id: i32) -> Option<(f64, f64, usize)> {
     host.timeline_nav(id)
         .map(|(nav, total)| (nav.start, nav.len, total))
-}
-
-/// Alias of [`nav`] where the local name `nav` is already a `View`.
-fn nav_of(host: &Host, id: i32) -> Option<(f64, f64, usize)> {
-    nav(host, id)
 }
 
 /// A piano-roll note's current `(start, dur)` in the host tree.
@@ -3312,6 +3250,175 @@ mod tests {
             (start + len / 2.0 - 0.5).abs() < 1e-9,
             "the window stays centred on zero: got ({start}, {len})"
         );
+    }
+
+    /// The container's plan decides, and the element takes what it is handed:
+    /// on a lane, the clip under the cursor moves, empty lane space locates the
+    /// transport, and the header — beside the axis, on no position at all —
+    /// does neither.
+    #[test]
+    fn a_lanes_plan_grabs_the_clip_first_and_locates_where_there_is_none() {
+        let mut host = lane_host();
+        host.sync_track_totals();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 800, 200);
+        let body = {
+            let h = interact::hit(&host, 1, 800, 200, 400.0, 100.0, &|_, _| 1).unwrap();
+            interact::time_of(&h.chain).unwrap().1.body
+        };
+        let midy = (body.y + body.h / 2.0) as f64;
+
+        // Over the first clip (the axis spans 0..10000 samples over the body):
+        // the element wins, and the drag moves it.
+        let on_clip = body.x as f64 + body.w as f64 * 0.02;
+        g.press(&mut host, &ctx, on_clip, midy, &mut || false);
+        assert!(g.dragging(), "the clip under the cursor was grabbed");
+        g.release(&mut host, &ctx, on_clip, midy);
+
+        // Empty lane space: the element declines and the lane's own plan
+        // locates the transport there.
+        let empty = body.x as f64 + body.w as f64 * 0.5;
+        let effects = g.press(&mut host, &ctx, empty, midy, &mut || false);
+        assert!(has_emit_tag(&effects, 70, "locate"));
+        assert!(!g.dragging());
+
+        // The header strip, left of the axis: no clip, no position, no locate.
+        let effects = g.press(&mut host, &ctx, body.x as f64 - 10.0, midy, &mut || false);
+        assert!(
+            !has_emit_tag(&effects, 70, "locate"),
+            "a press beside the axis names no time"
+        );
+    }
+
+    /// Shift+drag pans, on every timeline view, because the *axis* claims it
+    /// before the widget drawn on it ever sees the press.
+    #[test]
+    fn shift_drag_pans_whatever_timeline_view_is_under_it() {
+        for view in [
+            r#"{"id":80,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}"#,
+            r#"{"id":80,"type":"track","label":"lane","children":[
+                   {"id":81,"type":"clip","offset":0.0,"dur":1000.0}]}"#,
+            r#"{"id":80,"type":"pianoroll","min":48.0,"max":72.0,"notes":[0.0,500.0,60.0,100,0]}"#,
+            r#"{"id":80,"type":"timeruler"}"#,
+        ] {
+            let mut host = host_from(&format!(
+                r#"{{"type":"window","margin":0,"children":[{view}]}}"#
+            ));
+            host.set_timeline_total(80, 10000);
+            host.zoom_timeline(80, 0.25, 0.5); // leave room to pan in both directions
+            let start_before = host.timeline_nav(80).unwrap().0.start;
+            let mut g = Gestures::default();
+            let mut ctx = GestureCtx::new(1, 800, 200);
+            ctx.shift = true;
+            // Near the top edge, where a free-standing ruler (the shortest of
+            // the four) also lands.
+            g.press(&mut host, &ctx, 500.0, 8.0, &mut || false);
+            assert!(g.dragging(), "shift+press on {view} started no drag");
+            g.drag_to(&mut host, &ctx, 300.0, 8.0);
+            let start_after = host.timeline_nav(80).unwrap().0.start;
+            assert!(
+                start_after > start_before,
+                "dragging left pans the axis right on {view}"
+            );
+        }
+    }
+
+    /// A sweep on the roll's grid is one marquee: the time span drives the
+    /// shared selection every linked view follows, and the rectangle it covers
+    /// in time x pitch picks the notes.
+    #[test]
+    fn a_sweep_on_the_roll_selects_the_time_span_and_the_notes_inside_it() {
+        let mut host = host_from(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":90,"type":"pianoroll","min":48.0,"max":72.0,
+                 "notes":[0.0,400.0,60.0,100,0, 6000.0,400.0,61.0,100,0]}]}"#,
+        );
+        host.set_timeline_total(90, 10000);
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 800, 400);
+        let (grid, lo, hi) = {
+            let h = interact::hit(&host, 1, 800, 400, 400.0, 100.0, &|_, _| 1).unwrap();
+            let axis = interact::time_of(&h.chain).unwrap().1;
+            let (lo, hi) = axis.y.unwrap().window.unwrap();
+            (axis.body, lo, hi)
+        };
+        // Sweep the first tenth of the axis, over every pitch the window shows.
+        let x0 = grid.x as f64 + 1.0;
+        let x1 = grid.x as f64 + grid.w as f64 * 0.1;
+        let effects = g.press(
+            &mut host,
+            &ctx,
+            x0,
+            (grid.y + grid.h) as f64 - 1.0,
+            &mut || false,
+        );
+        assert!(has_emit_tag(&effects, 90, "selection"));
+        g.drag_to(&mut host, &ctx, x1, grid.y as f64 + 1.0);
+        let key = host.timeline_key(90).unwrap();
+        assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
+        assert_eq!(
+            selected_notes(&host, 90),
+            vec![0],
+            "only the note inside the swept rectangle ({lo}..{hi})"
+        );
+    }
+
+    /// The multi-note selection of a `pianoroll`.
+    fn selected_notes(host: &Host, id: i32) -> Vec<usize> {
+        match &host.window_def(1).unwrap().find(id).unwrap().kind {
+            WidgetKind::PianoRoll { selected, .. } => selected.clone(),
+            other => panic!("not a roll: {other:?}"),
+        }
+    }
+
+    /// The table is the container's, and the wire can set it: a waveform told
+    /// to pan on a plain drag pans, with no element touched.
+    #[test]
+    fn the_gestures_prop_repoints_a_chord_without_touching_the_element() {
+        let mut host = host_from(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":95,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"base_bucket":2,
+                 "gestures":{"drag":"pan","shift":"select"}}]}"#,
+        );
+        host.set_timeline_total(95, 10000);
+        host.zoom_timeline(95, 0.25, 0.5);
+        let start_before = host.timeline_nav(95).unwrap().0.start;
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 800, 300);
+        // Plain drag: pans, and never touches the selection.
+        g.press(&mut host, &ctx, 500.0, 150.0, &mut || false);
+        g.drag_to(&mut host, &ctx, 300.0, 150.0);
+        assert!(host.timeline_nav(95).unwrap().0.start > start_before);
+        let key = host.timeline_key(95).unwrap();
+        assert_eq!(host.timelines().state(key).unwrap().sel_len, 0.0);
+        g.release(&mut host, &ctx, 300.0, 150.0);
+        // ...and Shift now does what a plain drag used to.
+        let mut ctx = GestureCtx::new(1, 800, 300);
+        ctx.shift = true;
+        g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+        g.drag_to(&mut host, &ctx, 600.0, 150.0);
+        assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
+    }
+
+    /// ...and a live `/gui_set` moves it, on top of the kind's defaults: the
+    /// chords it does not name keep them.
+    #[test]
+    fn a_gui_set_of_the_table_keeps_the_chords_it_does_not_name() {
+        let mut host = host_from(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":96,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+        );
+        host.set_timeline_total(96, 10000);
+        set_prop(&mut host, 96, "gestures", r#"{"drag":"locate"}"#);
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 800, 300);
+        let effects = g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+        assert!(has_emit_tag(&effects, 96, "locate"), "the set took effect");
+        // Shift was not named, so it still pans.
+        let mut ctx = GestureCtx::new(1, 800, 300);
+        ctx.shift = true;
+        g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+        assert!(g.dragging(), "the default shift plan survived the set");
     }
 
     // --- multitrack lanes: the edge auto-scroll ---

@@ -436,6 +436,212 @@ impl Axis {
     }
 }
 
+/// One thing a **container** does with a pointer press on it, independent of
+/// what is drawn inside it.
+///
+/// These are the gestures that belong to the coordinate system rather than to
+/// the element: panning is panning whether the axis carries a waveform, a lane
+/// of clips or a piano-roll, and a container that owns an axis owns them all.
+/// [`GestureStep::Element`] is where the element under the cursor gets its
+/// turn — a note dragged, a clip grabbed, a knob turned — which is why a plan
+/// is an *order* rather than a single action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GestureStep {
+    /// Hand the press to whatever is under the cursor: the widget the hit
+    /// found, or — inside a container that draws its contents rather than
+    /// laying them out — the clip, note or box it placed there. It may decline
+    /// (empty space), and then the plan goes on.
+    Element,
+    /// Pan the container's axis: time on a timeline, the plane on a workspace.
+    Pan,
+    /// Sweep a selection: the shared time selection on a timeline (restricted
+    /// in pitch where the axis has a vertical one), the marquee on a canvas.
+    Select,
+    /// Put the transport's cursor under the pointer (a timeline locate).
+    Locate,
+}
+
+impl GestureStep {
+    fn from_str(s: &str) -> Option<GestureStep> {
+        Some(match s {
+            "element" => GestureStep::Element,
+            "pan" => GestureStep::Pan,
+            "select" => GestureStep::Select,
+            "locate" => GestureStep::Locate,
+            _ => return None,
+        })
+    }
+}
+
+/// What one modifier chord does on a container: an ordered plan of up to three
+/// steps, each of which may decline, the first that consumes the press winning.
+///
+/// The order is the whole point. `[Element, Locate]` is a multitrack lane —
+/// grab the clip under the cursor, and if there is none, locate the transport;
+/// `[Select]` is a waveform, which has nothing under the cursor to grab. A plan
+/// that consumes nothing falls **outward** to the enclosing container's plan,
+/// which is how Shift+drag on a patcher's empty canvas still pans the workspace
+/// around it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GesturePlan([Option<GestureStep>; 3]);
+
+impl GesturePlan {
+    /// The plan's steps, in order.
+    pub fn steps(&self) -> impl Iterator<Item = GestureStep> + '_ {
+        self.0.iter().flatten().copied()
+    }
+
+    /// A plan from its steps (a longer list is truncated).
+    fn of(steps: &[GestureStep]) -> GesturePlan {
+        let mut plan = GesturePlan::default();
+        for (slot, step) in plan.0.iter_mut().zip(steps) {
+            *slot = Some(*step);
+        }
+        plan
+    }
+
+    /// Parses a plan's wire form: the step names in order, separated by
+    /// whitespace or commas (`"element locate"`). `"none"` (or an empty
+    /// string) is the plan that does nothing, so a container's default can be
+    /// switched off. An unknown name makes the whole value invalid.
+    fn parse(s: &str) -> Option<GesturePlan> {
+        let mut plan = GesturePlan::default();
+        let mut slots = plan.0.iter_mut();
+        for name in s.split([' ', ',', '\t']).filter(|t| !t.is_empty()) {
+            if name == "none" {
+                continue;
+            }
+            *slots.next()? = Some(GestureStep::from_str(name)?);
+        }
+        Some(plan)
+    }
+}
+
+/// A container's **gesture table**: which plan each modifier chord runs.
+///
+/// Every container has one, defaulted from what it is ([`GestureMap::of_kind`])
+/// and overridable from the wire (the `gestures` prop), so a timeline can be
+/// made to pan on a plain drag without touching any element's code. The chords
+/// are read in order — `ctrl`, `alt`, `shift`, then plain — so a press with
+/// several modifiers held resolves to exactly one plan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GestureMap {
+    pub plain: GesturePlan,
+    pub shift: GesturePlan,
+    pub ctrl: GesturePlan,
+    pub alt: GesturePlan,
+}
+
+impl GestureMap {
+    /// The plan for a chord (`ctrl` and `alt` win over `shift`, which wins over
+    /// the plain drag).
+    pub fn plan(&self, shift: bool, ctrl: bool, alt: bool) -> GesturePlan {
+        if ctrl {
+            self.ctrl
+        } else if alt {
+            self.alt
+        } else if shift {
+            self.shift
+        } else {
+            self.plain
+        }
+    }
+
+    /// The table a container of this kind carries unless the wire replaces it.
+    ///
+    /// The timeline views differ only in what a plain drag is for: a waveform
+    /// has nothing placed on its axis, so it selects; a lane and a roll hand
+    /// the press to the clip or note first; a free-standing ruler is a scrub
+    /// strip. Shift pans on all of them — that is the convention the whole
+    /// track shares — and a workspace pans with whatever is left over.
+    pub fn of_kind(kind: &WidgetKind) -> GestureMap {
+        use GestureStep::*;
+        let (plain, shift, ctrl, alt): (&[_], &[_], &[_], &[_]) = match kind {
+            WidgetKind::Track { .. } => (
+                &[Element, Locate],
+                &[Pan],
+                &[Element, Locate],
+                &[Element, Locate],
+            ),
+            WidgetKind::PianoRoll { .. } => {
+                (&[Element, Select], &[Pan], &[Element, Select], &[Element])
+            }
+            WidgetKind::TimeRuler { .. } => (&[Locate], &[Pan], &[Locate], &[Locate]),
+            WidgetKind::Waveform { .. } | WidgetKind::Spectrogram { .. } => {
+                (&[Select], &[Pan], &[Select], &[Select])
+            }
+            // The patcher: a plain drag on the empty canvas sweeps the box
+            // marquee, Shift leaves the press to the workspace under it.
+            WidgetKind::Patch { .. } => (
+                &[Element, Select],
+                &[Element],
+                &[Element, Select],
+                &[Element, Select],
+            ),
+            // A workspace claims nothing: whatever no element and no inner
+            // container took pans the plane.
+            WidgetKind::Scroll { .. } => (
+                &[Element, Pan],
+                &[Element, Pan],
+                &[Element, Pan],
+                &[Element, Pan],
+            ),
+            _ => (&[Element], &[Element], &[Element], &[Element]),
+        };
+        GestureMap {
+            plain: GesturePlan::of(plain),
+            shift: GesturePlan::of(shift),
+            ctrl: GesturePlan::of(ctrl),
+            alt: GesturePlan::of(alt),
+        }
+    }
+
+    /// Overlays the `gestures` prop on this table: an object keyed by chord
+    /// (`drag`/`shift`/`ctrl`/`alt`), each value a plan (`"element locate"`).
+    /// A bare string sets the plain drag alone. Returns whether the value was
+    /// usable at all; an unreadable chord is warned about and skipped, so one
+    /// typo does not drop the rest of the table.
+    fn overlay(&mut self, v: &Value) -> bool {
+        // A string is either a bare plan for the plain drag or the **scalar
+        // carrier** of the table (the `theme`/`points` convention, which is how
+        // a `/gui_set` sends an object).
+        let carried;
+        let table = match v {
+            Value::Object(table) => table,
+            Value::String(s) => match serde_json::from_str::<Value>(s) {
+                Ok(Value::Object(t)) => {
+                    carried = t;
+                    &carried
+                }
+                _ => {
+                    return match GesturePlan::parse(s) {
+                        Some(plan) => {
+                            self.plain = plan;
+                            true
+                        }
+                        None => false,
+                    };
+                }
+            },
+            _ => return false,
+        };
+        for (chord, value) in table {
+            let Some(plan) = value.as_str().and_then(GesturePlan::parse) else {
+                tracing::warn!("gestures: unreadable plan for {chord:?}");
+                continue;
+            };
+            match chord.as_str() {
+                "drag" | "plain" => self.plain = plan,
+                "shift" => self.shift = plan,
+                "ctrl" => self.ctrl = plan,
+                "alt" => self.alt = plan,
+                other => tracing::warn!("gestures: unknown chord {other:?}"),
+            }
+        }
+        true
+    }
+}
+
 /// A `scroll` container's 2D window onto its virtual content area: the pan
 /// offsets and the scale (all view state, settable via `/gui_set` and emitted
 /// as the `"view"` payload when a gesture moves them), plus the configuration
@@ -1142,6 +1348,11 @@ pub struct Widget {
     /// roles that carry this widget's function (see
     /// [`Theme::accent_seeded`](super::theme::Theme::accent_seeded)).
     pub color: Option<super::paint::Color>,
+    /// The `gestures` prop: the container's own (chord → plan) table, replacing
+    /// the default its kind carries ([`GestureMap::of_kind`]). `None` on the
+    /// overwhelming majority of widgets, which are not containers and whose
+    /// press is the element's.
+    pub gestures: Option<GestureMap>,
     /// The resolved theme this widget draws with, produced at mutation points
     /// by [`resolve_themes`] (an [`Arc`] clone per widget, so the per-frame
     /// path reads exactly one theme and pays nothing). `None` until the first
@@ -1217,10 +1428,15 @@ impl Widget {
                 .collect::<Result<Vec<_>, _>>()?,
             _ => Vec::new(),
         };
+        let gestures = node.props.get("gestures").and_then(|v| {
+            let mut map = GestureMap::of_kind(&kind);
+            map.overlay(v).then_some(map)
+        });
         Ok(Widget {
             id,
             kind,
             place: Place::parse(&node.props),
+            gestures,
             theme_over: node.props.get("theme").and_then(Value::as_object).cloned(),
             color: node
                 .props
@@ -1277,6 +1493,27 @@ impl Widget {
             }
             _ => false,
         }
+    }
+
+    /// This widget's gesture table: the `gestures` prop when it carries one,
+    /// else the default its kind implies. The one door the press walk reads, so
+    /// a container never has to know whether it was configured.
+    pub fn gesture_map(&self) -> GestureMap {
+        self.gestures
+            .unwrap_or_else(|| GestureMap::of_kind(&self.kind))
+    }
+
+    /// Applies a `/gui_set gestures` to this container: the same overlay the
+    /// prop takes at build time, on top of the kind's defaults — so a set names
+    /// only the chords it changes and an empty table restores the defaults.
+    /// Returns whether the value was usable.
+    pub fn gestures_apply(&mut self, v: &Value) -> bool {
+        let mut map = GestureMap::of_kind(&self.kind);
+        if !map.overlay(v) {
+            return false;
+        }
+        self.gestures = Some(map);
+        true
     }
 
     /// Whether this is the heavy waveform view (a convenience for the renderer).
