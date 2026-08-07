@@ -30,6 +30,7 @@ use crate::host::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_l
 use crate::host::nodetree::NodeTree;
 use crate::host::paint::Painter;
 use crate::host::spectrum::SpectrumState;
+use crate::host::timeline::group_key;
 use crate::host::widget::{Widget, WidgetKind};
 use crate::host::{BusSource, ClientId, GUI_EVENT, Host, HostEffect};
 use crate::view::Renderers;
@@ -239,7 +240,8 @@ impl App {
     /// (time-driven, always), or a meter/scope with a shared segment to feed it.
     fn window_is_animated(&self, def_id: i32) -> bool {
         self.host.window_def(def_id).is_some_and(|tree| {
-            tree_has_canvas(tree) || (self.shm.is_some() && tree_has_live_widget(tree))
+            tree_has_canvas(tree)
+                || (self.shm.is_some() && tree_has_live_widget(tree, self.host.timelines()))
         })
     }
 
@@ -732,12 +734,17 @@ impl App {
     }
 
     /// The shared playhead's current sample for a widget while it is running
-    /// (`playhead_at` anchored to the engine clock), else `None`.
+    /// (`playhead_at` anchored to the engine clock), else `None`. It is the
+    /// widget's navigation group that is running or not — the recording keeps
+    /// time with what the lanes draw, which is the group's sweep.
     pub(super) fn playhead_sample(&self, def_id: i32, id: i32) -> Option<f64> {
         let tree = self.host.window_def(def_id)?;
         let e = tree.find(id)?.kind.editor()?;
         let clock = self.shm.as_ref().map_or(0.0, |s| s.sample_clock());
-        e.swept_at(clock)
+        self.host
+            .timelines()
+            .state(group_key(id, e.link))?
+            .swept_at(clock)
     }
 
     /// A piano-roll's `snap` grid (0 when none or not a roll).

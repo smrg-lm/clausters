@@ -31,7 +31,7 @@ use super::paint::{Mesh, Painter};
 use super::ruler::{self, TimeUnit};
 use super::spectrum::SpectrumState;
 use super::theme::{Theme, with_alpha};
-use super::timeline::{TimelineGroups, group_key};
+use super::timeline::{GroupState, TimelineGroups, group_key};
 use super::widget::{EditorProps, Rate, Ruler, RulerY, Widget, WidgetKind};
 use super::{
     BusSource, bpf, controls, live, meters, patch, phasescope, piano, pianoroll, plot, spectrum,
@@ -433,14 +433,21 @@ impl Default for FrameInputs<'_> {
     }
 }
 
-/// The navigation window a placed timeline view draws: its group's shared
-/// window, or the full extent of its own data when it is in no group yet (the
-/// defensive fallback; `total` is the slot's sample count).
-fn nav_for(inputs: &FrameInputs, item: &TimelineItem, total: usize) -> View {
-    inputs
-        .timelines
-        .nav(group_key(item.id, item.editor.link))
-        .unwrap_or_else(|| View::full(total))
+/// The shared state a placed timeline widget draws with — the window, the
+/// selection and the playhead of its navigation group, which is where all
+/// three live. A widget in no group yet (nothing registered its data) falls
+/// back to its own def-time props over `fallback`, the window it would have
+/// seeded: the same values the group is about to take.
+fn chrome_for(
+    inputs: &FrameInputs,
+    id: i32,
+    editor: &EditorProps,
+    fallback: impl FnOnce() -> View,
+) -> GroupState {
+    match inputs.timelines.state(group_key(id, editor.link)) {
+        Some(state) => *state,
+        None => GroupState::seed(editor, fallback()),
+    }
 }
 
 /// The **placed** navigation window a member's own data is drawn through: the
@@ -560,20 +567,21 @@ fn pitch_window(item: &PianoRollItem) -> (f32, f32) {
 
 /// Draws a `pianoroll`: keyboard gutter, note grid, the velocity/OSC lanes and
 /// the time ruler into `mesh`; the selection band and the playhead into `over`.
-/// Everything rides the shared `nav` window, so it zooms/pans/plays in lockstep
-/// with linked sibling views.
+/// Everything rides `chrome`, its navigation group's shared window, selection
+/// and playhead, so it zooms/pans/plays in lockstep with linked sibling views.
 #[allow(clippy::too_many_arguments)] // one view's flat draw inputs
 fn draw_pianoroll_item(
     mesh: &mut Mesh,
     over: &mut Mesh,
     item: &PianoRollItem,
-    nav: &View,
+    chrome: &GroupState,
     rate: f64,
     sample_clock: f64,
     cursor: Option<(f64, f64)>,
     m: &Metrics,
     theme: &Theme,
 ) {
+    let nav = &chrome.nav;
     let ruler_on = item.editor.ruler != Ruler::Off;
     let r = pianoroll::regions(item.rect, ruler_on, item.osc_lane, item.velocity_lane, m);
     let (lo, hi) = pitch_window(item);
@@ -625,7 +633,7 @@ fn draw_pianoroll_item(
         );
     }
     // Selection band over the grid.
-    if let Some((start, len)) = item.editor.selection() {
+    if let Some((start, len)) = chrome.selection() {
         let x0 = sample_to_x(start, nav, r.grid).clamp(r.grid.x, r.grid.x + r.grid.w);
         let x1 = sample_to_x(start + len, nav, r.grid).clamp(r.grid.x, r.grid.x + r.grid.w);
         if x1 > x0 {
@@ -644,7 +652,7 @@ fn draw_pianoroll_item(
         }
     }
     // Playhead: swept by the engine clock while playing, else the static cursor.
-    if let Some(pos) = item.editor.head_at(sample_clock)
+    if let Some(pos) = chrome.head_at(sample_clock)
         && pos >= nav.start
         && pos <= nav.start + nav.len
     {
@@ -684,8 +692,9 @@ fn draw_pianoroll_item(
     }
 }
 
-/// Draws the selection overlay and playhead of one timeline view, plus its
-/// cursor readout when the pointer is inside the body. `lanes` is the lane
+/// Draws the selection overlay and playhead of one timeline view — both read
+/// off `chrome`, its navigation group's shared state — plus its cursor readout
+/// when the pointer is inside the body. `lanes` is the lane
 /// count of the stacked layout (1 when overlaid), so the vertical readout is
 /// computed within the lane under the cursor.
 #[allow(clippy::too_many_arguments)] // one chrome pass, all inputs by value
@@ -693,7 +702,7 @@ fn draw_editor_overlay(
     mesh: &mut Mesh,
     item: &TimelineItem,
     body: Rect,
-    nav: &View,
+    chrome: &GroupState,
     rate: f64,
     lanes: usize,
     inputs: &FrameInputs,
@@ -701,9 +710,10 @@ fn draw_editor_overlay(
     theme: &Theme,
 ) {
     let m = inputs.metrics;
+    let nav = &chrome.nav;
     mesh.border(body, m.divider_w, theme.view_frame);
     // Selection: a translucent band with hard edges, clipped to the body.
-    if let Some((start, len)) = item.editor.selection() {
+    if let Some((start, len)) = chrome.selection() {
         let x0 = sample_to_x(start, nav, body).clamp(body.x, body.x + body.w);
         let x1 = sample_to_x(start + len, nav, body).clamp(body.x, body.x + body.w);
         if x1 > x0 {
@@ -723,7 +733,7 @@ fn draw_editor_overlay(
     }
     // Playhead: the engine clock relative to the widget's origin while playing,
     // else the static cursor of a located, stopped transport.
-    if let Some(pos) = item.editor.head_at(inputs.sample_clock)
+    if let Some(pos) = chrome.head_at(inputs.sample_clock)
         && pos >= nav.start
         && pos <= nav.start + nav.len
     {
@@ -1425,7 +1435,10 @@ fn draw_timeline_meshes(
                     over.border(body, 1.0, th.view_frame);
                     continue;
                 };
-                let nav = nav_for(inputs, item, slot.view.total_samples());
+                let chrome = chrome_for(inputs, item.id, &item.editor, || {
+                    View::full(slot.view.total_samples())
+                });
+                let nav = chrome.nav;
                 let rate = if item.editor.sample_rate > 0.0 {
                     item.editor.sample_rate
                 } else {
@@ -1455,7 +1468,7 @@ fn draw_timeline_meshes(
                     over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), th.lane_divider);
                 }
                 draw_editor_overlay(
-                    &mut *over, item, body, &nav, rate, draw_lanes, inputs, None, th,
+                    &mut *over, item, body, &chrome, rate, draw_lanes, inputs, None, th,
                 );
             }
             TimelineKind::Spectrogram { freq_scale, .. } => {
@@ -1463,7 +1476,10 @@ fn draw_timeline_meshes(
                     over.border(body, 1.0, th.view_frame);
                     continue;
                 };
-                let nav = nav_for(inputs, item, slot.total_samples());
+                let chrome = chrome_for(inputs, item.id, &item.editor, || {
+                    View::full(slot.total_samples())
+                });
+                let nav = chrome.nav;
                 let (nyquist, f_lo) = slot
                     .views
                     .first()
@@ -1505,7 +1521,7 @@ fn draw_timeline_meshes(
                     &mut *over,
                     item,
                     body,
-                    &nav,
+                    &chrome,
                     rate,
                     lanes,
                     inputs,
@@ -1587,10 +1603,7 @@ fn draw_static_meshes(
     for item in &collected.ruler_items {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let nav = inputs
-            .timelines
-            .nav(group_key(item.id, item.editor.link))
-            .unwrap_or_else(|| track::window_nav(tree));
+        let nav = chrome_for(inputs, item.id, &item.editor, || track::window_nav(tree)).nav;
         let rate = if item.editor.sample_rate > 0.0 {
             item.editor.sample_rate
         } else {
@@ -1611,10 +1624,8 @@ fn draw_static_meshes(
             mesh.set_clip(item.clip);
             over.set_clip(item.clip);
             let th = item.theme.as_deref().unwrap_or(theme);
-            let nav = inputs
-                .timelines
-                .nav(group_key(item.id, item.editor.link))
-                .unwrap_or(full);
+            let chrome = chrome_for(inputs, item.id, &item.editor, || full);
+            let nav = chrome.nav;
             let ruler_on = item.editor.ruler != Ruler::Off;
             track::draw(
                 &mut *mesh,
@@ -1640,7 +1651,7 @@ fn draw_static_meshes(
             // The playhead, over the clips: the engine clock as a timeline
             // position (`playhead_at` anchors timeline sample 0 to a clock
             // value), so it sweeps the lane as the composition plays.
-            if let Some(pos) = item.editor.head_at(inputs.sample_clock)
+            if let Some(pos) = chrome.head_at(inputs.sample_clock)
                 && let Some(x) = track::playhead_x(body, &nav, pos)
             {
                 over.rect(Rect::new(x, body.y, 1.5, body.h), th.playhead);
@@ -1655,19 +1666,16 @@ fn draw_static_meshes(
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let nav = inputs
-            .timelines
-            .nav(group_key(item.id, item.editor.link))
-            .unwrap_or_else(|| {
-                let mut span = 0.0f64;
-                for n in &item.notes {
-                    span = span.max(n.start + n.dur);
-                }
-                for m in &item.osc {
-                    span = span.max(m.time);
-                }
-                View::full(span.ceil().max(1.0) as usize)
-            });
+        let chrome = chrome_for(inputs, item.id, &item.editor, || {
+            let mut span = 0.0f64;
+            for n in &item.notes {
+                span = span.max(n.start + n.dur);
+            }
+            for m in &item.osc {
+                span = span.max(m.time);
+            }
+            View::full(span.ceil().max(1.0) as usize)
+        });
         let rate = if item.editor.sample_rate > 0.0 {
             item.editor.sample_rate
         } else {
@@ -1677,7 +1685,7 @@ fn draw_static_meshes(
             &mut *mesh,
             &mut *over,
             item,
-            &nav,
+            &chrome,
             rate,
             inputs.sample_clock,
             inputs.cursor,
@@ -1745,7 +1753,10 @@ pub(crate) fn render(
         match &item.kind {
             TimelineKind::Waveform { .. } => {
                 if let Some(slot) = waveforms.get_mut(&item.id) {
-                    let nav = nav_for(inputs, item, slot.view.total_samples());
+                    let nav = chrome_for(inputs, item.id, &item.editor, || {
+                        View::full(slot.view.total_samples())
+                    })
+                    .nav;
                     let nav = placed_nav(&nav, item.editor.offset);
                     slot.view
                         .set_amp_window(item.editor.y_view().0, item.editor.y_view().1);
@@ -1768,7 +1779,10 @@ pub(crate) fn render(
                 colormap,
             } => {
                 if let Some(slot) = spectrograms.get_mut(&item.id) {
-                    let nav = nav_for(inputs, item, slot.total_samples());
+                    let nav = chrome_for(inputs, item.id, &item.editor, || {
+                        View::full(slot.total_samples())
+                    })
+                    .nav;
                     let nav = placed_nav(&nav, item.editor.offset);
                     for view in &mut slot.views {
                         view.set_display(

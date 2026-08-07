@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use clausters_core::oscil;
 
 use super::BusSource;
+use super::timeline::{TimelineGroups, group_key};
 use super::widget::{Widget, WidgetKind};
 
 /// Most recent control-bus samples a `scope` keeps and plots.
@@ -124,13 +125,36 @@ pub(crate) fn collect_live_taps(widget: &Widget, out: &mut Vec<i32>) {
 /// any audio-tap consumer (scope/spectrum/phasescope), or a timeline view
 /// with an active playhead (its line tracks the engine clock every frame) —
 /// so the window animates.
-pub(crate) fn tree_has_live_widget(widget: &Widget) -> bool {
+pub(crate) fn tree_has_live_widget(widget: &Widget, groups: &TimelineGroups) -> bool {
     let mut taps = Vec::new();
     widget.kind.audio_buses_read(&mut taps);
     widget.kind.live_bus().is_some()
         || !taps.is_empty()
-        || widget.kind.has_playhead()
-        || widget.children.iter().any(tree_has_live_widget)
+        || has_playhead(widget, groups)
+        || widget
+            .children
+            .iter()
+            .any(|child| tree_has_live_widget(child, groups))
+}
+
+/// Whether `widget` shows a live playhead — so its window must animate, the
+/// line tracking the engine sample clock every frame. A timeline view has no
+/// anchor of its own: it draws its navigation group's, and only the group's
+/// props (its member's are the def-time seed) say whether one is running. A
+/// `score` carries its own and must be asked separately, or its cursor freezes
+/// where it was anchored.
+fn has_playhead(widget: &Widget, groups: &TimelineGroups) -> bool {
+    if let WidgetKind::Score(data) = &widget.kind {
+        return data.playhead_at >= 0.0;
+    }
+    let Some(editor) = widget.kind.editor() else {
+        return false;
+    };
+    let anchor = widget
+        .id
+        .and_then(|id| groups.state(group_key(id, editor.link)))
+        .map_or(editor.playhead_at, |state| state.playhead_at);
+    anchor >= 0.0
 }
 
 /// Whether a widget tree contains a view with an active playhead (a timeline
@@ -138,8 +162,12 @@ pub(crate) fn tree_has_live_widget(widget: &Widget) -> bool {
 /// The browser front polls the server clock (`/clock_query`) each tick only then;
 /// the native front reads the shm header, which needs no message at all.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
-pub(crate) fn tree_has_playhead(widget: &Widget) -> bool {
-    widget.kind.has_playhead() || widget.children.iter().any(tree_has_playhead)
+pub(crate) fn tree_has_playhead(widget: &Widget, groups: &TimelineGroups) -> bool {
+    has_playhead(widget, groups)
+        || widget
+            .children
+            .iter()
+            .any(|child| tree_has_playhead(child, groups))
 }
 
 /// Refreshes the aligned display window of every audio-rate scope in `tree`,
@@ -451,6 +479,7 @@ pub(crate) struct LiveDemand {
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) fn demand<'a>(
     trees: impl IntoIterator<Item = &'a Widget>,
+    groups: &TimelineGroups,
     sample_rate: f64,
 ) -> LiveDemand {
     let mut out = LiveDemand::default();
@@ -458,8 +487,8 @@ pub(crate) fn demand<'a>(
         collect_live_buses(tree, &mut out.buses);
         collect_live_taps(tree, &mut out.taps);
         out.tap_frames = out.tap_frames.max(tap_stream_frames(tree, sample_rate));
-        out.animated |= tree_has_canvas(tree) || tree_has_live_widget(tree);
-        out.playhead |= tree_has_playhead(tree);
+        out.animated |= tree_has_canvas(tree) || tree_has_live_widget(tree, groups);
+        out.playhead |= tree_has_playhead(tree, groups);
     }
     out.buses.sort_unstable();
     out.buses.dedup();
@@ -534,6 +563,13 @@ mod tests {
     use super::super::guidef::GuiNode;
     use super::*;
 
+    /// No navigation group registered: a timeline view then answers from its
+    /// own def-time props, and a `score` (which is in no group ever) from its
+    /// own either way.
+    fn groups() -> TimelineGroups {
+        TimelineGroups::default()
+    }
+
     fn tree(json: &str) -> Widget {
         let node = GuiNode::parse(json.as_bytes()).unwrap();
         Widget::from_node(1, &node, &[]).unwrap()
@@ -554,7 +590,7 @@ mod tests {
                 {"id":3,"type":"meter","bus":3,"rate":"control"},
                 {"id":4,"type":"meter","bus":1,"rate":"control"}]}"#,
         );
-        let d = demand([&one, &two], 48_000.0);
+        let d = demand([&one, &two], &groups(), 48_000.0);
         assert_eq!(d.buses, vec![1, 3, 9]);
         assert!(d.animated, "meters and scopes animate");
     }
@@ -570,11 +606,14 @@ mod tests {
         let hidden = tree(
             r#"{"type":"window","children":[{"id":2,"type":"meter","bus":4,"rate":"control"}]}"#,
         );
-        assert_eq!(demand([&shown, &hidden], 48_000.0).buses, vec![4, 9]);
-        assert_eq!(demand([&shown], 48_000.0).buses, vec![9]);
+        assert_eq!(
+            demand([&shown, &hidden], &groups(), 48_000.0).buses,
+            vec![4, 9]
+        );
+        assert_eq!(demand([&shown], &groups(), 48_000.0).buses, vec![9]);
         // Nothing drawing at all: no subscription and no frame clock.
         let none: [&Widget; 0] = [];
-        let quiet = demand(none, 48_000.0);
+        let quiet = demand(none, &groups(), 48_000.0);
         assert!(quiet.buses.is_empty() && !quiet.animated);
     }
 
@@ -583,7 +622,7 @@ mod tests {
     #[test]
     fn a_still_tree_does_not_animate() {
         let still = tree(r#"{"type":"window","children":[{"id":1,"type":"label","text":"hi"}]}"#);
-        let d = demand([&still], 48_000.0);
+        let d = demand([&still], &groups(), 48_000.0);
         assert!(d.buses.is_empty());
         assert!(!d.animated);
     }
@@ -613,15 +652,15 @@ mod tests {
             r#"{"type":"window","children":[{"type":"scroll","id":1,"children":[
                 {"id":2,"type":"score","vb":[100,50],"playhead_at":48000.0}]}]}"#,
         );
-        assert!(tree_has_live_widget(&anchored));
-        assert!(tree_has_playhead(&anchored));
+        assert!(tree_has_live_widget(&anchored, &groups()));
+        assert!(tree_has_playhead(&anchored, &groups()));
         // A static cursor (or none) needs no animation: it does not move.
         let still = tree(
             r#"{"type":"window","children":[
                 {"id":2,"type":"score","vb":[100,50],"playhead":250.0}]}"#,
         );
-        assert!(!tree_has_live_widget(&still));
-        assert!(!tree_has_playhead(&still));
+        assert!(!tree_has_live_widget(&still, &groups()));
+        assert!(!tree_has_playhead(&still, &groups()));
     }
 
     #[test]

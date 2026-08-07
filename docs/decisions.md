@@ -412,10 +412,12 @@ a loop plays would silently move what is heard, and a client that loops
 something *other* than the selection (a clip, a timeline range) would have no
 way to say so. The cost is one extra prop.
 
-It lives on the shared `EditorProps`, so `waveform`, `spectrogram`, `track`,
+It lives on the shared editor chrome, so `waveform`, `spectrogram`, `track`,
 `clip` and `pianoroll` get it at once, and it is **group-wide** like the anchor
 — linked views must wrap at the same place, or one file's waveform and
-spectrogram would draw the line in different spots. The `score` carries the
+spectrogram would draw the line in different spots. The navigation group is
+where it is *kept*, and every view reads it from there; a widget's own props
+only seed the group when it is first built. The `score` carries the
 same pair in **ms**, its own unit, since its cursor rides an engraved timemap
 rather than a sample axis. The static `playhead` keeps its meaning, and a client
 still sends **one** message per transport state change.

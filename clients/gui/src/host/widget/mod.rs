@@ -225,9 +225,10 @@ impl RulerY {
 /// `link` is the widget's **navigation group** (see `host::timeline`): every
 /// timeline view declaring the same link id shares one horizontal view,
 /// selection and playhead — a gesture or `/gui_set` on any member applies to
-/// all of them. Without a `link` the widget navigates alone. The selection
-/// and playhead fields here are the group's mirrored copy (the group is the
-/// single writer once the widget is live); only the y axis stays per-widget.
+/// all of them. Without a `link` the widget navigates alone. The selection and
+/// playhead fields here are the **def-time seed** of that group and nothing
+/// more: once the group exists it holds those values, every reader takes them
+/// from it, and these fields no longer move. Only the y axis stays per-widget.
 ///
 /// `offset` is the widget's **placement** on its group's shared timeline (in
 /// timeline sample units): the view's own data sample 0 sits at timeline
@@ -323,52 +324,6 @@ impl EditorProps {
         let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
         axis.set_span(self.y_start, self.y_len);
         axis.span()
-    }
-
-    /// The selection as `(start, len)` in samples, if one is active.
-    pub fn selection(&self) -> Option<(f64, f64)> {
-        (self.sel_len > 0.0).then_some((self.sel_start, self.sel_len))
-    }
-
-    /// Where the playhead stands, in this view's own sample units, for an
-    /// engine `sample_clock` — the one place the sweep is defined, so every
-    /// timeline view agrees.
-    ///
-    /// A transport that is *playing* anchors `playhead_at` and the line is
-    /// swept from Rust every frame with no message per frame; a *located,
-    /// stopped* one parks on the static `playhead`. `playhead_loop_len > 0`
-    /// wraps the sweep inside `[playhead_loop_start, +len)` — what a looping
-    /// region (an editor's "play selection", a looping clip) actually does —
-    /// and leaves the straight pass untouched otherwise.
-    pub fn head_at(&self, sample_clock: f64) -> Option<f64> {
-        self.swept_at(sample_clock)
-            .or_else(|| (self.playhead >= 0.0).then_some(self.playhead))
-    }
-
-    /// Where the *swept* playhead stands — `Some` only while a transport is
-    /// running (`playhead_at` anchored, the clock started), so a caller that
-    /// must tell playing from stopped keeps that distinction; [`head_at`] adds
-    /// the parked cursor on top.
-    ///
-    /// [`head_at`]: EditorProps::head_at
-    pub fn swept_at(&self, sample_clock: f64) -> Option<f64> {
-        if self.playhead_at < 0.0 || sample_clock <= 0.0 {
-            return None;
-        }
-        let swept = sample_clock - self.playhead_at;
-        Some(match self.playhead_loop() {
-            // `rem_euclid`, not `%`: a loop whose start sits past the anchor
-            // makes the first pass negative, and a negative remainder would
-            // park the line left of the region.
-            Some((start, len)) => start + (swept - start).rem_euclid(len),
-            None => swept,
-        })
-    }
-
-    /// The playhead's loop region as `(start, len)` in samples, if one is set.
-    pub fn playhead_loop(&self) -> Option<(f64, f64)> {
-        (self.playhead_loop_len > 0.0)
-            .then_some((self.playhead_loop_start.max(0.0), self.playhead_loop_len))
     }
 
     fn apply(&mut self, key: &str, v: &Value) -> bool {
@@ -1469,17 +1424,6 @@ impl WidgetKind {
         }
     }
 
-    /// Whether this widget shows a live playhead (so its window must animate:
-    /// the line tracks the engine sample clock every frame). The timeline views
-    /// carry theirs on the shared editor chrome; a `score` carries its own, and
-    /// must be asked separately or its cursor freezes where it was anchored.
-    pub fn has_playhead(&self) -> bool {
-        match self {
-            WidgetKind::Score(data) => data.playhead_at >= 0.0,
-            _ => self.editor().is_some_and(|e| e.playhead_at >= 0.0),
-        }
-    }
-
     /// The server group a `nodetree` widget mirrors, if this is one. The windowed
     /// front uses it to know which groups to query and which windows to refresh.
     pub fn node_tree_group(&self) -> Option<i32> {
@@ -1532,16 +1476,6 @@ mod tests {
         GuiNode::parse(json.as_bytes()).unwrap()
     }
 
-    /// The editor chrome of a parsed widget.
-    fn editor_of(json: &str) -> EditorProps {
-        Widget::from_node(1, &node(json), &[])
-            .unwrap()
-            .kind
-            .editor()
-            .cloned()
-            .unwrap()
-    }
-
     /// A plane's zoom is nameable *and* clearable: a positive number is the
     /// scale, and anything else — `0`, an empty string — puts it back to the
     /// default, which is the only way the wire can ask for a default it has no
@@ -1579,60 +1513,6 @@ mod tests {
                 "{cleared} restores the default"
             );
         }
-    }
-
-    #[test]
-    fn the_playhead_sweeps_straight_without_a_loop() {
-        let e = editor_of(r#"{"type":"waveform","data":[0.0],"playhead_at":1000.0}"#);
-        assert_eq!(e.playhead_loop(), None, "no loop by default");
-        assert_eq!(e.head_at(1500.0), Some(500.0));
-        // Past the end it keeps running: a straight pass is unbounded.
-        assert_eq!(e.head_at(9000.0), Some(8000.0));
-        // No clock yet, and no static cursor: nothing to draw.
-        assert_eq!(e.head_at(0.0), None);
-    }
-
-    #[test]
-    fn a_stopped_transport_parks_on_the_static_playhead() {
-        let e = editor_of(r#"{"type":"waveform","data":[0.0],"playhead":320.0}"#);
-        // The static cursor wins when no anchor is set, whatever the clock.
-        assert_eq!(e.head_at(0.0), Some(320.0));
-        assert_eq!(e.head_at(99_000.0), Some(320.0));
-    }
-
-    #[test]
-    fn the_playhead_wraps_inside_its_loop_region() {
-        let e = editor_of(
-            r#"{"type":"waveform","data":[0.0],"playhead_at":1000.0,
-                "playhead_loop_start":400.0,"playhead_loop_len":100.0}"#,
-        );
-        assert_eq!(e.playhead_loop(), Some((400.0, 100.0)));
-        // Inside the region the sweep is untouched.
-        assert_eq!(e.head_at(1450.0), Some(450.0));
-        // Past its end it wraps to the start, and keeps wrapping.
-        assert_eq!(e.head_at(1500.0), Some(400.0));
-        assert_eq!(e.head_at(1530.0), Some(430.0));
-        assert_eq!(e.head_at(1700.0), Some(400.0));
-        assert_eq!(e.head_at(1725.0), Some(425.0));
-        // Before the region — the anchor precedes the loop start, so the first
-        // pass runs up to it — the line still lands inside, never left of it.
-        for clock in [1001.0, 1100.0, 1399.0] {
-            let pos = e.head_at(clock).unwrap();
-            assert!(
-                (400.0..500.0).contains(&pos),
-                "clock {clock} put the line at {pos}, outside the region"
-            );
-        }
-    }
-
-    #[test]
-    fn a_non_positive_loop_length_is_the_straight_pass() {
-        let e = editor_of(
-            r#"{"type":"waveform","data":[0.0],"playhead_at":0.0,
-                "playhead_loop_start":400.0,"playhead_loop_len":0.0}"#,
-        );
-        assert_eq!(e.playhead_loop(), None);
-        assert_eq!(e.head_at(900.0), Some(900.0));
     }
 
     #[test]
@@ -1863,15 +1743,13 @@ mod tests {
         let plain = w.children[1].kind.editor().unwrap();
         assert_eq!(plain.ruler, Ruler::Off);
         assert!(plain.playhead_at < 0.0);
-        assert!(!w.children[1].kind.has_playhead());
-        // The chrome is live: `/gui_set` lands on the lane itself (a track is no
-        // navigation-group member, so it does not route through the group model).
+        // The chrome parses live too: `/gui_set` reaches these fields (what a
+        // lane *draws* is its navigation group's playhead, which these seed).
         assert!(
             w.children[1]
                 .kind
                 .apply("playhead_at", &serde_json::json!(96000.0))
         );
-        assert!(w.children[1].kind.has_playhead());
         assert_eq!(w.children[1].kind.editor().unwrap().playhead_at, 96000.0);
     }
 
@@ -2411,12 +2289,11 @@ mod tests {
                 assert!(*overlay);
                 assert_eq!(editor.ruler, Ruler::Samples);
                 assert_eq!(editor.sample_rate, 48_000.0);
-                assert_eq!(editor.selection(), Some((100.0, 50.0)));
+                assert_eq!((editor.sel_start, editor.sel_len), (100.0, 50.0));
                 assert_eq!(editor.playhead_at, 1000.0);
             }
             other => panic!("expected waveform, got {other:?}"),
         }
-        assert!(w.children[0].kind.has_playhead());
         assert!(w.children[0].is_timeline());
         // The vertical ruler defaults to the normalized amplitude axis.
         assert_eq!(w.children[0].kind.editor().unwrap().ruler_y, RulerY::Norm);
@@ -2430,8 +2307,8 @@ mod tests {
         assert!(wf.kind.apply("ruler", &Value::from("off")));
         assert!(!wf.kind.apply("ruler", &Value::from("nonesuch")));
         let editor = wf.kind.editor().unwrap();
-        assert_eq!(editor.selection(), None, "zero length clears it");
-        assert!(!wf.kind.has_playhead());
+        assert_eq!(editor.sel_len, 0.0, "zero length clears it");
+        assert!(editor.playhead_at < 0.0);
         assert_eq!(editor.ruler, Ruler::Off);
     }
 

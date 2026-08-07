@@ -26,10 +26,11 @@
 //! the same shared timeline, set through [`Host::set_timeline_offset`] — so a
 //! lane of clips and a pair of linked lanes are one model, not two.
 //!
-//! Selection and playhead are **mirrored** from the group into every member's
-//! `EditorProps` on each change, so the frame renderer, `has_playhead` and
-//! the readouts keep reading the widget tree they always read — the group is
-//! the single writer, the mirrors can never drift.
+//! Selection and playhead live in the group and **only** there: every reader
+//! — the frame renderer, the animation demand, the readouts — resolves the
+//! member's key and reads the shared state, so there is nothing to keep in
+//! step. A member's own `sel_*`/`playhead*` props are the *seed* a fresh
+//! group takes its def-time values from, and are inert from then on.
 
 use std::collections::HashMap;
 
@@ -59,7 +60,11 @@ pub fn group_key(widget_id: i32, link: Option<i32>) -> GroupKey {
 
 /// The shared state of one navigation group: the visible window, the
 /// selection and the playhead anchor, all in timeline sample units.
-#[derive(Clone, Debug)]
+///
+/// Every member reads this one value — it is what a linked view *is* — so it
+/// is `Copy`: a reader takes the state it draws with by value and the group
+/// stays the only place it is written.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GroupState {
     /// The visible horizontal window.
     pub nav: View,
@@ -81,11 +86,11 @@ pub struct GroupState {
 }
 
 impl GroupState {
-    /// A fresh group seeded from its first member's editor props (the def-time
-    /// selection/playhead), spanning `total` timeline samples.
-    fn seed(editor: &EditorProps, total: usize) -> GroupState {
+    /// A fresh group seeded from a member's editor props — the def-time
+    /// selection and playhead — over the window `nav`.
+    pub(crate) fn seed(editor: &EditorProps, nav: View) -> GroupState {
         GroupState {
-            nav: View::full(total),
+            nav,
             sel_start: editor.sel_start,
             sel_len: editor.sel_len,
             playhead_at: editor.playhead_at,
@@ -93,6 +98,52 @@ impl GroupState {
             playhead_loop_start: editor.playhead_loop_start,
             playhead_loop_len: editor.playhead_loop_len,
         }
+    }
+
+    /// The selection as `(start, len)` in timeline samples, if one is active.
+    pub fn selection(&self) -> Option<(f64, f64)> {
+        (self.sel_len > 0.0).then_some((self.sel_start, self.sel_len))
+    }
+
+    /// Where the playhead stands, in timeline sample units, for an engine
+    /// `sample_clock` — the one place the sweep is defined, so every member of
+    /// the group agrees.
+    ///
+    /// A transport that is *playing* anchors `playhead_at` and the line is
+    /// swept from Rust every frame with no message per frame; a *located,
+    /// stopped* one parks on the static `playhead`. `playhead_loop_len > 0`
+    /// wraps the sweep inside `[playhead_loop_start, +len)` — what a looping
+    /// region (an editor's "play selection", a looping clip) actually does —
+    /// and leaves the straight pass untouched otherwise.
+    pub fn head_at(&self, sample_clock: f64) -> Option<f64> {
+        self.swept_at(sample_clock)
+            .or_else(|| (self.playhead >= 0.0).then_some(self.playhead))
+    }
+
+    /// Where the *swept* playhead stands — `Some` only while a transport is
+    /// running (`playhead_at` anchored, the clock started), so a caller that
+    /// must tell playing from stopped keeps that distinction; [`head_at`] adds
+    /// the parked cursor on top.
+    ///
+    /// [`head_at`]: GroupState::head_at
+    pub fn swept_at(&self, sample_clock: f64) -> Option<f64> {
+        if self.playhead_at < 0.0 || sample_clock <= 0.0 {
+            return None;
+        }
+        let swept = sample_clock - self.playhead_at;
+        Some(match self.playhead_loop() {
+            // `rem_euclid`, not `%`: a loop whose start sits past the anchor
+            // makes the first pass negative, and a negative remainder would
+            // park the line left of the region.
+            Some((start, len)) => start + (swept - start).rem_euclid(len),
+            None => swept,
+        })
+    }
+
+    /// The playhead's loop region as `(start, len)` in samples, if one is set.
+    pub fn playhead_loop(&self) -> Option<(f64, f64)> {
+        (self.playhead_loop_len > 0.0)
+            .then_some((self.playhead_loop_start.max(0.0), self.playhead_loop_len))
     }
 }
 
@@ -486,8 +537,8 @@ impl Host {
     }
 
     /// Sets widget `id`'s group selection from the `/gui_set` `sel_start`/
-    /// `sel_len` keys (either alone keeps the other) and mirrors it into every
-    /// member's editor props. Returns the roots to repaint.
+    /// `sel_len` keys (either alone keeps the other). Returns the roots to
+    /// repaint — every member draws the group's selection, so they all do.
     pub fn set_timeline_selection(
         &mut self,
         id: i32,
@@ -506,12 +557,11 @@ impl Host {
         if let Some(len) = len {
             state.sel_len = len;
         }
-        self.mirror_timeline_group(key);
         self.timeline_roots(key)
     }
 
-    /// Sets widget `id`'s group playhead anchor and mirrors it into every
-    /// member's editor props. Returns the roots to repaint.
+    /// Sets widget `id`'s group playhead anchor. Returns the roots to repaint
+    /// (the anchor is group-wide: every member sweeps from it).
     pub fn set_timeline_playhead(&mut self, id: i32, at: f64) -> Vec<i32> {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
@@ -520,12 +570,11 @@ impl Host {
             return Vec::new();
         };
         state.playhead_at = at;
-        self.mirror_timeline_group(key);
         self.timeline_roots(key)
     }
 
     /// Sets the group's **static cursor** — where a located, stopped transport
-    /// sits. Mirrored into every member, so all the lanes show one cursor.
+    /// sits. Group-wide, so all the lanes show one cursor.
     pub fn set_timeline_cursor(&mut self, id: i32, pos: f64) -> Vec<i32> {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
@@ -534,13 +583,12 @@ impl Host {
             return Vec::new();
         };
         state.playhead = pos;
-        self.mirror_timeline_group(key);
         self.timeline_roots(key)
     }
 
     /// Sets the group's **playhead loop region** — where the swept line wraps
-    /// (samples; a non-positive length restores the straight pass). Mirrored
-    /// into every member, so linked views wrap at one place.
+    /// (samples; a non-positive length restores the straight pass). Group-wide,
+    /// so linked views wrap at one place.
     pub fn set_timeline_playhead_loop(
         &mut self,
         id: i32,
@@ -559,7 +607,6 @@ impl Host {
         if let Some(len) = len {
             state.playhead_loop_len = len;
         }
-        self.mirror_timeline_group(key);
         self.timeline_roots(key)
     }
 
@@ -629,7 +676,6 @@ impl Host {
             let start = state.nav.start;
             state.nav.set_start(start, total);
         }
-        self.mirror_timeline_group(new_key);
         self.prune_timeline_groups();
         for root in self.timeline_roots(new_key) {
             if !roots.contains(&root) {
@@ -639,37 +685,8 @@ impl Host {
         roots
     }
 
-    /// Copies group `key`'s selection/playhead into every member's editor
-    /// props — the mirror that keeps the widget tree (what the renderer and
-    /// `has_playhead` read) in lockstep with the group (the single writer).
-    fn mirror_timeline_group(&mut self, key: GroupKey) {
-        let Some(state) = self.timelines.states.get(&key).cloned() else {
-            return;
-        };
-        let members: Vec<Member> = self
-            .timeline_members()
-            .into_iter()
-            .filter(|m| m.key == key)
-            .collect();
-        for m in members {
-            if let Some(editor) = self
-                .window_defs
-                .get_mut(&m.root)
-                .and_then(|t| t.find_mut(m.id))
-                .and_then(|w| w.kind.editor_mut())
-            {
-                editor.sel_start = state.sel_start;
-                editor.sel_len = state.sel_len;
-                editor.playhead_at = state.playhead_at;
-                editor.playhead = state.playhead;
-                editor.playhead_loop_start = state.playhead_loop_start;
-                editor.playhead_loop_len = state.playhead_loop_len;
-            }
-        }
-    }
-
-    /// Ensures every timeline widget's group exists and every member agrees
-    /// with it. Called after a `/gui_def` builds (or rebuilds) a window tree:
+    /// Ensures every timeline widget's group exists. Called after a `/gui_def`
+    /// builds (or rebuilds) a window tree:
     /// `redefined` names that def, whose widgets get rebuild semantics — any
     /// group confined to that def is reseeded fresh; a group spanning other
     /// windows survives and the redefined members adopt it. Data extents are
@@ -693,12 +710,8 @@ impl Host {
             }
         }
         // The first member of a fresh group seeds it from its own def-time
-        // editor props; every member then mirrors the group.
-        let mut keys: Vec<GroupKey> = Vec::new();
+        // editor props; the rest of the members read what it seeded.
         for m in &members {
-            if !keys.contains(&m.key) {
-                keys.push(m.key);
-            }
             if !self.timelines.states.contains_key(&m.key) {
                 let editor = self
                     .window_defs
@@ -707,15 +720,12 @@ impl Host {
                     .and_then(|w| w.kind.editor())
                     .cloned();
                 if let Some(editor) = editor {
-                    let total = self.timeline_total(m.key);
+                    let nav = View::full(self.timeline_total(m.key));
                     self.timelines
                         .states
-                        .insert(m.key, GroupState::seed(&editor, total));
+                        .insert(m.key, GroupState::seed(&editor, nav));
                 }
             }
-        }
-        for key in keys {
-            self.mirror_timeline_group(key);
         }
         self.prune_timeline_groups();
     }
@@ -914,17 +924,111 @@ mod tests {
             .unwrap()
     }
 
+    /// What widget `id` draws with: the state of the group it resolves to —
+    /// the same lookup the frame path and the animation demand do, and the
+    /// only place the selection and the playhead exist.
+    fn chrome_of(host: &Host, id: i32) -> GroupState {
+        *host
+            .timelines()
+            .state(host.timeline_key(id).unwrap())
+            .unwrap()
+    }
+
+    /// A bare group state carrying just a playhead: the sweep math is all
+    /// these read.
+    fn head_state(at: f64, parked: f64, loop_start: f64, loop_len: f64) -> GroupState {
+        GroupState {
+            nav: View::full(1),
+            sel_start: 0.0,
+            sel_len: 0.0,
+            playhead_at: at,
+            playhead: parked,
+            playhead_loop_start: loop_start,
+            playhead_loop_len: loop_len,
+        }
+    }
+
     #[test]
-    fn def_seeds_the_group_from_its_first_member_and_mirrors_the_rest() {
+    fn the_playhead_sweeps_straight_without_a_loop() {
+        let e = head_state(1000.0, -1.0, 0.0, 0.0);
+        assert_eq!(e.playhead_loop(), None, "no loop by default");
+        assert_eq!(e.head_at(1500.0), Some(500.0));
+        // Past the end it keeps running: a straight pass is unbounded.
+        assert_eq!(e.head_at(9000.0), Some(8000.0));
+        // No clock yet, and no static cursor: nothing to draw.
+        assert_eq!(e.head_at(0.0), None);
+    }
+
+    #[test]
+    fn a_stopped_transport_parks_on_the_static_playhead() {
+        let e = head_state(-1.0, 320.0, 0.0, 0.0);
+        // The static cursor wins when no anchor is set, whatever the clock.
+        assert_eq!(e.head_at(0.0), Some(320.0));
+        assert_eq!(e.head_at(99_000.0), Some(320.0));
+    }
+
+    #[test]
+    fn the_playhead_wraps_inside_its_loop_region() {
+        let e = head_state(1000.0, -1.0, 400.0, 100.0);
+        assert_eq!(e.playhead_loop(), Some((400.0, 100.0)));
+        // Inside the region the sweep is untouched.
+        assert_eq!(e.head_at(1450.0), Some(450.0));
+        // Past its end it wraps to the start, and keeps wrapping.
+        assert_eq!(e.head_at(1500.0), Some(400.0));
+        assert_eq!(e.head_at(1530.0), Some(430.0));
+        assert_eq!(e.head_at(1700.0), Some(400.0));
+        assert_eq!(e.head_at(1725.0), Some(425.0));
+        // Before the region — the anchor precedes the loop start, so the first
+        // pass runs up to it — the line still lands inside, never left of it.
+        for clock in [1001.0, 1100.0, 1399.0] {
+            let pos = e.head_at(clock).unwrap();
+            assert!(
+                (400.0..500.0).contains(&pos),
+                "clock {clock} put the line at {pos}, outside the region"
+            );
+        }
+    }
+
+    #[test]
+    fn a_non_positive_loop_length_is_the_straight_pass() {
+        let e = head_state(0.0, -1.0, 400.0, 0.0);
+        assert_eq!(e.playhead_loop(), None);
+        assert_eq!(e.head_at(900.0), Some(900.0));
+    }
+
+    #[test]
+    fn def_seeds_the_group_from_its_first_member_for_all_of_them() {
         let host = linked_host();
-        // Member 10 declared the selection; member 11 adopted it on def.
-        assert_eq!(editor_of(&host, 11).selection(), Some((1.0, 2.0)));
+        // Member 10 declared the selection; member 11 reads the same group.
+        assert_eq!(chrome_of(&host, 11).selection(), Some((1.0, 2.0)));
         // The unlinked widget keeps its own (empty) selection.
-        assert_eq!(editor_of(&host, 12).selection(), None);
+        assert_eq!(chrome_of(&host, 12).selection(), None);
         // Linked members share one key; the solo widget has its own.
         assert_eq!(host.timeline_key(10), Some(GroupKey::Link(1)));
         assert_eq!(host.timeline_key(10), host.timeline_key(11));
         assert_eq!(host.timeline_key(12), Some(GroupKey::Solo(12)));
+    }
+
+    /// Every reader resolves the group, so a playhead set on one member is the
+    /// one that decides the *window* animates — including for a member whose
+    /// own props never carried an anchor. Nothing is copied into the tree, so
+    /// this is the check that the resolution actually happens.
+    #[test]
+    fn the_animation_demand_follows_the_group_not_the_seed() {
+        let mut host = linked_host();
+        let still = host.window_def(1).unwrap();
+        assert!(!super::super::live::tree_has_playhead(
+            still,
+            host.timelines()
+        ));
+        // Anchored through member 11, whose own `playhead_at` prop is unset.
+        host.handle_packet(set_msg(11, &[("playhead_at", OscType::Float(0.0))]), from());
+        assert_eq!(editor_of(&host, 11).playhead_at, -1.0, "the seed stands");
+        let running = host.window_def(1).unwrap();
+        assert!(super::super::live::tree_has_playhead(
+            running,
+            host.timelines()
+        ));
     }
 
     #[test]
@@ -944,16 +1048,16 @@ mod tests {
             effects.iter().any(|e| matches!(e, HostEffect::Redraw(1))),
             "the members' window repaints"
         );
-        // Both members mirror the group; the unlinked one is untouched.
-        assert_eq!(editor_of(&host, 10).selection(), Some((0.0, 3.0)));
-        assert_eq!(editor_of(&host, 11).selection(), Some((0.0, 3.0)));
-        assert_eq!(editor_of(&host, 12).selection(), None);
+        // Both members read the group; the unlinked one is untouched.
+        assert_eq!(chrome_of(&host, 10).selection(), Some((0.0, 3.0)));
+        assert_eq!(chrome_of(&host, 11).selection(), Some((0.0, 3.0)));
+        assert_eq!(chrome_of(&host, 12).selection(), None);
         // The playhead applies group-wide too.
         host.handle_packet(
             set_msg(10, &[("playhead_at", OscType::Float(100.0))]),
             from(),
         );
-        assert_eq!(editor_of(&host, 11).playhead_at, 100.0);
+        assert_eq!(chrome_of(&host, 11).playhead_at, 100.0);
     }
 
     /// The loop region is group-wide like the anchor: a linked waveform and
@@ -975,21 +1079,21 @@ mod tests {
         );
         assert!(effects.iter().any(|e| matches!(e, HostEffect::Redraw(1))));
         for id in [10, 11] {
-            let e = editor_of(&host, id);
+            let e = chrome_of(&host, id);
             assert_eq!(e.playhead_loop(), Some((2.0, 4.0)), "member {id}");
-            // And the wrap is live through the mirrored props: a clock of 9
-            // sweeps to 9, which folds into [2, 6) at 5.
+            // And the wrap is live for both: a clock of 9 sweeps to 9, which
+            // folds into [2, 6) at 5.
             assert_eq!(e.head_at(9.0), Some(5.0), "member {id} wraps");
         }
         // The unlinked member keeps the straight pass.
-        assert_eq!(editor_of(&host, 12).playhead_loop(), None);
+        assert_eq!(chrome_of(&host, 12).playhead_loop(), None);
         // A non-positive length restores it group-wide.
         host.handle_packet(
             set_msg(10, &[("playhead_loop_len", OscType::Float(0.0))]),
             from(),
         );
-        assert_eq!(editor_of(&host, 11).playhead_loop(), None);
-        assert_eq!(editor_of(&host, 11).head_at(9.0), Some(9.0));
+        assert_eq!(chrome_of(&host, 11).playhead_loop(), None);
+        assert_eq!(chrome_of(&host, 11).head_at(9.0), Some(9.0));
     }
 
     #[test]
@@ -1025,7 +1129,7 @@ mod tests {
         assert_eq!(nav.len, 2.0, "the linked member zoomed too");
         let (start, len, _) = host.select_timeline(11, 3.5, 0.5).unwrap();
         assert_eq!((start, len), (0.5, 3.0), "sorted and clamped");
-        assert_eq!(editor_of(&host, 10).selection(), Some((0.5, 3.0)));
+        assert_eq!(chrome_of(&host, 10).selection(), Some((0.5, 3.0)));
     }
 
     #[test]
@@ -1068,7 +1172,7 @@ mod tests {
         );
         host.handle_packet(set_msg(12, &[("link", OscType::Int(1))]), from());
         assert_eq!(host.timeline_key(12), Some(GroupKey::Link(1)));
-        assert_eq!(editor_of(&host, 12).selection(), Some((0.0, 1.0)));
+        assert_eq!(chrome_of(&host, 12).selection(), Some((0.0, 1.0)));
     }
 
     #[test]
@@ -1200,22 +1304,18 @@ mod tests {
     }
 
     #[test]
-    fn a_playhead_set_on_a_lane_reaches_the_tree_the_renderer_reads() {
+    fn a_playhead_set_on_a_lane_reaches_every_lane_of_its_group() {
         let mut host = lanes_host();
         host.handle_packet(
             set_msg(100, &[("playhead_at", OscType::Float(12288.0))]),
             from(),
         );
-        // The renderer reads the *typed tree*, not the registry: a lane is a
-        // group member, so the value must land there through the group mirror.
+        // The renderer resolves each lane to its group and draws that: a set on
+        // one lane is what every lane of the group sweeps from.
         for lane in [100, 200] {
-            let editor = host
-                .window_def(1)
-                .and_then(|t| t.find(lane))
-                .and_then(|w| w.kind.editor())
-                .unwrap();
             assert_eq!(
-                editor.playhead_at, 12288.0,
+                chrome_of(&host, lane).playhead_at,
+                12288.0,
                 "lane {lane} draws no playhead without it"
             );
         }
@@ -1227,15 +1327,11 @@ mod tests {
         // The transport is located at 300 (a click on the ruler, or a script).
         host.handle_packet(set_msg(100, &[("playhead", OscType::Float(300.0))]), from());
         for lane in [100, 200] {
-            let editor = host
-                .window_def(1)
-                .and_then(|t| t.find(lane))
-                .and_then(|w| w.kind.editor())
-                .unwrap();
-            assert_eq!(editor.playhead, 300.0, "every lane shows the one cursor");
+            let chrome = chrome_of(&host, lane);
+            assert_eq!(chrome.playhead, 300.0, "every lane shows the one cursor");
             // The clock anchor is untouched: the cursor is what a *stopped*
             // transport shows, and the two are different things.
-            assert!(editor.playhead_at < 0.0);
+            assert!(chrome.playhead_at < 0.0);
         }
     }
 

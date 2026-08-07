@@ -661,7 +661,7 @@ impl WebApp {
             .into_iter()
             .filter_map(|def| self.host.window_def(def))
             .collect();
-        live::demand(trees, self.server_rate)
+        live::demand(trees, self.host.timelines(), self.server_rate)
     }
 
     /// Subscribes the audio server to exactly the control buses the drawing
@@ -801,7 +801,7 @@ impl WebApp {
                 &mut slot.tap_windows,
             );
             live::update_spectra(tree, |tap, out| taps.read_raw(tap, out), &mut slot.spectra);
-            wants_clock |= live::tree_has_playhead(tree);
+            wants_clock |= live::tree_has_playhead(tree, self.host.timelines());
             slot.request_redraw();
         }
         // A visible playhead needs the engine clock: poll it once per tick (the

@@ -3228,17 +3228,10 @@ mod tests {
         assert!(has_emit_tag(&effects, 50, "selection"));
         let effects = g.drag_to(&mut host, &ctx, 600.0, 150.0);
         assert!(has_emit_tag(&effects, 50, "selection"));
-        // The selection landed in the editor props with a positive length.
-        let editor = host
-            .window_def(1)
-            .unwrap()
-            .find(50)
-            .unwrap()
-            .kind
-            .editor()
-            .cloned()
-            .unwrap();
-        assert!(editor.sel_len > 0.0);
+        // The selection landed in the widget's navigation group — where every
+        // reader of it looks — with a positive length.
+        let key = host.timeline_key(50).unwrap();
+        assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
     }
 
     #[test]
