@@ -141,7 +141,7 @@ pub use bind::Binding;
 pub use client::ServerLeg;
 pub use guidef::GuiNode;
 pub use registry::Registry;
-pub use widget::Widget;
+pub use widget::{Widget, WidgetKind};
 
 /// Where a request reached the host and where its replies go. The `/gui_*`
 /// *encoding* is transport-independent, so client identity is too: every
@@ -616,6 +616,22 @@ impl Host {
     /// a user interaction produced (a turned knob, a moved slider).
     pub fn window_def_mut(&mut self, id: i32) -> Option<&mut Widget> {
         self.window_defs.get_mut(&id)
+    }
+
+    /// The typed kind of widget `widget_id` inside window `def_id` — the whole
+    /// of what an interaction addresses, since a gesture reaches a widget by
+    /// the pair of ids the wire gave it and then matches on what it is.
+    ///
+    /// Spelling the walk out (`window_def(def_id)?.find(widget_id)?.kind`) is
+    /// what the interaction layer did at every one of its doors; this is that
+    /// walk, named once.
+    pub fn widget_kind(&self, def_id: i32, widget_id: i32) -> Option<&WidgetKind> {
+        Some(&self.window_def(def_id)?.find(widget_id)?.kind)
+    }
+
+    /// [`widget_kind`](Self::widget_kind), mutably — the write half of an edit.
+    pub fn widget_kind_mut(&mut self, def_id: i32, widget_id: i32) -> Option<&mut WidgetKind> {
+        Some(&mut self.window_def_mut(def_id)?.find_mut(widget_id)?.kind)
     }
 
     /// Handles one decoded packet from `from`, returning the effects its front

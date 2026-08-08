@@ -1024,12 +1024,9 @@ impl Gestures {
                     return false;
                 };
                 // The lane's own grid, from the container the axis came from.
-                let snap = match host.window_def(def_id).and_then(|t| t.find(lane.0)) {
-                    Some(w) => match w.kind {
-                        WidgetKind::Track { snap, .. } => snap,
-                        _ => 0.0,
-                    },
-                    None => 0.0,
+                let snap = match host.widget_kind(def_id, lane.0) {
+                    Some(WidgetKind::Track { snap, .. }) => *snap,
+                    _ => 0.0,
                 };
                 // The clip's own axis, resolved by the layout and carried down
                 // the hit chain — not re-derived from the lane's window here.
@@ -1293,9 +1290,8 @@ impl Gestures {
                 // Dragging down moves the window down with the cursor;
                 // absolute from the snapshot, so a clamped edge never drifts.
                 let y_len = host
-                    .window_def(def_id)
-                    .and_then(|t| t.find(id))
-                    .and_then(|w| w.kind.editor())
+                    .widget_kind(def_id, id)
+                    .and_then(WidgetKind::editor)
                     .map_or(1.0, |e| e.y_view().1);
                 let start = y_start + (cy - origin_y) / lane_h * y_len;
                 set_y_view(host, &mut out, def_id, id, start, y_len);

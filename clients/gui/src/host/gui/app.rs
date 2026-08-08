@@ -763,12 +763,7 @@ impl App {
 
     /// A piano-roll's `snap` grid (0 when none or not a roll).
     pub(super) fn roll_snap(&self, def_id: i32, id: i32) -> f64 {
-        match self
-            .host
-            .window_def(def_id)
-            .and_then(|t| t.find(id))
-            .map(|w| &w.kind)
-        {
+        match self.host.widget_kind(def_id, id) {
             Some(WidgetKind::PianoRoll { snap, .. }) => *snap,
             _ => 0.0,
         }

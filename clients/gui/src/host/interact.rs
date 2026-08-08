@@ -534,8 +534,7 @@ pub(crate) fn text_edit<R>(
     widget_id: i32,
     f: impl FnOnce(&mut String, &mut super::textedit::Caret, bool) -> R,
 ) -> Option<R> {
-    let w = host.window_def_mut(def_id)?.find_mut(widget_id)?;
-    match &mut w.kind {
+    match host.widget_kind_mut(def_id, widget_id)? {
         WidgetKind::Text {
             value,
             caret,
@@ -558,8 +557,7 @@ pub(crate) fn text_caret_at(
     cx: f64,
     cy: f64,
 ) -> Option<usize> {
-    let w = host.window_def(def_id)?.find(widget_id)?;
-    match &w.kind {
+    match host.widget_kind(def_id, widget_id)? {
         WidgetKind::Text {
             value,
             label,
@@ -662,8 +660,7 @@ pub(crate) fn bpf_edit<R>(
     widget_id: i32,
     f: impl FnOnce(&mut Vec<bpf::BpfPoint>, f64, f32, f32, bool) -> R,
 ) -> Option<R> {
-    let w = host.window_def_mut(def_id)?.find_mut(widget_id)?;
-    match &mut w.kind {
+    match host.widget_kind_mut(def_id, widget_id)? {
         WidgetKind::Bpf {
             points,
             min,
@@ -712,8 +709,7 @@ pub(crate) fn graph_cord(
     cy: f64,
     scale: f32,
 ) -> Option<(usize, String, usize, String)> {
-    let w = host.window_def_mut(def_id)?.find_mut(widget_id)?;
-    let WidgetKind::Patch { patch, .. } = &mut w.kind else {
+    let WidgetKind::Patch { patch, .. } = host.widget_kind_mut(def_id, widget_id)? else {
         return None;
     };
     let drop = super::patch::port_hit(area, patch, cx, cy, scale)?;
@@ -899,8 +895,7 @@ pub(crate) fn lane_header<R>(
     lane_id: i32,
     f: impl FnOnce(&mut track::Header) -> R,
 ) -> Option<R> {
-    let w = host.window_def_mut(def_id)?.find_mut(lane_id)?;
-    match &mut w.kind {
+    match host.widget_kind_mut(def_id, lane_id)? {
         WidgetKind::Track { header, .. } => Some(f(header)),
         _ => None,
     }
@@ -956,7 +951,7 @@ pub(crate) fn header_hit(
     cx: f64,
     cy: f64,
 ) -> Option<HeaderHit> {
-    let WidgetKind::Track { header, .. } = &host.window_def(def_id)?.find(lane_id)?.kind else {
+    let WidgetKind::Track { header, .. } = host.widget_kind(def_id, lane_id)? else {
         return None;
     };
     let band = super::timeline::gutter_band(rect, body_x - rect.x);
@@ -1311,7 +1306,7 @@ pub(crate) fn pianoroll_notes_edit<R>(
     widget_id: i32,
     f: impl FnOnce(&mut Vec<pianoroll::Note>) -> R,
 ) -> Option<R> {
-    match &mut host.window_def_mut(def_id)?.find_mut(widget_id)?.kind {
+    match host.widget_kind_mut(def_id, widget_id)? {
         WidgetKind::PianoRoll { notes, .. } => Some(f(notes)),
         _ => None,
     }
@@ -1326,7 +1321,7 @@ pub(crate) fn pianoroll_state_edit<R>(
     widget_id: i32,
     f: impl FnOnce(&mut Vec<pianoroll::Note>, &mut Vec<usize>) -> R,
 ) -> Option<R> {
-    match &mut host.window_def_mut(def_id)?.find_mut(widget_id)?.kind {
+    match host.widget_kind_mut(def_id, widget_id)? {
         WidgetKind::PianoRoll {
             notes, selected, ..
         } => Some(f(notes, selected)),
@@ -1372,7 +1367,7 @@ pub(crate) fn pianoroll_osc_edit<R>(
     widget_id: i32,
     f: impl FnOnce(&mut Vec<pianoroll::OscMark>) -> R,
 ) -> Option<R> {
-    match &mut host.window_def_mut(def_id)?.find_mut(widget_id)?.kind {
+    match host.widget_kind_mut(def_id, widget_id)? {
         WidgetKind::PianoRoll { osc, .. } => Some(f(osc)),
         _ => None,
     }
@@ -1443,7 +1438,7 @@ fn piano_state<R>(
     widget_id: i32,
     f: impl FnOnce(&mut Vec<i32>) -> R,
 ) -> Option<R> {
-    match &mut host.window_def_mut(def_id)?.find_mut(widget_id)?.kind {
+    match host.widget_kind_mut(def_id, widget_id)? {
         WidgetKind::Piano { pressed, .. } => Some(f(pressed)),
         _ => None,
     }
@@ -1459,10 +1454,9 @@ pub(crate) fn piano_set_range(
     new_min: i32,
     new_max: i32,
 ) -> Option<(i32, i32)> {
-    let w = host.window_def_mut(def_id)?.find_mut(widget_id)?;
     let WidgetKind::Piano {
         min, max, pressed, ..
-    } = &mut w.kind
+    } = host.widget_kind_mut(def_id, widget_id)?
     else {
         return None;
     };
@@ -1580,7 +1574,7 @@ fn score_data(
     def_id: i32,
     widget_id: i32,
 ) -> Option<&mut super::score::ScoreData> {
-    match &mut host.window_def_mut(def_id)?.find_mut(widget_id)?.kind {
+    match host.widget_kind_mut(def_id, widget_id)? {
         WidgetKind::Score(data) => Some(data),
         _ => None,
     }

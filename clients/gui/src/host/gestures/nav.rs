@@ -34,7 +34,7 @@ pub(super) fn hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<Hit> 
 /// it every step: the plane it is panning moves under it, so the chain's
 /// press-time snapshot would be one frame stale by the second step.
 pub(super) fn scroll_view(host: &Host, def_id: i32, id: i32) -> Option<ScrollView> {
-    match &host.window_def(def_id)?.find(id)?.kind {
+    match host.widget_kind(def_id, id)? {
         WidgetKind::Scroll { view, .. } => Some(*view),
         _ => None,
     }
@@ -79,7 +79,7 @@ pub(super) fn group_view(host: &Host, id: i32) -> Option<(f64, f64, usize)> {
 
 /// A piano-roll note's current `(start, dur)` in the host tree.
 pub(super) fn note_at(host: &Host, def_id: i32, id: i32, index: usize) -> Option<(f64, f64)> {
-    match &host.window_def(def_id)?.find(id)?.kind {
+    match host.widget_kind(def_id, id)? {
         WidgetKind::PianoRoll { notes, .. } => notes.get(index).map(|n| (n.start, n.dur)),
         _ => None,
     }
@@ -88,7 +88,7 @@ pub(super) fn note_at(host: &Host, def_id: i32, id: i32, index: usize) -> Option
 /// The diatonic steps a vertical drag of `dy` pixels means on score `id`, whose
 /// page is fitted into `rect`.
 pub(super) fn score_steps(host: &Host, def_id: i32, id: i32, rect: Rect, dy: f64) -> Option<i32> {
-    match &host.window_def(def_id)?.find(id)?.kind {
+    match host.widget_kind(def_id, id)? {
         WidgetKind::Score(data) => Some(data.steps_for(rect, dy as f32)),
         _ => None,
     }
@@ -288,9 +288,8 @@ pub(super) fn zoom_timeline_y(
     anchor: f64,
 ) {
     let Some((y0, ylen)) = host
-        .window_def(def_id)
-        .and_then(|t| t.find(id))
-        .and_then(|w| w.kind.editor())
+        .widget_kind(def_id, id)
+        .and_then(WidgetKind::editor)
         .map(|e| e.y_view())
     else {
         return;
