@@ -1,0 +1,1728 @@
+//! The gesture machine's tests: one press -> drag -> release sequence per
+//! gesture, driven over a hand-built widget tree with no window and no GPU.
+
+use clausters_core::osc::{OscMessage, OscPacket};
+
+use super::super::metrics::Metrics;
+use super::super::widget::ScrollView;
+use super::super::{ClientId, GUI_DEF, GUI_SET};
+use super::*;
+
+fn from() -> ClientId {
+    ClientId::Udp(std::net::SocketAddr::from((
+        std::net::Ipv4Addr::LOCALHOST,
+        9000,
+    )))
+}
+
+fn host_from(json: &str) -> Host {
+    let mut host = Host::new();
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_DEF.into(),
+            args: vec![OscType::Int(1), OscType::String(json.into())],
+        }),
+        from(),
+    );
+    host
+}
+
+/// A live `/gui_set` of one string-valued prop, as a script would send it.
+fn set_prop(host: &mut Host, id: i32, key: &str, value: &str) {
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_SET.into(),
+            args: vec![
+                OscType::Int(id),
+                OscType::String(key.into()),
+                OscType::String(value.into()),
+            ],
+        }),
+        from(),
+    );
+}
+
+fn has_emit_tag(effects: &[GestureEffect], id: i32, tag: &str) -> bool {
+    effects.iter().any(|e| match e {
+        GestureEffect::Emit {
+            widget_id, args, ..
+        } => *widget_id == id && args.first() == Some(&OscType::String(tag.into())),
+        _ => false,
+    })
+}
+
+// ---- the menu: a list that opens, and the press that picks from it ----
+
+fn menu_host() -> Host {
+    host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":7,"type":"menu","label":"View","w":200,"h":48,
+             "options":["ruler: shown","ruler: hidden","ruler: locked"]}]}"#,
+    )
+}
+
+fn menu_index(host: &Host, id: i32) -> usize {
+    match &host.window_def(1).unwrap().find(id).unwrap().kind {
+        WidgetKind::Menu { index, .. } => *index,
+        other => panic!("not a menu: {other:?}"),
+    }
+}
+
+#[test]
+fn a_press_opens_the_menus_list_and_changes_nothing_yet() {
+    let mut host = menu_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    let effects = g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
+    let open = g.menu_open().expect("the list is open");
+    assert_eq!(open.id, 7);
+    assert!(open.popup.h > 0.0 && open.popup.w > 0.0);
+    assert_eq!(menu_index(&host, 7), 0, "opening picks nothing");
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, GestureEffect::Emit { .. })),
+        "and emits nothing"
+    );
+}
+
+#[test]
+fn a_press_on_a_row_picks_that_option_and_closes() {
+    let mut host = menu_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
+    let popup = g.menu_open().unwrap().popup;
+    // The middle row: the option a click on it means, wherever the list
+    // was placed (it hangs below the field, or above it near an edge).
+    let row_h = popup.h as f64 / 3.0;
+    let effects = g.press(
+        &mut host,
+        &ctx,
+        popup.x as f64 + 5.0,
+        popup.y as f64 + row_h * 1.5,
+        &mut || false,
+    );
+    assert!(g.menu_open().is_none(), "the list closes");
+    assert_eq!(menu_index(&host, 7), 1);
+    assert!(
+        effects.iter().any(|e| matches!(
+            e,
+            GestureEffect::Emit { widget_id: 7, args, .. }
+                if args.first() == Some(&OscType::Int(1))
+        )),
+        "the pick is the widget's value, as a cycling press was"
+    );
+}
+
+#[test]
+fn a_press_outside_the_list_only_closes_it() {
+    let mut host = menu_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 550.0, 380.0, &mut || false);
+    assert!(g.menu_open().is_none());
+    assert_eq!(menu_index(&host, 7), 0, "nothing picked");
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, GestureEffect::Emit { .. })),
+        "an open list swallows the press that dismisses it"
+    );
+}
+
+#[test]
+fn a_list_with_no_room_below_opens_upwards() {
+    // The same menu at the bottom of a short window: the list has to go
+    // somewhere, and off the bottom edge is not somewhere.
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","children":[
+            {"id":6,"type":"label","text":"filler","weight":1},
+            {"id":7,"type":"menu","w":200,"h":48,
+             "options":["a","b","c","d","e","f"]}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 200);
+    g.press(&mut host, &ctx, 40.0, 180.0, &mut || false);
+    let popup = g.menu_open().unwrap().popup;
+    assert!(popup.y + popup.h <= 200.0, "the list fits in the window");
+}
+
+fn slider_value(host: &Host, id: i32) -> f32 {
+    match &host.window_def(1).unwrap().find(id).unwrap().kind {
+        WidgetKind::Slider { range, .. } => range.value,
+        other => panic!("not a slider: {other:?}"),
+    }
+}
+
+/// A `scroll` workspace's live view state.
+fn view_of(host: &Host, id: i32) -> ScrollView {
+    match &host.window_def(1).unwrap().find(id).unwrap().kind {
+        WidgetKind::Scroll { view, .. } => *view,
+        other => panic!("not a scroll: {other:?}"),
+    }
+}
+
+/// A window holding one 2D workspace with a 2000x2000 content area.
+fn workspace(extra: &str) -> Host {
+    host_from(&format!(
+        r#"{{"type":"window","margin":0,"children":[
+            {{"id":20,"type":"plane","margin":0,
+              "content_w":2000,"content_h":2000{extra},
+              "children":[{{"id":21,"type":"label","text":"a",
+                            "x":100,"y":100,"w":80,"h":40}}]}}]}}"#
+    ))
+}
+
+/// A window holding one full-area directed patch: `tone` (an outlet)
+/// and `dac` (an inlet and an outlet), a cord tone.out → dac.in.
+fn patch_host() -> Host {
+    host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":7,"type":"plane",
+             "boxes":[{"def":"tone","outlets":["out"]},
+                      {"def":"dac","inlets":["in"],"outlets":["out"]}],
+             "cords":[0,0,1,0]}]}"#,
+    )
+}
+
+fn patch_of(host: &Host) -> super::super::patch::PatchDraw {
+    match &host.window_def(1).unwrap().find(7).unwrap().kind {
+        WidgetKind::Patch { patch, .. } => patch.clone(),
+        other => panic!("not a patch: {other:?}"),
+    }
+}
+
+fn selection_of(host: &Host) -> Vec<usize> {
+    match &host.window_def(1).unwrap().find(7).unwrap().kind {
+        WidgetKind::Patch { selected, .. } => selected.clone(),
+        other => panic!("not a patch: {other:?}"),
+    }
+}
+
+/// The whole widget-binding chain from a real press: a toggle bound to a
+/// `stack`'s `index` flips the page inside the host, the window is asked to
+/// repaint, and **nothing leaves for the script** — the point of a binding.
+#[test]
+fn a_press_on_a_bound_toggle_flips_the_stack_it_drives() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+        {"id":10,"type":"toggle","label":"view","h":32,
+         "bind":["widget",20,"index"]},
+        {"id":20,"type":"layout","flow":"stack","index":0,"children":[
+            {"id":21,"type":"label","text":"one"},
+            {"id":22,"type":"label","text":"two"}]}]}"#,
+    );
+    let page = |host: &Host| match host.window_def(1).unwrap().find(20).unwrap().kind {
+        WidgetKind::Stack { index, .. } => index,
+        ref other => panic!("not a stack: {other:?}"),
+    };
+    assert_eq!(page(&host), 0);
+
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    let mut grab = || false;
+    // The toggle sits in the window's top strip (its declared height).
+    let mut effects = g.press(&mut host, &ctx, 300.0, 20.0, &mut grab);
+    effects.extend(g.release(&mut host, &ctx, 300.0, 20.0));
+
+    assert_eq!(page(&host), 1, "the toggle's value became the page");
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, GestureEffect::Redraw(1))),
+        "the apply asks the window to repaint"
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, GestureEffect::Emit { .. })),
+        "a bound widget emits nothing to the script"
+    );
+}
+
+#[test]
+fn dragging_a_box_selects_it_moves_it_and_emits_the_move() {
+    let mut host = patch_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    let area = Rect::new(0.0, 0.0, 600.0, 400.0);
+    let before = patch_of(&host);
+    let b0 = patch::obj_rect(area, &before, 0, 1.0);
+    // Grab the box body, clear of the outlet pin at the bottom-centre.
+    let (px, py) = ((b0.x + 12.0) as f64, (b0.y + 8.0) as f64);
+    let mut grab = || false;
+    g.press(&mut host, &ctx, px, py, &mut grab);
+    assert_eq!(selection_of(&host), vec![0]);
+    g.drag_to(&mut host, &ctx, px + 150.0, py + 80.0);
+    let effects = g.release(&mut host, &ctx, px + 150.0, py + 80.0);
+    assert!(has_emit_tag(&effects, 7, "move"), "the round trip leaves");
+    let after = patch_of(&host);
+    // The first drag makes the auto placement explicit, moved by the delta.
+    let (x0, y0) = (b0.x - area.x, b0.y - area.y);
+    assert_eq!(after.boxes[0].x, Some(x0 + 150.0));
+    assert_eq!(after.boxes[0].y, Some(y0 + 80.0));
+    // The untouched box keeps its auto placement.
+    assert_eq!(after.boxes[1].x, None);
+}
+
+#[test]
+fn a_plain_drag_marquees_and_shift_pans_leaving_the_selection() {
+    let mut host = patch_host();
+    let mut g = Gestures::default();
+    let plain = GestureCtx::new(1, 600, 400);
+    let mut shift = GestureCtx::new(1, 600, 400);
+    shift.shift = true;
+    let area = Rect::new(0.0, 0.0, 600.0, 400.0);
+    let before = patch_of(&host);
+    // A plain drag from the empty middle-bottom over the two stacked boxes.
+    let b1 = patch::obj_rect(area, &before, 1, 1.0);
+    g.press(&mut host, &plain, 300.0, 390.0, &mut || false);
+    g.drag_to(&mut host, &plain, (b1.x - 2.0) as f64, 2.0);
+    assert_eq!(
+        selection_of(&host),
+        vec![0, 1],
+        "the marquee spans both boxes"
+    );
+    assert!(g.marquee().is_some(), "the rectangle draws while dragging");
+    g.release(&mut host, &plain, (b1.x - 2.0) as f64, 2.0);
+    assert!(g.marquee().is_none());
+    // Shift+drag on empty canvas pans (the heavy-view convention): it starts
+    // no marquee and leaves the selection untouched.
+    g.press(&mut host, &shift, 300.0, 390.0, &mut || false);
+    g.drag_to(&mut host, &shift, 330.0, 360.0);
+    assert!(g.marquee().is_none(), "Shift pans, it does not marquee");
+    g.release(&mut host, &shift, 330.0, 360.0);
+    assert_eq!(selection_of(&host), vec![0, 1], "Shift+drag does not clear");
+    // A plain click on empty canvas (a zero-size marquee) clears the set.
+    g.press(&mut host, &plain, 300.0, 390.0, &mut || false);
+    g.release(&mut host, &plain, 300.0, 390.0);
+    assert!(selection_of(&host).is_empty());
+}
+
+#[test]
+fn a_cord_drag_from_an_outlet_lands_on_an_inlet() {
+    let mut host = patch_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    let area = Rect::new(0.0, 0.0, 600.0, 400.0);
+    let before = patch_of(&host);
+    // Grab dac's outlet, drop on... first detach: grab tone's outlet.
+    let (px, py) = patch::port_pin(area, &before, 0, patch::Side::Out, 0, 1.0);
+    g.press(&mut host, &ctx, px as f64, py as f64, &mut || false);
+    assert!(g.wiring().is_some(), "a press on a port starts the cord");
+    // Released over dac's inlet: the cord lands, no move is emitted.
+    let (ix, iy) = patch::port_pin(area, &before, 1, patch::Side::In, 0, 1.0);
+    let effects = g.release(&mut host, &ctx, ix as f64, iy as f64);
+    assert!(has_emit_tag(&effects, 7, "wire"));
+    assert!(!has_emit_tag(&effects, 7, "move"));
+}
+
+#[test]
+fn wheel_zooms_the_workspace_anchored_at_the_cursor() {
+    let mut host = workspace("");
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    let (cx, cy) = (300.0, 200.0);
+    let before = view_of(&host, 20);
+    let m = Metrics::default();
+    let content_under_cursor =
+        |v: ScrollView| (v.view_x + cx / v.zoom(&m), v.view_y + cy / v.zoom(&m));
+    let effects = g.wheel(&mut host, &ctx, cx, cy, 1.0);
+    let after = view_of(&host, 20);
+    assert!(after.zoom(&m) > before.zoom(&m), "wheel up zooms in");
+    let (bx, by) = content_under_cursor(before);
+    let (ax, ay) = content_under_cursor(after);
+    assert!((bx - ax).abs() < 1e-6 && (by - ay).abs() < 1e-6);
+    // View state: always an event (never a bound forward), plus a repaint.
+    assert!(has_emit_tag(&effects, 20, "view"));
+    assert!(effects.contains(&GestureEffect::Redraw(1)));
+}
+
+#[test]
+fn dragging_the_empty_plane_pans_both_axes() {
+    let mut host = workspace("");
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    // A press on the container's empty area (away from the child) grabs it.
+    g.press(&mut host, &ctx, 500.0, 350.0, &mut || false);
+    assert!(g.dragging());
+    let effects = g.drag_to(&mut host, &ctx, 450.0, 300.0);
+    let v = view_of(&host, 20);
+    // The content follows the cursor: dragging left/up moves the view right/down.
+    assert_eq!((v.view_x, v.view_y), (50.0, 50.0));
+    assert!(has_emit_tag(&effects, 20, "view"));
+    g.release(&mut host, &ctx, 450.0, 300.0);
+    assert!(!g.dragging());
+}
+
+#[test]
+fn the_plane_pans_every_direction_from_its_origin() {
+    // The regression this fixes: a plane sitting at the content's top-left
+    // corner (its default) used to be clamped dead against down/right
+    // drags — half the gestures did nothing and it read as broken. The
+    // free plane overscrolls, so every direction moves it.
+    let mut host = workspace("");
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    assert_eq!(
+        (view_of(&host, 20).view_x, view_of(&host, 20).view_y),
+        (0.0, 0.0)
+    );
+    g.press(&mut host, &ctx, 500.0, 350.0, &mut || false);
+    let effects = g.drag_to(&mut host, &ctx, 560.0, 390.0);
+    let v = view_of(&host, 20);
+    assert_eq!((v.view_x, v.view_y), (-60.0, -40.0), "down/right moves it");
+    assert!(has_emit_tag(&effects, 20, "view"));
+    // And it stops at half a viewport out, so the content is never lost.
+    g.drag_to(&mut host, &ctx, 5000.0, 5000.0);
+    let v = view_of(&host, 20);
+    assert_eq!((v.view_x, v.view_y), (-300.0, -200.0));
+}
+
+/// The same anchor, on a plane whose **content follows the zoom**: a graph
+/// sizes its plane to itself-but-never-below-the-viewport, so the visible
+/// content shrinks as the zoom grows. Clamping the new pan against the
+/// content of the *old* zoom slid the plane out from under the cursor —
+/// invisible on a plane with an explicit `content_w`, which is why the test
+/// above did not catch it.
+#[test]
+fn wheel_zoom_over_a_graph_sized_plane_holds_the_cursor_too() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":20,"type":"plane","margin":0,"children":[
+              {"id":7,"type":"plane","boxes":[
+                {"def":"tone","outlets":["out"]},
+                {"def":"dac","inlets":["in"],"outlets":["out"]}],
+               "cords":[0,0,1,0]}]}]}"#,
+    );
+    let m = Metrics::default();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    let (cx, cy) = (420.0, 260.0);
+    let area = crate::host::layout::Rect::new(0.0, 0.0, 600.0, 400.0);
+    // Where the graph itself sits on screen — the thing an eye tracks, and
+    // the thing the content extent moves when it follows the zoom.
+    let graph = |host: &Host| {
+        crate::host::layout::layout(area, host.window_def(1).unwrap(), &m)
+            .into_iter()
+            .find(|p| p.widget.id == Some(7))
+            .map(|p| (p.rect.x + p.rect.w * 0.5, p.rect.y + p.rect.h * 0.5))
+            .expect("the patch is placed")
+    };
+    let before = view_of(&host, 20);
+    let (bx, by) = graph(&host);
+    g.wheel(&mut host, &ctx, cx, cy, 1.0);
+    let after = view_of(&host, 20);
+    let factor = (after.zoom(&m) / before.zoom(&m)) as f32;
+    assert!(factor > 1.0, "wheel up zooms in");
+    let (ax, ay) = graph(&host);
+    // A zoom about the cursor maps every pixel p to cursor + (p - cursor) * f.
+    let (wx, wy) = (
+        cx as f32 + (bx - cx as f32) * factor,
+        cy as f32 + (by - cy as f32) * factor,
+    );
+    assert!(
+        (ax - wx).abs() < 0.5 && (ay - wy).abs() < 0.5,
+        "the graph slid under the cursor: expected {wx},{wy}, got {ax},{ay}"
+    );
+}
+
+#[test]
+fn a_vertical_scroll_view_is_the_workspace_constrained_by_configuration() {
+    // `axis: "y"` with `zoom: 0` *is* a plain vertical scroll view: the
+    // wheel scrolls, x never moves, the zoom stays put.
+    let mut host = workspace(r#","axis":"y","zoom":0"#);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    g.wheel(&mut host, &ctx, 300.0, 200.0, -1.0);
+    let v = view_of(&host, 20);
+    assert_eq!(
+        v.zoom(&Metrics::default()),
+        1.0,
+        "zoom disabled: the wheel does not scale"
+    );
+    assert_eq!(v.view_x, 0.0, "the x axis is not pannable");
+    assert_eq!(v.view_y, scroll::WHEEL_PAN_PX, "the wheel scrolls down");
+    // A drag on the plane likewise moves only y.
+    g.press(&mut host, &ctx, 500.0, 350.0, &mut || false);
+    g.drag_to(&mut host, &ctx, 400.0, 300.0);
+    let v = view_of(&host, 20);
+    assert_eq!(v.view_x, 0.0);
+    assert_eq!(v.view_y, scroll::WHEEL_PAN_PX + 50.0);
+}
+
+#[test]
+fn a_horizontal_strip_pans_only_x_and_clamps_to_the_content() {
+    let mut host = workspace(r#","axis":"x","zoom":0"#);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    // The wheel drives the single axis; far past the end it clamps to
+    // content - visible = 2000 - 600.
+    for _ in 0..100 {
+        g.wheel(&mut host, &ctx, 300.0, 200.0, -1.0);
+    }
+    let v = view_of(&host, 20);
+    assert_eq!(v.view_x, 1400.0);
+    assert_eq!(v.view_y, 0.0);
+}
+
+#[test]
+fn a_widget_inside_the_workspace_still_takes_the_press() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":20,"type":"plane","margin":0,"content_w":2000,"content_h":2000,
+             "children":[{"id":21,"type":"toggle","value":0,
+                          "x":0,"y":0,"w":100,"h":50}]}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    // Over the toggle: the widget wins, no pan drag starts.
+    let effects = g.press(&mut host, &ctx, 50.0, 25.0, &mut || false);
+    assert!(!g.dragging(), "the toggle consumed the press");
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, GestureEffect::Emit { widget_id: 21, .. }))
+    );
+    // Scrolled out of view, the same widget is no longer hit: the press
+    // falls through to the plane.
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: super::super::GUI_SET.into(),
+            args: vec![
+                OscType::Int(20),
+                OscType::String("view_x".into()),
+                OscType::Float(500.0),
+            ],
+        }),
+        from(),
+    );
+    g.press(&mut host, &ctx, 50.0, 25.0, &mut || false);
+    assert!(g.dragging(), "the scrolled-away widget is not hit");
+}
+
+#[test]
+fn slider_press_and_drag_set_the_value_and_emit() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":10,"type":"slider","min":0.0,"max":10.0,"value":2.5}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 400, 100);
+    // The slider is natural-thick: a strip under the window's margin, not
+    // the whole pane, so the press aims inside it.
+    let effects = g.press(&mut host, &ctx, 200.0, 25.0, &mut || false);
+    assert!(g.dragging());
+    let after_press = slider_value(&host, 10);
+    assert!(after_press > 2.5, "press near the middle raises 2.5");
+    // Unbound: the new value leaves as a /gui_event carrying one float.
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        GestureEffect::Emit { widget_id: 10, args, .. } if args.len() == 1
+    )));
+    assert!(effects.contains(&GestureEffect::Redraw(1)));
+    // Dragging to the far right pins the value at max.
+    g.drag_to(&mut host, &ctx, 399.0, 25.0);
+    assert_eq!(slider_value(&host, 10), 10.0);
+    assert!(g.release(&mut host, &ctx, 399.0, 25.0).is_empty());
+    assert!(!g.dragging());
+}
+
+#[test]
+fn button_press_emits_one_and_release_emits_zero() {
+    let mut host = host_from(r#"{"type":"window","children":[{"id":20,"type":"button"}]}"#);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 200, 100);
+    // A button is one control line tall (its natural height).
+    let effects = g.press(&mut host, &ctx, 100.0, 16.0, &mut || false);
+    assert_eq!(g.active_button(), Some(20));
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        GestureEffect::Emit { widget_id: 20, args, .. } if args == &[OscType::Int(1)]
+    )));
+    let effects = g.release(&mut host, &ctx, 100.0, 16.0);
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        GestureEffect::Emit { widget_id: 20, args, .. } if args == &[OscType::Int(0)]
+    )));
+    assert_eq!(g.active_button(), None);
+}
+
+#[test]
+fn toggle_press_flips_the_state() {
+    let mut host =
+        host_from(r#"{"type":"window","children":[{"id":30,"type":"toggle","value":0}]}"#);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 200, 100);
+    let effects = g.press(&mut host, &ctx, 100.0, 16.0, &mut || false);
+    match &host.window_def(1).unwrap().find(30).unwrap().kind {
+        WidgetKind::Toggle { value, .. } => assert!(*value),
+        other => panic!("not a toggle: {other:?}"),
+    }
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, GestureEffect::Emit { widget_id: 30, .. }))
+    );
+    assert!(!g.dragging()); // a toggle is a click, not a drag
+}
+
+#[test]
+fn knob_press_records_the_grab_result_and_locked_ignores_cursor_motion() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":40,"type":"knob","min":0.0,"max":1.0,"value":0.5}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 200, 200);
+    // A knob is as tall as its disc plus its read-out (its natural height),
+    // so it is a strip at the top of the window: the press aims inside it.
+    g.press(&mut host, &ctx, 22.0, 30.0, &mut || true);
+    assert!(g.locked());
+    // Locked: cursor motion is ignored (relative deltas drive it instead).
+    let effects = g.drag_to(&mut host, &ctx, 22.0, 80.0);
+    assert!(effects.is_empty());
+    let effects = g.relative_motion(&mut host, &ctx, -20.0);
+    assert!(effects.contains(&GestureEffect::Redraw(1)));
+    // Release asks the front to drop the pointer grab.
+    let effects = g.release(&mut host, &ctx, 22.0, 80.0);
+    assert!(effects.contains(&GestureEffect::ReleasePointer(1)));
+}
+
+#[test]
+fn waveform_press_and_drag_select_a_range() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+    );
+    host.set_timeline_total(50, 1000);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    // Press inside the view body (right of the y-ruler strip), then drag.
+    let effects = g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    assert!(has_emit_tag(&effects, 50, "selection"));
+    let effects = g.drag_to(&mut host, &ctx, 600.0, 150.0);
+    assert!(has_emit_tag(&effects, 50, "selection"));
+    // The selection landed in the widget's navigation group — where every
+    // reader of it looks — with a positive length.
+    let key = host.timeline_key(50).unwrap();
+    assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
+}
+
+#[test]
+fn wheel_zooms_the_time_axis_and_emits_the_view() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":60,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+    );
+    host.set_timeline_total(60, 1000);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let before = host.timeline_nav(60).unwrap().0.len;
+    let effects = g.wheel(&mut host, &ctx, 400.0, 150.0, 1.0);
+    let after = host.timeline_nav(60).unwrap().0.len;
+    assert!(after < before, "wheel-in shrinks the visible window");
+    assert!(has_emit_tag(&effects, 60, "view"));
+}
+
+/// The amplitude axis zooms symmetrically: whatever lane the cursor is
+/// over, the window keeps its centre — so every channel's zero line stays
+/// at its lane's centre instead of sliding out of the lane. The regression
+/// this fixes: the anchor used to be the cursor's height within its lane,
+/// which is meaningless for the *other* lanes of one shared window — a
+/// wheel near the top of channel 2 pushed every channel's wave to the
+/// bottom of its lane, clipped.
+#[test]
+fn the_amplitude_axis_zooms_about_its_centre_whatever_lane_is_under_the_cursor() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":61,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+    );
+    host.set_timeline_total(61, 1000);
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 300);
+    // Four channels: the body splits into four lanes.
+    ctx.wave_lanes.insert(61, 4);
+    // Wheel over the y-ruler strip (left of the body), high inside the
+    // *last* lane — the worst case for a cursor-derived anchor.
+    let effects = g.wheel(&mut host, &ctx, 10.0, 212.0, 4.0);
+    assert!(has_emit_tag(&effects, 61, "view_y"));
+    let (start, len) = host
+        .window_def(1)
+        .unwrap()
+        .find(61)
+        .unwrap()
+        .kind
+        .editor()
+        .unwrap()
+        .y_view();
+    assert!(len < 1.0, "wheel-in shrinks the amplitude window");
+    // Zero (display 0.5) sits at the centre of the window, so it lands at
+    // the centre of every lane.
+    assert!(
+        (start + len / 2.0 - 0.5).abs() < 1e-9,
+        "the window stays centred on zero: got ({start}, {len})"
+    );
+}
+
+/// The container's plan decides, and the element takes what it is handed:
+/// on a lane, the clip under the cursor moves, empty lane space locates the
+/// transport, and the header — beside the axis, on no position at all —
+/// does neither.
+#[test]
+fn a_lanes_plan_grabs_the_clip_first_and_locates_where_there_is_none() {
+    let mut host = lane_host();
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    let body = {
+        let h = interact::hit(&host, 1, 800, 200, 400.0, 100.0, &|_, _| 1).unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let midy = (body.y + body.h / 2.0) as f64;
+
+    // Over the first clip (the axis spans 0..10000 samples over the body):
+    // the element wins, and the drag moves it.
+    let on_clip = body.x as f64 + body.w as f64 * 0.02;
+    g.press(&mut host, &ctx, on_clip, midy, &mut || false);
+    assert!(g.dragging(), "the clip under the cursor was grabbed");
+    g.release(&mut host, &ctx, on_clip, midy);
+
+    // Empty lane space: the element declines and the lane's own plan
+    // locates the transport there.
+    let empty = body.x as f64 + body.w as f64 * 0.5;
+    let effects = g.press(&mut host, &ctx, empty, midy, &mut || false);
+    assert!(has_emit_tag(&effects, 70, "locate"));
+    assert!(!g.dragging());
+
+    // The header strip, left of the axis: no clip, no position, no locate.
+    let effects = g.press(&mut host, &ctx, body.x as f64 - 10.0, midy, &mut || false);
+    assert!(
+        !has_emit_tag(&effects, 70, "locate"),
+        "a press beside the axis names no time"
+    );
+}
+
+/// Shift+drag pans, on every timeline view, because the *axis* claims it
+/// before the widget drawn on it ever sees the press.
+#[test]
+fn shift_drag_pans_whatever_timeline_view_is_under_it() {
+    for view in [
+        r#"{"id":80,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}"#,
+        r#"{"id":80,"type":"field","label":"lane","children":[
+               {"id":81,"type":"field","offset":0.0,"dur":1000.0}]}"#,
+        r#"{"id":80,"type":"notes","min":48.0,"max":72.0,"notes":[0.0,500.0,60.0,100,0]}"#,
+        r#"{"id":80,"type":"field"}"#,
+    ] {
+        let mut host = host_from(&format!(
+            r#"{{"type":"window","margin":0,"children":[{view}]}}"#
+        ));
+        host.set_timeline_total(80, 10000);
+        host.zoom_timeline(80, 0.25, 0.5); // leave room to pan in both directions
+        let start_before = host.timeline_nav(80).unwrap().0.start;
+        let mut g = Gestures::default();
+        let mut ctx = GestureCtx::new(1, 800, 200);
+        ctx.shift = true;
+        // Near the top edge, where a free-standing ruler (the shortest of
+        // the four) also lands.
+        g.press(&mut host, &ctx, 500.0, 8.0, &mut || false);
+        assert!(g.dragging(), "shift+press on {view} started no drag");
+        g.drag_to(&mut host, &ctx, 300.0, 8.0);
+        let start_after = host.timeline_nav(80).unwrap().0.start;
+        assert!(
+            start_after > start_before,
+            "dragging left pans the axis right on {view}"
+        );
+    }
+}
+
+/// A sweep on the roll's grid is one marquee: the time span drives the
+/// shared selection every linked view follows, and the rectangle it covers
+/// in time x pitch picks the notes.
+#[test]
+fn a_sweep_on_the_roll_selects_the_time_span_and_the_notes_inside_it() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":90,"type":"notes","min":48.0,"max":72.0,
+             "notes":[0.0,400.0,60.0,100,0, 6000.0,400.0,61.0,100,0]}]}"#,
+    );
+    host.set_timeline_total(90, 10000);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 400);
+    let (grid, lo, hi) = {
+        let h = interact::hit(&host, 1, 800, 400, 400.0, 100.0, &|_, _| 1).unwrap();
+        let axis = interact::time_of(&h.chain).unwrap().1;
+        let (lo, hi) = axis.y.unwrap().window.unwrap();
+        (axis.body, lo, hi)
+    };
+    // Sweep the first tenth of the axis, over every pitch the window shows.
+    let x0 = grid.x as f64 + 1.0;
+    let x1 = grid.x as f64 + grid.w as f64 * 0.1;
+    let effects = g.press(
+        &mut host,
+        &ctx,
+        x0,
+        (grid.y + grid.h) as f64 - 1.0,
+        &mut || false,
+    );
+    assert!(has_emit_tag(&effects, 90, "selection"));
+    g.drag_to(&mut host, &ctx, x1, grid.y as f64 + 1.0);
+    let key = host.timeline_key(90).unwrap();
+    assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
+    assert_eq!(
+        selected_notes(&host, 90),
+        vec![0],
+        "only the note inside the swept rectangle ({lo}..{hi})"
+    );
+}
+
+/// The multi-note selection of a `pianoroll`.
+fn selected_notes(host: &Host, id: i32) -> Vec<usize> {
+    match &host.window_def(1).unwrap().find(id).unwrap().kind {
+        WidgetKind::PianoRoll { selected, .. } => selected.clone(),
+        other => panic!("not a roll: {other:?}"),
+    }
+}
+
+/// The table is the container's, and the wire can set it: a waveform told
+/// to pan on a plain drag pans, with no element touched.
+#[test]
+fn the_gestures_prop_repoints_a_modifier_without_touching_the_element() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":95,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2,
+             "gestures":{"drag":"pan","shift":"select"}}]}"#,
+    );
+    host.set_timeline_total(95, 10000);
+    host.zoom_timeline(95, 0.25, 0.5);
+    let start_before = host.timeline_nav(95).unwrap().0.start;
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    // Plain drag: pans, and never touches the selection.
+    g.press(&mut host, &ctx, 500.0, 150.0, &mut || false);
+    g.drag_to(&mut host, &ctx, 300.0, 150.0);
+    assert!(host.timeline_nav(95).unwrap().0.start > start_before);
+    let key = host.timeline_key(95).unwrap();
+    assert_eq!(host.timelines().state(key).unwrap().sel_len, 0.0);
+    g.release(&mut host, &ctx, 300.0, 150.0);
+    // ...and Shift now does what a plain drag used to.
+    let mut ctx = GestureCtx::new(1, 800, 300);
+    ctx.shift = true;
+    g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    g.drag_to(&mut host, &ctx, 600.0, 150.0);
+    assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
+}
+
+/// ...and a live `/gui_set` moves it, on top of the kind's defaults: the
+/// modifiers it does not name keep them.
+#[test]
+fn a_gui_set_of_the_table_keeps_the_modifiers_it_does_not_name() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":96,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+    );
+    host.set_timeline_total(96, 10000);
+    set_prop(&mut host, 96, "gestures", r#"{"drag":"locate"}"#);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let effects = g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    assert!(has_emit_tag(&effects, 96, "locate"), "the set took effect");
+    // Shift was not named, so it still pans.
+    let mut ctx = GestureCtx::new(1, 800, 300);
+    ctx.shift = true;
+    g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    assert!(g.dragging(), "the default shift plan survived the set");
+}
+
+// --- multitrack lanes: the edge auto-scroll ---
+
+/// The header band beside the axis is the lane's own element: its controls
+/// take a press there, and the value leaves as an edit-back the way every
+/// other host-owned edit does.
+/// The pixels a multitrack has that are not a lane — the gap between two of
+/// them, the slack under the last one, a margin — are the axis with nothing
+/// drawn on them, so the gestures of the axis work there.
+#[test]
+fn the_windows_one_axis_answers_off_the_lanes() {
+    // The example's shape: the lanes inside a vertical scroll view with
+    // more room than content, so the plane is pinned and the slack under
+    // the lane belongs to nobody.
+    let mut host = host_from(
+        r#"{"type":"window","margin":8,"flow":"col","children":[
+            {"id":30,"type":"plane","axis":"y","zoom":0,"flow":"col","margin":0,
+             "content_h":80,"weight":1,"children":[
+              {"id":40,"type":"field","label":"lane","h":60,"link":7,"children":[
+                {"id":41,"type":"field","offset":0,"dur":1000},
+                {"id":42,"type":"field","offset":40000,"dur":1000}]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let key = super::super::timeline::group_key(40, Some(7));
+    let mut fx = Vec::new();
+    host.set_props(
+        40,
+        vec![
+            ("view_start".into(), serde_json::json!(20_000.0)),
+            ("view_len".into(), serde_json::json!(4_000.0)),
+        ],
+        &mut fx,
+    );
+    let nav = |h: &Host| h.timelines().nav(key).unwrap();
+    let mut ctx = GestureCtx::new(1, 800, 400);
+    let (below_x, below_y) = (400.0, 300.0); // under the lane, over nothing
+
+    // The wheel zooms the axis, from off it.
+    let mut g = Gestures::default();
+    let before = nav(&host).len;
+    g.wheel(&mut host, &ctx, below_x, below_y, -1.0);
+    assert!(nav(&host).len > before, "the wheel zoomed the one axis out");
+
+    // Ctrl+wheel is still the lanes' thickness.
+    ctx.ctrl = true;
+    let effects = g.wheel(&mut host, &ctx, below_x, below_y, 1.0);
+    assert!(
+        host.window_def(1).unwrap().find(40).unwrap().place.h > Some(60.0),
+        "the lane grew from a press over empty space"
+    );
+    assert!(has_emit_tag(&effects, 40, "height"));
+    ctx.ctrl = false;
+
+    // And Shift+drag pans it.
+    let start = nav(&host).start;
+    ctx.shift = true;
+    g.press(&mut host, &ctx, below_x, below_y, &mut || false);
+    g.drag_to(&mut host, &ctx, below_x - 120.0, below_y);
+    assert!(
+        nav(&host).start > start,
+        "the axis panned from off the lanes"
+    );
+}
+
+/// Shift+drag is the **lane's** gesture wherever it starts, clip or no
+/// clip. A clip is a container of its own local axis, so it must not answer
+/// for a pan; before it declined, a busy arrangement could only be panned
+/// in the gaps between its clips.
+#[test]
+fn shift_drag_over_a_clip_pans_the_lane_it_is_on() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":40,"type":"field","label":"lane","link":7,"children":[
+               {"id":41,"type":"field","offset":0,"dur":1000},
+               {"id":42,"type":"field","offset":40000,"dur":1000}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 200);
+    ctx.shift = true;
+    let key = super::super::timeline::group_key(40, Some(7));
+    // Zoomed in, so the axis has room to move, and pressing on the clip at
+    // the far end of the composition.
+    let mut fx = Vec::new();
+    host.set_props(
+        40,
+        vec![
+            ("view_start".into(), serde_json::json!(39_000.0)),
+            ("view_len".into(), serde_json::json!(2_000.0)),
+        ],
+        &mut fx,
+    );
+    let before = host.timelines().nav(key).unwrap().start;
+    g.press(&mut host, &ctx, 700.0, 100.0, &mut || false);
+    g.drag_to(&mut host, &ctx, 500.0, 100.0);
+    let after = host.timelines().nav(key).unwrap().start;
+    assert!(
+        after > before,
+        "the lane's window moved: {before} -> {after}"
+    );
+    // And the clip stayed where it was: Shift never grabbed it.
+    assert!(matches!(
+        host.window_def(1).unwrap().find(42).unwrap().kind,
+        WidgetKind::Clip { offset, .. } if (offset - 40_000.0).abs() < 0.5
+    ));
+}
+
+/// The stack a multitrack lives in cannot make its lanes thicker — a
+/// plane's zoom is uniform and would stretch time with it — so the lane's
+/// own `h` is the knob, and Ctrl+wheel is the gesture that turns it.
+#[test]
+fn ctrl_wheel_over_a_lane_resizes_it_and_edits_back() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":70,"type":"field","label":"lane","h":120,
+             "children":[{"id":71,"type":"field","offset":0.0,"dur":1000.0}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 400);
+    ctx.ctrl = true;
+    let effects = g.wheel(&mut host, &ctx, 400.0, 60.0, 1.0);
+    let h = match &host.window_def(1).unwrap().find(70).unwrap().place.h {
+        Some(h) => *h,
+        None => panic!("the lane took a height"),
+    };
+    assert!(h > 120.0, "wheel up makes the lane thicker: {h}");
+    assert!(has_emit_tag(&effects, 70, "height"), "and says so");
+
+    // The plain wheel is still the time axis: the lane keeps its thickness.
+    ctx.ctrl = false;
+    g.wheel(&mut host, &ctx, 400.0, 60.0, 1.0);
+    assert_eq!(
+        host.window_def(1).unwrap().find(70).unwrap().place.h,
+        Some(h)
+    );
+}
+
+#[test]
+fn a_press_on_the_lane_header_works_its_controls_and_edits_back() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":70,"type":"field","label":"lane","mute":false,"level":0.0,
+             "children":[{"id":71,"type":"field","offset":0.0,"dur":1000.0}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    let (rect, body_x) = {
+        let h = interact::hit(&host, 1, 800, 200, 400.0, 100.0, &|_, _| 1).unwrap();
+        let lane = h.chain.iter().find(|f| f.id == Some(70)).unwrap();
+        (lane.rect, interact::time_of(&h.chain).unwrap().1.body.x)
+    };
+    let m = *host.metrics_for(1);
+    let band = crate::host::timeline::gutter_band(rect, body_x - rect.x);
+    let header = match &host.window_def(1).unwrap().find(70).unwrap().kind {
+        WidgetKind::Track { header, .. } => header.clone(),
+        other => panic!("not a lane: {other:?}"),
+    };
+    let parts = crate::host::track::header_parts(band, &header, &m);
+    let mid = |r: Rect| ((r.x + r.w / 2.0) as f64, (r.y + r.h / 2.0) as f64);
+
+    // The mute toggles and says so.
+    let (x, y) = mid(parts.mute.expect("the lane offers a mute"));
+    let effects = g.press(&mut host, &ctx, x, y, &mut || false);
+    assert!(has_emit_tag(&effects, 70, "mute"));
+    assert_eq!(lane_header_of(&host).mute, Some(true));
+
+    // The fader takes its value from where it was pressed, and keeps
+    // taking it while the drag runs.
+    let fader = parts.fader.expect("the lane offers a fader");
+    let (x, y) = mid(fader);
+    let effects = g.press(&mut host, &ctx, x, y, &mut || false);
+    assert!(has_emit_tag(&effects, 70, "level"));
+    assert!((lane_header_of(&host).level.unwrap() - 0.5).abs() < 0.05);
+    g.drag_to(&mut host, &ctx, (fader.x + fader.w) as f64, y);
+    assert!((lane_header_of(&host).level.unwrap() - 1.0).abs() < 0.01);
+    g.release(&mut host, &ctx, (fader.x + fader.w) as f64, y);
+
+    // The name row names no control: the press falls through to the lane,
+    // which names no position beside its axis either.
+    let (x, y) = mid(parts.label);
+    let effects = g.press(&mut host, &ctx, x, y, &mut || false);
+    assert!(!has_emit_tag(&effects, 70, "locate"));
+}
+
+fn lane_header_of(host: &Host) -> crate::host::track::Header {
+    match &host.window_def(1).unwrap().find(70).unwrap().kind {
+        WidgetKind::Track { header, .. } => header.clone(),
+        other => panic!("not a lane: {other:?}"),
+    }
+}
+
+/// One lane, one short clip, on a long axis — so zooming in leaves most of
+/// the timeline off screen, which is the case the edge scroll exists for.
+fn lane_host() -> Host {
+    host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":70,"type":"field","label":"lane","children":[
+                {"id":71,"type":"field","offset":0.0,"dur":1000.0},
+                {"id":72,"type":"field","offset":9000.0,"dur":1000.0}
+            ]}]}"#,
+    )
+}
+
+fn clip_offset(host: &Host, id: i32) -> f64 {
+    match &host.window_def(1).unwrap().find(id).unwrap().kind {
+        WidgetKind::Clip { offset, .. } => *offset,
+        other => panic!("not a clip: {other:?}"),
+    }
+}
+
+/// A clip dragged against the lane's edge pulls the view along, so it can
+/// travel further than the visible window. The regression this fixes: the
+/// drag mapped the cursor through the *press-time* window and nothing
+/// scrolled, so a clip could never move more than one window's worth —
+/// zoomed in, that was a sliver, and holding at the edge did nothing at all.
+#[test]
+fn a_clip_dragged_to_the_edge_pulls_the_view_along() {
+    let mut host = lane_host();
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+
+    // Zoom in hard, anchored at the left: the window shows a fraction of
+    // the timeline, and the first clip sits at its left end.
+    for _ in 0..6 {
+        host.zoom_timeline(70, 0.6, 0.0);
+    }
+    let (before, _) = host.timeline_nav(70).unwrap();
+    assert!(before.len < 2000.0, "zoomed in: {}", before.len);
+
+    // Grab the clip and drag it hard against the right edge.
+    // (past the lane's 96 px header strip, so the press lands on the clip)
+    g.press(&mut host, &ctx, 300.0, 100.0, &mut || false);
+    assert!(g.dragging(), "the press grabbed the clip");
+    g.drag_to(&mut host, &ctx, 790.0, 100.0);
+    let parked = clip_offset(&host, 71);
+    assert!(parked > 0.0, "the drag moved it: {parked}");
+    assert!(g.edge_scrolling(790.0), "and it is pinned at the edge");
+    let (at_edge, _) = host.timeline_nav(70).unwrap();
+    assert_eq!(at_edge.start, before.start, "the drag alone does not pan");
+
+    // Now hold there: every tick pans the view and carries the clip.
+    let mut effects = Vec::new();
+    for _ in 0..10 {
+        effects = g.tick(&mut host, &ctx, 790.0, 1.0 / 30.0);
+    }
+    let (after, _) = host.timeline_nav(70).unwrap();
+    assert!(
+        after.start > at_edge.start,
+        "the window followed the drag: {} -> {}",
+        at_edge.start,
+        after.start
+    );
+    assert!(
+        clip_offset(&host, 71) > parked,
+        "and the clip travelled with it: {parked} -> {}",
+        clip_offset(&host, 71)
+    );
+    // The move keeps reporting itself, and the view move is reported too.
+    assert!(has_emit_tag(&effects, 71, "clip"));
+    // The view move is the *lane's* — the group member, not the clip.
+    assert!(has_emit_tag(&effects, 70, "view"));
+
+    // A cursor clear of the margins scrolls nothing.
+    let (held, _) = host.timeline_nav(70).unwrap();
+    let idle = g.tick(&mut host, &ctx, 400.0, 1.0 / 30.0);
+    assert_eq!(host.timeline_nav(70).unwrap().0.start, held.start);
+    assert!(idle.is_empty());
+
+    // And the scroll stops with the drag.
+    g.release(&mut host, &ctx, 790.0, 100.0);
+    let (dropped, _) = host.timeline_nav(70).unwrap();
+    g.tick(&mut host, &ctx, 790.0, 1.0 / 30.0);
+    assert_eq!(host.timeline_nav(70).unwrap().0.start, dropped.start);
+}
+
+/// Dragging keeps the zoom and scrolls, **from the untouched view too**.
+/// The regression this fixes: a window showing exactly the whole timeline
+/// was refitted to the new total on every drag step, so extending the
+/// content zoomed the axis out from under the cursor instead of scrolling —
+/// and the edge scroll's pan was overwritten as fast as it was applied. It
+/// only appeared to work once the zoom had been changed at least once,
+/// which is what took the window off the exact-full case.
+#[test]
+fn dragging_from_the_full_view_scrolls_instead_of_zooming_out() {
+    let mut host = lane_host();
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    // Untouched: the window shows the whole timeline, exactly.
+    let (before, total) = host.timeline_nav(70).unwrap();
+    assert_eq!(before.len, total as f64, "showing it all, never zoomed");
+
+    // Drag the far clip past the end and hold at the edge. It spans
+    // 9000..10000 of a 10000-sample axis drawn over the body (96..800), so
+    // it occupies roughly the last 70 px.
+    g.press(&mut host, &ctx, 760.0, 100.0, &mut || false);
+    assert!(g.dragging(), "the press grabbed the far clip");
+    g.drag_to(&mut host, &ctx, 790.0, 100.0);
+    for _ in 0..20 {
+        g.tick(&mut host, &ctx, 790.0, 1.0 / 30.0);
+    }
+    let (after, grown) = host.timeline_nav(70).unwrap();
+    assert!(grown > total, "the content grew with the clip");
+    assert!(
+        (after.len - before.len).abs() < 1.0,
+        "the zoom held: {} -> {}",
+        before.len,
+        after.len
+    );
+    assert!(
+        after.start > before.start,
+        "and the axis scrolled: {} -> {}",
+        before.start,
+        after.start
+    );
+    g.release(&mut host, &ctx, 790.0, 100.0);
+}
+
+/// The left edge scrolls the other way, and never past the axis origin.
+#[test]
+fn the_left_edge_scrolls_back_and_stops_at_the_origin() {
+    let mut host = lane_host();
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    for _ in 0..6 {
+        host.zoom_timeline(70, 0.6, 0.0);
+    }
+    // Start from a window well into the timeline, holding the far clip.
+    host.pan_timeline(70, 9000.0);
+    let (before, _) = host.timeline_nav(70).unwrap();
+    assert!(before.start > 0.0);
+    g.press(&mut host, &ctx, 400.0, 100.0, &mut || false);
+    g.drag_to(&mut host, &ctx, 10.0, 100.0);
+    for _ in 0..10 {
+        g.tick(&mut host, &ctx, 10.0, 1.0 / 30.0);
+    }
+    let (after, _) = host.timeline_nav(70).unwrap();
+    assert!(after.start < before.start, "the window walked back");
+    // Keep holding: it parks at the origin instead of running negative.
+    for _ in 0..2000 {
+        g.tick(&mut host, &ctx, 10.0, 1.0 / 30.0);
+    }
+    assert_eq!(host.timeline_nav(70).unwrap().0.start, 0.0);
+    assert!(
+        clip_offset(&host, 72) >= 0.0,
+        "and the clip never goes negative"
+    );
+}
+
+// --- score ---
+
+/// A one-score window, the page fitted 1:1 into the child rect: a window of
+/// 1012x412 gives the child (6,6,1000,400), matching the 1000x400 viewBox.
+fn score_host() -> Host {
+    // Editable, so the drag tests exercise the transpose gesture; the
+    // read-only default is covered by its own test below.
+    host_from(
+        r#"{"type":"window","children":[
+            {"id":80,"type":"score","vb":[1000,400],"editable":true,
+             "glyphs":{"E0A4":"M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
+             "prims":[{"k":"line","pts":[[0,200],[1000,200]],"w":13,"id":"staff"},
+                      {"k":"glyph","cp":"E0A4","xf":[500,200,0.72,-0.72],"id":"n1"}]}]}"#,
+    )
+}
+
+fn score_selected(host: &Host) -> Option<String> {
+    match &host.window_def(1).unwrap().find(80).unwrap().kind {
+        WidgetKind::Score(data) => data.selected.clone(),
+        other => panic!("not a score: {other:?}"),
+    }
+}
+
+fn element_emits(effects: &[GestureEffect]) -> Vec<String> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            GestureEffect::Emit { args, .. }
+                if args.first() == Some(&OscType::String("element".into())) =>
+            {
+                match &args[1..] {
+                    [OscType::String(s)] => Some(s.clone()),
+                    _ => panic!("malformed element payload: {args:?}"),
+                }
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_press_on_the_score_selects_the_element_and_emits_its_id() {
+    let mut host = score_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 1012, 412);
+    // the notehead sits at page (500, 200) -> child rect origin (6, 6)
+    let effects = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+    assert_eq!(element_emits(&effects), vec!["n1".to_string()]);
+    assert_eq!(score_selected(&host).as_deref(), Some("n1"));
+    // pressing the same element again changes nothing: no event, no repaint
+    let again = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+    assert!(again.is_empty(), "a re-press on the selection is inert");
+    // blank paper clears it, reported as an empty id
+    let cleared = g.press(&mut host, &ctx, 106.0, 386.0, &mut || false);
+    assert_eq!(element_emits(&cleared), vec![String::new()]);
+    assert_eq!(score_selected(&host), None);
+}
+
+fn score_drag_preview(host: &Host) -> Option<(String, i32)> {
+    match &host.window_def(1).unwrap().find(80).unwrap().kind {
+        WidgetKind::Score(data) => data.drag.as_ref().map(|d| (d.id.clone(), d.steps)),
+        other => panic!("not a score: {other:?}"),
+    }
+}
+
+fn transpose_emits(effects: &[GestureEffect]) -> Vec<(String, i32)> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            GestureEffect::Emit { args, .. }
+                if args.first() == Some(&OscType::String("transpose".into())) =>
+            {
+                match &args[1..] {
+                    [OscType::String(s), OscType::Int(n)] => Some((s.clone(), *n)),
+                    _ => panic!("malformed transpose payload: {args:?}"),
+                }
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn dragging_a_note_up_the_staff_transposes_it_in_diatonic_steps() {
+    let mut host = score_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 1012, 412);
+    // grab the notehead at page (500, 200); the page is fitted 1:1, so a
+    // diatonic step is the default 90 page units = 90 px
+    g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+    // short of a step the page does not move
+    g.drag_to(&mut host, &ctx, 556.0, 156.0);
+    assert_eq!(score_drag_preview(&host), None);
+    // two steps up: drawn displaced while the drag lasts
+    g.drag_to(&mut host, &ctx, 556.0, 16.0);
+    assert_eq!(score_drag_preview(&host), Some(("n1".into(), 2)));
+    // the release asks the client for the edit, in steps
+    let effects = g.release(&mut host, &ctx, 556.0, 16.0);
+    assert_eq!(transpose_emits(&effects), vec![("n1".to_string(), 2)]);
+    // and the displacement stands until the re-engraved page arrives
+    assert_eq!(score_drag_preview(&host), Some(("n1".into(), 2)));
+    set_prop(&mut host, 80, "display_list", r#"{"vb":[1000,400]}"#);
+    assert_eq!(score_drag_preview(&host), None);
+}
+
+#[test]
+fn a_press_that_does_not_move_the_note_stays_a_selection() {
+    let mut host = score_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 1012, 412);
+    g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+    // wandering back and forth within one step is not an edit
+    g.drag_to(&mut host, &ctx, 556.0, 240.0);
+    let effects = g.release(&mut host, &ctx, 556.0, 240.0);
+    assert!(transpose_emits(&effects).is_empty(), "no step, no edit");
+    assert_eq!(score_drag_preview(&host), None);
+    assert_eq!(score_selected(&host).as_deref(), Some("n1"));
+}
+
+#[test]
+fn a_read_only_score_selects_but_a_drag_does_not_transpose() {
+    // The same host without `editable`: a press still selects and reports
+    // the element (inspecting a page is not editing it), but dragging it a
+    // full step neither previews nor emits a transpose.
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":80,"type":"score","vb":[1000,400],
+             "glyphs":{"E0A4":"M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
+             "prims":[{"k":"line","pts":[[0,200],[1000,200]],"w":13,"id":"staff"},
+                      {"k":"glyph","cp":"E0A4","xf":[500,200,0.72,-0.72],"id":"n1"}]}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 1012, 412);
+    let picked = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+    assert_eq!(element_emits(&picked), vec!["n1".to_string()]);
+    assert_eq!(score_selected(&host).as_deref(), Some("n1"));
+    // two full steps up: no preview while dragging, no transpose on release
+    g.drag_to(&mut host, &ctx, 556.0, 16.0);
+    assert_eq!(score_drag_preview(&host), None);
+    let effects = g.release(&mut host, &ctx, 556.0, 16.0);
+    assert!(transpose_emits(&effects).is_empty(), "read-only: no edit");
+}
+
+// --- piano ---
+
+/// A one-piano window (no overview, no label: the keys fill the widget
+/// rect), plus the layout the gestures see. The window is 712x132 so the
+/// child rect is (6,6,700,120): one octave C4..C5 = 8 white keys.
+fn piano_host(extra: &str) -> (Host, piano::Layout) {
+    let json = format!(
+        r#"{{"type":"window","children":[
+            {{"id":70,"type":"keys","min":60,"max":72,"overview":0{extra}}}]}}"#
+    );
+    let host = host_from(&json);
+    let l = piano::layout(
+        Rect::new(6.0, 6.0, 700.0, 120.0),
+        60,
+        72,
+        false,
+        false,
+        &Metrics::default(),
+    );
+    (host, l)
+}
+
+fn note_emits(effects: &[GestureEffect]) -> Vec<(i32, i32, i32, i32)> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            GestureEffect::Emit { args, .. }
+                if args.first() == Some(&OscType::String("note".into())) =>
+            {
+                match args[1..] {
+                    [
+                        OscType::Int(p),
+                        OscType::Int(v),
+                        OscType::Int(s),
+                        OscType::Int(c),
+                    ] => Some((p, v, s, c)),
+                    _ => panic!("malformed note payload: {args:?}"),
+                }
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn piano_pressed(host: &Host) -> Vec<i32> {
+    match &host.window_def(1).unwrap().find(70).unwrap().kind {
+        WidgetKind::Piano { pressed, .. } => pressed.clone(),
+        other => panic!("not a piano: {other:?}"),
+    }
+}
+
+#[test]
+fn piano_press_glissando_and_release_emit_midi_shaped_notes() {
+    let (mut host, l) = piano_host(r#","channel":2"#);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 712, 132);
+    // Press the front of C4: note-on, high velocity, channel carried.
+    let c = piano::key_rect(&l, 60).unwrap();
+    let effects = g.press(
+        &mut host,
+        &ctx,
+        (c.x + c.w * 0.5) as f64,
+        (c.y + c.h - 1.0) as f64,
+        &mut || false,
+    );
+    let notes = note_emits(&effects);
+    assert_eq!(notes.len(), 1);
+    let (p, v, s, ch) = notes[0];
+    assert_eq!((p, s, ch), (60, 1, 2));
+    assert!(v > 120, "front-of-key press is loud, got {v}");
+    assert_eq!(piano_pressed(&host), vec![60]);
+    // Glissando onto D4: off 60, on 62 (the new key's own velocity).
+    let d = piano::key_rect(&l, 62).unwrap();
+    let effects = g.drag_to(
+        &mut host,
+        &ctx,
+        (d.x + d.w * 0.5) as f64,
+        (d.y + d.h * 0.5) as f64,
+    );
+    let notes = note_emits(&effects);
+    assert_eq!(notes.len(), 2);
+    assert_eq!((notes[0].0, notes[0].2), (60, 0));
+    assert_eq!((notes[1].0, notes[1].2), (62, 1));
+    assert_eq!(piano_pressed(&host), vec![62]);
+    // Release: note-off of the held key.
+    let effects = g.release(&mut host, &ctx, d.x as f64, d.y as f64);
+    let notes = note_emits(&effects);
+    assert_eq!(notes.len(), 1);
+    assert_eq!((notes[0].0, notes[0].2), (62, 0));
+    assert!(piano_pressed(&host).is_empty());
+}
+
+#[test]
+fn piano_glissando_across_two_keys_releases_each_left_key() {
+    // A glissando spanning more than one crossing: every key left behind
+    // must get its note-off, and the final release offs the last key only.
+    let (mut host, l) = piano_host("");
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 712, 132);
+    let c = piano::key_rect(&l, 60).unwrap();
+    g.press(
+        &mut host,
+        &ctx,
+        (c.x + c.w * 0.5) as f64,
+        (c.y + c.h - 1.0) as f64,
+        &mut || false,
+    );
+    let d = piano::key_rect(&l, 62).unwrap();
+    g.drag_to(
+        &mut host,
+        &ctx,
+        (d.x + d.w * 0.5) as f64,
+        (d.y + d.h * 0.5) as f64,
+    );
+    let e = piano::key_rect(&l, 64).unwrap();
+    let effects = g.drag_to(
+        &mut host,
+        &ctx,
+        (e.x + e.w * 0.5) as f64,
+        (e.y + e.h * 0.5) as f64,
+    );
+    let notes = note_emits(&effects);
+    assert_eq!(notes.len(), 2, "second crossing: one off, one on");
+    assert_eq!((notes[0].0, notes[0].2), (62, 0), "the key left is 62");
+    assert_eq!((notes[1].0, notes[1].2), (64, 1));
+    assert_eq!(piano_pressed(&host), vec![64]);
+    let effects = g.release(&mut host, &ctx, e.x as f64, e.y as f64);
+    let notes = note_emits(&effects);
+    assert_eq!(notes.len(), 1);
+    assert_eq!((notes[0].0, notes[0].2), (64, 0));
+    assert!(piano_pressed(&host).is_empty());
+}
+
+#[test]
+fn piano_fixed_velocity_and_grayed_keys() {
+    // A fixed velocity overrides the press-height map.
+    let (mut host, l) = piano_host(r#","velocity":90"#);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 712, 132);
+    let c = piano::key_rect(&l, 60).unwrap();
+    let effects = g.press(
+        &mut host,
+        &ctx,
+        (c.x + 2.0) as f64,
+        (c.y + c.h - 1.0) as f64,
+        &mut || false,
+    );
+    assert_eq!(note_emits(&effects)[0].1, 90);
+    g.release(&mut host, &ctx, c.x as f64, c.y as f64);
+    // A press outside the active range is inert: no event, no held key.
+    let (mut host, _) = piano_host(r#","active_min":64,"active_max":72"#);
+    let mut g = Gestures::default();
+    let effects = g.press(
+        &mut host,
+        &ctx,
+        (c.x + 2.0) as f64,
+        (c.y + c.h - 1.0) as f64,
+        &mut || false,
+    );
+    assert!(note_emits(&effects).is_empty());
+    assert!(!g.dragging());
+    assert!(piano_pressed(&host).is_empty());
+}
+
+#[test]
+fn piano_wheel_pans_the_range_and_pan_zero_freezes_it() {
+    let (mut host, l) = piano_host("");
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 712, 132);
+    let c = piano::key_rect(&l, 60).unwrap();
+    let (cx, cy) = ((c.x + c.w * 0.5) as f64, (c.y + c.h - 1.0) as f64);
+    let effects = g.wheel(&mut host, &ctx, cx, cy, 1.0);
+    assert!(has_emit_tag(&effects, 70, "range"));
+    match &host.window_def(1).unwrap().find(70).unwrap().kind {
+        WidgetKind::Piano { min, max, .. } => assert_eq!((*min, *max), (62, 74)),
+        other => panic!("not a piano: {other:?}"),
+    }
+    // `pan: 0` silences every range gesture.
+    let (mut host, _) = piano_host(r#","pan":0"#);
+    let effects = g.wheel(&mut host, &ctx, cx, cy, 1.0);
+    assert!(effects.is_empty());
+    match &host.window_def(1).unwrap().find(70).unwrap().kind {
+        WidgetKind::Piano { min, max, .. } => assert_eq!((*min, *max), (60, 72)),
+        other => panic!("not a piano: {other:?}"),
+    }
+}
+
+#[test]
+fn piano_overview_drag_pans_and_wheel_zooms() {
+    // With the overview on, the strip sits at the top of the widget rect.
+    let host_json = r#"{"type":"window","children":[
+        {"id":70,"type":"keys","min":60,"max":72}]}"#;
+    let mut host = host_from(host_json);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 712, 132);
+    let l = piano::layout(
+        Rect::new(6.0, 6.0, 700.0, 120.0),
+        60,
+        72,
+        true,
+        false,
+        &Metrics::default(),
+    );
+    let strip = l.overview.unwrap();
+    let sy = (strip.y + strip.h * 0.5) as f64;
+    // Drag along the strip: the window pans with the cursor.
+    let x0 = piano::overview_key_x(strip, 66) as f64;
+    let x1 = piano::overview_key_x(strip, 78) as f64;
+    let effects = g.press(&mut host, &ctx, x0, sy, &mut || false);
+    assert!(note_emits(&effects).is_empty(), "the strip plays no note");
+    let effects = g.drag_to(&mut host, &ctx, x1, sy);
+    assert!(has_emit_tag(&effects, 70, "range"));
+    match &host.window_def(1).unwrap().find(70).unwrap().kind {
+        WidgetKind::Piano { min, max, .. } => {
+            assert_eq!(max - min, 12, "pan keeps the span");
+            assert!(*min > 60, "the window moved right");
+        }
+        other => panic!("not a piano: {other:?}"),
+    }
+    g.release(&mut host, &ctx, x1, sy);
+    // Wheel over the strip zooms out (steps < 0 widens the span).
+    let effects = g.wheel(&mut host, &ctx, x1, sy, -2.0);
+    assert!(has_emit_tag(&effects, 70, "range"));
+    match &host.window_def(1).unwrap().find(70).unwrap().kind {
+        WidgetKind::Piano { min, max, .. } => assert!(max - min > 12),
+        other => panic!("not a piano: {other:?}"),
+    }
+}
+
+#[test]
+fn piano_voice_mode_tracks_one_node_per_held_pitch() {
+    let (mut host, l) = piano_host(r#","voice":"pv","voice_args":["pan",0.5]"#);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 712, 132);
+    let c = piano::key_rect(&l, 60).unwrap();
+    let (cx, cy) = ((c.x + 2.0) as f64, (c.y + c.h - 1.0) as f64);
+    g.press(&mut host, &ctx, cx, cy, &mut || false);
+    let voices = host.piano_voices(70).to_vec();
+    assert_eq!(voices.len(), 1);
+    assert_eq!(voices[0].0, 60);
+    // Glissando: the old voice is released, a new node sounds the new key.
+    let d = piano::key_rect(&l, 62).unwrap();
+    g.drag_to(
+        &mut host,
+        &ctx,
+        (d.x + d.w * 0.5) as f64,
+        (d.y + 1.0) as f64,
+    );
+    let after = host.piano_voices(70).to_vec();
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0].0, 62);
+    assert_ne!(after[0].1, voices[0].1, "a fresh node id per voice");
+    // Release clears the bookkeeping.
+    g.release(&mut host, &ctx, cx, cy);
+    assert!(host.piano_voices(70).is_empty());
+    // A freed widget releases whatever is still held.
+    g.press(&mut host, &ctx, cx, cy, &mut || false);
+    assert!(!host.piano_voices(70).is_empty());
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: super::super::GUI_FREE.into(),
+            args: vec![OscType::Int(1)],
+        }),
+        from(),
+    );
+    assert!(host.piano_voices(70).is_empty());
+}
+
+// --- editable text field ------------------------------------------------
+
+/// A window with one editable `text` field (id 5) filling it.
+/// A window holding one single-line field. It is **natural-sized**, so it
+/// is a control-high strip at the top of the window rather than the whole
+/// pane — every press below aims inside that strip.
+fn text_host() -> Host {
+    host_from(r#"{"type":"window","margin":0,"children":[{"id":5,"type":"text"}]}"#)
+}
+
+fn text_value(host: &Host, id: i32) -> String {
+    match &host.window_def(1).unwrap().find(id).unwrap().kind {
+        WidgetKind::Text { value, .. } => value.clone(),
+        other => panic!("not a text field: {other:?}"),
+    }
+}
+
+/// The string of the single `Emit` in `effects`, if any.
+fn emitted_string(effects: &[GestureEffect]) -> Option<String> {
+    effects.iter().find_map(|e| match e {
+        GestureEffect::Emit { args, .. } => match args.first() {
+            Some(OscType::String(s)) => Some(s.clone()),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
+#[test]
+fn a_press_focuses_the_field_and_typing_emits_on_every_keystroke() {
+    let mut host = text_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    // A press focuses the field (no emit yet — a click is not an edit).
+    let e = g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
+    assert_eq!(host.focused_text(), Some((1, 5)));
+    assert!(emitted_string(&e).is_none());
+    // Each character is delivered as the field's whole string, ungated.
+    for (ch, expect) in [('h', "h"), ('i', "hi")] {
+        let e = g
+            .text_key(&mut host, &ctx, TextKey::Char(ch), &mut String::new())
+            .expect("the focused field consumes the key");
+        assert_eq!(emitted_string(&e).as_deref(), Some(expect));
+        assert_eq!(text_value(&host, 5), expect);
+    }
+    // Backspace edits and re-emits.
+    let e = g
+        .text_key(&mut host, &ctx, TextKey::Backspace, &mut String::new())
+        .unwrap();
+    assert_eq!(emitted_string(&e).as_deref(), Some("h"));
+}
+
+#[test]
+fn keys_are_ignored_when_no_field_is_focused() {
+    let mut host = text_host();
+    let g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    // Nothing focused: the machine declines the key (the front runs its
+    // global shortcuts instead).
+    assert!(
+        g.text_key(&mut host, &ctx, TextKey::Char('x'), &mut String::new())
+            .is_none()
+    );
+    assert_eq!(text_value(&host, 5), "");
+}
+
+#[test]
+fn a_press_elsewhere_defocuses_the_field() {
+    // Two fields; focusing one then pressing the other moves the focus.
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"row","children":[
+            {"id":5,"type":"text"},{"id":6,"type":"text"}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+    assert_eq!(host.focused_text(), Some((1, 5)));
+    g.press(&mut host, &ctx, 330.0, 30.0, &mut || false);
+    assert_eq!(host.focused_text(), Some((1, 6)));
+}
+
+#[test]
+fn enter_inserts_a_newline_only_in_a_multiline_field() {
+    let ctx = GestureCtx::new(1, 600, 400);
+    // Single-line: Enter is inert (no send-on-Enter).
+    let mut host = text_host();
+    let mut g = Gestures::default();
+    g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
+    let e = g
+        .text_key(&mut host, &ctx, TextKey::Enter, &mut String::new())
+        .unwrap();
+    assert!(emitted_string(&e).is_none());
+    assert_eq!(text_value(&host, 5), "");
+    // Multiline: Enter inserts a newline and emits.
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[{"id":5,"type":"text","multiline":true}]}"#,
+    );
+    let mut g = Gestures::default();
+    g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+    g.text_key(&mut host, &ctx, TextKey::Char('a'), &mut String::new());
+    let e = g
+        .text_key(&mut host, &ctx, TextKey::Enter, &mut String::new())
+        .unwrap();
+    assert_eq!(emitted_string(&e).as_deref(), Some("a\n"));
+}
+
+#[test]
+fn cut_and_paste_move_text_through_the_clipboard() {
+    let mut host = text_host();
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 600, 400);
+    let mut clip = String::new();
+    g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
+    for ch in "abc".chars() {
+        g.text_key(&mut host, &ctx, TextKey::Char(ch), &mut clip);
+    }
+    // Select all, then cut to the clipboard.
+    ctx.ctrl = true;
+    g.text_key(&mut host, &ctx, TextKey::Char('a'), &mut clip);
+    g.text_key(&mut host, &ctx, TextKey::Char('x'), &mut clip);
+    assert_eq!(clip, "abc");
+    assert_eq!(text_value(&host, 5), "");
+    // Paste it back twice.
+    g.text_key(&mut host, &ctx, TextKey::Char('v'), &mut clip);
+    g.text_key(&mut host, &ctx, TextKey::Char('v'), &mut clip);
+    assert_eq!(text_value(&host, 5), "abcabc");
+}
