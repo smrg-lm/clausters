@@ -63,8 +63,8 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   so a script addresses it by name (`win["cutoff"].set(…)`) and never writes or
   matches an integer. The name is stripped from the JSON — the host only ever
   sees ids.
-- **`children`** nests (containers only: `window`, `panel`, `stack`, `scroll`,
-  `track`).
+- **`children`** nests (containers only: `window`, `layout`, `plane`,
+  `field`).
 - **The place props** — every widget, whatever its type, may carry `w`, `h`,
   `weight`, `x`, `y` (all numbers, **logical pixels**, all live via `/gui_set`).
   In a `row`/`col` the main axis resolves in **one order**: a fixed main-axis
@@ -80,8 +80,8 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   `menu`, a single-line `text`, a `slider`'s thickness across its track — its
   groove plus the row its value reads out in, which is why the number never
   sits on the handle — a `knob`'s height, a `timeruler`'s thickness), the **surface** kinds do not
-  (`panel`, `stack`, `scroll`, `patch`, `track`, `plot`, `nodetree`, `canvas`, the
-  heavy views, a wrapped `label`, a multiline `text`). A natural size follows
+  (`layout`, `plane`, `field`, `nodes`, `canvas`, every `signal`, a wrapped
+  `label`, a multiline `text`). A natural size follows
   the host's sizing table and the widget's own `text_size`/`label`, **never
   its data** — a longer string or another thousand samples never move it, so
   a `/gui_set` never relayouts the window. In a `free` container `x`/`y`
@@ -89,7 +89,8 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   overlays the whole area. A container additionally takes `margin` (inset
   before its children, default 6), `gap` (between children, default 6) and
   `cols` (a fixed `grid` column count; default near-square) — except a
-  `stack`, which arranges nothing and so takes only the `margin`. One pass, no
+  `layout` whose `flow` is `stack`, which arranges nothing and so takes only
+  the `margin`. One pass, no
   measurement and no constraint solver — a container never measures its
   children, so chrome that must hug its content says so with `h`: when a
   layout needs negotiation, the answer is explicit sizes.
@@ -127,15 +128,15 @@ The **edit-back payloads**:
 | `"note"` | `pitch velocity state channel` (ints; state 1 = press, 0 = release) | the `piano` keyboard played — MIDI-shaped, translatable 1:1 to note-on/note-off |
 | `"range"` | `min max` (MIDI notes) | the `piano`'s visible range panned or zoomed |
 | `"clip"` | `offset dur` (timeline units) | a `clip` moved or resized |
-| `"mute"` / `"solo"` | `0|1` | a lane header's toggle worked — the tag is the `track` prop that changed |
+| `"mute"` / `"solo"` | `0|1` | a lane header's toggle worked — the tag is the lane prop that changed |
 | `"level"` | `f` (0..1) | a lane header's fader dragged |
 | `"element"` | `id` (a string: the MEI `xml:id`; empty = the selection was cleared) | a `score` page clicked — the engraved element under the cursor |
 | `"transpose"` | `id steps` (the MEI `xml:id`; whole diatonic steps, positive = up the staff) | a `score` element dragged up or down — a pitch edit *requested*, since the host holds no score |
-| `"wire"` | `src_box outlet dst_box inlet` (ports by name; a rate mismatch is refused at the gesture) | a `patch` cord drawn `outlet -> inlet` |
-| `"move"` | `index x y` (box index; canvas units) | a `patch` box dragged — one payload per moved box, so the driver owns the geometry |
+| `"wire"` | `src_box outlet dst_box inlet` (ports by name; a rate mismatch is refused at the gesture) | a patcher cord drawn `outlet -> inlet` |
+| `"move"` | `index x y` (box index; canvas units) | a patcher box dragged — one payload per moved box, so the driver owns the geometry |
 | `"locate"` | `position` (timeline units) | a lane's time ruler (or its empty space) clicked — the transport is being seeked there |
 | `"selection"` | `start len` (samples) | a selection dragged on a timeline view |
-| `"view"` | `start len` (samples), or `x y zoom` on a `scroll` | the navigation window zoomed or panned — the timeline group's shared window, or a 2D workspace's plane |
+| `"view"` | `start len` (samples), or `x y zoom` on a `plane` | the navigation window zoomed or panned — the timeline group's shared window, or a 2D workspace's plane |
 | `"view_y"` | `start len` (0..1) | the vertical display window zoomed or panned |
 
 Edited data flows as a **payload, never a new address**: the `/gui_*` family does
@@ -247,10 +248,6 @@ and the model wants it for a patcher's box — but a plane's boxes are still its
 layout, per-box hit-testing and edit-back) rather than of spelling. Until that
 lands, `box` names nothing.
 
-One name is deferred: **`box`** currently means a synonym of `panel` and the
-model wants it for a patcher's box, and both cannot be true while both
-spellings parse. Until then a plane's boxes stay its `boxes` property.
-
 ## The widget catalog
 
 The names below are **builder** names in both clients, not wire types — each
@@ -302,26 +299,26 @@ recording at all: it reads the per-bus level the engine publishes every block.
 
 **Logical pixels, and the one place that is not.** Every length the wire declares — the place props `w`/`h`/`x`/`y`, a container's `margin`/`gap`, a `window`'s `w`/`h` — is a **logical** pixel: the host multiplies it by the display's scale, so a `h: 28` strip is a 28-pixel-looking strip on an ordinary monitor and a 56-physical-pixel one on a doubled HiDPI screen, and a script never asks what it is running on. `text_size` is logical the same way (it is a glyph scale, so it scales with the rest instead of the font staying tiny). The scale is one number per window, taken from the system natively and from `devicePixelRatio` in a browser, and the sizing table resolves against it **once per change** — never per frame.
 
-The exception is a `scroll` workspace's **content plane**: its `content_w`/`content_h`, its `view_x`/`view_y` pan and its children's place props are content units, and what turns them into pixels is `view_zoom` — physical pixels per content unit, because the plane's pan and zoom are written in the pixels the pointer moves. What the display scale does there is set the **default zoom**: absent a `view_zoom`, a plane starts at the window's scale, so one content unit is one *logical* pixel and a patcher's boxes come up the size they are meant to look. Name a `view_zoom` (in the tree, or by turning the wheel) and it is literal from then on; **`/gui_set view_zoom 0`** (or any non-number) clears it and hands the plane back to its default, which is the only way to ask for a default that has no number of its own — the same shape an empty `theme` uses to drop an overlay. Same split in the heavy views (`waveform`, `spectrogram`), which resolve their signal against physical pixels. So: chrome is logical, a navigable plane is its own — and its zoom is where the two meet.
+The exception is a `plane` workspace's **content plane**: its `content_w`/`content_h`, its `view_x`/`view_y` pan and its children's place props are content units, and what turns them into pixels is `view_zoom` — physical pixels per content unit, because the plane's pan and zoom are written in the pixels the pointer moves. What the display scale does there is set the **default zoom**: absent a `view_zoom`, a plane starts at the window's scale, so one content unit is one *logical* pixel and a patcher's boxes come up the size they are meant to look. Name a `view_zoom` (in the tree, or by turning the wheel) and it is literal from then on; **`/gui_set view_zoom 0`** (or any non-number) clears it and hands the plane back to its default, which is the only way to ask for a default that has no number of its own — the same shape an empty `theme` uses to drop an overlay. Same split in the heavy views (`waveform`, `spectrogram`), which resolve their signal against physical pixels. So: chrome is logical, a navigable plane is its own — and its zoom is where the two meet.
 
 **Why the default is the density and not a fit to the content.** A plane's content unit is a *display* unit: a patcher box is 96 units wide because that is how wide a box should look. Fitting the zoom to the content instead would make a box's apparent size follow **how many boxes there are** — a three-box graph huge, a fifty-box graph unreadable — and re-zoom the plane on every edit. Zoom-to-fit belongs to a key, not to the default. The distinction generalizes: a view whose content unit is *data* (a `waveform`'s sample, a `pianoroll`'s semitone, a `score`'s staff step) keeps its own window and the display scale must not touch it — a denser screen means more detail over the same span, not a different span.
 
-**Theme groups and the `color` prop.** The host draws every chrome color from one theme — a table of named roles, loaded from `[gui.theme]` or `--theme` (see the configuration chapter) — and the wire customizes it with the same partial table, recursively. A **container** (`window`, `panel`, `stack`, `scroll`, `track`) may carry a `theme` prop: a JSON object of `"role": "#rrggbb[aa]"` entries overlaying its parent's theme for its whole subtree — a **theme group**, a style scoped to the function of a set of widgets (the transport bar dimmed, the recording strip warm) rather than to any individual part. Groups nest: an inner table overlays the *inherited* one. The leaf case is the single `color` prop on **any** widget — one hex that re-seeds just the roles carrying that widget's function: the accent family (a slider's handle and fill, a button face, a meter's bar), the trace, the first color of the multichannel series cycle, a clip's body. Both are live via `/gui_set` (`theme` rides as its JSON string; an empty value clears), and a `theme` on a GuiDef root persists with the named def, so a standalone bundle ships its look with zero host configuration. Overlays resolve when a def arrives or a set changes them — each widget ends up holding one resolved theme — so the per-frame path pays nothing; there are no selectors and no per-part rules, deliberately.
+**Theme groups and the `color` prop.** The host draws every chrome color from one theme — a table of named roles, loaded from `[gui.theme]` or `--theme` (see the configuration chapter) — and the wire customizes it with the same partial table, recursively. A **container** (`window`, `layout`, `plane`, `field`) may carry a `theme` prop: a JSON object of `"role": "#rrggbb[aa]"` entries overlaying its parent's theme for its whole subtree — a **theme group**, a style scoped to the function of a set of widgets (the transport bar dimmed, the recording strip warm) rather than to any individual part. Groups nest: an inner table overlays the *inherited* one. The leaf case is the single `color` prop on **any** widget — one hex that re-seeds just the roles carrying that widget's function: the accent family (a slider's handle and fill, a button face, a meter's bar), the trace, the first color of the multichannel series cycle, a clip's body. Both are live via `/gui_set` (`theme` rides as its JSON string; an empty value clears), and a `theme` on a GuiDef root persists with the named def, so a standalone bundle ships its look with zero host configuration. Overlays resolve when a def arrives or a set changes them — each widget ends up holding one resolved theme — so the per-frame path pays nothing; there are no selectors and no per-part rules, deliberately.
 
 **The `gestures` table: what a drag on a container does.** Panning, sweeping a
 selection and locating the transport are the **container's** gestures, not the
 element's: they belong to the coordinate system a container gives its contents,
-which is why Shift+drag pans the same way over a `waveform`, a `track` lane, a
-`pianoroll` and a `timeruler`, and why a plain drag on a `scroll`'s background
-pans the plane. Any container may carry a `gestures` prop — an object keyed by
+which is why Shift+drag pans the same way over every `field` — a lane, a clip,
+a bare ruler — and over a navigable `signal`, and why a plain drag on a
+`plane`'s background pans it. Any container may carry a `gestures` prop — an object keyed by
 modifier chord (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value a
 **plan**: the step names in order, separated by spaces.
 
 | Step | What it does |
 | --- | --- |
 | `element` | Hands the press to whatever is under the cursor — the widget the pointer found, or the clip, note or box the container drew there. It may decline (empty space), and the plan goes on |
-| `pan` | Pans the container's axis: time on a timeline view, the plane on a `scroll` |
-| `select` | Sweeps a selection: the shared time selection on a timeline (a rectangle in time x pitch on a `pianoroll`, which also picks its notes), the box marquee on a `patch` |
+| `pan` | Pans the container's axis: time on a `field`, the plane on a `plane` |
+| `select` | Sweeps a selection: the shared time selection on a timeline (a rectangle in time x pitch on a `notes` element, which also picks its notes), the box marquee on a patcher `plane` |
 | `locate` | Puts the transport's cursor under the pointer and emits `"locate"` |
 | `none` | Nothing |
 
@@ -331,11 +328,11 @@ nothing on its axis to grab. A plan that consumes nothing falls **outward** to
 the container around it, which is how Shift+drag on a patcher's empty canvas
 pans the workspace the patcher sits in. The defaults are the behavior described
 throughout this chapter (`{"drag": "element locate", "shift": "pan"}` on a
-`track`, `{"drag": "select", "shift": "pan"}` on the heavy views, and so on), so
+lane, `{"drag": "select", "shift": "pan"}` on the heavy views, and so on), so
 a table names only what it changes:
 
 ```json
-{"id": 7, "type": "waveform", "gestures": {"drag": "pan", "shift": "select"}}
+{"id": 7, "type": "signal", "view": "trace", "gestures": {"drag": "pan", "shift": "select"}}
 ```
 
 Live via `/gui_set gestures` (as a JSON string, the `theme` convention), and
@@ -348,7 +345,7 @@ keyboard gutter) always pans that axis, and the wheel always zooms.
 
 **The editable `text` field.** A `text` widget is an editable entry: click to focus it and place the caret, type to insert, move the caret with the arrows / `Home` / `End` (word-wise with `Ctrl`), edit with `Backspace`/`Delete`, select by dragging or with `Shift`+arrows (`Ctrl+A` selects all), and cut/copy/paste with `Ctrl+X`/`C`/`V`. The entered string is delivered **the same way a slider's value is — on every edit, never gated on Enter**: an unbound field emits `/gui_event <id> <string>` per keystroke, a bound one (`/gui_bind`) forwards the string straight to the audio server. `multiline: true` allows embedded newlines (`Enter` inserts one; a single-line field ignores it) and a field that grows to its rect; `value` seeds the contents and `/gui_set value` sets them live. The caret and selection are view state, not wire state, so redefining `value` never carries them.
 
-The `scroll` container is **one widget with one gesture path**, and the familiar constrained scroll views are configurations of it rather than separate types: `axis: "y"` with `zoom: 0` *is* a plain vertical scroll view, `axis: "x"` a horizontal strip, and the default is the full 2D plane — drag the empty background to pan both axes, wheel to zoom anchored at the cursor. Its children's place props (`x`/`y`/`w`/`h`) are read in **content units** — physical pixels on the plane, not the logical ones the chrome declares: the content area sizes itself from their extents unless `content_w`/`content_h` name it. `view_x`/`view_y` are the content coordinates at the widget's top-left corner and `view_zoom` is physical pixels per content unit (absent — or set to `0` — the window's display scale, see the units section above); all three are live via `/gui_set` and travel back as the `"view"` payload when a gesture moves them. A widget scrolled outside its container is clipped away — it is neither drawn nor hit.
+The `plane` container is **one container with one gesture path**, and the familiar constrained scroll views are configurations of it rather than separate types: `axis: "y"` with `zoom: 0` *is* a plain vertical scroll view, `axis: "x"` a horizontal strip, and the default is the full 2D plane — drag the empty background to pan both axes, wheel to zoom anchored at the cursor. Its children's place props (`x`/`y`/`w`/`h`) are read in **content units** — physical pixels on the plane, not the logical ones the chrome declares: the content area sizes itself from their extents unless `content_w`/`content_h` name it. `view_x`/`view_y` are the content coordinates at the widget's top-left corner and `view_zoom` is physical pixels per content unit (absent — or set to `0` — the window's display scale, see the units section above); all three are live via `/gui_set` and travel back as the `"view"` payload when a gesture moves them. A widget scrolled outside its container is clipped away — it is neither drawn nor hit.
 
 The two shapes also **bound differently, deliberately**. A constrained scroll view is a bounded document: it clamps to `[0, content - visible]`, so you cannot scroll above its first row or past its last. The free plane is conceptually unbounded — `content_w`/`content_h` only say where its contents happen to sit — so it overscrolls by half a viewport past each edge, which is what keeps every drag direction alive when the plane is sitting at its content's corner (and still little enough that the contents can never be lost off-screen).
 
