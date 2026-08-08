@@ -762,11 +762,31 @@ impl Host {
         if props.is_empty() {
             return warn!("{from}: {GUI_SET} {id}: no key/value pairs");
         }
-        let keys: Vec<&String> = props.iter().map(|(k, _)| k).collect();
-        if !self.registry.set(id, props.clone()) {
+        let keys: Vec<String> = props.iter().map(|(k, _)| k.clone()).collect();
+        if !self.set_props(id, props, effects) {
             return warn!("{from}: {GUI_SET} {id}: no such widget");
         }
         info!("{from}: {GUI_SET} {id}: updated {keys:?}");
+    }
+
+    /// The mutation a `/gui_set` performs, without its wire form: apply `props`
+    /// to widget `id` in the generic registry and, when it is inside an open
+    /// window, in the typed render tree. Returns whether the widget exists.
+    ///
+    /// It is a method of its own because a **widget binding** performs exactly
+    /// this and nothing else — one apply, never another delivery — so the two
+    /// paths cannot drift and a binding cannot cascade
+    /// ([`bind`](super::bind)).
+    pub fn set_props(
+        &mut self,
+        id: i32,
+        props: Vec<(String, Value)>,
+        effects: &mut Vec<HostEffect>,
+    ) -> bool {
+        let keys: Vec<&String> = props.iter().map(|(k, _)| k).collect();
+        if !self.registry.set(id, props.clone()) {
+            return false;
+        }
         // A set can retarget a view's source or widen its channel run, which
         // changes what has to be recorded; the diff below is a no-op otherwise.
         let touches_source = keys
@@ -836,6 +856,7 @@ impl Host {
         if touches_source {
             self.sync_bus_watches();
         }
+        true
     }
 
     /// `/gui_free <id>` — destroy a widget and its subtree (and its window, if
@@ -917,39 +938,67 @@ impl Host {
             Ok(b) => b,
             Err(e) => return warn!("{from}: {GUI_BIND} {id}: {e}"),
         };
-        if self.server.is_none() {
-            warn!(
-                "{from}: {GUI_BIND} {id}: no audio server attached (--server); the binding \
-                 will swallow the value but cannot forward it"
-            );
+        match &binding {
+            Binding::Server { addr, prefix } => {
+                if self.server.is_none() {
+                    warn!(
+                        "{from}: {GUI_BIND} {id}: no audio server attached (--server); the \
+                         binding will swallow the value but cannot forward it"
+                    );
+                }
+                info!("{from}: {GUI_BIND} {id} -> audio server {addr} {prefix:?}");
+            }
+            Binding::Widget {
+                id: target,
+                prop: key,
+            } => info!("{from}: {GUI_BIND} {id} -> widget {target} {key}"),
         }
-        info!(
-            "{from}: {GUI_BIND} {id} -> audio server {} {:?}",
-            binding.addr, binding.prefix
-        );
         self.bindings.insert(id, binding);
     }
 
-    /// Forwards `widget_id`'s `value` to the audio server when it is bound,
-    /// returning whether the binding handled it. When it returns `true` the
-    /// caller must **not** also emit a `/gui_event` — bypassing the script is
-    /// the whole point. A bound widget with no audio server attached still
-    /// returns `true` (the value is swallowed, not sent to the script); the
-    /// missing `--server` was already warned about at bind time.
-    pub fn forward(&self, widget_id: i32, value: OscType) -> bool {
-        self.forward_args(widget_id, vec![value])
+    /// Forwards `widget_id`'s `value` to wherever it is bound, returning whether
+    /// the binding handled it. When it returns `true` the caller must **not**
+    /// also emit a `/gui_event` — bypassing the script is the whole point. A
+    /// widget bound to an audio server that is not attached still returns
+    /// `true` (the value is swallowed, not sent to the script); the missing
+    /// `--server` was already warned about at bind time.
+    pub fn forward(
+        &mut self,
+        widget_id: i32,
+        value: OscType,
+        effects: &mut Vec<HostEffect>,
+    ) -> bool {
+        self.forward_args(widget_id, vec![value], effects)
     }
 
     /// [`forward`](Self::forward) for a **flat list** of values — the edit-back
     /// payload of an editor widget (a `bpf`'s breakpoint list today, a drawn
     /// buffer region later): a bound editor sends `addr prefix… values…` to
-    /// the audio server, bypassing the script exactly as a bound knob does.
-    pub fn forward_args(&self, widget_id: i32, values: Vec<OscType>) -> bool {
+    /// the audio server, or the payload's JSON carrier to another widget's
+    /// prop, bypassing the script exactly as a bound knob does.
+    pub fn forward_args(
+        &mut self,
+        widget_id: i32,
+        values: Vec<OscType>,
+        effects: &mut Vec<HostEffect>,
+    ) -> bool {
         let Some(binding) = self.bindings.get(&widget_id) else {
             return false;
         };
-        if let Some(server) = self.server.as_ref()
-            && let Err(e) = server.send(binding.message_args(values))
+        // Bound to another widget: the value lands on that widget's prop, as
+        // the one apply a `/gui_set` would perform. It never re-enters this
+        // path, so a binding fires an apply and never another binding.
+        if let Binding::Widget { .. } = binding {
+            if let Some((target, key, value)) = binding.prop(&values)
+                && !self.set_props(target, vec![(key.clone(), value)], effects)
+            {
+                warn!("{GUI_BIND} {widget_id}: no widget {target} to set {key:?} on");
+            }
+            return true;
+        }
+        if let Some(msg) = binding.message_args(values)
+            && let Some(server) = self.server.as_ref()
+            && let Err(e) = server.send(msg)
         {
             warn!("{GUI_BIND} {widget_id}: failed to forward to the audio server: {e}");
         }
@@ -1506,7 +1555,7 @@ mod tests {
         assert!(host.is_bound(10));
 
         // A value change goes straight to the server (bypassing the script).
-        assert!(host.forward(10, OscType::Float(440.0)));
+        assert!(host.forward(10, OscType::Float(440.0), &mut Vec::new()));
         let mut buf = [0u8; 1024];
         let (len, _) = fake_server.recv_from(&mut buf).expect("forwarded datagram");
         let msg = match decode_packet(&buf[..len]).unwrap() {
@@ -1526,7 +1575,93 @@ mod tests {
         // Unbinding (no target) restores the event path: forward stops handling.
         host.handle_packet(bind_msg(10, vec![]), from());
         assert!(!host.is_bound(10));
-        assert!(!host.forward(10, OscType::Float(1.0)));
+        assert!(!host.forward(10, OscType::Float(1.0), &mut Vec::new()));
+    }
+
+    /// The other destination: a widget bound to a widget. A toggle drives a
+    /// `stack`'s page with no script and no server in the process — the whole
+    /// of tabs, and what makes a persisted GuiDef an autonomous application.
+    #[test]
+    fn a_widget_binding_applies_to_the_other_widget_and_never_cascades() {
+        const TABS: &str = r#"{"type":"window","children":[
+            {"id":10,"type":"toggle","label":"view"},
+            {"id":20,"type":"stack","index":0,"children":[
+                {"id":21,"type":"label","text":"one"},
+                {"id":22,"type":"label","text":"two"}]}]}"#;
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, TABS), from());
+        host.handle_packet(
+            bind_msg(
+                10,
+                vec![
+                    OscType::String("widget".into()),
+                    OscType::Int(20),
+                    OscType::String("index".into()),
+                ],
+            ),
+            from(),
+        );
+        assert!(host.is_bound(10));
+
+        // The toggle's value applies as a `/gui_set 20 index 1` would: the
+        // typed tree switches page, and the window is asked to repaint.
+        let mut effects = Vec::new();
+        assert!(
+            host.forward(10, OscType::Int(1), &mut effects),
+            "bound: the script never sees it"
+        );
+        assert!(matches!(effects.as_slice(), [HostEffect::Redraw(1)]));
+        let index = match host.window_def(1).unwrap().find(20).unwrap().kind {
+            widget::WidgetKind::Stack { index, .. } => index,
+            ref other => panic!("expected a stack, got {other:?}"),
+        };
+        assert_eq!(index, 1, "the page the toggle names");
+        // The generic registry moved with it, so a `/gui_query` agrees.
+        assert_eq!(
+            host.registry().get(20).unwrap().props.get("index"),
+            Some(&Value::from(1))
+        );
+
+        // A binding fires an apply, never another binding: binding the stack
+        // back to the toggle cannot make the apply re-enter delivery, so the
+        // pair settles instead of cascading.
+        host.handle_packet(
+            bind_msg(
+                20,
+                vec![
+                    OscType::String("widget".into()),
+                    OscType::Int(10),
+                    OscType::String("value".into()),
+                ],
+            ),
+            from(),
+        );
+        let mut effects = Vec::new();
+        host.forward(10, OscType::Int(0), &mut effects);
+        assert_eq!(
+            host.registry().get(10).unwrap().props.get("value"),
+            None,
+            "the stack's own binding did not fire from the apply"
+        );
+    }
+
+    /// An inline `bind` carries a widget target too, which is what lets a saved
+    /// GuiDef boot with its pages already wired.
+    #[test]
+    fn an_inline_widget_bind_is_registered_at_define_time() {
+        const TABS: &str = r#"{"type":"window","children":[
+            {"id":10,"type":"menu","items":["a","b"],"bind":["widget",20,"index"]},
+            {"id":20,"type":"stack","children":[
+                {"id":21,"type":"label","text":"one"},
+                {"id":22,"type":"label","text":"two"}]}]}"#;
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, TABS), from());
+        assert!(host.is_bound(10));
+        host.forward(10, OscType::Int(1), &mut Vec::new());
+        assert!(matches!(
+            host.window_def(1).unwrap().find(20).unwrap().kind,
+            widget::WidgetKind::Stack { index: 1, .. }
+        ));
     }
 
     #[test]
@@ -1576,7 +1711,7 @@ mod tests {
         );
         assert!(host.is_bound(10));
         assert!(
-            host.forward(10, OscType::Float(1.0)),
+            host.forward(10, OscType::Float(1.0), &mut Vec::new()),
             "swallowed, not emitted"
         );
     }

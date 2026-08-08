@@ -23,7 +23,7 @@ use super::interact::{self, Hit, slider_t, value_of};
 use super::layout::Rect;
 use super::signal::Presentation;
 use super::widget::{Axis, GestureStep, ScrollView, Widget, WidgetKind};
-use super::{Host, bpf, controls, patch, piano, pianoroll, scroll};
+use super::{Host, HostEffect, bpf, controls, patch, piano, pianoroll, scroll};
 use crate::viewport::View;
 
 /// What a gesture asks of the front: everything the machine cannot do itself
@@ -2395,20 +2395,42 @@ fn emit(out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32, args: Vec<Osc
     });
 }
 
-/// Routes a widget's new `value` to the audio server when it is bound
-/// (`/gui_bind`, the low-latency path that bypasses the script), or to the
-/// script as a `/gui_event` otherwise. Every interaction that produces a
-/// value goes through here, so a single binding check covers them all.
-fn deliver(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32, value: OscType) {
-    if host.forward(widget_id, value.clone()) {
-        return; // bound: the value went straight to the audio server
+/// Routes a widget's new `value` where it is bound (`/gui_bind`: the audio
+/// server on the low-latency path, or another widget's prop), or to the script
+/// as a `/gui_event` otherwise. Every interaction that produces a value goes
+/// through here, so a single binding check covers them all.
+fn deliver(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    widget_id: i32,
+    value: OscType,
+) {
+    let mut effects = Vec::new();
+    if host.forward(widget_id, value.clone(), &mut effects) {
+        // Bound: the value went straight to its destination, and whatever the
+        // apply behind a widget binding touched has to repaint.
+        return redraws(out, effects);
     }
     emit(out, def_id, widget_id, vec![value]);
 }
 
+/// Turns the host effects an apply produced into gesture effects. A binding's
+/// apply is a `/gui_set` without the wire, so the only thing it can ask for is
+/// a repaint; anything else would be a window opening behind a knob turn, which
+/// a binding has no business doing.
+fn redraws(out: &mut Vec<GestureEffect>, effects: Vec<HostEffect>) {
+    for effect in effects {
+        match effect {
+            HostEffect::Redraw(root) => out.push(GestureEffect::Redraw(root)),
+            other => tracing::warn!("a binding's apply asked for {other:?}, which it cannot do"),
+        }
+    }
+}
+
 /// Delivers a control's current value: straight to the audio server when the
 /// widget is bound, otherwise as a `/gui_event` to the script.
-fn emit_value(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
+fn emit_value(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
     if let Some(value) = host.window_def(def_id).and_then(|t| value_of(t, widget_id)) {
         deliver(host, out, def_id, widget_id, value);
     }
@@ -2419,7 +2441,7 @@ fn emit_value(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id:
 /// payload, not a server argument) straight to the audio server; an unbound one
 /// emits the whole tagged list as a `/gui_event`.
 fn deliver_args(
-    host: &Host,
+    host: &mut Host,
     out: &mut Vec<GestureEffect>,
     def_id: i32,
     widget_id: i32,
@@ -2429,14 +2451,15 @@ fn deliver_args(
         return;
     };
     if host.is_bound(widget_id) {
-        host.forward_args(widget_id, args[1..].to_vec());
-        return;
+        let mut effects = Vec::new();
+        host.forward_args(widget_id, args[1..].to_vec(), &mut effects);
+        return redraws(out, effects);
     }
     emit(out, def_id, widget_id, args);
 }
 
 /// Delivers a `bpf`/automation-clip widget's edited breakpoint list.
-fn emit_points(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
+fn emit_points(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
     let args = host
         .window_def(def_id)
         .and_then(|t| interact::bpf_event_args(t, widget_id));
@@ -2445,7 +2468,7 @@ fn emit_points(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id
 
 /// Delivers a lane header control's new value (`"mute"`/`"solo"`/`"level"`).
 fn emit_lane(
-    host: &Host,
+    host: &mut Host,
     out: &mut Vec<GestureEffect>,
     def_id: i32,
     widget_id: i32,
@@ -2458,7 +2481,7 @@ fn emit_lane(
 }
 
 /// Delivers a `clip`'s edited placement (`"clip" offset dur`).
-fn emit_clip(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
+fn emit_clip(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
     let args = host
         .window_def(def_id)
         .and_then(|t| interact::clip_event_args(t, widget_id));
@@ -2525,7 +2548,7 @@ fn set_piano_range(
 }
 
 /// Delivers a piano-roll's edited notes (`"notes" start dur pitch vel ch …`).
-fn emit_notes(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
+fn emit_notes(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
     let args = host
         .window_def(def_id)
         .and_then(|t| interact::notes_event_args(t, widget_id));
@@ -2533,7 +2556,7 @@ fn emit_notes(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id:
 }
 
 /// Delivers a piano-roll's edited OSC events (`"osc" time label …`).
-fn emit_osc(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
+fn emit_osc(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
     let args = host
         .window_def(def_id)
         .and_then(|t| interact::osc_event_args(t, widget_id));
@@ -2877,6 +2900,47 @@ mod tests {
             WidgetKind::Patch { selected, .. } => selected.clone(),
             other => panic!("not a patch: {other:?}"),
         }
+    }
+
+    /// The whole widget-binding chain from a real press: a toggle bound to a
+    /// `stack`'s `index` flips the page inside the host, the window is asked to
+    /// repaint, and **nothing leaves for the script** — the point of a binding.
+    #[test]
+    fn a_press_on_a_bound_toggle_flips_the_stack_it_drives() {
+        let mut host = host_from(
+            r#"{"type":"window","children":[
+            {"id":10,"type":"toggle","label":"view","h":32,
+             "bind":["widget",20,"index"]},
+            {"id":20,"type":"stack","index":0,"children":[
+                {"id":21,"type":"label","text":"one"},
+                {"id":22,"type":"label","text":"two"}]}]}"#,
+        );
+        let page = |host: &Host| match host.window_def(1).unwrap().find(20).unwrap().kind {
+            WidgetKind::Stack { index, .. } => index,
+            ref other => panic!("not a stack: {other:?}"),
+        };
+        assert_eq!(page(&host), 0);
+
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        let mut grab = || false;
+        // The toggle sits in the window's top strip (its declared height).
+        let mut effects = g.press(&mut host, &ctx, 300.0, 20.0, &mut grab);
+        effects.extend(g.release(&mut host, &ctx, 300.0, 20.0));
+
+        assert_eq!(page(&host), 1, "the toggle's value became the page");
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, GestureEffect::Redraw(1))),
+            "the apply asks the window to repaint"
+        );
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, GestureEffect::Emit { .. })),
+            "a bound widget emits nothing to the script"
+        );
     }
 
     #[test]

@@ -312,6 +312,25 @@ export class GuiHost {
     }
 
     /**
+     * `/gui_bind <id> "widget" <target> <prop>` — apply this widget's value to
+     * **another widget's property**, with no round-trip through this script.
+     *
+     * On every change the host sets `prop` on widget `target` exactly as a
+     * `set` would — `bindWidget(picker, pages, "index")` makes a menu flip a
+     * `stack`'s page, a slider drive a plot's `max`, a curve write another
+     * curve's `points` (an edit-back payload rides as the JSON string the prop
+     * already takes). A bound widget stops emitting `/gui_event`; `unbind`
+     * restores it.
+     *
+     * **A binding fires an apply, never another binding**: the target's own
+     * binding does not fire from it, so two widgets bound to each other settle
+     * instead of cascading.
+     */
+    bindWidget(id: number, target: number, prop: string): void {
+        this.send("/gui_bind", ["i", id], "widget", ["i", target], prop);
+    }
+
+    /**
      * `/gui_bind <id>` (no target) — remove a widget's binding, so its value
      * flows back to this script as `/gui_event` again.
      */

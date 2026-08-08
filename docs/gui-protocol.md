@@ -28,6 +28,7 @@ adding a widget are in [Architecture](architecture.md).
 | `/gui_free id` | Free a widget and its subtree. Freeing a `window`-rooted def closes its window. |
 | `/gui_query id` | Ask for a widget's state. Replies `/gui_info id type key value …`; an **empty type** (`""`) means no such widget — the host answers either way, as the audio server replies even on a miss. |
 | `/gui_bind id "server" address prefix…` | Forward this widget's value **straight to the audio server**, bypassing the script: on every change the host sends `address` with the fixed `prefix` arguments followed by the value (e.g. `"/node_set" 1001 "freq"` makes the widget send `/node_set 1001 freq <value>`). A bound widget stops emitting `/gui_event`. |
+| `/gui_bind id "widget" target prop` | Apply this widget's value to **another widget's property**, as a `/gui_set target prop <value>` would — a `menu` flipping a `stack`'s `index`, a slider driving a plot's `max`. A multi-value edit-back payload rides as the JSON string the prop already takes. A binding fires an **apply, never another binding**: the target's own binding does not fire from it, so two widgets bound to each other settle instead of cascading (stated, not detected — the chain is one hop by construction). |
 | `/gui_bind id` | (no target) Remove the binding; the widget emits events again. |
 | `/gui_load name` | Instantiate a **persisted** GuiDef by name (the host replays it as its saved `/gui_def`). Needs a data directory. |
 
@@ -62,7 +63,8 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   so a script addresses it by name (`win["cutoff"].set(…)`) and never writes or
   matches an integer. The name is stripped from the JSON — the host only ever
   sees ids.
-- **`children`** nests (containers only: `window`, `panel`, `scroll`, `track`).
+- **`children`** nests (containers only: `window`, `panel`, `stack`, `scroll`,
+  `track`).
 - **The place props** — every widget, whatever its type, may carry `w`, `h`,
   `weight`, `x`, `y` (all numbers, **logical pixels**, all live via `/gui_set`).
   In a `row`/`col` the main axis resolves in **one order**: a fixed main-axis
@@ -78,7 +80,7 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   `menu`, a single-line `text`, a `slider`'s thickness across its track — its
   groove plus the row its value reads out in, which is why the number never
   sits on the handle — a `knob`'s height, a `timeruler`'s thickness), the **surface** kinds do not
-  (`panel`, `scroll`, `patch`, `track`, `plot`, `nodetree`, `canvas`, the
+  (`panel`, `stack`, `scroll`, `patch`, `track`, `plot`, `nodetree`, `canvas`, the
   heavy views, a wrapped `label`, a multiline `text`). A natural size follows
   the host's sizing table and the widget's own `text_size`/`label`, **never
   its data** — a longer string or another thousand samples never move it, so
@@ -86,12 +88,16 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   (+ `w`/`h`) position the child absolutely, and a child with none of the four
   overlays the whole area. A container additionally takes `margin` (inset
   before its children, default 6), `gap` (between children, default 6) and
-  `cols` (a fixed `grid` column count; default near-square). One pass, no
+  `cols` (a fixed `grid` column count; default near-square) — except a
+  `stack`, which arranges nothing and so takes only the `margin`. One pass, no
   measurement and no constraint solver — a container never measures its
   children, so chrome that must hug its content says so with `h`: when a
   layout needs negotiation, the answer is explicit sizes.
 - **`bind`** as an inline prop registers a binding declaratively, so a saved
-  GuiDef carries its own (no separate `/gui_bind` at boot).
+  GuiDef carries its own (no separate `/gui_bind` at boot). It is the
+  `/gui_bind` tail as an array: `["widget", 20, "index"]`, `["server",
+  "/node_set", 1000, "freq"]`, or the bare address-first `["/node_set", 1000,
+  "freq"]`, which is the same server binding with the keyword left out.
 
 The wire form is deliberately generic (`{id, type, props, children}`): a new
 widget kind never changes the protocol, and a host that does not know a type lays
@@ -146,6 +152,7 @@ script actually names these. The catalog itself:
 |---|---|---|
 | `window` | A top-level window (a GuiDef root) | `title`, `w`, `h`, `layout`, `margin`, `gap`, `cols`, `theme` |
 | `panel` | A nestable container | `layout`, `margin`, `gap`, `cols`, `theme` |
+| `stack` | A container showing **one child at a time**, the one at `index`: it fills the container, and the hidden pages are neither laid out nor drawn while keeping their place in the tree (so a heavy view keeps its GPU slot and its bus reads across a switch). An `index` outside the children shows nothing — a blank page, not a clamped one. Tabs, a pager and a waveform/spectrogram switch are this plus a control bound to `index` | `index`, `margin`, `theme` |
 | `scroll` | The **2D workspace**: a container whose children live in a virtual content area seen through a panning, zooming window. General first — the default is the free plane; the constrained scroll views degenerate from it by configuration | `axis` (`both`/`x`/`y`), `zoom` (0 disables the wheel zoom), `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`, plus `layout` (default `free` here), `margin`, `gap`, `cols`, `theme` |
 | `label` | Static text | `text`, `text_size`, `wrap`, `align` (`start`/`center`/`end`) |
 | `knob`, `slider`, `number` | Continuous controls | `min`, `max`, `value`, `label`, `text_size` (`vertical` on a slider) |
@@ -186,7 +193,7 @@ The exception is a `scroll` workspace's **content plane**: its `content_w`/`cont
 
 **Why the default is the density and not a fit to the content.** A plane's content unit is a *display* unit: a patcher box is 96 units wide because that is how wide a box should look. Fitting the zoom to the content instead would make a box's apparent size follow **how many boxes there are** — a three-box graph huge, a fifty-box graph unreadable — and re-zoom the plane on every edit. Zoom-to-fit belongs to a key, not to the default. The distinction generalizes: a view whose content unit is *data* (a `waveform`'s sample, a `pianoroll`'s semitone, a `score`'s staff step) keeps its own window and the display scale must not touch it — a denser screen means more detail over the same span, not a different span.
 
-**Theme groups and the `color` prop.** The host draws every chrome color from one theme — a table of named roles, loaded from `[gui.theme]` or `--theme` (see the configuration chapter) — and the wire customizes it with the same partial table, recursively. A **container** (`window`, `panel`, `scroll`, `track`) may carry a `theme` prop: a JSON object of `"role": "#rrggbb[aa]"` entries overlaying its parent's theme for its whole subtree — a **theme group**, a style scoped to the function of a set of widgets (the transport bar dimmed, the recording strip warm) rather than to any individual part. Groups nest: an inner table overlays the *inherited* one. The leaf case is the single `color` prop on **any** widget — one hex that re-seeds just the roles carrying that widget's function: the accent family (a slider's handle and fill, a button face, a meter's bar), the trace, the first color of the multichannel series cycle, a clip's body. Both are live via `/gui_set` (`theme` rides as its JSON string; an empty value clears), and a `theme` on a GuiDef root persists with the named def, so a standalone bundle ships its look with zero host configuration. Overlays resolve when a def arrives or a set changes them — each widget ends up holding one resolved theme — so the per-frame path pays nothing; there are no selectors and no per-part rules, deliberately.
+**Theme groups and the `color` prop.** The host draws every chrome color from one theme — a table of named roles, loaded from `[gui.theme]` or `--theme` (see the configuration chapter) — and the wire customizes it with the same partial table, recursively. A **container** (`window`, `panel`, `stack`, `scroll`, `track`) may carry a `theme` prop: a JSON object of `"role": "#rrggbb[aa]"` entries overlaying its parent's theme for its whole subtree — a **theme group**, a style scoped to the function of a set of widgets (the transport bar dimmed, the recording strip warm) rather than to any individual part. Groups nest: an inner table overlays the *inherited* one. The leaf case is the single `color` prop on **any** widget — one hex that re-seeds just the roles carrying that widget's function: the accent family (a slider's handle and fill, a button face, a meter's bar), the trace, the first color of the multichannel series cycle, a clip's body. Both are live via `/gui_set` (`theme` rides as its JSON string; an empty value clears), and a `theme` on a GuiDef root persists with the named def, so a standalone bundle ships its look with zero host configuration. Overlays resolve when a def arrives or a set changes them — each widget ends up holding one resolved theme — so the per-frame path pays nothing; there are no selectors and no per-part rules, deliberately.
 
 **The `gestures` table: what a drag on a container does.** Panning, sweeping a
 selection and locating the transport are the **container's** gestures, not the

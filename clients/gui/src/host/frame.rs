@@ -1085,7 +1085,9 @@ fn collect_widgets(
         // accent), resolved at mutation points -- one reference per widget.
         let th = p.widget.theme.as_deref().unwrap_or(theme);
         match &p.widget.kind {
-            WidgetKind::Panel { .. } | WidgetKind::Scroll { .. } => mesh.rect(p.rect, th.panel),
+            WidgetKind::Panel { .. } | WidgetKind::Scroll { .. } | WidgetKind::Stack { .. } => {
+                mesh.rect(p.rect, th.panel)
+            }
             WidgetKind::Label {
                 text,
                 text_size,

@@ -317,6 +317,45 @@ export function panel(options: ContainerOptions = {}, ...children: GuiNode[]): G
 }
 
 /**
+ * A `stack` container showing **one child at a time**: the one at `index`.
+ *
+ * The shown page fills the container (`margin` insets it); the hidden ones are
+ * not laid out and not drawn, so a page costs nothing while it is away — but
+ * they stay in the tree, so a heavy view keeps its GPU slot across a switch and
+ * comes back without re-uploading anything.
+ *
+ * `index` is live via `set`, and it is the prop a control **binds** to: a
+ * toggle or a menu bound to it (`GuiHost.bindWidget`, or an inline
+ * `bind: ["widget", stackId, "index"]`) flips the page with no round-trip
+ * through this script — which is what makes tabs, a pager and a
+ * waveform/spectrogram switch composition rather than widgets. An `index`
+ * outside the children shows nothing: a blank page rather than a clamped one.
+ */
+export function stack(
+    options: WidgetOptions & {
+        /** The child shown, from 0 (the default). */
+        index?: number;
+        /** The inset before the shown page (default 6). */
+        margin?: number;
+        /** A theme group over the whole subtree, hidden pages included. */
+        theme?: Record<string, string>;
+        children?: readonly GuiNode[];
+    } = {},
+    ...children: GuiNode[]
+): GuiNode {
+    const { index, margin, theme, ...rest } = options;
+    return node("stack", {
+        ...rest,
+        ...drop([
+            ["index", index],
+            ["margin", margin],
+            ["theme", theme],
+        ]),
+        children: [...(options.children ?? []), ...children],
+    });
+}
+
+/**
  * A `scroll` container: a 2D workspace onto a virtual content area.
  *
  * The children lay out into a content area larger than the widget, seen

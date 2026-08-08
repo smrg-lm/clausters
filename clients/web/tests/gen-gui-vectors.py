@@ -59,8 +59,8 @@ def cases():
         ),
     ))
 
-    # Containers: a scroll workspace configured down to a vertical view, and a
-    # theme group over a subtree.
+    # Containers: a scroll workspace configured down to a vertical view, a
+    # theme group over a subtree, and a stack driven by an inline-bound menu.
     out.append((
         "containers",
         g.window(
@@ -69,6 +69,12 @@ def cases():
                         theme={"panel_fill": "#101018", "accent": "#40c0a0"}),
                 id=1, axis="y", zoom=False, content_h=1200.0, view_y=40.0,
                 view_zoom=1.0, layout="free",
+            ),
+            g.menu(["one", "two"], id=3, index=1, bind=["widget", 4, "index"]),
+            g.stack(
+                g.panel(id=5),
+                g.panel(id=6),
+                id=4, index=1, margin=4.0,
             ),
             title="workspace", layout="col", theme={"window_fill": "#0d0d12"},
         ),

@@ -122,6 +122,36 @@
               "h": 1200.0
             }
           ]
+        },
+        {
+          "type": "menu",
+          "id": 3,
+          "options": [
+            "one",
+            "two"
+          ],
+          "index": 1,
+          "bind": [
+            "widget",
+            4,
+            "index"
+          ]
+        },
+        {
+          "type": "stack",
+          "id": 4,
+          "index": 1,
+          "margin": 4.0,
+          "children": [
+            {
+              "type": "panel",
+              "id": 5
+            },
+            {
+              "type": "panel",
+              "id": 6
+            }
+          ]
         }
       ]
     }

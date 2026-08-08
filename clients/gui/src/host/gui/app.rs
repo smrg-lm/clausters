@@ -323,7 +323,7 @@ impl App {
     /// tag); an unbound one emits `/gui_event id "notes" start dur pitch vel
     /// channel …` to the script.
     #[cfg(feature = "midi")]
-    pub(super) fn emit_notes(&self, def_id: i32, widget_id: i32) {
+    pub(super) fn emit_notes(&mut self, def_id: i32, widget_id: i32) {
         let Some(args) = self
             .host
             .window_def(def_id)
@@ -332,7 +332,17 @@ impl App {
             return;
         };
         if self.host.is_bound(widget_id) {
-            self.host.forward_args(widget_id, args[1..].to_vec());
+            // A bound roll may be driving another widget, whose window then
+            // has to repaint: the apply behind a widget binding reports it the
+            // same way a `/gui_set` does.
+            let mut effects = Vec::new();
+            self.host
+                .forward_args(widget_id, args[1..].to_vec(), &mut effects);
+            for effect in effects {
+                if let HostEffect::Redraw(id) = effect {
+                    self.redraw(id);
+                }
+            }
             return;
         }
         self.emit(def_id, widget_id, args);

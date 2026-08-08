@@ -89,6 +89,16 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
                 .is_some(),
             _ => flow.apply(key, v),
         },
+        // The page shown, live: this is the prop a bound toggle or menu drives.
+        // A non-number leaves it alone rather than blanking the stack.
+        WidgetKind::Stack { index, margin } => match key {
+            "index" => v.as_i64().map(|n| *index = n as i32).is_some(),
+            "margin" => {
+                *margin = v.as_f64().map(|n| n as f32);
+                true
+            }
+            _ => false,
+        },
         WidgetKind::Scroll { layout, flow, view } => match key {
             "layout" => v
                 .as_str()

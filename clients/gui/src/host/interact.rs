@@ -204,7 +204,7 @@ pub(crate) fn hit(
             && p.widget.id.is_some()
             && !matches!(
                 p.widget.kind,
-                WidgetKind::Window { .. } | WidgetKind::Panel { .. }
+                WidgetKind::Window { .. } | WidgetKind::Panel { .. } | WidgetKind::Stack { .. }
             )
         {
             found = Some(i);
@@ -236,7 +236,9 @@ fn chain_of(
     while let Some(j) = at {
         let p = placed[j];
         let coords = match &p.widget.kind {
-            WidgetKind::Window { .. } | WidgetKind::Panel { .. } => Some(Coords::Layout),
+            WidgetKind::Window { .. } | WidgetKind::Panel { .. } | WidgetKind::Stack { .. } => {
+                Some(Coords::Layout)
+            }
             WidgetKind::Scroll { view, .. } => Some(Coords::Plane(*view)),
             WidgetKind::Patch { .. } => Some(Coords::Canvas),
             // A clip carries the axis the layout gave it, which is the whole

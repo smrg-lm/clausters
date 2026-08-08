@@ -53,6 +53,16 @@ export class WidgetHandle {
         return this;
     }
 
+    /**
+     * Apply this widget's value to another widget's property, with no round-trip
+     * through this script (see `GuiHost.bindWidget`). `target` may be a handle
+     * or an id.
+     */
+    bindWidget(target: WidgetHandle | number, prop: string): this {
+        this.host.bindWidget(this.id, typeof target === "number" ? target : target.id, prop);
+        return this;
+    }
+
     /** Remove this widget's binding, so its value comes back as an event. */
     unbind(): this {
         this.host.unbind(this.id);

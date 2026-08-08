@@ -869,6 +869,24 @@ pub enum WidgetKind {
     },
     /// A nestable container.
     Panel { layout: Layout, flow: Flow },
+    /// A container showing **one child at a time**: the one at `index`, filling
+    /// the container's area (its `flow`'s margin inset). The others are hidden
+    /// — skipped by the layout, so they are neither drawn nor hit — but they
+    /// stay in the tree, which is what makes a switch cheap: a hidden heavy
+    /// element keeps its GPU slot and its bus watch, since both are collected
+    /// from the tree and not from the placements, so flipping back re-uploads
+    /// nothing.
+    ///
+    /// An `index` outside the children shows nothing, deliberately: it is a
+    /// blank page, not a clamped one, so a pager cannot silently show the wrong
+    /// child. With `index` bound to a `toggle` or a `menu`
+    /// ([`bind`](super::bind)) this is the whole of tabs, a pager, and
+    /// alternating two views of one signal — composition, not a widget.
+    ///
+    /// It carries a `margin` rather than a whole [`Flow`]: a stack makes no
+    /// arrangement, so the `gap` between children and a `grid`'s column count
+    /// have nothing to mean here.
+    Stack { index: i32, margin: Option<f32> },
     /// The 2D workspace: a container whose children live in a **virtual
     /// content area** seen through a scrolling, zooming window ([`ScrollView`]).
     /// General first — the default pans both axes and zooms at the cursor; the
@@ -1315,6 +1333,7 @@ impl Widget {
             WidgetKind::Window { .. }
             | WidgetKind::Panel { .. }
             | WidgetKind::Scroll { .. }
+            | WidgetKind::Stack { .. }
             | WidgetKind::Track { .. } => node
                 .children
                 .iter()

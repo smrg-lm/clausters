@@ -55,6 +55,12 @@ class WidgetHandle:
         self._host.bind(self.id, address, *prefix)
         return self
 
+    def bind_widget(self, target, prop: str) -> "WidgetHandle":
+        """Apply this widget's value to another widget's property (see
+        `GuiHost.bind_widget`). ``target`` may be a handle or an id."""
+        self._host.bind_widget(self.id, int(target), prop)
+        return self
+
     def unbind(self) -> "WidgetHandle":
         """Remove this widget's binding (see `GuiHost.unbind`)."""
         self._host.unbind(self.id)

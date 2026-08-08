@@ -277,6 +277,24 @@ class GuiHost:
         OSC int, a ``str`` as a string)."""
         self._osc.send_msg(self.target, "/gui_bind", id, "server", address, *prefix)
 
+    def bind_widget(self, id: int, target: int, prop: str):
+        """``/gui_bind <id> "widget" <target> <prop>`` — apply this widget's value
+        to **another widget's property**, with no round-trip through this script.
+
+        On every change the host sets ``prop`` on widget ``target`` exactly as a
+        `set` would — ``bind_widget(picker, pages, "index")`` makes a menu flip a
+        ``stack``'s page, a slider drive a plot's ``max``, a curve write another
+        curve's ``points`` (an edit-back payload rides as the JSON string the
+        prop already takes). A bound widget stops emitting ``/gui_event``;
+        `unbind` restores it.
+
+        **A binding fires an apply, never another binding**: the target's own
+        binding does not fire from it, so two widgets bound to each other settle
+        instead of cascading. Nothing detects a cycle, because the chain is one
+        hop by construction.
+        """
+        self._osc.send_msg(self.target, "/gui_bind", id, "widget", int(target), prop)
+
     def unbind(self, id: int):
         """``/gui_bind <id>`` (no target) — remove a widget's binding, so its value
         flows back to this script as ``/gui_event`` again."""

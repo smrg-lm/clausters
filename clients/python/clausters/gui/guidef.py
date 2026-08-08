@@ -120,6 +120,7 @@ __all__ = [
     "window",
     "panel",
     "scroll",
+    "stack",
     "label",
     "knob",
     "slider",
@@ -219,6 +220,35 @@ def panel(*children, layout: str | None = None, margin: float | None = None,
     """
     extra = _drop_none(layout=layout, margin=margin, gap=gap, cols=cols, theme=theme, color=color)
     return node("panel", id=id, children=children, **extra, **props)
+
+
+def stack(*children, index: int | None = None, margin: float | None = None,
+          theme: dict | None = None, color: str | None = None, id: int | None = None,
+          **props) -> dict:
+    """A ``stack`` container showing **one child at a time**: the one at ``index``.
+
+    The shown page fills the container (``margin`` insets it); the hidden ones
+    are not laid out and not drawn, so a page costs nothing while it is away —
+    but they stay in the tree, so a heavy view keeps its GPU slot and its bus
+    reads across a switch and comes back without re-uploading anything.
+
+    ``index`` is live via ``set``, and it is the prop a control **binds** to:
+    a toggle or a menu bound to it (`GuiHost.bind_widget`, or an inline
+    ``bind=["widget", stack_id, "index"]``) flips the page with no round-trip
+    through this script — which is what makes tabs, a pager and a
+    waveform/spectrogram switch composition rather than widgets::
+
+        pages = stack(waveform(data=take), spectrogram(data=take), name="views")
+        picker = menu(["wave", "spectrum"], name="picker")
+        ...
+        host.bind_widget(win["picker"].id, win["views"].id, "index")
+
+    An ``index`` outside the children shows nothing — a blank page rather than
+    a clamped one, so a pager that runs off the end never shows the wrong
+    child.
+    """
+    extra = _drop_none(index=index, margin=margin, theme=theme, color=color)
+    return node("stack", id=id, children=children, **extra, **props)
 
 
 def scroll(*children, axis: str | None = None, zoom: bool | None = None,

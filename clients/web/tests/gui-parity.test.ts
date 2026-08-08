@@ -48,6 +48,7 @@ import {
     score,
     scroll,
     slider,
+    stack,
     spectrogram,
     spectrum,
     text,
@@ -123,6 +124,12 @@ const trees: Record<string, () => GuiNode> = {
                     id: 2, x: 0.0, y: 0.0, w: 200.0, h: 1200.0,
                     theme: { panel_fill: "#101018", accent: "#40c0a0" },
                 }),
+            ),
+            menu(["one", "two"], { id: 3, index: 1, bind: ["widget", 4, "index"] }),
+            stack(
+                { id: 4, index: 1, margin: 4.0 },
+                panel({ id: 5 }),
+                panel({ id: 6 }),
             ),
         ),
 

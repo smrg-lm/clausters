@@ -4516,3 +4516,38 @@ so a handle aimed at another machine still raises.
 What is *not* solved here is the audio device: two servers open two streams, so
 this works wherever the host mixes (PipeWire, CoreAudio) and fails on an
 exclusive ALSA device, where the second boot reports it and stops.
+
+## A binding fires an apply, never another binding
+
+A widget's value could already leave for the audio server without the script
+(`/gui_bind … "server" …`). Pointing it at **another widget** — a menu flipping a
+`stack`'s page, a slider driving a plot's `max` — is what makes a persisted
+GuiDef an application rather than a picture: the pages flip inside the host,
+with no client attached at all. But two widgets bound to each other is a cycle
+the moment an apply can trigger a delivery, and a GUI that live-locks on a click
+is worse than one that cannot switch tabs.
+
+The rule is **one hop, by construction**: what a widget binding fires is the
+mutation `/gui_set` performs (`Host::set_props`, extracted for exactly this) and
+nothing else. That method applies the prop, mirrors it into the registry and
+asks for a repaint; it never enters the delivery path, so the target's own
+binding does not fire from it. There is no cycle detector and no depth counter,
+because there is no chain to walk — and the alternative, letting a binding
+cascade and then policing it, buys a feature nobody asked for at the price of a
+class of hangs.
+
+- **The destination keyword was already on the wire**, which is the whole reason
+  this was additive: `/gui_bind id "server" …` spelled out a destination when
+  there was only one. So the binding became an enum of destinations rather than
+  an address with a keyword in front of it, and a widget binding carries no
+  address, no prefix and no server to be missing.
+- **An apply can ask for a repaint where a forward could only ask for a
+  datagram**, so the delivery seam had to take a `&mut Host` and an effect sink.
+  The gesture layer translates the host's effects into its own rather than
+  sharing a vector: what a binding's apply may legitimately produce is a
+  redraw, and anything else (a window opening behind a knob turn) is a bug worth
+  seeing in the log.
+- **A multi-value payload rides as its JSON string** — the scalar carrier the
+  array-valued props (`points`, `notes`) already accept from `/gui_set` — so one
+  curve drives another curve without a second encoding being invented for the
+  binding path.

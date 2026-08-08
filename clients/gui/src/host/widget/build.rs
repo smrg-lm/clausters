@@ -38,6 +38,16 @@ pub(super) fn build_kind(
             layout: Layout::parse(&node.props),
             flow: Flow::parse(&node.props),
         },
+        // One child at a time: the container has no arrangement to name, since
+        // the shown child fills it — only which one, and the margin around it.
+        "stack" => WidgetKind::Stack {
+            index: int_prop(&node.props, "index", 0),
+            margin: node
+                .props
+                .get("margin")
+                .and_then(Value::as_f64)
+                .map(|v| v as f32),
+        },
         "scroll" => WidgetKind::Scroll {
             // The workspace's natural arrangement is free placement (the
             // virtual content area sizes from the placement extents), so

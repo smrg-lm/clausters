@@ -339,6 +339,25 @@ fn place<'a>(
         WidgetKind::Scroll { .. } => {
             return place_scrolled(area, widget, clip, space, ctx, me, out);
         }
+        // One child at a time: the shown page fills the container, and the
+        // hidden ones are not placed at all — no rectangle, so nothing draws
+        // them and nothing hits them. They keep their place in the *tree*
+        // (their GPU slots and bus watches are collected from there), which is
+        // what makes flipping back free.
+        WidgetKind::Stack { index, margin } => {
+            let inner = area.inset(
+                margin
+                    .map_or(space.metrics.margin, |m| space.px(m))
+                    .max(0.0),
+            );
+            if let Some(child) = usize::try_from(index)
+                .ok()
+                .and_then(|i| widget.children.get(i))
+            {
+                place(inner, child, clip, space, ctx, Some(me), out);
+            }
+            return;
+        }
         // The time containers: a lane places its clips on the shared axis, a
         // clip places its bodies on its own local one.
         WidgetKind::Track { .. } | WidgetKind::Clip { .. } => {
@@ -686,6 +705,58 @@ mod tests {
 
     fn area() -> Rect {
         Rect::new(0.0, 0.0, 600.0, 400.0)
+    }
+
+    #[test]
+    fn a_stack_places_only_the_page_its_index_names() {
+        // Three pages, one shown: the hidden ones get no rectangle at all, so
+        // nothing draws them and nothing hits them — while staying in the tree,
+        // which is where a heavy view's GPU slot is collected from.
+        let w = tree(
+            r#"{"type":"window","children":[
+            {"id":5,"type":"stack","index":1,"children":[
+                {"id":10,"type":"label","text":"one"},
+                {"id":11,"type":"label","text":"two"},
+                {"id":12,"type":"label","text":"three"}]}]}"#,
+        );
+        let m = Metrics::default();
+        let placed = layout(area(), &w, &m);
+        let shown: Vec<i32> = placed.iter().filter_map(|p| p.widget.id).collect();
+        assert_eq!(
+            shown,
+            vec![1, 5, 11],
+            "the window, the stack and its page 1, nothing else"
+        );
+
+        // The page fills the stack, inset by the container's margin — a stack
+        // has no arrangement to make, only a page to show.
+        let stack = placed.iter().find(|p| p.widget.id == Some(5)).unwrap();
+        let page = placed.iter().find(|p| p.widget.id == Some(11)).unwrap();
+        assert_eq!(page.rect, stack.rect.inset(m.margin));
+        let si = placed.iter().position(|p| p.widget.id == Some(5)).unwrap();
+        assert_eq!(page.parent, Some(si), "the page hangs off the stack");
+    }
+
+    #[test]
+    fn a_stack_index_outside_its_children_shows_nothing() {
+        // A blank page, not a clamped one: a pager that runs off the end shows
+        // nothing rather than silently showing the wrong child.
+        let w = tree(
+            r#"{"type":"window","children":[
+            {"id":5,"type":"stack","index":7,"children":[
+                {"id":10,"type":"label","text":"one"}]}]}"#,
+        );
+        let placed = layout(area(), &w, &Metrics::default());
+        let shown: Vec<i32> = placed.iter().filter_map(|p| p.widget.id).collect();
+        assert_eq!(shown, vec![1, 5], "the window and an empty stack");
+        // A negative index is the same blank page.
+        let w = tree(
+            r#"{"type":"window","children":[
+            {"id":5,"type":"stack","index":-1,"children":[
+                {"id":10,"type":"label","text":"one"}]}]}"#,
+        );
+        let placed = layout(area(), &w, &Metrics::default());
+        assert_eq!(placed.iter().filter_map(|p| p.widget.id).count(), 2);
     }
 
     #[test]
