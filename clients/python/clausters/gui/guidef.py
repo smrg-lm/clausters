@@ -565,8 +565,8 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
              playhead_at: float | None = None, playhead: float | None = None,
              playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
              y_start: float | None = None,
-             y_len: float | None = None, link: int | None = None, color: str | None = None,
-             id: int | None = None, **props) -> dict:
+             y_len: float | None = None, link: int | None = None, axes: dict | None = None,
+             color: str | None = None, id: int | None = None, **props) -> dict:
     """The heavy ``waveform`` view, fed its samples one of several ways (in the
     host's precedence order):
 
@@ -639,7 +639,7 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket, color=color)
-    extra.update(_axes(ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
+    extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
                        playhead_at=playhead_at, playhead=playhead,
@@ -663,8 +663,8 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
                 playhead_at: float | None = None, playhead: float | None = None,
                 playhead_loop_start: float | None = None,
                 playhead_loop_len: float | None = None, y_start: float | None = None,
-                y_len: float | None = None, link: int | None = None, color: str | None = None,
-                id: int | None = None, **props) -> dict:
+                y_len: float | None = None, link: int | None = None, axes: dict | None = None,
+                color: str | None = None, id: int | None = None, **props) -> dict:
     """The heavy ``spectrogram`` (STFT time-frequency) view, fed like the
     `waveform`: a mapped ``path`` of raw little-endian ``f32``, a server
     ``buffer``, inline ``data``/``blob``, or a prebuilt single-channel STFT
@@ -703,7 +703,7 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
                        channels=channels, window_size=window_size, hop=hop,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
                        colormap=colormap, color=color)
-    extra.update(_axes(ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
+    extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
                        tempo=tempo, beat_at=beat_at, quant=quant,
                        sel_start=sel_start, sel_len=sel_len,
                        playhead_at=playhead_at, playhead=playhead,
@@ -740,7 +740,7 @@ def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
           trigger: float | None = None, hold: bool | None = None, min: float | None = None,
           max: float | None = None, ruler: "bool | str | None" = None,
           ruler_y: "bool | str | None" = None, label: str | None = None, color: str | None = None,
-          id: int | None = None, **props) -> dict:
+          axes: dict | None = None, id: int | None = None, **props) -> dict:
     """A time-domain ``scope`` over ``channels`` **adjacent** buses starting at
     ``bus`` (bus 0 is the first hardware output), in one of two rates.
 
@@ -770,7 +770,7 @@ def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     for key, flag in (("hold", hold), ("overlay", overlay)):
         if flag is not None:
             extra[key] = 1 if flag else 0
-    extra.update(_axes(min=min, max=max, **_strips(ruler=ruler, ruler_y=ruler_y)))
+    extra.update(_axes(axes, min=min, max=max, **_strips(ruler=ruler, ruler_y=ruler_y)))
     return node("signal", bus=bus, rate=rate, view="trace", **extra, **props, id=id)
 
 
@@ -798,7 +798,7 @@ def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None 
              freq_scale: str | None = None, log_freq: bool | None = None,
              averaging: float | None = None, peak_hold: bool | None = None,
              ruler: "bool | str | None" = None, ruler_y: "bool | str | None" = None,
-             label: str | None = None, color: str | None = None, id: int | None = None, **props
+             label: str | None = None, color: str | None = None, axes: dict | None = None, id: int | None = None, **props
              ) -> dict:
     """A live ``spectrum`` (spectroscope) over ``channels`` **adjacent**
     audio buses starting at ``bus``: one forward FFT per channel per frame of
@@ -822,7 +822,7 @@ def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None 
         extra["log_freq"] = 1 if log_freq else 0
     if peak_hold is not None:
         extra["peak_hold"] = 1 if peak_hold else 0
-    extra.update(_axes(**_strips(ruler=ruler, ruler_y=ruler_y)))
+    extra.update(_axes(axes, **_strips(ruler=ruler, ruler_y=ruler_y)))
     return node("signal", bus=bus, view="spectrum", **extra, **props, id=id)
 
 
@@ -842,7 +842,7 @@ def nodetree(*, group: int = 0, controls: bool | None = None, label: str | None 
 
 def bpf(*, points=None, min: float | None = None, max: float | None = None,
         duration: float | None = None, exp: bool | None = None, label: str | None = None,
-        color: str | None = None, id: int | None = None, **props) -> dict:
+        color: str | None = None, axes: dict | None = None, id: int | None = None, **props) -> dict:
     """A drawable ``bpf`` break-point function — the envelope editor.
 
     Breakpoints ``(time, value)`` plus a per-segment shape using the server's
@@ -877,7 +877,7 @@ def bpf(*, points=None, min: float | None = None, max: float | None = None,
     JSON string)."""
     extra = _drop_none(points=_flat_points(points) if points is not None else None,
                        duration=duration, label=label, color=color)
-    extra.update(_axes(min=min, max=max))
+    extra.update(_axes(axes, min=min, max=max))
     if exp is not None:
         extra["exp"] = 1 if exp else 0
     return node("curve", id=id, **extra, **props)
@@ -946,7 +946,7 @@ def plot(*, data=None, blob: int | None = None,
                  ruler_y: str | None = None, fft_size: int | None = None,
                  db_floor: float | None = None, db_ceil: float | None = None,
                  freq_scale: str | None = None, label: str | None = None, color: str | None = None,
-                 id: int | None = None, **props) -> dict:
+                 axes: dict | None = None, id: int | None = None, **props) -> dict:
     """A static ``plot`` of a signal — measurement without navigation. Unlike
     the heavy `waveform`, it does not zoom, pan or edit; it is the catalog's
     "plot of an NRT-generated signal/file", grown x/y rulers, multichannel
@@ -994,7 +994,7 @@ def plot(*, data=None, blob: int | None = None,
                        channels=channels, fft_size=fft_size,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
                        label=label, color=color)
-    extra.update(_axes(ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
+    extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
                        min=min, max=max))
     if overlay is not None:
         extra["overlay"] = 1 if overlay else 0
@@ -1086,7 +1086,7 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
           playhead_at: float | None = None, playhead: float | None = None,
           playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
           link: int | None = None, theme: dict | None = None, color: str | None = None,
-          id: int | None = None, **props) -> dict:
+          axes: dict | None = None, id: int | None = None, **props) -> dict:
     """A multitrack ``track`` lane holding `clip` children placed on a shared
     time axis — the DAW-style track editor's lane. ``label`` names it in a left
     header; ``height`` is its lane weight when several tracks stack under one
@@ -1142,7 +1142,7 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
     """
     extra = _drop_none(label=label, height=height, snap=snap, header_w=header_w,
                        mute=mute, solo=solo, level=level, theme=theme, color=color)
-    extra.update(_axes(ruler=ruler, sample_rate=sample_rate, tempo=tempo,
+    extra.update(_axes(axes, ruler=ruler, sample_rate=sample_rate, tempo=tempo,
                        beat_at=beat_at, quant=quant, playhead_at=playhead_at,
                        playhead=playhead, playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len, link=link))
@@ -1152,7 +1152,7 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
 def timeruler(*, h: float = 20.0, ruler: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, beat_at: float | None = None, quant: float | None = None,
               link: int | None = None, theme: dict | None = None, color: str | None = None,
-              id: int | None = None, **props) -> dict:
+              axes: dict | None = None, id: int | None = None, **props) -> dict:
     """A free-standing **time ruler**: the shared axis drawn as a strip the
     document places — a DAW's ruler above its tracks.
 
@@ -1184,7 +1184,7 @@ def timeruler(*, h: float = 20.0, ruler: str | None = None, sample_rate: float |
               layout="col")
     """
     extra = _drop_none(theme=theme, color=color)
-    extra.update(_axes(ruler=ruler, sample_rate=sample_rate, tempo=tempo,
+    extra.update(_axes(axes, ruler=ruler, sample_rate=sample_rate, tempo=tempo,
                        beat_at=beat_at, quant=quant, link=link))
     return node("field", id=id, h=h, **extra, **props)
 
@@ -1263,7 +1263,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               playhead_at: float | None = None, playhead: float | None = None,
               playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
               y_start: float | None = None, y_len: float | None = None, label: str | None = None,
-              color: str | None = None, id: int | None = None, **props) -> dict:
+              color: str | None = None, axes: dict | None = None, id: int | None = None, **props) -> dict:
     """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
     note grid, an optional velocity lane and an OSC-event lane — the timeline
     sibling of the compact `clip` piano-roll body, drawing the **same notes** with
@@ -1313,7 +1313,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
         osc=_flat_osc(osc) if osc is not None else None,
         snap=snap, label=label, color=color)
     extra.update(_axes(
-        min=min, max=max, link=link, ruler=ruler,
+        axes, min=min, max=max, link=link, ruler=ruler,
         sample_rate=sample_rate, tempo=tempo, beat_at=beat_at, quant=quant,
         sel_start=sel_start, sel_len=sel_len, playhead_at=playhead_at,
         playhead=playhead, playhead_loop_start=playhead_loop_start,

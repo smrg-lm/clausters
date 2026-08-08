@@ -17,6 +17,7 @@
 - [Timing models](timing-models.md)
 - [A DAW-style transport](transport.md)
 - [The visual elements: a GUI the script builds](gui.md)
+  - [Building from the model alone](gui/model.md)
 - [Composition: the arrangement and the multitrack editor](composition.md)
 - [Composing a piece, step by step](composing.md)
   - [Setup: a session, two instruments, a take](composing/setup.md)

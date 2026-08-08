@@ -18,6 +18,8 @@ flow through the responder model (`clausters.responders.OscFunc`) and are wired
 up as the interactive widgets land.
 """
 
+import json
+
 from ..base import _osclib
 from ..base._oscinterface import OscTcpInterface, OscUdpInterface
 from .guidef import to_json
@@ -248,11 +250,19 @@ class GuiHost:
         self._alloc.free(id)
 
     def set(self, id: int, **props):
-        """``/gui_set <id> <k> <v> ...`` — update one live widget. Property types
-        are preserved: a Python ``int`` rides as an OSC int, a ``float`` as an
-        OSC float."""
+        """``/gui_set <id> <k> <v> ...`` — update one live widget.
+
+        Property types are preserved: a Python ``int`` rides as an OSC int, a
+        ``float`` as an OSC float. A **structural** value — an ``axes`` pair, a
+        ``theme`` table, a list of ``points`` or ``notes`` — has no OSC type at
+        all, so it rides as its JSON string; pass the object and it is
+        serialized here, or pass the string yourself and it goes through
+        untouched.
+        """
         args = []
         for k, v in props.items():
+            if isinstance(v, (dict, list, tuple)):
+                v = json.dumps(list(v) if isinstance(v, tuple) else v)
             args += [k, v]
         self._osc.send_msg(self.target, "/gui_set", id, *args)
 

@@ -287,8 +287,6 @@ it:
   (`timeruler`).
 
 ```python
-import json
-
 from clausters.gui import clip, timeruler, track, window
 
 BEAT = 24_000.0          # samples per beat at 48 kHz, two beats a second
@@ -312,8 +310,15 @@ have yet and the body grows, which is how a curve is drawn over a take without
 rebuilding the def:
 
 ```python
-win["a"].set(points=json.dumps([0.0, 0.0, 1, 0.0, 4 * BEAT, 1.0, 1, 0.0]))
+win["a"].set(points=[0.0, 0.0, 1, 0.0, 4 * BEAT, 1.0, 1, 0.0])
 ```
+
+A list or a dict passed to `set` is serialized for you: OSC has no structural
+argument, so an `axes` pair, a `theme` table and a list of `points` or `notes`
+all ride as their JSON string. What a **live** set takes is the flat wire form
+— `t v shape curve` per break-point, `start dur pitch velocity channel` per
+note — because converting the friendlier tuples is the *builder's* job, and a
+`set` names a prop without knowing what it means.
 
 The ruler is its **own** strip under the stack rather than one lane's `ruler`,
 because a lane's ruler is reserved out of that lane's height — ruling a stack
@@ -506,3 +511,8 @@ two phases, several instruments in one document — is the
   the [composition chapter](composition.md) is the layer above.
 - The runnable demos live in `clients/python/examples/`, one capability each;
   `gui_window.py` is the "first pixels" one to start from.
+- Everything above used the shortcuts, which is what a script reaches for.
+  [Building from the model alone](gui/model.md) writes the same kind of window
+  without any of them — the four containers, the elements and `node` itself —
+  which is both how to say what no shortcut names and what the wire actually
+  carries.
