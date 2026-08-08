@@ -25,6 +25,25 @@ Everything above the connection seam — the `Server`, the def builders, the `Gu
 - **The sequencing layer** (`base/clock.ts`, `seq/`) — a `TempoClock` that resumes generator routines on musical time, `Event`, the value patterns and `Pbind`, `Timeline` and `Playhead`, under either timebase (the page's monotonic clock, or the server's own sample clock).
 - **The page runtime** (`engine/`, `bundle.ts`, `elements.ts`) — the page's engine and GUI host (one of each by default, more when a caller asks) and the custom elements that mount a bundle. A page that only *mounts* an instrument loads this and none of the builders.
 
+## How this book relates to the other two
+
+The three books do **not** repeat each other, and this one is deliberately the
+thinnest: it documents **what the browser makes different**, and links out for
+everything the two clients share.
+
+| Looking for | Where it is |
+|---|---|
+| the connection seam, the def model, sessions, the clock, the visual elements — **as this package spells them** | here |
+| what a page has and a script does not: the in-page engine, promises everywhere, reading buses without a shared segment, components in a document | here, and nowhere else |
+| the *concepts* under all of that — what a def is, what a routine is, how the arrangement works, how a bundle is written | the [Python client's book](https://clausters-python.readthedocs.io/), which is the reference client's and the fuller one |
+| the wire — OSC commands, the two def formats, the `/gui_*` protocol, the bundle format | the [server guide](https://clausters.readthedocs.io/) |
+| a symbol, an option, a payload | the [API reference](api/index.md), generated from this package's own doc comments |
+
+So a page here that looks short usually is: it says the delta and points at the
+chapter that says the rest. Nothing that is true of both clients is written
+twice, on purpose — two copies of one explanation drift, and the reader who
+finds the stale one has no way to tell.
+
 ## How to read this book
 
 - **New here?** [Getting started](getting-started.md): build the package, serve it, make a sound in a tab.
