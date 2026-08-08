@@ -384,19 +384,27 @@ pub fn draw(
 /// Draws one clip's own box into the rectangle the layout placed it at: its
 /// fill, its edge and its `label`. Its **bodies** are children, drawn after it
 /// from their own placements ([`draw_body_widget`]), so they land over it.
-pub fn draw_clip(mesh: &mut Mesh, cr: Rect, label: Option<&str>, m: &Metrics, theme: &Theme) {
+pub fn draw_clip(mesh: &mut Mesh, cr: Rect, m: &Metrics, theme: &Theme) {
     mesh.rect(cr, theme.object_fill);
     mesh.border(cr, m.divider_w, theme.object_edge);
-    if let Some(t) = label {
-        font::text(
-            mesh,
-            t,
-            cr.x + m.pad,
-            cr.y + m.pad,
-            m.caption_scale,
-            theme.text,
-        );
-    }
+}
+
+/// Draws a clip's **name**, into whichever mesh is painted over its bodies.
+///
+/// It is a separate call because a name has to read: drawn with the box, the
+/// take's trace goes over it, and the time-frequency texture — which is not
+/// mesh at all but a GPU pass after every mesh — hides it outright. So the box
+/// is the base mesh's and the name is the overlay's, the same split the
+/// playhead and the selection already take.
+pub fn draw_clip_label(mesh: &mut Mesh, cr: Rect, label: &str, m: &Metrics, theme: &Theme) {
+    font::text(
+        mesh,
+        label,
+        cr.x + m.pad,
+        cr.y + m.pad,
+        m.caption_scale,
+        theme.text,
+    );
 }
 
 /// Draws one clip **body** — a child element of a clip — into the clip's
@@ -899,8 +907,13 @@ mod tests {
         // ...and a clip's box is drawn from its own placement.
         let before = m.vertex_count();
         let (cr, _) = placed(0.0, 100.0, &View::full(400));
-        draw_clip(&mut m, cr, Some("a"), &metrics, &Theme::default());
+        draw_clip(&mut m, cr, &metrics, &Theme::default());
         assert!(m.vertex_count() > before);
+        // The name is the overlay's, so it is not in that count: drawn with the
+        // box, a take's trace (or a spectral clip's texture) would bury it.
+        let mut over = Mesh::new();
+        draw_clip_label(&mut over, cr, "a", &metrics, &Theme::default());
+        assert!(!over.is_empty(), "the name draws over the bodies");
     }
 
     #[test]

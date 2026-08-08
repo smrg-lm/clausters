@@ -369,12 +369,40 @@ pub enum TextKey {
 #[derive(Default)]
 pub struct Gestures {
     drag: Option<Drag>,
+    /// The `menu` whose option list is **open**, and where that list was
+    /// placed. A popup is the one thing on screen that is not a placement, so
+    /// it lives here with the rest of the interaction state and reaches the
+    /// renderer through [`FrameInputs`](super::frame::FrameInputs) — the same
+    /// road the marquee takes.
+    menu: Option<MenuOpen>,
+}
+
+/// An open `menu`'s list: which widget opened it and the rectangle it occupies
+/// (device pixels), resolved once at the press so the drawing and the click
+/// cannot disagree about where the rows are.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MenuOpen {
+    pub id: i32,
+    pub popup: Rect,
 }
 
 impl Gestures {
     /// Whether a drag is in progress (the front routes cursor motion here).
     pub fn dragging(&self) -> bool {
         self.drag.is_some()
+    }
+
+    /// The open `menu`'s list, if one is open — what the renderer draws over
+    /// the window and what the next press is tested against first.
+    pub fn menu_open(&self) -> Option<MenuOpen> {
+        self.menu
+    }
+
+    /// Closes an open list, if any; `true` when there was one (the caller
+    /// repaints). A def that replaces the tree, a window that closes and a
+    /// press outside all end the same way.
+    pub fn close_menu(&mut self) -> bool {
+        self.menu.take().is_some()
     }
 
     /// The held momentary button's widget id, if the active drag is one (the
@@ -515,7 +543,7 @@ impl Gestures {
     /// first, until one of their steps consumes it.
     ///
     /// The order is the containers', not the widget's. Each container over the
-    /// point declares what a chord does on it ([`super::widget::GestureMap`]) — pan its axis,
+    /// point declares what a modifier does on it ([`super::widget::GestureMap`]) — pan its axis,
     /// sweep a selection, locate the transport, or hand the press to the
     /// element under the cursor — and a step that declines passes the press on,
     /// outward through the chain. That is why Shift+drag pans the same way over
@@ -536,11 +564,24 @@ impl Gestures {
         grab: &mut dyn FnMut() -> bool,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
+        // An **open list is modal**: it is over everything, so it is tested
+        // before the tree, and it swallows the press either way — on a row it
+        // picks that option, anywhere else it just closes, the way a menu
+        // everywhere else behaves.
+        if let Some(open) = self.menu.take() {
+            out.push(GestureEffect::Redraw(ctx.def_id));
+            if let Some(row) = self.menu_row(host, ctx, open, cx, cy) {
+                interact::set_menu_index(host, ctx.def_id, open.id, row);
+                emit_value(host, &mut out, ctx.def_id, open.id);
+            }
+            return out;
+        }
         let Some(hit) = hit(host, ctx, cx, cy) else {
             // A press on empty space drops the text focus (the caret disappears).
             if let Some(old) = host.clear_text_focus() {
                 out.push(GestureEffect::Redraw(old));
             }
+            self.pan_sole_axis(host, ctx, cx);
             return out;
         };
         // A press on anything other than the focused text field defocuses it.
@@ -549,7 +590,7 @@ impl Gestures {
         {
             out.push(GestureEffect::Redraw(old));
         }
-        // The vertical axis is grabbed on its own strip, before any chord: a
+        // The vertical axis is grabbed on its own strip, before any modifier: a
         // press on a y-ruler or a piano-roll's keyboard gutter means *that*
         // axis, whatever the container maps the drag to elsewhere.
         if let Some((id, axis)) = interact::time_of(&hit.chain)
@@ -582,7 +623,55 @@ impl Gestures {
                 }
             }
         }
+        // Nobody took it.
+        self.pan_sole_axis(host, ctx, cx);
         out
+    }
+
+    /// Shift+drag means "pan the axis" wherever it starts, so in a window with
+    /// **one** navigation group it means that off the lanes too — the gap
+    /// between them, the slack under the last one, a container's margin, the
+    /// window's own edge. Returns whether it grabbed.
+    fn pan_sole_axis(&mut self, host: &Host, ctx: &GestureCtx, cx: f64) -> bool {
+        if !ctx.shift {
+            return false;
+        }
+        let Some(sole) =
+            interact::sole_time_axis(host, ctx.def_id, ctx.fb_w, ctx.fb_h, &|id, kind| {
+                ctx.lanes(id, kind)
+            })
+        else {
+            return false;
+        };
+        self.drag = Some(Drag::Pan {
+            id: sole.id,
+            origin_x: cx,
+            start: sole.axis.nav.start,
+            body_w: sole.axis.body.w.max(1.0) as f64,
+        });
+        true
+    }
+
+    /// The option row an open list has under `(cx, cy)` — `None` when the press
+    /// landed outside the list (which closes it and picks nothing). The option
+    /// count comes from the tree, so a list left open over a widget that is
+    /// gone resolves to nothing rather than to a stale row.
+    fn menu_row(
+        &self,
+        host: &Host,
+        ctx: &GestureCtx,
+        open: MenuOpen,
+        cx: f64,
+        cy: f64,
+    ) -> Option<usize> {
+        let options = host
+            .window_def(ctx.def_id)
+            .and_then(|tree| tree.find(open.id))
+            .and_then(|w| match &w.kind {
+                WidgetKind::Menu { options, .. } => Some(options.len()),
+                _ => None,
+            })?;
+        controls::menu_row_at(open.popup, options, cx, cy)
     }
 
     /// One container-level step of a press: the gestures that belong to the
@@ -619,6 +708,13 @@ impl Gestures {
                 true
             }
             (GestureStep::Pan, interact::Coords::Plane(view)) => {
+                // A plane with nowhere to go **declines**, the way its wheel
+                // does: the slack under a short stack is not a surface with a
+                // gesture of its own, and eating the press there is what left
+                // Shift+drag dead everywhere except over a lane.
+                if !interact::plane_can_pan(host, def_id, id, frame.rect, view) {
+                    return false;
+                }
                 self.drag = Some(Drag::ScrollPan {
                     id,
                     area: frame.rect,
@@ -754,9 +850,22 @@ impl Gestures {
                 emit_value(host, out, def_id, id);
                 out.push(GestureEffect::Redraw(def_id));
             }
-            WidgetKind::Menu { .. } => {
-                interact::cycle_menu(host, def_id, id);
-                emit_value(host, out, def_id, id);
+            WidgetKind::Menu {
+                ref options,
+                ref label,
+                text_size,
+                ..
+            } => {
+                // The list hangs off the menu's **body** (the field the chosen
+                // option is drawn in), not off the whole cell, so it lines up
+                // with what it is replacing rather than with the label over it.
+                let m = host.metrics_for(def_id).at(scale);
+                let size = text_size * scale;
+                let body = controls::body_rect_at(rect, label.is_some(), size, &m);
+                self.menu = Some(MenuOpen {
+                    id,
+                    popup: controls::menu_popup(body, options.len(), size, ctx.fb_h as f32, &m),
+                });
                 out.push(GestureEffect::Redraw(def_id));
             }
             WidgetKind::Text { .. } => {
@@ -1674,6 +1783,36 @@ impl Gestures {
             }
             return out;
         }
+        // **Ctrl+wheel over a lane is the other axis of the view**: not time,
+        // which the bare wheel already zooms, but how thick the lane is. The
+        // stack it lives in cannot do it — a plane's zoom is uniform over both
+        // axes and would stretch the time axis out from under the ruler — and a
+        // lane's thickness is a number on the wire, so this is an edit of the
+        // document like a clip's placement: applied here and emitted as
+        // `"height" h` for whoever owns the tree to mirror (a driver usually
+        // gives every lane the same thickness, which is its call, not ours).
+        if ctx.ctrl
+            && let Some((tid, _)) = interact::time_of(&chain)
+            && let Some(frame) = chain.iter().rev().find(|f| f.id == Some(tid))
+        {
+            // The wire's lengths are logical, the rectangle is physical: a lane
+            // with no `h` of its own is measured off the pixels it was drawn at
+            // and given one, so the first turn of the wheel does not jump.
+            let ui = host.metrics_for(def_id).ui_scale.max(f32::EPSILON);
+            let drawn = frame.rect.h / ui;
+            if let Some(h) =
+                interact::lane_resize(host, def_id, tid, drawn, 1.1f32.powf(steps as f32))
+            {
+                emit(
+                    &mut out,
+                    def_id,
+                    tid,
+                    vec![OscType::String("height".into()), OscType::Float(h)],
+                );
+                out.push(GestureEffect::Redraw(def_id));
+                return out;
+            }
+        }
         // A timeline view's wheel is its **axis'**, and the axis is on the
         // chain: over the vertical strip it zooms the display window, anywhere
         // else the shared time axis, both anchored at the cursor.
@@ -1726,7 +1865,42 @@ impl Gestures {
                     _ => (view.view_x, view.view_y - d, zoom),
                 }
             };
-            set_scroll_view(host, &mut out, def_id, id, area, next);
+            // A plane that **cannot** move passes the wheel on rather than
+            // eating it: the slack under a short stack is not a surface with a
+            // gesture of its own.
+            if set_scroll_view(host, &mut out, def_id, id, area, next) {
+                return out;
+            }
+        }
+        // Nothing under the pointer claimed the wheel — a gap between lanes,
+        // the slack under the last one, a container's margin. In a window with
+        // **one** axis those pixels are that axis with nothing drawn on them,
+        // so the wheel means there what it means over a lane: Ctrl the lanes'
+        // thickness, otherwise the time zoom, anchored at the cursor.
+        if let Some(sole) =
+            interact::sole_time_axis(host, def_id, ctx.fb_w, ctx.fb_h, &|id, kind| {
+                ctx.lanes(id, kind)
+            })
+        {
+            if ctx.ctrl {
+                let factor = 1.1f32.powf(steps as f32);
+                let ui = host.metrics_for(def_id).ui_scale.max(f32::EPSILON);
+                for lane in sole.lanes {
+                    let drawn = sole.axis.body.h / ui;
+                    if let Some(h) = interact::lane_resize(host, def_id, lane, drawn, factor) {
+                        emit(
+                            &mut out,
+                            def_id,
+                            lane,
+                            vec![OscType::String("height".into()), OscType::Float(h)],
+                        );
+                    }
+                }
+                out.push(GestureEffect::Redraw(def_id));
+            } else {
+                let factor = 0.85f64.powf(steps);
+                zoom_timeline(host, &mut out, def_id, sole.id, sole.axis.body, cx, factor);
+            }
         }
         out
     }
@@ -2333,7 +2507,7 @@ fn set_scroll_view(
     id: i32,
     area: Rect,
     next: (f64, f64, f64),
-) {
+) -> bool {
     if let Some((x, y, zoom)) = interact::scroll_set_view(host, def_id, id, area, next) {
         emit(
             out,
@@ -2347,7 +2521,9 @@ fn set_scroll_view(
             ],
         );
         out.push(GestureEffect::Redraw(def_id));
+        return true;
     }
+    false
 }
 
 /// The navigation window of timeline view `id`'s group:
@@ -2848,6 +3024,104 @@ mod tests {
             } => *widget_id == id && args.first() == Some(&OscType::String(tag.into())),
             _ => false,
         })
+    }
+
+    // ---- the menu: a list that opens, and the press that picks from it ----
+
+    fn menu_host() -> Host {
+        host_from(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":7,"type":"menu","label":"View","w":200,"h":48,
+                 "options":["ruler: shown","ruler: hidden","ruler: locked"]}]}"#,
+        )
+    }
+
+    fn menu_index(host: &Host, id: i32) -> usize {
+        match &host.window_def(1).unwrap().find(id).unwrap().kind {
+            WidgetKind::Menu { index, .. } => *index,
+            other => panic!("not a menu: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_press_opens_the_menus_list_and_changes_nothing_yet() {
+        let mut host = menu_host();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        let effects = g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
+        let open = g.menu_open().expect("the list is open");
+        assert_eq!(open.id, 7);
+        assert!(open.popup.h > 0.0 && open.popup.w > 0.0);
+        assert_eq!(menu_index(&host, 7), 0, "opening picks nothing");
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, GestureEffect::Emit { .. })),
+            "and emits nothing"
+        );
+    }
+
+    #[test]
+    fn a_press_on_a_row_picks_that_option_and_closes() {
+        let mut host = menu_host();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
+        let popup = g.menu_open().unwrap().popup;
+        // The middle row: the option a click on it means, wherever the list
+        // was placed (it hangs below the field, or above it near an edge).
+        let row_h = popup.h as f64 / 3.0;
+        let effects = g.press(
+            &mut host,
+            &ctx,
+            popup.x as f64 + 5.0,
+            popup.y as f64 + row_h * 1.5,
+            &mut || false,
+        );
+        assert!(g.menu_open().is_none(), "the list closes");
+        assert_eq!(menu_index(&host, 7), 1);
+        assert!(
+            effects.iter().any(|e| matches!(
+                e,
+                GestureEffect::Emit { widget_id: 7, args, .. }
+                    if args.first() == Some(&OscType::Int(1))
+            )),
+            "the pick is the widget's value, as a cycling press was"
+        );
+    }
+
+    #[test]
+    fn a_press_outside_the_list_only_closes_it() {
+        let mut host = menu_host();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
+        let effects = g.press(&mut host, &ctx, 550.0, 380.0, &mut || false);
+        assert!(g.menu_open().is_none());
+        assert_eq!(menu_index(&host, 7), 0, "nothing picked");
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, GestureEffect::Emit { .. })),
+            "an open list swallows the press that dismisses it"
+        );
+    }
+
+    #[test]
+    fn a_list_with_no_room_below_opens_upwards() {
+        // The same menu at the bottom of a short window: the list has to go
+        // somewhere, and off the bottom edge is not somewhere.
+        let mut host = host_from(
+            r#"{"type":"window","margin":0,"flow":"col","children":[
+                {"id":6,"type":"label","text":"filler","weight":1},
+                {"id":7,"type":"menu","w":200,"h":48,
+                 "options":["a","b","c","d","e","f"]}]}"#,
+        );
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 200);
+        g.press(&mut host, &ctx, 40.0, 180.0, &mut || false);
+        let popup = g.menu_open().unwrap().popup;
+        assert!(popup.y + popup.h <= 200.0, "the list fits in the window");
     }
 
     fn slider_value(host: &Host, id: i32) -> f32 {
@@ -3490,7 +3764,7 @@ mod tests {
     /// The table is the container's, and the wire can set it: a waveform told
     /// to pan on a plain drag pans, with no element touched.
     #[test]
-    fn the_gestures_prop_repoints_a_chord_without_touching_the_element() {
+    fn the_gestures_prop_repoints_a_modifier_without_touching_the_element() {
         let mut host = host_from(
             r#"{"type":"window","margin":0,"children":[
                 {"id":95,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2,
@@ -3517,9 +3791,9 @@ mod tests {
     }
 
     /// ...and a live `/gui_set` moves it, on top of the kind's defaults: the
-    /// chords it does not name keep them.
+    /// modifiers it does not name keep them.
     #[test]
-    fn a_gui_set_of_the_table_keeps_the_chords_it_does_not_name() {
+    fn a_gui_set_of_the_table_keeps_the_modifiers_it_does_not_name() {
         let mut host = host_from(
             r#"{"type":"window","margin":0,"children":[
                 {"id":96,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
@@ -3542,6 +3816,138 @@ mod tests {
     /// The header band beside the axis is the lane's own element: its controls
     /// take a press there, and the value leaves as an edit-back the way every
     /// other host-owned edit does.
+    /// The pixels a multitrack has that are not a lane — the gap between two of
+    /// them, the slack under the last one, a margin — are the axis with nothing
+    /// drawn on them, so the gestures of the axis work there.
+    #[test]
+    fn the_windows_one_axis_answers_off_the_lanes() {
+        // The example's shape: the lanes inside a vertical scroll view with
+        // more room than content, so the plane is pinned and the slack under
+        // the lane belongs to nobody.
+        let mut host = host_from(
+            r#"{"type":"window","margin":8,"flow":"col","children":[
+                {"id":30,"type":"plane","axis":"y","zoom":0,"flow":"col","margin":0,
+                 "content_h":80,"weight":1,"children":[
+                  {"id":40,"type":"field","label":"lane","h":60,"link":7,"children":[
+                    {"id":41,"type":"field","offset":0,"dur":1000},
+                    {"id":42,"type":"field","offset":40000,"dur":1000}]}]}]}"#,
+        );
+        host.sync_track_totals();
+        let key = super::super::timeline::group_key(40, Some(7));
+        let mut fx = Vec::new();
+        host.set_props(
+            40,
+            vec![
+                ("view_start".into(), serde_json::json!(20_000.0)),
+                ("view_len".into(), serde_json::json!(4_000.0)),
+            ],
+            &mut fx,
+        );
+        let nav = |h: &Host| h.timelines().nav(key).unwrap();
+        let mut ctx = GestureCtx::new(1, 800, 400);
+        let (below_x, below_y) = (400.0, 300.0); // under the lane, over nothing
+
+        // The wheel zooms the axis, from off it.
+        let mut g = Gestures::default();
+        let before = nav(&host).len;
+        g.wheel(&mut host, &ctx, below_x, below_y, -1.0);
+        assert!(nav(&host).len > before, "the wheel zoomed the one axis out");
+
+        // Ctrl+wheel is still the lanes' thickness.
+        ctx.ctrl = true;
+        let effects = g.wheel(&mut host, &ctx, below_x, below_y, 1.0);
+        assert!(
+            host.window_def(1).unwrap().find(40).unwrap().place.h > Some(60.0),
+            "the lane grew from a press over empty space"
+        );
+        assert!(has_emit_tag(&effects, 40, "height"));
+        ctx.ctrl = false;
+
+        // And Shift+drag pans it.
+        let start = nav(&host).start;
+        ctx.shift = true;
+        g.press(&mut host, &ctx, below_x, below_y, &mut || false);
+        g.drag_to(&mut host, &ctx, below_x - 120.0, below_y);
+        assert!(
+            nav(&host).start > start,
+            "the axis panned from off the lanes"
+        );
+    }
+
+    /// Shift+drag is the **lane's** gesture wherever it starts, clip or no
+    /// clip. A clip is a container of its own local axis, so it must not answer
+    /// for a pan; before it declined, a busy arrangement could only be panned
+    /// in the gaps between its clips.
+    #[test]
+    fn shift_drag_over_a_clip_pans_the_lane_it_is_on() {
+        let mut host = host_from(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":40,"type":"field","label":"lane","link":7,"children":[
+                   {"id":41,"type":"field","offset":0,"dur":1000},
+                   {"id":42,"type":"field","offset":40000,"dur":1000}]}]}"#,
+        );
+        host.sync_track_totals();
+        let mut g = Gestures::default();
+        let mut ctx = GestureCtx::new(1, 800, 200);
+        ctx.shift = true;
+        let key = super::super::timeline::group_key(40, Some(7));
+        // Zoomed in, so the axis has room to move, and pressing on the clip at
+        // the far end of the composition.
+        let mut fx = Vec::new();
+        host.set_props(
+            40,
+            vec![
+                ("view_start".into(), serde_json::json!(39_000.0)),
+                ("view_len".into(), serde_json::json!(2_000.0)),
+            ],
+            &mut fx,
+        );
+        let before = host.timelines().nav(key).unwrap().start;
+        g.press(&mut host, &ctx, 700.0, 100.0, &mut || false);
+        g.drag_to(&mut host, &ctx, 500.0, 100.0);
+        let after = host.timelines().nav(key).unwrap().start;
+        assert!(
+            after > before,
+            "the lane's window moved: {before} -> {after}"
+        );
+        // And the clip stayed where it was: Shift never grabbed it.
+        assert!(matches!(
+            host.window_def(1).unwrap().find(42).unwrap().kind,
+            WidgetKind::Clip { offset, .. } if (offset - 40_000.0).abs() < 0.5
+        ));
+    }
+
+    /// The stack a multitrack lives in cannot make its lanes thicker — a
+    /// plane's zoom is uniform and would stretch time with it — so the lane's
+    /// own `h` is the knob, and Ctrl+wheel is the gesture that turns it.
+    #[test]
+    fn ctrl_wheel_over_a_lane_resizes_it_and_edits_back() {
+        let mut host = host_from(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":70,"type":"field","label":"lane","h":120,
+                 "children":[{"id":71,"type":"field","offset":0.0,"dur":1000.0}]}]}"#,
+        );
+        host.sync_track_totals();
+        let mut g = Gestures::default();
+        let mut ctx = GestureCtx::new(1, 800, 400);
+        ctx.ctrl = true;
+        let effects = g.wheel(&mut host, &ctx, 400.0, 60.0, 1.0);
+        let h = match &host.window_def(1).unwrap().find(70).unwrap().place.h {
+            Some(h) => *h,
+            None => panic!("the lane took a height"),
+        };
+        assert!(h > 120.0, "wheel up makes the lane thicker: {h}");
+        assert!(has_emit_tag(&effects, 70, "height"), "and says so");
+
+        // The plain wheel is still the time axis: the lane keeps its thickness.
+        ctx.ctrl = false;
+        g.wheel(&mut host, &ctx, 400.0, 60.0, 1.0);
+        assert_eq!(
+            host.window_def(1).unwrap().find(70).unwrap().place.h,
+            Some(h)
+        );
+    }
+
     #[test]
     fn a_press_on_the_lane_header_works_its_controls_and_edits_back() {
         let mut host = host_from(

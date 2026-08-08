@@ -262,7 +262,7 @@ impl App {
                 // lives in the tree, not on the GPU, since a clip body is flat
                 // geometry decimated from it. The id is the clip's — a body
                 // carries none — so `signal_target_mut` reaches the take.
-                WidgetKind::Signal(ref el) if !el.is_gpu_view() => {
+                WidgetKind::Signal(ref el) if !el.needs_gpu_slot() => {
                     let bucket = el
                         .source
                         .data()
@@ -281,7 +281,7 @@ impl App {
                     continue; // no navigation group, no ruler rate: a lane owns those
                 }
                 WidgetKind::Signal(ref el)
-                    if el.presentation == Presentation::TimeFrequency && el.is_gpu_view() =>
+                    if el.presentation == Presentation::TimeFrequency && el.needs_gpu_slot() =>
                 {
                     let rate = if el.editor.sample_rate > 0.0 {
                         el.editor.sample_rate

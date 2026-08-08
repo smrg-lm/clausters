@@ -205,6 +205,11 @@ pub struct Placed<'a> {
     /// member's rect — the shared gutter of the axis it is on, `0` for anything
     /// that is not on one. Resolved once per window here, because the renderer
     /// and the hit-test must agree on it and both read this vector.
+    ///
+    /// It is `0` inside a time container too, whatever group the child is on:
+    /// the gutter is the *container's*, and a lane's body already starts past
+    /// it — a member drawn in there (a clip's take, a heavy view used as a
+    /// lane's body) would otherwise indent by it a second time.
     pub indent: f32,
     /// The visible window of the **time axis this placement's rectangle spans**,
     /// when its container placed it on one: a clip carries the slice of its own
@@ -285,6 +290,7 @@ pub fn layout_on<'a>(
         &ctx,
         None,
         &mut out,
+        None,
     );
     out
 }
@@ -311,6 +317,12 @@ impl Ctx<'_> {
     }
 }
 
+/// Places `widget` at `area` and recurses into its children.
+///
+/// `indent` overrides the gutter stamped on the placement: `None` asks the
+/// group table (the ordinary case), `Some(0.0)` says the container already took
+/// the gutter out of the rectangle it is handing down, so its contents draw
+/// from the rectangle's own left edge.
 #[allow(clippy::too_many_arguments)] // one recursion's state, all by value
 fn place<'a>(
     area: Rect,
@@ -320,6 +332,7 @@ fn place<'a>(
     ctx: &Ctx,
     parent: Option<usize>,
     out: &mut Vec<Placed<'a>>,
+    indent: Option<f32>,
 ) {
     let me = out.len();
     out.push(Placed {
@@ -327,7 +340,7 @@ fn place<'a>(
         clip,
         scale: space.unit,
         metrics: space.metrics,
-        indent: ctx.indent(widget),
+        indent: indent.unwrap_or_else(|| ctx.indent(widget)),
         time: space.time,
         parent,
         widget,
@@ -354,7 +367,7 @@ fn place<'a>(
                 .ok()
                 .and_then(|i| widget.children.get(i))
             {
-                place(inner, child, clip, space, ctx, Some(me), out);
+                place(inner, child, clip, space, ctx, Some(me), out, None);
             }
             return;
         }
@@ -373,7 +386,7 @@ fn place<'a>(
         flow,
         space,
     )) {
-        place(rect, child, clip, space, ctx, Some(me), out);
+        place(rect, child, clip, space, ctx, Some(me), out, None);
     }
 }
 
@@ -438,7 +451,12 @@ fn place_on_time<'a>(
             // layered bodies, and a lane's own non-clip chrome.
             _ => (body, space.on_time(nav)),
         };
-        place(rect, child, clip, inner, ctx, Some(me), out);
+        // The gutter is the *container's*: it was taken out of the lane's rect
+        // to make this body, so a member drawn inside it must not take it
+        // again. A clip's bodies carry no id and never asked for one; a heavy
+        // view used as a lane's body does, and used to land a gutter's width
+        // to the right of the clips it shares an axis with.
+        place(rect, child, clip, inner, ctx, Some(me), out, Some(0.0));
     }
 }
 
@@ -501,7 +519,7 @@ fn place_scrolled<'a>(
             (r.w as f64 * zoom) as f32,
             (r.h as f64 * zoom) as f32,
         );
-        place(rect, child, clip, inside, ctx, Some(me), out);
+        place(rect, child, clip, inside, ctx, Some(me), out, None);
     }
 }
 
@@ -791,6 +809,34 @@ mod tests {
         // The lane above it stays on the *group's* window, not the clip's.
         let lane = placed.iter().find(|p| p.widget.id == Some(5)).unwrap();
         assert_eq!(lane.time, None);
+    }
+
+    #[test]
+    fn a_heavy_view_used_as_a_lanes_body_does_not_indent_by_the_gutter_twice() {
+        // A lane with a header and, as its body, a spectrogram on the same
+        // navigation group — a spectral lane in a multitrack. The lane reserves
+        // the group's gutter for its header; the view drawn inside that body
+        // must start at the body's own left edge, or its trace, its ruler and
+        // its playhead land a gutter's width right of the clips it shares an
+        // axis with.
+        let w = tree(
+            r#"{"type":"window","children":[
+            {"id":5,"type":"field","label":"takes","link":7,"children":[
+                {"id":6,"type":"field","offset":0,"dur":400}]},
+            {"id":8,"type":"field","label":"spectrum","link":7,"children":[
+                {"id":9,"type":"signal","view":"spectrogram","link":7,
+                 "data":[0.0,1.0]}]}]}"#,
+        );
+        let placed = layout(area(), &w, &Metrics::default());
+        let lane = placed.iter().find(|p| p.widget.id == Some(8)).unwrap();
+        let view = placed.iter().find(|p| p.widget.id == Some(9)).unwrap();
+        assert!(lane.indent > 0.0, "the lanes share a gutter for the header");
+        assert_eq!(view.indent, 0.0, "the lane already took the gutter out");
+        assert_eq!(
+            view.rect.x,
+            lane.rect.x + lane.indent,
+            "the body starts where the clips of the sibling lane do"
+        );
     }
 
     #[test]

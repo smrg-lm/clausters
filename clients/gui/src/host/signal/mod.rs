@@ -361,10 +361,25 @@ impl SignalElement {
     }
 
     /// Whether the element owns a GPU slot: a navigable heavy presentation.
-    /// Everything else — a plot, a live curve, a clip's body — draws into the
+    /// Everything else — a plot, a live curve, a clip's take — draws into the
     /// window's shared mesh.
     pub fn is_gpu_view(&self) -> bool {
         self.caps.navigable && self.presentation.is_heavy()
+    }
+
+    /// Whether the element's picture *is* a texture — the time-frequency
+    /// presentation, one sample of an uploaded STFT per pixel. The trace has
+    /// two drawings of one signal (the GPU pipeline when it navigates, the mesh
+    /// when it is a clip's take); this one has a single drawing, so a clip
+    /// carrying it needs the slot a navigable view would have.
+    pub fn is_texture_view(&self) -> bool {
+        self.presentation == Presentation::TimeFrequency
+    }
+
+    /// Whether the element needs a GPU slot of its own, under whatever id
+    /// addresses it (a clip's body is addressed by the clip).
+    pub fn needs_gpu_slot(&self) -> bool {
+        self.is_gpu_view() || (self.is_texture_view() && !self.is_live())
     }
 
     /// Whether the element reads its samples live (a forward-only source).

@@ -36,8 +36,14 @@ fn apply_clip_body(widget: &mut Widget, key: &str, v: &Value) -> bool {
     let is_roll = |k: &WidgetKind| matches!(k, WidgetKind::PianoRoll { .. });
     let is_curve = |k: &WidgetKind| matches!(k, WidgetKind::Bpf { .. });
     match key {
-        // A source prop, or the take's own axis.
-        "data" | "blob" | "path" | "cache" | "buffer" | "channels" | "base_bucket" => {
+        // A source prop, the take's own axis, or a spectral take's **display**
+        // — the dB window, the frequency scale and the colormap are shader
+        // uniforms, so they are live on a clip exactly as they are on a view.
+        // What is not here is what the picture is built from: `view`, the
+        // analysis size and the hop are read when the clip is built, since the
+        // texture is computed and allocated then.
+        "data" | "blob" | "path" | "cache" | "buffer" | "channels" | "base_bucket" | "db_floor"
+        | "db_ceil" | "freq_scale" | "log_freq" | "colormap" => {
             widget.ensure_body(is_take);
             widget
                 .clip_body_mut(is_take)
@@ -391,6 +397,12 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             // group model by the host `on_set` for the timeline keys.
             _ => editor.apply(key, v),
         },
+        // A free-standing ruler is its editor chrome and nothing else: the
+        // unit it labels (`ruler`), the rate and the beat grid, the link that
+        // joins it to the lanes. Without this arm a `/gui_set` of any of them
+        // was recorded in the registry and never reached the drawing — a
+        // script could not change the unit of the strip it had just built.
+        WidgetKind::TimeRuler { editor } => editor.apply(key, v),
         WidgetKind::Piano {
             min,
             max,

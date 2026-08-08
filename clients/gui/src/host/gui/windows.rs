@@ -207,8 +207,12 @@ fn collect_timelines(
     // A widget with no id of its own is addressed by its container's — which
     // is how a clip's bodies are reached, since only the clip is on the wire.
     let owner = widget.id.or(owner);
-    match (&widget.kind, widget.id) {
-        (WidgetKind::Signal(el), Some(id)) if el.is_gpu_view() => {
+    match (&widget.kind, owner) {
+        // A slot is keyed by whatever addresses the widget: its own id, or —
+        // for a clip's take, which carries none — the clip's. A navigable heavy
+        // view needs one; so does a **spectral clip body**, whose picture is a
+        // texture and cannot be drawn into the mesh the way a take's trace is.
+        (WidgetKind::Signal(el), Some(id)) if el.needs_gpu_slot() => {
             let Some(data) = el.source.data() else {
                 return;
             };
@@ -262,7 +266,18 @@ fn collect_timelines(
                         el.spectral.hop,
                         el.editor.sample_rate,
                     );
+                    let frames: usize = stfts.iter().map(|s| s.n_frames()).sum();
                     if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
+                        info!(
+                            "spectrogram {id}: analyzed {} from {} ({} frame(s), no OSC)",
+                            path.display(),
+                            if el.caps.navigable {
+                                "a view"
+                            } else {
+                                "a clip"
+                            },
+                            frames
+                        );
                         spectrograms.insert(id, slot);
                     }
                 }
@@ -284,7 +299,7 @@ fn collect_timelines(
         // nothing yet: fetch it over the leg, exactly as a heavy view does.
         // This is a clip's take — it owns no GPU slot, and its id is the
         // clip's, since a body carries none of its own.
-        (WidgetKind::Signal(el), _) if !el.is_gpu_view() => {
+        (WidgetKind::Signal(el), _) if !el.needs_gpu_slot() => {
             if let (Some(id), Some(data)) = (owner, el.source.data())
                 && data.bulk
                 && data.is_empty()

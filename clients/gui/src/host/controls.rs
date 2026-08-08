@@ -17,10 +17,18 @@ use super::textedit;
 use super::theme::Theme;
 use super::widget::{Align, Range, WidgetKind};
 
-/// The label strip height when a control carries a label, else 0.
-fn label_height(has_label: bool, text_size: f32, m: &Metrics) -> f32 {
-    if has_label {
-        font::height(text_size) + m.pad
+/// The label strip height when a control carries a label, else 0 — **and 0 when
+/// the cell cannot hold both**.
+///
+/// A squeezed control drops its label before it squeezes its body: a field box
+/// shorter than the text inside it is a drawing that lies (the glyphs stand
+/// clear of their own background), while a value with no caption is merely
+/// terser. Every geometry here goes through this, so the strip that is not
+/// reserved is also not drawn.
+fn label_height(rect_h: f32, has_label: bool, text_size: f32, m: &Metrics) -> f32 {
+    let strip = font::height(text_size) + m.pad;
+    if has_label && rect_h - strip - 2.0 * m.pad >= font::height(text_size) {
+        strip
     } else {
         0.0
     }
@@ -35,7 +43,7 @@ pub fn body_rect(rect: Rect, has_label: bool, m: &Metrics) -> Rect {
 /// The control body (the rect minus its label strip — sized by the widget's
 /// `text_size` — and a small inset).
 pub fn body_rect_at(rect: Rect, has_label: bool, text_size: f32, m: &Metrics) -> Rect {
-    let top = rect.y + label_height(has_label, text_size, m);
+    let top = rect.y + label_height(rect.h, has_label, text_size, m);
     Rect::new(
         rect.x + m.pad,
         top + m.pad,
@@ -165,20 +173,15 @@ pub fn draw(
             options,
             label,
             text_size,
-        } => {
-            let current = options.get(*index).map(String::as_str).unwrap_or("");
-            field(
-                mesh,
-                current,
-                label.as_deref(),
-                rect,
-                *text_size * scale,
-                false,
-                None, // a menu's read-out is never an editable focus target
-                m,
-                theme,
-            );
-        }
+        } => menu(
+            mesh,
+            options.get(*index).map(String::as_str).unwrap_or(""),
+            label.as_deref(),
+            rect,
+            *text_size * scale,
+            m,
+            theme,
+        ),
         _ => {}
     }
 }
@@ -193,6 +196,9 @@ fn label_strip(
     m: &Metrics,
     theme: &Theme,
 ) {
+    if label_height(rect.h, label.is_some(), size, m) <= 0.0 {
+        return; // no room for both: the body keeps the cell
+    }
     if let Some(text) = label {
         font::text_ellipsis(
             mesh,
@@ -455,6 +461,111 @@ fn toggle(
 /// once clicked into. A single-line field clips overflow with an ellipsis when
 /// unfocused, and scrolls to the caret when focused. (A `menu`'s read-out reuses
 /// this as an unfocused single-line field.)
+/// The height of one row of an open `menu`'s list.
+pub fn menu_row_h(text_size: f32, m: &Metrics) -> f32 {
+    (font::height(text_size) + 2.0 * m.pad).max(m.control_h)
+}
+
+/// The rectangle an open `menu`'s list occupies: the width of the menu's cell,
+/// one [`menu_row_h`] per option, hanging **below** the cell — or above it when
+/// there is no room below, so a menu at the bottom of a window still opens.
+///
+/// One function for the drawing and for the hit-test, so a click lands on the
+/// row it highlighted.
+pub fn menu_popup(cell: Rect, options: usize, text_size: f32, window_h: f32, m: &Metrics) -> Rect {
+    let h = menu_row_h(text_size, m) * options.max(1) as f32;
+    let below = cell.y + cell.h;
+    let y = if below + h <= window_h || cell.y - h < 0.0 {
+        below
+    } else {
+        cell.y - h
+    };
+    Rect::new(cell.x, y, cell.w, h)
+}
+
+/// The option index at `py` inside an open list (`None` outside it).
+pub fn menu_row_at(popup: Rect, options: usize, px: f64, py: f64) -> Option<usize> {
+    if options == 0 || !popup.contains(px, py) {
+        return None;
+    }
+    let row = ((py - popup.y as f64) / (popup.h as f64 / options as f64)) as usize;
+    Some(row.min(options - 1))
+}
+
+/// Draws an open `menu`'s list: every option, the chosen one marked and the one
+/// under the cursor highlighted. It is drawn into the **overlay**, over the
+/// whole window, because a list that opens has to cover whatever it opens over.
+#[allow(clippy::too_many_arguments)] // one popup: its box, its rows, its look
+pub fn draw_menu_popup(
+    mesh: &mut Mesh,
+    popup: Rect,
+    options: &[String],
+    index: usize,
+    hover: Option<usize>,
+    size: f32,
+    m: &Metrics,
+    theme: &Theme,
+) {
+    mesh.rect(popup, theme.field);
+    border(mesh, popup, m.divider_w, theme.accent);
+    let row_h = popup.h / options.len().max(1) as f32;
+    for (i, option) in options.iter().enumerate() {
+        let row = Rect::new(popup.x, popup.y + i as f32 * row_h, popup.w, row_h);
+        if hover == Some(i) {
+            mesh.rect(row, theme.hilite);
+        } else if i == index {
+            mesh.rect(row, theme.accent_dim);
+        }
+        font::text_ellipsis(
+            mesh,
+            option,
+            row.x + m.pad,
+            row.y + (row.h - font::height(size)) * 0.5,
+            (row.w - 2.0 * m.pad).max(0.0),
+            size,
+            theme.text,
+        );
+    }
+}
+
+/// Draws a `menu`: the chosen option in a field, with a **marker** in a gutter
+/// at its right edge.
+///
+/// The marker points **down**: a press opens the option list over the window,
+/// and a press on a row picks it. A menu drawn as a bare field reads as a
+/// label, and then the click that changes the value comes as a surprise. The
+/// gutter is reserved out of the text's width, so a long option ellipsizes
+/// before it reaches the marker.
+fn menu(
+    mesh: &mut Mesh,
+    current: &str,
+    label: Option<&str>,
+    rect: Rect,
+    size: f32,
+    m: &Metrics,
+    theme: &Theme,
+) {
+    let gutter = font::height(size) + m.pad;
+    let text_cell = Rect::new(rect.x, rect.y, (rect.w - gutter).max(0.0), rect.h);
+    field(mesh, current, label, text_cell, size, false, None, m, theme);
+    // The marker rides the body's own row, not the cell's: a labelled menu has
+    // a label strip over it, and the two must not overlap.
+    let body = body_rect_at(rect, label.is_some(), size, m);
+    mesh.rect(
+        Rect::new(text_cell.x + text_cell.w - m.pad, body.y, gutter, body.h),
+        theme.field,
+    );
+    let side = (font::height(size) * 0.5).min(body.h * 0.4).max(2.0);
+    let cx = rect.x + rect.w - m.pad - side;
+    let cy = body.y + body.h * 0.5;
+    mesh.tri(
+        [cx - side, cy - side * 0.5],
+        [cx + side, cy - side * 0.5],
+        [cx, cy + side * 0.5],
+        theme.accent,
+    );
+}
+
 #[allow(clippy::too_many_arguments)] // a widget's draw: its content plus its box
 fn field(
     mesh: &mut Mesh,

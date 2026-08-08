@@ -89,7 +89,7 @@ export interface WidgetOptions {
     color?: string;
     /**
      * A **container's** gesture table: what a drag on it does, by modifier
-     * chord (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value an
+     * modifier (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value an
      * ordered plan of steps — `element` (hand the press to whatever is under
      * the cursor: a clip, a note, a box; it may decline), `pan`, `select`,
      * `locate`, `none`.
@@ -98,7 +98,7 @@ export interface WidgetOptions {
      * coordinate system a container gives its contents, which is why
      * Shift+drag pans the same way over a `waveform`, a `track` lane, a
      * `pianoroll` and a `timeruler`. A plan that consumes nothing falls
-     * outward to the container around it; a table names only the chords it
+     * outward to the container around it; a table names only the modifiers it
      * changes (`{ drag: "pan", shift: "select" }`), and the vertical strip of
      * a view always pans that axis whatever the table says.
      */
@@ -753,8 +753,13 @@ export function text(
 }
 
 /**
- * A `menu` selector over `options` (strings); a click cycles to the next and
- * emits the chosen `index`.
+ * A `menu` over `options` (strings), emitting the chosen `index`.
+ *
+ * A press **opens the list** over the window — the field grown downward by a
+ * row per option, flipped above it near the bottom edge — and a press on a row
+ * picks it; a press anywhere else dismisses it and picks nothing. The list is
+ * the host's, so a bound menu drives its target with no round trip through the
+ * page.
  */
 export function menu(
     options: readonly string[] = [],
@@ -1302,11 +1307,19 @@ export function track(
  * dur]` in timeline sample units (the graphic unit — length = duration).
  *
  * Its body is a **take** (reached exactly as the heavy `waveform`'s samples
- * are — `cache`/`path`/`buffer`/`data`/`blob`, summarized through the take's
- * peak pyramid to fit the rectangle), a **piano-roll** of `notes`, or an
- * **automation curve** of `points` editable in place. Dragging the clip
+ * are — `cache`/`path`/`buffer`/`data`/`blob`), a **piano-roll** of `notes`,
+ * or an **automation curve** of `points` editable in place. Dragging the clip
  * (move) or its edge (resize) flows back as a `"clip"` event carrying the new
  * `offset`/`dur`.
+ *
+ * The take is drawn in the presentation `view` names: `"trace"` (the default)
+ * summarizes it through the peak pyramid to fit the rectangle,
+ * `"spectrogram"` draws its STFT as the time-frequency texture — the same
+ * signal seen the other way, and still a clip: placed at `offset`, ending at
+ * `dur`, dragged and resized on the lane's axis. The spectral parameters are
+ * the `spectrogram` view's own (`windowSize`, `hop`, `dbFloor`, `dbCeil`,
+ * `freqScale`, `colormap`); the presentation and the analysis are read when
+ * the clip is built, the display props are live via `set`.
  */
 export function clip(
     options: SourceOptions & {
@@ -1315,6 +1328,14 @@ export function clip(
         /** Its duration (samples) — a clip with no duration draws nothing. */
         dur: number;
         baseBucket?: number;
+        /** The take's presentation: `"trace"` (default) or `"spectrogram"`. */
+        view?: string;
+        windowSize?: number;
+        hop?: number;
+        dbFloor?: number;
+        dbCeil?: number;
+        freqScale?: string;
+        colormap?: number;
         notes?: NoteSpec;
         points?: PointSpec;
         exp?: boolean;
@@ -1325,7 +1346,8 @@ export function clip(
 ): GuiNode {
     const {
         offset = 0.0, dur, cache, path, buffer, data, blob, channels,
-        baseBucket, notes, points, exp, min, max, label: text, ...rest
+        baseBucket, view, windowSize, hop, dbFloor, dbCeil, freqScale, colormap,
+        notes, points, exp, min, max, label: text, ...rest
     } = options;
     return node("field", {
         ...rest,
@@ -1334,6 +1356,13 @@ export function clip(
         ...sourceProps({ cache, path, buffer, data, blob, channels }),
         ...drop([
             ["base_bucket", baseBucket],
+            ["view", view],
+            ["window_size", windowSize],
+            ["hop", hop],
+            ["db_floor", dbFloor],
+            ["db_ceil", dbCeil],
+            ["freq_scale", freqScale],
+            ["colormap", colormap],
             ["notes", notes === undefined ? undefined : flatNotes(notes)],
             ["points", points === undefined ? undefined : flatPoints(points)],
             ["exp", flag(exp)],

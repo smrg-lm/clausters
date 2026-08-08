@@ -315,7 +315,7 @@ choices were on the table and both are worth recording:
   wheel over the strip zooms the vertical axis and dragging the strip pans it;
   the wheel over the
   body stays horizontal zoom and plain/Shift drag keep selecting/panning time.
-  Spatial separation needs no modifier chord, leaves every existing body
+  Spatial separation needs no modifier, leaves every existing body
   gesture untouched, and matches the audio-editor convention (Audacity, most
   DAWs pan/zoom an axis by grabbing its ruler). The strip only exists when the
   ruler is on (`ruler_y != "off"`), which is also the only time the axis has

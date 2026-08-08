@@ -15,7 +15,7 @@ use super::bpf;
 use super::layout::{self, Rect};
 use super::pianoroll;
 use super::track;
-use super::widget::{GestureMap, ScrollView, Widget, WidgetKind};
+use super::widget::{Axis, GestureMap, ScrollView, Widget, WidgetKind};
 use super::{Host, controls};
 use crate::viewport::View;
 
@@ -114,7 +114,7 @@ pub(crate) struct Frame {
     /// ([`super::layout::Placed::scale`]), which its own contents' geometry is
     /// measured at.
     pub scale: f32,
-    /// What a press on this container does, by chord — the container's own
+    /// What a press on this container does, by modifier — the container's own
     /// table, or the default its kind carries.
     pub map: GestureMap,
     pub coords: Coords,
@@ -219,6 +219,64 @@ pub(crate) fn hit(
         scale: p.scale,
         kind: p.widget.kind.clone(),
         chain: chain_of(host, def_id, &placed, i, lanes),
+    })
+}
+
+/// The window's **one** navigation group, when it has exactly one: a member's
+/// id and axis (they share the window and the gutter, so any member answers for
+/// all of them), plus every **lane** on it.
+///
+/// It is what a gesture falls back to when the pointer is not over a timeline
+/// at all — the gap between two lanes, the slack under the last one, a
+/// container's margin. In a window built around one axis those pixels are not a
+/// third thing the user meant: they are the axis with nothing drawn on them.
+/// With two groups there is no such answer, so there is no fallback either.
+pub(crate) struct SoleAxis {
+    pub id: i32,
+    pub axis: TimeAxis,
+    pub lanes: Vec<i32>,
+}
+
+pub(crate) fn sole_time_axis(
+    host: &Host,
+    def_id: i32,
+    fb_w: u32,
+    fb_h: u32,
+    lanes: &dyn Fn(i32, &WidgetKind) -> usize,
+) -> Option<SoleAxis> {
+    let tree = host.window_def(def_id)?;
+    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    let placed = layout::layout_on(area, tree, host.metrics_for(def_id), &|id, link| {
+        host.timelines().nav(super::timeline::group_key(id, link))
+    });
+    let mut key = None;
+    let mut found: Option<(i32, TimeAxis)> = None;
+    let mut lane_ids = Vec::new();
+    for p in &placed {
+        let (Some(id), true) = (p.widget.id, p.widget.is_timeline()) else {
+            continue;
+        };
+        let Some(editor) = p.widget.kind.editor() else {
+            continue;
+        };
+        let this = super::timeline::group_key(id, editor.link);
+        match key {
+            Some(k) if k != this => return None, // two axes: nothing to fall back to
+            Some(_) => {}
+            None => key = Some(this),
+        }
+        if matches!(p.widget.kind, WidgetKind::Track { .. }) {
+            lane_ids.push(id);
+        }
+        if found.is_none() {
+            found = time_axis(host, def_id, p, p.indent, lanes).map(|axis| (id, axis));
+        }
+    }
+    let (id, axis) = found?;
+    Some(SoleAxis {
+        id,
+        axis,
+        lanes: lane_ids,
     })
 }
 
@@ -404,6 +462,36 @@ pub(crate) fn scroll_set_view(
     Some(next)
 }
 
+/// Whether plane `id` has anywhere to pan: its content is bigger than the
+/// window on an axis it may move, or it is a free plane (which always has its
+/// slack). A pinned plane declines a pan so the press walks on.
+pub(crate) fn plane_can_pan(
+    host: &Host,
+    def_id: i32,
+    id: i32,
+    area: Rect,
+    view: ScrollView,
+) -> bool {
+    let metrics = *host.metrics_for(def_id);
+    let Some(tree) = host.window_def(def_id) else {
+        return false;
+    };
+    let Some(w) = tree.find(id) else {
+        return false;
+    };
+    let content = layout::scroll_content(w, area, &metrics);
+    if view.axis.slack() > 0.0 {
+        return true; // a free plane is unbounded by construction
+    }
+    let zoom = view.zoom(&metrics);
+    let room = |content: f32, viewport: f32| content as f64 > viewport as f64 / zoom + 0.5;
+    match view.axis {
+        Axis::X => room(content.0, area.w),
+        Axis::Y => room(content.1, area.h),
+        _ => room(content.0, area.w) || room(content.1, area.h),
+    }
+}
+
 /// The current 0..1 fraction of a continuous control (slider/knob/number) in the
 /// host tree — the live value used to drive an incremental drag.
 pub(crate) fn fraction_of(host: &Host, def_id: i32, widget_id: i32) -> Option<f32> {
@@ -504,14 +592,49 @@ pub(crate) fn flip_toggle(host: &mut Host, def_id: i32, id: i32) {
     }
 }
 
-/// Advances a `menu`'s selected option (wrapping) in the host tree.
-pub(crate) fn cycle_menu(host: &mut Host, def_id: i32, id: i32) {
+/// The thickness a lane may be dragged between (logical pixels): thin enough to
+/// pack a big arrangement into a window, tall enough that a clip's body is still
+/// a drawing.
+const LANE_H: (f32, f32) = (24.0, 600.0);
+
+/// Scales a **lane's** thickness by `factor` (Ctrl+wheel), returning its new
+/// `h` in logical pixels — `None` when `id` is not a lane, or when the change
+/// would leave the bounds it is already at.
+///
+/// `drawn` is the height it is on screen, in logical pixels, which is what a
+/// lane that never named an `h` is measured from: its thickness becomes a
+/// number on the wire the moment the wheel gives it one, and from then on it is
+/// the number that moves.
+pub(crate) fn lane_resize(
+    host: &mut Host,
+    def_id: i32,
+    id: i32,
+    drawn: f32,
+    factor: f32,
+) -> Option<f32> {
+    let tree = host.window_def_mut(def_id)?;
+    let widget = tree.find_mut(id)?;
+    if !matches!(widget.kind, WidgetKind::Track { .. }) {
+        return None;
+    }
+    let from = widget.place.h.unwrap_or(drawn).max(1.0);
+    let to = (from * factor).clamp(LANE_H.0, LANE_H.1);
+    if (to - from).abs() < 0.5 {
+        return None;
+    }
+    widget.place.h = Some(to);
+    Some(to)
+}
+
+/// Sets a `menu`'s selected option in the host tree (a pick from its open
+/// list), ignoring an index the list does not have.
+pub(crate) fn set_menu_index(host: &mut Host, def_id: i32, id: i32, to: usize) {
     if let Some(tree) = host.window_def_mut(def_id)
         && let Some(w) = tree.find_mut(id)
         && let WidgetKind::Menu { index, options, .. } = &mut w.kind
-        && !options.is_empty()
+        && to < options.len()
     {
-        *index = (*index + 1) % options.len();
+        *index = to;
     }
 }
 

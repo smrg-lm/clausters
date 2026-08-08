@@ -130,6 +130,7 @@ The **edit-back payloads**:
 | `"clip"` | `offset dur` (timeline units) | a `clip` moved or resized |
 | `"mute"` / `"solo"` | `0|1` | a lane header's toggle worked — the tag is the lane prop that changed |
 | `"level"` | `f` (0..1) | a lane header's fader dragged |
+| `"height"` | `h` (logical pixels) | a lane resized with **Ctrl+wheel** — the host applies it to the lane under the cursor and says so, and a driver that wants every lane the same thickness echoes it onto the others |
 | `"element"` | `id` (a string: the MEI `xml:id`; empty = the selection was cleared) | a `score` page clicked — the engraved element under the cursor |
 | `"transpose"` | `id steps` (the MEI `xml:id`; whole diatonic steps, positive = up the staff) | a `score` element dragged up or down — a pitch edit *requested*, since the host holds no score |
 | `"wire"` | `src_box outlet dst_box inlet` (ports by name; a rate mismatch is refused at the gesture) | a patcher cord drawn `outlet -> inlet` |
@@ -218,7 +219,7 @@ Under an axis a property drops the axis marker — `x.start` is the old
 
 | Axis | Properties |
 |---|---|
-| `x` | `unit` (`time`/`samples`/`beats`/`off`; `ruler` is accepted as its old name), `start`, `len`, `tempo`, `beat_at`, `quant`, `sample_rate`, `link`, `sel_start`, `sel_len`, `playhead`, `playhead_at`, `playhead_loop_start`, `playhead_loop_len` |
+| `x` | `unit` (`time`/`samples`/`beats`/`off`; `ruler` is accepted as its old name), `start`, `len`, `tempo` (beats per second), `beat_at`, `quant` (**beats per bar** — the grid a `bar:beat` label counts on, not a length in samples), `sample_rate`, `link`, `sel_start`, `sel_len`, `playhead`, `playhead_at`, `playhead_loop_start`, `playhead_loop_len` |
 | `y` | `unit` (`norm`/`db`/`bits`/`percent`/`hz`/`off`), `start`, `len`, `min`, `max`, `bit_depth` |
 
 An `axes` pair works on `/gui_def` and on `/gui_set` alike (there it rides as
@@ -281,7 +282,7 @@ script actually names these. The catalog itself:
 | `plot` | A static plot of a signal: multichannel lanes, x/y rulers, a hover readout, and **views** (`signal`, `spectrum`; the set is extensible) — measurement without navigation | `data`/`blob`/`path`, `channels`, `view`, `overlay`, `sample_rate`, `min`/`max` (omit a side to auto-fit it; the string `"auto"` releases it live), `ruler` (`samples`/`time`/`off`), `ruler_y` (`off` to hide), and for `view: "spectrum"`: `fft_size`, `db_floor`/`db_ceil`, `freq_scale` (`log`/`linear`/`mel`/`bark`) |
 | `timeruler` | A **free-standing time ruler**: the shared axis as a strip the *document* places — a DAW's ruler above its tracks. A lane's own `ruler` is reserved out of that lane's height, so ruling a stack meant picking one lane to carry it and to pay for it; this owns its box instead. Joins the group named by `link` — or, with none, the window's own lanes — and labels its window; its ticks are indented by the **group's** gutter (the widest any member asks for) so they stand over the samples they name. A press **locates**, Shift+drag pans, the wheel zooms | `ruler` (the unit), `sample_rate`, `tempo`/`beat_at`/`quant`, `link`, `h` (its thickness), `theme` |
 | `track` | A multitrack **lane**, holding `clip` children on the window's shared time axis. Its **header** (the band left of the axis) carries the name and, when asked for, the lane's controls | `label`, `height`, `snap`, `header_w`, `mute`, `solo`, `level`, `ruler`, `tempo`, `sample_rate`, `playhead_at`, `playhead`, `playhead_loop_*`, `link`, `theme` |
-| `clip` | A placed rectangle spanning `[offset, offset + dur]` — the graphic unit. Its bodies **layer**: a take, a piano-roll of events, and an automation curve over them | `offset`, `dur`, the take (`buffer`/`path`/`cache`/`data`/`blob`), `notes`, `points` (+ `points_min`/`points_max`, the curve's own value axis), `min`, `max`, `label` |
+| `clip` | A placed rectangle spanning `[offset, offset + dur]` — the graphic unit. Its bodies **layer**: a take, a piano-roll of events, and an automation curve over them. The take is drawn in the presentation `view` names — the trace (the default) or the time-frequency `"spectrogram"`, the same signal seen the other way, ending where the clip ends | `offset`, `dur`, the take (`buffer`/`path`/`cache`/`data`/`blob`) and its `view` (+ `window_size`, `hop`, `db_floor`, `db_ceil`, `freq_scale`, `colormap` for the spectral one), `notes`, `points` (+ `points_min`/`points_max`, the curve's own value axis), `min`, `max`, `label` |
 | `patch` | A **directed, typed patcher**, drawing both levels: boxes with **inlets on top, outlets on the bottom**, a **cord** per `outlet -> inlet` connection, **coloured by rate** — contrasting primaries at one width — audio (`ar`) red, control (`kr`) blue, init (`ir`) yellow and dashed — colour carries the rate. At **level 1** (a `GraphDef`) a cord *is* a server bus (not drawn — the client names it); at **level 2** (a `SynthDef`/`FaustDef`) a cord is an internal UGen wire. A **canvas**: a box with `x`/`y` places freely; a box **without** `x`/`y` takes its slot in the host's **layered (Sugiyama-style) auto-layout** (ranked by longest path to a sink, so inputs sit above their use and sinks at the bottom). Boxes drag (`"move"` flows back), a click or a marquee on empty canvas selects, and inside a `scroll` workspace the whole patch pans and zooms; the labelled panel frames whatever boxes it holds | `boxes` (each `{def, inlets, outlets[, x, y, role]}`; a port is a bare name (audio) or `{name, rate}` with `rate` `"control"`/`"init"`; `role` `"source"`/`"const"` only tags a box for drawing — a `const` value box gets a distinct fill — the layout ranks every box by its cords), `cords` (a flat `[from_box, outlet, to_box, inlet, ...]` list, indices within each box's inlet/outlet lists), `label` |
 | `score` | An **engraved music-notation page**. The client engraves a score and sends a *display list* — a glyph-outline table keyed by SMuFL codepoint plus placed glyphs, staff lines, stems, beams, slurs and text in page units — which the host fits into the widget and tessellates into the same triangle mesh as the rest of the chrome. Every primitive carries the MEI `xml:id` it was engraved from, so a click names an element (`"element"`), a drag transposes it (`"transpose"`) and the page shows a playback cursor over its own timemap | `vb` (the `[width, height]` page-unit viewBox), `glyphs` (hex SMuFL codepoint → outline path `d`), `prims` (the placed primitives, each with its `id`), `cursors` (the cursor track: `t` in ms → `x`, `y0`, `y1`), `step` (page units per diatonic step), `display_list` (the whole drawing replaced live, as a JSON string), `playhead`, `playhead_at`, `playhead_loop_*` (ms), `sample_rate`, `selected`, `editable` (opt into pitch editing; off = a read-only view) |
 | `canvas` | A script-supplied WGSL shader over the widget area | `shader`, `params`, `buses` |
@@ -311,7 +312,7 @@ element's: they belong to the coordinate system a container gives its contents,
 which is why Shift+drag pans the same way over every `field` — a lane, a clip,
 a bare ruler — and over a navigable `signal`, and why a plain drag on a
 `plane`'s background pans it. Any container may carry a `gestures` prop — an object keyed by
-modifier chord (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value a
+modifier (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value a
 **plan**: the step names in order, separated by spaces.
 
 | Step | What it does |
@@ -321,6 +322,8 @@ modifier chord (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value a
 | `select` | Sweeps a selection: the shared time selection on a timeline (a rectangle in time x pitch on a `notes` element, which also picks its notes), the box marquee on a patcher `plane` |
 | `locate` | Puts the transport's cursor under the pointer and emits `"locate"` |
 | `none` | Nothing |
+
+A container may also name **no** step for a modifier, which is not the same as `none`: an empty plan declines and the press walks outward, while `none` consumes it. That is a `clip`'s own table — the plain drag grabs it, every other chord falls through to the lane — because a clip is a container of its *local* axis, so a pan there would mean the wrong window.
 
 The order is the point. `"element locate"` is a lane — grab the clip under the
 cursor, and if there is none, locate; `"select"` is a waveform, which has
@@ -336,10 +339,18 @@ a table names only what it changes:
 ```
 
 Live via `/gui_set gestures` (as a JSON string, the `theme` convention), and
-each set starts again from the kind's defaults — so the chords it does not name
-keep them. Two gestures are **not** in the table, because they are not
+each set starts again from the kind's defaults — so the modifiers it does not
+name keep them. **Off the lanes.** A multitrack has pixels that are not a lane — the gap between two of them, the slack under the last one, a container's margin — and in a window with **exactly one** navigation group those are that axis with nothing drawn on them. So the axis' own gestures work there: the wheel zooms it, Ctrl+wheel resizes its lanes, Shift+drag pans it. A surface under the pointer that *can* act still wins (a `plane` with somewhere to scroll scrolls); one that cannot passes the gesture on instead of eating it. With two groups in a window there is no such answer, so there is no fallback.
+
+Two gestures are **not** in the table, because they are not
 ambiguous: a press on a view's vertical strip (a `ruler_y`, a `pianoroll`'s
-keyboard gutter) always pans that axis, and the wheel always zooms.
+keyboard gutter) always pans that axis, and the wheel always zooms — the axis
+under it, except **Ctrl+wheel over a lane**, which resizes the lane (its `h`)
+and emits `"height"`. Time and thickness are different things: a `plane`'s zoom
+is uniform over both axes, so growing the lanes with it would stretch the time
+axis out from under the ruler.
+
+**The `menu` opens.** A press on a `menu` opens its **option list** over the window — the widget's field grown downward by one row per option, flipped above it near the bottom edge — with the chosen row marked and the row under the cursor highlighted. A press on a row picks that option (the `index`, emitted as the widget's value exactly as any control's change is, or forwarded when the menu is bound); a press anywhere else dismisses the list and picks nothing. An open list is **modal**: it is drawn over everything, including the heavy views, and it is hit-tested before the widget tree, so the press that dismisses it does nothing else. The list is the host's — no script round trip, so a persisted GuiDef's menus work with nobody attached.
 
 **Text on the light widgets.** Every text-bearing light widget — `label`, `button`, `toggle`, `text`, `number`, `menu` and the control labels on `slider`/`knob` — takes a `text_size`: a glyph scale over the host's embedded 5x7 bitmap font (default `2.0`, the size everything drew at before the prop existed; clamped to `[1, 16]`). Single-line text that overflows its rect clips with an ellipsis instead of bleeding into the neighbor. `label` additionally takes `wrap` (word wrap on the font's fixed advance, the lines past the label's bottom edge dropped) and `align` (`start`, the default left edge / `center` / `end`, applied per line). All of them are live via `/gui_set`. Inside a `scroll` workspace everything scales with the view's zoom together — the text, the padding, a control's own parts — because a zoom is an enlargement: a box at zoom 2 is the same box twice the size, not a box with oversized text jammed into it.
 

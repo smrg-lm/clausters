@@ -112,7 +112,7 @@ strip) are that same widget configured down.
 locating the transport belong to the coordinate system a container gives its
 contents, not to what is drawn in it — which is why Shift+drag pans the same
 way over a ``waveform``, a ``track`` lane, a ``pianoroll`` and a ``timeruler``.
-A ``gestures`` prop replaces that mapping, keyed by modifier chord (``drag``
+A ``gestures`` prop replaces that mapping, keyed by modifier (``drag``
 for the plain drag, ``shift``, ``ctrl``, ``alt``), each value an ordered plan
 of steps: ``element`` (hand the press to whatever is under the cursor — a clip,
 a note, a box — which may decline), ``pan``, ``select``, ``locate``, ``none``::
@@ -292,7 +292,7 @@ def field(*children, axes: dict | None = None, offset: float | None = None,
                     "y": {"min": -1.0, "max": 1.0}})
 
     On the x axis: ``unit`` (``"time"``/``"samples"``/``"beats"``/``"off"``),
-    ``start``/``len`` (the navigation window), ``tempo``/``beat_at``/``quant``,
+    ``start``/``len`` (the navigation window), ``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on — not a length in samples),
     ``sample_rate``, ``link`` (the navigation group), ``sel_start``/``sel_len``
     and the ``playhead`` family. On the y axis: ``unit``, ``start``/``len``,
     ``min``/``max``, ``bit_depth``.
@@ -548,8 +548,14 @@ def text(*, value: str | None = None, label: str | None = None, text_size: float
 def menu(options=(), *, index: int | None = None, label: str | None = None,
          text_size: float | None = None, color: str | None = None, id: int | None = None, **props
          ) -> dict:
-    """A ``menu`` selector over ``options`` (a list of strings); a click cycles
-    to the next and emits the chosen ``index``. ``text_size`` scales the shown
+    """A ``menu`` over ``options`` (a list of strings), emitting the chosen
+    ``index``.
+
+    A press **opens the list** over the window — the field grown downward by a
+    row per option, flipped above it near the bottom edge — and a press on a row
+    picks it; a press anywhere else dismisses it and picks nothing. The list is
+    the host's, so a bound menu (`GuiHost.bind`/`bind_widget`) drives its target
+    with no round trip through this script. ``text_size`` scales the shown
     choice and the label."""
     extra = _drop_none(index=index, label=label, text_size=text_size, color=color)
     return node("menu", id=id, options=list(options), **extra, **props)
@@ -686,7 +692,7 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
     the default, or ``"off"``) draws the frequency ruler, its tick positions
     following ``freq_scale``; ``ruler`` labels the time axis exactly as on the
     `waveform` (``"time"``/``"samples"``/``"beats"`` with
-    ``tempo``/``beat_at``/``quant``, or ``"off"``). The rest of the editor
+    ``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on — not a length in samples), or ``"off"``). The rest of the editor
     chrome (``sel_start``/``sel_len``, ``playhead_at``/``playhead`` and their
     ``playhead_loop_start``/``playhead_loop_len`` region, drag-to-select /
     Shift+drag pan / wheel zoom) also works exactly as on the `waveform` —
@@ -1095,6 +1101,12 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
     timeline samples a clip's move/resize rounds to (omitted / ``0`` = snap to
     whole samples).
 
+    **Ctrl+wheel over a lane resizes it**: the host sets that lane's ``h`` and
+    emits ``"height" h`` (logical pixels), which a driver mirrors onto its
+    sibling lanes when it wants one thickness for the stack. It is a gesture of
+    its own because the bare wheel is the time axis and a scrolled workspace's
+    zoom is uniform over both — thickness is neither.
+
     The lanes of a window **navigate as one**: they share a time axis you can
     zoom (wheel) and pan (Shift+drag), spanning the composition (the longest clip
     end over every lane, so dragging a clip past the end lengthens it). That is
@@ -1168,7 +1180,7 @@ def timeruler(*, h: float = 20.0, ruler: str | None = None, sample_rate: float |
     them — so a ruler dropped under a stack needs nothing said; pass a ``link``
     id only to follow a group that is not this window's lanes. ``ruler`` is the unit (``"time"`` the default, ``"samples"``,
     ``"beats"``), with ``sample_rate`` labelling real time and
-    ``tempo``/``beat_at``/``quant`` labelling beats, exactly as on a lane. Its
+    ``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on — not a length in samples) labelling beats, exactly as on a lane. Its
     ticks are indented by the **group's** gutter — the widest any member asks
     for — so they stand over the samples they label when it is stacked with the
     lanes. (``link`` names a navigation
@@ -1191,7 +1203,10 @@ def timeruler(*, h: float = 20.0, ruler: str | None = None, sample_rate: float |
 
 def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
          buffer: int | None = None, path: str | None = None, cache: str | None = None,
-         channels: int | None = None, base_bucket: int | None = None, notes=None, points=None,
+         channels: int | None = None, base_bucket: int | None = None, view: str | None = None,
+         window_size: int | None = None, hop: int | None = None, db_floor: float | None = None,
+         db_ceil: float | None = None, freq_scale: str | None = None,
+         colormap: int | None = None, notes=None, points=None,
          exp: bool | None = None, min: float | None = None, max: float | None = None,
          label: str | None = None, color: str | None = None, id: int | None = None, **props
          ) -> dict:
@@ -1199,7 +1214,16 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
     dur]`` in timeline sample units (the graphic unit — length = duration). Its
     body is one of three:
 
-    - a **waveform** — the take, drawn decimated to the clip's pixel width;
+    - a **take** — the recorded signal, drawn in the presentation ``view``
+      names: ``"trace"`` (the default) decimates it to the clip's pixel width
+      through the peak pyramid, ``"spectrogram"`` draws its STFT as the
+      time-frequency texture. It is the same element a `signal` view is, so the
+      analysis (``window_size``, ``hop``) and the display (``db_floor``,
+      ``db_ceil``, ``freq_scale``, ``colormap``) are named the same way — and a
+      spectral clip is a clip: placed at ``offset``, ending at ``dur``,
+      draggable, resizable, on the lane's own axis. The presentation is read
+      when the clip is built (the texture is computed then); the display props
+      are live via ``set``;
     - a **piano-roll** — ``notes``, an iterable of ``(start, dur, pitch)`` (or
       ``(start, dur, pitch, velocity, channel)``) events (times relative to the
       clip, in samples; pitch mapped over ``[min, max]``), drawn as note bars —
@@ -1242,7 +1266,9 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
     Dragging a clip (move) or its edge (resize) flows back as a ``"clip"``
     event carrying the new ``offset``/``dur`` — the edit-back path — so a driver
     can update the arrangement and re-render."""
-    extra = _drop_none(offset=offset,
+    extra = _drop_none(offset=offset, view=view, window_size=window_size, hop=hop,
+                       db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
+                       colormap=colormap,
                        data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket,
@@ -1294,7 +1320,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     so ``link`` joins/splits its navigation group (zoom with the wheel over the
     grid, pan with Shift+drag, all group-wide); ``ruler`` places a time ruler
     (``"time"``/``"samples"``/``"beats"``, default ``"time"``) with
-    ``sample_rate``/``tempo``/``beat_at``/``quant`` labelling it; ``sel_start``/
+    ``sample_rate``/``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on — not a length in samples) labelling it; ``sel_start``/
     ``sel_len`` mark a time selection; ``playhead_at`` sweeps a playhead from the
     engine clock (``playhead`` sets a static cursor, and
     ``playhead_loop_start``/``playhead_loop_len`` wrap the sweep inside a

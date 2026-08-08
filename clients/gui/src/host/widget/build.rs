@@ -308,16 +308,19 @@ pub(super) fn body_widget(kind: WidgetKind) -> Widget {
 /// same three elements, with nothing in them yet.
 pub(super) fn empty_clip_body(is: fn(&WidgetKind) -> bool) -> Option<WidgetKind> {
     let candidates: [WidgetKind; 3] = [
-        WidgetKind::Signal(Box::new(take_element(signal::Data {
-            samples: Arc::from([] as [f32; 0]),
-            channels: 1,
-            buffer: None,
-            path: None,
-            cache: None,
-            base_bucket: DEFAULT_BASE_BUCKET,
-            bulk: true,
-            body: None,
-        }))),
+        WidgetKind::Signal(Box::new(take_element(
+            signal::Data {
+                samples: Arc::from([] as [f32; 0]),
+                channels: 1,
+                buffer: None,
+                path: None,
+                cache: None,
+                base_bucket: DEFAULT_BASE_BUCKET,
+                bulk: true,
+                body: None,
+            },
+            Presentation::Signal,
+        ))),
         WidgetKind::PianoRoll {
             notes: Vec::new(),
             osc: Vec::new(),
@@ -343,12 +346,20 @@ pub(super) fn empty_clip_body(is: fn(&WidgetKind) -> bool) -> Option<WidgetKind>
     candidates.into_iter().find(|k: &WidgetKind| is(k))
 }
 
-/// The signal element a clip's take is, over `source`: the `waveform` preset
+/// The signal element a clip's take is, over `source`: a stored presentation
 /// with every capability off and no chrome — it is drawn against the clip's
 /// axis, and the clip is what navigates.
-fn take_element(source: signal::Data) -> signal::SignalElement {
-    let mut el =
-        signal::SignalElement::from_preset(&signal::point(Presentation::Signal, false, true));
+///
+/// `view` is the presentation the clip asked for: the trace (the default), or
+/// the time-frequency texture — the same signal, seen the other way, placed in
+/// time like any take. A presentation with nothing to draw over a stored source
+/// falls back to the trace rather than leaving the clip blank.
+fn take_element(source: signal::Data, view: Presentation) -> signal::SignalElement {
+    let view = match view {
+        Presentation::Signal | Presentation::TimeFrequency => view,
+        _ => Presentation::Signal,
+    };
+    let mut el = signal::SignalElement::from_preset(&signal::point(view, false, true));
     el.caps = signal::Caps::default();
     el.editor.ruler = Ruler::Off;
     el.editor.ruler_y = RulerY::Off;
@@ -376,26 +387,66 @@ fn clip_take(props: &Map<String, Value>, blobs: &[Vec<u8>]) -> Result<Option<Wid
     if samples.is_empty() && buffer.is_none() && path.is_none() && cache.is_none() {
         return Ok(None);
     }
-    let mut el = take_element(signal::Data {
-        samples,
-        channels: props
-            .get("channels")
-            .and_then(Value::as_u64)
-            .map(|n| (n as usize).max(1))
-            .unwrap_or(1),
-        buffer,
-        path,
-        cache,
-        base_bucket: props
-            .get("base_bucket")
-            .and_then(Value::as_u64)
-            .map(|n| (n as usize).max(1))
-            .unwrap_or(DEFAULT_BASE_BUCKET),
-        bulk: true,
-        body: None,
-    });
+    let mut el = take_element(
+        signal::Data {
+            samples,
+            channels: props
+                .get("channels")
+                .and_then(Value::as_u64)
+                .map(|n| (n as usize).max(1))
+                .unwrap_or(1),
+            buffer,
+            path,
+            cache,
+            base_bucket: props
+                .get("base_bucket")
+                .and_then(Value::as_u64)
+                .map(|n| (n as usize).max(1))
+                .unwrap_or(DEFAULT_BASE_BUCKET),
+            bulk: true,
+            body: None,
+        },
+        props
+            .get("view")
+            .and_then(Value::as_str)
+            .and_then(Presentation::parse)
+            .unwrap_or(Presentation::Signal),
+    );
+    el.spectral = spectral_props(props, el.spectral, "window_size");
     el.value = signal::ValueRange::new(number(props, "min", -1.0), number(props, "max", 1.0));
     Ok(Some(WidgetKind::Signal(Box::new(el))))
+}
+
+/// The spectral parameters a signal names, over `base` (its preset's): the
+/// analysis size under whichever name this presentation calls it (`size_prop`
+/// — `fft_size` for the spectra, `window_size` for the time-frequency
+/// texture), the hop, and the display. One function for the element and for a
+/// clip's take, so a spectral clip is tuned exactly like a spectral view.
+fn spectral_props(
+    props: &Map<String, Value>,
+    base: signal::Spectral,
+    size_prop: &str,
+) -> signal::Spectral {
+    let size = props
+        .get(size_prop)
+        .and_then(Value::as_u64)
+        .map(|n| n as usize)
+        .filter(|n| clausters_core::fft::supports(*n))
+        .unwrap_or(base.fft_size);
+    signal::Spectral {
+        fft_size: size,
+        hop: props
+            .get("hop")
+            .and_then(Value::as_u64)
+            .map(|n| (n as usize).max(1))
+            .unwrap_or(size / 2),
+        db_floor: number(props, "db_floor", base.db_floor),
+        db_ceil: number(props, "db_ceil", base.db_ceil),
+        freq_scale: parse_freq_scale(props),
+        averaging: number(props, "averaging", base.averaging).clamp(0.0, 0.99),
+        peak_hold: props.get("peak_hold").and_then(truthy).unwrap_or(false),
+        colormap: int_prop(props, "colormap", base.colormap),
+    }
 }
 
 /// A clip's **roll**: the note events over a pitch window. The window defaults
@@ -510,26 +561,7 @@ fn build_signal(
         max: opt_number(props, "max").or(p.value.max),
     };
 
-    let size = props
-        .get(p.size_prop)
-        .and_then(Value::as_u64)
-        .map(|n| n as usize)
-        .filter(|n| clausters_core::fft::supports(*n))
-        .unwrap_or(p.spectral.fft_size);
-    el.spectral = signal::Spectral {
-        fft_size: size,
-        hop: props
-            .get("hop")
-            .and_then(Value::as_u64)
-            .map(|n| (n as usize).max(1))
-            .unwrap_or(size / 2),
-        db_floor: number(props, "db_floor", p.spectral.db_floor),
-        db_ceil: number(props, "db_ceil", p.spectral.db_ceil),
-        freq_scale: parse_freq_scale(props),
-        averaging: number(props, "averaging", p.spectral.averaging).clamp(0.0, 0.99),
-        peak_hold: props.get("peak_hold").and_then(truthy).unwrap_or(false),
-        colormap: int_prop(props, "colormap", p.spectral.colormap),
-    };
+    el.spectral = spectral_props(props, p.spectral, p.size_prop);
 
     el.display = signal::Display {
         overlay: props.get("overlay").and_then(truthy).unwrap_or(false),

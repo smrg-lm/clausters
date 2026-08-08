@@ -514,7 +514,7 @@ impl GestureStep {
     }
 }
 
-/// What one modifier chord does on a container: an ordered plan of up to three
+/// What one modifier does on a container: an ordered plan of up to three
 /// steps, each of which may decline, the first that consumes the press winning.
 ///
 /// The order is the whole point. `[Element, Locate]` is a multitrack lane —
@@ -558,11 +558,12 @@ impl GesturePlan {
     }
 }
 
-/// A container's **gesture table**: which plan each modifier chord runs.
+/// A container's **gesture table**: which plan each modifier runs.
 ///
 /// Every container has one, defaulted from what it is ([`GestureMap::of_kind`])
 /// and overridable from the wire (the `gestures` prop), so a timeline can be
-/// made to pan on a plain drag without touching any element's code. The chords
+/// made to pan on a plain drag without touching any element's code. The
+/// modifiers
 /// are read in order — `ctrl`, `alt`, `shift`, then plain — so a press with
 /// several modifiers held resolves to exactly one plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -574,7 +575,7 @@ pub struct GestureMap {
 }
 
 impl GestureMap {
-    /// The plan for a chord (`ctrl` and `alt` win over `shift`, which wins over
+    /// The plan for a modifier (`ctrl` and `alt` win over `shift`, which wins over
     /// the plain drag).
     pub fn plan(&self, shift: bool, ctrl: bool, alt: bool) -> GesturePlan {
         if ctrl {
@@ -628,6 +629,15 @@ impl GestureMap {
                 &[Element, Pan],
                 &[Element, Pan],
             ),
+            // A **clip** takes the plain drag (grab it, move it, resize it) and
+            // lets every other modifier fall straight through to the lane around
+            // it. It must not answer for `pan`: a clip is a container of its
+            // own local `[0, dur]` axis, so panning *it* would mean panning
+            // that, while Shift+drag on a timeline means the lane's shared
+            // window — which is why an empty plan here is the point and not an
+            // omission. Without it a lane could only be panned where no clip
+            // was drawn, which on a busy arrangement is nowhere.
+            WidgetKind::Clip { .. } => (&[Element], &[], &[Element], &[Element]),
             _ => (&[Element], &[Element], &[Element], &[Element]),
         };
         GestureMap {
@@ -638,10 +648,10 @@ impl GestureMap {
         }
     }
 
-    /// Overlays the `gestures` prop on this table: an object keyed by chord
+    /// Overlays the `gestures` prop on this table: an object keyed by modifier
     /// (`drag`/`shift`/`ctrl`/`alt`), each value a plan (`"element locate"`).
     /// A bare string sets the plain drag alone. Returns whether the value was
-    /// usable at all; an unreadable chord is warned about and skipped, so one
+    /// usable at all; an unreadable modifier is warned about and skipped, so one
     /// typo does not drop the rest of the table.
     fn overlay(&mut self, v: &Value) -> bool {
         // A string is either a bare plan for the plain drag or the **scalar
@@ -667,17 +677,17 @@ impl GestureMap {
             },
             _ => return false,
         };
-        for (chord, value) in table {
+        for (modifier, value) in table {
             let Some(plan) = value.as_str().and_then(GesturePlan::parse) else {
-                tracing::warn!("gestures: unreadable plan for {chord:?}");
+                tracing::warn!("gestures: unreadable plan for {modifier:?}");
                 continue;
             };
-            match chord.as_str() {
+            match modifier.as_str() {
                 "drag" | "plain" => self.plain = plan,
                 "shift" => self.shift = plan,
                 "ctrl" => self.ctrl = plan,
                 "alt" => self.alt = plan,
-                other => tracing::warn!("gestures: unknown chord {other:?}"),
+                other => tracing::warn!("gestures: unknown modifier {other:?}"),
             }
         }
         true
@@ -1246,7 +1256,7 @@ pub struct Widget {
     /// roles that carry this widget's function (see
     /// [`Theme::accent_seeded`](super::theme::Theme::accent_seeded)).
     pub color: Option<super::paint::Color>,
-    /// The `gestures` prop: the container's own (chord → plan) table, replacing
+    /// The `gestures` prop: the container's own (modifier → plan) table, replacing
     /// the default its kind carries ([`GestureMap::of_kind`]). `None` on the
     /// overwhelming majority of widgets, which are not containers and whose
     /// press is the element's.
@@ -1431,7 +1441,7 @@ impl Widget {
 
     /// Applies a `/gui_set gestures` to this container: the same overlay the
     /// prop takes at build time, on top of the kind's defaults — so a set names
-    /// only the chords it changes and an empty table restores the defaults.
+    /// only the modifiers it changes and an empty table restores the defaults.
     /// Returns whether the value was usable.
     pub fn gestures_apply(&mut self, v: &Value) -> bool {
         let mut map = GestureMap::of_kind(&self.kind);
@@ -3131,5 +3141,27 @@ mod tests {
             }
             other => panic!("expected piano, got {other:?}"),
         }
+    }
+    /// A free-standing ruler answers for its own chrome. Its unit is the one
+    /// thing a script changes at run time — a transport read-out switching
+    /// between bars, seconds and samples wants the strip to follow — and it
+    /// used to be recorded and dropped.
+    #[test]
+    fn a_free_standing_ruler_changes_its_unit_live() {
+        let mut w = Widget::from_node(
+            1,
+            &node(r#"{"id":9,"type":"field","h":22,"ruler":"beats"}"#),
+            &[],
+        )
+        .unwrap();
+        let unit = |w: &Widget| match &w.kind {
+            WidgetKind::TimeRuler { editor } => editor.ruler,
+            other => panic!("not a ruler: {other:?}"),
+        };
+        assert_eq!(unit(&w), Ruler::Beats);
+        assert!(apply_widget(&mut w, "ruler", &serde_json::json!("samples")));
+        assert_eq!(unit(&w), Ruler::Samples);
+        assert!(apply_widget(&mut w, "ruler", &serde_json::json!("time")));
+        assert_eq!(unit(&w), Ruler::Time);
     }
 }

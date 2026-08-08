@@ -406,6 +406,36 @@ struct ClipBodyItem {
     kind: WidgetKind,
 }
 
+/// One placed **spectral clip body**: the time-frequency take of a clip, whose
+/// picture is a texture rather than mesh geometry, so it is collected apart
+/// from the mesh-drawn bodies and drawn in the GPU pass.
+///
+/// `id` is the **clip's** — a body carries none of its own, and the slot the
+/// texture lives in is keyed by whatever addresses the widget. `local` is the
+/// clip's own axis (the slice of `[0, dur]` its rectangle shows), which is what
+/// makes the analysis end where the clip ends instead of spanning the lane.
+/// The open list of a `menu`, copied out of the tree: where it goes, what is in
+/// it and the size its rows draw at. Collected with the placements (only they
+/// know the scale) and drawn last, into the overlay.
+struct MenuPopupItem {
+    popup: Rect,
+    options: Vec<String>,
+    index: usize,
+    size: f32,
+    theme: Option<Arc<Theme>>,
+}
+
+struct SpectralBodyItem {
+    id: i32,
+    rect: Rect,
+    local: View,
+    clip: Option<Rect>,
+    db_floor: f32,
+    db_ceil: f32,
+    freq_scale: FreqScale,
+    colormap: i32,
+}
+
 struct PianoRollItem {
     id: i32,
     rect: Rect,
@@ -578,6 +608,10 @@ pub(crate) struct FrameInputs<'a> {
     /// The host's timeline navigation groups: each waveform/spectrogram draws
     /// its group's shared window (linked views navigate as one).
     pub(crate) timelines: &'a TimelineGroups,
+    /// The `menu` whose option list is **open** and where it was placed
+    /// ([`Gestures::menu_open`](super::gestures::Gestures::menu_open)). Drawn
+    /// last, over everything: a list that opens covers what it opens over.
+    pub(crate) menu_popup: Option<super::gestures::MenuOpen>,
     /// A selection marquee in flight on a patch: the widget and the
     /// rectangle (device pixels), drawn over the canvas.
     pub(crate) marquee: Option<(i32, Rect)>,
@@ -605,6 +639,7 @@ impl Default for FrameInputs<'_> {
             cursor: None,
             timelines: NO_GROUPS.get_or_init(TimelineGroups::default),
             wiring: None,
+            menu_popup: None,
             marquee: None,
         }
     }
@@ -1009,6 +1044,8 @@ struct Collected {
     track_items: Vec<TrackItem>,
     clip_items: Vec<ClipItem>,
     clip_bodies: Vec<ClipBodyItem>,
+    spectral_bodies: Vec<SpectralBodyItem>,
+    menu_popup: Option<MenuPopupItem>,
     ruler_items: Vec<RulerItem>,
     pianoroll_items: Vec<PianoRollItem>,
     nodetree_rects: Vec<NodeTreeItem>,
@@ -1050,6 +1087,8 @@ fn collect_widgets(
     // emits parent-before-child), which is the layering the drawing needs.
     let mut clip_items: Vec<ClipItem> = Vec::new();
     let mut clip_bodies: Vec<ClipBodyItem> = Vec::new();
+    let mut menu_popup: Option<MenuPopupItem> = None;
+    let mut spectral_bodies: Vec<SpectralBodyItem> = Vec::new();
     let mut ruler_items: Vec<RulerItem> = Vec::new();
     let mut pianoroll_items: Vec<PianoRollItem> = Vec::new();
     let mut nodetree_rects: Vec<NodeTreeItem> = Vec::new();
@@ -1066,6 +1105,25 @@ fn collect_widgets(
         if let Some(parent) = p.parent
             && let WidgetKind::Clip { dur, .. } = placed[parent].widget.kind
         {
+            // The one body whose picture is not geometry: a time-frequency take
+            // samples an uploaded texture, so it goes to the GPU pass with the
+            // clip's own axis and the clip's id (the slot's key).
+            if let WidgetKind::Signal(el) = &p.widget.kind
+                && el.is_texture_view()
+                && let Some(id) = placed[parent].widget.id
+            {
+                spectral_bodies.push(SpectralBodyItem {
+                    id,
+                    rect: p.rect,
+                    local: p.time.unwrap_or_else(|| View::full(1)),
+                    clip: p.clip,
+                    db_floor: el.spectral.db_floor,
+                    db_ceil: el.spectral.db_ceil,
+                    freq_scale: el.spectral.freq_scale,
+                    colormap: el.spectral.colormap,
+                });
+                continue;
+            }
             clip_bodies.push(ClipBodyItem {
                 rect: p.rect,
                 local: p.time.unwrap_or_else(|| View::full(1)),
@@ -1352,16 +1410,48 @@ fn collect_widgets(
                 );
             }
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
-            kind => controls::draw(
-                &mut *mesh,
-                kind,
-                p.rect,
-                p.widget.id == active_button,
-                p.widget.id.is_some() && p.widget.id == inputs.focused_text,
-                p.scale,
-                m,
-                th,
-            ),
+            kind => {
+                // The open list of *this* menu, collected here because only the
+                // placement knows the scale its text is drawn at.
+                if let (
+                    WidgetKind::Menu {
+                        options,
+                        index,
+                        text_size,
+                        ..
+                    },
+                    Some(open),
+                ) = (kind, inputs.menu_popup)
+                    && p.widget.id == Some(open.id)
+                {
+                    menu_popup = Some(MenuPopupItem {
+                        popup: open.popup,
+                        options: options.clone(),
+                        index: *index,
+                        size: *text_size * p.scale,
+                        theme: p.widget.theme.clone(),
+                    });
+                }
+                // A control draws its parts at its **natural** size — a label
+                // strip, a body, a read-out row — whatever cell it was given.
+                // Put in a strip shorter than that, it used to paint over its
+                // neighbours, so a too-thin toolbar came out as overlapping
+                // text; clipped to its own cell it comes out truncated, which
+                // says "make the strip taller" instead of hiding the widget
+                // next to it.
+                mesh.set_clip(Some(p.clip.map_or(p.rect, |c| c.intersect(p.rect))));
+                controls::draw(
+                    &mut *mesh,
+                    kind,
+                    p.rect,
+                    p.widget.id == active_button,
+                    p.widget.id.is_some() && p.widget.id == inputs.focused_text,
+                    p.scale,
+                    m,
+                    th,
+                );
+                mesh.set_clip(p.clip);
+            }
         }
     }
 
@@ -1377,6 +1467,8 @@ fn collect_widgets(
         track_items,
         clip_items,
         clip_bodies,
+        spectral_bodies,
+        menu_popup,
         ruler_items,
         pianoroll_items,
         nodetree_rects,
@@ -1757,13 +1849,13 @@ fn draw_static_meshes(
             }
         }
     }
-    // The clips over their lanes, and their bodies over them: two passes rather
-    // than one nested loop, because that *is* the z order — every clip's box is
-    // under every body, and the layout emitted them in that order.
+    // The clips over their lanes, and their bodies over them: separate passes
+    // rather than one nested loop, because that *is* the z order — every clip's
+    // box is under every body, and the layout emitted them in that order.
     for item in &collected.clip_items {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        track::draw_clip(&mut *mesh, item.rect, item.label.as_deref(), m, th);
+        track::draw_clip(&mut *mesh, item.rect, m, th);
     }
     for item in &collected.clip_bodies {
         mesh.set_clip(item.clip);
@@ -1777,6 +1869,18 @@ fn draw_static_meshes(
             m,
             th,
         );
+    }
+    // A clip's **name**, last and into the overlay: a body drawn over it would
+    // bury it (the take's trace does, and the time-frequency texture — a GPU
+    // pass after every mesh — hides it outright), and a clip nobody can read is
+    // a rectangle. Same reason the playhead and the selection live here.
+    for item in &collected.clip_items {
+        let Some(label) = item.label.as_deref() else {
+            continue;
+        };
+        over.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
+        track::draw_clip_label(&mut *over, item.rect, label, m, th);
     }
     // Piano-roll views: flat geometry (keyboard/grid/lanes/ruler) into the base
     // mesh, selection/playhead into the overlay. Each draws through its
@@ -1810,6 +1914,27 @@ fn draw_static_meshes(
             inputs.sample_clock,
             inputs.cursor,
             item.indent,
+            m,
+            th,
+        );
+    }
+    // The open menu list, last of everything drawn here and into the overlay:
+    // it covers whatever it opened over, including the heavy views the GPU pass
+    // paints between the two meshes. The row under the cursor highlights, which
+    // is read straight off the frame's cursor — a hover is not a gesture.
+    if let Some(item) = &collected.menu_popup {
+        over.set_clip(None);
+        let th = item.theme.as_deref().unwrap_or(theme);
+        let hover = inputs
+            .cursor
+            .and_then(|(cx, cy)| controls::menu_row_at(item.popup, item.options.len(), cx, cy));
+        controls::draw_menu_popup(
+            &mut *over,
+            item.popup,
+            &item.options,
+            item.index,
+            hover,
+            item.size,
             m,
             th,
         );
@@ -1929,6 +2054,28 @@ pub(crate) fn render(
             }
         }
     }
+    // The spectral clip bodies: the same texture, uploaded against the clip's
+    // own axis instead of the group's window — which is the whole difference
+    // between a spectral *view* of a file and a spectral *clip* of it.
+    for item in &collected.spectral_bodies {
+        if let Some(slot) = spectrograms.get_mut(&item.id) {
+            for view in &mut slot.views {
+                view.set_display(
+                    item.db_floor,
+                    item.db_ceil,
+                    item.freq_scale,
+                    item.colormap.max(0) as u32,
+                );
+                view.upload(
+                    &gpu.device,
+                    &gpu.queue,
+                    renderers,
+                    &item.local,
+                    item.rect.w.max(1.0) as u32,
+                );
+            }
+        }
+    }
     // Recompile any canvas whose shader changed, then push its per-frame uniforms
     // (viewport size, elapsed time, resolved params).
     for frame in &collected.canvas_frames {
@@ -2023,6 +2170,26 @@ pub(crate) fn render(
                             view.draw(&mut pass, renderers);
                         }
                     }
+                }
+            }
+        }
+        for item in &collected.spectral_bodies {
+            let Some(slot) = spectrograms.get(&item.id) else {
+                continue;
+            };
+            if item.rect.w < 1.0
+                || item.rect.h < 1.0
+                || !apply_scissor(&mut pass, item.clip, fb_w, fb_h)
+            {
+                continue;
+            }
+            let lanes = slot.views.len();
+            for (ch, view) in slot.views.iter().enumerate() {
+                let lane = lane_rect(item.rect, lanes, ch);
+                let (x, y, w, h) = clamp_viewport(lane, fb_w, fb_h);
+                if w >= 1.0 && h >= 1.0 {
+                    pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                    view.draw(&mut pass, renderers);
                 }
             }
         }
@@ -2165,6 +2332,42 @@ mod tests {
         let lane_only = paint(&collected);
         assert!(no_bodies > lane_only, "the clip's box draws over the lane");
         assert!(full > no_bodies, "the bodies draw over the clip's box");
+    }
+
+    /// A clip's take drawn as the time-frequency texture: the same clip, the
+    /// same placement, another presentation. It leaves the mesh bodies (it is
+    /// not geometry) and is collected for the GPU pass under the **clip's** id,
+    /// on the **clip's own axis** — which is what makes a spectral clip end
+    /// where the clip ends instead of spanning the lane.
+    #[test]
+    fn a_clips_take_can_be_the_time_frequency_texture() {
+        use crate::host::guidef::GuiNode;
+        use crate::host::widget::Widget;
+
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":5,"type":"field","label":"lane","children":[
+                {"id":10,"type":"field","offset":0,"dur":400,"view":"spectrogram",
+                 "colormap":1,"data":[0.0,1.0,-1.0,0.5]}]}]}"#;
+        let tree = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+        let m = Metrics::default();
+        let inputs = FrameInputs {
+            metrics: &m,
+            ..FrameInputs::default()
+        };
+        let placed = layout::layout(Rect::new(0.0, 0.0, 800.0, 300.0), &tree, &m);
+        let mut mesh = Mesh::new();
+        let collected = collect_widgets(&placed, &mut mesh, &inputs, &Theme::default());
+
+        assert!(collected.clip_bodies.is_empty(), "not a mesh body");
+        assert_eq!(collected.spectral_bodies.len(), 1);
+        let body = &collected.spectral_bodies[0];
+        assert_eq!(body.id, 10, "the slot is keyed by the clip");
+        assert_eq!(body.rect, collected.clip_items[0].rect);
+        assert_eq!(body.colormap, 1, "the clip's display props reach the take");
+        assert!(
+            body.local.start.abs() < 0.5 && (body.local.len - 400.0).abs() < 1.0,
+            "the clip's own axis, not the lane's window"
+        );
     }
 
     #[test]

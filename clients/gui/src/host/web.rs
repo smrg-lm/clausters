@@ -981,7 +981,7 @@ impl WebApp {
                         // A **mesh-drawn take** (a clip's body): its pyramid
                         // lands in the tree, no GPU slot — the same landing the
                         // mapped bulk path uses.
-                        WidgetKind::Signal(ref el) if !el.is_gpu_view() => {
+                        WidgetKind::Signal(ref el) if !el.needs_gpu_slot() => {
                             let bucket = el
                                 .source
                                 .data()
@@ -996,7 +996,7 @@ impl WebApp {
                         }
                         WidgetKind::Signal(ref el)
                             if el.presentation == Presentation::TimeFrequency
-                                && el.is_gpu_view() =>
+                                && el.needs_gpu_slot() =>
                         {
                             let rate = if el.editor.sample_rate > 0.0 {
                                 el.editor.sample_rate
@@ -1124,7 +1124,7 @@ impl WebApp {
                 .window_def(def)
                 .and_then(|t| t.find(widget_id))
                 .and_then(|w| w.signal_target())
-                .is_some_and(|el| !el.is_gpu_view())
+                .is_some_and(|el| !el.needs_gpu_slot())
         {
             let BulkData::Waveform(data) = data else {
                 unreachable!()
@@ -1180,6 +1180,7 @@ impl WebApp {
         let mut spectrograms = HashMap::new();
         build_inline_timelines(
             tree,
+            None,
             &render.gpu,
             &render.renderers,
             &mut waveforms,
@@ -1236,6 +1237,7 @@ impl WebApp {
                 .gestures
                 .wiring()
                 .map(|(id, port)| (id, port, (slot.cursor.0 as f32, slot.cursor.1 as f32))),
+            menu_popup: slot.gestures.menu_open(),
             marquee: slot.gestures.marquee(),
             ..Default::default()
         };
@@ -1834,14 +1836,18 @@ fn web_proxy() -> Option<EventLoopProxy<HostEvent>> {
 /// async through [`fetch_bulk`] and the fetch machine).
 fn build_inline_timelines(
     widget: &Widget,
+    owner: Option<i32>,
     gpu: &Gpu,
     renderers: &Renderers,
     waveforms: &mut HashMap<i32, WaveformSlot>,
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
 ) {
-    if let Some(id) = widget.id {
+    // A widget with no id of its own is addressed by its container's — which is
+    // how a clip's bodies are reached, since only the clip is on the wire.
+    let owner = widget.id.or(owner);
+    if let Some(id) = owner {
         match &widget.kind {
-            WidgetKind::Signal(el) if el.is_gpu_view() => {
+            WidgetKind::Signal(el) if el.needs_gpu_slot() => {
                 let Some(data) = el.source.data().filter(|d| !d.samples.is_empty()) else {
                     return;
                 };
@@ -1868,7 +1874,7 @@ fn build_inline_timelines(
         }
     }
     for child in &widget.children {
-        build_inline_timelines(child, gpu, renderers, waveforms, spectrograms);
+        build_inline_timelines(child, owner, gpu, renderers, waveforms, spectrograms);
     }
 }
 
@@ -1891,7 +1897,7 @@ fn collect_bulk(
             WidgetKind::Signal(el) => {
                 let Some(data) = el.source.data() else { return };
                 let time_freq = el.presentation == Presentation::TimeFrequency;
-                if !el.is_gpu_view() && data.bulk {
+                if !el.needs_gpu_slot() && data.bulk {
                     // A **take** drawn into the mesh (a clip's body): the same
                     // resolution a heavy view's samples take — cache, then
                     // path, then buffer — landing in the tree, not the GPU.
@@ -1910,7 +1916,7 @@ fn collect_bulk(
                     } else if let (Some(bufnum), true) = (data.buffer, data.is_empty()) {
                         buffer_refs.push((id, bufnum));
                     }
-                } else if !el.is_gpu_view() {
+                } else if !el.needs_gpu_slot() {
                     // A **sequence**: its samples go straight into the tree —
                     // no pyramid, no analysis cache to fetch.
                     if data.samples.is_empty()
