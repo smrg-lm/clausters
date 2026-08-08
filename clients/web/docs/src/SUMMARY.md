@@ -11,6 +11,7 @@
 - [The transport: a shared grid, and a piece that freezes](transport.md)
 - [Reading the server: buses and buffers](data.md)
 - [Receiving: responders](responders.md)
+- [The visual elements in a page](gui.md)
 - [Components: an instrument in the page](components.md)
 - [Examples](examples.md)
 

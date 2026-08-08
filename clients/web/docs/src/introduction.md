@@ -21,7 +21,7 @@ Everything above the connection seam — the `Server`, the def builders, the `Gu
 
 - **The OSC codec and the numeric core** (`base/`) — `clausters-core` compiled to wasm. The bytes on the wire, the beat/second/sample arithmetic, the scheduler queue, the seeded random stream and the builtins are the *same code* the server and the Python client run, so results match by construction rather than by care.
 - **The def model** (`defs/`) — `Server` (the only object that knows a connection), `SynthDef` with the lowercase UGen callables, `FaustDef` with the signal API, `GraphDef`, and the `Node`/`Bus`/`Buffer` handles whose ids come from the core's own allocator.
-- **The GUI driver** (`gui/`) — `GuiHost` over the same connection seam, and the whole widget catalogue as builders (`gui.window`, `gui.knob`, `gui.waveform`, `gui.track`, …) emitting the same GuiDef JSON the Python builders emit.
+- **The GUI driver** (`gui/`) — `GuiHost` over the same connection seam, and the whole visual vocabulary as builders: the containers (`gui.layout`, `gui.plane`, `gui.field`), the elements (`gui.signal`, `gui.notes`, `gui.curve`, …) and the controls, plus a shortcut under each name the old catalogue used (`gui.waveform`, `gui.track`, `gui.scope`, …). They emit the same GuiDef JSON the Python builders emit, vector for vector.
 - **The sequencing layer** (`base/clock.ts`, `seq/`) — a `TempoClock` that resumes generator routines on musical time, `Event`, the value patterns and `Pbind`, `Timeline` and `Playhead`, under either timebase (the page's monotonic clock, or the server's own sample clock).
 - **The page runtime** (`engine/`, `bundle.ts`, `elements.ts`) — the page's engine and GUI host (one of each by default, more when a caller asks) and the custom elements that mount a bundle. A page that only *mounts* an instrument loads this and none of the builders.
 
@@ -29,6 +29,7 @@ Everything above the connection seam — the `Server`, the def builders, the `Gu
 
 - **New here?** [Getting started](getting-started.md): build the package, serve it, make a sound in a tab.
 - **Want the mental model?** [The client, layer by layer](guide.md): the connection seam, the def model, the GUI driver and the clock — and the three places where the browser changes the shape of the reference client.
+- **Drawing something?** [The visual elements](gui.md): the widget vocabulary, and what the browser makes different about it.
 - **Handing an instrument to a page?** [Components](components.md): a bundle mounted as a custom element, with no client library loaded at run time.
 - **Looking for runnable code?** [Examples](examples.md).
 - **Looking for a symbol?** The [API reference](api/index.md) is generated from the package's own doc comments.
