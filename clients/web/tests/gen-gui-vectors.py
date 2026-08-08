@@ -207,6 +207,34 @@ def cases():
         ),
     ))
 
+    # The model's own vocabulary, built by the general builders rather than
+    # reached through a shortcut: containers by axis count, one signal element
+    # saying the point of the product, and the chrome nested on the axes it
+    # belongs to.
+    out.append((
+        "model_vocabulary",
+        g.window(
+            g.layout(
+                g.signal(id=2, view="trace", path="take.f32", channels=2,
+                         navigable=True, selectable=True, base_bucket=512,
+                         axes={"x": {"unit": "beats", "tempo": 2.0, "link": 1},
+                               "y": {"unit": "db", "min": -1.0, "max": 1.0}}),
+                g.signal(id=3, view="spectrum", bus=0, rate="audio", channels=2,
+                         fft_size=2048, label="live"),
+                id=1, flow="row", gap=4.0,
+            ),
+            g.plane(g.node("box", id=6, x=0.0, y=0.0),
+                    id=5, axis="both", zoom=True, view_zoom=1.0),
+            g.field(
+                g.field(id=8, offset=0.0, dur=48000.0, label="take"),
+                id=7, label="drums", height=2.0,
+                axes={"x": {"unit": "time", "sample_rate": 48000.0, "link": 1}},
+            ),
+            g.field(id=9, h=24.0, axes={"x": {"unit": "beats", "link": 1}}),
+            title="the model", flow="col",
+        ),
+    ))
+
     # The generic escape hatch: a node type this client does not name.
     out.append((
         "generic_node",

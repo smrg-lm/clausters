@@ -38,6 +38,10 @@ use super::GuiNode;
 /// have no way to say which it meant.
 pub(crate) const AXES: &str = "axes";
 
+/// The key a container's arrangement rides under — what the catalog spells
+/// `layout`, which the model spends on the container type itself.
+const FLOW: &str = "flow";
+
 /// Rewrites a node written in the model's vocabulary into the one the catalog
 /// reads. `None` — the common path — means the node needs no rewriting and its
 /// own `type` and props are used as they are.
@@ -48,11 +52,18 @@ pub(crate) const AXES: &str = "axes";
 pub(super) fn rewrite(node: &GuiNode) -> Option<(String, Map<String, Value>)> {
     let named = resolve(&node.kind, &node.props, !node.children.is_empty());
     let axes = node.props.get(AXES).and_then(Value::as_object);
-    if named.is_none() && axes.is_none() {
+    // `flow` is what the model calls a container's arrangement, on every
+    // container that has one — so it is mapped here rather than in the arm of
+    // whichever type happens to be resolving.
+    let flow = node.props.contains_key(FLOW) && !node.props.contains_key("layout");
+    if named.is_none() && axes.is_none() && !flow {
         return None;
     }
     let mut props = node.props.clone();
     props.remove(AXES);
+    if let Some(arrangement) = flow.then(|| props[FLOW].clone()) {
+        props.insert("layout".to_string(), arrangement);
+    }
     if let Some(axes) = axes {
         flatten(axes, &mut props);
     }
@@ -61,6 +72,23 @@ pub(super) fn rewrite(node: &GuiNode) -> Option<(String, Map<String, Value>)> {
         props.insert(key.to_string(), value);
     }
     Some((kind, props))
+}
+
+/// Flattens every `axes` pair in a tree, in place — the pass a def makes on
+/// the way in, before the registry records the node or the renderer reads it.
+/// The node's `type` is untouched: only the chrome moves, so a `/gui_query`
+/// still answers in the vocabulary the tree was written in.
+pub(crate) fn flatten_tree(node: &mut GuiNode) {
+    if let Some(Value::Object(axes)) = node.props.remove(AXES) {
+        let mut flat = Map::new();
+        flatten(&axes, &mut flat);
+        for (key, value) in flat {
+            node.props.entry(key).or_insert(value);
+        }
+    }
+    for child in &mut node.children {
+        flatten_tree(child);
+    }
 }
 
 /// Flattens an `axes` pair into the props each axis is spelled as today,
@@ -133,17 +161,13 @@ fn resolve(
         // its own: a container with a selection instead of an arrangement.
         "layout" => {
             let flow = props
-                .get("flow")
+                .get(FLOW)
                 .or_else(|| props.get("layout"))
-                .and_then(Value::as_str)
-                .unwrap_or("col");
-            if flow == "stack" {
+                .and_then(Value::as_str);
+            if flow == Some("stack") {
                 named("stack")
             } else {
-                Some((
-                    "panel".to_string(),
-                    vec![("layout", Value::from(flow.to_string()))],
-                ))
+                named("panel")
             }
         }
         // Two axes locked to one scale. What the patcher adds to a plane is its
@@ -156,16 +180,24 @@ fn resolve(
                 named("scroll")
             }
         }
-        // Two independent axes: a clip is one placed on another's x axis, a
-        // lane is one with lane chrome, a free-standing ruler is one with
-        // nothing drawn on it.
+        // Two independent axes, told apart by what is on it: a placement makes
+        // it a clip on its parent's x axis, a thickness with nothing placed and
+        // no lane chrome makes it the free-standing ruler, and everything else
+        // is a lane — including an empty one, which a multitrack opens all the
+        // time and which must not read as a ruler.
         "field" => {
-            if props.contains_key("offset") || props.contains_key("dur") {
+            let any = |keys: &[&str]| keys.iter().any(|k| props.contains_key(*k));
+            if any(&["offset", "dur"]) {
                 named("clip")
-            } else if has_children {
-                named("track")
-            } else {
+            } else if props.contains_key("h")
+                && !has_children
+                && !any(&[
+                    "label", "height", "header_w", "mute", "solo", "level", "snap",
+                ])
+            {
                 named("timeruler")
+            } else {
+                named("track")
             }
         }
         "signal" => Some(signal(props)),
@@ -184,6 +216,12 @@ fn resolve(
 fn signal(props: &Map<String, Value>) -> (String, Vec<(&'static str, Value)>) {
     let live = props.contains_key("bus");
     let view = props.get("view").and_then(Value::as_str).unwrap_or("trace");
+    // A trace over addressable samples that says it does not navigate is the
+    // `plot` preset, not the `waveform` one with a capability turned off: the
+    // two also differ in what they resolve their source as (a take through the
+    // peak pyramid, or the sequence itself) and in whether an unnamed value
+    // axis auto-fits, and neither is a capability a prop can flip afterwards.
+    let still = props.get("navigable").and_then(super::truthy) == Some(false);
     let name = match (view, live) {
         ("spectrogram", _) => "spectrogram",
         ("phase", _) => "phasescope",
@@ -194,6 +232,7 @@ fn signal(props: &Map<String, Value>) -> (String, Vec<(&'static str, Value)>) {
             return ("plot".to_string(), vec![("view", Value::from("spectrum"))]);
         }
         (_, true) => "scope",
+        (_, false) if still => "plot",
         (_, false) => "waveform",
     };
     (name.to_string(), Vec::new())
@@ -239,7 +278,10 @@ mod tests {
                 r#"{"type":"field","offset":0.0,"dur":48000.0}"#,
                 r#"{"type":"clip","offset":0.0,"dur":48000.0}"#,
             ),
-            (r#"{"type":"field"}"#, r#"{"type":"timeruler"}"#),
+            (
+                r#"{"type":"field","h":24.0}"#,
+                r#"{"type":"timeruler","h":24.0}"#,
+            ),
             (
                 r#"{"type":"notes","min":48,"max":84}"#,
                 r#"{"type":"pianoroll","min":48,"max":84}"#,
@@ -265,9 +307,11 @@ mod tests {
         }
     }
 
-    /// A `field` holding something is a lane; the same node with nothing on its
-    /// axes is the free-standing ruler. One container, told apart by what is
-    /// placed on it rather than by two type names.
+    /// A `field` holding something is a lane; a bare strip of a given
+    /// thickness is the free-standing ruler. One container, told apart by what
+    /// is placed on it rather than by two type names — and an **empty lane**
+    /// is a lane, since a multitrack opens those and a ruler is not what it
+    /// wanted.
     #[test]
     fn a_field_is_a_lane_or_a_bare_ruler_by_what_is_on_it() {
         assert!(matches!(
@@ -275,8 +319,16 @@ mod tests {
             WidgetKind::Track { .. }
         ));
         assert!(matches!(
-            build(r#"{"type":"field"}"#),
+            build(r#"{"type":"field","h":24.0}"#),
             WidgetKind::TimeRuler { .. }
+        ));
+        assert!(matches!(
+            build(r#"{"type":"field"}"#),
+            WidgetKind::Track { .. }
+        ));
+        assert!(matches!(
+            build(r#"{"type":"field","h":24.0,"label":"drums"}"#),
+            WidgetKind::Track { .. }
         ));
     }
 
@@ -323,8 +375,17 @@ mod tests {
             other => panic!("not a signal element: {other:?}"),
         };
         assert!(caps(r#"{"type":"signal","data":[0.0]}"#).navigable);
-        assert!(!caps(r#"{"type":"signal","data":[0.0],"navigable":false}"#).navigable);
         assert!(caps(r#"{"type":"signal","bus":0,"selectable":true}"#).selectable);
+        // The one capability that is not only a capability: a trace that does
+        // not navigate is the whole `plot` construction, source resolution and
+        // auto-fitted value axis included.
+        assert_eq!(
+            format!(
+                "{:?}",
+                build(r#"{"type":"signal","data":[0.0],"navigable":false}"#)
+            ),
+            format!("{:?}", build(r#"{"type":"plot","data":[0.0]}"#))
+        );
     }
 
     /// The axis chrome nests under the container's axes and lands on the props
@@ -333,8 +394,9 @@ mod tests {
     #[test]
     fn an_axis_pair_flattens_onto_the_props_that_carry_it_today() {
         let node = GuiNode::parse(
-            br#"{"type":"field","axes":{"x":{"ruler":"beats","tempo":2.0,"start":100.0,"len":900.0},
-                                        "y":{"ruler":"db","min":-1.0,"max":1.0}}}"#,
+            br#"{"type":"field","h":24.0,
+                 "axes":{"x":{"ruler":"beats","tempo":2.0,"start":100.0,"len":900.0},
+                         "y":{"ruler":"db","min":-1.0,"max":1.0}}}"#,
         )
         .unwrap();
         let (kind, props) = rewrite(&node).expect("the axes key is rewritten");
@@ -360,21 +422,37 @@ mod tests {
     /// old spelling is the one its author last touched.
     #[test]
     fn a_flat_prop_beside_an_axis_pair_keeps_its_value() {
-        let node =
-            GuiNode::parse(br#"{"type":"field","view_start":7.0,"axes":{"x":{"start":9.0}}}"#)
-                .unwrap();
+        let node = GuiNode::parse(
+            br#"{"type":"field","h":24.0,"view_start":7.0,"axes":{"x":{"start":9.0}}}"#,
+        )
+        .unwrap();
         let (_, props) = rewrite(&node).unwrap();
         assert_eq!(props.get("view_start").and_then(Value::as_f64), Some(7.0));
     }
 
-    /// `layout` carries the arrangement its `flow` names, so the container that
-    /// replaces `panel` is not silently a column.
+    /// `flow` is the arrangement on every container that has one — the model
+    /// spends `layout` on the container type itself, so a window and a plane
+    /// read it too, not only the container named after it.
     #[test]
-    fn a_layouts_flow_is_the_arrangement_it_gets() {
+    fn a_containers_flow_is_the_arrangement_it_gets() {
         assert!(matches!(
             build(r#"{"type":"layout","flow":"grid","cols":3}"#),
             WidgetKind::Panel {
                 layout: Layout::Grid,
+                ..
+            }
+        ));
+        assert!(matches!(
+            build(r#"{"type":"window","flow":"row"}"#),
+            WidgetKind::Window {
+                layout: Layout::Row,
+                ..
+            }
+        ));
+        assert!(matches!(
+            build(r#"{"type":"plane","flow":"col"}"#),
+            WidgetKind::Scroll {
+                layout: Layout::Col,
                 ..
             }
         ));

@@ -47,9 +47,12 @@ class FakeHost:
 
 
 def _plot_widget(tree: dict) -> dict:
+    """The window's one child: the `signal` element a plot is — a trace (or a
+    spectrum) that does not navigate, which is the capability the wire names
+    rather than a widget of its own."""
     assert tree["type"] == "window"
     (widget,) = tree["children"]
-    assert widget["type"] == "plot"
+    assert widget["type"] == "signal" and widget["navigable"] == 0
     return widget
 
 
@@ -59,15 +62,16 @@ def test_guidef_plot_carries_the_new_props():
                     ruler="time", ruler_y="off", fft_size=1024,
                     db_floor=-90.0, db_ceil=-3.0, freq_scale="mel",
                     label="sig")
-    assert w["type"] == "plot" and w["id"] == 7
+    assert w["type"] == "signal" and w["navigable"] == 0 and w["id"] == 7
     assert w["view"] == "spectrum" and w["freq_scale"] == "mel"
     assert w["overlay"] == 1 and w["channels"] == 2
     assert w["fft_size"] == 1024 and isinstance(w["fft_size"], int)
-    assert (w["min"], w["max"]) == (-2.0, 2.0)
-    assert (w["ruler"], w["ruler_y"]) == ("time", "off")
-    # Omitted props do not ride the wire (auto-fit relies on their absence).
+    assert (w["axes"]["y"]["min"], w["axes"]["y"]["max"]) == (-2.0, 2.0)
+    assert (w["axes"]["x"]["unit"], w["axes"]["y"]["unit"]) == ("time", "off")
+    # Omitted props do not ride the wire (auto-fit relies on their absence):
+    # with no value range and no ruler named, there is no axis pair at all.
     lean = guidef.plot(id=8, data=[0.5])
-    assert "min" not in lean and "max" not in lean and "view" not in lean
+    assert "axes" not in lean and lean["view"] == "trace"
 
 
 def test_sequence_materializes_lists_patterns_and_channels():
@@ -96,8 +100,8 @@ def test_plot_opens_one_window_with_inline_data():
     assert widget["data"] == [40.0, 47.0, 60.0]
     # A sequence has no rate: the x ruler reads index counts, and the value
     # range is auto-fitted (no min/max on the wire).
-    assert widget["ruler"] == "samples"
-    assert "sample_rate" not in widget and "min" not in widget
+    assert widget["axes"]["x"]["unit"] == "samples"
+    assert "sample_rate" not in widget["axes"]["x"] and "y" not in widget["axes"]
     # The handle drives the display live and closes its own window.
     win.set(view="spectrum")
     assert host.sets == [(widget["id"], {"view": "spectrum"})]
@@ -111,7 +115,7 @@ def test_plot_passes_the_ruler_units_through():
     host = FakeHost()
     plot([1.0, 2.0], ruler="off", ruler_y="off", host=host)
     widget = _plot_widget(host.opened[0])
-    assert (widget["ruler"], widget["ruler_y"]) == ("off", "off")
+    assert (widget["axes"]["x"]["unit"], widget["axes"]["y"]["unit"]) == ("off", "off")
 
 
 def test_each_plot_takes_a_fresh_widget_id():
@@ -158,7 +162,7 @@ def test_plot_renders_a_synthdef_offline():
     assert isinstance(win, PlotWindow)
     widget = _plot_widget(host.opened[0])
     # A def render is real audio: it rides the bulk file with its rate.
-    assert widget["sample_rate"] == SR
+    assert widget["axes"]["x"]["sample_rate"] == SR
     assert widget["label"] == "plot_probe"
     frames = os.path.getsize(widget["path"]) // 4
     assert abs(frames - 0.25 * SR) <= 128, f"~0.25 s rendered, got {frames}"
@@ -187,7 +191,7 @@ def test_plot_renders_a_bare_ugen_expression():
     widget = _plot_widget(host.opened[0])
     # A bare expression plots as wide as it writes: one lane, real audio.
     assert widget["label"] == "expr"
-    assert widget["sample_rate"] == SR
+    assert widget["axes"]["x"]["sample_rate"] == SR
     assert widget.get("channels", 1) == 1
     frames = os.path.getsize(widget["path"]) // 4
     assert abs(frames - 0.25 * SR) <= 128, f"~0.25 s rendered, got {frames}"

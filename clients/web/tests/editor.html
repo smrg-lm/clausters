@@ -145,10 +145,10 @@
         await sleep(900);   // the host fetches the buffer over its client leg
 
         const wave = await win.widget("wave").query();
-        if (wave.type !== "waveform" || wave.props.buffer !== buffer.bufnum) {
+        if (wave.type !== "signal" || wave.props.buffer !== buffer.bufnum) {
           throw new Error(`unexpected view: ${JSON.stringify(wave)}`);
         }
-        log(`the host holds ${wave.type} on buffer ${wave.props.buffer}`);
+        log(`the host holds ${wave.type}/${wave.props.view} on buffer ${wave.props.buffer}`);
 
         // ---- the transport, asserted on the analyser ----
         const silent = await peak(150);

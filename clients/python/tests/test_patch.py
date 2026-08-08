@@ -200,7 +200,16 @@ class _FakeHost:
 
 
 def _find(node, kind):
-    if node.get("type") == kind:
+    """The first node of `kind`, where a patcher and a plain workspace are the
+    same container told apart by whether it carries boxes — which is all the
+    patcher ever added to a plane."""
+    if kind == "patch":
+        match = node.get("type") == "plane" and "boxes" in node
+    elif kind == "scroll":
+        match = node.get("type") == "plane" and "boxes" not in node
+    else:
+        match = node.get("type") == kind
+    if match:
         return node
     for child in node.get("children", []):
         hit = _find(child, kind)

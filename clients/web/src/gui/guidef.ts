@@ -232,6 +232,26 @@ function strip(value: boolean | string | undefined): string | number | undefined
 }
 
 /**
+ * A `plot`'s `view` option as the model's presentation name: the static plot
+ * spelled the same choice its own way, which is the clearest single sign that
+ * the six view names were points of one product all along.
+ */
+const PLOT_VIEW: Record<string, string> = { signal: "trace", spectrum: "spectrum" };
+
+/**
+ * The axis pair `{x, y}` the chrome of a two-axis container belongs to, as
+ * the one `axes` prop it rides under (or nothing, when neither side was
+ * named). `x`/`y` are already the free-placement props, which is why the pair
+ * nests rather than sitting bare on the node.
+ */
+function axes(x: Props, y: Props): Props {
+    const out: Props = {};
+    if (Object.keys(x).length > 0) out.x = x;
+    if (Object.keys(y).length > 0) out.y = y;
+    return Object.keys(out).length > 0 ? { axes: out } : {};
+}
+
+/**
  * The children of a container, as a plain array (or absent when there are
  * none — an empty `children` key would be noise on the wire).
  */
@@ -269,6 +289,200 @@ export function node(
 
 // ---- containers ----
 
+// A GuiDef names three kinds of thing: a **container** owning 0, 1 or 2 axes,
+// an **element** drawn against them, and a **control**, which is an element
+// with a value and no axis. The four builders here name that model; the ones
+// below (`panel`, `waveform`, `track`, ...) are shortcuts that build the same
+// nodes with a familiar name and the props of one common case.
+
+/**
+ * A container with **no axes**, arranging its children by `flow`:
+ * `"row"`, `"col"` (the default), `"grid"`, `"free"` — or `"stack"`, which
+ * shows one child at a time, the one `index` names, and lays out and draws
+ * none of the others. A stack is not a different container: it is this one
+ * with a selection instead of an arrangement.
+ */
+export function layout(
+    options: ContainerOptions & {
+        /** With `flow: "stack"`, the child shown (from 0). */
+        index?: number;
+        /** The arrangement; `layout` is accepted as its old name. */
+        flow?: string;
+    } = {},
+    ...children: GuiNode[]
+): GuiNode {
+    const { flow, index, layout: arrangement, margin, gap, cols, theme, ...rest } = options;
+    return node("layout", {
+        ...rest,
+        ...drop([
+            ["flow", flow ?? arrangement],
+            ["index", index],
+            ["margin", margin],
+            ["gap", gap],
+            ["cols", cols],
+            ["theme", theme],
+        ]),
+        children: [...(options.children ?? []), ...children],
+    });
+}
+
+/**
+ * A container with **two axes locked to one scale**: a pannable, zoomable
+ * plane in content units. `axis`/`zoom` constrain it (see `scroll`), and with
+ * `boxes`/`cords` it is the **patcher** — the boxes are what the plane places
+ * and the cords the wires between them, which is all `patch` ever added.
+ */
+export function plane(
+    options: ContainerOptions & {
+        axis?: string;
+        zoom?: boolean;
+        contentW?: number;
+        contentH?: number;
+        viewX?: number;
+        viewY?: number;
+        viewZoom?: number;
+        flow?: string;
+        boxes?: readonly unknown[];
+        cords?: readonly number[];
+    } = {},
+    ...children: GuiNode[]
+): GuiNode {
+    const {
+        axis, zoom, contentW, contentH, viewX, viewY, viewZoom, boxes, cords,
+        flow, layout: arrangement, margin, gap, cols, theme, ...rest
+    } = options;
+    return node("plane", {
+        ...rest,
+        ...drop([
+            ["axis", axis],
+            ["zoom", flag(zoom)],
+            ["content_w", contentW],
+            ["content_h", contentH],
+            ["view_x", viewX],
+            ["view_y", viewY],
+            ["view_zoom", viewZoom],
+            ["boxes", boxes === undefined ? undefined : [...boxes]],
+            ["cords", cords === undefined ? undefined : cords.map((n) => Math.trunc(n))],
+            ["flow", flow ?? arrangement],
+            ["margin", margin],
+            ["gap", gap],
+            ["cols", cols],
+            ["theme", theme],
+        ]),
+        children: [...(options.children ?? []), ...children],
+    });
+}
+
+/**
+ * A container with **two independent axes** — the time/value container.
+ *
+ * One container, told apart by what is on it: holding other fields it is a
+ * **lane** (with the header options), carrying `offset`/`dur` it is a **clip**
+ * placed on its parent's x axis, and a bare strip of a given `h` with nothing
+ * on it is the free-standing **ruler** over its navigation group. `track`,
+ * `clip` and `timeruler` are those three cases.
+ *
+ * `axes` is the pair the chrome belongs to — on `x`: `unit`
+ * (`"time"`/`"samples"`/`"beats"`/`"off"`), `start`/`len`, `tempo`/`beatAt`
+ * as `beat_at`/`quant`, `sample_rate`, `link`, `sel_start`/`sel_len` and the
+ * playhead family; on `y`: `unit`, `start`/`len`, `min`/`max`, `bit_depth`.
+ */
+export function field(
+    options: WidgetOptions & {
+        axes?: { x?: Props; y?: Props };
+        offset?: number;
+        dur?: number;
+        label?: string;
+        height?: number;
+        snap?: number;
+        headerW?: number;
+        mute?: boolean;
+        solo?: boolean;
+        level?: number;
+        h?: number;
+        theme?: Record<string, string>;
+        children?: readonly GuiNode[];
+    } = {},
+    ...children: GuiNode[]
+): GuiNode {
+    const {
+        axes: pair, offset, dur, label: text, height, snap, headerW,
+        mute, solo, level, theme, ...rest
+    } = options;
+    return node("field", {
+        ...rest,
+        ...(pair === undefined ? {} : { axes: pair }),
+        ...drop([
+            ["offset", offset],
+            ["dur", dur],
+            ["label", text],
+            ["height", height],
+            ["snap", snap],
+            ["header_w", headerW],
+            ["mute", mute],
+            ["solo", solo],
+            ["level", level],
+            ["theme", theme],
+        ]),
+        children: [...(options.children ?? []), ...children],
+    });
+}
+
+/**
+ * **Every view of a signal**, as the one element they are: a presentation of
+ * a source, with the capabilities offered over it.
+ *
+ * `view` is the presentation — `"trace"` (the default), `"spectrum"`,
+ * `"spectrogram"` or `"phase"`. The source is either `bus` (with `rate`),
+ * read forward-only, or the addressable `data`/`blob`/`buffer`/`path`/`cache`,
+ * which is what lets a view navigate, slice and select. `navigable`,
+ * `selectable` and `editable` are the capabilities over it. So
+ * `signal({ view: "trace", path: take })` is the heavy waveform and
+ * `signal({ view: "trace", bus: 0 })` the oscilloscope.
+ *
+ * The presentation's own parameters (`fft_size`/`window_size`, `hop`,
+ * `db_floor`/`db_ceil`, `freq_scale`, `colormap`, `window_ms`, `trigger`,
+ * `hold`, `averaging`, `peak_hold`) ride through under their wire names;
+ * `waveform`, `plot`, `scope`, `spectrum`, `spectrogram` and `phasescope`
+ * name and document the six common points of the product.
+ */
+export function signal(
+    options: SourceOptions & {
+        view?: string;
+        bus?: number;
+        rate?: "audio" | "control";
+        baseBucket?: number;
+        navigable?: boolean;
+        selectable?: boolean;
+        editable?: boolean;
+        overlay?: boolean;
+        axes?: { x?: Props; y?: Props };
+        label?: string;
+    } = {},
+): GuiNode {
+    const {
+        view, cache, path, buffer, data, blob, channels, bus, rate, baseBucket,
+        navigable, selectable, editable, overlay, axes: pair, label: text, ...rest
+    } = options;
+    return node("signal", {
+        ...rest,
+        ...(pair === undefined ? {} : { axes: pair }),
+        ...sourceProps({ cache, path, buffer, data, blob, channels }),
+        ...drop([
+            ["view", view],
+            ["bus", bus],
+            ["rate", rate],
+            ["base_bucket", baseBucket],
+            ["navigable", flag(navigable)],
+            ["selectable", flag(selectable)],
+            ["editable", flag(editable)],
+            ["overlay", flag(overlay)],
+            ["label", text],
+        ]),
+    });
+}
+
+
 /**
  * A top-level `window` container (a GuiDef root). It takes no id — the root's
  * id is the `/gui_def` argument.
@@ -287,7 +501,7 @@ export function window(
         ...rest,
         ...drop([
             ["title", title],
-            ["layout", layout],
+            ["flow", layout],
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],
@@ -303,10 +517,10 @@ export function window(
  */
 export function panel(options: ContainerOptions = {}, ...children: GuiNode[]): GuiNode {
     const { layout, margin, gap, cols, theme, ...rest } = options;
-    return node("panel", {
+    return node("layout", {
         ...rest,
         ...drop([
-            ["layout", layout],
+            ["flow", layout],
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],
@@ -344,8 +558,9 @@ export function stack(
     ...children: GuiNode[]
 ): GuiNode {
     const { index, margin, theme, ...rest } = options;
-    return node("stack", {
+    return node("layout", {
         ...rest,
+        flow: "stack",
         ...drop([
             ["index", index],
             ["margin", margin],
@@ -397,7 +612,7 @@ export function scroll(
         axis, zoom, contentW, contentH, viewX, viewY, viewZoom,
         layout, margin, gap, cols, theme, ...rest
     } = options;
-    return node("scroll", {
+    return node("plane", {
         ...rest,
         ...drop([
             ["axis", axis],
@@ -407,7 +622,7 @@ export function scroll(
             ["view_x", viewX],
             ["view_y", viewY],
             ["view_zoom", viewZoom],
-            ["layout", layout],
+            ["flow", layout],
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],
@@ -579,15 +794,11 @@ export function waveform(
         cache, path, buffer, data, blob, channels, baseBucket, overlay,
         rulerY, bitDepth, ...timeline
     } = options;
-    return node("waveform", {
-        ...timelineProps(timeline),
+    return node("signal", {
+        view: "trace",
+        ...timelineProps(timeline, drop([["unit", rulerY], ["bit_depth", bitDepth]])),
         ...sourceProps({ cache, path, buffer, data, blob, channels }),
-        ...drop([
-            ["base_bucket", baseBucket],
-            ["overlay", flag(overlay)],
-            ["ruler_y", rulerY],
-            ["bit_depth", bitDepth],
-        ]),
+        ...drop([["base_bucket", baseBucket], ["overlay", flag(overlay)]]),
     });
 }
 
@@ -620,8 +831,9 @@ export function spectrogram(
         cache, path, buffer, data, blob, channels, windowSize, hop,
         dbFloor, dbCeil, freqScale, logFreq, colormap, rulerY, ...timeline
     } = options;
-    return node("spectrogram", {
-        ...timelineProps(timeline),
+    return node("signal", {
+        view: "spectrogram",
+        ...timelineProps(timeline, drop([["unit", rulerY]])),
         ...sourceProps({ cache, path, buffer, data, blob, channels }),
         ...drop([
             ["window_size", windowSize],
@@ -631,7 +843,6 @@ export function spectrogram(
             ["freq_scale", freqScale],
             ["log_freq", flag(logFreq)],
             ["colormap", colormap],
-            ["ruler_y", rulerY],
         ]),
     });
 }
@@ -665,17 +876,19 @@ export function plot(
         min, max, ruler, rulerY, fftSize, dbFloor, dbCeil, freqScale,
         label: text, ...rest
     } = options;
-    return node("plot", {
+    // A plot is the trace (or the spectrum) of a signal that does **not**
+    // navigate — the capability, not a different element.
+    return node("signal", {
         ...rest,
+        view: PLOT_VIEW[view ?? "signal"] ?? view,
+        navigable: 0,
         ...sourceProps({ cache, path, buffer, data, blob, channels }),
+        ...axes(
+            drop([["unit", ruler], ["sample_rate", sampleRate]]),
+            drop([["unit", rulerY], ["min", min], ["max", max]]),
+        ),
         ...drop([
-            ["view", view],
             ["overlay", flag(overlay)],
-            ["sample_rate", sampleRate],
-            ["min", min],
-            ["max", max],
-            ["ruler", ruler],
-            ["ruler_y", rulerY],
             ["fft_size", fftSize],
             ["db_floor", dbFloor],
             ["db_ceil", dbCeil],
@@ -753,20 +966,21 @@ export function scope(
         rate = "audio", channels, overlay, windowMs, trigger, hold, min, max,
         ruler, rulerY, label: text, ...rest
     } = options;
-    return node("scope", {
+    return node("signal", {
         ...rest,
         bus,
         rate,
+        view: "trace",
+        ...axes(
+            drop([["unit", strip(ruler)]]),
+            drop([["unit", strip(rulerY)], ["min", min], ["max", max]]),
+        ),
         ...drop([
             ["channels", channels],
             ["overlay", flag(overlay)],
             ["window_ms", windowMs],
             ["trigger", trigger],
             ["hold", flag(hold)],
-            ["min", min],
-            ["max", max],
-            ["ruler", strip(ruler)],
-            ["ruler_y", strip(rulerY)],
             ["label", text],
         ]),
     });
@@ -789,9 +1003,10 @@ export function phasescope(
     } = {},
 ): GuiNode {
     const { windowMs, hold, label: text, ...rest } = options;
-    return node("phasescope", {
+    return node("signal", {
         ...rest,
         bus,
+        view: "phase",
         ...drop([
             ["window_ms", windowMs],
             ["hold", flag(hold)],
@@ -828,9 +1043,11 @@ export function spectrum(
         channels, fftSize, dbFloor, dbCeil, freqScale, logFreq, averaging,
         peakHold, ruler, rulerY, label: text, ...rest
     } = options;
-    return node("spectrum", {
+    return node("signal", {
         ...rest,
         bus,
+        view: "spectrum",
+        ...axes(drop([["unit", strip(ruler)]]), drop([["unit", strip(rulerY)]])),
         ...drop([
             ["channels", channels],
             ["fft_size", fftSize],
@@ -840,8 +1057,6 @@ export function spectrum(
             ["log_freq", flag(logFreq)],
             ["averaging", averaging],
             ["peak_hold", flag(peakHold)],
-            ["ruler", strip(ruler)],
-            ["ruler_y", strip(rulerY)],
             ["label", text],
         ]),
     });
@@ -857,7 +1072,7 @@ export function nodetree(
     options: WidgetOptions & { group?: number; controls?: boolean; label?: string } = {},
 ): GuiNode {
     const { group = 0, controls, label: text, ...rest } = options;
-    return node("nodetree", {
+    return node("nodes", {
         ...rest,
         group,
         ...drop([["controls", flag(controls)], ["label", text]]),
@@ -892,12 +1107,11 @@ export function bpf(
     } = {},
 ): GuiNode {
     const { points, min, max, duration, exp, label: text, ...rest } = options;
-    return node("bpf", {
+    return node("curve", {
         ...rest,
+        ...axes({}, drop([["min", min], ["max", max]])),
         ...drop([
             ["points", points === undefined ? undefined : flatPoints(points)],
-            ["min", min],
-            ["max", max],
             ["duration", duration],
             ["exp", flag(exp)],
             ["label", text],
@@ -926,27 +1140,22 @@ export function pianoroll(
         velocity?: boolean;
         oscLane?: boolean;
         midiIn?: boolean;
-        /** A static cursor, for a located, stopped transport. */
-        playhead?: number;
         label?: string;
     } = {},
 ): GuiNode {
     const {
-        notes, osc, min, max, snap, velocity, oscLane, midiIn, playhead,
+        notes, osc, min, max, snap, velocity, oscLane, midiIn,
         label: text, ...timeline
     } = options;
-    return node("pianoroll", {
-        ...timelineProps(timeline),
+    return node("notes", {
+        ...timelineProps(timeline, drop([["min", min], ["max", max]])),
         ...drop([
             ["notes", notes === undefined ? undefined : flatNotes(notes)],
             ["osc", osc === undefined ? undefined : flatOsc(osc)],
-            ["min", min],
-            ["max", max],
             ["snap", snap],
             ["velocity", flag(velocity)],
             ["osc_lane", flag(oscLane)],
             ["midi_in", flag(midiIn)],
-            ["playhead", playhead],
             ["label", text],
         ]),
     });
@@ -984,7 +1193,7 @@ export function piano(
         min, max, activeMin, activeMax, pan, overview, velocity, channel,
         voice, voiceArgs, label: text, ...rest
     } = options;
-    return node("piano", {
+    return node("keys", {
         ...rest,
         ...drop([
             ["min", min],
@@ -1020,7 +1229,7 @@ export function piano(
  */
 export function timeruler(options: TimelineOptions = {}): GuiNode {
     const { h = 20, ...timeline } = options;
-    return node("timeruler", { ...timelineProps(timeline), h });
+    return node("field", { ...timelineProps(timeline), h });
 }
 
 /**
@@ -1069,7 +1278,7 @@ export function track(
         children,
         ...timeline
     } = options;
-    return node("track", {
+    return node("field", {
         ...timelineProps(timeline),
         ...drop([
             ["label", text],
@@ -1115,7 +1324,7 @@ export function clip(
         offset = 0.0, dur, cache, path, buffer, data, blob, channels,
         baseBucket, notes, points, exp, min, max, label: text, ...rest
     } = options;
-    return node("clip", {
+    return node("field", {
         ...rest,
         dur,
         offset,
@@ -1203,7 +1412,7 @@ export function patch(
     } = {},
 ): GuiNode {
     const { boxes, cords, label: text, ...rest } = options;
-    return node("patch", {
+    return node("plane", {
         ...rest,
         ...drop([
             ["boxes", boxes === undefined ? undefined : [...boxes]],
@@ -1247,7 +1456,7 @@ export function canvas(
 // ---- the shared prop groups ----
 
 /** The timeline chrome (and the generic options riding with it) as wire props. */
-function timelineProps(options: TimelineOptions): Props {
+function timelineProps(options: TimelineOptions, y: Props = {}): Props {
     const {
         ruler, sampleRate, tempo, beatAt, quant, selStart, selLen,
         playheadAt, playhead, playheadLoopStart, playheadLoopLen,
@@ -1255,24 +1464,36 @@ function timelineProps(options: TimelineOptions): Props {
     } = options;
     return {
         ...rest,
-        ...drop([
-            ["ruler", ruler],
-            ["sample_rate", sampleRate],
-            ["tempo", tempo],
-            ["beat_at", beatAt],
-            ["quant", quant],
-            ["sel_start", selStart],
-            ["sel_len", selLen],
-            ["playhead_at", playheadAt],
-            ["playhead", playhead],
-            ["playhead_loop_start", playheadLoopStart],
-            ["playhead_loop_len", playheadLoopLen],
-            ["y_start", yStart],
-            ["y_len", yLen],
-            ["link", link],
-        ]),
+        ...axes(
+            drop([
+                ["unit", ruler],
+                ["sample_rate", sampleRate],
+                ["tempo", tempo],
+                ["beat_at", beatAt],
+                ["quant", quant],
+                ["sel_start", selStart],
+                ["sel_len", selLen],
+                ["playhead_at", playheadAt],
+                ["playhead", playhead],
+                ["playhead_loop_start", playheadLoopStart],
+                ["playhead_loop_len", playheadLoopLen],
+                ["link", link],
+            ]),
+            { ...drop([["start", yStart], ["len", yLen]]), ...y },
+        ),
     };
 }
+
+/**
+ * The model's names for the four elements the catalog named after the thing
+ * they show rather than for what they are: a piano-roll is the **notes**
+ * element, a break-point envelope a **curve**, the server's graph **nodes**
+ * and a keyboard **keys**. The same builder under both names.
+ */
+export const notes = pianoroll;
+export const curve = bpf;
+export const nodes = nodetree;
+export const keys = piano;
 
 /** A heavy view's data source as wire props. */
 function sourceProps(options: Pick<SourceOptions,

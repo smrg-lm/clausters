@@ -26,7 +26,7 @@ adding a widget are in [Architecture](architecture.md).
 | `/gui_def id json [blob…]` | Build a whole widget tree in one message. `json` is the GuiDef document (below); trailing blobs carry bulk data a widget references by index. Re-sending an existing id **redefines** it (the old subtree is freed first), exactly as re-sending a `SynthDef` replaces it. |
 | `/gui_set id key value …` | Update one live widget's properties. Types are preserved (an OSC int stays an int). A value that is logically an array (a curve's break-points, a patch's wires) rides as its **JSON string**, since an OSC key/value is a scalar. |
 | `/gui_free id` | Free a widget and its subtree. Freeing a `window`-rooted def closes its window. |
-| `/gui_query id` | Ask for a widget's state. Replies `/gui_info id type key value …`; an **empty type** (`""`) means no such widget — the host answers either way, as the audio server replies even on a miss. |
+| `/gui_query id` | Ask for a widget's state. Replies `/gui_info id type key value …` — **scalar props only**, since a reply is flat OSC arguments: a structural prop (`theme`, `points`, `boxes`, `data`) is not reported, and asking for one means keeping the tree that was sent. The `axes` pair is the exception: a def's axis chrome is recorded **flat** (`ruler`, `view_start`, `min`, …) precisely so a query can answer it, while the node's `type` is kept as the tree wrote it. An **empty type** (`""`) means no such widget — the host answers either way, as the audio server replies even on a miss. |
 | `/gui_bind id "server" address prefix…` | Forward this widget's value **straight to the audio server**, bypassing the script: on every change the host sends `address` with the fixed `prefix` arguments followed by the value (e.g. `"/node_set" 1001 "freq"` makes the widget send `/node_set 1001 freq <value>`). A bound widget stops emitting `/gui_event`. |
 | `/gui_bind id "widget" target prop` | Apply this widget's value to **another widget's property**, as a `/gui_set target prop <value>` would — a `menu` flipping a `stack`'s `index`, a slider driving a plot's `max`. A multi-value edit-back payload rides as the JSON string the prop already takes. A binding fires an **apply, never another binding**: the target's own binding does not fire from it, so two widgets bound to each other settle instead of cascading (stated, not detected — the chain is one hop by construction). |
 | `/gui_bind id` | (no target) Remove the binding; the widget emits events again. |
@@ -143,11 +143,12 @@ not grow per widget.
 
 ## The model: containers, axes and elements
 
-The `type` vocabulary is **being replaced**, and the host already reads the
-replacement. What is changing is not the wire's shape — a node is still
-`{id, type, props, children}` — but what a type *names*: the catalog below
-names twenty-nine widgets over a model of three things, and the model is what a
-script should learn.
+The `type` vocabulary is **being replaced**, and this is what the wire says
+now: both clients emit the model, and the host reads it and the catalog below
+alike. What changed is not the wire's shape — a node is still
+`{id, type, props, children}` — but what a type *names*: the catalog names
+twenty-nine widgets over a model of three things, and the model is what a
+script learns.
 
 | Kind | What it is | Types |
 |---|---|---|
@@ -168,17 +169,23 @@ catalog spells one idea several ways.
 | `plane` | 2, **locked to one scale** | a pannable, zoomable plane in content units: `axis`, `zoom`, `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`; with `boxes`/`cords`, the patcher | `scroll`, `patch` |
 | `field` | 2, **independent** | the time/value container: an `axes` pair, plus lane chrome (`label`, `height`, `header_w`, `mute`, `solo`, `level`) or a placement (`offset`, `dur`) | `track`, `clip`, `timeruler` |
 
+`flow` is what the catalog spelled `layout`, on **every** container that has
+an arrangement: the model spends the word `layout` on the container itself.
+
 `stack` stops being a type because it never was one: a container showing one
-child is a layout with a **selection** instead of an arrangement. `field` is
-one container told apart by what is placed on it — a lane holds clips, a clip
-is a field placed on another field's x axis, a bare ruler has nothing drawn on
-it at all.
+child is a layout with a **selection** instead of an arrangement.
+
+A `field` is told apart **by what is on it**, in this order: a placement
+(`offset`/`dur`) makes it a **clip** on its parent's x axis; a bare strip of a
+given thickness `h`, with nothing placed on it and no lane chrome, is the
+free-standing **ruler**; anything else is a **lane** — including an empty one,
+which a multitrack opens all the time and which must not read as a ruler.
 
 ### The elements
 
 | Type | Replaces | How the old name is said |
 |---|---|---|
-| `signal` | `waveform`, `spectrogram`, `plot`, `scope`, `spectrum`, `phasescope` | **`view`** (`trace` default / `spectrum` / `spectrogram` / `phase`) × the **source** (`bus` = forward-only; `data`/`blob`/`buffer`/`path`/`cache` = addressable) × the **capabilities** `navigable`, `selectable`, `editable` |
+| `signal` | `waveform`, `spectrogram`, `plot`, `scope`, `spectrum`, `phasescope` | **`view`** (`trace` default / `spectrum` / `spectrogram` / `phase`) × the **source** (`bus` = forward-only; `data`/`blob`/`buffer`/`path`/`cache` = addressable) × the **capabilities** `navigable`, `selectable`, `editable`. `navigable: 0` over addressable samples is the static plot — the whole of it, since a view that does not navigate also resolves its source as the sequence itself rather than as a take, and auto-fits a value axis nobody named |
 | `notes` | `pianoroll` | unchanged properties |
 | `curve` | `bpf` | unchanged properties |
 | `nodes` | `nodetree` | it is an element, not a widget named after a tree |
@@ -225,10 +232,16 @@ own stays where it is: an element's source (`data`, `buffer`, `path`, `cache`,
 ### Both spellings parse, for now
 
 The host accepts the model's vocabulary **and** every name in the catalog
-below, so nothing that runs today stops running. The old names are **leaving**:
-they are read through a translation layer that is deleted when the clients and
-the examples have moved, and a saved bundle written in the old spelling will
-need re-saving then. Write new trees in the model's terms.
+below, so nothing that ran before stops running. The old names are **leaving**:
+they are read through a translation layer that is deleted once nothing writes
+them, and a saved bundle written in the old spelling will need re-saving then.
+Write new trees in the model's terms.
+
+Both clients already do. Their **builders keep their familiar names** —
+`panel`, `waveform`, `track`, `clip`, `scope` — as shortcuts that build a
+model node with the props of one common case, so a script does not change; and
+`layout`, `plane`, `field` and `signal` are there beside them for the cases no
+shortcut names. What a client *emits* is the model, always.
 
 One name is deferred: **`box`** currently means a synonym of `panel` and the
 model wants it for a patcher's box, and both cannot be true while both
@@ -236,8 +249,10 @@ spellings parse. Until then a plane's boxes stay its `boxes` property.
 
 ## The widget catalog
 
-The names below are the ones the model above replaces; they are documented
-because they still parse and because every existing script is written in them.
+The names below are the ones the model above replaces. They still parse, and
+both clients still offer a **builder** under each of them — a shortcut onto
+the model node it always meant — so this table is where a shortcut's own props
+are documented.
 The authoritative per-widget reference — every property, its default and its
 meaning — is the [Python client's builder
 documentation](https://clausters-python.readthedocs.io/), since that is how a

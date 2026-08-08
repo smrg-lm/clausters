@@ -8,6 +8,23 @@ one OSC argument. These helpers compose that tree as plain ``dict``s — they ar
 ``id`` (it comes from the ``/gui_def <id>`` argument); every child carries an
 integer id on the wire, but a script never has to write one.
 
+**What a `type` names is the model, not a widget.** A GuiDef has three kinds of
+node: a **container** owning 0, 1 or 2 axes (`layout`, `plane`, `field`, and
+the `window` root), an **element** drawn against those axes (`signal`, `notes`,
+`curve`, `score`, `keys`, `nodes`, `meter`, `canvas`, `label`), and a
+**control**, which is an element with a value and no axis (`slider`, `knob`,
+`number`, `button`, `toggle`, `text`, `menu`). The chrome of an axis — its
+ruler, its navigation window, the selection, the playhead, the value range —
+belongs to the **container's** ``axes``, not to each element drawn against it.
+
+The builders named after widgets (`panel`, `stack`, `scroll`, `waveform`,
+`plot`, `scope`, `track`, `clip`, `timeruler`, ...) are **shortcuts**: each
+builds a model node with the props of one common case, and takes its axis
+chrome as flat keywords (``ruler=``, ``link=``, ``min=``) which it packs into
+the pair for you. `layout`, `plane`, `field` and `signal` are the general
+builders beside them, for the cases no shortcut names — a navigable spectrum,
+a lane that is also a clip, a plane that is neither a scroll view nor a patcher.
+
 **Address a widget by name, not by id.** Pass ``name="cutoff"`` to any builder
 and `GuiHost.open` hands back a window handle you index by that name —
 ``win["cutoff"].set(value=…)``, ``win["cutoff"].on_event(fn)``. The name is a
@@ -118,6 +135,14 @@ from ..defs.ugens import env_to_points, points_to_env  # re-exported; shared wit
 __all__ = [
     "node",
     "window",
+    "layout",
+    "plane",
+    "field",
+    "signal",
+    "notes",
+    "curve",
+    "nodes",
+    "keys",
     "panel",
     "scroll",
     "stack",
@@ -185,9 +210,153 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> dict:
     return out
 
 
+# --------------------------------------------------------------- the model
+#
+# A GuiDef names three kinds of thing: a **container** owning 0, 1 or 2 axes,
+# an **element** drawn against them, and a **control**, which is an element
+# with a value and no axis. The builders below name that model; the ones
+# further down (`panel`, `waveform`, `track`, ...) are shortcuts that build
+# the same nodes with a familiar name and the props of one common case.
+
+
+def layout(*children, flow: str | None = None, index: int | None = None,
+           margin: float | None = None, gap: float | None = None, cols: int | None = None,
+           theme: dict | None = None, color: str | None = None, id: int | None = None,
+           **props) -> dict:
+    """A container with **no axes**, arranging its children by ``flow``.
+
+    ``flow`` is ``"row"``, ``"col"`` (the default), ``"grid"``, ``"free"`` — or
+    ``"stack"``, which shows **one child at a time**, the one ``index`` names,
+    and lays out and draws none of the others. A stack is not a different
+    container: it is this one with a selection instead of an arrangement, which
+    is why `stack` is a shortcut rather than a type.
+
+    ``margin`` insets the children, ``gap`` separates them, ``cols`` fixes the
+    ``grid`` column count. ``theme`` (a partial ``{"role": "#rrggbb[aa]"}``
+    table) makes it a **theme group** over its whole subtree; ``color``
+    re-seeds the accent family for itself.
+    """
+    extra = _drop_none(flow=flow, index=index, margin=margin, gap=gap, cols=cols,
+                       theme=theme, color=color)
+    return node("layout", id=id, children=children, **extra, **props)
+
+
+def plane(*children, flow: str | None = None, axis: str | None = None,
+          zoom: bool | None = None, content_w: float | None = None,
+          content_h: float | None = None, view_x: float | None = None,
+          view_y: float | None = None, view_zoom: float | None = None,
+          boxes=None, cords=None, margin: float | None = None, gap: float | None = None,
+          cols: int | None = None, theme: dict | None = None, color: str | None = None,
+          id: int | None = None, **props) -> dict:
+    """A container with **two axes locked to one scale**: a pannable, zoomable
+    plane in content units.
+
+    The children lay out into a content area larger than the widget, seen
+    through a window that pans and zooms. ``axis`` (``"both"``/``"x"``/``"y"``)
+    and ``zoom`` constrain it — a plain vertical scroll view is
+    ``axis="y", zoom=False`` — and ``view_x``/``view_y``/``view_zoom`` are the
+    window itself. See `scroll` for the whole of it.
+
+    With ``boxes`` and ``cords`` the plane is a **patcher**: the boxes are what
+    it places and the cords are the wires between them, which is all `patch`
+    ever added to a plane. See `patch` for their shape.
+    """
+    extra = _drop_none(flow=flow, axis=axis, content_w=content_w, content_h=content_h,
+                       view_x=view_x, view_y=view_y, view_zoom=view_zoom,
+                       boxes=list(boxes) if boxes is not None else None,
+                       cords=[int(x) for x in cords] if cords is not None else None,
+                       margin=margin, gap=gap, cols=cols, theme=theme, color=color)
+    if zoom is not None:
+        extra["zoom"] = 1 if zoom else 0
+    return node("plane", id=id, children=children, **extra, **props)
+
+
+def field(*children, axes: dict | None = None, offset: float | None = None,
+          dur: float | None = None, label: str | None = None, height: float | None = None,
+          snap: float | None = None, header_w: float | None = None, mute: bool | None = None,
+          solo: bool | None = None, level: float | None = None, h: float | None = None,
+          theme: dict | None = None, color: str | None = None, id: int | None = None,
+          **props) -> dict:
+    """A container with **two independent axes** — the time/value container.
+
+    One container, told apart by what is placed on it: holding other fields it
+    is a **lane** (with the header props ``label``/``height``/``header_w``/
+    ``mute``/``solo``/``level``), carrying ``offset``/``dur`` it is a **clip**
+    placed on its parent's x axis, and with nothing on it at all it is a
+    free-standing **ruler** over its navigation group. The three shortcuts
+    `track`, `clip` and `timeruler` are those three cases.
+
+    ``axes`` is the pair the chrome belongs to::
+
+        field(axes={"x": {"unit": "beats", "tempo": 2.0, "link": 1},
+                    "y": {"min": -1.0, "max": 1.0}})
+
+    On the x axis: ``unit`` (``"time"``/``"samples"``/``"beats"``/``"off"``),
+    ``start``/``len`` (the navigation window), ``tempo``/``beat_at``/``quant``,
+    ``sample_rate``, ``link`` (the navigation group), ``sel_start``/``sel_len``
+    and the ``playhead`` family. On the y axis: ``unit``, ``start``/``len``,
+    ``min``/``max``, ``bit_depth``.
+
+    A placed field's **bodies** — a take, note events, an automation curve —
+    are still described by props (``data``/``buffer``/``path``/``cache``,
+    ``notes``, ``points``); `clip` is the shortcut that packs them.
+    """
+    extra = _drop_none(offset=offset, dur=dur, label=label, height=height, snap=snap,
+                       header_w=header_w, mute=mute, solo=solo, level=level, h=h,
+                       theme=theme, color=color)
+    extra.update(_axes(axes))
+    return node("field", id=id, children=children, **extra, **props)
+
+
+def signal(*, view: str | None = None, data=None, blob: int | None = None,
+           buffer: int | None = None, path: str | None = None, cache: str | None = None,
+           bus: int | None = None, rate: str | None = None, channels: int | None = None,
+           base_bucket: int | None = None, navigable: bool | None = None,
+           selectable: bool | None = None, editable: bool | None = None,
+           overlay: bool | None = None, axes: dict | None = None, label: str | None = None,
+           color: str | None = None, id: int | None = None, **props) -> dict:
+    """**Every view of a signal**, as the one element they are: a presentation
+    of a source, with the capabilities offered over it.
+
+    - ``view`` — the presentation: ``"trace"`` (the default; value against
+      time), ``"spectrum"`` (magnitude against frequency), ``"spectrogram"``
+      (the STFT, magnitude against time *and* frequency) or ``"phase"`` (the
+      goniometer of a stereo pair).
+    - the **source** — ``bus`` (with ``rate``) is forward-only, read live;
+      ``data``/``blob``/``buffer``/``path``/``cache`` are addressable samples,
+      which is what lets a view navigate, slice and select. ``channels``
+      de-interleaves it, ``base_bucket`` sizes the peak pyramid.
+    - the **capabilities** — ``navigable`` (zooms and pans its axes, and joins
+      the navigation group its x axis names), ``selectable``, ``editable``.
+
+    So ``signal(view="trace", path=take)`` is the heavy waveform and
+    ``signal(view="trace", bus=0)`` the oscilloscope: the same element over the
+    two kinds of source. The presentation's own parameters (``fft_size`` /
+    ``window_size``, ``hop``, ``db_floor``/``db_ceil``, ``freq_scale``,
+    ``colormap``, ``window_ms``, ``trigger``, ``hold``, ``averaging``,
+    ``peak_hold``) ride through as keywords; the shortcuts `waveform`, `plot`,
+    `scope`, `spectrum`, `spectrogram` and `phasescope` name and document the
+    six common points of the product.
+
+    ``axes`` is the axis pair the rulers, the navigation window, the selection,
+    the playhead and the value range belong to (see `field`).
+    """
+    extra = _drop_none(view=view, data=list(data) if data is not None else None,
+                       blob=blob, buffer=buffer, path=path, cache=cache,
+                       bus=bus, rate=rate, channels=channels, base_bucket=base_bucket,
+                       label=label, color=color)
+    for key, flag in (("navigable", navigable), ("selectable", selectable),
+                      ("editable", editable), ("overlay", overlay)):
+        if flag is not None:
+            extra[key] = 1 if flag else 0
+    extra.update(_axes(axes))
+    return node("signal", id=id, **extra, **props)
+
+
 def window(*children, title: str | None = None, w: int | None = None, h: int | None = None,
-           layout: str | None = None, margin: float | None = None, gap: float | None = None,
-           cols: int | None = None, theme: dict | None = None, **props) -> dict:
+           flow: str | None = None, layout: str | None = None, margin: float | None = None,
+           gap: float | None = None, cols: int | None = None, theme: dict | None = None,
+           **props) -> dict:
     """A top-level ``window`` container (a GuiDef root). It takes no id.
 
     ``w``/``h`` size the OS window; ``layout`` (``row``/``col``/``grid``/
@@ -199,14 +368,15 @@ def window(*children, title: str | None = None, w: int | None = None, h: int | N
     the whole window — a **theme group**. On the root it persists with a named
     def, so a standalone bundle ships its look.
     """
-    extra = _drop_none(title=title, w=w, h=h, layout=layout, margin=margin, gap=gap, cols=cols,
-                       theme=theme)
+    extra = _drop_none(title=title, w=w, h=h, flow=flow or layout, margin=margin, gap=gap,
+                       cols=cols, theme=theme)
     return node("window", children=children, **extra, **props)
 
 
-def panel(*children, layout: str | None = None, margin: float | None = None,
-          gap: float | None = None, cols: int | None = None, theme: dict | None = None,
-          color: str | None = None, id: int | None = None, **props) -> dict:
+def panel(*children, flow: str | None = None, layout: str | None = None,
+          margin: float | None = None, gap: float | None = None, cols: int | None = None,
+          theme: dict | None = None, color: str | None = None, id: int | None = None,
+          **props) -> dict:
     """A nestable ``panel`` container; ``layout`` is ``row``/``col``/``grid``/``free``.
 
     ``margin`` insets the children, ``gap`` separates them, ``cols`` fixes the
@@ -218,8 +388,9 @@ def panel(*children, layout: str | None = None, margin: float | None = None,
     dimmed, a recording strip warm — recursively over the parent's theme.
     ``color`` re-seeds just the accent family for the panel itself.
     """
-    extra = _drop_none(layout=layout, margin=margin, gap=gap, cols=cols, theme=theme, color=color)
-    return node("panel", id=id, children=children, **extra, **props)
+    extra = _drop_none(flow=flow or layout, margin=margin, gap=gap, cols=cols,
+                       theme=theme, color=color)
+    return node("layout", id=id, children=children, **extra, **props)
 
 
 def stack(*children, index: int | None = None, margin: float | None = None,
@@ -248,15 +419,16 @@ def stack(*children, index: int | None = None, margin: float | None = None,
     child.
     """
     extra = _drop_none(index=index, margin=margin, theme=theme, color=color)
-    return node("stack", id=id, children=children, **extra, **props)
+    return node("layout", id=id, children=children, flow="stack", **extra, **props)
 
 
 def scroll(*children, axis: str | None = None, zoom: bool | None = None,
            content_w: float | None = None, content_h: float | None = None,
            view_x: float | None = None, view_y: float | None = None,
-           view_zoom: float | None = None, layout: str | None = None, margin: float | None = None,
-           gap: float | None = None, cols: int | None = None, theme: dict | None = None,
-           color: str | None = None, id: int | None = None, **props) -> dict:
+           view_zoom: float | None = None, flow: str | None = None, layout: str | None = None,
+           margin: float | None = None, gap: float | None = None, cols: int | None = None,
+           theme: dict | None = None, color: str | None = None, id: int | None = None,
+           **props) -> dict:
     """A ``scroll`` container: a 2D workspace onto a virtual content area.
 
     The children lay out into a content area larger than the widget, seen
@@ -286,10 +458,11 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
     """
     extra = _drop_none(axis=axis, content_w=content_w, content_h=content_h,
                        view_x=view_x, view_y=view_y, view_zoom=view_zoom,
-                       layout=layout, margin=margin, gap=gap, cols=cols, theme=theme, color=color)
+                       flow=flow or layout, margin=margin, gap=gap, cols=cols,
+                       theme=theme, color=color)
     if zoom is not None:
         extra["zoom"] = 1 if zoom else 0
-    return node("scroll", id=id, children=children, **extra, **props)
+    return node("plane", id=id, children=children, **extra, **props)
 
 
 def label(text: str = "", *, text_size: float | None = None, wrap: bool | None = None,
@@ -465,18 +638,17 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     stays per-view."""
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
-                       channels=channels, base_bucket=base_bucket,
-                       ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
+                       channels=channels, base_bucket=base_bucket, color=color)
+    extra.update(_axes(ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
                        playhead_at=playhead_at, playhead=playhead,
                        playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len,
-                       y_start=y_start, y_len=y_len,
-                       link=link, color=color)
+                       y_start=y_start, y_len=y_len, link=link))
     if overlay is not None:
         extra["overlay"] = 1 if overlay else 0
-    return node("waveform", id=id, **extra, **props)
+    return node("signal", id=id, view="trace", **extra, **props)
 
 
 def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None,
@@ -529,19 +701,18 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, window_size=window_size, hop=hop,
-                       sample_rate=sample_rate, db_floor=db_floor,
-                       db_ceil=db_ceil, freq_scale=freq_scale,
-                       colormap=colormap, ruler=ruler, ruler_y=ruler_y,
+                       db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
+                       colormap=colormap, color=color)
+    extra.update(_axes(ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
                        tempo=tempo, beat_at=beat_at, quant=quant,
                        sel_start=sel_start, sel_len=sel_len,
                        playhead_at=playhead_at, playhead=playhead,
                        playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len,
-                       y_start=y_start, y_len=y_len,
-                       link=link, color=color)
+                       y_start=y_start, y_len=y_len, link=link))
     if log_freq is not None:
         extra["log_freq"] = 1 if log_freq else 0
-    return node("spectrogram", id=id, **extra, **props)
+    return node("signal", id=id, view="spectrogram", **extra, **props)
 
 
 def meter(bus: int = 0, *, rate: str = "audio", min: float | None = None,
@@ -595,14 +766,12 @@ def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     bipolar ``-1``/``1``).
     """
     extra = _drop_none(channels=channels, window_ms=window_ms,
-                       trigger=trigger, min=min, max=max, label=label, color=color)
+                       trigger=trigger, label=label, color=color)
     for key, flag in (("hold", hold), ("overlay", overlay)):
         if flag is not None:
             extra[key] = 1 if flag else 0
-    for key, strip in (("ruler", ruler), ("ruler_y", ruler_y)):
-        if strip is not None:
-            extra[key] = strip if isinstance(strip, str) else (1 if strip else "off")
-    return node("scope", bus=bus, rate=rate, **extra, **props, id=id)
+    extra.update(_axes(min=min, max=max, **_strips(ruler=ruler, ruler_y=ruler_y)))
+    return node("signal", bus=bus, rate=rate, view="trace", **extra, **props, id=id)
 
 
 def phasescope(bus: int = 0, *, window_ms: float | None = None, hold: bool | None = None,
@@ -621,7 +790,7 @@ def phasescope(bus: int = 0, *, window_ms: float | None = None, hold: bool | Non
     extra = _drop_none(window_ms=window_ms, label=label, color=color)
     if hold is not None:
         extra["hold"] = 1 if hold else 0
-    return node("phasescope", bus=bus, **extra, **props, id=id)
+    return node("signal", bus=bus, view="phase", **extra, **props, id=id)
 
 
 def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None = None,
@@ -653,10 +822,8 @@ def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None 
         extra["log_freq"] = 1 if log_freq else 0
     if peak_hold is not None:
         extra["peak_hold"] = 1 if peak_hold else 0
-    for key, strip in (("ruler", ruler), ("ruler_y", ruler_y)):
-        if strip is not None:
-            extra[key] = strip if isinstance(strip, str) else (1 if strip else "off")
-    return node("spectrum", bus=bus, **extra, **props, id=id)
+    extra.update(_axes(**_strips(ruler=ruler, ruler_y=ruler_y)))
+    return node("signal", bus=bus, view="spectrum", **extra, **props, id=id)
 
 
 def nodetree(*, group: int = 0, controls: bool | None = None, label: str | None = None,
@@ -670,7 +837,7 @@ def nodetree(*, group: int = 0, controls: bool | None = None, label: str | None 
     extra = _drop_none(label=label, color=color)
     if controls is not None:
         extra["controls"] = 1 if controls else 0
-    return node("nodetree", id=id, group=group, **extra, **props)
+    return node("nodes", id=id, group=group, **extra, **props)
 
 
 def bpf(*, points=None, min: float | None = None, max: float | None = None,
@@ -709,10 +876,11 @@ def bpf(*, points=None, min: float | None = None, max: float | None = None,
     the whole list (a ``/gui_set`` value is a scalar, so the array rides as its
     JSON string)."""
     extra = _drop_none(points=_flat_points(points) if points is not None else None,
-                       min=min, max=max, duration=duration, label=label, color=color)
+                       duration=duration, label=label, color=color)
+    extra.update(_axes(min=min, max=max))
     if exp is not None:
         extra["exp"] = 1 if exp else 0
-    return node("bpf", id=id, **extra, **props)
+    return node("curve", id=id, **extra, **props)
 
 
 def _flat_points(points) -> list:
@@ -823,14 +991,17 @@ def plot(*, data=None, blob: int | None = None,
     """
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, path=path, cache=cache, buffer=buffer,
-                       channels=channels, view=view,
-                       sample_rate=sample_rate, min=min, max=max,
-                       ruler=ruler, ruler_y=ruler_y, fft_size=fft_size,
+                       channels=channels, fft_size=fft_size,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
                        label=label, color=color)
+    extra.update(_axes(ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
+                       min=min, max=max))
     if overlay is not None:
         extra["overlay"] = 1 if overlay else 0
-    return node("plot", id=id, **extra, **props)
+    # A plot is the trace (or the spectrum) of a signal that does **not**
+    # navigate — the capability, not a different element.
+    return node("signal", id=id, view=_PLOT_VIEW.get(view or "signal", view),
+                navigable=0, **extra, **props)
 
 
 def score(*, display_list: dict | None = None, playhead: float | None = None,
@@ -970,13 +1141,12 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
               label="drums", name="drums")
     """
     extra = _drop_none(label=label, height=height, snap=snap, header_w=header_w,
-                       mute=mute, solo=solo, level=level, ruler=ruler,
-                       sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
-                       quant=quant, playhead_at=playhead_at, playhead=playhead,
-                       playhead_loop_start=playhead_loop_start,
-                       playhead_loop_len=playhead_loop_len,
-                       link=link, theme=theme, color=color)
-    return node("track", id=id, children=clips, **extra, **props)
+                       mute=mute, solo=solo, level=level, theme=theme, color=color)
+    extra.update(_axes(ruler=ruler, sample_rate=sample_rate, tempo=tempo,
+                       beat_at=beat_at, quant=quant, playhead_at=playhead_at,
+                       playhead=playhead, playhead_loop_start=playhead_loop_start,
+                       playhead_loop_len=playhead_loop_len, link=link))
+    return node("field", id=id, children=clips, **extra, **props)
 
 
 def timeruler(*, h: float = 20.0, ruler: str | None = None, sample_rate: float | None = None,
@@ -1013,10 +1183,10 @@ def timeruler(*, h: float = 20.0, ruler: str | None = None, sample_rate: float |
               track(clip(offset=0, dur=4, data=take), link=1),
               layout="col")
     """
-    extra = _drop_none(ruler=ruler, sample_rate=sample_rate, tempo=tempo,
-                       beat_at=beat_at, quant=quant, link=link, theme=theme,
-                       color=color)
-    return node("timeruler", id=id, h=h, **extra, **props)
+    extra = _drop_none(theme=theme, color=color)
+    extra.update(_axes(ruler=ruler, sample_rate=sample_rate, tempo=tempo,
+                       beat_at=beat_at, quant=quant, link=link))
+    return node("field", id=id, h=h, **extra, **props)
 
 
 def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
@@ -1081,7 +1251,7 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
                        min=min, max=max, label=label, color=color)
     if exp is not None:
         extra["exp"] = 1 if exp else 0
-    return node("clip", id=id, dur=dur, **extra, **props)
+    return node("field", id=id, dur=dur, **extra, **props)
 
 
 def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | None = None,
@@ -1141,19 +1311,21 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     extra = _drop_none(
         notes=_flat_notes(notes) if notes is not None else None,
         osc=_flat_osc(osc) if osc is not None else None,
-        min=min, max=max, snap=snap, link=link, ruler=ruler,
+        snap=snap, label=label, color=color)
+    extra.update(_axes(
+        min=min, max=max, link=link, ruler=ruler,
         sample_rate=sample_rate, tempo=tempo, beat_at=beat_at, quant=quant,
         sel_start=sel_start, sel_len=sel_len, playhead_at=playhead_at,
         playhead=playhead, playhead_loop_start=playhead_loop_start,
         playhead_loop_len=playhead_loop_len,
-        y_start=y_start, y_len=y_len, label=label, color=color)
+        y_start=y_start, y_len=y_len))
     if velocity is not None:
         extra["velocity"] = 1 if velocity else 0
     if osc_lane is not None:
         extra["osc_lane"] = 1 if osc_lane else 0
     if midi_in is not None:
         extra["midi_in"] = 1 if midi_in else 0
-    return node("pianoroll", id=id, **extra, **props)
+    return node("notes", id=id, **extra, **props)
 
 
 def piano(*, min: int | None = None, max: int | None = None, active_min: int | None = None,
@@ -1210,7 +1382,7 @@ def piano(*, min: int | None = None, max: int | None = None, active_min: int | N
         extra["pan"] = 1 if pan else 0
     if overview is not None:
         extra["overview"] = 1 if overview else 0
-    return node("piano", id=id, **extra, **props)
+    return node("keys", id=id, **extra, **props)
 
 
 def patch(*, boxes=None, cords=None, label: str | None = None, color: str | None = None,
@@ -1256,7 +1428,7 @@ def patch(*, boxes=None, cords=None, label: str | None = None, color: str | None
         boxes=list(boxes) if boxes is not None else None,
         cords=[int(x) for x in cords] if cords is not None else None,
         label=label, color=color)
-    return node("patch", id=id, **extra, **props)
+    return node("plane", id=id, **extra, **props)
 
 
 def canvas(shader: str | None = None, *, params=None, buses=None, label: str | None = None,
@@ -1287,6 +1459,17 @@ def canvas(shader: str | None = None, *, params=None, buses=None, label: str | N
                        buses=[_value(b, int) for b in buses] if buses is not None else None,
                        color=color)
     return node("canvas", id=id, **extra, **props)
+
+
+#: The model's names for the four elements the catalog named after the thing
+#: they show rather than for what they are. The same builder under both names,
+#: since the rename is the whole of the difference: a piano-roll is the
+#: **notes** element, a break-point envelope is a **curve**, the server's graph
+#: is **nodes** and a keyboard is **keys**.
+notes = pianoroll
+curve = bpf
+nodes = nodetree
+keys = piano
 
 
 def to_json(tree: dict) -> str:
@@ -1380,6 +1563,61 @@ def _value(x, cast=float):
     return cast(x)
 
 
+#: A `plot`'s ``view`` keyword as the model's presentation name. The static
+#: plot spelled the same choice its own way, which is the clearest single sign
+#: that the six view names were points of one product all along.
+_PLOT_VIEW = {"signal": "trace", "spectrum": "spectrum"}
+
+
+def _strips(**strips) -> dict:
+    """The live views' ``ruler``/``ruler_y`` keywords, which accept a bool as
+    well as a unit name (their x unit was never selectable, so only on/off was
+    ever meaningful there), as the values an axis takes."""
+    return {k: (v if isinstance(v, str) else (1 if v else "off"))
+            for k, v in strips.items() if v is not None}
+
+
 def _drop_none(**kwargs) -> dict:
     """Keeps only the keyword arguments that were actually given."""
     return {k: v for k, v in kwargs.items() if v is not None}
+
+
+#: The axis each chrome keyword belongs to, and what it is called **on** that
+#: axis: a property drops the axis marker once it is inside one, so the
+#: keyword ``view_start`` is ``axes["x"]["start"]`` and ``ruler_y`` is
+#: ``axes["y"]["unit"]``. Read by `_axes`, which is what every builder with an
+#: axis pair packs its flat keywords through.
+_X_AXIS = {
+    "ruler": "unit", "view_start": "start", "view_len": "len",
+    "tempo": "tempo", "beat_at": "beat_at", "quant": "quant",
+    "sample_rate": "sample_rate", "link": "link",
+    "sel_start": "sel_start", "sel_len": "sel_len",
+    "playhead": "playhead", "playhead_at": "playhead_at",
+    "playhead_loop_start": "playhead_loop_start",
+    "playhead_loop_len": "playhead_loop_len",
+}
+_Y_AXIS = {
+    "ruler_y": "unit", "y_start": "start", "y_len": "len",
+    "min": "min", "max": "max", "bit_depth": "bit_depth",
+}
+
+
+def _axes(_axes_given: dict | None = None, **flat) -> dict:
+    """The ``axes`` prop the flat chrome keywords describe, or ``{}`` for none.
+
+    The ruler, the navigation window, the selection, the playhead and the value
+    range describe the **container's axes** rather than each element drawn
+    against them, so they ride nested. The builders still take them flat —
+    that is the shorthand a script types — and this is where the two meet.
+    ``_axes_given`` is an explicit ``axes`` argument, which wins over the flat
+    keywords for any axis it names.
+    """
+    out = {}
+    for axis, table in (("x", _X_AXIS), ("y", _Y_AXIS)):
+        side = {name: flat[key] for key, name in table.items()
+                if flat.get(key) is not None}
+        if side:
+            out[axis] = side
+    for axis, side in (_axes_given or {}).items():
+        out[axis] = {**out.get(axis, {}), **side}
+    return {"axes": out} if out else {}

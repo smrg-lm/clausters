@@ -6,7 +6,7 @@
       "title": "panel",
       "w": 480,
       "h": 420,
-      "layout": "col",
+      "flow": "col",
       "margin": 8.0,
       "children": [
         {
@@ -18,9 +18,9 @@
           "h": 24
         },
         {
-          "type": "panel",
+          "type": "layout",
           "id": 2,
-          "layout": "row",
+          "flow": "row",
           "gap": 10.0,
           "children": [
             {
@@ -51,9 +51,9 @@
           ]
         },
         {
-          "type": "panel",
+          "type": "layout",
           "id": 6,
-          "layout": "row",
+          "flow": "row",
           "h": 40,
           "children": [
             {
@@ -94,23 +94,23 @@
     "tree": {
       "type": "window",
       "title": "workspace",
-      "layout": "col",
+      "flow": "col",
       "theme": {
         "window_fill": "#0d0d12"
       },
       "children": [
         {
-          "type": "scroll",
+          "type": "plane",
           "id": 1,
           "axis": "y",
           "content_h": 1200.0,
           "view_y": 40.0,
           "view_zoom": 1.0,
-          "layout": "free",
+          "flow": "free",
           "zoom": 0,
           "children": [
             {
-              "type": "panel",
+              "type": "layout",
               "id": 2,
               "theme": {
                 "panel_fill": "#101018",
@@ -138,17 +138,18 @@
           ]
         },
         {
-          "type": "stack",
+          "type": "layout",
           "id": 4,
+          "flow": "stack",
           "index": 1,
           "margin": 4.0,
           "children": [
             {
-              "type": "panel",
+              "type": "layout",
               "id": 5
             },
             {
-              "type": "panel",
+              "type": "layout",
               "id": 6
             }
           ]
@@ -161,61 +162,82 @@
     "tree": {
       "type": "window",
       "title": "views",
-      "layout": "col",
+      "flow": "col",
       "children": [
         {
-          "type": "waveform",
+          "type": "signal",
           "id": 1,
+          "view": "trace",
           "path": "take.f32",
           "channels": 2,
           "base_bucket": 512,
-          "ruler": "beats",
-          "ruler_y": "db",
-          "tempo": 2.0,
-          "beat_at": 0.0,
-          "quant": 4.0,
-          "sel_start": 1000.0,
-          "sel_len": 4000.0,
-          "playhead_at": 48000.0,
-          "playhead": 32000.0,
-          "playhead_loop_start": 1000.0,
-          "playhead_loop_len": 8000.0,
-          "y_start": 0.25,
-          "y_len": 0.5,
-          "link": 7,
+          "axes": {
+            "x": {
+              "unit": "beats",
+              "tempo": 2.0,
+              "beat_at": 0.0,
+              "quant": 4.0,
+              "link": 7,
+              "sel_start": 1000.0,
+              "sel_len": 4000.0,
+              "playhead": 32000.0,
+              "playhead_at": 48000.0,
+              "playhead_loop_start": 1000.0,
+              "playhead_loop_len": 8000.0
+            },
+            "y": {
+              "unit": "db",
+              "start": 0.25,
+              "len": 0.5
+            }
+          },
           "overlay": 1
         },
         {
-          "type": "spectrogram",
+          "type": "signal",
           "id": 2,
+          "view": "spectrogram",
           "cache": "take.stft",
           "window_size": 2048,
           "hop": 512,
-          "sample_rate": 48000.0,
           "db_floor": -90.0,
           "db_ceil": 0.0,
           "freq_scale": "mel",
           "colormap": 1,
-          "ruler": "time",
-          "ruler_y": "hz",
-          "link": 7
+          "axes": {
+            "x": {
+              "unit": "time",
+              "sample_rate": 48000.0,
+              "link": 7
+            },
+            "y": {
+              "unit": "hz"
+            }
+          }
         },
         {
-          "type": "plot",
+          "type": "signal",
           "id": 3,
+          "view": "spectrum",
+          "navigable": 0,
           "data": [
             0.0,
             0.5,
             -0.5,
             1.0
           ],
-          "view": "spectrum",
-          "ruler": "samples",
-          "ruler_y": "off",
           "fft_size": 1024,
           "db_floor": -100.0,
           "freq_scale": "log",
-          "label": "render"
+          "label": "render",
+          "axes": {
+            "x": {
+              "unit": "samples"
+            },
+            "y": {
+              "unit": "off"
+            }
+          }
         }
       ]
     }
@@ -225,7 +247,7 @@
     "tree": {
       "type": "window",
       "title": "live",
-      "layout": "col",
+      "flow": "col",
       "children": [
         {
           "type": "meter",
@@ -237,36 +259,50 @@
           "label": "bus"
         },
         {
-          "type": "scope",
+          "type": "signal",
           "id": 2,
           "bus": 10,
           "rate": "control",
-          "min": -1.0,
-          "max": 1.0
+          "view": "trace",
+          "axes": {
+            "y": {
+              "min": -1.0,
+              "max": 1.0
+            }
+          }
         },
         {
-          "type": "scope",
+          "type": "signal",
           "id": 3,
           "bus": 0,
           "rate": "audio",
+          "view": "trace",
           "channels": 2,
           "window_ms": 20.0,
           "trigger": 0.0,
           "overlay": 1,
-          "ruler": "off",
-          "ruler_y": "off"
+          "axes": {
+            "x": {
+              "unit": "off"
+            },
+            "y": {
+              "unit": "off"
+            }
+          }
         },
         {
-          "type": "phasescope",
+          "type": "signal",
           "id": 4,
           "bus": 0,
+          "view": "phase",
           "window_ms": 30.0,
           "hold": 0
         },
         {
-          "type": "spectrum",
+          "type": "signal",
           "id": 5,
           "bus": 0,
+          "view": "spectrum",
           "channels": 2,
           "fft_size": 2048,
           "db_floor": -100.0,
@@ -276,7 +312,7 @@
           "peak_hold": 1
         },
         {
-          "type": "nodetree",
+          "type": "nodes",
           "id": 6,
           "group": 0,
           "controls": 1
@@ -289,10 +325,10 @@
     "tree": {
       "type": "window",
       "title": "envelopes",
-      "layout": "col",
+      "flow": "col",
       "children": [
         {
-          "type": "bpf",
+          "type": "curve",
           "id": 1,
           "points": [
             0.0,
@@ -308,14 +344,18 @@
             5,
             -4.0
           ],
-          "min": 0.0,
-          "max": 1.0,
           "duration": 1.0,
           "label": "env",
+          "axes": {
+            "y": {
+              "min": 0.0,
+              "max": 1.0
+            }
+          },
           "exp": 0
         },
         {
-          "type": "bpf",
+          "type": "curve",
           "id": 2,
           "points": [
             0.0,
@@ -337,7 +377,7 @@
           ]
         },
         {
-          "type": "bpf",
+          "type": "curve",
           "id": 3,
           "points": [
             0.0,
@@ -358,10 +398,10 @@
     "tree": {
       "type": "window",
       "title": "arrangement",
-      "layout": "col",
+      "flow": "col",
       "children": [
         {
-          "type": "pianoroll",
+          "type": "notes",
           "id": 1,
           "notes": [
             0.0,
@@ -381,20 +421,26 @@
             9600.0,
             ""
           ],
-          "min": 48,
-          "max": 84,
           "snap": 1200.0,
-          "ruler": "beats",
-          "tempo": 2.0,
-          "playhead_at": -1.0,
-          "playhead": 2400.0,
-          "playhead_loop_start": 0.0,
-          "playhead_loop_len": 9600.0,
+          "axes": {
+            "x": {
+              "unit": "beats",
+              "tempo": 2.0,
+              "playhead": 2400.0,
+              "playhead_at": -1.0,
+              "playhead_loop_start": 0.0,
+              "playhead_loop_len": 9600.0
+            },
+            "y": {
+              "min": 48,
+              "max": 84
+            }
+          },
           "velocity": 1,
           "osc_lane": 1
         },
         {
-          "type": "piano",
+          "type": "keys",
           "id": 2,
           "min": 36,
           "max": 96,
@@ -411,21 +457,25 @@
           "overview": 1
         },
         {
-          "type": "track",
+          "type": "field",
           "id": 3,
           "label": "drums",
           "height": 2.0,
           "snap": 1200.0,
-          "ruler": "time",
-          "sample_rate": 48000.0,
-          "playhead_at": 0.0,
-          "playhead": 12000.0,
-          "playhead_loop_start": 0.0,
-          "playhead_loop_len": 96000.0,
-          "link": 7,
+          "axes": {
+            "x": {
+              "unit": "time",
+              "sample_rate": 48000.0,
+              "link": 7,
+              "playhead": 12000.0,
+              "playhead_at": 0.0,
+              "playhead_loop_start": 0.0,
+              "playhead_loop_len": 96000.0
+            }
+          },
           "children": [
             {
-              "type": "clip",
+              "type": "field",
               "id": 4,
               "dur": 48000.0,
               "offset": 0.0,
@@ -435,7 +485,7 @@
               "label": "take"
             },
             {
-              "type": "clip",
+              "type": "field",
               "id": 5,
               "dur": 24000.0,
               "offset": 48000.0,
@@ -450,7 +500,7 @@
               "max": 84.0
             },
             {
-              "type": "clip",
+              "type": "field",
               "id": 6,
               "dur": 24000.0,
               "offset": 72000.0,
@@ -476,17 +526,21 @@
     "tree": {
       "type": "window",
       "title": "ruler and score",
-      "layout": "col",
+      "flow": "col",
       "children": [
         {
-          "type": "timeruler",
+          "type": "field",
           "id": 1,
           "h": 24.0,
-          "ruler": "beats",
-          "tempo": 2.0,
-          "beat_at": 0.0,
-          "quant": 4.0,
-          "link": 7
+          "axes": {
+            "x": {
+              "unit": "beats",
+              "tempo": 2.0,
+              "beat_at": 0.0,
+              "quant": 4.0,
+              "link": 7
+            }
+          }
         },
         {
           "type": "score",
@@ -525,8 +579,9 @@
           "step": 2.5
         },
         {
-          "type": "spectrogram",
+          "type": "signal",
           "id": 3,
+          "view": "spectrogram",
           "data": [
             0.0,
             0.5,
@@ -536,9 +591,10 @@
           "log_freq": 1
         },
         {
-          "type": "spectrum",
+          "type": "signal",
           "id": 4,
           "bus": 0,
+          "view": "spectrum",
           "label": "legacy",
           "log_freq": 0
         }
@@ -550,10 +606,10 @@
     "tree": {
       "type": "window",
       "title": "patch",
-      "layout": "row",
+      "flow": "row",
       "children": [
         {
-          "type": "patch",
+          "type": "plane",
           "id": 1,
           "boxes": [
             {
@@ -603,6 +659,104 @@
             -1,
             -1
           ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "model_vocabulary",
+    "tree": {
+      "type": "window",
+      "title": "the model",
+      "flow": "col",
+      "children": [
+        {
+          "type": "layout",
+          "id": 1,
+          "flow": "row",
+          "gap": 4.0,
+          "children": [
+            {
+              "type": "signal",
+              "id": 2,
+              "view": "trace",
+              "path": "take.f32",
+              "channels": 2,
+              "base_bucket": 512,
+              "navigable": 1,
+              "selectable": 1,
+              "axes": {
+                "x": {
+                  "unit": "beats",
+                  "tempo": 2.0,
+                  "link": 1
+                },
+                "y": {
+                  "unit": "db",
+                  "min": -1.0,
+                  "max": 1.0
+                }
+              }
+            },
+            {
+              "type": "signal",
+              "id": 3,
+              "view": "spectrum",
+              "bus": 0,
+              "rate": "audio",
+              "channels": 2,
+              "label": "live",
+              "fft_size": 2048
+            }
+          ]
+        },
+        {
+          "type": "plane",
+          "id": 5,
+          "axis": "both",
+          "view_zoom": 1.0,
+          "zoom": 1,
+          "children": [
+            {
+              "type": "box",
+              "id": 6,
+              "x": 0.0,
+              "y": 0.0
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "id": 7,
+          "label": "drums",
+          "height": 2.0,
+          "axes": {
+            "x": {
+              "unit": "time",
+              "sample_rate": 48000.0,
+              "link": 1
+            }
+          },
+          "children": [
+            {
+              "type": "field",
+              "id": 8,
+              "offset": 0.0,
+              "dur": 48000.0,
+              "label": "take"
+            }
+          ]
+        },
+        {
+          "type": "field",
+          "id": 9,
+          "h": 24.0,
+          "axes": {
+            "x": {
+              "unit": "beats",
+              "link": 1
+            }
+          }
         }
       ]
     }

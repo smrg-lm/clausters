@@ -37,6 +37,8 @@ GUIDEF_TS = ROOT / "clients/web/src/gui/guidef.ts"
 WIDGET_DIR = ROOT / "clients/gui/src/host/widget"
 #: The signal element's model — where the six wire names it presets are listed.
 SIGNAL_MOD = ROOT / "clients/gui/src/host/signal/mod.rs"
+#: The alias layer of the vocabulary migration: what a model type resolves to.
+VOCABULARY = ROOT / "clients/gui/src/host/widget/vocabulary.rs"
 MANIFEST = ROOT / "docs/gui-props.md"
 
 sys.path.insert(0, str(ROOT / "clients/python"))
@@ -58,7 +60,8 @@ def strip_comments(text: str) -> str:
 # ---------------------------------------------------------------- the Python side
 
 def python_props() -> dict:
-    """``{widget kind: {prop}}`` from the builders' own signatures."""
+    """``{model kind: {prop}}`` from the builders' own signatures, unioned over
+    every builder that emits that kind."""
     from clausters.gui import guidef
 
     out = {}
@@ -78,7 +81,11 @@ def python_props() -> dict:
             # is the escape hatch every builder carries, not declared props.
             if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)
         }
-        out[kind.group(1)] = params - NOT_A_PROP
+        # Several builders share one model type — `waveform`, `plot` and
+        # `scope` all build a `signal` — so a kind's vocabulary is the union of
+        # what its builders offer, not whichever one was read last.
+        out.setdefault(kind.group(1), set())
+        out[kind.group(1)] |= params - NOT_A_PROP
     return out
 
 
@@ -107,6 +114,11 @@ def web_props() -> dict:
 
     out = {}
     for m in re.finditer(r"export function (\w+)\(", src):
+        # `node` is the generic escape hatch, not a widget: its `type`
+        # parameter is the wire tag, and the kind search below would attribute
+        # it to whichever builder happens to follow it in the file.
+        if m.group(1) == "node":
+            continue
         # The parameter list, balanced from the opening paren.
         start = m.end() - 1
         depth = 0
@@ -145,7 +157,8 @@ def web_props() -> dict:
             if "Options" in line or "GuiNode" in line:
                 continue
             props.add(pm.group(2))
-        out[kind.group(1)] = {snake(p) for p in props} - NOT_A_PROP
+        out.setdefault(kind.group(1), set())
+        out[kind.group(1)] |= {snake(p) for p in props} - NOT_A_PROP
     return out
 
 
@@ -168,9 +181,10 @@ def _literal_keys(text: str) -> set:
     # The helpers take the key as an argument: `number_f64(&props, "hop", 0.0)`.
     keys |= set(re.findall(r'props,\s*"([a-z_][a-z_0-9]*)"', text))
     # A local reader closure over the same map: `let f = |k| props.get(k)…`,
-    # then `f("margin")`.
-    for name in re.findall(r"let (\w+) = \|k(?:ey)?: &str\| props", text):
-        keys |= set(re.findall(rf'\b{name}\("([a-z_][a-z_0-9]*)"\)', text))
+    # then `f("margin")` — or `f("navigable", default)`, since a reader may
+    # take the fallback beside the key.
+    for name in re.findall(r"let (\w+) = \|k(?:ey)?: &str[^|]*\| props", text):
+        keys |= set(re.findall(rf'\b{name}\("([a-z_][a-z_0-9]*)"[,)]', text))
     return keys
 
 
@@ -255,13 +269,21 @@ def _arms(text: str, pattern: str) -> list:
     return out
 
 
+def axes_key() -> str:
+    """The key an axis pair rides under, read from the host's own constant."""
+    m = re.search(r'const AXES: &str = "([a-z_]+)"', VOCABULARY.read_text())
+    assert m, "the axis key moved out of vocabulary.rs"
+    return m.group(1)
+
+
 def generic_props() -> set:
     """The props the host reads for **every** widget, whatever its kind.
 
     `Widget::build` parses them off the node before the kind is even
-    considered — the place props the container's layout applies, plus the two
-    style props — so they are not part of any widget's own vocabulary and are
-    left out of the comparison below (see `docs/gui-props.md`).
+    considered — the place props the container's layout applies, the two style
+    props, and the `axes` pair and `flow` the vocabulary rewrites — so they are
+    not part of any widget's own vocabulary and are left out of the comparison
+    below (see `docs/gui-props.md`).
     """
     helpers = _helper_keys()
     mod = (WIDGET_DIR / "mod.rs").read_text()
@@ -271,8 +293,8 @@ def generic_props() -> set:
         keys |= body
     # `Place::parse` is reached through `Widget::build`; assert the pair is
     # actually there rather than silently returning an empty set.
-    assert "Place::parse(&node.props)" in mod, "the generic place-prop parse moved"
-    return keys - NOT_A_PROP
+    assert "Place::parse(props)" in mod, "the generic place-prop parse moved"
+    return (keys | {axes_key(), "flow"}) - NOT_A_PROP
 
 
 def signal_presets() -> list:
@@ -301,6 +323,22 @@ def signal_presets() -> list:
 #: rather than made to guess: the alternative is an arm pretending to read props
 #: it does not touch.
 OUTBOARD = {"clip": ("clip_bodies", "apply_clip_body")}
+
+#: The catalog arms each **model** type is built through, mirroring
+#: `vocabulary::resolve`. The wire names the model now (`layout`, `plane`,
+#: `field`, `signal`, ...) while the host's schema still has one arm per
+#: catalog name, so a model type's vocabulary is the union of the arms it
+#: reaches. Both this table and that function go away in the migration's last
+#: stage, when the arms are named by the model directly.
+MODEL = {
+    "layout": ("panel", "box", "stack"),
+    "plane": ("scroll", "patch"),
+    "field": ("track", "clip", "timeruler"),
+    "notes": ("pianoroll",),
+    "curve": ("bpf",),
+    "nodes": ("nodetree",),
+    "keys": ("piano",),
+}
 
 
 def host_props() -> dict:
@@ -338,6 +376,7 @@ def host_props() -> dict:
             out.setdefault(kind, set())
             out[kind] |= keys
             variant_of.setdefault("Signal", []).append(kind)
+    assert len(signal_presets()) >= 6, "the preset table shrank"
 
     # ...and the props a widget's bodies carry, read outside its own arm.
     for kind, helpers_named in OUTBOARD.items():
@@ -353,6 +392,11 @@ def host_props() -> dict:
             for kind in variant_of.get(variant, []):
                 out.setdefault(kind, set())
                 out[kind] |= keys
+
+    # ...and the model's own types, each the union of the catalog arms the
+    # vocabulary layer builds it through.
+    for model, arms in {**MODEL, "signal": tuple(signal_presets())}.items():
+        out[model] = set().union(*(out.get(arm, set()) for arm in arms))
     return {k: v - NOT_A_PROP for k, v in out.items()}
 
 
@@ -406,7 +450,7 @@ def divergences() -> dict:
 def test_every_widget_is_read_by_all_three_readers():
     """A reader that silently stops matching would make every check below pass."""
     host, py, web = host_props(), python_props(), web_props()
-    assert len(py) >= 28, f"the Python reader found only {len(py)} builders"
+    assert len(py) >= 20, f"the Python reader found only {len(py)} builders"
     assert set(py) == set(web), (
         "a widget one client builds and the other does not:\n"
         f"  python only: {sorted(set(py) - set(web))}\n"

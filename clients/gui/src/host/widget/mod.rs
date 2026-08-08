@@ -54,7 +54,7 @@ mod parse;
 mod size;
 mod vocabulary;
 
-pub(super) use vocabulary::{AXES, flatten as flatten_axes};
+pub(super) use vocabulary::{AXES, flatten as flatten_axes, flatten_tree as flatten_tree_axes};
 
 use parse::*;
 

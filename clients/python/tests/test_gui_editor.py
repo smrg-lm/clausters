@@ -50,8 +50,27 @@ def fx_chain() -> Group:
     return g
 
 
+# A lane, a clip and the free-standing ruler are one container — a `field` —
+# told apart by what is on it: a placement makes it a clip, a bare strip of a
+# given thickness is the ruler, everything else is a lane.
+def is_lane(n: dict) -> bool:
+    return n["type"] == "field" and "dur" not in n and "h" not in n
+
+
+def is_ruler(n: dict) -> bool:
+    return n["type"] == "field" and "h" in n and "label" not in n
+
+
+def is_plane(n: dict) -> bool:
+    return n["type"] == "plane" and "boxes" not in n
+
+
+def is_patch(n: dict) -> bool:
+    return n["type"] == "plane" and "boxes" in n
+
+
 def lanes(tree: dict) -> list:
-    return [c for c in tree["children"] if c["type"] == "track"]
+    return [c for c in tree["children"] if is_lane(c)]
 
 
 def clips(lane: dict) -> list:
@@ -83,7 +102,7 @@ def test_each_root_member_becomes_a_lane_named_after_its_material():
     # The shared axis is ruled by a free-standing strip under the stack, not by
     # the bottom lane's own `ruler` - which would be reserved out of that lane's
     # height, costing it a strip of itself.
-    assert [c["type"] for c in tree["children"]][-1] == "timeruler"
+    assert is_ruler(tree["children"][-1])
     assert all("ruler" not in lane for lane in lanes(tree))
     assert "ruler" not in lanes(tree)[0]
 
@@ -91,7 +110,7 @@ def test_each_root_member_becomes_a_lane_named_after_its_material():
 def test_a_buffer_clip_names_the_server_buffer_and_spans_its_frames():
     audio = lanes(editor().draw())[0]
     (take,) = clips(audio)
-    assert take["type"] == "clip"
+    assert take["type"] == "field" and "dur" in take
     assert take["buffer"] == 7                    # fetched over the host's leg
     assert take["dur"] == pytest.approx(4 * BEAT)  # the take's own length, 1:1
     assert take["offset"] == 0.0
@@ -156,11 +175,11 @@ def test_an_element_renders_as_a_dedicated_piano_roll():
     ed = Editor(track, sample_rate=SR, tempo=TEMPO, quant=0.25)
     ed._mode, ed._roll_element = "pianoroll", track
     (roll,) = ed.draw()["children"][:1]
-    assert roll["type"] == "pianoroll"
+    assert roll["type"] == "notes"
     # Notes as quintuples (pitch is the 3rd), the OSC event on its own lane.
     assert [roll["notes"][i] for i in (2, 7)] == [60.0, 64.0]
     assert roll["osc"] == [pytest.approx(0.5 * BEAT), "/cue"]
-    assert roll["ruler"] == "beats"
+    assert roll["axes"]["x"]["unit"] == "beats"
 
 
 def test_a_note_edit_rewrites_the_editable_timeline():
@@ -515,8 +534,8 @@ def test_a_logical_group_is_skipped_until_the_directed_driver():
                   name="chain", buses=["mix"])
     tree = editor(Group([(0.0, chain)], name="song")).draw()
     children = tree.get("children", [])
-    assert [c for c in children if c["type"] == "patch"] == []
-    assert [c for c in children if c["type"] == "track"] == [], \
+    assert [c for c in children if is_patch(c)] == []
+    assert [c for c in children if is_lane(c)] == [], \
         "a logical member is neither a lane nor (yet) a patch"
 
 
@@ -588,10 +607,10 @@ def test_logical_patch_derives_boxes_and_cords_from_the_defs():
 def test_editor_draws_a_root_logical_group_as_a_graph():
     ed = Editor(fx_chain(), sample_rate=SR, tempo=TEMPO)
     tree = ed.draw()
-    scrolls = [c for c in tree["children"] if c["type"] == "scroll"]
+    scrolls = [c for c in tree["children"] if is_plane(c)]
     assert len(scrolls) == 1, "the logical group is a pan/zoom graph workspace"
     view = scrolls[0]["children"][0]
-    assert view["type"] == "patch"
+    assert is_patch(view)
     assert view["cords"] == [0, 0, 1, 0]
     # Registered so an edit-back resolves to the group it draws.
     assert view["id"] in ed._patches
@@ -604,13 +623,14 @@ def test_a_logical_group_among_concrete_lanes_draws_as_a_patch_lane():
     root = Group([(0.0, Group([(0.0, melody)], name="lead")),
                   (0.0, fx_chain())], name="song")
     tree = Editor(root, sample_rate=SR, tempo=TEMPO).draw()
-    kinds = [c["type"] for c in tree["children"]]
-    assert "track" in kinds and "scroll" in kinds
+    kids = tree["children"]
+    assert any(is_lane(c) for c in kids) and any(is_plane(c) for c in kids)
     # The ruler is its own strip under the stack; a patch lane has no time axis,
     # so a window that drew *only* one gets no ruler at all.
-    assert kinds[-1] == "timeruler"
-    assert [c["type"] for c in Editor(fx_chain(), sample_rate=SR).draw()["children"]] \
-        == ["scroll"]
+    assert is_ruler(kids[-1])
+    only_patch = Editor(fx_chain(), sample_rate=SR).draw()["children"]
+    assert len(only_patch) == 1 and is_plane(only_patch[0])
+    assert is_patch(only_patch[0]["children"][0])
 
 
 def test_a_wire_edit_rewrites_the_members_controls_onto_a_shared_bus():
@@ -622,7 +642,7 @@ def test_a_wire_edit_rewrites_the_members_controls_onto_a_shared_bus():
     hk = g.add(Generator(sink))
     ed = Editor(g, sample_rate=SR, tempo=TEMPO)
     tree = ed.draw()
-    wid = [c for c in tree["children"] if c["type"] == "scroll"][0]["children"][0]["id"]
+    wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
 
     assert ed.apply("/gui_event", [wid, "wire", 0, "out", 1, "in"]) is True
     # Both members now name one internal bus; the group declares it (audio).
@@ -644,7 +664,7 @@ def test_a_wire_reuses_an_existing_bus_for_fan_out():
     hk = g.add(Generator(sink))                       # unwired sink
     ed = Editor(g, sample_rate=SR, tempo=TEMPO)
     tree = ed.draw()
-    wid = [c for c in tree["children"] if c["type"] == "scroll"][0]["children"][0]["id"]
+    wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
     ed.apply("/gui_event", [wid, "wire", 0, "out", 1, "in"])
     # The sink joins the source's existing bus, not a fresh one.
     assert hk.element.controls["in"] == "mix"
@@ -654,10 +674,10 @@ def test_a_wire_reuses_an_existing_bus_for_fan_out():
 def test_a_graph_box_move_persists_its_position_across_a_redraw():
     ed = Editor(fx_chain(), sample_rate=SR, tempo=TEMPO)
     tree = ed.draw()
-    wid = [c for c in tree["children"] if c["type"] == "scroll"][0]["children"][0]["id"]
+    wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
     # A move is presentation only: the composition did not change.
     assert ed.apply("/gui_event", [wid, "move", 1, 300.0, 120.0]) is False
     # It survives a redraw (keyed by the group, not the widget id).
-    view = [c for c in ed.draw()["children"] if c["type"] == "scroll"][0]["children"][0]
+    view = [c for c in ed.draw()["children"] if is_plane(c)][0]["children"][0]
     assert view["boxes"][1]["x"] == pytest.approx(300.0)
     assert view["boxes"][1]["y"] == pytest.approx(120.0)

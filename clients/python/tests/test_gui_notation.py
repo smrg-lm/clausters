@@ -133,7 +133,7 @@ def test_score_view_places_the_rate_on_the_inner_score():
     view = notation.score_view({"vb": [1000, 500], "glyphs": {}, "prims": []},
                                scroll_id=10, score_id=11, width=800.0,
                                sample_rate=48000.0)
-    assert view["type"] == "scroll"
+    assert view["type"] == "plane"
     inner = view["children"][0]
     assert inner["type"] == "score"
     assert inner["sample_rate"] == 48000.0

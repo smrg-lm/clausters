@@ -66,12 +66,16 @@
 
         // Each plot opens its own window; the host is asked what it holds, so
         // what is asserted is the widget the host actually built.
+        //
         const opened = async (name, promise) => {
           const win = await promise;
           const info = await win.host.query(win.widgetId);
           shapes[name] = info;
-          check(info.type === "plot", `${name}: widget is ${info.type}`);
-          log(`  plot(${name}): ${info.type}, channels=${info.props.channels}, `
+          // A plot is the signal element that does not navigate.
+          check(info.type === "signal" && info.props.navigable === 0,
+            `${name}: widget is ${info.type}`);
+          log(`  plot(${name}): ${info.type}/${info.props.view}, `
+            + `channels=${info.props.channels}, `
             + `rate=${info.props.sample_rate ?? "-"}`);
           return win;
         };

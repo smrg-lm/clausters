@@ -28,9 +28,11 @@ import {
     bpf,
     canvas,
     clip,
+    field,
     envToPoints,
     label,
     knob,
+    layout,
     menu,
     meter,
     node,
@@ -39,6 +41,7 @@ import {
     panel,
     patch,
     phasescope,
+    plane,
     piano,
     pianoroll,
     plot,
@@ -47,6 +50,7 @@ import {
     scope,
     score,
     scroll,
+    signal,
     slider,
     stack,
     spectrogram,
@@ -269,6 +273,38 @@ const trees: Record<string, () => GuiNode> = {
             canvas("return vec4<f32>(uv, u.params.x, 1.0);", {
                 id: 2, params: [0.5, 0.0, 0.0, 0.0], buses: [10, -1, -1, -1],
             }),
+        ),
+
+    model_vocabulary: () =>
+        window(
+            { title: "the model", flow: "col" },
+            layout(
+                { id: 1, flow: "row", gap: 4.0 },
+                signal({
+                    id: 2, view: "trace", path: "take.f32", channels: 2,
+                    navigable: true, selectable: true, baseBucket: 512,
+                    axes: {
+                        x: { unit: "beats", tempo: 2.0, link: 1 },
+                        y: { unit: "db", min: -1.0, max: 1.0 },
+                    },
+                }),
+                signal({
+                    id: 3, view: "spectrum", bus: 0, rate: "audio", channels: 2,
+                    fft_size: 2048, label: "live",
+                }),
+            ),
+            plane(
+                { id: 5, axis: "both", zoom: true, viewZoom: 1.0 },
+                node("box", { id: 6, x: 0.0, y: 0.0 }),
+            ),
+            field(
+                {
+                    id: 7, label: "drums", height: 2.0,
+                    axes: { x: { unit: "time", sample_rate: 48000.0, link: 1 } },
+                },
+                field({ id: 8, offset: 0.0, dur: 48000.0, label: "take" }),
+            ),
+            field({ id: 9, h: 24.0, axes: { x: { unit: "beats", link: 1 } } }),
         ),
 
     generic_node: () =>

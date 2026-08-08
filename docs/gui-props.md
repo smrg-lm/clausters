@@ -74,18 +74,10 @@ measured, so a row that becomes half-true fails rather than rotting.
 
 | widget | prop | surfaces | verdict |
 |---|---|---|---|
-| `timeruler` | `playhead` | host web | **idiom** — a ruler draws an axis and nothing else: it parses the whole chrome only because it shares the host's `EditorProps` bundle, and the frame pass gives it a ruler strip with no playhead, selection or vertical window. The web client declares that bundle once (`TimelineOptions`) and so offers the inert members too; the Python builder names props widget by widget and names only the ones the ruler acts on (`ruler`, `tempo`, `beat_at`, `quant`, `sample_rate`, `link`) |
-| `timeruler` | `playhead_at` | host web | **idiom** — as above |
-| `timeruler` | `playhead_loop_len` | host web | **idiom** — as above |
-| `timeruler` | `playhead_loop_start` | host web | **idiom** — as above |
-| `timeruler` | `sel_len` | host web | **idiom** — as above |
-| `timeruler` | `sel_start` | host web | **idiom** — as above |
-| `timeruler` | `y_len` | host web | **idiom** — as above |
-| `timeruler` | `y_start` | host web | **idiom** — as above |
-| `track` | `sel_len` | host web | **idiom** — a lane has no selection and no vertical window (`EditorProps::parse_lane` says so, and the frame pass draws neither), so these four are inert on it for the same reason the ruler's are. The lane *does* act on the playhead and its loop region, and the Python builder names those |
-| `track` | `sel_start` | host web | **idiom** — as above |
-| `track` | `y_len` | host web | **idiom** — as above |
-| `track` | `y_start` | host web | **idiom** — as above |
+| `field` | `sel_start` | host web | **idiom** — a `field` is one container in three uses, and two of them act on less than the whole chrome: a lane has no selection and no vertical window (`EditorProps::parse_lane` says so, and the frame pass draws neither), and a bare ruler draws an axis and nothing else. Both parse the lot only because they share the host's `EditorProps` bundle. The web client declares that bundle once (`TimelineOptions`) and so offers the inert members too; the Python `track` and `timeruler` name props case by case and name only the ones each acts on |
+| `field` | `sel_len` | host web | **idiom** — as above |
+| `field` | `y_start` | host web | **idiom** — as above |
+| `field` | `y_len` | host web | **idiom** — as above |
 
 ## What the table says, read as a whole
 
@@ -93,15 +85,17 @@ The table used to be twenty-eight rows, twenty-six of them pointing one way:
 the Python client is the reference for the API and was behind on the timeline
 chrome — the host implemented the playhead, its loop region, the selection and
 the vertical window for every timeline widget, and the Python builders, which
-name props widget by widget rather than sharing an interface, had named only
-some of them. That is closed: `waveform`, `spectrogram`, `pianoroll`, `track`
-and `score` name the whole chrome they act on, and the web client gained the
-`log_freq` alias and `score`'s loop region in the same pass.
+name props case by case rather than sharing an interface, had named only some
+of them. That is closed.
 
 What is left is one kind of row, and it is not work:
 
-- **Twelve `idiom` rows on `timeruler` and `track`** — props the host parses
-  for those two only because both embed the shared `EditorProps` bundle, and
-  then draws nothing with. The web client declares the bundle once and inherits
-  them; Python names them per widget and does not. Naming an inert prop is
-  worse than not naming it, so this asymmetry is the correct one.
+- **Four `idiom` rows on `field`** — props the host parses there only because
+  the lane and the ruler embed the shared `EditorProps` bundle, and then draws
+  nothing with. The web client declares the bundle once and inherits them;
+  Python names them case by case and does not. Naming an inert prop is worse
+  than not naming it, so this asymmetry is the correct one.
+
+  (The twelve rows this replaced said the same thing about `track` and
+  `timeruler` separately. The two are one container now — a `field` told apart
+  by what is placed on it — so they are one set of rows.)

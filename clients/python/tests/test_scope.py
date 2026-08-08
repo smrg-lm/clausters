@@ -44,10 +44,13 @@ class FakeServer:
         self.shm = shm
 
 
-def _widget(tree: dict, kind: str) -> dict:
+def _widget(tree: dict, view: str) -> dict:
+    """The window's one child, which every scope window is: a `signal` element
+    at the presentation `view` names — the wire says the point of the product
+    now, not one of six names for points of it."""
     assert tree["type"] == "window"
     (widget,) = tree["children"]
-    assert widget["type"] == kind
+    assert widget["type"] == "signal" and widget["view"] == view
     return widget
 
 
@@ -57,7 +60,7 @@ def test_scope_signal_names_its_bus_and_closes_cleanly():
     server, host = FakeServer(), FakeHost()
     win = scope(2, trigger=0.1, server=server, host=host)
     assert isinstance(win, ScopeWindow)
-    widget = _widget(host.opened[0], "scope")
+    widget = _widget(host.opened[0], "trace")
     assert widget["bus"] == 2 and win.bus == 2
     assert widget["rate"] == "audio"
     assert widget["trigger"] == 0.1
@@ -73,7 +76,7 @@ def test_scope_signal_names_its_bus_and_closes_cleanly():
 def test_scope_phase_is_the_bus_pair():
     server, host = FakeServer(), FakeHost()
     win = scope(0, view="phase", server=server, host=host)
-    widget = _widget(host.opened[0], "phasescope")
+    widget = _widget(host.opened[0], "phase")
     assert widget["bus"] == 0, "the right channel is bus + 1"
     win.close()
 
@@ -93,7 +96,7 @@ def test_scope_spectrum_carries_the_freq_scale():
 def test_scope_signal_monitors_consecutive_channels():
     server, host = FakeServer(), FakeHost()
     win = scope(2, channels=3, server=server, host=host)
-    widget = _widget(host.opened[0], "scope")
+    widget = _widget(host.opened[0], "trace")
     assert (widget["bus"], widget["channels"]) == (2, 3)
     assert widget["label"] == "bus 2-4"
     win.close()
@@ -102,12 +105,12 @@ def test_scope_signal_monitors_consecutive_channels():
 def test_scope_channels_default_from_a_bus_handle():
     server, host = FakeServer(), FakeHost()
     win = scope(Bus(4, channels=2), server=server, host=host)
-    widget = _widget(host.opened[0], "scope")
+    widget = _widget(host.opened[0], "trace")
     assert (widget["bus"], widget["channels"]) == (4, 2), "a Bus monitors all its channels"
     win.close()
     # An explicit channels= wins over the handle's count.
     win = scope(Bus(4, channels=2), channels=1, server=server, host=host)
-    assert _widget(host.opened[1], "scope")["channels"] == 1
+    assert _widget(host.opened[1], "trace")["channels"] == 1
     win.close()
 
 
@@ -123,14 +126,14 @@ def test_scope_spectrum_channels_and_strips_ride_the_wire():
                 server=server, host=host)
     widget = _widget(host.opened[0], "spectrum")
     assert widget["channels"] == 2
-    assert widget["ruler_y"] == "off"
+    assert widget["axes"]["y"]["unit"] == "off"
     win.close()
 
 
 def test_scope_accepts_a_bus_handle_and_labels_from_it():
     server, host = FakeServer(), FakeHost()
     win = scope(Bus(6, channels=2), view="phase", server=server, host=host)
-    widget = _widget(host.opened[0], "phasescope")
+    widget = _widget(host.opened[0], "phase")
     assert widget["label"] == "bus 6/7"
     assert widget["bus"] == 6
     win.close()
@@ -164,7 +167,7 @@ def test_scope_without_shm_needs_an_explicit_host():
 def test_guidef_spectrum_carries_freq_scale_with_log_freq_legacy():
     w = guidef.spectrum(3, id=7, fft_size=512, freq_scale="bark",
                         averaging=0.8, peak_hold=True, label="spec")
-    assert w["type"] == "spectrum" and w["bus"] == 3
+    assert w["type"] == "signal" and w["view"] == "spectrum" and w["bus"] == 3
     assert w["freq_scale"] == "bark"
     assert w["peak_hold"] == 1 and w["averaging"] == 0.8
     # The legacy boolean still rides (the host reads it as linear/log).

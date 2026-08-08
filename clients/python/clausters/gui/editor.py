@@ -257,9 +257,12 @@ class Editor:
         # lane's height, so ruling the stack used to cost the bottom lane a
         # strip of itself. Un-linked, it joins the lanes' navigation group, so
         # its ticks stand over the samples they name.
+        # A lane and a patch workspace are different containers on the wire, and
+        # only the first has a time axis to rule: `track` builds the two-axis
+        # `field`, `patch` the locked-scale `plane`.
         ruler = [timeruler(ruler="beats", sample_rate=self.sample_rate,
                            tempo=self.tempo)] if any(
-            lane.get("type") == "track" for lane in lanes) else []
+            lane.get("type") == "field" for lane in lanes) else []
         return window(*lanes, *ruler, *self.extra, title=self.title,
                       w=self.size[0], h=self.size[1], layout="col")
 

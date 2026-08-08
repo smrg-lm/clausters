@@ -93,7 +93,8 @@ test("GuiHost: a built panel defines, queries and frees on a native host", {
         assert.equal(info.props.label, "freq");
         assert.equal(info.props.value, 220.0);
         const view = await win.widget("view").query();
-        assert.equal(view.type, "waveform");
+        assert.equal(view.type, "signal");
+        assert.equal(view.props.view, "trace");
 
         // A live edit, read back.
         freq.set({ value: 440.0, label: "pitch" });

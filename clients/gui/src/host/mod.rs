@@ -666,10 +666,16 @@ impl Host {
         let Some(bytes) = json_arg(args, 1) else {
             return warn!("{from}: {GUI_DEF} needs a JSON string or blob argument");
         };
-        let node = match GuiNode::parse(bytes) {
+        let mut node = match GuiNode::parse(bytes) {
             Ok(node) => node,
             Err(e) => return warn!("{from}: {GUI_DEF} {id}: invalid GuiDef JSON: {e}"),
         };
+        // The axis chrome lands flat before anything records it, so the
+        // registry — and the `/gui_info` a query answers with — carries the
+        // props the host itself reads, whichever spelling the tree used. The
+        // node's *type* is kept as written: a query answers in the vocabulary
+        // the script wrote.
+        widget::flatten_tree_axes(&mut node);
         // Keep the verbatim JSON: the source of truth for persistence and reload.
         self.def_json.insert(id, bytes.to_vec());
         let outcome = self.registry.define(id, &node);
@@ -1729,6 +1735,26 @@ mod tests {
         // And it is a member because the tree says so: the collector that
         // registers the groups walks the widgets, not the rectangles.
         assert!(host.window_def(1).unwrap().find(22).unwrap().is_timeline());
+    }
+
+    /// A def written in the model's vocabulary is recorded — and answered to a
+    /// query — with its chrome flat: the type stays as the script wrote it, so
+    /// a reply is in the vocabulary it asked in, while the axis pair (a
+    /// structural prop, which `/gui_info` cannot carry) lands where the host
+    /// itself reads it.
+    #[test]
+    fn a_query_answers_with_the_chrome_an_axis_pair_carried() {
+        const LANE: &str = r#"{"type":"window","children":[
+            {"id":40,"type":"signal","view":"trace","data":[0.0,1.0],
+             "axes":{"x":{"unit":"beats","tempo":2.0},"y":{"min":-2.0,"max":2.0}}}]}"#;
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, LANE), from());
+        let widget = host.registry.get(40).expect("the element is registered");
+        assert_eq!(widget.kind, "signal", "the type is answered as written");
+        assert!(!widget.props.contains_key("axes"));
+        assert_eq!(widget.props["ruler"], serde_json::json!("beats"));
+        assert_eq!(widget.props["tempo"], serde_json::json!(2.0));
+        assert_eq!(widget.props["min"], serde_json::json!(-2.0));
     }
 
     /// A `/gui_set` says the axis chrome the same way a `/gui_def` does — the
