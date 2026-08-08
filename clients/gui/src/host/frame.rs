@@ -133,6 +133,61 @@ pub(crate) fn deinterleave(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
         .collect()
 }
 
+/// Visits every signal element in the tree, each with the id that **addresses**
+/// it: its own, or — for a clip's body, which carries none — its container's.
+///
+/// The slot walk both fronts do, so the addressing rule is written once. What
+/// each front does per element still differs (the native one maps local files
+/// and defers a server buffer to its leg, the browser one fetches over HTTP),
+/// but neither gets to decide on its own *which* elements are visited or what
+/// key their slots hang on.
+pub(crate) fn visit_elements(
+    widget: &Widget,
+    owner: Option<i32>,
+    f: &mut dyn FnMut(Option<i32>, &signal::SignalElement),
+) {
+    let owner = widget.id.or(owner);
+    if let WidgetKind::Signal(el) = &widget.kind {
+        f(owner, el);
+    }
+    for child in &widget.children {
+        visit_elements(child, owner, f);
+    }
+}
+
+/// Builds the GPU slot an element's **inline** samples ask for, keyed by the id
+/// that addresses it: the peak pyramid of a trace, one STFT lane per channel of
+/// a spectrogram.
+///
+/// The one place a slot is built out of samples the host already holds — the
+/// native front falls through to it once its mapped and deferred sources are
+/// ruled out, the browser front has no other case — so a new heavy view becomes
+/// drawable on both fronts at once instead of in whichever one was edited.
+pub(crate) fn inline_slot(
+    id: i32,
+    el: &signal::SignalElement,
+    data: &signal::Data,
+    gpu: &Gpu,
+    renderers: &Renderers,
+    waveforms: &mut HashMap<i32, WaveformSlot>,
+    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
+) {
+    if el.presentation == Presentation::Signal {
+        let loaded = WaveformData::from_interleaved(&data.samples, data.channels, data.base_bucket);
+        waveforms.insert(id, waveform_slot(loaded, gpu));
+    } else if !data.samples.is_empty() {
+        let stfts = stft_lanes(
+            deinterleave(&data.samples, data.channels),
+            el.spectral.fft_size,
+            el.spectral.hop,
+            el.editor.sample_rate,
+        );
+        if let Some(slot) = spectrogram_slot(stfts, gpu, renderers) {
+            spectrograms.insert(id, slot);
+        }
+    }
+}
+
 /// The body a timeline view draws into: its rect minus the time-ruler strip
 /// under it (when the x ruler is on) and the gutter band to its left — each
 /// ruler gets its own space instead of overlaying the view.

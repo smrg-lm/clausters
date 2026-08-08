@@ -23,7 +23,6 @@ use crate::host::{BulkLoader, ClientId, GUI_CLOSED};
 use crate::spectrogram::Stft;
 use crate::view::Renderers;
 use crate::view::TimelineView;
-use crate::waveform::WaveformData;
 
 use super::app::{App, WindowState};
 use super::serverleg::tree_has_node_tree;
@@ -204,123 +203,88 @@ fn collect_timelines(
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
     buffer_refs: &mut Vec<(i32, i32)>,
 ) {
-    // A widget with no id of its own is addressed by its container's — which
-    // is how a clip's bodies are reached, since only the clip is on the wire.
-    let owner = widget.id.or(owner);
-    match (&widget.kind, owner) {
-        // A slot is keyed by whatever addresses the widget: its own id, or —
-        // for a clip's take, which carries none — the clip's. A navigable heavy
-        // view needs one; so does a **spectral clip body**, whose picture is a
-        // texture and cannot be drawn into the mesh the way a take's trace is.
-        (WidgetKind::Signal(el), Some(id)) if el.needs_gpu_slot() => {
-            let Some(data) = el.source.data() else {
-                return;
-            };
-            let (cache, path) = (data.cache.as_deref(), data.path.as_deref());
-            if el.presentation == Presentation::Signal {
-                if cache.is_some() || path.is_some() {
-                    // Bulk path: map a local resource (raw samples or a
-                    // prebuilt cache) through the BulkLoader seam, then build
-                    // the GPU slot.
-                    if let Some(loaded) =
-                        MmapLoader.waveform(cache, path, data.channels, data.base_bucket)
-                    {
-                        waveforms.insert(id, frame::waveform_slot(loaded, gpu));
-                    }
-                } else if let (Some(bufnum), true) = (data.buffer, data.samples.is_empty()) {
-                    // A server buffer with no inline data: fetch it over the leg.
-                    buffer_refs.push((id, bufnum));
-                } else {
-                    waveforms.insert(
-                        id,
-                        frame::waveform_slot(
-                            WaveformData::from_interleaved(
-                                &data.samples,
-                                data.channels,
-                                data.base_bucket,
-                            ),
-                            gpu,
-                        ),
-                    );
-                }
-            } else if let Some(cache) = cache {
-                // A prebuilt (single-channel) STFT cache, parsed directly.
-                if let Some(stft) = MmapLoader
-                    .file_bytes(cache)
-                    .and_then(|bytes| Stft::from_bytes(&bytes))
-                {
-                    if let Some(slot) = frame::spectrogram_slot(vec![stft], gpu, renderers) {
-                        spectrograms.insert(id, slot);
-                    }
-                } else {
-                    warn!(
-                        "spectrogram {id}: cannot parse STFT cache {}",
-                        cache.display()
-                    );
-                }
-            } else if let Some(path) = path {
-                if let Some(split) = MmapLoader.raw_channels(path, data.channels) {
-                    let stfts = frame::stft_lanes(
-                        split,
-                        el.spectral.fft_size,
-                        el.spectral.hop,
-                        el.editor.sample_rate,
-                    );
-                    let frames: usize = stfts.iter().map(|s| s.n_frames()).sum();
-                    if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
-                        info!(
-                            "spectrogram {id}: analyzed {} from {} ({} frame(s), no OSC)",
-                            path.display(),
-                            if el.caps.navigable {
-                                "a view"
-                            } else {
-                                "a clip"
-                            },
-                            frames
-                        );
-                        spectrograms.insert(id, slot);
-                    }
-                }
-            } else if let (Some(bufnum), true) = (data.buffer, data.samples.is_empty()) {
-                buffer_refs.push((id, bufnum));
-            } else if !data.samples.is_empty() {
-                let stfts = frame::stft_lanes(
-                    frame::deinterleave(&data.samples, data.channels),
-                    el.spectral.fft_size,
-                    el.spectral.hop,
-                    el.editor.sample_rate,
-                );
-                if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
-                    spectrograms.insert(id, slot);
-                }
-            }
-        }
+    frame::visit_elements(widget, owner, &mut |owner, el| {
+        let (Some(id), Some(data)) = (owner, el.source.data()) else {
+            return;
+        };
         // A **mesh-drawn** bulk source naming a server buffer and holding
         // nothing yet: fetch it over the leg, exactly as a heavy view does.
         // This is a clip's take — it owns no GPU slot, and its id is the
         // clip's, since a body carries none of its own.
-        (WidgetKind::Signal(el), _) if !el.needs_gpu_slot() => {
-            if let (Some(id), Some(data)) = (owner, el.source.data())
-                && data.bulk
+        if !el.needs_gpu_slot() {
+            if data.bulk
                 && data.is_empty()
                 && let Some(bufnum) = data.buffer
             {
                 buffer_refs.push((id, bufnum));
             }
+            return;
         }
-        _ => {}
-    }
-    for child in &widget.children {
-        collect_timelines(
-            child,
-            owner,
-            gpu,
-            renderers,
-            waveforms,
-            spectrograms,
-            buffer_refs,
-        );
-    }
+        // A navigable heavy view needs a slot; so does a **spectral clip
+        // body**, whose picture is a texture and cannot be drawn into the mesh
+        // the way a take's trace is.
+        let (cache, path) = (data.cache.as_deref(), data.path.as_deref());
+        if el.presentation == Presentation::Signal {
+            if cache.is_some() || path.is_some() {
+                // Bulk path: map a local resource (raw samples or a prebuilt
+                // cache) through the BulkLoader seam, then build the GPU slot.
+                if let Some(loaded) =
+                    MmapLoader.waveform(cache, path, data.channels, data.base_bucket)
+                {
+                    waveforms.insert(id, frame::waveform_slot(loaded, gpu));
+                }
+                return;
+            }
+        } else if let Some(cache) = cache {
+            // A prebuilt (single-channel) STFT cache, parsed directly.
+            match MmapLoader
+                .file_bytes(cache)
+                .and_then(|bytes| Stft::from_bytes(&bytes))
+            {
+                Some(stft) => {
+                    if let Some(slot) = frame::spectrogram_slot(vec![stft], gpu, renderers) {
+                        spectrograms.insert(id, slot);
+                    }
+                }
+                None => warn!(
+                    "spectrogram {id}: cannot parse STFT cache {}",
+                    cache.display()
+                ),
+            }
+            return;
+        } else if let Some(path) = path {
+            if let Some(split) = MmapLoader.raw_channels(path, data.channels) {
+                let stfts = frame::stft_lanes(
+                    split,
+                    el.spectral.fft_size,
+                    el.spectral.hop,
+                    el.editor.sample_rate,
+                );
+                let frames: usize = stfts.iter().map(|s| s.n_frames()).sum();
+                if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
+                    info!(
+                        "spectrogram {id}: analyzed {} from {} ({} frame(s), no OSC)",
+                        path.display(),
+                        if el.caps.navigable {
+                            "a view"
+                        } else {
+                            "a clip"
+                        },
+                        frames
+                    );
+                    spectrograms.insert(id, slot);
+                }
+            }
+            return;
+        }
+        // No local resource named: a server buffer with no inline data is
+        // deferred to the leg, anything else builds its slot from what the
+        // host already holds.
+        match data.buffer.filter(|_| data.samples.is_empty()) {
+            Some(bufnum) => buffer_refs.push((id, bufnum)),
+            None => frame::inline_slot(id, el, data, gpu, renderers, waveforms, spectrograms),
+        }
+    });
 }
 
 /// Builds a [`CanvasView`] (compiling the user shader) for every `canvas` in the

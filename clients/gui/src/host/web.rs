@@ -1842,134 +1842,102 @@ fn build_inline_timelines(
     waveforms: &mut HashMap<i32, WaveformSlot>,
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
 ) {
-    // A widget with no id of its own is addressed by its container's — which is
-    // how a clip's bodies are reached, since only the clip is on the wire.
-    let owner = widget.id.or(owner);
-    if let Some(id) = owner {
-        match &widget.kind {
-            WidgetKind::Signal(el) if el.needs_gpu_slot() => {
-                let Some(data) = el.source.data().filter(|d| !d.samples.is_empty()) else {
-                    return;
-                };
-                if el.presentation == Presentation::Signal {
-                    let loaded = WaveformData::from_interleaved(
-                        &data.samples,
-                        data.channels,
-                        data.base_bucket,
-                    );
-                    waveforms.insert(id, frame::waveform_slot(loaded, gpu));
-                } else {
-                    let stfts = frame::stft_lanes(
-                        frame::deinterleave(&data.samples, data.channels),
-                        el.spectral.fft_size,
-                        el.spectral.hop,
-                        el.editor.sample_rate,
-                    );
-                    if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
-                        spectrograms.insert(id, slot);
-                    }
-                }
-            }
-            _ => {}
+    frame::visit_elements(widget, owner, &mut |owner, el| {
+        // Only what is already here: an element still naming a `path`/`cache`/
+        // `buffer` has empty samples at this point and is the fetch machine's,
+        // so building its slot now would show an empty view until the data
+        // lands and replaces it.
+        if let (Some(id), true) = (owner, el.needs_gpu_slot())
+            && let Some(data) = el.source.data().filter(|d| !d.samples.is_empty())
+        {
+            frame::inline_slot(id, el, data, gpu, renderers, waveforms, spectrograms);
         }
-    }
-    for child in &widget.children {
-        build_inline_timelines(child, owner, gpu, renderers, waveforms, spectrograms);
-    }
+    });
 }
 
 /// Walks the tree collecting the async bulk sources: waveforms referencing a
 /// server `buffer` (fetched over the WS leg) and waveform/plot `path`/`cache`
 /// references (URLs fetched against the page origin). The browser mirror of
-/// the native `collect_waveforms`/`load_plot_paths` resolution, minus the
-/// inline case handled by [`build_inline_waveforms`].
+/// the native front's mapped-file resolution (`collect_timelines` and
+/// `load_element_bulk` there), minus the inline case, which is
+/// [`build_inline_timelines`] over the shared walk.
 fn collect_bulk(
     widget: &Widget,
     owner: Option<i32>,
     buffer_refs: &mut Vec<(i32, i32)>,
     requests: &mut Vec<(i32, BulkRequest)>,
 ) {
-    // A widget with no id of its own is addressed by its container's — which is
-    // how a clip's bodies are reached, since only the clip is on the wire.
-    let owner = widget.id.or(owner);
-    if let Some(id) = owner {
-        match &widget.kind {
-            WidgetKind::Signal(el) => {
-                let Some(data) = el.source.data() else { return };
-                let time_freq = el.presentation == Presentation::TimeFrequency;
-                if !el.needs_gpu_slot() && data.bulk {
-                    // A **take** drawn into the mesh (a clip's body): the same
-                    // resolution a heavy view's samples take — cache, then
-                    // path, then buffer — landing in the tree, not the GPU.
-                    if let Some(cache) = &data.cache {
-                        requests
-                            .push((id, BulkRequest::Cache(cache.to_string_lossy().into_owned())));
-                    } else if let Some(path) = &data.path {
-                        requests.push((
-                            id,
-                            BulkRequest::Raw {
-                                url: path.to_string_lossy().into_owned(),
-                                channels: data.channels,
-                                base_bucket: data.base_bucket,
-                            },
-                        ));
-                    } else if let (Some(bufnum), true) = (data.buffer, data.is_empty()) {
-                        buffer_refs.push((id, bufnum));
-                    }
-                } else if !el.needs_gpu_slot() {
-                    // A **sequence**: its samples go straight into the tree —
-                    // no pyramid, no analysis cache to fetch.
-                    if data.samples.is_empty()
-                        && let Some(path) = &data.path
-                    {
-                        requests.push((
-                            id,
-                            BulkRequest::Plot {
-                                url: path.to_string_lossy().into_owned(),
-                                channels: data.channels,
-                            },
-                        ));
-                    }
-                } else if let Some(cache) = &data.cache {
-                    let url = cache.to_string_lossy().into_owned();
-                    requests.push((
-                        id,
-                        if time_freq {
-                            BulkRequest::StftCache(url)
-                        } else {
-                            BulkRequest::Cache(url)
-                        },
-                    ));
-                } else if let Some(path) = &data.path {
-                    let url = path.to_string_lossy().into_owned();
-                    requests.push((
-                        id,
-                        if time_freq {
-                            BulkRequest::StftRaw {
-                                url,
-                                channels: data.channels,
-                                window_size: el.spectral.fft_size,
-                                hop: el.spectral.hop,
-                                sample_rate: el.editor.sample_rate,
-                            }
-                        } else {
-                            BulkRequest::Raw {
-                                url,
-                                channels: data.channels,
-                                base_bucket: data.base_bucket,
-                            }
-                        },
-                    ));
-                } else if let (Some(bufnum), true) = (data.buffer, data.samples.is_empty()) {
-                    buffer_refs.push((id, bufnum));
-                }
+    frame::visit_elements(widget, owner, &mut |owner, el| {
+        let (Some(id), Some(data)) = (owner, el.source.data()) else {
+            return;
+        };
+        let time_freq = el.presentation == Presentation::TimeFrequency;
+        if !el.needs_gpu_slot() && data.bulk {
+            // A **take** drawn into the mesh (a clip's body): the same
+            // resolution a heavy view's samples take — cache, then
+            // path, then buffer — landing in the tree, not the GPU.
+            if let Some(cache) = &data.cache {
+                requests.push((id, BulkRequest::Cache(cache.to_string_lossy().into_owned())));
+            } else if let Some(path) = &data.path {
+                requests.push((
+                    id,
+                    BulkRequest::Raw {
+                        url: path.to_string_lossy().into_owned(),
+                        channels: data.channels,
+                        base_bucket: data.base_bucket,
+                    },
+                ));
+            } else if let (Some(bufnum), true) = (data.buffer, data.is_empty()) {
+                buffer_refs.push((id, bufnum));
             }
-            _ => {}
+        } else if !el.needs_gpu_slot() {
+            // A **sequence**: its samples go straight into the tree —
+            // no pyramid, no analysis cache to fetch.
+            if data.samples.is_empty()
+                && let Some(path) = &data.path
+            {
+                requests.push((
+                    id,
+                    BulkRequest::Plot {
+                        url: path.to_string_lossy().into_owned(),
+                        channels: data.channels,
+                    },
+                ));
+            }
+        } else if let Some(cache) = &data.cache {
+            let url = cache.to_string_lossy().into_owned();
+            requests.push((
+                id,
+                if time_freq {
+                    BulkRequest::StftCache(url)
+                } else {
+                    BulkRequest::Cache(url)
+                },
+            ));
+        } else if let Some(path) = &data.path {
+            let url = path.to_string_lossy().into_owned();
+            requests.push((
+                id,
+                if time_freq {
+                    BulkRequest::StftRaw {
+                        url,
+                        channels: data.channels,
+                        window_size: el.spectral.fft_size,
+                        hop: el.spectral.hop,
+                        sample_rate: el.editor.sample_rate,
+                    }
+                } else {
+                    BulkRequest::Raw {
+                        url,
+                        channels: data.channels,
+                        base_bucket: data.base_bucket,
+                    }
+                },
+            ));
+        } else if let (Some(bufnum), true) = (data.buffer, data.samples.is_empty()) {
+            buffer_refs.push((id, bufnum));
         }
-    }
-    for child in &widget.children {
-        collect_bulk(child, owner, buffer_refs, requests);
-    }
+    });
 }
 
 /// Fetches one bulk URL and decodes it off the event loop, then hands the
