@@ -2634,12 +2634,24 @@ fn deliver_args(
     emit(out, def_id, widget_id, args);
 }
 
+/// Delivers the tagged payload `read` finds for `widget_id` in the window's
+/// tree — the whole of what every edit-back emitter below does, so each of them
+/// is the name of a payload and nothing else, and the next one is a line rather
+/// than another copy of this pair of statements.
+fn emit_read(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    widget_id: i32,
+    read: impl FnOnce(&Widget, i32) -> Option<Vec<OscType>>,
+) {
+    let args = host.window_def(def_id).and_then(|t| read(t, widget_id));
+    deliver_args(host, out, def_id, widget_id, args);
+}
+
 /// Delivers a `bpf`/automation-clip widget's edited breakpoint list.
 fn emit_points(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
-    let args = host
-        .window_def(def_id)
-        .and_then(|t| interact::bpf_event_args(t, widget_id));
-    deliver_args(host, out, def_id, widget_id, args);
+    emit_read(host, out, def_id, widget_id, interact::bpf_event_args);
 }
 
 /// Delivers a lane header control's new value (`"mute"`/`"solo"`/`"level"`).
@@ -2650,18 +2662,14 @@ fn emit_lane(
     widget_id: i32,
     part: interact::HeaderPart,
 ) {
-    let args = host
-        .window_def(def_id)
-        .and_then(|t| interact::lane_event_args(t, widget_id, part));
-    deliver_args(host, out, def_id, widget_id, args);
+    emit_read(host, out, def_id, widget_id, |t, id| {
+        interact::lane_event_args(t, id, part)
+    });
 }
 
 /// Delivers a `clip`'s edited placement (`"clip" offset dur`).
 fn emit_clip(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
-    let args = host
-        .window_def(def_id)
-        .and_then(|t| interact::clip_event_args(t, widget_id));
-    deliver_args(host, out, def_id, widget_id, args);
+    emit_read(host, out, def_id, widget_id, interact::clip_event_args);
 }
 
 /// Plays or releases one `piano` key: updates the held-key view state, drives
@@ -2725,18 +2733,12 @@ fn set_piano_range(
 
 /// Delivers a piano-roll's edited notes (`"notes" start dur pitch vel ch …`).
 fn emit_notes(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
-    let args = host
-        .window_def(def_id)
-        .and_then(|t| interact::notes_event_args(t, widget_id));
-    deliver_args(host, out, def_id, widget_id, args);
+    emit_read(host, out, def_id, widget_id, interact::notes_event_args);
 }
 
 /// Delivers a piano-roll's edited OSC events (`"osc" time label …`).
 fn emit_osc(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
-    let args = host
-        .window_def(def_id)
-        .and_then(|t| interact::osc_event_args(t, widget_id));
-    deliver_args(host, out, def_id, widget_id, args);
+    emit_read(host, out, def_id, widget_id, interact::osc_event_args);
 }
 
 /// Repaints every window in `roots` (the windows a group mutation touched).
