@@ -557,9 +557,11 @@ pub(crate) fn bpf_edit<R>(
 /// placed on a lane: one payload, so a script (or an `Automation`) consumes an
 /// edit without caring which view drew it.
 pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
-    let points = match &tree.find(id)?.kind {
+    let widget = tree.find(id)?;
+    // A clip's curve is a `bpf` **body** of it, so both cases are the one
+    // element — the clip is only what the script addresses.
+    let points = match widget.kind_or_body(is_curve)? {
         WidgetKind::Bpf { points, .. } => points,
-        WidgetKind::Clip { points, .. } if !points.is_empty() => points,
         _ => return None,
     };
     let mut args = vec![OscType::String("points".into())];
@@ -687,16 +689,26 @@ fn clip_curve<R>(
     f: impl FnOnce(&mut Vec<bpf::BpfPoint>, f32, f32, bool) -> R,
 ) -> Option<R> {
     let w = host.window_def_mut(def_id)?.find_mut(clip_id)?;
-    match &mut w.kind {
-        WidgetKind::Clip {
+    match w.clip_body_mut(is_curve)? {
+        WidgetKind::Bpf {
             points,
-            points_min,
-            points_max,
+            min,
+            max,
             exp,
             ..
-        } => Some(f(points, *points_min, *points_max, *exp)),
+        } => Some(f(points, *min, *max, *exp)),
         _ => None,
     }
+}
+
+/// Whether a kind is a clip's automation-curve body.
+fn is_curve(kind: &WidgetKind) -> bool {
+    matches!(kind, WidgetKind::Bpf { .. })
+}
+
+/// Whether a kind is a clip's note-roll body.
+fn is_roll(kind: &WidgetKind) -> bool {
+    matches!(kind, WidgetKind::PianoRoll { .. })
 }
 
 /// Moves break-point `index` of an automation clip to the cursor: the time maps
@@ -921,13 +933,32 @@ pub(crate) fn clip_hit(
     let WidgetKind::Clip { offset, dur, .. } = widget.kind else {
         return None;
     };
-    let drawn = track::clip_draw(widget);
-    let has_curve = drawn.as_ref().is_some_and(|clip| !clip.points.is_empty());
     // A break-point is grabbed on the clip's **own** axis, the one it was drawn
     // on — the lane's window below is only what the clip's placement drags in.
-    let point = drawn
-        .filter(|_| has_curve)
-        .and_then(|clip| track::curve_hit(&clip, rect, &local.nav, x, y, host.metrics_for(def_id)));
+    let curve = match widget.clip_body(is_curve) {
+        Some(WidgetKind::Bpf {
+            points,
+            min,
+            max,
+            exp,
+            ..
+        }) if !points.is_empty() => Some((points, *min, *max, *exp)),
+        _ => None,
+    };
+    let has_curve = curve.is_some();
+    let point = curve.and_then(|(points, min, max, exp)| {
+        track::curve_hit(
+            points,
+            rect,
+            &local.nav,
+            min,
+            max,
+            exp,
+            x,
+            y,
+            host.metrics_for(def_id),
+        )
+    });
     Some(ClipHit {
         id,
         lane: lane_id,
@@ -1226,9 +1257,8 @@ pub(crate) fn pianoroll_osc_edit<R>(
 /// the `pianoroll` and `clip` share. A `/gui_event` carries it to the script; a
 /// bound editor forwards it (minus the tag) to the audio server.
 pub(crate) fn notes_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
-    let notes = match &tree.find(id)?.kind {
+    let notes = match tree.find(id)?.kind_or_body(is_roll)? {
         WidgetKind::PianoRoll { notes, .. } => notes,
-        WidgetKind::Clip { notes, .. } if !notes.is_empty() => notes,
         _ => return None,
     };
     let mut args = vec![OscType::String("notes".into())];

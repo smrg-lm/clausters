@@ -292,6 +292,17 @@ def signal_presets() -> list:
     return names
 
 
+#: Widgets whose props are read **outside** their own schema arm, and where.
+#:
+#: A `clip`'s bodies are *children* — a signal element, a piano-roll, a curve —
+#: so the props that describe them are read by `build::clip_bodies` on the way
+#: in and by `apply::apply_clip_body` on the way back, not by the `"clip" =>`
+#: arm, which holds only the clip's own placement and name. The scanner is told
+#: rather than made to guess: the alternative is an arm pretending to read props
+#: it does not touch.
+OUTBOARD = {"clip": ("clip_bodies", "apply_clip_body")}
+
+
 def host_props() -> dict:
     """``{widget kind: {prop}}`` from the schema's construction and set passes."""
     helpers = _helper_keys()
@@ -327,6 +338,13 @@ def host_props() -> dict:
             out.setdefault(kind, set())
             out[kind] |= keys
             variant_of.setdefault("Signal", []).append(kind)
+
+    # ...and the props a widget's bodies carry, read outside its own arm.
+    for kind, helpers_named in OUTBOARD.items():
+        out.setdefault(kind, set())
+        for helper in helpers_named:
+            assert helper in helpers, f"{helper} moved; OUTBOARD is stale"
+            out[kind] |= helpers[helper]
 
     # Mutation: `WidgetKind::Waveform { … } => match key { … }`.
     for m, body in _arms(apply, r"\s{8}WidgetKind::(\w+)"):

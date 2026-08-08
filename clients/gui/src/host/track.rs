@@ -15,8 +15,6 @@
 //! lane's clips through the same [`View`], so a clip at offset 8 lines up
 //! across tracks. Placement/geometry is display logic — this stays gui-side.
 
-use std::sync::Arc;
-
 use super::bpf::{self, BpfPoint};
 use super::font;
 use super::layout::Rect;
@@ -32,39 +30,12 @@ use super::theme::Theme;
 use super::timeline;
 use super::widget::{Widget, WidgetKind};
 use crate::viewport::View;
-use crate::waveform::WaveformData;
 
 /// A piano-roll note. Re-exported from [`super::pianoroll`], the module that
 /// owns the note model and the drawing/hit-test primitives — a clip's roll and
 /// the dedicated `pianoroll` view share the one type so they never disagree on
 /// geometry.
 pub use super::pianoroll::Note;
-
-/// One clip copied out of the host tree for drawing (and hit-testing). A clip
-/// with `notes` draws a piano-roll body (its samples ignored); one without draws
-/// the decimated waveform body — from `data` (a loaded `cache`/`path`/`buffer`
-/// take, decimated through its peak pyramid) when the host has one, else from
-/// the inline `samples`.
-#[derive(Clone)]
-pub struct ClipDraw {
-    pub id: i32,
-    pub offset: f64,
-    pub dur: f64,
-    pub samples: Arc<[f32]>,
-    pub data: Option<Arc<WaveformData>>,
-    pub notes: Vec<Note>,
-    /// An automation clip's break-points (times relative to the clip): the curve
-    /// body, which wins over the notes and the waveform.
-    pub points: Vec<BpfPoint>,
-    pub exp: bool,
-    /// The curve body's own value range — a layered clip's bodies do not share an
-    /// axis (a roll's `min`/`max` are pitches, a curve's are its parameter's).
-    pub points_min: f32,
-    pub points_max: f32,
-    pub min: f32,
-    pub max: f32,
-    pub label: Option<String>,
-}
 
 /// What a lane reserves **left of its axis**, and what it carries there.
 ///
@@ -366,57 +337,20 @@ fn local_t(cr: Rect, local: &View, x: f64) -> f64 {
     local.start + local.len * (x - cr.x as f64) / cr.w.max(1.0) as f64
 }
 
-/// A `clip` widget copied out of the tree for drawing or hit-testing (`None` for
-/// anything else) — the one place the typed tree becomes a [`ClipDraw`], so the
-/// renderer and the interaction can never disagree about what a clip holds.
-pub fn clip_draw(widget: &Widget) -> Option<ClipDraw> {
-    match &widget.kind {
-        WidgetKind::Clip {
-            offset,
-            dur,
-            samples,
-            body,
-            notes,
-            points,
-            exp,
-            points_min,
-            points_max,
-            min,
-            max,
-            label,
-            ..
-        } => Some(ClipDraw {
-            id: widget.id.unwrap_or(-1),
-            offset: *offset,
-            dur: *dur,
-            samples: Arc::clone(samples),
-            data: body.clone(),
-            notes: notes.clone(),
-            points: points.clone(),
-            exp: *exp,
-            points_min: *points_min,
-            points_max: *points_max,
-            min: *min,
-            max: *max,
-            label: label.clone(),
-        }),
-        _ => None,
-    }
-}
-
-/// Draws one track lane into `rect`: the header (with `label`), the lane field,
-/// and every clip as a framed rectangle (its body decimated inside) through the
-/// shared timeline `nav`. `ruler` reserves the bottom strip for the time ruler
-/// (drawn by the frame renderer, which owns the tick math); the playhead is an
-/// overlay, over the clips.
-#[allow(clippy::too_many_arguments)] // one lane's draw: its clips, box, look
+/// Draws one track lane into `rect`: the header (with `label` and its
+/// controls) and the lane field. **Not** its clips — those are widgets the
+/// layout places, drawn from their own placements ([`draw_clip`]), so the lane
+/// draws what a lane is and nothing else.
+///
+/// `ruler` reserves the bottom strip for the time ruler (drawn by the frame
+/// renderer, which owns the tick math); the playhead is an overlay over the
+/// clips.
+#[allow(clippy::too_many_arguments)] // one lane's draw: its box, header, look
 pub fn draw(
     mesh: &mut Mesh,
     rect: Rect,
-    nav: &View,
     label: Option<&str>,
     header: &Header,
-    clips: &[ClipDraw],
     ruler: bool,
     indent: f32,
     m: &Metrics,
@@ -441,58 +375,67 @@ pub fn draw(
     }
     draw_header_controls(mesh, band, header, m, theme);
     let body = lane_body(rect, ruler, indent, m);
-    if body.w <= 0.0 || body.h <= 0.0 {
-        return;
+    if body.w > 0.0 && body.h > 0.0 {
+        mesh.rect(body, theme.lane);
+        mesh.border(body, m.divider_w, theme.frame);
     }
-    mesh.rect(body, theme.lane);
-    mesh.border(body, m.divider_w, theme.frame);
-    for clip in clips {
-        let Some((x0, x1)) = clip_x_range(body, nav, clip.offset, clip.dur) else {
-            continue;
-        };
-        let cr = clip_rect(body, x0, x1);
-        mesh.rect(cr, theme.object_fill);
-        mesh.border(cr, m.divider_w, theme.object_edge);
-        // Everything inside the clip is drawn against the clip's **own** axis:
-        // its rectangle and the slice of `[0, dur]` that rectangle shows.
-        let local = clip_local_view(body, nav, clip.offset, clip.dur, cr);
-        // The bodies **layer**, back to front: the take, the events over it, the
-        // envelope over both — an automation drawn on top of the material it
-        // shapes is one clip, not two, and each body keeps its own value axis.
-        match &clip.data {
-            // A loaded take (mapped file, peak cache or fetched buffer): decimated
-            // through its pyramid, so a minutes-long clip costs the same as a
-            // short one.
-            Some(data) => draw_body(mesh, cr, &local, clip, &Trace::Data(data), m, theme),
-            // An **inline** sketch sent with the def: the same drawing, a
-            // cheaper source.
-            None => draw_body(
-                mesh,
-                cr,
-                &local,
-                clip,
-                &Trace::samples(&clip.samples, 1),
-                m,
-                theme,
-            ),
+}
+
+/// Draws one clip's own box into the rectangle the layout placed it at: its
+/// fill, its edge and its `label`. Its **bodies** are children, drawn after it
+/// from their own placements ([`draw_body_widget`]), so they land over it.
+pub fn draw_clip(mesh: &mut Mesh, cr: Rect, label: Option<&str>, m: &Metrics, theme: &Theme) {
+    mesh.rect(cr, theme.object_fill);
+    mesh.border(cr, m.divider_w, theme.object_edge);
+    if let Some(t) = label {
+        font::text(
+            mesh,
+            t,
+            cr.x + m.pad,
+            cr.y + m.pad,
+            m.caption_scale,
+            theme.text,
+        );
+    }
+}
+
+/// Draws one clip **body** — a child element of a clip — into the clip's
+/// rectangle, against the clip's own axis. This is the whole of what "a clip is
+/// a container" buys: the element says what it is, the container says where it
+/// is, and neither knows about the lane, the group's window or the clip's
+/// offset on it.
+///
+/// The bodies **layer**, back to front, because that is the order the layout
+/// placed them in: the take, the events over it, the envelope over both — an
+/// automation drawn on top of the material it shapes is one clip, not two, and
+/// each body keeps its own value axis.
+pub fn draw_body_widget(
+    mesh: &mut Mesh,
+    kind: &WidgetKind,
+    cr: Rect,
+    local: &View,
+    dur: f64,
+    m: &Metrics,
+    theme: &Theme,
+) {
+    match kind {
+        WidgetKind::Signal(el) => {
+            if let Some(data) = el.source.data() {
+                let (min, max) = el.value.resolved(-1.0, 1.0);
+                draw_take(mesh, cr, local, dur, &data.trace(), min, max, m, theme);
+            }
         }
-        if !clip.notes.is_empty() {
-            // Notes on the clip's own axis, pitch mapped over [min, max].
-            draw_piano_roll(mesh, cr, &local, clip, m, theme);
-        }
-        if !clip.points.is_empty() {
-            draw_curve(mesh, cr, &local, clip, m, theme);
-        }
-        if let Some(t) = &clip.label {
-            font::text(
-                mesh,
-                t,
-                cr.x + m.pad,
-                cr.y + m.pad,
-                m.caption_scale,
-                theme.text,
-            );
-        }
+        WidgetKind::PianoRoll {
+            notes, min, max, ..
+        } => draw_piano_roll(mesh, cr, local, notes, *min, *max, m, theme),
+        WidgetKind::Bpf {
+            points,
+            min,
+            max,
+            exp,
+            ..
+        } => draw_curve(mesh, cr, local, points, *min, *max, *exp, m, theme),
+        _ => {}
     }
 }
 
@@ -513,10 +456,14 @@ pub fn curve_value_at(cr: Rect, min: f32, max: f32, exp: bool, cy: f64) -> f32 {
 /// The index of the breakpoint under `(cx, cy)` in an automation clip, within a
 /// pixel radius — the clip-placed twin of `bpf::hit_point` (a point is placed on
 /// the *shared* axis here, not on a widget-local one).
+#[allow(clippy::too_many_arguments)] // one display mapping, all scalars
 pub fn curve_hit(
-    clip: &ClipDraw,
+    points: &[BpfPoint],
     cr: Rect,
     local: &View,
+    min: f32,
+    max: f32,
+    exp: bool,
     cx: f64,
     cy: f64,
     m: &Metrics,
@@ -525,9 +472,9 @@ pub fn curve_hit(
     // it is drawn.
     let radius = (m.point_radius + m.hit_slop).max(6.0) as f64;
     let mut best: Option<(usize, f64)> = None;
-    for (i, p) in clip.points.iter().enumerate() {
+    for (i, p) in points.iter().enumerate() {
         let x = local_x(cr, local, p.time) as f64;
-        let y = curve_y(cr, p.value, clip.points_min, clip.points_max, clip.exp) as f64;
+        let y = curve_y(cr, p.value, min, max, exp) as f64;
         let d = ((cx - x).powi(2) + (cy - y).powi(2)).sqrt();
         if d <= radius && best.is_none_or(|(_, bd)| d < bd) {
             best = Some((i, d));
@@ -547,28 +494,32 @@ fn curve_y(cr: Rect, value: f32, min: f32, max: f32, exp: bool) -> f32 {
 /// is what is heard — plus a disc per breakpoint. Times map through the clip's
 /// own axis (`local`), exactly as the piano-roll's notes do, so the whole curve
 /// moves with the clip and stays put under zoom.
+#[allow(clippy::too_many_arguments)] // one body's draw: rect, axis, range, look
 fn draw_curve(
     mesh: &mut Mesh,
     cr: Rect,
     local: &View,
-    clip: &ClipDraw,
+    points: &[BpfPoint],
+    min: f32,
+    max: f32,
+    exp: bool,
     m: &Metrics,
     theme: &Theme,
 ) {
-    if cr.w < 1.0 || cr.h <= 0.0 {
+    if cr.w < 1.0 || cr.h <= 0.0 || points.is_empty() {
         return;
     }
     let columns = cr.w.max(1.0) as usize;
-    let y_at = |v: f32| curve_y(cr, v, clip.points_min, clip.points_max, clip.exp);
+    let y_at = |v: f32| curve_y(cr, v, min, max, exp);
     let time_at = |x: f32| local_t(cr, local, x as f64);
-    let mut prev = [cr.x, y_at(bpf::value_at(&clip.points, time_at(cr.x)))];
+    let mut prev = [cr.x, y_at(bpf::value_at(points, time_at(cr.x)))];
     for c in 1..=columns {
         let x = cr.x + c as f32;
-        let p = [x, y_at(bpf::value_at(&clip.points, time_at(x)))];
+        let p = [x, y_at(bpf::value_at(points, time_at(x)))];
         mesh.line(prev, p, m.trace_w, theme.trace);
         prev = p;
     }
-    for p in &clip.points {
+    for p in points {
         let x = local_x(cr, local, p.time);
         if x >= cr.x && x <= cr.x + cr.w {
             mesh.disc(x, y_at(p.value), m.point_radius, theme.point);
@@ -582,17 +533,23 @@ fn draw_curve(
 /// the shared [`super::pianoroll::draw_notes`] primitive — the same one the
 /// dedicated `pianoroll` view draws with, so a clip's roll and the editor never
 /// disagree. The clip body uses only that one layer (no keyboard/lanes).
+#[allow(clippy::too_many_arguments)] // one body's draw: rect, axis, range, look
 fn draw_piano_roll(
     mesh: &mut Mesh,
     cr: Rect,
     local: &View,
-    clip: &ClipDraw,
+    notes: &[Note],
+    min: f32,
+    max: f32,
     m: &Metrics,
     theme: &Theme,
 ) {
+    if notes.is_empty() {
+        return;
+    }
     // The compact pitch ruler: each C named at the clip's left edge (there is
     // no keyboard gutter here), only when the rows are tall enough to read.
-    pianoroll::draw_pitch_labels(mesh, cr, clip.min, clip.max, m, theme);
+    pianoroll::draw_pitch_labels(mesh, cr, min, max, m, theme);
     // The clip rect is both the note primitive's pixel domain and its clamp:
     // note times are clip-local, so there is no offset to subtract any more.
     pianoroll::draw_notes(
@@ -601,9 +558,9 @@ fn draw_piano_roll(
         cr,
         local,
         0.0,
-        &clip.notes,
-        clip.min,
-        clip.max,
+        notes,
+        min,
+        max,
         false,
         &[],
         m,
@@ -633,14 +590,16 @@ pub fn clip_source_at(cr: Rect, local: &View, dur: f64, total: f64, x: f32) -> f
 /// through the clip's own axis, which is what makes it scroll and stretch with
 /// the view instead of squashing into whatever slice is on screen. Never
 /// resolves finer than the screen — the one graphics rule.
-// mesh + rect + axis + clip + source + look: one body's draw.
+// mesh + rect + axis + span + source + range + look: one body's draw.
 #[allow(clippy::too_many_arguments)]
-fn draw_body(
+fn draw_take(
     mesh: &mut Mesh,
     cr: Rect,
     local: &View,
-    clip: &ClipDraw,
+    dur: f64,
     trace: &Trace,
+    min: f32,
+    max: f32,
     m: &Metrics,
     theme: &Theme,
 ) {
@@ -648,8 +607,8 @@ fn draw_body(
     if total < 2.0 || cr.w < 1.0 || cr.h <= 0.0 {
         return;
     }
-    let y_at = |v: f32| cr.y + cr.h * (1.0 - fraction(v, clip.min, clip.max));
-    if clip.min < 0.0 && clip.max > 0.0 {
+    let y_at = |v: f32| cr.y + cr.h * (1.0 - fraction(v, min, max));
+    if min < 0.0 && max > 0.0 {
         let y = y_at(0.0);
         mesh.line([cr.x, y], [cr.x + cr.w, y], m.divider_w, theme.baseline);
     }
@@ -658,10 +617,10 @@ fn draw_body(
         cr,
         trace,
         0,
-        |x| clip_source_at(cr, local, clip.dur, total, x),
+        |x| clip_source_at(cr, local, dur, total, x),
         // The inverse placement: a source frame sits at its own fraction of the
         // clip's span, seen through the clip's visible window.
-        |s| local_x(cr, local, s / total * clip.dur),
+        |s| local_x(cr, local, s / total * dur),
         y_at,
         TraceStyle {
             color: theme.selection,
@@ -672,7 +631,11 @@ fn draw_body(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
+    use crate::host::widget::EditorProps;
+    use crate::waveform::WaveformData;
 
     fn lane() -> Rect {
         // A 500-wide track: header 96 + a 404-wide lane body.
@@ -855,145 +818,6 @@ mod tests {
         assert!(clip_x_range(body, &nav, 160.0, 0.0).is_none());
     }
 
-    #[test]
-    fn draw_paints_the_header_lane_and_clips() {
-        let mut m = Mesh::new();
-        let clips = vec![
-            ClipDraw {
-                id: 1,
-                offset: 0.0,
-                dur: 100.0,
-                samples: vec![0.0, 0.5, -0.5, 1.0].into(),
-                data: None,
-                notes: Vec::new(),
-                points: Vec::new(),
-                exp: false,
-                points_min: -1.0,
-                points_max: 1.0,
-                min: -1.0,
-                max: 1.0,
-                label: Some("a".into()),
-            },
-            ClipDraw {
-                id: 2,
-                offset: 200.0,
-                dur: 100.0,
-                samples: Arc::from([] as [f32; 0]),
-                data: None,
-                notes: Vec::new(),
-                points: Vec::new(),
-                exp: false,
-                points_min: -1.0,
-                points_max: 1.0,
-                min: -1.0,
-                max: 1.0,
-                label: None,
-            },
-        ];
-        draw(
-            &mut m,
-            lane(),
-            &View::full(400),
-            Some("drums"),
-            &Header::default(),
-            &clips,
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-            &Theme::default(),
-        );
-        assert!(!m.is_empty(), "the header, lane and clips draw");
-    }
-
-    #[test]
-    fn a_loaded_take_draws_decimated_through_its_pyramid() {
-        // A "long" take: many more samples than the clip has pixels. The body
-        // must cost pixels, not samples — it is read through the peak pyramid.
-        let samples: Vec<f32> = (0..100_000)
-            .map(|i| (i as f32 * 0.01).sin())
-            .collect::<Vec<_>>();
-        let data = Arc::new(WaveformData::new(samples.into(), 256));
-        let clip = ClipDraw {
-            id: 1,
-            offset: 0.0,
-            dur: 400.0,
-            samples: Arc::from([] as [f32; 0]),
-            data: Some(Arc::clone(&data)),
-            notes: Vec::new(),
-            points: Vec::new(),
-            exp: false,
-            points_min: -1.0,
-            points_max: 1.0,
-            min: -1.0,
-            max: 1.0,
-            label: Some("take".into()),
-        };
-        let mut m = Mesh::new();
-        draw(
-            &mut m,
-            lane(),
-            &View::full(400),
-            None,
-            &Header::default(),
-            std::slice::from_ref(&clip),
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-            &Theme::default(),
-        );
-        assert!(!m.is_empty(), "the take draws a body");
-        // One min/max column per pixel of the clip rect, not one per sample: the
-        // 100k-sample take costs the same as the lane is wide.
-        let body = lane_body(
-            lane(),
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-        );
-        let (x0, x1) = clip_x_range(body, &View::full(400), 0.0, 400.0).unwrap();
-        let cols = (x1 - x0) as usize;
-        let mut bare = Mesh::new();
-        draw(
-            &mut bare,
-            lane(),
-            &View::full(400),
-            None,
-            &Header::default(),
-            &[ClipDraw {
-                data: None,
-                ..clip.clone()
-            }],
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-            &Theme::default(),
-        );
-        let per_line = 6u32; // two triangles per column line
-        let added = m.vertex_count() - bare.vertex_count();
-        assert!(
-            added <= (cols as u32 + 2) * per_line,
-            "the body is decimated to the clip's pixel width ({added} vertices for {cols} columns)"
-        );
-    }
-
-    fn curve_clip(points: Vec<BpfPoint>) -> ClipDraw {
-        ClipDraw {
-            id: 1,
-            offset: 0.0,
-            dur: 400.0,
-            samples: Arc::from([] as [f32; 0]),
-            data: None,
-            notes: Vec::new(),
-            points,
-            exp: false,
-            points_min: 0.0,
-            points_max: 1.0,
-            min: 0.0,
-            max: 1.0,
-            label: Some("cutoff".into()),
-        }
-    }
-
     fn pt(time: f64, value: f32) -> BpfPoint {
         BpfPoint {
             time,
@@ -1003,76 +827,180 @@ mod tests {
         }
     }
 
+    /// The geometry a clip is drawn with, for a lane spanning `nav`: the
+    /// rectangle the layout would place it at and the clip's own axis. The
+    /// tests below draw bodies exactly as the frame does — through
+    /// `(rect, local)` and nothing else.
+    fn placed(offset: f64, dur: f64, nav: &View) -> (Rect, View) {
+        let m = Metrics::default();
+        let body = lane_body(lane(), false, m.header_w, &m);
+        let (x0, x1) = clip_x_range(body, nav, offset, dur).expect("the clip is visible");
+        let cr = clip_rect(body, x0, x1);
+        (cr, clip_local_view(body, nav, offset, dur, cr))
+    }
+
+    fn body_mesh(kind: &WidgetKind, dur: f64) -> Mesh {
+        let (cr, local) = placed(0.0, dur, &View::full(dur.max(1.0) as usize));
+        let mut mesh = Mesh::new();
+        draw_body_widget(
+            &mut mesh,
+            kind,
+            cr,
+            &local,
+            dur,
+            &Metrics::default(),
+            &Theme::default(),
+        );
+        mesh
+    }
+
+    fn take_body(data: signal::Data) -> WidgetKind {
+        let mut el = signal::SignalElement::from_preset(&signal::preset("waveform").unwrap());
+        el.caps = signal::Caps::default();
+        el.source = signal::Source::Data(data);
+        WidgetKind::Signal(Box::new(el))
+    }
+
+    fn inline_take(samples: Vec<f32>) -> signal::Data {
+        signal::Data {
+            samples: samples.into(),
+            channels: 1,
+            buffer: None,
+            path: None,
+            cache: None,
+            base_bucket: 256,
+            bulk: true,
+            body: None,
+        }
+    }
+
     #[test]
-    fn an_automation_clip_draws_its_curve_instead_of_a_body() {
-        let clip = curve_clip(vec![pt(0.0, 0.0), pt(200.0, 1.0), pt(400.0, 0.0)]);
-        let mut with = Mesh::new();
+    fn a_lane_draws_its_header_and_field_and_no_clip() {
+        // What a lane is: a header band and a field. Its clips are widgets the
+        // layout places, so they are not the lane's to draw.
+        let mut m = Mesh::new();
+        let metrics = Metrics::default();
         draw(
-            &mut with,
+            &mut m,
             lane(),
-            &View::full(400),
-            None,
+            Some("drums"),
             &Header::default(),
-            std::slice::from_ref(&clip),
             false,
-            Metrics::default().header_w,
-            &Metrics::default(),
+            metrics.header_w,
+            &metrics,
             &Theme::default(),
         );
-        let mut bare = Mesh::new();
-        draw(
-            &mut bare,
-            lane(),
-            &View::full(400),
-            None,
-            &Header::default(),
-            &[ClipDraw {
-                points: Vec::new(),
-                ..clip.clone()
-            }],
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-            &Theme::default(),
-        );
+        assert!(!m.is_empty(), "the header and the lane field draw");
+
+        // ...and a clip's box is drawn from its own placement.
+        let before = m.vertex_count();
+        let (cr, _) = placed(0.0, 100.0, &View::full(400));
+        draw_clip(&mut m, cr, Some("a"), &metrics, &Theme::default());
+        assert!(m.vertex_count() > before);
+    }
+
+    #[test]
+    fn a_loaded_take_draws_decimated_through_its_pyramid() {
+        // A "long" take: many more samples than the clip has pixels. The body
+        // must cost pixels, not samples — it is read through the peak pyramid.
+        let samples: Vec<f32> = (0..100_000).map(|i| (i as f32 * 0.01).sin()).collect();
+        let mut data = inline_take(Vec::new());
+        data.body = Some(Arc::new(WaveformData::new(samples.into(), 256)));
+        let drawn = body_mesh(&take_body(data), 400.0);
+        assert!(!drawn.is_empty(), "the take draws a body");
+
+        // One min/max column per pixel of the clip rect, not one per sample: the
+        // 100k-sample take costs the same as the lane is wide.
+        let (cr, _) = placed(0.0, 400.0, &View::full(400));
+        let cols = cr.w as usize;
+        let per_line = 6u32; // two triangles per column line
         assert!(
-            with.vertex_count() > bare.vertex_count(),
-            "the curve and its breakpoints add geometry over the bare clip"
+            drawn.vertex_count() <= (cols as u32 + 2) * per_line,
+            "the body is decimated to the clip's pixel width ({} vertices for {cols} columns)",
+            drawn.vertex_count()
         );
+    }
+
+    fn curve_body(points: Vec<BpfPoint>, min: f32, max: f32) -> WidgetKind {
+        WidgetKind::Bpf {
+            points,
+            min,
+            max,
+            duration: 0.0,
+            exp: false,
+            label: None,
+        }
+    }
+
+    fn roll_body(notes: Vec<Note>, min: f32, max: f32) -> WidgetKind {
+        WidgetKind::PianoRoll {
+            notes,
+            osc: Vec::new(),
+            selected: Vec::new(),
+            min,
+            max,
+            snap: 0.0,
+            velocity_lane: false,
+            osc_lane: false,
+            midi_in: false,
+            label: None,
+            editor: EditorProps::body(),
+        }
+    }
+
+    #[test]
+    fn each_body_draws_only_what_it_is() {
+        // Three elements, three drawings, no precedence between them: a body
+        // draws its own data and nothing else's.
+        let curve = body_mesh(
+            &curve_body(vec![pt(0.0, 0.0), pt(200.0, 1.0), pt(400.0, 0.0)], 0.0, 1.0),
+            400.0,
+        );
+        let roll = body_mesh(
+            &roll_body(vec![Note::new(0.0, 100.0, 60.0)], 48.0, 72.0),
+            400.0,
+        );
+        let take = body_mesh(&take_body(inline_take(vec![0.0, 0.5, -0.5, 1.0])), 400.0);
+        for (what, mesh) in [("curve", &curve), ("roll", &roll), ("take", &take)] {
+            assert!(!mesh.is_empty(), "the {what} body draws");
+        }
+        // An empty body of any kind draws nothing at all.
+        assert!(body_mesh(&curve_body(Vec::new(), 0.0, 1.0), 400.0).is_empty());
+        assert!(body_mesh(&roll_body(Vec::new(), 48.0, 72.0), 400.0).is_empty());
     }
 
     #[test]
     fn a_curve_point_is_hit_where_it_is_drawn_and_maps_back_through_the_axis() {
-        let body = lane_body(
-            lane(),
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-        );
         let nav = View::full(400);
+        let m = Metrics::default();
+        let lane_rect = lane_body(lane(), false, m.header_w, &m);
         // The clip sits at 100 on the axis, so its point at t=100 is at 200.
-        let clip = ClipDraw {
-            offset: 100.0,
-            dur: 200.0,
-            ..curve_clip(vec![pt(0.0, 0.0), pt(100.0, 1.0), pt(200.0, 0.0)])
-        };
-        let (x0, x1) = clip_x_range(body, &nav, clip.offset, clip.dur).unwrap();
-        let cr = clip_rect(body, x0, x1);
+        let (cr, local) = placed(100.0, 200.0, &nav);
+        let points = vec![pt(0.0, 0.0), pt(100.0, 1.0), pt(200.0, 0.0)];
 
         // The clip's own axis - the whole clip is visible, so it is [0, dur].
-        let local = clip_local_view(body, &nav, clip.offset, clip.dur, cr);
-        assert!((local.start).abs() < 0.5 && (local.len - 200.0).abs() < 0.5);
+        assert!(local.start.abs() < 0.5 && (local.len - 200.0).abs() < 0.5);
 
         // The peak point (t=100, value=1 -> the top of the clip).
-        let px = to_x(200.0, &nav, body);
+        let px = to_x(200.0, &nav, lane_rect);
         let py = cr.y as f64;
         assert_eq!(
-            curve_hit(&clip, cr, &local, px, py, &Metrics::default()),
+            curve_hit(&points, cr, &local, 0.0, 1.0, false, px, py, &m),
             Some(1)
         );
         // Away from any point: nothing (so the clip still moves by its body).
         assert_eq!(
-            curve_hit(&clip, cr, &local, px + 40.0, py + 20.0, &Metrics::default()),
+            curve_hit(
+                &points,
+                cr,
+                &local,
+                0.0,
+                1.0,
+                false,
+                px + 40.0,
+                py + 20.0,
+                &m
+            ),
             None
         );
 
@@ -1086,26 +1014,14 @@ mod tests {
         // The bug this pins: a partially visible clip must draw the *part of its
         // take that is on screen*, not squash the whole take into the visible
         // sliver — so a pixel maps back through the axis to the source.
-        let body = lane_body(
-            lane(),
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-        );
-        let clip = ClipDraw {
-            offset: 0.0,
-            dur: 400.0,
-            ..curve_clip(Vec::new()) // a plain clip: no curve, no notes
-        };
-        let total = 1000.0;
+        let m = Metrics::default();
+        let lane_rect = lane_body(lane(), false, m.header_w, &m);
+        let (dur, total) = (400.0, 1000.0);
 
         // Fully zoomed out: the clip's ends map to the take's ends.
-        let full = View::full(400);
-        let (x0, x1) = clip_x_range(body, &full, clip.offset, clip.dur).unwrap();
-        let cr = clip_rect(body, x0, x1);
-        let local = clip_local_view(body, &full, clip.offset, clip.dur, cr);
-        assert!(clip_source_at(cr, &local, clip.dur, total, x0) < 1.0);
-        assert!(clip_source_at(cr, &local, clip.dur, total, x1) > total - 1.0);
+        let (cr, local) = placed(0.0, dur, &View::full(400));
+        assert!(clip_source_at(cr, &local, dur, total, cr.x) < 1.0);
+        assert!(clip_source_at(cr, &local, dur, total, cr.x + cr.w) > total - 1.0);
 
         // Zoomed into the clip's second half: the lane's left edge is now the
         // middle of the take, and the visible span is the half after it. The
@@ -1114,12 +1030,10 @@ mod tests {
             start: 200.0,
             len: 200.0,
         };
-        let (zx0, zx1) = clip_x_range(body, &zoomed, clip.offset, clip.dur).unwrap();
-        let zcr = clip_rect(body, zx0, zx1);
-        let zlocal = clip_local_view(body, &zoomed, clip.offset, clip.dur, zcr);
+        let (zcr, zlocal) = placed(0.0, dur, &zoomed);
         assert!((zlocal.start - 200.0).abs() < 1.0 && (zlocal.len - 200.0).abs() < 1.0);
-        let left = clip_source_at(zcr, &zlocal, clip.dur, total, body.x);
-        let right = clip_source_at(zcr, &zlocal, clip.dur, total, body.x + body.w);
+        let left = clip_source_at(zcr, &zlocal, dur, total, lane_rect.x);
+        let right = clip_source_at(zcr, &zlocal, dur, total, lane_rect.x + lane_rect.w);
         assert!(
             (left - 500.0).abs() < 5.0,
             "the left edge is mid-take, not 0"
@@ -1128,121 +1042,29 @@ mod tests {
     }
 
     #[test]
-    fn a_clip_layers_its_bodies_and_the_curve_keeps_its_own_axis() {
+    fn a_layered_clip_draws_every_body_and_each_keeps_its_own_axis() {
         // An envelope drawn over the event it shapes is *one* clip: both bodies
         // draw, and they do not share a value axis (notes are pitches, the curve
         // is its parameter's units).
-        let notes = vec![Note::new(0.0, 200.0, 60.0)];
-        let layered = ClipDraw {
-            notes: notes.clone(),
-            points: vec![pt(0.0, 200.0), pt(400.0, 900.0)],
-            points_min: 150.0,
-            points_max: 1000.0,
-            min: 48.0,
-            max: 72.0,
-            ..curve_clip(Vec::new())
-        };
-        let mut both = Mesh::new();
-        draw(
-            &mut both,
-            lane(),
-            &View::full(400),
-            None,
-            &Header::default(),
-            std::slice::from_ref(&layered),
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-            &Theme::default(),
-        );
+        let roll = roll_body(vec![Note::new(0.0, 200.0, 60.0)], 48.0, 72.0);
+        let curve = curve_body(vec![pt(0.0, 200.0), pt(400.0, 900.0)], 150.0, 1000.0);
+        let (cr, local) = placed(0.0, 400.0, &View::full(400));
+        let metrics = Metrics::default();
+        let theme = Theme::default();
+
         let mut roll_only = Mesh::new();
-        draw(
-            &mut roll_only,
-            lane(),
-            &View::full(400),
-            None,
-            &Header::default(),
-            &[ClipDraw {
-                points: Vec::new(),
-                ..layered.clone()
-            }],
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-            &Theme::default(),
-        );
+        draw_body_widget(&mut roll_only, &roll, cr, &local, 400.0, &metrics, &theme);
+        let mut both = Mesh::new();
+        draw_body_widget(&mut both, &roll, cr, &local, 400.0, &metrics, &theme);
+        draw_body_widget(&mut both, &curve, cr, &local, 400.0, &metrics, &theme);
         assert!(
             both.vertex_count() > roll_only.vertex_count(),
             "the curve draws over the notes, it does not replace them"
         );
 
-        // The curve's points sit on the curve's range: its 200 Hz start is near the
-        // bottom of the clip, not off the pitch axis.
-        let body = lane_body(
-            lane(),
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-        );
-        let nav = View::full(400);
-        let (x0, x1) = clip_x_range(body, &nav, layered.offset, layered.dur).unwrap();
-        let cr = clip_rect(body, x0, x1);
-        let y = curve_y(cr, 200.0, layered.points_min, layered.points_max, false);
+        // The curve's points sit on the curve's range: its 200 Hz start is near
+        // the bottom of the clip, not off the pitch axis the roll uses.
+        let y = curve_y(cr, 200.0, 150.0, 1000.0, false);
         assert!(y > cr.y + cr.h * 0.8, "200 Hz over [150, 1000] reads low");
-    }
-
-    #[test]
-    fn a_piano_roll_clip_draws_its_notes() {
-        let clip = ClipDraw {
-            id: 1,
-            offset: 0.0,
-            dur: 400.0,
-            samples: Arc::from([] as [f32; 0]),
-            data: None,
-            notes: vec![Note::new(0.0, 100.0, 60.0), Note::new(100.0, 100.0, 67.0)],
-            points: Vec::new(),
-            exp: false,
-            points_min: -1.0,
-            points_max: 1.0,
-            min: 48.0, // pitch range low
-            max: 72.0, // pitch range high
-            label: Some("theme".into()),
-        };
-        // With notes, the clip draws a piano-roll (not a waveform body).
-        let mut with = Mesh::new();
-        draw(
-            &mut with,
-            lane(),
-            &View::full(400),
-            None,
-            &Header::default(),
-            std::slice::from_ref(&clip),
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-            &Theme::default(),
-        );
-        // The same clip with no notes and no samples: only the clip frame.
-        let mut without = Mesh::new();
-        let bare = ClipDraw {
-            notes: Vec::new(),
-            ..clip
-        };
-        draw(
-            &mut without,
-            lane(),
-            &View::full(400),
-            None,
-            &Header::default(),
-            std::slice::from_ref(&bare),
-            false,
-            Metrics::default().header_w,
-            &Metrics::default(),
-            &Theme::default(),
-        );
-        assert!(
-            with.vertex_count() > without.vertex_count(),
-            "the notes add geometry over the bare clip"
-        );
     }
 }

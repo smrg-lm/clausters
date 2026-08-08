@@ -369,7 +369,6 @@ struct TrackItem {
     label: Option<String>,
     /// The lane's gutter: its width and the controls it carries.
     header: track::Header,
-    clips: Vec<track::ClipDraw>,
     /// The lane's chrome: its time ruler (off by default), its playhead anchor
     /// and its `link` — the navigation group whose shared window it draws
     /// through (the lanes of a window are linked by default, so they zoom and
@@ -381,6 +380,32 @@ struct TrackItem {
 /// content and the pitch window, plus the editor chrome (ruler/selection/
 /// playhead/link — its navigation group). Drawn as flat geometry, the
 /// static-view posture, sharing the `pianoroll` primitives with the clip body.
+/// One placed `clip`: the box the layout put it in and its name. Its bodies
+/// are separate items ([`ClipBodyItem`]), collected after it — the placements
+/// are emitted parent-before-child, so drawing the vectors in order paints
+/// every clip and then every body over its own clip.
+struct ClipItem {
+    rect: Rect,
+    clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
+    label: Option<String>,
+}
+
+/// One placed **clip body**: a child element of a clip, with the rectangle and
+/// the clip-local window it is drawn against ([`layout::Placed::time`]) and the
+/// clip's span, which is what maps a source frame onto that window.
+///
+/// The element is copied out whole, like every other data-driven item, so the
+/// heavier mesh work happens after the host-tree borrow is released.
+struct ClipBodyItem {
+    rect: Rect,
+    local: View,
+    dur: f64,
+    clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
+    kind: WidgetKind,
+}
+
 struct PianoRollItem {
     id: i32,
     rect: Rect,
@@ -982,6 +1007,8 @@ struct Collected {
     plot_rects: Vec<PlotItem>,
     bpf_rects: Vec<BpfItem>,
     track_items: Vec<TrackItem>,
+    clip_items: Vec<ClipItem>,
+    clip_bodies: Vec<ClipBodyItem>,
     ruler_items: Vec<RulerItem>,
     pianoroll_items: Vec<PianoRollItem>,
     nodetree_rects: Vec<NodeTreeItem>,
@@ -1018,6 +1045,11 @@ fn collect_widgets(
     let mut plot_rects: Vec<PlotItem> = Vec::new();
     let mut bpf_rects: Vec<BpfItem> = Vec::new();
     let mut track_items: Vec<TrackItem> = Vec::new();
+    // A clip and its bodies are placed widgets, so they are collected from
+    // their own placements: the clip's box first, its bodies after (the pass
+    // emits parent-before-child), which is the layering the drawing needs.
+    let mut clip_items: Vec<ClipItem> = Vec::new();
+    let mut clip_bodies: Vec<ClipBodyItem> = Vec::new();
     let mut ruler_items: Vec<RulerItem> = Vec::new();
     let mut pianoroll_items: Vec<PianoRollItem> = Vec::new();
     let mut nodetree_rects: Vec<NodeTreeItem> = Vec::new();
@@ -1026,6 +1058,24 @@ fn collect_widgets(
     for p in placed {
         // Everything a scrolled widget paints clips to its container's area.
         mesh.set_clip(p.clip);
+        // A **clip body** is drawn as a body, not as the element it also is:
+        // it has no chrome of its own (no ruler, no keyboard gutter, no
+        // navigation), because it is drawn against the axes of the clip
+        // holding it. That is what the containment buys, and it is decided
+        // here — once — rather than by each element asking where it is.
+        if let Some(parent) = p.parent
+            && let WidgetKind::Clip { dur, .. } = placed[parent].widget.kind
+        {
+            clip_bodies.push(ClipBodyItem {
+                rect: p.rect,
+                local: p.time.unwrap_or_else(|| View::full(1)),
+                dur,
+                clip: p.clip,
+                theme: p.widget.theme.clone(),
+                kind: p.widget.kind.clone(),
+            });
+            continue;
+        }
         // This widget's own size table: the host's, resolved at the scale it is
         // seen through ([`layout::Placed::metrics`]). Identical to the window's
         // outside a workspace; inside a zoomed one it carries the zoom, so a
@@ -1148,15 +1198,9 @@ fn collect_widgets(
                 editor,
                 ..
             } => {
-                // A track carries its clips as children (not laid out by the
-                // layout engine — they are placed by offset/dur on the shared
-                // time axis in the overlay pass below).
-                let clips = p
-                    .widget
-                    .children
-                    .iter()
-                    .filter_map(track::clip_draw)
-                    .collect();
+                // The lane's clips are placed widgets of their own, collected
+                // from their own placements below — a lane draws what a lane
+                // is, and nothing that is on it.
                 track_items.push(TrackItem {
                     id: p.widget.id.unwrap_or(-1),
                     rect: p.rect,
@@ -1165,8 +1209,15 @@ fn collect_widgets(
                     theme: p.widget.theme.clone(),
                     label: label.clone(),
                     header: header.clone(),
-                    clips,
                     editor: editor.clone(),
+                });
+            }
+            WidgetKind::Clip { label, .. } => {
+                clip_items.push(ClipItem {
+                    rect: p.rect,
+                    clip: p.clip,
+                    theme: p.widget.theme.clone(),
+                    label: label.clone(),
                 });
             }
             WidgetKind::PianoRoll {
@@ -1322,6 +1373,8 @@ fn collect_widgets(
         plot_rects,
         bpf_rects,
         track_items,
+        clip_items,
+        clip_bodies,
         ruler_items,
         pianoroll_items,
         nodetree_rects,
@@ -1674,10 +1727,8 @@ fn draw_static_meshes(
             track::draw(
                 &mut *mesh,
                 item.rect,
-                &nav,
                 item.label.as_deref(),
                 &item.header,
-                &item.clips,
                 ruler_on,
                 indent,
                 m,
@@ -1703,6 +1754,27 @@ fn draw_static_meshes(
                 over.rect(Rect::new(x, body.y, 1.5, body.h), th.playhead);
             }
         }
+    }
+    // The clips over their lanes, and their bodies over them: two passes rather
+    // than one nested loop, because that *is* the z order — every clip's box is
+    // under every body, and the layout emitted them in that order.
+    for item in &collected.clip_items {
+        mesh.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
+        track::draw_clip(&mut *mesh, item.rect, item.label.as_deref(), m, th);
+    }
+    for item in &collected.clip_bodies {
+        mesh.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
+        track::draw_body_widget(
+            &mut *mesh,
+            &item.kind,
+            item.rect,
+            &item.local,
+            item.dur,
+            m,
+            th,
+        );
     }
     // Piano-roll views: flat geometry (keyboard/grid/lanes/ruler) into the base
     // mesh, selection/playhead into the overlay. Each draws through its
@@ -2040,6 +2112,57 @@ mod tests {
             link: None,
             offset: 0.0,
         }
+    }
+
+    /// The whole clip path, from the tree to the geometry: the clip's box, and
+    /// then each body over it. This is what the containment has to buy — the
+    /// lane draws no clip, the clip draws no body, and each body draws itself
+    /// against the clip's rectangle and axis.
+    #[test]
+    fn a_clips_bodies_are_collected_and_drawn_over_it() {
+        use crate::host::guidef::GuiNode;
+        use crate::host::widget::Widget;
+
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":5,"type":"track","label":"lane","children":[
+                {"id":10,"type":"clip","offset":0,"dur":400,"data":[0.0,1.0,-1.0,0.5],
+                 "notes":[0.0,100.0,60.0],"points":[0.0,0.5,1,0.0,400.0,0.9,1,0.0]}]}]}"#;
+        let tree = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+        let m = Metrics::default();
+        let inputs = FrameInputs {
+            metrics: &m,
+            ..FrameInputs::default()
+        };
+        let area = Rect::new(0.0, 0.0, 800.0, 300.0);
+        let placed = layout::layout(area, &tree, &m);
+        let mut mesh = Mesh::new();
+        let collected = collect_widgets(&placed, &mut mesh, &inputs, &Theme::default());
+
+        assert_eq!(collected.track_items.len(), 1);
+        assert_eq!(collected.clip_items.len(), 1);
+        assert_eq!(collected.clip_bodies.len(), 3, "a take, a roll and a curve");
+        // Every body is drawn against the clip's own rectangle and axis.
+        let clip = &collected.clip_items[0];
+        for body in &collected.clip_bodies {
+            assert_eq!(body.rect, clip.rect);
+            assert_eq!(body.dur, 400.0);
+        }
+
+        // ...and each of them actually puts geometry down, over the lane and
+        // over the clip's own box.
+        let paint = |c: &Collected| {
+            let (mut base, mut over) = (Mesh::new(), Mesh::new());
+            draw_static_meshes(&mut base, &mut over, c, &inputs, &Theme::default(), &tree);
+            base.vertex_count()
+        };
+        let mut collected = collected;
+        let full = paint(&collected);
+        collected.clip_bodies.clear();
+        let no_bodies = paint(&collected);
+        collected.clip_items.clear();
+        let lane_only = paint(&collected);
+        assert!(no_bodies > lane_only, "the clip's box draws over the lane");
+        assert!(full > no_bodies, "the bodies draw over the clip's box");
     }
 
     #[test]

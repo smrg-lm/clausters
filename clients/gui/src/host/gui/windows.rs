@@ -81,6 +81,7 @@ impl App {
         if let Some(tree) = self.host.window_def(id) {
             collect_timelines(
                 tree,
+                None,
                 &gpu,
                 &renderers,
                 &mut waveforms,
@@ -128,11 +129,11 @@ impl App {
         // asked of it (an X11-only override under Wayland, say) looks exactly
         // like a host that ignored it.
         info!("gui_def {id}: opened window \"{title}\" at scale {ui_scale}");
-        // Plots and clips that name a local file map it now (the bulk path, no
-        // OSC); the samples land in the host tree the renderer reads each frame.
+        // Every mesh-drawn element that names a local file maps it now (the bulk
+        // path, no OSC); the data lands in the host tree the renderer reads each
+        // frame — a sequence as samples, a take as its peak pyramid.
         if let Some(root) = self.host.window_def_mut(id) {
-            load_plot_paths(root);
-            load_clip_bodies(root);
+            load_element_bulk(root);
         }
         if let Some(ws) = self.windows.get(&id) {
             ws.gpu.window.request_redraw();
@@ -196,12 +197,16 @@ impl App {
 /// inline/blob (and empty) samples build a slot directly.
 fn collect_timelines(
     widget: &Widget,
+    owner: Option<i32>,
     gpu: &Gpu,
     renderers: &Renderers,
     waveforms: &mut HashMap<i32, WaveformSlot>,
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
     buffer_refs: &mut Vec<(i32, i32)>,
 ) {
+    // A widget with no id of its own is addressed by its container's — which
+    // is how a clip's bodies are reached, since only the clip is on the wire.
+    let owner = widget.id.or(owner);
     match (&widget.kind, widget.id) {
         (WidgetKind::Signal(el), Some(id)) if el.is_gpu_view() => {
             let Some(data) = el.source.data() else {
@@ -275,23 +280,31 @@ fn collect_timelines(
                 }
             }
         }
-        (
-            WidgetKind::Clip {
-                samples, buffer, ..
-            },
-            Some(id),
-        ) => {
-            // A clip naming a server buffer with no inline body: fetch it over
-            // the leg, exactly like a waveform (the `cache`/`path` bulk bodies
-            // are mapped in `load_clip_bodies` when the window opens).
-            if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
-                buffer_refs.push((id, *bufnum));
+        // A **mesh-drawn** bulk source naming a server buffer and holding
+        // nothing yet: fetch it over the leg, exactly as a heavy view does.
+        // This is a clip's take — it owns no GPU slot, and its id is the
+        // clip's, since a body carries none of its own.
+        (WidgetKind::Signal(el), _) if !el.is_gpu_view() => {
+            if let (Some(id), Some(data)) = (owner, el.source.data())
+                && data.bulk
+                && data.is_empty()
+                && let Some(bufnum) = data.buffer
+            {
+                buffer_refs.push((id, bufnum));
             }
         }
         _ => {}
     }
     for child in &widget.children {
-        collect_timelines(child, gpu, renderers, waveforms, spectrograms, buffer_refs);
+        collect_timelines(
+            child,
+            owner,
+            gpu,
+            renderers,
+            waveforms,
+            spectrograms,
+            buffer_refs,
+        );
     }
 }
 
@@ -308,51 +321,48 @@ fn collect_canvases(widget: &Widget, gpu: &Gpu, out: &mut HashMap<i32, CanvasVie
     }
 }
 
-/// Maps a **mesh-drawn** signal element's local resource into its tree node: a
-/// `path` of raw little-endian `f32` mapped read-only, kept interleaved — every
-/// channel is drawn (the bulk path, no OSC). Walks children too. An element
-/// that already has samples, one without a path, and the navigable heavy views
-/// (whose bulk lands on the GPU, above) are left as they are. Landing samples
-/// also refreshes the cached spectral analysis.
-fn load_plot_paths(widget: &mut Widget) {
+/// Maps every **mesh-drawn** signal element's local resource into its tree
+/// node, through the same [`BulkLoader`] seam the heavy views use — so a
+/// minutes-long take reaches a lane as a peak pyramid and never as JSON over
+/// OSC. Walks children too, which is how a clip's take is reached.
+///
+/// Which of the two forms a source resolves to is [`signal::Data::bulk`], not
+/// the widget it happens to be in: a **take** becomes a `WaveformData` (a
+/// pyramid, decimated to the pixel width it is drawn at), a **sequence**
+/// becomes the samples themselves, kept interleaved so every channel draws.
+/// Landing samples also refreshes the cached spectral analysis. An element that
+/// already holds its data, one naming no resource, and the navigable heavy
+/// views (whose bulk lands on the GPU, above) are left as they are.
+fn load_element_bulk(widget: &mut Widget) {
     if let Some(el) = widget.kind.signal_mut()
         && !el.is_gpu_view()
         && let Some(data) = el.source.data_mut()
-        && data.samples.is_empty()
-        && let Some(p) = data.path.clone()
-        && let Some(loaded) = MmapLoader.plot_samples(&p, data.channels)
     {
-        data.samples = loaded;
-        widget.kind.refresh_analysis();
+        let mut landed = false;
+        if data.bulk {
+            if data.body.is_none() && (data.path.is_some() || data.cache.is_some()) {
+                landed = MmapLoader
+                    .waveform(
+                        data.cache.as_deref(),
+                        data.path.as_deref(),
+                        data.channels,
+                        data.base_bucket,
+                    )
+                    .map(|loaded| data.body = Some(Arc::new(loaded)))
+                    .is_some();
+            }
+        } else if data.samples.is_empty()
+            && let Some(p) = data.path.clone()
+            && let Some(loaded) = MmapLoader.plot_samples(&p, data.channels)
+        {
+            data.samples = loaded;
+            landed = true;
+        }
+        if landed {
+            widget.kind.refresh_analysis();
+        }
     }
     for child in &mut widget.children {
-        load_plot_paths(child);
-    }
-}
-
-/// Maps the local resource (`cache` or `path`) of every clip that names one,
-/// through the same [`BulkLoader`] seam the waveform
-/// view uses — so a minutes-long take reaches a lane as a peak pyramid, never as
-/// JSON over OSC. The loaded body lands in the host tree (like a plot's
-/// samples), no GPU slot: a lane draws flat geometry decimated from the pyramid.
-#[allow(clippy::type_complexity)]
-fn load_clip_bodies(widget: &mut Widget) {
-    if let WidgetKind::Clip {
-        body,
-        path,
-        cache,
-        channels,
-        base_bucket,
-        ..
-    } = &mut widget.kind
-        && body.is_none()
-        && (path.is_some() || cache.is_some())
-        && let Some(data) =
-            MmapLoader.waveform(cache.as_deref(), path.as_deref(), *channels, *base_bucket)
-    {
-        *body = Some(Arc::new(data));
-    }
-    for child in &mut widget.children {
-        load_clip_bodies(child);
+        load_element_bulk(child);
     }
 }

@@ -14,18 +14,6 @@ use super::{GuiNode, *};
 const PITCH_MIN: f32 = 21.0;
 const PITCH_MAX: f32 = 108.0;
 
-/// The default vertical axis of a `clip`, which depends on **what its body
-/// is**: `notes` makes it a piano-roll, so the axis is pitch; otherwise it is a
-/// take and the axis is amplitude. Returns `notes` when the clip carries any,
-/// `otherwise` when it does not.
-fn note_axis(props: &serde_json::Map<String, Value>, notes: f32, otherwise: f32) -> f32 {
-    if props.contains_key("notes") {
-        notes
-    } else {
-        otherwise
-    }
-}
-
 /// Builds the [`WidgetKind`] a GuiDef `node` names (an unknown type becomes
 /// [`WidgetKind::Unknown`]). `id` is the node's resolved id (some widgets log
 /// with it); `blobs` are the `/gui_def` message's trailing bulk payloads.
@@ -244,61 +232,6 @@ pub(super) fn build_kind(
         "clip" => WidgetKind::Clip {
             offset: number_f64(&node.props, "offset", 0.0).max(0.0),
             dur: number_f64(&node.props, "dur", 0.0).max(0.0),
-            samples: inline_samples("clip", id, &node.props, blobs)?,
-            // Filled by the host when a `cache`/`path`/`buffer` body loads.
-            body: None,
-            buffer: node
-                .props
-                .get("buffer")
-                .and_then(Value::as_i64)
-                .map(|n| n as i32),
-            path: node
-                .props
-                .get("path")
-                .and_then(Value::as_str)
-                .map(PathBuf::from),
-            cache: node
-                .props
-                .get("cache")
-                .and_then(Value::as_str)
-                .map(PathBuf::from),
-            channels: node
-                .props
-                .get("channels")
-                .and_then(Value::as_u64)
-                .map(|n| (n as usize).max(1))
-                .unwrap_or(1),
-            base_bucket: node
-                .props
-                .get("base_bucket")
-                .and_then(Value::as_u64)
-                .map(|n| (n as usize).max(1))
-                .unwrap_or(DEFAULT_BASE_BUCKET),
-            notes: parse_notes(&node.props),
-            points: node
-                .props
-                .get("points")
-                .and_then(|v| {
-                    // Against the *curve's* range: a layered clip's `min`/`max`
-                    // belong to the body underneath (a piano-roll's pitches).
-                    super::bpf::parse_points(
-                        v,
-                        number(&node.props, "points_min", number(&node.props, "min", -1.0)),
-                        number(&node.props, "points_max", number(&node.props, "max", 1.0)),
-                    )
-                })
-                .unwrap_or_default(),
-            exp: node.props.get("exp").and_then(truthy).unwrap_or(false),
-            points_min: number(&node.props, "points_min", number(&node.props, "min", -1.0)),
-            points_max: number(&node.props, "points_max", number(&node.props, "max", 1.0)),
-            // The body's own axis. A **take** is amplitude (-1, 1); a
-            // **piano-roll** is pitch, and its default has to be a pitch range
-            // or every note lands outside the axis and clamps to the clip's top
-            // edge — silently, since nothing about the drawing says why. So a
-            // clip carrying `notes` falls back to the `pianoroll` widget's own
-            // window (a piano's compass) rather than to the take's amplitude.
-            min: number(&node.props, "min", note_axis(&node.props, PITCH_MIN, -1.0)),
-            max: number(&node.props, "max", note_axis(&node.props, PITCH_MAX, 1.0)),
             label: label(&node.props),
         },
         "patch" => WidgetKind::Patch {
@@ -307,6 +240,194 @@ pub(super) fn build_kind(
             label: label(&node.props),
         },
         other => WidgetKind::Unknown(other.to_string()),
+    })
+}
+
+/// The bodies a `clip` node describes, as the child widgets they are — back to
+/// front, so they **layer**: the take, the events over it, the envelope over
+/// both. A body the props do not describe is simply absent (a clip is not
+/// obliged to carry all three, and an empty one draws nothing but its frame).
+///
+/// This is the one place a clip's wire props become elements. The elements
+/// themselves are the ordinary ones — a signal element for the take, a
+/// piano-roll for the events, a break-point curve for the automation — so
+/// nothing here re-describes what they are; it only says which props feed
+/// which, and with what default axis.
+pub(super) fn clip_bodies(node: &GuiNode, blobs: &[Vec<u8>]) -> Result<Vec<Widget>, String> {
+    let props = &node.props;
+    let mut out = Vec::new();
+    if let Some(take) = clip_take(props, blobs)? {
+        out.push(body_widget(take));
+    }
+    if let Some(roll) = clip_roll(props) {
+        out.push(body_widget(roll));
+    }
+    if let Some(curve) = clip_curve(props) {
+        out.push(body_widget(curve));
+    }
+    Ok(out)
+}
+
+/// A clip body as a tree node: a widget with **no id** (the clip is what a
+/// script addresses) and no place props (a body fills the clip's rectangle —
+/// they layer rather than divide it, which is the layout's rule for a time
+/// container's contents, not a prop of theirs).
+pub(super) fn body_widget(kind: WidgetKind) -> Widget {
+    Widget {
+        id: None,
+        kind,
+        place: Place::default(),
+        gestures: None,
+        theme_over: None,
+        color: None,
+        theme: None,
+        children: Vec::new(),
+    }
+}
+
+/// An **empty** body of the kind `is` names, for a clip growing one it was not
+/// built with (a `/gui_set` of `points` on a clip that had only a take). The
+/// same three elements, with nothing in them yet.
+pub(super) fn empty_clip_body(is: fn(&WidgetKind) -> bool) -> Option<WidgetKind> {
+    let candidates: [WidgetKind; 3] = [
+        WidgetKind::Signal(Box::new(take_element(signal::Data {
+            samples: Arc::from([] as [f32; 0]),
+            channels: 1,
+            buffer: None,
+            path: None,
+            cache: None,
+            base_bucket: DEFAULT_BASE_BUCKET,
+            bulk: true,
+            body: None,
+        }))),
+        WidgetKind::PianoRoll {
+            notes: Vec::new(),
+            osc: Vec::new(),
+            selected: Vec::new(),
+            min: PITCH_MIN,
+            max: PITCH_MAX,
+            snap: 0.0,
+            velocity_lane: false,
+            osc_lane: false,
+            midi_in: false,
+            label: None,
+            editor: EditorProps::body(),
+        },
+        WidgetKind::Bpf {
+            points: Vec::new(),
+            min: -1.0,
+            max: 1.0,
+            duration: 0.0,
+            exp: false,
+            label: None,
+        },
+    ];
+    candidates.into_iter().find(|k: &WidgetKind| is(k))
+}
+
+/// The signal element a clip's take is, over `source`: the `waveform` preset
+/// with every capability off and no chrome — it is drawn against the clip's
+/// axis, and the clip is what navigates.
+fn take_element(source: signal::Data) -> signal::SignalElement {
+    let mut el = signal::SignalElement::from_preset(
+        &signal::preset("waveform").expect("the waveform preset exists"),
+    );
+    el.caps = signal::Caps::default();
+    el.editor.ruler = Ruler::Off;
+    el.editor.ruler_y = RulerY::Off;
+    el.source = signal::Source::Data(source);
+    el
+}
+
+/// A clip's **take**: a signal element over the clip's source props, with every
+/// capability off — it is drawn against the clip's axis, and the clip is what
+/// navigates. `bulk`, because a take is a take: it resolves as a peak pyramid,
+/// never as an array of samples, however long the material turns out to be.
+fn clip_take(
+    props: &serde_json::Map<String, Value>,
+    blobs: &[Vec<u8>],
+) -> Result<Option<WidgetKind>, String> {
+    let samples = inline_samples("clip", None, props, blobs)?;
+    let (buffer, path, cache) = (
+        props
+            .get("buffer")
+            .and_then(Value::as_i64)
+            .map(|n| n as i32),
+        props.get("path").and_then(Value::as_str).map(PathBuf::from),
+        props
+            .get("cache")
+            .and_then(Value::as_str)
+            .map(PathBuf::from),
+    );
+    if samples.is_empty() && buffer.is_none() && path.is_none() && cache.is_none() {
+        return Ok(None);
+    }
+    let mut el = take_element(signal::Data {
+        samples,
+        channels: props
+            .get("channels")
+            .and_then(Value::as_u64)
+            .map(|n| (n as usize).max(1))
+            .unwrap_or(1),
+        buffer,
+        path,
+        cache,
+        base_bucket: props
+            .get("base_bucket")
+            .and_then(Value::as_u64)
+            .map(|n| (n as usize).max(1))
+            .unwrap_or(DEFAULT_BASE_BUCKET),
+        bulk: true,
+        body: None,
+    });
+    el.value = signal::ValueRange::new(number(props, "min", -1.0), number(props, "max", 1.0));
+    Ok(Some(WidgetKind::Signal(Box::new(el))))
+}
+
+/// A clip's **roll**: the note events over a pitch window. The window defaults
+/// to the `pianoroll` widget's own compass rather than to an amplitude range —
+/// a pitch axis of `[-1, 1]` would clamp every note to the clip's top edge,
+/// silently, since nothing about the drawing would say why.
+fn clip_roll(props: &serde_json::Map<String, Value>) -> Option<WidgetKind> {
+    let notes = parse_notes(props);
+    if notes.is_empty() {
+        return None;
+    }
+    Some(WidgetKind::PianoRoll {
+        notes,
+        osc: Vec::new(),
+        selected: Vec::new(),
+        min: number(props, "min", PITCH_MIN),
+        max: number(props, "max", PITCH_MAX),
+        snap: 0.0,
+        velocity_lane: false,
+        osc_lane: false,
+        midi_in: false,
+        label: None,
+        editor: EditorProps::body(),
+    })
+}
+
+/// A clip's **automation curve**: break-points over the clip's span, against
+/// the curve's *own* value range (`points_min`/`points_max`), because a layered
+/// clip's bodies do not share an axis — an envelope's units are not the pitches
+/// under it.
+fn clip_curve(props: &serde_json::Map<String, Value>) -> Option<WidgetKind> {
+    let min = number(props, "points_min", number(props, "min", -1.0));
+    let max = number(props, "points_max", number(props, "max", 1.0));
+    let points = props
+        .get("points")
+        .and_then(|v| super::bpf::parse_points(v, min, max))
+        .filter(|p| !p.is_empty())?;
+    Some(WidgetKind::Bpf {
+        points,
+        min,
+        max,
+        // A clip's curve is placed on the clip's own axis, so its domain is the
+        // clip's span rather than a `duration` of its own.
+        duration: 0.0,
+        exp: props.get("exp").and_then(truthy).unwrap_or(false),
+        label: None,
     })
 }
 
@@ -356,6 +477,8 @@ fn build_signal(
                 .and_then(Value::as_u64)
                 .map(|n| (n as usize).max(1))
                 .unwrap_or(DEFAULT_BASE_BUCKET),
+            bulk: p.bulk,
+            body: None,
         })
     };
 

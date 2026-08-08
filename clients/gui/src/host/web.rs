@@ -952,11 +952,18 @@ impl WebApp {
                     if !self.canvases.contains_key(&want.def_id) {
                         continue;
                     }
+                    // The fetch was keyed by a widget id, and for a clip that
+                    // is the *clip's* — a body carries none — so the reply
+                    // resolves to the element that wanted the samples.
                     let Some(kind) = self
                         .host
                         .window_def(want.def_id)
                         .and_then(|t| t.find(want.widget_id))
-                        .map(|w| w.kind.clone())
+                        .map(|w| {
+                            w.signal_target()
+                                .map(|el| WidgetKind::Signal(Box::new(el.clone())))
+                                .unwrap_or_else(|| w.kind.clone())
+                        })
                     else {
                         continue;
                     };
@@ -971,14 +978,17 @@ impl WebApp {
                             let data = WaveformData::from_interleaved(&samples, channels, bucket);
                             self.place_bulk(want.def_id, want.widget_id, BulkData::Waveform(data));
                         }
-                        WidgetKind::Clip { base_bucket, .. } => {
-                            // A clip's take lands in the tree (its lane body is
-                            // flat geometry decimated from the pyramid, no GPU
-                            // slot) — the same landing the mapped bulk path uses.
-                            let data =
-                                WaveformData::from_interleaved(&samples, channels, base_bucket);
-                            self.set_clip_body(want.def_id, want.widget_id, data);
-                            // Falls through to the shared tail: a clip carries
+                        // A **mesh-drawn take** (a clip's body): its pyramid
+                        // lands in the tree, no GPU slot — the same landing the
+                        // mapped bulk path uses.
+                        WidgetKind::Signal(ref el) if !el.is_gpu_view() => {
+                            let bucket = el
+                                .source
+                                .data()
+                                .map_or(signal::DEFAULT_BASE_BUCKET, |d| d.base_bucket);
+                            let data = WaveformData::from_interleaved(&samples, channels, bucket);
+                            self.set_take_body(want.def_id, want.widget_id, data);
+                            // Falls through to the shared tail: a body carries
                             // no editor props, so the sample-rate fill is a
                             // no-op for it, but the **repaint** is not — a
                             // `continue` here left the take sitting in the tree
@@ -1046,7 +1056,7 @@ impl WebApp {
         };
         let mut buffer_refs = Vec::new();
         let mut requests = Vec::new();
-        collect_bulk(tree, &mut buffer_refs, &mut requests);
+        collect_bulk(tree, None, &mut buffer_refs, &mut requests);
         for (widget_id, bufnum) in buffer_refs {
             if let Some(query) = self.fetches.want(def, widget_id, bufnum) {
                 self.send_to_server(query);
@@ -1089,15 +1099,16 @@ impl WebApp {
         }
     }
 
-    /// Writes a fetched take into a `clip`'s body in the host tree — the clip
-    /// counterpart of a plot's samples (a lane needs no GPU slot: its body is
-    /// flat geometry, decimated from the take's peak pyramid).
-    fn set_clip_body(&mut self, def_id: i32, widget_id: i32, data: WaveformData) {
+    /// Writes a fetched take's pyramid into the signal element that wanted it —
+    /// the mesh-drawn counterpart of a plot's samples (a clip body needs no GPU
+    /// slot: it is flat geometry, decimated from the take's peak pyramid).
+    /// `widget_id` may name the clip rather than the body, which carries no id.
+    fn set_take_body(&mut self, def_id: i32, widget_id: i32, data: WaveformData) {
         if let Some(root) = self.host.window_def_mut(def_id)
-            && let Some(widget) = root.find_mut(widget_id)
-            && let WidgetKind::Clip { body, .. } = &mut widget.kind
+            && let Some(el) = root.find_mut(widget_id).and_then(|w| w.signal_target_mut())
+            && let Some(d) = el.source.data_mut()
         {
-            *body = Some(Arc::new(data));
+            d.body = Some(Arc::new(data));
         }
     }
 
@@ -1105,18 +1116,20 @@ impl WebApp {
     /// slot), write a clip's take or a plot's samples into the host tree, then
     /// repaint.
     fn on_bulk_ready(&mut self, def: i32, widget_id: i32, data: BulkData) {
-        // A waveform resource wanted by a `clip` lands in the tree, not the GPU.
+        // A waveform resource wanted by a **mesh-drawn** take (a clip's body)
+        // lands in the tree, not the GPU.
         if let BulkData::Waveform(_) = &data
             && self
                 .host
                 .window_def(def)
                 .and_then(|t| t.find(widget_id))
-                .is_some_and(|w| matches!(w.kind, WidgetKind::Clip { .. }))
+                .and_then(|w| w.signal_target())
+                .is_some_and(|el| !el.is_gpu_view())
         {
             let BulkData::Waveform(data) = data else {
                 unreachable!()
             };
-            self.set_clip_body(def, widget_id, data);
+            self.set_take_body(def, widget_id, data);
             self.request_redraw(def);
             return;
         }
@@ -1866,17 +1879,40 @@ fn build_inline_timelines(
 /// inline case handled by [`build_inline_waveforms`].
 fn collect_bulk(
     widget: &Widget,
+    owner: Option<i32>,
     buffer_refs: &mut Vec<(i32, i32)>,
     requests: &mut Vec<(i32, BulkRequest)>,
 ) {
-    if let Some(id) = widget.id {
+    // A widget with no id of its own is addressed by its container's — which is
+    // how a clip's bodies are reached, since only the clip is on the wire.
+    let owner = widget.id.or(owner);
+    if let Some(id) = owner {
         match &widget.kind {
             WidgetKind::Signal(el) => {
                 let Some(data) = el.source.data() else { return };
                 let time_freq = el.presentation == Presentation::TimeFrequency;
-                if !el.is_gpu_view() {
-                    // A mesh-drawn element takes its samples straight into the
-                    // tree — no pyramid, no analysis cache to fetch.
+                if !el.is_gpu_view() && data.bulk {
+                    // A **take** drawn into the mesh (a clip's body): the same
+                    // resolution a heavy view's samples take — cache, then
+                    // path, then buffer — landing in the tree, not the GPU.
+                    if let Some(cache) = &data.cache {
+                        requests
+                            .push((id, BulkRequest::Cache(cache.to_string_lossy().into_owned())));
+                    } else if let Some(path) = &data.path {
+                        requests.push((
+                            id,
+                            BulkRequest::Raw {
+                                url: path.to_string_lossy().into_owned(),
+                                channels: data.channels,
+                                base_bucket: data.base_bucket,
+                            },
+                        ));
+                    } else if let (Some(bufnum), true) = (data.buffer, data.is_empty()) {
+                        buffer_refs.push((id, bufnum));
+                    }
+                } else if !el.is_gpu_view() {
+                    // A **sequence**: its samples go straight into the tree —
+                    // no pyramid, no analysis cache to fetch.
                     if data.samples.is_empty()
                         && let Some(path) = &data.path
                     {
@@ -1922,37 +1958,11 @@ fn collect_bulk(
                     buffer_refs.push((id, bufnum));
                 }
             }
-            // A clip's take resolves exactly like a waveform's samples (cache →
-            // path → buffer), only its landing differs: the tree, not the GPU.
-            WidgetKind::Clip {
-                samples,
-                buffer,
-                path,
-                cache,
-                channels,
-                base_bucket,
-                ..
-            } => {
-                if let Some(cache) = cache {
-                    requests.push((id, BulkRequest::Cache(cache.to_string_lossy().into_owned())));
-                } else if let Some(path) = path {
-                    requests.push((
-                        id,
-                        BulkRequest::Raw {
-                            url: path.to_string_lossy().into_owned(),
-                            channels: *channels,
-                            base_bucket: *base_bucket,
-                        },
-                    ));
-                } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
-                    buffer_refs.push((id, *bufnum));
-                }
-            }
             _ => {}
         }
     }
     for child in &widget.children {
-        collect_bulk(child, buffer_refs, requests);
+        collect_bulk(child, owner, buffer_refs, requests);
     }
 }
 

@@ -39,6 +39,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::spectrogram::FreqScale;
+use crate::waveform::WaveformData;
 
 use super::widget::{EditorProps, Rate, Ruler, RulerY};
 
@@ -85,6 +86,34 @@ pub struct Data {
     pub cache: Option<PathBuf>,
     /// The peak pyramid's level-0 bucket, in samples.
     pub base_bucket: usize,
+    /// **Bulk**: resolve this source as a peak pyramid rather than as an array
+    /// of samples. It is a property of the source's *size*, not of the drawing
+    /// — a take is minutes of audio and reaches the host as a pyramid (a
+    /// mapped file, a peaks cache, a fetched buffer), a plotted sequence is a
+    /// few thousand values and reaches it whole. Both draw through the same
+    /// [`trace::Trace`], which is why this is one flag and not two code paths.
+    pub bulk: bool,
+    /// The resolved pyramid of a [`bulk`](Self::bulk) source, once a loader has
+    /// mapped or fetched it. `None` until then — and always, for a source that
+    /// is not bulk, which keeps its samples inline instead.
+    pub body: Option<Arc<WaveformData>>,
+}
+
+impl Data {
+    /// The one column source this data draws through: its resolved pyramid
+    /// when it has one, else its inline samples. Every signal drawing — the
+    /// GPU waveform, a plot, a clip's take — reads its columns from here.
+    pub fn trace(&self) -> trace::Trace<'_> {
+        match &self.body {
+            Some(d) => trace::Trace::Data(d),
+            None => trace::Trace::samples(&self.samples, self.channels),
+        }
+    }
+
+    /// Whether the source has nothing to draw yet — no pyramid and no samples.
+    pub fn is_empty(&self) -> bool {
+        self.body.is_none() && self.samples.is_empty()
+    }
 }
 
 /// A **forward-only** source: `channels` adjacent buses read live at `rate`.
@@ -191,6 +220,12 @@ impl ValueRange {
             max: None,
         }
     }
+
+    /// The range with each auto side filled in from `(lo, hi)` — for a drawing
+    /// that has no data pass of its own to auto-fit against.
+    pub fn resolved(&self, lo: f32, hi: f32) -> (f32, f32) {
+        (self.min.unwrap_or(lo), self.max.unwrap_or(hi))
+    }
 }
 
 /// The spectral parameters, shared by every presentation that runs an FFT — the
@@ -288,6 +323,8 @@ impl SignalElement {
                     path: None,
                     cache: None,
                     base_bucket: DEFAULT_BASE_BUCKET,
+                    bulk: p.bulk,
+                    body: None,
                 })
             },
             caps: p.caps,
@@ -367,6 +404,9 @@ pub struct Preset {
     /// Whether the name reads a `view` prop to pick its presentation — the
     /// static plot's `signal`/`spectrum` switch.
     pub view_prop: bool,
+    /// Whether a random-access source of this preset is [`Data::bulk`] — the
+    /// navigable heavy views, whose sources are takes rather than sequences.
+    pub bulk: bool,
 }
 
 /// Navigable and selectable: the editor-grade views over addressable data.
@@ -396,12 +436,18 @@ pub fn preset(kind: &str) -> Option<Preset> {
         window_ms: 20.0,
         size_prop: "fft_size",
         view_prop: false,
+        bulk: false,
     };
     Some(match kind {
-        "waveform" => Preset { caps: NAV, ..base },
+        "waveform" => Preset {
+            caps: NAV,
+            bulk: true,
+            ..base
+        },
         "spectrogram" => Preset {
             presentation: Presentation::TimeFrequency,
             caps: NAV,
+            bulk: true,
             ruler_y: RulerY::Hz,
             size_prop: "window_size",
             spectral: Spectral {

@@ -228,11 +228,18 @@ impl App {
             wants.len()
         );
         for want in wants {
+            // The fetch was keyed by a widget id, and for a clip that is the
+            // *clip's* — a body carries none — so the reply resolves to the
+            // element that wanted the samples rather than to the container.
             let Some(kind) = self
                 .host
                 .window_def(want.def_id)
                 .and_then(|t| t.find(want.widget_id))
-                .map(|w| w.kind.clone())
+                .map(|w| {
+                    w.signal_target()
+                        .map(|el| WidgetKind::Signal(Box::new(el.clone())))
+                        .unwrap_or_else(|| w.kind.clone())
+                })
             else {
                 continue;
             };
@@ -251,22 +258,25 @@ impl App {
                     let slot = frame::waveform_slot(data, &ws.gpu);
                     ws.waveforms.insert(want.widget_id, slot);
                 }
-                WidgetKind::Clip { base_bucket, .. } => {
-                    // A clip's take lives in the tree, not on the GPU (its lane
-                    // body is flat geometry decimated from the pyramid).
-                    let data = Arc::new(WaveformData::from_interleaved(
-                        &samples,
-                        channels,
-                        base_bucket,
-                    ));
+                // A **mesh-drawn** bulk source (a clip's take): the pyramid
+                // lives in the tree, not on the GPU, since a clip body is flat
+                // geometry decimated from it. The id is the clip's — a body
+                // carries none — so `signal_target_mut` reaches the take.
+                WidgetKind::Signal(ref el) if !el.is_gpu_view() => {
+                    let bucket = el
+                        .source
+                        .data()
+                        .map_or(signal::DEFAULT_BASE_BUCKET, |d| d.base_bucket);
+                    let data = Arc::new(WaveformData::from_interleaved(&samples, channels, bucket));
                     ws.gpu.window.request_redraw();
-                    if let Some(w) = self
+                    if let Some(el) = self
                         .host
                         .window_def_mut(want.def_id)
                         .and_then(|t| t.find_mut(want.widget_id))
-                        && let WidgetKind::Clip { body, .. } = &mut w.kind
+                        .and_then(|w| w.signal_target_mut())
+                        && let Some(d) = el.source.data_mut()
                     {
-                        *body = Some(data);
+                        d.body = Some(data);
                     }
                     continue; // no navigation group, no ruler rate: a lane owns those
                 }

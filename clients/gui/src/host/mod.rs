@@ -798,7 +798,7 @@ impl Host {
                         changed |= style
                             || (k == "gestures" && widget.gestures_apply(v))
                             || widget.place.apply(k, v)
-                            || widget.kind.apply(k, v);
+                            || widget::apply_widget(widget, k, v);
                     }
                 }
             }

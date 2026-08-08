@@ -723,6 +723,50 @@ mod tests {
     }
 
     #[test]
+    fn a_clips_bodies_are_placed_children_layered_on_its_own_axis() {
+        // One clip carrying all three bodies at once: a take, a roll of events
+        // and an automation curve. They **layer** — each fills the clip's whole
+        // rectangle — rather than dividing it, which is what makes an envelope
+        // over a take one clip instead of two.
+        let w = tree(
+            r#"{"type":"window","children":[
+            {"id":5,"type":"track","children":[
+                {"id":10,"type":"clip","offset":0,"dur":400,"data":[0.0,1.0],
+                 "notes":[0.0,100.0,60.0],"points":[0.0,0.5,1,0.0]}]}]}"#,
+        );
+        let m = Metrics::default();
+        let placed = layout(area(), &w, &m);
+        let ci = placed.iter().position(|p| p.widget.id == Some(10)).unwrap();
+        let clip = placed[ci];
+
+        // The bodies are the clip's children, in layering order.
+        let bodies: Vec<_> = placed
+            .iter()
+            .filter(|p| p.parent == Some(ci))
+            .cloned()
+            .collect();
+        assert_eq!(bodies.len(), 3, "a take, a roll and a curve");
+        assert!(matches!(bodies[0].widget.kind, WidgetKind::Signal(_)));
+        assert!(matches!(
+            bodies[1].widget.kind,
+            WidgetKind::PianoRoll { .. }
+        ));
+        assert!(matches!(bodies[2].widget.kind, WidgetKind::Bpf { .. }));
+
+        for b in &bodies {
+            assert_eq!(
+                b.rect, clip.rect,
+                "a body fills the clip, it does not share it"
+            );
+            assert_eq!(b.time, clip.time, "...and reads the clip's own axis");
+            assert!(
+                b.widget.id.is_none(),
+                "a body is not addressed: the clip is"
+            );
+        }
+    }
+
+    #[test]
     fn col_splits_height_evenly() {
         // Two elastic surfaces: nothing knows its own height, so they share.
         let w = tree(

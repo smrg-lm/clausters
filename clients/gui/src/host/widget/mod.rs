@@ -39,7 +39,6 @@ use clausters_core::osc::OscType;
 use serde_json::Value;
 
 use crate::spectrogram::FreqScale;
-use crate::waveform::WaveformData;
 
 use super::canvas;
 use super::guidef::GuiNode;
@@ -326,6 +325,17 @@ impl EditorProps {
                 .filter(|n| *n >= 0)
                 .map(|n| n as i32),
             offset: number_f64(props, "offset", 0.0).max(0.0),
+        }
+    }
+
+    /// The chrome of a **clip body**: none of it. A body is drawn against the
+    /// axes of the clip holding it, so it owns no ruler, no selection, no
+    /// playhead and no navigation group — everything a container answers for.
+    pub(super) fn body() -> EditorProps {
+        EditorProps {
+            ruler: Ruler::Off,
+            ruler_y: RulerY::Off,
+            ..EditorProps::parse(&serde_json::Map::new(), RulerY::Off)
         }
     }
 
@@ -1099,54 +1109,29 @@ pub enum WidgetKind {
     },
     /// One clip on a `track`: a placed rectangle spanning `[offset, offset +
     /// dur]` in timeline sample units (the graphic unit — length = duration),
-    /// with a `label`. Its body is one of two: a **waveform**, or — when `notes`
-    /// is non-empty — a **piano-roll** of note events (`start`/`dur` relative to
-    /// the clip, `pitch` over `[min, max]`), the events-track scalar-vertical
-    /// view. Interaction (drag to move `offset`, drag an edge to resize `dur`)
-    /// writes back through the edit-back path. A leaf.
+    /// with a `label`. Interaction (drag to move `offset`, drag an edge to
+    /// resize `dur`) writes back through the edit-back path.
     ///
-    /// The waveform body reaches the clip the same ways a navigable [`Signal`]
-    /// element's samples do, in the same precedence order — a real take is
-    /// minutes long, so it must never ride the wire as JSON: `cache` (a prebuilt
-    /// peak-pyramid file, raw samples never loaded), `path` (a file of raw
-    /// little-endian `f32` the host maps — the bulk path, no OSC), `buffer` (a
-    /// server buffer, fetched over the client leg), or inline `data`/`blob` for a
-    /// short body. A loaded body lands in `body` as the shared [`WaveformData`],
-    /// whose peak pyramid (the core's, the one every client builds) decimates it
-    /// to the clip's pixel width — the same "never resolve finer than the screen"
-    /// rule the editor views follow, with no GPU slot: a lane body is flat
-    /// geometry, the static-view posture.
+    /// **A clip is a container, and its bodies are its children.** A take is a
+    /// [`Signal`] element, a roll of events a [`PianoRoll`], an automation
+    /// curve a [`Bpf`] — the same elements that stand on their own elsewhere,
+    /// composed here rather than reimplemented, and **layered** back to front
+    /// rather than selected by precedence: an envelope drawn over the material
+    /// it shapes is one clip, not two. Each keeps its own value axis, because a
+    /// roll's `min`/`max` are pitches and a curve's are its parameter's.
+    ///
+    /// They are built from the clip's own props (`data`/`blob`/`path`/`cache`/
+    /// `buffer`, `notes`, `points`) because the wire still describes a clip as
+    /// a thing with bodies; moving the wire onto the containment is a separate
+    /// step. So they carry **no id**: a script addresses the clip, and a
+    /// `/gui_set` of a body prop routes into the child that owns it.
     ///
     /// [`Signal`]: WidgetKind::Signal
+    /// [`PianoRoll`]: WidgetKind::PianoRoll
+    /// [`Bpf`]: WidgetKind::Bpf
     Clip {
         offset: f64,
         dur: f64,
-        samples: Arc<[f32]>,
-        body: Option<Arc<WaveformData>>,
-        buffer: Option<i32>,
-        path: Option<PathBuf>,
-        cache: Option<PathBuf>,
-        channels: usize,
-        base_bucket: usize,
-        notes: Vec<super::track::Note>,
-        /// An **automation** clip: break-points over the clip's span (times in
-        /// timeline units relative to its `offset`, values over `[min, max]`),
-        /// drawn as the curve body and editable in place — the `bpf` editor's
-        /// model and shape math, placed on the multitrack. Takes precedence over
-        /// `notes` and the waveform body.
-        points: Vec<super::bpf::BpfPoint>,
-        /// An exponential display scale for the curve body's value axis (a
-        /// frequency-like range), as on the `bpf` view.
-        exp: bool,
-        /// The curve body's own value range. A clip may **layer** its bodies (an
-        /// envelope drawn over the event it shapes), and they do not share an
-        /// axis — a piano-roll's `min`/`max` are pitches, a curve's are its
-        /// parameter's units — so the curve keeps its own. Defaults to
-        /// `min`/`max`.
-        points_min: f32,
-        points_max: f32,
-        min: f32,
-        max: f32,
         label: Option<String>,
     },
     /// A **directed, typed** patcher (a GraphDef at level 1, a SynthDef/FaustDef
@@ -1254,6 +1239,13 @@ pub struct Widget {
     pub children: Vec<Widget>,
 }
 
+/// Applies one `/gui_set` key/value to a widget: its kind's own keys, plus —
+/// for a `clip` — the props of the bodies it holds as children. See
+/// [`apply::apply_widget`].
+pub fn apply_widget(widget: &mut Widget, key: &str, v: &Value) -> bool {
+    apply::apply_widget(widget, key, v)
+}
+
 /// Resolves every widget's theme reference: walking from `base` (the host
 /// theme), a `theme` prop overlays the inherited table for its subtree and a
 /// `color` prop re-seeds the function roles for its one widget — both at this
@@ -1328,6 +1320,11 @@ impl Widget {
                 .iter()
                 .map(|c| Self::build(None, c, blobs))
                 .collect::<Result<Vec<_>, _>>()?,
+            // A clip is a container too, but its children are not on the wire:
+            // the wire still describes a clip as a thing with bodies, so the
+            // bodies are built from its own props (see `build::clip_bodies`).
+            // Anything nested under a `clip` node is ignored, as under a leaf.
+            WidgetKind::Clip { .. } => build::clip_bodies(node, blobs)?,
             _ => Vec::new(),
         };
         let gestures = node.props.get("gestures").and_then(|v| {
@@ -1604,6 +1601,89 @@ impl WidgetKind {
     }
 }
 
+impl Widget {
+    /// The signal element this widget draws with: its own, or — for a `clip` —
+    /// the **take** among its bodies.
+    ///
+    /// A clip's bodies carry no id, so everything that resolves a widget by id
+    /// and then wants its samples (a bulk load landing, a buffer fetch coming
+    /// back) lands on the clip and reaches the take through here. That is the
+    /// containment stated once: a body's id *is* its container's.
+    pub fn signal_target(&self) -> Option<&SignalElement> {
+        match &self.kind {
+            WidgetKind::Signal(el) => Some(el),
+            WidgetKind::Clip { .. } => self.children.iter().find_map(|c| match &c.kind {
+                WidgetKind::Signal(el) => Some(&**el),
+                _ => None,
+            }),
+            _ => None,
+        }
+    }
+
+    /// [`signal_target`](Self::signal_target), mutably — the door a bulk load
+    /// writes its samples or its pyramid through.
+    pub fn signal_target_mut(&mut self) -> Option<&mut SignalElement> {
+        match &mut self.kind {
+            WidgetKind::Signal(el) => Some(el),
+            WidgetKind::Clip { .. } => self.children.iter_mut().find_map(|c| match &mut c.kind {
+                WidgetKind::Signal(el) => Some(&mut **el),
+                _ => None,
+            }),
+            _ => None,
+        }
+    }
+
+    /// The body of `kind` among a clip's children, mutably — the door a
+    /// `/gui_set` of a body prop and an edit-back both write through.
+    pub(crate) fn clip_body_mut(&mut self, is: fn(&WidgetKind) -> bool) -> Option<&mut WidgetKind> {
+        self.children
+            .iter_mut()
+            .map(|c| &mut c.kind)
+            .find(|k| is(k))
+    }
+
+    /// Adds the body `is` names to this clip when it has none yet, empty, so a
+    /// `/gui_set` that introduces a body has somewhere to land. Layering order
+    /// is take → notes → curve, and a body added later keeps it: an envelope
+    /// set on a clip that already has a take is drawn *over* it, which is the
+    /// whole point of the bodies being a composition.
+    pub(crate) fn ensure_body(&mut self, is: fn(&WidgetKind) -> bool) {
+        if !matches!(self.kind, WidgetKind::Clip { .. }) || self.clip_body(is).is_some() {
+            return;
+        }
+        let Some(kind) = build::empty_clip_body(is) else {
+            return;
+        };
+        let rank = |k: &WidgetKind| match k {
+            WidgetKind::Signal(_) => 0,
+            WidgetKind::PianoRoll { .. } => 1,
+            _ => 2,
+        };
+        let at = self
+            .children
+            .iter()
+            .position(|c| rank(&c.kind) > rank(&kind))
+            .unwrap_or(self.children.len());
+        self.children.insert(at, build::body_widget(kind));
+    }
+
+    /// This widget's own kind when `is` names it, else the body of that kind
+    /// among its children. The reader's half of the routing `apply_widget`
+    /// does for writes: an edit-back payload asks the widget it was addressed
+    /// to, and a clip answers with the body that owns the data.
+    pub(crate) fn kind_or_body(&self, is: fn(&WidgetKind) -> bool) -> Option<&WidgetKind> {
+        if is(&self.kind) {
+            return Some(&self.kind);
+        }
+        self.clip_body(is)
+    }
+
+    /// The body of `kind` among a clip's children.
+    pub(crate) fn clip_body(&self, is: fn(&WidgetKind) -> bool) -> Option<&WidgetKind> {
+        self.children.iter().map(|c| &c.kind).find(|k| is(k))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1835,20 +1915,27 @@ mod tests {
             other => panic!("expected track, got {other:?}"),
         }
         assert_eq!(track.children.len(), 2, "a track carries its clips");
-        match &track.children[0].kind {
-            WidgetKind::Clip {
-                offset,
-                dur,
-                samples,
-                label,
-                ..
-            } => {
+        let clip = &track.children[0];
+        match &clip.kind {
+            WidgetKind::Clip { offset, dur, label } => {
                 assert_eq!((*offset, *dur), (0.0, 100.0));
-                assert_eq!(&samples[..], &[0.0, 1.0]);
                 assert_eq!(label.as_deref(), Some("a"));
             }
             other => panic!("expected clip, got {other:?}"),
         }
+        // The take is a **child** of the clip, and an ordinary signal element:
+        // the clip is a container, so what it holds is elements.
+        assert_eq!(clip.children.len(), 1, "one body: the take");
+        let take = clip.signal_target().expect("the clip holds a take");
+        assert_eq!(&take.source.data().unwrap().samples[..], &[0.0, 1.0]);
+        assert!(
+            !take.caps.navigable,
+            "a body navigates nothing: the clip does"
+        );
+        assert!(take.source.data().unwrap().bulk, "a take is bulk");
+        // A clip with no source at all holds no take: a body a clip does not
+        // describe is simply absent.
+        assert!(track.children[1].children.is_empty());
         // A negative offset clamps to 0 (no clip starts before the timeline).
         match &track.children[1].kind {
             WidgetKind::Clip { offset, .. } => assert_eq!(*offset, 0.0),
@@ -1894,8 +1981,11 @@ mod tests {
             ]}"#,
         );
         let w = Widget::from_node(9, &n, &[]).unwrap();
-        match &w.children[0].children[0].kind {
-            WidgetKind::Clip { notes, .. } => {
+        let clip = &w.children[0].children[0];
+        match clip.children.first().map(|c| &c.kind) {
+            Some(WidgetKind::PianoRoll {
+                notes, min, max, ..
+            }) => {
                 // Two complete triples; the trailing lone number is dropped.
                 assert_eq!(notes.len(), 2);
                 assert_eq!(
@@ -1903,8 +1993,9 @@ mod tests {
                     (0.0, 100.0, 60.0)
                 );
                 assert_eq!(notes[1].pitch, 67.0);
+                assert_eq!((*min, *max), (48.0, 72.0));
             }
-            other => panic!("expected clip, got {other:?}"),
+            other => panic!("expected a roll body, got {other:?}"),
         }
     }
 
@@ -2848,55 +2939,116 @@ mod tests {
         }
     }
 
-    /// A clip's vertical axis defaults to what its **body** is. The regression
-    /// this fixes: a `notes` clip fell back to the take's amplitude range
-    /// (-1, 1), so every pitch sat outside the axis and clamped to the clip's
-    /// top edge — a roll drawn as a solid band, with nothing saying why.
+    /// The wire has not moved: a script still sets a **body's** prop on the
+    /// clip, so the set has to reach the child that owns it — and build that
+    /// child when the clip does not have it yet, which is how an envelope is
+    /// drawn over a take without rebuilding the def.
     #[test]
-    fn a_clip_takes_its_default_axis_from_its_body() {
-        let roll = node(r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0]}"#);
-        match Widget::from_node(1, &roll, &[]).unwrap().kind {
-            WidgetKind::Clip { min, max, .. } => {
-                assert_eq!((min, max), (21.0, 108.0), "a roll's axis is pitch");
-            }
-            other => panic!("expected a clip, got {other:?}"),
-        }
-        // A take keeps the amplitude axis.
-        let take = node(r#"{"type":"clip","dur":100.0,"buffer":3}"#);
-        match Widget::from_node(1, &take, &[]).unwrap().kind {
-            WidgetKind::Clip { min, max, .. } => {
-                assert_eq!((min, max), (-1.0, 1.0), "a take's axis is amplitude");
-            }
-            other => panic!("expected a clip, got {other:?}"),
-        }
-        // An explicit range always wins, whatever the body.
-        let named = node(
-            r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0],
-                             "min":48.0,"max":72.0}"#,
+    fn a_clip_routes_a_body_prop_into_the_body_that_owns_it() {
+        let is_take = |k: &WidgetKind| matches!(k, WidgetKind::Signal(_));
+        let is_roll = |k: &WidgetKind| matches!(k, WidgetKind::PianoRoll { .. });
+        let is_curve = |k: &WidgetKind| matches!(k, WidgetKind::Bpf { .. });
+
+        let n = node(
+            r#"{"type":"window","children":[{"id":1,"type":"track","children":[
+                {"id":10,"type":"clip","offset":0.0,"dur":400.0,"data":[0.0,1.0]}]}]}"#,
         );
-        match Widget::from_node(1, &named, &[]).unwrap().kind {
-            WidgetKind::Clip { min, max, .. } => assert_eq!((min, max), (48.0, 72.0)),
-            other => panic!("expected a clip, got {other:?}"),
-        }
-        // And the curve's own range is untouched by the roll's default: a
-        // layered clip's bodies do not share an axis.
-        let layered = node(
-            r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0],
-                "points":[0.0,0.5,1,0.0],"points_min":0.0,"points_max":1.0}"#,
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        let clip = w.find_mut(10).unwrap();
+        assert_eq!(clip.children.len(), 1, "built with a take and nothing else");
+
+        // A body prop for a body it does not have **grows** that body...
+        assert!(apply_widget(
+            clip,
+            "points",
+            &serde_json::json!([0.0, 0.0, 1, 0.0, 400.0, 1.0, 1, 0.0])
+        ));
+        let clip = w.find_mut(10).unwrap();
+        assert!(matches!(
+            clip.clip_body(is_curve),
+            Some(WidgetKind::Bpf { points, .. }) if points.len() == 2
+        ));
+        // ...in layering order: the curve draws over the take, not under it.
+        assert!(is_take(&clip.children[0].kind));
+        assert!(is_curve(&clip.children[1].kind));
+
+        // The same for notes, which land between the two.
+        assert!(apply_widget(
+            clip,
+            "notes",
+            &serde_json::json!([0.0, 100.0, 60.0])
+        ));
+        let clip = w.find_mut(10).unwrap();
+        assert_eq!(clip.children.len(), 3);
+        assert!(is_roll(&clip.children[1].kind));
+
+        // The curve's own range goes to the curve; `min`/`max` reach the bodies
+        // that measure with them and leave the curve alone.
+        assert!(apply_widget(clip, "points_min", &serde_json::json!(150.0)));
+        assert!(apply_widget(clip, "min", &serde_json::json!(48.0)));
+        let clip = w.find_mut(10).unwrap();
+        assert!(
+            matches!(clip.clip_body(is_curve), Some(WidgetKind::Bpf { min, .. }) if *min == 150.0)
         );
-        match Widget::from_node(1, &layered, &[]).unwrap().kind {
-            WidgetKind::Clip {
-                min,
-                max,
-                points_min,
-                points_max,
-                ..
-            } => {
-                assert_eq!((min, max), (21.0, 108.0));
-                assert_eq!((points_min, points_max), (0.0, 1.0));
+        assert!(
+            matches!(clip.clip_body(is_roll), Some(WidgetKind::PianoRoll { min, .. }) if *min == 48.0)
+        );
+        assert_eq!(
+            clip.signal_target().unwrap().value.min,
+            Some(48.0),
+            "the take measures with min/max too"
+        );
+
+        // The clip's own props still land on the clip, and an unknown one is
+        // still refused.
+        assert!(apply_widget(clip, "offset", &serde_json::json!(96.0)));
+        assert!(matches!(clip.kind, WidgetKind::Clip { offset, .. } if offset == 96.0));
+        assert!(!apply_widget(clip, "sideways", &serde_json::json!(1)));
+    }
+
+    /// Each body keeps **its own** value axis, and takes its default from what
+    /// it measures. A pitch axis defaulting to amplitude would clamp every note
+    /// to the clip's top edge — a roll drawn as a solid band, with nothing
+    /// saying why — and an envelope's units are not the pitches under it.
+    #[test]
+    fn each_clip_body_keeps_its_own_value_axis() {
+        let axis_of = |json: &str, is: fn(&WidgetKind) -> bool| {
+            let w = Widget::from_node(1, &node(json), &[]).unwrap();
+            match w.clip_body(is) {
+                Some(WidgetKind::PianoRoll { min, max, .. })
+                | Some(WidgetKind::Bpf { min, max, .. }) => (*min, *max),
+                Some(WidgetKind::Signal(el)) => el.value.resolved(0.0, 0.0),
+                other => panic!("no such body: {other:?}"),
             }
-            other => panic!("expected a clip, got {other:?}"),
-        }
+        };
+        let is_roll = |k: &WidgetKind| matches!(k, WidgetKind::PianoRoll { .. });
+        let is_curve = |k: &WidgetKind| matches!(k, WidgetKind::Bpf { .. });
+        let is_take = |k: &WidgetKind| matches!(k, WidgetKind::Signal(_));
+
+        // A roll's axis is pitch; a take's is amplitude.
+        assert_eq!(
+            axis_of(
+                r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0]}"#,
+                is_roll
+            ),
+            (21.0, 108.0)
+        );
+        assert_eq!(
+            axis_of(r#"{"type":"clip","dur":100.0,"buffer":3}"#, is_take),
+            (-1.0, 1.0)
+        );
+        // An explicit `min`/`max` wins, and reaches every body that measures
+        // with it.
+        let named = r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0],
+                        "buffer":3,"min":48.0,"max":72.0}"#;
+        assert_eq!(axis_of(named, is_roll), (48.0, 72.0));
+        assert_eq!(axis_of(named, is_take), (48.0, 72.0));
+        // The curve's own range is untouched by either: a layered clip's bodies
+        // do not share an axis.
+        let layered = r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0],
+                          "points":[0.0,0.5,1,0.0],"points_min":0.0,"points_max":1.0}"#;
+        assert_eq!(axis_of(layered, is_roll), (21.0, 108.0));
+        assert_eq!(axis_of(layered, is_curve), (0.0, 1.0));
     }
 
     #[test]

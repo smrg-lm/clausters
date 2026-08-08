@@ -7,6 +7,76 @@ use serde_json::Value;
 
 use super::*;
 
+/// Applies one `/gui_set` key/value to `widget` — its kind's own keys, plus,
+/// for a `clip`, the props of the **bodies it holds as children**.
+///
+/// The routing exists because the wire has not moved yet: a script still
+/// describes a clip as a thing with a take, notes and a curve, so `points`
+/// arrives addressed to the clip and has to reach the child that owns it. A
+/// body prop naming a body the clip does not have **creates** it, which is how
+/// a script draws a curve over a take without rebuilding the def.
+pub(super) fn apply_widget(widget: &mut Widget, key: &str, v: &Value) -> bool {
+    if matches!(widget.kind, WidgetKind::Clip { .. }) && !CLIP_OWN.contains(&key) {
+        return apply_clip_body(widget, key, v);
+    }
+    apply_kind(&mut widget.kind, key, v)
+}
+
+/// The keys a `clip` answers for itself; everything else it accepts belongs to
+/// one of its bodies.
+const CLIP_OWN: [&str; 3] = ["offset", "dur", "label"];
+
+/// Routes a body prop into the child that owns it, building that child first
+/// when the clip does not have it yet. The **value axis** props are the awkward
+/// ones and are stated here rather than guessed: `min`/`max` reach whichever
+/// body measures with them (the take's amplitude, the roll's pitches), and
+/// `points_min`/`points_max` are the curve's own.
+fn apply_clip_body(widget: &mut Widget, key: &str, v: &Value) -> bool {
+    let is_take = |k: &WidgetKind| matches!(k, WidgetKind::Signal(_));
+    let is_roll = |k: &WidgetKind| matches!(k, WidgetKind::PianoRoll { .. });
+    let is_curve = |k: &WidgetKind| matches!(k, WidgetKind::Bpf { .. });
+    match key {
+        // A source prop, or the take's own axis.
+        "data" | "blob" | "path" | "cache" | "buffer" | "channels" | "base_bucket" => {
+            widget.ensure_body(is_take);
+            widget
+                .clip_body_mut(is_take)
+                .is_some_and(|k| apply_kind(k, key, v))
+        }
+        "notes" => {
+            widget.ensure_body(is_roll);
+            widget
+                .clip_body_mut(is_roll)
+                .is_some_and(|k| apply_kind(k, key, v))
+        }
+        "points" | "exp" => {
+            widget.ensure_body(is_curve);
+            widget
+                .clip_body_mut(is_curve)
+                .is_some_and(|k| apply_kind(k, key, v))
+        }
+        "points_min" | "points_max" => {
+            let axis = if key == "points_min" { "min" } else { "max" };
+            widget.ensure_body(is_curve);
+            widget
+                .clip_body_mut(is_curve)
+                .is_some_and(|k| apply_kind(k, axis, v))
+        }
+        // The shared value axis: whichever bodies measure with it take it, and
+        // the curve does not — it has `points_min`/`points_max` of its own.
+        "min" | "max" => {
+            let mut hit = false;
+            for body in &mut widget.children {
+                if is_take(&body.kind) || is_roll(&body.kind) {
+                    hit |= apply_kind(&mut body.kind, key, v);
+                }
+            }
+            hit
+        }
+        _ => false,
+    }
+}
+
 /// Applies one `/gui_set` key/value to `kind`, returning whether the key was one
 /// this widget accepts (and thus changed it).
 pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
@@ -265,37 +335,12 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             // land on the widget itself rather than routing through a group.
             _ => editor.apply(key, v),
         },
-        WidgetKind::Clip {
-            offset,
-            dur,
-            notes,
-            points,
-            exp,
-            points_min,
-            points_max,
-            min,
-            max,
-            label,
-            ..
-        } => match key {
+        // A clip's own props are its placement and its name; its bodies are
+        // children, and their props route there — see `apply_clip`, which is
+        // reached through `Widget::apply_kind` because it needs them.
+        WidgetKind::Clip { offset, dur, label } => match key {
             "offset" => v.as_f64().map(|x| *offset = x.max(0.0)).is_some(),
             "dur" => v.as_f64().map(|x| *dur = x.max(0.0)).is_some(),
-            "notes" => {
-                *notes = parse_notes(&std::iter::once(("notes".to_string(), v.clone())).collect());
-                true
-            }
-            "points" => match super::bpf::parse_points(v, *min, *max) {
-                Some(parsed) => {
-                    *points = parsed;
-                    true
-                }
-                None => false,
-            },
-            "exp" => truthy(v).map(|b| *exp = b).is_some(),
-            "points_min" => set_f(points_min, v),
-            "points_max" => set_f(points_max, v),
-            "min" => set_f(min, v),
-            "max" => set_f(max, v),
             "label" => set_label(label, v),
             _ => false,
         },
