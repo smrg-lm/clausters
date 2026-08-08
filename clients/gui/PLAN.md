@@ -720,7 +720,74 @@ Not the size of `gestures.rs` (3995 lines) and `interact.rs` (1414). Only 15 of 
 
   The example is also where the **shape of a second binding** got decided, after the first draft bound a slider to one page's value axis and the reviewer put it plainly: a control that only works on one of the pages has no business being under all of them. The y axis is per view on purpose — a waveform's is amplitude, a spectrogram's is frequency — so nothing vertical is shared; what the pages *do* share is time, through the navigation group. So the slider drives `view_start` on a linked pair, and moves the page nobody is looking at as well as the one on screen. Which is the same tree-not-placements property the GPU slot has, and now has a test of its own: a hidden page is still a member of its group.
 
-- ⬜ **E9 — The migration**: the wire stops naming widgets and starts naming the model. One milestone moving together, per the packages-move-together rule: `docs/gui-protocol.md` rewritten around containers/axes/elements, `docs/architecture.md`'s widget map and module split, both builders (`clients/python/clausters/gui/guidef.py`, `clients/web/src/gui/guidef.ts`), every example in the three example directories, the Python `Editor` and the web composer, and the persisted bundles (`host::bundle`, `/gui_load`) — which is the piece that makes this a breaking change and drags the SemVer tier along (see the `release-versioning` skill). `clients/python/tests/test_gui_props.py` is extended to the new surface, since it is the only thing standing between a prop and the three edits it costs. The `docs/decisions.md` entry for the axis/container model lands here, when the model is proven rather than proposed.
+### E9's target vocabulary, decided before the code moves
+
+Written 2026-08-08, ahead of the milestone: E9 is a rename of everything at once, so what it renames *to* is the one thing that cannot be decided arm by arm while converting. This section is what the conversion is checked against; where a choice is genuinely open it says so rather than picking quietly.
+
+**The shape of a node stays exactly what it is** — `{id, type, props, children}`, JSON inside one OSC argument, ids client-allocated, unknown types laid out but not painted. E9 changes the **vocabulary of `type` and the ownership of the props**, not the wire's form, and no `/gui_*` address moves.
+
+#### The three kinds of node, and what each one is for
+
+| Kind | What it is | `type` values |
+|---|---|---|
+| **Container** | owns 0, 1 or 2 **axes**, and therefore a coordinate system its children are placed in | `window`, `layout`, `plane`, `field` |
+| **Element** | draws against the axes of the container holding it; owns no navigation | `signal`, `notes`, `curve`, `score`, `keys`, `nodes`, `meter`, `canvas`, `label`, and the controls |
+| **Control** | an element with no axis and a value: already at the right altitude, so **it does not move** | `slider`, `knob`, `number`, `button`, `toggle`, `text`, `menu` |
+
+The controls are called out because the temptation is to rename everything. A `knob` is not an accident of the catalog — it names what it is, its props are its own, and nothing about it duplicates another node. The migration's target is where the catalog says one thing several ways.
+
+#### The container table
+
+| New | Axes | Replaces | Notes |
+|---|---|---|---|
+| `window` | 0 | `window` | unchanged: a window is a root, not a coordinate system, and it is a `layout` that happens to be one |
+| `layout` | 0 | `panel`, `box`, `stack` | children flow by `flow` (`row`/`col`/`grid`/`free`/**`stack`**). `stack` stops being a type and becomes the flow that shows one child — which is what it always was: a layout container with a selection instead of an arrangement. Its `index` rides along |
+| `plane` | 2, **locked** to one scale | `scroll`, `patch` | a pannable/zoomable plane in content units. The patcher stops being a container type and becomes a `plane` holding `box` elements — the boxes and wires are what `patch` actually adds, and they are elements |
+| `field` | 2, **independent** (x and y each their own domain) | `track`, `clip`, `timeruler`, and the container implicit in every heavy view | the time/value container. A lane is a `field` with lane chrome, a clip is a `field` nested in one, a free-standing ruler is a `field` with no elements in it |
+
+**`field` is the name most open to a better one.** It has to cover a lane, a clip and the inside of a plot without reading as any of them; `axes`, `frame`, `region` and `chart` were considered and each leans toward one use. Decide before the code moves, not during.
+
+#### The element table
+
+| New | Replaces | How the old name is reconstructed |
+|---|---|---|
+| `signal` | `waveform`, `spectrogram`, `plot`, `scope`, `spectrum`, `phasescope` | `view` (`trace`/`spectrum`/`spectrogram`/`phase`) × the source (`bus` = forward-only, `buffer`/`path`/`cache`/`data` = addressable) × `navigable`/`selectable`/`editable`. The table already exists in code as `signal::preset` — E9 deletes it by making the wire say the point directly |
+| `notes` | `pianoroll`, a `clip`'s note body | one element, already one model (`host::pianoroll`) |
+| `curve` | `bpf`, a `clip`'s automation body | idem (`host::bpf`) |
+| `nodes` | `nodetree` | renamed only to stop reading as a *widget* named after a tree |
+| `keys` | `piano` | a keyboard is an element; `piano` reads as an instrument |
+| `box` | the patcher's boxes (today inside `patch`) | a `plane` places them; the wires stay a prop of the plane, since a wire is between two children and belongs to neither |
+| `score`, `meter`, `canvas`, `label` | themselves | already one thing each |
+
+A `clip`'s three bodies stop being props routed to children (E7's `apply_clip_body`) and become **children a script writes**, which is the migration's biggest simplification and the reason E7 shipped the containment first.
+
+#### Where the props go
+
+The migration moves props to whoever owns the thing they describe. This is the half that breaks scripts, so it is enumerated:
+
+| Props | Today | Under the model |
+|---|---|---|
+| `ruler`, `tempo`, `beat_at`, `quant`, `sample_rate`, `link`, `view_start`, `view_len`, `sel_start`, `sel_len`, `playhead*` | on every timeline view (`EditorProps`) | the **x axis** of the container |
+| `ruler_y`, `y_start`, `y_len`, `min`, `max`, `bit_depth` | idem, plus `min`/`max` on five widgets | the **y axis** of the container |
+| `offset`, `dur` | on a `clip` | the child's **placement on the parent's x axis** |
+| `w`, `h`, `weight`, `x`, `y` | any widget | unchanged — placement in a layout container |
+| `data`, `buffer`, `path`, `cache`, `channels`, `base_bucket`, `bus`, `rate` | on each view | unchanged — the **source** is the element's |
+| `fft_size`/`window_size`, `hop`, `db_floor`, `db_ceil`, `freq_scale`, `colormap` | on the spectral views | unchanged — the presentation's own parameters |
+| `layout`, `margin`, `gap`, `cols`, `index` | containers | unchanged, on the container |
+
+**The name collision this creates is `x`/`y`**, which are already the free-placement props. So the axes are declared under one key — `"axes": {"x": {…}, "y": {…}}` — rather than as bare `x`/`y` objects. That also gives an axis somewhere to grow a `unit` and a retention policy (the waterfall the model already allows and nothing builds).
+
+#### How it lands without a half-migrated wire
+
+E9 is written as one milestone because the wire, both builders, the three books, every example and the persisted bundles are ends of one cable. It still has to survive being interrupted, so it lands **expand → migrate → contract**, each stage green on its own:
+
+1. **Expand.** The host learns the new vocabulary and keeps accepting all 29 current names as an internal alias into the same constructions. Nothing else moves; every example still runs. `docs/gui-protocol.md` documents the new reference and marks the old names as leaving.
+2. **Migrate.** Both builders emit the new names; with them the examples of the three directories, the Python `Editor`, the web composer, and the bundle path (`host::bundle`, `/gui_load`) — reading either spelling, writing the new one. At the end of this stage everything speaks the model and the old spelling still parses.
+3. **Contract.** The alias table is deleted, `test_gui_props.py` is extended to the new surface, the `docs/decisions.md` entry for the axis/container model lands, and the versioning consequence is taken (the `release-versioning` skill; the persisted bundle format is what makes it breaking).
+
+The transitional aliases are **not** the rejected "presets on the wire" decision reappearing: that decision is about the end state, and stage 3 is what makes the end state total. If stage 3 is not reached, the migration is not done — the alias table is scaffolding, and a release must not ship standing on it.
+
+- ⬜ **E9 — The migration**: the wire stops naming widgets and starts naming the model. One milestone moving together, per the packages-move-together rule: `docs/gui-protocol.md` rewritten around containers/axes/elements, `docs/architecture.md`'s widget map and module split, both builders (`clients/python/clausters/gui/guidef.py`, `clients/web/src/gui/guidef.ts`), every example in the three example directories, the Python `Editor` and the web composer, and the persisted bundles (`host::bundle`, `/gui_load`) — which is the piece that makes this a breaking change and drags the SemVer tier along (see the `release-versioning` skill). `clients/python/tests/test_gui_props.py` is extended to the new surface, since it is the only thing standing between a prop and the three edits it costs. The `docs/decisions.md` entry for the axis/container model lands here, when the model is proven rather than proposed. **The target vocabulary is written above** (the section before this one) rather than decided while converting, and the milestone lands expand → migrate → contract so an interruption never leaves a half-migrated wire — the alias table of stage 1 is scaffolding, and a release must not ship standing on it.
 
 ## Future directions (to fold into milestones as they firm up)
 
