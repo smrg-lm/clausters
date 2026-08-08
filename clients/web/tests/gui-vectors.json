@@ -718,8 +718,9 @@
           "zoom": 1,
           "children": [
             {
-              "type": "box",
+              "type": "label",
               "id": 6,
+              "text": "placed in content units",
               "x": 0.0,
               "y": 0.0
             }

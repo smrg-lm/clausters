@@ -80,25 +80,27 @@
         // Each view opens its own window; the host is asked what it holds, so
         // what is asserted is the widget the host actually built.
         const shapes = {};
-        const opened = async (name, promise, type) => {
+        // The three views are one element at three presentations, so what is
+        // asserted is the point of the product, not a type name per view.
+        const opened = async (name, promise, view) => {
           const win = await promise;
           const info = await win.host.query(win.widgetId);
           shapes[name] = info;
-          check(info.type === type, `${name}: widget is ${info.type}`);
+          check(info.type === "signal" && info.props.view === view,
+            `${name}: widget is ${info.type}/${info.props.view}`);
           check(Number(info.props.bus) === 0, `${name}: on bus ${info.props.bus}`);
-          log(`  scope(${name}): ${info.type}, bus=${info.props.bus}, `
-            + `channels=${info.props.channels ?? "-"}`);
+          log(`  scope(${name}): ${info.type}/${info.props.view}, `
+            + `bus=${info.props.bus}, channels=${info.props.channels ?? "-"}`);
           return win;
         };
 
         const signal = await opened("signal",
-          scope(0, { channels: 2, windowMs: 10.0, trigger: 0.05 }), "scope");
+          scope(0, { channels: 2, windowMs: 10.0, trigger: 0.05 }), "trace");
         check(Number(signal.channels) === 2, "signal: two channels");
         check(Number(shapes.signal.props.window_ms) === 10,
           `signal: window_ms is ${shapes.signal.props.window_ms}`);
 
-        const phase = await opened("phase", scope(0, { view: "phase" }),
-          "phasescope");
+        const phase = await opened("phase", scope(0, { view: "phase" }), "phase");
         check(phase.channels === 2, "phase: fixed at two channels");
 
         const spectrum = await opened("spectrum",

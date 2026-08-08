@@ -223,7 +223,7 @@ def cases():
                          fft_size=2048, label="live"),
                 id=1, flow="row", gap=4.0,
             ),
-            g.plane(g.node("box", id=6, x=0.0, y=0.0),
+            g.plane(g.label("placed in content units", id=6, x=0.0, y=0.0),
                     id=5, axis="both", zoom=True, view_zoom=1.0),
             g.field(
                 g.field(id=8, offset=0.0, dur=48000.0, label="take"),

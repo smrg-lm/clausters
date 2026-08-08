@@ -295,7 +295,7 @@ const trees: Record<string, () => GuiNode> = {
             ),
             plane(
                 { id: 5, axis: "both", zoom: true, viewZoom: 1.0 },
-                node("box", { id: 6, x: 0.0, y: 0.0 }),
+                label("placed in content units", { id: 6, x: 0.0, y: 0.0 }),
             ),
             field(
                 {

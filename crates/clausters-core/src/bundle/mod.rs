@@ -327,7 +327,7 @@ mod tests {
                          ["/node_set", "@graph", "freq", "$freq"]],
                 "children": [
                     { "id": 2, "type": "meter", "bus": "@lfo" },
-                    { "id": 3, "type": "panel", "children": [
+                    { "id": 3, "type": "layout", "children": [
                         { "id": 4, "type": "knob", "value": "$freq",
                           "bind": ["/node_set", "@graph", "freq"] }
                     ]}
@@ -391,7 +391,7 @@ mod tests {
         let sparse: Template = serde_json::from_value(json!({
             "id": 1,
             "gui": { "type": "window", "children": [
-                { "id": 10, "type": "piano" },
+                { "id": 10, "type": "keys" },
                 { "id": 20, "type": "meter", "bus": 0 }]}
         }))
         .unwrap();

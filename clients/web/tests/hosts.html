@@ -125,7 +125,7 @@
       // an answer can be attributed to the host it came from.
       const panel = (title, value) => JSON.stringify({
         type: "window", id: 1000, title, w: 480, h: 300,
-        layout: "col", margin: 8.0, gap: 8.0,
+        flow: "col", margin: 8.0, gap: 8.0,
         children: [
           { type: "label", id: 1001, text: title, h: 28 },
           { type: "knob", id: 1002, name: "freq", min: 50.0, max: 2000.0,
