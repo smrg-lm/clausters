@@ -105,11 +105,11 @@ mod tests {
     use super::*;
 
     const FILTER: &str = r#"{
-        "type": "window", "title": "Filter", "w": 480, "h": 240, "layout": "col",
+        "type": "window", "title": "Filter", "w": 480, "h": 240, "flow": "col",
         "children": [
             {"id": 10, "type": "knob",     "label": "cutoff", "min": 20.0, "max": 20000.0, "value": 800.0},
             {"id": 11, "type": "slider",   "label": "res",    "min": 0.0,  "max": 1.0,      "value": 0.2},
-            {"id": 12, "type": "waveform", "buffer": 0}
+            {"id": 12, "type": "signal", "view": "trace", "buffer": 0}
         ]
     }"#;
 

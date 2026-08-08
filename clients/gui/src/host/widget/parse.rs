@@ -331,6 +331,13 @@ pub(super) fn options(props: &serde_json::Map<String, Value>) -> Vec<String> {
 }
 
 /// A JSON value as a boolean: real bool, or a number where non-zero is true.
+/// A container's arrangement, as the wire names it. The model spends the word
+/// `layout` on the container type itself, so the arrangement is `flow` — on
+/// every container that has one, a `window` and a `plane` included.
+pub(super) fn flow(props: &serde_json::Map<String, Value>) -> Option<&str> {
+    props.get("flow").and_then(Value::as_str)
+}
+
 pub(super) fn truthy(v: &Value) -> Option<bool> {
     match v {
         Value::Bool(b) => Some(*b),

@@ -82,7 +82,7 @@ fn apply_clip_body(widget: &mut Widget, key: &str, v: &Value) -> bool {
 pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
     match kind {
         WidgetKind::Window { layout, flow, .. } | WidgetKind::Panel { layout, flow } => match key {
-            "layout" => v
+            "flow" => v
                 .as_str()
                 .and_then(Layout::from_str)
                 .map(|l| *layout = l)
@@ -100,7 +100,7 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             _ => false,
         },
         WidgetKind::Scroll { layout, flow, view } => match key {
-            "layout" => v
+            "flow" => v
                 .as_str()
                 .and_then(Layout::from_str)
                 .map(|l| *layout = l)

@@ -569,7 +569,7 @@ mod tests {
         let one = tree(
             r#"{"type":"window","children":[
                 {"id":1,"type":"meter","bus":9,"rate":"control"},
-                {"id":2,"type":"scope","bus":3,"rate":"control"}]}"#,
+                {"id":2,"type":"signal","view":"trace","bus":3,"rate":"control"}]}"#,
         );
         let two = tree(
             r#"{"type":"window","children":[
@@ -618,7 +618,7 @@ mod tests {
         let w = tree(
             r#"{"type":"window","children":[
                 {"id":1,"type":"meter","bus":9,"rate":"control"},
-                {"id":2,"type":"scope","bus":3,"rate":"control"},
+                {"id":2,"type":"signal","view":"trace","bus":3,"rate":"control"},
                 {"id":3,"type":"meter","bus":3,"rate":"control"},
                 {"id":4,"type":"canvas","shader":"fn shade(){}","buses":[7]},
                 {"id":5,"type":"label","text":"no bus"}]}"#,
@@ -635,7 +635,7 @@ mod tests {
         // widget, or the window repaints only on messages and the cursor freezes
         // where the anchor left it.
         let anchored = tree(
-            r#"{"type":"window","children":[{"type":"scroll","id":1,"children":[
+            r#"{"type":"window","children":[{"type":"plane","id":1,"children":[
                 {"id":2,"type":"score","vb":[100,50],"playhead_at":48000.0}]}]}"#,
         );
         assert!(tree_has_live_widget(&anchored, &groups()));
@@ -652,7 +652,7 @@ mod tests {
     #[test]
     fn scope_history_advances_and_caps() {
         let w = tree(
-            r#"{"type":"window","children":[{"id":2,"type":"scope","bus":3,"rate":"control"}]}"#,
+            r#"{"type":"window","children":[{"id":2,"type":"signal","view":"trace","bus":3,"rate":"control"}]}"#,
         );
         let mut scopes = HashMap::new();
         for i in 0..(SCOPE_HISTORY + 10) {
@@ -674,7 +674,7 @@ mod tests {
         // both channels, so their relative phase is preserved verbatim.
         let w = tree(
             r#"{"type":"window","children":[
-                {"id":7,"type":"scope","tap":0,"channels":2,"window_ms":1.0}]}"#,
+                {"id":7,"type":"signal","view":"trace","bus":0,"channels":2,"window_ms":1.0}]}"#,
         );
         let mut windows = HashMap::new();
         // Channel 0 rises through zero at a known index; channel 1 counts, so
@@ -708,7 +708,7 @@ mod tests {
     fn spectra_keep_one_state_per_channel() {
         let w = tree(
             r#"{"type":"window","children":[
-                {"id":9,"type":"spectrum","bus":2,"channels":2,"fft_size":256}]}"#,
+                {"id":9,"type":"signal","view":"spectrum","bus":2,"channels":2,"fft_size":256}]}"#,
         );
         let mut states = HashMap::new();
         // Bus 2 carries a tone, bus 3 silence: the two channel states diverge.

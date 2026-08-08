@@ -49,12 +49,12 @@ use super::signal::{Presentation, SignalElement};
 use super::{bpf, piano, plot, score, signal, textedit};
 
 mod apply;
+mod axes;
 mod build;
 mod parse;
 mod size;
-mod vocabulary;
 
-pub(super) use vocabulary::{AXES, flatten as flatten_axes, flatten_tree as flatten_tree_axes};
+pub(super) use axes::{AXES, flatten as flatten_axes, flatten_tree as flatten_tree_axes};
 
 use parse::*;
 
@@ -68,11 +68,10 @@ pub enum Layout {
 }
 
 impl Layout {
-    /// Parses the `layout` property; defaults to `Col`.
+    /// Parses the `flow` property; defaults to `Col`. (`flow`, not `layout`:
+    /// the model spends that word on the container type itself.)
     fn parse(props: &serde_json::Map<String, Value>) -> Layout {
-        props
-            .get("layout")
-            .and_then(Value::as_str)
+        flow(props)
             .and_then(Layout::from_str)
             .unwrap_or(Layout::Col)
     }
@@ -1329,15 +1328,14 @@ impl Widget {
 
     fn build(id: Option<i32>, node: &GuiNode, blobs: &[Vec<u8>]) -> Result<Widget, String> {
         let id = id.or(node.id);
-        // A node written in the model's vocabulary is rewritten into the
-        // catalog's before anything reads it, so there is one construction
-        // path and not two ([`vocabulary`]).
-        let rewritten = vocabulary::rewrite(node);
-        let (name, props) = match &rewritten {
-            Some((name, props)) => (name.as_str(), props),
-            None => (node.kind.as_str(), &node.props),
-        };
-        let kind = build::build_kind(id, name, props, blobs)?;
+        let props = &node.props;
+        let kind = build::build_kind(
+            id,
+            node.kind.as_str(),
+            props,
+            !node.children.is_empty(),
+            blobs,
+        )?;
         // Only containers carry children into the typed tree; a leaf's children
         // (if any) are ignored. A `track` carries its clips.
         let children = match kind {
@@ -1732,14 +1730,14 @@ mod tests {
             WidgetKind::Scroll { view, .. } => view,
             other => panic!("not a scroll: {other:?}"),
         };
-        assert_eq!(view(r#"{"type":"scroll"}"#).view_zoom, None);
-        assert_eq!(view(r#"{"type":"scroll","view_zoom":0}"#).view_zoom, None);
+        assert_eq!(view(r#"{"type":"plane"}"#).view_zoom, None);
+        assert_eq!(view(r#"{"type":"plane","view_zoom":0}"#).view_zoom, None);
         assert_eq!(
-            view(r#"{"type":"scroll","view_zoom":3}"#).view_zoom,
+            view(r#"{"type":"plane","view_zoom":3}"#).view_zoom,
             Some(3.0)
         );
 
-        let mut kind = Widget::from_node(1, &node(r#"{"type":"scroll"}"#), &[])
+        let mut kind = Widget::from_node(1, &node(r#"{"type":"plane"}"#), &[])
             .unwrap()
             .kind;
         let zoom_of = |kind: &WidgetKind| match kind {
@@ -1799,10 +1797,10 @@ mod tests {
         // a widget with neither shares its parent's Arc.
         let n = node(
             r##"{"type":"window","children":[
-              {"id":11,"type":"panel","theme":{"accent":"#ff0000"},"children":[
+              {"id":11,"type":"layout","theme":{"accent":"#ff0000"},"children":[
                 {"id":12,"type":"label","text":"in the group"},
                 {"id":13,"type":"slider","color":"#0000ff"},
-                {"id":14,"type":"panel","theme":{"text":"#00ff00"},"children":[
+                {"id":14,"type":"layout","theme":{"text":"#00ff00"},"children":[
                   {"id":15,"type":"label","text":"nested"}]}]},
               {"id":16,"type":"label","text":"outside"}]}"##,
         );
@@ -1836,7 +1834,7 @@ mod tests {
 
     #[test]
     fn style_props_set_live_and_clear() {
-        let n = node(r#"{"type":"panel"}"#);
+        let n = node(r#"{"type":"layout"}"#);
         let mut w = Widget::from_node(1, &n, &[]).unwrap();
         assert!(w.style_apply("color", &Value::from("#112233")));
         assert!(w.color.is_some());
@@ -1880,8 +1878,8 @@ mod tests {
     #[test]
     fn window_with_inline_waveform() {
         let n = node(
-            r#"{"type":"window","title":"W","w":480,"h":240,"layout":"col",
-                "children":[{"id":12,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+            r#"{"type":"window","title":"W","w":480,"h":240,"flow":"col",
+                "children":[{"id":12,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
         );
         let w = Widget::from_node(1, &n, &[]).unwrap();
         assert_eq!(w.id, Some(1));
@@ -1913,8 +1911,8 @@ mod tests {
     fn waveform_parses_its_placement_offset() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"waveform","data":[0.0,1.0],"offset":8.0},
-                {"id":2,"type":"waveform","data":[0.0,1.0],"offset":-3.0}
+                {"id":1,"type":"signal","view":"trace","data":[0.0,1.0],"offset":8.0},
+                {"id":2,"type":"signal","view":"trace","data":[0.0,1.0],"offset":-3.0}
             ]}"#,
         );
         let w = Widget::from_node(9, &n, &[]).unwrap();
@@ -1922,7 +1920,9 @@ mod tests {
         // A negative placement clamps to 0 (no clip starts before the timeline).
         assert_eq!(w.children[1].kind.editor().unwrap().offset, 0.0);
         // The default is un-placed.
-        let n = node(r#"{"type":"window","children":[{"id":3,"type":"waveform","data":[0.0]}]}"#);
+        let n = node(
+            r#"{"type":"window","children":[{"id":3,"type":"signal","view":"trace","data":[0.0]}]}"#,
+        );
         let w = Widget::from_node(9, &n, &[]).unwrap();
         assert_eq!(w.children[0].kind.editor().unwrap().offset, 0.0);
     }
@@ -1931,9 +1931,9 @@ mod tests {
     fn track_carries_clips_with_their_placement() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"track","label":"drums","children":[
-                    {"id":10,"type":"clip","offset":0.0,"dur":100.0,"data":[0.0,1.0],"label":"a"},
-                    {"id":11,"type":"clip","offset":-5.0,"dur":50.0}
+                {"id":1,"type":"field","label":"drums","children":[
+                    {"id":10,"type":"field","offset":0.0,"dur":100.0,"data":[0.0,1.0],"label":"a"},
+                    {"id":11,"type":"field","offset":-5.0,"dur":50.0}
                 ]}
             ]}"#,
         );
@@ -1976,8 +1976,8 @@ mod tests {
     fn a_lane_carries_the_ruler_and_playhead_chrome() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"track","ruler":"beats","tempo":2.0,"playhead_at":480.0},
-                {"id":2,"type":"track"}
+                {"id":1,"type":"field","ruler":"beats","tempo":2.0,"playhead_at":480.0},
+                {"id":2,"type":"field"}
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2003,8 +2003,8 @@ mod tests {
     fn a_clip_parses_its_piano_roll_notes() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"track","children":[
-                    {"id":10,"type":"clip","offset":0.0,"dur":400.0,"min":48.0,"max":72.0,
+                {"id":1,"type":"field","children":[
+                    {"id":10,"type":"field","offset":0.0,"dur":400.0,"min":48.0,"max":72.0,
                      "notes":[0.0,100.0,60.0, 100.0,100.0,67.0, 999.0]}
                 ]}
             ]}"#,
@@ -2032,7 +2032,7 @@ mod tests {
     fn a_pianoroll_parses_its_notes_osc_and_pitch_window() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":5,"type":"pianoroll","min":36.0,"max":84.0,"snap":100.0,
+                {"id":5,"type":"notes","min":36.0,"max":84.0,"snap":100.0,
                  "notes":[0.0,200.0,60.0,90,0, 200.0,200.0,64.0,110,1],
                  "osc":[400.0,"/trig", 800.0,""]}
             ]}"#,
@@ -2068,14 +2068,13 @@ mod tests {
 
     #[test]
     fn a_pianoroll_midi_in_parses_and_defaults_off() {
-        let on =
-            node(r#"{"type":"window","children":[{"id":5,"type":"pianoroll","midi_in":true}]}"#);
+        let on = node(r#"{"type":"window","children":[{"id":5,"type":"notes","midi_in":true}]}"#);
         let w = Widget::from_node(1, &on, &[]).unwrap();
         assert!(matches!(
             &w.children[0].kind,
             WidgetKind::PianoRoll { midi_in: true, .. }
         ));
-        let off = node(r#"{"type":"window","children":[{"id":5,"type":"pianoroll"}]}"#);
+        let off = node(r#"{"type":"window","children":[{"id":5,"type":"notes"}]}"#);
         let w = Widget::from_node(1, &off, &[]).unwrap();
         assert!(matches!(
             &w.children[0].kind,
@@ -2085,7 +2084,9 @@ mod tests {
 
     #[test]
     fn waveform_by_server_buffer_starts_empty_with_the_buffer_number() {
-        let n = node(r#"{"type":"window","children":[{"id":3,"type":"waveform","buffer":7}]}"#);
+        let n = node(
+            r#"{"type":"window","children":[{"id":3,"type":"signal","view":"trace","buffer":7}]}"#,
+        );
         let w = Widget::from_node(1, &n, &[]).unwrap();
         let data = w.children[0]
             .signal()
@@ -2102,8 +2103,8 @@ mod tests {
     fn waveform_by_path_and_cache_defer_with_their_props() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"waveform","path":"/tmp/buf.f32","channels":2},
-                {"id":2,"type":"waveform","cache":"/tmp/buf.peaks"}
+                {"id":1,"type":"signal","view":"trace","path":"/tmp/buf.f32","channels":2},
+                {"id":2,"type":"signal","view":"trace","cache":"/tmp/buf.peaks"}
             ]}"#,
         );
         let w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2135,7 +2136,7 @@ mod tests {
         let n = node(
             r#"{"type":"window","children":[
                 {"id":1,"type":"meter","bus":5,"max":2.0,"label":"out"},
-                {"id":2,"type":"scope","bus":6}
+                {"id":2,"type":"signal","view":"trace","bus":6}
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2176,8 +2177,8 @@ mod tests {
     fn nodetree_and_plot_parse_with_defaults_and_apply() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"nodetree","group":2,"controls":0,"label":"tree"},
-                {"id":2,"type":"plot","data":[0.0,1.0,-1.0],"max":2.0,"label":"sig"}
+                {"id":1,"type":"nodes","group":2,"controls":0,"label":"tree"},
+                {"id":2,"type":"signal","navigable":0,"data":[0.0,1.0,-1.0],"max":2.0,"label":"sig"}
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2212,7 +2213,7 @@ mod tests {
     fn plot_parses_views_channels_and_applies_live() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"plot","data":[0.0,1.0,0.0,-1.0],"channels":2,
+                {"id":1,"type":"signal","navigable":0,"data":[0.0,1.0,0.0,-1.0],"channels":2,
                  "view":"spectrum","overlay":1,"sample_rate":48000.0,
                  "fft_size":1024,"freq_scale":"mel","ruler":"time","ruler_y":"off"}
             ]}"#,
@@ -2319,7 +2320,7 @@ mod tests {
     #[test]
     fn plot_by_path_defers_empty_with_its_props() {
         let n = node(
-            r#"{"type":"window","children":[{"id":3,"type":"plot","path":"/tmp/sig.f32","channels":2}]}"#,
+            r#"{"type":"window","children":[{"id":3,"type":"signal","navigable":0,"path":"/tmp/sig.f32","channels":2}]}"#,
         );
         let w = Widget::from_node(1, &n, &[]).unwrap();
         let data = w.children[0]
@@ -2340,7 +2341,9 @@ mod tests {
             .iter()
             .flat_map(|x| x.to_le_bytes())
             .collect();
-        let n = node(r#"{"type":"window","children":[{"id":2,"type":"waveform","blob":0}]}"#);
+        let n = node(
+            r#"{"type":"window","children":[{"id":2,"type":"signal","view":"trace","blob":0}]}"#,
+        );
         let w = Widget::from_node(1, &n, &[blob]).unwrap();
         let data = w.children[0]
             .signal()
@@ -2353,8 +2356,8 @@ mod tests {
     fn phasescope_and_spectrum_parse_with_defaults_and_apply() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"phasescope","bus":2},
-                {"id":2,"type":"spectrum","bus":0,"fft_size":1024,"log_freq":0}
+                {"id":1,"type":"signal","view":"phase","bus":2},
+                {"id":2,"type":"signal","view":"spectrum","bus":0,"fft_size":1024,"log_freq":0}
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2418,8 +2421,8 @@ mod tests {
     fn multichannel_scope_and_spectrum_read_adjacent_buses() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"scope","bus":4,"channels":2,"overlay":1,"ruler":"off"},
-                {"id":2,"type":"spectrum","bus":6,"channels":3,"ruler_y":"off"}
+                {"id":1,"type":"signal","view":"trace","bus":4,"channels":2,"overlay":1,"ruler":"off"},
+                {"id":2,"type":"signal","view":"spectrum","bus":6,"channels":3,"ruler_y":"off"}
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2459,7 +2462,7 @@ mod tests {
     fn waveform_editor_props_parse_and_apply() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"waveform","data":[0.0,1.0],"channels":2,"overlay":1,
+                {"id":1,"type":"signal","view":"trace","data":[0.0,1.0],"channels":2,"overlay":1,
                  "ruler":"samples","sample_rate":48000.0,"sel_start":100.0,"sel_len":50.0,
                  "playhead_at":1000.0}
             ]}"#,
@@ -2494,7 +2497,7 @@ mod tests {
     fn editor_ruler_units_parse_and_apply() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"waveform","data":[0.0],"ruler":"beats",
+                {"id":1,"type":"signal","view":"trace","data":[0.0],"ruler":"beats",
                  "sample_rate":48000.0,"tempo":2.0,"beat_at":8.0,"quant":3.0,
                  "ruler_y":"db","bit_depth":24}
             ]}"#,
@@ -2526,8 +2529,8 @@ mod tests {
     fn editor_y_view_parses_clamps_and_applies() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"waveform","data":[0.0],"y_start":0.8,"y_len":0.5},
-                {"id":2,"type":"spectrogram","data":[0.0]}
+                {"id":1,"type":"signal","view":"trace","data":[0.0],"y_start":0.8,"y_len":0.5},
+                {"id":2,"type":"signal","view":"spectrogram","data":[0.0]}
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2561,9 +2564,9 @@ mod tests {
     fn spectrogram_parses_with_defaults_and_applies() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"spectrogram","path":"/tmp/a.f32","channels":2,
+                {"id":1,"type":"signal","view":"spectrogram","path":"/tmp/a.f32","channels":2,
                  "sample_rate":44100.0},
-                {"id":2,"type":"spectrogram","buffer":3,"window_size":333}
+                {"id":2,"type":"signal","view":"spectrogram","buffer":3,"window_size":333}
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2626,12 +2629,12 @@ mod tests {
     fn the_six_names_parse_to_their_point_of_the_product() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"waveform","data":[0.0,1.0]},
-                {"id":2,"type":"spectrogram","data":[0.0,1.0]},
-                {"id":3,"type":"plot","data":[0.0,1.0]},
-                {"id":4,"type":"scope","bus":0},
-                {"id":5,"type":"spectrum","bus":0},
-                {"id":6,"type":"phasescope","bus":0}
+                {"id":1,"type":"signal","view":"trace","data":[0.0,1.0]},
+                {"id":2,"type":"signal","view":"spectrogram","data":[0.0,1.0]},
+                {"id":3,"type":"signal","navigable":0,"data":[0.0,1.0]},
+                {"id":4,"type":"signal","view":"trace","bus":0},
+                {"id":5,"type":"signal","view":"spectrum","bus":0},
+                {"id":6,"type":"signal","view":"phase","bus":0}
             ]}"#,
         );
         let w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2657,8 +2660,8 @@ mod tests {
     fn a_set_lands_on_the_part_of_the_model_it_names() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"waveform","data":[0.0,1.0]},
-                {"id":2,"type":"scope","bus":3}
+                {"id":1,"type":"signal","view":"trace","data":[0.0,1.0]},
+                {"id":2,"type":"signal","view":"trace","bus":3}
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2689,8 +2692,8 @@ mod tests {
     fn spectrogram_freq_scale_prop_parses_all_four() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"spectrogram","data":[0.0],"freq_scale":"bark"},
-                {"id":2,"type":"spectrogram","data":[0.0],"freq_scale":"linear","log_freq":1}
+                {"id":1,"type":"signal","view":"spectrogram","data":[0.0],"freq_scale":"bark"},
+                {"id":2,"type":"signal","view":"spectrogram","data":[0.0],"freq_scale":"linear","log_freq":1}
             ]}"#,
         );
         let w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2709,9 +2712,9 @@ mod tests {
     fn bpf_parses_with_defaults_and_applies() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"bpf","points":[0.0,0.0,1,0.0, 0.1,1.0,-4.0,0.0, 1.0,0.0,1,0.0],
+                {"id":1,"type":"curve","points":[0.0,0.0,1,0.0, 0.1,1.0,-4.0,0.0, 1.0,0.0,1,0.0],
                  "label":"env"},
-                {"id":2,"type":"bpf","min":20.0,"max":20000.0,"exp":1,"duration":4.0}
+                {"id":2,"type":"curve","min":20.0,"max":20000.0,"exp":1,"duration":4.0}
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2776,7 +2779,7 @@ mod tests {
     #[test]
     fn place_props_parse_and_apply() {
         let n = node(
-            r#"{"type":"window","layout":"row","children":[
+            r#"{"type":"window","flow":"row","children":[
             {"id":7,"type":"label","text":"a","w":100.5,"weight":2,"x":4,"y":8}]}"#,
         );
         let w = Widget::from_node(1, &n, &[]).unwrap();
@@ -2799,7 +2802,7 @@ mod tests {
 
     #[test]
     fn flow_props_parse_and_apply() {
-        let n = node(r#"{"type":"window","layout":"grid","margin":0,"gap":2,"cols":3}"#);
+        let n = node(r#"{"type":"window","flow":"grid","margin":0,"gap":2,"cols":3}"#);
         let w = Widget::from_node(1, &n, &[]).unwrap();
         let WidgetKind::Window { mut flow, .. } = w.kind else {
             unreachable!()
@@ -2815,7 +2818,7 @@ mod tests {
             layout: Layout::Col,
             flow: Flow::default(),
         };
-        assert!(kind.apply("layout", &serde_json::json!("row")));
+        assert!(kind.apply("flow", &serde_json::json!("row")));
         assert!(kind.apply("gap", &serde_json::json!(10)));
         assert!(matches!(
             kind,
@@ -2853,7 +2856,9 @@ mod tests {
 
     #[test]
     fn bad_blob_index_is_an_error() {
-        let n = node(r#"{"type":"window","children":[{"id":2,"type":"waveform","blob":3}]}"#);
+        let n = node(
+            r#"{"type":"window","children":[{"id":2,"type":"signal","view":"trace","blob":3}]}"#,
+        );
         assert!(Widget::from_node(1, &n, &[]).is_err());
     }
 
@@ -2916,7 +2921,7 @@ mod tests {
 
     #[test]
     fn piano_parses_defaults_and_normalizes_the_range() {
-        let n = node(r#"{"type":"window","children":[{"id":6,"type":"piano"}]}"#);
+        let n = node(r#"{"type":"window","children":[{"id":6,"type":"keys"}]}"#);
         let w = Widget::from_node(9, &n, &[]).unwrap();
         match &w.children[0].kind {
             WidgetKind::Piano {
@@ -2945,7 +2950,7 @@ mod tests {
         }
         // A black-key min snaps down to its white key; voice props parse.
         let n = node(
-            r#"{"type":"window","children":[{"id":6,"type":"piano","min":61,"max":85,
+            r#"{"type":"window","children":[{"id":6,"type":"keys","min":61,"max":85,
                 "velocity":90,"channel":3,"voice":"pv","voice_args":["pan",0.5]}]}"#,
         );
         let w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2979,8 +2984,8 @@ mod tests {
         let is_curve = |k: &WidgetKind| matches!(k, WidgetKind::Bpf { .. });
 
         let n = node(
-            r#"{"type":"window","children":[{"id":1,"type":"track","children":[
-                {"id":10,"type":"clip","offset":0.0,"dur":400.0,"data":[0.0,1.0]}]}]}"#,
+            r#"{"type":"window","children":[{"id":1,"type":"field","children":[
+                {"id":10,"type":"field","offset":0.0,"dur":400.0,"data":[0.0,1.0]}]}]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
         let clip = w.find_mut(10).unwrap();
@@ -3057,24 +3062,24 @@ mod tests {
         // A roll's axis is pitch; a take's is amplitude.
         assert_eq!(
             axis_of(
-                r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0]}"#,
+                r#"{"type":"field","dur":100.0,"notes":[0.0,10.0,60.0]}"#,
                 is_roll
             ),
             (21.0, 108.0)
         );
         assert_eq!(
-            axis_of(r#"{"type":"clip","dur":100.0,"buffer":3}"#, is_take),
+            axis_of(r#"{"type":"field","dur":100.0,"buffer":3}"#, is_take),
             (-1.0, 1.0)
         );
         // An explicit `min`/`max` wins, and reaches every body that measures
         // with it.
-        let named = r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0],
+        let named = r#"{"type":"field","dur":100.0,"notes":[0.0,10.0,60.0],
                         "buffer":3,"min":48.0,"max":72.0}"#;
         assert_eq!(axis_of(named, is_roll), (48.0, 72.0));
         assert_eq!(axis_of(named, is_take), (48.0, 72.0));
         // The curve's own range is untouched by either: a layered clip's bodies
         // do not share an axis.
-        let layered = r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0],
+        let layered = r#"{"type":"field","dur":100.0,"notes":[0.0,10.0,60.0],
                           "points":[0.0,0.5,1,0.0],"points_min":0.0,"points_max":1.0}"#;
         assert_eq!(axis_of(layered, is_roll), (21.0, 108.0));
         assert_eq!(axis_of(layered, is_curve), (0.0, 1.0));
@@ -3082,7 +3087,7 @@ mod tests {
 
     #[test]
     fn piano_apply_round_trips_and_prunes_held_keys() {
-        let n = node(r#"{"type":"window","children":[{"id":6,"type":"piano","min":48,"max":84}]}"#);
+        let n = node(r#"{"type":"window","children":[{"id":6,"type":"keys","min":48,"max":84}]}"#);
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
         let p = w.find_mut(6).unwrap();
         if let WidgetKind::Piano { pressed, .. } = &mut p.kind {

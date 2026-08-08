@@ -4551,3 +4551,62 @@ class of hangs.
   array-valued props (`points`, `notes`) already accept from `/gui_set` — so one
   curve drives another curve without a second encoding being invented for the
   binding path.
+
+## A widget type names a container, an element or a control — nothing narrower
+
+*(decided while landing the vocabulary migration)*
+
+The `/gui_*` catalog had grown to twenty-nine type names over a model of three
+things, and the same idea was spelled several ways: `waveform`, `plot`,
+`scope`, `spectrum`, `spectrogram` and `phasescope` were six points of one
+product (a presentation × a source kind × the capabilities over it); `panel`,
+`box` and `stack` were one container with three arrangements; `scroll` and
+`patch` one plane with and without boxes; `track`, `clip` and `timeruler` one
+time/value container told apart by what is placed on it. So the wire now names
+the **model**: a container owning 0, 1 or 2 axes (`window`, `layout`, `plane`,
+`field`), an element drawn against them (`signal`, `notes`, `curve`, `score`,
+`keys`, `nodes`, `meter`, `canvas`, `label`), and a control, which is an element
+with a value and no axis (unchanged — a `knob` names what it is).
+
+**Why the wire and not a set of presets over it.** Keeping the old names as
+wire names would have cost no migration at all, and was rejected: the reference
+would document twenty-nine types over a model of six concepts, and a reader
+would never discover that a plot is a trace that does not navigate, because
+"plot" reads as a different thing. The model's whole value is that the general
+form is what a script learns; hiding it behind the names defeats the refactor.
+That argument is about the **wire**. It does not reach a client's own builder
+names, which is why `waveform()` and `track()` survive as shortcuts onto the
+model — a shortcut re-documents nothing, and every existing call site kept
+working through the migration because of them.
+
+**The chrome belongs to the axes, not to each element.** A ruler, a navigation
+window, a selection, a playhead and a value range describe the container's axes;
+they were props of every view that drew against them. They now ride nested,
+under `axes: {x, y}` — nested rather than bare `x`/`y` because those are already
+the free-placement props, and a container that is placed *and* owns axes would
+have no way to say which it meant. Inside the host they stay flat, and a def's
+pair is flattened at the door: an OSC reply is flat arguments, so a structural
+prop cannot be answered at all, and nesting them would have made `/gui_query`
+stop reporting the ruler, the window and the range a script reads back.
+
+**What the discriminations cost.** Collapsing names means the props have to say
+which construction is meant, and three of those rules were only settled by
+writing them:
+
+- `navigable: 0` over addressable samples is the whole static-plot
+  construction, not a capability switched off: a view that does not navigate
+  also holds the sequence itself rather than a take (no peak pyramid) and
+  auto-fits a value axis nobody named.
+- A `field` with nothing on it is a **lane**, not a ruler. The first rule said
+  "children, or nothing at all" — but a multitrack opens empty lanes constantly,
+  so the ruler is the case that must declare itself: a bare strip of a given
+  thickness `h`, nothing placed on it, no lane chrome.
+- The arrangement is `flow`, on every container that has one, because the model
+  spends the word `layout` on the container type itself.
+
+**What it does not reach, on purpose.** `box` is the one name the migration
+could not take: the catalog spent it on a synonym of `panel`, the model wants it
+for a patcher's box, and turning a plane's `boxes` prop into child elements
+changes behavior (ids, layout, per-box hit-testing and edit-back), not spelling.
+The name is now unclaimed and the prop unchanged, waiting for the element rather
+than for a rename.

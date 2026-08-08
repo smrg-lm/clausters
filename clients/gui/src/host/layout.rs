@@ -714,7 +714,7 @@ mod tests {
         // which is where a heavy view's GPU slot is collected from.
         let w = tree(
             r#"{"type":"window","children":[
-            {"id":5,"type":"stack","index":1,"children":[
+            {"id":5,"type":"layout","flow":"stack","index":1,"children":[
                 {"id":10,"type":"label","text":"one"},
                 {"id":11,"type":"label","text":"two"},
                 {"id":12,"type":"label","text":"three"}]}]}"#,
@@ -743,7 +743,7 @@ mod tests {
         // nothing rather than silently showing the wrong child.
         let w = tree(
             r#"{"type":"window","children":[
-            {"id":5,"type":"stack","index":7,"children":[
+            {"id":5,"type":"layout","flow":"stack","index":7,"children":[
                 {"id":10,"type":"label","text":"one"}]}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
@@ -752,7 +752,7 @@ mod tests {
         // A negative index is the same blank page.
         let w = tree(
             r#"{"type":"window","children":[
-            {"id":5,"type":"stack","index":-1,"children":[
+            {"id":5,"type":"layout","flow":"stack","index":-1,"children":[
                 {"id":10,"type":"label","text":"one"}]}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
@@ -764,8 +764,8 @@ mod tests {
         // One lane, one clip spanning [0, 400] of a 400-long timeline.
         let w = tree(
             r#"{"type":"window","children":[
-            {"id":5,"type":"track","children":[
-                {"id":10,"type":"clip","offset":0,"dur":400}]}]}"#,
+            {"id":5,"type":"field","children":[
+                {"id":10,"type":"field","offset":0,"dur":400}]}]}"#,
         );
         let m = Metrics::default();
 
@@ -801,8 +801,8 @@ mod tests {
         // over a take one clip instead of two.
         let w = tree(
             r#"{"type":"window","children":[
-            {"id":5,"type":"track","children":[
-                {"id":10,"type":"clip","offset":0,"dur":400,"data":[0.0,1.0],
+            {"id":5,"type":"field","children":[
+                {"id":10,"type":"field","offset":0,"dur":400,"data":[0.0,1.0],
                  "notes":[0.0,100.0,60.0],"points":[0.0,0.5,1,0.0]}]}]}"#,
         );
         let m = Metrics::default();
@@ -841,8 +841,8 @@ mod tests {
     fn col_splits_height_evenly() {
         // Two elastic surfaces: nothing knows its own height, so they share.
         let w = tree(
-            r#"{"type":"window","layout":"col","children":[
-            {"id":1,"type":"panel"},{"id":2,"type":"panel"}]}"#,
+            r#"{"type":"window","flow":"col","children":[
+            {"id":1,"type":"layout"},{"id":2,"type":"layout"}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
         // [window, child a, child b]
@@ -856,7 +856,7 @@ mod tests {
     #[test]
     fn row_splits_width_evenly() {
         let w = tree(
-            r#"{"type":"window","layout":"row","children":[
+            r#"{"type":"window","flow":"row","children":[
             {"id":1,"type":"label","text":"a"},{"id":2,"type":"label","text":"b"}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
@@ -867,7 +867,9 @@ mod tests {
 
     #[test]
     fn single_child_fills_inset_area() {
-        let w = tree(r#"{"type":"window","children":[{"id":12,"type":"waveform","data":[]}]}"#);
+        let w = tree(
+            r#"{"type":"window","children":[{"id":12,"type":"signal","view":"trace","data":[]}]}"#,
+        );
         let placed = layout(area(), &w, &Metrics::default());
         assert_eq!(placed.len(), 2);
         let r = placed[1].rect;
@@ -880,7 +882,7 @@ mod tests {
     #[test]
     fn grid_of_four_is_two_by_two() {
         let w = tree(
-            r#"{"type":"window","layout":"grid","children":[
+            r#"{"type":"window","flow":"grid","children":[
             {"id":1,"type":"label","text":"a"},{"id":2,"type":"label","text":"b"},
             {"id":3,"type":"label","text":"c"},{"id":4,"type":"label","text":"d"}]}"#,
         );
@@ -895,7 +897,7 @@ mod tests {
     #[test]
     fn fixed_size_and_weight_split_a_row() {
         let w = tree(
-            r#"{"type":"window","layout":"row","margin":0,"gap":0,"children":[
+            r#"{"type":"window","flow":"row","margin":0,"gap":0,"children":[
             {"id":1,"type":"label","text":"a","w":100},
             {"id":2,"type":"label","text":"b","weight":3},
             {"id":3,"type":"label","text":"c"}]}"#,
@@ -915,11 +917,11 @@ mod tests {
     fn the_main_axis_resolves_in_one_order() {
         let m = Metrics::default();
         let w = tree(
-            r#"{"type":"window","layout":"col","margin":0,"gap":0,"children":[
+            r#"{"type":"window","flow":"col","margin":0,"gap":0,"children":[
             {"id":1,"type":"button","label":"fixed","h":50},
             {"id":2,"type":"button","label":"stretched","weight":2},
             {"id":3,"type":"button","label":"natural"},
-            {"id":4,"type":"panel"}]}"#,
+            {"id":4,"type":"layout"}]}"#,
         );
         let placed = layout(area(), &w, &m);
         let (fixed, weighted, natural, elastic) = (
@@ -956,7 +958,7 @@ mod tests {
         // Nothing elastic to absorb it: the controls stack at their own size
         // and the rest of the column stays empty, rather than everyone growing.
         let w = tree(
-            r#"{"type":"window","layout":"col","margin":0,"gap":0,"children":[
+            r#"{"type":"window","flow":"col","margin":0,"gap":0,"children":[
             {"id":1,"type":"button","label":"a"},{"id":2,"type":"button","label":"b"}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
@@ -970,7 +972,7 @@ mod tests {
         // A row of controls: a button knows its height, not its width, so the
         // row's main axis (x) still splits evenly and the cross axis fills.
         let w = tree(
-            r#"{"type":"window","layout":"row","margin":0,"gap":0,"children":[
+            r#"{"type":"window","flow":"row","margin":0,"gap":0,"children":[
             {"id":1,"type":"button","label":"a"},{"id":2,"type":"button","label":"b"}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
@@ -981,8 +983,8 @@ mod tests {
 
     #[test]
     fn the_density_moves_a_natural_row() {
-        let json = r#"{"type":"window","layout":"col","margin":0,"gap":0,"children":[
-            {"id":1,"type":"button","label":"a"},{"id":2,"type":"panel"}]}"#;
+        let json = r#"{"type":"window","flow":"col","margin":0,"gap":0,"children":[
+            {"id":1,"type":"button","label":"a"},{"id":2,"type":"layout"}]}"#;
         let (small, big) = (tree(json), tree(json));
         let compact = layout(area(), &small, &Metrics::generated(0.75));
         let comfortable = layout(area(), &big, &Metrics::generated(1.5));
@@ -997,10 +999,10 @@ mod tests {
     /// row all double, and the work surface still takes the rest.
     #[test]
     fn a_scaled_window_doubles_the_declared_chrome() {
-        let json = r#"{"type":"window","layout":"col","margin":0,"gap":10,"children":[
-            {"id":11,"type":"panel","h":28},
+        let json = r#"{"type":"window","flow":"col","margin":0,"gap":10,"children":[
+            {"id":11,"type":"layout","h":28},
             {"id":12,"type":"button","label":"natural"},
-            {"id":13,"type":"panel"}]}"#;
+            {"id":13,"type":"layout"}]}"#;
         let m = Metrics::default();
         let (one, two) = (tree(json), tree(json));
         let plain = layout(area(), &one, &m);
@@ -1029,7 +1031,7 @@ mod tests {
 
     #[test]
     fn a_scaled_free_placement_scales_position_and_size() {
-        let json = r#"{"type":"window","layout":"free","margin":4,"children":[
+        let json = r#"{"type":"window","flow":"free","margin":4,"children":[
             {"id":1,"type":"label","text":"a","x":50,"y":30,"w":120,"h":40}]}"#;
         let w = tree(json);
         let placed = layout(area(), &w, &Metrics::default().resolved(2.0));
@@ -1046,7 +1048,7 @@ mod tests {
     #[test]
     fn a_workspace_plane_scales_by_its_zoom_and_defaults_to_the_density() {
         let json = r#"{"type":"window","margin":0,"children":[
-            {"id":9,"type":"scroll","margin":0,"content_w":2000,"content_h":2000,
+            {"id":9,"type":"plane","margin":0,"content_w":2000,"content_h":2000,
              "children":[{"id":7,"type":"label","text":"a","x":100,"y":50,"w":80,"h":40}]}]}"#;
         let w = tree(json);
         let placed = layout(area(), &w, &Metrics::default().resolved(2.0));
@@ -1063,9 +1065,9 @@ mod tests {
     #[test]
     fn a_scrolled_box_enlarges_whole() {
         let json = r#"{"type":"window","margin":0,"children":[
-            {"id":9,"type":"scroll","margin":0,"content_w":2000,"content_h":2000,
+            {"id":9,"type":"plane","margin":0,"content_w":2000,"content_h":2000,
              "view_zoom":ZOOM,"children":[
-               {"id":10,"type":"panel","layout":"col","x":0,"y":0,"w":300,"h":220,
+               {"id":10,"type":"layout","flow":"col","x":0,"y":0,"w":300,"h":220,
                 "children":[{"id":11,"type":"label","text":"node"},
                             {"id":12,"type":"knob","label":"amount"}]}]}]}"#;
         let m = Metrics::default();
@@ -1098,7 +1100,7 @@ mod tests {
         // it gets on a doubled display too — the default is the density, a
         // named number is the number.
         let json = r#"{"type":"window","margin":0,"children":[
-            {"id":9,"type":"scroll","margin":0,"view_zoom":1,
+            {"id":9,"type":"plane","margin":0,"view_zoom":1,
              "content_w":2000,"content_h":2000,
              "children":[{"id":7,"type":"label","text":"a","x":100,"y":50,"w":80,"h":40}]}]}"#;
         let w = tree(json);
@@ -1115,8 +1117,8 @@ mod tests {
     #[test]
     fn a_small_graph_centres_at_any_density() {
         let json = r#"{"type":"window","margin":0,"children":[
-            {"id":9,"type":"scroll","margin":0,"children":[
-              {"id":7,"type":"patch","boxes":[{"def":"src","outlets":["out"]}]}]}]}"#;
+            {"id":9,"type":"plane","margin":0,"children":[
+              {"id":7,"type":"plane","boxes":[{"def":"src","outlets":["out"]}]}]}]}"#;
         let w = tree(json);
         let area = Rect::new(0.0, 0.0, 600.0, 400.0);
         for scale in [1.0, 2.0] {
@@ -1139,9 +1141,9 @@ mod tests {
         // The acceptance shape: a col window with a fixed menu bar, a weighted
         // content area and a fixed status bar.
         let w = tree(
-            r#"{"type":"window","layout":"col","margin":0,"gap":0,"children":[
-            {"id":11,"type":"panel","layout":"row","h":28},
-            {"id":12,"type":"panel"},
+            r#"{"type":"window","flow":"col","margin":0,"gap":0,"children":[
+            {"id":11,"type":"layout","flow":"row","h":28},
+            {"id":12,"type":"layout"},
             {"id":13,"type":"label","text":"ready","h":20}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
@@ -1162,7 +1164,7 @@ mod tests {
     #[test]
     fn margin_and_gap_props_override_the_defaults() {
         let w = tree(
-            r#"{"type":"window","layout":"col","margin":10,"gap":2,"children":[
+            r#"{"type":"window","flow":"col","margin":10,"gap":2,"children":[
             {"id":1,"type":"label","text":"a"},{"id":2,"type":"label","text":"b"}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
@@ -1177,7 +1179,7 @@ mod tests {
     #[test]
     fn grid_cols_prop_fixes_the_column_count() {
         let w = tree(
-            r#"{"type":"window","layout":"grid","cols":4,"children":[
+            r#"{"type":"window","flow":"grid","cols":4,"children":[
             {"id":1,"type":"label","text":"a"},{"id":2,"type":"label","text":"b"},
             {"id":3,"type":"label","text":"c"},{"id":4,"type":"label","text":"d"},
             {"id":5,"type":"label","text":"e"}]}"#,
@@ -1193,7 +1195,7 @@ mod tests {
     #[test]
     fn free_children_position_absolutely_or_overlay() {
         let w = tree(
-            r#"{"type":"window","layout":"free","margin":0,"children":[
+            r#"{"type":"window","flow":"free","margin":0,"children":[
             {"id":1,"type":"label","text":"a","x":50,"y":30,"w":120,"h":40},
             {"id":2,"type":"label","text":"b","w":200},
             {"id":3,"type":"label","text":"c"}]}"#,
@@ -1213,7 +1215,7 @@ mod tests {
     #[test]
     fn oversized_fixed_children_never_go_negative() {
         let w = tree(
-            r#"{"type":"window","layout":"row","margin":0,"gap":0,"children":[
+            r#"{"type":"window","flow":"row","margin":0,"gap":0,"children":[
             {"id":1,"type":"label","text":"a","w":900},
             {"id":2,"type":"label","text":"b"}]}"#,
         );
@@ -1243,7 +1245,7 @@ mod tests {
     fn scroll_content_extents_come_from_the_free_placement() {
         let w = tree(
             r#"{"type":"window","margin":0,"children":[
-            {"id":9,"type":"scroll","margin":10,"children":[
+            {"id":9,"type":"plane","margin":10,"children":[
               {"id":1,"type":"label","text":"a","x":0,"y":0,"w":100,"h":40},
               {"id":2,"type":"label","text":"b","x":300,"y":500,"w":120,"h":60}]}]}"#,
         );
@@ -1260,7 +1262,7 @@ mod tests {
     fn explicit_content_size_wins_and_a_non_free_scroll_falls_back_to_its_area() {
         let w = tree(
             r#"{"type":"window","margin":0,"children":[
-            {"id":9,"type":"scroll","content_w":2000,"content_h":1500,"children":[
+            {"id":9,"type":"plane","content_w":2000,"content_h":1500,"children":[
               {"id":1,"type":"label","text":"a","x":0,"y":0,"w":10,"h":10}]}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
@@ -1272,7 +1274,7 @@ mod tests {
         // (the workspace degenerates to a plain panel).
         let w = tree(
             r#"{"type":"window","margin":0,"children":[
-            {"id":9,"type":"scroll","layout":"col","children":[
+            {"id":9,"type":"plane","flow":"col","children":[
               {"id":1,"type":"label","text":"a"}]}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
@@ -1287,7 +1289,7 @@ mod tests {
     fn the_view_transform_offsets_and_scales_the_children() {
         let w = tree(
             r#"{"type":"window","margin":0,"children":[
-            {"id":9,"type":"scroll","margin":0,"content_w":2000,"content_h":2000,
+            {"id":9,"type":"plane","margin":0,"content_w":2000,"content_h":2000,
              "view_x":100,"view_y":50,"view_zoom":2,"children":[
               {"id":1,"type":"label","text":"a","x":100,"y":50,"w":80,"h":40}]}]}"#,
         );
@@ -1308,10 +1310,10 @@ mod tests {
         let w = tree(
             r#"{"type":"window","margin":0,"children":[
             {"id":15,"type":"label","text":"outside"},
-            {"id":19,"type":"scroll","margin":0,"view_zoom":2,"content_w":1000,"content_h":1000,
+            {"id":19,"type":"plane","margin":0,"view_zoom":2,"content_w":1000,"content_h":1000,
              "children":[
               {"id":11,"type":"label","text":"a","x":0,"y":0,"w":80,"h":40},
-              {"id":12,"type":"scroll","margin":0,"view_zoom":0.5,"x":100,"y":0,"w":200,"h":200,
+              {"id":12,"type":"plane","margin":0,"view_zoom":0.5,"x":100,"y":0,"w":200,"h":200,
                "content_w":400,"content_h":400,"children":[
                 {"id":13,"type":"label","text":"b","x":0,"y":0,"w":80,"h":40}]}]}]}"#,
         );
@@ -1335,7 +1337,7 @@ mod tests {
         // 2000 - 600 = 1400, and y — not a pannable axis here — stays put.
         let w = tree(
             r#"{"type":"window","margin":0,"children":[
-            {"id":9,"type":"scroll","margin":0,"axis":"x","zoom":0,
+            {"id":9,"type":"plane","margin":0,"axis":"x","zoom":0,
              "content_w":2000,"content_h":100,
              "view_x":9999,"view_y":9999,"children":[
               {"id":1,"type":"label","text":"a","x":0,"y":0,"w":10,"h":10}]}]}"#,
@@ -1354,7 +1356,7 @@ mod tests {
         // be pushed by half a viewport instead of pinning at the corner.
         let w = tree(
             r#"{"type":"window","margin":0,"children":[
-            {"id":9,"type":"scroll","margin":0,"content_w":2000,"content_h":100,
+            {"id":9,"type":"plane","margin":0,"content_w":2000,"content_h":100,
              "view_x":9999,"view_y":9999,"children":[
               {"id":1,"type":"label","text":"a","x":0,"y":0,"w":10,"h":10}]}]}"#,
         );
@@ -1368,8 +1370,8 @@ mod tests {
     fn a_scrolled_child_keeps_its_own_layout_inside_the_transformed_rect() {
         let w = tree(
             r#"{"type":"window","margin":0,"children":[
-            {"id":9,"type":"scroll","margin":0,"content_w":1000,"content_h":1000,"children":[
-              {"id":5,"type":"panel","layout":"row","margin":0,"gap":0,
+            {"id":9,"type":"plane","margin":0,"content_w":1000,"content_h":1000,"children":[
+              {"id":5,"type":"layout","flow":"row","margin":0,"gap":0,
                "x":0,"y":0,"w":200,"h":100,"children":[
                  {"id":2,"type":"label","text":"a"},{"id":3,"type":"label","text":"b"}]}]}]}"#,
         );
@@ -1394,7 +1396,7 @@ mod tests {
     fn nested_panel_recurses() {
         let w = tree(
             r#"{"type":"window","children":[
-            {"id":5,"type":"panel","children":[{"id":12,"type":"waveform","data":[]}]}]}"#,
+            {"id":5,"type":"layout","children":[{"id":12,"type":"signal","view":"trace","data":[]}]}]}"#,
         );
         let placed = layout(area(), &w, &Metrics::default());
         // [window, panel, waveform]

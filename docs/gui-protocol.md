@@ -143,12 +143,10 @@ not grow per widget.
 
 ## The model: containers, axes and elements
 
-The `type` vocabulary is **being replaced**, and this is what the wire says
-now: both clients emit the model, and the host reads it and the catalog below
-alike. What changed is not the wire's shape — a node is still
-`{id, type, props, children}` — but what a type *names*: the catalog names
-twenty-nine widgets over a model of three things, and the model is what a
-script learns.
+This is what a `type` names. The wire's shape has not changed — a node is
+still `{id, type, props, children}` — but the twenty-nine widget names the
+catalog had grown are gone: they spelled one idea several ways, and what is
+left is the model they were points of.
 
 | Kind | What it is | Types |
 |---|---|---|
@@ -229,19 +227,25 @@ own stays where it is: an element's source (`data`, `buffer`, `path`, `cache`,
 (`fft_size`/`window_size`, `hop`, `db_floor`/`db_ceil`, `freq_scale`,
 `colormap`), and every place prop (`w`, `h`, `weight`, `x`, `y`).
 
-### Both spellings parse, for now
+### The builders keep their names; the wire does not
 
-The host accepts the model's vocabulary **and** every name in the catalog
-below, so nothing that ran before stops running. The old names are **leaving**:
-they are read through a translation layer that is deleted once nothing writes
-them, and a saved bundle written in the old spelling will need re-saving then.
-Write new trees in the model's terms.
+The old type names **no longer parse**: a node saying `type: "waveform"` is an
+unknown type, laid out and not painted, like any type this host does not have.
+A GuiDef saved in the old spelling (a bundle, a named def in the host's store)
+has to be re-saved from a current client.
 
-Both clients already do. Their **builders keep their familiar names** —
-`panel`, `waveform`, `track`, `clip`, `scope` — as shortcuts that build a
-model node with the props of one common case, so a script does not change; and
-`layout`, `plane`, `field` and `signal` are there beside them for the cases no
-shortcut names. What a client *emits* is the model, always.
+What did not change is what a script types. Both clients still offer a builder
+under each old name — `panel`, `stack`, `scroll`, `waveform`, `plot`, `scope`,
+`track`, `clip`, `timeruler`, … — as **shortcuts** that build a model node with
+the props of one common case, and `layout`, `plane`, `field` and `signal` sit
+beside them for the cases no shortcut names. The catalog below is where a
+shortcut's own props are documented; what a client *emits* is always the model.
+
+One name is **unclaimed**: `box`. The catalog spent it on a synonym of `panel`,
+and the model wants it for a patcher's box — but a plane's boxes are still its
+`boxes` prop, because making them child elements is a change of behavior (ids,
+layout, per-box hit-testing and edit-back) rather than of spelling. Until that
+lands, `box` names nothing.
 
 One name is deferred: **`box`** currently means a synonym of `panel` and the
 model wants it for a patcher's box, and both cannot be true while both
@@ -249,10 +253,9 @@ spellings parse. Until then a plane's boxes stay its `boxes` property.
 
 ## The widget catalog
 
-The names below are the ones the model above replaces. They still parse, and
-both clients still offer a **builder** under each of them — a shortcut onto
-the model node it always meant — so this table is where a shortcut's own props
-are documented.
+The names below are **builder** names in both clients, not wire types — each
+is a shortcut onto one point of the model above, and this table is where its
+own props are documented. The `type` a node carries is always the model's.
 The authoritative per-widget reference — every property, its default and its
 meaning — is the [Python client's builder
 documentation](https://clausters-python.readthedocs.io/), since that is how a

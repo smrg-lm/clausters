@@ -855,7 +855,11 @@ mod tests {
     }
 
     fn take_body(data: signal::Data) -> WidgetKind {
-        let mut el = signal::SignalElement::from_preset(&signal::preset("waveform").unwrap());
+        let mut el = signal::SignalElement::from_preset(&signal::point(
+            crate::host::signal::Presentation::Signal,
+            false,
+            true,
+        ));
         el.caps = signal::Caps::default();
         el.source = signal::Source::Data(data);
         WidgetKind::Signal(Box::new(el))

@@ -963,10 +963,10 @@ mod tests {
     /// A window with a waveform (id 10) and a spectrogram (id 11) linked as
     /// group 1, plus an unlinked waveform (id 12) of the same data.
     const LINKED: &str = r#"{"type":"window","children":[
-        {"id":10,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"link":1,
+        {"id":10,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"link":1,
          "sel_start":1.0,"sel_len":2.0},
-        {"id":11,"type":"spectrogram","data":[0.0,0.5,-0.5,1.0],"link":1},
-        {"id":12,"type":"waveform","data":[0.0,0.5,-0.5,1.0]}
+        {"id":11,"type":"signal","view":"spectrogram","data":[0.0,0.5,-0.5,1.0],"link":1},
+        {"id":12,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0]}
     ]}"#;
 
     fn linked_host() -> Host {
@@ -1285,7 +1285,7 @@ mod tests {
             def_msg(
                 2,
                 r#"{"type":"window","children":[
-                    {"id":20,"type":"waveform","data":[0.0,0.5],"link":1}
+                    {"id":20,"type":"signal","view":"trace","data":[0.0,0.5],"link":1}
                 ]}"#,
             ),
             from(),
@@ -1303,12 +1303,12 @@ mod tests {
     /// Two lanes of one window (the window root is id 1, so the lanes take ids
     /// clear of it); the drums' clips end at 300, the lead's at 500.
     const LANES: &str = r#"{"type":"window","children":[
-        {"id":100,"type":"track","label":"drums","children":[
-            {"id":110,"type":"clip","offset":0.0,"dur":100.0},
-            {"id":111,"type":"clip","offset":200.0,"dur":100.0}
+        {"id":100,"type":"field","label":"drums","children":[
+            {"id":110,"type":"field","offset":0.0,"dur":100.0},
+            {"id":111,"type":"field","offset":200.0,"dur":100.0}
         ]},
-        {"id":200,"type":"track","label":"lead","children":[
-            {"id":210,"type":"clip","offset":100.0,"dur":400.0}
+        {"id":200,"type":"field","label":"lead","children":[
+            {"id":210,"type":"field","offset":100.0,"dur":400.0}
         ]}
     ]}"#;
 
@@ -1462,7 +1462,7 @@ mod tests {
             def_msg(
                 1,
                 r#"{"type":"window","margin":0,"children":[
-                {"id":100,"type":"pianoroll","notes":[],"min":48,"max":84,
+                {"id":100,"type":"notes","notes":[],"min":48,"max":84,
                  "sample_rate":48000.0,"tempo":2.0}
             ]}"#,
             ),
@@ -1513,7 +1513,7 @@ mod tests {
             def_msg(
                 1,
                 r#"{"type":"window","margin":0,"children":[
-                {"id":100,"type":"pianoroll","notes":[],"min":48,"max":84,
+                {"id":100,"type":"notes","notes":[],"min":48,"max":84,
                  "sample_rate":48000.0,"tempo":2.0}
             ]}"#,
             ),
@@ -1564,9 +1564,9 @@ mod tests {
             def_msg(
                 1,
                 r#"{"type":"window","margin":0,"children":[
-                {"id":90,"type":"timeruler","link":7,"h":20.0},
-                {"id":100,"type":"track","link":7,"children":[
-                    {"id":110,"type":"clip","offset":0.0,"dur":400.0}
+                {"id":90,"type":"field","link":7,"h":20.0},
+                {"id":100,"type":"field","link":7,"children":[
+                    {"id":110,"type":"field","offset":0.0,"dur":400.0}
                 ]}
             ]}"#,
             ),
@@ -1619,10 +1619,10 @@ mod indent_tests {
     fn one_group_starts_its_body_at_one_x() {
         let root = tree(
             r#"{"type":"window","children":[
-                {"id":1,"type":"timeruler","link":7},
-                {"id":2,"type":"track","link":7},
-                {"id":3,"type":"pianoroll","link":7},
-                {"id":4,"type":"waveform","data":[0.0,1.0],"link":7}
+                {"id":1,"type":"field","link":7},
+                {"id":2,"type":"field","link":7},
+                {"id":3,"type":"notes","link":7},
+                {"id":4,"type":"signal","view":"trace","data":[0.0,1.0],"link":7}
             ]}"#,
         );
         let m = Metrics::default();
@@ -1644,9 +1644,9 @@ mod indent_tests {
     fn one_wide_lane_header_moves_the_whole_axis() {
         let root = tree(
             r#"{"type":"window","children":[
-                {"id":1,"type":"timeruler","link":7},
-                {"id":2,"type":"track","link":7,"header_w":240},
-                {"id":3,"type":"pianoroll","link":7}
+                {"id":1,"type":"field","link":7},
+                {"id":2,"type":"field","link":7,"header_w":240},
+                {"id":3,"type":"notes","link":7}
             ]}"#,
         );
         let m = Metrics::default();
@@ -1666,8 +1666,8 @@ mod indent_tests {
     fn an_unlinked_timeruler_joins_the_windows_lanes() {
         let root = tree(
             r#"{"type":"window","children":[
-                {"id":1,"type":"track","header_w":180},
-                {"id":2,"type":"timeruler"}
+                {"id":1,"type":"field","header_w":180},
+                {"id":2,"type":"field"}
             ]}"#,
         );
         let m = Metrics::default();
@@ -1685,9 +1685,9 @@ mod indent_tests {
     fn a_solo_member_keeps_its_own_gutter() {
         let root = tree(
             r#"{"type":"window","children":[
-                {"id":1,"type":"track"},
-                {"id":2,"type":"waveform","data":[0.0,1.0]},
-                {"id":3,"type":"waveform","data":[0.0,1.0],"ruler_y":"off"}
+                {"id":1,"type":"field"},
+                {"id":2,"type":"signal","view":"trace","data":[0.0,1.0]},
+                {"id":3,"type":"signal","view":"trace","data":[0.0,1.0],"ruler_y":"off"}
             ]}"#,
         );
         let m = Metrics::default();

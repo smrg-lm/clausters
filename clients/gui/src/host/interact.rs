@@ -1554,9 +1554,9 @@ mod tests {
     /// (id 10) over [0, 400), B (id 11) over [400, 400), grid 100.
     fn track_host() -> Host {
         let json = r#"{"type":"window","children":[
-            {"id":5,"type":"track","snap":100.0,"children":[
-                {"id":10,"type":"clip","offset":0.0,"dur":400.0},
-                {"id":11,"type":"clip","offset":400.0,"dur":400.0}
+            {"id":5,"type":"field","snap":100.0,"children":[
+                {"id":10,"type":"field","offset":0.0,"dur":400.0},
+                {"id":11,"type":"field","offset":400.0,"dur":400.0}
             ]}
         ]}"#;
         let mut host = Host::new();
@@ -1596,10 +1596,10 @@ mod tests {
     /// `scroll` workspace (id 4) whose child is a second scroll (id 5) with a
     /// knob (id 6) in it — two planes, one nested in the other.
     fn nested_host() -> Host {
-        let json = r#"{"type":"window","layout":"row","children":[
-            {"id":2,"type":"panel","children":[{"id":3,"type":"knob"}]},
-            {"id":4,"type":"scroll","children":[
-                {"id":5,"type":"scroll","children":[{"id":6,"type":"knob"}]}
+        let json = r#"{"type":"window","flow":"row","children":[
+            {"id":2,"type":"layout","children":[{"id":3,"type":"knob"}]},
+            {"id":4,"type":"plane","children":[
+                {"id":5,"type":"plane","children":[{"id":6,"type":"knob"}]}
             ]}
         ]}"#;
         let mut host = Host::new();
@@ -1650,7 +1650,7 @@ mod tests {
     #[test]
     fn a_workspace_is_its_own_plane_when_the_press_lands_on_it() {
         let json = r#"{"type":"window","children":[
-            {"id":4,"type":"scroll","layout":"free","children":[
+            {"id":4,"type":"plane","flow":"free","children":[
                 {"id":6,"type":"knob","x":0.0,"y":0.0,"w":20.0,"h":20.0}
             ]}
         ]}"#;
@@ -1769,7 +1769,7 @@ mod tests {
     /// whole roll at MIDI 60 over the pitch window [48, 72], velocity lane on.
     fn pianoroll_host() -> Host {
         let json = r#"{"type":"window","children":[
-            {"id":5,"type":"pianoroll","min":48.0,"max":72.0,"snap":100.0,
+            {"id":5,"type":"notes","min":48.0,"max":72.0,"snap":100.0,
              "notes":[0.0,1000.0,60.0,100,0]}
         ]}"#;
         let mut host = Host::new();
@@ -1867,7 +1867,7 @@ mod tests {
     /// no cords yet — the drag under test draws one.
     fn graph_host() -> Host {
         let json = r#"{"type":"window","children":[
-            {"id":7,"type":"patch","label":"chain",
+            {"id":7,"type":"plane","label":"chain",
              "boxes":[{"def":"gsrc","outlets":["out"]},
                       {"def":"gsink","inlets":["in"],"outlets":["out"]}]}
         ]}"#;

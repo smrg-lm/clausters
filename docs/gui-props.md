@@ -74,6 +74,9 @@ measured, so a row that becomes half-true fails rather than rotting.
 
 | widget | prop | surfaces | verdict |
 |---|---|---|---|
+| `window` | `layout` | python web | **idiom** — the arrangement is `flow` on the wire: the model spends the word `layout` on the container type itself. Both builders still take `layout=` as its old name and emit `flow`, so a script written before the rename keeps building — a client-side courtesy the host knows nothing about |
+| `layout` | `layout` | python web | **idiom** — as above |
+| `plane` | `layout` | python web | **idiom** — as above |
 | `field` | `sel_start` | host web | **idiom** — a `field` is one container in three uses, and two of them act on less than the whole chrome: a lane has no selection and no vertical window (`EditorProps::parse_lane` says so, and the frame pass draws neither), and a bare ruler draws an axis and nothing else. Both parse the lot only because they share the host's `EditorProps` bundle. The web client declares that bundle once (`TimelineOptions`) and so offers the inert members too; the Python `track` and `timeruler` name props case by case and name only the ones each acts on |
 | `field` | `sel_len` | host web | **idiom** — as above |
 | `field` | `y_start` | host web | **idiom** — as above |

@@ -493,15 +493,15 @@ export function signal(
  * is just `window({ layout: "col" }, bar({ h: 28 }), content(), status({ h: 20 }))`.
  */
 export function window(
-    options: ContainerOptions & { title?: string } = {},
+    options: ContainerOptions & { title?: string; flow?: string } = {},
     ...children: GuiNode[]
 ): GuiNode {
-    const { title, layout, margin, gap, cols, theme, ...rest } = options;
+    const { title, flow, layout, margin, gap, cols, theme, ...rest } = options;
     return node("window", {
         ...rest,
         ...drop([
             ["title", title],
-            ["flow", layout],
+            ["flow", flow ?? layout],
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],
@@ -515,12 +515,15 @@ export function window(
  * A nestable `panel` container. As a child it takes the same place props as
  * any widget; `theme` makes it a theme group over its whole subtree.
  */
-export function panel(options: ContainerOptions = {}, ...children: GuiNode[]): GuiNode {
-    const { layout, margin, gap, cols, theme, ...rest } = options;
+export function panel(
+    options: ContainerOptions & { flow?: string } = {},
+    ...children: GuiNode[]
+): GuiNode {
+    const { flow, layout, margin, gap, cols, theme, ...rest } = options;
     return node("layout", {
         ...rest,
         ...drop([
-            ["flow", layout],
+            ["flow", flow ?? layout],
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],

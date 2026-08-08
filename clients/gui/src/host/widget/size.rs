@@ -195,13 +195,13 @@ mod tests {
     fn a_surface_is_elastic_on_both_axes() {
         let m = Metrics::default();
         for json in [
-            r#"{"type":"panel"}"#,
-            r#"{"type":"scroll"}"#,
-            r#"{"type":"waveform","data":[]}"#,
-            r#"{"type":"plot","data":[]}"#,
-            r#"{"type":"nodetree"}"#,
-            r#"{"type":"track"}"#,
-            r#"{"type":"patch"}"#,
+            r#"{"type":"layout"}"#,
+            r#"{"type":"plane"}"#,
+            r#"{"type":"signal","view":"trace","data":[]}"#,
+            r#"{"type":"signal","navigable":0,"data":[]}"#,
+            r#"{"type":"nodes"}"#,
+            r#"{"type":"field"}"#,
+            r#"{"type":"plane"}"#,
         ] {
             assert_eq!(kind(json).natural_size(&m, 1.0), (None, None), "{json}");
         }
@@ -381,7 +381,7 @@ mod tests {
     fn a_ruler_strip_is_as_thick_as_the_role() {
         let m = Metrics::default();
         assert_eq!(
-            kind(r#"{"type":"timeruler"}"#).natural_size(&m, 1.0),
+            kind(r#"{"type":"field","h":20.0}"#).natural_size(&m, 1.0),
             (None, Some(m.ruler_h))
         );
     }

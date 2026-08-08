@@ -28,10 +28,12 @@
 //! costs a GPU slot only when it is a *navigable* heavy view
 //! ([`SignalElement::is_gpu_view`]), so a multitrack of clip bodies costs none.
 //!
-//! The wire still names the six (`type: "waveform"`, `type: "scope"`, …), each
-//! a **preset** of this element — [`preset`] is that whole compatibility layer.
-//! Moving the wire onto the model itself is a separate step, because it is the
-//! breaking half.
+//! The wire says the **point** of the product — `view` (the presentation),
+//! the source props (a `bus` is forward-only, anything else addressable) and
+//! `navigable` — and [`point`] is where each combination's defaults live. The
+//! six names the catalog grew (`waveform`, `scope`, `spectrum`, …) were six
+//! points of it, and they are the two clients' builder names now, nothing the
+//! host knows about.
 
 pub mod trace;
 
@@ -64,6 +66,18 @@ pub enum Presentation {
 }
 
 impl Presentation {
+    /// The `view` prop as a presentation; `None` when the wire names one this
+    /// host does not have.
+    pub fn parse(name: &str) -> Option<Presentation> {
+        Some(match name {
+            "trace" => Presentation::Signal,
+            "spectrum" => Presentation::Spectrum,
+            "spectrogram" => Presentation::TimeFrequency,
+            "phase" => Presentation::Phase,
+            _ => return None,
+        })
+    }
+
     /// Whether this presentation has a GPU renderer at all — the two that
     /// resolve a whole buffer against a navigable time axis. Whether a given
     /// element *takes* it is [`SignalElement::is_gpu_view`].
@@ -377,12 +391,13 @@ impl SignalElement {
     }
 }
 
-/// A wire type name as a point in the element's product — its presentation,
-/// source kind and capabilities, plus the defaults that name carries.
+/// One point of the element's product — a presentation over a source kind,
+/// with the capabilities and the defaults that combination carries.
 ///
-/// This table is the whole of the compatibility layer: the six names the
-/// catalog grew are configurations of one element, so a script that says
-/// `type: "scope"` gets the forward-only triggered signal view it always got.
+/// The wire names the point directly (`view`, the source props, `navigable`),
+/// so this is the table of what each point *defaults* to, not a table of
+/// names: it is where a triggered live trace gets its 20 ms window and a
+/// spectrogram its 1024-sample analysis.
 #[derive(Debug, Clone, Copy)]
 pub struct Preset {
     pub presentation: Presentation,
@@ -401,9 +416,6 @@ pub struct Preset {
     /// The wire name of the analysis size: the spectral views say `fft_size`,
     /// the time-frequency one says `window_size`.
     pub size_prop: &'static str,
-    /// Whether the name reads a `view` prop to pick its presentation — the
-    /// static plot's `signal`/`spectrum` switch.
-    pub view_prop: bool,
     /// Whether a random-access source of this preset is [`Data::bulk`] — the
     /// navigable heavy views, whose sources are takes rather than sequences.
     pub bulk: bool,
@@ -422,12 +434,20 @@ const WATCH: Caps = Caps {
     editable: false,
 };
 
-/// The preset a wire type name configures, or `None` when the name is not a
-/// signal element.
-pub fn preset(kind: &str) -> Option<Preset> {
+/// The point of the product a wire node describes: its `view` (the
+/// presentation), whether its source is forward-only, and whether it
+/// navigates.
+///
+/// `navigable` separates the two addressable traces, and it separates more
+/// than a capability: a navigating view resolves its source as a **take** —
+/// through the peak pyramid, never as an array of samples — and pins its
+/// value axis, while a still one holds the sequence itself and auto-fits an
+/// axis nobody named. That is why it is an argument here rather than a flag
+/// applied afterwards.
+pub fn point(view: Presentation, live: bool, navigable: bool) -> Preset {
     let base = Preset {
-        presentation: Presentation::Signal,
-        live: false,
+        presentation: view,
+        live,
         caps: WATCH,
         value: ValueRange::new(-1.0, 1.0),
         spectral: Spectral::default(),
@@ -435,19 +455,14 @@ pub fn preset(kind: &str) -> Option<Preset> {
         ruler_y: RulerY::Norm,
         window_ms: 20.0,
         size_prop: "fft_size",
-        view_prop: false,
         bulk: false,
     };
-    Some(match kind {
-        "waveform" => Preset {
-            caps: NAV,
-            bulk: true,
-            ..base
-        },
-        "spectrogram" => Preset {
-            presentation: Presentation::TimeFrequency,
-            caps: NAV,
-            bulk: true,
+    match (view, live) {
+        // The time-frequency texture and the goniometer read the same over
+        // either source kind: neither has a still variant to tell apart.
+        (Presentation::TimeFrequency, _) => Preset {
+            caps: if navigable { NAV } else { WATCH },
+            bulk: !live,
             ruler_y: RulerY::Hz,
             size_prop: "window_size",
             spectral: Spectral {
@@ -458,89 +473,104 @@ pub fn preset(kind: &str) -> Option<Preset> {
             },
             ..base
         },
-        "plot" => Preset {
-            value: ValueRange::auto(),
-            view_prop: true,
-            ..base
-        },
-        "scope" => Preset { live: true, ..base },
-        "spectrum" => Preset {
-            presentation: Presentation::Spectrum,
-            live: true,
-            ruler_y: RulerY::Db,
-            ..base
-        },
-        "phasescope" => Preset {
-            presentation: Presentation::Phase,
-            live: true,
+        (Presentation::Phase, _) => Preset {
             ruler: Ruler::Off,
             ruler_y: RulerY::Off,
             window_ms: 30.0,
             ..base
         },
-        _ => return None,
-    })
+        (Presentation::Spectrum, true) => Preset {
+            ruler_y: RulerY::Db,
+            ..base
+        },
+        // A stored spectrum measures an arbitrary sequence, so its value axis
+        // auto-fits like any still view's.
+        (Presentation::Spectrum, false) => Preset {
+            value: ValueRange::auto(),
+            ..base
+        },
+        // A live trace is the triggered window; a still one is the whole
+        // sequence over an auto-fitted axis; a navigating one is the take.
+        (Presentation::Signal, true) => base,
+        (Presentation::Signal, false) if navigable => Preset {
+            caps: NAV,
+            bulk: true,
+            ..base
+        },
+        (Presentation::Signal, false) => Preset {
+            value: ValueRange::auto(),
+            ..base
+        },
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The six names the catalog grew are six *distinct* points of one product
-    /// — which is what makes the table a compatibility layer rather than a list
-    /// of aliases.
+    /// The six views the catalog named separately are six **distinct** points
+    /// of one product — which is why the wire says the point and no table of
+    /// names is left to keep in step with it.
     #[test]
-    fn every_wire_name_is_a_distinct_point_of_the_product() {
-        let names = [
-            "waveform",
-            "spectrogram",
-            "plot",
-            "scope",
-            "spectrum",
-            "phasescope",
+    fn the_six_views_are_distinct_points_of_the_product() {
+        let points = [
+            point(Presentation::Signal, false, true), // the heavy waveform
+            point(Presentation::Signal, false, false), // the static plot
+            point(Presentation::Signal, true, false), // the oscilloscope
+            point(Presentation::Spectrum, true, false), // the spectroscope
+            point(Presentation::TimeFrequency, false, true), // the spectrogram
+            point(Presentation::Phase, true, false),  // the goniometer
         ];
-        let points: Vec<_> = names
-            .iter()
-            .map(|n| {
-                let p = preset(n).unwrap();
-                (p.presentation, p.live, p.caps)
-            })
-            .collect();
+        let shape = |p: &Preset| (p.presentation, p.live, p.caps, p.bulk, p.value);
         for (i, a) in points.iter().enumerate() {
             for b in &points[i + 1..] {
-                assert_ne!(a, b, "two names configure the same element");
+                assert_ne!(shape(a), shape(b), "two points configure one element");
             }
         }
-        assert!(preset("slider").is_none());
     }
 
-    /// Only a navigable heavy view costs a GPU slot: a plot, a live curve and a
-    /// clip body all draw into the window's mesh.
+    /// Only a navigable heavy view costs a GPU slot: a plot, a live curve and
+    /// a clip body all draw into the window's mesh.
     #[test]
     fn only_a_navigable_heavy_view_owns_a_slot() {
-        let el = |name: &str| SignalElement::from_preset(&preset(name).unwrap());
-        assert!(el("waveform").is_gpu_view());
-        assert!(el("spectrogram").is_gpu_view());
-        assert!(!el("plot").is_gpu_view());
-        assert!(!el("scope").is_gpu_view());
-        assert!(!el("spectrum").is_gpu_view());
-        assert!(!el("phasescope").is_gpu_view());
+        let el = |v, live, nav| SignalElement::from_preset(&point(v, live, nav));
+        assert!(el(Presentation::Signal, false, true).is_gpu_view());
+        assert!(el(Presentation::TimeFrequency, false, true).is_gpu_view());
+        assert!(!el(Presentation::Signal, false, false).is_gpu_view());
+        assert!(!el(Presentation::Signal, true, false).is_gpu_view());
+        assert!(!el(Presentation::Spectrum, true, false).is_gpu_view());
+        assert!(!el(Presentation::Phase, true, false).is_gpu_view());
     }
 
     /// The two source kinds are the arrangement layer's two states, and the
-    /// preset table is where each name lands on one of them.
+    /// wire's `bus` is what puts an element on one of them.
     #[test]
-    fn the_live_names_are_the_forward_only_sources() {
-        for name in ["scope", "spectrum", "phasescope"] {
-            let el = SignalElement::from_preset(&preset(name).unwrap());
-            assert!(el.is_live(), "{name} reads a bus");
+    fn a_live_point_reads_a_bus_and_a_stored_one_reads_samples() {
+        for view in [
+            Presentation::Signal,
+            Presentation::Spectrum,
+            Presentation::Phase,
+        ] {
+            let el = SignalElement::from_preset(&point(view, true, false));
+            assert!(el.is_live(), "{view:?} over a bus reads forward-only");
             assert!(el.source.data().is_none());
             assert!(el.source.bus().is_some());
         }
-        for name in ["waveform", "spectrogram", "plot"] {
-            let el = SignalElement::from_preset(&preset(name).unwrap());
-            assert!(!el.is_live(), "{name} reads addressable samples");
+        for view in [Presentation::Signal, Presentation::TimeFrequency] {
+            let el = SignalElement::from_preset(&point(view, false, true));
+            assert!(!el.is_live(), "{view:?} over samples is addressable");
             assert!(el.source.data().is_some());
         }
+    }
+
+    /// A still trace is not a navigable one with a flag off: it holds the
+    /// sequence itself rather than a take, and auto-fits an axis nobody named.
+    #[test]
+    fn a_still_trace_is_a_construction_of_its_own() {
+        let moving = point(Presentation::Signal, false, true);
+        let still = point(Presentation::Signal, false, false);
+        assert!(moving.bulk && !still.bulk);
+        assert_eq!(still.value, ValueRange::auto());
+        assert_eq!(moving.value, ValueRange::new(-1.0, 1.0));
     }
 }

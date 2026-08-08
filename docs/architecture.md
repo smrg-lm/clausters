@@ -362,7 +362,7 @@ split, and every rule below falls out of it:
 |---|---|
 | `src/host/mod.rs` | The protocol core: the `Host`, the command dispatch (`/gui_def`/`/gui_set`/`/gui_free`/`/gui_query`/`/gui_bind`), the `Registry`, `HostEffect` |
 | `src/host/widget/` | `WidgetKind` — the typed tree the renderer reads — plus its three passes: the JSON parse (`build`), the `/gui_set` mutation (`apply`) and the **natural size** (`size`), how big each kind wants to be |
-| `src/host/widget/vocabulary.rs` | The wire has moved from naming widgets to naming the model (a container owning 0/1/2 axes, elements drawn against them). This is the **expand** stage of that migration: `layout`/`plane`/`field`/`signal`/`notes`/`curve`/`nodes`/`keys` and the nested `axes` pair are rewritten, once at the door, into the constructions and the flat chrome props the rest of the host already reads — so there is one build path and not two, and the last stage of the migration is this file's deletion rather than an unwinding of it. Both clients emit the model; their familiar builders (`panel`, `waveform`, `track`) are shortcuts onto it, which is why no example had to change |
+| `src/host/widget/axes.rs` | The **axis pair**: the chrome of a two-axis container (`ruler`, the navigation window, the selection, the playhead, the value range) rides the wire nested under one `axes` key — not bare `x`/`y`, which are already the free-placement props — and is **flattened at the door**, once, before anything records the node. Inside the host the chrome is one flat prop per key, which is what `EditorProps` parses, what a `/gui_set` addresses and what a `/gui_info` can answer at all (an OSC reply is flat arguments) |
 | `src/host/frame.rs` | The one frame renderer: places the tree (`layout`), builds the flat-geometry mesh and uploads the heavy GPU views. **Both fronts call it**, so the browser is pixel-faithful by construction |
 | `src/host/{gui,web}.rs` | The two fronts: native (winit/wgpu, sockets, mmap) and browser (canvas/WebGPU, WebSocket, fetch). Event *sources* and *sinks* only. **Both keep one surface per `window`-rooted def** — a desktop window, a `<canvas>` in a document — keyed by def id, with a wgpu surface, a size, a pointer, a gesture state and the scope/window/spectrum histories each |
 | `src/host/web.rs`, the instance seam | A page holds **one host by default and more when a caller asks**: `start()` returns one instance, and `WebHosts` multiplexes them behind the single `ApplicationHandler` winit takes, routing user events by `HostId` and window events by whoever holds the `WindowId`. The event loop is all they share — winit allows a page exactly one, and it drives any number of windows — so each instance keeps its own `Host` (and widget-id space), audio-server leg, canvases, buses, taps, tick and fetches, and two clients in one document need no id range partitioned between them. `GuiBridge::close` releases one. The engine side follows the same rule: `server()` is the page's, `engine()` is a separate one |
@@ -493,28 +493,28 @@ updates this table in the same change** (step 8 of the recipe below).
 
 | Widget | Implementation | Fed by |
 |---|---|---|
-| `window`, `panel` | parse/layout only: `host/widget/`, `host/layout.rs` | the GuiDef |
-| `stack` | parse/apply in `host/widget/`; `host/layout.rs` places the page its `index` names and skips the rest (they stay in the tree, so their GPU slots and bus watches — both collected from the tree — survive a switch) | the GuiDef and `/gui_set`, or a control **bound** to `index` (`host/bind.rs`) |
-| `scroll` | `host/layout.rs` (the view transform + the content extents) over the pure navigation math in `host/scroll.rs`; the clip is geometric in `host/paint.rs` and a pass scissor in `host/frame.rs`; gestures in `host/gestures.rs` | the GuiDef and `/gui_set`; pan/zoom emits `"view"` |
+| `window`, `layout` | parse/layout only: `host/widget/`, `host/layout.rs` | the GuiDef |
+| `layout` (`flow: "stack"`) | parse/apply in `host/widget/`; `host/layout.rs` places the page its `index` names and skips the rest (they stay in the tree, so their GPU slots and bus watches — both collected from the tree — survive a switch) | the GuiDef and `/gui_set`, or a control **bound** to `index` (`host/bind.rs`) |
+| `plane` | `host/layout.rs` (the view transform + the content extents) over the pure navigation math in `host/scroll.rs`; the clip is geometric in `host/paint.rs` and a pass scissor in `host/frame.rs`; gestures in `host/gestures.rs` | the GuiDef and `/gui_set`; pan/zoom emits `"view"` |
 | `label`, `text` | `host/controls.rs` over `host/paint.rs` + `host/font.rs` | the GuiDef, `/gui_set` |
 | `slider`, `knob`, `number` | `host/controls.rs` (draw + the pure drag math); the shared `Range` payload in `host/widget/mod.rs` | the script; value changes emit `/gui_event` (or a binding forwards) |
 | `button`, `toggle`, `menu` | `host/controls.rs` | idem |
 | `meter` | `host/meters.rs`; bus plumbing in `host/live.rs` | a control bus — the shm segment (native) / `/bus_stream` snapshots (browser) |
-| `scope` | the **signal element** it configures (`host/signal/`); signal logic (window sizing, trigger) is `clausters-core::oscil`'s; history in `host/live.rs` | `bus` at `rate`: a control bus's rolling history, or an audio bus's recorded samples (shm / `/bus_tapStream.reply`) |
-| `phasescope` | idem, drawn by `host/phasescope.rs` (Lissajous geometry + correlation, pure) | the audio bus pair `bus`/`bus + 1` |
-| `spectrum` | idem; `host/spectrum.rs` keeps the across-frame smoothing, and the per-frame curve (window, FFT, decibel scaling) is `clausters-core::spectrum`'s | `channels` adjacent audio buses |
-| `nodetree` | `host/nodetree.rs` | `/group_queryTree` over the client leg + node notifications |
+| `signal` (`view: "trace"`, a `bus`) | the **signal element** it configures (`host/signal/`); signal logic (window sizing, trigger) is `clausters-core::oscil`'s; history in `host/live.rs` | `bus` at `rate`: a control bus's rolling history, or an audio bus's recorded samples (shm / `/bus_tapStream.reply`) |
+| `signal` (`view: "phase"`) | idem, drawn by `host/phasescope.rs` (Lissajous geometry + correlation, pure) | the audio bus pair `bus`/`bus + 1` |
+| `signal` (`view: "spectrum"`, a `bus`) | idem; `host/spectrum.rs` keeps the across-frame smoothing, and the per-frame curve (window, FFT, decibel scaling) is `clausters-core::spectrum`'s | `channels` adjacent audio buses |
+| `nodes` | `host/nodetree.rs` | `/group_queryTree` over the client leg + node notifications |
 | `canvas` | `host/canvas.rs` (a GPU slot: the user's WGSL over the widget area) | `/gui_set` params and/or control buses |
-| `waveform` | idem; data + GPU renderer in `src/waveform.rs` over `src/viewport.rs`; chrome via `host/frame.rs` | `cache`/`path` (mapped or fetched), a server `buffer`, or inline `data`/`blob` — `host/{bulk,mapfile,fetch}.rs` |
-| `spectrogram` | idem, drawn by `src/spectrogram.rs` (the STFT cache + texture renderer), same navigation | the same sources |
-| `plot` | idem, drawn by `host/plot.rs` (pure; the spectral presentation analyses once at mutation points) | inline `data`/`blob` or a mapped `path` |
-| `bpf` | `host/bpf.rs`; the shape math is `clausters-core`'s (what `EnvGen` plays) | the script's `points`; edits emit `"points"` |
-| `timeruler` | `host/frame.rs` (the strip; the tick math is the shared `host/ruler.rs`); group navigation in `host/timeline.rs` | nothing of its own — it reads its `link` group's window |
-| `track`, `clip` | `host/track.rs` — a lane is a header (`track::Header`: name, mute/solo, level fader) plus a field; a **clip is a container** whose bodies are children (a signal element, a piano-roll, a curve), placed by `host/layout.rs` on the clip's own local axis and drawn by `track::draw_body_widget`; group navigation and the axis' shared gutter in `host/timeline.rs` | a clip take: the waveform's sources; `notes`/`points` inline; edits emit `"clip"`, and a header control `"mute"`/`"solo"`/`"level"` |
-| `pianoroll` | `host/pianoroll.rs` (the note core shared with `clip`) | the script's `notes`/`osc`; live MIDI in (native); edits emit `"notes"`/`"osc"` |
-| `piano` | `host/piano.rs` (proportional key layout, overview strip, voice messages — pure); host voices in `host/mod.rs`; `midi_to_hz` is `clausters-core::scale`'s | the pointer; presses emit MIDI-shaped `"note"` events (or a binding forwards them), pan/zoom emits `"range"`, and `voice` mode sends `/synth_new`/`gate 0` per held key over the server leg |
+| `signal` (`view: "trace"`, navigable) | idem; data + GPU renderer in `src/waveform.rs` over `src/viewport.rs`; chrome via `host/frame.rs` | `cache`/`path` (mapped or fetched), a server `buffer`, or inline `data`/`blob` — `host/{bulk,mapfile,fetch}.rs` |
+| `signal` (`view: "spectrogram"`) | idem, drawn by `src/spectrogram.rs` (the STFT cache + texture renderer), same navigation | the same sources |
+| `signal` (`navigable: 0`) | idem, drawn by `host/plot.rs` (pure; the spectral presentation analyses once at mutation points) | inline `data`/`blob` or a mapped `path` |
+| `curve` | `host/bpf.rs`; the shape math is `clausters-core`'s (what `EnvGen` plays) | the script's `points`; edits emit `"points"` |
+| `field` (a bare strip) | `host/frame.rs` (the strip; the tick math is the shared `host/ruler.rs`); group navigation in `host/timeline.rs` | nothing of its own — it reads its `link` group's window |
+| `field` (a lane, and a placed one) | `host/track.rs` — a lane is a header (`track::Header`: name, mute/solo, level fader) plus a field; a **clip is a container** whose bodies are children (a signal element, a piano-roll, a curve), placed by `host/layout.rs` on the clip's own local axis and drawn by `track::draw_body_widget`; group navigation and the axis' shared gutter in `host/timeline.rs` | a clip take: the waveform's sources; `notes`/`points` inline; edits emit `"clip"`, and a header control `"mute"`/`"solo"`/`"level"` |
+| `notes` | `host/pianoroll.rs` (the note core shared with `clip`) | the script's `notes`/`osc`; live MIDI in (native); edits emit `"notes"`/`"osc"` |
+| `keys` | `host/piano.rs` (proportional key layout, overview strip, voice messages — pure); host voices in `host/mod.rs`; `midi_to_hz` is `clausters-core::scale`'s | the pointer; presses emit MIDI-shaped `"note"` events (or a binding forwards them), pan/zoom emits `"range"`, and `voice` mode sends `/synth_new`/`gate 0` per held key over the server leg |
 | `score` | `host/score.rs` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon` | a display list engraved **client-side** (`clausters/gui/notation.py`, a shell over `clausters-notation`/`core` through the C ABI); the cursor follows `playhead_at` on the engine clock; a click emits `"element"`, a vertical drag `"transpose"` (diatonic steps), and `display_list` replaces the page after the client re-engraves |
-| `patch` | `host/patch.rs` (box/port geometry, the cords, hit-testing and the layered `solve` layout — pure), one implementation for both levels; the rate vocabulary is `clausters_core::patch`'s | the patch model a client compiled or decoded: a GraphDef's members and cord→bus wiring at level 1, a SynthDef/FaustDef's UGen graph at level 2; drawing a cord emits `"wire"`, dragging a box `"move"` |
+| `plane` (with `boxes`) | `host/patch.rs` (box/port geometry, the cords, hit-testing and the layered `solve` layout — pure), one implementation for both levels; the rate vocabulary is `clausters_core::patch`'s | the patch model a client compiled or decoded: a GraphDef's members and cord→bus wiring at level 1, a SynthDef/FaustDef's UGen graph at level 2; drawing a cord emits `"wire"`, dragging a box `"move"` |
 
 ### Adding a widget
 
@@ -522,7 +522,7 @@ Take a hypothetical `meterbar`. The steps are always the same.
 
 **First check that it is a widget at all.** A new view *of a signal* is
 usually not a kind but a configuration of the signal element — another
-presentation, another source, another capability — and lands as a preset in
+presentation, another source, another capability — and lands as a point in
 `host/signal/`, with no new variant, no new parse arm and no new apply arm.
 The steps below are for a widget that is genuinely something else.
 

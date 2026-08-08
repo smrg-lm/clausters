@@ -8,6 +8,20 @@ use serde_json::{Map, Value};
 
 use super::*;
 
+/// Whether a `field` is the **free-standing ruler**: a strip of a given
+/// thickness with nothing placed on it and no lane chrome. Everything else a
+/// field can be draws something or names a lane, and an empty lane — which a
+/// multitrack opens all the time — must not read as a ruler.
+fn is_bare_ruler(props: &Map<String, Value>, has_children: bool) -> bool {
+    props.contains_key("h")
+        && !has_children
+        && ![
+            "label", "height", "header_w", "mute", "solo", "level", "snap",
+        ]
+        .iter()
+        .any(|k| props.contains_key(*k))
+}
+
 /// The default pitch window of a note view — a piano's compass (A0..C8),
 /// shared by the `pianoroll` widget and by a `clip` whose body is a roll, so
 /// the two cannot drift apart.
@@ -21,6 +35,7 @@ pub(super) fn build_kind(
     id: Option<i32>,
     kind: &str,
     props: &Map<String, Value>,
+    has_children: bool,
     blobs: &[Vec<u8>],
 ) -> Result<WidgetKind, String> {
     Ok(match kind {
@@ -34,26 +49,36 @@ pub(super) fn build_kind(
             layout: Layout::parse(props),
             flow: Flow::parse(props),
         },
-        "panel" | "box" => WidgetKind::Panel {
-            layout: Layout::parse(props),
-            flow: Flow::parse(props),
-        },
-        // One child at a time: the container has no arrangement to name, since
-        // the shown child fills it — only which one, and the margin around it.
-        "stack" => WidgetKind::Stack {
+        // A container with no axes. `stack` — one child at a time, the one
+        // `index` names — is one of the arrangements rather than a type of its
+        // own: a layout with a selection instead of an arrangement. Nothing
+        // else about it is a container's business, so it takes only a margin.
+        "layout" if flow(props) == Some("stack") => WidgetKind::Stack {
             index: int_prop(props, "index", 0),
             margin: props
                 .get("margin")
                 .and_then(Value::as_f64)
                 .map(|v| v as f32),
         },
-        "scroll" => WidgetKind::Scroll {
+        "layout" => WidgetKind::Panel {
+            layout: Layout::parse(props),
+            flow: Flow::parse(props),
+        },
+        // Two axes locked to one scale. What a patcher adds to a plane is its
+        // boxes and the cords between them, so their presence is what tells
+        // the two constructions apart.
+        "plane" if props.contains_key("boxes") || props.contains_key("cords") => {
+            WidgetKind::Patch {
+                selected: Vec::new(),
+                patch: parse_patch(props),
+                label: label(props),
+            }
+        }
+        "plane" => WidgetKind::Scroll {
             // The workspace's natural arrangement is free placement (the
-            // virtual content area sizes from the placement extents), so
-            // `layout` defaults to `free` here, not `col`.
-            layout: props
-                .get("layout")
-                .and_then(Value::as_str)
+            // virtual content area sizes from the placement extents), so the
+            // flow defaults to `free` here, not `col`.
+            layout: flow(props)
                 .and_then(Layout::from_str)
                 .unwrap_or(Layout::Free),
             flow: Flow::parse(props),
@@ -69,9 +94,9 @@ pub(super) fn build_kind(
             wrap: props.get("wrap").and_then(truthy).unwrap_or(false),
             align: Align::parse(props),
         },
-        // Every signal element: the six wire names are presets of one
-        // element ([`super::signal::preset`]), so they parse in one arm.
-        name if signal::preset(name).is_some() => build_signal(id, name, props, blobs)?,
+        // Every view of a signal, in one arm because there is one element:
+        // the props say which point of the product ([`super::signal::point`]).
+        "signal" => build_signal(id, props, blobs)?,
         "meter" => WidgetKind::Meter {
             bus: int_prop(props, "bus", 0),
             rate: Rate::parse(props.get("rate").and_then(Value::as_str)),
@@ -79,7 +104,7 @@ pub(super) fn build_kind(
             max: number(props, "max", 1.0),
             label: label(props),
         },
-        "nodetree" => WidgetKind::NodeTree {
+        "nodes" => WidgetKind::NodeTree {
             group: int_prop(props, "group", 0),
             controls: props.get("controls").and_then(truthy).unwrap_or(true),
             label: label(props),
@@ -94,7 +119,7 @@ pub(super) fn build_kind(
             buses: i32_array(props, "buses", -1),
             label: label(props),
         },
-        "bpf" => {
+        "curve" => {
             let min = number(props, "min", 0.0);
             let max = number(props, "max", 1.0);
             let (lo, hi) = (min.min(max), min.max(max));
@@ -148,7 +173,20 @@ pub(super) fn build_kind(
                 text_size: text_size(props),
             }
         }
-        "track" => WidgetKind::Track {
+        // Two independent axes, told apart by what is on it: a placement
+        // makes it a clip on its parent's x axis, a bare strip of a given
+        // thickness with nothing placed and no lane chrome is the
+        // free-standing ruler, and everything else is a lane — including an
+        // empty one, which a multitrack opens all the time.
+        "field" if props.contains_key("offset") || props.contains_key("dur") => WidgetKind::Clip {
+            offset: number_f64(props, "offset", 0.0).max(0.0),
+            dur: number_f64(props, "dur", 0.0).max(0.0),
+            label: label(props),
+        },
+        "field" if is_bare_ruler(props, has_children) => WidgetKind::TimeRuler {
+            editor: EditorProps::parse(props, RulerY::Off),
+        },
+        "field" => WidgetKind::Track {
             label: label(props),
             height: number(props, "height", 1.0).max(0.0),
             snap: number_f64(props, "snap", 0.0).max(0.0),
@@ -168,7 +206,7 @@ pub(super) fn build_kind(
             },
             editor: EditorProps::parse_lane(props),
         },
-        "pianoroll" => {
+        "notes" => {
             let osc = parse_osc(props);
             WidgetKind::PianoRoll {
                 notes: parse_notes(props),
@@ -190,7 +228,7 @@ pub(super) fn build_kind(
                 editor: EditorProps::parse(props, RulerY::Off),
             }
         }
-        "piano" => {
+        "keys" => {
             let min = number(props, "min", 36.0) as i32;
             let max = number(props, "max", 96.0) as i32;
             WidgetKind::Piano {
@@ -217,23 +255,6 @@ pub(super) fn build_kind(
                 label: label(props),
             }
         }
-        // The free-standing ruler: a strip the document places, reading the
-        // group's axis. Its chrome parses like any timeline widget's, so
-        // `ruler` (the unit), `tempo`/`beat_at`/`quant` (the beats grid),
-        // `sample_rate` and `link` all mean what they mean everywhere else.
-        "timeruler" => WidgetKind::TimeRuler {
-            editor: EditorProps::parse(props, RulerY::Off),
-        },
-        "clip" => WidgetKind::Clip {
-            offset: number_f64(props, "offset", 0.0).max(0.0),
-            dur: number_f64(props, "dur", 0.0).max(0.0),
-            label: label(props),
-        },
-        "patch" => WidgetKind::Patch {
-            selected: Vec::new(),
-            patch: parse_patch(props),
-            label: label(props),
-        },
         other => WidgetKind::Unknown(other.to_string()),
     })
 }
@@ -326,9 +347,8 @@ pub(super) fn empty_clip_body(is: fn(&WidgetKind) -> bool) -> Option<WidgetKind>
 /// with every capability off and no chrome — it is drawn against the clip's
 /// axis, and the clip is what navigates.
 fn take_element(source: signal::Data) -> signal::SignalElement {
-    let mut el = signal::SignalElement::from_preset(
-        &signal::preset("waveform").expect("the waveform preset exists"),
-    );
+    let mut el =
+        signal::SignalElement::from_preset(&signal::point(Presentation::Signal, false, true));
     el.caps = signal::Caps::default();
     el.editor.ruler = Ruler::Off;
     el.editor.ruler_y = RulerY::Off;
@@ -425,17 +445,25 @@ fn clip_curve(props: &Map<String, Value>) -> Option<WidgetKind> {
     })
 }
 
-/// Builds a [`WidgetKind::Signal`] from the wire node: the type name picks the
-/// [`preset`](signal::preset) — the point of the presentation × source ×
-/// capabilities product that name has always meant — and the props are read
-/// over it. One arm for all six names, because there is one element.
+/// Builds a [`WidgetKind::Signal`] from the wire node: `view`, the source
+/// props and `navigable` name a [`point`](signal::point) of the presentation ×
+/// source × capabilities product, and the rest of the props are read over its
+/// defaults. One arm, because there is one element.
 fn build_signal(
     id: Option<i32>,
-    name: &str,
     props: &Map<String, Value>,
     blobs: &[Vec<u8>],
 ) -> Result<WidgetKind, String> {
-    let p = signal::preset(name).expect("caller matched a preset name");
+    // The point of the product the props name: the presentation, whether the
+    // source is forward-only, and whether the view navigates.
+    let view = props
+        .get("view")
+        .and_then(Value::as_str)
+        .and_then(Presentation::parse)
+        .unwrap_or_default();
+    let live = props.contains_key("bus");
+    let navigable = props.get("navigable").and_then(truthy).unwrap_or(true);
+    let p = signal::point(view, live, navigable);
     let mut el = signal::SignalElement::from_preset(&p);
 
     let channels = props
@@ -454,7 +482,7 @@ fn build_signal(
         })
     } else {
         signal::Source::Data(signal::Data {
-            samples: inline_samples(name, id, props, blobs)?,
+            samples: inline_samples("signal", id, props, blobs)?,
             channels,
             buffer: props
                 .get("buffer")
@@ -474,18 +502,6 @@ fn build_signal(
             body: None,
         })
     };
-
-    // The `view` prop, where the name reads one: the static plot's
-    // signal/spectrum switch.
-    if p.view_prop
-        && let Some(view) = props.get("view").and_then(Value::as_str)
-        && let Some(view) = super::plot::PlotView::parse(view)
-    {
-        el.presentation = match view {
-            super::plot::PlotView::Signal => Presentation::Signal,
-            super::plot::PlotView::Spectrum => Presentation::Spectrum,
-        };
-    }
 
     // The value axis: a named side wins, an unnamed one keeps the preset's
     // (which is `None` — auto-fitted — only where the name meant that).

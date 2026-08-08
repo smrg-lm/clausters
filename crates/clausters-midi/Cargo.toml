@@ -1,6 +1,6 @@
 [package]
 name = "clausters-midi"
-version = "0.8.1"
+version = "0.9.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Reusable MIDI file I/O for clausters clients and server: a flat-data C ABI (POD in, malloc'd file bytes out) over a Standard MIDI File writer (midly). The MIDI 2.0 Clip File (midi2-clip) is the planned full-resolution follow-up."

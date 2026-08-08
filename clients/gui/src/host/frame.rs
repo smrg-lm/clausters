@@ -2126,8 +2126,8 @@ mod tests {
         use crate::host::widget::Widget;
 
         let json = r#"{"type":"window","margin":0,"children":[
-            {"id":5,"type":"track","label":"lane","children":[
-                {"id":10,"type":"clip","offset":0,"dur":400,"data":[0.0,1.0,-1.0,0.5],
+            {"id":5,"type":"field","label":"lane","children":[
+                {"id":10,"type":"field","offset":0,"dur":400,"data":[0.0,1.0,-1.0,0.5],
                  "notes":[0.0,100.0,60.0],"points":[0.0,0.5,1,0.0,400.0,0.9,1,0.0]}]}]}"#;
         let tree = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
         let m = Metrics::default();

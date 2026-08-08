@@ -2869,7 +2869,7 @@ mod tests {
     fn workspace(extra: &str) -> Host {
         host_from(&format!(
             r#"{{"type":"window","margin":0,"children":[
-                {{"id":20,"type":"scroll","margin":0,
+                {{"id":20,"type":"plane","margin":0,
                   "content_w":2000,"content_h":2000{extra},
                   "children":[{{"id":21,"type":"label","text":"a",
                                 "x":100,"y":100,"w":80,"h":40}}]}}]}}"#
@@ -2881,7 +2881,7 @@ mod tests {
     fn patch_host() -> Host {
         host_from(
             r#"{"type":"window","margin":0,"children":[
-                {"id":7,"type":"patch",
+                {"id":7,"type":"plane",
                  "boxes":[{"def":"tone","outlets":["out"]},
                           {"def":"dac","inlets":["in"],"outlets":["out"]}],
                  "cords":[0,0,1,0]}]}"#,
@@ -2911,7 +2911,7 @@ mod tests {
             r#"{"type":"window","children":[
             {"id":10,"type":"toggle","label":"view","h":32,
              "bind":["widget",20,"index"]},
-            {"id":20,"type":"stack","index":0,"children":[
+            {"id":20,"type":"layout","flow":"stack","index":0,"children":[
                 {"id":21,"type":"label","text":"one"},
                 {"id":22,"type":"label","text":"two"}]}]}"#,
         );
@@ -3092,8 +3092,8 @@ mod tests {
     fn wheel_zoom_over_a_graph_sized_plane_holds_the_cursor_too() {
         let mut host = host_from(
             r#"{"type":"window","margin":0,"children":[
-                {"id":20,"type":"scroll","margin":0,"children":[
-                  {"id":7,"type":"patch","boxes":[
+                {"id":20,"type":"plane","margin":0,"children":[
+                  {"id":7,"type":"plane","boxes":[
                     {"def":"tone","outlets":["out"]},
                     {"def":"dac","inlets":["in"],"outlets":["out"]}],
                    "cords":[0,0,1,0]}]}]}"#,
@@ -3173,7 +3173,7 @@ mod tests {
     fn a_widget_inside_the_workspace_still_takes_the_press() {
         let mut host = host_from(
             r#"{"type":"window","margin":0,"children":[
-                {"id":20,"type":"scroll","margin":0,"content_w":2000,"content_h":2000,
+                {"id":20,"type":"plane","margin":0,"content_w":2000,"content_h":2000,
                  "children":[{"id":21,"type":"toggle","value":0,
                               "x":0,"y":0,"w":100,"h":50}]}]}"#,
         );
@@ -3296,7 +3296,7 @@ mod tests {
     fn waveform_press_and_drag_select_a_range() {
         let mut host = host_from(
             r#"{"type":"window","children":[
-                {"id":50,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+                {"id":50,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
         );
         host.set_timeline_total(50, 1000);
         let mut g = Gestures::default();
@@ -3316,7 +3316,7 @@ mod tests {
     fn wheel_zooms_the_time_axis_and_emits_the_view() {
         let mut host = host_from(
             r#"{"type":"window","children":[
-                {"id":60,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+                {"id":60,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
         );
         host.set_timeline_total(60, 1000);
         let mut g = Gestures::default();
@@ -3339,7 +3339,7 @@ mod tests {
     fn the_amplitude_axis_zooms_about_its_centre_whatever_lane_is_under_the_cursor() {
         let mut host = host_from(
             r#"{"type":"window","children":[
-                {"id":61,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+                {"id":61,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
         );
         host.set_timeline_total(61, 1000);
         let mut g = Gestures::default();
@@ -3411,11 +3411,11 @@ mod tests {
     #[test]
     fn shift_drag_pans_whatever_timeline_view_is_under_it() {
         for view in [
-            r#"{"id":80,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}"#,
-            r#"{"id":80,"type":"track","label":"lane","children":[
-                   {"id":81,"type":"clip","offset":0.0,"dur":1000.0}]}"#,
-            r#"{"id":80,"type":"pianoroll","min":48.0,"max":72.0,"notes":[0.0,500.0,60.0,100,0]}"#,
-            r#"{"id":80,"type":"timeruler"}"#,
+            r#"{"id":80,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}"#,
+            r#"{"id":80,"type":"field","label":"lane","children":[
+                   {"id":81,"type":"field","offset":0.0,"dur":1000.0}]}"#,
+            r#"{"id":80,"type":"notes","min":48.0,"max":72.0,"notes":[0.0,500.0,60.0,100,0]}"#,
+            r#"{"id":80,"type":"field"}"#,
         ] {
             let mut host = host_from(&format!(
                 r#"{{"type":"window","margin":0,"children":[{view}]}}"#
@@ -3446,7 +3446,7 @@ mod tests {
     fn a_sweep_on_the_roll_selects_the_time_span_and_the_notes_inside_it() {
         let mut host = host_from(
             r#"{"type":"window","margin":0,"children":[
-                {"id":90,"type":"pianoroll","min":48.0,"max":72.0,
+                {"id":90,"type":"notes","min":48.0,"max":72.0,
                  "notes":[0.0,400.0,60.0,100,0, 6000.0,400.0,61.0,100,0]}]}"#,
         );
         host.set_timeline_total(90, 10000);
@@ -3493,7 +3493,7 @@ mod tests {
     fn the_gestures_prop_repoints_a_chord_without_touching_the_element() {
         let mut host = host_from(
             r#"{"type":"window","margin":0,"children":[
-                {"id":95,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"base_bucket":2,
+                {"id":95,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2,
                  "gestures":{"drag":"pan","shift":"select"}}]}"#,
         );
         host.set_timeline_total(95, 10000);
@@ -3522,7 +3522,7 @@ mod tests {
     fn a_gui_set_of_the_table_keeps_the_chords_it_does_not_name() {
         let mut host = host_from(
             r#"{"type":"window","margin":0,"children":[
-                {"id":96,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+                {"id":96,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
         );
         host.set_timeline_total(96, 10000);
         set_prop(&mut host, 96, "gestures", r#"{"drag":"locate"}"#);
@@ -3546,8 +3546,8 @@ mod tests {
     fn a_press_on_the_lane_header_works_its_controls_and_edits_back() {
         let mut host = host_from(
             r#"{"type":"window","margin":0,"children":[
-                {"id":70,"type":"track","label":"lane","mute":false,"level":0.0,
-                 "children":[{"id":71,"type":"clip","offset":0.0,"dur":1000.0}]}]}"#,
+                {"id":70,"type":"field","label":"lane","mute":false,"level":0.0,
+                 "children":[{"id":71,"type":"field","offset":0.0,"dur":1000.0}]}]}"#,
         );
         host.sync_track_totals();
         let mut g = Gestures::default();
@@ -3602,9 +3602,9 @@ mod tests {
     fn lane_host() -> Host {
         host_from(
             r#"{"type":"window","margin":0,"children":[
-                {"id":70,"type":"track","label":"lane","children":[
-                    {"id":71,"type":"clip","offset":0.0,"dur":1000.0},
-                    {"id":72,"type":"clip","offset":9000.0,"dur":1000.0}
+                {"id":70,"type":"field","label":"lane","children":[
+                    {"id":71,"type":"field","offset":0.0,"dur":1000.0},
+                    {"id":72,"type":"field","offset":9000.0,"dur":1000.0}
                 ]}]}"#,
         )
     }
@@ -3908,7 +3908,7 @@ mod tests {
     fn piano_host(extra: &str) -> (Host, piano::Layout) {
         let json = format!(
             r#"{{"type":"window","children":[
-                {{"id":70,"type":"piano","min":60,"max":72,"overview":0{extra}}}]}}"#
+                {{"id":70,"type":"keys","min":60,"max":72,"overview":0{extra}}}]}}"#
         );
         let host = host_from(&json);
         let l = piano::layout(
@@ -4091,7 +4091,7 @@ mod tests {
     fn piano_overview_drag_pans_and_wheel_zooms() {
         // With the overview on, the strip sits at the top of the widget rect.
         let host_json = r#"{"type":"window","children":[
-            {"id":70,"type":"piano","min":60,"max":72}]}"#;
+            {"id":70,"type":"keys","min":60,"max":72}]}"#;
         let mut host = host_from(host_json);
         let mut g = Gestures::default();
         let ctx = GestureCtx::new(1, 712, 132);
@@ -4238,7 +4238,7 @@ mod tests {
     fn a_press_elsewhere_defocuses_the_field() {
         // Two fields; focusing one then pressing the other moves the focus.
         let mut host = host_from(
-            r#"{"type":"window","margin":0,"layout":"row","children":[
+            r#"{"type":"window","margin":0,"flow":"row","children":[
                 {"id":5,"type":"text"},{"id":6,"type":"text"}]}"#,
         );
         let mut g = Gestures::default();

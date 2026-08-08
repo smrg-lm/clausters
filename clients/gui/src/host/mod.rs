@@ -1481,7 +1481,8 @@ mod tests {
             .iter()
             .flat_map(|x| x.to_le_bytes())
             .collect();
-        let json = r#"{"type":"window","children":[{"id":9,"type":"waveform","blob":0}]}"#;
+        let json =
+            r#"{"type":"window","children":[{"id":9,"type":"signal","view":"trace","blob":0}]}"#;
         let msg = OscPacket::Message(OscMessage {
             addr: GUI_DEF.into(),
             args: vec![
@@ -1631,7 +1632,7 @@ mod tests {
     fn a_widget_binding_applies_to_the_other_widget_and_never_cascades() {
         const TABS: &str = r#"{"type":"window","children":[
             {"id":10,"type":"toggle","label":"view"},
-            {"id":20,"type":"stack","index":0,"children":[
+            {"id":20,"type":"layout","flow":"stack","index":0,"children":[
                 {"id":21,"type":"label","text":"one"},
                 {"id":22,"type":"label","text":"two"}]}]}"#;
         let mut host = Host::new();
@@ -1698,9 +1699,9 @@ mod tests {
     #[test]
     fn a_hidden_stack_page_still_belongs_to_its_navigation_group() {
         const PAGES: &str = r#"{"type":"window","children":[
-            {"id":20,"type":"stack","index":0,"children":[
-                {"id":21,"type":"waveform","data":[0.0,1.0,0.0,-1.0,0.0,1.0,0.0,-1.0],"link":1},
-                {"id":22,"type":"spectrogram","data":[0.0,1.0,0.0,-1.0,0.0,1.0,0.0,-1.0],"link":1}]}]}"#;
+            {"id":20,"type":"layout","flow":"stack","index":0,"children":[
+                {"id":21,"type":"signal","view":"trace","data":[0.0,1.0,0.0,-1.0,0.0,1.0,0.0,-1.0],"link":1},
+                {"id":22,"type":"signal","view":"spectrogram","data":[0.0,1.0,0.0,-1.0,0.0,1.0,0.0,-1.0],"link":1}]}]}"#;
         let mut host = Host::new();
         host.handle_packet(def_msg(1, PAGES), from());
         let nav = |host: &Host, id: i32| {
@@ -1794,7 +1795,7 @@ mod tests {
     fn an_inline_widget_bind_is_registered_at_define_time() {
         const TABS: &str = r#"{"type":"window","children":[
             {"id":10,"type":"menu","items":["a","b"],"bind":["widget",20,"index"]},
-            {"id":20,"type":"stack","children":[
+            {"id":20,"type":"layout","flow":"stack","children":[
                 {"id":21,"type":"label","text":"one"},
                 {"id":22,"type":"label","text":"two"}]}]}"#;
         let mut host = Host::new();

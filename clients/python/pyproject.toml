@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clausters"
-version = "0.8.1"
+version = "0.9.0"
 description = "High-level Python client for the Clausters audio server (Faust-first)."
 readme = "README.md"
 # 3.11 for the standard-library `tomllib`, used by `clausters.config` to read

@@ -1,6 +1,6 @@
 [package]
 name = "clausters-web"
-version = "0.8.1"
+version = "0.9.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "The engine's JS door: a thin wasm-bindgen shell over the clausters server crate (SynthDef family, no Faust/cpal) for running the engine in the browser."

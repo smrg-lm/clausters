@@ -35,10 +35,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 GUIDEF_TS = ROOT / "clients/web/src/gui/guidef.ts"
 WIDGET_DIR = ROOT / "clients/gui/src/host/widget"
-#: The signal element's model — where the six wire names it presets are listed.
-SIGNAL_MOD = ROOT / "clients/gui/src/host/signal/mod.rs"
-#: The alias layer of the vocabulary migration: what a model type resolves to.
-VOCABULARY = ROOT / "clients/gui/src/host/widget/vocabulary.rs"
+#: Where the axis pair's key is declared.
+AXES_MOD = ROOT / "clients/gui/src/host/widget/axes.rs"
 MANIFEST = ROOT / "docs/gui-props.md"
 
 sys.path.insert(0, str(ROOT / "clients/python"))
@@ -188,6 +186,23 @@ def _literal_keys(text: str) -> set:
     return keys
 
 
+def _helper_bodies() -> dict:
+    """``{function name: source}`` for every function in the widget schema —
+    what an arm that delegates has to be read through."""
+    src = _rust_sources()
+    lines, out = src.split("\n"), {}
+    for i, line in enumerate(lines):
+        fm = re.match(r"\s*(?:pub(?:\([^)]*\))? )?fn (\w+)", line)
+        if not fm:
+            continue
+        indent = len(line) - len(line.lstrip())
+        end, closer = i + 1, " " * indent + "}"
+        while end < len(lines) and lines[end] != closer:
+            end += 1
+        out[fm.group(1)] = "\n".join(lines[i:end])
+    return out
+
+
 def _helper_keys() -> dict:
     """``{helper name: {prop}}`` for every function that reads a props map.
 
@@ -271,7 +286,7 @@ def _arms(text: str, pattern: str) -> list:
 
 def axes_key() -> str:
     """The key an axis pair rides under, read from the host's own constant."""
-    m = re.search(r'const AXES: &str = "([a-z_]+)"', VOCABULARY.read_text())
+    m = re.search(r'const AXES: &str = "([a-z_]+)"', AXES_MOD.read_text())
     assert m, "the axis key moved out of vocabulary.rs"
     return m.group(1)
 
@@ -294,24 +309,7 @@ def generic_props() -> set:
     # `Place::parse` is reached through `Widget::build`; assert the pair is
     # actually there rather than silently returning an empty set.
     assert "Place::parse(props)" in mod, "the generic place-prop parse moved"
-    return (keys | {axes_key(), "flow"}) - NOT_A_PROP
-
-
-def signal_presets() -> list:
-    """The wire names `host::signal::preset` answers to.
-
-    `waveform`, `plot`, `scope`, `spectrum`, `spectrogram` and `phasescope` are
-    six **presets of one element**, so the schema parses them in a single
-    guarded arm (`name if signal::preset(name).is_some()`) rather than six named
-    ones. The names therefore live in the preset table, not in the wire pass —
-    which is exactly the place to read them from, since a seventh preset would
-    otherwise reach the wire with nothing checking its props.
-    """
-    table = SIGNAL_MOD.read_text()
-    body = table.split("pub fn preset(", 1)[1]
-    names = re.findall(r'^\s{8}"([a-z]+)" =>', body, re.M)
-    assert len(names) >= 6, f"the preset table stopped listing its names: {names}"
-    return names
+    return (keys | {axes_key()}) - NOT_A_PROP
 
 
 #: Widgets whose props are read **outside** their own schema arm, and where.
@@ -322,28 +320,14 @@ def signal_presets() -> list:
 #: arm, which holds only the clip's own placement and name. The scanner is told
 #: rather than made to guess: the alternative is an arm pretending to read props
 #: it does not touch.
-OUTBOARD = {"clip": ("clip_bodies", "apply_clip_body")}
+OUTBOARD = {"field": ("clip_bodies", "apply_clip_body")}
 
-#: The catalog arms each **model** type is built through, mirroring
-#: `vocabulary::resolve`. The wire names the model now (`layout`, `plane`,
-#: `field`, `signal`, ...) while the host's schema still has one arm per
-#: catalog name, so a model type's vocabulary is the union of the arms it
-#: reaches. Both this table and that function go away in the migration's last
-#: stage, when the arms are named by the model directly.
-MODEL = {
-    "layout": ("panel", "box", "stack"),
-    "plane": ("scroll", "patch"),
-    "field": ("track", "clip", "timeruler"),
-    "notes": ("pianoroll",),
-    "curve": ("bpf",),
-    "nodes": ("nodetree",),
-    "keys": ("piano",),
-}
+
 
 
 def host_props() -> dict:
     """``{widget kind: {prop}}`` from the schema's construction and set passes."""
-    helpers = _helper_keys()
+    helpers, bodies = _helper_keys(), _helper_bodies()
     build = (WIDGET_DIR / "build.rs").read_text()
     apply = (WIDGET_DIR / "apply.rs").read_text()
 
@@ -355,28 +339,29 @@ def host_props() -> dict:
         return keys
 
     out = {}
-    # Construction: `"panel" | "box" => WidgetKind::Panel { … }`.
+    # Construction: `"layout" => WidgetKind::Panel { … }`, and the **guarded**
+    # arms one container's several constructions need (`"field" if it carries
+    # a placement => Clip`), which are the same kind and so the same vocabulary.
     variant_of = {}
-    for m, body in _arms(build, r'\s{8}("[a-z]+"(?:\s*\|\s*"[a-z]+")*)\s*=>'):
+    for m, body in _arms(
+        build, r'\s{8}("[a-z]+"(?:\s*\|\s*"[a-z]+")*)(?: if .*)?\s*=>'
+    ):
         kinds = re.findall(r'"([a-z]+)"', m.group(1))
+        # An arm that delegates (`"signal" => build_signal(…)`) names its
+        # variant in the callee, not in itself.
         variant = re.search(r"WidgetKind::(\w+)", body)
+        if not variant:
+            for callee in re.findall(r"\b(\w+)\(", body):
+                if callee in bodies:
+                    variant = re.search(r"WidgetKind::(\w+)", bodies[callee])
+                    if variant:
+                        break
         keys = keys_in(body)
         for kind in kinds:
             out.setdefault(kind, set())
             out[kind] |= keys
             if variant:
                 variant_of.setdefault(variant.group(1), []).append(kind)
-
-    # ...and the one **guarded** arm: the signal element's six presets share
-    # `build_signal`, so they share its props, and the names come from the
-    # preset table itself.
-    for m, body in _arms(build, r"\s{8}name if signal::preset"):
-        keys = keys_in(body)
-        for kind in signal_presets():
-            out.setdefault(kind, set())
-            out[kind] |= keys
-            variant_of.setdefault("Signal", []).append(kind)
-    assert len(signal_presets()) >= 6, "the preset table shrank"
 
     # ...and the props a widget's bodies carry, read outside its own arm.
     for kind, helpers_named in OUTBOARD.items():
@@ -393,10 +378,6 @@ def host_props() -> dict:
                 out.setdefault(kind, set())
                 out[kind] |= keys
 
-    # ...and the model's own types, each the union of the catalog arms the
-    # vocabulary layer builds it through.
-    for model, arms in {**MODEL, "signal": tuple(signal_presets())}.items():
-        out[model] = set().union(*(out.get(arm, set()) for arm in arms))
     return {k: v - NOT_A_PROP for k, v in out.items()}
 
 

@@ -194,7 +194,7 @@ mod tests {
             "type": "window", "title": "Filter",
             "children": [
                 {"id": 10, "type": "knob",  "value": 800.0},
-                {"id": 11, "type": "panel", "children": [
+                {"id": 11, "type": "layout", "children": [
                     {"id": 20, "type": "slider", "value": 0.2}
                 ]}
             ]
