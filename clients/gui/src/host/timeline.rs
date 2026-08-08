@@ -155,7 +155,7 @@ impl GroupState {
 /// whatever axis it follows.
 ///
 /// This is the member's *wish*, not where its body actually begins: that is
-/// [`Host::group_indent`], the group's own. See it for why.
+/// [`group_indents`], the group's own. See it for why.
 pub(crate) fn own_gutter(kind: &WidgetKind, metrics: &Metrics) -> f32 {
     match kind {
         WidgetKind::Track { header, .. } => header.width(metrics),

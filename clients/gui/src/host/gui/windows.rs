@@ -326,7 +326,7 @@ fn collect_canvases(widget: &Widget, gpu: &Gpu, out: &mut HashMap<i32, CanvasVie
 /// minutes-long take reaches a lane as a peak pyramid and never as JSON over
 /// OSC. Walks children too, which is how a clip's take is reached.
 ///
-/// Which of the two forms a source resolves to is [`signal::Data::bulk`], not
+/// Which of the two forms a source resolves to is [`crate::host::signal::Data::bulk`], not
 /// the widget it happens to be in: a **take** becomes a `WaveformData` (a
 /// pyramid, decimated to the pixel width it is drawn at), a **sequence**
 /// becomes the samples themselves, kept interleaved so every channel draws.

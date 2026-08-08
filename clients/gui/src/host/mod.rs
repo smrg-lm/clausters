@@ -812,7 +812,7 @@ impl Host {
     /// It is a method of its own because a **widget binding** performs exactly
     /// this and nothing else — one apply, never another delivery — so the two
     /// paths cannot drift and a binding cannot cascade
-    /// ([`bind`](super::bind)).
+    /// ([`bind`]).
     pub fn set_props(
         &mut self,
         id: i32,

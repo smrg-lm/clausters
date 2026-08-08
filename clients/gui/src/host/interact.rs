@@ -111,7 +111,8 @@ pub(crate) struct Frame {
     /// Where the container sits, in window pixels.
     pub rect: Rect,
     /// The accumulated workspace zoom the container is drawn at
-    /// ([`Placed::scale`]), which its own contents' geometry is measured at.
+    /// ([`super::layout::Placed::scale`]), which its own contents' geometry is
+    /// measured at.
     pub scale: f32,
     /// What a press on this container does, by chord — the container's own
     /// table, or the default its kind carries.
@@ -131,7 +132,7 @@ pub(crate) struct Frame {
 pub(crate) struct Hit {
     pub id: i32,
     pub rect: Rect,
-    /// The accumulated workspace zoom ([`Placed::scale`], which the control
+    /// The accumulated workspace zoom ([`super::layout::Placed::scale`], which the control
     /// hit-math shares with the drawing).
     pub scale: f32,
     pub kind: WidgetKind,
@@ -222,7 +223,7 @@ pub(crate) fn hit(
 }
 
 /// The containers from the window down to `i`, `i` itself included when it is
-/// one — walked back through [`Placed::parent`], which is the containment the
+/// one — walked back through [`super::layout::Placed::parent`], which is the containment the
 /// layout pass already resolved.
 fn chain_of(
     host: &Host,

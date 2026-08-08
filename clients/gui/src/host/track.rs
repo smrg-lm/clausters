@@ -253,7 +253,7 @@ pub fn window_nav(tree: &Widget) -> View {
 /// is the un-rulered default).
 ///
 /// `indent` is the **group's**, not the lane's own header width (see
-/// [`super::timeline::group_indent`]): a lane sharing an axis with a roll or a
+/// [`super::timeline::group_indents`]): a lane sharing an axis with a roll or a
 /// ruler starts its body where they all do.
 pub fn lane_body(rect: Rect, ruler: bool, indent: f32, m: &Metrics) -> Rect {
     let hw = indent.min(rect.w);
