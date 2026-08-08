@@ -634,6 +634,30 @@ impl Host {
         Some(&mut self.window_def_mut(def_id)?.find_mut(widget_id)?.kind)
     }
 
+    /// Window `def_id`'s tree laid out over a `fb_w` x `fb_h` framebuffer, on
+    /// the **same** time axes the renderer drew it on — every timeline widget
+    /// resolved against its navigation group.
+    ///
+    /// That agreement is the point: a clip is hit on the pixels it was drawn
+    /// on, so hit-testing must not re-derive an axis the frame already chose.
+    /// The renderer runs the same call with its own metrics and groups
+    /// (`frame::render`), which is why this takes neither from a caller.
+    pub(crate) fn layout_window(
+        &self,
+        def_id: i32,
+        fb_w: u32,
+        fb_h: u32,
+    ) -> Option<Vec<layout::Placed<'_>>> {
+        let tree = self.window_def(def_id)?;
+        let area = layout::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+        Some(layout::layout_on(
+            area,
+            tree,
+            self.metrics_for(def_id),
+            &|id, link| self.timelines().nav(timeline::group_key(id, link)),
+        ))
+    }
+
     /// Handles one decoded packet from `from`, returning the effects its front
     /// should carry out (replies plus window open/close). A bundle is unwrapped
     /// and its messages run in order (the timetag is treated as immediate at this

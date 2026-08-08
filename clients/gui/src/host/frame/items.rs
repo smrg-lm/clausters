@@ -1,0 +1,879 @@
+//! What one frame *collects*: the per-widget snapshots the draw passes work
+//! from, and the single tree walk that fills them.
+//!
+//! A frame reads the host tree exactly once. Every data-driven widget is copied
+//! out of it into one of the item structs below, so the meshes and the GPU
+//! uploads that follow never hold the tree borrow — which is what lets a heavy
+//! view upload while the chrome is still being built. The flat widgets (labels,
+//! controls, panels, the patcher, the score, the piano) never become items:
+//! they draw straight into the mesh during the same walk, having nothing to
+//! defer.
+
+use super::*;
+
+/// A placed `plot` widget and the data its (static) draw needs, copied out of
+/// the host tree so the mesh is built after the tree borrow is released.
+pub(super) struct PlotItem {
+    pub(super) rect: Rect,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) samples: Arc<[f32]>,
+    pub(super) channels: usize,
+    pub(super) view: plot::PlotView,
+    pub(super) overlay: bool,
+    pub(super) sample_rate: f64,
+    pub(super) min: Option<f32>,
+    pub(super) max: Option<f32>,
+    pub(super) ruler: Ruler,
+    pub(super) ruler_y: bool,
+    pub(super) spectrum: Option<Arc<plot::PlotSpectrum>>,
+    pub(super) db_floor: f32,
+    pub(super) db_ceil: f32,
+    pub(super) freq_scale: FreqScale,
+    pub(super) label: Option<String>,
+}
+
+impl PlotItem {
+    pub(super) fn params(&self) -> plot::PlotParams<'_> {
+        plot::PlotParams {
+            samples: &self.samples,
+            channels: self.channels,
+            view: self.view,
+            overlay: self.overlay,
+            sample_rate: self.sample_rate,
+            min: self.min,
+            max: self.max,
+            ruler: self.ruler,
+            ruler_y: self.ruler_y,
+            spectrum: self.spectrum.as_deref(),
+            db_floor: self.db_floor,
+            db_ceil: self.db_ceil,
+            freq_scale: self.freq_scale,
+            label: self.label.as_deref(),
+        }
+    }
+}
+
+/// Sorts one signal element into the item list of the renderer its
+/// presentation picks. This is the one place the model's product becomes a
+/// choice of destination — a navigable heavy view to the window's GPU slots, a
+/// forward-only source to its per-tick window, a stored non-navigable one to
+/// the mesh — and it is deliberately the *only* place, so nothing downstream
+/// has to ask what a view "is".
+#[allow(clippy::too_many_arguments)] // one element, six destinations
+pub(super) fn signal_item(
+    id: i32,
+    el: &signal::SignalElement,
+    rect: Rect,
+    indent: f32,
+    clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
+    timelines: &mut Vec<TimelineItem>,
+    waves: &mut Vec<WaveItem>,
+    scopes: &mut Vec<ScopeItem>,
+    phases: &mut Vec<PhaseItem>,
+    spectra: &mut Vec<SpectrumItem>,
+    plots: &mut Vec<PlotItem>,
+) {
+    let (min, max) = (el.value.min.unwrap_or(-1.0), el.value.max.unwrap_or(1.0));
+    let strip_x = el.editor.ruler != Ruler::Off;
+    let strip_y = el.editor.ruler_y != RulerY::Off;
+    match (el.presentation, &el.source) {
+        // The navigable heavy views: their geometry is built on the window's
+        // pipelines from the slot keyed by this id.
+        (Presentation::Signal | Presentation::TimeFrequency, _) if el.caps.navigable => {
+            timelines.push(TimelineItem {
+                id,
+                rect,
+                indent,
+                clip,
+                theme,
+                kind: if el.presentation == Presentation::TimeFrequency {
+                    TimelineKind::Spectrogram {
+                        db_floor: el.spectral.db_floor,
+                        db_ceil: el.spectral.db_ceil,
+                        freq_scale: el.spectral.freq_scale,
+                        colormap: el.spectral.colormap,
+                    }
+                } else {
+                    TimelineKind::Waveform {
+                        overlay: el.display.overlay,
+                    }
+                },
+                editor: el.editor.clone(),
+            });
+        }
+        // A forward-only trace: the audio-rate window the tick aligned, or the
+        // control bus's rolling history.
+        (Presentation::Signal, signal::Source::Bus(bus)) => {
+            if bus.rate.is_audio() {
+                waves.push(WaveItem {
+                    id,
+                    rect,
+                    clip,
+                    theme,
+                    min,
+                    max,
+                    window_ms: bus.window_ms,
+                    trigger: bus.trigger,
+                    overlay: el.display.overlay,
+                    ruler: strip_x,
+                    ruler_y: strip_y,
+                    label: el.display.label.clone(),
+                });
+            } else {
+                scopes.push(ScopeItem {
+                    id,
+                    rect,
+                    clip,
+                    theme,
+                    min,
+                    max,
+                    label: el.display.label.clone(),
+                });
+            }
+        }
+        (Presentation::Phase, _) => phases.push(PhaseItem {
+            id,
+            rect,
+            clip,
+            theme,
+            label: el.display.label.clone(),
+        }),
+        (Presentation::Spectrum, signal::Source::Bus(_)) => spectra.push(SpectrumItem {
+            id,
+            rect,
+            clip,
+            theme,
+            fft_size: el.spectral.fft_size,
+            db_floor: el.spectral.db_floor,
+            db_ceil: el.spectral.db_ceil,
+            freq_scale: el.spectral.freq_scale,
+            peak_hold: el.spectral.peak_hold,
+            ruler: strip_x,
+            ruler_y: strip_y,
+            label: el.display.label.clone(),
+        }),
+        // A stored signal nobody navigates: the mesh renderer, whichever of
+        // the two presentations it shows.
+        (_, signal::Source::Data(data)) => plots.push(PlotItem {
+            rect,
+            clip,
+            theme,
+            samples: Arc::clone(&data.samples),
+            channels: data.channels,
+            view: if el.presentation == Presentation::Spectrum {
+                plot::PlotView::Spectrum
+            } else {
+                plot::PlotView::Signal
+            },
+            overlay: el.display.overlay,
+            sample_rate: el.editor.sample_rate,
+            min: el.value.min,
+            max: el.value.max,
+            ruler: el.editor.ruler,
+            ruler_y: strip_y,
+            spectrum: el.analysis.clone(),
+            db_floor: el.spectral.db_floor,
+            db_ceil: el.spectral.db_ceil,
+            freq_scale: el.spectral.freq_scale,
+            label: el.display.label.clone(),
+        }),
+        // A live source with no live renderer for its presentation (a stored
+        // presentation over a bus): nothing to draw until it has one.
+        (_, signal::Source::Bus(_)) => {}
+    }
+}
+
+/// A placed `bpf` widget and the data its draw needs, copied out of the host
+/// tree so the mesh is built after the tree borrow is released.
+pub(super) struct BpfItem {
+    pub(super) rect: Rect,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) points: Vec<bpf::BpfPoint>,
+    pub(super) min: f32,
+    pub(super) max: f32,
+    pub(super) duration: f64,
+    pub(super) exp: bool,
+    pub(super) label: Option<String>,
+}
+
+/// A placed `track` lane and its clips, copied out of the host tree so the
+/// graphic-unit overlay is drawn after the tree borrow is released. The clips'
+/// shared time axis is computed once over all the window's tracks.
+/// A placed free-standing `timeruler`: the strip and the group it labels.
+pub(super) struct RulerItem {
+    pub(super) id: i32,
+    pub(super) rect: Rect,
+    /// Where this member's group starts its body inside `rect`
+    /// ([`layout::Placed::indent`]).
+    pub(super) indent: f32,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) editor: EditorProps,
+}
+
+pub(super) struct TrackItem {
+    pub(super) id: i32,
+    pub(super) rect: Rect,
+    /// Where this member's group starts its body inside `rect`
+    /// ([`layout::Placed::indent`]).
+    pub(super) indent: f32,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) label: Option<String>,
+    /// The lane's gutter: its width and the controls it carries.
+    pub(super) header: track::Header,
+    /// The lane's chrome: its time ruler (off by default), its playhead anchor
+    /// and its `link` — the navigation group whose shared window it draws
+    /// through (the lanes of a window are linked by default, so they zoom and
+    /// pan as one).
+    pub(super) editor: EditorProps,
+}
+
+/// A placed `pianoroll` widget, copied out of the host tree: the note/OSC
+/// content and the pitch window, plus the editor chrome (ruler/selection/
+/// playhead/link — its navigation group). Drawn as flat geometry, the
+/// static-view posture, sharing the `pianoroll` primitives with the clip body.
+/// One placed `clip`: the box the layout put it in and its name. Its bodies
+/// are separate items ([`ClipBodyItem`]), collected after it — the placements
+/// are emitted parent-before-child, so drawing the vectors in order paints
+/// every clip and then every body over its own clip.
+pub(super) struct ClipItem {
+    pub(super) rect: Rect,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) label: Option<String>,
+}
+
+/// One placed **clip body**: a child element of a clip, with the rectangle and
+/// the clip-local window it is drawn against ([`layout::Placed::time`]) and the
+/// clip's span, which is what maps a source frame onto that window.
+///
+/// The element is copied out whole, like every other data-driven item, so the
+/// heavier mesh work happens after the host-tree borrow is released.
+pub(super) struct ClipBodyItem {
+    pub(super) rect: Rect,
+    pub(super) local: View,
+    pub(super) dur: f64,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) kind: WidgetKind,
+}
+
+/// One placed **spectral clip body**: the time-frequency take of a clip, whose
+/// picture is a texture rather than mesh geometry, so it is collected apart
+/// from the mesh-drawn bodies and drawn in the GPU pass.
+///
+/// `id` is the **clip's** — a body carries none of its own, and the slot the
+/// texture lives in is keyed by whatever addresses the widget. `local` is the
+/// clip's own axis (the slice of `[0, dur]` its rectangle shows), which is what
+/// makes the analysis end where the clip ends instead of spanning the lane.
+/// The open list of a `menu`, copied out of the tree: where it goes, what is in
+/// it and the size its rows draw at. Collected with the placements (only they
+/// know the scale) and drawn last, into the overlay.
+pub(super) struct MenuPopupItem {
+    pub(super) popup: Rect,
+    pub(super) options: Vec<String>,
+    pub(super) index: usize,
+    pub(super) size: f32,
+    pub(super) theme: Option<Arc<Theme>>,
+}
+
+pub(super) struct SpectralBodyItem {
+    pub(super) id: i32,
+    pub(super) rect: Rect,
+    pub(super) local: View,
+    pub(super) clip: Option<Rect>,
+    pub(super) db_floor: f32,
+    pub(super) db_ceil: f32,
+    pub(super) freq_scale: FreqScale,
+    pub(super) colormap: i32,
+}
+
+pub(super) struct PianoRollItem {
+    pub(super) id: i32,
+    pub(super) rect: Rect,
+    /// Where this member's group starts its body inside `rect`
+    /// ([`layout::Placed::indent`]).
+    pub(super) indent: f32,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) notes: Vec<pianoroll::Note>,
+    pub(super) osc: Vec<pianoroll::OscMark>,
+    /// The multi-note selection (note indices), drawn highlighted.
+    pub(super) selected: Vec<usize>,
+    pub(super) min: f32,
+    pub(super) max: f32,
+    pub(super) velocity_lane: bool,
+    pub(super) osc_lane: bool,
+    pub(super) label: Option<String>,
+    pub(super) editor: EditorProps,
+}
+
+/// A placed `meter`, copied out of the host tree: its rect, the control bus it
+/// reads each frame and the scale it shows it over.
+pub(super) struct MeterItem {
+    pub(super) rect: Rect,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) bus: i32,
+    /// Audio rate reads the bus's published block level; control rate reads
+    /// the control bus's current value.
+    pub(super) rate: Rate,
+    pub(super) min: f32,
+    pub(super) max: f32,
+    pub(super) label: Option<String>,
+}
+
+/// A placed **control-rate** `scope`, copied out of the host tree: its id (to
+/// fetch the rolling history the tick advanced) and the scale it draws over.
+pub(super) struct ScopeItem {
+    pub(super) id: i32,
+    pub(super) rect: Rect,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) min: f32,
+    pub(super) max: f32,
+    pub(super) label: Option<String>,
+}
+
+/// A placed `nodetree` view, copied out of the host tree: the server group it
+/// mirrors and whether it lists each node's controls.
+pub(super) struct NodeTreeItem {
+    pub(super) rect: Rect,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) group: i32,
+    pub(super) controls: bool,
+    pub(super) label: Option<String>,
+}
+
+/// A placed audio-rate `scope`, copied out of the host tree: its id (to fetch
+/// the tick's aligned tap window) and display parameters.
+pub(super) struct WaveItem {
+    pub(super) id: i32,
+    pub(super) rect: Rect,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) min: f32,
+    pub(super) max: f32,
+    pub(super) window_ms: f32,
+    pub(super) trigger: f32,
+    pub(super) overlay: bool,
+    pub(super) ruler: bool,
+    pub(super) ruler_y: bool,
+    pub(super) label: Option<String>,
+}
+
+/// A placed `spectrum` widget, copied out of the host tree: its id (to fetch the
+/// analysis states), rect and display parameters (the dB window and axis flags).
+pub(super) struct SpectrumItem {
+    pub(super) id: i32,
+    pub(super) rect: Rect,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) fft_size: usize,
+    pub(super) db_floor: f32,
+    pub(super) db_ceil: f32,
+    pub(super) freq_scale: FreqScale,
+    pub(super) peak_hold: bool,
+    pub(super) ruler: bool,
+    pub(super) ruler_y: bool,
+    pub(super) label: Option<String>,
+}
+
+/// A placed `phasescope`, copied out of the host tree (drawn from the
+/// interleaved L/R window the tick stored in `tap_windows`).
+pub(super) struct PhaseItem {
+    pub(super) id: i32,
+    pub(super) rect: Rect,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) label: Option<String>,
+}
+
+/// Which timeline view a placed editor-grade widget is, with its display props.
+pub(super) enum TimelineKind {
+    Waveform {
+        overlay: bool,
+    },
+    Spectrogram {
+        db_floor: f32,
+        db_ceil: f32,
+        freq_scale: FreqScale,
+        colormap: i32,
+    },
+}
+
+/// A placed timeline view (waveform/spectrogram), copied out of the host tree.
+pub(super) struct TimelineItem {
+    pub(super) id: i32,
+    pub(super) rect: Rect,
+    /// Where this member's group starts its body inside `rect`
+    /// ([`layout::Placed::indent`]).
+    pub(super) indent: f32,
+    pub(super) clip: Option<Rect>,
+    pub(super) theme: Option<Arc<Theme>>,
+    pub(super) kind: TimelineKind,
+    pub(super) editor: EditorProps,
+}
+
+/// A placed `canvas` widget, copied out of the host tree: its viewport body, the
+/// shader source (for an in-place recompile when it changed) and the param
+/// vector, with the bus-mapped slots already resolved from shared memory.
+pub(super) struct CanvasFrame {
+    pub(super) id: i32,
+    pub(super) body: Rect,
+    pub(super) clip: Option<Rect>,
+    pub(super) shader: String,
+    pub(super) params: [f32; canvas::PARAM_COUNT],
+}
+
+/// The data-driven widgets copied out of the host tree by [`collect_widgets`],
+/// grouped by kind. Each group is drawn in its own pass once the tree borrow is
+/// released, so the meshes and GPU uploads never touch the host tree.
+pub(super) struct Collected {
+    pub(super) timeline_items: Vec<TimelineItem>,
+    pub(super) meter_rects: Vec<MeterItem>,
+    pub(super) scope_rects: Vec<ScopeItem>,
+    pub(super) wave_rects: Vec<WaveItem>,
+    pub(super) phase_rects: Vec<PhaseItem>,
+    pub(super) spectrum_rects: Vec<SpectrumItem>,
+    pub(super) plot_rects: Vec<PlotItem>,
+    pub(super) bpf_rects: Vec<BpfItem>,
+    pub(super) track_items: Vec<TrackItem>,
+    pub(super) clip_items: Vec<ClipItem>,
+    pub(super) clip_bodies: Vec<ClipBodyItem>,
+    pub(super) spectral_bodies: Vec<SpectralBodyItem>,
+    pub(super) menu_popup: Option<MenuPopupItem>,
+    pub(super) ruler_items: Vec<RulerItem>,
+    pub(super) pianoroll_items: Vec<PianoRollItem>,
+    pub(super) nodetree_rects: Vec<NodeTreeItem>,
+    pub(super) canvas_frames: Vec<CanvasFrame>,
+}
+
+/// One immutable pass over the placed widgets: the flat widgets (labels,
+/// controls, panels, the patcher, the score, the piano) draw straight into
+/// `mesh`; every data-driven widget is copied out of the host tree into the
+/// returned [`Collected`], so the heavier meshes and the GPU uploads are built
+/// after the tree borrow is released.
+pub(super) fn collect_widgets(
+    placed: &[layout::Placed],
+    mesh: &mut Mesh,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) -> Collected {
+    let mut timeline_items: Vec<TimelineItem> = Vec::new();
+    // Meter/scope rects, copied out so their shared-memory values and the scope
+    // history can be read after the host-tree borrow is released.
+    let mut meter_rects: Vec<MeterItem> = Vec::new();
+    // Scope rects carry no bus: the value is sampled on the frame tick
+    // (`advance_scopes`); the render only draws the stored history. Audio-rate
+    // scopes draw their stored tap window instead (`wave_rects`).
+    let mut scope_rects: Vec<ScopeItem> = Vec::new();
+    let mut wave_rects: Vec<WaveItem> = Vec::new();
+    // Phasescope rects (drawn from the interleaved L/R window in `tap_windows`)
+    // and spectrum rects (drawn from the persistent `spectra` analysis states).
+    let mut phase_rects: Vec<PhaseItem> = Vec::new();
+    let mut spectrum_rects: Vec<SpectrumItem> = Vec::new();
+    // Plot items (with a cheap Arc clone of the samples) and node-tree rects,
+    // likewise copied out so the host-tree borrow can be released before the
+    // node-tree models and the GPU resources are read.
+    let mut plot_rects: Vec<PlotItem> = Vec::new();
+    let mut bpf_rects: Vec<BpfItem> = Vec::new();
+    let mut track_items: Vec<TrackItem> = Vec::new();
+    // A clip and its bodies are placed widgets, so they are collected from
+    // their own placements: the clip's box first, its bodies after (the pass
+    // emits parent-before-child), which is the layering the drawing needs.
+    let mut clip_items: Vec<ClipItem> = Vec::new();
+    let mut clip_bodies: Vec<ClipBodyItem> = Vec::new();
+    let mut menu_popup: Option<MenuPopupItem> = None;
+    let mut spectral_bodies: Vec<SpectralBodyItem> = Vec::new();
+    let mut ruler_items: Vec<RulerItem> = Vec::new();
+    let mut pianoroll_items: Vec<PianoRollItem> = Vec::new();
+    let mut nodetree_rects: Vec<NodeTreeItem> = Vec::new();
+    let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
+    let active_button = inputs.active_button;
+    for p in placed {
+        // Everything a scrolled widget paints clips to its container's area.
+        mesh.set_clip(p.clip);
+        // A **clip body** is drawn as a body, not as the element it also is:
+        // it has no chrome of its own (no ruler, no keyboard gutter, no
+        // navigation), because it is drawn against the axes of the clip
+        // holding it. That is what the containment buys, and it is decided
+        // here — once — rather than by each element asking where it is.
+        if let Some(parent) = p.parent
+            && let WidgetKind::Clip { dur, .. } = placed[parent].widget.kind
+        {
+            // The one body whose picture is not geometry: a time-frequency take
+            // samples an uploaded texture, so it goes to the GPU pass with the
+            // clip's own axis and the clip's id (the slot's key).
+            if let WidgetKind::Signal(el) = &p.widget.kind
+                && el.is_texture_view()
+                && let Some(id) = placed[parent].widget.id
+            {
+                spectral_bodies.push(SpectralBodyItem {
+                    id,
+                    rect: p.rect,
+                    local: p.time.unwrap_or_else(|| View::full(1)),
+                    clip: p.clip,
+                    db_floor: el.spectral.db_floor,
+                    db_ceil: el.spectral.db_ceil,
+                    freq_scale: el.spectral.freq_scale,
+                    colormap: el.spectral.colormap,
+                });
+                continue;
+            }
+            clip_bodies.push(ClipBodyItem {
+                rect: p.rect,
+                local: p.time.unwrap_or_else(|| View::full(1)),
+                dur,
+                clip: p.clip,
+                theme: p.widget.theme.clone(),
+                kind: p.widget.kind.clone(),
+            });
+            continue;
+        }
+        // This widget's own size table: the host's, resolved at the scale it is
+        // seen through ([`layout::Placed::metrics`]). Identical to the window's
+        // outside a workspace; inside a zoomed one it carries the zoom, so a
+        // box's padding, parts and text enlarge together.
+        let m = &p.metrics;
+        // The widget's resolved theme (a theme group's overlay, a `color`
+        // accent), resolved at mutation points -- one reference per widget.
+        let th = p.widget.theme.as_deref().unwrap_or(theme);
+        match &p.widget.kind {
+            WidgetKind::Panel { .. } | WidgetKind::Scroll { .. } | WidgetKind::Stack { .. } => {
+                mesh.rect(p.rect, th.panel)
+            }
+            WidgetKind::Label {
+                text,
+                text_size,
+                wrap,
+                align,
+            } => {
+                controls::draw_label(
+                    &mut *mesh,
+                    text,
+                    p.rect,
+                    *text_size * p.scale,
+                    *wrap,
+                    *align,
+                    m,
+                    th,
+                );
+            }
+            // Every signal element, sorted to the renderer its presentation
+            // picks: the two navigable heavy views to the GPU slots, the live
+            // ones to their per-tick windows, the stored non-navigable ones to
+            // the mesh plot. The element is one thing; only its destination
+            // differs.
+            WidgetKind::Signal(el) => {
+                if let Some(id) = p.widget.id {
+                    signal_item(
+                        id,
+                        el,
+                        p.rect,
+                        p.indent,
+                        p.clip,
+                        p.widget.theme.clone(),
+                        &mut timeline_items,
+                        &mut wave_rects,
+                        &mut scope_rects,
+                        &mut phase_rects,
+                        &mut spectrum_rects,
+                        &mut plot_rects,
+                    );
+                }
+            }
+            WidgetKind::Meter {
+                bus,
+                rate,
+                min,
+                max,
+                label,
+            } => meter_rects.push(MeterItem {
+                rect: p.rect,
+                clip: p.clip,
+                theme: p.widget.theme.clone(),
+                bus: *bus,
+                rate: *rate,
+                min: *min,
+                max: *max,
+                label: label.clone(),
+            }),
+            WidgetKind::Piano {
+                min,
+                max,
+                active_min,
+                active_max,
+                overview,
+                pressed,
+                label,
+                ..
+            } => piano::draw_widget(
+                &mut *mesh,
+                p.rect,
+                *min,
+                *max,
+                *overview,
+                *active_min,
+                *active_max,
+                pressed,
+                label.as_deref(),
+                m,
+                th,
+            ),
+            WidgetKind::Bpf {
+                points,
+                min,
+                max,
+                duration,
+                exp,
+                label,
+            } => bpf_rects.push(BpfItem {
+                rect: p.rect,
+                clip: p.clip,
+                theme: p.widget.theme.clone(),
+                points: points.clone(),
+                min: *min,
+                max: *max,
+                duration: *duration,
+                exp: *exp,
+                label: label.clone(),
+            }),
+            WidgetKind::TimeRuler { editor, .. } => {
+                ruler_items.push(RulerItem {
+                    id: p.widget.id.unwrap_or(-1),
+                    rect: p.rect,
+                    indent: p.indent,
+                    clip: p.clip,
+                    theme: p.widget.theme.clone(),
+                    editor: editor.clone(),
+                });
+            }
+            WidgetKind::Track {
+                label,
+                header,
+                editor,
+                ..
+            } => {
+                // The lane's clips are placed widgets of their own, collected
+                // from their own placements below — a lane draws what a lane
+                // is, and nothing that is on it.
+                track_items.push(TrackItem {
+                    id: p.widget.id.unwrap_or(-1),
+                    rect: p.rect,
+                    indent: p.indent,
+                    clip: p.clip,
+                    theme: p.widget.theme.clone(),
+                    label: label.clone(),
+                    header: header.clone(),
+                    editor: editor.clone(),
+                });
+            }
+            WidgetKind::Clip { label, .. } => {
+                clip_items.push(ClipItem {
+                    rect: p.rect,
+                    clip: p.clip,
+                    theme: p.widget.theme.clone(),
+                    label: label.clone(),
+                });
+            }
+            WidgetKind::PianoRoll {
+                notes,
+                osc,
+                selected,
+                min,
+                max,
+                velocity_lane,
+                osc_lane,
+                label,
+                editor,
+                ..
+            } => {
+                if let Some(id) = p.widget.id {
+                    pianoroll_items.push(PianoRollItem {
+                        id,
+                        rect: p.rect,
+                        indent: p.indent,
+                        clip: p.clip,
+                        theme: p.widget.theme.clone(),
+                        notes: notes.clone(),
+                        osc: osc.clone(),
+                        selected: selected.clone(),
+                        min: *min,
+                        max: *max,
+                        velocity_lane: *velocity_lane,
+                        osc_lane: *osc_lane,
+                        label: label.clone(),
+                        editor: editor.clone(),
+                    });
+                }
+            }
+            WidgetKind::Patch {
+                patch,
+                selected,
+                label,
+            } => {
+                // The patcher view of a logical group: drawn in the base mesh
+                // (flat geometry, like the other static views). The canvas
+                // scales with the enclosing workspace's zoom (`p.scale`), so
+                // boxes, wires and text zoom together.
+                let live = inputs
+                    .wiring
+                    .filter(|(id, _, _)| Some(*id) == p.widget.id)
+                    .map(|(_, port, cursor)| (port, cursor));
+                let marquee = inputs
+                    .marquee
+                    .filter(|(id, _)| Some(*id) == p.widget.id)
+                    .map(|(_, r)| r);
+                patch::draw(
+                    &mut *mesh,
+                    p.rect,
+                    patch,
+                    label.as_deref(),
+                    &patch::CanvasState {
+                        live,
+                        selected,
+                        marquee,
+                        scale: p.scale,
+                    },
+                    th,
+                );
+            }
+            WidgetKind::NodeTree {
+                group,
+                controls,
+                label,
+            } => nodetree_rects.push(NodeTreeItem {
+                rect: p.rect,
+                clip: p.clip,
+                theme: p.widget.theme.clone(),
+                group: *group,
+                controls: *controls,
+                label: label.clone(),
+            }),
+            WidgetKind::Canvas {
+                shader,
+                params,
+                buses,
+                label,
+            } => {
+                if let Some(id) = p.widget.id {
+                    if let Some(text) = label {
+                        font::text(
+                            &mut *mesh,
+                            text,
+                            p.rect.x + m.pad,
+                            p.rect.y + m.pad,
+                            m.label_scale,
+                            th.text,
+                        );
+                    }
+                    // Resolve the param vector: a `-1` slot keeps its script-set
+                    // value; a bus slot is read from shared memory this frame
+                    // (zero messages, like a meter).
+                    let mut resolved = *params;
+                    for (slot, &bus) in resolved.iter_mut().zip(buses.iter()) {
+                        if bus >= 0 {
+                            *slot = read_bus(inputs.bus, bus);
+                        }
+                    }
+                    canvas_frames.push(CanvasFrame {
+                        id,
+                        body: controls::body_rect(p.rect, label.is_some(), m),
+                        clip: p.clip,
+                        shader: shader.clone(),
+                        params: resolved,
+                    });
+                }
+            }
+            WidgetKind::Score(data) => {
+                // Notation tessellates straight into the shared triangle mesh:
+                // a paper panel under the engraving, glyphs and fills in ink,
+                // the playback cursor over it in the playhead accent.
+                mesh.rect(p.rect, th.panel);
+                // The cursor sweeps off the engine clock while a pass plays
+                // (`playhead_at`), so playback costs no messages per frame.
+                let head = data.head_ms(inputs.sample_clock, inputs.sample_rate);
+                data.render(
+                    &mut *mesh,
+                    p.rect,
+                    p.clip,
+                    head,
+                    score::ScoreColors {
+                        ink: th.text,
+                        playhead: th.playhead,
+                        selection: th.selection,
+                    },
+                );
+            }
+            WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
+            kind => {
+                // The open list of *this* menu, collected here because only the
+                // placement knows the scale its text is drawn at.
+                if let (
+                    WidgetKind::Menu {
+                        options,
+                        index,
+                        text_size,
+                        ..
+                    },
+                    Some(open),
+                ) = (kind, inputs.menu_popup)
+                    && p.widget.id == Some(open.id)
+                {
+                    menu_popup = Some(MenuPopupItem {
+                        popup: open.popup,
+                        options: options.clone(),
+                        index: *index,
+                        size: *text_size * p.scale,
+                        theme: p.widget.theme.clone(),
+                    });
+                }
+                // A control draws its parts at its **natural** size — a label
+                // strip, a body, a read-out row — whatever cell it was given.
+                // Put in a strip shorter than that, it used to paint over its
+                // neighbours, so a too-thin toolbar came out as overlapping
+                // text; clipped to its own cell it comes out truncated, which
+                // says "make the strip taller" instead of hiding the widget
+                // next to it.
+                mesh.set_clip(Some(p.clip.map_or(p.rect, |c| c.intersect(p.rect))));
+                controls::draw(
+                    &mut *mesh,
+                    kind,
+                    p.rect,
+                    p.widget.id == active_button,
+                    p.widget.id.is_some() && p.widget.id == inputs.focused_text,
+                    p.scale,
+                    m,
+                    th,
+                );
+                mesh.set_clip(p.clip);
+            }
+        }
+    }
+
+    Collected {
+        timeline_items,
+        meter_rects,
+        scope_rects,
+        wave_rects,
+        phase_rects,
+        spectrum_rects,
+        plot_rects,
+        bpf_rects,
+        track_items,
+        clip_items,
+        clip_bodies,
+        spectral_bodies,
+        menu_popup,
+        ruler_items,
+        pianoroll_items,
+        nodetree_rects,
+        canvas_frames,
+    }
+}

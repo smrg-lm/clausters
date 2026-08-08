@@ -191,13 +191,7 @@ pub(crate) fn hit(
     y: f64,
     lanes: &dyn Fn(i32, &WidgetKind) -> usize,
 ) -> Option<Hit> {
-    let tree = host.window_def(def_id)?;
-    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    // The same axis the renderer laid the clips out on: a clip is hit on the
-    // pixels it was drawn on.
-    let placed = layout::layout_on(area, tree, host.metrics_for(def_id), &|id, link| {
-        host.timelines().nav(super::timeline::group_key(id, link))
-    });
+    let placed = host.layout_window(def_id, fb_w, fb_h)?;
     let mut found = None;
     for (i, p) in placed.iter().enumerate() {
         if p.rect.contains(x, y)
@@ -244,11 +238,7 @@ pub(crate) fn sole_time_axis(
     fb_h: u32,
     lanes: &dyn Fn(i32, &WidgetKind) -> usize,
 ) -> Option<SoleAxis> {
-    let tree = host.window_def(def_id)?;
-    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    let placed = layout::layout_on(area, tree, host.metrics_for(def_id), &|id, link| {
-        host.timelines().nav(super::timeline::group_key(id, link))
-    });
+    let placed = host.layout_window(def_id, fb_w, fb_h)?;
     let mut key = None;
     let mut found: Option<(i32, TimeAxis)> = None;
     let mut lane_ids = Vec::new();

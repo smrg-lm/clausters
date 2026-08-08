@@ -1,0 +1,899 @@
+//! Rendering one window's widget tree into its wgpu surface — the shared frame
+//! path, agnostic of platform and of how the host is driven.
+//!
+//! This is the code the milestone calls "isolate the surface/GPU/loop port":
+//! both fronts feed the **same** [`render`] one tree plus its per-window GPU
+//! resources, so the browser is pixel-faithful to the desktop by construction,
+//! not by a parallel renderer. The native windowed front ([`super::gui`]) calls
+//! it with live inputs (the shared-memory bus source, scope histories, the node
+//! tree, the held-button highlight); the browser entry point (`super::web`)
+//! calls it with the streamed equivalents. It builds the flat-geometry [`Mesh`]
+//! from the placed widgets ([`super::layout`] + [`super::paint`]/
+//! [`super::font`]), uploads the heavy `waveform`/`spectrogram`/`canvas` views,
+//! and draws the whole frame in one pass — the editor chrome (rulers,
+//! selection, playhead, cursor readout) as a second, *overlay* mesh drawn
+//! after the heavy views so it reads on top of them.
+//!
+//! **Module layout.** This file is the frame's spine: the GPU slots a heavy
+//! view hangs on, the [`FrameInputs`] a front fills, and [`render`] itself —
+//! lay out, collect, draw, upload, one pass. The two long halves it calls are
+//! its children, one per direction of the frame. [`items`] is the *read* half:
+//! the per-widget snapshots and the single tree walk that fills them, kept
+//! together because a new item type is a struct plus an arm of that walk.
+//! [`draw`] is the *write* half: the three mesh passes over those snapshots,
+//! which by then hold no borrow of the host tree.
+
+mod draw;
+mod items;
+
+pub(crate) use draw::ruler_strip_body;
+use draw::*;
+use items::*;
+
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+
+use crate::gpu::Gpu;
+use crate::spectrogram::{FreqScale, SpectrogramView, Stft, hop_capped};
+use crate::view::{Renderers, TimelineView};
+use crate::viewport::View;
+use crate::waveform::{WaveformData, WaveformView};
+
+use super::canvas::{self, CanvasView};
+use super::layout::{self, Rect};
+use super::metrics::Metrics;
+use super::nodetree::{self, NodeTree};
+use super::paint::{Mesh, Painter};
+use super::ruler::{self, TimeUnit};
+use super::signal::{self, Presentation};
+use super::spectrum::SpectrumState;
+use super::theme::{Theme, with_alpha};
+use super::timeline::{GroupState, TimelineGroups, group_key};
+use super::widget::{EditorProps, Rate, Ruler, RulerY, Widget, WidgetKind};
+use super::{
+    BusSource, bpf, controls, font, live, meters, patch, phasescope, piano, pianoroll, plot, score,
+    spectrum, track,
+};
+
+/// The window clear color: the theme's `background` role as a `wgpu::Color`.
+pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
+    wgpu::Color {
+        r: theme.background[0] as f64,
+        g: theme.background[1] as f64,
+        b: theme.background[2] as f64,
+        a: theme.background[3] as f64,
+    }
+}
+
+/// A waveform widget's GPU view. Its navigation window lives in the widget's
+/// timeline group ([`super::timeline`]), not here — a slot is per window, a
+/// group may span windows.
+pub(crate) struct WaveformSlot {
+    pub(crate) view: WaveformView,
+}
+
+/// A `WaveformSlot` (the GPU view) for ready data.
+pub(crate) fn waveform_slot(data: WaveformData, gpu: &Gpu) -> WaveformSlot {
+    let view = WaveformView::new(&gpu.device, data);
+    WaveformSlot { view }
+}
+
+/// A spectrogram widget's GPU views — one [`SpectrogramView`] (own STFT and
+/// texture) per channel lane. Navigation lives in the timeline group.
+pub(crate) struct SpectrogramSlot {
+    pub(crate) views: Vec<SpectrogramView>,
+}
+
+impl SpectrogramSlot {
+    /// The per-channel sample count of this slot's data.
+    pub(crate) fn total_samples(&self) -> usize {
+        self.views.first().map_or(1, |v| v.total_samples())
+    }
+}
+
+/// A `SpectrogramSlot` from per-channel analyses (empty `stfts` yields none).
+pub(crate) fn spectrogram_slot(
+    stfts: Vec<Stft>,
+    gpu: &Gpu,
+    renderers: &Renderers,
+) -> Option<SpectrogramSlot> {
+    if stfts.is_empty() {
+        return None;
+    }
+    let views = stfts
+        .into_iter()
+        .map(|stft| {
+            SpectrogramView::new(
+                &gpu.device,
+                &gpu.queue,
+                &renderers.spectrogram,
+                Arc::new(stft),
+            )
+        })
+        .collect();
+    Some(SpectrogramSlot { views })
+}
+
+/// One STFT per channel for a spectrogram lane set: de-interleaved `channels`,
+/// analyzed at `window_size`/`hop` (the hop raised by [`hop_capped`] so a long
+/// buffer fits the magnitude texture) and `sample_rate` (48 kHz when unknown,
+/// so the frequency axis is still drawable). Shared by both fronts and every
+/// data source (mapped path, fetched buffer, inline samples).
+pub(crate) fn stft_lanes(
+    channels: Vec<Vec<f32>>,
+    window_size: usize,
+    hop: usize,
+    sample_rate: f64,
+) -> Vec<Stft> {
+    let sr = if sample_rate > 0.0 {
+        sample_rate as f32
+    } else {
+        48_000.0
+    };
+    channels
+        .into_iter()
+        .map(|ch| {
+            let hop = hop_capped(ch.len(), window_size, hop);
+            Stft::compute(&ch, window_size, hop, sr)
+        })
+        .collect()
+}
+
+/// De-interleaves `channels` channels out of a flat buffer (a trailing partial
+/// frame is ignored) — the front half of [`stft_lanes`] for inline sources.
+pub(crate) fn deinterleave(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
+    let channels = channels.max(1);
+    let frames = samples.len() / channels;
+    (0..channels)
+        .map(|ch| (0..frames).map(|f| samples[f * channels + ch]).collect())
+        .collect()
+}
+
+/// Visits every signal element in the tree, each with the id that **addresses**
+/// it: its own, or — for a clip's body, which carries none — its container's.
+///
+/// The slot walk both fronts do, so the addressing rule is written once. What
+/// each front does per element still differs (the native one maps local files
+/// and defers a server buffer to its leg, the browser one fetches over HTTP),
+/// but neither gets to decide on its own *which* elements are visited or what
+/// key their slots hang on.
+pub(crate) fn visit_elements(
+    widget: &Widget,
+    owner: Option<i32>,
+    f: &mut dyn FnMut(Option<i32>, &signal::SignalElement),
+) {
+    let owner = widget.id.or(owner);
+    if let WidgetKind::Signal(el) = &widget.kind {
+        f(owner, el);
+    }
+    for child in &widget.children {
+        visit_elements(child, owner, f);
+    }
+}
+
+/// Builds the GPU slot an element's **inline** samples ask for, keyed by the id
+/// that addresses it: the peak pyramid of a trace, one STFT lane per channel of
+/// a spectrogram.
+///
+/// The one place a slot is built out of samples the host already holds — the
+/// native front falls through to it once its mapped and deferred sources are
+/// ruled out, the browser front has no other case — so a new heavy view becomes
+/// drawable on both fronts at once instead of in whichever one was edited.
+pub(crate) fn inline_slot(
+    id: i32,
+    el: &signal::SignalElement,
+    data: &signal::Data,
+    gpu: &Gpu,
+    renderers: &Renderers,
+    waveforms: &mut HashMap<i32, WaveformSlot>,
+    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
+) {
+    if el.presentation == Presentation::Signal {
+        let loaded = WaveformData::from_interleaved(&data.samples, data.channels, data.base_bucket);
+        waveforms.insert(id, waveform_slot(loaded, gpu));
+    } else if !data.samples.is_empty() {
+        let stfts = stft_lanes(
+            deinterleave(&data.samples, data.channels),
+            el.spectral.fft_size,
+            el.spectral.hop,
+            el.editor.sample_rate,
+        );
+        if let Some(slot) = spectrogram_slot(stfts, gpu, renderers) {
+            spectrograms.insert(id, slot);
+        }
+    }
+}
+
+/// The body a timeline view draws into: its rect minus the time-ruler strip
+/// under it (when the x ruler is on) and the gutter band to its left — each
+/// ruler gets its own space instead of overlaying the view.
+/// `indent` is the **group's** gutter, not this view's own `ruler_w`: a
+/// waveform sharing an axis with a lane or a roll starts its trace where they
+/// start their body, and draws its value ruler into the whole band.
+pub(crate) fn timeline_body(
+    rect: Rect,
+    editor: &EditorProps,
+    indent: f32,
+    metrics: &Metrics,
+) -> Rect {
+    let (mut x, mut w, mut h) = (rect.x, rect.w, rect.h);
+    if editor.ruler != Ruler::Off {
+        h = (h - metrics.ruler_h).max(0.0);
+    }
+    let indent = indent.min(w);
+    x += indent;
+    w = (w - indent).max(0.0);
+    Rect::new(x, rect.y, w, h)
+}
+
+/// The live inputs the frame needs beyond the tree and the GPU resources. The
+/// native front fills them from its state; the browser front passes the
+/// streamed equivalents.
+pub(crate) struct FrameInputs<'a> {
+    /// The host's size roles: every layout and paint site of this frame reads
+    /// its spacing, control and text sizes from here (see
+    /// [`super::metrics`]).
+    pub(crate) metrics: &'a Metrics,
+    /// The control-bus source for `meter`/`canvas` reads (`None` reads zero).
+    pub(crate) bus: Option<&'a dyn BusSource>,
+    /// The server node trees the `nodetree` view draws, by group.
+    pub(crate) node_trees: &'a HashMap<i32, NodeTree>,
+    /// The id of a momentary button currently held down (drawn pressed).
+    pub(crate) active_button: Option<i32>,
+    /// The id of the focused editable `text` field in this window (drawn with a
+    /// caret and its selection), if any.
+    pub(crate) focused_text: Option<i32>,
+    /// Whether an audio server is attached (the `nodetree` placeholder text).
+    pub(crate) server_attached: bool,
+    /// The server's sample rate, placing the `spectrum` frequency axis and the
+    /// timeline rulers when a widget names no rate of its own (0.0 → unknown).
+    pub(crate) sample_rate: f64,
+    /// The engine's sample clock (samples since boot; the shm header natively,
+    /// the polled `/clock_query` in the browser). Drives the playhead: a timeline
+    /// view with `playhead_at >= 0` draws its line at
+    /// `sample_clock - playhead_at`.
+    pub(crate) sample_clock: f64,
+    /// The pointer position in device pixels, for the cursor readout of the
+    /// timeline views (`None` = no pointer over the window).
+    pub(crate) cursor: Option<(f64, f64)>,
+    /// The host's timeline navigation groups: each waveform/spectrogram draws
+    /// its group's shared window (linked views navigate as one).
+    pub(crate) timelines: &'a TimelineGroups,
+    /// The `menu` whose option list is **open** and where it was placed
+    /// ([`Gestures::menu_open`](super::gestures::Gestures::menu_open)). Drawn
+    /// last, over everything: a list that opens covers what it opens over.
+    pub(crate) menu_popup: Option<super::gestures::MenuOpen>,
+    /// A selection marquee in flight on a patch: the widget and the
+    /// rectangle (device pixels), drawn over the canvas.
+    pub(crate) marquee: Option<(i32, Rect)>,
+    /// A cord drag in flight on a patch: the widget, the grabbed port
+    /// (box, side, index) and the cursor — drawn as a cord following the pointer.
+    #[allow(clippy::type_complexity)] // node id, (port), (cursor) — documented above
+    pub(crate) wiring: Option<(i32, (usize, super::patch::Side, usize), (f32, f32))>,
+}
+
+impl Default for FrameInputs<'_> {
+    fn default() -> Self {
+        // 'static empties for the no-transport case.
+        static EMPTY: std::sync::OnceLock<HashMap<i32, NodeTree>> = std::sync::OnceLock::new();
+        static NO_GROUPS: std::sync::OnceLock<TimelineGroups> = std::sync::OnceLock::new();
+        static METRICS: std::sync::OnceLock<Metrics> = std::sync::OnceLock::new();
+        Self {
+            metrics: METRICS.get_or_init(Metrics::default),
+            bus: None,
+            node_trees: EMPTY.get_or_init(HashMap::new),
+            active_button: None,
+            focused_text: None,
+            server_attached: false,
+            sample_rate: 0.0,
+            sample_clock: 0.0,
+            cursor: None,
+            timelines: NO_GROUPS.get_or_init(TimelineGroups::default),
+            wiring: None,
+            menu_popup: None,
+            marquee: None,
+        }
+    }
+}
+
+/// The shared state a placed timeline widget draws with — the window, the
+/// selection and the playhead of its navigation group, which is where all
+/// three live. A widget in no group yet (nothing registered its data) falls
+/// back to its own def-time props over `fallback`, the window it would have
+/// seeded: the same values the group is about to take.
+fn chrome_for(
+    inputs: &FrameInputs,
+    id: i32,
+    editor: &EditorProps,
+    fallback: impl FnOnce() -> View,
+) -> GroupState {
+    match inputs.timelines.state(group_key(id, editor.link)) {
+        Some(state) => *state,
+        None => GroupState::seed(editor, fallback()),
+    }
+}
+
+/// The **placed** navigation window a member's own data is drawn through: the
+/// group window shifted so the member's data sample 0 lands at timeline
+/// position `offset`. The GPU body upload uses this (its data is in local
+/// sample units); the time ruler and the selection/playhead overlay keep the
+/// timeline-unit window. At `offset = 0` (the un-placed default) it is the
+/// identity.
+fn placed_nav(nav: &View, offset: f64) -> View {
+    View {
+        start: nav.start - offset,
+        len: nav.len,
+    }
+}
+
+/// The current value of control bus `bus` from `source` (`0.0` without a source
+/// or for a negative/out-of-range bus) — the same rule the native front used.
+fn read_bus(source: Option<&dyn BusSource>, bus: i32) -> f32 {
+    if bus < 0 {
+        return 0.0;
+    }
+    source.map_or(0.0, |s| s.control(bus as usize))
+}
+
+/// What a meter draws for its bus, at its rate: the published block level of an
+/// audio bus, or the current value of a control bus. Both are one atomic load
+/// out of the same segment — neither costs a message, and the audio one costs
+/// no tap either.
+fn read_level(source: Option<&dyn BusSource>, bus: i32, rate: Rate) -> f32 {
+    if bus < 0 {
+        return 0.0;
+    }
+    match rate {
+        Rate::Audio => source.map_or(0.0, |s| s.level(bus)),
+        Rate::Control => read_bus(source, bus),
+    }
+}
+
+/// Maps sample position `s` into `body`'s x range through `nav`.
+fn sample_to_x(s: f64, nav: &View, body: Rect) -> f32 {
+    (body.x as f64 + (s - nav.start) / nav.len * body.w as f64) as f32
+}
+
+/// The lane sub-rectangle `ch` of `lanes` inside `body` (stacked top to
+/// bottom, no gap — the divider line is overlay chrome).
+pub(crate) fn lane_rect(body: Rect, lanes: usize, ch: usize) -> Rect {
+    let lanes = lanes.max(1) as f32;
+    let h = body.h / lanes;
+    Rect::new(body.x, body.y + ch as f32 * h, body.w, h)
+}
+
+/// The time-ruler unit of `editor` (the beats grid rides its props).
+fn time_unit(editor: &EditorProps) -> TimeUnit {
+    match editor.ruler {
+        Ruler::Samples => TimeUnit::Samples,
+        Ruler::Beats => TimeUnit::Beats {
+            tempo: editor.tempo,
+            beat_at: editor.beat_at,
+            quant: editor.quant,
+        },
+        _ => TimeUnit::Seconds,
+    }
+}
+
+/// The stacked-lane index under window y `cy` (clamped into range).
+pub(crate) fn lane_at(body: Rect, lanes: usize, cy: f64) -> usize {
+    let rel = ((cy - body.y as f64) / body.h.max(1.0) as f64).clamp(0.0, 1.0);
+    ((rel * lanes as f64) as usize).min(lanes.saturating_sub(1))
+}
+
+/// Renders `tree` into `gpu`'s surface, using the window's `painter`/`overlay`
+/// (chrome under and over the heavy views), the `waveforms`/`spectrograms`/
+/// `canvases` GPU resources and (read-only) `scopes` histories, plus `inputs`
+/// for the live values. One immutable mesh-building pass over the placed
+/// widgets, then the GPU uploads and the single render pass.
+#[allow(clippy::too_many_arguments)] // the per-window resource set, both fronts
+pub(crate) fn render(
+    gpu: &mut Gpu,
+    renderers: &mut Renderers,
+    painter: &mut Painter,
+    overlay: &mut Painter,
+    waveforms: &mut HashMap<i32, WaveformSlot>,
+    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
+    canvases: &mut HashMap<i32, CanvasView>,
+    scopes: &HashMap<i32, VecDeque<f32>>,
+    tap_windows: &HashMap<i32, live::TapWindow>,
+    spectra: &HashMap<i32, Vec<SpectrumState>>,
+    tree: &Widget,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    let m = inputs.metrics;
+    let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
+    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    // The lanes' clips are placed on the axis their group currently stands at,
+    // so the layout of a multitrack follows the zoom and the pan.
+    let placed = layout::layout_on(area, tree, inputs.metrics, &|id, link| {
+        inputs.timelines.nav(group_key(id, link))
+    });
+    let mut mesh = Mesh::new();
+    let mut over = Mesh::new();
+    let collected = collect_widgets(&placed, &mut mesh, inputs, theme);
+
+    draw_live_meshes(
+        &mut mesh,
+        &collected,
+        scopes,
+        tap_windows,
+        spectra,
+        inputs,
+        theme,
+    );
+    draw_timeline_meshes(
+        &mut mesh,
+        &mut over,
+        &collected,
+        waveforms,
+        spectrograms,
+        inputs,
+        theme,
+    );
+    draw_static_meshes(&mut mesh, &mut over, &collected, inputs, theme, tree);
+
+    mesh.set_clip(None);
+    over.set_clip(None);
+    painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);
+    overlay.upload(&gpu.device, &gpu.queue, &over, fb_w, fb_h);
+    for item in &collected.timeline_items {
+        let body = timeline_body(item.rect, &item.editor, item.indent, m);
+        match &item.kind {
+            TimelineKind::Waveform { .. } => {
+                if let Some(slot) = waveforms.get_mut(&item.id) {
+                    let nav = chrome_for(inputs, item.id, &item.editor, || {
+                        View::full(slot.view.total_samples())
+                    })
+                    .nav;
+                    let nav = placed_nav(&nav, item.editor.offset);
+                    slot.view
+                        .set_amp_window(item.editor.y_view().0, item.editor.y_view().1);
+                    let th = item.theme.as_deref().unwrap_or(theme);
+                    slot.view
+                        .set_palette([th.series_1, th.series_2, th.series_3, th.series_4]);
+                    slot.view.upload(
+                        &gpu.device,
+                        &gpu.queue,
+                        renderers,
+                        &nav,
+                        body.w.max(1.0) as u32,
+                    );
+                }
+            }
+            TimelineKind::Spectrogram {
+                db_floor,
+                db_ceil,
+                freq_scale,
+                colormap,
+            } => {
+                if let Some(slot) = spectrograms.get_mut(&item.id) {
+                    let nav = chrome_for(inputs, item.id, &item.editor, || {
+                        View::full(slot.total_samples())
+                    })
+                    .nav;
+                    let nav = placed_nav(&nav, item.editor.offset);
+                    for view in &mut slot.views {
+                        view.set_display(
+                            *db_floor,
+                            *db_ceil,
+                            *freq_scale,
+                            (*colormap).max(0) as u32,
+                        );
+                        view.set_freq_window(item.editor.y_view().0, item.editor.y_view().1);
+                        view.upload(
+                            &gpu.device,
+                            &gpu.queue,
+                            renderers,
+                            &nav,
+                            body.w.max(1.0) as u32,
+                        );
+                    }
+                }
+            }
+        }
+    }
+    // The spectral clip bodies: the same texture, uploaded against the clip's
+    // own axis instead of the group's window — which is the whole difference
+    // between a spectral *view* of a file and a spectral *clip* of it.
+    for item in &collected.spectral_bodies {
+        if let Some(slot) = spectrograms.get_mut(&item.id) {
+            for view in &mut slot.views {
+                view.set_display(
+                    item.db_floor,
+                    item.db_ceil,
+                    item.freq_scale,
+                    item.colormap.max(0) as u32,
+                );
+                view.upload(
+                    &gpu.device,
+                    &gpu.queue,
+                    renderers,
+                    &item.local,
+                    item.rect.w.max(1.0) as u32,
+                );
+            }
+        }
+    }
+    // Recompile any canvas whose shader changed, then push its per-frame uniforms
+    // (viewport size, elapsed time, resolved params).
+    for frame in &collected.canvas_frames {
+        if let Some(view) = canvases.get_mut(&frame.id) {
+            view.set_shader(&gpu.device, &frame.shader);
+            let time = view.elapsed();
+            let res = [frame.body.w.max(1.0), frame.body.h.max(1.0)];
+            view.upload(&gpu.queue, res, time, frame.params);
+        }
+    }
+
+    let frame = match gpu.surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+        _ => {
+            // No drawable this turn (outdated/timed-out surface — e.g. the
+            // compositor stopped consuming a covered window's frames):
+            // reconfigure and ask for another redraw, so the frame that was
+            // requested is not silently dropped and the window never shows
+            // stale state once it is presentable again.
+            gpu.surface.configure(&gpu.device, &gpu.config);
+            gpu.window.request_redraw();
+            return;
+        }
+    };
+    let target = frame
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("gui frame"),
+        });
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("gui pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(clear_color(theme)),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        painter.draw(&mut pass);
+        for item in &collected.timeline_items {
+            let body = timeline_body(item.rect, &item.editor, item.indent, m);
+            if body.w < 1.0 || body.h < 1.0 {
+                continue;
+            }
+            if !apply_scissor(&mut pass, item.clip, fb_w, fb_h) {
+                continue;
+            }
+            match &item.kind {
+                TimelineKind::Waveform { overlay: overlaid } => {
+                    let Some(slot) = waveforms.get(&item.id) else {
+                        continue;
+                    };
+                    let lanes = slot.view.num_channels();
+                    if *overlaid || lanes == 1 {
+                        let (x, y, w, h) = clamp_viewport(body, fb_w, fb_h);
+                        if w >= 1.0 && h >= 1.0 {
+                            pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                            slot.view.draw(&mut pass, renderers);
+                        }
+                    } else {
+                        for ch in 0..lanes {
+                            let lane = lane_rect(body, lanes, ch);
+                            let (x, y, w, h) = clamp_viewport(lane, fb_w, fb_h);
+                            if w >= 1.0 && h >= 1.0 {
+                                pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                                slot.view.draw_channel(&mut pass, &renderers.waveform, ch);
+                            }
+                        }
+                    }
+                }
+                TimelineKind::Spectrogram { .. } => {
+                    let Some(slot) = spectrograms.get(&item.id) else {
+                        continue;
+                    };
+                    let lanes = slot.views.len();
+                    for (ch, view) in slot.views.iter().enumerate() {
+                        let lane = lane_rect(body, lanes, ch);
+                        let (x, y, w, h) = clamp_viewport(lane, fb_w, fb_h);
+                        if w >= 1.0 && h >= 1.0 {
+                            pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                            view.draw(&mut pass, renderers);
+                        }
+                    }
+                }
+            }
+        }
+        for item in &collected.spectral_bodies {
+            let Some(slot) = spectrograms.get(&item.id) else {
+                continue;
+            };
+            if item.rect.w < 1.0
+                || item.rect.h < 1.0
+                || !apply_scissor(&mut pass, item.clip, fb_w, fb_h)
+            {
+                continue;
+            }
+            let lanes = slot.views.len();
+            for (ch, view) in slot.views.iter().enumerate() {
+                let lane = lane_rect(item.rect, lanes, ch);
+                let (x, y, w, h) = clamp_viewport(lane, fb_w, fb_h);
+                if w >= 1.0 && h >= 1.0 {
+                    pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                    view.draw(&mut pass, renderers);
+                }
+            }
+        }
+        for frame in &collected.canvas_frames {
+            if frame.body.w >= 1.0
+                && frame.body.h >= 1.0
+                && let Some(view) = canvases.get(&frame.id)
+                && apply_scissor(&mut pass, frame.clip, fb_w, fb_h)
+            {
+                let (x, y, w, h) = clamp_viewport(frame.body, fb_w, fb_h);
+                pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                view.draw(&mut pass);
+            }
+        }
+        // The editor chrome reads over the heavy views: reset the viewport
+        // (and the scissor) to the full framebuffer first (the overlay mesh is
+        // in window space, already geometry-clipped where it needed to be).
+        pass.set_viewport(0.0, 0.0, fb_w as f32, fb_h as f32, 0.0, 1.0);
+        pass.set_scissor_rect(0, 0, fb_w, fb_h);
+        overlay.draw(&mut pass);
+    }
+    gpu.queue.submit(std::iter::once(encoder.finish()));
+    // The winit present contract: lets winit attach the compositor frame
+    // callback to this commit, so later `request_redraw`s are delivered (and
+    // throttled) correctly — without it, Wayland redraw delivery can stall on
+    // an unfocused or covered window until the compositor repaints it anyway.
+    gpu.window.pre_present_notify();
+    frame.present();
+}
+
+/// Applies a placed widget's clip as the pass scissor (the full framebuffer
+/// when it has none), returning `false` when the clip is empty — the caller
+/// skips the draw entirely. The heavy views draw through `set_viewport`, which
+/// *positions* but does not cut; a scrolled view poking out of its `scroll`
+/// container is cut by this scissor, the GPU sibling of the mesh's geometric
+/// clip.
+fn apply_scissor(
+    pass: &mut wgpu::RenderPass<'_>,
+    clip: Option<Rect>,
+    fb_w: u32,
+    fb_h: u32,
+) -> bool {
+    let Some(c) = clip else {
+        pass.set_scissor_rect(0, 0, fb_w, fb_h);
+        return true;
+    };
+    let x = c.x.clamp(0.0, fb_w as f32) as u32;
+    let y = c.y.clamp(0.0, fb_h as f32) as u32;
+    let w = (c.w.max(0.0) as u32).min(fb_w - x);
+    let h = (c.h.max(0.0) as u32).min(fb_h - y);
+    if w == 0 || h == 0 {
+        return false;
+    }
+    pass.set_scissor_rect(x, y, w, h);
+    true
+}
+
+/// Clamps a widget rect to the framebuffer for `set_viewport` (which rejects a
+/// viewport that leaves the attachment).
+fn clamp_viewport(r: Rect, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {
+    let x = r.x.clamp(0.0, fb_w as f32);
+    let y = r.y.clamp(0.0, fb_h as f32);
+    let w = r.w.min(fb_w as f32 - x).max(0.0);
+    let h = r.h.min(fb_h as f32 - y).max(0.0);
+    (x, y, w, h)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn editor(ruler: Ruler, ruler_y: RulerY) -> EditorProps {
+        EditorProps {
+            ruler,
+            ruler_y,
+            sample_rate: 0.0,
+            bit_depth: 16,
+            tempo: 1.0,
+            beat_at: 0.0,
+            quant: 4.0,
+            sel_start: 0.0,
+            sel_len: 0.0,
+            playhead_at: -1.0,
+            playhead: -1.0,
+            playhead_loop_start: 0.0,
+            playhead_loop_len: 0.0,
+            y_start: 0.0,
+            y_len: 1.0,
+            link: None,
+            offset: 0.0,
+        }
+    }
+
+    /// The whole clip path, from the tree to the geometry: the clip's box, and
+    /// then each body over it. This is what the containment has to buy — the
+    /// lane draws no clip, the clip draws no body, and each body draws itself
+    /// against the clip's rectangle and axis.
+    #[test]
+    fn a_clips_bodies_are_collected_and_drawn_over_it() {
+        use crate::host::guidef::GuiNode;
+        use crate::host::widget::Widget;
+
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":5,"type":"field","label":"lane","children":[
+                {"id":10,"type":"field","offset":0,"dur":400,"data":[0.0,1.0,-1.0,0.5],
+                 "notes":[0.0,100.0,60.0],"points":[0.0,0.5,1,0.0,400.0,0.9,1,0.0]}]}]}"#;
+        let tree = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+        let m = Metrics::default();
+        let inputs = FrameInputs {
+            metrics: &m,
+            ..FrameInputs::default()
+        };
+        let area = Rect::new(0.0, 0.0, 800.0, 300.0);
+        let placed = layout::layout(area, &tree, &m);
+        let mut mesh = Mesh::new();
+        let collected = collect_widgets(&placed, &mut mesh, &inputs, &Theme::default());
+
+        assert_eq!(collected.track_items.len(), 1);
+        assert_eq!(collected.clip_items.len(), 1);
+        assert_eq!(collected.clip_bodies.len(), 3, "a take, a roll and a curve");
+        // Every body is drawn against the clip's own rectangle and axis.
+        let clip = &collected.clip_items[0];
+        for body in &collected.clip_bodies {
+            assert_eq!(body.rect, clip.rect);
+            assert_eq!(body.dur, 400.0);
+        }
+
+        // ...and each of them actually puts geometry down, over the lane and
+        // over the clip's own box.
+        let paint = |c: &Collected| {
+            let (mut base, mut over) = (Mesh::new(), Mesh::new());
+            draw_static_meshes(&mut base, &mut over, c, &inputs, &Theme::default(), &tree);
+            base.vertex_count()
+        };
+        let mut collected = collected;
+        let full = paint(&collected);
+        collected.clip_bodies.clear();
+        let no_bodies = paint(&collected);
+        collected.clip_items.clear();
+        let lane_only = paint(&collected);
+        assert!(no_bodies > lane_only, "the clip's box draws over the lane");
+        assert!(full > no_bodies, "the bodies draw over the clip's box");
+    }
+
+    /// A clip's take drawn as the time-frequency texture: the same clip, the
+    /// same placement, another presentation. It leaves the mesh bodies (it is
+    /// not geometry) and is collected for the GPU pass under the **clip's** id,
+    /// on the **clip's own axis** — which is what makes a spectral clip end
+    /// where the clip ends instead of spanning the lane.
+    #[test]
+    fn a_clips_take_can_be_the_time_frequency_texture() {
+        use crate::host::guidef::GuiNode;
+        use crate::host::widget::Widget;
+
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":5,"type":"field","label":"lane","children":[
+                {"id":10,"type":"field","offset":0,"dur":400,"view":"spectrogram",
+                 "colormap":1,"data":[0.0,1.0,-1.0,0.5]}]}]}"#;
+        let tree = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+        let m = Metrics::default();
+        let inputs = FrameInputs {
+            metrics: &m,
+            ..FrameInputs::default()
+        };
+        let placed = layout::layout(Rect::new(0.0, 0.0, 800.0, 300.0), &tree, &m);
+        let mut mesh = Mesh::new();
+        let collected = collect_widgets(&placed, &mut mesh, &inputs, &Theme::default());
+
+        assert!(collected.clip_bodies.is_empty(), "not a mesh body");
+        assert_eq!(collected.spectral_bodies.len(), 1);
+        let body = &collected.spectral_bodies[0];
+        assert_eq!(body.id, 10, "the slot is keyed by the clip");
+        assert_eq!(body.rect, collected.clip_items[0].rect);
+        assert_eq!(body.colormap, 1, "the clip's display props reach the take");
+        assert!(
+            body.local.start.abs() < 0.5 && (body.local.len - 400.0).abs() < 1.0,
+            "the clip's own axis, not the lane's window"
+        );
+    }
+
+    #[test]
+    fn timeline_body_reserves_the_ruler_strip_and_the_group_gutter() {
+        let rect = Rect::new(10.0, 10.0, 400.0, 200.0);
+        let m = Metrics::default();
+        // The x ruler takes the bottom strip; the gutter is the group's, so a
+        // view alone with its value ruler indents by that ruler's width.
+        let body = timeline_body(rect, &editor(Ruler::Time, RulerY::Norm), m.ruler_w, &m);
+        assert_eq!(body.h, 200.0 - m.ruler_h);
+        assert_eq!(body.x, 10.0 + m.ruler_w);
+        assert_eq!(body.w, 400.0 - m.ruler_w);
+        // Each is independently optional.
+        let x_only = timeline_body(rect, &editor(Ruler::Time, RulerY::Off), 0.0, &m);
+        assert_eq!((x_only.x, x_only.w), (10.0, 400.0));
+        assert_eq!(x_only.h, 200.0 - m.ruler_h);
+        let y_only = timeline_body(rect, &editor(Ruler::Off, RulerY::Hz), m.ruler_w, &m);
+        assert_eq!(y_only.h, 200.0);
+        assert_eq!(y_only.x, 10.0 + m.ruler_w);
+        assert_eq!(
+            timeline_body(rect, &editor(Ruler::Off, RulerY::Off), 0.0, &m),
+            rect
+        );
+        // Sharing an axis with a lane, the same view starts its trace where the
+        // lane starts its clips — the indent is the axis', not the widget's.
+        let shared = timeline_body(rect, &editor(Ruler::Off, RulerY::Norm), m.header_w, &m);
+        assert_eq!(shared.x, 10.0 + m.header_w);
+    }
+
+    #[test]
+    fn placed_nav_shifts_the_body_window_by_the_offset() {
+        let nav = View {
+            start: 100.0,
+            len: 400.0,
+        };
+        // The un-placed default is the identity.
+        assert_eq!(placed_nav(&nav, 0.0), nav);
+        // A member placed at timeline sample 100 draws its data sample 0 there:
+        // the local window starts one clip-length earlier.
+        let placed = placed_nav(&nav, 100.0);
+        assert_eq!((placed.start, placed.len), (0.0, 400.0));
+        // Placing further right pushes the local window negative (data before
+        // the visible origin) without changing the span.
+        let placed = placed_nav(&nav, 250.0);
+        assert_eq!((placed.start, placed.len), (-150.0, 400.0));
+    }
+
+    #[test]
+    fn lane_at_picks_the_lane_under_the_cursor() {
+        let body = Rect::new(0.0, 0.0, 400.0, 300.0);
+        assert_eq!(lane_at(body, 3, 50.0), 0);
+        assert_eq!(lane_at(body, 3, 150.0), 1);
+        assert_eq!(lane_at(body, 3, 299.0), 2);
+        assert_eq!(lane_at(body, 3, 1000.0), 2, "clamped");
+    }
+
+    #[test]
+    fn lanes_split_the_body_evenly_and_share_x() {
+        let body = Rect::new(0.0, 0.0, 400.0, 300.0);
+        let a = lane_rect(body, 3, 0);
+        let b = lane_rect(body, 3, 1);
+        let c = lane_rect(body, 3, 2);
+        assert_eq!(a.h, 100.0);
+        assert_eq!((a.x, a.w), (b.x, b.w));
+        assert_eq!(b.y, 100.0);
+        assert_eq!(c.y + c.h, 300.0);
+    }
+
+    #[test]
+    fn deinterleave_splits_frames_and_drops_the_partial_tail() {
+        let flat = [1.0, -1.0, 2.0, -2.0, 3.0];
+        let chans = deinterleave(&flat, 2);
+        assert_eq!(chans, vec![vec![1.0, 2.0], vec![-1.0, -2.0]]);
+        assert_eq!(deinterleave(&flat, 1).len(), 1);
+        assert_eq!(deinterleave(&flat, 1)[0].len(), 5);
+    }
+
+    #[test]
+    fn stft_lanes_cap_the_hop_for_long_buffers() {
+        // A buffer long enough that hop 8 would exceed MAX_FRAMES: the hop is
+        // raised so every lane fits the texture.
+        let n = 200_000;
+        let chan: Vec<f32> = (0..n).map(|i| (i as f32 * 0.01).sin()).collect();
+        let lanes = stft_lanes(vec![chan], 256, 8, 48_000.0);
+        assert_eq!(lanes.len(), 1);
+        assert!(lanes[0].n_frames() <= crate::spectrogram::MAX_FRAMES);
+        assert_eq!(lanes[0].total_samples(), n);
+    }
+}
