@@ -414,6 +414,18 @@ export class Playhead {
      * The current song position, in beats. Interpolated from the clock between
      * items while playing; the start or last-seek beat while stopped.
      */
+    /**
+     * The **clock** beat the scan last woke on — the origin `position`
+     * interpolates from, and, once the scan has drained, the beat at which its
+     * last item was rendered. `null` before the first wake.
+     *
+     * A transport reads it to keep a cursor moving after the scan is over: the
+     * piece ends where the last item does, which is a stretch of time later.
+     */
+    get scannedAt(): number | null {
+        return this.posClock;
+    }
+
     position(): number {
         if (!this.running || this.posClock === null) return this.posBeat;
         let pos = this.posBeat + (this.clock.beats() - this.posClock);

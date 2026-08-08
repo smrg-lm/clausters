@@ -283,6 +283,17 @@ class Playhead:
         self._loop = None
         return self
 
+    @property
+    def scanned_at(self):
+        """The **clock** beat the scan last woke on — the origin `position`
+        interpolates from, and, once the scan has drained, the beat at which its
+        last item was rendered. ``None`` before the first wake.
+
+        A transport reads it to keep a cursor moving after the scan is over: the
+        piece ends where the last item does, which is a stretch of time later.
+        """
+        return self._pos_clock
+
     def position(self) -> float:
         """The current song position, in beats. Interpolated from the clock
         between items while playing; the start/last-seek beat while stopped."""

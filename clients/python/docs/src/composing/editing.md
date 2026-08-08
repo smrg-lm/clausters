@@ -52,7 +52,9 @@ set either directly — the transport calls do.
 
 A pass also **ends by itself**. The playhead reports when its scan ran out, so
 one call per pass of a script's loop parks the cursor at the composition's end
-rather than letting the line sweep off past it:
+rather than letting the line sweep off past it. A scan runs out when it renders
+its **last item**, and the last clip is still sounding then — so the line goes
+on crossing it and the cursor parks only when it reaches the end:
 
 ```python
 while editor.window is not None:

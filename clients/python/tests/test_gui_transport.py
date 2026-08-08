@@ -211,6 +211,66 @@ def test_without_an_extent_it_parks_on_the_last_item():
     assert tp.position == pytest.approx(2.0), "the last note's own onset"
 
 
+class RollingClock(TempoClock):
+    """A clock whose beat is set by hand instead of by a thread — a *rolling*
+    clock (its beat is the wall's, so a transport may sweep the last item's
+    tail over it) that a test can move deterministically."""
+
+    def __init__(self, tempo):
+        super().__init__(tempo)
+        self._beat = 0.0
+
+    @property
+    def rolling(self) -> bool:
+        return True     # a driven clock, whatever `render` left the mode on
+
+    def beats(self) -> float:
+        return self._beat
+
+    def advance(self, beats: float):
+        self._beat += beats
+
+
+def test_the_last_item_keeps_the_line_until_the_piece_actually_ends():
+    """A scan runs out when it renders its **last item**, and the last clip is
+    still sounding then. Parking the cursor there jumps the line to the end
+    while the sound goes on — so the drained scan starts a *tail* the line
+    sweeps, and only its end parks the cursor."""
+    host = FakeHost()
+    clock = RollingClock(TEMPO)
+    tp = transport(host, clock=clock, extent=lambda: 3.0)
+    tp.play(FakeServer(), at=0.0)
+    clock.render()                          # the scan drains on the last item
+
+    anchored = host.last("playhead_at")
+    assert not tp.update(), "the last item is still sounding"
+    assert tp.position == pytest.approx(2.0), "the last item's onset"
+    assert host.last("playhead_at") == anchored, "the line is left sweeping"
+
+    clock.advance(0.5)                      # half a beat into that last item
+    assert not tp.update()
+    assert tp.position == pytest.approx(2.5)
+    assert tp.playing, "the piece is still sounding, so the button says pause"
+
+    clock.advance(0.6)                      # past the piece's end
+    assert tp.update(), "the piece ended"
+    assert not tp.playing
+    assert tp.position == pytest.approx(3.0)
+    assert host.last("playhead") == pytest.approx(3 * BEAT)
+    assert host.last("playhead_at") == -1.0
+
+
+def test_a_pause_inside_the_tail_holds_where_the_music_is():
+    clock = RollingClock(TEMPO)
+    tp = transport(clock=clock, extent=lambda: 3.0)
+    tp.play(FakeServer(), at=0.0)
+    clock.render()
+    clock.advance(0.5)
+    tp.update()
+    tp.pause()
+    assert tp.at == pytest.approx(2.5), "not the beat the pass started from"
+
+
 def test_a_locate_after_the_end_stands():
     """Seeking away from the end must not be undone by the next `update`."""
     tp = transport(clock=(clock := TempoClock(TEMPO)), extent=lambda: 3.0)

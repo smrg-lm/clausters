@@ -1321,6 +1321,15 @@ the MIDI half of `responders.py` (**W9** — its OSC half is ported),
 `_cli.py`, `config.py`, `_midi.py`, `_libpath.py`), which is a process-shaped
 surface a page has no counterpart for.
 
+One rule the `gui/transport.py` port must carry, since the reference learned it
+after the list above was written: **a drained scan is not the end of the piece.**
+A `Playhead` runs out when it renders its *last item*, and that item is still
+sounding — parking the cursor there jumps the line to the end while the sound
+goes on. The reference keeps a *tail* (the clock beat and timeline beat at the
+drain), reports a position across it, counts it as playing, and parks only when
+it reaches the `extent`. The primitive it reads is already here:
+`Playhead.scannedAt`, the clock beat the scan last woke on.
+
 **What is left, checked module by module and symbol by symbol against the
 Python tree, so the next comparison does not re-derive it.** Every ported
 module now sits at its sibling's path; these four differences remain, and each

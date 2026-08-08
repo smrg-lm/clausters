@@ -75,6 +75,11 @@ class Transport:
         self._playhead = None
         self._at = 0.0       # the beat the cursor waits at while stopped
         self._ended = False  # the end of a pass was already parked (send it once)
+        #: The **tail**: `(clock beat, timeline beat)` at the moment the scan
+        #: drained. A scan runs out when it renders its *last item*, not when
+        #: the piece is over — the last clip is still sounding, and the line
+        #: must go on crossing it. `None` outside that stretch.
+        self._tail = None
 
     # ---- the unit bridge ----
 
@@ -98,17 +103,51 @@ class Transport:
 
     @property
     def playing(self) -> bool:
-        """Whether a pass is rolling. It goes False on its own at the end of the
-        piece, which is what `update` reads."""
+        """Whether the piece is sounding: a pass is rolling, **or** its scan has
+        drained and the last item is still ringing (the tail). It goes False on
+        its own at the end of the piece — where the last item ends, not where it
+        started — which is what `update` decides.
+
+        The tail counts as playing because everything a caller does with this
+        answer is true of it: a pause holds where the music is, a seek starts a
+        fresh pass from there, and a button reads "pause" rather than "play"."""
         ph = self._playhead
-        return ph is not None and ph.playing
+        return (ph is not None and ph.playing) or self._tail is not None
 
     @property
     def position(self) -> float:
         """The transport's position in beats: where the playhead is while it
-        plays, and where the next `play` starts when it does not."""
+        plays, where it got to while the last item is still ringing, and where
+        the next `play` starts when neither."""
         ph = self._playhead
-        return ph.position() if (ph is not None and ph.playing) else self._at
+        if ph is not None and ph.playing:
+            return ph.position()
+        tail = self._tail_position()
+        return self._at if tail is None else tail
+
+    def _tail_position(self):
+        """Where the line is between the scan draining and the piece ending: the
+        last item's beat plus what the clock has advanced since, never past the
+        end. ``None`` when there is no tail to be in.
+
+        The clock is the **pass's own** (`clausters.seq.Playhead.clock`), and it
+        has to be *rolling*: an offline render computes the whole piece in an
+        instant and its beat is the queue's, not the wall's, so there is no tail
+        to sweep and the cursor parks straight away — exactly as it did before
+        this existed."""
+        if self._tail is None:
+            return None
+        since, beat = self._tail
+        clock = self._pass_clock()
+        if clock is None or not getattr(clock, "rolling", False):
+            return beat
+        end = beat if self.extent is None else float(self.extent())
+        return min(beat + (clock.beats() - since), max(end, beat))
+
+    def _pass_clock(self):
+        """The clock the pass in flight runs on: the playhead's own, else the
+        one this transport was given."""
+        return getattr(self._playhead, "clock", None) or self.clock
 
     @property
     def at(self) -> float:
@@ -144,9 +183,9 @@ class Transport:
         the server's subtree and its queue, the clock freezes with them, and the
         scan simply stops making progress. That is what lets `resume` continue
         the sound rather than start it again."""
-        ph = self._playhead
-        if ph is not None and ph.playing:
-            self._at = ph.position()
+        # Where the music stopped — including inside the tail, where the scan
+        # has drained but the last clip is still sounding.
+        self._at = self.position
         if self.governed:
             server = self.server
             if server is not None and hasattr(server, "transport_stop"):
@@ -192,6 +231,7 @@ class Transport:
         if self.playing:
             self.play(at=beat)
         else:
+            self._tail = None
             self._at = beat
             if self._playhead is not None:
                 self._playhead.locate(beat)   # the pass no longer ended *here*
@@ -210,9 +250,20 @@ class Transport:
         ph = self._playhead
         if self._ended or ph is None or not ph.finished:
             return False
+        end = float(ph.position() if self.extent is None else self.extent())
+        clock = self._pass_clock()
+        if end > ph.position() and getattr(clock, "rolling", False):
+            if self._tail is None:
+                # From the moment the last item was *rendered* — which is a
+                # loop pass or two before anyone noticed — not from now.
+                since = getattr(ph, "scanned_at", None)
+                self._tail = (clock.beats() if since is None else since,
+                              ph.position())
+            if self._tail_position() < end:
+                return False       # the last clip is still sounding
         self._ended = True
-        end = ph.position() if self.extent is None else self.extent()
-        self._at = max(float(end), 0.0)
+        self._tail = None
+        self._at = max(end, 0.0)
         self.cursor(self._at)
         return True
 
@@ -272,6 +323,7 @@ class Transport:
 
     def _halt(self):
         """Stop the pass in flight, if any, without touching the cursor."""
+        self._tail = None
         ph = self._playhead
         if ph is not None and ph.playing:
             ph.stop()

@@ -124,6 +124,18 @@ class TempoClock:
             return self.secs2beats(self._frozen_at - self._mono_start)
         return self.secs2beats(self._now() - self._mono_start)
 
+    @property
+    def rolling(self) -> bool:
+        """Whether the beat advances **by itself**: the real-time driver is
+        running (`start`, not yet `stop`ped).
+
+        False before the first `start` and during an offline `render`, whose
+        beat is the queue's position and not the wall's — the distinction a
+        caller needs before treating `beats` as a thing that moves while it
+        waits (a transport sweeping a cursor over the last item's tail).
+        Freezing does not change it: a frozen clock is rolling and held."""
+        return self._running and self._mode == "rt"
+
     # ---- the freeze gate (a server transport's pause, reaching the clock) ----
 
     @property
