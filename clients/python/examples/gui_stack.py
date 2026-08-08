@@ -9,15 +9,18 @@ widget's property with no round-trip through this process. Put together, a menu
 bound to a stack's ``index`` *is* a tab bar: the pages flip inside the host, and
 nothing prints here while you click.
 
-The pages are three views of the same take — a waveform, a spectrogram and the
-curve over it — so switching also shows the other half: a hidden heavy view
-keeps its GPU slot, so coming back to it is instant rather than a re-upload.
-Flip back and forth as fast as you can and watch that it never rebuilds.
+The pages are three views of the same take: its waveform, its spectrogram and
+an envelope drawn over it. The first two are the **heavy** views, and they are
+what makes the switch worth watching — a hidden one keeps its GPU slot, so
+coming back to it is instant rather than a re-upload. Flip back and forth as
+fast as you can and see that neither ever rebuilds.
 
-The bottom half is the same idea aimed at an ordinary prop: a slider bound to
-the plot's ``max`` rescales it live, again with nothing going through Python.
-A binding fires an **apply, never another binding**, so widgets wired to each
-other settle instead of cascading.
+The bottom half is the same binding aimed at an ordinary prop: a slider bound to
+the envelope's ``max`` moves that curve's value axis live, so dragging it
+squashes the curve toward the floor with nothing going through Python. A binding
+fires an **apply, never another binding**, so widgets wired to each other settle
+instead of cascading — the envelope is editable, and its edits still come back
+here as events.
 
 No audio server is involved, so this boots only the GUI host.
 
@@ -39,7 +42,7 @@ import sys
 import time
 
 from clausters.gui import (
-    GuiHost, label, menu, panel, plot, slider, spectrogram, stack, waveform, window,
+    GuiHost, bpf, label, menu, panel, slider, spectrogram, stack, waveform, window,
 )
 
 SR = 48_000
@@ -64,6 +67,10 @@ def sweep(seconds: float = 2.0) -> list:
 
 TAKE = sweep()
 
+#: A shape over the take, for the third page: an envelope is the light element
+#: beside the two heavy ones, and the one the reader can edit.
+ENVELOPE = [(0.0, 0.0), (0.35, 1.0, "exp"), (0.7, 0.4, "sin"), (1.0, 0.0, -4.0)]
+
 # %% [markdown]
 # ## Launch the GUI host
 
@@ -71,7 +78,7 @@ TAKE = sweep()
 gui = GuiHost().boot()
 
 # %% [markdown]
-# ## The window: a picker over a stack, and a slider over a plot
+# ## The window: a picker over a stack, and a slider over the envelope
 # The `menu`'s options are the page names and its index *is* the stack's index,
 # which is exactly why the binding is one line and no event handler.
 #
@@ -86,33 +93,44 @@ win = gui.open(window(
           layout="row", h=32.0),
     stack(waveform(data=TAKE, sample_rate=float(SR), ruler="time"),
           spectrogram(data=TAKE, sample_rate=float(SR), ruler="time"),
-          plot(data=TAKE[::64], name="curve", min=-1.0, max=1.0),
+          bpf(points=ENVELOPE, name="curve", min=0.0, max=1.0, duration=1.0,
+              label="envelope"),
           name="pages", index=0, weight=1.0),
-    panel(label("plot max:", w=80.0),
-          slider(name="scale", min=0.2, max=1.0, value=1.0),
+    panel(label("envelope max:", w=110.0),
+          slider(name="scale", min=1.0, max=4.0, value=1.0),
           layout="row", h=32.0),
     title="stack: tabs with no script in the loop", w=900, h=560, layout="col"))
 
 # %% [markdown]
 # ## The two bindings
 # `bind_widget` names the target widget and the property its value lands on.
-# From here on the picker flips the page and the slider rescales the plot
-# **inside the host** -- turn either and nothing prints in this process.
+# From here on the picker flips the page and the slider moves the envelope's
+# value axis **inside the host** -- drive either and nothing prints in this
+# process. The contrast is the envelope itself: it is *not* bound, so editing it
+# still comes back as an event.
 
 # %%
 win["picker"].bind_widget(win["pages"], "index")
 win["scale"].bind_widget(win["curve"], "max")
 print("bound: picker -> pages.index, scale -> curve.max; "
-      "flip the pages and nothing prints here (no script round-trip)")
+      "flip the pages and drag the slider -- nothing prints here "
+      "(no script round-trip). Editing the envelope still does.")
 
 # %% [markdown]
 # ## Drive it
 # The script can still set the page itself -- a binding is another writer of the
 # same prop, not an owner of it. `page(1)` from a REPL shows the spectrogram.
+#
+# The one thing that *does* print is an edit of the envelope (drag a point,
+# Ctrl+click to add or remove one): an unbound editor sends its whole
+# breakpoint list back here, which is the path the two bound widgets replaced.
 
 # %%
 _closed = False
 win.on_closed(lambda: globals().__setitem__("_closed", True))
+win["curve"].on_event(
+    lambda tag, *flat: print(f"envelope edited: {len(flat) // 4} points")
+    if tag == "points" else None)
 
 
 def page(index: int) -> None:
@@ -121,7 +139,8 @@ def page(index: int) -> None:
 
 
 def run(seconds: float) -> None:
-    """Pumps events for ``seconds`` (the bound widgets send none back)."""
+    """Pumps events for ``seconds`` (only the envelope's edits arrive: the two
+    bound widgets send none back)."""
     start = time.monotonic()
     while time.monotonic() - start < seconds and not _closed:
         gui.pump(timeout=0.1)
