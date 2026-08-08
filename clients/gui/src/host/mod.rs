@@ -769,6 +769,42 @@ impl Host {
         info!("{from}: {GUI_SET} {id}: updated {keys:?}");
     }
 
+    /// Replaces an `axes` pair among `props` with the per-axis keys it names,
+    /// leaving every other pair where it is. A `/gui_set` that names no axes —
+    /// which is nearly all of them — allocates nothing.
+    fn expand_axes(props: Vec<(String, Value)>) -> Vec<(String, Value)> {
+        if !props.iter().any(|(k, _)| k == widget::AXES) {
+            return props;
+        }
+        let mut out = Vec::with_capacity(props.len());
+        for (key, value) in props {
+            if key != widget::AXES {
+                out.push((key, value));
+                continue;
+            }
+            // The pair rides as an object or as its string carrier, the way
+            // `theme` and `points` do — OSC has no structural argument.
+            let carried;
+            let axes = match &value {
+                Value::Object(map) => Some(map),
+                Value::String(json) => {
+                    carried = serde_json::from_str::<Value>(json).ok();
+                    carried.as_ref().and_then(Value::as_object)
+                }
+                _ => None,
+            };
+            match axes {
+                Some(axes) => {
+                    let mut flat = serde_json::Map::new();
+                    widget::flatten_axes(axes, &mut flat);
+                    out.extend(flat);
+                }
+                None => warn!("{GUI_SET}: {} is not a pair of axes", widget::AXES),
+            }
+        }
+        out
+    }
+
     /// The mutation a `/gui_set` performs, without its wire form: apply `props`
     /// to widget `id` in the generic registry and, when it is inside an open
     /// window, in the typed render tree. Returns whether the widget exists.
@@ -783,6 +819,10 @@ impl Host {
         props: Vec<(String, Value)>,
         effects: &mut Vec<HostEffect>,
     ) -> bool {
+        // An `axes` pair sets the chrome of the container's axes; it is the
+        // same relocation `/gui_def` accepts, so it goes through the same
+        // table rather than a second one (see `widget::vocabulary`).
+        let props = Self::expand_axes(props);
         let keys: Vec<&String> = props.iter().map(|(k, _)| k).collect();
         if !self.registry.set(id, props.clone()) {
             return false;
@@ -1689,6 +1729,37 @@ mod tests {
         // And it is a member because the tree says so: the collector that
         // registers the groups walks the widgets, not the rectangles.
         assert!(host.window_def(1).unwrap().find(22).unwrap().is_timeline());
+    }
+
+    /// A `/gui_set` says the axis chrome the same way a `/gui_def` does — the
+    /// relocation moves the props, so it has to move them on both doors or a
+    /// script would have to spell one thing two ways.
+    #[test]
+    fn a_set_of_an_axis_pair_reaches_the_props_the_axis_owns() {
+        const LANE: &str = r#"{"type":"window","children":[
+            {"id":30,"type":"field","children":[
+                {"id":31,"type":"field","offset":0.0,"dur":8.0}]}]}"#;
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, LANE), from());
+        assert!(host.window_def(1).unwrap().find(30).unwrap().is_timeline());
+        host.set_timeline_total(30, 8);
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_SET.into(),
+                args: vec![
+                    OscType::Int(30),
+                    OscType::String("axes".into()),
+                    OscType::String(r#"{"x":{"len":4.0,"start":2.0,"ruler":"beats"}}"#.into()),
+                ],
+            }),
+            from(),
+        );
+        let nav = host
+            .timelines()
+            .nav(timeline::group_key(30, Some(1)))
+            .expect("the lane is on its window's group");
+        assert!((nav.start - 2.0).abs() < 0.001, "the axis window moved");
+        assert!((nav.len - 4.0).abs() < 0.001);
     }
 
     /// An inline `bind` carries a widget target too, which is what lets a saved

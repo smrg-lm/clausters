@@ -141,8 +141,103 @@ The **edit-back payloads**:
 Edited data flows as a **payload, never a new address**: the `/gui_*` family does
 not grow per widget.
 
+## The model: containers, axes and elements
+
+The `type` vocabulary is **being replaced**, and the host already reads the
+replacement. What is changing is not the wire's shape — a node is still
+`{id, type, props, children}` — but what a type *names*: the catalog below
+names twenty-nine widgets over a model of three things, and the model is what a
+script should learn.
+
+| Kind | What it is | Types |
+|---|---|---|
+| **Container** | owns 0, 1 or 2 **axes**, and so a coordinate system its children are placed in | `window`, `layout`, `plane`, `field` |
+| **Element** | draws against the axes of the container holding it; owns no navigation | `signal`, `notes`, `curve`, `score`, `keys`, `nodes`, `meter`, `canvas`, `label` |
+| **Control** | an element with no axis and a value | `slider`, `knob`, `number`, `button`, `toggle`, `text`, `menu` — **unchanged** |
+
+The controls do not move: a `knob` names what it is, and nothing about it says
+the same thing another type also says. What is being replaced is where the
+catalog spells one idea several ways.
+
+### The containers
+
+| Type | Axes | Properties | Replaces |
+|---|---|---|---|
+| `window` | 0 | a root; `title`, `w`, `h`, `flow`, `margin`, `gap`, `cols`, `theme` | `window` |
+| `layout` | 0 | children arranged by **`flow`** — `row`, `col`, `grid`, `free` or **`stack`** (one child at a time, the one at `index`) — plus `margin`, `gap`, `cols`, `theme` | `panel`, `box`, `stack` |
+| `plane` | 2, **locked to one scale** | a pannable, zoomable plane in content units: `axis`, `zoom`, `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`; with `boxes`/`cords`, the patcher | `scroll`, `patch` |
+| `field` | 2, **independent** | the time/value container: an `axes` pair, plus lane chrome (`label`, `height`, `header_w`, `mute`, `solo`, `level`) or a placement (`offset`, `dur`) | `track`, `clip`, `timeruler` |
+
+`stack` stops being a type because it never was one: a container showing one
+child is a layout with a **selection** instead of an arrangement. `field` is
+one container told apart by what is placed on it — a lane holds clips, a clip
+is a field placed on another field's x axis, a bare ruler has nothing drawn on
+it at all.
+
+### The elements
+
+| Type | Replaces | How the old name is said |
+|---|---|---|
+| `signal` | `waveform`, `spectrogram`, `plot`, `scope`, `spectrum`, `phasescope` | **`view`** (`trace` default / `spectrum` / `spectrogram` / `phase`) × the **source** (`bus` = forward-only; `data`/`blob`/`buffer`/`path`/`cache` = addressable) × the **capabilities** `navigable`, `selectable`, `editable` |
+| `notes` | `pianoroll` | unchanged properties |
+| `curve` | `bpf` | unchanged properties |
+| `nodes` | `nodetree` | it is an element, not a widget named after a tree |
+| `keys` | `piano` | a keyboard is an element; `piano` reads as an instrument |
+| `score`, `meter`, `canvas`, `label` | themselves | already one thing each |
+
+The six signal names were six points of one product — `waveform` is a
+navigable trace over addressable samples, `scope` the same trace over a bus —
+so a `signal` says the point and the name falls out of it:
+
+```json
+{"id": 7, "type": "signal", "view": "trace", "path": "take.f32",
+ "navigable": true}
+```
+
+### The axes own the chrome
+
+A ruler, a navigation window, a selection, a playhead and a value range describe
+the **container's axes**, not each view drawn against them, so they ride under
+one `axes` key rather than as flat props of every element. `x`/`y` are already
+the free-placement props, which is why the pair is nested instead of bare:
+
+```json
+{"id": 3, "type": "field",
+ "axes": {"x": {"unit": "beats", "tempo": 2.0, "start": 0.0, "len": 96000.0},
+          "y": {"unit": "db", "min": -1.0, "max": 1.0}}}
+```
+
+Under an axis a property drops the axis marker — `x.start` is the old
+`view_start`, `y.unit` the old `ruler_y`:
+
+| Axis | Properties |
+|---|---|
+| `x` | `unit` (`time`/`samples`/`beats`/`off`; `ruler` is accepted as its old name), `start`, `len`, `tempo`, `beat_at`, `quant`, `sample_rate`, `link`, `sel_start`, `sel_len`, `playhead`, `playhead_at`, `playhead_loop_start`, `playhead_loop_len` |
+| `y` | `unit` (`norm`/`db`/`bits`/`percent`/`hz`/`off`), `start`, `len`, `min`, `max`, `bit_depth` |
+
+An `axes` pair works on `/gui_def` and on `/gui_set` alike (there it rides as
+its JSON string, the `theme` convention). Everything the container does **not**
+own stays where it is: an element's source (`data`, `buffer`, `path`, `cache`,
+`bus`, `rate`, `channels`, `base_bucket`), its presentation's own parameters
+(`fft_size`/`window_size`, `hop`, `db_floor`/`db_ceil`, `freq_scale`,
+`colormap`), and every place prop (`w`, `h`, `weight`, `x`, `y`).
+
+### Both spellings parse, for now
+
+The host accepts the model's vocabulary **and** every name in the catalog
+below, so nothing that runs today stops running. The old names are **leaving**:
+they are read through a translation layer that is deleted when the clients and
+the examples have moved, and a saved bundle written in the old spelling will
+need re-saving then. Write new trees in the model's terms.
+
+One name is deferred: **`box`** currently means a synonym of `panel` and the
+model wants it for a patcher's box, and both cannot be true while both
+spellings parse. Until then a plane's boxes stay its `boxes` property.
+
 ## The widget catalog
 
+The names below are the ones the model above replaces; they are documented
+because they still parse and because every existing script is written in them.
 The authoritative per-widget reference — every property, its default and its
 meaning — is the [Python client's builder
 documentation](https://clausters-python.readthedocs.io/), since that is how a

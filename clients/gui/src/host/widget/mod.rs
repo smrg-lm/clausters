@@ -52,6 +52,9 @@ mod apply;
 mod build;
 mod parse;
 mod size;
+mod vocabulary;
+
+pub(super) use vocabulary::{AXES, flatten as flatten_axes};
 
 use parse::*;
 
@@ -1326,7 +1329,15 @@ impl Widget {
 
     fn build(id: Option<i32>, node: &GuiNode, blobs: &[Vec<u8>]) -> Result<Widget, String> {
         let id = id.or(node.id);
-        let kind = build::build_kind(id, node, blobs)?;
+        // A node written in the model's vocabulary is rewritten into the
+        // catalog's before anything reads it, so there is one construction
+        // path and not two ([`vocabulary`]).
+        let rewritten = vocabulary::rewrite(node);
+        let (name, props) = match &rewritten {
+            Some((name, props)) => (name.as_str(), props),
+            None => (node.kind.as_str(), &node.props),
+        };
+        let kind = build::build_kind(id, name, props, blobs)?;
         // Only containers carry children into the typed tree; a leaf's children
         // (if any) are ignored. A `track` carries its clips.
         let children = match kind {
@@ -1343,21 +1354,20 @@ impl Widget {
             // the wire still describes a clip as a thing with bodies, so the
             // bodies are built from its own props (see `build::clip_bodies`).
             // Anything nested under a `clip` node is ignored, as under a leaf.
-            WidgetKind::Clip { .. } => build::clip_bodies(node, blobs)?,
+            WidgetKind::Clip { .. } => build::clip_bodies(props, blobs)?,
             _ => Vec::new(),
         };
-        let gestures = node.props.get("gestures").and_then(|v| {
+        let gestures = props.get("gestures").and_then(|v| {
             let mut map = GestureMap::of_kind(&kind);
             map.overlay(v).then_some(map)
         });
         Ok(Widget {
             id,
             kind,
-            place: Place::parse(&node.props),
+            place: Place::parse(props),
             gestures,
-            theme_over: node.props.get("theme").and_then(Value::as_object).cloned(),
-            color: node
-                .props
+            theme_over: props.get("theme").and_then(Value::as_object).cloned(),
+            color: props
                 .get("color")
                 .and_then(Value::as_str)
                 .and_then(super::theme::parse_hex),

@@ -745,7 +745,7 @@ The controls are called out because the temptation is to rename everything. A `k
 | `plane` | 2, **locked** to one scale | `scroll`, `patch` | a pannable/zoomable plane in content units. The patcher stops being a container type and becomes a `plane` holding `box` elements — the boxes and wires are what `patch` actually adds, and they are elements |
 | `field` | 2, **independent** (x and y each their own domain) | `track`, `clip`, `timeruler`, and the container implicit in every heavy view | the time/value container. A lane is a `field` with lane chrome, a clip is a `field` nested in one, a free-standing ruler is a `field` with no elements in it |
 
-**`field` is the name most open to a better one.** It has to cover a lane, a clip and the inside of a plot without reading as any of them; `axes`, `frame`, `region` and `chart` were considered and each leans toward one use. Decide before the code moves, not during.
+**`field` is settled** *(2026-08-08)*, having been the name most open to a better one: it has to cover a lane, a clip and the inside of a plot without reading as any of them, and every alternative leaned toward one use — `region` *is* the clip in DAW vocabulary (Pro Tools, Logic), `chart` reads as the plot, `frame` is already taken twice in the crate (the renderer, an STFT column), and `axes` is the prop key the container carries. `field` is the one that names none of the three, which is what a container covering all three needs.
 
 #### The element table
 
@@ -781,7 +781,13 @@ The migration moves props to whoever owns the thing they describe. This is the h
 
 E9 is written as one milestone because the wire, both builders, the three books, every example and the persisted bundles are ends of one cable. It still has to survive being interrupted, so it lands **expand → migrate → contract**, each stage green on its own:
 
-1. **Expand.** The host learns the new vocabulary and keeps accepting all 29 current names as an internal alias into the same constructions. Nothing else moves; every example still runs. `docs/gui-protocol.md` documents the new reference and marks the old names as leaving.
+1. ✅ **Expand** *(done 2026-08-08)*. The host learns the new vocabulary and keeps accepting all 29 current names as an internal alias into the same constructions. Nothing else moves; every example still runs. `docs/gui-protocol.md` documents the new reference and marks the old names as leaving.
+
+   It landed as **one door rather than a second parse** (`host/widget/vocabulary.rs`): a node is rewritten into the catalog's type and flat props *before* `build` sees it, so there is one construction path, the alias layer is the only thing that knows two vocabularies exist, and stage 3 is a deletion. The rewrite is skipped entirely for a node the catalog already names, which is every node any current script writes.
+
+   Three things the writing settled that the table had left implicit. **A `field` is told apart by what is on it** — a placement (`offset`/`dur`) makes it a clip, children make it a lane, neither makes it the bare ruler — which is the model's claim ("one container, three uses") turned into the only rule that could implement it. **A `plane` is a patcher when it has boxes**, for the same reason: what `patch` adds to a plane is its boxes and cords, so their presence is the distinction rather than a second type name. And the **capabilities became props of the signal element** (`navigable`/`selectable`/`editable` over the preset's), which is the part of the six-into-one collapse that actually buys something new: a trace that does not navigate used to require choosing a different widget.
+
+   The one thing expand cannot do is `box`: the catalog spends it on a synonym of `panel` while the model wants it for a patcher's box, and both cannot hold while both spellings parse. It is deferred to stage 3, and a plane's boxes stay the `boxes` prop until then.
 2. **Migrate.** Both builders emit the new names; with them the examples of the three directories, the Python `Editor`, the web composer, and the bundle path (`host::bundle`, `/gui_load`) — reading either spelling, writing the new one. At the end of this stage everything speaks the model and the old spelling still parses.
 3. **Contract.** The alias table is deleted, `test_gui_props.py` is extended to the new surface, the `docs/decisions.md` entry for the axis/container model lands, and the versioning consequence is taken (the `release-versioning` skill; the persisted bundle format is what makes it breaking).
 
