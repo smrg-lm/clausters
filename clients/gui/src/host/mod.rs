@@ -1645,6 +1645,52 @@ mod tests {
         );
     }
 
+    /// A hidden page is still on the axis: a `stack` skips a page's *layout*,
+    /// not its membership, so a scroll bound to one view moves the one behind
+    /// it too and a switch shows it already there. Same property as the GPU
+    /// slot it keeps — both are read from the tree, not from the placements.
+    #[test]
+    fn a_hidden_stack_page_still_belongs_to_its_navigation_group() {
+        const PAGES: &str = r#"{"type":"window","children":[
+            {"id":20,"type":"stack","index":0,"children":[
+                {"id":21,"type":"waveform","data":[0.0,1.0,0.0,-1.0,0.0,1.0,0.0,-1.0],"link":1},
+                {"id":22,"type":"spectrogram","data":[0.0,1.0,0.0,-1.0,0.0,1.0,0.0,-1.0],"link":1}]}]}"#;
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, PAGES), from());
+        let nav = |host: &Host, id: i32| {
+            host.timelines()
+                .nav(timeline::group_key(id, Some(1)))
+                .expect("a linked view is on a group")
+        };
+        // The extent is the front's to report (it is the loaded data's), so a
+        // headless test says it: eight samples on the axis.
+        host.set_timeline_total(21, 8);
+        host.set_timeline_total(22, 8);
+        // One group, so the hidden page reads the same window as the shown one.
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_SET.into(),
+                args: vec![
+                    OscType::Int(21),
+                    OscType::String("view_len".into()),
+                    OscType::Float(4.0),
+                    OscType::String("view_start".into()),
+                    OscType::Float(2.0),
+                ],
+            }),
+            from(),
+        );
+        assert!((nav(&host, 21).start - 2.0).abs() < 0.001);
+        assert_eq!(
+            nav(&host, 22),
+            nav(&host, 21),
+            "the page nobody is looking at moved with the axis"
+        );
+        // And it is a member because the tree says so: the collector that
+        // registers the groups walks the widgets, not the rectangles.
+        assert!(host.window_def(1).unwrap().find(22).unwrap().is_timeline());
+    }
+
     /// An inline `bind` carries a widget target too, which is what lets a saved
     /// GuiDef boot with its pages already wired.
     #[test]
