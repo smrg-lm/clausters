@@ -5,7 +5,7 @@ use clausters_core::osc::{OscMessage, OscPacket};
 
 use super::super::metrics::Metrics;
 use super::super::widget::ScrollView;
-use super::super::{ClientId, GUI_DEF, GUI_SET};
+use super::super::{ClientId, GUI_DEF, GUI_SET, Host, patch, scroll};
 use super::*;
 
 fn from() -> ClientId {
