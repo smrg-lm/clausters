@@ -19,7 +19,7 @@ use clausters_core::patch::Rate;
 
 use super::font;
 use super::layout::Rect;
-use super::paint::Mesh;
+use super::paint::{Draw, Mesh};
 use super::theme::{Theme, with_alpha};
 
 const PAD: f32 = 8.0;
@@ -795,13 +795,13 @@ fn content_rect(area: Rect, patch: &PatchDraw, scale: f32) -> Rect {
 /// Draws the patch: the boxes with their inlet/outlet pins, the directed cords
 /// (typed by weight), and the transient canvas chrome in `state`.
 pub fn draw(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     area: Rect,
     patch: &PatchDraw,
     label: Option<&str>,
     state: &CanvasState<'_>,
-    theme: &Theme,
 ) {
+    let (mesh, _m, theme) = d.parts();
     let CanvasState {
         live,
         selected,
@@ -965,6 +965,7 @@ pub fn cord_between(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::metrics::Metrics;
 
     /// tone (out) → trem (in, out) → dac (in, out), no cords yet placed.
     fn boxes() -> Vec<Obj> {
@@ -1511,9 +1512,21 @@ mod tests {
             scale: 1.0,
         };
         let mut ms = Mesh::new();
-        draw(&mut ms, area(), &solid, None, &state(), &Theme::default());
+        draw(
+            &mut Draw::new(&mut ms, &Metrics::default(), &Theme::default()),
+            area(),
+            &solid,
+            None,
+            &state(),
+        );
         let mut md = Mesh::new();
-        draw(&mut md, area(), &dashed, None, &state(), &Theme::default());
+        draw(
+            &mut Draw::new(&mut md, &Metrics::default(), &Theme::default()),
+            area(),
+            &dashed,
+            None,
+            &state(),
+        );
         assert!(
             md.vertex_count() > ms.vertex_count(),
             "the dashed init cord adds segments over the solid audio one"
@@ -1524,7 +1537,7 @@ mod tests {
     fn the_patch_draws_its_boxes_and_cords() {
         let mut m = Mesh::new();
         draw(
-            &mut m,
+            &mut Draw::new(&mut m, &Metrics::default(), &Theme::default()),
             area(),
             &chain(),
             Some("chain"),
@@ -1534,7 +1547,6 @@ mod tests {
                 marquee: None,
                 scale: 1.0,
             },
-            &Theme::default(),
         );
         assert!(!m.is_empty());
 
@@ -1542,7 +1554,7 @@ mod tests {
         // marquee add their chrome.
         let mut more = Mesh::new();
         draw(
-            &mut more,
+            &mut Draw::new(&mut more, &Metrics::default(), &Theme::default()),
             area(),
             &chain(),
             Some("chain"),
@@ -1552,7 +1564,6 @@ mod tests {
                 marquee: Some(Rect::new(50.0, 50.0, 120.0, 90.0)),
                 scale: 1.0,
             },
-            &Theme::default(),
         );
         assert!(more.vertex_count() > m.vertex_count());
     }

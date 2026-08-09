@@ -12,9 +12,8 @@
 use super::font;
 use super::layout::Rect;
 use super::metrics::Metrics;
-use super::paint::{Color, Mesh};
+use super::paint::{Color, Draw, Mesh};
 use super::textedit;
-use super::theme::Theme;
 use super::widget::{Align, Range, WidgetKind};
 
 /// The label strip height when a control carries a label, else 0 — **and 0 when
@@ -102,55 +101,26 @@ pub fn drag_fraction_delta(dy: f64, body_h: f32) -> f32 {
     (-(dy as f32)) / span
 }
 
-/// Draws a control into `mesh`. `active` highlights a pressed/dragged control;
-/// `scale` is the placement's accumulated workspace zoom ([`Placed::scale`]),
-/// which the text sizes pick up so a zoomed box keeps its proportions.
+/// Draws a control. `active` highlights a pressed/dragged control; `scale` is
+/// the placement's accumulated workspace zoom ([`Placed::scale`]), which the
+/// text sizes pick up so a zoomed box keeps its proportions.
 ///
 /// [`Placed::scale`]: super::layout::Placed::scale
-#[allow(clippy::too_many_arguments)] // one control's draw: its box, state, look
-pub fn draw(
-    mesh: &mut Mesh,
-    kind: &WidgetKind,
-    rect: Rect,
-    active: bool,
-    focused: bool,
-    scale: f32,
-    m: &Metrics,
-    theme: &Theme,
-) {
+pub fn draw(d: &mut Draw, kind: &WidgetKind, rect: Rect, active: bool, focused: bool, scale: f32) {
     match kind {
-        WidgetKind::Slider { range, vertical } => slider(
-            mesh,
-            range,
-            rect,
-            *vertical,
-            range.text_size * scale,
-            m,
-            theme,
-        ),
-        WidgetKind::Knob(r) => knob(mesh, r, rect, r.text_size * scale, m, theme),
-        WidgetKind::Number(r) => number(mesh, r, rect, r.text_size * scale, m, theme),
-        WidgetKind::Button { label, text_size } => button(
-            mesh,
-            label.as_deref(),
-            rect,
-            active,
-            *text_size * scale,
-            theme,
-        ),
+        WidgetKind::Slider { range, vertical } => {
+            slider(d, range, rect, *vertical, range.text_size * scale)
+        }
+        WidgetKind::Knob(r) => knob(d, r, rect, r.text_size * scale),
+        WidgetKind::Number(r) => number(d, r, rect, r.text_size * scale),
+        WidgetKind::Button { label, text_size } => {
+            button(d, label.as_deref(), rect, active, *text_size * scale)
+        }
         WidgetKind::Toggle {
             value,
             label,
             text_size,
-        } => toggle(
-            mesh,
-            *value,
-            label.as_deref(),
-            rect,
-            *text_size * scale,
-            m,
-            theme,
-        ),
+        } => toggle(d, *value, label.as_deref(), rect, *text_size * scale),
         WidgetKind::Text {
             value,
             label,
@@ -158,15 +128,13 @@ pub fn draw(
             multiline,
             caret,
         } => field(
-            mesh,
+            d,
             value,
             label.as_deref(),
             rect,
             *text_size * scale,
             *multiline,
             focused.then_some(*caret),
-            m,
-            theme,
         ),
         WidgetKind::Menu {
             index,
@@ -174,13 +142,11 @@ pub fn draw(
             label,
             text_size,
         } => menu(
-            mesh,
+            d,
             options.get(*index).map(String::as_str).unwrap_or(""),
             label.as_deref(),
             rect,
             *text_size * scale,
-            m,
-            theme,
         ),
         _ => {}
     }
@@ -188,14 +154,8 @@ pub fn draw(
 
 /// Draws the label strip above a control body, if it has a label (clipped to
 /// the cell with an ellipsis).
-fn label_strip(
-    mesh: &mut Mesh,
-    label: Option<&str>,
-    rect: Rect,
-    size: f32,
-    m: &Metrics,
-    theme: &Theme,
-) {
+fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect, size: f32) {
+    let (mesh, m, theme) = d.parts();
     if label_height(rect.h, label.is_some(), size, m) <= 0.0 {
         return; // no room for both: the body keeps the cell
     }
@@ -212,19 +172,12 @@ fn label_strip(
     }
 }
 
-fn slider(
-    mesh: &mut Mesh,
-    r: &Range,
-    rect: Rect,
-    vertical: bool,
-    size: f32,
-    m: &Metrics,
-    theme: &Theme,
-) {
-    label_strip(mesh, r.label.as_deref(), rect, size, m, theme);
+fn slider(d: &mut Draw, r: &Range, rect: Rect, vertical: bool, size: f32) {
+    label_strip(d, r.label.as_deref(), rect, size);
     // The groove lives in the track area, the number in the strip under it (the
     // knob's posture): the read-out is beside what it reads, never over it.
-    let body = slider_track(rect, r.label.is_some(), size, m);
+    let body = slider_track(rect, r.label.is_some(), size, d.m);
+    let (mesh, m, theme) = d.parts();
     // The track's groove, the value riding it and the handle's grip across the
     // axis: the handle is a short grip, **not** the full body span.
     let (track_thick, handle_thick) = (m.track_thick, m.handle_thick);
@@ -278,19 +231,14 @@ fn slider(
             theme.accent,
         );
     }
-    value_text(
-        mesh,
-        &fmt(r.value),
-        Rect::new(body.x, body.y + body.h, body.w, readout_h(size, m)),
-        size,
-        m,
-        theme,
-    );
+    let readout = Rect::new(body.x, body.y + body.h, body.w, readout_h(size, m));
+    value_text(d, &fmt(r.value), readout, size);
 }
 
-fn knob(mesh: &mut Mesh, r: &Range, rect: Rect, size: f32, m: &Metrics, theme: &Theme) {
-    label_strip(mesh, r.label.as_deref(), rect, size, m, theme);
-    let body = body_rect_at(rect, r.label.is_some(), size, m);
+fn knob(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
+    label_strip(d, r.label.as_deref(), rect, size);
+    let body = body_rect_at(rect, r.label.is_some(), size, d.m);
+    let (mesh, m, theme) = d.parts();
     // Reserve a strip at the bottom of the body for the value read-out and size
     // the disc in the area above it, so the number stays inside the body — it
     // never overlaps the disc nor spills past the cell into the row below.
@@ -305,19 +253,14 @@ fn knob(mesh: &mut Mesh, r: &Range, rect: Rect, size: f32, m: &Metrics, theme: &
     let angle = (135.0 + 270.0 * r.fraction()).to_radians();
     let tip = [cx + radius * angle.cos(), cy + radius * angle.sin()];
     mesh.line([cx, cy], tip, 3.0, theme.accent);
-    value_text(
-        mesh,
-        &fmt(r.value),
-        Rect::new(body.x, body.y + body.h - text_h, body.w, text_h),
-        size,
-        m,
-        theme,
-    );
+    let readout = Rect::new(body.x, body.y + body.h - text_h, body.w, text_h);
+    value_text(d, &fmt(r.value), readout, size);
 }
 
-fn number(mesh: &mut Mesh, r: &Range, rect: Rect, size: f32, m: &Metrics, theme: &Theme) {
-    label_strip(mesh, r.label.as_deref(), rect, size, m, theme);
-    let body = body_rect_at(rect, r.label.is_some(), size, m);
+fn number(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
+    label_strip(d, r.label.as_deref(), rect, size);
+    let body = body_rect_at(rect, r.label.is_some(), size, d.m);
+    let (mesh, m, theme) = d.parts();
     mesh.rect(body, theme.field);
     // A vertical fill rising from the bottom shows the value in range, so
     // dragging up raises the green level; a border frames the field.
@@ -334,17 +277,8 @@ fn number(mesh: &mut Mesh, r: &Range, rect: Rect, size: f32, m: &Metrics, theme:
 /// line placed by `align`. With `wrap` the text word-wraps on the font's
 /// fixed advance and lines past the rect's bottom are dropped; without it the
 /// single line clips with an ellipsis instead of bleeding into a neighbor.
-#[allow(clippy::too_many_arguments)] // the text, its box, its look
-pub fn draw_label(
-    mesh: &mut Mesh,
-    text: &str,
-    rect: Rect,
-    size: f32,
-    wrap: bool,
-    align: Align,
-    m: &Metrics,
-    theme: &Theme,
-) {
+pub fn draw_label(d: &mut Draw, text: &str, rect: Rect, size: f32, wrap: bool, align: Align) {
+    let (mesh, m, theme) = d.parts();
     let left = rect.x + m.pad;
     let avail = (rect.w - 2.0 * m.pad).max(0.0);
     if wrap {
@@ -387,14 +321,8 @@ fn border(mesh: &mut Mesh, rect: Rect, w: f32, color: Color) {
     mesh.rect(Rect::new(rect.x + rect.w - w, rect.y, w, rect.h), color);
 }
 
-fn button(
-    mesh: &mut Mesh,
-    label: Option<&str>,
-    rect: Rect,
-    active: bool,
-    size: f32,
-    theme: &Theme,
-) {
+fn button(d: &mut Draw, label: Option<&str>, rect: Rect, active: bool, size: f32) {
+    let (mesh, _m, theme) = d.parts();
     // A button *is* its box, so it fills its whole cell rather than insetting a
     // `body_rect` the way a slider/field does (whose track must not touch the
     // cell edge). The layout `gap` already separates it from its neighbours, and
@@ -412,15 +340,8 @@ fn button(
     font::text_centered(mesh, label.unwrap_or("BUTTON"), rect, size, theme.text);
 }
 
-fn toggle(
-    mesh: &mut Mesh,
-    on: bool,
-    label: Option<&str>,
-    rect: Rect,
-    size: f32,
-    m: &Metrics,
-    theme: &Theme,
-) {
+fn toggle(d: &mut Draw, on: bool, label: Option<&str>, rect: Rect, size: f32) {
+    let (mesh, m, theme) = d.parts();
     // Like `button`, the toggle owns its whole cell (its box and label fill it);
     // the layout gap does the separating.
     let body = rect;
@@ -495,17 +416,15 @@ pub fn menu_row_at(popup: Rect, options: usize, px: f64, py: f64) -> Option<usiz
 /// Draws an open `menu`'s list: every option, the chosen one marked and the one
 /// under the cursor highlighted. It is drawn into the **overlay**, over the
 /// whole window, because a list that opens has to cover whatever it opens over.
-#[allow(clippy::too_many_arguments)] // one popup: its box, its rows, its look
 pub fn draw_menu_popup(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     popup: Rect,
     options: &[String],
     index: usize,
     hover: Option<usize>,
     size: f32,
-    m: &Metrics,
-    theme: &Theme,
 ) {
+    let (mesh, m, theme) = d.parts();
     mesh.rect(popup, theme.field);
     border(mesh, popup, m.divider_w, theme.accent);
     let row_h = popup.h / options.len().max(1) as f32;
@@ -536,21 +455,14 @@ pub fn draw_menu_popup(
 /// label, and then the click that changes the value comes as a surprise. The
 /// gutter is reserved out of the text's width, so a long option ellipsizes
 /// before it reaches the marker.
-fn menu(
-    mesh: &mut Mesh,
-    current: &str,
-    label: Option<&str>,
-    rect: Rect,
-    size: f32,
-    m: &Metrics,
-    theme: &Theme,
-) {
-    let gutter = font::height(size) + m.pad;
+fn menu(d: &mut Draw, current: &str, label: Option<&str>, rect: Rect, size: f32) {
+    let gutter = font::height(size) + d.m.pad;
     let text_cell = Rect::new(rect.x, rect.y, (rect.w - gutter).max(0.0), rect.h);
-    field(mesh, current, label, text_cell, size, false, None, m, theme);
+    field(d, current, label, text_cell, size, false, None);
     // The marker rides the body's own row, not the cell's: a labelled menu has
     // a label strip over it, and the two must not overlap.
-    let body = body_rect_at(rect, label.is_some(), size, m);
+    let body = body_rect_at(rect, label.is_some(), size, d.m);
+    let (mesh, m, theme) = d.parts();
     mesh.rect(
         Rect::new(text_cell.x + text_cell.w - m.pad, body.y, gutter, body.h),
         theme.field,
@@ -566,21 +478,19 @@ fn menu(
     );
 }
 
-#[allow(clippy::too_many_arguments)] // a widget's draw: its content plus its box
 fn field(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     value: &str,
     label: Option<&str>,
     rect: Rect,
     size: f32,
     multiline: bool,
     caret: Option<textedit::Caret>,
-    m: &Metrics,
-    theme: &Theme,
 ) {
-    label_strip(mesh, label, rect, size, m, theme);
+    label_strip(d, label, rect, size);
+    let m = d.m;
     let body = body_rect_at(rect, label.is_some(), size, m);
-    mesh.rect(body, theme.field);
+    d.mesh.rect(body, d.theme.field);
 
     let text_x = body.x + m.pad;
     let text_w = (body.w - 2.0 * m.pad).max(0.0);
@@ -595,13 +505,11 @@ fn field(
         let ty = (body.y + (body.h - font::height(size)) * 0.5).max(body.y);
         let first = value.split('\n').next().unwrap_or("");
         if caret.is_none() {
-            font::text_ellipsis(mesh, first, text_x, ty, text_w, size, theme.text);
+            font::text_ellipsis(d.mesh, first, text_x, ty, text_w, size, d.theme.text);
             return;
         }
         let hstart = textedit::h_scroll(textedit::line_col(value, lay.pos).1, cols);
-        draw_line(
-            mesh, value, 0, text_x, ty, hstart, cols, cell, size, caret, theme,
-        );
+        draw_line(d, value, 0, text_x, ty, hstart, cols, cell, size, caret);
         return;
     }
 
@@ -615,9 +523,7 @@ fn field(
     for (i, line) in value.split('\n').enumerate() {
         if i >= row_start && i < row_start + rows {
             let ty = body.y + m.pad + (i - row_start) as f32 * row_h;
-            draw_line(
-                mesh, value, byte, text_x, ty, hstart, cols, cell, size, caret, theme,
-            );
+            draw_line(d, value, byte, text_x, ty, hstart, cols, cell, size, caret);
         }
         byte += line.len() + 1; // + the '\n'
     }
@@ -627,9 +533,9 @@ fn field(
 /// clipped to `cols`), and — only when `caret` is `Some` (focused) — the
 /// selection highlight over its selected span and the caret when it falls on
 /// this line. `line_byte` is the byte offset of the line's start in `value`.
-#[allow(clippy::too_many_arguments)] // the line, its window, the caret, the look
+#[allow(clippy::too_many_arguments)] // the line and its window, past the context
 fn draw_line(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     value: &str,
     line_byte: usize,
     x: f32,
@@ -639,8 +545,8 @@ fn draw_line(
     cell: f32,
     size: f32,
     caret: Option<textedit::Caret>,
-    theme: &Theme,
 ) {
+    let (mesh, _m, theme) = d.parts();
     let end_byte = value[line_byte..]
         .find('\n')
         .map_or(value.len(), |i| line_byte + i);
@@ -736,7 +642,8 @@ pub fn caret_at(
 
 /// A value read-out at the bottom-right of a body (clipped with an ellipsis
 /// when the body is narrower than the number).
-fn value_text(mesh: &mut Mesh, s: &str, body: Rect, size: f32, m: &Metrics, theme: &Theme) {
+fn value_text(d: &mut Draw, s: &str, body: Rect, size: f32) {
+    let (mesh, m, theme) = d.parts();
     let avail = (body.w - m.pad).max(0.0);
     let w = font::width(s, size).min(avail);
     let x = (body.x + body.w - w - m.pad).max(body.x);
@@ -756,6 +663,7 @@ fn fmt(v: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::theme::Theme;
 
     #[test]
     fn slider_fraction_spans_the_body() {
@@ -811,14 +719,12 @@ mod tests {
         for align in [Align::Start, Align::Center, Align::End] {
             let mut mesh = Mesh::new();
             draw_label(
-                &mut mesh,
+                &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
                 "HI",
                 rect,
                 2.0,
                 false,
                 align,
-                &Metrics::default(),
-                &Theme::default(),
             );
             xs.push(mesh.positions().map(|(x, _)| x).fold(f32::MAX, f32::min));
         }
@@ -830,14 +736,12 @@ mod tests {
         let rect = Rect::new(10.0, 10.0, 90.0, 60.0);
         let mut m = Mesh::new();
         draw_label(
-            &mut m,
+            &mut Draw::new(&mut m, &Metrics::default(), &Theme::default()),
             "a rather long label that must wrap over several lines",
             rect,
             2.0,
             true,
             Align::Start,
-            &Metrics::default(),
-            &Theme::default(),
         );
         assert!(!m.is_empty());
         let max_x = m.positions().map(|(x, _)| x).fold(f32::MIN, f32::max);
@@ -851,14 +755,12 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 60.0, 30.0);
         let mut m = Mesh::new();
         draw_label(
-            &mut m,
+            &mut Draw::new(&mut m, &Metrics::default(), &Theme::default()),
             "far too long to fit here",
             rect,
             2.0,
             false,
             Align::Start,
-            &Metrics::default(),
-            &Theme::default(),
         );
         let max_x = m.positions().map(|(x, _)| x).fold(f32::MIN, f32::max);
         assert!(max_x <= rect.x + rect.w, "single line bleeds past the rect");
@@ -880,12 +782,10 @@ mod tests {
         };
         let mut mesh = Mesh::new();
         knob(
-            &mut mesh,
+            &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
             &r,
             cell,
             r.text_size,
-            &Metrics::default(),
-            &Theme::default(),
         );
         let bottom = cell.y + cell.h;
         let max_y = mesh.positions().map(|(_, y)| y).fold(f32::MIN, f32::max);

@@ -25,7 +25,7 @@ use super::controls::body_rect;
 use super::font;
 use super::layout::Rect;
 use super::metrics::Metrics;
-use super::paint::Mesh;
+use super::paint::{Draw, Mesh};
 use super::theme::Theme;
 
 /// One node of the mirrored tree: its id and whether it is a group (with its
@@ -190,17 +190,15 @@ fn push_lines(entry: &NodeEntry, depth: usize, controls: bool, out: &mut Vec<Lin
 /// indented lines (clipped to the body height). `tree` is `None` before the
 /// first reply; `server` reports whether a client leg is attached at all, so an
 /// unattached host shows why it is empty instead of looking broken.
-#[allow(clippy::too_many_arguments)] // one view's draw: its model, box, look
 pub fn draw(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     rect: Rect,
     tree: Option<&NodeTree>,
     controls: bool,
     label: Option<&str>,
     server: bool,
-    m: &Metrics,
-    theme: &Theme,
 ) {
+    let (mesh, m, theme) = d.parts();
     if let Some(text) = label {
         font::text(
             mesh,
@@ -427,14 +425,12 @@ mod tests {
         let tree = NodeTree::parse(&sample_reply()).unwrap();
         let mut m = Mesh::new();
         draw(
-            &mut m,
+            &mut Draw::new(&mut m, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 200.0, 200.0),
             Some(&tree),
             true,
             Some("tree"),
             true,
-            &Metrics::default(),
-            &Theme::default(),
         );
         assert!(!m.is_empty(), "a populated node tree draws geometry");
     }

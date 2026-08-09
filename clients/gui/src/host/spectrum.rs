@@ -26,10 +26,8 @@ use super::controls::body_rect;
 use super::font;
 use super::layout::Rect;
 use super::meters::fraction;
-use super::metrics::Metrics;
-use super::paint::{Color, Mesh};
+use super::paint::{Color, Draw, Mesh};
 use super::ruler;
-use super::theme::Theme;
 
 /// The dB reference the magnitudes are floored at internally: the core's, so
 /// the analysis agrees with the spectrogram before the display dB window is
@@ -145,13 +143,12 @@ pub(crate) struct SpectrumParams<'a> {
 /// (shared with the spectrogram's rulers), `ruler_y` the dB strip.
 /// `sample_rate` places the frequency axis (48 kHz assumed when unknown).
 pub(crate) fn draw_spectrum(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     rect: Rect,
     states: &[SpectrumState],
     p: &SpectrumParams,
-    m: &Metrics,
-    theme: &Theme,
 ) {
+    let (mesh, m, theme) = d.parts();
     if let Some(text) = p.label {
         font::text(
             mesh,
@@ -182,7 +179,7 @@ pub(crate) fn draw_spectrum(
     // lock/free corner): log/mel/bark are not tellable apart from the tick
     // spacing at a glance. The size pads to 4 digits so the text never moves.
     let tag = format!("{:>4} {}", p.fft_size, ruler::scale_tag(p.freq_scale));
-    super::meters::value_text(mesh, &tag, body, m, theme);
+    super::meters::value_text(&mut Draw::new(mesh, m, theme), &tag, body);
 
     let sr = if p.sample_rate > 0.0 {
         p.sample_rate as f32
@@ -194,11 +191,17 @@ pub(crate) fn draw_spectrum(
     let f_lo_norm = (f_lo as f64 / nyquist as f64).clamp(1e-5, 0.5);
     if let Some(strip) = x_strip {
         let ticks = ruler::hz_ticks_h(nyquist as f64, p.freq_scale, f_lo_norm, strip.w as f64, m);
-        ruler::draw_ticks_h(mesh, strip, &ticks, m, theme);
+        ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks);
     }
     if let Some(strip_x) = strip_x {
         let ticks = ruler::value_ticks(p.db_floor as f64, p.db_ceil as f64, body.h as f64, m);
-        ruler::draw_ticks_v(mesh, body.x, strip_x, body, &ticks, m, theme);
+        ruler::draw_ticks_v(
+            &mut Draw::new(mesh, m, theme),
+            body.x,
+            strip_x,
+            body,
+            &ticks,
+        );
     }
     let columns = body.w.max(1.0) as usize;
     let db_ceil = p.db_ceil.max(p.db_floor + 1.0);

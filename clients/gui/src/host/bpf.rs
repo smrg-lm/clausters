@@ -33,8 +33,7 @@ use super::controls::body_rect;
 use super::font;
 use super::layout::Rect;
 use super::metrics::Metrics;
-use super::paint::Mesh;
-use super::theme::Theme;
+use super::paint::Draw;
 
 /// The custom-curvature clamp — past this the segment is visually a step.
 const CURVE_LIMIT: f32 = 32.0;
@@ -372,9 +371,9 @@ pub fn discontinuities(points: &[BpfPoint], duration: f64) -> Vec<(f64, f32, f32
 /// exact vertical connector at every discontinuity (the per-column polyline
 /// alone would render a jump as a one-pixel slant — or hide it entirely when
 /// two points share a time), and a disc per breakpoint.
-#[allow(clippy::too_many_arguments)] // one display mapping, all scalars
+#[allow(clippy::too_many_arguments)] // the curve, its box and its two axes, past the context
 pub fn draw(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     rect: Rect,
     points: &[BpfPoint],
     lo: f32,
@@ -382,9 +381,8 @@ pub fn draw(
     duration: f64,
     exp: bool,
     label: Option<&str>,
-    m: &Metrics,
-    theme: &Theme,
 ) {
+    let (mesh, m, theme) = d.parts();
     if let Some(text) = label {
         font::text(
             mesh,
@@ -437,6 +435,8 @@ pub fn body(rect: Rect, label: bool, m: &Metrics) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::paint::Mesh;
+    use crate::host::theme::Theme;
 
     fn pts() -> Vec<BpfPoint> {
         parse_points(
@@ -646,7 +646,7 @@ mod tests {
     fn draw_emits_geometry_per_column_and_per_point() {
         let mut mesh = Mesh::new();
         draw(
-            &mut mesh,
+            &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 120.0, 80.0),
             &pts(),
             0.0,
@@ -654,8 +654,6 @@ mod tests {
             0.0,
             false,
             Some("env"),
-            &Metrics::default(),
-            &Theme::default(),
         );
         assert!(!mesh.is_empty());
     }

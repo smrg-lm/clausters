@@ -1,5 +1,5 @@
 //! The piano-roll graphic primitives: a note grid, a piano keyboard gutter, a
-//! velocity lane and an OSC-event lane, all pure over a [`Mesh`] (the
+//! velocity lane and an OSC-event lane, all pure over a [`Draw`] (the
 //! flat-geometry [`super::paint`] painter) so they are unit-testable without a
 //! window — the static-view posture of `track`/`bpf`.
 //!
@@ -25,8 +25,7 @@ use clausters_core::scale;
 use super::font;
 use super::layout::Rect;
 use super::metrics::Metrics;
-use super::paint::Mesh;
-use super::theme::Theme;
+use super::paint::Draw;
 use crate::viewport::View;
 
 /// One note: its `start`/`dur` in timeline sample units (relative to the owning
@@ -207,14 +206,8 @@ pub fn y_to_pitch(y: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
 
 /// The grid background: black-key rows shaded, semitone lines, and a brighter
 /// line at each octave (every C). `lo`/`hi` are the visible MIDI pitch window.
-pub fn draw_grid_background(
-    mesh: &mut Mesh,
-    grid: Rect,
-    lo: f32,
-    hi: f32,
-    m: &Metrics,
-    theme: &Theme,
-) {
+pub fn draw_grid_background(d: &mut Draw, grid: Rect, lo: f32, hi: f32) {
+    let (mesh, m, theme) = d.parts();
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
     }
@@ -260,7 +253,7 @@ pub fn draw_grid_background(
 /// multi-note selection; the clip body passes none).
 #[allow(clippy::too_many_arguments)] // one time-and-pitch mapping, all scalars
 pub fn draw_notes(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     field: Rect,
     grid: Rect,
     nav: &View,
@@ -270,9 +263,8 @@ pub fn draw_notes(
     hi: f32,
     color_velocity: bool,
     selected: &[usize],
-    m: &Metrics,
-    theme: &Theme,
 ) {
+    let (mesh, m, theme) = d.parts();
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
     }
@@ -328,14 +320,8 @@ pub fn draw_notes(
 /// for a roll drawn **without** a keyboard gutter (the multitrack `clip`'s
 /// body; the dedicated widget names its Cs on the keyboard instead). Draws
 /// only when a semitone row is tall enough to read a label.
-pub fn draw_pitch_labels(
-    mesh: &mut Mesh,
-    grid: Rect,
-    lo: f32,
-    hi: f32,
-    m: &Metrics,
-    theme: &Theme,
-) {
+pub fn draw_pitch_labels(d: &mut Draw, grid: Rect, lo: f32, hi: f32) {
+    let (mesh, m, theme) = d.parts();
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
     }
@@ -363,7 +349,8 @@ pub fn draw_pitch_labels(
 
 /// Draw the keyboard gutter: a white/black key per semitone row, with a note
 /// name on each C. `lo`/`hi` are the same pitch window as the grid.
-pub fn draw_keyboard(mesh: &mut Mesh, gutter: Rect, lo: f32, hi: f32, m: &Metrics, theme: &Theme) {
+pub fn draw_keyboard(d: &mut Draw, gutter: Rect, lo: f32, hi: f32) {
+    let (mesh, m, theme) = d.parts();
     if gutter.w <= 0.0 || gutter.h <= 0.0 {
         return;
     }
@@ -396,15 +383,8 @@ pub fn draw_keyboard(mesh: &mut Mesh, gutter: Rect, lo: f32, hi: f32, m: &Metric
 
 /// Draw the velocity lane: one bar per note at the note's start, its height the
 /// velocity fraction. Shares the grid's time axis so a bar sits under its note.
-pub fn draw_velocity_lane(
-    mesh: &mut Mesh,
-    lane: Rect,
-    nav: &View,
-    offset: f64,
-    notes: &[Note],
-    m: &Metrics,
-    theme: &Theme,
-) {
+pub fn draw_velocity_lane(d: &mut Draw, lane: Rect, nav: &View, offset: f64, notes: &[Note]) {
+    let (mesh, m, theme) = d.parts();
     if lane.w <= 0.0 || lane.h <= 0.0 {
         return;
     }
@@ -423,15 +403,8 @@ pub fn draw_velocity_lane(
 }
 
 /// Draw the OSC event lane: a flag at each marker's time, with its label.
-pub fn draw_osc_lane(
-    mesh: &mut Mesh,
-    lane: Rect,
-    nav: &View,
-    offset: f64,
-    marks: &[OscMark],
-    m: &Metrics,
-    theme: &Theme,
-) {
+pub fn draw_osc_lane(d: &mut Draw, lane: Rect, nav: &View, offset: f64, marks: &[OscMark]) {
+    let (mesh, m, theme) = d.parts();
     if lane.w <= 0.0 || lane.h <= 0.0 {
         return;
     }
@@ -771,6 +744,8 @@ pub fn quantize_notes(notes: &mut [Note], indices: &[usize], grid: f64) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::paint::Mesh;
+    use crate::host::theme::Theme;
 
     fn grid() -> Rect {
         Rect::new(50.0, 10.0, 400.0, 240.0)
@@ -1005,23 +980,19 @@ mod tests {
         // One octave over 240px: ~20px rows — the C label fits.
         let mut mesh = Mesh::new();
         draw_pitch_labels(
-            &mut mesh,
+            &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
             grid(),
             55.0,
             67.0,
-            &Metrics::default(),
-            &Theme::default(),
         );
         assert!(mesh.vertex_count() > 0, "a readable C row gets its name");
         // Eight octaves over the same height: sub-3px rows — nothing draws.
         let mut mesh = Mesh::new();
         draw_pitch_labels(
-            &mut mesh,
+            &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
             grid(),
             12.0,
             108.0,
-            &Metrics::default(),
-            &Theme::default(),
         );
         assert_eq!(mesh.vertex_count(), 0);
     }

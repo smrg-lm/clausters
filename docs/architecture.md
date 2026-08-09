@@ -374,7 +374,7 @@ split, and every rule below falls out of it:
 | `src/host/interact.rs` | Pointer logic over the typed tree — hit-test, value writes, the edit-back payloads — shared by both fronts. A hit carries the **chain** of containers over the point, each naming the coordinate system it gives its contents (`Coords`: layout for `window`/`panel`/`stack`, a plane for `scroll`, a canvas for `patch`, a `TimeAxis` for every timeline view — its body, its navigation window and its vertical axis) and the **gesture table** it declares, so a gesture reads the plane it pans or the axis it locates on instead of laying the window out again to search for it |
 | `src/host/gestures/` | The one press → drag → release → wheel state machine **both fronts drive**: it mutates the `Host` through the `interact` doors and returns `GestureEffect`s (emit/redraw/release-pointer) for the front's own sinks, so every editing gesture behaves identically on either platform by construction. A press runs the **containers' plans** over the chain, innermost first (pan / select / locate / hand it to the element, each step free to decline and pass the press outward), so the axis' gestures exist once for the five timeline views instead of once per kind; the element step is where a widget's own behaviour lives. Beside the machine: `effects.rs` (what a gesture delivers — the one bound-vs-event decision), `nav.rs` (what it reads and moves), `keys.rs` (the keyboard half) |
 | `src/host/signal/` | The **signal element**: one model for every view of a signal — a *presentation* (the trace, a magnitude spectrum, the time-frequency texture, the phase of a stereo pair) of a *source* (random-access samples, or a bus read forward-only) with the *capabilities* the view offers over it, plus the table mapping each of the six wire names onto a point of that product. `signal/trace.rs` is the one min/max-per-column source every signal view reads, and the mesh half of that presentation's renderer |
-| `src/host/{track,pianoroll,bpf,plot,patch,score,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window. `pianoroll` is the note core (the notes, their mapping, drawing, hit-test, editing) **shared** by the dedicated `pianoroll` widget and the multitrack `clip`'s roll body, so the two never disagree — the `bpf::place_point` reuse move again |
+| `src/host/{track,pianoroll,bpf,plot,patch,score,nodetree,meters,…}.rs` | One module per flat view: pure over a `Draw` (the batch plus the two role tables, `host/paint.rs`), unit-tested without a window. `pianoroll` is the note core (the notes, their mapping, drawing, hit-test, editing) **shared** by the dedicated `pianoroll` widget and the multitrack `clip`'s roll body, so the two never disagree — the `bpf::place_point` reuse move again |
 | `src/{waveform,spectrogram,viewport}.rs` | The heavy GPU views and the navigation window (`View`) |
 | `src/host/timeline.rs` | The navigation **groups**: the shared window/selection/playhead of linked views and of the multitrack's aligned lanes |
 | `src/host/{bulk,fetch,shm,mapfile}.rs` | The data seams: a local resource is mapped (native) or fetched (browser), a server buffer is pulled over the client leg, control buses are read from the shared segment |
@@ -535,8 +535,10 @@ The steps below are for a widget that is genuinely something else.
    whose extent is the caller's (the default). Derive it from the metrics
    roles, never from a fresh literal — and never from the widget's data, or a
    `/gui_set` relayouts the window.
-3. **The view** — a module `host/meterbar.rs`, pure over a `Mesh`: layout, draw,
-   and (if it is interactive) a hit-test. No GPU, no platform: that is what makes
+3. **The view** — a module `host/meterbar.rs`, pure over a `Draw`: layout, draw,
+   and (if it is interactive) a hit-test. A draw function takes that one context
+   — the batch plus the size and color roles (`host/paint.rs`) — never the three
+   as separate parameters, and never a size or a color of its own. No GPU, no platform: that is what makes
    it unit-testable, and the tests go beside it. A *heavy* view (one that needs a
    texture or a vertex buffer) instead gets a GPU slot in `frame/mod.rs` and follows
    the LOD rule above.

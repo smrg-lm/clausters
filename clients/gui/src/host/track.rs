@@ -6,7 +6,7 @@
 //! unit: a left header naming the track, the lane field, and one framed
 //! rectangle per clip with its label and a body — a decimated waveform, or a
 //! **piano-roll** of note events when the clip carries `notes` (the events
-//! track's scalar-vertical view). Pure over a [`Mesh`] (the flat-geometry
+//! track's scalar-vertical view). Pure over a [`Draw`] (the flat-geometry
 //! [`super::paint`] painter), so it is unit-testable without a window — the
 //! same posture as the static `plot`/`bpf` views.
 //!
@@ -20,13 +20,12 @@ use super::font;
 use super::layout::Rect;
 use super::meters::fraction;
 use super::metrics::Metrics;
-use super::paint::Mesh;
+use super::paint::Draw;
 use super::pianoroll;
 use super::signal::{
     self,
     trace::{Trace, TraceStyle},
 };
-use super::theme::Theme;
 use super::timeline;
 use super::widget::{Widget, WidgetKind};
 use crate::viewport::View;
@@ -189,7 +188,8 @@ pub fn level_at(rect: Rect, x: f64) -> f32 {
 
 /// Draws a header's controls into `band` (the name is drawn by [`draw`], which
 /// owns the ellipsis against the band it actually got).
-fn draw_header_controls(mesh: &mut Mesh, band: Rect, header: &Header, m: &Metrics, theme: &Theme) {
+fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
+    let (mesh, m, theme) = d.parts();
     let parts = header_parts(band, header, m);
     let mut toggle = |rect: Option<Rect>, on: bool, letter: &str, lit: super::paint::Color| {
         let Some(r) = rect else { return };
@@ -345,17 +345,15 @@ fn local_t(cr: Rect, local: &View, x: f64) -> f64 {
 /// `ruler` reserves the bottom strip for the time ruler (drawn by the frame
 /// renderer, which owns the tick math); the playhead is an overlay over the
 /// clips.
-#[allow(clippy::too_many_arguments)] // one lane's draw: its box, header, look
 pub fn draw(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     rect: Rect,
     label: Option<&str>,
     header: &Header,
     ruler: bool,
     indent: f32,
-    m: &Metrics,
-    theme: &Theme,
 ) {
+    let (mesh, m, theme) = d.parts();
     // The header band on the left — the group's indent, so every member of the
     // axis starts its body at the same x. What the lane puts in that band is
     // its own (a name, and the controls it offers).
@@ -373,7 +371,7 @@ pub fn draw(
             theme.text,
         );
     }
-    draw_header_controls(mesh, band, header, m, theme);
+    draw_header_controls(&mut Draw::new(mesh, m, theme), band, header);
     let body = lane_body(rect, ruler, indent, m);
     if body.w > 0.0 && body.h > 0.0 {
         mesh.rect(body, theme.lane);
@@ -384,7 +382,8 @@ pub fn draw(
 /// Draws one clip's own box into the rectangle the layout placed it at: its
 /// fill, its edge and its `label`. Its **bodies** are children, drawn after it
 /// from their own placements ([`draw_body_widget`]), so they land over it.
-pub fn draw_clip(mesh: &mut Mesh, cr: Rect, m: &Metrics, theme: &Theme) {
+pub fn draw_clip(d: &mut Draw, cr: Rect) {
+    let (mesh, m, theme) = d.parts();
     mesh.rect(cr, theme.object_fill);
     mesh.border(cr, m.divider_w, theme.object_edge);
 }
@@ -396,7 +395,8 @@ pub fn draw_clip(mesh: &mut Mesh, cr: Rect, m: &Metrics, theme: &Theme) {
 /// mesh at all but a GPU pass after every mesh — hides it outright. So the box
 /// is the base mesh's and the name is the overlay's, the same split the
 /// playhead and the selection already take.
-pub fn draw_clip_label(mesh: &mut Mesh, cr: Rect, label: &str, m: &Metrics, theme: &Theme) {
+pub fn draw_clip_label(d: &mut Draw, cr: Rect, label: &str) {
+    let (mesh, m, theme) = d.parts();
     font::text(
         mesh,
         label,
@@ -417,32 +417,41 @@ pub fn draw_clip_label(mesh: &mut Mesh, cr: Rect, label: &str, m: &Metrics, them
 /// placed them in: the take, the events over it, the envelope over both — an
 /// automation drawn on top of the material it shapes is one clip, not two, and
 /// each body keeps its own value axis.
-pub fn draw_body_widget(
-    mesh: &mut Mesh,
-    kind: &WidgetKind,
-    cr: Rect,
-    local: &View,
-    dur: f64,
-    m: &Metrics,
-    theme: &Theme,
-) {
+pub fn draw_body_widget(d: &mut Draw, kind: &WidgetKind, cr: Rect, local: &View, dur: f64) {
+    let (mesh, m, theme) = d.parts();
     match kind {
         WidgetKind::Signal(el) => {
             if let Some(data) = el.source.data() {
                 let (min, max) = el.value.resolved(-1.0, 1.0);
-                draw_take(mesh, cr, local, dur, &data.trace(), min, max, m, theme);
+                draw_take(
+                    &mut Draw::new(mesh, m, theme),
+                    cr,
+                    local,
+                    dur,
+                    &data.trace(),
+                    min,
+                    max,
+                );
             }
         }
         WidgetKind::PianoRoll {
             notes, min, max, ..
-        } => draw_piano_roll(mesh, cr, local, notes, *min, *max, m, theme),
+        } => draw_piano_roll(&mut Draw::new(mesh, m, theme), cr, local, notes, *min, *max),
         WidgetKind::Bpf {
             points,
             min,
             max,
             exp,
             ..
-        } => draw_curve(mesh, cr, local, points, *min, *max, *exp, m, theme),
+        } => draw_curve(
+            &mut Draw::new(mesh, m, theme),
+            cr,
+            local,
+            points,
+            *min,
+            *max,
+            *exp,
+        ),
         _ => {}
     }
 }
@@ -502,18 +511,16 @@ fn curve_y(cr: Rect, value: f32, min: f32, max: f32, exp: bool) -> f32 {
 /// is what is heard — plus a disc per breakpoint. Times map through the clip's
 /// own axis (`local`), exactly as the piano-roll's notes do, so the whole curve
 /// moves with the clip and stays put under zoom.
-#[allow(clippy::too_many_arguments)] // one body's draw: rect, axis, range, look
 fn draw_curve(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     cr: Rect,
     local: &View,
     points: &[BpfPoint],
     min: f32,
     max: f32,
     exp: bool,
-    m: &Metrics,
-    theme: &Theme,
 ) {
+    let (mesh, m, theme) = d.parts();
     if cr.w < 1.0 || cr.h <= 0.0 || points.is_empty() {
         return;
     }
@@ -541,27 +548,18 @@ fn draw_curve(
 /// the shared [`super::pianoroll::draw_notes`] primitive — the same one the
 /// dedicated `pianoroll` view draws with, so a clip's roll and the editor never
 /// disagree. The clip body uses only that one layer (no keyboard/lanes).
-#[allow(clippy::too_many_arguments)] // one body's draw: rect, axis, range, look
-fn draw_piano_roll(
-    mesh: &mut Mesh,
-    cr: Rect,
-    local: &View,
-    notes: &[Note],
-    min: f32,
-    max: f32,
-    m: &Metrics,
-    theme: &Theme,
-) {
+fn draw_piano_roll(d: &mut Draw, cr: Rect, local: &View, notes: &[Note], min: f32, max: f32) {
+    let (mesh, m, theme) = d.parts();
     if notes.is_empty() {
         return;
     }
     // The compact pitch ruler: each C named at the clip's left edge (there is
     // no keyboard gutter here), only when the rows are tall enough to read.
-    pianoroll::draw_pitch_labels(mesh, cr, min, max, m, theme);
+    pianoroll::draw_pitch_labels(&mut Draw::new(mesh, m, theme), cr, min, max);
     // The clip rect is both the note primitive's pixel domain and its clamp:
     // note times are clip-local, so there is no offset to subtract any more.
     pianoroll::draw_notes(
-        mesh,
+        &mut Draw::new(mesh, m, theme),
         cr,
         cr,
         local,
@@ -571,8 +569,6 @@ fn draw_piano_roll(
         max,
         false,
         &[],
-        m,
-        theme,
     );
 }
 
@@ -599,18 +595,8 @@ pub fn clip_source_at(cr: Rect, local: &View, dur: f64, total: f64, x: f32) -> f
 /// the view instead of squashing into whatever slice is on screen. Never
 /// resolves finer than the screen — the one graphics rule.
 // mesh + rect + axis + span + source + range + look: one body's draw.
-#[allow(clippy::too_many_arguments)]
-fn draw_take(
-    mesh: &mut Mesh,
-    cr: Rect,
-    local: &View,
-    dur: f64,
-    trace: &Trace,
-    min: f32,
-    max: f32,
-    m: &Metrics,
-    theme: &Theme,
-) {
+fn draw_take(d: &mut Draw, cr: Rect, local: &View, dur: f64, trace: &Trace, min: f32, max: f32) {
+    let (mesh, m, theme) = d.parts();
     let total = trace.frames() as f64;
     if total < 2.0 || cr.w < 1.0 || cr.h <= 0.0 {
         return;
@@ -642,6 +628,8 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::host::paint::Mesh;
+    use crate::host::theme::Theme;
     use crate::host::widget::EditorProps;
     use crate::waveform::WaveformData;
 
@@ -851,13 +839,11 @@ mod tests {
         let (cr, local) = placed(0.0, dur, &View::full(dur.max(1.0) as usize));
         let mut mesh = Mesh::new();
         draw_body_widget(
-            &mut mesh,
+            &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
             kind,
             cr,
             &local,
             dur,
-            &Metrics::default(),
-            &Theme::default(),
         );
         mesh
     }
@@ -893,26 +879,28 @@ mod tests {
         let mut m = Mesh::new();
         let metrics = Metrics::default();
         draw(
-            &mut m,
+            &mut Draw::new(&mut m, &metrics, &Theme::default()),
             lane(),
             Some("drums"),
             &Header::default(),
             false,
             metrics.header_w,
-            &metrics,
-            &Theme::default(),
         );
         assert!(!m.is_empty(), "the header and the lane field draw");
 
         // ...and a clip's box is drawn from its own placement.
         let before = m.vertex_count();
         let (cr, _) = placed(0.0, 100.0, &View::full(400));
-        draw_clip(&mut m, cr, &metrics, &Theme::default());
+        draw_clip(&mut Draw::new(&mut m, &metrics, &Theme::default()), cr);
         assert!(m.vertex_count() > before);
         // The name is the overlay's, so it is not in that count: drawn with the
         // box, a take's trace (or a spectral clip's texture) would bury it.
         let mut over = Mesh::new();
-        draw_clip_label(&mut over, cr, "a", &metrics, &Theme::default());
+        draw_clip_label(
+            &mut Draw::new(&mut over, &metrics, &Theme::default()),
+            cr,
+            "a",
+        );
         assert!(!over.is_empty(), "the name draws over the bodies");
     }
 
@@ -1070,10 +1058,28 @@ mod tests {
         let theme = Theme::default();
 
         let mut roll_only = Mesh::new();
-        draw_body_widget(&mut roll_only, &roll, cr, &local, 400.0, &metrics, &theme);
+        draw_body_widget(
+            &mut Draw::new(&mut roll_only, &metrics, &theme),
+            &roll,
+            cr,
+            &local,
+            400.0,
+        );
         let mut both = Mesh::new();
-        draw_body_widget(&mut both, &roll, cr, &local, 400.0, &metrics, &theme);
-        draw_body_widget(&mut both, &curve, cr, &local, 400.0, &metrics, &theme);
+        draw_body_widget(
+            &mut Draw::new(&mut both, &metrics, &theme),
+            &roll,
+            cr,
+            &local,
+            400.0,
+        );
+        draw_body_widget(
+            &mut Draw::new(&mut both, &metrics, &theme),
+            &curve,
+            cr,
+            &local,
+            400.0,
+        );
         assert!(
             both.vertex_count() > roll_only.vertex_count(),
             "the curve draws over the notes, it does not replace them"

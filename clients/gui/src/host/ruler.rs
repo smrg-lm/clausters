@@ -33,8 +33,7 @@ use crate::waveform::AMP_MARGIN;
 use super::font;
 use super::layout::Rect;
 use super::metrics::Metrics;
-use super::paint::Mesh;
-use super::theme::Theme;
+use super::paint::Draw;
 use super::widget::RulerY;
 
 /// One ruler tick: its position as a fraction of the visible axis span
@@ -948,13 +947,8 @@ pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
 /// a mark up against the body's bottom edge (taller when labeled), the label
 /// centered under it and edge-clamped into the strip. The one drawing of the
 /// x-ruler strip — the editor frames and the plot both call it.
-pub(crate) fn draw_ticks_h(
-    mesh: &mut Mesh,
-    strip: Rect,
-    ticks: &[Tick],
-    metrics: &Metrics,
-    theme: &Theme,
-) {
+pub(crate) fn draw_ticks_h(d: &mut Draw, strip: Rect, ticks: &[Tick]) {
+    let (mesh, metrics, theme) = d.parts();
     let scale = metrics.caption_scale;
     for tick in ticks {
         let x = strip.x + strip.w * tick.frac as f32;
@@ -976,19 +970,11 @@ pub(crate) fn draw_ticks_h(
 /// labeled), labels right-aligned beside them and kept inside the strip
 /// starting at `strip_x`. `frac` 0 is the lane's bottom. The one drawing of
 /// the y-ruler strip, whatever the unit (amplitude, frequency, plain value).
-#[allow(clippy::too_many_arguments)] // one strip's flat draw inputs
-pub(crate) fn draw_ticks_v(
-    mesh: &mut Mesh,
-    body_x: f32,
-    strip_x: f32,
-    lane: Rect,
-    ticks: &[Tick],
-    metrics: &Metrics,
-    theme: &Theme,
-) {
+pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, lane: Rect, ticks: &[Tick]) {
     if lane.h <= 4.0 {
         return;
     }
+    let (mesh, metrics, theme) = d.parts();
     let scale = metrics.caption_scale;
     for tick in ticks {
         let y = lane.y + lane.h * (1.0 - tick.frac as f32);

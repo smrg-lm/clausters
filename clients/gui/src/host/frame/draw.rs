@@ -13,20 +13,18 @@ use super::*;
 /// Draws the time-ruler strip under `body` for the visible `nav` window
 /// (aligned with the body, so its ticks sit under the samples they label even
 /// when a vertical ruler indents the body).
-#[allow(clippy::too_many_arguments)] // one strip's draw: its box, axis, look
 pub(super) fn draw_time_ruler(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     rect: Rect,
     body: Rect,
     nav: &View,
     rate: f64,
     editor: &EditorProps,
-    metrics: &Metrics,
-    theme: &Theme,
 ) {
     if editor.ruler == Ruler::Off {
         return;
     }
+    let metrics = d.m;
     let strip = Rect::new(body.x, body.y + body.h, body.w, (rect.h - body.h).max(0.0));
     if strip.h <= 2.0 || strip.w <= 0.0 {
         return;
@@ -39,7 +37,7 @@ pub(super) fn draw_time_ruler(
         time_unit(editor),
         metrics,
     );
-    ruler::draw_ticks_h(mesh, strip, &ticks, metrics, theme);
+    ruler::draw_ticks_h(d, strip, &ticks);
 }
 
 /// The pixel domain a free-standing `timeruler` labels: its own rect, indented
@@ -70,7 +68,7 @@ pub(super) fn pitch_window(item: &PianoRollItem) -> (f32, f32) {
 /// and playhead, so it zooms/pans/plays in lockstep with linked sibling views.
 #[allow(clippy::too_many_arguments)] // one view's flat draw inputs
 pub(super) fn draw_pianoroll_item(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     over: &mut Mesh,
     item: &PianoRollItem,
     chrome: &GroupState,
@@ -78,9 +76,8 @@ pub(super) fn draw_pianoroll_item(
     sample_clock: f64,
     cursor: Option<(f64, f64)>,
     indent: f32,
-    m: &Metrics,
-    theme: &Theme,
 ) {
+    let (m, theme) = (d.m, d.theme);
     let nav = &chrome.nav;
     let ruler_on = item.editor.ruler != Ruler::Off;
     let r = pianoroll::regions(
@@ -92,9 +89,9 @@ pub(super) fn draw_pianoroll_item(
         m,
     );
     let (lo, hi) = pitch_window(item);
-    pianoroll::draw_grid_background(mesh, r.grid, lo, hi, m, theme);
+    pianoroll::draw_grid_background(d, r.grid, lo, hi);
     pianoroll::draw_notes(
-        mesh,
+        d,
         r.grid,
         r.grid,
         nav,
@@ -104,19 +101,17 @@ pub(super) fn draw_pianoroll_item(
         hi,
         true,
         &item.selected,
-        m,
-        theme,
     );
-    pianoroll::draw_keyboard(mesh, r.keyboard, lo, hi, m, theme);
+    pianoroll::draw_keyboard(d, r.keyboard, lo, hi);
     if item.osc_lane {
-        pianoroll::draw_osc_lane(mesh, r.osc, nav, 0.0, &item.osc, m, theme);
+        pianoroll::draw_osc_lane(d, r.osc, nav, 0.0, &item.osc);
     }
     if item.velocity_lane {
-        pianoroll::draw_velocity_lane(mesh, r.velocity, nav, 0.0, &item.notes, m, theme);
+        pianoroll::draw_velocity_lane(d, r.velocity, nav, 0.0, &item.notes);
     }
     if let Some(t) = &item.label {
         font::text(
-            mesh,
+            d.mesh,
             t,
             r.grid.x + m.pad,
             r.grid.y + 2.0,
@@ -128,16 +123,7 @@ pub(super) fn draw_pianoroll_item(
         // The ruler strip sits under the grid, aligned to the grid's x-range —
         // build the "body" `draw_time_ruler` derives the strip from.
         let ruler_body = Rect::new(r.grid.x, item.rect.y, r.grid.w, r.ruler.y - item.rect.y);
-        draw_time_ruler(
-            mesh,
-            item.rect,
-            ruler_body,
-            nav,
-            rate,
-            &item.editor,
-            m,
-            theme,
-        );
+        draw_time_ruler(d, item.rect, ruler_body, nav, rate, &item.editor);
     }
     // Selection band over the grid.
     if let Some((start, len)) = chrome.selection() {
@@ -332,13 +318,11 @@ pub(super) fn draw_live_meshes(
         let value = read_level(inputs.bus, item.bus, item.rate);
         let frac = meters::fraction(value, item.min, item.max);
         meters::draw_meter(
-            &mut *mesh,
+            &mut Draw::new(mesh, m, th),
             item.rect,
             value,
             frac,
             item.label.as_deref(),
-            m,
-            th,
         );
     }
     // The history is advanced on the frame tick (`advance_scopes`), not here, so a
@@ -351,14 +335,12 @@ pub(super) fn draw_live_meshes(
             .map(|h| h.iter().copied().collect())
             .unwrap_or_default();
         meters::draw_scope(
-            &mut *mesh,
+            &mut Draw::new(mesh, m, th),
             item.rect,
             &samples,
             item.min,
             item.max,
             item.label.as_deref(),
-            m,
-            th,
         );
     }
     // Audio-rate scopes likewise draw the triggered multichannel window stored
@@ -370,7 +352,7 @@ pub(super) fn draw_live_meshes(
         let th = item.theme.as_deref().unwrap_or(theme);
         let window = tap_windows.get(&item.id).unwrap_or(&empty_window);
         meters::draw_wave(
-            &mut *mesh,
+            &mut Draw::new(mesh, m, th),
             item.rect,
             &meters::WaveParams {
                 window,
@@ -383,8 +365,6 @@ pub(super) fn draw_live_meshes(
                 ruler_y: item.ruler_y,
                 label: item.label.as_deref(),
             },
-            m,
-            th,
         );
     }
     // Phasescopes draw the interleaved L/R window the tick stored (the same
@@ -397,14 +377,19 @@ pub(super) fn draw_live_meshes(
             .get(&item.id)
             .map(|w| w.samples.as_slice())
             .unwrap_or(&[]);
-        phasescope::draw_phasescope(&mut *mesh, item.rect, inter, item.label.as_deref(), m, th);
+        phasescope::draw_phasescope(
+            &mut Draw::new(mesh, m, th),
+            item.rect,
+            inter,
+            item.label.as_deref(),
+        );
     }
     for item in &collected.spectrum_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         if let Some(states) = spectra.get(&item.id) {
             spectrum::draw_spectrum(
-                &mut *mesh,
+                &mut Draw::new(mesh, m, th),
                 item.rect,
                 states,
                 &spectrum::SpectrumParams {
@@ -418,8 +403,6 @@ pub(super) fn draw_live_meshes(
                     ruler_y: item.ruler_y,
                     label: item.label.as_deref(),
                 },
-                m,
-                th,
             );
         }
     }
@@ -464,7 +447,14 @@ pub(super) fn draw_timeline_meshes(
                 } else {
                     inputs.sample_rate
                 };
-                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, m, th);
+                draw_time_ruler(
+                    &mut Draw::new(mesh, m, th),
+                    item.rect,
+                    body,
+                    &nav,
+                    rate,
+                    &item.editor,
+                );
                 let lanes = slot.view.num_channels();
                 // Overlaid traces share one lane (and one amplitude axis).
                 let draw_lanes = if *overlaid { 1 } else { lanes };
@@ -480,7 +470,13 @@ pub(super) fn draw_timeline_meshes(
                             y_len,
                             m,
                         );
-                        ruler::draw_ticks_v(&mut *mesh, body.x, item.rect.x, lane, &ticks, m, th);
+                        ruler::draw_ticks_v(
+                            &mut Draw::new(mesh, m, th),
+                            body.x,
+                            item.rect.x,
+                            lane,
+                            &ticks,
+                        );
                     }
                 }
                 for ch in 1..draw_lanes {
@@ -510,7 +506,14 @@ pub(super) fn draw_timeline_meshes(
                 } else {
                     nyquist * 2.0
                 };
-                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, m, th);
+                draw_time_ruler(
+                    &mut Draw::new(mesh, m, th),
+                    item.rect,
+                    body,
+                    &nav,
+                    rate,
+                    &item.editor,
+                );
                 let lanes = slot.views.len();
                 for ch in 0..lanes {
                     let lane = lane_rect(body, lanes, ch);
@@ -530,13 +533,23 @@ pub(super) fn draw_timeline_meshes(
                             item.editor.y_view().1,
                             m,
                         );
-                        ruler::draw_ticks_v(&mut *mesh, body.x, item.rect.x, lane, &ticks, m, th);
+                        ruler::draw_ticks_v(
+                            &mut Draw::new(mesh, m, th),
+                            body.x,
+                            item.rect.x,
+                            lane,
+                            &ticks,
+                        );
                     }
                 }
                 // The active scale, named over the view (the live views'
                 // corner slot) — log/mel/bark are not tellable apart from
                 // the tick spacing at a glance.
-                meters::value_text(&mut *over, ruler::scale_tag(*freq_scale), body, m, th);
+                meters::value_text(
+                    &mut Draw::new(over, m, th),
+                    ruler::scale_tag(*freq_scale),
+                    body,
+                );
                 draw_editor_overlay(
                     &mut *over,
                     item,
@@ -577,11 +590,11 @@ pub(super) fn draw_static_meshes(
         over.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         let params = item.params();
-        plot::draw(&mut *mesh, item.rect, &params, m, th);
+        plot::draw(&mut Draw::new(mesh, m, th), item.rect, &params);
         // The hover readout (hairline + the value under the cursor) rides the
         // overlay mesh, like the editor views' chrome.
         if let Some(cursor) = inputs.cursor {
-            plot::draw_readout(&mut *over, item.rect, &params, cursor, m, th);
+            plot::draw_readout(&mut Draw::new(over, m, th), item.rect, &params, cursor);
         }
     }
     // Envelope editors are pure mesh work: the curve evaluated per pixel
@@ -590,7 +603,7 @@ pub(super) fn draw_static_meshes(
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         bpf::draw(
-            &mut *mesh,
+            &mut Draw::new(mesh, m, th),
             item.rect,
             &item.points,
             item.min,
@@ -598,22 +611,18 @@ pub(super) fn draw_static_meshes(
             item.duration,
             item.exp,
             item.label.as_deref(),
-            m,
-            th,
         );
     }
     for item in &collected.nodetree_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         nodetree::draw(
-            &mut *mesh,
+            &mut Draw::new(mesh, m, th),
             item.rect,
             inputs.node_trees.get(&item.group),
             item.controls,
             item.label.as_deref(),
             inputs.server_attached,
-            m,
-            th,
         );
     }
     // Multitrack lanes: the window's tracks share one time axis (aligned
@@ -636,7 +645,14 @@ pub(super) fn draw_static_meshes(
         // over the samples they label whatever it is stacked with -- the whole
         // point of a ruler that is not inside one.
         let body = ruler_strip_body(item.rect, item.indent);
-        draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, m, th);
+        draw_time_ruler(
+            &mut Draw::new(mesh, m, th),
+            item.rect,
+            body,
+            &nav,
+            rate,
+            &item.editor,
+        );
     }
     if !collected.track_items.is_empty() {
         // The lanes navigate as a group (linked by default across a window), so
@@ -652,14 +668,12 @@ pub(super) fn draw_static_meshes(
             let ruler_on = item.editor.ruler != Ruler::Off;
             let indent = item.indent;
             track::draw(
-                &mut *mesh,
+                &mut Draw::new(mesh, m, th),
                 item.rect,
                 item.label.as_deref(),
                 &item.header,
                 ruler_on,
                 indent,
-                m,
-                th,
             );
             let body = track::lane_body(item.rect, ruler_on, indent, m);
             // The lane's own time ruler, in the strip the lane body reserved —
@@ -670,7 +684,14 @@ pub(super) fn draw_static_meshes(
                 } else {
                     inputs.sample_rate
                 };
-                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, m, th);
+                draw_time_ruler(
+                    &mut Draw::new(mesh, m, th),
+                    item.rect,
+                    body,
+                    &nav,
+                    rate,
+                    &item.editor,
+                );
             }
             // The playhead, over the clips: the engine clock as a timeline
             // position (`playhead_at` anchors timeline sample 0 to a clock
@@ -688,19 +709,17 @@ pub(super) fn draw_static_meshes(
     for item in &collected.clip_items {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        track::draw_clip(&mut *mesh, item.rect, m, th);
+        track::draw_clip(&mut Draw::new(mesh, m, th), item.rect);
     }
     for item in &collected.clip_bodies {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         track::draw_body_widget(
-            &mut *mesh,
+            &mut Draw::new(mesh, m, th),
             &item.kind,
             item.rect,
             &item.local,
             item.dur,
-            m,
-            th,
         );
     }
     // A clip's **name**, last and into the overlay: a body drawn over it would
@@ -713,7 +732,7 @@ pub(super) fn draw_static_meshes(
         };
         over.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        track::draw_clip_label(&mut *over, item.rect, label, m, th);
+        track::draw_clip_label(&mut Draw::new(over, m, th), item.rect, label);
     }
     // Piano-roll views: flat geometry (keyboard/grid/lanes/ruler) into the base
     // mesh, selection/playhead into the overlay. Each draws through its
@@ -739,16 +758,14 @@ pub(super) fn draw_static_meshes(
             inputs.sample_rate
         };
         draw_pianoroll_item(
-            &mut *mesh,
-            &mut *over,
+            &mut Draw::new(mesh, m, th),
+            over,
             item,
             &chrome,
             rate,
             inputs.sample_clock,
             inputs.cursor,
             item.indent,
-            m,
-            th,
         );
     }
     // The open menu list, last of everything drawn here and into the overlay:
@@ -762,14 +779,12 @@ pub(super) fn draw_static_meshes(
             .cursor
             .and_then(|(cx, cy)| controls::menu_row_at(item.popup, item.options.len(), cx, cy));
         controls::draw_menu_popup(
-            &mut *over,
+            &mut Draw::new(over, m, th),
             item.popup,
             &item.options,
             item.index,
             hover,
             item.size,
-            m,
-            th,
         );
     }
 }

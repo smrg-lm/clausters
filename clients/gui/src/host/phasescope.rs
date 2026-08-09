@@ -19,9 +19,7 @@ use clausters_core::measure::{correlation, lissajous_point};
 use super::controls::body_rect;
 use super::font;
 use super::layout::Rect;
-use super::metrics::Metrics;
-use super::paint::Mesh;
-use super::theme::Theme;
+use super::paint::Draw;
 
 /// The furthest a sample reaches from the origin: a full-scale mono signal sits
 /// at mid `(1+1)/√2 = √2`. The field is scaled so that extent just fits, with a
@@ -35,14 +33,8 @@ const MAX_SEGMENTS: usize = 2000;
 /// goniometer field with an age-faded Lissajous trail (oldest faint, newest
 /// bright), a faint mid/side center cross, and a correlation bar beneath. An
 /// empty or odd-length window draws just the field and an empty readout.
-pub fn draw_phasescope(
-    mesh: &mut Mesh,
-    rect: Rect,
-    interleaved: &[f32],
-    label: Option<&str>,
-    m: &Metrics,
-    theme: &Theme,
-) {
+pub fn draw_phasescope(d: &mut Draw, rect: Rect, interleaved: &[f32], label: Option<&str>) {
+    let (mesh, m, theme) = d.parts();
     if let Some(text) = label {
         font::text(
             mesh,
@@ -105,13 +97,14 @@ pub fn draw_phasescope(
 
     // Correlation readout under the field.
     let strip = Rect::new(outer.x, field_area.y + field_area.h, outer.w, corr_h);
-    draw_correlation(mesh, strip, interleaved, m, theme);
+    draw_correlation(&mut Draw::new(mesh, m, theme), strip, interleaved);
 }
 
 /// Draws the correlation strip: a `[-1, +1]` bar filled from center toward the
 /// measured coefficient (green toward mono/+1, red toward anti-phase/−1), with a
 /// numeric readout. A silent/DC window (undefined correlation) shows a dash.
-fn draw_correlation(mesh: &mut Mesh, strip: Rect, interleaved: &[f32], m: &Metrics, theme: &Theme) {
+fn draw_correlation(d: &mut Draw, strip: Rect, interleaved: &[f32]) {
+    let (mesh, m, theme) = d.parts();
     if strip.w <= 0.0 || strip.h <= 0.0 {
         return;
     }
@@ -156,6 +149,9 @@ fn draw_correlation(mesh: &mut Mesh, strip: Rect, interleaved: &[f32], m: &Metri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::metrics::Metrics;
+    use crate::host::paint::Mesh;
+    use crate::host::theme::Theme;
 
     /// An interleaved window of `n` pairs from two channel functions.
     fn window(n: usize, l: impl Fn(usize) -> f32, r: impl Fn(usize) -> f32) -> Vec<f32> {
@@ -171,12 +167,10 @@ mod tests {
         );
         let mut mesh = Mesh::new();
         draw_phasescope(
-            &mut mesh,
+            &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 200.0, 240.0),
             &w,
             Some("phase"),
-            &Metrics::default(),
-            &Theme::default(),
         );
         assert!(!mesh.is_empty(), "a stereo window draws geometry");
     }
@@ -185,12 +179,10 @@ mod tests {
     fn an_empty_window_draws_only_chrome() {
         let mut mesh = Mesh::new();
         draw_phasescope(
-            &mut mesh,
+            &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 200.0, 240.0),
             &[],
             None,
-            &Metrics::default(),
-            &Theme::default(),
         );
         // The field, cross and correlation track still draw; it does not panic
         // and produces some geometry (the frame), just no trail.
@@ -202,12 +194,10 @@ mod tests {
         let mut mesh = Mesh::new();
         // Three floats = one full pair plus a stray; must not read out of range.
         draw_phasescope(
-            &mut mesh,
+            &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 120.0, 160.0),
             &[0.1, 0.2, 0.3],
             None,
-            &Metrics::default(),
-            &Theme::default(),
         );
     }
 }

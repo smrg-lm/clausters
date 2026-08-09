@@ -5,7 +5,7 @@
 //! (see [`super::shm`]), so they need no buffer, no analysis and no dedicated
 //! pipeline — just the flat-geometry painter ([`super::paint`]) plus bitmap text,
 //! exactly like the standard controls. The drawing lives here as pure functions
-//! over a [`Mesh`]; the windowed front supplies the live value(s) read from
+//! over a [`Draw`]; the windowed front supplies the live value(s) read from
 //! shared memory and keeps the scope's rolling history. Keeping it GPU- and
 //! shm-free makes it unit-testable without a window.
 
@@ -16,10 +16,8 @@ use super::font;
 use super::frame::lane_rect;
 use super::layout::Rect;
 use super::live::TapWindow;
-use super::metrics::Metrics;
-use super::paint::{Color, Mesh};
+use super::paint::{Color, Draw};
 use super::ruler;
-use super::theme::Theme;
 use crate::viewport::{Axis, Unit};
 
 /// The 0..1 position of `value` in `[min, max]`, clamped. A degenerate range
@@ -34,17 +32,9 @@ pub fn fraction(value: f32, min: f32, max: f32) -> f32 {
 
 /// Draws a vertical level meter: a framed field with a green column rising from
 /// the bottom to `fraction` of the body height, plus the raw value as text.
-#[allow(clippy::too_many_arguments)] // one view's draw: its value, box, look
-pub fn draw_meter(
-    mesh: &mut Mesh,
-    rect: Rect,
-    value: f32,
-    fraction: f32,
-    label: Option<&str>,
-    m: &Metrics,
-    theme: &Theme,
-) {
-    label_strip(mesh, label, rect, m, theme);
+pub fn draw_meter(d: &mut Draw, rect: Rect, value: f32, fraction: f32, label: Option<&str>) {
+    label_strip(d, label, rect);
+    let (mesh, m, theme) = d.parts();
     let body = body_rect(rect, label.is_some(), m);
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
@@ -56,24 +46,22 @@ pub fn draw_meter(
         theme.accent,
     );
     mesh.border(body, m.divider_w, theme.accent);
-    value_text(mesh, &fmt(value), body, m, theme);
+    value_text(d, &fmt(value), body);
 }
 
 /// Draws a time-domain scope: a framed field with a polyline through `history`
 /// (oldest sample at the left, newest at the right), each sample normalized into
 /// `[min, max]`. Fewer than two samples draw just the frame.
-#[allow(clippy::too_many_arguments)] // one view's draw: its data, box, look
 pub fn draw_scope(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     rect: Rect,
     history: &[f32],
     min: f32,
     max: f32,
     label: Option<&str>,
-    m: &Metrics,
-    theme: &Theme,
 ) {
-    label_strip(mesh, label, rect, m, theme);
+    label_strip(d, label, rect);
+    let (mesh, m, theme) = d.parts();
     let body = body_rect(rect, label.is_some(), m);
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
@@ -117,8 +105,9 @@ pub(crate) struct WaveParams<'a> {
 /// read-out says whether it fired. `ruler` is the x strip in milliseconds of
 /// the window, `ruler_y` the per-lane value strip. An empty window draws just
 /// the framed field.
-pub(crate) fn draw_wave(mesh: &mut Mesh, rect: Rect, p: &WaveParams, m: &Metrics, theme: &Theme) {
-    label_strip(mesh, p.label, rect, m, theme);
+pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
+    label_strip(d, p.label, rect);
+    let m = d.m;
     let mut body = body_rect(rect, p.label.is_some(), m);
     let strip_x = (p.ruler_y && body.w > m.ruler_w * 2.0).then(|| {
         let x = body.x;
@@ -133,8 +122,8 @@ pub(crate) fn draw_wave(mesh: &mut Mesh, rect: Rect, p: &WaveParams, m: &Metrics
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
-    mesh.rect(body, theme.field);
-    mesh.border(body, m.divider_w, theme.accent);
+    d.mesh.rect(body, d.theme.field);
+    d.mesh.border(body, m.divider_w, d.theme.accent);
     if let Some(strip) = x_strip {
         let ticks = ruler::hz_ticks_h(
             p.window_ms.max(0.1) as f64,
@@ -143,7 +132,7 @@ pub(crate) fn draw_wave(mesh: &mut Mesh, rect: Rect, p: &WaveParams, m: &Metrics
             strip.w as f64,
             m,
         );
-        ruler::draw_ticks_h(mesh, strip, &ticks, m, theme);
+        ruler::draw_ticks_h(d, strip, &ticks);
     }
     let channels = p.window.channels.max(1);
     let frames = p.window.frames();
@@ -151,54 +140,48 @@ pub(crate) fn draw_wave(mesh: &mut Mesh, rect: Rect, p: &WaveParams, m: &Metrics
     for ch in 0..channels {
         let lane = lane_rect(body, lanes, if p.overlay { 0 } else { ch });
         if ch > 0 && !p.overlay {
-            mesh.rect(
+            d.mesh.rect(
                 Rect::new(body.x, lane.y, body.w, m.divider_w),
-                theme.lane_divider,
+                d.theme.lane_divider,
             );
         }
         if (ch == 0 || !p.overlay)
             && let Some(strip_x) = strip_x
         {
             let ticks = ruler::value_ticks(p.min as f64, p.max as f64, lane.h as f64, m);
-            ruler::draw_ticks_v(mesh, body.x, strip_x, lane, &ticks, m, theme);
+            ruler::draw_ticks_v(d, body.x, strip_x, lane, &ticks);
         }
         if ch == 0 && frames > 0 {
             // The trigger level, in the channel the alignment is searched in.
             let y = lane.y + lane.h * (1.0 - fraction(p.trigger, p.min, p.max));
-            mesh.rect(Rect::new(body.x, y, body.w, m.divider_w), theme.trigger);
+            d.mesh
+                .rect(Rect::new(body.x, y, body.w, m.divider_w), d.theme.trigger);
         }
         let color = if channels > 1 {
-            theme.series(ch)
+            d.theme.series(ch)
         } else {
-            theme.trace
+            d.theme.trace
         };
         let at = |f: usize| p.window.samples[f * channels + ch];
-        trace_lane(mesh, lane, frames, &at, p.min, p.max, m, color);
+        trace_lane(d, lane, frames, &at, p.min, p.max, color);
     }
     if frames > 0 {
-        value_text(
-            mesh,
-            if p.window.locked { "lock" } else { "free" },
-            body,
-            m,
-            theme,
-        );
+        value_text(d, if p.window.locked { "lock" } else { "free" }, body);
     }
 }
 
 /// One channel's trace into `lane`: a per-column min/max envelope when the
 /// frames outnumber the pixels, a polyline otherwise.
-#[allow(clippy::too_many_arguments)] // one lane's trace: its data, box, look
 fn trace_lane(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     lane: Rect,
     frames: usize,
     at: &impl Fn(usize) -> f32,
     min: f32,
     max: f32,
-    m: &Metrics,
     color: Color,
 ) {
+    let (mesh, m, _theme) = d.parts();
     let columns = lane.w.max(1.0) as usize;
     let y_at = |v: f32| lane.y + lane.h * (1.0 - fraction(v, min, max));
     if frames > columns * 2 {
@@ -230,7 +213,8 @@ fn trace_lane(
 }
 
 /// Draws the label strip above a view body, if it has a label.
-fn label_strip(mesh: &mut Mesh, label: Option<&str>, rect: Rect, m: &Metrics, theme: &Theme) {
+fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect) {
+    let (mesh, m, theme) = d.parts();
     if let Some(text) = label {
         font::text(
             mesh,
@@ -245,7 +229,8 @@ fn label_strip(mesh: &mut Mesh, label: Option<&str>, rect: Rect, m: &Metrics, th
 
 /// A value read-out at the top-right of a body — the corner slot the scope's
 /// `lock`/`free` state and the spectral views' scale tag share.
-pub(crate) fn value_text(mesh: &mut Mesh, s: &str, body: Rect, m: &Metrics, theme: &Theme) {
+pub(crate) fn value_text(d: &mut Draw, s: &str, body: Rect) {
+    let (mesh, m, theme) = d.parts();
     let w = font::width(s, m.text_scale);
     let x = (body.x + body.w - w - m.pad).max(body.x);
     font::text(mesh, s, x, body.y + m.pad, m.text_scale, theme.text);
@@ -263,6 +248,9 @@ fn fmt(v: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::metrics::Metrics;
+    use crate::host::paint::Mesh;
+    use crate::host::theme::Theme;
 
     #[test]
     fn fraction_clamps_and_handles_degenerate_range() {
@@ -277,13 +265,11 @@ mod tests {
     fn meter_emits_fill_geometry() {
         let mut m = Mesh::new();
         draw_meter(
-            &mut m,
+            &mut Draw::new(&mut m, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 40.0, 120.0),
             0.5,
             0.5,
             Some("out"),
-            &Metrics::default(),
-            &Theme::default(),
         );
         assert!(!m.is_empty(), "a meter with a positive fill draws geometry");
     }
@@ -292,27 +278,23 @@ mod tests {
     fn scope_draws_a_polyline_for_history() {
         let mut empty = Mesh::new();
         draw_scope(
-            &mut empty,
+            &mut Draw::new(&mut empty, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 80.0, 60.0),
             &[0.0],
             -1.0,
             1.0,
             None,
-            &Metrics::default(),
-            &Theme::default(),
         );
         let with_one = empty.vertex_count();
 
         let mut many = Mesh::new();
         draw_scope(
-            &mut many,
+            &mut Draw::new(&mut many, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 80.0, 60.0),
             &[0.0, 0.5, -0.5, 1.0],
             -1.0,
             1.0,
             None,
-            &Metrics::default(),
-            &Theme::default(),
         );
         assert!(
             many.vertex_count() > with_one,

@@ -2,7 +2,7 @@
 //! out with **real piano proportions** (relative units, so it resizes freely),
 //! an overview strip spanning the full MIDI range for zoom/pan navigation, and
 //! the voice-mode `/synth_new`/`/node_set` message builders — all pure over a
-//! [`Mesh`] (the flat-geometry [`super::paint`] painter) so everything is
+//! [`Draw`] (the flat-geometry [`super::paint`] painter) so everything is
 //! unit-testable without a window.
 //!
 //! The key geometry follows the real instrument, expressed only as ratios of
@@ -24,8 +24,8 @@ use clausters_core::scale;
 use super::font;
 use super::layout::Rect;
 use super::metrics::Metrics;
-use super::paint::Mesh;
-use super::theme::{Theme, with_alpha};
+use super::paint::Draw;
+use super::theme::with_alpha;
 
 // --- Proportions (white-key units) -----------------------------------------
 
@@ -295,10 +295,11 @@ pub struct PianoDraw<'a> {
 /// Draw the keyboard: white keys with a hairline gap, black keys on top,
 /// pressed keys highlighted, keys outside the active range grayed, and a note
 /// name on each C when the white keys are wide enough to carry it.
-pub fn draw(mesh: &mut Mesh, l: &Layout, state: &PianoDraw, m: &Metrics, theme: &Theme) {
+pub fn draw(d: &mut Draw, l: &Layout, state: &PianoDraw) {
     if l.keys.w <= 0.0 || l.keys.h <= 0.0 {
         return;
     }
+    let (mesh, m, theme) = d.parts();
     mesh.rect(l.keys, theme.key_gap);
     let active = |p: i32| p >= state.active_min && p <= state.active_max;
     // White keys first (with a 1px gap between them), then the C labels, then
@@ -351,20 +352,18 @@ pub fn draw(mesh: &mut Mesh, l: &Layout, state: &PianoDraw, m: &Metrics, theme: 
 /// lit against the gray outside, black-key positions shaded, the pressed keys
 /// marked, and the visible window as a translucent box with bright edges — the
 /// keyboard's "ruler", dragged to pan and wheeled to zoom.
-#[allow(clippy::too_many_arguments)] // one strip's draw: its range, box, look
 pub fn draw_overview(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     strip: Rect,
     min: i32,
     max: i32,
     active: (i32, i32),
     pressed: &[i32],
-    m: &Metrics,
-    theme: &Theme,
 ) {
     if strip.w <= 0.0 || strip.h <= 0.0 {
         return;
     }
+    let (mesh, m, theme) = d.parts();
     mesh.rect(strip, theme.key_overview);
     // The active range reads as the lit band.
     let (a0, a1) = (active.0.clamp(0, MIDI_MAX), active.1.clamp(0, MIDI_MAX));
@@ -409,7 +408,7 @@ pub fn draw_overview(
 /// the keyboard — the one entry the frame renderer calls.
 #[allow(clippy::too_many_arguments)] // one widget's flat prop set, all scalars
 pub fn draw_widget(
-    mesh: &mut Mesh,
+    d: &mut Draw,
     rect: Rect,
     min: i32,
     max: i32,
@@ -418,34 +417,24 @@ pub fn draw_widget(
     active_max: i32,
     pressed: &[i32],
     label: Option<&str>,
-    m: &Metrics,
-    theme: &Theme,
 ) {
+    let m = d.m;
     if let Some(text) = label {
         font::text(
-            mesh,
+            d.mesh,
             text,
             rect.x + m.pad,
             rect.y + 2.0,
             m.label_scale,
-            theme.text,
+            d.theme.text,
         );
     }
     let l = layout(rect, min, max, overview, label.is_some(), m);
     if let Some(strip) = l.overview {
-        draw_overview(
-            mesh,
-            strip,
-            l.min,
-            l.max,
-            (active_min, active_max),
-            pressed,
-            m,
-            theme,
-        );
+        draw_overview(d, strip, l.min, l.max, (active_min, active_max), pressed);
     }
     draw(
-        mesh,
+        d,
         &l,
         &PianoDraw {
             pressed,
@@ -453,8 +442,6 @@ pub fn draw_widget(
             active_max,
             label,
         },
-        m,
-        theme,
     );
 }
 
@@ -510,6 +497,8 @@ pub fn voice_off_msg(node: i32) -> OscMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::paint::Mesh;
+    use crate::host::theme::Theme;
 
     fn l(min: i32, max: i32) -> Layout {
         layout(
@@ -721,7 +710,7 @@ mod tests {
     fn drawing_covers_keys_and_overview() {
         let mut mesh = Mesh::new();
         draw_widget(
-            &mut mesh,
+            &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 700.0, 140.0),
             60,
             72,
@@ -730,14 +719,12 @@ mod tests {
             127,
             &[60, 61],
             Some("piano"),
-            &Metrics::default(),
-            &Theme::default(),
         );
         assert!(mesh.vertex_count() > 0);
         // Grayed keys still draw (they are visible, just inactive).
         let mut gray = Mesh::new();
         draw_widget(
-            &mut gray,
+            &mut Draw::new(&mut gray, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 700.0, 140.0),
             60,
             72,
@@ -746,8 +733,6 @@ mod tests {
             67,
             &[],
             None,
-            &Metrics::default(),
-            &Theme::default(),
         );
         assert!(gray.vertex_count() > 0);
     }

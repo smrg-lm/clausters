@@ -555,14 +555,12 @@ pub(super) fn collect_widgets(
                 align,
             } => {
                 controls::draw_label(
-                    &mut *mesh,
+                    &mut Draw::new(mesh, m, th),
                     text,
                     p.rect,
                     *text_size * p.scale,
                     *wrap,
                     *align,
-                    m,
-                    th,
                 );
             }
             // Every signal element, sorted to the renderer its presentation
@@ -614,7 +612,7 @@ pub(super) fn collect_widgets(
                 label,
                 ..
             } => piano::draw_widget(
-                &mut *mesh,
+                &mut Draw::new(mesh, m, th),
                 p.rect,
                 *min,
                 *max,
@@ -623,8 +621,6 @@ pub(super) fn collect_widgets(
                 *active_max,
                 pressed,
                 label.as_deref(),
-                m,
-                th,
             ),
             WidgetKind::Bpf {
                 points,
@@ -731,7 +727,7 @@ pub(super) fn collect_widgets(
                     .filter(|(id, _)| Some(*id) == p.widget.id)
                     .map(|(_, r)| r);
                 patch::draw(
-                    &mut *mesh,
+                    &mut Draw::new(mesh, m, th),
                     p.rect,
                     patch,
                     label.as_deref(),
@@ -741,7 +737,6 @@ pub(super) fn collect_widgets(
                         marquee,
                         scale: p.scale,
                     },
-                    th,
                 );
             }
             WidgetKind::NodeTree {
@@ -843,14 +838,12 @@ pub(super) fn collect_widgets(
                 // next to it.
                 mesh.set_clip(Some(p.clip.map_or(p.rect, |c| c.intersect(p.rect))));
                 controls::draw(
-                    &mut *mesh,
+                    &mut Draw::new(mesh, m, th),
                     kind,
                     p.rect,
                     p.widget.id == active_button,
                     p.widget.id.is_some() && p.widget.id == inputs.focused_text,
                     p.scale,
-                    m,
-                    th,
                 );
                 mesh.set_clip(p.clip);
             }

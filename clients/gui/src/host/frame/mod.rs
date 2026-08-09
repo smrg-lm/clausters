@@ -43,7 +43,7 @@ use super::canvas::{self, CanvasView};
 use super::layout::{self, Rect};
 use super::metrics::Metrics;
 use super::nodetree::{self, NodeTree};
-use super::paint::{Mesh, Painter};
+use super::paint::{Draw, Mesh, Painter};
 use super::ruler::{self, TimeUnit};
 use super::signal::{self, Presentation};
 use super::spectrum::SpectrumState;
