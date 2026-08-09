@@ -199,7 +199,7 @@ pub(super) struct ClipDrag {
 /// snapped and clamped), writes it and reports it.
 ///
 /// The cursor maps through the group's **current** window, not the press-time
-/// one — that is what lets the edge auto-scroll ([`Gestures::tick`]) carry the
+/// one — that is what lets the edge auto-scroll ([`super::Gestures::tick`]) carry the
 /// clip: panning the view under a held cursor moves the sample beneath it, and
 /// the clip follows. `press_sample` is already a timeline coordinate, so it
 /// stays fixed while the window moves.
