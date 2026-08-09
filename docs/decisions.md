@@ -1561,7 +1561,7 @@ a Sutherland-Hodgman polygon clip as triangles are emitted (a triangle against
 a rectangle yields at most 7 vertices; fully-outside geometry is dropped
 before it reaches the buffer). The batch stays single, and the clipping is
 identical on both fronts by construction because it happens before the GPU.
-The **heavy views keep a real scissor** (`host/frame.rs::apply_scissor`) —
+The **heavy views keep a real scissor** (`host/frame/mod.rs::apply_scissor`) —
 they own their own pipelines and draw through `set_viewport`, which positions
 but does not cut, so there is no batch to protect there and nothing else can
 do the job.
