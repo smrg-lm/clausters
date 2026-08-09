@@ -838,10 +838,10 @@ pub(crate) fn clip_point_move(
     cx: f64,
     cy: f64,
 ) -> bool {
-    let Some(widget) = host.window_def(def_id).and_then(|t| t.find(clip_id)) else {
+    let Some(kind) = host.widget_kind(def_id, clip_id) else {
         return false;
     };
-    let WidgetKind::Clip { dur, .. } = widget.kind else {
+    let WidgetKind::Clip { dur, .. } = *kind else {
         return false;
     };
     let t = track::curve_time_at(rect, local, cx).min(dur);
@@ -1212,7 +1212,7 @@ pub(crate) fn pianoroll_hit(
         osc_lane,
         editor,
         ..
-    } = &host.window_def(def_id)?.find(id)?.kind
+    } = host.widget_kind(def_id, id)?
     else {
         return None;
     };
@@ -1464,16 +1464,13 @@ pub(crate) fn piano_set_range(
 /// Whether a piano key is inside the widget's active (non-grayed) range — a
 /// press outside it is inert.
 pub(crate) fn piano_key_active(host: &Host, def_id: i32, widget_id: i32, pitch: i32) -> bool {
-    match host.window_def(def_id).and_then(|t| t.find(widget_id)) {
-        Some(w) => match &w.kind {
-            WidgetKind::Piano {
-                active_min,
-                active_max,
-                ..
-            } => (*active_min..=*active_max).contains(&pitch),
-            _ => false,
-        },
-        None => false,
+    match host.widget_kind(def_id, widget_id) {
+        Some(WidgetKind::Piano {
+            active_min,
+            active_max,
+            ..
+        }) => (*active_min..=*active_max).contains(&pitch),
+        _ => false,
     }
 }
 
