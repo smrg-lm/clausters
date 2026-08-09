@@ -485,18 +485,12 @@ pub(crate) fn plane_can_pan(
 /// The current 0..1 fraction of a continuous control (slider/knob/number) in the
 /// host tree — the live value used to drive an incremental drag.
 pub(crate) fn fraction_of(host: &Host, def_id: i32, widget_id: i32) -> Option<f32> {
-    fn walk(w: &Widget, id: i32) -> Option<f32> {
-        if w.id == Some(id) {
-            return match &w.kind {
-                WidgetKind::Slider { range: r, .. }
-                | WidgetKind::Knob(r)
-                | WidgetKind::Number(r) => Some(r.fraction()),
-                _ => None,
-            };
+    match &host.window_def(def_id)?.find(widget_id)?.kind {
+        WidgetKind::Slider { range: r, .. } | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
+            Some(r.fraction())
         }
-        w.children.iter().find_map(|c| walk(c, id))
+        _ => None,
     }
-    walk(host.window_def(def_id)?, widget_id)
 }
 
 /// Sets a continuous control's value from a 0..1 fraction, in the host tree.
@@ -629,13 +623,7 @@ pub(crate) fn set_menu_index(host: &mut Host, def_id: i32, id: i32, to: usize) {
 /// The current event value of widget `id` in `tree` (what a `/gui_event` or a
 /// bound forward carries).
 pub(crate) fn value_of(tree: &Widget, id: i32) -> Option<OscType> {
-    fn walk(w: &Widget, id: i32) -> Option<OscType> {
-        if w.id == Some(id) {
-            return w.kind.event_value();
-        }
-        w.children.iter().find_map(|c| walk(c, id))
-    }
-    walk(tree, id)
+    tree.find(id)?.kind.event_value()
 }
 
 /// Runs `f` over a `bpf` widget's model in the host tree — the one door every

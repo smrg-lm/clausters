@@ -12,7 +12,7 @@ use super::super::interact::{self, Hit};
 use super::super::widget::WidgetKind;
 use super::super::{Host, pianoroll, textedit};
 use super::effects::{emit_notes, emit_value, emit_view, redraw_all};
-use super::nav::{collect_timeline_ids, hit, set_y_view};
+use super::nav::{hit, set_y_view, timeline_ids};
 use super::{GestureCtx, GestureEffect, Gestures, TextKey};
 
 impl Gestures {
@@ -340,10 +340,10 @@ impl Gestures {
     pub fn reset_timelines(&mut self, host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
-        let mut ids: Vec<i32> = Vec::new();
-        if let Some(tree) = host.window_def(def_id) {
-            collect_timeline_ids(tree, &mut ids);
-        }
+        let ids = host
+            .window_def(def_id)
+            .map(timeline_ids)
+            .unwrap_or_default();
         for id in ids {
             // The whole group resets (linked members in other windows too).
             let roots = host.reset_timeline(id);

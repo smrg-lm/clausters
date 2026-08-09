@@ -1257,16 +1257,15 @@ fn watch_msg(bus: i32, watch: bool) -> OscMessage {
 }
 
 /// Appends every audio bus whose samples a tree's views read, deduplicated.
-fn collect_audio_buses(widget: &Widget, out: &mut Vec<i32>) {
+fn collect_audio_buses(tree: &Widget, out: &mut Vec<i32>) {
     let mut mine = Vec::new();
-    widget.kind.audio_buses_read(&mut mine);
+    for widget in tree.descendants() {
+        widget.kind.audio_buses_read(&mut mine);
+    }
     for bus in mine {
         if bus >= 0 && !out.contains(&bus) {
             out.push(bus);
         }
-    }
-    for child in &widget.children {
-        collect_audio_buses(child, out);
     }
 }
 

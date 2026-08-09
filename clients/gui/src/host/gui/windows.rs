@@ -289,14 +289,13 @@ fn collect_timelines(
 
 /// Builds a [`CanvasView`] (compiling the user shader) for every `canvas` in the
 /// tree, keyed by widget id.
-fn collect_canvases(widget: &Widget, gpu: &Gpu, out: &mut HashMap<i32, CanvasView>) {
-    if let WidgetKind::Canvas { shader, .. } = &widget.kind
-        && let Some(id) = widget.id
-    {
-        out.insert(id, CanvasView::new(&gpu.device, gpu.config.format, shader));
-    }
-    for child in &widget.children {
-        collect_canvases(child, gpu, out);
+fn collect_canvases(tree: &Widget, gpu: &Gpu, out: &mut HashMap<i32, CanvasView>) {
+    for widget in tree.descendants() {
+        if let WidgetKind::Canvas { shader, .. } = &widget.kind
+            && let Some(id) = widget.id
+        {
+            out.insert(id, CanvasView::new(&gpu.device, gpu.config.format, shader));
+        }
     }
 }
 

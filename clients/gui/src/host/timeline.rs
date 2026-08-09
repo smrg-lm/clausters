@@ -188,17 +188,13 @@ pub(crate) fn own_gutter(kind: &WidgetKind, metrics: &Metrics) -> f32 {
 /// renderer and the hit-test read it from there, so a clip is dragged on the
 /// pixels it was drawn on.
 pub(crate) fn group_indents(tree: &Widget, metrics: &Metrics) -> HashMap<GroupKey, f32> {
-    fn walk(widget: &Widget, metrics: &Metrics, out: &mut HashMap<GroupKey, f32>) {
+    let mut out: HashMap<GroupKey, f32> = HashMap::new();
+    for widget in tree.descendants() {
         if let (Some(id), Some(editor)) = (widget.id, widget.kind.editor()) {
             let slot = out.entry(group_key(id, editor.link)).or_insert(0.0f32);
             *slot = slot.max(own_gutter(&widget.kind, metrics));
         }
-        for child in &widget.children {
-            walk(child, metrics, out);
-        }
     }
-    let mut out = HashMap::new();
-    walk(tree, metrics, &mut out);
     out
 }
 
@@ -256,22 +252,17 @@ impl Host {
 
     /// Every timeline widget in every window def, with its group key.
     fn timeline_members(&self) -> Vec<Member> {
-        fn walk(widget: &Widget, root: i32, out: &mut Vec<Member>) {
-            if let (Some(id), Some(editor)) = (widget.id, widget.kind.editor()) {
-                out.push(Member {
-                    root,
-                    id,
-                    key: group_key(id, editor.link),
-                    offset: editor.offset,
-                });
-            }
-            for child in &widget.children {
-                walk(child, root, out);
-            }
-        }
         let mut out = Vec::new();
         for (root, tree) in &self.window_defs {
-            walk(tree, *root, &mut out);
+            out.extend(tree.descendants().filter_map(|w| {
+                let editor = w.kind.editor()?;
+                Some(Member {
+                    root: *root,
+                    id: w.id?,
+                    key: group_key(w.id?, editor.link),
+                    offset: editor.offset,
+                })
+            }));
         }
         out
     }
@@ -366,47 +357,25 @@ impl Host {
     /// The `(sample_rate, tempo)` grid of the first `pianoroll` in group `key`,
     /// if it holds one — the surface whose axis exists before its content.
     fn roll_grid(&self, key: GroupKey) -> Option<(f64, f64)> {
-        self.window_defs.iter().find_map(|(_root, tree)| {
-            fn walk(w: &Widget, key: GroupKey, out: &mut Option<(f64, f64)>) {
-                if out.is_none()
-                    && let (Some(id), Some(editor), true) = (
-                        w.id,
-                        w.kind.editor(),
-                        matches!(w.kind, super::widget::WidgetKind::PianoRoll { .. }),
-                    )
-                    && group_key(id, editor.link) == key
-                {
-                    *out = Some((editor.sample_rate, editor.tempo));
-                }
-                for c in &w.children {
-                    walk(c, key, out);
-                }
-            }
-            let mut found = None;
-            walk(tree, key, &mut found);
-            found
+        self.window_defs.values().find_map(|tree| {
+            tree.descendants().find_map(|w| {
+                let editor = w.kind.editor()?;
+                (matches!(w.kind, super::widget::WidgetKind::PianoRoll { .. })
+                    && group_key(w.id?, editor.link) == key)
+                    .then_some((editor.sample_rate, editor.tempo))
+            })
         })
     }
 
     /// Whether group `key` holds a `track` lane (a multitrack axis).
     fn group_has_lane(&self, key: GroupKey) -> bool {
-        self.window_defs.iter().any(|(_root, tree)| {
-            fn walk(w: &Widget, key: GroupKey, out: &mut bool) {
-                if let (Some(id), Some(editor), true) = (
-                    w.id,
-                    w.kind.editor(),
-                    matches!(w.kind, super::widget::WidgetKind::Track { .. }),
-                ) && group_key(id, editor.link) == key
-                {
-                    *out = true;
-                }
-                for c in &w.children {
-                    walk(c, key, out);
-                }
-            }
-            let mut found = false;
-            walk(tree, key, &mut found);
-            found
+        self.window_defs.values().any(|tree| {
+            tree.descendants().any(|w| {
+                matches!(w.kind, super::widget::WidgetKind::Track { .. })
+                    && w.id
+                        .zip(w.kind.editor())
+                        .is_some_and(|(id, editor)| group_key(id, editor.link) == key)
+            })
         })
     }
 
@@ -490,33 +459,23 @@ impl Host {
     }
 
     fn sync_track_totals_inner(&mut self, refit: bool) {
-        fn walk(widget: &Widget, out: &mut Vec<(i32, usize)>) {
-            match (&widget.id, &widget.kind) {
-                (Some(id), super::widget::WidgetKind::Track { .. }) => {
-                    let span = super::track::clips_span(widget);
-                    out.push((*id, span.ceil().max(0.0) as usize));
+        /// A surface's own extent in samples: a lane spans its clips, a roll
+        /// spans its material (the end of its last note and its last event).
+        fn extent(widget: &Widget) -> Option<(i32, usize)> {
+            let span = match (&widget.id?, &widget.kind) {
+                (_, super::widget::WidgetKind::Track { .. }) => super::track::clips_span(widget),
+                (_, super::widget::WidgetKind::PianoRoll { notes, osc, .. }) => {
+                    let notes = notes.iter().map(|n| n.start + n.dur);
+                    let events = osc.iter().map(|m| m.time);
+                    notes.chain(events).fold(0.0f64, f64::max)
                 }
-                // A piano-roll's extent is its content: the end of its last note
-                // and its last OSC event, so its shared axis spans the material.
-                (Some(id), super::widget::WidgetKind::PianoRoll { notes, osc, .. }) => {
-                    let mut span = 0.0f64;
-                    for n in notes {
-                        span = span.max(n.start + n.dur);
-                    }
-                    for m in osc {
-                        span = span.max(m.time);
-                    }
-                    out.push((*id, span.ceil().max(0.0) as usize));
-                }
-                _ => {}
-            }
-            for child in &widget.children {
-                walk(child, out);
-            }
+                _ => return None,
+            };
+            Some((widget.id?, span.ceil().max(0.0) as usize))
         }
         let mut lanes = Vec::new();
         for tree in self.window_defs.values() {
-            walk(tree, &mut lanes);
+            lanes.extend(tree.descendants().filter_map(extent));
         }
         for (id, span) in lanes {
             if refit {

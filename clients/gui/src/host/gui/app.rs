@@ -26,7 +26,7 @@ use crate::host::gestures::{Gestures, TextKey};
 #[cfg(feature = "midi")]
 use crate::host::interact;
 use crate::host::live::TapWindow;
-use crate::host::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_live_widget};
+use crate::host::live::{self, tree_has_canvas, tree_has_live_widget};
 use crate::host::nodetree::NodeTree;
 use crate::host::paint::Painter;
 use crate::host::spectrum::SpectrumState;
@@ -172,36 +172,20 @@ impl App {
         }
     }
 
-    /// The current value of control bus `bus` from the shared segment (`0.0`
-    /// without a segment or for a negative/out-of-range bus).
-    pub(super) fn read_bus(&self, bus: i32) -> f32 {
-        if bus < 0 {
-            return 0.0;
-        }
-        self.shm.as_ref().map_or(0.0, |s| s.control(bus as usize))
-    }
-
     /// Pushes one fresh sample into every `scope`'s rolling history, read from the
     /// shared segment. Called once per animation frame tick (not per `render`), so
     /// the scope scrolls at a steady, time-based rate regardless of how often the
     /// window happens to repaint.
     fn advance_scopes(&mut self) {
-        // Collect (window, scope id, bus value) under immutable borrows, then push
-        // — keeps the shared-segment read and the per-window history mutation
-        // from overlapping borrows of `self`.
-        let mut samples: Vec<(i32, i32, f32)> = Vec::new();
-        for def_id in self.windows.keys() {
+        // The segment is taken out first (a cheap `Arc` clone), which is what
+        // frees `self` for the per-window mutation — the same shape
+        // `advance_tap_windows` uses, so both read the tick through the one
+        // shared advance rather than a front-side copy of it.
+        let shm = self.shm.clone();
+        let read = |bus: i32| frame::read_bus(shm.as_deref(), bus);
+        for (def_id, ws) in &mut self.windows {
             if let Some(tree) = self.host.window_def(*def_id) {
-                let mut scopes = Vec::new();
-                collect_scopes(tree, &mut scopes);
-                for (id, bus) in scopes {
-                    samples.push((*def_id, id, self.read_bus(bus)));
-                }
-            }
-        }
-        for (def_id, id, value) in samples {
-            if let Some(ws) = self.windows.get_mut(&def_id) {
-                push_sample(ws.scopes.entry(id).or_default(), value);
+                live::advance_scope_histories(tree, read, &mut ws.scopes);
             }
         }
     }
@@ -733,19 +717,15 @@ impl ApplicationHandler<UserEvent> for App {
 impl App {
     /// Every `midi_in` piano-roll in an open window, as `(window, widget)`.
     pub(super) fn midi_rolls(&self) -> Vec<(i32, i32)> {
-        fn collect(w: &Widget, def_id: i32, out: &mut Vec<(i32, i32)>) {
-            if let (WidgetKind::PianoRoll { midi_in: true, .. }, Some(id)) = (&w.kind, w.id) {
-                out.push((def_id, id));
-            }
-            for c in &w.children {
-                collect(c, def_id, out);
-            }
-        }
         let mut out = Vec::new();
         for &def_id in self.windows.keys() {
-            if let Some(tree) = self.host.window_def(def_id) {
-                collect(tree, def_id, &mut out);
-            }
+            let Some(tree) = self.host.window_def(def_id) else {
+                continue;
+            };
+            out.extend(tree.descendants().filter_map(|w| {
+                matches!(w.kind, WidgetKind::PianoRoll { midi_in: true, .. })
+                    .then_some((def_id, w.id?))
+            }));
         }
         out
     }

@@ -1481,17 +1481,29 @@ impl Widget {
     /// window needs a frame per move (a fully static one, like a plot's, has no
     /// other frame source; a live one is already redrawn every tick).
     pub fn has_hover_readout(&self) -> bool {
-        self.is_timeline()
-            || self.signal().is_some_and(|el| !el.is_live())
-            || self.children.iter().any(Widget::has_hover_readout)
+        self.descendants()
+            .any(|w| w.is_timeline() || w.signal().is_some_and(|el| !el.is_live()))
+    }
+
+    /// Every widget in this subtree, `self` first and each child's subtree in
+    /// order — the tree's one traversal.
+    ///
+    /// Nearly everything a pass wants from the tree is a filter over this: the
+    /// live buses a window reads, the timeline views on an axis, the ids the
+    /// server leg must query. Writing each of those as its own recursion is
+    /// what the walk-shaped helper functions used to be, and every one of them
+    /// had to re-state the same two lines to get the order right.
+    ///
+    /// Order is **pre-order**, which is the order the layout emits and the
+    /// order the drawing depends on: a parent is seen before the children it
+    /// contains.
+    pub fn descendants(&self) -> Descendants<'_> {
+        Descendants { stack: vec![self] }
     }
 
     /// The widget with id `id` anywhere in this tree.
     pub fn find(&self, id: i32) -> Option<&Widget> {
-        if self.id == Some(id) {
-            return Some(self);
-        }
-        self.children.iter().find_map(|c| c.find(id))
+        self.descendants().find(|w| w.id == Some(id))
     }
 
     /// The widget with id `id` anywhere in this tree, mutably (for `/gui_set`
@@ -1501,6 +1513,26 @@ impl Widget {
             return Some(self);
         }
         self.children.iter_mut().find_map(|c| c.find_mut(id))
+    }
+}
+
+/// The pre-order walk of a widget subtree ([`Widget::descendants`]).
+///
+/// An explicit stack rather than a recursion, so a caller can `filter`,
+/// `find` or `any` over the tree and stop where it likes — a deep tree costs
+/// no call frames.
+pub struct Descendants<'a> {
+    stack: Vec<&'a Widget>,
+}
+
+impl<'a> Iterator for Descendants<'a> {
+    type Item = &'a Widget;
+
+    fn next(&mut self) -> Option<&'a Widget> {
+        let widget = self.stack.pop()?;
+        // Reversed, so the pop order is the children's own order.
+        self.stack.extend(widget.children.iter().rev());
+        Some(widget)
     }
 }
 
@@ -1727,6 +1759,29 @@ mod tests {
 
     fn node(json: &str) -> GuiNode {
         GuiNode::parse(json.as_bytes()).unwrap()
+    }
+
+    /// The traversal is pre-order and keeps each level's own order: a parent
+    /// before the children it contains, siblings left to right. Every pass that
+    /// reads the tree through it inherits that order, so it is pinned here
+    /// rather than in each of them.
+    #[test]
+    fn descendants_walk_parents_before_children_in_order() {
+        let tree = Widget::from_node(
+            1,
+            &node(
+                r#"{"id":1,"type":"window","children":[
+                    {"id":2,"type":"layout","children":[
+                        {"id":3,"type":"label","text":"a"},
+                        {"id":4,"type":"label","text":"b"}]},
+                    {"id":5,"type":"layout","children":[
+                        {"id":6,"type":"label","text":"c"}]}]}"#,
+            ),
+            &[],
+        )
+        .unwrap();
+        let ids: Vec<i32> = tree.descendants().filter_map(|w| w.id).collect();
+        assert_eq!(ids, vec![1, 2, 3, 4, 5, 6]);
     }
 
     /// A plane's zoom is nameable *and* clearable: a positive number is the

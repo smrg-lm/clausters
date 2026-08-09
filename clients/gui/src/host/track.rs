@@ -225,17 +225,12 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
 /// its navigation group) and, over a whole window, its full time axis. `0.0`
 /// when there are no clips.
 pub fn clips_span(tree: &Widget) -> f64 {
-    fn walk(w: &Widget, acc: &mut f64) {
-        if let WidgetKind::Clip { offset, dur, .. } = w.kind {
-            *acc = acc.max(offset + dur);
-        }
-        for c in &w.children {
-            walk(c, acc);
-        }
-    }
-    let mut span = 0.0;
-    walk(tree, &mut span);
-    span
+    tree.descendants()
+        .filter_map(|w| match w.kind {
+            WidgetKind::Clip { offset, dur, .. } => Some(offset + dur),
+            _ => None,
+        })
+        .fold(0.0f64, f64::max)
 }
 
 /// The full-span navigation window of a window's tracks — the fallback for a

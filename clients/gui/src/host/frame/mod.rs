@@ -162,6 +162,8 @@ pub(crate) fn visit_elements(
     owner: Option<i32>,
     f: &mut dyn FnMut(Option<i32>, &signal::SignalElement),
 ) {
+    // Not a flat `descendants` walk: an element's *owner* is the nearest id
+    // above it, which only a walk carrying that id down knows.
     let owner = widget.id.or(owner);
     if let WidgetKind::Signal(el) = &widget.kind {
         f(owner, el);
@@ -327,8 +329,9 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 }
 
 /// The current value of control bus `bus` from `source` (`0.0` without a source
-/// or for a negative/out-of-range bus) — the same rule the native front used.
-fn read_bus(source: Option<&dyn BusSource>, bus: i32) -> f32 {
+/// or for a negative/out-of-range bus) — the one rule, read by the frame and by
+/// the native front's scope tick alike.
+pub(crate) fn read_bus(source: Option<&dyn BusSource>, bus: i32) -> f32 {
     if bus < 0 {
         return 0.0;
     }

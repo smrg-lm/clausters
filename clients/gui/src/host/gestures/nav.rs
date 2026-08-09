@@ -94,16 +94,12 @@ pub(super) fn score_steps(host: &Host, def_id: i32, id: i32, rect: Rect, dy: f64
     }
 }
 
-/// Appends every timeline (waveform/spectrogram) widget id in the tree.
-pub(super) fn collect_timeline_ids(widget: &Widget, out: &mut Vec<i32>) {
-    if widget.is_nav_signal()
-        && let Some(id) = widget.id
-    {
-        out.push(id);
-    }
-    for child in &widget.children {
-        collect_timeline_ids(child, out);
-    }
+/// Every timeline (waveform/spectrogram) widget id in the tree.
+pub(super) fn timeline_ids(tree: &Widget) -> Vec<i32> {
+    tree.descendants()
+        .filter(|w| w.is_nav_signal())
+        .filter_map(|w| w.id)
+        .collect()
 }
 
 /// Writes the selection spanning samples `a..b` (any order, clamped to the

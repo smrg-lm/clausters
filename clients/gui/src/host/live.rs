@@ -30,15 +30,10 @@ pub(crate) const STREAM_PERIOD_MS: i32 = 33;
 /// Appends `(widget_id, bus)` for every **control-rate** `scope` in the tree,
 /// so the frame tick can sample each one's bus into its rolling history (an
 /// audio-rate scope reads a tap window instead — see [`collect_tap_scopes`]).
-pub(crate) fn collect_scopes(widget: &Widget, out: &mut Vec<(i32, i32)>) {
-    if let Some(bus) = widget.kind.live_bus()
-        && let Some(id) = widget.id
-    {
-        out.push((id, bus));
-    }
-    for child in &widget.children {
-        collect_scopes(child, out);
-    }
+pub(crate) fn collect_scopes(tree: &Widget) -> Vec<(i32, i32)> {
+    tree.descendants()
+        .filter_map(|w| Some((w.id?, w.kind.live_bus()?)))
+        .collect()
 }
 
 /// One tap consumer's per-tick display window: `channels` interleaved
@@ -76,43 +71,36 @@ pub(crate) struct TapScope {
 }
 
 /// Appends the [`TapScope`] of every audio-rate `scope` in the tree.
-pub(crate) fn collect_tap_scopes(widget: &Widget, out: &mut Vec<TapScope>) {
-    if let Some(el) = widget.kind.signal()
-        && el.presentation == Presentation::Signal
-        && let Some(bus) = el.source.bus()
-        && bus.rate.is_audio()
-        && let Some(id) = widget.id
-    {
-        out.push(TapScope {
-            widget_id: id,
-            bus: bus.bus,
-            channels: bus.channels,
-            window_ms: bus.window_ms,
-            trigger: bus.trigger,
-            hold: bus.hold,
-        });
-    }
-    for child in &widget.children {
-        collect_tap_scopes(child, out);
-    }
+pub(crate) fn collect_tap_scopes(tree: &Widget) -> Vec<TapScope> {
+    tree.descendants()
+        .filter_map(|w| {
+            let el = w.kind.signal()?;
+            let bus = el.source.bus()?;
+            (el.presentation == Presentation::Signal && bus.rate.is_audio()).then_some(TapScope {
+                widget_id: w.id?,
+                bus: bus.bus,
+                channels: bus.channels,
+                window_ms: bus.window_ms,
+                trigger: bus.trigger,
+                hold: bus.hold,
+            })
+        })
+        .collect()
 }
 
 /// The distinct, sorted tap indices a tree reads live each frame — every
 /// audio-rate scope, spectrum and phasescope (two taps each). The browser front
 /// subscribes exactly this set with `/bus_tapStream`.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
-pub(crate) fn collect_live_taps(widget: &Widget, out: &mut Vec<i32>) {
+pub(crate) fn collect_live_taps(tree: &Widget, out: &mut Vec<i32>) {
     let mut taps = Vec::new();
-    widget.kind.audio_buses_read(&mut taps);
-    for tap in taps {
-        if !out.contains(&tap) {
-            out.push(tap);
-        }
+    for widget in tree.descendants() {
+        widget.kind.audio_buses_read(&mut taps);
     }
-    for child in &widget.children {
-        collect_live_taps(child, out);
-    }
+    taps.retain(|tap| !out.contains(tap));
+    out.extend(taps);
     out.sort_unstable();
+    out.dedup();
 }
 
 /// Whether a widget tree contains a live widget: a bus-backed meter/scope,
@@ -180,8 +168,7 @@ pub(crate) fn update_tap_windows(
     read_raw: impl Fn(i32, &mut [f32]) -> bool,
     windows: &mut HashMap<i32, TapWindow>,
 ) {
-    let mut specs = Vec::new();
-    collect_tap_scopes(tree, &mut specs);
+    let specs = collect_tap_scopes(tree);
     let mut raw = Vec::new();
     let mut chans: Vec<Vec<f32>> = Vec::new();
     for spec in specs {
@@ -232,23 +219,20 @@ pub(crate) struct PhaseScope {
 }
 
 /// Appends the [`PhaseScope`] of every `phasescope` in the tree.
-pub(crate) fn collect_phase_scopes(widget: &Widget, out: &mut Vec<PhaseScope>) {
-    if let Some(el) = widget.kind.signal()
-        && el.presentation == Presentation::Phase
-        && let Some(bus) = el.source.bus()
-        && let Some(id) = widget.id
-    {
-        out.push(PhaseScope {
-            widget_id: id,
-            bus_l: bus.bus,
-            bus_r: bus.bus + 1,
-            window_ms: bus.window_ms,
-            hold: bus.hold,
-        });
-    }
-    for child in &widget.children {
-        collect_phase_scopes(child, out);
-    }
+pub(crate) fn collect_phase_scopes(tree: &Widget) -> Vec<PhaseScope> {
+    tree.descendants()
+        .filter_map(|w| {
+            let el = w.kind.signal()?;
+            let bus = el.source.bus()?;
+            (el.presentation == Presentation::Phase).then_some(PhaseScope {
+                widget_id: w.id?,
+                bus_l: bus.bus,
+                bus_r: bus.bus + 1,
+                window_ms: bus.window_ms,
+                hold: bus.hold,
+            })
+        })
+        .collect()
 }
 
 /// Refreshes each phasescope's interleaved `[l, r, l, r, …]` window (the same
@@ -264,8 +248,7 @@ pub(crate) fn update_phase_windows(
     read_raw: impl Fn(i32, &mut [f32]) -> bool,
     windows: &mut HashMap<i32, TapWindow>,
 ) {
-    let mut specs = Vec::new();
-    collect_phase_scopes(tree, &mut specs);
+    let specs = collect_phase_scopes(tree);
     let (mut l, mut r) = (Vec::new(), Vec::new());
     for spec in specs {
         if spec.hold {
@@ -306,24 +289,21 @@ pub(crate) struct SpectrumSpec {
 }
 
 /// Appends the [`SpectrumSpec`] of every `spectrum` in the tree.
-pub(crate) fn collect_spectra(widget: &Widget, out: &mut Vec<SpectrumSpec>) {
-    if let Some(el) = widget.kind.signal()
-        && el.presentation == Presentation::Spectrum
-        && let Some(bus) = el.source.bus()
-        && let Some(id) = widget.id
-    {
-        out.push(SpectrumSpec {
-            widget_id: id,
-            bus: bus.bus,
-            channels: bus.channels,
-            fft_size: el.spectral.fft_size,
-            averaging: el.spectral.averaging,
-            peak_hold: el.spectral.peak_hold,
-        });
-    }
-    for child in &widget.children {
-        collect_spectra(child, out);
-    }
+pub(crate) fn collect_spectra(tree: &Widget) -> Vec<SpectrumSpec> {
+    tree.descendants()
+        .filter_map(|w| {
+            let el = w.kind.signal()?;
+            let bus = el.source.bus()?;
+            (el.presentation == Presentation::Spectrum).then_some(SpectrumSpec {
+                widget_id: w.id?,
+                bus: bus.bus,
+                channels: bus.channels,
+                fft_size: el.spectral.fft_size,
+                averaging: el.spectral.averaging,
+                peak_hold: el.spectral.peak_hold,
+            })
+        })
+        .collect()
 }
 
 /// Folds each spectrum channel's newest FFT window into its persistent
@@ -336,8 +316,7 @@ pub(crate) fn update_spectra(
     read_raw: impl Fn(i32, &mut [f32]) -> bool,
     states: &mut HashMap<i32, Vec<super::spectrum::SpectrumState>>,
 ) {
-    let mut specs = Vec::new();
-    collect_spectra(tree, &mut specs);
+    let specs = collect_spectra(tree);
     let mut raw = Vec::new();
     for spec in specs {
         let chans = states.entry(spec.widget_id).or_default();
@@ -361,28 +340,23 @@ pub(crate) fn update_spectra(
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) fn tap_stream_frames(tree: &Widget, sample_rate: f64) -> usize {
     let mut frames = 0usize;
-    let mut scopes = Vec::new();
-    collect_tap_scopes(tree, &mut scopes);
-    for s in scopes {
+    for s in collect_tap_scopes(tree) {
         let display = oscil::display_frames(s.window_ms, sample_rate);
         frames = frames.max(oscil::raw_frames(display));
     }
-    let mut phases = Vec::new();
-    collect_phase_scopes(tree, &mut phases);
-    for p in phases {
+    for p in collect_phase_scopes(tree) {
         frames = frames.max(oscil::display_frames(p.window_ms, sample_rate));
     }
-    let mut spectra = Vec::new();
-    collect_spectra(tree, &mut spectra);
-    for s in spectra {
+    for s in collect_spectra(tree) {
         frames = frames.max(s.fft_size);
     }
     frames
 }
 
 /// Whether a widget tree contains a `canvas` (so the window animates each frame).
-pub(crate) fn tree_has_canvas(widget: &Widget) -> bool {
-    matches!(widget.kind, WidgetKind::Canvas { .. }) || widget.children.iter().any(tree_has_canvas)
+pub(crate) fn tree_has_canvas(tree: &Widget) -> bool {
+    tree.descendants()
+        .any(|w| matches!(w.kind, WidgetKind::Canvas { .. }))
 }
 
 /// Pushes one sample into a scope's rolling history, capped at [`SCOPE_HISTORY`].
@@ -403,9 +377,7 @@ pub(crate) fn advance_scope_histories(
     read: impl Fn(i32) -> f32,
     scopes: &mut HashMap<i32, VecDeque<f32>>,
 ) {
-    let mut pairs = Vec::new();
-    collect_scopes(tree, &mut pairs);
-    for (id, bus) in pairs {
+    for (id, bus) in collect_scopes(tree) {
         push_sample(scopes.entry(id).or_default(), read(bus));
     }
 }
@@ -414,22 +386,21 @@ pub(crate) fn advance_scope_histories(
 /// `meter`/`scope` bus plus a `canvas`'s non-negative `buses` entries. The
 /// browser front subscribes exactly this set with `/bus_stream`.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
-pub(crate) fn collect_live_buses(widget: &Widget, out: &mut Vec<i32>) {
-    let mut push = |bus: i32| {
-        if bus >= 0 && !out.contains(&bus) {
-            out.push(bus);
-        }
-    };
-    if let Some(bus) = widget.kind.live_bus() {
-        push(bus);
-    }
-    if let WidgetKind::Canvas { buses, .. } = &widget.kind {
-        for &bus in buses {
+pub(crate) fn collect_live_buses(tree: &Widget, out: &mut Vec<i32>) {
+    for widget in tree.descendants() {
+        let mut push = |bus: i32| {
+            if bus >= 0 && !out.contains(&bus) {
+                out.push(bus);
+            }
+        };
+        if let Some(bus) = widget.kind.live_bus() {
             push(bus);
         }
-    }
-    for child in &widget.children {
-        collect_live_buses(child, out);
+        if let WidgetKind::Canvas { buses, .. } = &widget.kind {
+            for &bus in buses {
+                push(bus);
+            }
+        }
     }
     out.sort_unstable();
 }

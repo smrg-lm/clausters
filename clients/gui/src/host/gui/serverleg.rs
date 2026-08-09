@@ -333,17 +333,16 @@ fn float_arg(arg: &OscType) -> f64 {
 /// Whether a widget tree contains a `nodetree` view (so the window drives the
 /// node-tree query/notify path).
 pub(super) fn tree_has_node_tree(widget: &Widget) -> bool {
-    widget.kind.node_tree_group().is_some() || widget.children.iter().any(tree_has_node_tree)
+    widget
+        .descendants()
+        .any(|w| w.kind.node_tree_group().is_some())
 }
 
-/// Appends the distinct server groups every `nodetree` in `widget` mirrors.
-fn collect_node_tree_groups(widget: &Widget, out: &mut Vec<i32>) {
-    if let Some(group) = widget.kind.node_tree_group()
-        && !out.contains(&group)
-    {
-        out.push(group);
-    }
-    for child in &widget.children {
-        collect_node_tree_groups(child, out);
+/// Appends the distinct server groups every `nodetree` in `tree` mirrors.
+fn collect_node_tree_groups(tree: &Widget, out: &mut Vec<i32>) {
+    for group in tree.descendants().filter_map(|w| w.kind.node_tree_group()) {
+        if !out.contains(&group) {
+            out.push(group);
+        }
     }
 }
