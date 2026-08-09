@@ -867,7 +867,7 @@ impl Host {
     ) -> bool {
         // An `axes` pair sets the chrome of the container's axes; it is the
         // same relocation `/gui_def` accepts, so it goes through the same
-        // table rather than a second one (see `widget::vocabulary`).
+        // table rather than a second one (see `widget::axes`).
         let props = Self::expand_axes(props);
         let keys: Vec<&String> = props.iter().map(|(k, _)| k).collect();
         if !self.registry.set(id, props.clone()) {
