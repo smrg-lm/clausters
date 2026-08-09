@@ -30,8 +30,11 @@ use crate::host::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_l
 use crate::host::nodetree::NodeTree;
 use crate::host::paint::Painter;
 use crate::host::spectrum::SpectrumState;
+#[cfg(feature = "midi")]
 use crate::host::timeline::group_key;
-use crate::host::widget::{Widget, WidgetKind};
+use crate::host::widget::Widget;
+#[cfg(feature = "midi")]
+use crate::host::widget::WidgetKind;
 use crate::host::{BusSource, ClientId, GUI_EVENT, Host, HostEffect};
 use crate::view::Renderers;
 
