@@ -4734,3 +4734,35 @@ one of them re-emitted the window it already had. The view events (`"view"`,
 carries a small epsilon, and that is not a fudge: a bound that is itself a
 function of the window's position converges to it by last bits rather than
 landing on it, and a billionth of a normalized axis is a millionth of a pixel.
+
+## The Rust builder is generic, so it never becomes a fourth widget catalog
+
+*2026-08-10, opening the Rust door into the host (`clausters_gui::tree`).*
+
+A program that links the crate needed a way to build a widget tree without
+serializing a JSON document against itself and parsing it straight back, and the
+obvious shape for it — one typed constructor per widget, `knob(min, max)`,
+`meter(bus)` — is the shape the Python builder already has and the one to
+refuse here.
+
+Every widget's props are declared in **three** surfaces today (the host, the
+Python builder, the web builder), and `docs/gui-props.md` plus
+`clients/python/tests/test_gui_props.py` exist precisely because three surfaces
+drift: the test reads all of them and fails on a divergence nobody declared. A
+typed Rust mirror would be a fourth, with no test holding it and no client
+asking for it — the Python client is the reference surface for the catalog by
+the project's own rule, and the reader who wants a knob's props reads its page,
+not a Rust signature.
+
+The second reason is the one that makes it structural rather than a matter of
+taste: a **registered element** (the `Element` trait) has props no catalog
+inside this crate can know, and instantiating one is a first-class use of the
+builder. So the open door — a node named by its wire type, props set by key —
+has to exist whatever else is built on top of it. Once it does, a typed twin of
+the catalog buys spelling rather than safety, at the cost of a surface that
+rots.
+
+What *is* typed is what a hand-written document actually loses: a prop is a Rust
+value, so an integer stays an integer and a continuous value stays continuous —
+the int/float distinction the host reads props by, kept by construction instead
+of by remembering to type `2.0`.

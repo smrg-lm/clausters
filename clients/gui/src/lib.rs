@@ -23,6 +23,12 @@
 //! `wasm32`, and a native I/O shell behind those traits (UDP transport, on-disk
 //! persistence, shared-memory bus source, mmap bulk loader, the winit/wgpu
 //! driver) that is excluded from `wasm32`.
+//!
+//! A program that **links** the crate rather than speaking to it over a socket
+//! has two doors of its own, and they are meant to be used together:
+//! [`tree`] builds a widget tree from Rust values and
+//! [`host::Host::define`] takes it, with no document written and parsed back;
+//! [`register`] adds a leaf the catalog does not have ([`Element`]).
 
 // This crate is the GUI host, read as *developer* documentation (much of it
 // with `--document-private-items`): a module's docs routinely name the private
@@ -33,6 +39,7 @@
 #![allow(rustdoc::private_intra_doc_links)]
 
 pub mod host;
+pub mod tree;
 
 /// Adding an element **from a program that links this crate**: implement
 /// [`Element`], register a constructor under the wire name it answers to, and

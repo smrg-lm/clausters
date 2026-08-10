@@ -729,10 +729,70 @@ impl Host {
         let Some(bytes) = json_arg(args, 1) else {
             return warn!("{from}: {GUI_DEF} needs a JSON string or blob argument");
         };
-        let mut node = match GuiNode::parse(bytes) {
+        let node = match GuiNode::parse(bytes) {
             Ok(node) => node,
             Err(e) => return warn!("{from}: {GUI_DEF} {id}: invalid GuiDef JSON: {e}"),
         };
+        let blobs = blob_args(&args[2.min(args.len())..]);
+        self.define_node(id, node, bytes.to_vec(), &blobs, &from, effects);
+    }
+
+    /// Defines a GuiDef tree **from Rust**, with no document to write and parse
+    /// back: the counterpart of `/gui_def` for a program that links the crate,
+    /// taking the node the parser would have produced (build one with
+    /// [`crate::tree`]). A `window` root opens or rebuilds its window, so the
+    /// returned effects are the ones [`Self::handle_packet`] returns.
+    ///
+    /// The def is still recorded as the document it is — persisted by `name`,
+    /// reloadable, answerable by `/gui_query` — because the JSON is *derived*
+    /// here rather than skipped: there is one definition path, and this is its
+    /// other entrance.
+    pub fn define(&mut self, root_id: i32, root: impl Into<GuiNode>) -> Vec<HostEffect> {
+        self.define_with_blobs(root_id, root, &[])
+    }
+
+    /// [`Self::define`] with the bulk payloads a `"blob": <index>` prop refers
+    /// to — the in-process equivalent of the blobs trailing a `/gui_def`
+    /// message.
+    pub fn define_with_blobs(
+        &mut self,
+        root_id: i32,
+        root: impl Into<GuiNode>,
+        blobs: &[Vec<u8>],
+    ) -> Vec<HostEffect> {
+        let node = root.into();
+        // The verbatim document, derived from the node before anything
+        // rewrites it — the same bytes the wire would have carried, which is
+        // what persistence and reload are the source of truth over.
+        let bytes = match serde_json::to_vec(&node) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                warn!("in-process: {GUI_DEF} {root_id}: cannot serialize the tree: {e}");
+                return Vec::new();
+            }
+        };
+        let mut effects = Vec::new();
+        self.define_node(root_id, node, bytes, blobs, &"in-process", &mut effects);
+        effects
+    }
+
+    /// The definition itself, from the point where the document has been
+    /// parsed — shared by the wire (`/gui_def`) and by [`Self::define`], so a
+    /// tree built in Rust is recorded, rendered, bound and persisted by
+    /// exactly the same steps as one that arrived as JSON. `source` only names
+    /// who asked, for the log.
+    fn define_node(
+        &mut self,
+        id: i32,
+        mut node: GuiNode,
+        bytes: Vec<u8>,
+        blobs: &[Vec<u8>],
+        source: &dyn std::fmt::Display,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        // The log names whoever asked — a client address on the wire, the
+        // process itself in a Rust program.
+        let from = source;
         // The axis chrome lands flat before anything records it, so the
         // registry — and the `/gui_info` a query answers with — carries the
         // props the host itself reads, whichever spelling the tree used. The
@@ -740,7 +800,7 @@ impl Host {
         // the script wrote.
         widget::flatten_tree_axes(&mut node);
         // Keep the verbatim JSON: the source of truth for persistence and reload.
-        self.def_json.insert(id, bytes.to_vec());
+        self.def_json.insert(id, bytes.clone());
         let outcome = self.registry.define(id, &node);
         // The acceptance criterion: log the parsed tree.
         info!(
@@ -756,8 +816,7 @@ impl Host {
         );
         // A window root becomes a renderable typed document; the front opens it.
         if node.kind == "window" {
-            let blobs = blob_args(&args[2.min(args.len())..]);
-            match Widget::from_node(id, &node, &blobs) {
+            match Widget::from_node(id, &node, blobs) {
                 Ok(mut tree) => {
                     // Theme groups and per-widget accents resolve here — at
                     // the mutation point, never per frame.
@@ -788,7 +847,7 @@ impl Host {
         if let Some(name) = node.props.get("name").and_then(Value::as_str)
             && let Some(store) = self.store.as_ref()
         {
-            match store.save(name, id, bytes) {
+            match store.save(name, id, &bytes) {
                 Ok(()) => info!("{from}: {GUI_DEF} {id}: saved as \"{name}\""),
                 Err(e) => warn!("{from}: {GUI_DEF} {id}: cannot save \"{name}\": {e}"),
             }
@@ -1920,5 +1979,103 @@ mod tests {
             host.forward(10, OscType::Float(1.0), &mut Vec::new()),
             "swallowed, not emitted"
         );
+    }
+
+    // ---- the two doors: a def sent as JSON, and a def built in Rust ----
+
+    /// **Parity is the whole promise of the Rust door**: a tree built with the
+    /// typed builder and the same tree sent as a `/gui_def` document must
+    /// leave the host in the same state — the same typed widget tree, the same
+    /// recorded document. They meet at `GuiNode`, so this is what proves the
+    /// two entrances share one definition path rather than resembling it.
+    #[test]
+    fn a_tree_built_in_rust_defines_what_the_document_defines() {
+        let json = r#"{"type":"window","title":"Mixer","w":400,"h":300,"children":[
+            {"id":2,"type":"layout","flow":"row","children":[
+                {"id":3,"type":"knob","label":"amp","max":2.0},
+                {"id":4,"type":"meter","bus":0}]}]}"#;
+        let mut sent = Host::new();
+        sent.handle_packet(def_msg(1, json), from());
+
+        let mut built = Host::new();
+        let effects = built.define(
+            1,
+            crate::tree::window()
+                .prop("title", "Mixer")
+                .prop("w", 400)
+                .prop("h", 300)
+                .child(
+                    crate::tree::layout()
+                        .id(2)
+                        .prop("flow", "row")
+                        .child(
+                            crate::tree::node("knob")
+                                .id(3)
+                                .prop("label", "amp")
+                                .prop("max", 2.0),
+                        )
+                        .child(crate::tree::node("meter").id(4).prop("bus", 0)),
+                ),
+        );
+
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, HostEffect::OpenWindow(1))),
+            "a window root opens its window through either door: {effects:?}"
+        );
+        assert_eq!(
+            format!("{:?}", built.window_def(1).unwrap()),
+            format!("{:?}", sent.window_def(1).unwrap()),
+            "the typed trees differ"
+        );
+        // And the document each recorded is the same one, which is what
+        // persistence, reload and `/gui_query` all read.
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&built.def_json[&1]).unwrap(),
+            serde_json::from_slice::<serde_json::Value>(&sent.def_json[&1]).unwrap(),
+        );
+    }
+
+    /// A registered element reaches the host through the Rust door with nothing
+    /// added to the builder — the K1 seam and the K2 builder meeting, which is
+    /// the case a program embedding the crate actually has.
+    #[test]
+    fn a_registered_element_defines_through_the_rust_door() {
+        #[derive(Debug, Clone)]
+        struct Pad(i32);
+        impl crate::Element for Pad {
+            fn set(&mut self, _key: &str, _v: &Value) -> bool {
+                false
+            }
+            fn draw(&self, _d: &mut crate::host::paint::Draw, _rect: crate::host::layout::Rect) {}
+            fn value(&self) -> Option<OscType> {
+                Some(OscType::Int(self.0))
+            }
+            fn clone_box(&self) -> Box<dyn crate::Element> {
+                Box::new(self.clone())
+            }
+        }
+        crate::register("test_door_pad", |props, _| {
+            Ok(Box::new(Pad(
+                props.get("n").and_then(Value::as_i64).unwrap_or(0) as i32,
+            )))
+        });
+
+        let mut host = Host::new();
+        host.define(
+            1,
+            crate::tree::window().child(crate::tree::node("test_door_pad").id(2).prop("n", 7)),
+        );
+        assert_eq!(
+            host.window_def(1)
+                .unwrap()
+                .find(2)
+                .unwrap()
+                .kind
+                .event_value(),
+            Some(OscType::Int(7)),
+        );
+        crate::unregister("test_door_pad");
     }
 }

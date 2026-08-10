@@ -568,6 +568,10 @@ The steps below are for a widget that is genuinely something else.
 
 Three properties hold it together, and none of them is a new rule to learn. The registry is consulted **only when no built-in name matched**, so a registration can neither shadow a built-in nor change what a shipped def means. A registry **miss is `Unknown`** — laid out, not painted — which is what an unrecognized type has always been, so an element family compiled out of a slim build degrades exactly the way a host older than the def does. And a **container is not extensible** this way: the coordinate systems stay the enum's.
 
+**Building the tree from Rust.** The same program needs a way to *instantiate* what it registered, and the host's only door was `handle_packet` — OSC framing around JSON — so an embedder had to serialize a document against itself and parse it back. `src/tree.rs` builds a node from Rust values and `Host::define(id, root)` takes it, doing everything `/gui_def` does from the point where the JSON has already been parsed. The two entrances meet at `GuiNode`, the generic wire node, so there is one definition path and a tree built in Rust is recorded, rendered, bound and persisted by the same steps as one that arrived as JSON — the derived document is still what persistence and `/gui_query` read. A pair of parity tests holds the two doors to the same result.
+
+The builder **does not mirror the widget catalog**, and that is the decision rather than an omission: a leaf is `node("knob").prop(…)`. Every widget's props are already declared in three surfaces a test holds together (`docs/gui-props.md` against the host, the Python builder and the web builder); a typed Rust twin would be a fourth to keep in step. A registered element has props no catalog in this crate can know, so the open door must exist regardless — and once it does, a typed twin buys spelling, not safety.
+
 A **new element kind** (a new primitive of the arrangement) is the client's
 business, not the host's: it lands in `clients/python/clausters/form/`, and it
 reaches the screen through the editor driver (`clausters/gui/editor.py`), which is
