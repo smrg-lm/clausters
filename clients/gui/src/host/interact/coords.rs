@@ -16,7 +16,7 @@
 //! [`hit`], [`read`] or [`edit`].
 //!
 //! [`Host`]: super::super::Host
-//! [`hit`]: super::hit
+//! [`hit`]: mod@super::hit
 //! [`read`]: super::read
 //! [`edit`]: super::edit
 
