@@ -1,5 +1,5 @@
 //! **How the machine talks to an element**: the one place the four phases of a
-//! gesture reach a [`Element`](crate::host::widget::Element), and the one place
+//! gesture reach an [`Element`], and the one place
 //! what an element reports becomes what the front sends.
 //!
 //! It is a file of its own because the four phases must agree about it, and
@@ -127,7 +127,7 @@ pub(super) fn report(
 /// with the placement it was drawn at.
 ///
 /// Found by asking the tree rather than by remembering: an overlay is declared
-/// ([`Element::overlay_rect`](crate::host::widget::Element::overlay_rect)), so
+/// ([`Element::overlay_rect`]), so
 /// there is no machine state to keep in step with an element that opened or
 /// closed one, and a def that replaced the tree takes its overlays with it.
 pub(super) fn overlay_owner(host: &Host, ctx: &GestureCtx) -> Option<(i32, Rect, f32)> {

@@ -4,7 +4,7 @@
 //! Each element gets *one* door, and both fronts go through it — which is what
 //! keeps a turned knob, a dragged break-point or a moved clip meaning the same
 //! thing natively and in a page. Two shapes recur: a setter that writes the
-//! value ([`set_fraction`], [`clip_set`], [`piano_set_range`]) and a
+//! value ([`clip_set`], [`piano_set_range`]) and a
 //! `…_edit`/`…_curve` door that hands a closure the element's own model
 //! ([`pianoroll_notes_edit`]) so the fronts never
 //! unpack a [`WidgetKind`] variant themselves.
@@ -228,7 +228,7 @@ pub(crate) fn header_set(
 }
 
 /// Writes a clip's placement (`offset`/`dur`, each clamped `>= 0`) in the host
-/// tree — the drag's mutation, the sibling of [`set_fraction`].
+/// tree — the drag's mutation.
 pub(crate) fn clip_set(
     host: &mut Host,
     def_id: i32,
