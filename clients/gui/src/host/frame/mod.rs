@@ -35,7 +35,7 @@ use std::sync::Arc;
 
 use crate::gpu::Gpu;
 use crate::spectrogram::{FreqScale, SpectrogramView, Stft, hop_capped};
-use crate::view::{Renderers, TimelineView};
+use crate::view::{Framing, Renderers, TimelineView};
 use crate::viewport::View;
 use crate::waveform::{WaveformData, WaveformView};
 
@@ -507,6 +507,16 @@ pub(crate) fn render(
                     let th = item.theme.as_deref().unwrap_or(theme);
                     slot.view
                         .set_palette([th.series_1, th.series_2, th.series_3, th.series_4]);
+                    let lanes = slot.view.num_channels();
+                    let overlaid = matches!(item.kind, TimelineKind::Waveform { overlay: true });
+                    let framings: Vec<Framing> = if overlaid || lanes == 1 {
+                        vec![framing_of(body, fb_w, fb_h)]
+                    } else {
+                        (0..lanes)
+                            .map(|ch| framing_of(lane_rect(body, lanes, ch), fb_w, fb_h))
+                            .collect()
+                    };
+                    slot.view.set_framings(&framings);
                     slot.view.upload(
                         &gpu.device,
                         &gpu.queue,
@@ -528,7 +538,8 @@ pub(crate) fn render(
                     })
                     .nav;
                     let nav = placed_nav(&nav, item.editor.offset);
-                    for view in &mut slot.views {
+                    let lanes = slot.views.len();
+                    for (ch, view) in slot.views.iter_mut().enumerate() {
                         view.set_display(
                             *db_floor,
                             *db_ceil,
@@ -536,6 +547,7 @@ pub(crate) fn render(
                             (*colormap).max(0) as u32,
                         );
                         view.set_freq_window(item.editor.y_view().0, item.editor.y_view().1);
+                        view.set_framing(framing_of(lane_rect(body, lanes, ch), fb_w, fb_h));
                         view.upload(
                             &gpu.device,
                             &gpu.queue,
@@ -553,13 +565,15 @@ pub(crate) fn render(
     // between a spectral *view* of a file and a spectral *clip* of it.
     for item in &collected.spectral_bodies {
         if let Some(slot) = spectrograms.get_mut(&item.id) {
-            for view in &mut slot.views {
+            let lanes = slot.views.len();
+            for (ch, view) in slot.views.iter_mut().enumerate() {
                 view.set_display(
                     item.db_floor,
                     item.db_ceil,
                     item.freq_scale,
                     item.colormap.max(0) as u32,
                 );
+                view.set_framing(framing_of(lane_rect(item.rect, lanes, ch), fb_w, fb_h));
                 view.upload(
                     &gpu.device,
                     &gpu.queue,
@@ -577,7 +591,8 @@ pub(crate) fn render(
             view.set_shader(&gpu.device, &frame.shader);
             let time = view.elapsed();
             let res = [frame.body.w.max(1.0), frame.body.h.max(1.0)];
-            view.upload(&gpu.queue, res, time, frame.params);
+            let framing = framing_of(frame.body, fb_w, fb_h);
+            view.upload(&gpu.queue, res, time, frame.params, framing);
         }
     }
 
@@ -717,9 +732,11 @@ pub(crate) fn render(
 /// Applies a placed widget's clip as the pass scissor (the full framebuffer
 /// when it has none), returning `false` when the clip is empty — the caller
 /// skips the draw entirely. The heavy views draw through `set_viewport`, which
-/// *positions* but does not cut; a scrolled view poking out of its `scroll`
-/// container is cut by this scissor, the GPU sibling of the mesh's geometric
-/// clip.
+/// *positions and scales* but does not cut; a scrolled view poking out of its
+/// `scroll` container is cut by this scissor, the GPU sibling of the mesh's
+/// geometric clip. What the scissor cannot reach is the **window** edge, since
+/// a viewport may not leave the attachment at all — that is [`Framing`]'s
+/// half of the same job.
 fn apply_scissor(
     pass: &mut wgpu::RenderPass<'_>,
     clip: Option<Rect>,
@@ -741,19 +758,71 @@ fn apply_scissor(
     true
 }
 
-/// Clamps a widget rect to the framebuffer for `set_viewport` (which rejects a
-/// viewport that leaves the attachment).
-fn clamp_viewport(r: Rect, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {
-    let x = r.x.clamp(0.0, fb_w as f32);
-    let y = r.y.clamp(0.0, fb_h as f32);
-    let w = r.w.min(fb_w as f32 - x).max(0.0);
-    let h = r.h.min(fb_h as f32 - y).max(0.0);
-    (x, y, w, h)
+/// The part of a widget rect the framebuffer can hold, as `set_viewport` wants
+/// it (that call rejects a viewport leaving the attachment).
+///
+/// It is the **intersection**, not a clamp of the origin: a rect starting above
+/// the window keeps its far edge where it is instead of sliding down with its
+/// origin. What the viewport still cannot do is cut — it scales whatever the
+/// view draws into whatever rectangle it is given — so a view that is only
+/// partly visible also gets a [`Framing`] built from this pair, and places its
+/// geometry for the full rect inside it.
+pub(crate) fn clamp_viewport(r: Rect, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {
+    let x0 = r.x.max(0.0);
+    let y0 = r.y.max(0.0);
+    let x1 = (r.x + r.w).min(fb_w as f32);
+    let y1 = (r.y + r.h).min(fb_h as f32);
+    (x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
+}
+
+/// The [`Framing`] a rect is drawn with in this framebuffer: the identity while
+/// it fits, and the placement that keeps its picture at a fixed size once the
+/// window edge starts cutting it.
+pub(crate) fn framing_of(r: Rect, fb_w: u32, fb_h: u32) -> Framing {
+    Framing::new((r.x, r.y, r.w, r.h), clamp_viewport(r, fb_w, fb_h))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The viewport is the rect **intersected** with the framebuffer, not its
+    /// origin clamped into it: a lane starting above the window keeps its far
+    /// edge where it is instead of sliding down, and the framing built from the
+    /// pair then cuts the picture there.
+    #[test]
+    fn a_viewport_is_the_intersection_and_the_framing_follows() {
+        let (fb_w, fb_h) = (800u32, 600u32);
+        // Wholly inside: the viewport is the rect and nothing is framed.
+        let inside = Rect::new(10.0, 20.0, 300.0, 120.0);
+        assert_eq!(
+            clamp_viewport(inside, fb_w, fb_h),
+            (10.0, 20.0, 300.0, 120.0)
+        );
+        assert_eq!(framing_of(inside, fb_w, fb_h), Framing::IDENTITY);
+
+        // Past the bottom: the height is what is left, and the picture keeps
+        // its size (a scale of 2 for half of it showing).
+        let below = Rect::new(0.0, 560.0, 300.0, 80.0);
+        assert_eq!(clamp_viewport(below, fb_w, fb_h), (0.0, 560.0, 300.0, 40.0));
+        assert_eq!(framing_of(below, fb_w, fb_h).scale[1], 2.0);
+
+        // Above the top: the far edge stays at y 40, so 40 px are visible -
+        // where clamping the origin would have kept the full 80 and slid the
+        // whole picture down into the window.
+        let above = Rect::new(0.0, -40.0, 300.0, 80.0);
+        assert_eq!(clamp_viewport(above, fb_w, fb_h), (0.0, 0.0, 300.0, 40.0));
+        let f = framing_of(above, fb_w, fb_h);
+        assert_eq!(f.scale[1], 2.0);
+        assert!(
+            (f.apply(0.0, -1.0).1 + 1.0).abs() < 1e-6,
+            "the bottom edge holds"
+        );
+
+        // Entirely outside: an empty viewport, which the caller skips.
+        let gone = Rect::new(0.0, 700.0, 300.0, 80.0);
+        assert_eq!(clamp_viewport(gone, fb_w, fb_h).3, 0.0);
+    }
 
     fn editor(ruler: Ruler, ruler_y: RulerY) -> EditorProps {
         EditorProps {

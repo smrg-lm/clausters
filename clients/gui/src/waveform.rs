@@ -28,7 +28,7 @@
 use std::sync::Arc;
 
 use crate::peaks::{self, MultiPyramid, Pyramid};
-use crate::view::{Renderers, TimelineView};
+use crate::view::{Framing, Renderers, TimelineView};
 use crate::viewport::{Axis, Unit, View};
 
 /// At or below this many samples per pixel, draw the raw sample polyline rather
@@ -370,7 +370,8 @@ impl WaveformRenderer {
         }
     }
 
-    fn push_vertex(&mut self, x: f32, y: f32, color: [f32; 4]) {
+    fn push_vertex(&mut self, f: Framing, x: f32, y: f32, color: [f32; 4]) {
+        let (x, y) = f.apply(x, y);
         self.scratch
             .extend_from_slice(&[x, y, color[0], color[1], color[2], color[3]]);
     }
@@ -393,6 +394,7 @@ impl WaveformRenderer {
         view: &View,
         render_width_px: u32,
         y_window: (f64, f64),
+        framings: &[Framing],
     ) {
         let w = render_width_px.max(1);
         let spp = view.samples_per_px(w);
@@ -408,6 +410,10 @@ impl WaveformRenderer {
         };
         for ch in 0..data.num_channels() {
             let color = geom.palette[ch % geom.palette.len()];
+            // The lane's framing, since each channel is drawn with its own
+            // viewport: a stack can have its top lane whole and its bottom one
+            // cut by the window edge.
+            let f = framings.get(ch).copied().unwrap_or(Framing::IDENTITY);
             let first = (self.scratch.len() / FLOATS_PER_VERTEX) as u32;
             match geom.mode {
                 Mode::Line => {
@@ -417,7 +423,7 @@ impl WaveformRenderer {
                         let frac = (i as f64 - view.start) / view.len;
                         let x = (-1.0 + 2.0 * frac) as f32;
                         let y = amp_to_clip(data.samples_at(ch, i), y0, y_len);
-                        self.push_vertex(x, y, color);
+                        self.push_vertex(f, x, y, color);
                     }
                 }
                 Mode::Columns => {
@@ -429,12 +435,12 @@ impl WaveformRenderer {
                         let xr = -1.0 + 2.0 * ((x + 1) as f32 / w as f32);
                         let yb = amp_to_clip(lo.min(0.0), y0, y_len);
                         let yt = amp_to_clip(hi.max(0.0), y0, y_len);
-                        self.push_vertex(xl, yb, color);
-                        self.push_vertex(xr, yb, color);
-                        self.push_vertex(xr, yt, color);
-                        self.push_vertex(xl, yb, color);
-                        self.push_vertex(xr, yt, color);
-                        self.push_vertex(xl, yt, color);
+                        self.push_vertex(f, xl, yb, color);
+                        self.push_vertex(f, xr, yb, color);
+                        self.push_vertex(f, xr, yt, color);
+                        self.push_vertex(f, xl, yb, color);
+                        self.push_vertex(f, xr, yt, color);
+                        self.push_vertex(f, xl, yt, color);
                     }
                 }
             }
@@ -504,6 +510,10 @@ pub struct WaveformView {
     amp: Axis,
     /// The amplitude window's start, snapshotted for absolute drag panning.
     drag_amp_start: f64,
+    /// One framing per lane (empty = every lane whole). Set before the upload,
+    /// because a waveform's geometry is built on the CPU and the framing goes
+    /// into the vertices rather than into a uniform.
+    framings: Vec<Framing>,
 }
 
 impl WaveformView {
@@ -513,6 +523,7 @@ impl WaveformView {
             geometry: WaveformGeometry::new(device),
             amp: Axis::normalized(Unit::Norm),
             drag_amp_start: 0.0,
+            framings: Vec::new(),
         }
     }
 
@@ -541,6 +552,14 @@ impl WaveformView {
     pub fn set_palette(&mut self, palette: [[f32; 4]; 4]) {
         self.geometry.set_palette(palette);
     }
+
+    /// Sets where each lane's picture sits inside the viewport it is drawn with
+    /// (see [`Framing`]) — one per lane, in the order the lanes are drawn.
+    /// Clearing it (an empty slice) is the whole-element case.
+    pub fn set_framings(&mut self, framings: &[Framing]) {
+        self.framings.clear();
+        self.framings.extend_from_slice(framings);
+    }
 }
 
 impl TimelineView for WaveformView {
@@ -564,6 +583,7 @@ impl TimelineView for WaveformView {
             view,
             render_width_px,
             self.amp.span(),
+            &self.framings,
         );
     }
 

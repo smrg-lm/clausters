@@ -1149,8 +1149,8 @@ with an eye on the drawing was ever going to catch.
   column), clippy, `check-wasm.sh`, the doc build, and `gui_analyzer` by eye
   including its live halving of the span.
 
-- ⬜ **E19 — A heavy view hanging off the window is cut, not squashed**:
-  *(found by eye on 2026-08-10, checking the trace-weight fix in
+- ✅ **E19 — A heavy view hanging off the window is cut, not squashed**
+  *(done 2026-08-10; found by eye the same day, checking the trace-weight fix in
   `gui_multitrack`: pan a spectral clip until its lane pokes past the bottom of
   the window and the picture **flattens into what is left** instead of being
   cropped — the content behaves as if it were sized by the visible area rather
@@ -1185,6 +1185,36 @@ with an eye on the drawing was ever going to catch.
   content at a fixed size and simply loses what is outside, in all three
   pipelines; the same view fully inside the window draws byte-identically to
   what it draws today.
+
+  **What shipped, and the half of the bug the entry did not name.** The framing
+  is a `Framing` in `src/view.rs` — a `scale * ndc + offset` a view applies to
+  its own geometry — and the viewport keeps taking the visible part of the rect,
+  as planned. But `frame::clamp_viewport` had to stop being a *clamp*: clamping
+  the origin is what made an overhanging **top** slide, since the rect kept its
+  full height and simply moved down into the window. It is the **intersection**
+  now, and the framing is built from that pair.
+
+  Where each pipeline takes it differs, and follows where its geometry is built.
+  A **waveform** builds its columns on the CPU every frame, so the framing goes
+  into the vertices, one per *lane* — each channel is drawn with its own
+  viewport, so a stack can have its top lane whole and its bottom one cut. The
+  **spectrogram** and the **canvas** draw one full-screen triangle from a
+  uniform block, so each grew a `rect: vec4` and one line in its vertex stage;
+  `uv` is taken from the *untransformed* corner, so the framing moves the picture
+  without moving what each of its pixels samples.
+
+  **The `canvas` contract did not change**, against what the entry anticipated:
+  the vertex stage is the host's prelude, not the user's, so `shade(uv, frag)`
+  sees exactly what it always saw and `docs/gui-protocol.md` is untouched. The
+  added field is host-owned (`_rect`).
+
+  One thing no test could have caught: the spectrogram's uniform was declared
+  visible to the fragment stage only, so the first run died creating the
+  pipeline. Nothing in the suite builds a GPU device — the example is the only
+  thing that runs a shader, which is exactly why it is the manual test surface.
+  Green on 526 tests (the identity, both vertical edges, the horizontal one, and
+  the viewport's intersection), clippy, `check-wasm.sh`, the doc build, and
+  `gui_multitrack` by eye at all four edges.
 
 ### What a pass with an eye on the drawing found (E20–E21)
 

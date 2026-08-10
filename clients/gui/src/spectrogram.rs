@@ -11,7 +11,7 @@
 
 use clausters_core::{bytes, fft};
 
-use crate::view::{Renderers, TimelineView};
+use crate::view::{Framing, Renderers, TimelineView};
 use crate::viewport::{Axis, Unit, View};
 
 const MAGIC: &[u8; 4] = b"CLSG";
@@ -417,6 +417,9 @@ struct Uniforms {
     /// x = lo_frac, y = hi_frac of the display dB window within the stored
     /// reference range (the colour scale); z = colormap index.
     db: [f32; 4],
+    /// xy = scale, zw = offset of the [`Framing`] that places the picture
+    /// inside its viewport — the identity for a view the window shows whole.
+    rect: [f32; 4],
 }
 
 /// GPU renderer for spectrograms: the pipeline that samples a magnitude texture
@@ -606,7 +609,9 @@ impl SpectrogramRenderer {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    // The vertex stage reads it too: the framing that places
+                    // the picture inside its viewport rides these uniforms.
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -695,6 +700,8 @@ pub struct SpectrogramView {
     colormap: u32,
     /// The frequency window's start, snapshotted for absolute drag panning.
     drag_freq_start: f64,
+    /// Where this view's picture sits inside the viewport it is drawn with.
+    framing: Framing,
     /// The quantized column a rolling push uploads through — held so a landing
     /// column allocates nothing.
     scratch: Vec<u8>,
@@ -717,6 +724,7 @@ impl SpectrogramView {
             db_ceil: 0.0,
             colormap: 0,
             drag_freq_start: 0.0,
+            framing: Framing::IDENTITY,
             scratch: Vec::new(),
         }
     }
@@ -807,6 +815,13 @@ impl SpectrogramView {
         self.freq.set_span(start, len);
     }
 
+    /// Sets where the picture sits inside the viewport it is drawn with (see
+    /// [`Framing`]) — a shader uniform, so a view cut by the window edge costs
+    /// nothing extra to draw.
+    pub fn set_framing(&mut self, framing: Framing) {
+        self.framing = framing;
+    }
+
     /// Build the GPU uniforms from the current time `view` and display state.
     ///
     /// The frequency window is expressed in *display* coordinates `[0, 1]`
@@ -832,6 +847,12 @@ impl SpectrogramView {
             time: [start, len, self.stft.nyquist(), 0.0],
             freq: [d0, d1, self.scale.index() as f32, f_lo],
             db: [lo, hi, self.colormap as f32, 0.0],
+            rect: [
+                self.framing.scale[0],
+                self.framing.scale[1],
+                self.framing.offset[0],
+                self.framing.offset[1],
+            ],
         }
     }
 }

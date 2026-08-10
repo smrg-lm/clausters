@@ -14,6 +14,11 @@ struct Uniforms {
     freq: vec4<f32>,
     // x = lo_frac, y = hi_frac of the display dB window; z = colormap index.
     db: vec4<f32>,
+    // xy = scale, zw = offset placing the picture inside its viewport. A
+    // viewport positions but does not cut, so a view hanging off the window
+    // edge is drawn for its full rectangle and the part outside clip space is
+    // rasterized away. The identity (1, 1, 0, 0) for a view shown whole.
+    rect: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -34,8 +39,10 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
     );
     let xy = corners[vi];
     var out: VsOut;
-    out.pos = vec4<f32>(xy, 0.0, 1.0);
-    // uv: (0,0) top-left .. (1,1) bottom-right of the screen.
+    out.pos = vec4<f32>(xy * u.rect.xy + u.rect.zw, 0.0, 1.0);
+    // uv: (0,0) top-left .. (1,1) bottom-right of the *element*, taken from the
+    // untransformed corner - so the framing moves the picture without moving
+    // what each of its pixels samples.
     out.uv = vec2<f32>((xy.x + 1.0) * 0.5, (1.0 - xy.y) * 0.5);
     return out;
 }

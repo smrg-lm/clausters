@@ -19,6 +19,8 @@ use std::time::Instant;
 
 use tracing::warn;
 
+use crate::view::Framing;
+
 /// The number of `params` the uniform block carries (a `vec4`).
 pub const PARAM_COUNT: usize = 4;
 
@@ -30,6 +32,10 @@ struct Uniforms {
     time: f32,
     _pad: f32,
     params: vec4<f32>,
+    // Host-owned: xy = scale, zw = offset placing the canvas inside its
+    // viewport, so one hanging off the window edge is cut rather than squashed.
+    // `uv` and `resolution` are unaffected, which is why `shade` never sees it.
+    _rect: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 
@@ -47,7 +53,9 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
     );
     let xy = corners[vi];
     var out: VsOut;
-    out.pos = vec4<f32>(xy, 0.0, 1.0);
+    out.pos = vec4<f32>(xy * u._rect.xy + u._rect.zw, 0.0, 1.0);
+    // From the untransformed corner: the framing moves the picture, not the
+    // coordinate `shade` is asked to colour.
     out.uv = vec2<f32>((xy.x + 1.0) * 0.5, (1.0 - xy.y) * 0.5);
     return out;
 }
@@ -92,7 +100,7 @@ impl CanvasView {
         // 8 f32: resolution.xy, time, pad, params.xyzw.
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("canvas uniforms"),
-            size: 8 * std::mem::size_of::<f32>() as u64,
+            size: 12 * std::mem::size_of::<f32>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -150,15 +158,17 @@ impl CanvasView {
         self.start.elapsed().as_secs_f32()
     }
 
-    /// Writes the per-frame uniforms (viewport size, elapsed time, params).
+    /// Writes the per-frame uniforms (viewport size, elapsed time, params, and
+    /// the host's own [`Framing`] — see the prelude).
     pub fn upload(
         &self,
         queue: &wgpu::Queue,
         resolution: [f32; 2],
         time: f32,
         params: [f32; PARAM_COUNT],
+        framing: Framing,
     ) {
-        let data: [f32; 8] = [
+        let data: [f32; 12] = [
             resolution[0],
             resolution[1],
             time,
@@ -167,6 +177,10 @@ impl CanvasView {
             params[1],
             params[2],
             params[3],
+            framing.scale[0],
+            framing.scale[1],
+            framing.offset[0],
+            framing.offset[1],
         ];
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&data));
     }
