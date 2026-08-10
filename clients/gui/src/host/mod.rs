@@ -1445,7 +1445,7 @@ fn watch_msg(bus: i32, watch: bool) -> OscMessage {
 fn collect_audio_buses(tree: &Widget, out: &mut Vec<i32>) {
     let mut mine = Vec::new();
     for widget in tree.descendants() {
-        widget.kind.audio_buses_read(&mut mine);
+        mine.extend(widget.kind.needs().taps);
     }
     for bus in mine {
         if bus >= 0 && !out.contains(&bus) {

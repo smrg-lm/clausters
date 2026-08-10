@@ -47,13 +47,12 @@ use super::metrics::Metrics;
 
 use super::paint::{Draw, Mesh, Painter};
 use super::ruler::{self, TimeUnit};
-use super::signal::{self, Presentation};
 use super::theme::{Theme, with_alpha};
 use super::timeline::{GroupState, group_key};
 use super::widget::element::{Ctx, Loaded, SlotFill, SlotFrame, TimeSpace};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
-use super::{font, meters, patch, phasescope, piano, pianoroll, plot, spectrum, track};
+use super::{font, meters, patch, piano, pianoroll, track};
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
 pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
@@ -467,7 +466,6 @@ pub(crate) fn render(
     inputs: &FrameInputs,
     theme: &Theme,
 ) {
-    let m = inputs.metrics;
     let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
     // The lanes' clips are placed on the axis their group currently stands at,
@@ -479,7 +477,6 @@ pub(crate) fn render(
     let mut over = Mesh::new();
     let collected = collect_widgets(&placed, &mut mesh, inputs, theme);
 
-    draw_live_meshes(&mut mesh, &collected, inputs, theme);
     draw_timeline_meshes(
         &mut mesh,
         &mut over,
@@ -497,22 +494,24 @@ pub(crate) fn render(
     painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);
     overlay.upload(&gpu.device, &gpu.queue, &over, fb_w, fb_h);
     for item in &collected.timeline_items {
-        let body = timeline_body(item.rect, &item.editor, item.indent, m);
+        // The body the element stated when it described its frame: one
+        // rectangle, so the picture and the chrome around it agree.
+        let body = item.body;
         match &item.kind {
-            TimelineKind::Waveform { .. } => {
+            TimelineKind::Waveform { amp, .. } => {
                 if let Some(slot) = waveforms.get_mut(&item.id) {
                     let nav = chrome_for(inputs, item.id, &item.editor, || {
                         View::full(slot.view.total_samples())
                     })
                     .nav;
                     let nav = placed_nav(&nav, item.editor.offset);
-                    slot.view
-                        .set_amp_window(item.editor.y_view().0, item.editor.y_view().1);
+                    slot.view.set_amp_window(amp.0, amp.1);
                     let th = item.theme.as_deref().unwrap_or(theme);
                     slot.view
                         .set_palette([th.series_1, th.series_2, th.series_3, th.series_4]);
                     let lanes = slot.view.num_channels();
-                    let overlaid = matches!(item.kind, TimelineKind::Waveform { overlay: true });
+                    let overlaid =
+                        matches!(item.kind, TimelineKind::Waveform { overlay: true, .. });
                     let framings: Vec<Framing> = if overlaid || lanes == 1 {
                         vec![framing_of(body, fb_w, fb_h)]
                     } else {
@@ -530,12 +529,7 @@ pub(crate) fn render(
                     );
                 }
             }
-            TimelineKind::Spectrogram {
-                db_floor,
-                db_ceil,
-                freq_scale,
-                colormap,
-            } => {
+            TimelineKind::Spectrogram { freq, look } => {
                 if let Some(slot) = spectrograms.get_mut(&item.id) {
                     let nav = chrome_for(inputs, item.id, &item.editor, || {
                         View::full(slot.total_samples())
@@ -545,12 +539,12 @@ pub(crate) fn render(
                     let lanes = slot.views.len();
                     for (ch, view) in slot.views.iter_mut().enumerate() {
                         view.set_display(
-                            *db_floor,
-                            *db_ceil,
-                            *freq_scale,
-                            (*colormap).max(0) as u32,
+                            look.db_floor,
+                            look.db_ceil,
+                            look.freq_scale,
+                            look.colormap.max(0) as u32,
                         );
-                        view.set_freq_window(item.editor.y_view().0, item.editor.y_view().1);
+                        view.set_freq_window(freq.0, freq.1);
                         view.set_framing(framing_of(lane_rect(body, lanes, ch), fb_w, fb_h));
                         view.upload(
                             &gpu.device,
@@ -640,7 +634,9 @@ pub(crate) fn render(
         });
         painter.draw(&mut pass);
         for item in &collected.timeline_items {
-            let body = timeline_body(item.rect, &item.editor, item.indent, m);
+            // The body the element stated when it described its frame: one
+            // rectangle, so the picture and the chrome around it agree.
+            let body = item.body;
             if body.w < 1.0 || body.h < 1.0 {
                 continue;
             }
@@ -648,7 +644,9 @@ pub(crate) fn render(
                 continue;
             }
             match &item.kind {
-                TimelineKind::Waveform { overlay: overlaid } => {
+                TimelineKind::Waveform {
+                    overlay: overlaid, ..
+                } => {
                     let Some(slot) = waveforms.get(&item.id) else {
                         continue;
                     };

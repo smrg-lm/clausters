@@ -246,7 +246,7 @@ mod tests {
     use crate::host::BusSource;
     use crate::host::guidef::GuiNode;
     use crate::host::live::tick_tree;
-    use crate::host::widget::{Widget, WidgetKind};
+    use crate::host::widget::Widget;
 
     /// A source that answers control buses with their index and fills a tap
     /// window from `fill`, so what a view accumulated says where it read.
@@ -272,10 +272,7 @@ mod tests {
 
     /// The live state of the one signal element in `tree`.
     fn state(tree: &Widget, id: i32) -> &LiveState {
-        match &tree.find(id).unwrap().kind {
-            WidgetKind::Signal(el) => &el.live,
-            other => panic!("not a signal: {other:?}"),
-        }
+        &tree.find(id).unwrap().signal().expect("a signal").live
     }
 
     fn tick(tree: &mut Widget, source: &dyn BusSource) {

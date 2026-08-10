@@ -365,7 +365,7 @@ impl EditorProps {
         normalized_window(self.x_start, self.x_len)
     }
 
-    pub(super) fn apply(&mut self, key: &str, v: &Value) -> bool {
+    pub(crate) fn apply(&mut self, key: &str, v: &Value) -> bool {
         match key {
             "ruler" => self.ruler.set(v),
             "ruler_y" => self.ruler_y.set(v),

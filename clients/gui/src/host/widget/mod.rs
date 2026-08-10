@@ -47,18 +47,16 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::spectrogram::FreqScale;
-
 use super::guidef::GuiNode;
 // Sibling widget modules the wire matches reach via `super::` — re-imported here
 // so the `build`/`apply` child modules resolve the same paths (a descendant sees
 // the parent's private `use` items).
-use super::signal::{Presentation, SignalElement};
-use super::{piano, plot, signal};
+use super::{piano, signal};
 
 mod apply;
 mod axes;
 mod build;
+pub(crate) use build::signal_element;
 pub mod element;
 pub(crate) mod parse;
 mod props;
@@ -120,16 +118,6 @@ pub enum WidgetKind {
         flow: Flow,
         view: ScrollView,
     },
-    /// The **signal element**: every view of a signal, in one widget.
-    ///
-    /// A presentation (the trace, a magnitude spectrum, the time-frequency
-    /// texture, the phase of a stereo pair) of a source (addressable samples,
-    /// or a bus read forward-only), with the capabilities the view offers over
-    /// it — see [`super::signal`], which is where the model and the wire-name
-    /// presets live. The six names the catalog grew (`waveform`, `plot`,
-    /// `scope`, `spectrum`, `spectrogram`, `phasescope`) are six points of that
-    /// product, so this one arm answers for all of them.
-    Signal(Box<SignalElement>),
     /// A multitrack lane: a horizontal strip of the shared timeline holding
     /// `clip` children placed by their `offset`/`dur`. A container (its clips
     /// are its children); `label` names the track in a left header, `height`
@@ -242,7 +230,7 @@ pub enum WidgetKind {
     /// resize `dur`) writes back through the edit-back path.
     ///
     /// **A clip is a container, and its bodies are its children.** A take is a
-    /// [`Signal`] element, a roll of events a [`PianoRoll`], an automation
+    /// **signal** element, a roll of events a [`PianoRoll`], an automation
     /// curve a `curve` element — the same elements that stand on their own
     /// composed here rather than reimplemented, and **layered** back to front
     /// rather than selected by precedence: an envelope drawn over the material
@@ -255,7 +243,6 @@ pub enum WidgetKind {
     /// step. So they carry **no id**: a script addresses the clip, and a
     /// `/gui_set` of a body prop routes into the child that owns it.
     ///
-    /// [`Signal`]: WidgetKind::Signal
     /// [`PianoRoll`]: WidgetKind::PianoRoll
     Clip {
         offset: f64,
@@ -399,13 +386,7 @@ impl Widget {
     fn build(id: Option<i32>, node: &GuiNode, blobs: &[Vec<u8>]) -> Result<Widget, String> {
         let id = id.or(node.id);
         let props = &node.props;
-        let kind = build::build_kind(
-            id,
-            node.kind.as_str(),
-            props,
-            !node.children.is_empty(),
-            blobs,
-        )?;
+        let kind = build::build_kind(node.kind.as_str(), props, !node.children.is_empty(), blobs)?;
         // Only containers carry children into the typed tree; a leaf's children
         // (if any) are ignored. A `track` carries its clips.
         let children = match kind {

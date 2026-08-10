@@ -2248,10 +2248,13 @@ fn a_wheel_against_the_time_axis_bound_reports_nothing() {
 /// the analysis resolves where it sits — what the frame draws and `"view_x"`
 /// reports, as against the `x_window` that was asked for.
 fn shown_x_window(host: &Host, id: i32) -> (f64, f64) {
-    match &host.window_def(1).unwrap().find(id).unwrap().kind {
-        WidgetKind::Signal(el) => el.freq_window(48_000.0),
-        other => panic!("not a signal: {other:?}"),
-    }
+    host.window_def(1)
+        .unwrap()
+        .find(id)
+        .unwrap()
+        .signal()
+        .expect("a signal element")
+        .freq_window(48_000.0)
 }
 
 /// **Panning to the end of a frequency axis stops there.** The zoom floor is

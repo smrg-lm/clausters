@@ -479,6 +479,7 @@ mod tests {
                 world: &World::default(),
                 metrics: &m,
                 rect,
+                indent: 0.0,
                 scale: 1.0,
                 time: None,
                 clip: None,
@@ -492,6 +493,7 @@ mod tests {
                 world: &World::default(),
                 metrics: &m,
                 rect,
+                indent: 0.0,
                 scale: 1.0,
                 time: Some(TimeSpace {
                     view: View::full(100),

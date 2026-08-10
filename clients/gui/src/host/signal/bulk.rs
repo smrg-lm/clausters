@@ -168,14 +168,11 @@ impl SignalElement {
 mod tests {
     use super::*;
     use crate::host::guidef::GuiNode;
-    use crate::host::widget::{Widget, WidgetKind};
+    use crate::host::widget::Widget;
 
     fn element(json: &str) -> SignalElement {
         let w = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
-        match w.kind {
-            WidgetKind::Signal(el) => *el,
-            other => panic!("not a signal: {other:?}"),
-        }
+        w.signal().expect("a signal element").clone()
     }
 
     /// The form follows what the element **draws from**, not what the file is:

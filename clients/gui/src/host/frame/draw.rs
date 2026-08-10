@@ -295,98 +295,6 @@ pub(super) fn draw_editor_overlay(
     }
 }
 
-/// Draws the live widgets (meters, control- and audio-rate scopes, phasescopes
-/// and spectra) into the base mesh: each reads its source (shared-memory bus,
-/// the tick's rolling history, the stored tap window, the analysis states) and
-/// draws the current value — the tick advances the state, a repaint only draws.
-pub(super) fn draw_live_meshes(
-    mesh: &mut Mesh,
-    collected: &Collected,
-    inputs: &FrameInputs,
-    theme: &Theme,
-) {
-    let m = inputs.metrics;
-    // Meters and scopes read their control bus straight from shared memory each
-    // frame (zero messages); the scope keeps a per-widget rolling history in this
-    // window's state.
-    // The history is advanced on the frame tick (`advance_scopes`), not here, so a
-    // repaint only ever *draws* the current samples — never adds one.
-    for item in &collected.scope_rects {
-        mesh.set_clip(item.clip);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        let samples: Vec<f32> = item.live.history.iter().copied().collect();
-        meters::draw_scope(
-            &mut Draw::new(mesh, m, th),
-            item.rect,
-            &samples,
-            item.min,
-            item.max,
-            item.label.as_deref(),
-        );
-    }
-    // Audio-rate scopes likewise draw the triggered multichannel window stored
-    // on the tick (`live::update_tap_windows`); an empty one draws just the
-    // framed field.
-    for item in &collected.wave_rects {
-        mesh.set_clip(item.clip);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        let window = &item.live.window;
-        meters::draw_wave(
-            &mut Draw::new(mesh, m, th),
-            item.rect,
-            &meters::WaveParams {
-                window,
-                min: item.min,
-                max: item.max,
-                window_ms: item.window_ms,
-                trigger: item.trigger,
-                overlay: item.overlay,
-                ruler: item.ruler,
-                ruler_y: item.ruler_y,
-                label: item.label.as_deref(),
-            },
-        );
-    }
-    // Phasescopes draw the interleaved L/R window the tick stored (the same
-    // `tap_windows` map, keyed by their own ids); spectra draw the per-bin
-    // curves the tick folded into their per-channel analysis states.
-    for item in &collected.phase_rects {
-        mesh.set_clip(item.clip);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        let inter = item.live.window.samples.as_slice();
-        phasescope::draw_phasescope(
-            &mut Draw::new(mesh, m, th),
-            item.rect,
-            inter,
-            item.label.as_deref(),
-        );
-    }
-    for item in &collected.spectrum_rects {
-        mesh.set_clip(item.clip);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        {
-            let states = &item.live.spectra;
-            spectrum::draw_spectrum(
-                &mut Draw::new(mesh, m, th),
-                item.rect,
-                states,
-                &spectrum::SpectrumParams {
-                    sample_rate: inputs.world.sample_rate,
-                    fft_size: item.fft_size,
-                    db_floor: item.db_floor,
-                    db_ceil: item.db_ceil,
-                    freq_scale: item.freq_scale,
-                    peak_hold: item.peak_hold,
-                    ruler: item.ruler,
-                    ruler_y: item.ruler_y,
-                    x_view: item.x_view,
-                    label: item.label.as_deref(),
-                },
-            );
-        }
-    }
-}
-
 /// Draws the timeline views (waveform/spectrogram): the field, time ruler and
 /// the vertical-ruler strip go into the base `mesh` (under the GPU view); the
 /// border, lane dividers, selection, playhead and cursor readout into `over`
@@ -409,10 +317,15 @@ pub(super) fn draw_timeline_meshes(
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let body = timeline_body(item.rect, &item.editor, item.indent, m);
+        // The body the element stated when it described its frame: one
+        // rectangle, so the picture and the chrome around it agree.
+        let body = item.body;
         mesh.rect(body, th.view_field);
         match &item.kind {
-            TimelineKind::Waveform { overlay: overlaid } => {
+            TimelineKind::Waveform {
+                overlay: overlaid,
+                amp,
+            } => {
                 let Some(slot) = waveforms.get(&item.id) else {
                     over.border(body, 1.0, th.view_frame);
                     continue;
@@ -438,7 +351,9 @@ pub(super) fn draw_timeline_meshes(
                 // Overlaid traces share one lane (and one amplitude axis).
                 let draw_lanes = if *overlaid { 1 } else { lanes };
                 if item.editor.ruler_y != RulerY::Off {
-                    let (y0, y_len) = item.editor.y_view();
+                    // The window the element stated for this frame, which is
+                    // the one its picture was uploaded at.
+                    let (y0, y_len) = (amp.0, amp.1);
                     for ch in 0..draw_lanes {
                         let lane = lane_rect(body, draw_lanes, ch);
                         let ticks = ruler::amp_ticks(
@@ -466,7 +381,7 @@ pub(super) fn draw_timeline_meshes(
                     &mut *over, item, body, &chrome, rate, draw_lanes, inputs, None, th,
                 );
             }
-            TimelineKind::Spectrogram { freq_scale, .. } => {
+            TimelineKind::Spectrogram { freq, look } => {
                 let Some(slot) = spectrograms.get(&item.id) else {
                     over.border(body, 1.0, th.view_frame);
                     continue;
@@ -505,11 +420,11 @@ pub(super) fn draw_timeline_meshes(
                     if item.editor.ruler_y != RulerY::Off {
                         let ticks = ruler::hz_ticks(
                             nyquist,
-                            *freq_scale,
+                            look.freq_scale,
                             f_lo,
                             lane.h as f64,
-                            item.editor.y_view().0,
-                            item.editor.y_view().1,
+                            freq.0,
+                            freq.1,
                             m,
                         );
                         ruler::draw_ticks_v(
@@ -526,7 +441,7 @@ pub(super) fn draw_timeline_meshes(
                 // the tick spacing at a glance.
                 meters::value_text(
                     &mut Draw::new(over, m, th),
-                    ruler::scale_tag(*freq_scale),
+                    ruler::scale_tag(look.freq_scale),
                     body,
                 );
                 draw_editor_overlay(
@@ -537,7 +452,7 @@ pub(super) fn draw_timeline_meshes(
                     rate,
                     lanes,
                     inputs,
-                    Some((nyquist, *freq_scale, f_lo)),
+                    Some((nyquist, look.freq_scale, f_lo)),
                     th,
                 );
             }
@@ -564,18 +479,6 @@ pub(super) fn draw_static_meshes(
     // Static plots draw from their (already mapped) samples; node trees draw from
     // the model last read off the client leg. Both are pure mesh work with the
     // host-tree borrow already released.
-    for item in &collected.plot_rects {
-        mesh.set_clip(item.clip);
-        over.set_clip(item.clip);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        let params = item.params();
-        plot::draw(&mut Draw::new(mesh, m, th), item.rect, &params);
-        // The hover readout (hairline + the value under the cursor) rides the
-        // overlay mesh, like the editor views' chrome.
-        if let Some(cursor) = inputs.world.cursor {
-            plot::draw_readout(&mut Draw::new(over, m, th), item.rect, &params, cursor);
-        }
-    }
     // Envelope editors are pure mesh work: the curve evaluated per pixel
     // column through the shared shape math, discs for the breakpoints.
     // Multitrack lanes: the window's tracks share one time axis (aligned
@@ -678,6 +581,9 @@ pub(super) fn draw_static_meshes(
                     world: &inputs.world,
                     metrics: &item.metrics,
                     rect: item.rect,
+                    // A body is drawn against its clip's axis, which starts at
+                    // the clip's own left edge: no group gutter here.
+                    indent: 0.0,
                     clip: item.clip,
                     scale: item.scale,
                     time: Some(TimeSpace {
@@ -775,6 +681,7 @@ pub(super) fn draw_element_overlays(
                 world: &inputs.world,
                 metrics: m,
                 rect: p.rect,
+                indent: p.indent,
                 clip: p.clip,
                 scale: p.scale,
                 time: None,

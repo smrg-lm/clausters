@@ -419,7 +419,6 @@ pub fn draw_body_widget(d: &mut Draw, kind: &WidgetKind, cr: Rect, local: &View,
         } => draw_piano_roll(&mut Draw::new(mesh, m, theme), cr, local, notes, *min, *max),
         // Every leaf answers for itself; a widget that fills no body role
         // draws nothing here.
-        WidgetKind::Signal(el) => el.draw_body(&mut Draw::new(mesh, m, theme), cr, local, dur),
         WidgetKind::Custom(el) => el.draw_body(&mut Draw::new(mesh, m, theme), cr, local, dur),
         _ => {}
     }
@@ -738,7 +737,7 @@ mod tests {
         ));
         el.caps = signal::Caps::default();
         el.source = signal::Source::Data(data);
-        WidgetKind::Signal(Box::new(el))
+        WidgetKind::Custom(Box::new(el))
     }
 
     fn inline_take(samples: Vec<f32>) -> signal::Data {
@@ -978,6 +977,7 @@ mod tests {
                 world: &world,
                 metrics: &metrics,
                 rect: cr,
+                indent: 0.0,
                 scale: 1.0,
                 time: Some(TimeSpace {
                     view: local,

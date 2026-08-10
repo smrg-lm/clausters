@@ -85,15 +85,12 @@ mod tests {
     use crate::host::BusSource;
     use crate::host::guidef::GuiNode;
     use crate::host::live::{tick_tree, update_retention};
+    use crate::host::widget::Widget;
     use crate::host::widget::element::{Live, SlotFill, SlotKind};
-    use crate::host::widget::{Widget, WidgetKind};
 
     fn element(json: &str) -> SignalElement {
         let w = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
-        match w.kind {
-            WidgetKind::Signal(el) => *el,
-            other => panic!("not a signal: {other:?}"),
-        }
+        w.signal().expect("a signal element").clone()
     }
 
     /// The form follows the slot the element claimed, and the whole point of

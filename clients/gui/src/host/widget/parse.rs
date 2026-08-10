@@ -196,7 +196,7 @@ pub(super) fn parse_freq_scale(props: &serde_json::Map<String, Value>) -> FreqSc
 }
 
 /// A frequency-scale name as the widget schema spells it.
-pub(super) fn freq_scale_from_str(s: &str) -> Option<FreqScale> {
+pub(crate) fn freq_scale_from_str(s: &str) -> Option<FreqScale> {
     Some(match s {
         "linear" | "lin" => FreqScale::Linear,
         "log" => FreqScale::Log,
@@ -378,7 +378,7 @@ pub(super) fn opt_number(props: &serde_json::Map<String, Value>, key: &str) -> O
 }
 
 /// Sets an optional f32 from a number, or clears it from the string `"auto"`.
-pub(super) fn set_opt_f(slot: &mut Option<f32>, v: &Value) -> bool {
+pub(crate) fn set_opt_f(slot: &mut Option<f32>, v: &Value) -> bool {
     if v.as_str() == Some("auto") {
         *slot = None;
         return true;

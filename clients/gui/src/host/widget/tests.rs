@@ -5,8 +5,10 @@
 
 use clausters_core::osc::OscType;
 
+use super::super::signal::Presentation;
 use super::element::SlotKind;
 use super::*;
+use crate::spectrogram::FreqScale;
 
 fn node(json: &str) -> GuiNode {
     GuiNode::parse(json.as_bytes()).unwrap()
@@ -434,7 +436,7 @@ fn meter_and_scope_parse_with_defaults_and_apply() {
     assert_eq!(el.source.bus().unwrap().bus, 6);
     assert_eq!((el.value.min, el.value.max), (Some(-1.0), Some(1.0)));
     // An audio-rate meter reads a published level, not a control bus.
-    assert_eq!(w.children[0].kind.live_bus(), None);
+    assert_eq!(w.children[0].kind.needs().buses.first().copied(), None);
     // A live `/gui_set` reaches the element and moves the declaration with it.
     let meter = w.find_mut(1).unwrap();
     assert!(meter.kind.apply("bus", &Value::from(8)));
@@ -458,7 +460,7 @@ fn nodetree_and_plot_parse_with_defaults_and_apply() {
     assert_eq!(w.children[0].kind.needs().node_groups, vec![2]);
     // A nodetree is non-interactive and reads no bus.
     assert_eq!(w.children[0].kind.event_value(), None);
-    assert_eq!(w.children[0].kind.live_bus(), None);
+    assert_eq!(w.children[0].kind.needs().buses.first().copied(), None);
     let el = w.children[1].signal().expect("a plot is a signal element");
     assert_eq!(&el.source.data().unwrap().samples[..], &[0.0, 1.0, -1.0]);
     // An explicit side is kept; the omitted one auto-fits.
@@ -534,9 +536,8 @@ fn canvas_parses_shader_params_buses_and_applies() {
         })
     );
     assert_eq!(needs.buses, vec![7], "an unset slot names no bus");
-    // A canvas is non-interactive and reads no single bus.
+    // A canvas is non-interactive: it reads buses, it reports no value.
     assert_eq!(w.children[0].kind.event_value(), None);
-    assert_eq!(w.children[0].kind.live_bus(), None);
     // Live `/gui_set` reaches the element and moves both with it.
     let c = w.find_mut(1).unwrap();
     assert!(c.kind.apply("bus0", &Value::from(9)));
@@ -619,9 +620,9 @@ fn phasescope_and_spectrum_parse_with_defaults_and_apply() {
     assert!(!bus.hold);
     // A phasescope reads both buses; it is not a single-bus widget.
     let mut buses = Vec::new();
-    w.children[0].kind.audio_buses_read(&mut buses);
+    buses.extend(w.children[0].kind.needs().taps);
     assert_eq!(buses, vec![2, 3]);
-    assert_eq!(w.children[0].kind.live_bus(), None);
+    assert_eq!(w.children[0].kind.needs().buses.first().copied(), None);
     let el = w.children[1].signal().unwrap();
     assert_eq!(el.presentation, Presentation::Spectrum);
     assert_eq!(
@@ -687,10 +688,10 @@ fn multichannel_scope_and_spectrum_read_adjacent_buses() {
     );
     // Each consumer reads its whole adjacent run of buses.
     let mut buses = Vec::new();
-    w.children[0].kind.audio_buses_read(&mut buses);
+    buses.extend(w.children[0].kind.needs().taps);
     assert_eq!(buses, vec![4, 5]);
     buses.clear();
-    w.children[1].kind.audio_buses_read(&mut buses);
+    buses.extend(w.children[1].kind.needs().taps);
     assert_eq!(buses, vec![6, 7, 8]);
     // Live: grow the runs and toggle a strip back on.
     assert!(
@@ -701,7 +702,7 @@ fn multichannel_scope_and_spectrum_read_adjacent_buses() {
     );
     assert!(w.find_mut(1).unwrap().kind.apply("ruler", &Value::from(1)));
     buses.clear();
-    w.find_mut(1).unwrap().kind.audio_buses_read(&mut buses);
+    buses.extend(w.find_mut(1).unwrap().kind.needs().taps);
     assert_eq!(buses, vec![4, 5, 6, 7]);
     let el = w.children[1].signal().unwrap();
     assert_eq!(el.channels(), 3);
@@ -1319,7 +1320,10 @@ fn a_clip_recognizes_a_body_by_the_role_the_element_declares() {
     // The clip finds it under the role it declared, and under no other.
     assert!(matches!(clip.clip_body(Curve), Some(WidgetKind::Custom(_))));
     assert!(clip.clip_body(Notes).is_none());
-    assert!(matches!(clip.clip_body(Take), Some(WidgetKind::Signal(_))));
+    assert_eq!(
+        clip.clip_body(Take).and_then(WidgetKind::body_role),
+        Some(Take)
+    );
 
     // ...so the clip does not grow a second curve beside it, and a role it
     // genuinely lacks is still built.
@@ -1346,7 +1350,11 @@ fn each_clip_body_keeps_its_own_value_axis() {
         let w = Widget::from_node(1, &node(json), &[]).unwrap();
         match w.clip_body(role) {
             Some(WidgetKind::PianoRoll { min, max, .. }) => (*min, *max),
-            Some(WidgetKind::Signal(el)) => el.value.resolved(0.0, 0.0),
+            Some(kind) if kind.body_role() == Some(Take) => kind
+                .signal()
+                .expect("a take is a signal element")
+                .value
+                .resolved(0.0, 0.0),
             other => panic!("no such body: {other:?}"),
         }
     };

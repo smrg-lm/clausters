@@ -52,6 +52,9 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "menu" => menu::build,
         "nodes" => nodes::build,
         "score" => score::build,
+        // Every view of a signal is one element: the props say which point of
+        // the product it is (`host::signal`), so one name answers for six.
+        "signal" => super::signal::build,
         "number" => number::build,
         "slider" => slider::build,
         "text" => text::build,

@@ -20,7 +20,7 @@
 use clausters_core::osc::OscType;
 use serde_json::Value;
 
-use super::super::signal::{Presentation, SignalElement};
+use super::super::signal::SignalElement;
 use super::element::BodyRole;
 use super::{EditorProps, GestureMap, Widget, WidgetKind, build};
 
@@ -33,7 +33,12 @@ impl Widget {
             .unwrap_or_else(|| GestureMap::of_kind(&self.kind))
     }
 
-    /// The signal element this widget is, if it is one.
+    /// The signal element this widget is, if it is one — through the trait's
+    /// downcast door ([`Element::as_any`](super::Element::as_any)).
+    ///
+    /// **Nothing in the passes calls this.** Every question a pass asks has a
+    /// door of its own, which is the whole point of the seam; what is left is
+    /// the element's own tests, which own the model they assert on.
     pub fn signal(&self) -> Option<&SignalElement> {
         self.kind.signal()
     }
@@ -111,7 +116,6 @@ impl WidgetKind {
     /// be one.
     pub fn body_role(&self) -> Option<BodyRole> {
         match self {
-            WidgetKind::Signal(_) => Some(BodyRole::Take),
             WidgetKind::PianoRoll { .. } => Some(BodyRole::Notes),
             WidgetKind::Custom(el) => el.body_role(),
             _ => None,
@@ -149,7 +153,6 @@ impl WidgetKind {
     /// widget that carries an x window rather than a navigation group.
     pub fn navigates_freq(&self) -> bool {
         match self {
-            WidgetKind::Signal(el) => el.navigates_freq(),
             WidgetKind::Custom(el) => el.navigates_freq(),
             _ => false,
         }
@@ -165,7 +168,6 @@ impl WidgetKind {
         sample_rate: f64,
     ) -> Option<super::element::FreqAxis> {
         match self {
-            WidgetKind::Signal(el) => el.freq_axis(rect, m, sample_rate),
             WidgetKind::Custom(el) => el.freq_axis(rect, m, sample_rate),
             _ => None,
         }
@@ -176,7 +178,6 @@ impl WidgetKind {
     /// ([`Element::freq_window_of`](super::Element::freq_window_of)).
     pub fn freq_window_of(&self, sample_rate: f64, want: Option<(f64, f64)>) -> Option<(f64, f64)> {
         match self {
-            WidgetKind::Signal(el) => el.freq_window_shown(sample_rate, want),
             WidgetKind::Custom(el) => el.freq_window_of(sample_rate, want),
             _ => None,
         }
@@ -186,7 +187,6 @@ impl WidgetKind {
     /// ([`Element::freq_min_span`](super::Element::freq_min_span)).
     pub fn freq_min_span(&self, sample_rate: f64, start: f64) -> Option<f64> {
         match self {
-            WidgetKind::Signal(el) => el.freq_min_span(sample_rate, start),
             WidgetKind::Custom(el) => el.freq_min_span(sample_rate, start),
             _ => None,
         }
@@ -247,23 +247,17 @@ impl WidgetKind {
     }
 
     /// **What this widget reads from outside itself** — the one door every tree
-    /// collector asks, so none of them matches on a kind any more. An element
-    /// answers for itself; a built-in is assembled here out of the per-kind
-    /// queries below, each answered by the arm that knows the prop it comes
-    /// from, and its rows disappear as the leaf moves behind the trait.
+    /// collector asks, so none of them matches on a kind.
+    ///
+    /// Only an element reads anything: a container arranges, and the leaves
+    /// that read a bus, tap a ring, watch a node tree or claim a slot are all
+    /// behind the trait. What used to be assembled here, arm by arm, is the
+    /// element's own [`Element::needs`](super::Element::needs).
     pub fn needs(&self) -> super::Needs {
-        if let WidgetKind::Custom(el) = self {
-            return el.needs();
+        match self {
+            WidgetKind::Custom(el) => el.needs(),
+            _ => super::Needs::default(),
         }
-        let mut needs = super::Needs {
-            buses: self.live_bus().into_iter().collect(),
-            retention: self.signal().map_or(0.0, SignalElement::retention),
-            bulk: self.signal().and_then(SignalElement::want),
-            slot: self.signal().and_then(SignalElement::slot_kind),
-            ..Default::default()
-        };
-        self.audio_buses_read(&mut needs.taps);
-        needs
     }
 
     /// **The drag table an element declares for itself**, or `None` for a
@@ -272,7 +266,6 @@ impl WidgetKind {
     /// first).
     pub fn element_gesture_map(&self) -> Option<super::GestureMap> {
         match self {
-            WidgetKind::Signal(el) => el.gesture_map(),
             WidgetKind::Custom(el) => el.gesture_map(),
             _ => None,
         }
@@ -283,7 +276,6 @@ impl WidgetKind {
     /// ([`Element::texture_body`](super::Element::texture_body)).
     pub fn texture_body(&self) -> Option<super::element::TextureLook> {
         match self {
-            WidgetKind::Signal(el) => el.texture_body(),
             WidgetKind::Custom(el) => el.texture_body(),
             _ => None,
         }
@@ -300,7 +292,6 @@ impl WidgetKind {
         match self {
             WidgetKind::Track { header, .. } => header.width(m),
             WidgetKind::PianoRoll { .. } => super::super::pianoroll::KEYBOARD_W,
-            WidgetKind::Signal(el) => el.gutter(m),
             WidgetKind::Custom(el) => el.gutter(m),
             _ => 0.0,
         }
@@ -316,7 +307,6 @@ impl WidgetKind {
         m: &super::super::metrics::Metrics,
     ) -> Option<f32> {
         match self {
-            WidgetKind::Signal(el) => el.measured_gutter(rect, m),
             WidgetKind::Custom(el) => el.measured_gutter(rect, m),
             _ => None,
         }
@@ -330,7 +320,6 @@ impl WidgetKind {
     /// ([`Element::lanes`](super::Element::lanes)).
     pub fn lanes(&self, uploaded: usize) -> usize {
         match self {
-            WidgetKind::Signal(el) => el.lanes(uploaded),
             WidgetKind::Custom(el) => el.lanes(uploaded),
             _ => uploaded.max(1),
         }
@@ -344,7 +333,6 @@ impl WidgetKind {
     /// ([`Element::centres_y_zoom`](super::Element::centres_y_zoom)).
     pub fn centres_y_zoom(&self) -> bool {
         match self {
-            WidgetKind::Signal(el) => el.centres_y_zoom(),
             WidgetKind::Custom(el) => el.centres_y_zoom(),
             _ => false,
         }
@@ -360,43 +348,8 @@ impl WidgetKind {
     /// three and throw the specs away.
     pub fn tap_frames(&self, sample_rate: f64) -> usize {
         match self {
-            WidgetKind::Signal(el) => el.tap_frames(sample_rate),
             WidgetKind::Custom(el) => el.tap_frames(sample_rate),
             _ => 0,
-        }
-    }
-
-    /// The control bus a live (shared-memory-backed) **trace** reads each
-    /// frame, if this is one — the one bus a `scope` history is advanced from,
-    /// which is why this stays a single answer where [`Self::needs`] is a set.
-    /// An audio-rate view reads recorded samples instead — see
-    /// [`Self::audio_buses_read`].
-    pub fn live_bus(&self) -> Option<i32> {
-        match self {
-            WidgetKind::Signal(el) if el.presentation == Presentation::Signal => el
-                .source
-                .bus()
-                .filter(|b| !b.rate.is_audio())
-                .map(|b| b.bus),
-            _ => None,
-        }
-    }
-
-    /// Appends every audio bus whose **samples** this widget reads each frame —
-    /// `channels` adjacent buses for an audio-rate `scope` or a `spectrum`, two
-    /// (left and right) for a `phasescope`. This is the set the host asks the
-    /// server to record (`/bus_tap`) and the set it animates for, so all three
-    /// sample consumers are covered uniformly.
-    pub fn audio_buses_read(&self, out: &mut Vec<i32>) {
-        let Some(el) = self.signal() else { return };
-        let Some(bus) = el.source.bus() else { return };
-        match el.presentation {
-            // The phase view is a stereo pair by construction: a bus and the
-            // one beside it, whatever `channels` says.
-            Presentation::Phase => out.extend([bus.bus, bus.bus + 1]),
-            // A control-rate trace is read as a bus value, not as samples.
-            Presentation::Signal if !bus.rate.is_audio() => {}
-            _ => out.extend((0..bus.channels as i32).map(|k| bus.bus + k)),
         }
     }
 
@@ -407,7 +360,7 @@ impl WidgetKind {
     /// chrome but navigates with the window's clip span.)
     pub fn editor(&self) -> Option<&EditorProps> {
         match self {
-            WidgetKind::Signal(el) => Some(&el.editor),
+            WidgetKind::Custom(el) => el.editor(),
             WidgetKind::Track { editor, .. }
             | WidgetKind::PianoRoll { editor, .. }
             | WidgetKind::TimeRuler { editor, .. } => Some(editor),
@@ -419,7 +372,7 @@ impl WidgetKind {
     /// through here).
     pub fn editor_mut(&mut self) -> Option<&mut EditorProps> {
         match self {
-            WidgetKind::Signal(el) => Some(&mut el.editor),
+            WidgetKind::Custom(el) => el.editor_mut(),
             WidgetKind::Track { editor, .. }
             | WidgetKind::PianoRoll { editor, .. }
             | WidgetKind::TimeRuler { editor, .. } => Some(editor),
@@ -429,19 +382,11 @@ impl WidgetKind {
 
     /// Applies one `/gui_set` key/value to a live widget, returning whether it
     /// changed anything the renderer cares about.
-    /// The signal element this kind is, if it is one.
+    /// The signal element this kind is, if it is one — see
+    /// [`Widget::signal`] for why this is a downcast and not a match.
     pub fn signal(&self) -> Option<&SignalElement> {
         match self {
-            WidgetKind::Signal(el) => Some(el),
-            _ => None,
-        }
-    }
-
-    /// The signal element this kind is, mutably — a bulk load and a `/gui_set`
-    /// both write through here.
-    pub fn signal_mut(&mut self) -> Option<&mut SignalElement> {
-        match self {
-            WidgetKind::Signal(el) => Some(el),
+            WidgetKind::Custom(el) => el.as_any()?.downcast_ref::<SignalElement>(),
             _ => None,
         }
     }
@@ -452,10 +397,8 @@ impl WidgetKind {
     /// ([`Element::tick`](super::Element::tick)) — the single door, so the
     /// front drives one walk instead of one per kind of live view.
     pub fn tick(&mut self, live: &super::element::Live) {
-        match self {
-            WidgetKind::Signal(el) => el.tick(live),
-            WidgetKind::Custom(el) => el.tick(live),
-            _ => {}
+        if let WidgetKind::Custom(el) = self {
+            el.tick(live)
         }
     }
 
@@ -466,7 +409,6 @@ impl WidgetKind {
     /// resolves a resource and never reaches into a widget to place it.
     pub fn take_bulk(&mut self, data: super::element::Loaded) -> bool {
         match self {
-            WidgetKind::Signal(el) => el.take(data),
             WidgetKind::Custom(el) => el.bulk(data),
             _ => false,
         }
@@ -481,7 +423,6 @@ impl WidgetKind {
     /// from what each kind happens to be.
     pub fn fill(&mut self) -> Option<super::element::SlotFill> {
         match self {
-            WidgetKind::Signal(el) => el.fill(),
             WidgetKind::Custom(el) => el.fill(),
             _ => None,
         }
@@ -491,21 +432,8 @@ impl WidgetKind {
     /// re-attached): whatever this widget handed over has to be handed over
     /// again.
     pub fn slot_dropped(&mut self) {
-        match self {
-            WidgetKind::Signal(el) => el.slot_dirty = true,
-            WidgetKind::Custom(el) => el.slot_dropped(),
-            _ => {}
-        }
-    }
-
-    /// Recomputes a stored spectrum's cached analysis from its current samples
-    /// and props — a no-op for every other widget and every other
-    /// presentation. Called at the element's mutation points (parse, a bulk
-    /// load landing samples, a live `/gui_set` touching what the analysis
-    /// reads), which keeps the per-frame render pure and allocation-light.
-    pub fn refresh_analysis(&mut self) {
-        if let WidgetKind::Signal(el) = self {
-            el.refresh_analysis();
+        if let WidgetKind::Custom(el) = self {
+            el.slot_dropped()
         }
     }
 }
@@ -514,19 +442,13 @@ impl Widget {
     /// The signal element this widget draws with: its own, or — for a `clip` —
     /// the **take** among its bodies.
     ///
-    /// A clip's bodies carry no id, so everything that resolves a widget by id
-    /// and then wants its samples (a bulk load landing, a buffer fetch coming
-    /// back) lands on the clip and reaches the take through here. That is the
-    /// containment stated once: a body's id *is* its container's.
+    /// The reader's half of the containment, and a test accessor like
+    /// [`Widget::signal`]: what a *pass* wants of a clip's body it asks through
+    /// a door ([`Widget::bulk_target`], [`Widget::clip_body`]).
     pub fn signal_target(&self) -> Option<&SignalElement> {
-        match &self.kind {
-            WidgetKind::Signal(el) => Some(el),
-            WidgetKind::Clip { .. } => self.children.iter().find_map(|c| match &c.kind {
-                WidgetKind::Signal(el) => Some(&**el),
-                _ => None,
-            }),
-            _ => None,
-        }
+        self.kind
+            .signal()
+            .or_else(|| self.children.iter().find_map(|c| c.kind.signal()))
     }
 
     /// **Who a bulk load is really for**: this widget, or the body of it that
@@ -553,19 +475,6 @@ impl Widget {
             return true;
         }
         false
-    }
-
-    /// [`signal_target`](Self::signal_target), mutably — the door a bulk load
-    /// writes its samples or its pyramid through.
-    pub fn signal_target_mut(&mut self) -> Option<&mut SignalElement> {
-        match &mut self.kind {
-            WidgetKind::Signal(el) => Some(el),
-            WidgetKind::Clip { .. } => self.children.iter_mut().find_map(|c| match &mut c.kind {
-                WidgetKind::Signal(el) => Some(&mut **el),
-                _ => None,
-            }),
-            _ => None,
-        }
     }
 
     /// **What a gesture has changed on this widget** — its own kind's

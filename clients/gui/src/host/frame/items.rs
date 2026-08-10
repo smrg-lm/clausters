@@ -9,191 +9,8 @@
 //! they draw straight into the mesh during the same walk, having nothing to
 //! defer.
 
+use super::super::widget::element::TextureLook;
 use super::*;
-
-/// A placed `plot` widget and the data its (static) draw needs, copied out of
-/// the host tree so the mesh is built after the tree borrow is released.
-pub(super) struct PlotItem {
-    pub(super) rect: Rect,
-    pub(super) clip: Option<Rect>,
-    pub(super) theme: Option<Arc<Theme>>,
-    pub(super) samples: Arc<[f32]>,
-    pub(super) channels: usize,
-    pub(super) view: plot::PlotView,
-    pub(super) overlay: bool,
-    pub(super) sample_rate: f64,
-    pub(super) min: Option<f32>,
-    pub(super) max: Option<f32>,
-    pub(super) ruler: Ruler,
-    pub(super) ruler_y: bool,
-    pub(super) spectrum: Option<Arc<plot::PlotSpectrum>>,
-    pub(super) db_floor: f32,
-    pub(super) db_ceil: f32,
-    pub(super) freq_scale: FreqScale,
-    /// The element's own frequency window, normalized (a spectrum view only).
-    pub(super) x_view: (f64, f64),
-    pub(super) label: Option<String>,
-}
-
-impl PlotItem {
-    pub(super) fn params(&self) -> plot::PlotParams<'_> {
-        plot::PlotParams {
-            samples: &self.samples,
-            channels: self.channels,
-            view: self.view,
-            overlay: self.overlay,
-            sample_rate: self.sample_rate,
-            min: self.min,
-            max: self.max,
-            ruler: self.ruler,
-            ruler_y: self.ruler_y,
-            spectrum: self.spectrum.as_deref(),
-            db_floor: self.db_floor,
-            db_ceil: self.db_ceil,
-            freq_scale: self.freq_scale,
-            x_view: self.x_view,
-            label: self.label.as_deref(),
-        }
-    }
-}
-
-/// Sorts one signal element into the item list of the renderer its
-/// presentation picks. This is the one place the model's product becomes a
-/// choice of destination — a navigable heavy view to the window's GPU slots, a
-/// forward-only source to its per-tick window, a stored non-navigable one to
-/// the mesh — and it is deliberately the *only* place, so nothing downstream
-/// has to ask what a view "is".
-#[allow(clippy::too_many_arguments)] // one element, six destinations
-pub(super) fn signal_item<'a>(
-    id: i32,
-    el: &'a signal::SignalElement,
-    // The server's rate, placing a frequency axis whose element names none.
-    server_rate: f64,
-    rect: Rect,
-    indent: f32,
-    clip: Option<Rect>,
-    theme: Option<Arc<Theme>>,
-    timelines: &mut Vec<TimelineItem>,
-    waves: &mut Vec<WaveItem<'a>>,
-    scopes: &mut Vec<ScopeItem<'a>>,
-    phases: &mut Vec<PhaseItem<'a>>,
-    spectra: &mut Vec<SpectrumItem<'a>>,
-    plots: &mut Vec<PlotItem>,
-) {
-    let (min, max) = (el.value.min.unwrap_or(-1.0), el.value.max.unwrap_or(1.0));
-    let strip_x = el.editor.ruler != Ruler::Off;
-    let strip_y = el.editor.ruler_y != RulerY::Off;
-    match (el.presentation, &el.source) {
-        // The navigable heavy views: their geometry is built on the window's
-        // pipelines from the slot keyed by this id.
-        (Presentation::Signal | Presentation::TimeFrequency, _) if el.caps.navigable => {
-            timelines.push(TimelineItem {
-                id,
-                rect,
-                indent,
-                clip,
-                theme,
-                kind: if el.presentation == Presentation::TimeFrequency {
-                    TimelineKind::Spectrogram {
-                        db_floor: el.spectral.db_floor,
-                        db_ceil: el.spectral.db_ceil,
-                        freq_scale: el.spectral.freq_scale,
-                        colormap: el.spectral.colormap,
-                    }
-                } else {
-                    TimelineKind::Waveform {
-                        overlay: el.display.overlay,
-                    }
-                },
-                editor: el.editor.clone(),
-            });
-        }
-        // A forward-only trace: the audio-rate window the tick aligned, or the
-        // control bus's rolling history.
-        (Presentation::Signal, signal::Source::Bus(bus)) => {
-            if bus.rate.is_audio() {
-                waves.push(WaveItem {
-                    live: &el.live,
-                    rect,
-                    clip,
-                    theme,
-                    min,
-                    max,
-                    window_ms: bus.window_ms,
-                    trigger: bus.trigger,
-                    overlay: el.display.overlay,
-                    ruler: strip_x,
-                    ruler_y: strip_y,
-                    label: el.display.label.clone(),
-                });
-            } else {
-                scopes.push(ScopeItem {
-                    live: &el.live,
-                    rect,
-                    clip,
-                    theme,
-                    min,
-                    max,
-                    label: el.display.label.clone(),
-                });
-            }
-        }
-        (Presentation::Phase, _) => phases.push(PhaseItem {
-            live: &el.live,
-            rect,
-            clip,
-            theme,
-            label: el.display.label.clone(),
-        }),
-        (Presentation::Spectrum, signal::Source::Bus(_)) => spectra.push(SpectrumItem {
-            live: &el.live,
-            rect,
-            clip,
-            theme,
-            fft_size: el.spectral.fft_size,
-            db_floor: el.spectral.db_floor,
-            db_ceil: el.spectral.db_ceil,
-            freq_scale: el.spectral.freq_scale,
-            peak_hold: el.spectral.peak_hold,
-            ruler: strip_x,
-            ruler_y: strip_y,
-            // The window the axis can show, not the one that was asked for:
-            // an item is a drawing instruction, and the floor of the analysis
-            // is part of what there is to draw.
-            x_view: el.freq_window(server_rate),
-            label: el.display.label.clone(),
-        }),
-        // A stored signal nobody navigates: the mesh renderer, whichever of
-        // the two presentations it shows.
-        (_, signal::Source::Data(data)) => plots.push(PlotItem {
-            rect,
-            clip,
-            theme,
-            samples: Arc::clone(&data.samples),
-            channels: data.channels,
-            view: if el.presentation == Presentation::Spectrum {
-                plot::PlotView::Spectrum
-            } else {
-                plot::PlotView::Signal
-            },
-            overlay: el.display.overlay,
-            sample_rate: el.editor.sample_rate,
-            min: el.value.min,
-            max: el.value.max,
-            ruler: el.editor.ruler,
-            ruler_y: strip_y,
-            spectrum: el.analysis.clone(),
-            db_floor: el.spectral.db_floor,
-            db_ceil: el.spectral.db_ceil,
-            freq_scale: el.spectral.freq_scale,
-            x_view: el.freq_window(server_rate),
-            label: el.display.label.clone(),
-        }),
-        // A live source with no live renderer for its presentation (a stored
-        // presentation over a bus): nothing to draw until it has one.
-        (_, signal::Source::Bus(_)) => {}
-    }
-}
 
 /// A placed `track` lane and its clips, copied out of the host tree so the
 /// graphic-unit overlay is drawn after the tree borrow is released. The clips'
@@ -293,87 +110,33 @@ pub(super) struct PianoRollItem {
     pub(super) editor: EditorProps,
 }
 
-/// A placed **control-rate** `scope`, copied out of the host tree: its id (to
-/// fetch the rolling history the tick advanced) and the scale it draws over.
-pub(super) struct ScopeItem<'a> {
-    /// What the tick accumulated for this view — read straight off the
-    /// element, which is where a live view's state lives.
-    pub(super) live: &'a signal::LiveState,
-    pub(super) rect: Rect,
-    pub(super) clip: Option<Rect>,
-    pub(super) theme: Option<Arc<Theme>>,
-    pub(super) min: f32,
-    pub(super) max: f32,
-    pub(super) label: Option<String>,
-}
-
-/// A placed audio-rate `scope`, copied out of the host tree: the window the
-/// tick aligned (borrowed from the element that keeps it) and the display
-/// parameters.
-pub(super) struct WaveItem<'a> {
-    pub(super) live: &'a signal::LiveState,
-    pub(super) rect: Rect,
-    pub(super) clip: Option<Rect>,
-    pub(super) theme: Option<Arc<Theme>>,
-    pub(super) min: f32,
-    pub(super) max: f32,
-    pub(super) window_ms: f32,
-    pub(super) trigger: f32,
-    pub(super) overlay: bool,
-    pub(super) ruler: bool,
-    pub(super) ruler_y: bool,
-    pub(super) label: Option<String>,
-}
-
-/// A placed `spectrum` widget, copied out of the host tree: its id (to fetch the
-/// analysis states), rect and display parameters (the dB window and axis flags).
-pub(super) struct SpectrumItem<'a> {
-    pub(super) live: &'a signal::LiveState,
-    pub(super) rect: Rect,
-    pub(super) clip: Option<Rect>,
-    pub(super) theme: Option<Arc<Theme>>,
-    pub(super) fft_size: usize,
-    pub(super) db_floor: f32,
-    pub(super) db_ceil: f32,
-    pub(super) freq_scale: FreqScale,
-    pub(super) peak_hold: bool,
-    pub(super) ruler: bool,
-    pub(super) ruler_y: bool,
-    /// The element's own frequency window, normalized.
-    pub(super) x_view: (f64, f64),
-    pub(super) label: Option<String>,
-}
-
-/// A placed `phasescope`, copied out of the host tree (drawn from the
-/// interleaved L/R window the tick stored in `tap_windows`).
-pub(super) struct PhaseItem<'a> {
-    pub(super) live: &'a signal::LiveState,
-    pub(super) rect: Rect,
-    pub(super) clip: Option<Rect>,
-    pub(super) theme: Option<Arc<Theme>>,
-    pub(super) label: Option<String>,
-}
-
 /// Which timeline view a placed editor-grade widget is, with its display props.
 pub(super) enum TimelineKind {
     Waveform {
+        /// The amplitude window, as the element stated it.
+        amp: (f64, f64),
         overlay: bool,
     },
     Spectrogram {
-        db_floor: f32,
-        db_ceil: f32,
-        freq_scale: FreqScale,
-        colormap: i32,
+        /// The frequency window, as the element stated it.
+        freq: (f64, f64),
+        look: TextureLook,
     },
 }
 
 /// A placed timeline view (waveform/spectrogram), copied out of the host tree.
+///
+/// Half of it is the **element's** answer — the body its picture is drawn in
+/// and the vertical window, which arrived as a
+/// [`SlotFrame`] — and half is the
+/// **axis'**: the placement, the group gutter and the editor chrome, which the
+/// frame draws around every member of a navigation group alike, a lane and a
+/// roll included.
 pub(super) struct TimelineItem {
     pub(super) id: i32,
     pub(super) rect: Rect,
-    /// Where this member's group starts its body inside `rect`
-    /// ([`layout::Placed::indent`]).
-    pub(super) indent: f32,
+    /// Where the picture goes, as the element resolved it out of `rect`.
+    pub(super) body: Rect,
     pub(super) clip: Option<Rect>,
     pub(super) theme: Option<Arc<Theme>>,
     pub(super) kind: TimelineKind,
@@ -394,13 +157,8 @@ pub(super) struct CanvasFrame {
 /// The data-driven widgets copied out of the host tree by [`collect_widgets`],
 /// grouped by kind. Each group is drawn in its own pass once the tree borrow is
 /// released, so the meshes and GPU uploads never touch the host tree.
-pub(super) struct Collected<'a> {
+pub(super) struct Collected {
     pub(super) timeline_items: Vec<TimelineItem>,
-    pub(super) scope_rects: Vec<ScopeItem<'a>>,
-    pub(super) wave_rects: Vec<WaveItem<'a>>,
-    pub(super) phase_rects: Vec<PhaseItem<'a>>,
-    pub(super) spectrum_rects: Vec<SpectrumItem<'a>>,
-    pub(super) plot_rects: Vec<PlotItem>,
     pub(super) track_items: Vec<TrackItem>,
     pub(super) clip_items: Vec<ClipItem>,
     pub(super) clip_bodies: Vec<ClipBodyItem>,
@@ -415,26 +173,13 @@ pub(super) struct Collected<'a> {
 /// `mesh`; every data-driven widget is copied out of the host tree into the
 /// returned [`Collected`], so the heavier meshes and the GPU uploads are built
 /// after the tree borrow is released.
-pub(super) fn collect_widgets<'a>(
-    placed: &'a [layout::Placed<'a>],
+pub(super) fn collect_widgets(
+    placed: &[layout::Placed<'_>],
     mesh: &mut Mesh,
     inputs: &FrameInputs,
     theme: &Theme,
-) -> Collected<'a> {
+) -> Collected {
     let mut timeline_items: Vec<TimelineItem> = Vec::new();
-    // Scope rects carry no bus: the value is sampled on the frame tick
-    // (`advance_scopes`); the render only draws the stored history. Audio-rate
-    // scopes draw their stored tap window instead (`wave_rects`).
-    let mut scope_rects: Vec<ScopeItem> = Vec::new();
-    let mut wave_rects: Vec<WaveItem> = Vec::new();
-    // Phasescope rects (drawn from the interleaved L/R window in `tap_windows`)
-    // and spectrum rects (drawn from the persistent `spectra` analysis states).
-    let mut phase_rects: Vec<PhaseItem> = Vec::new();
-    let mut spectrum_rects: Vec<SpectrumItem> = Vec::new();
-    // Plot items (with a cheap Arc clone of the samples) and node-tree rects,
-    // likewise copied out so the host-tree borrow can be released before the
-    // node-tree models and the GPU resources are read.
-    let mut plot_rects: Vec<PlotItem> = Vec::new();
     let mut track_items: Vec<TrackItem> = Vec::new();
     // A clip and its bodies are placed widgets, so they are collected from
     // their own placements: the clip's box first, its bodies after (the pass
@@ -497,30 +242,6 @@ pub(super) fn collect_widgets<'a>(
         match &p.widget.kind {
             WidgetKind::Panel { .. } | WidgetKind::Scroll { .. } | WidgetKind::Stack { .. } => {
                 mesh.rect(p.rect, th.panel)
-            }
-            // Every signal element, sorted to the renderer its presentation
-            // picks: the two navigable heavy views to the GPU slots, the live
-            // ones to their per-tick windows, the stored non-navigable ones to
-            // the mesh plot. The element is one thing; only its destination
-            // differs.
-            WidgetKind::Signal(el) => {
-                if let Some(id) = p.widget.id {
-                    signal_item(
-                        id,
-                        el,
-                        inputs.world.sample_rate,
-                        p.rect,
-                        p.indent,
-                        p.clip,
-                        p.widget.theme.clone(),
-                        &mut timeline_items,
-                        &mut wave_rects,
-                        &mut scope_rects,
-                        &mut phase_rects,
-                        &mut spectrum_rects,
-                        &mut plot_rects,
-                    );
-                }
             }
             WidgetKind::Piano {
                 min,
@@ -648,6 +369,7 @@ pub(super) fn collect_widgets<'a>(
                     world: &inputs.world,
                     metrics: m,
                     rect: p.rect,
+                    indent: p.indent,
                     scale: p.scale,
                     clip: p.clip,
                     time: None,
@@ -659,6 +381,22 @@ pub(super) fn collect_widgets<'a>(
                 // is the frame's, so this match is over pipelines the window
                 // already has -- never over what the element is.
                 if let (Some(id), Some(slot)) = (p.widget.id, el.slot(&ctx)) {
+                    // A timeline slot is half an item: the element said where
+                    // its picture goes and at what vertical window, the axis
+                    // says the rest (the chrome every group member shares).
+                    let mut timeline = |body: Rect, kind: TimelineKind| {
+                        if let Some(editor) = p.widget.kind.editor() {
+                            timeline_items.push(TimelineItem {
+                                id,
+                                rect: p.rect,
+                                body,
+                                clip: p.clip,
+                                theme: p.widget.theme.clone(),
+                                kind,
+                                editor: editor.clone(),
+                            });
+                        }
+                    };
                     match slot {
                         SlotFrame::Shader {
                             body,
@@ -671,6 +409,12 @@ pub(super) fn collect_widgets<'a>(
                             shader: source,
                             params,
                         }),
+                        SlotFrame::Waveform { body, amp, overlay } => {
+                            timeline(body, TimelineKind::Waveform { amp, overlay })
+                        }
+                        SlotFrame::Spectrogram { body, freq, look } => {
+                            timeline(body, TimelineKind::Spectrogram { freq, look })
+                        }
                     }
                 }
             }
@@ -689,11 +433,6 @@ pub(super) fn collect_widgets<'a>(
 
     Collected {
         timeline_items,
-        scope_rects,
-        wave_rects,
-        phase_rects,
-        spectrum_rects,
-        plot_rects,
         track_items,
         clip_items,
         clip_bodies,

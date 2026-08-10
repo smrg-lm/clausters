@@ -87,6 +87,16 @@ pub struct Ctx<'a> {
     pub metrics: &'a Metrics,
     /// The rect this element was placed in, in the window's pixels.
     pub rect: Rect,
+    /// Where this element's **shared axis** begins inside its rect: the widest
+    /// gutter any member of its navigation group asked for
+    /// ([`Element::gutter`]), stamped on the placement by the layout. `0.0`
+    /// for an element on no shared axis, which is most of them.
+    ///
+    /// It is here and not derived because it is the *group's* answer: an
+    /// element that measured its own would start the axis somewhere the lane
+    /// beside it did not, and the same sample would sit at two different
+    /// pixels.
+    pub indent: f32,
     /// The clip rectangle of the container this was placed in — what a scrolled
     /// widget's drawing is cut to — or `None` outside one.
     ///
@@ -443,6 +453,28 @@ pub enum SlotFrame {
         source: String,
         params: [f32; super::super::canvas::PARAM_COUNT],
     },
+    /// The geometry slot: a trace decimated per frame out of the peak pyramid
+    /// the slot holds, drawn into `body` at the element's vertical window.
+    ///
+    /// What is *not* here is as deliberate as what is: the horizontal window is
+    /// the **navigation group's** and the lane count is the **slot's**, so an
+    /// element states neither — it would have to know its own id for the first
+    /// and what reached the card for the second. `overlay` is the one thing
+    /// about the lanes that is the element's: whether they stack or share one.
+    Waveform {
+        body: Rect,
+        /// The amplitude window, as a normalized `(start, len)`.
+        amp: (f64, f64),
+        overlay: bool,
+    },
+    /// The texture slot: one uploaded analysis per lane, sampled a texel per
+    /// pixel, drawn into `body` at the element's frequency window and look.
+    Spectrogram {
+        body: Rect,
+        /// The frequency window, as a normalized `(start, len)`.
+        freq: (f64, f64),
+        look: TextureLook,
+    },
 }
 
 /// **What an element hands its claimed slot to upload**, when it has something
@@ -756,6 +788,53 @@ pub trait Element: fmt::Debug {
     /// What this element reads from outside itself.
     fn needs(&self) -> Needs {
         Needs::default()
+    }
+
+    /// **The editor chrome this element carries**, or `None` (the default) for
+    /// one that carries none.
+    ///
+    /// [`EditorProps`](super::EditorProps) is what a member of a navigation
+    /// group is made of — its ruler units, its own vertical window, its link,
+    /// its offset on the shared axis — and it is read *and written* from
+    /// outside: a gesture pans the group and writes the member's window, a
+    /// `/gui_set` of `view_y` lands here. So the door is a borrow of the props
+    /// rather than a copy of them.
+    fn editor(&self) -> Option<&super::EditorProps> {
+        None
+    }
+
+    /// [`editor`](Element::editor), mutably — the door a navigation gesture and
+    /// a `/gui_set` of the chrome write through.
+    fn editor_mut(&mut self) -> Option<&mut super::EditorProps> {
+        None
+    }
+
+    /// Whether this element navigates the window's **shared time axis**, and so
+    /// joins a navigation group. `false` by default.
+    fn navigates_time(&self) -> bool {
+        false
+    }
+
+    /// Whether this element draws an overlay that **follows the pointer** — a
+    /// cursor readout over stored data. `false` by default.
+    ///
+    /// The window asks because it decides what a mouse move costs: a picture
+    /// with a readout needs a frame per move, where a fully static one has no
+    /// other frame source and a live one is being repainted anyway.
+    fn hover_readout(&self) -> bool {
+        false
+    }
+
+    /// **The concrete element behind the trait object**, for the few callers
+    /// that own it — `None` by default, which is every element that has no
+    /// reason to be reached concretely.
+    ///
+    /// It exists for the built-ins whose *tests* assert on their own model, and
+    /// for a program that registered an element and wants its own type back.
+    /// Nothing in the passes uses it: a pass that needs an answer gets a door,
+    /// which is the whole point of the seam.
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        None
     }
 
     /// Whether this element navigates a **measured x axis of its own** — a

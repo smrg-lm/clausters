@@ -882,7 +882,7 @@ mod tests {
             .cloned()
             .collect();
         assert_eq!(bodies.len(), 3, "a take, a roll and a curve");
-        assert!(matches!(bodies[0].widget.kind, WidgetKind::Signal(_)));
+        assert!(bodies[0].widget.signal().is_some());
         assert!(matches!(
             bodies[1].widget.kind,
             WidgetKind::PianoRoll { .. }

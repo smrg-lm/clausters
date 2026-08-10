@@ -6,6 +6,7 @@
 
 use serde_json::{Map, Value};
 
+use super::super::signal::Presentation;
 use super::*;
 use element::BodyRole;
 
@@ -30,10 +31,9 @@ const PITCH_MIN: f32 = 21.0;
 const PITCH_MAX: f32 = 108.0;
 
 /// Builds the [`WidgetKind`] a GuiDef `node` names (an unknown type becomes
-/// [`WidgetKind::Unknown`]). `id` is the node's resolved id (some widgets log
-/// with it); `blobs` are the `/gui_def` message's trailing bulk payloads.
+/// [`WidgetKind::Unknown`]). `blobs` are the `/gui_def` message's trailing bulk
+/// payloads.
 pub(super) fn build_kind(
-    id: Option<i32>,
     kind: &str,
     props: &Map<String, Value>,
     has_children: bool,
@@ -85,9 +85,6 @@ pub(super) fn build_kind(
             flow: Flow::parse(props),
             view: ScrollView::parse(props),
         },
-        // Every view of a signal, in one arm because there is one element:
-        // the props say which point of the product ([`super::signal::point`]).
-        "signal" => build_signal(id, props, blobs)?,
         // Two independent axes, told apart by what is on it: a placement
         // makes it a clip on its parent's x axis, a bare strip of a given
         // thickness with nothing placed and no lane chrome is the
@@ -237,7 +234,7 @@ pub(super) fn body_widget(kind: WidgetKind) -> Widget {
 /// three elements, with nothing in them yet.
 pub(super) fn empty_clip_body(role: BodyRole) -> Option<WidgetKind> {
     let candidates: [WidgetKind; 3] = [
-        WidgetKind::Signal(Box::new(take_element(
+        WidgetKind::Custom(Box::new(take_element(
             signal::Data {
                 samples: Arc::from([] as [f32; 0]),
                 channels: 1,
@@ -338,7 +335,7 @@ fn clip_take(props: &Map<String, Value>, blobs: &[Vec<u8>]) -> Result<Option<Wid
     );
     el.spectral = spectral_props(props, el.spectral, "window_size");
     el.value = signal::ValueRange::new(number(props, "min", -1.0), number(props, "max", 1.0));
-    Ok(Some(WidgetKind::Signal(Box::new(el))))
+    Ok(Some(WidgetKind::Custom(Box::new(el))))
 }
 
 /// The spectral parameters a signal names, over `base` (its preset's): the
@@ -397,15 +394,15 @@ fn clip_roll(props: &Map<String, Value>) -> Option<WidgetKind> {
     })
 }
 
-/// Builds a [`WidgetKind::Signal`] from the wire node: `view`, the source
-/// props and `navigable` name a [`point`](signal::point) of the presentation ×
-/// source × capabilities product, and the rest of the props are read over its
-/// defaults. One arm, because there is one element.
-fn build_signal(
-    id: Option<i32>,
+/// Builds the signal element from the wire node: `view`, the source props and
+/// `navigable` name a [`point`](signal::point) of the presentation × source ×
+/// capabilities product, and the rest of the props are read over its defaults.
+/// One constructor, because there is one element.
+pub(crate) fn signal_element(
     props: &Map<String, Value>,
     blobs: &[Vec<u8>],
-) -> Result<WidgetKind, String> {
+) -> Result<signal::SignalElement, String> {
+    let id: Option<i32> = props.get("id").and_then(Value::as_i64).map(|n| n as i32);
     // The point of the product the props name: the presentation, whether the
     // source is forward-only, and whether the view navigates.
     let view = props
@@ -491,5 +488,5 @@ fn build_signal(
     };
 
     el.refresh_analysis();
-    Ok(WidgetKind::Signal(Box::new(el)))
+    Ok(el)
 }

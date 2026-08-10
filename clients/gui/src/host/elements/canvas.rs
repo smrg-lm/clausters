@@ -216,6 +216,7 @@ mod tests {
             world: &world,
             metrics: &metrics,
             rect: Rect::new(0.0, 0.0, 100.0, 60.0),
+            indent: 0.0,
             scale: 1.0,
             time: None,
             clip: None,

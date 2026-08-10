@@ -45,12 +45,15 @@ use crate::waveform::WaveformData;
 
 use super::widget::{EditorProps, Rate, Ruler, RulerY};
 
+mod apply;
 mod body;
 mod bulk;
 mod chrome;
+mod element;
 mod freq;
 mod live;
 mod slot;
+pub(crate) use element::build;
 pub use live::LiveState;
 
 /// The default peak-pyramid bucket of an element whose props name none: one
