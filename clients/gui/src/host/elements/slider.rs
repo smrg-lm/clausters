@@ -89,6 +89,10 @@ impl Element for Slider {
         control::value(&self.range)
     }
 
+    fn info(&self) -> Vec<(String, Value)> {
+        control::info(&self.range)
+    }
+
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         let track = self.track(input);
         self.drag.press(&mut self.range, track, self.vertical, at)

@@ -56,6 +56,10 @@ impl Element for Number {
         control::value(&self.range)
     }
 
+    fn info(&self) -> Vec<(String, Value)> {
+        control::info(&self.range)
+    }
+
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         self.drag.press(control::body(&self.range, input).h, at)
     }

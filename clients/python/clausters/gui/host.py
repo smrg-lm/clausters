@@ -313,6 +313,17 @@ class GuiHost:
     def query(self, id: int, timeout: float = 1.0):
         """``/gui_query <id>`` -> the ``/gui_info`` reply as ``(type, props)``.
 
+        What the widget **is now**: the props it was defined with, with every
+        edit the user has made since laid over them — a dragged control's value,
+        a moved clip's ``offset``/``dur``, an edited curve's ``points``. So this
+        is how a script reads back what a gesture did without listening for the
+        event that announced it.
+
+        Scalars only, since the reply is flat OSC arguments: a structural prop
+        nothing edits is not reported, while an edited one comes back as the
+        JSON **string** its own ``set`` accepts, so what you read is what you
+        could write.
+
         Returns ``None`` on timeout. An empty ``type`` (``""``) means the host
         has no such widget — it still answers, the way the server replies even on
         a miss.

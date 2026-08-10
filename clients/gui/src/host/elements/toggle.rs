@@ -71,6 +71,10 @@ impl Element for Toggle {
         Some(OscType::Int(self.value as i32))
     }
 
+    fn info(&self) -> Vec<(String, Value)> {
+        vec![("value".into(), Value::from(self.value))]
+    }
+
     fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
         self.value = !self.value;
         Claim::value(OscType::Int(self.value as i32))

@@ -574,6 +574,18 @@ Three properties hold it together, and none of them is a new rule to learn. The 
 
 **An element may fill a container's body.** A `clip` layers its contents — the material, the events over it, the automation over both — and used to recognize each by matching the leaf's variant, in every pass that layered, routed a `/gui_set`, drew or hit-tested one. A leaf behind the trait has no variant, so it *declares* a **`BodyRole`** instead (`Element::body_role`), shaped exactly like the slot: a closed set belonging to the **container**, which an element chooses among and cannot invent. The container keeps the layering (the role's own order is back to front), the axis and the edit doors, which are a coordinate system's business; the element says only which role it fills, and is then handed that axis through `Ctx::time`/`Input::time` — the same element, mapped through whichever coordinate system it was placed on. A body's **address** is its container's id plus its role, which is the routing a `/gui_set` of a body prop already took: a body carries no id, because the script addresses the clip.
 
+**A query answers what a widget is, not what it was defined as.** Two surfaces
+say what a widget holds, and a gesture writes only one of them: the **registry**
+keeps the document (what the script sent, kept current by every `/gui_set`),
+while the **render tree** keeps the widget as the user has since left it. So
+`/gui_query` reads the document and overlays `Widget::info()` — an element's
+`Element::info`, a built-in's arm in `host/widget/query.rs`, and, for a `clip`,
+its bodies' (a body carries no id, so the routing is the one a `/gui_set` of a
+body prop already takes). The rule for what belongs there is what keeps it from
+becoming a second source of truth: **only what a gesture can change**, named by
+the prop that sets it, and a non-scalar reported as the JSON string its own
+`/gui_set` accepts — so what a query gives back is what a set would take.
+
 **A heavy element claims a slot instead of drawing.** An element that cannot go into the window's one mesh — it needs a texture, a vertex buffer or a shader of its own — declares a `SlotKind` in its `Needs` and is fed by `Element::slot` each frame, and the frame maintains that slot keyed by widget id exactly as it does for the built-in heavy views. **The set of slot kinds is closed and belongs to the frame**, which owns the device, the pipelines and the one-batch rule: an element chooses among them and cannot invent one, so a `canvas` is an ordinary element whose user WGSL is a *parameter* of the shader slot rather than a pipeline of its own. Widening the set means adding a pipeline to the frame, priced once per window and only in the builds that compiled it in — the same boundary as "a container is not extensible", drawn where the hardware is.
 
 **Building the tree from Rust.** The same program needs a way to *instantiate* what it registered, and the host's only door was `handle_packet` — OSC framing around JSON — so an embedder had to serialize a document against itself and parse it back. `src/tree.rs` builds a node from Rust values and `Host::define(id, root)` takes it, doing everything `/gui_def` does from the point where the JSON has already been parsed. The two entrances meet at `GuiNode`, the generic wire node, so there is one definition path and a tree built in Rust is recorded, rendered, bound and persisted by the same steps as one that arrived as JSON — the derived document is still what persistence and `/gui_query` read. A pair of parity tests holds the two doors to the same result.

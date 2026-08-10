@@ -204,6 +204,15 @@ impl Element for Curve {
         bpf::draw(d, &ax, &self.points);
     }
 
+    fn info(&self) -> Vec<(String, Value)> {
+        // The list as the JSON string `/gui_set points` already accepts: a
+        // query gives back exactly what a set would take.
+        vec![(
+            "points".into(),
+            Value::from(bpf::points_json(&self.points).to_string()),
+        )]
+    }
+
     fn body_role(&self) -> Option<BodyRole> {
         Some(BodyRole::Curve)
     }

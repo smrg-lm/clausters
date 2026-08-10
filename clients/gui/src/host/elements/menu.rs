@@ -111,6 +111,10 @@ impl Element for Menu {
         Some(OscType::Int(self.index as i32))
     }
 
+    fn info(&self) -> Vec<(String, Value)> {
+        vec![("index".into(), Value::from(self.index))]
+    }
+
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         // Already up: this press is the list's, wherever it landed. A row picks
         // that option; anywhere else just closes, and either way the press goes

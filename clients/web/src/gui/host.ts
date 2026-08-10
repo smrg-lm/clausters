@@ -342,6 +342,13 @@ export class GuiHost {
      * `/gui_query <id>` → the `/gui_info` reply. Rejects with `ReplyTimeout`
      * if the host does not answer; an **empty** `type` means no such widget.
      *
+     * What the widget **is now**: the props it was defined with, with every
+     * edit the user has made since laid over them — a dragged control's value,
+     * a moved clip's `offset`/`dur`, an edited curve's `points` — so this is
+     * how a page reads back what a gesture did without listening for the event
+     * that announced it. Scalars only (the reply is flat OSC arguments); an
+     * edited structure comes back as the JSON string its own `set` accepts.
+     *
      * The default wait is the Python client's second: a host that is up
      * answers a query off its own event loop, and one that is not will not
      * answer in five either.

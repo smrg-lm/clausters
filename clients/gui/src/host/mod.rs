@@ -1062,10 +1062,17 @@ impl Host {
             return warn!("{from}: {GUI_QUERY} needs an integer id");
         };
         let mut out = vec![OscType::Int(id)];
+        // What the widget *is now*, before the document is read: a gesture
+        // edits the render tree and never the document, so a widget that was
+        // dragged answers with what it was defined as unless the live state
+        // overlays it (see `live_props`).
+        let live = self.live_props(id);
         match self.registry.get(id) {
             Some(widget) => {
                 out.push(OscType::String(widget.kind.clone()));
-                for (k, v) in &widget.props {
+                let mut props = widget.props.clone();
+                props.extend(live);
+                for (k, v) in &props {
                     if let Some(arg) = scalar_arg(v) {
                         out.push(OscType::String(k.clone()));
                         out.push(arg);
@@ -1086,6 +1093,30 @@ impl Host {
             addr: GUI_INFO.into(),
             args: out,
         }));
+    }
+
+    /// The props widget `id` currently holds that its **document does not** —
+    /// what a gesture changed since the def was sent.
+    ///
+    /// Two surfaces answer "what is this widget", and only one of them a
+    /// gesture writes. The registry holds the document: what the script sent,
+    /// kept current by every `/gui_set`, and it is the base a query answers
+    /// from because it carries props the render tree does not model. The render
+    /// tree holds the widget as the user has since left it — a slider dragged, a
+    /// clip moved, a curve edited — and that is the divergence this closes, in
+    /// the props' **own vocabulary**: a key here is one a script could set, with
+    /// the value it would have to set to reproduce what is on screen.
+    ///
+    /// Empty for a widget nothing edits, which is most of them.
+    fn live_props(&self, id: i32) -> serde_json::Map<String, Value> {
+        let live = self
+            .registry
+            .root_of(id)
+            .and_then(|root| self.window_defs.get(&root))
+            .and_then(|tree| tree.find(id))
+            .map(|w| w.info())
+            .unwrap_or_default();
+        live.into_iter().collect()
     }
 
     /// `/gui_bind <id> "server" <addr> <prefix…>` — forward this widget's value
@@ -1506,6 +1537,116 @@ mod tests {
             .position(|a| *a == OscType::String("value".into()))
             .expect("value key present");
         assert_eq!(info.args[pos + 1], OscType::Float(800.0));
+    }
+
+    /// **A query answers what the widget is, not what it was defined as.** A
+    /// gesture writes the render tree and never the document, so a dragged
+    /// control used to report its def-time value forever — which is the one
+    /// answer a script cannot check any other way.
+    #[test]
+    fn a_query_reports_what_a_gesture_left_behind() {
+        use crate::host::gestures::{GestureCtx, Gestures};
+
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","margin":0,"children":[
+                    {"id":10,"type":"slider","min":0.0,"max":1.0,"value":0.0}]}"#,
+            ),
+            from(),
+        );
+        let queried = |host: &mut Host, key: &str| -> Option<OscType> {
+            let out = replies(host.handle_packet(
+                OscPacket::Message(OscMessage {
+                    addr: GUI_QUERY.into(),
+                    args: vec![OscType::Int(10)],
+                }),
+                from(),
+            ));
+            let args = &out[0].args;
+            let at = args
+                .iter()
+                .position(|a| *a == OscType::String(key.into()))?;
+            args.get(at + 1).cloned()
+        };
+        assert_eq!(queried(&mut host, "value"), Some(OscType::Float(0.0)));
+
+        // Drag the slider to the right end of the groove it was actually
+        // placed on, so the press lands where the renderer drew it.
+        let rect = host
+            .layout_window(1, 400, 200)
+            .unwrap()
+            .iter()
+            .find(|p| p.widget.id == Some(10))
+            .expect("the slider is placed")
+            .rect;
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 400, 200);
+        let (x, y) = (
+            (rect.x + rect.w - 2.0) as f64,
+            (rect.y + rect.h * 0.5) as f64,
+        );
+        g.press(&mut host, &ctx, x, y, &mut || false);
+        g.release(&mut host, &ctx, x, y);
+        let dragged = match queried(&mut host, "value") {
+            Some(OscType::Float(v)) => v,
+            other => panic!("no float value: {other:?}"),
+        };
+        assert!(
+            dragged > 0.5,
+            "the query reports the drag, not the def: {dragged}"
+        );
+
+        // ...and a `/gui_set` still wins, because it writes both surfaces.
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_SET.into(),
+                args: vec![
+                    OscType::Int(10),
+                    OscType::String("value".into()),
+                    OscType::Float(0.25),
+                ],
+            }),
+            from(),
+        );
+        assert_eq!(queried(&mut host, "value"), Some(OscType::Float(0.25)));
+    }
+
+    /// The same for a **container's own** editable state and for a non-scalar
+    /// payload: a clip reports where it was dragged to, and a curve reports its
+    /// break-points as the JSON string a `/gui_set points` already takes — so
+    /// what a query gives back is what a set would take.
+    #[test]
+    fn a_query_reports_a_moved_clip_and_an_edited_curve() {
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","margin":0,"children":[
+                    {"id":20,"type":"field","label":"lane","children":[
+                        {"id":21,"type":"field","offset":0.0,"dur":100.0,
+                         "points":[0.0,0.0,1,0.0,100.0,1.0,1,0.0],
+                         "points_min":0.0,"points_max":1.0}]}]}"#,
+            ),
+            from(),
+        );
+        let live = |host: &Host, id: i32, key: &str| host.live_props(id).get(key).cloned();
+
+        // The clip's placement is the clip's own, edited by its container drag.
+        assert_eq!(live(&host, 21, "offset"), Some(Value::from(0.0)));
+        interact::clip_set(&mut host, 1, 21, Some(40.0), None);
+        assert_eq!(live(&host, 21, "offset"), Some(Value::from(40.0)));
+
+        // The curve is a body, so the clip is what a script addresses — and the
+        // points it reports parse straight back through the same prop.
+        let reported = match live(&host, 21, "points") {
+            Some(Value::String(s)) => s,
+            other => panic!("points are not the string carrier: {other:?}"),
+        };
+        let parsed = bpf::parse_points(&Value::String(reported), 0.0, 1.0).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[1].value, 1.0);
     }
 
     #[test]

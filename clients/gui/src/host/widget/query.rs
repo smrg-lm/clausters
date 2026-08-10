@@ -18,6 +18,7 @@
 //! [`clip_body`]: Widget::clip_body
 
 use clausters_core::osc::OscType;
+use serde_json::Value;
 
 use super::super::signal::{Presentation, SignalElement};
 use super::element::BodyRole;
@@ -145,6 +146,53 @@ impl WidgetKind {
             WidgetKind::Text { value, .. } => Some(OscType::String(value.clone())),
             WidgetKind::Custom(el) => el.value(),
             _ => None,
+        }
+    }
+
+    /// **What a gesture has changed on this widget**, in the props' own
+    /// vocabulary — the keys a script could set, with the values it would have
+    /// to set to reproduce what is on screen.
+    ///
+    /// The one door `/gui_query` overlays on the document, so a widget answers
+    /// with what it *is* rather than with what it was defined as. An element
+    /// answers for itself ([`Element::info`](super::Element::info)); a built-in
+    /// is an arm here, and its row disappears as the leaf moves behind the
+    /// trait — the shape [`Self::needs`] already has.
+    ///
+    /// **Only what a gesture can change belongs here.** A prop the script alone
+    /// writes is already current in the document, since a `/gui_set` updates it;
+    /// restating it would be a second source of truth for the same value. And a
+    /// non-scalar rides as the JSON string its `/gui_set` already accepts, so
+    /// what a query gives back is what a set would take.
+    pub fn info(&self) -> Vec<(String, Value)> {
+        match self {
+            WidgetKind::Custom(el) => el.info(),
+            WidgetKind::Text { value, .. } => {
+                vec![("value".into(), Value::from(value.clone()))]
+            }
+            WidgetKind::Clip { offset, dur, .. } => vec![
+                ("offset".into(), Value::from(*offset)),
+                ("dur".into(), Value::from(*dur)),
+            ],
+            WidgetKind::Track { header, .. } => header
+                .mute
+                .map(|b| ("mute".into(), Value::from(b)))
+                .into_iter()
+                .chain(header.solo.map(|b| ("solo".into(), Value::from(b))))
+                .chain(header.level.map(|v| ("level".into(), Value::from(v))))
+                .collect(),
+            WidgetKind::PianoRoll { notes, osc, .. } => vec![
+                (
+                    "notes".into(),
+                    Value::from(super::super::pianoroll::notes_json(notes).to_string()),
+                ),
+                (
+                    "osc".into(),
+                    Value::from(super::super::pianoroll::osc_json(osc).to_string()),
+                ),
+            ],
+            WidgetKind::Scroll { view, .. } => view.info(),
+            _ => Vec::new(),
         }
     }
 
@@ -287,6 +335,23 @@ impl Widget {
             }),
             _ => None,
         }
+    }
+
+    /// **What a gesture has changed on this widget** — its own kind's
+    /// ([`WidgetKind::info`]) plus, for a `clip`, its **bodies'**.
+    ///
+    /// The reader's half of the routing `apply_widget` does for writes, and for
+    /// the same reason: a body carries no id, so a script addresses the clip
+    /// and the prop that answers is whichever body owns it. A curve edited on a
+    /// lane reports its points through the clip that holds it.
+    pub fn info(&self) -> Vec<(String, Value)> {
+        let mut out = self.kind.info();
+        if matches!(self.kind, WidgetKind::Clip { .. }) {
+            for body in &self.children {
+                out.extend(body.kind.info());
+            }
+        }
+        out
     }
 
     /// The body filling `role` among a clip's children, mutably — the door a

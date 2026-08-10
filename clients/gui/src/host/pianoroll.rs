@@ -21,6 +21,7 @@
 //! keyboard and the pitch ruler — lives in `clausters_core::scale`.
 
 use clausters_core::scale;
+use serde_json::Value;
 
 use super::font;
 use super::layout::Rect;
@@ -39,6 +40,35 @@ pub struct Note {
     pub pitch: f32,
     pub velocity: i32,
     pub channel: i32,
+}
+
+/// The `notes` wire form of a note list: the flat `start dur pitch velocity
+/// channel` quintuple array, as JSON.
+///
+/// The inverse of the `notes` prop's parse, so what a `/gui_query` reports is
+/// what a `/gui_set` would take — which is the whole contract of reporting a
+/// non-scalar as its own string carrier.
+pub fn notes_json(notes: &[Note]) -> Value {
+    let mut out = Vec::with_capacity(notes.len() * 5);
+    for n in notes {
+        out.push(Value::from(n.start));
+        out.push(Value::from(n.dur));
+        out.push(Value::from(n.pitch));
+        out.push(Value::from(n.velocity));
+        out.push(Value::from(n.channel));
+    }
+    Value::Array(out)
+}
+
+/// The `osc` wire form of a marker list: the flat `time label` pair array, as
+/// JSON — the inverse of the `osc` prop's parse.
+pub fn osc_json(marks: &[OscMark]) -> Value {
+    let mut out = Vec::with_capacity(marks.len() * 2);
+    for m in marks {
+        out.push(Value::from(m.time));
+        out.push(Value::from(m.label.clone().unwrap_or_default()));
+    }
+    Value::Array(out)
 }
 
 impl Note {

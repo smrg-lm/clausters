@@ -45,6 +45,13 @@ pub(super) fn value(r: &Range) -> Option<OscType> {
     Some(OscType::Float(r.value))
 }
 
+/// What a drag left behind, under the key that sets it — the whole of what a
+/// ranged control's `/gui_query` has to correct, since `min`, `max` and the
+/// label are the script's and are already current in the document.
+pub(super) fn info(r: &Range) -> Vec<(String, Value)> {
+    vec![("value".into(), Value::from(r.value))]
+}
+
 /// The **absolute** drag: the groove the press landed in, held for as long as
 /// the press is. `None` when nothing is being dragged.
 #[derive(Debug, Clone, Default)]

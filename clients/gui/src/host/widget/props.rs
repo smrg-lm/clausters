@@ -721,6 +721,23 @@ pub struct ScrollView {
 }
 
 impl ScrollView {
+    /// The navigation a gesture wrote — where the plane is and how far in it is
+    /// zoomed, under the keys that set them.
+    ///
+    /// `view_zoom` is reported only when something named one: `None` is "the
+    /// density of the screen it is drawn on", which is not a number the plane
+    /// holds and not one a script has to send back.
+    pub fn info(&self) -> Vec<(String, serde_json::Value)> {
+        let mut out = vec![
+            ("view_x".into(), serde_json::Value::from(self.view_x)),
+            ("view_y".into(), serde_json::Value::from(self.view_y)),
+        ];
+        if let Some(zoom) = self.view_zoom {
+            out.push(("view_zoom".into(), serde_json::Value::from(zoom)));
+        }
+        out
+    }
+
     /// This plane's scale in physical pixels per content unit, resolved against
     /// the window's metrics.
     ///
