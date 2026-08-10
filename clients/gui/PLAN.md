@@ -1014,13 +1014,16 @@ The transitional aliases are **not** the rejected "presets on the wire" decision
 
 **Not a milestone here — `box`.** The catalog spent the name on a synonym for `panel` and E9's model wants it for the patcher's box, but a plane's boxes are still its `boxes` prop. Turning them into child elements changes ids, layout, per-box hit-testing and edit-back — it is behavior, not spelling — so it belongs to **P5**, the patcher's editing surface, where it is now written down as that milestone's first item rather than only pointed at from here.
 
-### The axis E16 left open (E17–E18)
+### The axis E16 left open, and what the GPU path still owes (E17–E19)
 
-*Added 2026-08-09, from what closing E16 found.* Retention made a forward-only
-source addressable and proved the model end to end, and it surfaced two things
-that are genuinely missing rather than merely unbuilt. Neither is a refactor:
-one is a capability the acceptance line asked for and did not get, the other is
-a cost the first landing knowingly paid.
+*Added 2026-08-09, from what closing E16 found; E19 added 2026-08-10, from the
+by-eye pass that closed E17.* Retention made a forward-only source addressable
+and proved the model end to end, and it surfaced two things that are genuinely
+missing rather than merely unbuilt. Neither is a refactor: one is a capability
+the acceptance line asked for and did not get, the other is a cost the first
+landing knowingly paid. The third is older than both — a defect the examples
+walked past for as long as there have been GPU windows, and that only a pass
+with an eye on the drawing was ever going to catch.
 
 - ✅ **E17 — A navigable axis whose domain is not time**: E16 shipped the
   retained waterfall and **not** the zoomable live `spectrum` its acceptance
@@ -1114,6 +1117,43 @@ a cost the first landing knowingly paid.
   transform is the degenerate case (cursor 0, never advanced) and draws
   byte-identically to what it draws today. Ordered after E17 because it changes
   nothing a user can see and E17 changes something they asked for.
+
+- ⬜ **E19 — A heavy view hanging off the window is cut, not squashed**:
+  *(found by eye on 2026-08-10, checking the trace-weight fix in
+  `gui_multitrack`: pan a spectral clip until its lane pokes past the bottom of
+  the window and the picture **flattens into what is left** instead of being
+  cropped — the content behaves as if it were sized by the visible area rather
+  than by the lane.)*
+
+  The cause is one function. Every heavy view builds its geometry in NDC
+  `[-1, 1]` and lets `set_viewport` place it, so the viewport is not a crop but
+  a **scale**; and since wgpu refuses a viewport that leaves the attachment,
+  `frame::clamp_viewport` shrinks the rectangle against the framebuffer. A view
+  overhanging the bottom therefore gets its whole picture mapped into the
+  remaining height, and one overhanging the top gets its origin clamped to 0 and
+  slides instead of being cut. The scissor beside it (`frame::apply_scissor`) is
+  right and its comment already says the viewport "positions but does not cut" —
+  the sentence that is missing is that it also *scales*, which is where the bug
+  lives. It dates from `277f79f`, the track's first GPU window.
+
+  **Why only a spectral clip shows it today**, which is also why the milestone
+  is small: every other clip body is drawn into the shared mesh and cut
+  geometrically, and the one exception is a take whose `view` is the
+  time-frequency texture — `frame/items.rs` collects it apart precisely because
+  it is a texture rather than geometry. The navigable waveform and the `canvas`
+  have the same defect and no example currently parks one against a window edge.
+
+  The fix is to stop asking the viewport to do the framing: keep it legal
+  (clamped, as now) and hand each pipeline the **visible sub-rectangle** as a
+  scale + offset in NDC, one more uniform beside the ones each already carries,
+  so the geometry is placed for the full rect and only the visible slice is
+  rasterized. It touches the three heavy pipelines — waveform, spectrogram,
+  `canvas` — and the `canvas` one is user-authored WGSL, so whatever the uniform
+  is called becomes part of that contract and belongs in `docs/gui-protocol.md`.
+  Acceptance: a lane dragged past each of the four window edges keeps its
+  content at a fixed size and simply loses what is outside, in all three
+  pipelines; the same view fully inside the window draws byte-identically to
+  what it draws today.
 
 ## K track — the kit: opening the element, from Rust and from the wire
 
