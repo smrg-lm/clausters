@@ -880,7 +880,26 @@ The transitional aliases are **not** the rejected "presets on the wire" decision
   directories. Then the web half: `./build.sh` staged, `./test.sh` green — 229
   unit tests and all 19 pages, the split of `web/` intact.
 
-- ⬜ **E13 — `interact.rs` splits by the question it answers** *(2036 lines, no submodules)*: the file has the same shape `gestures/mod.rs` had at 2149 before E5 cut it, and `web.rs` had at 2325 — hit-testing, the coordinate-system types, per-element value mutation and per-element data readers (`score_data`, `piano_state`, the `clip_*` and `graph_*` families) in one flat file, carrying the three surviving `allow(too_many_arguments)`. Into `interact/`: `coords.rs` (`Coords`/`TimeAxis`/`YAxis`/`Link`/`Hit` — the chain's vocabulary), `hit.rs` (the one layout pass that answers a pointer question, `chain_of`, `time_axis`, `view_of`), `edit.rs` (the write doors — `set_fraction`, the text field, `bpf_edit`, the scroll-view door) and `read.rs` (the per-element readers the frame and the gestures ask for). A pure move; the `allow`s go with the split rather than surviving it, since each one is a function that was carrying two files' worth of parameters.
+- ✅ **E13 — `interact.rs` splits by the question it answers** *(2036 lines, no submodules)*: the file has the same shape `gestures/mod.rs` had at 2149 before E5 cut it, and `web.rs` had at 2325 — hit-testing, the coordinate-system types, per-element value mutation and per-element data readers (`score_data`, `piano_state`, the `clip_*` and `graph_*` families) in one flat file, carrying the three surviving `allow(too_many_arguments)`. Into `interact/`: `coords.rs` (`Coords`/`TimeAxis`/`YAxis`/`Link`/`Hit` — the chain's vocabulary), `hit.rs` (the one layout pass that answers a pointer question, `chain_of`, `time_axis`, `view_of`), `edit.rs` (the write doors — `set_fraction`, the text field, `bpf_edit`, the scroll-view door) and `read.rs` (the per-element readers the frame and the gestures ask for). A pure move; the `allow`s go with the split rather than surviving it, since each one is a function that was carrying two files' worth of parameters.
+
+  **What shipped.** The four children, and one rule that turned out to be worth
+  more than the file sizes: **`coords.rs` never mentions the `Host`**. That is
+  what makes it the vocabulary rather than a fourth door — types and arithmetic,
+  testable on their own — and it decided every borderline case (the axis math,
+  the clip-part split and the drag placement went there; anything that had to
+  ask the tree did not). The other three follow the moment of the gesture:
+  `hit.rs` answers *what is under the point*, `edit.rs` writes, `read.rs` says
+  what an element holds and builds the payload that reports it. `mod.rs` is 68
+  lines — the map, plus the re-exports the fronts use, which is deliberately
+  *less* than the file held: a name used only inside the module is not
+  re-exported, so the list is an inventory of the door rather than of the file.
+  The three `allow(too_many_arguments)` retired the way the entry predicted, by
+  naming what the scalars were: `CanvasAt` (the area, the workspace scale and
+  the cursor — a patch canvas question) and `ClipAt` (the clip's rectangle, its
+  own window and the cursor), each one value where four positional floats could
+  be paired wrongly. Zero `allow`s left in the module. Green on 501 tests,
+  clippy, rustdoc and `check-wasm.sh`; `docs/architecture.md` and the
+  `gui-widgets` skill now name the children.
 
 - ⬜ **E14 — The schema file keeps the schema** *(`widget/mod.rs`, 3222 lines)*: `build`/`apply`/`size`/`parse`/`axes` are already siblings, so what is left is the enum plus roughly 600 lines that are not the enum — the prop bundles (`EditorProps`, `GestureMap`/`GesturePlan`, `ScrollView`, `Flow`, `Range`, `Place`) to `widget/props.rs`, and the per-kind predicates that are really a query pass (`is_timeline`, `event_value`, `live_bus`, `editor`, `link_lanes`) to `widget/query.rs` — the same third-arm-per-kind shape `size.rs` already is, in the same direction. What stays is `WidgetKind` and its documentation, which is where a reader looking for the model should land. Ordered after E13 because it is the smaller of the two and the one the K track's registry rewrites anyway.
 

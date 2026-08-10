@@ -516,7 +516,16 @@ impl Gestures {
                     if h.point.is_some() || (ctx.ctrl && h.has_curve) {
                         if ctx.ctrl {
                             if interact::clip_point_edit(
-                                host, def_id, h.id, h.point, h.rect, &h.local, cx, cy,
+                                host,
+                                def_id,
+                                h.id,
+                                h.point,
+                                interact::ClipAt {
+                                    rect: h.rect,
+                                    local: h.local,
+                                    cx,
+                                    cy,
+                                },
                             ) {
                                 emit_points(host, out, def_id, h.id);
                                 out.push(GestureEffect::Redraw(def_id));

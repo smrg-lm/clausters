@@ -390,11 +390,16 @@ impl Gestures {
                 // The curve of an automation clip, edited in place: the cursor maps
                 // back through the clip's own axis (time) and its value range,
                 // then the point moves with the `bpf` model's own semantics.
-                let local = View {
-                    start: nav_start,
-                    len: nav_len,
+                let at = interact::ClipAt {
+                    rect,
+                    local: View {
+                        start: nav_start,
+                        len: nav_len,
+                    },
+                    cx,
+                    cy,
                 };
-                if interact::clip_point_move(host, def_id, id, index, rect, &local, cx, cy) {
+                if interact::clip_point_move(host, def_id, id, index, at) {
                     emit_points(host, &mut out, def_id, id);
                     out.push(GestureEffect::Redraw(def_id));
                 }
@@ -551,9 +556,18 @@ impl Gestures {
                 // (outlet -> inlet, matching rate) and the edit leaves as the
                 // flat directed `"wire" src_box outlet dst_box inlet` event, so
                 // the driver adds the cord and re-renders. Anything else cancels.
-                if let Some((from, outlet, to, inlet)) =
-                    interact::graph_cord(host, def_id, id, port, area, cx, cy, scale)
-                {
+                if let Some((from, outlet, to, inlet)) = interact::graph_cord(
+                    host,
+                    def_id,
+                    id,
+                    port,
+                    interact::CanvasAt {
+                        area,
+                        scale,
+                        cx,
+                        cy,
+                    },
+                ) {
                     out.push(GestureEffect::Emit {
                         def_id,
                         widget_id: id,
