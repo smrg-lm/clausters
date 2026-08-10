@@ -115,39 +115,51 @@ impl BufferFetches {
         FetchStep::Request(request_chunk(bufnum, 0, total))
     }
 
-    /// `/buffer_getRange.reply bufnum start count value...`: store a chunk, then request the
-    /// next one or finish when the whole buffer has arrived.
+    /// `/buffer_getRange.reply bufnum [start blob]...`: store each range, then
+    /// request the next chunk or finish when the whole buffer has arrived.
+    ///
+    /// **The samples come back as a little-endian `f32` blob**, not as float
+    /// arguments — the reply's own length is what actually came back, so no
+    /// declared count can disagree with it. A range that carries nothing (an
+    /// unallocated buffer, or a read past a buffer shorter than
+    /// `/buffer_query.reply` said) ends the download with what has arrived
+    /// rather than re-asking for a chunk the server has already declined.
     pub(crate) fn on_data(&mut self, args: &[OscType]) -> FetchStep {
-        let [
-            OscType::Int(bufnum),
-            OscType::Int(start),
-            OscType::Int(count),
-            rest @ ..,
-        ] = args
-        else {
+        let [OscType::Int(bufnum), ranges @ ..] = args else {
             return FetchStep::None;
         };
-        let (bufnum, start) = (*bufnum, (*start).max(0) as usize);
-        let count = (*count).max(0) as usize;
-        let (done, total) = {
+        let bufnum = *bufnum;
+        let (done, total, next) = {
             let Some(fetch) = self.fetches.get_mut(&bufnum) else {
                 return FetchStep::None;
             };
-            let end = start.saturating_add(count).min(fetch.total);
-            let n = end.saturating_sub(start);
-            for (i, arg) in rest.iter().take(n).enumerate() {
-                if let OscType::Float(v) = arg {
-                    fetch.samples[start + i] = *v;
+            let mut next = 0usize;
+            let mut landed = 0usize;
+            for range in ranges.chunks(2) {
+                let [OscType::Int(start), OscType::Blob(bytes)] = range else {
+                    continue;
+                };
+                let start = (*start).max(0) as usize;
+                let n = (bytes.len() / 4).min(fetch.total.saturating_sub(start));
+                for (i, word) in bytes.chunks_exact(4).take(n).enumerate() {
+                    fetch.samples[start + i] =
+                        f32::from_le_bytes([word[0], word[1], word[2], word[3]]);
                 }
+                fetch.received += n;
+                landed += n;
+                next = next.max(start + n);
             }
-            fetch.received += n;
-            (fetch.received >= fetch.total, fetch.total)
+            (
+                landed == 0 || fetch.received >= fetch.total,
+                fetch.total,
+                next,
+            )
         };
         if done {
             let fetch = self.fetches.remove(&bufnum).unwrap();
             self.finish(bufnum, fetch.samples, fetch.channels, fetch.sample_rate)
         } else {
-            FetchStep::Request(request_chunk(bufnum, start + count, total))
+            FetchStep::Request(request_chunk(bufnum, next, total))
         }
     }
 
@@ -207,14 +219,18 @@ mod tests {
             .collect()
     }
 
-    fn setn_args(bufnum: i32, start: usize, values: &[f32]) -> Vec<OscType> {
-        let mut args = vec![
+    /// One `/buffer_getRange.reply` range, in the shape the server sends it:
+    /// the samples as a little-endian `f32` blob, never as float arguments.
+    fn range_reply(bufnum: i32, start: usize, values: &[f32]) -> Vec<OscType> {
+        let mut blob = Vec::with_capacity(values.len() * 4);
+        for v in values {
+            blob.extend_from_slice(&v.to_le_bytes());
+        }
+        vec![
             OscType::Int(bufnum),
             OscType::Int(start as i32),
-            OscType::Int(values.len() as i32),
-        ];
-        args.extend(values.iter().map(|v| OscType::Float(*v)));
-        args
+            OscType::Blob(blob),
+        ]
     }
 
     #[test]
@@ -232,7 +248,7 @@ mod tests {
         };
         assert_eq!(msg.addr, "/buffer_getRange");
         assert_eq!(ints(&msg), vec![7, 0, 6]);
-        let step = fetches.on_data(&setn_args(7, 0, &[0.0, 9.0, 1.0, 9.0, 2.0, 9.0]));
+        let step = fetches.on_data(&range_reply(7, 0, &[0.0, 9.0, 1.0, 9.0, 2.0, 9.0]));
         let FetchStep::Done {
             bufnum,
             samples,
@@ -255,6 +271,24 @@ mod tests {
         assert_eq!(ids, vec![10, 11]);
     }
 
+    /// A range that comes back empty ends the download. The server clamps a
+    /// read to what the buffer holds, so a buffer that shrank between the
+    /// query and the read answers with nothing — and re-asking for the same
+    /// chunk would spin forever against a server that is already right.
+    #[test]
+    fn a_range_that_carries_nothing_finishes_the_download() {
+        let mut fetches = BufferFetches::default();
+        fetches.want(1, 10, 4);
+        let FetchStep::Request(_) = fetches.on_info(4, 100, 1, 48_000.0) else {
+            panic!("expected the first /buffer_getRange");
+        };
+        let step = fetches.on_data(&range_reply(4, 0, &[]));
+        let FetchStep::Done { samples, .. } = step else {
+            panic!("an empty range ends it rather than re-asking");
+        };
+        assert_eq!(samples.len(), 100, "what was declared, zero-filled");
+    }
+
     #[test]
     fn large_buffer_walks_sequential_chunks() {
         let total = BUFFER_CHUNK * 2 + 100; // mono: three chunks
@@ -264,7 +298,7 @@ mod tests {
             panic!("expected the first /buffer_getRange");
         };
         assert_eq!(ints(&msg), vec![3, 0, BUFFER_CHUNK as i32]);
-        let FetchStep::Request(msg) = fetches.on_data(&setn_args(3, 0, &vec![1.0; BUFFER_CHUNK]))
+        let FetchStep::Request(msg) = fetches.on_data(&range_reply(3, 0, &vec![1.0; BUFFER_CHUNK]))
         else {
             panic!("expected the second chunk request");
         };
@@ -273,13 +307,13 @@ mod tests {
             vec![3, BUFFER_CHUNK as i32, BUFFER_CHUNK as i32]
         );
         let FetchStep::Request(msg) =
-            fetches.on_data(&setn_args(3, BUFFER_CHUNK, &vec![2.0; BUFFER_CHUNK]))
+            fetches.on_data(&range_reply(3, BUFFER_CHUNK, &vec![2.0; BUFFER_CHUNK]))
         else {
             panic!("expected the third chunk request");
         };
         assert_eq!(ints(&msg), vec![3, (BUFFER_CHUNK * 2) as i32, 100]);
         let FetchStep::Done { samples, .. } =
-            fetches.on_data(&setn_args(3, BUFFER_CHUNK * 2, &vec![3.0; 100]))
+            fetches.on_data(&range_reply(3, BUFFER_CHUNK * 2, &vec![3.0; 100]))
         else {
             panic!("expected completion");
         };
@@ -306,7 +340,7 @@ mod tests {
             panic!("expected a chunk request");
         };
         fetches.drop_def(2);
-        let FetchStep::Done { wants, .. } = fetches.on_data(&setn_args(6, 0, &[0.5, 0.5])) else {
+        let FetchStep::Done { wants, .. } = fetches.on_data(&range_reply(6, 0, &[0.5, 0.5])) else {
             panic!("expected completion");
         };
         let ids: Vec<i32> = wants.iter().map(|w| w.widget_id).collect();
@@ -318,7 +352,7 @@ mod tests {
         let mut fetches = BufferFetches::default();
         assert!(matches!(fetches.on_info(9, 4, 1, 0.0), FetchStep::None));
         assert!(matches!(
-            fetches.on_data(&setn_args(9, 0, &[1.0])),
+            fetches.on_data(&range_reply(9, 0, &[1.0])),
             FetchStep::None
         ));
     }
