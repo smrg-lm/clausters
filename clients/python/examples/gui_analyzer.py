@@ -81,11 +81,18 @@ gui = session.gui()
 
 # %%
 def stereo_def(name: str = "stereo_image") -> SynthDef:
-    freq = control("freq", 220.0)
+    # The sweep below writes these ~30 times a second, and a control is applied
+    # in steps at block boundaries: unlagged, the image jumps rather than
+    # sweeps, and a stepped `freq` breaks the sine's phase, which the
+    # goniometer shows as the figure snapping. `lag` is the server's own
+    # smoother -- it inserts a `Lag` for a lagged control -- so what the views
+    # analyze is the continuous signal the script means, not the staircase the
+    # messages arrive as.
+    freq = control("freq", 220.0, lag=0.05)
     amp = control("amp", 0.2)
     left = sine(freq)
     side = sine(freq * 1.5)  # a fifth up: decorrelated from `left`
-    right = left * control("wm", 1.0) + side * control("ws", 0.0)
+    right = left * control("wm", 1.0, lag=0.05) + side * control("ws", 0.0, lag=0.05)
     return SynthDef(name, out(0.0, left * amp), out(1.0, right * amp))
 
 
@@ -106,11 +113,16 @@ synth = Synth("stereo_image", {"freq": 220.0}, server=server)
 RETAIN = 8.0
 
 win = gui.open(window(
+    # The labels are sized for the boxes they sit in: these two share the
+    # window's width, so a caption that reads well across a whole row comes
+    # back clipped with an ellipsis here -- the host truncates a line that does
+    # not fit rather than bleeding it into the neighbour. The waterfall below
+    # has the full width and can afford a longer one.
     panel(phasescope(0, name="gonio", window_ms=30.0,
-                     label="goniometer (stereo pair)"),
+                     label="goniometer (L/R)"),
           spectrum(0, name="spectrum", fft_size=2048, log_freq=True,
                    peak_hold=True, navigable=True,
-                   label="spectrum (left tap, log Hz -- navigable)"),
+                   label="spectrum (left, log Hz)"),
           layout="row", h=200),
     signal(view="spectrogram", bus=0, retention=RETAIN, navigable=True,
            name="waterfall", window_size=1024, freq_scale="log",

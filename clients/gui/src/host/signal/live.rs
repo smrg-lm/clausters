@@ -354,6 +354,45 @@ mod tests {
         assert!(peak(&chans[1]) < -60.0, "the silent channel stays down");
     }
 
+    /// **Each tick brings the newest window of both buses**, and the pairs are
+    /// interleaved in read order — the property a jittering goniometer would
+    /// break, since a figure drawn from a left window of one tick and a right
+    /// window of another is not a phase relationship at all.
+    #[test]
+    fn a_phase_window_pairs_the_two_buses_of_the_same_tick() {
+        let mut w = tree(
+            r#"{"type":"window","children":[
+                {"id":5,"type":"signal","view":"phase","bus":0,"window_ms":1.0}]}"#,
+        );
+        // Left counts up from the tick number, right down from it: a stale
+        // half would show as a pair that does not belong to one tick.
+        for tick_no in 0..3 {
+            tick(
+                &mut w,
+                &Source {
+                    offset: 0.0,
+                    fill: move |bus: i32, out: &mut [f32]| {
+                        for (i, s) in out.iter_mut().enumerate() {
+                            *s = if bus == 0 {
+                                tick_no as f32 + i as f32
+                            } else {
+                                -(tick_no as f32) - i as f32
+                            };
+                        }
+                    },
+                },
+            );
+            let win = &state(&w, 5).window;
+            assert_eq!(win.channels, 2);
+            let frames = win.frames();
+            assert!(frames > 0);
+            for f in 0..frames {
+                assert_eq!(win.samples[2 * f], tick_no as f32 + f as f32);
+                assert_eq!(win.samples[2 * f + 1], -(tick_no as f32) - f as f32);
+            }
+        }
+    }
+
     /// A frozen trace keeps the window it had: `hold` is what makes a
     /// measurement readable.
     #[test]
