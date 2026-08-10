@@ -20,6 +20,7 @@
 use clausters_core::osc::OscType;
 
 use super::super::signal::{Presentation, SignalElement};
+use super::element::BodyRole;
 use super::{EditorProps, GestureMap, Widget, WidgetKind, build};
 
 impl Widget {
@@ -96,6 +97,25 @@ impl WidgetKind {
                 | WidgetKind::TimeRuler { .. }
                 | WidgetKind::Unknown(_)
         ) || matches!(self, WidgetKind::Custom(el) if el.is_bare_surface())
+    }
+
+    /// The **body role** this widget fills inside a container that layers its
+    /// contents — the one question a `clip` asks about a child of its own.
+    ///
+    /// A built-in answers from its variant, an element from
+    /// [`Element::body_role`](super::Element::body_role); anything that fills
+    /// no role answers `None` and is simply not one of a clip's bodies. This
+    /// is the single door, so the layering, the `/gui_set` routing, the drawing
+    /// and the hit-test all recognize a body the same way and a new element can
+    /// be one.
+    pub fn body_role(&self) -> Option<BodyRole> {
+        match self {
+            WidgetKind::Signal(_) => Some(BodyRole::Take),
+            WidgetKind::PianoRoll { .. } => Some(BodyRole::Notes),
+            WidgetKind::Bpf { .. } => Some(BodyRole::Curve),
+            WidgetKind::Custom(el) => el.body_role(),
+            _ => None,
+        }
     }
 
     /// The area this widget occupies **outside its own rect** — an open list, a
@@ -270,53 +290,51 @@ impl Widget {
         }
     }
 
-    /// The body of `kind` among a clip's children, mutably — the door a
+    /// The body filling `role` among a clip's children, mutably — the door a
     /// `/gui_set` of a body prop and an edit-back both write through.
-    pub(crate) fn clip_body_mut(&mut self, is: fn(&WidgetKind) -> bool) -> Option<&mut WidgetKind> {
+    pub(crate) fn clip_body_mut(&mut self, role: BodyRole) -> Option<&mut WidgetKind> {
         self.children
             .iter_mut()
             .map(|c| &mut c.kind)
-            .find(|k| is(k))
+            .find(|k| k.body_role() == Some(role))
     }
 
-    /// Adds the body `is` names to this clip when it has none yet, empty, so a
-    /// `/gui_set` that introduces a body has somewhere to land. Layering order
-    /// is take → notes → curve, and a body added later keeps it: an envelope
-    /// set on a clip that already has a take is drawn *over* it, which is the
-    /// whole point of the bodies being a composition.
-    pub(crate) fn ensure_body(&mut self, is: fn(&WidgetKind) -> bool) {
-        if !matches!(self.kind, WidgetKind::Clip { .. }) || self.clip_body(is).is_some() {
+    /// Adds the body `role` names to this clip when it has none yet, empty, so
+    /// a `/gui_set` that introduces a body has somewhere to land. Layering
+    /// order is the role's own ([`BodyRole`]), and a body added later keeps it:
+    /// an envelope set on a clip that already has a take is drawn *over* it,
+    /// which is the whole point of the bodies being a composition.
+    pub(crate) fn ensure_body(&mut self, role: BodyRole) {
+        if !matches!(self.kind, WidgetKind::Clip { .. }) || self.clip_body(role).is_some() {
             return;
         }
-        let Some(kind) = build::empty_clip_body(is) else {
+        let Some(kind) = build::empty_clip_body(role) else {
             return;
-        };
-        let rank = |k: &WidgetKind| match k {
-            WidgetKind::Signal(_) => 0,
-            WidgetKind::PianoRoll { .. } => 1,
-            _ => 2,
         };
         let at = self
             .children
             .iter()
-            .position(|c| rank(&c.kind) > rank(&kind))
+            .position(|c| c.kind.body_role() > Some(role))
             .unwrap_or(self.children.len());
         self.children.insert(at, build::body_widget(kind));
     }
 
-    /// This widget's own kind when `is` names it, else the body of that kind
+    /// This widget's own kind when it fills `role`, else the body filling it
     /// among its children. The reader's half of the routing `apply_widget`
     /// does for writes: an edit-back payload asks the widget it was addressed
     /// to, and a clip answers with the body that owns the data.
-    pub(crate) fn kind_or_body(&self, is: fn(&WidgetKind) -> bool) -> Option<&WidgetKind> {
-        if is(&self.kind) {
+    pub(crate) fn kind_or_body(&self, role: BodyRole) -> Option<&WidgetKind> {
+        if self.kind.body_role() == Some(role) {
             return Some(&self.kind);
         }
-        self.clip_body(is)
+        self.clip_body(role)
     }
 
-    /// The body of `kind` among a clip's children.
-    pub(crate) fn clip_body(&self, is: fn(&WidgetKind) -> bool) -> Option<&WidgetKind> {
-        self.children.iter().map(|c| &c.kind).find(|k| is(k))
+    /// The body filling `role` among a clip's children.
+    pub(crate) fn clip_body(&self, role: BodyRole) -> Option<&WidgetKind> {
+        self.children
+            .iter()
+            .map(|c| &c.kind)
+            .find(|k| k.body_role() == Some(role))
     }
 }

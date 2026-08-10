@@ -16,9 +16,9 @@
 
 use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
+use super::super::widget::element::BodyRole;
 use super::super::{Host, controls, pianoroll, track};
 use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis, clip_part};
-use super::read::is_curve;
 use super::{ClipPart, HeaderPart};
 use crate::viewport::View;
 
@@ -398,7 +398,7 @@ pub(crate) fn clip_hit(
     };
     // A break-point is grabbed on the clip's **own** axis, the one it was drawn
     // on — the lane's window below is only what the clip's placement drags in.
-    let curve = match widget.clip_body(is_curve) {
+    let curve = match widget.clip_body(BodyRole::Curve) {
         Some(WidgetKind::Bpf {
             points,
             min,

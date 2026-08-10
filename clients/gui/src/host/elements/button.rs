@@ -102,6 +102,7 @@ mod tests {
             scale: 1.0,
             mods: Mods::default(),
             viewport: (400.0, 300.0),
+            time: None,
         }
     }
 

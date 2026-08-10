@@ -13,6 +13,7 @@
 
 use super::super::layout;
 use super::super::layout::Rect;
+use super::super::widget::element::BodyRole;
 use super::super::widget::{Axis, ScrollView, Widget, WidgetKind};
 use super::super::{Host, bpf, track};
 use clausters_core::osc::OscType;
@@ -63,23 +64,13 @@ pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     let widget = tree.find(id)?;
     // A clip's curve is a `bpf` **body** of it, so both cases are the one
     // element — the clip is only what the script addresses.
-    let points = match widget.kind_or_body(is_curve)? {
+    let points = match widget.kind_or_body(BodyRole::Curve)? {
         WidgetKind::Bpf { points, .. } => points,
         _ => return None,
     };
     let mut args = vec![OscType::String("points".into())];
     args.extend(bpf::points_args(points));
     Some(args)
-}
-
-/// Whether a kind is a clip's automation-curve body.
-pub(super) fn is_curve(kind: &WidgetKind) -> bool {
-    matches!(kind, WidgetKind::Bpf { .. })
-}
-
-/// Whether a kind is a clip's note-roll body.
-pub(super) fn is_roll(kind: &WidgetKind) -> bool {
-    matches!(kind, WidgetKind::PianoRoll { .. })
 }
 
 /// A lane header control's edit-back payload: the control's own name plus its
@@ -127,7 +118,7 @@ pub(crate) fn clip_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
 /// the `pianoroll` and `clip` share. A `/gui_event` carries it to the script; a
 /// bound editor forwards it (minus the tag) to the audio server.
 pub(crate) fn notes_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
-    let notes = match tree.find(id)?.kind_or_body(is_roll)? {
+    let notes = match tree.find(id)?.kind_or_body(BodyRole::Notes)? {
         WidgetKind::PianoRoll { notes, .. } => notes,
         _ => return None,
     };

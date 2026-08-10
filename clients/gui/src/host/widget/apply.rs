@@ -32,9 +32,7 @@ const CLIP_OWN: [&str; 3] = ["offset", "dur", "label"];
 /// body measures with them (the take's amplitude, the roll's pitches), and
 /// `points_min`/`points_max` are the curve's own.
 fn apply_clip_body(widget: &mut Widget, key: &str, v: &Value) -> bool {
-    let is_take = |k: &WidgetKind| matches!(k, WidgetKind::Signal(_));
-    let is_roll = |k: &WidgetKind| matches!(k, WidgetKind::PianoRoll { .. });
-    let is_curve = |k: &WidgetKind| matches!(k, WidgetKind::Bpf { .. });
+    use element::BodyRole::{Curve, Notes, Take};
     match key {
         // A source prop, the take's own axis, or a spectral take's **display**
         // — the dB window, the frequency scale and the colormap are shader
@@ -44,28 +42,28 @@ fn apply_clip_body(widget: &mut Widget, key: &str, v: &Value) -> bool {
         // texture is computed and allocated then.
         "data" | "blob" | "path" | "cache" | "buffer" | "channels" | "base_bucket" | "db_floor"
         | "db_ceil" | "freq_scale" | "log_freq" | "colormap" => {
-            widget.ensure_body(is_take);
+            widget.ensure_body(Take);
             widget
-                .clip_body_mut(is_take)
+                .clip_body_mut(Take)
                 .is_some_and(|k| apply_kind(k, key, v))
         }
         "notes" => {
-            widget.ensure_body(is_roll);
+            widget.ensure_body(Notes);
             widget
-                .clip_body_mut(is_roll)
+                .clip_body_mut(Notes)
                 .is_some_and(|k| apply_kind(k, key, v))
         }
         "points" | "exp" => {
-            widget.ensure_body(is_curve);
+            widget.ensure_body(Curve);
             widget
-                .clip_body_mut(is_curve)
+                .clip_body_mut(Curve)
                 .is_some_and(|k| apply_kind(k, key, v))
         }
         "points_min" | "points_max" => {
             let axis = if key == "points_min" { "min" } else { "max" };
-            widget.ensure_body(is_curve);
+            widget.ensure_body(Curve);
             widget
-                .clip_body_mut(is_curve)
+                .clip_body_mut(Curve)
                 .is_some_and(|k| apply_kind(k, axis, v))
         }
         // The shared value axis: whichever bodies measure with it take it, and
@@ -73,7 +71,7 @@ fn apply_clip_body(widget: &mut Widget, key: &str, v: &Value) -> bool {
         "min" | "max" => {
             let mut hit = false;
             for body in &mut widget.children {
-                if is_take(&body.kind) || is_roll(&body.kind) {
+                if matches!(body.kind.body_role(), Some(Take | Notes)) {
                     hit |= apply_kind(&mut body.kind, key, v);
                 }
             }

@@ -85,6 +85,10 @@ pub struct Ctx<'a> {
     /// resolved (`self.text_size * scale`), matching what
     /// [`natural`](Element::natural) measured.
     pub scale: f32,
+    /// The container's coordinate system, when this element was placed inside
+    /// one — a clip's own time axis. `None` for an element standing on its own
+    /// rectangle, which is every element outside a `clip` today.
+    pub time: Option<TimeSpace>,
 }
 
 /// What an element declares it reads from outside itself. Empty by default: an
@@ -144,6 +148,49 @@ pub enum SlotKind {
     },
 }
 
+/// The role an element fills as one of a **container's bodies** — the layered
+/// contents of a `clip`: the material, the events over it, the automation over
+/// both.
+///
+/// **The set is closed and belongs to the container**, which owns the layering,
+/// the axis the bodies are drawn against and the props they are built from — an
+/// element *chooses* among these and cannot invent one, exactly as it chooses a
+/// [`SlotKind`] and cannot invent a pipeline. What the element says is only
+/// which role it fills; where that role sits and what it is drawn through stays
+/// the clip's, which is the boundary between an element and a coordinate
+/// system.
+///
+/// The declaration order **is** the layering order, back to front: a curve set
+/// on a clip that already has a take is drawn over it, which is what makes an
+/// envelope over its material one clip rather than two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BodyRole {
+    /// The material itself — a clip's sound, drawn as a signal.
+    Take,
+    /// The events over it — the notes of a roll.
+    Notes,
+    /// The automation over both — a break-point curve.
+    Curve,
+}
+
+/// The **coordinate system a container placed an element on**: a clip's own
+/// time axis, in the container's units.
+///
+/// A body is drawn and grabbed against this rather than against its own
+/// rectangle, which is what lets one element be both the standalone view and
+/// the clip's body: the same picture, mapped through the axis it was given.
+/// `None` on [`Ctx`]/[`Input`] is an element standing on its own, which then
+/// draws its own chrome and spans its own domain.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TimeSpace {
+    /// The visible window of the container's axis, in its own units — the
+    /// slice of `0..span` the element's rectangle spans.
+    pub view: crate::viewport::View,
+    /// The full span of that axis (a clip's `dur`): the domain a time is
+    /// clamped into, whatever part of it is on screen.
+    pub span: f64,
+}
+
 /// What a claimed slot is fed **this frame** — the live counterpart of
 /// [`SlotKind`], produced with the world in hand so a value read from a bus is
 /// resolved where every other per-frame read is.
@@ -180,6 +227,9 @@ pub struct Input<'a> {
     /// The window in device pixels — what a popup that must stay on screen
     /// clamps itself against.
     pub viewport: (f32, f32),
+    /// The container's coordinate system (see [`Ctx::time`]), so a grab lands
+    /// on the axis the element was drawn against.
+    pub time: Option<TimeSpace>,
 }
 
 /// The modifier keys a gesture was made with.
@@ -345,6 +395,19 @@ pub trait Element: fmt::Debug {
     /// What this element reads from outside itself.
     fn needs(&self) -> Needs {
         Needs::default()
+    }
+
+    /// The [`BodyRole`] this element fills when a container holds it as one of
+    /// its bodies, or `None` (the default) for an element that is only ever
+    /// itself.
+    ///
+    /// It is how a container **recognizes** one of its bodies, which used to be
+    /// a match on the leaf's variant in every pass that layered, routed a
+    /// `/gui_set`, drew or hit-tested one. The container asks the element what
+    /// role it fills and learns nothing else about it — so an element family
+    /// can fill a clip's curve without the clip knowing what a curve is.
+    fn body_role(&self) -> Option<BodyRole> {
+        None
     }
 
     /// What the GPU slot this element claimed draws this frame, or `None` for

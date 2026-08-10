@@ -1254,9 +1254,7 @@ fn piano_parses_defaults_and_normalizes_the_range() {
 /// drawn over a take without rebuilding the def.
 #[test]
 fn a_clip_routes_a_body_prop_into_the_body_that_owns_it() {
-    let is_take = |k: &WidgetKind| matches!(k, WidgetKind::Signal(_));
-    let is_roll = |k: &WidgetKind| matches!(k, WidgetKind::PianoRoll { .. });
-    let is_curve = |k: &WidgetKind| matches!(k, WidgetKind::Bpf { .. });
+    use crate::host::widget::element::BodyRole::{Curve, Notes, Take};
 
     let n = node(
         r#"{"type":"window","children":[{"id":1,"type":"field","children":[
@@ -1274,12 +1272,12 @@ fn a_clip_routes_a_body_prop_into_the_body_that_owns_it() {
     ));
     let clip = w.find_mut(10).unwrap();
     assert!(matches!(
-        clip.clip_body(is_curve),
+        clip.clip_body(Curve),
         Some(WidgetKind::Bpf { points, .. }) if points.len() == 2
     ));
     // ...in layering order: the curve draws over the take, not under it.
-    assert!(is_take(&clip.children[0].kind));
-    assert!(is_curve(&clip.children[1].kind));
+    assert_eq!(clip.children[0].kind.body_role(), Some(Take));
+    assert_eq!(clip.children[1].kind.body_role(), Some(Curve));
 
     // The same for notes, which land between the two.
     assert!(apply_widget(
@@ -1289,16 +1287,16 @@ fn a_clip_routes_a_body_prop_into_the_body_that_owns_it() {
     ));
     let clip = w.find_mut(10).unwrap();
     assert_eq!(clip.children.len(), 3);
-    assert!(is_roll(&clip.children[1].kind));
+    assert_eq!(clip.children[1].kind.body_role(), Some(Notes));
 
     // The curve's own range goes to the curve; `min`/`max` reach the bodies
     // that measure with them and leave the curve alone.
     assert!(apply_widget(clip, "points_min", &serde_json::json!(150.0)));
     assert!(apply_widget(clip, "min", &serde_json::json!(48.0)));
     let clip = w.find_mut(10).unwrap();
-    assert!(matches!(clip.clip_body(is_curve), Some(WidgetKind::Bpf { min, .. }) if *min == 150.0));
+    assert!(matches!(clip.clip_body(Curve), Some(WidgetKind::Bpf { min, .. }) if *min == 150.0));
     assert!(
-        matches!(clip.clip_body(is_roll), Some(WidgetKind::PianoRoll { min, .. }) if *min == 48.0)
+        matches!(clip.clip_body(Notes), Some(WidgetKind::PianoRoll { min, .. }) if *min == 48.0)
     );
     assert_eq!(
         clip.signal_target().unwrap().value.min,
@@ -1313,49 +1311,96 @@ fn a_clip_routes_a_body_prop_into_the_body_that_owns_it() {
     assert!(!apply_widget(clip, "sideways", &serde_json::json!(1)));
 }
 
+/// A container recognizes one of its bodies by the **role the element
+/// declares**, not by the variant it happens to be — which is the whole of
+/// what lets a leaf move behind the trait without the clip learning about it.
+#[test]
+fn a_clip_recognizes_a_body_by_the_role_the_element_declares() {
+    use crate::host::widget::element::BodyRole::{Curve, Notes, Take};
+
+    #[derive(Debug, Clone)]
+    struct Automation;
+    impl element::Element for Automation {
+        fn set(&mut self, _key: &str, _v: &Value) -> bool {
+            false
+        }
+        fn draw(&self, _d: &mut crate::host::paint::Draw, _ctx: &element::Ctx) {}
+        fn body_role(&self) -> Option<element::BodyRole> {
+            Some(Curve)
+        }
+        fn clone_box(&self) -> Box<dyn element::Element> {
+            Box::new(self.clone())
+        }
+    }
+
+    let n = node(
+        r#"{"type":"window","children":[{"id":1,"type":"field","children":[
+            {"id":10,"type":"field","offset":0.0,"dur":400.0,"data":[0.0,1.0]}]}]}"#,
+    );
+    let mut w = Widget::from_node(9, &n, &[]).unwrap();
+    let clip = w.find_mut(10).unwrap();
+    clip.children
+        .push(build::body_widget(WidgetKind::Custom(Box::new(Automation))));
+
+    // The clip finds it under the role it declared, and under no other.
+    assert!(matches!(clip.clip_body(Curve), Some(WidgetKind::Custom(_))));
+    assert!(clip.clip_body(Notes).is_none());
+    assert!(matches!(clip.clip_body(Take), Some(WidgetKind::Signal(_))));
+
+    // ...so the clip does not grow a second curve beside it, and a role it
+    // genuinely lacks is still built.
+    clip.ensure_body(Curve);
+    assert_eq!(clip.children.len(), 2, "the declared curve is the curve");
+    clip.ensure_body(Notes);
+    assert_eq!(clip.children.len(), 3);
+    assert_eq!(
+        clip.children[1].kind.body_role(),
+        Some(Notes),
+        "and it lands in layering order, between the take and the curve"
+    );
+}
+
 /// Each body keeps **its own** value axis, and takes its default from what
 /// it measures. A pitch axis defaulting to amplitude would clamp every note
 /// to the clip's top edge — a roll drawn as a solid band, with nothing
 /// saying why — and an envelope's units are not the pitches under it.
 #[test]
 fn each_clip_body_keeps_its_own_value_axis() {
-    let axis_of = |json: &str, is: fn(&WidgetKind) -> bool| {
+    use crate::host::widget::element::BodyRole::{self, Curve, Notes, Take};
+
+    let axis_of = |json: &str, role: BodyRole| {
         let w = Widget::from_node(1, &node(json), &[]).unwrap();
-        match w.clip_body(is) {
+        match w.clip_body(role) {
             Some(WidgetKind::PianoRoll { min, max, .. })
             | Some(WidgetKind::Bpf { min, max, .. }) => (*min, *max),
             Some(WidgetKind::Signal(el)) => el.value.resolved(0.0, 0.0),
             other => panic!("no such body: {other:?}"),
         }
     };
-    let is_roll = |k: &WidgetKind| matches!(k, WidgetKind::PianoRoll { .. });
-    let is_curve = |k: &WidgetKind| matches!(k, WidgetKind::Bpf { .. });
-    let is_take = |k: &WidgetKind| matches!(k, WidgetKind::Signal(_));
-
     // A roll's axis is pitch; a take's is amplitude.
     assert_eq!(
         axis_of(
             r#"{"type":"field","dur":100.0,"notes":[0.0,10.0,60.0]}"#,
-            is_roll
+            Notes
         ),
         (21.0, 108.0)
     );
     assert_eq!(
-        axis_of(r#"{"type":"field","dur":100.0,"buffer":3}"#, is_take),
+        axis_of(r#"{"type":"field","dur":100.0,"buffer":3}"#, Take),
         (-1.0, 1.0)
     );
     // An explicit `min`/`max` wins, and reaches every body that measures
     // with it.
     let named = r#"{"type":"field","dur":100.0,"notes":[0.0,10.0,60.0],
                     "buffer":3,"min":48.0,"max":72.0}"#;
-    assert_eq!(axis_of(named, is_roll), (48.0, 72.0));
-    assert_eq!(axis_of(named, is_take), (48.0, 72.0));
+    assert_eq!(axis_of(named, Notes), (48.0, 72.0));
+    assert_eq!(axis_of(named, Take), (48.0, 72.0));
     // The curve's own range is untouched by either: a layered clip's bodies
     // do not share an axis.
     let layered = r#"{"type":"field","dur":100.0,"notes":[0.0,10.0,60.0],
                       "points":[0.0,0.5,1,0.0],"points_min":0.0,"points_max":1.0}"#;
-    assert_eq!(axis_of(layered, is_roll), (21.0, 108.0));
-    assert_eq!(axis_of(layered, is_curve), (0.0, 1.0));
+    assert_eq!(axis_of(layered, Notes), (21.0, 108.0));
+    assert_eq!(axis_of(layered, Curve), (0.0, 1.0));
 }
 
 #[test]

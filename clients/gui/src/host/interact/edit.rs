@@ -15,10 +15,10 @@
 
 use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
+use super::super::widget::element::BodyRole;
 use super::super::{Host, bpf, pianoroll, track};
 use super::HeaderPart;
 use super::coords::{CanvasAt, ClipAt};
-use super::read::is_curve;
 
 /// Sets a `scroll`'s view state (clamped against its content in `area`),
 /// returning the clamped `(view_x, view_y, view_zoom)` when something actually
@@ -250,7 +250,7 @@ fn clip_curve<R>(
     f: impl FnOnce(&mut Vec<bpf::BpfPoint>, f32, f32, bool) -> R,
 ) -> Option<R> {
     let w = host.window_def_mut(def_id)?.find_mut(clip_id)?;
-    match w.clip_body_mut(is_curve)? {
+    match w.clip_body_mut(BodyRole::Curve)? {
         WidgetKind::Bpf {
             points,
             min,

@@ -7,6 +7,7 @@
 use serde_json::{Map, Value};
 
 use super::*;
+use element::BodyRole;
 
 /// Whether a `field` is the **free-standing ruler**: a strip of a given
 /// thickness with nothing placed on it and no lane chrome. Everything else a
@@ -260,10 +261,10 @@ pub(super) fn body_widget(kind: WidgetKind) -> Widget {
     }
 }
 
-/// An **empty** body of the kind `is` names, for a clip growing one it was not
-/// built with (a `/gui_set` of `points` on a clip that had only a take). The
-/// same three elements, with nothing in them yet.
-pub(super) fn empty_clip_body(is: fn(&WidgetKind) -> bool) -> Option<WidgetKind> {
+/// An **empty** body filling `role`, for a clip growing one it was not built
+/// with (a `/gui_set` of `points` on a clip that had only a take). The same
+/// three elements, with nothing in them yet.
+pub(super) fn empty_clip_body(role: BodyRole) -> Option<WidgetKind> {
     let candidates: [WidgetKind; 3] = [
         WidgetKind::Signal(Box::new(take_element(
             signal::Data {
@@ -300,7 +301,9 @@ pub(super) fn empty_clip_body(is: fn(&WidgetKind) -> bool) -> Option<WidgetKind>
             label: None,
         },
     ];
-    candidates.into_iter().find(|k: &WidgetKind| is(k))
+    candidates
+        .into_iter()
+        .find(|k: &WidgetKind| k.body_role() == Some(role))
 }
 
 /// The signal element a clip's take is, over `source`: a stored presentation

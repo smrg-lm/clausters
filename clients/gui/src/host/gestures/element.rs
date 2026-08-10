@@ -36,6 +36,7 @@ pub(super) fn input<'a>(
             alt: ctx.alt,
         },
         viewport: (ctx.fb_w as f32, ctx.fb_h as f32),
+        time: None,
     }
 }
 

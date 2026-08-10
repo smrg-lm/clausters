@@ -695,6 +695,7 @@ pub(super) fn collect_widgets(
                     metrics: m,
                     rect: p.rect,
                     scale: p.scale,
+                    time: None,
                 };
                 el.draw(&mut Draw::new(mesh, m, th), &ctx);
                 // ...and, for a view the shared mesh cannot carry, what its

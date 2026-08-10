@@ -776,6 +776,7 @@ pub(super) fn draw_element_overlays(
                 metrics: m,
                 rect: p.rect,
                 scale: p.scale,
+                time: None,
             },
         );
     }
