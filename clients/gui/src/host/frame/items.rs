@@ -322,21 +322,6 @@ pub(super) struct PianoRollItem {
     pub(super) editor: EditorProps,
 }
 
-/// A placed `meter`, copied out of the host tree: its rect, the control bus it
-/// reads each frame and the scale it shows it over.
-pub(super) struct MeterItem {
-    pub(super) rect: Rect,
-    pub(super) clip: Option<Rect>,
-    pub(super) theme: Option<Arc<Theme>>,
-    pub(super) bus: i32,
-    /// Audio rate reads the bus's published block level; control rate reads
-    /// the control bus's current value.
-    pub(super) rate: Rate,
-    pub(super) min: f32,
-    pub(super) max: f32,
-    pub(super) label: Option<String>,
-}
-
 /// A placed **control-rate** `scope`, copied out of the host tree: its id (to
 /// fetch the rolling history the tick advanced) and the scale it draws over.
 pub(super) struct ScopeItem {
@@ -346,17 +331,6 @@ pub(super) struct ScopeItem {
     pub(super) theme: Option<Arc<Theme>>,
     pub(super) min: f32,
     pub(super) max: f32,
-    pub(super) label: Option<String>,
-}
-
-/// A placed `nodetree` view, copied out of the host tree: the server group it
-/// mirrors and whether it lists each node's controls.
-pub(super) struct NodeTreeItem {
-    pub(super) rect: Rect,
-    pub(super) clip: Option<Rect>,
-    pub(super) theme: Option<Arc<Theme>>,
-    pub(super) group: i32,
-    pub(super) controls: bool,
     pub(super) label: Option<String>,
 }
 
@@ -448,7 +422,6 @@ pub(super) struct CanvasFrame {
 /// released, so the meshes and GPU uploads never touch the host tree.
 pub(super) struct Collected {
     pub(super) timeline_items: Vec<TimelineItem>,
-    pub(super) meter_rects: Vec<MeterItem>,
     pub(super) scope_rects: Vec<ScopeItem>,
     pub(super) wave_rects: Vec<WaveItem>,
     pub(super) phase_rects: Vec<PhaseItem>,
@@ -462,7 +435,6 @@ pub(super) struct Collected {
     pub(super) menu_popup: Option<MenuPopupItem>,
     pub(super) ruler_items: Vec<RulerItem>,
     pub(super) pianoroll_items: Vec<PianoRollItem>,
-    pub(super) nodetree_rects: Vec<NodeTreeItem>,
     pub(super) canvas_frames: Vec<CanvasFrame>,
 }
 
@@ -478,9 +450,6 @@ pub(super) fn collect_widgets(
     theme: &Theme,
 ) -> Collected {
     let mut timeline_items: Vec<TimelineItem> = Vec::new();
-    // Meter/scope rects, copied out so their shared-memory values and the scope
-    // history can be read after the host-tree borrow is released.
-    let mut meter_rects: Vec<MeterItem> = Vec::new();
     // Scope rects carry no bus: the value is sampled on the frame tick
     // (`advance_scopes`); the render only draws the stored history. Audio-rate
     // scopes draw their stored tap window instead (`wave_rects`).
@@ -505,7 +474,6 @@ pub(super) fn collect_widgets(
     let mut spectral_bodies: Vec<SpectralBodyItem> = Vec::new();
     let mut ruler_items: Vec<RulerItem> = Vec::new();
     let mut pianoroll_items: Vec<PianoRollItem> = Vec::new();
-    let mut nodetree_rects: Vec<NodeTreeItem> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
     let active_button = inputs.active_button;
     for p in placed {
@@ -584,22 +552,6 @@ pub(super) fn collect_widgets(
                     );
                 }
             }
-            WidgetKind::Meter {
-                bus,
-                rate,
-                min,
-                max,
-                label,
-            } => meter_rects.push(MeterItem {
-                rect: p.rect,
-                clip: p.clip,
-                theme: p.widget.theme.clone(),
-                bus: *bus,
-                rate: *rate,
-                min: *min,
-                max: *max,
-                label: label.clone(),
-            }),
             WidgetKind::Piano {
                 min,
                 max,
@@ -737,18 +689,6 @@ pub(super) fn collect_widgets(
                     },
                 );
             }
-            WidgetKind::NodeTree {
-                group,
-                controls,
-                label,
-            } => nodetree_rects.push(NodeTreeItem {
-                rect: p.rect,
-                clip: p.clip,
-                theme: p.widget.theme.clone(),
-                group: *group,
-                controls: *controls,
-                label: label.clone(),
-            }),
             WidgetKind::Canvas {
                 shader,
                 params,
@@ -863,7 +803,6 @@ pub(super) fn collect_widgets(
 
     Collected {
         timeline_items,
-        meter_rects,
         scope_rects,
         wave_rects,
         phase_rects,
@@ -877,7 +816,6 @@ pub(super) fn collect_widgets(
         menu_popup,
         ruler_items,
         pianoroll_items,
-        nodetree_rects,
         canvas_frames,
     }
 }

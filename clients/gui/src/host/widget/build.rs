@@ -87,18 +87,6 @@ pub(super) fn build_kind(
         // Every view of a signal, in one arm because there is one element:
         // the props say which point of the product ([`super::signal::point`]).
         "signal" => build_signal(id, props, blobs)?,
-        "meter" => WidgetKind::Meter {
-            bus: int_prop(props, "bus", 0),
-            rate: Rate::parse(props.get("rate").and_then(Value::as_str)),
-            min: number(props, "min", 0.0),
-            max: number(props, "max", 1.0),
-            label: label(props),
-        },
-        "nodes" => WidgetKind::NodeTree {
-            group: int_prop(props, "group", 0),
-            controls: props.get("controls").and_then(truthy).unwrap_or(true),
-            label: label(props),
-        },
         "canvas" => WidgetKind::Canvas {
             shader: props
                 .get("shader")

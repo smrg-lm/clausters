@@ -42,7 +42,7 @@ use crate::waveform::{WaveformData, WaveformView};
 use super::canvas::{self, CanvasView};
 use super::layout::{self, Rect};
 use super::metrics::Metrics;
-use super::nodetree;
+
 use super::paint::{Draw, Mesh, Painter};
 use super::ruler::{self, TimeUnit};
 use super::signal::{self, Presentation};
@@ -50,7 +50,7 @@ use super::spectrum::SpectrumState;
 use super::theme::{Theme, with_alpha};
 use super::timeline::{GroupState, group_key};
 use super::widget::element::Ctx;
-use super::widget::{EditorProps, Rate, Ruler, RulerY, Widget, WidgetKind};
+use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
 use super::{
     bpf, controls, font, live, meters, patch, phasescope, piano, pianoroll, plot, score, spectrum,

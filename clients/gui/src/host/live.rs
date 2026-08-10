@@ -93,10 +93,10 @@ pub(crate) fn collect_tap_scopes(tree: &Widget) -> Vec<TapScope> {
 /// subscribes exactly this set with `/bus_tapStream`.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) fn collect_live_taps(tree: &Widget, out: &mut Vec<i32>) {
-    let mut taps = Vec::new();
-    for widget in tree.descendants() {
-        widget.kind.audio_buses_read(&mut taps);
-    }
+    let mut taps: Vec<i32> = tree
+        .descendants()
+        .flat_map(|w| w.kind.needs().taps)
+        .collect();
     taps.retain(|tap| !out.contains(tap));
     out.extend(taps);
     out.sort_unstable();
@@ -108,10 +108,10 @@ pub(crate) fn collect_live_taps(tree: &Widget, out: &mut Vec<i32>) {
 /// with an active playhead (its line tracks the engine clock every frame) —
 /// so the window animates.
 pub(crate) fn tree_has_live_widget(widget: &Widget, groups: &TimelineGroups) -> bool {
-    let mut taps = Vec::new();
-    widget.kind.audio_buses_read(&mut taps);
-    widget.kind.live_bus().is_some()
-        || !taps.is_empty()
+    let needs = widget.kind.needs();
+    !needs.buses.is_empty()
+        || !needs.levels.is_empty()
+        || !needs.taps.is_empty()
         || has_playhead(widget, groups)
         || widget
             .children
@@ -608,10 +608,10 @@ pub(crate) fn tap_stream_frames(tree: &Widget, sample_rate: f64) -> usize {
     frames
 }
 
-/// Whether a widget tree contains a `canvas` (so the window animates each frame).
-pub(crate) fn tree_has_canvas(tree: &Widget) -> bool {
-    tree.descendants()
-        .any(|w| matches!(w.kind, WidgetKind::Canvas { .. }))
+/// Whether a widget tree holds anything whose picture follows the clock rather
+/// than a value (a `canvas`), so the window animates each frame.
+pub(crate) fn tree_animates(tree: &Widget) -> bool {
+    tree.descendants().any(|w| w.kind.needs().animated)
 }
 
 /// Pushes one sample into a scope's rolling history, capped at [`SCOPE_HISTORY`].
@@ -637,29 +637,16 @@ pub(crate) fn advance_scope_histories(
     }
 }
 
-/// The distinct, sorted control buses a tree reads live each frame: every
-/// `meter`/`scope` bus plus a `canvas`'s non-negative `buses` entries. The
-/// browser front subscribes exactly this set with `/bus_stream`.
+/// The distinct, sorted control buses a tree reads live each frame: whatever
+/// each widget declares it reads. The browser front subscribes exactly this set
+/// with `/bus_stream`.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) fn collect_live_buses(tree: &Widget, out: &mut Vec<i32>) {
     for widget in tree.descendants() {
-        let mut push = |bus: i32| {
+        for bus in widget.kind.needs().buses {
             if bus >= 0 && !out.contains(&bus) {
                 out.push(bus);
             }
-        };
-        if let Some(bus) = widget.kind.live_bus() {
-            push(bus);
-        }
-        if let WidgetKind::Canvas { buses, .. } = &widget.kind {
-            for &bus in buses {
-                push(bus);
-            }
-        }
-        // A registered element reads through one declaration instead of a prop
-        // this walk would have to know the name of.
-        for bus in widget.kind.needs().buses {
-            push(bus);
         }
     }
     out.sort_unstable();
@@ -704,7 +691,7 @@ pub(crate) fn demand<'a>(
         collect_live_buses(tree, &mut out.buses);
         collect_live_taps(tree, &mut out.taps);
         out.tap_frames = out.tap_frames.max(tap_stream_frames(tree, sample_rate));
-        out.animated |= tree_has_canvas(tree) || tree_has_live_widget(tree, groups);
+        out.animated |= tree_animates(tree) || tree_has_live_widget(tree, groups);
         out.playhead |= tree_has_playhead(tree, groups);
     }
     out.buses.sort_unstable();
@@ -952,6 +939,21 @@ mod tests {
         let none: [&Widget; 0] = [];
         let quiet = demand(none, &groups(), 48_000.0);
         assert!(quiet.buses.is_empty() && !quiet.animated);
+    }
+
+    /// An audio-rate meter reads a **level**, which costs neither a streamed
+    /// bus nor a recording — and used to cost the window its animation too,
+    /// because the liveness walk only knew about control buses and taps. The
+    /// declaration says it reads something, so the window follows it.
+    #[test]
+    fn a_level_meter_animates_its_window() {
+        let w = tree(r#"{"type":"window","children":[{"id":1,"type":"meter","bus":2}]}"#);
+        let d = demand([&w], &groups(), 48_000.0);
+        assert!(
+            d.buses.is_empty() && d.taps.is_empty(),
+            "a level costs neither"
+        );
+        assert!(d.animated, "but the column still has to move");
     }
 
     /// A still tree asks for nothing per frame — the tick stays off, however

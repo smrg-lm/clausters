@@ -24,6 +24,8 @@
 use super::widget::element::Constructor;
 
 mod label;
+mod meter;
+mod nodes;
 
 /// The constructor for a built-in element name, or `None` when no built-in
 /// answers to it — in which case the caller consults the registry, and then
@@ -31,6 +33,8 @@ mod label;
 pub(crate) fn builtin(name: &str) -> Option<Constructor> {
     Some(match name {
         "label" => label::build,
+        "meter" => meter::build,
+        "nodes" => nodes::build,
         _ => return None,
     })
 }

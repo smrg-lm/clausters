@@ -117,30 +117,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         // the source, the value axis, the spectral parameters, the chrome —
         // and a key a presentation does not read is simply not one of them.
         WidgetKind::Signal(el) => apply_signal(el, key, v),
-        WidgetKind::Meter {
-            bus,
-            rate,
-            min,
-            max,
-            label,
-        } => match key {
-            "bus" => v.as_i64().map(|n| *bus = n as i32).is_some(),
-            "rate" => set_rate(rate, v),
-            "min" => set_f(min, v),
-            "max" => set_f(max, v),
-            "label" => set_label(label, v),
-            _ => false,
-        },
-        WidgetKind::NodeTree {
-            group,
-            controls,
-            label,
-        } => match key {
-            "group" => v.as_i64().map(|n| *group = n as i32).is_some(),
-            "controls" => truthy(v).map(|b| *controls = b).is_some(),
-            "label" => set_label(label, v),
-            _ => false,
-        },
         WidgetKind::Bpf {
             points,
             min,

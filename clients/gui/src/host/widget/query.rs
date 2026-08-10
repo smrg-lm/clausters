@@ -122,26 +122,38 @@ impl WidgetKind {
         }
     }
 
-    /// What a registered element declares it reads from outside itself, empty
-    /// for every built-in — whose own needs are the specific queries above
-    /// ([`live_bus`](Self::live_bus), [`level_bus`](Self::level_bus),
-    /// [`audio_buses_read`](Self::audio_buses_read)), each answered by the arm
-    /// that knows the prop it comes from.
+    /// **What this widget reads from outside itself** — the one door every tree
+    /// collector asks, so none of them matches on a kind any more. An element
+    /// answers for itself; a built-in is assembled here out of the per-kind
+    /// queries below, each answered by the arm that knows the prop it comes
+    /// from, and its rows disappear as the leaf moves behind the trait.
     pub fn needs(&self) -> super::Needs {
-        match self {
-            WidgetKind::Custom(el) => el.needs(),
-            _ => super::Needs::default(),
+        if let WidgetKind::Custom(el) = self {
+            return el.needs();
         }
+        let mut needs = super::Needs {
+            buses: self.live_bus().into_iter().collect(),
+            ..Default::default()
+        };
+        self.audio_buses_read(&mut needs.taps);
+        if let WidgetKind::Canvas { buses, .. } = self {
+            // A shader's picture follows the clock whatever its params do, so a
+            // canvas animates even with every slot script-set.
+            needs
+                .buses
+                .extend(buses.iter().copied().filter(|b| *b >= 0));
+            needs.animated = true;
+        }
+        needs
     }
 
-    /// The control bus a live (shared-memory-backed) widget reads each frame,
-    /// if this is one. The windowed front uses it to know which windows to
-    /// animate and which bus to sample. An audio-rate view reads recorded
-    /// samples or a published level instead — see [`Self::audio_buses_read`]
-    /// and [`Self::level_bus`].
+    /// The control bus a live (shared-memory-backed) **trace** reads each
+    /// frame, if this is one — the one bus a `scope` history is advanced from,
+    /// which is why this stays a single answer where [`Self::needs`] is a set.
+    /// An audio-rate view reads recorded samples instead — see
+    /// [`Self::audio_buses_read`].
     pub fn live_bus(&self) -> Option<i32> {
         match self {
-            WidgetKind::Meter { bus, rate, .. } if !rate.is_audio() => Some(*bus),
             WidgetKind::Signal(el) if el.presentation == Presentation::Signal => el
                 .source
                 .bus()
@@ -151,22 +163,11 @@ impl WidgetKind {
         }
     }
 
-    /// The audio bus whose **published level** this widget reads each frame, if
-    /// this is one. A meter wants one number per block, not samples, so it
-    /// reads the segment's level table and asks the server to record nothing.
-    pub fn level_bus(&self) -> Option<i32> {
-        match self {
-            WidgetKind::Meter { bus, rate, .. } if rate.is_audio() => Some(*bus),
-            _ => None,
-        }
-    }
-
     /// Appends every audio bus whose **samples** this widget reads each frame —
     /// `channels` adjacent buses for an audio-rate `scope` or a `spectrum`, two
     /// (left and right) for a `phasescope`. This is the set the host asks the
     /// server to record (`/bus_tap`) and the set it animates for, so all three
-    /// sample consumers are covered uniformly. A meter is deliberately absent:
-    /// its level costs no recording.
+    /// sample consumers are covered uniformly.
     pub fn audio_buses_read(&self, out: &mut Vec<i32>) {
         let Some(el) = self.signal() else { return };
         let Some(bus) = el.source.bus() else { return };
@@ -203,15 +204,6 @@ impl WidgetKind {
             WidgetKind::Track { editor, .. }
             | WidgetKind::PianoRoll { editor, .. }
             | WidgetKind::TimeRuler { editor, .. } => Some(editor),
-            _ => None,
-        }
-    }
-
-    /// The server group a `nodetree` widget mirrors, if this is one. The windowed
-    /// front uses it to know which groups to query and which windows to refresh.
-    pub fn node_tree_group(&self) -> Option<i32> {
-        match self {
-            WidgetKind::NodeTree { group, .. } => Some(*group),
             _ => None,
         }
     }

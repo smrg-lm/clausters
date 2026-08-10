@@ -131,27 +131,6 @@ pub enum WidgetKind {
     /// `scope`, `spectrum`, `spectrogram`, `phasescope`) are six points of that
     /// product, so this one arm answers for all of them.
     Signal(Box<SignalElement>),
-    /// A level meter reading bus `bus` from the shared-memory segment each
-    /// frame (zero messages), shown as a bar over `[min, max]`. At `rate`
-    /// audio (the default) it reads the bus's published block level, the
-    /// console meter over a hardware output or any mix bus; at control rate it
-    /// reads the control bus's current value.
-    Meter {
-        bus: i32,
-        rate: Rate,
-        min: f32,
-        max: f32,
-        label: Option<String>,
-    },
-    /// A live text view of the audio server's node tree rooted at `group`,
-    /// queried over the client leg (`/group_queryTree`) and refreshed on node
-    /// lifecycle notifications and a low-rate poll. `controls` shows each
-    /// synth's control name/value pairs. A read-only client-of-the-server view.
-    NodeTree {
-        group: i32,
-        controls: bool,
-        label: Option<String>,
-    },
     /// A script-supplied WGSL shader run over the widget area. `shader` is the
     /// user's `shade` source; `params` are four floats fed to the shader, each
     /// set from the script (`/gui_set param0…`) and/or overwritten every frame by

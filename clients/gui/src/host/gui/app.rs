@@ -26,7 +26,7 @@ use crate::host::gestures::{Gestures, TextKey};
 #[cfg(feature = "midi")]
 use crate::host::interact;
 use crate::host::live::TapWindow;
-use crate::host::live::{self, tree_has_canvas, tree_has_live_widget};
+use crate::host::live::{self, tree_animates, tree_has_live_widget};
 use crate::host::nodetree::NodeTree;
 use crate::host::paint::Painter;
 use crate::host::spectrum::SpectrumState;
@@ -287,7 +287,7 @@ impl App {
     /// (time-driven, always), or a meter/scope with a shared segment to feed it.
     fn window_is_animated(&self, def_id: i32) -> bool {
         self.host.window_def(def_id).is_some_and(|tree| {
-            tree_has_canvas(tree)
+            tree_animates(tree)
                 || (self.shm.is_some() && tree_has_live_widget(tree, self.host.timelines()))
         })
     }

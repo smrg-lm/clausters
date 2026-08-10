@@ -78,15 +78,37 @@ pub struct Ctx<'a> {
     pub scale: f32,
 }
 
-/// What an element declares it reads from outside itself, collected by the
-/// tree walks that feed a frame. Empty by default: an element that draws only
-/// from its own props needs nothing.
+/// What an element declares it reads from outside itself. Empty by default: an
+/// element that draws only from its own props needs nothing.
+///
+/// **This is the whole declaration the tree collectors read.** Each field used
+/// to be a walk of its own matching on a kind — which buses to stream, which
+/// rings to record, which groups to query, whether the window animates — and
+/// each of those walks now asks every widget one question instead. A collector
+/// therefore learns nothing about a new element, which is what makes the
+/// element addable by writing a file.
+///
+/// The sets are declarative and per element: the collectors merge, sort and
+/// dedup them, so an element names what *it* reads and never what a window
+/// subscribes to.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Needs {
     /// Control buses read once per frame (the shm segment natively,
-    /// `/bus_stream` in a page) — the same set a `meter` or a live scope
+    /// `/bus_stream` in a page) — what a control-rate meter or a live trace
     /// contributes.
     pub buses: Vec<i32>,
+    /// Audio buses whose **published block level** is read: one number per
+    /// block out of the same source, costing neither a message nor a recording.
+    pub levels: Vec<i32>,
+    /// Audio buses whose **samples** are read, which the server has to record
+    /// into a ring first (`/bus_tap`, `/bus_tapStream` in a page).
+    pub taps: Vec<i32>,
+    /// Server groups whose node tree this element draws, so the client leg
+    /// knows which trees to keep queried.
+    pub node_groups: Vec<i32>,
+    /// Whether this element must be redrawn every tick even with no data
+    /// arriving — a picture driven by the clock rather than by a value.
+    pub animated: bool,
 }
 
 /// What an element did with a press it was offered.
@@ -149,9 +171,9 @@ pub trait Element: fmt::Debug {
 
     /// Whether the wheel **falls through** this element to whatever is behind
     /// it. True for something that only puts marks on its rect and has no
-    /// navigation of its own (a label, a level meter): in a window with one
-    /// navigation group, its pixels are that axis with something written on
-    /// them. False — the default — for anything drawing a picture it owns,
+    /// navigation of its own (a label): in a window with one navigation group,
+    /// its pixels are that axis with something written on them. False — the
+    /// default — for anything drawing a picture it owns,
     /// since turning the wheel over a goniometer must not zoom the waterfall
     /// underneath it.
     fn is_bare_surface(&self) -> bool {
@@ -260,8 +282,16 @@ mod tests {
         }
 
         fn needs(&self) -> Needs {
+            // Deliberately the *whole* declaration: a registered element is the
+            // only thing that exercises the fields no built-in fills any more,
+            // and each of them is a collector that must not have to know what a
+            // counter is.
             Needs {
                 buses: vec![self.bus],
+                levels: vec![self.bus + 1],
+                taps: vec![self.bus + 2],
+                node_groups: vec![self.bus + 3],
+                animated: true,
             }
         }
 
@@ -299,6 +329,7 @@ mod tests {
 
         assert_eq!(w.kind.event_value(), Some(OscType::Int(3)));
         assert_eq!(w.kind.needs().buses, vec![7]);
+        assert_eq!(w.kind.needs().taps, vec![9]);
         let m = Metrics::default();
         assert_eq!(w.kind.natural_size(&m, 1.0), (None, Some(m.control_h)));
 

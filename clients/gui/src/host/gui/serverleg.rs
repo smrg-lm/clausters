@@ -335,12 +335,12 @@ fn float_arg(arg: &OscType) -> f64 {
 pub(super) fn tree_has_node_tree(widget: &Widget) -> bool {
     widget
         .descendants()
-        .any(|w| w.kind.node_tree_group().is_some())
+        .any(|w| !w.kind.needs().node_groups.is_empty())
 }
 
 /// Appends the distinct server groups every `nodetree` in `tree` mirrors.
 fn collect_node_tree_groups(tree: &Widget, out: &mut Vec<i32>) {
-    for group in tree.descendants().filter_map(|w| w.kind.node_tree_group()) {
+    for group in tree.descendants().flat_map(|w| w.kind.needs().node_groups) {
         if !out.contains(&group) {
             out.push(group);
         }

@@ -423,20 +423,15 @@ fn meter_and_scope_parse_with_defaults_and_apply() {
         ]}"#,
     );
     let mut w = Widget::from_node(9, &n, &[]).unwrap();
-    match &w.children[0].kind {
-        WidgetKind::Meter {
-            bus,
-            rate,
-            min,
-            max,
-            label,
-        } => {
-            assert_eq!((*bus, *min, *max), (5, 0.0, 2.0));
-            assert_eq!(*rate, Rate::Audio, "a meter watches audio unless told");
-            assert_eq!(label.as_deref(), Some("out"));
-        }
-        other => panic!("expected meter, got {other:?}"),
-    }
+    // The meter is an element: the schema resolves the name and the document's
+    // props become its declaration, which is all this pass answers for. What it
+    // does with them is its own file's suite.
+    assert!(matches!(w.children[0].kind, WidgetKind::Custom(_)));
+    assert_eq!(
+        w.children[0].kind.needs().levels,
+        vec![5],
+        "a meter watches audio unless told"
+    );
     // The scope is a signal element over a forward-only source, and
     // defaults to the bipolar [-1, 1] range.
     let el = w.children[1].signal().expect("a scope is a signal element");
@@ -444,16 +439,13 @@ fn meter_and_scope_parse_with_defaults_and_apply() {
     assert_eq!((el.value.min, el.value.max), (Some(-1.0), Some(1.0)));
     // An audio-rate meter reads a published level, not a control bus.
     assert_eq!(w.children[0].kind.live_bus(), None);
-    assert_eq!(w.children[0].kind.level_bus(), Some(5));
-    // A live `/gui_set` can retarget the bus, rescale the meter, and move
-    // it between the rates.
+    // A live `/gui_set` reaches the element and moves the declaration with it.
     let meter = w.find_mut(1).unwrap();
     assert!(meter.kind.apply("bus", &Value::from(8)));
-    assert!(meter.kind.apply("max", &Value::from(4.0)));
-    assert_eq!(meter.kind.level_bus(), Some(8));
+    assert_eq!(meter.kind.needs().levels, vec![8]);
     assert!(meter.kind.apply("rate", &Value::from("control")));
-    assert_eq!(meter.kind.live_bus(), Some(8));
-    assert_eq!(meter.kind.level_bus(), None);
+    assert_eq!(meter.kind.needs().buses, vec![8]);
+    assert!(meter.kind.needs().levels.is_empty());
 }
 
 #[test]
@@ -465,18 +457,9 @@ fn nodetree_and_plot_parse_with_defaults_and_apply() {
         ]}"#,
     );
     let mut w = Widget::from_node(9, &n, &[]).unwrap();
-    match &w.children[0].kind {
-        WidgetKind::NodeTree {
-            group,
-            controls,
-            label,
-        } => {
-            assert_eq!((*group, *controls), (2, false));
-            assert_eq!(label.as_deref(), Some("tree"));
-        }
-        other => panic!("expected nodetree, got {other:?}"),
-    }
-    assert_eq!(w.children[0].kind.node_tree_group(), Some(2));
+    // The node-tree view is an element; its props are its own file's suite.
+    assert!(matches!(w.children[0].kind, WidgetKind::Custom(_)));
+    assert_eq!(w.children[0].kind.needs().node_groups, vec![2]);
     // A nodetree is non-interactive and reads no bus.
     assert_eq!(w.children[0].kind.event_value(), None);
     assert_eq!(w.children[0].kind.live_bus(), None);
@@ -489,7 +472,7 @@ fn nodetree_and_plot_parse_with_defaults_and_apply() {
     // Live `/gui_set` retargets the tree's group and rescales the plot.
     assert!(w.find_mut(1).unwrap().kind.apply("group", &Value::from(0)));
     assert!(w.find_mut(2).unwrap().kind.apply("max", &Value::from(1.0)));
-    assert_eq!(w.children[0].kind.node_tree_group(), Some(0));
+    assert_eq!(w.children[0].kind.needs().node_groups, vec![0]);
 }
 
 #[test]

@@ -1,8 +1,11 @@
 //! Reading typed widget props out of a GuiDef node's generic JSON: the shared
 //! wire-parsing helpers behind the schema ([`super`]) and its two long wire
 //! matches ([`super::build`] and [`super::apply`]). Split out of the schema so
-//! the enum and the construction/update matches read on their own; the helpers
-//! stay `pub(super)`, visible to the `widget` module tree and nowhere else.
+//! the enum and the construction/update matches read on their own. A helper
+//! stays `pub(super)` — the `widget` module tree and nowhere else — until a
+//! leaf that moved behind [`Element`](super::Element) needs it, since an
+//! element in [`elements`](crate::host::elements) parses the same props from
+//! outside the module; those are `pub(crate)`.
 
 use std::sync::Arc;
 
@@ -213,7 +216,7 @@ pub(super) fn dimension(props: &serde_json::Map<String, Value>, key: &str, defau
 }
 
 /// An integer property, defaulted when absent or non-integer.
-pub(super) fn int_prop(props: &serde_json::Map<String, Value>, key: &str, default: i32) -> i32 {
+pub(crate) fn int_prop(props: &serde_json::Map<String, Value>, key: &str, default: i32) -> i32 {
     props
         .get(key)
         .and_then(Value::as_i64)
@@ -240,7 +243,7 @@ pub(super) fn set_f64(slot: &mut f64, v: &Value) -> bool {
 }
 
 /// A float property, defaulted when absent or non-numeric.
-pub(super) fn number(props: &serde_json::Map<String, Value>, key: &str, default: f32) -> f32 {
+pub(crate) fn number(props: &serde_json::Map<String, Value>, key: &str, default: f32) -> f32 {
     props
         .get(key)
         .and_then(Value::as_f64)
@@ -312,7 +315,7 @@ pub(super) fn set_size(slot: &mut f32, v: &Value) -> bool {
 }
 
 /// The `label` property as an owned string, if present.
-pub(super) fn label(props: &serde_json::Map<String, Value>) -> Option<String> {
+pub(crate) fn label(props: &serde_json::Map<String, Value>) -> Option<String> {
     props
         .get("label")
         .and_then(Value::as_str)
@@ -347,7 +350,7 @@ pub(crate) fn truthy(v: &Value) -> Option<bool> {
 }
 
 /// Sets `slot` from a numeric JSON value, reporting whether it applied.
-pub(super) fn set_f(slot: &mut f32, v: &Value) -> bool {
+pub(crate) fn set_f(slot: &mut f32, v: &Value) -> bool {
     match v.as_f64() {
         Some(x) => {
             *slot = x as f32;
@@ -359,7 +362,7 @@ pub(super) fn set_f(slot: &mut f32, v: &Value) -> bool {
 
 /// Sets a data view's rate live (`/gui_set rate "control"`), so one widget can
 /// be retuned between watching an audio bus and a control bus.
-pub(super) fn set_rate(slot: &mut Rate, v: &Value) -> bool {
+pub(crate) fn set_rate(slot: &mut Rate, v: &Value) -> bool {
     match v.as_str() {
         Some(s) => {
             *slot = Rate::parse(Some(s));
@@ -390,7 +393,7 @@ pub(super) fn set_opt_f(slot: &mut Option<f32>, v: &Value) -> bool {
 }
 
 /// Sets an optional label from a string JSON value.
-pub(super) fn set_label(slot: &mut Option<String>, v: &Value) -> bool {
+pub(crate) fn set_label(slot: &mut Option<String>, v: &Value) -> bool {
     match v.as_str() {
         Some(s) => {
             *slot = Some(s.to_string());

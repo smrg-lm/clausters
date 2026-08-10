@@ -312,19 +312,6 @@ pub(super) fn draw_live_meshes(
     // Meters and scopes read their control bus straight from shared memory each
     // frame (zero messages); the scope keeps a per-widget rolling history in this
     // window's state.
-    for item in &collected.meter_rects {
-        mesh.set_clip(item.clip);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        let value = inputs.world.level(item.bus, item.rate);
-        let frac = meters::fraction(value, item.min, item.max);
-        meters::draw_meter(
-            &mut Draw::new(mesh, m, th),
-            item.rect,
-            value,
-            frac,
-            item.label.as_deref(),
-        );
-    }
     // The history is advanced on the frame tick (`advance_scopes`), not here, so a
     // repaint only ever *draws* the current samples — never adds one.
     for item in &collected.scope_rects {
@@ -612,18 +599,6 @@ pub(super) fn draw_static_meshes(
             item.duration,
             item.exp,
             item.label.as_deref(),
-        );
-    }
-    for item in &collected.nodetree_rects {
-        mesh.set_clip(item.clip);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        nodetree::draw(
-            &mut Draw::new(mesh, m, th),
-            item.rect,
-            inputs.world.node_tree(item.group),
-            item.controls,
-            item.label.as_deref(),
-            inputs.world.server_attached,
         );
     }
     // Multitrack lanes: the window's tracks share one time axis (aligned
