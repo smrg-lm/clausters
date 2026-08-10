@@ -13,43 +13,7 @@
 //! JSON over OSC.
 
 use super::*;
-
-/// A fetched-and-decoded bulk resource, ready to place. The decode (pyramid
-/// mapping, raw-`f32` de-interleave, in-wasm pyramid/STFT build) happens in
-/// the async fetch task; placing a waveform/spectrogram needs the GPU, a plot
-/// only the tree.
-pub(super) enum BulkData {
-    Waveform(WaveformData),
-    Spectrogram(Vec<Stft>),
-    Plot(Arc<[f32]>),
-}
-
-/// One waveform/spectrogram/plot URL to fetch and how to decode its bytes.
-pub(super) enum BulkRequest {
-    /// A prebuilt peak-pyramid cache (mono v1 or multichannel v2), mapped
-    /// straight to a [`MultiPyramid`].
-    Cache(String),
-    /// Raw little-endian `f32`: de-interleave every channel, build the
-    /// pyramids in wasm (the analysis lives in `clausters-core`, FFI-free).
-    Raw {
-        url: String,
-        channels: usize,
-        base_bucket: usize,
-    },
-    /// A prebuilt (single-channel) STFT cache for a `spectrogram`.
-    StftCache(String),
-    /// Raw little-endian `f32` for a `spectrogram`: de-interleave every
-    /// channel and analyze each in wasm.
-    StftRaw {
-        url: String,
-        channels: usize,
-        window_size: usize,
-        hop: usize,
-        sample_rate: f64,
-    },
-    /// Raw little-endian `f32` for a `plot` (kept interleaved, no pyramid).
-    Plot { url: String, channels: usize },
-}
+use crate::host::widget::element::Bulk;
 
 /// Builds the GPU slot for every inline-data `waveform`/`spectrogram` in the
 /// tree (the zero-latency bulk source; `path`/`cache`/`buffer` references load
@@ -75,107 +39,49 @@ pub(super) fn build_inline_timelines(
     });
 }
 
-/// Walks the tree collecting the async bulk sources: waveforms referencing a
-/// server `buffer` (fetched over the WS leg) and waveform/plot `path`/`cache`
-/// references (URLs fetched against the page origin). The browser mirror of
-/// the native front's mapped-file resolution (`collect_timelines` and
-/// `load_element_bulk` there), minus the inline case, which is
-/// [`build_inline_timelines`] over the shared walk.
+/// Every element's **declared** bulk resource, as fetches to start — and the
+/// server buffers to pull over the client leg, which are the one resource a
+/// page cannot fetch for itself.
+///
+/// Nothing here derives what a view wants from what it is: the element says
+/// which resource and in which form (`Needs::bulk`), and this walk turns a
+/// local reference into the URL a page reads it from. That is the whole of the
+/// browser's half.
 fn collect_bulk(
     widget: &Widget,
     owner: Option<i32>,
     buffer_refs: &mut Vec<(i32, i32)>,
-    requests: &mut Vec<(i32, BulkRequest)>,
+    requests: &mut Vec<(i32, Bulk)>,
 ) {
-    frame::visit_elements(widget, owner, &mut |owner, el| {
-        let (Some(id), Some(data)) = (owner, el.source.data()) else {
-            return;
-        };
-        let time_freq = el.presentation == Presentation::TimeFrequency;
-        if !el.needs_gpu_slot() && data.bulk {
-            // A **take** drawn into the mesh (a clip's body): the same
-            // resolution a heavy view's samples take — cache, then
-            // path, then buffer — landing in the tree, not the GPU.
-            if let Some(cache) = &data.cache {
-                requests.push((id, BulkRequest::Cache(cache.to_string_lossy().into_owned())));
-            } else if let Some(path) = &data.path {
-                requests.push((
-                    id,
-                    BulkRequest::Raw {
-                        url: path.to_string_lossy().into_owned(),
-                        channels: data.channels,
-                        base_bucket: data.base_bucket,
-                    },
-                ));
-            } else if let (Some(bufnum), true) = (data.buffer, data.is_empty()) {
-                buffer_refs.push((id, bufnum));
-            }
-        } else if !el.needs_gpu_slot() {
-            // A **sequence**: its samples go straight into the tree —
-            // no pyramid, no analysis cache to fetch.
-            if data.samples.is_empty()
-                && let Some(path) = &data.path
-            {
-                requests.push((
-                    id,
-                    BulkRequest::Plot {
-                        url: path.to_string_lossy().into_owned(),
-                        channels: data.channels,
-                    },
-                ));
-            }
-        } else if let Some(cache) = &data.cache {
-            let url = cache.to_string_lossy().into_owned();
-            requests.push((
-                id,
-                if time_freq {
-                    BulkRequest::StftCache(url)
-                } else {
-                    BulkRequest::Cache(url)
-                },
-            ));
-        } else if let Some(path) = &data.path {
-            let url = path.to_string_lossy().into_owned();
-            requests.push((
-                id,
-                if time_freq {
-                    BulkRequest::StftRaw {
-                        url,
-                        channels: data.channels,
-                        window_size: el.spectral.fft_size,
-                        hop: el.spectral.hop,
-                        sample_rate: el.editor.sample_rate,
-                    }
-                } else {
-                    BulkRequest::Raw {
-                        url,
-                        channels: data.channels,
-                        base_bucket: data.base_bucket,
-                    }
-                },
-            ));
-        } else if let (Some(bufnum), true) = (data.buffer, data.samples.is_empty()) {
-            buffer_refs.push((id, bufnum));
+    let id = widget.id.or(owner);
+    if let (Some(id), Some(want)) = (id, widget.kind.needs().bulk) {
+        match want {
+            Bulk::Buffer(bufnum) => buffer_refs.push((id, bufnum)),
+            want => requests.push((id, want)),
         }
-    });
+    }
+    for child in &widget.children {
+        // A clip's body carries no id of its own: the fetch is keyed by the
+        // container's, which is what the reply resolves back through.
+        collect_bulk(child, id, buffer_refs, requests);
+    }
 }
 
 /// Fetches one bulk URL and decodes it off the event loop, then hands the
 /// result back through the proxy as [`WebEvent::BulkReady`].
-pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, request: BulkRequest) {
-    let url = match &request {
-        BulkRequest::Cache(url) | BulkRequest::StftCache(url) => url,
-        BulkRequest::Raw { url, .. }
-        | BulkRequest::StftRaw { url, .. }
-        | BulkRequest::Plot { url, .. } => url,
-    }
-    .clone();
+pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, request: Bulk) {
+    // A declared resource is a local reference natively and a URL here: the
+    // page fetches what the tree named, which is the one platform difference in
+    // the whole bulk path.
+    let Some(url) = request.resource().map(|p| p.to_string_lossy().into_owned()) else {
+        return; // a server buffer: the client leg's, not a fetch
+    };
     let bytes = match fetch_bytes(&url).await {
         Ok(bytes) => bytes,
         Err(e) => return log(&format!("bulk fetch {url}: {e}")),
     };
     let data = match request {
-        BulkRequest::Cache(_) => {
+        Bulk::PeakCache(_) => {
             let Some(multi) = MultiPyramid::from_bytes(&bytes) else {
                 return log(&format!("bulk fetch {url}: malformed peak pyramid"));
             };
@@ -184,9 +90,9 @@ pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, reques
                 multi.frames(),
                 multi.num_channels()
             ));
-            BulkData::Waveform(WaveformData::with_multi_pyramid(multi))
+            Loaded::Peaks(WaveformData::with_multi_pyramid(multi))
         }
-        BulkRequest::Raw {
+        Bulk::Peaks {
             channels,
             base_bucket,
             ..
@@ -196,9 +102,9 @@ pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, reques
                 "waveform: fetched {} samples x {channels} channel(s) from {url} (pyramids built in wasm)",
                 flat.len() / channels.max(1)
             ));
-            BulkData::Waveform(WaveformData::from_interleaved(&flat, channels, base_bucket))
+            Loaded::Peaks(WaveformData::from_interleaved(&flat, channels, base_bucket))
         }
-        BulkRequest::StftCache(_) => {
+        Bulk::StftCache(_) => {
             let Some(stft) = Stft::from_bytes(&bytes) else {
                 return log(&format!("bulk fetch {url}: malformed STFT cache"));
             };
@@ -207,9 +113,9 @@ pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, reques
                 stft.n_frames(),
                 stft.n_bins()
             ));
-            BulkData::Spectrogram(vec![stft])
+            Loaded::Stfts(vec![stft])
         }
-        BulkRequest::StftRaw {
+        Bulk::Stft {
             channels,
             window_size,
             hop,
@@ -227,9 +133,9 @@ pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, reques
                 "spectrogram: fetched {} samples x {channels} channel(s) from {url} (STFT in wasm)",
                 flat.len() / channels.max(1)
             ));
-            BulkData::Spectrogram(stfts)
+            Loaded::Stfts(stfts)
         }
-        BulkRequest::Plot { channels, .. } => {
+        Bulk::Samples { channels, .. } => {
             let mut flat = decode_f32(&bytes);
             let channels = channels.max(1);
             flat.truncate(flat.len() / channels * channels);
@@ -237,8 +143,10 @@ pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, reques
                 "plot: fetched {} samples x {channels} channel(s) from {url}",
                 flat.len() / channels
             ));
-            BulkData::Plot(flat.into())
+            Loaded::Samples(flat.into())
         }
+        // Resolved above: a buffer names no URL and never reaches the fetch.
+        Bulk::Buffer(_) => return,
     };
     if let Some(proxy) = web_proxy() {
         let _ = proxy.send_event(HostEvent::To(
@@ -303,7 +211,7 @@ impl WebApp {
     /// Places a decoded GPU-bound resource (waveform or spectrogram) on its
     /// def's canvas: a slot right away when that device is up, else stashed and
     /// replayed on `GpuReady`.
-    pub(super) fn place_bulk(&mut self, def_id: i32, widget_id: i32, data: BulkData) {
+    pub(super) fn place_bulk(&mut self, def_id: i32, widget_id: i32, data: Loaded) {
         let Some(slot) = self.canvases.get_mut(&def_id) else {
             return; // the canvas was detached while the fetch was in flight
         };
@@ -313,18 +221,22 @@ impl WebApp {
         };
         let mut total = None;
         match data {
-            BulkData::Waveform(data) => {
+            Loaded::Peaks(data) => {
                 let slot = frame::waveform_slot(data, &render.gpu);
                 total = Some(slot.view.total_samples());
                 render.waveforms.insert(widget_id, slot);
             }
-            BulkData::Spectrogram(stfts) => {
+            Loaded::Stfts(stfts) => {
                 if let Some(slot) = frame::spectrogram_slot(stfts, &render.gpu, &render.renderers) {
                     total = Some(slot.total_samples());
                     render.spectrograms.insert(widget_id, slot);
                 }
             }
-            BulkData::Plot(_) => unreachable!("plots are placed in the tree, not the GPU"),
+            // A slot takes what its kind asked for; the forms an element takes
+            // home never reach here (`on_bulk_ready` routes on the declaration).
+            Loaded::Samples(_) | Loaded::Raw { .. } => log(&format!(
+                "widget {widget_id}: raw samples cannot fill a GPU slot"
+            )),
         }
         // The loaded extent joins the widget's navigation group.
         if let Some(total) = total {
@@ -332,57 +244,47 @@ impl WebApp {
         }
     }
 
-    /// Writes a fetched take's pyramid into the signal element that wanted it —
-    /// the mesh-drawn counterpart of a plot's samples (a clip body needs no GPU
-    /// slot: it is flat geometry, decimated from the take's peak pyramid).
-    /// `widget_id` may name the clip rather than the body, which carries no id.
-    pub(super) fn set_take_body(&mut self, def_id: i32, widget_id: i32, data: WaveformData) {
-        if let Some(root) = self.host.window_def_mut(def_id)
-            && let Some(el) = root.find_mut(widget_id).and_then(|w| w.signal_target_mut())
-            && let Some(d) = el.source.data_mut()
+    /// A fetched bulk resource arrived: an element that claimed a **GPU slot**
+    /// is fed through it, and every other one takes the data home itself.
+    ///
+    /// The fork is the *declaration*, not the presentation — the loader knows
+    /// nothing about what a signal is, exactly as the native one does not.
+    pub(super) fn on_bulk_ready(&mut self, def: i32, widget_id: i32, data: Loaded) {
+        let wants_slot = self
+            .host
+            .window_def(def)
+            .and_then(|t| t.find(widget_id))
+            .is_some_and(|w| slot_target(w).is_some());
+        if wants_slot {
+            self.place_bulk(def, widget_id, data);
+        } else if let Some(widget) = self
+            .host
+            .window_def_mut(def)
+            .and_then(|t| t.find_mut(widget_id))
         {
-            d.body = Some(Arc::new(data));
-        }
-    }
-
-    /// A fetched bulk resource arrived: place a waveform/spectrogram (GPU
-    /// slot), write a clip's take or a plot's samples into the host tree, then
-    /// repaint.
-    pub(super) fn on_bulk_ready(&mut self, def: i32, widget_id: i32, data: BulkData) {
-        // A waveform resource wanted by a **mesh-drawn** take (a clip's body)
-        // lands in the tree, not the GPU.
-        if let BulkData::Waveform(_) = &data
-            && self
-                .host
-                .window_def(def)
-                .and_then(|t| t.find(widget_id))
-                .and_then(|w| w.signal_target())
-                .is_some_and(|el| !el.needs_gpu_slot())
-        {
-            let BulkData::Waveform(data) = data else {
-                unreachable!()
-            };
-            self.set_take_body(def, widget_id, data);
-            self.request_redraw(def);
-            return;
-        }
-        match data {
-            BulkData::Waveform(_) | BulkData::Spectrogram(_) => {
-                self.place_bulk(def, widget_id, data);
-            }
-            BulkData::Plot(samples) => {
-                if let Some(root) = self.host.window_def_mut(def)
-                    && let Some(widget) = root.find_mut(widget_id)
-                    && let Some(el) = widget.kind.signal_mut()
-                    && let Some(data) = el.source.data_mut()
-                {
-                    data.samples = samples;
-                    // Landed samples feed the spectral presentation: refresh
-                    // its cached analysis.
-                    widget.kind.refresh_analysis();
-                }
-            }
+            take_bulk(widget, data);
         }
         self.request_redraw(def);
     }
+}
+
+/// The widget a slot is keyed by, when this one (or a body of it) claimed one —
+/// a clip's body carries no id, so the slot is the container's.
+fn slot_target(widget: &Widget) -> Option<&Widget> {
+    if widget.kind.needs().slot.is_some() {
+        return Some(widget);
+    }
+    widget
+        .children
+        .iter()
+        .find(|c| c.kind.needs().slot.is_some())
+}
+
+/// Hands a loaded resource to the widget that wanted it, reaching a body when
+/// the id named its container.
+fn take_bulk(widget: &mut Widget, data: Loaded) -> bool {
+    if widget.kind.take_bulk(data) {
+        return true;
+    }
+    false
 }

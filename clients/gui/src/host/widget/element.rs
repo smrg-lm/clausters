@@ -60,6 +60,8 @@ use std::fmt;
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
+use std::path::{Path, PathBuf};
+
 use super::super::layout::Rect;
 use super::super::metrics::Metrics;
 use super::super::paint::Draw;
@@ -178,7 +180,7 @@ impl Live<'_> {
 /// The sets are declarative and per element: the collectors merge, sort and
 /// dedup them, so an element names what *it* reads and never what a window
 /// subscribes to.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Needs {
     /// Control buses read once per frame (the shm segment natively,
     /// `/bus_stream` in a page) — what a control-rate meter or a live trace
@@ -208,6 +210,85 @@ pub struct Needs {
     /// The GPU slot this element claims, for a view that cannot draw into the
     /// shared mesh. `None` — the default — is an element that draws.
     pub slot: Option<SlotKind>,
+    /// The **bulk resource** this element wants resolved, and in which form.
+    ///
+    /// Bulk is the data too big for the wire — a minutes-long take, a peaks
+    /// cache, a server buffer — and it moves through local shared resources
+    /// (a mapped file natively, a `fetch` in a page), never re-encoded over
+    /// OSC. This is the *declaration*; where the answer goes is not the
+    /// loader's decision either: an element that claimed a [`slot`](Self::slot)
+    /// is fed through it, and every other one takes the data home through
+    /// [`Element::bulk`].
+    pub bulk: Option<Bulk>,
+}
+
+/// **What an element wants loaded, and in which form** — the two halves of one
+/// question, because the same file is a pyramid to one view and a run of
+/// samples to another.
+///
+/// The form is the element's own business and not the resource's: a *take* is
+/// minutes of audio and is summarized into peaks before it is ever drawn, while
+/// a plotted *sequence* is a few thousand values that are kept whole. Neither
+/// is a property of the file.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Bulk {
+    /// A prebuilt peak-pyramid cache, used as it is (no raw samples).
+    PeakCache(PathBuf),
+    /// Raw interleaved `f32` to de-interleave and summarize into a pyramid at
+    /// `base_bucket`.
+    Peaks {
+        path: PathBuf,
+        channels: usize,
+        base_bucket: usize,
+    },
+    /// Raw interleaved `f32` kept **whole** (a plotted sequence): every channel
+    /// is drawn, so nothing is decimated away.
+    Samples { path: PathBuf, channels: usize },
+    /// A prebuilt (single-channel) STFT cache.
+    StftCache(PathBuf),
+    /// Raw interleaved `f32` to analyze into per-channel STFT lanes.
+    Stft {
+        path: PathBuf,
+        channels: usize,
+        window_size: usize,
+        hop: usize,
+        sample_rate: f64,
+    },
+    /// A **server buffer**, pulled over the host's client leg rather than off
+    /// the local filesystem — the one resource the host does not own and has to
+    /// ask for.
+    Buffer(i32),
+}
+
+impl Bulk {
+    /// The local resource this wants, when it names one (a `Buffer` names
+    /// none) — what a loader maps or fetches.
+    pub fn resource(&self) -> Option<&Path> {
+        match self {
+            Bulk::PeakCache(p) | Bulk::StftCache(p) => Some(p),
+            Bulk::Peaks { path, .. } | Bulk::Samples { path, .. } | Bulk::Stft { path, .. } => {
+                Some(path)
+            }
+            Bulk::Buffer(_) => None,
+        }
+    }
+}
+
+/// **What came back**, in the form the [`Bulk`] asked for. The element takes it
+/// home through [`Element::bulk`]; a loader never reaches into an element to
+/// place it.
+pub enum Loaded {
+    /// **Raw interleaved samples**, for the element to make what it draws from
+    /// — a pyramid, or the samples themselves. It is the one form a loader can
+    /// hand over without knowing the drawing, which is what the server's own
+    /// buffers arrive as.
+    Raw { samples: Vec<f32>, channels: usize },
+    /// A peak pyramid, from a cache or summarized from raw samples.
+    Peaks(crate::waveform::WaveformData),
+    /// Per-channel STFT lanes.
+    Stfts(Vec<crate::spectrogram::Stft>),
+    /// Interleaved samples, kept whole.
+    Samples(std::sync::Arc<[f32]>),
 }
 
 /// The GPU slot an element claims because it cannot draw into the window's one
@@ -219,7 +300,7 @@ pub struct Needs {
 /// which the cost rule already prices at once per window and only in the builds
 /// that compiled it in. That is the same boundary as "a container is not
 /// extensible", drawn where the hardware actually is.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SlotKind {
     /// A user fragment shader run over the element's rect. The WGSL is a
     /// **parameter** of this slot, not a pipeline of its own, which is what
@@ -228,6 +309,26 @@ pub enum SlotKind {
         /// The source the slot is created with; a later change arrives with the
         /// frame ([`SlotFrame::Shader`]) and recompiles in place.
         source: String,
+    },
+    /// A **vertex-buffer** slot: geometry rebuilt per frame, bounded by the
+    /// render width in physical pixels — the resolution rule the whole crate
+    /// draws signals by (never finer than the screen). What the columns are
+    /// decimated *from* is a peak pyramid, which is why the bucket is the
+    /// slot's parameter: it is what a load has to be summarized at before the
+    /// pipeline can take it.
+    Geometry {
+        /// The peak pyramid's level-0 bucket, in samples.
+        base_bucket: usize,
+    },
+    /// A **texture** slot: an analysis uploaded once and sampled one texel per
+    /// pixel, so the GPU cost is constant however far the axis is zoomed. The
+    /// analysis parameters ride with the slot because whoever fills it has to
+    /// run that analysis, and the element is the only one that knows it.
+    Texture {
+        window_size: usize,
+        hop: usize,
+        /// The rate to place the analysis on (`0.0` = the server's).
+        sample_rate: f64,
     },
 }
 
@@ -525,6 +626,17 @@ pub trait Element: fmt::Debug {
         Needs::default()
     }
 
+    /// **A bulk resource this element asked for has arrived.** Returns whether
+    /// it was taken, so a loader can log what it resolved for nobody.
+    ///
+    /// The element places the data itself, in whatever shape it draws from —
+    /// which is the half of the bulk seam that cannot be a declaration: what
+    /// comes back is a pyramid, a set of analyses or a run of samples, and only
+    /// the element knows what it is for.
+    fn bulk(&mut self, _data: Loaded) -> bool {
+        false
+    }
+
     /// The [`BodyRole`] this element fills when a container holds it as one of
     /// its bodies, or `None` (the default) for an element that is only ever
     /// itself.
@@ -762,6 +874,7 @@ mod tests {
                 animated: true,
                 clock: true,
                 slot: None,
+                bulk: Some(Bulk::Buffer(self.bus + 4)),
             }
         }
 

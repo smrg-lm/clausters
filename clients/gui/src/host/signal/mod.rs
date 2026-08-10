@@ -45,6 +45,7 @@ use crate::waveform::WaveformData;
 
 use super::widget::{EditorProps, Rate, Ruler, RulerY};
 
+mod bulk;
 mod live;
 pub use live::LiveState;
 

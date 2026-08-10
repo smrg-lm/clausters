@@ -67,7 +67,7 @@ pub(super) struct CanvasSlot {
     pub(super) histories: HashMap<i32, live::BusHistory>,
     /// Fetched waveforms/spectrograms that arrived before the GPU was ready,
     /// placed on `GpuReady` (plots need no GPU and are placed immediately).
-    pub(super) pending_bulk: Vec<(i32, BulkData)>,
+    pub(super) pending_bulk: Vec<(i32, Loaded)>,
 }
 
 impl CanvasSlot {

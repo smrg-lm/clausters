@@ -50,9 +50,8 @@ use super::gestures::{GestureCtx, GestureEffect, Gestures};
 use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
 use super::pianoroll;
-use super::signal::{self, Presentation};
-use super::widget::element::{Key as HostKey, Live};
-use super::widget::{Widget, WidgetKind};
+use super::widget::Widget;
+use super::widget::element::{Key as HostKey, Live, Loaded, SlotKind};
 use super::{BusSource, ClientId, GUI_EVENT, Host, HostEffect, ServerLink};
 
 mod bridge;
@@ -62,7 +61,7 @@ mod input;
 mod serverleg;
 
 pub use bridge::{GuiBridge, bundle_boot_packets, start};
-use bulk::{BulkData, build_inline_timelines};
+use bulk::build_inline_timelines;
 use canvas::{CanvasSlot, WindowRender};
 pub use serverleg::{PageServerLink, WsServerLink};
 
@@ -167,7 +166,7 @@ enum WebEvent {
     BulkReady {
         def_id: i32,
         widget_id: i32,
-        data: BulkData,
+        data: Loaded,
     },
     /// A theme overlay from the page: role -> "#rrggbb\[aa\]" pairs (the same
     /// table `[gui.theme]` and a `--theme` file carry natively).

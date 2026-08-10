@@ -299,68 +299,65 @@ impl WebApp {
                     }
                     // The fetch was keyed by a widget id, and for a clip that
                     // is the *clip's* — a body carries none — so the reply
-                    // resolves to the element that wanted the samples.
-                    let Some(kind) = self
+                    // resolves to the element that wanted the samples. What is
+                    // read out is the **declaration**: a slot says where the
+                    // data goes and what has to be made of it first.
+                    let Some(slot) = self
                         .host
                         .window_def(want.def_id)
                         .and_then(|t| t.find(want.widget_id))
-                        .map(|w| {
-                            w.signal_target()
-                                .map(|el| WidgetKind::Signal(Box::new(el.clone())))
-                                .unwrap_or_else(|| w.kind.clone())
-                        })
+                        .map(|w| w.bulk_target().kind.needs().slot)
                     else {
                         continue;
                     };
-                    match kind {
-                        WidgetKind::Signal(ref el)
-                            if el.presentation == Presentation::Signal && el.is_gpu_view() =>
-                        {
-                            let bucket = el
-                                .source
-                                .data()
-                                .map_or(signal::DEFAULT_BASE_BUCKET, |d| d.base_bucket);
-                            let data = WaveformData::from_interleaved(&samples, channels, bucket);
-                            self.place_bulk(want.def_id, want.widget_id, BulkData::Waveform(data));
+                    match slot {
+                        Some(SlotKind::Geometry { base_bucket }) => {
+                            let data =
+                                WaveformData::from_interleaved(&samples, channels, base_bucket);
+                            self.place_bulk(want.def_id, want.widget_id, Loaded::Peaks(data));
                         }
-                        // A **mesh-drawn take** (a clip's body): its pyramid
-                        // lands in the tree, no GPU slot — the same landing the
-                        // mapped bulk path uses.
-                        WidgetKind::Signal(ref el) if !el.needs_gpu_slot() => {
-                            let bucket = el
-                                .source
-                                .data()
-                                .map_or(signal::DEFAULT_BASE_BUCKET, |d| d.base_bucket);
-                            let data = WaveformData::from_interleaved(&samples, channels, bucket);
-                            self.set_take_body(want.def_id, want.widget_id, data);
-                            // Falls through to the shared tail: a body carries
-                            // no editor props, so the sample-rate fill is a
-                            // no-op for it, but the **repaint** is not — a
-                            // `continue` here left the take sitting in the tree
-                            // with the canvas still showing the frame before it.
-                        }
-                        WidgetKind::Signal(ref el)
-                            if el.presentation == Presentation::TimeFrequency
-                                && el.needs_gpu_slot() =>
-                        {
-                            let rate = if el.editor.sample_rate > 0.0 {
-                                el.editor.sample_rate
+                        Some(SlotKind::Texture {
+                            window_size,
+                            hop,
+                            sample_rate: declared,
+                        }) => {
+                            let rate = if declared > 0.0 {
+                                declared
                             } else {
                                 sample_rate
                             };
                             let stfts = frame::stft_lanes(
                                 frame::deinterleave(&samples, channels),
-                                el.spectral.fft_size,
-                                el.spectral.hop,
+                                window_size,
+                                hop,
                                 rate,
                             );
-                            self.place_bulk(
-                                want.def_id,
-                                want.widget_id,
-                                BulkData::Spectrogram(stfts),
-                            );
+                            self.place_bulk(want.def_id, want.widget_id, Loaded::Stfts(stfts));
                         }
-                        _ => continue,
+                        // Mesh-drawn: the samples go home to the element, which
+                        // makes of them whatever it draws from. It falls
+                        // through to the shared tail — a body carries no editor
+                        // props, so the sample-rate fill is a no-op for it, but
+                        // the **repaint** is not.
+                        _ => {
+                            if let Some(w) = self
+                                .host
+                                .window_def_mut(want.def_id)
+                                .and_then(|t| t.find_mut(want.widget_id))
+                            {
+                                let raw = || Loaded::Raw {
+                                    samples: samples.to_vec(),
+                                    channels,
+                                };
+                                if !w.take_bulk(raw()) {
+                                    for body in &mut w.children {
+                                        if body.take_bulk(raw()) {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     // Let the ruler label real time when the widget knew no rate.
                     if sample_rate > 0.0

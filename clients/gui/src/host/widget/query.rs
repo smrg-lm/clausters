@@ -216,6 +216,8 @@ impl WidgetKind {
         }
         let mut needs = super::Needs {
             buses: self.live_bus().into_iter().collect(),
+            bulk: self.signal().and_then(SignalElement::want),
+            slot: self.signal().and_then(SignalElement::slot_kind),
             ..Default::default()
         };
         self.audio_buses_read(&mut needs.taps);
@@ -315,6 +317,19 @@ impl WidgetKind {
         }
     }
 
+    /// **A declared bulk resource has arrived**: the element takes it home.
+    ///
+    /// A built-in answers from its variant, an element for itself
+    /// ([`Element::bulk`](super::Element::bulk)) — the single door, so a loader
+    /// resolves a resource and never reaches into a widget to place it.
+    pub fn take_bulk(&mut self, data: super::element::Loaded) -> bool {
+        match self {
+            WidgetKind::Signal(el) => el.take(data),
+            WidgetKind::Custom(el) => el.bulk(data),
+            _ => false,
+        }
+    }
+
     /// Recomputes a stored spectrum's cached analysis from its current samples
     /// and props — a no-op for every other widget and every other
     /// presentation. Called at the element's mutation points (parse, a bulk
@@ -344,6 +359,32 @@ impl Widget {
             }),
             _ => None,
         }
+    }
+
+    /// **Who a bulk load is really for**: this widget, or the body of it that
+    /// declared the want — a clip's take carries no id, so the fetch was keyed
+    /// by the container's.
+    ///
+    /// It asks the declaration rather than the variant, which is what lets a
+    /// registered element be a clip's body and be loaded like any other.
+    pub fn bulk_target(&self) -> &Widget {
+        let declares = |w: &Widget| {
+            let needs = w.kind.needs();
+            needs.bulk.is_some() || needs.slot.is_some()
+        };
+        if declares(self) {
+            return self;
+        }
+        self.children.iter().find(|c| declares(c)).unwrap_or(self)
+    }
+
+    /// Hands a loaded resource to whichever of this widget or its bodies takes
+    /// it, returning whether one did.
+    pub fn take_bulk(&mut self, data: super::element::Loaded) -> bool {
+        if self.kind.take_bulk(data) {
+            return true;
+        }
+        false
     }
 
     /// [`signal_target`](Self::signal_target), mutably — the door a bulk load

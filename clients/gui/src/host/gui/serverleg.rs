@@ -12,8 +12,8 @@ use tracing::{debug, info, warn};
 use crate::host::fetch::{FetchStep, WaveWant};
 use crate::host::frame;
 use crate::host::nodetree::NodeTree;
-use crate::host::signal::{self, Presentation};
-use crate::host::widget::{Widget, WidgetKind};
+use crate::host::widget::Widget;
+use crate::host::widget::element::{Loaded, SlotKind};
 use crate::waveform::WaveformData;
 
 use super::app::App;
@@ -231,74 +231,70 @@ impl App {
             // The fetch was keyed by a widget id, and for a clip that is the
             // *clip's* — a body carries none — so the reply resolves to the
             // element that wanted the samples rather than to the container.
-            let Some(kind) = self
+            // What is copied out is the **declaration**, never the widget: a
+            // slot says where the data goes, and its parameters say what has to
+            // be made of the samples before a pipeline can take them.
+            let Some(slot) = self
                 .host
                 .window_def(want.def_id)
                 .and_then(|t| t.find(want.widget_id))
-                .map(|w| {
-                    w.signal_target()
-                        .map(|el| WidgetKind::Signal(Box::new(el.clone())))
-                        .unwrap_or_else(|| w.kind.clone())
-                })
+                .map(|w| w.bulk_target().kind.needs().slot)
             else {
                 continue;
             };
             let Some(ws) = self.windows.get_mut(&want.def_id) else {
                 continue;
             };
-            match kind {
-                WidgetKind::Signal(ref el)
-                    if el.presentation == Presentation::Signal && el.is_gpu_view() =>
-                {
-                    let bucket = el
-                        .source
-                        .data()
-                        .map_or(signal::DEFAULT_BASE_BUCKET, |d| d.base_bucket);
-                    let data = WaveformData::from_interleaved(&samples, channels, bucket);
+            match slot {
+                Some(SlotKind::Geometry { base_bucket }) => {
+                    let data = WaveformData::from_interleaved(&samples, channels, base_bucket);
                     let slot = frame::waveform_slot(data, &ws.gpu);
                     ws.waveforms.insert(want.widget_id, slot);
                 }
-                // A **mesh-drawn** bulk source (a clip's take): the pyramid
-                // lives in the tree, not on the GPU, since a clip body is flat
-                // geometry decimated from it. The id is the clip's — a body
-                // carries none — so `signal_target_mut` reaches the take.
-                WidgetKind::Signal(ref el) if !el.needs_gpu_slot() => {
-                    let bucket = el
-                        .source
-                        .data()
-                        .map_or(signal::DEFAULT_BASE_BUCKET, |d| d.base_bucket);
-                    let data = Arc::new(WaveformData::from_interleaved(&samples, channels, bucket));
-                    ws.gpu.window.request_redraw();
-                    if let Some(el) = self
-                        .host
-                        .window_def_mut(want.def_id)
-                        .and_then(|t| t.find_mut(want.widget_id))
-                        .and_then(|w| w.signal_target_mut())
-                        && let Some(d) = el.source.data_mut()
-                    {
-                        d.body = Some(data);
-                    }
-                    continue; // no navigation group, no ruler rate: a lane owns those
-                }
-                WidgetKind::Signal(ref el)
-                    if el.presentation == Presentation::TimeFrequency && el.needs_gpu_slot() =>
-                {
-                    let rate = if el.editor.sample_rate > 0.0 {
-                        el.editor.sample_rate
+                Some(SlotKind::Texture {
+                    window_size,
+                    hop,
+                    sample_rate: declared,
+                }) => {
+                    let rate = if declared > 0.0 {
+                        declared
                     } else {
                         sample_rate
                     };
                     let stfts = frame::stft_lanes(
                         frame::deinterleave(&samples, channels),
-                        el.spectral.fft_size,
-                        el.spectral.hop,
+                        window_size,
+                        hop,
                         rate,
                     );
                     if let Some(slot) = frame::spectrogram_slot(stfts, &ws.gpu, &ws.renderers) {
                         ws.spectrograms.insert(want.widget_id, slot);
                     }
                 }
-                _ => continue,
+                // Mesh-drawn (a clip's take, a plot): the samples go home to
+                // the element, which makes of them whatever it draws from.
+                _ => {
+                    ws.gpu.window.request_redraw();
+                    if let Some(w) = self
+                        .host
+                        .window_def_mut(want.def_id)
+                        .and_then(|t| t.find_mut(want.widget_id))
+                    {
+                        let raw = || Loaded::Raw {
+                            samples: samples.to_vec(),
+                            channels,
+                        };
+                        if !w.take_bulk(raw()) {
+                            // A clip addressed the fetch for its body.
+                            for body in &mut w.children {
+                                if body.take_bulk(raw()) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    continue; // no navigation group, no ruler rate: a lane owns those
+                }
             }
             ws.gpu.window.request_redraw();
             // The fetched buffer's extent joins the widget's navigation group.

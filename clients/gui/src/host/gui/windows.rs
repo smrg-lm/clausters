@@ -17,8 +17,8 @@ use crate::host::bulk::MmapLoader;
 use crate::host::canvas::CanvasView;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
 use crate::host::paint::Painter;
-use crate::host::signal::Presentation;
-use crate::host::widget::element::SlotKind;
+use crate::host::signal::{self, Presentation};
+use crate::host::widget::element::{Bulk, Loaded, SlotKind};
 use crate::host::widget::{Widget, WidgetKind};
 use crate::host::{BulkLoader, ClientId, GUI_CLOSED};
 use crate::spectrogram::Stft;
@@ -298,48 +298,46 @@ fn collect_canvases(tree: &Widget, gpu: &Gpu, out: &mut HashMap<i32, CanvasView>
     }
 }
 
-/// Maps every **mesh-drawn** signal element's local resource into its tree
-/// node, through the same [`BulkLoader`] seam the heavy views use — so a
-/// minutes-long take reaches a lane as a peak pyramid and never as JSON over
-/// OSC. Walks children too, which is how a clip's take is reached.
+/// Resolves every element's **declared** bulk resource into it, through the
+/// [`BulkLoader`] seam — so a minutes-long take reaches a lane as a peak
+/// pyramid and never as JSON over OSC. Walks children too, which is how a
+/// clip's take is reached.
 ///
-/// Which of the two forms a source resolves to is [`crate::host::signal::Data::bulk`], not
-/// the widget it happens to be in: a **take** becomes a `WaveformData` (a
-/// pyramid, decimated to the pixel width it is drawn at), a **sequence**
-/// becomes the samples themselves, kept interleaved so every channel draws.
-/// Landing samples also refreshes the cached spectral analysis. An element that
-/// already holds its data, one naming no resource, and the navigable heavy
-/// views (whose bulk lands on the GPU, above) are left as they are.
+/// Nothing here knows what a signal is. An element says which resource it wants
+/// and in which form (`Needs::bulk`), the loader maps that form, and the
+/// element takes the answer home (`Element::bulk`). An element that claimed a
+/// **GPU slot** is skipped: its data is fed to a pipeline, above.
 fn load_element_bulk(widget: &mut Widget) {
-    if let Some(el) = widget.kind.signal_mut()
-        && !el.is_gpu_view()
-        && let Some(data) = el.source.data_mut()
+    let needs = widget.kind.needs();
+    if let (Some(want), None) = (needs.bulk, needs.slot)
+        && let Some(loaded) = resolve_bulk(&want)
     {
-        let mut landed = false;
-        if data.bulk {
-            if data.body.is_none() && (data.path.is_some() || data.cache.is_some()) {
-                landed = MmapLoader
-                    .waveform(
-                        data.cache.as_deref(),
-                        data.path.as_deref(),
-                        data.channels,
-                        data.base_bucket,
-                    )
-                    .map(|loaded| data.body = Some(Arc::new(loaded)))
-                    .is_some();
-            }
-        } else if data.samples.is_empty()
-            && let Some(p) = data.path.clone()
-            && let Some(loaded) = MmapLoader.plot_samples(&p, data.channels)
-        {
-            data.samples = loaded;
-            landed = true;
-        }
-        if landed {
-            widget.kind.refresh_analysis();
-        }
+        widget.kind.take_bulk(loaded);
     }
     for child in &mut widget.children {
         load_element_bulk(child);
+    }
+}
+
+/// Maps one declared resource with the native loader. A `Buffer` resolves to
+/// nothing here — it is the client leg's, and the reply lands the same way.
+fn resolve_bulk(want: &Bulk) -> Option<Loaded> {
+    match want {
+        Bulk::PeakCache(cache) => MmapLoader
+            .waveform(Some(cache), None, 1, signal::DEFAULT_BASE_BUCKET)
+            .map(Loaded::Peaks),
+        Bulk::Peaks {
+            path,
+            channels,
+            base_bucket,
+        } => MmapLoader
+            .waveform(None, Some(path), *channels, *base_bucket)
+            .map(Loaded::Peaks),
+        Bulk::Samples { path, channels } => MmapLoader
+            .plot_samples(path, *channels)
+            .map(Loaded::Samples),
+        // The spectral forms belong to a GPU slot, which is fed above; a
+        // mesh-drawn element never asks for them.
+        Bulk::StftCache(_) | Bulk::Stft { .. } | Bulk::Buffer(_) => None,
     }
 }
