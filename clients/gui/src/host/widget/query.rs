@@ -216,12 +216,29 @@ impl WidgetKind {
         }
         let mut needs = super::Needs {
             buses: self.live_bus().into_iter().collect(),
+            retention: self.signal().map_or(0.0, SignalElement::retention),
             bulk: self.signal().and_then(SignalElement::want),
             slot: self.signal().and_then(SignalElement::slot_kind),
             ..Default::default()
         };
         self.audio_buses_read(&mut needs.taps);
         needs
+    }
+
+    /// **The window one read of this widget's taps has to bring**, in frames at
+    /// `sample_rate` — the one door the page's tap subscription is sized from.
+    ///
+    /// A built-in answers from its variant, an element for itself
+    /// ([`Element::tap_frames`](super::Element::tap_frames)). It replaced three
+    /// collectors that each walked the tree building a per-kind read spec — a
+    /// scope's, a goniometer's, a spectrum's — only to take the largest of the
+    /// three and throw the specs away.
+    pub fn tap_frames(&self, sample_rate: f64) -> usize {
+        match self {
+            WidgetKind::Signal(el) => el.tap_frames(sample_rate),
+            WidgetKind::Custom(el) => el.tap_frames(sample_rate),
+            _ => 0,
+        }
     }
 
     /// The control bus a live (shared-memory-backed) **trace** reads each

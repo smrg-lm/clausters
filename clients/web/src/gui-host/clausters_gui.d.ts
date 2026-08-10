@@ -180,8 +180,8 @@ export interface InitOutput {
     readonly start: () => number;
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue__core_9b3796e30d99ddb7___result__Result_____wasm_bindgen_ac0f9960a408a037___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___js_sys_680697122f8f483d___Array__web_sys_80b4f796a3c8b06___features__gen_ResizeObserver__ResizeObserver______true_: (a: number, b: number, c: any, d: any) => void;
-    readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1_: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1_: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1__4: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1__5: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1__6: (a: number, b: number, c: any) => void;

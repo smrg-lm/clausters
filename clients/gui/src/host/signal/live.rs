@@ -81,6 +81,38 @@ impl SignalElement {
         }
     }
 
+    /// The seconds of its bus this element wants kept addressable, `0.0` for
+    /// one that reads only the present.
+    pub fn retention(&self) -> f32 {
+        self.source.bus().map_or(0.0, |bus| bus.retention.max(0.0))
+    }
+
+    /// The window one tick reads out of each of this element's taps, in frames
+    /// — the sizing half of what [`tick`](Self::tick) then reads, stated where
+    /// the read itself is written so the two cannot drift apart.
+    ///
+    /// A retained view answers `0`: it reads its bus's *history*, which the
+    /// retention span sizes ([`Needs::retention`]), not a window of its own.
+    ///
+    /// [`Needs::retention`]: super::super::widget::Needs::retention
+    pub fn tap_frames(&self, sample_rate: f64) -> usize {
+        let Some(bus) = self.source.bus() else {
+            return 0;
+        };
+        match self.presentation {
+            // A control-rate trace is read as a bus value, one number per tick.
+            Presentation::Signal if !bus.rate.is_audio() => 0,
+            // The trigger searches past the display window, so the raw read is
+            // wider than what is drawn.
+            Presentation::Signal => {
+                oscil::raw_frames(oscil::display_frames(bus.window_ms, sample_rate))
+            }
+            Presentation::Phase => oscil::display_frames(bus.window_ms, sample_rate),
+            Presentation::Spectrum => self.spectral.fft_size,
+            Presentation::TimeFrequency => 0,
+        }
+    }
+
     /// The audio-rate trace's triggered window: the trigger is searched in the
     /// **first** channel and the found alignment applied to every channel, so
     /// the channels keep their true relative phase. A `hold` trace keeps its

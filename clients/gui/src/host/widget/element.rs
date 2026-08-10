@@ -192,6 +192,16 @@ pub struct Needs {
     /// Audio buses whose **samples** are read, which the server has to record
     /// into a ring first (`/bus_tap`, `/bus_tapStream` in a page).
     pub taps: Vec<i32>,
+    /// How many **seconds** of each tapped bus this element wants kept
+    /// addressable — the `retention` span, `0.0` (the default) for a view that
+    /// only ever reads the present.
+    ///
+    /// The span is declared here rather than resolved to samples, because the
+    /// history is the **bus's** and not the element's: two views of one bus
+    /// share one ring, sized at the longest span either asked for and resolved
+    /// against the sample rate by the collector
+    /// ([`live::collect_retention`](super::super::live::collect_retention)).
+    pub retention: f32,
     /// Server groups whose node tree this element draws, so the client leg
     /// knows which trees to keep queried.
     pub node_groups: Vec<i32>,
@@ -702,6 +712,24 @@ pub trait Element: fmt::Debug {
         Needs::default()
     }
 
+    /// **How wide a window of a tapped bus one read has to bring**, in frames
+    /// at `sample_rate`, or `0` (the default) for an element that reads no
+    /// taps.
+    ///
+    /// It is a length and not a set: *which* buses are read is
+    /// [`Needs::taps`], and the page's one `/bus_tapStream` subscription serves
+    /// every consumer at the widest window any of them asks for. So an element
+    /// answers for itself and never for the window — a scope's display window
+    /// plus its trigger slack, a goniometer's window, a spectrum's FFT size —
+    /// and a subscription that is too narrow is not a slow drawing but a blank
+    /// one, since a source refuses a read it cannot fill.
+    ///
+    /// The sample rate is a parameter because most of these are declared in
+    /// **time** and one window is not the other at 96 kHz.
+    fn tap_frames(&self, _sample_rate: f64) -> usize {
+        0
+    }
+
     /// **A bulk resource this element asked for has arrived.** Returns whether
     /// it was taken, so a loader can log what it resolved for nobody.
     ///
@@ -975,12 +1003,19 @@ mod tests {
                 buses: vec![self.bus],
                 levels: vec![self.bus + 1],
                 taps: vec![self.bus + 2],
+                retention: 0.5,
                 node_groups: vec![self.bus + 3],
                 animated: true,
                 clock: true,
                 slot: None,
                 bulk: Some(Bulk::Buffer(self.bus + 4)),
             }
+        }
+
+        fn tap_frames(&self, sample_rate: f64) -> usize {
+            // A hundredth of a second of the tap it declared: a length in time,
+            // like every real one.
+            (sample_rate / 100.0) as usize
         }
 
         fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
@@ -1031,6 +1066,11 @@ mod tests {
         assert_eq!(w.kind.event_value(), Some(OscType::Int(3)));
         assert_eq!(w.kind.needs().buses, vec![7]);
         assert_eq!(w.kind.needs().taps, vec![9]);
+        assert_eq!(w.kind.needs().retention, 0.5);
+        // And how wide a read of that tap has to be, which is what sizes the
+        // page's one subscription: a length in time, resolved at the rate.
+        assert_eq!(w.kind.tap_frames(48_000.0), 480);
+        assert_eq!(w.kind.tap_frames(96_000.0), 960);
         let m = Metrics::default();
         assert_eq!(w.kind.natural_size(&m, 1.0), (None, Some(m.control_h)));
 

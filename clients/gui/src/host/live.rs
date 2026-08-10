@@ -12,10 +12,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use clausters_core::oscil;
-
 use super::BusSource;
-use super::signal::Presentation;
 use super::timeline::{TimelineGroups, group_key};
 use super::widget::Widget;
 
@@ -41,39 +38,6 @@ impl TapWindow {
     pub fn frames(&self) -> usize {
         self.samples.len() / self.channels.max(1)
     }
-}
-
-/// One audio-rate scope's per-tick read spec: its first tap and how many
-/// adjacent rings, how big a window, where to trigger, and whether the trace
-/// is frozen.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub(crate) struct TapScope {
-    pub widget_id: i32,
-    /// The first audio bus it reads; `channels` adjacent buses follow. Where
-    /// each one's samples live is looked up in the segment's directory.
-    pub bus: i32,
-    pub channels: usize,
-    pub window_ms: f32,
-    pub trigger: f32,
-    pub hold: bool,
-}
-
-/// Appends the [`TapScope`] of every audio-rate `scope` in the tree.
-pub(crate) fn collect_tap_scopes(tree: &Widget) -> Vec<TapScope> {
-    tree.descendants()
-        .filter_map(|w| {
-            let el = w.kind.signal()?;
-            let bus = el.source.bus()?;
-            (el.presentation == Presentation::Signal && bus.rate.is_audio()).then_some(TapScope {
-                widget_id: w.id?,
-                bus: bus.bus,
-                channels: bus.channels,
-                window_ms: bus.window_ms,
-                trigger: bus.trigger,
-                hold: bus.hold,
-            })
-        })
-        .collect()
 }
 
 /// The distinct, sorted tap indices a tree reads live each frame — every
@@ -140,34 +104,6 @@ pub(crate) fn tree_has_playhead(widget: &Widget, groups: &TimelineGroups) -> boo
             .children
             .iter()
             .any(|child| tree_has_playhead(child, groups))
-}
-
-/// One phasescope's per-tick read spec: its two taps (left, right), how big a
-/// window of pairs to keep, and whether the trace is frozen.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub(crate) struct PhaseScope {
-    pub widget_id: i32,
-    pub bus_l: i32,
-    pub bus_r: i32,
-    pub window_ms: f32,
-    pub hold: bool,
-}
-
-/// Appends the [`PhaseScope`] of every `phasescope` in the tree.
-pub(crate) fn collect_phase_scopes(tree: &Widget) -> Vec<PhaseScope> {
-    tree.descendants()
-        .filter_map(|w| {
-            let el = w.kind.signal()?;
-            let bus = el.source.bus()?;
-            (el.presentation == Presentation::Phase).then_some(PhaseScope {
-                widget_id: w.id?,
-                bus_l: bus.bus,
-                bus_r: bus.bus + 1,
-                window_ms: bus.window_ms,
-                hold: bus.hold,
-            })
-        })
-        .collect()
 }
 
 /// **A retained history of one bus** — the addressable past a forward-only
@@ -280,10 +216,17 @@ pub(crate) struct RetentionSpec {
     pub capacity: usize,
 }
 
-/// Appends the [`RetentionSpec`] of every element declaring a retention span,
+/// The [`RetentionSpec`] of every widget declaring a retention span,
 /// **merged per bus**: a bus watched by two views is retained once, at the
 /// longest span either asked for, since the history is the bus's and not the
 /// drawing's.
+///
+/// Both halves are the declaration's ([`Needs`]) — the span in seconds and the
+/// taps it applies to — so a widget retains exactly the buses it reads. The
+/// seconds become samples here and only here: the rate is the front's, and the
+/// same span is the same span at any of them.
+///
+/// [`Needs`]: super::widget::Needs
 pub(crate) fn collect_retention(tree: &Widget, sample_rate: f64) -> Vec<RetentionSpec> {
     let sr = if sample_rate > 0.0 {
         sample_rate
@@ -292,16 +235,12 @@ pub(crate) fn collect_retention(tree: &Widget, sample_rate: f64) -> Vec<Retentio
     };
     let mut specs: Vec<RetentionSpec> = Vec::new();
     for widget in tree.descendants() {
-        let Some(el) = widget.kind.signal() else {
-            continue;
-        };
-        let Some(bus) = el.source.bus() else { continue };
-        if bus.retention <= 0.0 {
+        let needs = widget.kind.needs();
+        if needs.retention <= 0.0 {
             continue;
         }
-        let capacity = (bus.retention as f64 * sr).round().max(0.0) as usize;
-        for k in 0..bus.channels.max(1) {
-            let bus_id = bus.bus + k as i32;
+        let capacity = (needs.retention as f64 * sr).round().max(0.0) as usize;
+        for bus_id in needs.taps {
             match specs.iter_mut().find(|s| s.bus == bus_id) {
                 Some(s) => s.capacity = s.capacity.max(capacity),
                 None => specs.push(RetentionSpec {
@@ -364,53 +303,23 @@ pub(crate) fn update_retention(
     }
 }
 
-/// One spectrum's per-tick read spec: its first tap and how many adjacent
-/// rings, FFT size and display smoothing.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub(crate) struct SpectrumSpec {
-    pub widget_id: i32,
-    pub bus: i32,
-    pub channels: usize,
-    pub fft_size: usize,
-    pub averaging: f32,
-    pub peak_hold: bool,
-}
-
-/// Appends the [`SpectrumSpec`] of every `spectrum` in the tree.
-pub(crate) fn collect_spectra(tree: &Widget) -> Vec<SpectrumSpec> {
-    tree.descendants()
-        .filter_map(|w| {
-            let el = w.kind.signal()?;
-            let bus = el.source.bus()?;
-            (el.presentation == Presentation::Spectrum).then_some(SpectrumSpec {
-                widget_id: w.id?,
-                bus: bus.bus,
-                channels: bus.channels,
-                fft_size: el.spectral.fft_size,
-                averaging: el.spectral.averaging,
-                peak_hold: el.spectral.peak_hold,
-            })
-        })
-        .collect()
-}
-
-/// The largest raw tap window any of a tree's tap consumers needs — an
-/// oscilloscope's `window_ms` (with the trigger slack), a phasescope's window,
-/// or a spectrum's FFT size — so the browser's `/bus_tapStream` subscription is
-/// sized to feed all three. Zero when the tree reads no taps.
+/// The largest raw tap window any of a tree's tap consumers needs, so the
+/// browser's one `/bus_tapStream` subscription is sized to feed all of them.
+/// Zero when the tree reads no taps.
+///
+/// Each widget answers for itself
+/// ([`WidgetKind::tap_frames`](super::widget::WidgetKind::tap_frames)) and this
+/// takes the widest, which is the whole of the arithmetic: a subscription
+/// serves every consumer at once, so the one that asks for most decides. The
+/// retained span is the exception and is added here, because what a retaining
+/// view reads is not a window of its own but *whatever elapsed*.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) fn tap_stream_frames(tree: &Widget, sample_rate: f64) -> usize {
-    let mut frames = 0usize;
-    for s in collect_tap_scopes(tree) {
-        let display = oscil::display_frames(s.window_ms, sample_rate);
-        frames = frames.max(oscil::raw_frames(display));
-    }
-    for p in collect_phase_scopes(tree) {
-        frames = frames.max(oscil::display_frames(p.window_ms, sample_rate));
-    }
-    for s in collect_spectra(tree) {
-        frames = frames.max(s.fft_size);
-    }
+    let mut frames = tree
+        .descendants()
+        .map(|w| w.kind.tap_frames(sample_rate))
+        .max()
+        .unwrap_or(0);
     // A retained view reads a whole tick's worth per frame, not a display
     // window: the subscription has to carry it or the history never fills.
     if !collect_retention(tree, sample_rate).is_empty() {
@@ -665,6 +574,45 @@ mod tests {
                 bus: 3,
                 capacity: 192_000
             }
+        );
+    }
+
+    /// A view retains exactly the buses it **reads**, which is the declaration
+    /// answering both halves: a goniometer taps a pair, so a span on it retains
+    /// the pair.
+    #[test]
+    fn a_span_retains_the_buses_the_view_taps() {
+        let w = tree(
+            r#"{"type":"window","children":[
+                {"id":5,"type":"signal","view":"phase","bus":2,"retention":1.0}]}"#,
+        );
+        let specs = collect_retention(&w, 48_000.0);
+        assert_eq!(specs.iter().map(|s| s.bus).collect::<Vec<_>>(), vec![2, 3]);
+        assert!(specs.iter().all(|s| s.capacity == 48_000));
+    }
+
+    /// One subscription serves every tap consumer, so it is sized by the one
+    /// that asks for most — and each of them answers for itself, which is what
+    /// replaced three per-kind collectors.
+    #[test]
+    fn the_subscription_is_sized_by_the_widest_reader() {
+        let rate = 48_000.0;
+        // A 10 ms scope window (plus the trigger slack) against a 4096-point
+        // FFT: the spectrum is wider, so the spectrum decides.
+        let w = tree(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"signal","view":"trace","bus":0,"rate":"audio","window_ms":10.0},
+                {"id":2,"type":"signal","view":"spectrum","bus":4,"fft_size":4096}]}"#,
+        );
+        assert_eq!(tap_stream_frames(&w, rate), 4096);
+        // Nothing tapped at all: no window to ask for.
+        let quiet = tree(r#"{"type":"window","children":[{"id":1,"type":"label"}]}"#);
+        assert_eq!(tap_stream_frames(&quiet, rate), 0);
+        // A retaining view reads whatever elapsed rather than a window of its
+        // own, and that floor is wider than any display window here.
+        assert_eq!(
+            tap_stream_frames(&retaining(2.0), rate),
+            retention_window(rate, 0)
         );
     }
 
