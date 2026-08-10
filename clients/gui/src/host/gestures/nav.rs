@@ -310,6 +310,7 @@ pub(super) fn freq_axis(host: &Host, def_id: i32, hit: &interact::Hit) -> Option
         el.display.label.is_some(),
         el.editor.ruler != super::super::widget::Ruler::Off,
         el.editor.ruler_y != super::super::widget::RulerY::Off,
+        (el.spectral.db_floor, el.spectral.db_ceil),
         host.metrics_for(def_id),
     );
     if r.body.w <= 0.0 || r.body.h <= 0.0 {

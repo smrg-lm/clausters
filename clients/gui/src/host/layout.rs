@@ -274,13 +274,32 @@ pub fn layout_on<'a>(
     metrics: &Metrics,
     axis: &dyn AxisSource,
 ) -> Vec<Placed<'a>> {
+    let floor = timeline::group_indents(root, metrics);
+    let out = place_all(area, root, metrics, axis, floor.clone());
+    // A value ruler's labels are a property of the data, so the width one needs
+    // is only known once its member has a height. That is one pass too late, so
+    // the members are measured and the pass is taken again — but only when the
+    // measure asks for more than the roles reserved, which an ordinary window
+    // never does.
+    match timeline::measured_indents(&out, &floor) {
+        Some(indents) => place_all(area, root, metrics, axis, indents),
+        None => out,
+    }
+}
+
+/// One layout pass with a settled gutter table.
+fn place_all<'a>(
+    area: Rect,
+    root: &'a Widget,
+    metrics: &Metrics,
+    axis: &dyn AxisSource,
+    indents: HashMap<GroupKey, f32>,
+) -> Vec<Placed<'a>> {
     let mut out = Vec::new();
     let ctx = Ctx {
         metrics,
         axis,
-        // The shared gutter per group, from the tree: it is a fact about the
-        // *kinds* on an axis, so it is known before a single rectangle is.
-        indents: timeline::group_indents(root, metrics),
+        indents,
     };
     place(
         area,

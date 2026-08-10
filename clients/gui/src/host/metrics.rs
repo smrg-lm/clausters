@@ -159,8 +159,10 @@ metrics_roles! {
     // -- Chrome --
     /// The height of a ruler strip along a horizontal axis.
     ruler_h,
-    /// The width of a ruler strip beside a vertical axis (sized for its widest
-    /// labels).
+    /// The **floor** width of a ruler strip beside a vertical axis. A strip
+    /// asks for what its own labels need (`ruler::ticks_width`) and takes this
+    /// when they are narrower, which every fixed-vocabulary axis is; a value
+    /// axis over small numbers formats far longer ones and asks for more.
     ruler_w,
     /// The width of a row's header column (a lane's name and controls).
     header_w,
@@ -228,8 +230,9 @@ impl Metrics {
             knob_d: grid(2.0 * control_h * 1.08),
 
             ruler_h: grid(cell * 1.25),
-            // Five captions wide: the widest vertical-ruler labels are
-            // `-32768`, `20K` and `-INF`.
+            // Five captions wide: the widest labels of the *fixed* vertical
+            // vocabularies, `-32768`, `20K` and `-INF`. A data-dependent axis
+            // measures its own and asks for more when it needs it.
             ruler_w: grid(5.0 * advance(caption_scale)),
             // Eight characters of header text wide.
             header_w: grid(8.0 * advance(text_scale)),

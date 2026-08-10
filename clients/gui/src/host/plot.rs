@@ -182,21 +182,32 @@ struct Geom {
 
 fn geometry(rect: Rect, p: &PlotParams, m: &Metrics) -> Geom {
     let mut body = body_rect(rect, p.label.is_some(), m);
-    let strip_x = (p.ruler_y && body.w > m.ruler_w * 2.0).then(|| {
-        let x = body.x;
-        body.x += m.ruler_w;
-        body.w -= m.ruler_w;
-        x
-    });
-    let x_strip = (p.ruler != Ruler::Off && body.h > m.ruler_h * 2.0).then(|| {
-        body.h -= m.ruler_h;
-        Rect::new(body.x, body.y + body.h, body.w, m.ruler_h)
-    });
     let lanes = if p.overlay {
         1
     } else {
         p.channels.max(1).min(frames_of(p).max(1))
     };
+    // The x strip only takes height and the y strip only takes width, so the
+    // two reservations are independent - and the height has to be settled
+    // first, because it is what decides how finely the value axis steps and
+    // therefore how wide the labels the y strip must hold are.
+    let takes_x = p.ruler != Ruler::Off && body.h > m.ruler_h * 2.0;
+    let lane_h = (if takes_x { body.h - m.ruler_h } else { body.h }) / lanes.max(1) as f32;
+    let (lo, hi) = match p.view {
+        PlotView::Signal => value_range(p),
+        PlotView::Spectrum => (p.db_floor, p.db_ceil.max(p.db_floor + 1.0)),
+    };
+    let want_w = ruler::value_strip_w(lo as f64, hi as f64, lane_h, m);
+    let strip_x = (p.ruler_y && body.w > want_w * 2.0).then(|| {
+        let x = body.x;
+        body.x += want_w;
+        body.w -= want_w;
+        x
+    });
+    let x_strip = takes_x.then(|| {
+        body.h -= m.ruler_h;
+        Rect::new(body.x, body.y + body.h, body.w, m.ruler_h)
+    });
     Geom {
         body,
         strip_x,
@@ -526,6 +537,40 @@ mod tests {
     use super::*;
     use crate::host::paint::Mesh;
     use crate::host::theme::Theme;
+
+    /// An auto-fitted plot over a small range labels `-0.0625` where one over
+    /// `[-1, 1]` labels `-1.0`, so its y strip asks for more room — and asks
+    /// for exactly what its own ticks need.
+    #[test]
+    fn an_auto_fitted_plot_widens_its_value_strip() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 400.0, 300.0);
+        let wide: Vec<f32> = vec![-1.0, 1.0, 0.0, -0.5];
+        let small: Vec<f32> = wide.iter().map(|v| v * 0.0625).collect();
+
+        let g_wide = geometry(rect, &params(&wide, 1), &m);
+        let mut bare = params(&wide, 1);
+        bare.ruler_y = false;
+        let g_bare = geometry(rect, &bare, &m);
+        assert_eq!(
+            g_wide.body.x - g_bare.body.x,
+            m.ruler_w,
+            "an ordinary range reserves the role and nothing more"
+        );
+
+        let g_small = geometry(rect, &params(&small, 1), &m);
+        assert!(
+            g_small.body.x > g_wide.body.x,
+            "the strip stayed at the role for labels that do not fit"
+        );
+        let (lo, hi) = value_range(&params(&small, 1));
+        let ticks = ruler::value_ticks(lo as f64, hi as f64, g_small.body.h as f64, &m);
+        assert_eq!(
+            g_small.body.x - g_bare.body.x,
+            ruler::ticks_width(&ticks, &m),
+            "and by exactly what its widest label needs"
+        );
+    }
 
     fn params<'a>(samples: &'a [f32], channels: usize) -> PlotParams<'a> {
         PlotParams {

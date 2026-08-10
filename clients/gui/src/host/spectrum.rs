@@ -159,16 +159,27 @@ pub(crate) fn regions(
     label: bool,
     ruler: bool,
     ruler_y: bool,
+    db_window: (f32, f32),
     m: &super::metrics::Metrics,
 ) -> SpectrumRegions {
     let mut body = body_rect(rect, label, m);
-    let strip_y_x = (ruler_y && body.w > m.ruler_w * 2.0).then(|| {
+    // The x strip takes height and the y strip takes width, so the two are
+    // independent - but the height comes first, since it is what decides how
+    // finely the dB axis steps and therefore how wide its labels are.
+    let takes_x = ruler && body.h > m.ruler_h * 2.0;
+    let lane_h = if takes_x { body.h - m.ruler_h } else { body.h };
+    // The pair as the ticks are drawn from it, not as the *trace* reads it
+    // (which floors the span at a decibel): a strip has to hold the labels the
+    // ruler will actually put in it.
+    let (db_floor, db_ceil) = db_window;
+    let want_w = ruler::value_strip_w(db_floor as f64, db_ceil as f64, lane_h, m);
+    let strip_y_x = (ruler_y && body.w > want_w * 2.0).then(|| {
         let x = body.x;
-        body.x += m.ruler_w;
-        body.w -= m.ruler_w;
+        body.x += want_w;
+        body.w -= want_w;
         x
     });
-    let strip_x = (ruler && body.h > m.ruler_h * 2.0).then(|| {
+    let strip_x = takes_x.then(|| {
         body.h -= m.ruler_h;
         Rect::new(body.x, body.y + body.h, body.w, m.ruler_h)
     });
@@ -207,7 +218,14 @@ pub(crate) fn draw_spectrum(
         body,
         strip_y_x: strip_x,
         strip_x: x_strip,
-    } = regions(rect, p.label.is_some(), p.ruler, p.ruler_y, m);
+    } = regions(
+        rect,
+        p.label.is_some(),
+        p.ruler,
+        p.ruler_y,
+        (p.db_floor, p.db_ceil),
+        m,
+    );
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
@@ -335,6 +353,38 @@ pub(crate) fn polyline(
 
 #[cfg(test)]
 mod tests {
+
+    /// The dB strip is as wide as its own labels: the default `[-90, 0]`
+    /// window labels whole decibels the role already holds, so the body starts
+    /// exactly where it always did; a window zoomed onto a fraction of a
+    /// decibel formats decimals and the strip asks for the room to draw them.
+    #[test]
+    fn the_db_strip_follows_its_window() {
+        let m = super::super::metrics::Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 400.0, 300.0);
+        let plain = regions(rect, false, true, true, (-90.0, 0.0), &m);
+        let bare = regions(rect, false, true, false, (-90.0, 0.0), &m);
+        assert_eq!(
+            plain.body.x - bare.body.x,
+            m.ruler_w,
+            "an ordinary dB axis reserves the role and nothing more"
+        );
+
+        let zoomed = regions(rect, false, true, true, (-0.0625, 0.0625), &m);
+        assert!(
+            zoomed.body.x > plain.body.x,
+            "the strip stayed at the role for labels that do not fit"
+        );
+        let ticks = super::super::ruler::value_ticks(-0.0625, 0.0625, zoomed.body.h as f64, &m);
+        assert_eq!(
+            zoomed.body.x - bare.body.x,
+            super::super::ruler::ticks_width(&ticks, &m),
+            "and by exactly what its widest label needs"
+        );
+        // The x strip below is unaffected in height and follows the new body.
+        assert_eq!(zoomed.strip_x.unwrap().h, m.ruler_h);
+        assert_eq!(zoomed.strip_x.unwrap().x, zoomed.body.x);
+    }
     use super::*;
 
     /// The bin whose smoothed magnitude is largest — where a pure tone peaks.

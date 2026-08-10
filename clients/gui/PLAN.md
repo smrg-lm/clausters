@@ -1225,7 +1225,7 @@ changes, both are one rule away from right, and both are the kind of thing no
 test was ever going to report — a label that runs out of room, and a gesture
 that lands somewhere the reader did not point.
 
-- ⬜ **E20 — A ruler strip is as wide as its own labels**: the vertical strip's
+- ✅ **E20 — A ruler strip is as wide as its own labels** *(done 2026-08-10)*: the vertical strip's
   width is a fixed size role — `metrics.rs`'s `ruler_w`, `grid(5.0 *
   advance(caption_scale))`, five caption characters, sized for `-32768`, `20K`
   and `-INF`. But a label's width is a property of the **data**: a value axis
@@ -1251,6 +1251,35 @@ that lands somewhere the reader did not point.
   label every tick in full, no clamping; a waveform's `-1.0 … 1.0` axis and a
   spectrogram's hertz axis are pixel-identical to today; two linked views with
   different label widths still share one gutter, the wider one's.
+
+  **What shipped, and the one thing the entry underestimated.** `ruler` gained
+  the measure (`ticks_width`, and the two floored forms `value_strip_w` /
+  `amp_strip_w`), and it is asked in the two places a vertical strip is
+  reserved. In the **local** ones — a `plot`'s, a `meter`'s, a `spectrum`'s —
+  the body is right there, so the reservation just had to be reordered: the x
+  strip takes height and the y strip takes width, so the *height* is settled
+  first, because it is what decides how finely the axis steps and therefore how
+  wide its labels are.
+
+  The **group gutter** is where the entry was optimistic. `own_gutter` answers
+  from the kind alone, and it has to: that is what lets the layout place a
+  lane's clips before a single rectangle exists. But a label's width depends on
+  the member's *height*, which is one pass too late — so `layout_on` measures
+  the placed members and lays out **again**, and only when the measure asks for
+  more than the roles reserved, which an ordinary window never does. The
+  circularity is only apparent: the gutter moves a body's x and never its
+  height, so the second pass reads a height the first one already settled.
+
+  Two things the measure deliberately does not do. A **hertz** axis stays on the
+  role — its labels are short and bounded (`20K`, `1.5k`, `440`) and the
+  frequency they run to belongs to the analysis, not to the tree. And a member
+  is measured as **one lane**: a stacked view's lanes are shorter and step more
+  coarsely, so this asks for at most what a multichannel member needs and never
+  for less. Green on 533 tests (the strip measure and its floor, a zoomed
+  amplitude gutter, linked members sharing the wider one, the hertz axis
+  unchanged, and the local dB and auto-fitted-plot strips each growing by
+  exactly what their widest label needs), clippy, `check-wasm.sh` and the doc
+  build; `docs/architecture.md` carries the second pass.
 
 - ⬜ **E21 — The wheel's fall-through is for pixels with nothing on them**:
   when nothing under the pointer claims the wheel and the window has exactly one

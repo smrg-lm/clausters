@@ -1007,6 +1007,57 @@ pub(crate) fn draw_ticks_h(d: &mut Draw, strip: Rect, ticks: &[Tick]) {
 /// labeled), labels right-aligned beside them and kept inside the strip
 /// starting at `strip_x`. `frac` 0 is the lane's bottom. The one drawing of
 /// the y-ruler strip, whatever the unit (amplitude, frequency, plain value).
+/// The clear space `draw_ticks_v` leaves between a label's right edge and the
+/// body it labels — so the width a strip must reserve is its widest label plus
+/// this.
+const LABEL_GAP: f32 = 10.0;
+
+/// **The width a value strip has to be to draw `ticks` in full**: its widest
+/// label plus [`LABEL_GAP`], or `0` when nothing is labelled.
+///
+/// This is what a fixed size role could not express. A label's width is a
+/// property of the *data*: an axis over `[-1, 1]` formats `-1.0` and asks for
+/// no more room than the role always gave it, while one over `[-0.1, 0.1]`
+/// formats `-0.0625` and is clamped against the strip's edge unless it can ask
+/// for the room to draw it. Callers take the role as the **floor**, so an axis
+/// whose labels are narrow looks exactly as it always did.
+pub(crate) fn ticks_width(ticks: &[Tick], metrics: &Metrics) -> f32 {
+    let scale = metrics.caption_scale;
+    let widest = ticks
+        .iter()
+        .filter_map(|t| t.label.as_deref())
+        .map(|l| font::width(l, scale))
+        .fold(0.0f32, f32::max);
+    if widest > 0.0 {
+        widest + LABEL_GAP
+    } else {
+        0.0
+    }
+}
+
+/// The width a **value** strip over `[lo, hi]` asks for, never below the
+/// `ruler_w` role: [`ticks_width`] of the ticks [`value_ticks`] will draw in a
+/// lane `lane_h` px tall.
+pub(crate) fn value_strip_w(lo: f64, hi: f64, lane_h: f32, metrics: &Metrics) -> f32 {
+    let ticks = value_ticks(lo, hi, lane_h as f64, metrics);
+    metrics.ruler_w.max(ticks_width(&ticks, metrics))
+}
+
+/// The width an **amplitude** strip asks for, never below the `ruler_w` role:
+/// the same question as [`value_strip_w`] for the axis conventions
+/// [`amp_ticks`] draws (decibels, normalized, percent, sample values).
+pub(crate) fn amp_strip_w(
+    unit: RulerY,
+    lane_h: f32,
+    bit_depth: u32,
+    y_start: f64,
+    y_len: f64,
+    metrics: &Metrics,
+) -> f32 {
+    let ticks = amp_ticks(unit, lane_h as f64, bit_depth, y_start, y_len, metrics);
+    metrics.ruler_w.max(ticks_width(&ticks, metrics))
+}
+
 pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, lane: Rect, ticks: &[Tick]) {
     if lane.h <= 4.0 {
         return;
@@ -1022,7 +1073,7 @@ pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, lane: Rect, 
         );
         if let Some(label) = &tick.label {
             let lw = font::width(label, scale);
-            let lx = (body_x - 10.0 - lw).max(strip_x);
+            let lx = (body_x - LABEL_GAP - lw).max(strip_x);
             let ty = (y - 3.0).clamp(lane.y, lane.y + lane.h - font::height(scale));
             font::text(mesh, label, lx, ty, scale, theme.ruler_text);
         }
@@ -1035,6 +1086,53 @@ mod tests {
 
     fn labels(ticks: &[Tick]) -> Vec<&str> {
         ticks.iter().filter_map(|t| t.label.as_deref()).collect()
+    }
+
+    /// A strip asks for what its own ticks need, floored by the role: an axis
+    /// over `[-1, 1]` labels `-1.0` and is exactly as wide as it always was,
+    /// while one over `[-0.1, 0.1]` labels `-0.0625` and asks for the room.
+    #[test]
+    fn a_value_strip_is_as_wide_as_its_own_labels() {
+        let m = Metrics::default();
+        let plain = value_strip_w(-1.0, 1.0, 200.0, &m);
+        assert_eq!(plain, m.ruler_w, "the role holds an ordinary axis");
+
+        let narrow = value_strip_w(-0.1, 0.1, 200.0, &m);
+        assert!(
+            narrow > m.ruler_w,
+            "{narrow} did not grow past {}",
+            m.ruler_w
+        );
+        // ...and it grew by exactly what the widest label needs to be drawn.
+        let ticks = value_ticks(-0.1, 0.1, 200.0, &m);
+        assert_eq!(narrow, ticks_width(&ticks, &m));
+        let widest = ticks
+            .iter()
+            .filter_map(|t| t.label.as_deref())
+            .max_by_key(|l| l.len())
+            .unwrap();
+        assert!(
+            font::width(widest, m.caption_scale) + LABEL_GAP <= narrow,
+            "'{widest}' still does not fit"
+        );
+
+        // Unlabelled ticks ask for nothing, so the role stands.
+        assert_eq!(ticks_width(&[], &m), 0.0);
+        assert_eq!(value_strip_w(0.0, 0.0, 200.0, &m), m.ruler_w);
+    }
+
+    /// The same rule on the amplitude conventions: an unzoomed axis is the
+    /// role, a zoomed one is its labels.
+    #[test]
+    fn an_amp_strip_follows_its_window() {
+        let m = Metrics::default();
+        assert_eq!(
+            amp_strip_w(RulerY::Norm, 200.0, 16, 0.0, 1.0, &m),
+            m.ruler_w
+        );
+        assert!(amp_strip_w(RulerY::Norm, 200.0, 16, 0.4995, 0.001, &m) > m.ruler_w);
+        // An axis that draws nothing keeps the role.
+        assert_eq!(amp_strip_w(RulerY::Off, 200.0, 16, 0.0, 1.0, &m), m.ruler_w);
     }
 
     #[test]

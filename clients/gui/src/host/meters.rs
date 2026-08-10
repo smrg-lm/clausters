@@ -109,13 +109,23 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
     label_strip(d, p.label, rect);
     let m = d.m;
     let mut body = body_rect(rect, p.label.is_some(), m);
-    let strip_x = (p.ruler_y && body.w > m.ruler_w * 2.0).then(|| {
+    let lanes = if p.overlay {
+        1
+    } else {
+        p.window.channels.max(1)
+    };
+    // Height first: the x strip takes it, and it is what decides how finely the
+    // value axis steps and therefore how wide the labels the y strip holds are.
+    let takes_x = p.ruler && body.h > m.ruler_h * 2.0;
+    let lane_h = (if takes_x { body.h - m.ruler_h } else { body.h }) / lanes as f32;
+    let want_w = ruler::value_strip_w(p.min as f64, p.max as f64, lane_h, m);
+    let strip_x = (p.ruler_y && body.w > want_w * 2.0).then(|| {
         let x = body.x;
-        body.x += m.ruler_w;
-        body.w -= m.ruler_w;
+        body.x += want_w;
+        body.w -= want_w;
         x
     });
-    let x_strip = (p.ruler && body.h > m.ruler_h * 2.0).then(|| {
+    let x_strip = takes_x.then(|| {
         body.h -= m.ruler_h;
         Rect::new(body.x, body.y + body.h, body.w, m.ruler_h)
     });
@@ -138,7 +148,6 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
     }
     let channels = p.window.channels.max(1);
     let frames = p.window.frames();
-    let lanes = if p.overlay { 1 } else { channels };
     for ch in 0..channels {
         let lane = lane_rect(body, lanes, if p.overlay { 0 } else { ch });
         if ch > 0 && !p.overlay {
