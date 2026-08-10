@@ -67,6 +67,8 @@ impl PlotItem {
 pub(super) fn signal_item(
     id: i32,
     el: &signal::SignalElement,
+    // The server's rate, placing a frequency axis whose element names none.
+    server_rate: f64,
     rect: Rect,
     indent: f32,
     clip: Option<Rect>,
@@ -155,7 +157,10 @@ pub(super) fn signal_item(
             peak_hold: el.spectral.peak_hold,
             ruler: strip_x,
             ruler_y: strip_y,
-            x_view: el.editor.x_view(),
+            // The window the axis can show, not the one that was asked for:
+            // an item is a drawing instruction, and the floor of the analysis
+            // is part of what there is to draw.
+            x_view: el.freq_window(server_rate),
             label: el.display.label.clone(),
         }),
         // A stored signal nobody navigates: the mesh renderer, whichever of
@@ -181,7 +186,7 @@ pub(super) fn signal_item(
             db_floor: el.spectral.db_floor,
             db_ceil: el.spectral.db_ceil,
             freq_scale: el.spectral.freq_scale,
-            x_view: el.editor.x_view(),
+            x_view: el.freq_window(server_rate),
             label: el.display.label.clone(),
         }),
         // A live source with no live renderer for its presentation (a stored
@@ -580,6 +585,7 @@ pub(super) fn collect_widgets(
                     signal_item(
                         id,
                         el,
+                        inputs.sample_rate,
                         p.rect,
                         p.indent,
                         p.clip,

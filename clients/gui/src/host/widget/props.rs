@@ -234,7 +234,11 @@ fn normalized_window(start: f64, len: f64) -> (f64, f64) {
 /// names; what differs is who owns the answer. On a member of a navigation
 /// group those keys never reach here — the group model takes them, in samples
 /// (see `host::timeline`) — so exactly one of the two readings is ever live for
-/// a given widget.
+/// a given widget. Over a frequency axis this pair is the window that was
+/// **asked** for and not necessarily the one on the screen: the analysis has a
+/// resolution, and
+/// [`SignalElement::freq_window`](crate::host::signal::SignalElement::freq_window)
+/// opens the request wherever it is finer than the bins are where it sits.
 ///
 /// `link` is the widget's **navigation group** (see `host::timeline`): every
 /// timeline view declaring the same link id shares one horizontal view,

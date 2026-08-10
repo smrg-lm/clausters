@@ -333,7 +333,9 @@ pub(super) fn freq_axis(host: &Host, ctx: &GestureCtx, hit: &interact::Hit) -> O
         Some(strip) => Rect::new(r.body.x, r.body.y, r.body.w, r.body.h + strip.h),
         None => r.body,
     };
-    let (start, len) = el.editor.x_view();
+    // What the axis is showing, not what was asked of it: a gesture anchors in
+    // the picture the reader is pointing at.
+    let (start, len) = el.freq_window(ctx.sample_rate);
     Some(FreqAxis {
         body: r.body,
         surface,
@@ -343,12 +345,6 @@ pub(super) fn freq_axis(host: &Host, ctx: &GestureCtx, hit: &interact::Hit) -> O
     })
 }
 
-/// Writes spectrum `id`'s **frequency** window — clamped through the same
-/// normalized axis the vertical one uses, and floored at the resolution of the
-/// analysis behind it ([`freq_min_span`]) — and emits the `"view_x" start len`
-/// event — the horizontal sibling of [`set_y_view`], and deliberately not the
-/// group's `"view"`: this window belongs to the element, so nothing else moves
-/// with it.
 /// How far a view window has to move to count as having moved.
 ///
 /// Not a fudge but the resolution the question is asked at. A normalized window
@@ -371,12 +367,15 @@ fn window_moved(a: (f64, f64), b: (f64, f64)) -> bool {
     (a.0 - b.0).abs() > VIEW_EPSILON || (a.1 - b.1).abs() > VIEW_EPSILON
 }
 
-/// The narrowest window spectrum `id`'s frequency axis may be written to: the
-/// display width of a handful of its own analysis bins.
+/// The narrowest window spectrum `id`'s frequency axis may be **asked** for at
+/// a window starting at `start`: the display width of a handful of its own
+/// analysis bins.
 ///
-/// Every writer of the window goes through it, so the floor is a property of
-/// the axis rather than of the gesture that happened to move it — a wheel, a
-/// drag and a `R` reset all land inside the same bound.
+/// A zoom needs it as a number, because a zoom that overshot the floor and was
+/// clamped afterwards would have anchored a window narrower than the one it
+/// ends up with, sliding the picture sideways at every step. Everyone else
+/// wants the window it produces, which is
+/// [`SignalElement::freq_window`](crate::host::signal::SignalElement::freq_window).
 pub(super) fn freq_min_span(
     host: &Host,
     def_id: i32,
@@ -389,7 +388,7 @@ pub(super) fn freq_min_span(
     };
     // Through the very geometry the curve and the ruler are drawn with, the
     // fallback rate included — the floor has to be the one the reader sees.
-    let (nyquist, f_lo_norm) = super::super::spectrum::axis_geometry(sample_rate);
+    let (nyquist, f_lo_norm) = super::super::spectrum::axis_geometry(el.freq_rate(sample_rate));
     super::super::spectrum::min_display_span(
         el.spectral.fft_size,
         nyquist * 2.0,
@@ -399,6 +398,60 @@ pub(super) fn freq_min_span(
     )
 }
 
+/// The window spectrum `id` is **showing**: its request opened up to what the
+/// analysis resolves there.
+pub(super) fn freq_window(
+    host: &Host,
+    def_id: i32,
+    id: i32,
+    sample_rate: f64,
+) -> Option<(f64, f64)> {
+    host.widget_kind(def_id, id)?
+        .signal()
+        .map(|el| el.freq_window(sample_rate))
+}
+
+/// The length spectrum `id`'s frequency window was last **asked** for, which is
+/// what a pan carries along: a pan moves an axis, and moving one is no reason
+/// to spend the zoom the reader set on it.
+fn asked_x_len(host: &Host, def_id: i32, id: i32) -> f64 {
+    host.widget_kind(def_id, id)
+        .and_then(WidgetKind::editor)
+        .map_or(1.0, |e| e.x_view().1)
+}
+
+/// Pans spectrum `id`'s frequency window to `start`, keeping the length that
+/// was asked for rather than the wider one the floor may be granting where the
+/// window currently sits.
+///
+/// The distinction is the whole of why the two are kept apart: a pan down a log
+/// axis has to open the window (four bins at 100 Hz are a quarter of the axis),
+/// and writing that opening back would make the pan spend the zoom — the way
+/// up would then arrive somewhere nobody asked to be, and one gesture would no
+/// longer undo itself.
+pub(super) fn pan_x_view(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    id: i32,
+    start: f64,
+    sample_rate: f64,
+) {
+    let len = asked_x_len(host, def_id, id);
+    set_x_view(host, out, def_id, id, start, len, sample_rate);
+}
+
+/// Writes spectrum `id`'s **frequency** window — the request, clamped through
+/// the same normalized axis the vertical one uses — and emits the
+/// `"view_x" start len` event carrying the window that request produces. The
+/// horizontal sibling of [`set_y_view`], and deliberately not the group's
+/// `"view"`: this window belongs to the element, so nothing else moves with it.
+///
+/// A request that shows the reader exactly what they are already looking at is
+/// **not written down**. It is the wheel at the end of an axis: it asks for a
+/// window the axis cannot give, so the one already there stands — and with it
+/// the length the reader chose where it *was* available, which the axis will
+/// hand back the moment the pan returns somewhere it fits.
 pub(super) fn set_x_view(
     host: &mut Host,
     out: &mut Vec<GestureEffect>,
@@ -409,20 +462,23 @@ pub(super) fn set_x_view(
     sample_rate: f64,
 ) {
     let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
-    axis.set_min_span(freq_min_span(host, def_id, id, sample_rate, start));
     axis.set_span(start, len);
     let (start, len) = axis.span();
-    let mut moved = true;
+    let shown = match (
+        freq_window(host, def_id, id, sample_rate),
+        host.widget_kind(def_id, id)
+            .and_then(WidgetKind::signal)
+            .map(|el| el.freq_window_of(sample_rate, start, len)),
+    ) {
+        (Some(before), Some(after)) if !window_moved(before, after) => return,
+        (_, after) => after.unwrap_or((start, len)),
+    };
     if let Some(editor) = host
         .window_def_mut(def_id)
         .and_then(|t| t.find_mut(id))
         .and_then(|w| w.kind.editor_mut())
     {
-        moved = window_moved((editor.x_start, editor.x_len), (start, len));
         (editor.x_start, editor.x_len) = (start, len);
-    }
-    if !moved {
-        return;
     }
     emit(
         out,
@@ -430,8 +486,8 @@ pub(super) fn set_x_view(
         id,
         vec![
             OscType::String("view_x".into()),
-            OscType::Float(start as f32),
-            OscType::Float(len as f32),
+            OscType::Float(shown.0 as f32),
+            OscType::Float(shown.1 as f32),
         ],
     );
     out.push(GestureEffect::Redraw(def_id));

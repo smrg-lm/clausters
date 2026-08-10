@@ -254,6 +254,15 @@ reach that differently:
   Nyquist. Raise `fft_size` to zoom further; that is the only thing that buys
   more detail, here as anywhere.
 
+  Because the floor moves with the window, the axis distinguishes the window you
+  **asked** for from the one it can **show** you. `view_start`/`view_len` are the
+  request — set from the script or by a gesture, it makes no difference — and the
+  axis opens it wherever it is finer than the bins there. So panning down towards
+  20 Hz widens the picture on its own, and panning back up hands your window
+  back: the trip does not spend the zoom. A `set(view_len=…)` finer than the
+  analysis is honoured the same way — drawn, and reported as `"view_x"`, opened
+  up — so what you read back is always what is on the screen.
+
   And an axis at a bound is quiet: once the window cannot move, the wheel
   reports no `"view_x"` at all. That holds for every view window — `"view"` and
   `"view_y"` too — so a handler counting events is counting movements, not

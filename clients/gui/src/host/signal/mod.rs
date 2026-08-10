@@ -421,6 +421,61 @@ impl SignalElement {
         self.caps.navigable && !self.navigates_freq()
     }
 
+    /// The rate this element's frequency axis is placed by: its own when it
+    /// names one — a stored analysis carries the rate of what it analyzed —
+    /// else the server's, which is what a live tap is running at.
+    pub fn freq_rate(&self, server_rate: f64) -> f64 {
+        if self.editor.sample_rate > 0.0 {
+            self.editor.sample_rate
+        } else {
+            server_rate
+        }
+    }
+
+    /// **The frequency window this element can actually show**: the window that
+    /// was asked for ([`EditorProps::x_view`]), opened up wherever it is finer
+    /// than the analysis behind it resolves.
+    ///
+    /// The two are deliberately kept apart. What is *stored* is the request —
+    /// the reader's last zoom, or a script's `/gui_set` — and the floor is a
+    /// function of where the window sits: on a log axis a window narrow enough
+    /// at 12 kHz cannot exist at 100 Hz, where four bins already span a quarter
+    /// of the axis. Were the opening written back, a pan down the axis would
+    /// spend the zoom on its way and the pan back up would arrive somewhere the
+    /// reader never asked to be. Kept apart, the axis opens where it must and
+    /// closes again as soon as there is room, so a gesture undoes itself.
+    ///
+    /// This is the window the frame draws, the gesture anchors in, and the
+    /// `"view_x"` event reports — everything but what is written down.
+    pub fn freq_window(&self, server_rate: f64) -> (f64, f64) {
+        let (start, len) = self.editor.x_view();
+        self.freq_window_of(server_rate, start, len)
+    }
+
+    /// [`Self::freq_window`] of a request that has not been written yet: what
+    /// the element would be showing had it been. A gesture asks this before
+    /// writing, so a request that changes nothing on the screen can be left
+    /// unwritten rather than overwriting the one the reader is still using.
+    pub fn freq_window_of(&self, server_rate: f64, start: f64, len: f64) -> (f64, f64) {
+        // Only over a frequency axis: the same pair on a stored waveform is a
+        // window over time, which no FFT bin has anything to say about.
+        if self.presentation != Presentation::Spectrum {
+            return (start, len);
+        }
+        let (nyquist, f_lo_norm) = super::spectrum::axis_geometry(self.freq_rate(server_rate));
+        let floor = super::spectrum::min_display_span(
+            self.spectral.fft_size,
+            nyquist * 2.0,
+            self.spectral.freq_scale,
+            f_lo_norm,
+            start,
+        );
+        // Opened at the left edge, which is where the floor was measured from;
+        // only a window that then runs off the top is pulled back onto the axis.
+        let len = len.max(floor).min(1.0);
+        (start.min(1.0 - len).max(0.0), len)
+    }
+
     /// Recomputes [`Self::analysis`] from the current samples and parameters. A
     /// no-op unless this is a stored-signal spectrum with samples to analyze.
     pub fn refresh_analysis(&mut self) {

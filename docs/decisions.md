@@ -4691,12 +4691,28 @@ what keeps the three from disagreeing.
 
 Two consequences worth stating:
 
-- **The floor belongs to the axis, not to the gesture.** Every writer of the
-  window goes through it — the wheel, the drag, the `R` reset — so no path can
-  put the axis somewhere another path forbids. It also has to be applied to the
-  *zoom* and not only to the write: clamping afterwards keeps the anchor a
-  narrower window computed, so each further step at the bottom would slide the
-  picture sideways instead of standing still.
+- **The floor belongs to the axis, not to the gesture.** No path can put the
+  axis somewhere another path forbids: the wheel, the drag, the `R` reset and a
+  script's `/gui_set` all land inside the same bound. It is applied where the
+  vertical window's own clamping already lives — at the **read**, not in
+  `apply` — which is also why one `/gui_set` carrying both keys cannot depend on
+  their order. The *zoom* is the one place that needs it as a number beforehand:
+  clamping afterwards would keep the anchor a narrower window computed, so each
+  further step at the bottom would slide the picture sideways instead of
+  standing still.
+- **What is stored is the request; what is shown is the request opened up.** The
+  floor is a function of where the window sits — at 12 kHz four bins are a
+  thousandth of a log axis, at 20 Hz they are a quarter of it — so a window that
+  exists up the axis cannot exist down it. Writing the opening back would make a
+  *pan* spend the zoom: the way down would widen the window, and the way back up
+  would arrive somewhere the reader never asked to be, one gesture no longer
+  undoing itself. So the pair on the element is what was last asked for, from a
+  gesture or from the wire alike, and everything that looks at the axis — the
+  frame, the gesture's anchor, the `"view_x"` event — asks it for the window it
+  can actually show. The two agree everywhere but at the bottom of the axis,
+  which is the whole point. A corollary: a request that would show exactly what
+  is already on the screen is not written down, so the wheel at the floor does
+  not quietly discard the zoom the reader is still going to want back.
 - **The gesture needs the sample rate**, which the fronts knew and the gesture
   context did not. It is one field on `GestureCtx`, filled from the same source
   the frame draws with — because a gesture that resolved a different hertz than

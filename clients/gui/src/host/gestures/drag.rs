@@ -295,13 +295,13 @@ impl Gestures {
                 body_w,
             } => {
                 // Dragging right moves the axis right with the cursor: the
-                // frequency grabbed stays under it.
-                let x_len = host
-                    .widget_kind(def_id, id)
-                    .and_then(WidgetKind::editor)
-                    .map_or(1.0, |e| e.x_view().1);
+                // frequency grabbed stays under it. Over the window on the
+                // screen, which is what the hand is on — where the floor has
+                // opened the axis, a pixel is worth more hertz than the
+                // request would say.
+                let x_len = freq_window(host, def_id, id, ctx.sample_rate).map_or(1.0, |w| w.1);
                 let start = x_start - (cx - origin_x) / body_w * x_len;
-                set_x_view(host, &mut out, def_id, id, start, x_len, ctx.sample_rate);
+                pan_x_view(host, &mut out, def_id, id, start, ctx.sample_rate);
             }
             Drag::BpfPoint { id, index, body } => {
                 interact::bpf_edit(host, def_id, id, |p, duration, lo, hi, exp| {
