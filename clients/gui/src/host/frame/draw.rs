@@ -587,20 +587,6 @@ pub(super) fn draw_static_meshes(
     }
     // Envelope editors are pure mesh work: the curve evaluated per pixel
     // column through the shared shape math, discs for the breakpoints.
-    for item in &collected.bpf_rects {
-        mesh.set_clip(item.clip);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        bpf::draw(
-            &mut Draw::new(mesh, m, th),
-            item.rect,
-            &item.points,
-            item.min,
-            item.max,
-            item.duration,
-            item.exp,
-            item.label.as_deref(),
-        );
-    }
     // Multitrack lanes: the window's tracks share one time axis (aligned
     // lanes), spanning the longest clip end; each lane's clips are placed on it.
     // The hit-test (`interact::clip_hit`) reads the same `window_nav`, so a clip
@@ -690,13 +676,32 @@ pub(super) fn draw_static_meshes(
     for item in &collected.clip_bodies {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        track::draw_body_widget(
-            &mut Draw::new(mesh, m, th),
-            &item.kind,
-            item.rect,
-            &item.local,
-            item.dur,
-        );
+        match &item.kind {
+            // An **element** body draws itself, told which coordinate system
+            // it is in: the same element that stands on its own elsewhere,
+            // handed the clip's axis instead of its own. The container decides
+            // that here — once — rather than each element asking where it is.
+            WidgetKind::Custom(el) => el.draw(
+                &mut Draw::new(mesh, &item.metrics, th),
+                &Ctx {
+                    world: &inputs.world,
+                    metrics: &item.metrics,
+                    rect: item.rect,
+                    scale: item.scale,
+                    time: Some(TimeSpace {
+                        view: item.local,
+                        span: item.dur,
+                    }),
+                },
+            ),
+            kind => track::draw_body_widget(
+                &mut Draw::new(mesh, m, th),
+                kind,
+                item.rect,
+                &item.local,
+                item.dur,
+            ),
+        }
     }
     // A clip's **name**, last and into the overlay: a body drawn over it would
     // bury it (the take's trace does, and the time-frequency texture — a GPU

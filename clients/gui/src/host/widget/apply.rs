@@ -115,31 +115,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         // the source, the value axis, the spectral parameters, the chrome —
         // and a key a presentation does not read is simply not one of them.
         WidgetKind::Signal(el) => apply_signal(el, key, v),
-        WidgetKind::Bpf {
-            points,
-            min,
-            max,
-            duration,
-            exp,
-            label,
-        } => match key {
-            // The full breakpoint list replaces in one set — the flat
-            // `[t, v, shape, curve, …]` array, or that array as a JSON
-            // string (the `/gui_set` scalar carrier).
-            "points" => match super::bpf::parse_points(v, *min, *max) {
-                Some(p) if !p.is_empty() => {
-                    *points = p;
-                    true
-                }
-                _ => false,
-            },
-            "min" => set_f(min, v),
-            "max" => set_f(max, v),
-            "duration" => set_f64(duration, v),
-            "exp" => truthy(v).map(|b| *exp = b).is_some(),
-            "label" => set_label(label, v),
-            _ => false,
-        },
         WidgetKind::Score(data) => match key {
             // Replace the engraved page in place — the answer to an edit, and
             // the reason a score does not have to be redefined to change. Only

@@ -15,7 +15,6 @@
 //! lane's clips through the same [`View`], so a clip at offset 8 lines up
 //! across tracks. Placement/geometry is display logic — this stays gui-side.
 
-use super::bpf::{self, BpfPoint};
 use super::font;
 use super::layout::Rect;
 use super::meters::fraction;
@@ -432,108 +431,7 @@ pub fn draw_body_widget(d: &mut Draw, kind: &WidgetKind, cr: Rect, local: &View,
         WidgetKind::PianoRoll {
             notes, min, max, ..
         } => draw_piano_roll(&mut Draw::new(mesh, m, theme), cr, local, notes, *min, *max),
-        WidgetKind::Bpf {
-            points,
-            min,
-            max,
-            exp,
-            ..
-        } => draw_curve(
-            &mut Draw::new(mesh, m, theme),
-            cr,
-            local,
-            points,
-            *min,
-            *max,
-            *exp,
-        ),
         _ => {}
-    }
-}
-
-/// The clip-local time an x pixel falls on inside the clip rect `cr`: the
-/// inverse of the clip's own axis. The curve body's editing runs through this,
-/// so a point lands where the pointer is under any zoom.
-pub fn curve_time_at(cr: Rect, local: &View, cx: f64) -> f64 {
-    local_t(cr, local, cx).max(0.0)
-}
-
-/// The value a y pixel falls on inside the clip rect `cr`, over `[min, max]`
-/// (honouring the exponential display scale) — the vertical inverse.
-pub fn curve_value_at(cr: Rect, min: f32, max: f32, exp: bool, cy: f64) -> f32 {
-    let frac = 1.0 - ((cy - cr.y as f64) / cr.h.max(1.0) as f64).clamp(0.0, 1.0);
-    bpf::fraction_to_value(frac as f32, min, max, exp)
-}
-
-/// The index of the breakpoint under `(cx, cy)` in an automation clip, within a
-/// pixel radius — the clip-placed twin of `bpf::hit_point` (a point is placed on
-/// the *shared* axis here, not on a widget-local one).
-#[allow(clippy::too_many_arguments)] // one display mapping, all scalars
-pub fn curve_hit(
-    points: &[BpfPoint],
-    cr: Rect,
-    local: &View,
-    min: f32,
-    max: f32,
-    exp: bool,
-    cx: f64,
-    cy: f64,
-    m: &Metrics,
-) -> Option<usize> {
-    // The `bpf` view's grab radius, so a point is grabbed the same way wherever
-    // it is drawn.
-    let radius = (m.point_radius + m.hit_slop).max(6.0) as f64;
-    let mut best: Option<(usize, f64)> = None;
-    for (i, p) in points.iter().enumerate() {
-        let x = local_x(cr, local, p.time) as f64;
-        let y = curve_y(cr, p.value, min, max, exp) as f64;
-        let d = ((cx - x).powi(2) + (cy - y).powi(2)).sqrt();
-        if d <= radius && best.is_none_or(|(_, bd)| d < bd) {
-            best = Some((i, d));
-        }
-    }
-    best.map(|(i, _)| i)
-}
-
-/// A curve value's y pixel inside the clip rect.
-fn curve_y(cr: Rect, value: f32, min: f32, max: f32, exp: bool) -> f32 {
-    cr.y + cr.h * (1.0 - bpf::value_fraction(value, min, max, exp))
-}
-
-/// Draws an automation clip's break-point curve inside `cr`: one column per
-/// pixel of the *visible* clip rect, each evaluated through the same envelope
-/// shape math the server's `EnvGen` plays (`bpf::value_at`) — so what is drawn
-/// is what is heard — plus a disc per breakpoint. Times map through the clip's
-/// own axis (`local`), exactly as the piano-roll's notes do, so the whole curve
-/// moves with the clip and stays put under zoom.
-fn draw_curve(
-    d: &mut Draw,
-    cr: Rect,
-    local: &View,
-    points: &[BpfPoint],
-    min: f32,
-    max: f32,
-    exp: bool,
-) {
-    let (mesh, m, theme) = d.parts();
-    if cr.w < 1.0 || cr.h <= 0.0 || points.is_empty() {
-        return;
-    }
-    let columns = cr.w.max(1.0) as usize;
-    let y_at = |v: f32| curve_y(cr, v, min, max, exp);
-    let time_at = |x: f32| local_t(cr, local, x as f64);
-    let mut prev = [cr.x, y_at(bpf::value_at(points, time_at(cr.x)))];
-    for c in 1..=columns {
-        let x = cr.x + c as f32;
-        let p = [x, y_at(bpf::value_at(points, time_at(x)))];
-        mesh.line(prev, p, m.trace_w, theme.trace);
-        prev = p;
-    }
-    for p in points {
-        let x = local_x(cr, local, p.time);
-        if x >= cr.x && x <= cr.x + cr.w {
-            mesh.disc(x, y_at(p.value), m.point_radius, theme.point);
-        }
     }
 }
 
@@ -809,15 +707,6 @@ mod tests {
         assert!(clip_x_range(body, &nav, 160.0, 0.0).is_none());
     }
 
-    fn pt(time: f64, value: f32) -> BpfPoint {
-        BpfPoint {
-            time,
-            value,
-            shape: 1,
-            curve: 0.0,
-        }
-    }
-
     /// The geometry a clip is drawn with, for a lane spanning `nav`: the
     /// rectangle the layout would place it at and the clip's own axis. The
     /// tests below draw bodies exactly as the frame does — through
@@ -921,17 +810,6 @@ mod tests {
         );
     }
 
-    fn curve_body(points: Vec<BpfPoint>, min: f32, max: f32) -> WidgetKind {
-        WidgetKind::Bpf {
-            points,
-            min,
-            max,
-            duration: 0.0,
-            exp: false,
-            label: None,
-        }
-    }
-
     fn roll_body(notes: Vec<Note>, min: f32, max: f32) -> WidgetKind {
         WidgetKind::PianoRoll {
             notes,
@@ -950,63 +828,79 @@ mod tests {
 
     #[test]
     fn each_body_draws_only_what_it_is() {
-        // Three elements, three drawings, no precedence between them: a body
-        // draws its own data and nothing else's.
-        let curve = body_mesh(
-            &curve_body(vec![pt(0.0, 0.0), pt(200.0, 1.0), pt(400.0, 0.0)], 0.0, 1.0),
-            400.0,
-        );
+        // Two built-in bodies, two drawings, no precedence between them: a
+        // body draws its own data and nothing else's. (The curve is an
+        // element and draws itself -- see `elements::curve`.)
         let roll = body_mesh(
             &roll_body(vec![Note::new(0.0, 100.0, 60.0)], 48.0, 72.0),
             400.0,
         );
         let take = body_mesh(&take_body(inline_take(vec![0.0, 0.5, -0.5, 1.0])), 400.0);
-        for (what, mesh) in [("curve", &curve), ("roll", &roll), ("take", &take)] {
+        for (what, mesh) in [("roll", &roll), ("take", &take)] {
             assert!(!mesh.is_empty(), "the {what} body draws");
         }
         // An empty body of any kind draws nothing at all.
-        assert!(body_mesh(&curve_body(Vec::new(), 0.0, 1.0), 400.0).is_empty());
         assert!(body_mesh(&roll_body(Vec::new(), 48.0, 72.0), 400.0).is_empty());
     }
 
+    /// The seam the placement exists for: what the layout hands a clip's body
+    /// — its rectangle and the clip's own window — is what the **element**
+    /// grabs through, so a break-point is hit where it was drawn on a lane.
     #[test]
-    fn a_curve_point_is_hit_where_it_is_drawn_and_maps_back_through_the_axis() {
+    fn a_body_element_grabs_through_the_axis_the_clip_placed_it_on() {
+        use crate::host::elements::curve;
+        use crate::host::widget::element::{Claim, Element, Input, Mods, TimeSpace};
+
         let nav = View::full(400);
         let m = Metrics::default();
         let lane_rect = lane_body(lane(), false, m.header_w, &m);
         // The clip sits at 100 on the axis, so its point at t=100 is at 200.
         let (cr, local) = placed(100.0, 200.0, &nav);
-        let points = vec![pt(0.0, 0.0), pt(100.0, 1.0), pt(200.0, 0.0)];
-
         // The clip's own axis - the whole clip is visible, so it is [0, dur].
         assert!(local.start.abs() < 0.5 && (local.len - 200.0).abs() < 0.5);
+
+        let mut el = curve::body(
+            &serde_json::from_str(
+                r#"{"points":[0.0,0.0,1,0.0,100.0,1.0,1,0.0,200.0,0.0,1,0.0],
+                    "points_min":0.0,"points_max":1.0}"#,
+            )
+            .unwrap(),
+        )
+        .expect("the props carry a curve");
+        let input = Input {
+            metrics: &m,
+            rect: cr,
+            scale: 1.0,
+            mods: Mods::default(),
+            viewport: (lane_rect.w, lane_rect.h),
+            time: Some(TimeSpace {
+                view: local,
+                span: 200.0,
+            }),
+        };
 
         // The peak point (t=100, value=1 -> the top of the clip).
         let px = to_x(200.0, &nav, lane_rect);
         let py = cr.y as f64;
-        assert_eq!(
-            curve_hit(&points, cr, &local, 0.0, 1.0, false, px, py, &m),
-            Some(1)
-        );
-        // Away from any point: nothing (so the clip still moves by its body).
-        assert_eq!(
-            curve_hit(
-                &points,
-                cr,
-                &local,
-                0.0,
-                1.0,
-                false,
-                px + 40.0,
-                py + 20.0,
-                &m
-            ),
-            None
-        );
+        assert!(matches!(el.press((px, py), &input), Claim::Take(_)));
 
-        // The inverse mapping an edit uses: pixels -> clip-relative time, value.
-        assert!((curve_time_at(cr, &local, px) - 100.0).abs() < 1.0);
-        assert!((curve_value_at(cr, 0.0, 1.0, false, py) - 1.0).abs() < 0.05);
+        // Anywhere that is not one of its points, a body **declines**: it
+        // shares its rectangle with the clip, whose own drag is what the rest
+        // of it means, so the press falls back to the container's move.
+        let mut el2 = el.clone();
+        assert!(matches!(
+            el2.press((px + 40.0, py + 20.0), &input),
+            Claim::Decline
+        ));
+
+        // The drag maps pixels back through the same axis: dropping the peak on
+        // the clip's left edge takes it to t=0, where it is grabbed next time.
+        el.drag((cr.x as f64, py), &input);
+        el.release((cr.x as f64, py), &input);
+        assert!(matches!(
+            el.press((cr.x as f64, py), &input),
+            Claim::Take(_)
+        ));
     }
 
     #[test]
@@ -1046,8 +940,19 @@ mod tests {
         // An envelope drawn over the event it shapes is *one* clip: both bodies
         // draw, and they do not share a value axis (notes are pitches, the curve
         // is its parameter's units).
+        use crate::host::elements::curve;
+        use crate::host::widget::element::{Ctx, Element, TimeSpace};
+        use crate::host::world::World;
+
         let roll = roll_body(vec![Note::new(0.0, 200.0, 60.0)], 48.0, 72.0);
-        let curve = curve_body(vec![pt(0.0, 200.0), pt(400.0, 900.0)], 150.0, 1000.0);
+        let curve = curve::body(
+            &serde_json::from_str(
+                r#"{"points":[0.0,200.0,1,0.0,400.0,900.0,1,0.0],
+                    "points_min":150.0,"points_max":1000.0}"#,
+            )
+            .unwrap(),
+        )
+        .expect("the props carry a curve");
         let (cr, local) = placed(0.0, 400.0, &View::full(400));
         let metrics = Metrics::default();
         let theme = Theme::default();
@@ -1068,21 +973,23 @@ mod tests {
             &local,
             400.0,
         );
-        draw_body_widget(
+        let world = World::default();
+        curve.draw(
             &mut Draw::new(&mut both, &metrics, &theme),
-            &curve,
-            cr,
-            &local,
-            400.0,
+            &Ctx {
+                world: &world,
+                metrics: &metrics,
+                rect: cr,
+                scale: 1.0,
+                time: Some(TimeSpace {
+                    view: local,
+                    span: 400.0,
+                }),
+            },
         );
         assert!(
             both.vertex_count() > roll_only.vertex_count(),
             "the curve draws over the notes, it does not replace them"
         );
-
-        // The curve's points sit on the curve's range: its 200 Hz start is near
-        // the bottom of the clip, not off the pitch axis the roll uses.
-        let y = curve_y(cr, 200.0, 150.0, 1000.0, false);
-        assert!(y > cr.y + cr.h * 0.8, "200 Hz over [150, 1000] reads low");
     }
 }

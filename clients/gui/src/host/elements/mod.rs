@@ -26,6 +26,7 @@ use super::widget::element::Constructor;
 mod button;
 mod canvas;
 mod control;
+pub(crate) mod curve;
 mod knob;
 mod label;
 mod menu;
@@ -42,6 +43,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
     Some(match name {
         "button" => button::build,
         "canvas" => canvas::build,
+        "curve" => curve::build,
         "knob" => knob::build,
         "label" => label::build,
         "meter" => meter::build,

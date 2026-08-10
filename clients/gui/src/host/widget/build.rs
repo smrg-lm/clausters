@@ -88,23 +88,6 @@ pub(super) fn build_kind(
         // Every view of a signal, in one arm because there is one element:
         // the props say which point of the product ([`super::signal::point`]).
         "signal" => build_signal(id, props, blobs)?,
-        "curve" => {
-            let min = number(props, "min", 0.0);
-            let max = number(props, "max", 1.0);
-            let (lo, hi) = (min.min(max), min.max(max));
-            WidgetKind::Bpf {
-                points: props
-                    .get("points")
-                    .and_then(|v| super::bpf::parse_points(v, lo, hi))
-                    .filter(|p| !p.is_empty())
-                    .unwrap_or_else(|| super::bpf::default_points(lo)),
-                min: lo,
-                max: hi,
-                duration: number_f64(props, "duration", 0.0),
-                exp: props.get("exp").and_then(truthy).unwrap_or(false),
-                label: label(props),
-            }
-        }
         "score" => WidgetKind::Score(super::score::ScoreData::parse(props)),
         "text" => WidgetKind::Text {
             value: props
@@ -238,8 +221,8 @@ pub(super) fn clip_bodies(
     if let Some(roll) = clip_roll(props) {
         out.push(body_widget(roll));
     }
-    if let Some(curve) = clip_curve(props) {
-        out.push(body_widget(curve));
+    if let Some(curve) = super::super::elements::curve::body(props) {
+        out.push(body_widget(WidgetKind::Custom(Box::new(curve))));
     }
     Ok(out)
 }
@@ -292,14 +275,7 @@ pub(super) fn empty_clip_body(role: BodyRole) -> Option<WidgetKind> {
             label: None,
             editor: EditorProps::body(),
         },
-        WidgetKind::Bpf {
-            points: Vec::new(),
-            min: -1.0,
-            max: 1.0,
-            duration: 0.0,
-            exp: false,
-            label: None,
-        },
+        WidgetKind::Custom(Box::new(super::super::elements::curve::empty_body())),
     ];
     candidates
         .into_iter()
@@ -430,29 +406,6 @@ fn clip_roll(props: &Map<String, Value>) -> Option<WidgetKind> {
         midi_in: false,
         label: None,
         editor: EditorProps::body(),
-    })
-}
-
-/// A clip's **automation curve**: break-points over the clip's span, against
-/// the curve's *own* value range (`points_min`/`points_max`), because a layered
-/// clip's bodies do not share an axis — an envelope's units are not the pitches
-/// under it.
-fn clip_curve(props: &Map<String, Value>) -> Option<WidgetKind> {
-    let min = number(props, "points_min", number(props, "min", -1.0));
-    let max = number(props, "points_max", number(props, "max", 1.0));
-    let points = props
-        .get("points")
-        .and_then(|v| super::bpf::parse_points(v, min, max))
-        .filter(|p| !p.is_empty())?;
-    Some(WidgetKind::Bpf {
-        points,
-        min,
-        max,
-        // A clip's curve is placed on the clip's own axis, so its domain is the
-        // clip's span rather than a `duration` of its own.
-        duration: 0.0,
-        exp: props.get("exp").and_then(truthy).unwrap_or(false),
-        label: None,
     })
 }
 

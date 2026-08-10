@@ -15,8 +15,9 @@
 
 use super::super::interact::{self, Hit};
 use super::super::textedit;
+use super::super::widget::element::TimeSpace;
 use super::super::widget::{Claim, GestureStep, WidgetKind};
-use super::super::{Host, bpf, patch, piano, pianoroll};
+use super::super::{Host, patch, piano, pianoroll};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element};
@@ -55,10 +56,9 @@ impl Gestures {
         // answers for both cases, since only it knows where its area is.
         if let Some((id, rect, scale)) = element::overlay_owner(host, ctx) {
             out.push(GestureEffect::Redraw(ctx.def_id));
-            let claim = element::with(host, ctx, id, rect, scale, |el, input| {
-                el.press((cx, cy), input)
-            })
-            .unwrap_or(Claim::Decline);
+            let at = element::At::widget(id, rect, scale);
+            let claim = element::with(host, ctx, at, |el, input| el.press((cx, cy), input))
+                .unwrap_or(Claim::Decline);
             if let Claim::Take(take) = claim {
                 element::report(host, &mut out, ctx, id, take.events);
             }
@@ -268,6 +268,82 @@ impl Gestures {
         }
     }
 
+    /// Offers a press to the element `at` addresses: it takes it (and holds it
+    /// from here, the drag carrying no geometry of its own because what the
+    /// drag *means* is the element's) or declines and the press walks on.
+    ///
+    /// One function, because a widget and a container's **body** differ only in
+    /// the address ([`element::At`]) — everything the machine does with the
+    /// claim is the same, and a second copy of it is how the two would drift.
+    #[allow(clippy::too_many_arguments)] // an address, the context, a cursor, the grab
+    fn element_at(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        at: element::At,
+        cx: f64,
+        cy: f64,
+        grab: &mut dyn FnMut() -> bool,
+        out: &mut Vec<GestureEffect>,
+    ) -> bool {
+        let claim = element::with(host, ctx, at, |el, input| el.press((cx, cy), input))
+            .unwrap_or(Claim::Decline);
+        let Claim::Take(take) = claim else {
+            return false;
+        };
+        let grab = take.grab && grab();
+        self.drag = Some(Drag::Element { at, grab });
+        element::report(host, out, ctx, at.id, take.events);
+        out.push(GestureEffect::Redraw(ctx.def_id));
+        true
+    }
+
+    /// Offers a press to a clip's **element bodies**, topmost first.
+    ///
+    /// The container resolves the address and the coordinate system — a body
+    /// fills the clip's rectangle and reads the clip's own axis, which is what
+    /// the layout placed it on — and learns nothing else about what it holds.
+    #[allow(clippy::too_many_arguments)] // a hit, the context, a cursor, the grab
+    fn clip_body_press(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        h: &interact::ClipHit,
+        cx: f64,
+        cy: f64,
+        grab: &mut dyn FnMut() -> bool,
+        out: &mut Vec<GestureEffect>,
+    ) -> bool {
+        let Some(widget) = host.window_def(ctx.def_id).and_then(|t| t.find(h.id)) else {
+            return false;
+        };
+        // Collected before the offer, because the press mutates the tree the
+        // roles were read out of.
+        let roles: Vec<_> = widget
+            .children
+            .iter()
+            .rev()
+            .filter(|c| matches!(c.kind, WidgetKind::Custom(_)))
+            .filter_map(|c| c.kind.body_role())
+            .collect();
+        for body in roles {
+            let at = element::At {
+                id: h.id,
+                body: Some(body),
+                rect: h.rect,
+                scale: 1.0,
+                time: Some(TimeSpace {
+                    view: h.local,
+                    span: h.dur,
+                }),
+            };
+            if self.element_at(host, ctx, at, cx, cy, grab, out) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// The press the containers handed down: what the widget under the cursor
     /// does with it — a control's value, a note, a break-point, a clip, a piano
     /// key, a cord. Returns whether it was consumed; declining (empty space in
@@ -308,60 +384,6 @@ impl Gestures {
                     anchor: pos,
                 });
                 out.push(GestureEffect::Redraw(def_id));
-            }
-            WidgetKind::Bpf {
-                ref points,
-                min,
-                max,
-                duration,
-                exp,
-                ref label,
-                ..
-            } => {
-                let body = bpf::body(rect, label.is_some(), host.metrics_for(def_id));
-                let hit_pt = bpf::hit_point(
-                    points,
-                    body,
-                    duration,
-                    min,
-                    max,
-                    exp,
-                    cx,
-                    cy,
-                    host.metrics_for(def_id),
-                );
-                if ctx.ctrl {
-                    // Ctrl+click on a point removes it; elsewhere it adds one
-                    // at the cursor (which then drags until release).
-                    // `None` = nothing changed, `Some(None)` = removed,
-                    // `Some(Some(i))` = added at index `i`.
-                    let edited: Option<Option<usize>> = match hit_pt {
-                        Some(i) => interact::bpf_edit(host, def_id, id, |p, _, _, _, _| {
-                            bpf::remove_point(p, i)
-                        })
-                        .and_then(|removed| removed.then_some(None)),
-                        None => interact::bpf_edit(host, def_id, id, |p, duration, lo, hi, exp| {
-                            bpf::add_point(p, body, duration, lo, hi, exp, cx, cy)
-                        })
-                        .map(Some),
-                    };
-                    if let Some(added) = edited {
-                        if let Some(index) = added {
-                            self.drag = Some(Drag::BpfPoint { id, index, body });
-                        }
-                        emit_points(host, out, def_id, id);
-                        out.push(GestureEffect::Redraw(def_id));
-                    }
-                } else if let Some(index) = hit_pt {
-                    self.drag = Some(Drag::BpfPoint { id, index, body });
-                } else if let Some(segment) = bpf::hit_segment(points, body, duration, cx) {
-                    self.drag = Some(Drag::BpfCurve {
-                        id,
-                        segment,
-                        last_y: cy,
-                        body_h: body.h.max(1.0) as f64,
-                    });
-                }
             }
             WidgetKind::Patch {
                 ref patch,
@@ -444,37 +466,14 @@ impl Gestures {
                 let Some(local) = interact::local_time_of(chain) else {
                     return false;
                 };
-                if let Some(h) = interact::clip_hit(host, def_id, lane, local, cx, cy) {
-                    // An automation clip: a break-point wins over the clip body
-                    // (as it wins over a segment in the `bpf` view), and Ctrl+click
-                    // adds one - or removes the one under the cursor. The same
-                    // gestures, now on a lane.
-                    if h.point.is_some() || (ctx.ctrl && h.has_curve) {
-                        if ctx.ctrl {
-                            if interact::clip_point_edit(
-                                host,
-                                def_id,
-                                h.id,
-                                h.point,
-                                interact::ClipAt {
-                                    rect: h.rect,
-                                    local: h.local,
-                                    cx,
-                                    cy,
-                                },
-                            ) {
-                                emit_points(host, out, def_id, h.id);
-                                out.push(GestureEffect::Redraw(def_id));
-                            }
-                        } else if let Some(index) = h.point {
-                            self.drag = Some(Drag::ClipPoint {
-                                id: h.id,
-                                index,
-                                rect: h.rect,
-                                nav_start: h.local.start,
-                                nav_len: h.local.len,
-                            });
-                        }
+                if let Some(h) = interact::clip_hit(host, def_id, lane, local, cx) {
+                    // The clip's **bodies** get the press first, topmost first:
+                    // an element drawn on the clip's axis (an envelope's
+                    // break-points) is what the pointer is on, and the clip's
+                    // own move or resize is what is under it. A body that
+                    // declines hands it straight back, exactly as an element
+                    // declining anywhere else does.
+                    if self.clip_body_press(host, ctx, &h, cx, cy, grab, out) {
                         return true;
                     }
                     let press_sample = interact::sample_at(
@@ -601,24 +600,15 @@ impl Gestures {
             // is delivered, so the element's borrow of the tree is over by the
             // time the event leaves.
             WidgetKind::Custom(_) => {
-                let claim = element::with(host, ctx, id, rect, scale, |el, input| {
-                    el.press((cx, cy), input)
-                })
-                .unwrap_or(Claim::Decline);
-                let Claim::Take(take) = claim else {
-                    return false;
-                };
-                // Held from here: the drag carries no geometry of its own,
-                // because what the drag *means* is the element's.
-                let grab = take.grab && grab();
-                self.drag = Some(Drag::Element {
-                    id,
-                    rect,
-                    scale,
+                return self.element_at(
+                    host,
+                    ctx,
+                    element::At::widget(id, rect, scale),
+                    cx,
+                    cy,
                     grab,
-                });
-                element::report(host, out, ctx, id, take.events);
-                out.push(GestureEffect::Redraw(def_id));
+                    out,
+                );
             }
             _ => {}
         }

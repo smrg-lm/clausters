@@ -195,20 +195,6 @@ pub(super) fn signal_item(
     }
 }
 
-/// A placed `bpf` widget and the data its draw needs, copied out of the host
-/// tree so the mesh is built after the tree borrow is released.
-pub(super) struct BpfItem {
-    pub(super) rect: Rect,
-    pub(super) clip: Option<Rect>,
-    pub(super) theme: Option<Arc<Theme>>,
-    pub(super) points: Vec<bpf::BpfPoint>,
-    pub(super) min: f32,
-    pub(super) max: f32,
-    pub(super) duration: f64,
-    pub(super) exp: bool,
-    pub(super) label: Option<String>,
-}
-
 /// A placed `track` lane and its clips, copied out of the host tree so the
 /// graphic-unit overlay is drawn after the tree borrow is released. The clips'
 /// shared time axis is computed once over all the window's tracks.
@@ -269,6 +255,10 @@ pub(super) struct ClipBodyItem {
     pub(super) dur: f64,
     pub(super) clip: Option<Rect>,
     pub(super) theme: Option<Arc<Theme>>,
+    /// The placement's size table and zoom — an element body draws through
+    /// them exactly as it does anywhere else.
+    pub(super) metrics: Metrics,
+    pub(super) scale: f32,
     pub(super) kind: WidgetKind,
 }
 
@@ -408,7 +398,6 @@ pub(super) struct Collected {
     pub(super) phase_rects: Vec<PhaseItem>,
     pub(super) spectrum_rects: Vec<SpectrumItem>,
     pub(super) plot_rects: Vec<PlotItem>,
-    pub(super) bpf_rects: Vec<BpfItem>,
     pub(super) track_items: Vec<TrackItem>,
     pub(super) clip_items: Vec<ClipItem>,
     pub(super) clip_bodies: Vec<ClipBodyItem>,
@@ -443,7 +432,6 @@ pub(super) fn collect_widgets(
     // likewise copied out so the host-tree borrow can be released before the
     // node-tree models and the GPU resources are read.
     let mut plot_rects: Vec<PlotItem> = Vec::new();
-    let mut bpf_rects: Vec<BpfItem> = Vec::new();
     let mut track_items: Vec<TrackItem> = Vec::new();
     // A clip and its bodies are placed widgets, so they are collected from
     // their own placements: the clip's box first, its bodies after (the pass
@@ -490,6 +478,8 @@ pub(super) fn collect_widgets(
                 dur,
                 clip: p.clip,
                 theme: p.widget.theme.clone(),
+                metrics: p.metrics,
+                scale: p.scale,
                 kind: p.widget.kind.clone(),
             });
             continue;
@@ -550,24 +540,6 @@ pub(super) fn collect_widgets(
                 pressed,
                 label.as_deref(),
             ),
-            WidgetKind::Bpf {
-                points,
-                min,
-                max,
-                duration,
-                exp,
-                label,
-            } => bpf_rects.push(BpfItem {
-                rect: p.rect,
-                clip: p.clip,
-                theme: p.widget.theme.clone(),
-                points: points.clone(),
-                min: *min,
-                max: *max,
-                duration: *duration,
-                exp: *exp,
-                label: label.clone(),
-            }),
             WidgetKind::TimeRuler { editor, .. } => {
                 ruler_items.push(RulerItem {
                     id: p.widget.id.unwrap_or(-1),
@@ -747,7 +719,6 @@ pub(super) fn collect_widgets(
         phase_rects,
         spectrum_rects,
         plot_rects,
-        bpf_rects,
         track_items,
         clip_items,
         clip_bodies,

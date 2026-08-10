@@ -16,7 +16,6 @@
 
 use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
-use super::super::widget::element::BodyRole;
 use super::super::{Host, controls, pianoroll, track};
 use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis, clip_part};
 use super::{ClipPart, HeaderPart};
@@ -350,25 +349,17 @@ pub(crate) struct ClipHit {
     pub offset: f64,
     pub dur: f64,
     pub body: Rect,
-    /// The clip's own rectangle (the body the curve of an automation clip is
-    /// drawn in, so its point edits map onto the pixels drawn).
+    /// The clip's own rectangle — the box its bodies fill, so a body's edits
+    /// map onto the pixels that were drawn.
     pub rect: Rect,
     pub nav: View,
     /// The clip's **own** axis: the window of its `[0, dur]` span that `rect`
-    /// shows. Every edit inside the clip (a break-point today, its child
-    /// elements next) maps through `(rect, local)`; `body`/`nav` above are only
-    /// what the clip's *placement* on the lane is dragged through.
+    /// shows. Every edit inside the clip maps through `(rect, local)` — it is
+    /// the coordinate system the clip hands its body elements; `body`/`nav`
+    /// above are only what the clip's *placement* on the lane is dragged
+    /// through.
     pub local: View,
     pub part: ClipPart,
-    /// The break-point under the cursor on an automation clip: a point wins over
-    /// the clip's body (as it wins over a segment in the `bpf` view), so the
-    /// curve is edited in place while the clip still moves by its empty space.
-    pub point: Option<usize>,
-    /// Whether the clip carries a curve at all (an automation clip), which is
-    /// what decides a Ctrl+press *adds* a point rather than doing nothing. The
-    /// hit knows it — it looked for a point on that curve — so the press does
-    /// not go back to the tree to ask.
-    pub has_curve: bool,
 }
 
 /// The [`ClipHit`] of the `clip` the pointer landed on: the clip the layout
@@ -380,6 +371,9 @@ pub(crate) struct ClipHit {
 /// was not a placed widget and there was nothing else to ask; now it is one, so
 /// the topmost-wins rule is the layout's (later children are placed later, and
 /// the hit takes the last match) and the rectangle is the one that was drawn.
+/// What is *inside* the clip is not here: a body element is asked for the
+/// press directly, on `(rect, local)`, and answers for its own parts — the
+/// hit-test says which widget, never which part of what it holds.
 /// Native-only, like the other edit-back gestures.
 pub(crate) fn clip_hit(
     host: &Host,
@@ -387,7 +381,6 @@ pub(crate) fn clip_hit(
     lane: (i32, TimeAxis),
     clip: (i32, TimeAxis),
     x: f64,
-    y: f64,
 ) -> Option<ClipHit> {
     let (lane_id, TimeAxis { body, nav, .. }) = lane;
     let (id, local) = clip;
@@ -396,32 +389,6 @@ pub(crate) fn clip_hit(
     let WidgetKind::Clip { offset, dur, .. } = widget.kind else {
         return None;
     };
-    // A break-point is grabbed on the clip's **own** axis, the one it was drawn
-    // on — the lane's window below is only what the clip's placement drags in.
-    let curve = match widget.clip_body(BodyRole::Curve) {
-        Some(WidgetKind::Bpf {
-            points,
-            min,
-            max,
-            exp,
-            ..
-        }) if !points.is_empty() => Some((points, *min, *max, *exp)),
-        _ => None,
-    };
-    let has_curve = curve.is_some();
-    let point = curve.and_then(|(points, min, max, exp)| {
-        track::curve_hit(
-            points,
-            rect,
-            &local.nav,
-            min,
-            max,
-            exp,
-            x,
-            y,
-            host.metrics_for(def_id),
-        )
-    });
     Some(ClipHit {
         id,
         lane: lane_id,
@@ -432,8 +399,6 @@ pub(crate) fn clip_hit(
         nav,
         local: local.nav,
         part: clip_part(rect.x, rect.x + rect.w, x as f32),
-        point,
-        has_curve,
     })
 }
 

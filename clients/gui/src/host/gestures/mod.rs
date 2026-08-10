@@ -129,16 +129,12 @@ impl GestureCtx {
 #[derive(Clone)]
 enum Drag {
     /// An element is holding the press. The machine remembers only what it
-    /// alone can answer for: who has it, where it was placed (the geometry the
-    /// press was measured against cannot change under a drag) and whether the
-    /// front granted a pointer grab, which decides whether motion arrives as a
-    /// position or as a delta.
-    Element {
-        id: i32,
-        rect: Rect,
-        scale: f32,
-        grab: bool,
-    },
+    /// alone can answer for: **where** it is ([`element::At`] — which widget or
+    /// which body of which container, the placement the press was measured
+    /// against, the axis it was placed on) and whether the front granted a
+    /// pointer grab, which decides whether motion arrives as a position or as a
+    /// delta.
+    Element { at: element::At, grab: bool },
     /// Panning a timeline view's (waveform/spectrogram) window from a snapshot
     /// (Shift+drag).
     Pan {
@@ -182,17 +178,6 @@ enum Drag {
         origin_x: f64,
         x_start: f64,
         body_w: f64,
-    },
-    /// Dragging a `bpf` breakpoint: the point follows the cursor within
-    /// `body`, times clamped monotonic between its neighbors.
-    BpfPoint { id: i32, index: usize, body: Rect },
-    /// Dragging a `bpf` segment vertically: its curvature follows the cursor
-    /// (`last_y` re-anchors each step, incremental like a knob drag).
-    BpfCurve {
-        id: i32,
-        segment: usize,
-        last_y: f64,
-        body_h: f64,
     },
     /// Dragging a multitrack `clip`: the body moves its `offset`, an edge
     /// resizes its `dur`. The cursor maps to a timeline sample through the
@@ -248,22 +233,9 @@ enum Drag {
         origin: (f64, f64),
         cursor: (f64, f64),
     },
-    /// A break-point of an **automation clip** being dragged in place: the clip
-    /// and the point, plus the geometry mapping the cursor back onto the shared
-    /// axis and the clip's value range.
     /// Dragging a lane header's level fader: the cursor's x over the fader's
     /// rectangle is the value, so the press itself already sets it.
     LaneLevel { id: i32, rect: Rect },
-    ClipPoint {
-        id: i32,
-        index: usize,
-        /// The clip's own axis: the rectangle it was drawn in and the window of
-        /// its `[0, dur]` span that rectangle shows. The lane's gutter and the
-        /// group's window play no part in a curve edit.
-        rect: Rect,
-        nav_start: f64,
-        nav_len: f64,
-    },
     /// Dragging a piano-roll note: the body moves it in time and pitch, an edge
     /// resizes its duration. The cursor maps to a region-relative time through
     /// the grid and the shared `nav`, and to a pitch through the visible window

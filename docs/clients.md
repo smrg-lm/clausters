@@ -141,9 +141,9 @@ thing that differs between them:
   to the clip's pixel width through the shared peak pyramid, so a minutes-long
   clip costs a screen's worth of columns and never rides the wire as JSON;
 - a **piano-roll** of note events (time and pitch);
-- an **automation curve** — the `bpf` model, placed on the lane and editable in
-  place, evaluated through the same envelope-shape math the server's `EnvGen`
-  plays.
+- an **automation curve** — the same `curve` element that stands on its own,
+  placed on the lane and editable in place, evaluated through the same
+  envelope-shape math the server's `EnvGen` plays.
 
 Everything is editable back: dragging a clip or its edge emits `"clip"`, dragging
 a break-point emits `"points"`, and the script's model — not the widget tree — is

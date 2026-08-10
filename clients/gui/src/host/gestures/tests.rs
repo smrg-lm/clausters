@@ -1246,6 +1246,58 @@ fn clip_offset(host: &Host, id: i32) -> f64 {
     }
 }
 
+/// An **automation clip**: the curve is an element filling the clip's curve
+/// body, and the container routes the press into it. Two things have to hold
+/// at once, and the second is the one the port nearly lost — a body claims its
+/// break-points and *declines* everywhere else, so the clip it shares a
+/// rectangle with still moves.
+#[test]
+fn a_clips_curve_body_takes_its_points_and_leaves_the_clip_its_drag() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":80,"type":"field","label":"automation","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":1000.0,
+                 "points":[0.0,0.0,1,0.0, 500.0,1.0,1,0.0, 1000.0,0.0,1,0.0],
+                 "points_min":0.0,"points_max":1.0}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+
+    // The clip spans the whole axis, so its peak (t=500, value 1) sits at the
+    // middle of the lane body, at its top edge.
+    let lane = host
+        .layout_window(1, 800, 200)
+        .unwrap()
+        .iter()
+        .find(|p| p.widget.id == Some(81))
+        .expect("the clip is placed")
+        .rect;
+    let peak = ((lane.x + lane.w * 0.5) as f64, lane.y as f64 + 1.0);
+
+    // On the point: the body takes the press and the drag reports the whole
+    // list in the envelope's own units, tagged `points`.
+    g.press(&mut host, &ctx, peak.0, peak.1, &mut || false);
+    assert!(g.dragging());
+    let effects = g.drag_to(&mut host, &ctx, peak.0, (lane.y + lane.h) as f64 - 1.0);
+    assert!(has_emit_tag(&effects, 81, "points"), "{effects:?}");
+    g.release(&mut host, &ctx, peak.0, (lane.y + lane.h) as f64 - 1.0);
+    assert_eq!(clip_offset(&host, 81), 0.0, "the clip itself did not move");
+
+    // Off the points: the press falls through to the clip, which moves.
+    let away = (
+        (lane.x + lane.w * 0.25) as f64,
+        (lane.y + lane.h * 0.5) as f64,
+    );
+    g.press(&mut host, &ctx, away.0, away.1, &mut || false);
+    g.drag_to(&mut host, &ctx, away.0 + 40.0, away.1);
+    g.release(&mut host, &ctx, away.0 + 40.0, away.1);
+    assert!(
+        clip_offset(&host, 81) > 0.0,
+        "the clip moved under the curve"
+    );
+}
+
 /// A clip dragged against the lane's edge pulls the view along, so it can
 /// travel further than the visible window. The regression this fixes: the
 /// drag mapped the cursor through the *press-time* window and nothing

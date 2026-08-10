@@ -887,7 +887,10 @@ mod tests {
             bodies[1].widget.kind,
             WidgetKind::PianoRoll { .. }
         ));
-        assert!(matches!(bodies[2].widget.kind, WidgetKind::Bpf { .. }));
+        assert_eq!(
+            bodies[2].widget.kind.body_role(),
+            Some(crate::host::widget::element::BodyRole::Curve)
+        );
 
         for b in &bodies {
             assert_eq!(

@@ -106,16 +106,6 @@ pub(super) fn emit_read(
     deliver_args(host, out, def_id, widget_id, args);
 }
 
-/// Delivers a `bpf`/automation-clip widget's edited breakpoint list.
-pub(super) fn emit_points(
-    host: &mut Host,
-    out: &mut Vec<GestureEffect>,
-    def_id: i32,
-    widget_id: i32,
-) {
-    emit_read(host, out, def_id, widget_id, interact::bpf_event_args);
-}
-
 /// Delivers a lane header control's new value (`"mute"`/`"solo"`/`"level"`).
 pub(super) fn emit_lane(
     host: &mut Host,

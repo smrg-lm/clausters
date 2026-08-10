@@ -54,7 +54,7 @@ use super::guidef::GuiNode;
 // so the `build`/`apply` child modules resolve the same paths (a descendant sees
 // the parent's private `use` items).
 use super::signal::{Presentation, SignalElement};
-use super::{bpf, piano, plot, score, signal, textedit};
+use super::{piano, plot, score, signal, textedit};
 
 mod apply;
 mod axes;
@@ -130,23 +130,6 @@ pub enum WidgetKind {
     /// `scope`, `spectrum`, `spectrogram`, `phasescope`) are six points of that
     /// product, so this one arm answers for all of them.
     Signal(Box<SignalElement>),
-    /// A drawable break-point function (envelope editor): breakpoints
-    /// `(time, value)` plus a per-segment shape/curve **using the server's own
-    /// envelope shape numbers** (evaluated through the shared core, so what it
-    /// draws is what an `EnvGen` plays). Values live in `[min, max]` — any
-    /// automation range: unipolar, bipolar, an on/off lane via the hold shape —
-    /// with an optional exponential display scale (`exp`) for frequency-like
-    /// params; times span `[0, duration]` (0 = fit the last point). Edits flow
-    /// back as a `"points"` event (or the bound forward) carrying the flat
-    /// `t v shape curve …` list — see [`super::bpf`].
-    Bpf {
-        points: Vec<super::bpf::BpfPoint>,
-        min: f32,
-        max: f32,
-        duration: f64,
-        exp: bool,
-        label: Option<String>,
-    },
     /// An engraved music-notation page. The rendering client (verovio, in the
     /// Python `clausters.gui` submodule) engraves a score and sends a semantic
     /// display list — a glyph-outline table keyed by SMuFL codepoint plus placed
@@ -294,7 +277,7 @@ pub enum WidgetKind {
     ///
     /// **A clip is a container, and its bodies are its children.** A take is a
     /// [`Signal`] element, a roll of events a [`PianoRoll`], an automation
-    /// curve a [`Bpf`] — the same elements that stand on their own elsewhere,
+    /// curve a `curve` element — the same elements that stand on their own
     /// composed here rather than reimplemented, and **layered** back to front
     /// rather than selected by precedence: an envelope drawn over the material
     /// it shapes is one clip, not two. Each keeps its own value axis, because a
@@ -308,7 +291,6 @@ pub enum WidgetKind {
     ///
     /// [`Signal`]: WidgetKind::Signal
     /// [`PianoRoll`]: WidgetKind::PianoRoll
-    /// [`Bpf`]: WidgetKind::Bpf
     Clip {
         offset: f64,
         dur: f64,

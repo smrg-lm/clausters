@@ -187,7 +187,8 @@ impl Gestures {
         // wheel over it may be its own — and `None` back means it has none,
         // which is the swallow this test has always been.
         if let WidgetKind::Custom(_) = kind {
-            let reported = element::with(host, ctx, id, rect, found_scale, |el, input| {
+            let at = element::At::widget(id, rect, found_scale);
+            let reported = element::with(host, ctx, at, |el, input| {
                 el.wheel((cx, cy), (0.0, steps), input)
             })
             .flatten();

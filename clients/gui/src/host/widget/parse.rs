@@ -227,12 +227,12 @@ pub(crate) fn int_prop(props: &serde_json::Map<String, Value>, key: &str, defaul
 /// An `f64` property, defaulted when absent or non-numeric — for sample
 /// positions and clock values, where `f32` would lose sample accuracy on
 /// buffers past a few minutes.
-pub(super) fn number_f64(props: &serde_json::Map<String, Value>, key: &str, default: f64) -> f64 {
+pub(crate) fn number_f64(props: &serde_json::Map<String, Value>, key: &str, default: f64) -> f64 {
     props.get(key).and_then(Value::as_f64).unwrap_or(default)
 }
 
 /// Sets an `f64` slot from a numeric JSON value, reporting whether it applied.
-pub(super) fn set_f64(slot: &mut f64, v: &Value) -> bool {
+pub(crate) fn set_f64(slot: &mut f64, v: &Value) -> bool {
     match v.as_f64() {
         Some(x) => {
             *slot = x;

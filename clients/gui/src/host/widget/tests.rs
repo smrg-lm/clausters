@@ -999,8 +999,13 @@ fn spectrogram_freq_scale_prop_parses_all_four() {
     );
 }
 
+/// The `curve` wire name resolves to the **element**, which is what a clip
+/// then recognizes as its automation body. What the element does with the
+/// props is its own suite (`elements::curve`); what the schema owes is that the
+/// name builds one, that it is no timeline view and no scalar control, and that
+/// a `/gui_set` reaches it.
 #[test]
-fn bpf_parses_with_defaults_and_applies() {
+fn curve_builds_an_element_filling_the_curve_body_role() {
     let n = node(
         r#"{"type":"window","children":[
             {"id":1,"type":"curve","points":[0.0,0.0,1,0.0, 0.1,1.0,-4.0,0.0, 1.0,0.0,1,0.0],
@@ -1009,45 +1014,25 @@ fn bpf_parses_with_defaults_and_applies() {
         ]}"#,
     );
     let mut w = Widget::from_node(9, &n, &[]).unwrap();
-    match &w.children[0].kind {
-        WidgetKind::Bpf {
-            points,
-            min,
-            max,
-            exp,
-            label,
-            ..
-        } => {
-            assert_eq!(points.len(), 3);
-            assert_eq!((*min, *max), (0.0, 1.0), "the range defaults unipolar");
-            assert!(!*exp);
-            assert_eq!(label.as_deref(), Some("env"));
-        }
-        other => panic!("expected bpf, got {other:?}"),
+    for child in &w.children {
+        assert!(
+            matches!(child.kind, WidgetKind::Custom(_)),
+            "{:?}",
+            child.kind
+        );
+        assert_eq!(
+            child.kind.body_role(),
+            Some(element::BodyRole::Curve),
+            "so a clip recognizes it as its automation body"
+        );
+        // Neither a timeline view nor a scalar-value control: its edit-back
+        // carries the flat breakpoint list instead.
+        assert!(!child.is_timeline());
+        assert_eq!(child.kind.event_value(), None);
     }
-    // No points: the predictable default flat line, still editable.
-    match &w.children[1].kind {
-        WidgetKind::Bpf {
-            points,
-            min,
-            max,
-            duration,
-            exp,
-            ..
-        } => {
-            assert_eq!(points.len(), 2);
-            assert_eq!((*min, *max), (20.0, 20_000.0));
-            assert_eq!(*duration, 4.0);
-            assert!(*exp);
-        }
-        other => panic!("expected bpf, got {other:?}"),
-    }
-    // A bpf is neither a timeline view nor a scalar-value control: its
-    // edit-back event carries the flat list instead.
-    assert!(!w.children[0].is_timeline());
-    assert_eq!(w.children[0].kind.event_value(), None);
-    // Live `/gui_set`: replace the whole breakpoint list (array or its
-    // JSON-string carrier), retune the range and the domain.
+    // Live `/gui_set`: the whole breakpoint list (array or its JSON-string
+    // carrier) and the domain land on the element; a malformed value is
+    // refused rather than swallowed, and so is a key it does not own.
     let b = w.find_mut(1).unwrap();
     assert!(
         b.kind
@@ -1055,16 +1040,7 @@ fn bpf_parses_with_defaults_and_applies() {
     );
     assert!(b.kind.apply("duration", &Value::from(3.0)));
     assert!(!b.kind.apply("points", &Value::from("nonesuch")));
-    match &b.kind {
-        WidgetKind::Bpf {
-            points, duration, ..
-        } => {
-            assert_eq!(points.len(), 2);
-            assert_eq!(points[1].shape, 3);
-            assert_eq!(*duration, 3.0);
-        }
-        _ => unreachable!(),
-    }
+    assert!(!b.kind.apply("sideways", &Value::from(1)));
 }
 
 #[test]
@@ -1271,10 +1247,7 @@ fn a_clip_routes_a_body_prop_into_the_body_that_owns_it() {
         &serde_json::json!([0.0, 0.0, 1, 0.0, 400.0, 1.0, 1, 0.0])
     ));
     let clip = w.find_mut(10).unwrap();
-    assert!(matches!(
-        clip.clip_body(Curve),
-        Some(WidgetKind::Bpf { points, .. }) if points.len() == 2
-    ));
+    assert!(matches!(clip.clip_body(Curve), Some(WidgetKind::Custom(_))));
     // ...in layering order: the curve draws over the take, not under it.
     assert_eq!(clip.children[0].kind.body_role(), Some(Take));
     assert_eq!(clip.children[1].kind.body_role(), Some(Curve));
@@ -1294,7 +1267,8 @@ fn a_clip_routes_a_body_prop_into_the_body_that_owns_it() {
     assert!(apply_widget(clip, "points_min", &serde_json::json!(150.0)));
     assert!(apply_widget(clip, "min", &serde_json::json!(48.0)));
     let clip = w.find_mut(10).unwrap();
-    assert!(matches!(clip.clip_body(Curve), Some(WidgetKind::Bpf { min, .. }) if *min == 150.0));
+    // (What the curve did with `points_min` is its own suite's — the schema's
+    // half is that the key reached the body that owns it and no other.)
     assert!(
         matches!(clip.clip_body(Notes), Some(WidgetKind::PianoRoll { min, .. }) if *min == 48.0)
     );
@@ -1371,8 +1345,7 @@ fn each_clip_body_keeps_its_own_value_axis() {
     let axis_of = |json: &str, role: BodyRole| {
         let w = Widget::from_node(1, &node(json), &[]).unwrap();
         match w.clip_body(role) {
-            Some(WidgetKind::PianoRoll { min, max, .. })
-            | Some(WidgetKind::Bpf { min, max, .. }) => (*min, *max),
+            Some(WidgetKind::PianoRoll { min, max, .. }) => (*min, *max),
             Some(WidgetKind::Signal(el)) => el.value.resolved(0.0, 0.0),
             other => panic!("no such body: {other:?}"),
         }
@@ -1396,11 +1369,13 @@ fn each_clip_body_keeps_its_own_value_axis() {
     assert_eq!(axis_of(named, Notes), (48.0, 72.0));
     assert_eq!(axis_of(named, Take), (48.0, 72.0));
     // The curve's own range is untouched by either: a layered clip's bodies
-    // do not share an axis.
+    // do not share an axis. (The curve element reads `points_min`/`points_max`
+    // for itself — `elements::curve`; here the roll must be left alone.)
     let layered = r#"{"type":"field","dur":100.0,"notes":[0.0,10.0,60.0],
                       "points":[0.0,0.5,1,0.0],"points_min":0.0,"points_max":1.0}"#;
     assert_eq!(axis_of(layered, Notes), (21.0, 108.0));
-    assert_eq!(axis_of(layered, Curve), (0.0, 1.0));
+    let w = Widget::from_node(1, &node(layered), &[]).unwrap();
+    assert!(matches!(w.clip_body(Curve), Some(WidgetKind::Custom(_))));
 }
 
 #[test]

@@ -15,11 +15,10 @@ use clausters_core::osc::OscType;
 
 use super::super::interact::{self};
 use super::super::widget::{Axis, WidgetKind};
-use super::super::{Host, bpf, piano, pianoroll};
+use super::super::{Host, piano, pianoroll};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element};
-use crate::viewport::View;
 
 impl Gestures {
     /// Advances an edge-held clip drag by `dt` seconds: pans the group's window
@@ -114,14 +113,10 @@ impl Gestures {
             // reason: the cursor is not travelling, so these positions are not
             // the gesture.
             Drag::Element { grab: true, .. } => {}
-            Drag::Element {
-                id, rect, scale, ..
-            } => {
-                let events = element::with(host, ctx, id, rect, scale, |el, input| {
-                    el.drag((cx, cy), input)
-                });
+            Drag::Element { at, .. } => {
+                let events = element::with(host, ctx, at, |el, input| el.drag((cx, cy), input));
                 if let Some(events) = events {
-                    element::report(host, &mut out, ctx, id, events);
+                    element::report(host, &mut out, ctx, at.id, events);
                 }
             }
             Drag::TextSelect {
@@ -293,31 +288,6 @@ impl Gestures {
                 let start = x_start - (cx - origin_x) / body_w * x_len;
                 pan_x_view(host, &mut out, def_id, id, start, ctx.sample_rate);
             }
-            Drag::BpfPoint { id, index, body } => {
-                interact::bpf_edit(host, def_id, id, |p, duration, lo, hi, exp| {
-                    bpf::move_point(p, index, body, duration, lo, hi, exp, cx, cy);
-                });
-                emit_points(host, &mut out, def_id, id);
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            Drag::BpfCurve {
-                id,
-                segment,
-                last_y,
-                body_h,
-            } => {
-                // Incremental like a knob: the upward step bends the curve so
-                // the segment's middle follows the cursor.
-                let dy_frac = (last_y - cy) / body_h;
-                interact::bpf_edit(host, def_id, id, |p, _, _, _, _| {
-                    bpf::drag_curve(p, segment, dy_frac);
-                });
-                if let Some(Drag::BpfCurve { last_y, .. }) = self.drag.as_mut() {
-                    *last_y = cy;
-                }
-                emit_points(host, &mut out, def_id, id);
-                out.push(GestureEffect::Redraw(def_id));
-            }
             Drag::Select {
                 id,
                 body,
@@ -384,30 +354,6 @@ impl Gestures {
                 interact::header_set(host, def_id, id, part, Some((rect, cx)));
                 emit_lane(host, &mut out, def_id, id, part);
                 out.push(GestureEffect::Redraw(def_id));
-            }
-            Drag::ClipPoint {
-                id,
-                index,
-                rect,
-                nav_start,
-                nav_len,
-            } => {
-                // The curve of an automation clip, edited in place: the cursor maps
-                // back through the clip's own axis (time) and its value range,
-                // then the point moves with the `bpf` model's own semantics.
-                let at = interact::ClipAt {
-                    rect,
-                    local: View {
-                        start: nav_start,
-                        len: nav_len,
-                    },
-                    cx,
-                    cy,
-                };
-                if interact::clip_point_move(host, def_id, id, index, at) {
-                    emit_points(host, &mut out, def_id, id);
-                    out.push(GestureEffect::Redraw(def_id));
-                }
             }
             Drag::Note {
                 id,
@@ -540,19 +486,12 @@ impl Gestures {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
         match self.drag.take() {
-            Some(Drag::Element {
-                id,
-                rect,
-                scale,
-                grab,
-            }) => {
+            Some(Drag::Element { at, grab }) => {
                 // What the drag *delivers*, as against what it showed along the
                 // way. The grab is the front's to undo, whatever came back.
-                let events = element::with(host, ctx, id, rect, scale, |el, input| {
-                    el.release((cx, cy), input)
-                });
+                let events = element::with(host, ctx, at, |el, input| el.release((cx, cy), input));
                 if let Some(events) = events {
-                    element::report(host, &mut out, ctx, id, events);
+                    element::report(host, &mut out, ctx, at.id, events);
                 }
                 if grab {
                     out.push(GestureEffect::ReleasePointer(def_id));
@@ -663,18 +602,12 @@ impl Gestures {
         dy: f64,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
-        if let Some(Drag::Element {
-            id,
-            rect,
-            scale,
-            grab: true,
-        }) = self.drag
-        {
-            let events = element::with(host, ctx, id, rect, scale, |el, input| {
+        if let Some(Drag::Element { at, grab: true }) = self.drag {
+            let events = element::with(host, ctx, at, |el, input| {
                 el.drag_relative((0.0, dy), input)
             });
             if let Some(events) = events {
-                element::report(host, &mut out, ctx, id, events);
+                element::report(host, &mut out, ctx, at.id, events);
             }
             return out;
         }

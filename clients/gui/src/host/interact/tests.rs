@@ -204,7 +204,7 @@ fn the_hit_lands_on_the_placed_clip_and_names_the_part_under_the_cursor() {
         // The clip's own axis rides the chain beside the lane's.
         let local = local_time_of(&h.chain).unwrap();
         assert_eq!((local.0, local.1.body), (h.id, h.rect));
-        let hit = clip_hit(&host, 1, lane, local, x, midy).unwrap();
+        let hit = clip_hit(&host, 1, lane, local, x).unwrap();
         (hit.id, hit.part)
     };
 

@@ -11,9 +11,43 @@
 use super::super::Host;
 use super::super::layout::Rect;
 use super::super::widget::WidgetKind;
-use super::super::widget::element::{Element, Events, Input, Mods};
+use super::super::widget::element::{BodyRole, Element, Events, Input, Mods, TimeSpace};
 use super::effects::{deliver, deliver_args};
 use super::{GestureCtx, GestureEffect};
+
+/// **Where an element is**, for the machine: which widget — or which *body* of
+/// which container — plus the placement the press was measured against and the
+/// coordinate system it was placed on.
+///
+/// The body half is what a container's routing costs. A clip's bodies carry no
+/// id (a script addresses the clip), so a body's address is its container's
+/// id plus the [`BodyRole`] it fills: the same routing a `/gui_set` of a body
+/// prop already takes, rather than a second way to name the same child.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct At {
+    /// The widget the press was addressed to — a clip, for a body.
+    pub id: i32,
+    /// Which body of that widget, or `None` for the widget itself.
+    pub body: Option<BodyRole>,
+    pub rect: Rect,
+    pub scale: f32,
+    /// The container's axis, when it placed the element on one.
+    pub time: Option<TimeSpace>,
+}
+
+impl At {
+    /// A widget addressed directly, on no container's axis — every element
+    /// outside a clip.
+    pub(super) fn widget(id: i32, rect: Rect, scale: f32) -> Self {
+        Self {
+            id,
+            body: None,
+            rect,
+            scale,
+            time: None,
+        }
+    }
+}
 
 /// The gesture context for an element placed at `rect`/`scale` in this window.
 ///
@@ -23,38 +57,41 @@ use super::{GestureCtx, GestureEffect};
 pub(super) fn input<'a>(
     metrics: &'a super::super::metrics::Metrics,
     ctx: &GestureCtx,
-    rect: Rect,
-    scale: f32,
+    at: At,
 ) -> Input<'a> {
     Input {
         metrics,
-        rect,
-        scale,
+        rect: at.rect,
+        scale: at.scale,
         mods: Mods {
             shift: ctx.shift,
             ctrl: ctx.ctrl,
             alt: ctx.alt,
         },
         viewport: (ctx.fb_w as f32, ctx.fb_h as f32),
-        time: None,
+        time: at.time,
     }
 }
 
-/// Runs `f` on the element addressed by `id`, with the [`Input`] its placement
-/// implies. `None` when the widget is gone or was never an element — a drag
-/// whose widget was freed under it, which is an ordinary thing to survive.
+/// Runs `f` on the element `at` addresses, with the [`Input`] its placement
+/// implies. `None` when the widget is gone, was never an element, or no longer
+/// holds the body — a drag whose widget was freed under it, which is an
+/// ordinary thing to survive.
 pub(super) fn with<R>(
     host: &mut Host,
     ctx: &GestureCtx,
-    id: i32,
-    rect: Rect,
-    scale: f32,
+    at: At,
     f: impl FnOnce(&mut dyn Element, &Input) -> R,
 ) -> Option<R> {
-    let metrics = host.metrics_for(ctx.def_id).at(scale);
-    let input = input(&metrics, ctx, rect, scale);
-    match host.widget_kind_mut(ctx.def_id, id) {
-        Some(WidgetKind::Custom(el)) => Some(f(&mut **el, &input)),
+    let metrics = host.metrics_for(ctx.def_id).at(at.scale);
+    let input = input(&metrics, ctx, at);
+    let widget = host.window_def_mut(ctx.def_id)?.find_mut(at.id)?;
+    let kind = match at.body {
+        Some(role) => widget.clip_body_mut(role)?,
+        None => &mut widget.kind,
+    };
+    match kind {
+        WidgetKind::Custom(el) => Some(f(&mut **el, &input)),
         _ => None,
     }
 }

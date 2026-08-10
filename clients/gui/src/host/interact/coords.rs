@@ -270,19 +270,3 @@ pub(crate) struct CanvasAt {
     pub cx: f64,
     pub cy: f64,
 }
-
-/// **A cursor on a clip's own axis**: the rectangle the clip was drawn in, the
-/// window of its `[0, dur]` span that rectangle shows ([`Coords::Local`]), and
-/// where the pointer is on it.
-///
-/// A clip's contents are placed, drawn and edited through this alone — the
-/// lane's window below is only what the clip's *placement* is dragged in — so
-/// an edit inside one takes the mapping as one value rather than as four
-/// scalars a caller could pair wrongly.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct ClipAt {
-    pub rect: Rect,
-    pub local: View,
-    pub cx: f64,
-    pub cy: f64,
-}

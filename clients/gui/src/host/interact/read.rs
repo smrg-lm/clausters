@@ -2,9 +2,9 @@
 //! reports it.
 //!
 //! Two kinds of reader, and they are the same question asked at two moments.
-//! The live value a drag starts from ([`fraction_of`], [`value_of`],
-//! [`piano_key_active`]) — and the **edit-back payload** a finished edit sends
-//! ([`clip_event_args`], [`bpf_event_args`], [`notes_event_args`], …), each a
+//! The live value a drag starts from ([`value_of`], [`piano_key_active`]) —
+//! and the **edit-back payload** a finished edit sends
+//! ([`clip_event_args`], [`notes_event_args`], …), each a
 //! flat OSC list beginning with the tag that names what changed, so a script
 //! and a bound forward read the same message.
 //!
@@ -15,7 +15,7 @@ use super::super::layout;
 use super::super::layout::Rect;
 use super::super::widget::element::BodyRole;
 use super::super::widget::{Axis, ScrollView, Widget, WidgetKind};
-use super::super::{Host, bpf, track};
+use super::super::{Host, track};
 use clausters_core::osc::OscType;
 
 /// Whether plane `id` has anywhere to pan: its content is bigger than the
@@ -52,25 +52,6 @@ pub(crate) fn plane_can_pan(
 /// bound forward carries).
 pub(crate) fn value_of(tree: &Widget, id: i32) -> Option<OscType> {
     tree.find(id)?.kind.event_value()
-}
-
-/// A break-point curve's edit-back payload: the `"points"` tag plus the flat
-/// breakpoint list (`t v shape curve` per point) — what a `/gui_event` carries
-/// to the script, and what a bound editor forwards to the audio server. Shared
-/// by the `bpf` view and the **automation clip**, whose curve is the same model
-/// placed on a lane: one payload, so a script (or an `Automation`) consumes an
-/// edit without caring which view drew it.
-pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
-    let widget = tree.find(id)?;
-    // A clip's curve is a `bpf` **body** of it, so both cases are the one
-    // element — the clip is only what the script addresses.
-    let points = match widget.kind_or_body(BodyRole::Curve)? {
-        WidgetKind::Bpf { points, .. } => points,
-        _ => return None,
-    };
-    let mut args = vec![OscType::String("points".into())];
-    args.extend(bpf::points_args(points));
-    Some(args)
 }
 
 /// A lane header control's edit-back payload: the control's own name plus its

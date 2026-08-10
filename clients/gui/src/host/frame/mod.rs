@@ -49,12 +49,11 @@ use super::signal::{self, Presentation};
 use super::spectrum::SpectrumState;
 use super::theme::{Theme, with_alpha};
 use super::timeline::{GroupState, group_key};
-use super::widget::element::{Ctx, SlotFrame};
+use super::widget::element::{Ctx, SlotFrame, TimeSpace};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
 use super::{
-    bpf, controls, font, live, meters, patch, phasescope, piano, pianoroll, plot, score, spectrum,
-    track,
+    controls, font, live, meters, patch, phasescope, piano, pianoroll, plot, score, spectrum, track,
 };
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.

@@ -6,7 +6,7 @@
 //! thing natively and in a page. Two shapes recur: a setter that writes the
 //! value ([`set_fraction`], [`clip_set`], [`piano_set_range`]) and a
 //! `…_edit`/`…_curve` door that hands a closure the element's own model
-//! ([`text_edit`], [`bpf_edit`], [`pianoroll_notes_edit`]) so the fronts never
+//! ([`text_edit`], [`pianoroll_notes_edit`]) so the fronts never
 //! unpack a [`WidgetKind`] variant themselves.
 //!
 //! What a write *reports* is not here: the edit-back payloads live in
@@ -15,10 +15,9 @@
 
 use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
-use super::super::widget::element::BodyRole;
-use super::super::{Host, bpf, pianoroll, track};
+use super::super::{Host, pianoroll, track};
 use super::HeaderPart;
-use super::coords::{CanvasAt, ClipAt};
+use super::coords::CanvasAt;
 
 /// Sets a `scroll`'s view state (clamped against its content in `area`),
 /// returning the clamped `(view_x, view_y, view_zoom)` when something actually
@@ -56,7 +55,7 @@ pub(crate) fn scroll_set_view(
 
 /// Runs `f` over a `text` field's `(value, caret)` in the host tree — the one
 /// door every keystroke and click goes through, so the fronts never unpack the
-/// variant themselves (the sibling of [`set_fraction`]/[`bpf_edit`]). `f`'s
+/// variant themselves. `f`'s
 /// return value is passed through (`None` when the widget is gone or not a
 /// `text` field).
 pub(crate) fn text_edit<R>(
@@ -108,31 +107,6 @@ pub(crate) fn lane_resize(
     }
     widget.place.h = Some(to);
     Some(to)
-}
-
-/// Runs `f` over a `bpf` widget's model in the host tree — the one door every
-/// envelope edit goes through, so the fronts never unpack the variant
-/// themselves. `f` gets the breakpoints and the display mapping (the time
-/// domain, the value range and the `exp` scale); its return value is passed
-/// through (`None` when the widget is not a `bpf`). Both fronts reach these
-/// helpers through the shared gesture machine ([`super::super::gestures`]).
-pub(crate) fn bpf_edit<R>(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    f: impl FnOnce(&mut Vec<bpf::BpfPoint>, f64, f32, f32, bool) -> R,
-) -> Option<R> {
-    match host.widget_kind_mut(def_id, widget_id)? {
-        WidgetKind::Bpf {
-            points,
-            min,
-            max,
-            duration,
-            exp,
-            ..
-        } => Some(f(points, *duration, *min, *max, *exp)),
-        _ => None,
-    }
 }
 
 /// Completes a cord drag on a patch: the grabbed `port` is paired with
@@ -241,75 +215,8 @@ pub(crate) fn graph_marquee(
         .collect();
 }
 
-/// Runs `f` over an automation clip's break-points in the host tree — the one
-/// door a curve edit on a lane goes through (the clip sibling of `bpf_edit`).
-fn clip_curve<R>(
-    host: &mut Host,
-    def_id: i32,
-    clip_id: i32,
-    f: impl FnOnce(&mut Vec<bpf::BpfPoint>, f32, f32, bool) -> R,
-) -> Option<R> {
-    let w = host.window_def_mut(def_id)?.find_mut(clip_id)?;
-    match w.clip_body_mut(BodyRole::Curve)? {
-        WidgetKind::Bpf {
-            points,
-            min,
-            max,
-            exp,
-            ..
-        } => Some(f(points, *min, *max, *exp)),
-        _ => None,
-    }
-}
-
-/// Moves break-point `index` of an automation clip to the cursor `at`: the time
-/// maps back through the **clip's own axis** and the value through the clip's
-/// range, then the point is placed with the `bpf` model's own monotonic clamp.
-/// Returns whether it moved.
-pub(crate) fn clip_point_move(
-    host: &mut Host,
-    def_id: i32,
-    clip_id: i32,
-    index: usize,
-    at: ClipAt,
-) -> bool {
-    let Some(kind) = host.widget_kind(def_id, clip_id) else {
-        return false;
-    };
-    let WidgetKind::Clip { dur, .. } = *kind else {
-        return false;
-    };
-    let t = track::curve_time_at(at.rect, &at.local, at.cx).min(dur);
-    clip_curve(host, def_id, clip_id, |points, min, max, exp| {
-        let value = track::curve_value_at(at.rect, min, max, exp, at.cy);
-        bpf::place_point(points, index, t, value, dur.max(t));
-    })
-    .is_some()
-}
-
-/// Adds a break-point at the cursor `at` on an automation clip (Ctrl+click), or
-/// removes the one under it — the `bpf` view's gesture, on a lane.
-pub(crate) fn clip_point_edit(
-    host: &mut Host,
-    def_id: i32,
-    clip_id: i32,
-    hit: Option<usize>,
-    at: ClipAt,
-) -> bool {
-    let t = track::curve_time_at(at.rect, &at.local, at.cx);
-    clip_curve(host, def_id, clip_id, |points, min, max, exp| match hit {
-        Some(i) => bpf::remove_point(points, i),
-        None => {
-            let value = track::curve_value_at(at.rect, min, max, exp, at.cy);
-            bpf::insert_point(points, t, value);
-            true
-        }
-    })
-    .unwrap_or(false)
-}
-
 /// Runs `f` over a lane's header in the host tree — the one door a header
-/// control's edit goes through, the sibling of [`clip_curve`].
+/// control's edit goes through.
 pub(crate) fn lane_header<R>(
     host: &mut Host,
     def_id: i32,
@@ -365,7 +272,7 @@ pub(crate) fn clip_set(
 }
 
 /// Mutate a piano-roll's note list in the host tree (the drag's write path, the
-/// sibling of [`bpf_edit`]). Returns `None` when the widget is gone or not a
+/// Returns `None` when the widget is gone or not a
 /// piano-roll.
 pub(crate) fn pianoroll_notes_edit<R>(
     host: &mut Host,

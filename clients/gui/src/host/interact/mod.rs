@@ -48,21 +48,20 @@ mod tests;
 pub(crate) use super::track::HeaderPart;
 
 pub(crate) use coords::{
-    CanvasAt, ClipAt, ClipPart, Coords, Frame, Hit, clip_drag_placement, local_time_of, plane_of,
+    CanvasAt, ClipPart, Coords, Frame, Hit, clip_drag_placement, local_time_of, plane_of,
     sample_at, snap, time_of, value_at,
 };
 pub(crate) use edit::{
-    bpf_edit, clear_element_selection, clip_point_edit, clip_point_move, clip_set, graph_cord,
-    graph_marquee, graph_move, graph_select, header_set, lane_resize, piano_press_key,
-    piano_release_key, piano_set_range, pianoroll_notes_edit, pianoroll_osc_edit,
-    pianoroll_state_edit, score_drag, score_drag_end, score_select, scroll_set_view,
-    select_elements_in_rect, text_edit,
+    clear_element_selection, clip_set, graph_cord, graph_marquee, graph_move, graph_select,
+    header_set, lane_resize, piano_press_key, piano_release_key, piano_set_range,
+    pianoroll_notes_edit, pianoroll_osc_edit, pianoroll_state_edit, score_drag, score_drag_end,
+    score_select, scroll_set_view, select_elements_in_rect, text_edit,
 };
 pub(crate) use hit::{
-    PianoRollHit, PrRegion, clip_hit, header_hit, hit, pianoroll_hit, sole_time_axis, text_caret_at,
+    ClipHit, PianoRollHit, PrRegion, clip_hit, header_hit, hit, pianoroll_hit, sole_time_axis,
+    text_caret_at,
 };
 pub(crate) use read::{
-    bpf_event_args, clip_event_args, lane_event_args, notes_event_args, osc_event_args,
-    piano_key_active, piano_note_args, plane_can_pan, score_element_args, score_transpose_args,
-    value_of,
+    clip_event_args, lane_event_args, notes_event_args, osc_event_args, piano_key_active,
+    piano_note_args, plane_can_pan, score_element_args, score_transpose_args, value_of,
 };

@@ -112,7 +112,6 @@ impl WidgetKind {
         match self {
             WidgetKind::Signal(_) => Some(BodyRole::Take),
             WidgetKind::PianoRoll { .. } => Some(BodyRole::Notes),
-            WidgetKind::Bpf { .. } => Some(BodyRole::Curve),
             WidgetKind::Custom(el) => el.body_role(),
             _ => None,
         }
