@@ -294,6 +294,24 @@ impl Mesh {
     pub fn vertex_count(&self) -> u32 {
         (self.verts.len() / FLOATS_PER_VERTEX) as u32
     }
+
+    /// The bounding box of everything accumulated, `None` for an empty mesh —
+    /// how much of the area a drawing actually inked, which is the one thing a
+    /// test can ask about a picture without a window.
+    #[cfg(test)]
+    pub(crate) fn extent(&self) -> Option<Rect> {
+        let mut it = self.verts.chunks_exact(FLOATS_PER_VERTEX);
+        let first = it.next()?;
+        let (mut x0, mut x1) = (first[0], first[0]);
+        let (mut y0, mut y1) = (first[1], first[1]);
+        for v in it {
+            x0 = x0.min(v[0]);
+            x1 = x1.max(v[0]);
+            y0 = y0.min(v[1]);
+            y1 = y1.max(v[1]);
+        }
+        Some(Rect::new(x0, y0, x1 - x0, y1 - y0))
+    }
 }
 
 /// Uploads a [`Mesh`] and draws it.

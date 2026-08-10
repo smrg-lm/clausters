@@ -110,9 +110,11 @@ impl<'a> Trace<'a> {
     }
 }
 
-/// How a trace is inked: the color of its columns and polyline, and the line
-/// width the polyline is stroked with (a column is never drawn wider than the
-/// pixel column it fills).
+/// How a trace is inked: the color of its columns and polyline, and the trace's
+/// **weight** — the width the polyline is stroked with, and the least a column
+/// is ever inked, so a signal keeps one optical weight across the regime
+/// boundary (a column is as wide as the pixel column it fills, which is what
+/// makes the columns tile).
 #[derive(Debug, Clone, Copy)]
 pub struct TraceStyle {
     pub color: Color,
@@ -150,19 +152,28 @@ pub fn draw_channel(
     let cw = rect.w / cols as f32;
     let per_px = (src(rect.x + cw) - src(rect.x)).max(0.0);
     if per_px >= LINE_THRESHOLD {
-        let w = style.width.min(cw.max(1.0));
         for c in 0..cols {
             let x = rect.x + c as f32 * cw;
             let (lo, hi) = trace.column(ch, per_px, src(x), src(x + cw));
             if lo > hi {
                 continue;
             }
-            mesh.line(
-                [x + cw * 0.5, y_at(hi)],
-                [x + cw * 0.5, y_at(lo)],
-                w,
-                style.color,
-            );
+            // A column is a quad — the shape the GPU waveform emits for this
+            // same regime — and it is **never inked thinner than the trace's
+            // weight in either direction**: at least the pixel column it fills,
+            // so columns tile into a solid band on a dense signal, and at least
+            // `style.width`, so a signal keeps one optical weight across the
+            // regime boundary. The centred stroke this replaces was thinner on
+            // both counts: capped to the column width it came out below the
+            // weight the polyline uses a pixel away, and where the signal
+            // barely moves inside one column it was a zero-length line, which
+            // draws *nothing* — so the flat stretch of an envelope disappeared
+            // exactly where it is most readable. Overlapping neighbours is the
+            // price of the second floor, and it is what a stroke does anyway.
+            let (top, bottom) = (y_at(hi), y_at(lo));
+            let (w, h) = (cw.max(style.width), (bottom - top).max(style.width));
+            let (cx, cy) = (x + cw * 0.5, (top + bottom) * 0.5);
+            mesh.rect(Rect::new(cx - w * 0.5, cy - h * 0.5, w, h), style.color);
         }
     } else {
         // Few enough samples per pixel that individual ones matter: step by
@@ -251,6 +262,52 @@ mod tests {
         // Two triangles (six vertices) per column, at most one column per pixel.
         assert!(mesh.vertex_count() <= (rect.w as u32 + 2) * 6);
         assert!(!mesh.is_empty());
+    }
+
+    /// A column the signal barely moves in is still inked, at the trace's own
+    /// weight in **both** directions. It used to be a zero-length line — which
+    /// draws nothing at all — so a slow curve faded out exactly where it
+    /// flattened: the sustain of an envelope, the tail of a decay. And a column
+    /// narrower than the weight read thinner than the polyline the same
+    /// function draws a pixel the other side of the threshold. The regime
+    /// decides how a signal is resolved, never how heavily it is inked.
+    #[test]
+    fn a_flat_column_still_inks_the_traces_own_weight() {
+        // A constant signal, long enough to be well inside the column regime.
+        let samples = vec![0.5f32; 40_000];
+        let trace = Trace::samples(&samples, 1);
+        let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
+        let n = samples.len() as f64;
+        let mut mesh = Mesh::new();
+        draw_channel(
+            &mut mesh,
+            rect,
+            &trace,
+            0,
+            |x| (x - rect.x) as f64 / rect.w as f64 * n,
+            |s| rect.x + (s / n) as f32 * rect.w,
+            |v| rect.y + rect.h * 0.5 * (1.0 - v),
+            TraceStyle {
+                color: [1.0, 1.0, 1.0, 1.0],
+                width: 1.5,
+            },
+        );
+        // Every column drew: six vertices each, none collapsed away.
+        assert_eq!(mesh.vertex_count(), rect.w as u32 * 6);
+        // ...and each one is a quad at least the trace's weight both ways: a
+        // flat signal over a 200 px rect inks a band 1.5 px thick, not a
+        // hairline and not nothing.
+        let inked = mesh.extent().expect("the flat signal drew");
+        assert!(
+            (inked.h - 1.5).abs() < 1e-3,
+            "a flat column inks the trace weight vertically, got {}",
+            inked.h
+        );
+        assert!(
+            inked.w >= rect.w + 0.5 - 1e-3,
+            "columns span the rect, widened to the weight, got {}",
+            inked.w
+        );
     }
 
     /// Zoomed in past the threshold, every sample in range is a polyline
