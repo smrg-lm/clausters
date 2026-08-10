@@ -78,12 +78,6 @@ impl WidgetKind {
         let text = |size: &f32| *size * scale;
         match self {
             // -- Content: the widget knows its own extent --
-            WidgetKind::Button { text_size, .. } => (None, Some(control_box(text(text_size), m))),
-            // A toggle owns its cell: the box and its label sit on one row, so
-            // the box's own side is the floor its height cannot go under.
-            WidgetKind::Toggle { text_size, .. } => {
-                (None, Some(control_box(text(text_size), m).max(m.box_side)))
-            }
             WidgetKind::Menu {
                 label, text_size, ..
             } => (

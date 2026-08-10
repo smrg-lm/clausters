@@ -475,7 +475,6 @@ pub(super) fn collect_widgets(
     let mut ruler_items: Vec<RulerItem> = Vec::new();
     let mut pianoroll_items: Vec<PianoRollItem> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
-    let active_button = inputs.active_button;
     for p in placed {
         // Everything a scrolled widget paints clips to its container's area.
         mesh.set_clip(p.clip);
@@ -774,7 +773,6 @@ pub(super) fn collect_widgets(
                     &mut Draw::new(mesh, m, th),
                     kind,
                     p.rect,
-                    p.widget.id == active_button,
                     p.widget.id.is_some() && p.widget.id == inputs.focused_text,
                     p.scale,
                 );

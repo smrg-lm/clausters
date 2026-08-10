@@ -76,16 +76,6 @@ pub(crate) fn text_edit<R>(
     }
 }
 
-/// Flips a `toggle`'s boolean state in the host tree.
-pub(crate) fn flip_toggle(host: &mut Host, def_id: i32, id: i32) {
-    if let Some(tree) = host.window_def_mut(def_id)
-        && let Some(w) = tree.find_mut(id)
-        && let WidgetKind::Toggle { value, .. } = &mut w.kind
-    {
-        *value = !*value;
-    }
-}
-
 /// The thickness a lane may be dragged between (logical pixels): thin enough to
 /// pack a big arrangement into a window, tall enough that a clip's body is still
 /// a drawing.

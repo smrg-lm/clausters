@@ -298,8 +298,6 @@ pub(crate) struct FrameInputs<'a> {
     pub(crate) metrics: &'a Metrics,
     /// The read-only per-frame facts no widget owns (see [`World`]).
     pub(crate) world: World<'a>,
-    /// The id of a momentary button currently held down (drawn pressed).
-    pub(crate) active_button: Option<i32>,
     /// The id of the focused editable `text` field in this window (drawn with a
     /// caret and its selection), if any.
     pub(crate) focused_text: Option<i32>,
@@ -324,7 +322,6 @@ impl Default for FrameInputs<'_> {
         Self {
             metrics: METRICS.get_or_init(Metrics::default),
             world: World::default(),
-            active_button: None,
             focused_text: None,
             wiring: None,
             menu_popup: None,

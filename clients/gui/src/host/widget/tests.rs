@@ -1171,10 +1171,11 @@ fn parses_controls_and_clamps_value() {
         Some(OscType::Float(2000.0)),
         "value clamps into the range"
     );
-    assert!(matches!(
-        w.children[1].kind,
-        WidgetKind::Toggle { value: true, .. }
-    ));
+    assert_eq!(
+        w.children[1].kind.event_value(),
+        Some(OscType::Int(1)),
+        "the toggle parsed its state"
+    );
     assert!(matches!(
         &w.children[2].kind,
         WidgetKind::Menu { index: 1, .. }

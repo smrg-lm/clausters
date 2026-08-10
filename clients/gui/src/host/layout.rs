@@ -996,13 +996,12 @@ mod tests {
             placed[4].rect,
         );
         assert_eq!(fixed.h, 50.0, "an explicit size is taken as given");
-        let control_h = WidgetKind::Button {
-            label: None,
-            text_size: crate::host::font::DEFAULT_SIZE,
-        }
-        .natural_size(&m, 1.0)
-        .1
-        .unwrap();
+        let control_h = placed[3]
+            .widget
+            .kind
+            .natural_size(&m, 1.0)
+            .1
+            .expect("a button knows its height");
         assert_eq!(natural.h, control_h, "the natural size is taken as wanted");
         // The leftover (400 - 50 - the natural row) splits 2:1 between the
         // weighted button — its weight beats its own natural size, the escape

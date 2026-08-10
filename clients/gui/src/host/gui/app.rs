@@ -423,10 +423,6 @@ impl App {
     /// shared-memory bus, the scope histories, the node trees, the held button).
     fn render(&mut self, def_id: i32) {
         tracing::trace!("rendering window {def_id}");
-        let active_button = self
-            .windows
-            .get(&def_id)
-            .and_then(|w| w.gestures.active_button());
         let server_attached = self.host.server().is_some();
         // Disjoint field borrows: the tree (host), the bus (shm), the node trees,
         // and the window's GPU resources are separate fields of `self`.
@@ -445,7 +441,6 @@ impl App {
                 cursor,
                 timelines: self.host.timelines(),
             },
-            active_button,
             focused_text: self
                 .host
                 .focused_text()

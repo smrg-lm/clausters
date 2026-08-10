@@ -52,8 +52,8 @@ pub(crate) use coords::{
     sample_at, snap, time_of, value_at,
 };
 pub(crate) use edit::{
-    bpf_edit, clear_element_selection, clip_point_edit, clip_point_move, clip_set, flip_toggle,
-    graph_cord, graph_marquee, graph_move, graph_select, header_set, lane_resize, piano_press_key,
+    bpf_edit, clear_element_selection, clip_point_edit, clip_point_move, clip_set, graph_cord,
+    graph_marquee, graph_move, graph_select, header_set, lane_resize, piano_press_key,
     piano_release_key, piano_set_range, pianoroll_notes_edit, pianoroll_osc_edit,
     pianoroll_state_edit, score_drag, score_drag_end, score_select, scroll_set_view,
     select_elements_in_rect, set_menu_index, text_edit,

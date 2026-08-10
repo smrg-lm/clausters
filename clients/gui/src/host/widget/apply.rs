@@ -193,16 +193,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             "editable" => v.as_bool().map(|b| data.editable = b).is_some(),
             _ => false,
         },
-        WidgetKind::Toggle {
-            value,
-            label,
-            text_size,
-        } => match key {
-            "value" => truthy(v).map(|b| *value = b).is_some(),
-            "label" => set_label(label, v),
-            "text_size" => set_size(text_size, v),
-            _ => false,
-        },
         WidgetKind::Text {
             value,
             label,
@@ -405,11 +395,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
                 true
             }
             "label" => set_label(label, v),
-            _ => false,
-        },
-        WidgetKind::Button { label, text_size } => match key {
-            "label" => set_label(label, v),
-            "text_size" => set_size(text_size, v),
             _ => false,
         },
         // A registered element answers for its own props, with the same

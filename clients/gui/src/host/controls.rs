@@ -101,21 +101,13 @@ pub fn drag_fraction_delta(dy: f64, body_h: f32) -> f32 {
     (-(dy as f32)) / span
 }
 
-/// Draws a control. `active` highlights a pressed/dragged control; `scale` is
-/// the placement's accumulated workspace zoom ([`Placed::scale`]), which the
-/// text sizes pick up so a zoomed box keeps its proportions.
+/// Draws a control. `scale` is the placement's accumulated workspace zoom
+/// ([`Placed::scale`]), which the text sizes pick up so a zoomed box keeps its
+/// proportions.
 ///
 /// [`Placed::scale`]: super::layout::Placed::scale
-pub fn draw(d: &mut Draw, kind: &WidgetKind, rect: Rect, active: bool, focused: bool, scale: f32) {
+pub fn draw(d: &mut Draw, kind: &WidgetKind, rect: Rect, focused: bool, scale: f32) {
     match kind {
-        WidgetKind::Button { label, text_size } => {
-            button(d, label.as_deref(), rect, active, *text_size * scale)
-        }
-        WidgetKind::Toggle {
-            value,
-            label,
-            text_size,
-        } => toggle(d, *value, label.as_deref(), rect, *text_size * scale),
         WidgetKind::Text {
             value,
             label,
@@ -316,7 +308,7 @@ fn border(mesh: &mut Mesh, rect: Rect, w: f32, color: Color) {
     mesh.rect(Rect::new(rect.x + rect.w - w, rect.y, w, rect.h), color);
 }
 
-fn button(d: &mut Draw, label: Option<&str>, rect: Rect, active: bool, size: f32) {
+pub fn button(d: &mut Draw, label: Option<&str>, rect: Rect, active: bool, size: f32) {
     let (mesh, _m, theme) = d.parts();
     // A button *is* its box, so it fills its whole cell rather than insetting a
     // `body_rect` the way a slider/field does (whose track must not touch the
@@ -335,7 +327,7 @@ fn button(d: &mut Draw, label: Option<&str>, rect: Rect, active: bool, size: f32
     font::text_centered(mesh, label.unwrap_or("BUTTON"), rect, size, theme.text);
 }
 
-fn toggle(d: &mut Draw, on: bool, label: Option<&str>, rect: Rect, size: f32) {
+pub fn toggle(d: &mut Draw, on: bool, label: Option<&str>, rect: Rect, size: f32) {
     let (mesh, m, theme) = d.parts();
     // Like `button`, the toggle owns its whole cell (its box and label fill it);
     // the layout gap does the separating.

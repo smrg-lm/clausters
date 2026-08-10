@@ -108,10 +108,8 @@ impl Gestures {
             return out;
         };
         match drag {
-            // A held button and a wire-in-flight only act on release; a locked
-            // knob drag is driven by relative motion (`relative_motion`), not by
-            // these cursor positions.
-            Drag::Button { .. } | Drag::Wire { .. } => {}
+            // A wire in flight only acts on release.
+            Drag::Wire { .. } => {}
             // A grabbed element is driven by `relative_motion` for the same
             // reason: the cursor is not travelling, so these positions are not
             // the gesture.
@@ -542,10 +540,6 @@ impl Gestures {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
         match self.drag.take() {
-            Some(Drag::Button { id }) => {
-                deliver(host, &mut out, def_id, id, OscType::Int(0));
-                out.push(GestureEffect::Redraw(def_id));
-            }
             Some(Drag::Element {
                 id,
                 rect,

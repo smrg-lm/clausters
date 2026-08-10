@@ -13,8 +13,6 @@
 //! the arms are short (a hit-test, a snapshot, a `Drag`), and the exhaustive
 //! match is what makes a new widget kind impossible to forget here.
 
-use clausters_core::osc::OscType;
-
 use super::super::interact::{self, Hit};
 use super::super::textedit;
 use super::super::widget::{Claim, GestureStep, WidgetKind};
@@ -325,16 +323,6 @@ impl Gestures {
         let def_id = ctx.def_id;
         let effects_before = out.len();
         match kind {
-            WidgetKind::Button { .. } => {
-                deliver(host, out, def_id, id, OscType::Int(1));
-                self.drag = Some(Drag::Button { id });
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            WidgetKind::Toggle { .. } => {
-                interact::flip_toggle(host, def_id, id);
-                emit_value(host, out, def_id, id);
-                out.push(GestureEffect::Redraw(def_id));
-            }
             WidgetKind::Menu {
                 ref options,
                 ref label,

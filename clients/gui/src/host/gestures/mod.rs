@@ -139,8 +139,6 @@ enum Drag {
         scale: f32,
         grab: bool,
     },
-    /// A momentary button held down (emits 0 on release).
-    Button { id: i32 },
     /// Panning a timeline view's (waveform/spectrogram) window from a snapshot
     /// (Shift+drag).
     Pan {
@@ -442,15 +440,6 @@ impl Gestures {
     /// press outside all end the same way.
     pub fn close_menu(&mut self) -> bool {
         self.menu.take().is_some()
-    }
-
-    /// The held momentary button's widget id, if the active drag is one (the
-    /// renderer draws it pressed).
-    pub fn active_button(&self) -> Option<i32> {
-        match &self.drag {
-            Some(Drag::Button { id }) => Some(*id),
-            _ => None,
-        }
     }
 
     /// The selection marquee in flight, if any: the `patch` widget and the

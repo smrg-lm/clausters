@@ -161,17 +161,6 @@ pub enum WidgetKind {
     /// the timeline views do. Read-only for now: the MEI xml:id travels on each
     /// primitive for a later interactive/edit-back pass.
     Score(super::score::ScoreData),
-    /// A momentary push button.
-    Button {
-        label: Option<String>,
-        text_size: f32,
-    },
-    /// A boolean on/off control.
-    Toggle {
-        value: bool,
-        label: Option<String>,
-        text_size: f32,
-    },
     /// An editable text-entry field. `value` is the string (the event value it
     /// emits on every edit, exactly as a numeric control emits on every drag —
     /// never gated on a key); `multiline` allows embedded newlines (Enter

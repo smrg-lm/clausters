@@ -275,7 +275,6 @@ impl WebApp {
                 // exists.
                 ..Default::default()
             },
-            active_button: slot.gestures.active_button(),
             focused_text,
             // A rewiring drag in flight draws its wire to the pointer.
             wiring: slot

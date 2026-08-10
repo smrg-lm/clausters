@@ -501,7 +501,8 @@ updates this table in the same change** (step 8 of the recipe below).
 | `label` | an **element**: `host/elements/label.rs` over the text drawing in `host/controls.rs` | the GuiDef, `/gui_set` |
 | `text` | `host/controls.rs` over `host/paint.rs` + `host/font.rs`; the editing in `host/textedit.rs` | the GuiDef, `/gui_set`, the keyboard |
 | `slider`, `knob`, `number` | **elements**: `host/elements/{slider,knob,number}.rs` over the drawing in `host/controls.rs`; the two drag families they share are `host/elements/control.rs` (absolute for the groove, incremental for the two dials), and the `Range` payload is `host/widget/props.rs` | the script; value changes emit `/gui_event` (or a binding forwards) |
-| `button`, `toggle`, `menu` | `host/controls.rs` | idem |
+| `button`, `toggle` | **elements**: `host/elements/{button,toggle}.rs` over the drawing in `host/controls.rs`; a button holds its own pressed state, where the frame used to be told it | idem |
+| `menu` | `host/controls.rs` | idem |
 | `meter` | an **element**: `host/elements/meter.rs` over the drawing in `host/meters.rs`; the bus read is the world's, the subscription follows its `Needs` | a bus at `rate` — an audio bus's published block level, or a control bus's value (the shm segment natively, `/bus_stream` snapshots in a page) |
 | `signal` (`view: "trace"`, a `bus`) | the **signal element** it configures (`host/signal/`); signal logic (window sizing, trigger) is `clausters-core::oscil`'s; history in `host/live.rs` | `bus` at `rate`: a control bus's rolling history, or an audio bus's recorded samples (shm / `/bus_tapStream.reply`) |
 | `signal` (`view: "phase"`) | idem, drawn by `host/phasescope.rs` (Lissajous geometry + correlation, pure) | the audio bus pair `bus`/`bus + 1` |

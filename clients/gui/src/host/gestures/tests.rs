@@ -487,12 +487,14 @@ fn a_widget_inside_the_workspace_still_takes_the_press() {
     let ctx = GestureCtx::new(1, 600, 400);
     // Over the toggle: the widget wins, no pan drag starts.
     let effects = g.press(&mut host, &ctx, 50.0, 25.0, &mut || false);
-    assert!(!g.dragging(), "the toggle consumed the press");
     assert!(
         effects
             .iter()
-            .any(|e| matches!(e, GestureEffect::Emit { widget_id: 21, .. }))
+            .any(|e| matches!(e, GestureEffect::Emit { widget_id: 21, .. })),
+        "the toggle consumed the press: {effects:?}"
     );
+    assert_eq!(view_of(&host, 20).view_x, 0.0, "so no pan drag started");
+    g.release(&mut host, &ctx, 50.0, 25.0);
     // Scrolled out of view, the same widget is no longer hit: the press
     // falls through to the plane.
     host.handle_packet(
@@ -547,7 +549,7 @@ fn button_press_emits_one_and_release_emits_zero() {
     let ctx = GestureCtx::new(1, 200, 100);
     // A button is one control line tall (its natural height).
     let effects = g.press(&mut host, &ctx, 100.0, 16.0, &mut || false);
-    assert_eq!(g.active_button(), Some(20));
+    assert!(g.dragging(), "held until it is let go");
     assert!(effects.iter().any(|e| matches!(
         e,
         GestureEffect::Emit { widget_id: 20, args, .. } if args == &[OscType::Int(1)]
@@ -557,7 +559,7 @@ fn button_press_emits_one_and_release_emits_zero() {
         e,
         GestureEffect::Emit { widget_id: 20, args, .. } if args == &[OscType::Int(0)]
     )));
-    assert_eq!(g.active_button(), None);
+    assert!(!g.dragging());
 }
 
 #[test]
@@ -567,16 +569,34 @@ fn toggle_press_flips_the_state() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 200, 100);
     let effects = g.press(&mut host, &ctx, 100.0, 16.0, &mut || false);
-    match &host.window_def(1).unwrap().find(30).unwrap().kind {
-        WidgetKind::Toggle { value, .. } => assert!(*value),
-        other => panic!("not a toggle: {other:?}"),
-    }
+    assert_eq!(
+        host.window_def(1)
+            .unwrap()
+            .find(30)
+            .unwrap()
+            .kind
+            .event_value(),
+        Some(OscType::Int(1)),
+        "the press flipped it"
+    );
     assert!(
         effects
             .iter()
             .any(|e| matches!(e, GestureEffect::Emit { widget_id: 30, .. }))
     );
-    assert!(!g.dragging()); // a toggle is a click, not a drag
+    // A toggle is a click, and the click already happened: the press is still
+    // held (every taken press is, until the button comes up), and moving the
+    // cursor under it does nothing.
+    g.drag_to(&mut host, &ctx, 150.0, 16.0);
+    assert_eq!(
+        host.window_def(1)
+            .unwrap()
+            .find(30)
+            .unwrap()
+            .kind
+            .event_value(),
+        Some(OscType::Int(1))
+    );
 }
 
 #[test]

@@ -110,10 +110,8 @@ impl WidgetKind {
     /// is the event).
     pub fn event_value(&self) -> Option<OscType> {
         match self {
-            WidgetKind::Toggle { value, .. } => Some(OscType::Int(*value as i32)),
             WidgetKind::Menu { index, .. } => Some(OscType::Int(*index as i32)),
             WidgetKind::Text { value, .. } => Some(OscType::String(value.clone())),
-            WidgetKind::Button { .. } => Some(OscType::Int(1)),
             WidgetKind::Custom(el) => el.value(),
             _ => None,
         }

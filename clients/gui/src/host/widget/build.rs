@@ -105,15 +105,6 @@ pub(super) fn build_kind(
             }
         }
         "score" => WidgetKind::Score(super::score::ScoreData::parse(props)),
-        "button" => WidgetKind::Button {
-            label: label(props),
-            text_size: text_size(props),
-        },
-        "toggle" => WidgetKind::Toggle {
-            value: props.get("value").and_then(truthy).unwrap_or(false),
-            label: label(props),
-            text_size: text_size(props),
-        },
         "text" => WidgetKind::Text {
             value: props
                 .get("value")
