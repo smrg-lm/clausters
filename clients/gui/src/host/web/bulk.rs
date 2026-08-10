@@ -195,25 +195,17 @@ impl WebApp {
             slot.pending_bulk.push((widget_id, data));
             return;
         };
-        let mut total = None;
-        match data {
-            Loaded::Peaks(data) => {
-                let slot = frame::waveform_slot(data, &render.gpu);
-                total = Some(slot.view.total_samples());
-                render.waveforms.insert(widget_id, slot);
-            }
-            Loaded::Stfts(stfts) => {
-                if let Some(slot) = frame::spectrogram_slot(stfts, &render.gpu, &render.renderers) {
-                    total = Some(slot.total_samples());
-                    render.spectrograms.insert(widget_id, slot);
-                }
-            }
-            // A slot takes what its kind asked for; the forms an element takes
-            // home never reach here (`on_bulk_ready` routes on the declaration).
-            Loaded::Samples(_) | Loaded::Raw { .. } => log(&format!(
-                "widget {widget_id}: raw samples cannot fill a GPU slot"
-            )),
-        }
+        // The shared placement: a pyramid fills a geometry slot, analyses fill a
+        // texture slot, and the desktop puts a mapped file in exactly the same
+        // place (`frame::place_in_slot`).
+        let total = frame::place_in_slot(
+            data,
+            widget_id,
+            &render.gpu,
+            &render.renderers,
+            &mut render.waveforms,
+            &mut render.spectrograms,
+        );
         // The loaded extent joins the widget's navigation group.
         if let Some(total) = total {
             self.host.set_timeline_total(widget_id, total);

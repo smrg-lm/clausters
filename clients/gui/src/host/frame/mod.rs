@@ -33,6 +33,8 @@ use items::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use tracing::warn;
+
 use crate::gpu::Gpu;
 use crate::spectrogram::{FreqScale, SpectrogramView, Stft, hop_capped};
 use crate::view::{Framing, Renderers, TimelineView};
@@ -48,7 +50,7 @@ use super::ruler::{self, TimeUnit};
 use super::signal::{self, Presentation};
 use super::theme::{Theme, with_alpha};
 use super::timeline::{GroupState, group_key};
-use super::widget::element::{Ctx, SlotFill, SlotFrame, TimeSpace};
+use super::widget::element::{Ctx, Loaded, SlotFill, SlotFrame, TimeSpace};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
 use super::{font, meters, patch, phasescope, piano, pianoroll, plot, spectrum, track};
@@ -103,6 +105,44 @@ pub(crate) fn spectrogram_slot(
         .map(|stft| SpectrogramView::new(&gpu.device, &gpu.queue, &renderers.spectrogram, stft))
         .collect();
     Some(SpectrogramSlot { views })
+}
+
+/// **Puts a resolved bulk resource into the slot its element claimed**, keyed
+/// by the id that addresses that element (a clip's body is its container's).
+/// Returns the loaded extent in samples, for the navigation group that has to
+/// know how long its longest member is.
+///
+/// The routing is the *form* the loader brought back and nothing else — a
+/// pyramid fills a geometry slot, analyses fill a texture slot — which is what
+/// lets one function serve a mapped file, a page's `fetch` and a server
+/// buffer's reply alike. The forms an element takes home never reach here: the
+/// loader forked on `Needs::slot` before calling.
+pub(crate) fn place_in_slot(
+    data: Loaded,
+    id: i32,
+    gpu: &Gpu,
+    renderers: &Renderers,
+    waveforms: &mut HashMap<i32, WaveformSlot>,
+    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
+) -> Option<usize> {
+    match data {
+        Loaded::Peaks(data) => {
+            let slot = waveform_slot(data, gpu);
+            let total = slot.view.total_samples();
+            waveforms.insert(id, slot);
+            Some(total)
+        }
+        Loaded::Stfts(stfts) => {
+            let slot = spectrogram_slot(stfts, gpu, renderers)?;
+            let total = slot.total_samples();
+            spectrograms.insert(id, slot);
+            Some(total)
+        }
+        Loaded::Samples(_) | Loaded::Raw { .. } => {
+            warn!("widget {id}: raw samples cannot fill a GPU slot");
+            None
+        }
+    }
 }
 
 /// Feeds a **retained** time-frequency view the columns its rolling analysis

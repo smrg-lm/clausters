@@ -17,7 +17,7 @@ use crate::host::bulk::MmapLoader;
 use crate::host::canvas::CanvasView;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
 use crate::host::paint::Painter;
-use crate::host::signal::{self, Presentation};
+use crate::host::signal;
 use crate::host::widget::element::{Bulk, Loaded, SlotKind};
 use crate::host::widget::{Widget, WidgetKind};
 use crate::host::{BulkLoader, ClientId, GUI_CLOSED};
@@ -78,8 +78,8 @@ impl App {
         // The window's shared pipelines come first: a spectrogram slot binds its
         // textures against their layout.
         let renderers = Renderers::new(&gpu.device, gpu.config.format);
-        if let Some(tree) = self.host.window_def(id) {
-            collect_timelines(
+        if let Some(tree) = self.host.window_def_mut(id) {
+            load_bulk(
                 tree,
                 None,
                 &gpu,
@@ -88,6 +88,8 @@ impl App {
                 &mut spectrograms,
                 &mut buffer_refs,
             );
+        }
+        if let Some(tree) = self.host.window_def(id) {
             collect_canvases(tree, &gpu, &mut canvases);
         }
         // ...and whatever the elements themselves hold goes up through the same
@@ -146,12 +148,6 @@ impl App {
         // asked of it (an X11-only override under Wayland, say) looks exactly
         // like a host that ignored it.
         info!("gui_def {id}: opened window \"{title}\" at scale {ui_scale}");
-        // Every mesh-drawn element that names a local file maps it now (the bulk
-        // path, no OSC); the data lands in the host tree the renderer reads each
-        // frame — a sequence as samples, a take as its peak pyramid.
-        if let Some(root) = self.host.window_def_mut(id) {
-            load_element_bulk(root);
-        }
         if let Some(ws) = self.windows.get(&id) {
             ws.gpu.window.request_redraw();
         }
@@ -207,36 +203,26 @@ impl App {
     }
 }
 
-/// Visits every signal element in the tree, each with the id that **addresses**
-/// it: its own, or -- for a clip's body, which carries none -- its container's.
+/// **Resolves every declared bulk resource** in one walk, and routes what came
+/// back the way the declaration says: into the element's **GPU slot** when it
+/// claimed one, into the element itself when it did not, and onto the deferred
+/// `buffer_refs` list when the resource is a server buffer the client leg has to
+/// ask for.
 ///
-/// The addressing rule the slot maps are keyed by, which the shared fill walk
-/// ([`frame::fill_slots`]) states for the tree at large; this is the native
-/// loader's own version of it, over the elements whose *resources* it resolves.
-fn visit_elements(
-    widget: &Widget,
-    owner: Option<i32>,
-    f: &mut dyn FnMut(Option<i32>, &signal::SignalElement),
-) {
-    // Not a flat `descendants` walk: an element's *owner* is the nearest id
-    // above it, which only a walk carrying that id down knows.
-    let owner = widget.id.or(owner);
-    if let WidgetKind::Signal(el) = &widget.kind {
-        f(owner, el);
-    }
-    for child in &widget.children {
-        visit_elements(child, owner, f);
-    }
-}
-
-/// Walks the tree building the timeline views (waveform and spectrogram) out
-/// of the resources a **loader** resolves. A `cache`/`path` is mapped **now**
-/// from a local file (the bulk path, no OSC); a server-`buffer` reference with
-/// no data is deferred as a `(widget_id, bufnum)` entry in `buffer_refs` for
-/// the client leg to fetch. Data the element already holds is not this walk's:
-/// the element fills its own slot with it ([`frame::fill_slots`]).
-fn collect_timelines(
-    widget: &Widget,
+/// Nothing here knows what a signal is. Two walks used to: this one matched the
+/// arm and re-derived from a presentation whether an element's file became a
+/// peak pyramid or a set of analyses, while a second one (`load_element_bulk`)
+/// already asked the declaration for everything mesh-drawn. They are one now,
+/// and the fork is `Needs::slot` — the same one the page forks on
+/// (`host::web::bulk`, which this build does not compile), so a resource that
+/// lands in a lane natively
+/// lands in the same place in a browser.
+///
+/// The id a load is keyed by is the **owner's**: a clip's body carries none, so
+/// the walk carries the nearest id above it down, which a flat `descendants`
+/// pass could not.
+fn load_bulk(
+    widget: &mut Widget,
     owner: Option<i32>,
     gpu: &Gpu,
     renderers: &Renderers,
@@ -244,88 +230,35 @@ fn collect_timelines(
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
     buffer_refs: &mut Vec<(i32, i32)>,
 ) {
-    visit_elements(widget, owner, &mut |owner, el| {
-        let (Some(id), Some(data)) = (owner, el.source.data()) else {
-            return;
-        };
-        // A **mesh-drawn** bulk source naming a server buffer and holding
-        // nothing yet: fetch it over the leg, exactly as a heavy view does.
-        // This is a clip's take — it owns no GPU slot, and its id is the
-        // clip's, since a body carries none of its own.
-        if !el.needs_gpu_slot() {
-            if data.bulk
-                && data.is_empty()
-                && let Some(bufnum) = data.buffer
-            {
-                buffer_refs.push((id, bufnum));
-            }
-            return;
-        }
-        // A navigable heavy view needs a slot; so does a **spectral clip
-        // body**, whose picture is a texture and cannot be drawn into the mesh
-        // the way a take's trace is.
-        let (cache, path) = (data.cache.as_deref(), data.path.as_deref());
-        if el.presentation == Presentation::Signal {
-            if cache.is_some() || path.is_some() {
-                // Bulk path: map a local resource (raw samples or a prebuilt
-                // cache) through the BulkLoader seam, then build the GPU slot.
-                if let Some(loaded) =
-                    MmapLoader.waveform(cache, path, data.channels, data.base_bucket)
-                {
-                    waveforms.insert(id, frame::waveform_slot(loaded, gpu));
-                }
-                return;
-            }
-        } else if let Some(cache) = cache {
-            // A prebuilt (single-channel) STFT cache, parsed directly.
-            match MmapLoader
-                .file_bytes(cache)
-                .and_then(|bytes| Stft::from_bytes(&bytes))
-            {
-                Some(stft) => {
-                    if let Some(slot) = frame::spectrogram_slot(vec![stft], gpu, renderers) {
-                        spectrograms.insert(id, slot);
+    let owner = widget.id.or(owner);
+    let needs = widget.kind.needs();
+    if let (Some(id), Some(want)) = (owner, needs.bulk) {
+        match want {
+            // A server buffer names no local file: the leg fetches it, and the
+            // reply lands through the same routing this walk does.
+            Bulk::Buffer(bufnum) => buffer_refs.push((id, bufnum)),
+            want => {
+                if let Some(loaded) = resolve_bulk(&want) {
+                    if needs.slot.is_some() {
+                        frame::place_in_slot(loaded, id, gpu, renderers, waveforms, spectrograms);
+                    } else {
+                        widget.kind.take_bulk(loaded);
                     }
                 }
-                None => warn!(
-                    "spectrogram {id}: cannot parse STFT cache {}",
-                    cache.display()
-                ),
             }
-            return;
-        } else if let Some(path) = path {
-            if let Some(split) = MmapLoader.raw_channels(path, data.channels) {
-                let stfts = frame::stft_lanes(
-                    split,
-                    el.spectral.fft_size,
-                    el.spectral.hop,
-                    el.editor.sample_rate,
-                );
-                let frames: usize = stfts.iter().map(|s| s.n_frames()).sum();
-                if let Some(slot) = frame::spectrogram_slot(stfts, gpu, renderers) {
-                    info!(
-                        "spectrogram {id}: analyzed {} from {} ({} frame(s), no OSC)",
-                        path.display(),
-                        if el.caps.navigable {
-                            "a view"
-                        } else {
-                            "a clip"
-                        },
-                        frames
-                    );
-                    spectrograms.insert(id, slot);
-                }
-            }
-            return;
         }
-        // No local resource named: a server buffer with no inline data is
-        // deferred to the leg. Anything else is data the element already holds,
-        // and it fills its own slot with it (`frame::fill_slots`) — nothing
-        // here has to know what a presentation makes of its samples.
-        if let Some(bufnum) = data.buffer.filter(|_| data.samples.is_empty()) {
-            buffer_refs.push((id, bufnum));
-        }
-    });
+    }
+    for child in &mut widget.children {
+        load_bulk(
+            child,
+            owner,
+            gpu,
+            renderers,
+            waveforms,
+            spectrograms,
+            buffer_refs,
+        );
+    }
 }
 
 /// Builds a [`CanvasView`] (compiling the user shader) for every `canvas` in the
@@ -337,27 +270,6 @@ fn collect_canvases(tree: &Widget, gpu: &Gpu, out: &mut HashMap<i32, CanvasView>
         {
             out.insert(id, CanvasView::new(&gpu.device, gpu.config.format, &source));
         }
-    }
-}
-
-/// Resolves every element's **declared** bulk resource into it, through the
-/// [`BulkLoader`] seam — so a minutes-long take reaches a lane as a peak
-/// pyramid and never as JSON over OSC. Walks children too, which is how a
-/// clip's take is reached.
-///
-/// Nothing here knows what a signal is. An element says which resource it wants
-/// and in which form (`Needs::bulk`), the loader maps that form, and the
-/// element takes the answer home (`Element::bulk`). An element that claimed a
-/// **GPU slot** is skipped: its data is fed to a pipeline, above.
-fn load_element_bulk(widget: &mut Widget) {
-    let needs = widget.kind.needs();
-    if let (Some(want), None) = (needs.bulk, needs.slot)
-        && let Some(loaded) = resolve_bulk(&want)
-    {
-        widget.kind.take_bulk(loaded);
-    }
-    for child in &mut widget.children {
-        load_element_bulk(child);
     }
 }
 
@@ -378,8 +290,34 @@ fn resolve_bulk(want: &Bulk) -> Option<Loaded> {
         Bulk::Samples { path, channels } => MmapLoader
             .plot_samples(path, *channels)
             .map(Loaded::Samples),
-        // The spectral forms belong to a GPU slot, which is fed above; a
-        // mesh-drawn element never asks for them.
-        Bulk::StftCache(_) | Bulk::Stft { .. } | Bulk::Buffer(_) => None,
+        Bulk::StftCache(cache) => match MmapLoader
+            .file_bytes(cache)
+            .and_then(|bytes| Stft::from_bytes(&bytes))
+        {
+            Some(stft) => Some(Loaded::Stfts(vec![stft])),
+            None => {
+                warn!("spectrogram: cannot parse STFT cache {}", cache.display());
+                None
+            }
+        },
+        Bulk::Stft {
+            path,
+            channels,
+            window_size,
+            hop,
+            sample_rate,
+        } => MmapLoader.raw_channels(path, *channels).map(|split| {
+            let stfts = frame::stft_lanes(split, *window_size, *hop, *sample_rate);
+            let frames: usize = stfts.iter().map(|s| s.n_frames()).sum();
+            info!(
+                "spectrogram: analyzed {} ({} frame(s), no OSC)",
+                path.display(),
+                frames
+            );
+            Loaded::Stfts(stfts)
+        }),
+        // A server buffer is the leg's: it names no local resource, and the
+        // walk above never brings one here.
+        Bulk::Buffer(_) => None,
     }
 }

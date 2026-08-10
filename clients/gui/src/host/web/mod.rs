@@ -41,7 +41,6 @@ use crate::gpu::Gpu;
 use crate::peaks::MultiPyramid;
 use crate::spectrogram::Stft;
 use crate::view::Renderers;
-use crate::view::TimelineView;
 use crate::waveform::WaveformData;
 
 use super::fetch::{BufferFetches, FetchStep};
