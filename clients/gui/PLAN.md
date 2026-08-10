@@ -1155,6 +1155,70 @@ with an eye on the drawing was ever going to catch.
   pipelines; the same view fully inside the window draws byte-identically to
   what it draws today.
 
+### What a pass with an eye on the drawing found (E20–E21)
+
+*Added 2026-08-10, from the same session that opened E19.* Closing E17 and the
+trace-weight fix meant opening four examples and watching them, and the pass
+turned up two more things neither change caused. Both are older than both
+changes, both are one rule away from right, and both are the kind of thing no
+test was ever going to report — a label that runs out of room, and a gesture
+that lands somewhere the reader did not point.
+
+- ⬜ **E20 — A ruler strip is as wide as its own labels**: the vertical strip's
+  width is a fixed size role — `metrics.rs`'s `ruler_w`, `grid(5.0 *
+  advance(caption_scale))`, five caption characters, sized for `-32768`, `20K`
+  and `-INF`. But a label's width is a property of the **data**: a value axis
+  over small numbers formats `0.0625` and `-0.0625`, six and seven characters,
+  and the label is then clamped against the strip's edge and runs out of room.
+  (Found on a spectrum's dB axis zoomed in; any auto-fitted `plot` over a small
+  range does it too.)
+
+  **Not a bigger constant.** That charges every view in the system the widest
+  case a few axes have, and it would be a number picked to survive the examples
+  rather than a rule. The rule is that the strip asks for what its own ticks
+  need — and the negotiation for that already exists one level up: a navigation
+  group's gutter is *the widest any member asks for* (`layout.rs`'s `indents`
+  table, `Ctx::indent`), which is exactly this question asked across a group.
+  So: the tick formatter reports the widest label it will draw, a view's
+  vertical strip asks for that instead of the role, and the group table keeps
+  reconciling members as it already does. The role stays as the **floor**, so
+  an axis whose labels are narrow looks exactly as it looks today.
+
+  Deliberately **not** in scope: the caption font and its advance. This is about
+  how much room the strip asks for, not about the glyphs it asks for it in.
+  Acceptance: a `plot` auto-fitted over `[-0.1, 0.1]` and a zoomed dB axis both
+  label every tick in full, no clamping; a waveform's `-1.0 … 1.0` axis and a
+  spectrogram's hertz axis are pixel-identical to today; two linked views with
+  different label widths still share one gutter, the wider one's.
+
+- ⬜ **E21 — The wheel's fall-through is for pixels with nothing on them**:
+  when nothing under the pointer claims the wheel and the window has exactly one
+  navigation group, `gestures::wheel` treats those pixels as that axis and zooms
+  it. The justification written beside it names *"a gap between lanes, the slack
+  under the last one, a container's margin"* — pixels with nothing drawn on
+  them, which is right. What the code actually tests is only whether the wheel
+  was **claimed**, so it fires over an element that draws its own picture and
+  simply has no wheel gesture: in `gui_analyzer`, turning the wheel over the
+  goniometer zooms the waterfall underneath it. The reader pointed at one thing
+  and another moved.
+
+  The missing rule is the one already written in prose: the fall-through is for
+  *empty* pixels. What makes it more than a one-line gate is that **the press
+  path shares the mechanism and means it differently** — `pan_sole_axis` is what
+  makes Shift+drag pan the axis from anywhere at all, over any element, and that
+  is intended and documented. So the milestone has to separate the two: either
+  the wheel's fall-through alone requires empty pixels (the press keeps its
+  reach), or the distinction becomes a property a widget answers for — an
+  element with a picture of its own against a label, a container, a gap — and
+  each gesture says which it wants. Prefer the second if it stays small: it is
+  the same question the gesture map answers everywhere else.
+  Acceptance: the wheel over the goniometer (and over any element that has no
+  wheel of its own) leaves the sole axis alone; over a gap, a margin and the
+  slack under the last lane it still zooms it; Shift+drag still pans from every
+  one of those places, including over an element. (E17 removed one instance of
+  this by giving a navigable spectrum a wheel of its own — that is a coincidence
+  of that milestone, not a fix of this one.)
+
 ## K track — the kit: opening the element, from Rust and from the wire
 
 *Section added 2026-08-09, from an audit of the crate read as a general UI library.* The finding is one asymmetry, and it is worth stating plainly because it is also the track's boundary: **the architecture is general in everything around the element and deliberately closed in the element itself.** What is general is genuinely good — a wire that grows by extension and never changes (`{id, type, props, children}`, an unknown type laid out and not painted), four I/O traits with a real wasm gate behind them, two role tables (theme, metrics) that no paint or layout site bypasses, one gesture machine driven by a table on the wire, and the habit of collapsing a family into a product (`signal`, `pianoroll`, `patch`) that is the only thing keeping a 25-variant enum from becoming 60. What is closed is the element: there is no `trait Widget`, only I/O traits, so adding one edits eight files (`widget/mod.rs`, `build.rs`, `apply.rs`, `size.rs`, `frame/items.rs`, `frame/draw.rs`, `interact.rs`, `gestures/press.rs`, plus `layout.rs` for a container) — 102 mentions of `WidgetKind::` in the schema, 49 in `interact.rs`, 33 in `build.rs`. The documentation's "extension, not a protocol change" is true *of the protocol* and the opposite of true of the code, and a third party cannot add an element without forking the crate.
