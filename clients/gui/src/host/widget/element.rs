@@ -16,9 +16,18 @@
 //! | [`apply`](super::apply) | [`Element::set`] |
 //! | [`size`](super::size) | [`Element::natural`] |
 //! | the frame's flat draw | [`Element::draw`] |
+//! | the frame's GPU slots | a [`SlotKind`] claimed in [`Needs`], fed by [`Element::slot`] |
 //! | the query pass | [`Element::value`] / [`Element::info`] |
 //! | the press walk | [`Element::press`] |
 //! | the tree collectors | [`Element::needs`] |
+//!
+//! **Three things in, two things out**, and the boundary is narrow on purpose:
+//! most of what looks like "what a widget needs from the host" is the widget's
+//! own state coming back to it, and that stays home. What genuinely crosses is
+//! the roles ([`Draw`] — the one mesh, the theme, the size table), the
+//! [`World`] and the placement (both in [`Ctx`]); and back out, what the
+//! element *is and needs* ([`Needs`], [`Element::value`]) and what it asks the
+//! front to do ([`Claim`]). None of that grows per widget.
 //!
 //! **The registry is consulted only when no built-in name matched**, so a
 //! built-in never changes meaning and a third party can register an element
@@ -109,6 +118,44 @@ pub struct Needs {
     /// Whether this element must be redrawn every tick even with no data
     /// arriving — a picture driven by the clock rather than by a value.
     pub animated: bool,
+    /// The GPU slot this element claims, for a view that cannot draw into the
+    /// shared mesh. `None` — the default — is an element that draws.
+    pub slot: Option<SlotKind>,
+}
+
+/// The GPU slot an element claims because it cannot draw into the window's one
+/// mesh: it needs a texture, a vertex buffer or a shader of its own.
+///
+/// **The set is closed and belongs to the frame**, which owns the device, the
+/// pipelines and the one-batch-per-window rule — an element *chooses* among
+/// these and cannot invent one. Widening it is adding a pipeline to the frame,
+/// which the cost rule already prices at once per window and only in the builds
+/// that compiled it in. That is the same boundary as "a container is not
+/// extensible", drawn where the hardware actually is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SlotKind {
+    /// A user fragment shader run over the element's rect. The WGSL is a
+    /// **parameter** of this slot, not a pipeline of its own, which is what
+    /// makes a `canvas` an ordinary element rather than an exemption.
+    Shader {
+        /// The source the slot is created with; a later change arrives with the
+        /// frame ([`SlotFrame::Shader`]) and recompiles in place.
+        source: String,
+    },
+}
+
+/// What a claimed slot is fed **this frame** — the live counterpart of
+/// [`SlotKind`], produced with the world in hand so a value read from a bus is
+/// resolved where every other per-frame read is.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SlotFrame {
+    /// The shader slot: where in the placement to draw, the current source
+    /// (recompiled only when it changed) and the resolved uniform params.
+    Shader {
+        body: Rect,
+        source: String,
+        params: [f32; super::super::canvas::PARAM_COUNT],
+    },
 }
 
 /// What an element did with a press it was offered.
@@ -167,6 +214,14 @@ pub trait Element: fmt::Debug {
     /// What this element reads from outside itself.
     fn needs(&self) -> Needs {
         Needs::default()
+    }
+
+    /// What the GPU slot this element claimed draws this frame, or `None` for
+    /// an element that claimed none (the default). An element that claims one
+    /// usually still [`draw`](Element::draw)s — a label, a frame — into the
+    /// shared mesh around it.
+    fn slot(&self, _ctx: &Ctx) -> Option<SlotFrame> {
+        None
     }
 
     /// Whether the wheel **falls through** this element to whatever is behind
@@ -292,6 +347,7 @@ mod tests {
                 taps: vec![self.bus + 2],
                 node_groups: vec![self.bus + 3],
                 animated: true,
+                slot: None,
             }
         }
 

@@ -87,16 +87,6 @@ pub(super) fn build_kind(
         // Every view of a signal, in one arm because there is one element:
         // the props say which point of the product ([`super::signal::point`]).
         "signal" => build_signal(id, props, blobs)?,
-        "canvas" => WidgetKind::Canvas {
-            shader: props
-                .get("shader")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| canvas::DEFAULT_SHADER.to_string()),
-            params: f32_array(props, "params", 0.0),
-            buses: i32_array(props, "buses", -1),
-            label: label(props),
-        },
         "curve" => {
             let min = number(props, "min", 0.0);
             let max = number(props, "max", 1.0);

@@ -49,7 +49,6 @@ use serde_json::Value;
 
 use crate::spectrogram::FreqScale;
 
-use super::canvas;
 use super::guidef::GuiNode;
 // Sibling widget modules the wire matches reach via `super::` — re-imported here
 // so the `build`/`apply` child modules resolve the same paths (a descendant sees
@@ -131,18 +130,6 @@ pub enum WidgetKind {
     /// `scope`, `spectrum`, `spectrogram`, `phasescope`) are six points of that
     /// product, so this one arm answers for all of them.
     Signal(Box<SignalElement>),
-    /// A script-supplied WGSL shader run over the widget area. `shader` is the
-    /// user's `shade` source; `params` are four floats fed to the shader, each
-    /// set from the script (`/gui_set param0…`) and/or overwritten every frame by
-    /// the control bus named in `buses` (a `-1` slot is script-only), read from
-    /// shared memory like a meter — so the shader animates from OSC parameters
-    /// and from live server audio at once.
-    Canvas {
-        shader: String,
-        params: [f32; canvas::PARAM_COUNT],
-        buses: [i32; canvas::PARAM_COUNT],
-        label: Option<String>,
-    },
     /// A drawable break-point function (envelope editor): breakpoints
     /// `(time, value)` plus a per-segment shape/curve **using the server's own
     /// envelope shape numbers** (evaluated through the shared core, so what it

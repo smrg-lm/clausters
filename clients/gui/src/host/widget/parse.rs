@@ -253,7 +253,7 @@ pub(crate) fn number(props: &serde_json::Map<String, Value>, key: &str, default:
 
 /// A fixed-size `[f32; N]` from a JSON array property, taking the first `N`
 /// numbers and padding the rest with `default`.
-pub(super) fn f32_array<const N: usize>(
+pub(crate) fn f32_array<const N: usize>(
     props: &serde_json::Map<String, Value>,
     key: &str,
     default: f32,
@@ -271,7 +271,7 @@ pub(super) fn f32_array<const N: usize>(
 
 /// A fixed-size `[i32; N]` from a JSON array property, taking the first `N`
 /// integers and padding the rest with `default`.
-pub(super) fn i32_array<const N: usize>(
+pub(crate) fn i32_array<const N: usize>(
     props: &serde_json::Map<String, Value>,
     key: &str,
     default: i32,
@@ -289,7 +289,7 @@ pub(super) fn i32_array<const N: usize>(
 
 /// The integer suffix of `key` after `prefix` (e.g. `"param2"` -> `2`), if `key`
 /// is exactly `prefix` followed by digits.
-pub(super) fn index_suffix(key: &str, prefix: &str) -> Option<usize> {
+pub(crate) fn index_suffix(key: &str, prefix: &str) -> Option<usize> {
     key.strip_prefix(prefix).and_then(|s| s.parse().ok())
 }
 

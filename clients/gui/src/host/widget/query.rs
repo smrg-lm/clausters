@@ -136,14 +136,6 @@ impl WidgetKind {
             ..Default::default()
         };
         self.audio_buses_read(&mut needs.taps);
-        if let WidgetKind::Canvas { buses, .. } = self {
-            // A shader's picture follows the clock whatever its params do, so a
-            // canvas animates even with every slot script-set.
-            needs
-                .buses
-                .extend(buses.iter().copied().filter(|b| *b >= 0));
-            needs.animated = true;
-        }
         needs
     }
 

@@ -5,6 +5,7 @@
 
 use clausters_core::osc::OscType;
 
+use super::element::SlotKind;
 use super::*;
 
 fn node(json: &str) -> GuiNode {
@@ -526,60 +527,49 @@ fn canvas_parses_shader_params_buses_and_applies() {
         ]}"#,
     );
     let mut w = Widget::from_node(9, &n, &[]).unwrap();
-    match &w.children[0].kind {
-        WidgetKind::Canvas {
-            shader,
-            params,
-            buses,
-            ..
-        } => {
-            assert_eq!(shader, "fn shade(){}");
-            // The given params/buses fill the front of the fixed arrays; the
-            // rest default (0.0 / -1).
-            assert_eq!(*params, [0.5, 0.25, 0.0, 0.0]);
-            assert_eq!(*buses, [7, -1, -1, -1]);
-        }
-        other => panic!("expected canvas, got {other:?}"),
-    }
+    // The canvas is an element: the schema resolves the name, and what the
+    // document says about it becomes the slot it claims and the buses it
+    // declares. Its props are its own file's suite.
+    assert!(matches!(w.children[0].kind, WidgetKind::Custom(_)));
+    let needs = w.children[0].kind.needs();
+    assert_eq!(
+        needs.slot,
+        Some(SlotKind::Shader {
+            source: "fn shade(){}".into()
+        })
+    );
+    assert_eq!(needs.buses, vec![7], "an unset slot names no bus");
     // A canvas is non-interactive and reads no single bus.
     assert_eq!(w.children[0].kind.event_value(), None);
     assert_eq!(w.children[0].kind.live_bus(), None);
-    // Live `/gui_set`: a param from the script, a bus remap, a new shader.
+    // Live `/gui_set` reaches the element and moves both with it.
     let c = w.find_mut(1).unwrap();
-    assert!(c.kind.apply("param1", &Value::from(0.75)));
     assert!(c.kind.apply("bus0", &Value::from(9)));
     assert!(c.kind.apply("shader", &Value::from("fn shade2(){}")));
     assert!(
         !c.kind.apply("param9", &Value::from(1.0)),
         "out-of-range slot"
     );
-    match &c.kind {
-        WidgetKind::Canvas {
-            shader,
-            params,
-            buses,
-            ..
-        } => {
-            assert_eq!(params[1], 0.75);
-            assert_eq!(buses[0], 9);
-            assert_eq!(shader, "fn shade2(){}");
-        }
-        _ => unreachable!(),
-    }
+    let needs = c.kind.needs();
+    assert_eq!(needs.buses, vec![9]);
+    assert_eq!(
+        needs.slot,
+        Some(SlotKind::Shader {
+            source: "fn shade2(){}".into()
+        })
+    );
 }
 
 #[test]
 fn canvas_without_a_shader_gets_the_default() {
     let n = node(r#"{"type":"window","children":[{"id":1,"type":"canvas"}]}"#);
     let w = Widget::from_node(9, &n, &[]).unwrap();
-    match &w.children[0].kind {
-        WidgetKind::Canvas { shader, .. } => {
-            assert!(
-                shader.contains("fn shade"),
-                "falls back to the default shader"
-            )
-        }
-        other => panic!("expected canvas, got {other:?}"),
+    match w.children[0].kind.needs().slot {
+        Some(SlotKind::Shader { source }) => assert!(
+            source.contains("fn shade"),
+            "falls back to the default shader"
+        ),
+        other => panic!("expected the shader slot, got {other:?}"),
     }
 }
 

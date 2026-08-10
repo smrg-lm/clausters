@@ -23,6 +23,7 @@
 
 use super::widget::element::Constructor;
 
+mod canvas;
 mod label;
 mod meter;
 mod nodes;
@@ -32,6 +33,7 @@ mod nodes;
 /// gives up on `Unknown`.
 pub(crate) fn builtin(name: &str) -> Option<Constructor> {
     Some(match name {
+        "canvas" => canvas::build,
         "label" => label::build,
         "meter" => meter::build,
         "nodes" => nodes::build,

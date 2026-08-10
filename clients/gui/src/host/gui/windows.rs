@@ -18,6 +18,7 @@ use crate::host::canvas::CanvasView;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
 use crate::host::paint::Painter;
 use crate::host::signal::Presentation;
+use crate::host::widget::element::SlotKind;
 use crate::host::widget::{Widget, WidgetKind};
 use crate::host::{BulkLoader, ClientId, GUI_CLOSED};
 use crate::spectrogram::Stft;
@@ -293,10 +294,10 @@ fn collect_timelines(
 /// tree, keyed by widget id.
 fn collect_canvases(tree: &Widget, gpu: &Gpu, out: &mut HashMap<i32, CanvasView>) {
     for widget in tree.descendants() {
-        if let WidgetKind::Canvas { shader, .. } = &widget.kind
+        if let Some(SlotKind::Shader { source }) = widget.kind.needs().slot
             && let Some(id) = widget.id
         {
-            out.insert(id, CanvasView::new(&gpu.device, gpu.config.format, shader));
+            out.insert(id, CanvasView::new(&gpu.device, gpu.config.format, &source));
         }
     }
 }

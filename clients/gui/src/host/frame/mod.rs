@@ -49,7 +49,7 @@ use super::signal::{self, Presentation};
 use super::spectrum::SpectrumState;
 use super::theme::{Theme, with_alpha};
 use super::timeline::{GroupState, group_key};
-use super::widget::element::Ctx;
+use super::widget::element::{Ctx, SlotFrame};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
 use super::{

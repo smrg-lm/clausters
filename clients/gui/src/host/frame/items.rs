@@ -689,41 +689,6 @@ pub(super) fn collect_widgets(
                     },
                 );
             }
-            WidgetKind::Canvas {
-                shader,
-                params,
-                buses,
-                label,
-            } => {
-                if let Some(id) = p.widget.id {
-                    if let Some(text) = label {
-                        font::text(
-                            &mut *mesh,
-                            text,
-                            p.rect.x + m.pad,
-                            p.rect.y + m.pad,
-                            m.label_scale,
-                            th.text,
-                        );
-                    }
-                    // Resolve the param vector: a `-1` slot keeps its script-set
-                    // value; a bus slot is read from shared memory this frame
-                    // (zero messages, like a meter).
-                    let mut resolved = *params;
-                    for (slot, &bus) in resolved.iter_mut().zip(buses.iter()) {
-                        if bus >= 0 {
-                            *slot = inputs.world.control(bus);
-                        }
-                    }
-                    canvas_frames.push(CanvasFrame {
-                        id,
-                        body: controls::body_rect(p.rect, label.is_some(), m),
-                        clip: p.clip,
-                        shader: shader.clone(),
-                        params: resolved,
-                    });
-                }
-            }
             WidgetKind::Score(data) => {
                 // Notation tessellates straight into the shared triangle mesh:
                 // a paper panel under the engraving, glyphs and fills in ink,
@@ -744,19 +709,36 @@ pub(super) fn collect_widgets(
                     },
                 );
             }
-            // A registered element is a flat widget: it draws straight into the
-            // window's one mesh during this walk, with the placement's theme
-            // and size table, and never becomes an item — it has nothing to
-            // defer, which is also what keeps it inside the single batch.
-            WidgetKind::Custom(el) => el.draw(
-                &mut Draw::new(mesh, m, th),
-                &Ctx {
+            // A registered element draws straight into the window's one mesh
+            // during this walk, with the placement's theme and size table...
+            WidgetKind::Custom(el) => {
+                let ctx = Ctx {
                     world: &inputs.world,
                     metrics: m,
                     rect: p.rect,
                     scale: p.scale,
-                },
-            ),
+                };
+                el.draw(&mut Draw::new(mesh, m, th), &ctx);
+                // ...and, for a view the shared mesh cannot carry, what its
+                // claimed slot draws this frame. The set of slots is closed and
+                // is the frame's, so this match is over pipelines the window
+                // already has -- never over what the element is.
+                if let (Some(id), Some(slot)) = (p.widget.id, el.slot(&ctx)) {
+                    match slot {
+                        SlotFrame::Shader {
+                            body,
+                            source,
+                            params,
+                        } => canvas_frames.push(CanvasFrame {
+                            id,
+                            body,
+                            clip: p.clip,
+                            shader: source,
+                            params,
+                        }),
+                    }
+                }
+            }
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
             kind => {
                 // The open list of *this* menu, collected here because only the

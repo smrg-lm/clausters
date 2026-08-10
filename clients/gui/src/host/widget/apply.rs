@@ -142,24 +142,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             "label" => set_label(label, v),
             _ => false,
         },
-        WidgetKind::Canvas {
-            shader,
-            params,
-            buses,
-            label,
-        } => match key {
-            "shader" => v.as_str().map(|s| *shader = s.to_string()).is_some(),
-            "label" => set_label(label, v),
-            _ => {
-                if let Some(i) = index_suffix(key, "param").filter(|i| *i < params.len()) {
-                    set_f(&mut params[i], v)
-                } else if let Some(i) = index_suffix(key, "bus").filter(|i| *i < buses.len()) {
-                    v.as_i64().map(|n| buses[i] = n as i32).is_some()
-                } else {
-                    false
-                }
-            }
-        },
         WidgetKind::Score(data) => match key {
             // Replace the engraved page in place — the answer to an edit, and
             // the reason a score does not have to be redefined to change. Only
