@@ -687,6 +687,23 @@ fn x_window(host: &Host, id: i32) -> (f64, f64) {
         .x_view()
 }
 
+/// Points a spectrum's frequency window the way a script does, over the wire.
+fn set_x_window(host: &mut Host, id: i32, start: f32, len: f32) {
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_SET.into(),
+            args: vec![
+                OscType::Int(id),
+                OscType::String("view_start".into()),
+                OscType::Float(start),
+                OscType::String("view_len".into()),
+                OscType::Float(len),
+            ],
+        }),
+        from(),
+    );
+}
+
 /// The wheel over a navigable spectrum zooms its **frequency** axis, anchored
 /// at the cursor — and it reports the element's own `"view_x"`, not a group's
 /// `"view"`, because there is no group: the axis belongs to the element the way
@@ -1940,4 +1957,44 @@ fn a_wheel_against_the_time_axis_bound_reports_nothing() {
     // ...and zooming in still does.
     let out = g.wheel(&mut host, &ctx, 400.0, 150.0, 4.0);
     assert!(has_emit_tag(&out, 60, "view"));
+}
+
+/// **Panning to the end of a frequency axis stops there.** The zoom floor is
+/// measured forward from the window's left edge, and a pan hands over an edge
+/// that is off the axis — that is what dragging past it means, the write
+/// clamping it a step later. Charging that overshoot to the floor widened the
+/// window by however far the drag had gone, and the next step of the drag read
+/// the wider window and went further: the picture rushed out to the whole axis
+/// under a gesture that asked to move sideways.
+#[test]
+fn a_pan_past_the_axis_end_stops_at_its_floor() {
+    let mut host = spectrum_host();
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 300);
+    ctx.sample_rate = 48_000.0;
+    // A window narrow enough that reaching the bottom of the axis takes a few
+    // drags, so the runaway had room to compound.
+    set_x_window(&mut host, 80, 0.30, 0.05);
+    let mut seen = Vec::new();
+    for _ in 0..8 {
+        g.press(&mut host, &ctx, 100.0, 150.0, &mut || false);
+        g.drag_to(&mut host, &ctx, 790.0, 150.0);
+        g.release(&mut host, &ctx, 790.0, 150.0);
+        seen.push(x_window(&host, 80));
+    }
+    // Against the bottom of the axis, and no wider than four bins are there:
+    // the floor at 20 Hz, which is where the pan was heading all along.
+    let floor = crate::host::spectrum::min_display_span(
+        2048,
+        48_000.0,
+        crate::spectrogram::FreqScale::Log,
+        crate::host::spectrum::axis_geometry(48_000.0).1,
+        0.0,
+    );
+    let (start, len) = *seen.last().unwrap();
+    assert_eq!(start, 0.0, "the pan ran to the bottom of the axis");
+    assert!(
+        (len - floor).abs() < 1e-9,
+        "the window settled at {len} instead of the floor {floor}: {seen:?}"
+    );
 }

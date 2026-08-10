@@ -185,6 +185,15 @@ const MIN_VISIBLE_BINS: f64 = 4.0;
 /// a bin is not one on a log (or mel, or bark) axis: at 500 Hz it is a
 /// twentieth of the visible axis, near Nyquist a thousandth, so a fixed floor
 /// is both far too coarse at the top and far too fine at the bottom.
+///
+/// `start` is read as the display coordinate it is, **clamped onto the axis**.
+/// A pan hands over a window that begins off the axis — that is what dragging
+/// past the edge means, and the write clamps it a step later — and measuring
+/// the bins forward from there would charge the overshoot to the floor: the
+/// window would be widened by however far the drag had gone, and the next step
+/// of the same drag reads that wider window and goes further still, until the
+/// picture has rushed out to the whole axis under a pan that asked to move
+/// sideways.
 pub(crate) fn min_display_span(
     fft_size: usize,
     sample_rate: f64,
@@ -196,8 +205,9 @@ pub(crate) fn min_display_span(
     if nyquist <= 0.0 || fft_size == 0 {
         return crate::viewport::MIN_SPAN;
     }
+    let start = start.clamp(0.0, 1.0);
     let bin_hz = sample_rate / fft_size as f64;
-    let lo = ruler::display_to_hz(start.clamp(0.0, 1.0), nyquist, scale, f_lo_norm);
+    let lo = ruler::display_to_hz(start, nyquist, scale, f_lo_norm);
     let hi = (lo + MIN_VISIBLE_BINS * bin_hz).min(nyquist);
     let span = ruler::hz_to_display(hi, nyquist, scale, f_lo_norm) - start;
     // A window pressed against the top of the axis has nowhere forward to

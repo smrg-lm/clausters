@@ -4701,6 +4701,15 @@ Two consequences worth stating:
   context did not. It is one field on `GestureCtx`, filled from the same source
   the frame draws with — because a gesture that resolved a different hertz than
   the frame drew would anchor a zoom where the reader is not pointing.
+- **A floor read off the axis is not a floor.** Because it is measured forward
+  from the window's left edge, the floor is a function of where the window is —
+  and a pan hands over an edge that is *off* the axis, which is exactly what
+  dragging past the end means, the write clamping it a step later. Measured from
+  there, the overshoot is charged to the floor: the window comes back widened by
+  how far the drag went, the next step of the same drag reads that wider window
+  and goes further still, and a gesture asking to move sideways rushes the
+  picture out to the whole axis. The edge is clamped onto the axis before the
+  bins are counted from it.
 
 **And a gesture that moves nothing says nothing.** The same pass found the other
 half: an axis pressed against a bound goes on receiving wheel notches, and every
