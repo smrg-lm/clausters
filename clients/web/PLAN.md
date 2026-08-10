@@ -1321,6 +1321,26 @@ the MIDI half of `responders.py` (**W9** — its OSC half is ported),
 `_cli.py`, `config.py`, `_midi.py`, `_libpath.py`), which is a process-shaped
 surface a page has no counterpart for.
 
+**The shape `gui/notation.py`'s port must follow, decided on the Python side
+2026-08-09 rather than re-derived here.** The reference is a *package* now
+(`clausters/gui/notation/`), split by what each part knows, and the port takes
+the same four files because the seams are the layer's, not Python's:
+`engraver` (the loaded document, the one-shot engrave, the SVG-to-display-list
+adapter and the page-replacement payload), `mei` (the client's own sequencing
+data reduced to a *voice* and handed to the shared encoder), `view` (wrapping a
+page in a scroll, and the transport that plays it) and a private `_abi` for the
+two shapes both native callers share. Two things are not negotiable in the
+port. **The engraver lives on the client and the walk lives in the core**: a
+page reaches the host as the same display list Python sends, so the host's
+`score` renderer is reused rather than re-implemented — which is the whole
+reason this is portable at all. And **`mei` is the seam**, not an
+implementation detail: the client half reduces to the voice, the shared half in
+`clausters_core::notation` lays it out into barred, tied measures, and richer
+encoding (tuplets, voices, spelling, articulations) extends the *shared* half,
+so both clients gain it at once. The blocker is unchanged and is a packaging
+one: the page needs an engraver, and libverovio is not in the bundle — so this
+lands with **W16** and not before.
+
 One rule the `gui/transport.py` port must carry, since the reference learned it
 after the list above was written: **a drained scan is not the end of the piece.**
 A `Playhead` runs out when it renders its *last item*, and that item is still

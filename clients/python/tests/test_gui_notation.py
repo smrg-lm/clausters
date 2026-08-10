@@ -25,7 +25,7 @@ from clausters.seq.timeline import Timeline
 def _engraver() -> bool:
     """Whether this checkout can engrave at all."""
     try:
-        notation._engraver()
+        notation._abi._engraver()
         return True
     except RuntimeError:
         return False

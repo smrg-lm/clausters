@@ -73,6 +73,9 @@ loaders:
       - clausters.gui.editor
       - clausters.gui.host
       - clausters.gui.notation
+      - clausters.gui.notation.engraver
+      - clausters.gui.notation.mei
+      - clausters.gui.notation.view
       - clausters.gui.transport
 processors:
   - type: filter

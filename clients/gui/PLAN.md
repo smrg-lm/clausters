@@ -923,7 +923,28 @@ The transitional aliases are **not** the rejected "presets on the wire" decision
   they were a level deeper, and the compiler said "private" about code nobody
   had edited. They are `pub(crate)` now, which says what they always meant.
 
-- ⬜ **E15 — Notation gets a submodule, on both sides**: `host/score.rs` is 1664 flat lines, and unlike the other elements its growth is **semantic, not graphic** — the timemap, the identity of the element under the cursor, transposition in diatonic steps, the edit-back payloads, and everything G31g still owes (tuplets, voices, spelling, articulations). That is the argument that made `signal` a submodule, applied one element later. Host: `host/score/` — `list.rs` (display-list decode), `glyphs.rs` (the outline cache), `tess.rs` (the lyon fill and the painter's strokes), `cursor.rs` (timemap, playback cursor, element hit). Client: `clausters/gui/notation.py` (460 lines) becomes `clausters/gui/notation/` — `engrave.py` (verovio), `mei.py` (the encoder G31g extends, kept as the seam it already is), `timemap.py`, `edit.py`. The web client has **no** notation module at all, so per the packages-move-together rule this milestone leaves `clients/web/PLAN.md` naming the shape the port must follow rather than letting the two re-derive it. No wire change, no behavioral change; the host still never depends on verovio.
+- ✅ **E15 — Notation gets a submodule, on both sides**: `host/score.rs` is 1664 flat lines, and unlike the other elements its growth is **semantic, not graphic** — the timemap, the identity of the element under the cursor, transposition in diatonic steps, the edit-back payloads, and everything G31g still owes (tuplets, voices, spelling, articulations). That is the argument that made `signal` a submodule, applied one element later. Host: `host/score/` — `list.rs` (display-list decode), `glyphs.rs` (the outline cache), `tess.rs` (the lyon fill and the painter's strokes), `cursor.rs` (timemap, playback cursor, element hit). Client: `clausters/gui/notation.py` (460 lines) becomes `clausters/gui/notation/` — `engrave.py` (verovio), `mei.py` (the encoder G31g extends, kept as the seam it already is), `timemap.py`, `edit.py`. The web client has **no** notation module at all, so per the packages-move-together rule this milestone leaves `clients/web/PLAN.md` naming the shape the port must follow rather than letting the two re-derive it. No wire change, no behavioral change; the host still never depends on verovio.
+
+  **What shipped, and where the entry guessed wrong.** The host split landed as
+  written: `score/list.rs`, `score/glyphs.rs`, `score/tess.rs`,
+  `score/cursor.rs`, plus the 500-line suite in `score/tests.rs` and `mod.rs`
+  left as the page itself — the geometry types, the primitive, and the
+  `ScoreData` every one of those files is a method of. The client half is a
+  package too, but with **three modules, not four**: `engraver` (the loaded
+  document, the one-shot engrave, the SVG adapter, the page-replacement
+  payload), `mei` (the encoder, kept as the seam it already is) and `view`
+  (`score_view` + `transport`), beside a private `_abi` for the two shapes both
+  native callers share. There is no `edit.py`, and the reason is worth
+  recording: **editing is not a body of code here** — `transpose`, `edit`,
+  `undo` and `redo` are four methods on the verovio handle, and lifting them
+  off `Score` would invent a seam rather than find one. `timemap.py` did not
+  survive contact either: the timemap is decoded in the core and consumed by
+  `transport`, so it is a line of `view`, not a module. One name changed on the
+  way: the submodule is `engraver`, because `notation.engrave` is already the
+  function and a module of the same name would have shadowed it at runtime.
+  530 Python tests green, `pyright` at zero, both score examples watched by eye
+  (a click, a transpose drag, undo/redo, and a page engraved from a timeline).
+  `clients/web/PLAN.md` now carries the shape the port must follow.
 
 - ⬜ **E16 — Retention is a policy on the axis** *(the one gap the model expresses and nobody built)*: E3 decided that an axis is navigable when its domain is addressable and that a forward-only source becomes addressable only if the host **retains** a history — and then built the clamp/zoom half and not the retention half. E6 confirmed it from the other side: a navigable live spectrum and a waterfall are reachable in the model and absent from the catalog. This wires the missing half: a retention ring per watched bus, sized by the axis's declared span, filled by the same live path that already reads the segment each frame, so `caps.navigable` over a forward-only source stops being a combination that parses and does nothing. Acceptance: a retained waterfall and a zoomable live spectrum in `gui_analyzer`, and the retention span live via `/gui_set`.
 

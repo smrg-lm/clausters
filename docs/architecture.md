@@ -416,7 +416,7 @@ still tags each box with a **role** used only for *drawing* (a `const` literal
 gets the distinct `value_fill`). `some_def.plot_def()` opens either level in its
 own window; the decode is faithful (`DefPatch.to_synthdef` reproduces the spec).
 
-**The score widget draws notation the host cannot read.** `src/host/score.rs`
+**The score widget draws notation the host cannot read.** `src/host/score/`
 takes a **display list** — a SMuFL glyph-outline table keyed by codepoint plus
 placed glyphs, strokes, fills and text in page units, each carrying the MEI
 `xml:id` it came from — and tessellates it into the ordinary `Mesh` (outlines
@@ -427,9 +427,9 @@ is native and shared. `clausters-notation` binds libverovio and owns the editabl
 `Score`; the format-agnostic half — the SVG→display-list walk, the MEI writer,
 the timemap→cursor fold — is `clausters_core::notation` (feature `notation`, so
 it compiles to wasm); `clausters-ffi` exposes both over the C ABI, and each
-client is a thin shell over that (`clients/python/clausters/gui/notation.py` is
+client is a thin shell over that (`clients/python/clausters/gui/notation/` is
 `ctypes` plus the reduction of its own `Event`/`Timeline` into a voice — the one
-step that reads client-native types). The host never links verovio, and a second
+step that reads client-native types, and the seam a richer encoding extends). The host never links verovio, and a second
 client in another language rebinds the same ABI rather than reimplementing a
 line — the same "no engraving logic duplicated per language" split the value-math
 rule makes elsewhere. Two derived structures ride along, both computed where the
@@ -513,7 +513,7 @@ updates this table in the same change** (step 8 of the recipe below).
 | `field` (a lane, and a placed one) | `host/track.rs` — a lane is a header (`track::Header`: name, mute/solo, level fader) plus a field; a **clip is a container** whose bodies are children (a signal element, a piano-roll, a curve), placed by `host/layout.rs` on the clip's own local axis and drawn by `track::draw_body_widget` — except a take whose `view` is the time-frequency texture, which is not geometry: `host/frame/items.rs` collects it apart and `frame/mod.rs` draws it in the GPU pass, keyed by the clip's id and uploaded against the clip's own axis; group navigation and the axis' shared gutter in `host/timeline.rs` | a clip take: the signal element's sources and its `view`; `notes`/`points` inline; edits emit `"clip"`, and a header control `"mute"`/`"solo"`/`"level"` |
 | `notes` | `host/pianoroll.rs` (the note core shared with `clip`) | the script's `notes`/`osc`; live MIDI in (native); edits emit `"notes"`/`"osc"` |
 | `keys` | `host/piano.rs` (proportional key layout, overview strip, voice messages — pure); host voices in `host/mod.rs`; `midi_to_hz` is `clausters-core::scale`'s | the pointer; presses emit MIDI-shaped `"note"` events (or a binding forwards them), pan/zoom emits `"range"`, and `voice` mode sends `/synth_new`/`gate 0` per held key over the server leg |
-| `score` | `host/score.rs` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon` | a display list engraved **client-side** (`clausters/gui/notation.py`, a shell over `clausters-notation`/`core` through the C ABI); the cursor follows `playhead_at` on the engine clock; a click emits `"element"`, a vertical drag `"transpose"` (diatonic steps), and `display_list` replaces the page after the client re-engraves |
+| `score` | `host/score/` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon`. Split by what each part knows, since the element's growth is semantic rather than graphic: `list` decodes the client's page off the wire, `glyphs` turns an outline string into a path, `tess` paints, `cursor` holds the hit and staff indexes and the mappings a gesture measures against | a display list engraved **client-side** (`clausters/gui/notation/`, a shell over `clausters-notation`/`core` through the C ABI: `engraver`, `mei`, `view`); the cursor follows `playhead_at` on the engine clock; a click emits `"element"`, a vertical drag `"transpose"` (diatonic steps), and `display_list` replaces the page after the client re-engraves |
 | `plane` (with `boxes`) | `host/patch.rs` (box/port geometry, the cords, hit-testing and the layered `solve` layout — pure), one implementation for both levels; the rate vocabulary is `clausters_core::patch`'s | the patch model a client compiled or decoded: a GraphDef's members and cord→bus wiring at level 1, a SynthDef/FaustDef's UGen graph at level 2; drawing a cord emits `"wire"`, dragging a box `"move"` |
 
 ### Adding a widget
