@@ -669,14 +669,31 @@ Section added 2026-07-19; **reconceived 2026-07-22.** G23 gave the logical group
     **As shipped (the concrete shape):** the level-2 model is `clausters.defs.DefPatch`, a Python peer of `GraphPatch` (the pattern from level 1: the *model* is client-side; only a shared *pass* would live in `clausters-core`, and level 2 has none — a read-only decode has nothing to compile). So `clausters-core` gained exactly the shared vocabulary the widget needs — `Rate::Init` (the third cord type, `ar`/`kr`/`ir`) — and nothing more; the `DefPatch` document (boxes carrying each UGen's `kind`/`rate`/`op`/`label`/`static`, control boxes their name/default/rate, constants recorded per inlet) stays in Python, and its wire form is the same generic `{boxes, cords}` widget schema P3 defined, now with `rate:"init"` ports. A UGen box's inlets are **named from the client's own builder signatures** (`ugen_input_names` in `clausters.defs.ugens`, the same callables the `/ugen_query` contrast test keeps honest — no new server verb), falling back to positional for the generic op UGens and the wire-order-misaligned kinds (`EnvGen`, `Poll`, …). An unset UGen output rate defaults to **audio** (the honest headless heuristic — the exact per-kind default is the server's, not the client's). The `ir` cord draws **dashed** (`host::patch::draw_cord`). `to_synthdef` reconstructs the def from the boxes (dependency-ordered, one forward pass) and the round trip **reproduces the spec exactly**. Faust: the **signal-tree** form decodes node for node (every op a box, every operand a cord, a slider a source box); a **box-tree or source** def is opaque and draws as a single box (its internals are the compiler's, not reconstructable client-side). Examples consolidated to one per level — `examples/gui_patch1.py` (level 1) and `examples/gui_patch2.py` (level 2).
     **Refined after the on-screen reviews (also 2026-07-22):** the **node-positioning moved to the host** (`host::patch::auto_layout`) — the decode ships no coordinates, so every client rebinding the widget gets the layout for free (`GraphDef.plot_def` benefits too). Because a def is a **DAG** (not a single-root tree), the layout is a small **layered (Sugiyama-style)** graph drawing — layer by longest path to a sink (inputs land above their use, not piled in one top row — the mistake a first attempt made by pinning inputs to the top; Reingold–Tilford was rejected as it needs a single-root tree), insert a **dummy node** on every rank a long edge skips (so the wire bends through the gap instead of cutting across the boxes between its rows), **order** each layer by alternating up/down **barycenter** sweeps (crossings cut at every level, not just near the sinks — the earlier single simultaneous relaxation only settled the bottom row), **place** on the x axis by iterated barycenter separated with an **isotonic (pool-adjacent-violators)** fit so overlapping boxes spread around their shared centre (children align under parents, no left-margin pile-up). The scroll workspace **sizes its content to the graph's natural extent, never below the viewport** (`scroll_content` reads `patch::natural_size`) and the layout **centres** the block in that area — a small graph centres in the window, a large one fills the content and pans (the earlier Python guess over-sized the content and pushed the graph off-screen). The panel **frame hugs its boxes and their bent wires** instead of clipping a fixed rect; **constants became `const` value boxes** (a number box corded into the inlet, distinct `value_fill`) rather than inline defaults; every cord is **one width**, the **rate read by colour** — **contrasting primaries, audio red / control blue / init yellow+dashed** (a fat-vs-thin pair and the earlier green/blue both read badly); the box's **central band is white with black text**, framed by **dark port strips**; the per-box **role** is now only a drawing tag; and the panel **caption is the def kind** (`synthdef`/`faustdef`/`graphdef`), not the def name. The level-1 example was expanded to a four-box effect chain with the full canvas (placement, marquee, navigation, render/hear). See `docs/decisions.md`.
 
-- **P5 — the editing & authoring surface (to plan)** *(phase B — one milestone, deliberately not designed yet; it earns editing on top of the closed level-1 and level-2 representations)*: **all** the patcher's editing lives here, consolidated so it stops interleaving with the representation. The shipped **P3d** edit-back (a `"wire"`/`"move"` rewriting the arrangement, still wired into `editor.py`'s `apply()` but unproven in the window) is its **seed**; this milestone makes it a real, verified authoring surface across both levels. What it must cover, each a design question to converge before opening:
+- **P5 — the editing & authoring surface (to plan)** *(phase B — one milestone, deliberately not designed yet; it earns editing on top of the closed level-1 and level-2 representations)*: **all** the patcher's editing lives here, consolidated so it stops interleaving with the representation. The shipped **P3d** edit-back (a `"wire"`/`"move"` rewriting the arrangement, still wired into `editor.py`'s `apply()` but unproven in the window) is its **seed**; this milestone makes it a real, verified authoring surface across both levels.
+
+  **What the E track changed under this milestone** *(recorded 2026-08-09, after E16 closed; P5 was written before E9 moved the wire and the bullets below still spoke the old vocabulary)*. Three facts the design must start from rather than rediscover:
+
+  - **There is no `patch` type any more.** E9 moved the wire onto the model: the patcher is a **`plane`** — a two-axis container in content units — **that has boxes**, and their presence is what makes it a patcher rather than a second type name. So every edit-back below is a `/gui_event` from a `plane`, and the cords are still a prop of the plane (a wire is between two children and belongs to neither). The Python and TS builders keep the name `patch` as a *shortcut* onto that node, which is why no example changed and why this entry's old prose read as if nothing had.
+  - **The gestures ride the shared machine, and the container decides first.** E10 gave every container a **gesture plan** — an ordered list of steps per modifier, declared on the wire (`gestures`) and defaulted from what the container is — where `GestureStep::Element` is the point at which the thing under the cursor gets its turn, and a step that declines passes the press **outward**. A patcher's canvas is `Coords::Canvas`, so a marquee sweeps canvas units and a press that no box claims falls through to the plane under it. P5's new gestures are therefore arms of `gestures/press.rs` and `interact/edit.rs`, not a private handler; the box-drag and cord-drag already there (`Drag::Box`, `Drag::Wire`) are the pattern the rest follow.
+  - **The eye pass is part of closing it.** E12 established what the whole E track had skipped: nothing in CI runs an example, so `gui_patch1` and `gui_patch2` are the manual test surface and a milestone is not closed until they have been opened and watched. P4's "the on-screen render is a manual smoke step, not asserted here" is the honest note; P5 inherits it as an obligation rather than a caveat.
+
+  **And the one milestone the E track deliberately handed here** — `box` **as an element**. The catalog spent the name on a synonym for `panel`, E9's model wants it for the patcher's box, and E9's expand stage could not take it while both spellings parsed, so a plane's boxes are **still its `boxes` prop**. Turning them into child elements is behavior, not spelling: ids (a box becomes addressable on its own), layout (the plane places them instead of drawing them), per-box hit-testing (the chain reaches a box the way it reaches any child) and edit-back (a `"move"` becomes a child's `place`, not an indexed prop of the parent). It belongs here because P5 is what needs it — structural creation, per-box error state and a control panel per box all want a box to *be* something addressable — and it should be sequenced **first** within the milestone, since every other bullet reads differently depending on whether a box has an id. Note the ordering against the **K track**: K1 moves every *leaf* element behind `trait Element` and keeps containers in the enum, so a `box` that lands before K1 is an enum arm and one that lands after is a registered element. Neither is wrong; deciding which is cheaper is part of opening P5.
+
+  What P5 must cover, each a design question to converge before opening:
   - **Structural creation** (`"make"`/`"free"`) — the drop-down/object-box gestures to add and remove boxes (`/gui_event <id> "make" <kind> <name> <x> <y>`, `"free" <kind> <index>`, cords dropping first). Graphically heavy (in-canvas text entry + filterable lists over P2's `/def_query`/`/ugen_query`) and the create round-trip is not yet defined — until it lands the patcher is the **view of the def-generators** a composition already holds, not an authoring-from-empty surface.
   - **Parameter/value boxes** — a box representing a **parameter as a value** (a number for `freq`, an envelope, a buffer) feeding a def box's parameter inlet; today the patcher wires def-to-def signal buses only and a def's parameters-as-values are undrawn.
   - **Buffers as a value box** — a buffer is **data, not a def-box** (one kind of value box). The arrangement model keeps a `Buffer` object (parity — the patch is a view of a part of the model), a cord carrying a buffer is *not* a signal bus; *visualizing* it (fetch its samples, draw like the audio editor's waveform) and *playing* it (a temporary synthdef) are facilities off the server buffer. See `docs/decisions.md`.
   - **The live patch** — the patch meets the running tree, closing the **drawn-vs-sounding gap**: rendered members light up (the driver correlates its instance with `/group_queryTree` + `/server_notify`, sets a per-member `live` flag via `/gui_set` — the host draws state, never queries), a box edited since its render reads **stale**, double-click opens a member's **control panel** (sliders over its controls from `/def_query.reply`, bindable via `/gui_bind` — Max's live number boxes with zero new widget code), and a `"render"`/`"stop"` affordance closes the create → wire → sound loop.
   - **Level-2 authoring → def** — the same directed edit-backs over UGen/Faust boxes, compiled to a def through the builders that already exist (a UGen patch through the SynthDef graph builder, a Faust patch through the box API — **never a third compiler**): a tree walk from the `Out` boxes; a patch the walk cannot serialize (a cycle without a delay, a dangling required inlet) fails client-side naming the offending box. The def is sent (`/def_send` + `/server_sync`) and auditioned live; a server `/fail` routes back as an `error` prop on the box. The translation lives beside the `clausters-core` document schema so it is portable. Examples when it lands: `examples/gui_patch1.py` (a level-1 effect chain from an empty canvas), `examples/gui_patch2.py` (a synth patched from UGen boxes).
 
-- **P6 — the patch as a document: persistence and round trip** *(design to converge before opening)*: where a patch lives when the window closes. The leading option: the patch document persists **beside the def it produced** — a sidecar in the server's def store (the store already persists defs across sessions; a def compiled from a patch would reload *with* its patch, so any client can reopen the boxes behind a sound) — against the alternative of a purely client-side document beside the arrangement. Needs a decision on identity (what happens when the def is re-sent from code and the patch goes stale) and lands with a `docs/decisions.md` entry either way; not opened until that converges.
+- **P6 — the patch as a document: persistence and round trip** *(design to converge before opening)*: where a patch lives when the window closes. The original two options: the patch document persists **beside the def it produced** — a sidecar in the server's def store (the store already persists defs across sessions; a def compiled from a patch would reload *with* its patch, so any client can reopen the boxes behind a sound) — against a purely client-side document beside the arrangement. Needs a decision on identity (what happens when the def is re-sent from code and the patch goes stale) and lands with a `docs/decisions.md` entry either way; not opened until that converges.
+
+  **A third option exists now, and it did not when this was written** *(recorded 2026-08-09)*. The GUI host grew its own persistence twice over while the P track was paused, and both are a better fit than a def-store sidecar for the thing a patch actually is:
+
+  - **The host's named-GuiDef store** — `store::GuiStore` behind the `DefStore` seam, serving `/gui_load`: the host already saves a GuiDef by name and hands it back. A patcher window *is* a GuiDef, so the boxes and their canvas positions persist with no new format at all.
+  - **The persisted bundle** — `host::bundle`, the boot the native standalone mode and the browser both replay: defs → graphdefs → boot preset → the GuiDef's `boot` messages, and, when the manifest declares a component contract, a **template** whose symbols are allocated and holes resolved at mount. That is precisely a patch's two halves travelling together — *the def it produced* and *the boxes behind it* — which is what the def-store sidecar was reaching for, in a container that already exists on all three legs.
+
+  So the decision to converge is no longer "sidecar or client-side" but **which existing container owns it**, and the identity question sharpens rather than goes away: a bundle mounted twice is two instances of one patch, so a patch document has to say whether the boxes are the template's or the instance's. Two constraints to carry in. The bundle format is **version-bearing** — E9 moved it and that is what dragged the SemVer tier to 0.9.0 — so a patch inside one is a release decision under the `release-versioning` skill, not only a schema one. And a browser host **runs without a store** by design (`DefStore` is a seam the page simply does not fill), so anything built on `/gui_load` alone persists on one leg and not the other, which is a degradation of one build the K track's first constraint would otherwise forbid.
 
 ## E track — the element library: coordinate-system containers and composed elements
 
@@ -993,10 +1010,75 @@ The transitional aliases are **not** the rejected "presets on the wire" decision
   `ruler::display_to_hz`, so a normalized `[start, len]` sub-range is one
   remapping there and one in `hz_ticks_h`. It is the gesture and grouping half
   that needs a decision, and inventing one here would land it in the same voice
-  as a staged design. It belongs with whatever milestone opens a **non-time
-  navigable axis**.
+  as a staged design. It is **E17**, opened below.
 
-**Not a milestone here — `box`.** The catalog spent the name on a synonym for `panel` and E9's model wants it for the patcher's box, but a plane's boxes are still its `boxes` prop. Turning them into child elements changes ids, layout, per-box hit-testing and edit-back — it is behavior, not spelling — so it belongs to **P5**, the patcher's editing surface, and is recorded there rather than opened as a rename.
+**Not a milestone here — `box`.** The catalog spent the name on a synonym for `panel` and E9's model wants it for the patcher's box, but a plane's boxes are still its `boxes` prop. Turning them into child elements changes ids, layout, per-box hit-testing and edit-back — it is behavior, not spelling — so it belongs to **P5**, the patcher's editing surface, where it is now written down as that milestone's first item rather than only pointed at from here.
+
+### The axis E16 left open (E17–E18)
+
+*Added 2026-08-09, from what closing E16 found.* Retention made a forward-only
+source addressable and proved the model end to end, and it surfaced two things
+that are genuinely missing rather than merely unbuilt. Neither is a refactor:
+one is a capability the acceptance line asked for and did not get, the other is
+a cost the first landing knowingly paid.
+
+- ⬜ **E17 — A navigable axis whose domain is not time**: E16 shipped the
+  retained waterfall and **not** the zoomable live `spectrum` its acceptance
+  line also named, because the two are not the same mechanism and the second has
+  no staged design. Everything navigable in the host today navigates *time*: a
+  navigation group is keyed by `link` over a shared time axis, `Coords::Time`
+  carries a `TimeAxis`, `is_timeline` is what joins a widget to a group, and the
+  span is measured in samples. A `spectrum`'s x is **frequency** — a domain that
+  is addressable without any retention at all (E3's own observation, and E6's) —
+  so `navigable` over one is a combination the model expresses and the code has
+  nowhere to put: `signal::point` deliberately drops the capability for a live
+  spectrum rather than pretending.
+
+  What the milestone has to decide is exactly one thing, and it is not a
+  drawing question: **what a navigation group is when its axis is not the
+  window's time.** Two shapes are open and the choice belongs here rather than
+  in an implementation — a *second axis kind* beside `Coords::Time` (a
+  `Coords::Domain` carrying its unit, so a frequency axis groups with other
+  frequency axes and never with a lane), or the **element's own window**, no
+  group at all, in the shape `EditorProps::y_view` already has for the vertical
+  axis (a normalized `[start, len]` the element carries alone). The second is
+  smaller and is probably right for a spectrum, which nothing else would ever
+  share an axis with; the first is what a *pair* of spectra comparing two buses
+  would want, and it is the one that generalizes to the arbitrary-domain plot.
+  Decide it, record it in `docs/decisions.md`, then build.
+
+  The draw side is nearly free once that is settled and is worth stating so the
+  cost is not overestimated: `spectrum::draw_spectrum` already maps every screen
+  column through `ruler::display_to_hz`, so a normalized sub-range is one
+  remapping there and one in `ruler::hz_ticks_h` — the same inversion the
+  spectrogram's frequency ruler and cursor readout already share. The work is
+  the gesture and grouping half. Acceptance: a live spectrum in `gui_analyzer`
+  zoomed and panned on its frequency axis, the window round-tripping through
+  `/gui_set` and a `"view_x"`-shaped event, and the ruler revealing finer rungs
+  as it zooms — the property L8 already fixed for every other axis.
+
+- ⬜ **E18 — The waterfall writes its new columns instead of re-uploading the
+  texture**: E16's rolling analysis is incremental — a hop's worth of samples
+  costs one FFT, not a re-analysis of the span — but the *upload* is not: every
+  tick that lands a column rebuilds a `SpectrogramView`, which allocates a
+  texture and writes the whole magnitude image. **The number, so this is a
+  measured cost and not a worry**: the texture is `R8Unorm`, one byte a texel, so
+  an 8-second span at hop 512 and `fft_size` 1024 is 750 columns × 512 bins =
+  **384 KB per tick, ~11.5 MB/s at 30 fps**, plus one texture allocation per
+  tick per waterfall. That is affordable — it is why the milestone landed this
+  way — and it is also the wrong shape: it scales with the *span* where the work
+  scales with the *hop*, so a minute of retention costs eight times as much to
+  show the same two new columns.
+
+  The fix is the classic one and it is what a ring texture is for: keep the
+  texture allocated, `write_texture` the **new columns only**, and let the shader
+  unwrap a write cursor (one more uniform beside the `time`/`freq`/`db` triple
+  the pipeline already carries) so the oldest column reads as the leftmost.
+  Its cost is a change to `spectrogram.wgsl`, which **every** spectrogram shares
+  — the stored path included — so the invariant to hold is that a stored
+  transform is the degenerate case (cursor 0, never advanced) and draws
+  byte-identically to what it draws today. Ordered after E17 because it changes
+  nothing a user can see and E17 changes something they asked for.
 
 ## K track — the kit: opening the element, from Rust and from the wire
 
