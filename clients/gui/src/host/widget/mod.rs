@@ -157,13 +157,6 @@ pub enum WidgetKind {
         multiline: bool,
         caret: super::textedit::Caret,
     },
-    /// A drop/cycle selector over `options`, holding the chosen index.
-    Menu {
-        index: usize,
-        options: Vec<String>,
-        label: Option<String>,
-        text_size: f32,
-    },
     /// A multitrack lane: a horizontal strip of the shared timeline holding
     /// `clip` children placed by their `offset`/`dur`. A container (its clips
     /// are its children); `label` names the track in a left header, `height`

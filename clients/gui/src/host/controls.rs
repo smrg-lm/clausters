@@ -107,14 +107,15 @@ pub fn drag_fraction_delta(dy: f64, body_h: f32) -> f32 {
 ///
 /// [`Placed::scale`]: super::layout::Placed::scale
 pub fn draw(d: &mut Draw, kind: &WidgetKind, rect: Rect, focused: bool, scale: f32) {
-    match kind {
-        WidgetKind::Text {
-            value,
-            label,
-            text_size,
-            multiline,
-            caret,
-        } => field(
+    if let WidgetKind::Text {
+        value,
+        label,
+        text_size,
+        multiline,
+        caret,
+    } = kind
+    {
+        field(
             d,
             value,
             label.as_deref(),
@@ -122,20 +123,7 @@ pub fn draw(d: &mut Draw, kind: &WidgetKind, rect: Rect, focused: bool, scale: f
             *text_size * scale,
             *multiline,
             focused.then_some(*caret),
-        ),
-        WidgetKind::Menu {
-            index,
-            options,
-            label,
-            text_size,
-        } => menu(
-            d,
-            options.get(*index).map(String::as_str).unwrap_or(""),
-            label.as_deref(),
-            rect,
-            *text_size * scale,
-        ),
-        _ => {}
+        );
     }
 }
 
