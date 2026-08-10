@@ -243,7 +243,14 @@ impl WebApp {
                         .chunks_exact(4)
                         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                         .collect();
-                    self.taps.set(*tap, samples);
+                    // The position the window ends at: what retention appends
+                    // by, so a slow tick never stretches the history.
+                    let at = match msg.args.get(1) {
+                        Some(OscType::Long(p)) => *p as u64,
+                        Some(OscType::Int(p)) => *p as u64,
+                        _ => 0,
+                    };
+                    self.taps.set(*tap, samples, at);
                 }
             }
             "/clock_query.reply" => {

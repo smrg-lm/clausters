@@ -80,6 +80,13 @@ pub(super) struct WindowState {
     /// and peak-hold curves, one entry per channel), advanced on the frame
     /// tick.
     pub(super) spectra: HashMap<i32, Vec<SpectrumState>>,
+    /// The retained history of every bus this window's tree declares a
+    /// `retention` span on — the addressable past a forward-only source has
+    /// none of. Keyed by **bus**: one history, however many views read it.
+    pub(super) histories: HashMap<i32, crate::host::live::BusHistory>,
+    /// The rolling time-frequency analysis of every retained waterfall, keyed
+    /// by **widget**: two views of one bus may analyze it differently.
+    pub(super) rolls: HashMap<i32, crate::host::waterfall::Waterfall>,
 }
 
 pub(super) struct App {
@@ -219,7 +226,54 @@ impl App {
                     |bus, out| shm.read_bus(bus, out),
                     &mut ws.spectra,
                 );
+                // The retained half: a history per watched bus, then the
+                // rolling transform each waterfall makes of it.
+                crate::host::live::update_retention(
+                    tree,
+                    sample_rate,
+                    crate::host::live::retention_window(sample_rate, shm.window_limit()),
+                    |bus, out| shm.read_bus_at(bus, out),
+                    &mut ws.histories,
+                );
+                crate::host::live::update_waterfalls(
+                    tree,
+                    sample_rate,
+                    &ws.histories,
+                    &mut ws.rolls,
+                );
             }
+        }
+        self.refresh_waterfall_slots();
+    }
+
+    /// Uploads the transform of every waterfall whose roll moved this tick —
+    /// and only those, so a still picture costs no texture.
+    fn refresh_waterfall_slots(&mut self) {
+        let mut totals: Vec<(i32, usize)> = Vec::new();
+        for ws in self.windows.values_mut() {
+            let dirty: Vec<i32> = ws
+                .rolls
+                .iter()
+                .filter(|(_, roll)| roll.is_dirty())
+                .map(|(id, _)| *id)
+                .collect();
+            for id in dirty {
+                let Some(stft) = ws.rolls.get_mut(&id).and_then(|r| r.take_stft()) else {
+                    continue;
+                };
+                totals.push((id, stft.total_samples()));
+                if let Some(slot) = frame::spectrogram_slot(vec![stft], &ws.gpu, &ws.renderers) {
+                    ws.spectrograms.insert(id, slot);
+                }
+            }
+        }
+        // The axis has to know how long it is, or the navigation window falls
+        // back to a span the size of the body in *samples* and the whole
+        // history draws as one stretched column. It is the *live* setter: a
+        // retained axis slides, so it follows the newest until someone
+        // navigates it and then holds where they left it.
+        for (id, total) in totals {
+            self.host.set_live_timeline_total(id, total);
         }
     }
 

@@ -69,6 +69,12 @@ pub(super) struct CanvasSlot {
     /// Persistent FFT analysis state per `spectrum` widget id, advanced on the
     /// tick (`live::update_spectra`), exactly as the native front does.
     pub(super) spectra: HashMap<i32, Vec<SpectrumState>>,
+    /// The retained history per watched **bus**, and the rolling
+    /// time-frequency analysis per retaining **widget** — the browser half of
+    /// `retention`, filled from the `/bus_tapStream.reply` store exactly as the
+    /// native tick fills them from the segment.
+    pub(super) histories: HashMap<i32, live::BusHistory>,
+    pub(super) rolls: HashMap<i32, crate::host::waterfall::Waterfall>,
     /// Fetched waveforms/spectrograms that arrived before the GPU was ready,
     /// placed on `GpuReady` (plots need no GPU and are placed immediately).
     pub(super) pending_bulk: Vec<(i32, BulkData)>,
@@ -90,6 +96,8 @@ impl CanvasSlot {
             scopes: HashMap::new(),
             tap_windows: HashMap::new(),
             spectra: HashMap::new(),
+            histories: HashMap::new(),
+            rolls: HashMap::new(),
             pending_bulk: Vec::new(),
         }
     }

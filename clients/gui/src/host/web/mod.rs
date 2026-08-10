@@ -400,6 +400,9 @@ impl WebApp {
     /// then repaint.
     fn on_tick(&mut self) {
         let mut wants_clock = false;
+        // Applied after the loop: registering a live axis' length borrows the
+        // host, which the loop holds a tree of.
+        let mut waterfall_totals: Vec<(i32, usize)> = Vec::new();
         for def in self.visible_defs() {
             let Some(tree) = self.host.window_def(def) else {
                 continue;
@@ -433,8 +436,27 @@ impl WebApp {
                 &mut slot.tap_windows,
             );
             live::update_spectra(tree, |tap, out| taps.read_raw(tap, out), &mut slot.spectra);
+            // The retained half: a history per watched bus, then each
+            // waterfall's rolling transform of it. Same two calls as the
+            // desktop tick, over the streamed windows instead of the segment.
+            live::update_retention(
+                tree,
+                self.server_rate,
+                live::retention_window(self.server_rate, 0),
+                |tap, out| taps.read_raw_at(tap, out),
+                &mut slot.histories,
+            );
+            live::update_waterfalls(tree, self.server_rate, &slot.histories, &mut slot.rolls);
+            waterfall_totals.extend(refresh_waterfall_slots(slot));
             wants_clock |= live::tree_has_playhead(tree, self.host.timelines());
             slot.request_redraw();
+        }
+        // The retained axis has to know how long it is, or the navigation
+        // window falls back to a span the size of the body in *samples* and the
+        // whole history draws as one stretched column. It is the *live*
+        // setter: the axis follows the newest until someone navigates it.
+        for (id, total) in waterfall_totals {
+            self.host.set_live_timeline_total(id, total);
         }
         // A visible playhead needs the engine clock: poll it once per tick (the
         // browser's stand-in for the shm header's sample clock) — once for the
@@ -734,4 +756,34 @@ thread_local! {
 /// The proxy every instance-side closure reaches the loop through.
 fn web_proxy() -> Option<EventLoopProxy<HostEvent>> {
     WEB_PROXY.with(|p| p.borrow().clone())
+}
+
+/// Uploads the transform of every waterfall on this canvas whose roll moved
+/// this tick — and only those, so a still picture costs no texture. The
+/// browser twin of the desktop front's own pass, kept beside the tick that
+/// advances the rolls rather than inside the render, since a texture upload
+/// is not a drawing decision.
+fn refresh_waterfall_slots(slot: &mut CanvasSlot) -> Vec<(i32, usize)> {
+    let mut totals = Vec::new();
+    let Some(render) = slot.render.as_mut() else {
+        return totals;
+    };
+    let dirty: Vec<i32> = slot
+        .rolls
+        .iter()
+        .filter(|(_, roll)| roll.is_dirty())
+        .map(|(id, _)| *id)
+        .collect();
+    for id in dirty {
+        let Some(stft) = slot.rolls.get_mut(&id).and_then(|r| r.take_stft()) else {
+            continue;
+        };
+        totals.push((id, stft.total_samples()));
+        if let Some(built) =
+            crate::host::frame::spectrogram_slot(vec![stft], &render.gpu, &render.renderers)
+        {
+            render.spectrograms.insert(id, built);
+        }
+    }
+    totals
 }

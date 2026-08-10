@@ -386,6 +386,31 @@ impl Host {
         Some((nav, self.timeline_total(key)))
     }
 
+    /// Registers the length of a **live** axis — one whose content slides,
+    /// like a retained waterfall's — and re-fits the view **only while nobody
+    /// has navigated it**.
+    ///
+    /// A retained axis is a sliding window of a bus: its sample 0 is a moving
+    /// point in real time, so keeping a fixed sample range would walk the view
+    /// off the data as the history rolls (the picture stalls), while re-fitting
+    /// unconditionally would yank a zoom out of the user's hands every tick.
+    /// The rule that resolves it is the one every transport already uses:
+    /// **follow the newest until you touch it, then stay where you were put.**
+    /// "Untouched" is the view still spanning the whole axis, which is exactly
+    /// what a zoom or a pan stops being true of.
+    pub fn set_live_timeline_total(&mut self, id: i32, total: usize) {
+        let untouched = match self.timeline_nav(id) {
+            // A degenerate or full-span window: nobody has navigated it.
+            Some((nav, old)) => nav.len <= 0.0 || nav.len >= old.max(1) as f64,
+            None => true,
+        };
+        if untouched {
+            self.set_timeline_total(id, total);
+        } else {
+            self.set_timeline_total_keeping_view(id, total);
+        }
+    }
+
     /// The distinct window roots showing any member of group `key` — the
     /// windows a group mutation must repaint.
     fn timeline_roots(&self, key: GroupKey) -> Vec<i32> {

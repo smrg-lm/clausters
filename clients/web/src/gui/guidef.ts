@@ -451,6 +451,18 @@ export function signal(
         view?: string;
         bus?: number;
         rate?: "audio" | "control";
+        /**
+         * Seconds of history the host keeps of a `bus` (0 = none, the
+         * default). A forward-only source has no addressable past, which is
+         * what stops it being navigable: there is nothing behind the newest
+         * window to zoom out to. This supplies one, so
+         * `signal({ view: "spectrogram", bus: 0, retention: 8, navigable: true })`
+         * is a **waterfall** — eight seconds of live spectrum you can zoom and
+         * pan like a file. It is a policy of the axis, not of the drawing: the
+         * same seconds mean the same seconds at any frame rate, FFT size or
+         * hop, and a `GuiHost.set` of it resizes the history live.
+         */
+        retention?: number;
         baseBucket?: number;
         navigable?: boolean;
         selectable?: boolean;
@@ -461,8 +473,9 @@ export function signal(
     } = {},
 ): GuiNode {
     const {
-        view, cache, path, buffer, data, blob, channels, bus, rate, baseBucket,
-        navigable, selectable, editable, overlay, axes: pair, label: text, ...rest
+        view, cache, path, buffer, data, blob, channels, bus, rate, retention,
+        baseBucket, navigable, selectable, editable, overlay, axes: pair,
+        label: text, ...rest
     } = options;
     return node("signal", {
         ...rest,
@@ -472,6 +485,7 @@ export function signal(
             ["view", view],
             ["bus", bus],
             ["rate", rate],
+            ["retention", retention],
             ["base_bucket", baseBucket],
             ["navigable", flag(navigable)],
             ["selectable", flag(selectable)],

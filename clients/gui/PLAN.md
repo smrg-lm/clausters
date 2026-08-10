@@ -946,7 +946,55 @@ The transitional aliases are **not** the rejected "presets on the wire" decision
   (a click, a transpose drag, undo/redo, and a page engraved from a timeline).
   `clients/web/PLAN.md` now carries the shape the port must follow.
 
-- ⬜ **E16 — Retention is a policy on the axis** *(the one gap the model expresses and nobody built)*: E3 decided that an axis is navigable when its domain is addressable and that a forward-only source becomes addressable only if the host **retains** a history — and then built the clamp/zoom half and not the retention half. E6 confirmed it from the other side: a navigable live spectrum and a waterfall are reachable in the model and absent from the catalog. This wires the missing half: a retention ring per watched bus, sized by the axis's declared span, filled by the same live path that already reads the segment each frame, so `caps.navigable` over a forward-only source stops being a combination that parses and does nothing. Acceptance: a retained waterfall and a zoomable live spectrum in `gui_analyzer`, and the retention span live via `/gui_set`.
+- ✅ **E16 — Retention is a policy on the axis** *(the one gap the model expresses and nobody built)*: E3 decided that an axis is navigable when its domain is addressable and that a forward-only source becomes addressable only if the host **retains** a history — and then built the clamp/zoom half and not the retention half. E6 confirmed it from the other side: a navigable live spectrum and a waterfall are reachable in the model and absent from the catalog. This wires the missing half: a retention ring per watched bus, sized by the axis's declared span, filled by the same live path that already reads the segment each frame, so `caps.navigable` over a forward-only source stops being a combination that parses and does nothing. Acceptance: a retained waterfall and a zoomable live spectrum in `gui_analyzer`, and the retention span live via `/gui_set`.
+
+  **What shipped.** `retention`, in **seconds**, on the forward-only source —
+  the unit the axis is declared in, so the same seconds are the same seconds
+  whatever the frame rate, the `fft_size` or the `hop`. Two stores, keyed
+  differently on purpose: a **history per watched bus** (`live::BusHistory` —
+  one history however many views read it) and a **rolling transform per widget**
+  (`waterfall::Waterfall` — two views of one bus may analyze it differently).
+  The transform is rolling rather than recomputed: at 30 fps over an 8 s span
+  a full re-analysis would be ~750 FFTs a tick to learn what two of them say, so
+  each whole hop is analyzed once, through the very function the stored path
+  uses (`spectrogram::column_into`, factored out for exactly this) — which is
+  what makes a retained waterfall and an offline spectrogram of the same audio
+  the same picture, and lets the renderer, the frequency ruler and the cursor
+  readout stay one implementation.
+
+  **Three things the entry did not foresee, all found by eye and all worth
+  keeping.** *(1)* The append must be by **stream position**, not by window:
+  two ticks read overlapping windows and the overlap follows the frame rate, so
+  appending windows would stretch the history. `BusSource::read_bus_at` carries
+  the position; a stretch the reader never saw is retained as **silence**, so a
+  drop-out is visible instead of being compressed out of the time axis. *(2)* A
+  retaining read must size itself by **what the source will serve**
+  (`BusSource::window_limit` — half the tap ring): asking for more is refused,
+  and a refusal is indistinguishable from a bus nobody writes, so the first
+  build retained nothing and looked exactly like silence. *(3)* The one that
+  actually took two rounds at the window: **a live axis has to register its
+  length, and follow it.** Without the length the navigation window falls back
+  to a span the size of the body in *samples* and the whole history draws as one
+  stretched column; with the length but a kept view, the view walks off a
+  history that slides underneath it and the picture stalls. The rule is
+  `Host::set_live_timeline_total`: **follow the newest until you navigate it,
+  then stay where you were put** — "untouched" being the view still spanning the
+  whole axis, which a zoom or a pan stops being true of.
+
+  **Not done, and it is a separate design rather than a leftover: the zoomable
+  live `spectrum`.** The waterfall is a navigable live view and it is what the
+  entry's body describes; the *curve*'s frequency-axis zoom is a different
+  mechanism. A `spectrum` is not a timeline container — it has no `Coords::Time`,
+  no navigation group, no x window — and its x domain is **frequency**, not
+  time, so making `navigable` mean something over one means deciding what a
+  navigation group is when its axis is not the window's time (today
+  `signal::point` deliberately drops `navigable` for a live spectrum). The draw
+  side is nearly free — `draw_spectrum` already maps every column through
+  `ruler::display_to_hz`, so a normalized `[start, len]` sub-range is one
+  remapping there and one in `hz_ticks_h`. It is the gesture and grouping half
+  that needs a decision, and inventing one here would land it in the same voice
+  as a staged design. It belongs with whatever milestone opens a **non-time
+  navigable axis**.
 
 **Not a milestone here — `box`.** The catalog spent the name on a synonym for `panel` and E9's model wants it for the patcher's box, but a plane's boxes are still its `boxes` prop. Turning them into child elements changes ids, layout, per-box hit-testing and edit-back — it is behavior, not spelling — so it belongs to **P5**, the patcher's editing surface, and is recorded there rather than opened as a rename.
 

@@ -121,6 +121,8 @@ impl App {
                 scopes: HashMap::new(),
                 tap_windows: HashMap::new(),
                 spectra: HashMap::new(),
+                histories: HashMap::new(),
+                rolls: HashMap::new(),
             },
         );
         // The scale is in the line because it is the one thing about a window

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""A phasescope and a live spectrum over server audio buses.
+"""A phasescope, a live spectrum and a retained waterfall over server audio buses.
 
-Two of the GUI's analysis views, both reading **audio buses** straight from the
+Three of the GUI's analysis views, all reading **audio buses** straight from the
 shared-memory segment (the same path the oscilloscope uses, ``gui_scope.py``):
 
 - a ``phasescope`` (goniometer) reads a **stereo pair** of buses and draws them
@@ -10,7 +10,15 @@ shared-memory segment (the same path the oscilloscope uses, ``gui_scope.py``):
   correlation read-out (Pearson's r) beneath;
 - a ``spectrum`` (spectroscope) reads one bus and draws one forward FFT per
   frame as a magnitude curve on a log frequency axis, with per-bin averaging
-  and a decaying peak-hold so it does not flicker.
+  and a decaying peak-hold so it does not flicker;
+- a **waterfall** -- the spectrogram presentation over the same live bus, with a
+  ``retention`` span. That prop is the whole point of the third view: a
+  forward-only source has no addressable past, so ``navigable`` over one is a
+  combination that would parse and do nothing. Retention supplies the past --
+  the host keeps that many seconds of the bus and analyzes them into columns as
+  they arrive -- and the time axis becomes navigable, zoomable and pannable
+  exactly like a spectrogram computed from a file. The span is a policy of the
+  axis and is settable live, which the script does halfway through.
 
 The source is a sine whose **stereo image** is swept from the script: the left
 channel is a fixed sine, the right is a rotation ``cos(theta)*left +
@@ -45,7 +53,7 @@ import time
 
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
-from clausters.gui import panel, phasescope, spectrum, window
+from clausters.gui import panel, phasescope, signal, spectrum, window
 from clausters.defs import Synth
 
 # %% [markdown]
@@ -85,16 +93,30 @@ synth = Synth("stereo_image", {"freq": 220.0}, server=server)
 # *named*, not numbered -- `open` hands back a handle that resolves the names.
 
 # %%
+# The seconds of the bus the host keeps. A forward-only source has no
+# addressable past -- there is nothing behind the newest window to zoom out to
+# -- so a retention span is what makes `navigable` mean something over one: the
+# waterfall below is a spectrogram of the last RETAIN seconds, zoomable and
+# pannable exactly like one computed from a file.
+RETAIN = 8.0
+
 win = gui.open(window(
     panel(phasescope(0, name="gonio", window_ms=30.0,
                      label="goniometer (stereo pair)"),
           spectrum(0, name="spectrum", fft_size=2048, log_freq=True,
                    peak_hold=True, label="spectrum (left tap, log Hz)"),
-          layout="row"),
-    title="Phasescope + live spectrum", w=760, h=420))
+          layout="row", h=200),
+    signal(view="spectrogram", bus=0, retention=RETAIN, navigable=True,
+           name="waterfall", window_size=1024, freq_scale="log",
+           label="waterfall (left tap, %.0f s retained)" % RETAIN,
+           axes={"x": {"ruler": "time"}, "y": {"ruler": "hz"}}),
+    title="Phasescope + live spectrum + waterfall", w=760, h=640, layout="col"))
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("goniometer: vertical=mono (r=+1), lozenge=wide (r~0), "
-      "horizontal=anti-phase (r=-1); close the window to stop")
+      "horizontal=anti-phase (r=-1)")
+print(f"waterfall: the last {RETAIN:.0f} s of the same bus, and because the "
+      "host retains them the axis is navigable -- wheel to zoom the time axis, "
+      "drag to pan, as on a file; close the window to stop")
 
 # %% [markdown]
 # ## Drive it
@@ -125,11 +147,28 @@ def run(seconds: float) -> None:
         gui.pump(timeout=0.03)
 
 
+def retain(seconds: float) -> None:
+    """Resizes the retained span live -- the axis's own policy, set the way
+    any other prop is set. Narrowing it drops the oldest history at once
+    rather than when the ring next fills, so the waterfall's time axis
+    visibly shortens under the picture."""
+    win["waterfall"].set(retention=seconds,
+                         label=f"waterfall (left tap, {seconds:.0f} s retained)")
+    print(f"  retention -> {seconds:.0f} s")
+
+
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(30.0)
+        run(15.0)
+        # The span is a live prop: halve it, watch the waterfall's time axis
+        # shorten under the picture, then put it back.
+        retain(RETAIN / 2)
+        run(8.0)
+        retain(RETAIN)
+        run(15.0)
     finally:
         session.close()
 else:
-    print("analyzer up - run(10) to sweep the image, session.close() to end")
+    print("analyzer up - run(10) to sweep the image, retain(4) to narrow the "
+          "waterfall's span, session.close() to end")

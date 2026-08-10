@@ -74,6 +74,49 @@ impl FreqScale {
     }
 }
 
+/// The analysis window and its coherent gain: a Hann window, and the sum that
+/// normalizes a full-scale sine to about 0 dB. Computed once per transform, not
+/// once per column.
+pub fn analysis_window(window_size: usize) -> (Vec<f32>, f32) {
+    let hann: Vec<f32> = (0..window_size)
+        .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / window_size as f32).cos())
+        .collect();
+    let gain = hann.iter().sum::<f32>() * 0.5;
+    (hann, gain)
+}
+
+/// **One column of a spectrogram**: `frame` windowed, transformed, and mapped
+/// to the normalized 0..1 magnitudes the texture stores.
+///
+/// It is a free function rather than a method because two paths produce
+/// columns and they must produce the *same* ones: the stored transform
+/// ([`Stft::compute`], analyzing a whole buffer at once) and the rolling one a
+/// retained live view keeps (`host::waterfall`, analyzing a column at a time as
+/// the samples arrive). A retained waterfall and an offline spectrogram of the
+/// same audio are then the same picture, which is the only reason the renderer,
+/// the frequency ruler and the cursor readout can stay one implementation.
+///
+/// `windowed` and `spectrum` are scratch the caller owns, so a rolling
+/// analysis allocates nothing per column.
+pub fn column_into(
+    frame: &[f32],
+    hann: &[f32],
+    win_gain: f32,
+    windowed: &mut [f32],
+    spectrum: &mut [f32],
+    out: &mut [f32],
+) {
+    for (i, w) in windowed.iter_mut().enumerate() {
+        *w = frame.get(i).copied().unwrap_or(0.0) * hann[i];
+    }
+    // The forward FFT lives once in the shared core (`clausters_core::fft`).
+    fft::rfft_magnitudes_into(windowed, spectrum);
+    for (o, m) in out.iter_mut().zip(spectrum.iter()) {
+        let db = 20.0 * (m / win_gain + 1e-9).log10();
+        *o = ((db - REF_FLOOR) / -REF_FLOOR).clamp(0.0, 1.0);
+    }
+}
+
 /// A short-time Fourier transform: `n_frames` x `n_bins` normalized magnitudes
 /// in `[0, 1]` (dB mapped from `[DB_FLOOR, 0]`), row-major by frame. Frame `f`
 /// is centred on samples starting at `f * hop`.
@@ -105,32 +148,57 @@ impl Stft {
             1 + (total_samples - window_size) / hop
         };
 
-        // Hann window and its coherent gain (sum), used to normalize so that a
-        // full-scale sine reads ~0 dB.
-        let hann: Vec<f32> = (0..window_size)
-            .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / window_size as f32).cos())
-            .collect();
-        let win_gain: f32 = hann.iter().sum::<f32>() * 0.5;
-
+        let (hann, win_gain) = analysis_window(window_size);
         let mut mags = vec![0.0f32; n_frames * n_bins];
         let mut windowed = vec![0.0f32; window_size];
         let mut spectrum = vec![0.0f32; n_bins]; // n_bins == window_size / 2
         for f in 0..n_frames {
             let start = f * hop;
-            for (i, w) in windowed.iter_mut().enumerate() {
-                *w = samples.get(start + i).copied().unwrap_or(0.0) * hann[i];
-            }
-            // The forward FFT lives once in the shared core (`clausters_core::fft`).
-            fft::rfft_magnitudes_into(&windowed, &mut spectrum);
-            for b in 0..n_bins {
-                let mag = spectrum[b] / win_gain;
-                let db = 20.0 * (mag + 1e-9).log10();
-                mags[f * n_bins + b] = ((db - REF_FLOOR) / -REF_FLOOR).clamp(0.0, 1.0);
-            }
+            let frame: Vec<f32> = (0..window_size)
+                .map(|i| samples.get(start + i).copied().unwrap_or(0.0))
+                .collect();
+            column_into(
+                &frame,
+                &hann,
+                win_gain,
+                &mut windowed,
+                &mut spectrum,
+                &mut mags[f * n_bins..(f + 1) * n_bins],
+            );
         }
 
         Self {
             total_samples,
+            n_frames,
+            n_bins,
+            hop,
+            window_size,
+            sample_rate,
+            mags,
+        }
+    }
+
+    /// An STFT assembled from magnitudes computed elsewhere, frame-major
+    /// (`n_frames` runs of `n_bins`) and normalized the way [`compute`] leaves
+    /// them.
+    ///
+    /// What needs it is the **rolling** analysis: a retained live view adds one
+    /// column per hop and drops one off the front, so recomputing the whole
+    /// transform each frame would redo hundreds of FFTs to learn what one of
+    /// them says. The columns are the thing that is kept; this turns them back
+    /// into the transform the renderer uploads.
+    ///
+    /// [`compute`]: Stft::compute
+    pub fn from_columns(
+        mags: Vec<f32>,
+        n_bins: usize,
+        hop: usize,
+        window_size: usize,
+        sample_rate: f32,
+    ) -> Self {
+        let n_frames = mags.len().checked_div(n_bins).unwrap_or(0);
+        Stft {
+            total_samples: n_frames.saturating_sub(1) * hop + window_size,
             n_frames,
             n_bins,
             hop,

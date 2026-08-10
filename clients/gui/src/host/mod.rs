@@ -65,6 +65,7 @@ pub mod textedit;
 pub mod theme;
 pub mod timeline;
 pub mod track;
+pub mod waterfall;
 pub mod widget;
 
 // Booting a persisted bundle over the wire — the ordering/encoding half of the
@@ -341,6 +342,28 @@ pub trait BusSource: Send + Sync {
     /// Above here, a bus is the only thing anyone names.
     fn read_bus(&self, _bus: i32, _out: &mut [f32]) -> bool {
         false
+    }
+
+    /// [`read_bus`](Self::read_bus), plus **where the window ends in the bus's
+    /// own stream** — the count of samples the engine has ever written to it.
+    ///
+    /// The newest window alone cannot be retained: two ticks read overlapping
+    /// windows, and how much they overlap depends on the frame rate, so
+    /// appending them would stretch or compress the history. The position is
+    /// what makes the append exact — a retainer keeps the last one it saw and
+    /// takes only the samples past it. `None` where the source has no window
+    /// for the bus, or carries no position (nothing is retained then, rather
+    /// than something wrong being retained).
+    fn read_bus_at(&self, _bus: i32, _out: &mut [f32]) -> Option<u64> {
+        None
+    }
+
+    /// The largest window this source can serve in **one** read (0 = it does
+    /// not say). A reader asking for more than this gets nothing back, which is
+    /// silence that looks exactly like a bus nobody is writing — so a retaining
+    /// read sizes itself by this rather than by a duration it picked.
+    fn window_limit(&self) -> usize {
+        0
     }
 
     /// Audio bus `bus`'s published level — the peak of the engine's last

@@ -311,6 +311,7 @@ def field(*children, axes: dict | None = None, offset: float | None = None,
 def signal(*, view: str | None = None, data=None, blob: int | None = None,
            buffer: int | None = None, path: str | None = None, cache: str | None = None,
            bus: int | None = None, rate: str | None = None, channels: int | None = None,
+           retention: float | None = None,
            base_bucket: int | None = None, navigable: bool | None = None,
            selectable: bool | None = None, editable: bool | None = None,
            overlay: bool | None = None, axes: dict | None = None, label: str | None = None,
@@ -328,6 +329,15 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       de-interleaves it, ``base_bucket`` sizes the peak pyramid.
     - the **capabilities** — ``navigable`` (zooms and pans its axes, and joins
       the navigation group its x axis names), ``selectable``, ``editable``.
+    - ``retention`` — **seconds of history the host keeps of a ``bus``** (0 =
+      none, the default). A forward-only source has no addressable past, which
+      is what stops it being navigable: there is nothing behind the newest
+      window to zoom out to. This is what supplies one, so
+      ``signal(view="spectrogram", bus=0, retention=8.0, navigable=True)`` is a
+      **waterfall** — eight seconds of live spectrum you can zoom and pan like a
+      file. It is a policy of the axis, not of the drawing: the same seconds
+      mean the same seconds at any frame rate, FFT size or hop, and a
+      `GuiHost.set` of it resizes the history live.
 
     So ``signal(view="trace", path=take)`` is the heavy waveform and
     ``signal(view="trace", bus=0)`` the oscilloscope: the same element over the
@@ -343,6 +353,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
     """
     extra = _drop_none(view=view, data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
+                       retention=retention,
                        bus=bus, rate=rate, channels=channels, base_bucket=base_bucket,
                        label=label, color=color)
     for key, flag in (("navigable", navigable), ("selectable", selectable),

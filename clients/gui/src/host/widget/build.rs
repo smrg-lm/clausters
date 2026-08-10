@@ -530,6 +530,7 @@ fn build_signal(
             window_ms: number(props, "window_ms", p.window_ms),
             trigger: number(props, "trigger", 0.0),
             hold: props.get("hold").and_then(truthy).unwrap_or(false),
+            retention: number(props, "retention", 0.0).max(0.0),
         })
     } else {
         signal::Source::Data(signal::Data {

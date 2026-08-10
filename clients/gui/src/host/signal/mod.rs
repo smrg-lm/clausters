@@ -143,6 +143,18 @@ pub struct Bus {
     pub window_ms: f32,
     pub trigger: f32,
     pub hold: bool,
+    /// **The retention policy on this source's time axis**, in seconds of
+    /// history (0 = none, the default).
+    ///
+    /// A forward-only source has no addressable past, which is what stops it
+    /// being navigable: there is nothing behind the newest window to zoom out
+    /// to. Retention is what supplies one — the host keeps this many seconds of
+    /// the bus and the view reads *that*, so a span the axis declares is a span
+    /// the axis can be navigated over. It is a policy of the **axis**, not of
+    /// the drawing: the same seconds mean the same seconds whatever the frame
+    /// rate, the FFT size or the hop, and a `/gui_set` of it resizes the
+    /// history live.
+    pub retention: f32,
 }
 
 /// Where a signal element's samples come from — the arrangement layer's own
@@ -328,6 +340,7 @@ impl SignalElement {
                     window_ms: p.window_ms,
                     trigger: 0.0,
                     hold: false,
+                    retention: 0.0,
                 })
             } else {
                 Source::Data(Data {

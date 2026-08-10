@@ -512,6 +512,17 @@ fn apply_signal(el: &mut signal::SignalElement, key: &str, v: &Value) -> bool {
             Some(b) => truthy(v).map(|x| b.hold = x).is_some(),
             None => false,
         },
+        // The axis's declared span. Clamped at zero rather than refused: a
+        // negative retention is "no history", which is the default anyway.
+        "retention" => match el.source.bus_mut() {
+            Some(b) => {
+                set_f(&mut b.retention, v) && {
+                    b.retention = b.retention.max(0.0);
+                    true
+                }
+            }
+            None => false,
+        },
         "channels" => match v.as_i64() {
             Some(n) => {
                 let n = (n as usize).max(1);

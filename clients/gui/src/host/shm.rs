@@ -297,11 +297,22 @@ impl super::BusSource for SharedSegment {
     }
 
     fn read_bus(&self, bus: i32, out: &mut [f32]) -> bool {
+        self.read_bus_at(bus, out).is_some()
+    }
+
+    fn read_bus_at(&self, bus: i32, out: &mut [f32]) -> Option<u64> {
         // The bus is the key: the server publishes which ring records it.
-        bus >= 0
-            && self
-                .tap_of_bus(bus as usize)
-                .is_some_and(|tap| self.tap_read_latest(tap, out).is_some())
+        if bus < 0 {
+            return None;
+        }
+        let tap = self.tap_of_bus(bus as usize)?;
+        self.tap_read_latest(tap, out)
+    }
+
+    fn window_limit(&self) -> usize {
+        // The reader's own cap: a window past half the ring cannot be copied
+        // without racing the writer round it.
+        self.tap_frames() / 2
     }
 
     fn level(&self, bus: i32) -> f32 {
