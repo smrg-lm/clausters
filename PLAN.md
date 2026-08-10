@@ -1225,3 +1225,23 @@ no page equivalent by design.
   `examples/` if the feature is user-facing — not just the code and the git
   history. The examples are also the manual-test surface: new
   human-audible/visual behavior is checked by running one.
+
+## Found by use: the running list of fixes
+
+These are not milestones and they are not future directions. They are what
+**using the thing** turns up — an eye pass over an example, a path read while
+doing something else, a behavior that is correct and unclear — recorded the day
+it is found so it is not rediscovered, and kept here rather than inside whichever
+milestone happened to be open at the time.
+
+Two conventions, because the section only works if both hold. Every entry is a
+**checkbox**, so what is open reads as open at a glance and nothing has to be
+inferred from where it sits. And a fixed one **stays**, with the record of what
+was wrong and why the fix is the shape it is — that is what makes the list worth
+reading rather than a queue that empties.
+
+Anything unresolved lives here or under "Future directions", both **after** the
+tracks: never inside the milestone that happened to be open, and never among
+finished work, where a pending item reads as done.
+
+*(Nothing open here yet.)*

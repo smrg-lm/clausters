@@ -7,6 +7,18 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   `clients/gui/PLAN.md` and `clients/web/PLAN.md` (client/GUI/web tracks), all
   in English — a roadmap plus a checkbox status per milestone, not an expanded
   completion narrative.
+  - **Anything unresolved goes at the end of its plan, and carries a checkbox.**
+    A gap found by use — an eye pass over an example, a path read while doing
+    something else, a behavior that is correct and unclear — is written down the
+    day it is found, in the plan's **"Found by use"** section (fixes) or
+    **"Future directions"** (a design that is not a fix), both of which live
+    *after* the tracks and after "Definition of done". Never inside the
+    milestone that happened to be open, and never in a section of finished work:
+    a pending item filed among done ones reads as done, which is how it gets
+    lost. Every entry there is `⬜`/`✅`, so what is open reads as open without
+    inferring it from where it sits, and a fixed one **stays** with the record
+    of what was wrong — that is what makes the list worth reading rather than a
+    queue that empties.
 - The record of *what shipped* is the git history (clear commit messages); there
   is no separate per-milestone log. Non-obvious decisions and upstream-bug
   findings are curated in `docs/decisions.md` (ADR spirit); the frozen historical

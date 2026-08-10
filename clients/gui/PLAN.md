@@ -580,6 +580,32 @@ none after — the sweep is shared code, so both fronts get it from the one
 window being redefined, if the source swap lands; and a canvas supplied at a
 size keeps it, with no `resize` needed to correct the default.
 
+## G33: every live view names a bus and a rate
+
+- ✅ **G33 — Every live view names a bus and a rate; the sample ring is the
+  server's** *(done 2026-07-28)*: the four live data views took three different
+  kinds of number — a `meter` a control bus, a `scope` either a control bus or a
+  *tap* (an index into the segment's eight sample rings), the goniometer and the
+  spectroscope only taps — so the surface claimed two kinds of signal where the
+  server has one kind at two rates, and the ring index (which the caller had to
+  allocate, route and release) leaked through the wire, the host, both clients
+  and every example. Now each view takes **`bus`, `rate` and `channels`**
+  adjacent buses (the SuperCollider model; audio is the default and bus 0 is the
+  first hardware output, so a bare `scope()` is the console scope). `/bus_tap bus
+  watch` replaces `/bus_tap tapIndex bus`: the **server** picks the ring and
+  publishes the choice in a per-bus directory in the segment (ABI v3 → v4),
+  counting watches so views share one ring and the last one to stop frees it;
+  the **host** is what turns a widget into that command, diffing the audio buses
+  its open documents read on every def/free/set; a `/bus_tapStream` subscription
+  *is* a watch, so a browser client never sends it. A `meter` needed a path of
+  its own — eight rings cannot back a mixer, and a meter wants one number per
+  block, not samples — so the segment also carries a **per-bus level**, the
+  block peak held with a 20 dB/s decay (correct for a reader a dozen blocks
+  slower than the engine, and for several readers at once, which a
+  reader-clears-the-max scheme is not). Ported to both clients in the same
+  change; the Python and TypeScript tap allocators are gone. Rationale in
+  `docs/decisions.md`.
+
 ## G34 — The multitrack editor reuses the widget set that grew past it
 
 Found while reviewing `gui_composer.py`. `clausters.gui.Editor` composes its window the way it did when the lanes first landed (G22) and has not followed the widgets that landed after — so the Python multitrack view builds by hand what the catalog now provides, and the two multitrack views have **drifted apart**: the web's `composer.html` already rules from the top with the `timeruler` G32c added, while the client that is supposed to be the reference for the port does not know the widget exists. That inversion is the milestone's real subject; the individual gaps are small and mostly mechanical.
@@ -1520,6 +1546,32 @@ One ordering detail worth stating because it was previously a known cost: **the 
 
 Recorded so no milestone reopens it: a styling language, selectors or a cascade (the role overlay is the only cascade, and it cascades role tables, never per-part rules); a constraint solver; an accessibility tree (K6); a third-party **container** (a coordinate system is a much larger promise than a drawing — K8 draws that line and tests it); and the catalog growing a new name where a product of the existing ones would do — the `signal` rule, which is the only thing that has kept the enum from doubling and which Part A makes structural rather than habitual.
 
+## ✅ In-browser audio engine (Web Audio / AudioWorklet) — shipped as the server's B track
+
+**This track converged and is numbered on the server side: `PLAN.md` (root), "B track — the engine in the browser" (B0–B4).** The engine port, the AudioWorklet backend and the wasm-`Embed` link landed there because the engine is the server's; the GUI-host leg landed as B3 (`ServerLink::Page` + `GuiBridge.connect_page`/`server_reply`, the `host::bundle` boot replay, the standalone page), and the web-component packaging landed as B4 (the `clausters` package seeded in `clients/web/`). **Consolidation (with W0):** this crate no longer carries a `web/` directory — the harness/parity/standalone pages and the bundle tooling that G12/G16/B3 grew here live in the web package (`clients/web/examples`, `tests`, `tools`), which stages this crate's wasm-bindgen bundle into its `dist/gui-host/`; the milestone entries keep the original paths as the record of what shipped where. The design notes below are the original record that shaped it — note the SharedArrayBuffer route they sketch was *not* taken initially (no COOP/COEP on arbitrary pages; the MessagePort ring landed instead, with SAB kept open as a later optimization — see `docs/decisions.md`).
+
+Not part of G11-G16; recorded here because the G11 seam was deliberately shaped to accept it, and the G11 decision ("no in-process engine in the browser") is a scope boundary that this track relaxes. Through G16 the browser GUI host drives a *separate* audio server over WebSocket. The parallel, larger piece of work is to compile `clausters-server` itself to `wasm32` with a **Web Audio backend**, so the engine runs **in the browser** - the wasm analogue of the native `standalone`/`embed` mode.
+
+- **A new audio backend behind the existing engine seam, not a DSP rewrite.** The engine core (`Engine::process_block`) is already decoupled from the device: it feeds the real-time cpal callback and the offline `render()`/NRT path from the same block function (FTZ armed in both, NRT sample-identical to RT). A browser backend is a *third* driver - an **AudioWorklet** output whose process callback pulls blocks from the engine. cpal does not target Web Audio, so this is a genuine backend addition, which is exactly why it is its own track rather than a step inside G11-G16.
+- **An in-process browser link, the wasm `Embed`.** With the engine in the page, the GUI host reaches it through a new `ServerLink` variant (the wasm counterpart of `Embed`): OSC over an in-process channel, **not** WebSocket. This is the same second link kind the native host already has (`Udp` vs `Embed`); the `Transport` trait and the cfg-gated `ServerLink` from G11 take the variant without a protocol change. WebSocket stays the carrier for a *remote* server, so it never disappears - it stops being the browser's only option.
+- **The shared-memory paths return inside the browser.** An AudioWorklet runs on its own thread and shares state with the main thread through `SharedArrayBuffer` (which needs cross-origin isolation, COOP/COEP). That is the browser's shared-memory primitive: it can carry the zero-message `BusSource` (control buses read each frame) and the bulk audio path **inside** the page - the same roles `host::shm`/`mapfile` play natively - instead of the WS/`fetch` fallback G14/G15 build for the remote case. So a browser host paired with an in-page engine looks more like the native host than like the remote-server browser.
+- **RT-safety carries to the worklet.** The audio thread's no-alloc/no-lock discipline applies to the AudioWorklet thread, and the lock-free command/garbage FIFOs map onto `SharedArrayBuffer` ring buffers. A standalone-style bundle (a GuiDef + GraphDefs) could then boot entirely in a browser tab with no server process at all - the browser twin of `--standalone`.
+
+This intersected the server track and not only the GUI one, which is why it was numbered there. **The one piece of the sketch above that did not ship is the third bullet** — the in-page shared-memory paths — and it is recorded as a track to open under Future directions rather than left here reading as done. The product TypeScript client (`clients/web`, see the G13 note) is still a separate concern from both.
+
+## Definition of done (per milestone)
+
+Following the project rule: code + tests, a clear commit message (the record of *what* shipped) and this file's checkbox updated; developer/user docs where the feature touches them; a commented example when the feature is user-facing — the example is also how new human-visible behavior gets checked by eye; and a `docs/decisions.md` note only when a choice has non-obvious context.
+
+## Future directions (to fold into milestones as they firm up)
+
+Captured here so the depth the editor-grade vision needs is not lost; each becomes a `Gx` when its design converges. (The former entries for scopes, the editor-grade views, edit-back-to-data and the BPF view converged into G18-G21 above.) **Ordering (decided):** the widget-deepening arc comes first because everything in it is immediately usable from the installed Python client over the existing protocol; the timeline and notation views follow as their designs firm up (both since converged - G22 and G31); **packaging and the in-browser audio engine are deliberately last** - they change how the system ships, not what it can show, and both keep constraining design in the meantime (the web frontend must stay Tauri-wrappable; the `Transport`/`ServerLink` seam must keep the wasm-engine variant open).
+
+- **DAW / timeline view.** Now firming up as the **G22** arc above (per-member placement, `track`/`clip` widgets, clip edit-back, an events piano-roll). Tracks with audio and MIDI/OSC sequencing; since the audio lives in the server, the view reads it from there. Builds directly on G20d's group navigation/placement seat and G21's edit-back pattern.
+- **The free arrangement plane (the blueprint view).** A second projection of the same arrangement: the L3 workspace with its x `View` joined to the window's navigation group, so the plane's x axis *is* the composition's time axis (ruler, selection, the playhead sweeping the whole plane as a vertical line — all existing group machinery), while y is **free spatial organization** — clips and visual elements placed like an architectural plan, not locked to lanes. The model (`clausters.form`) is untouched: `offset`/`dur` stay the temporal truth, and y is presentation geometry owned by the driver and persisted by the `Editor` beside the tree, exactly the P1 `"move"` pattern. A concrete `Group` draws as a bounding **zone** (visual containment as the group's projection) instead of a lane; the classic lane-stack multitrack becomes the *constrained* case of the free plane, the same general-to-constrained pattern L3 fixes for scrolling. One boundary to hold when this opens: **y means nothing to the render** — not pitch, not bus, not bounce order; presentation only, stated so the view never implies semantics the engine does not have (any later mapped-y is an explicit decision, not drift). The honest precedent is the graphic score — **a UPIC whose material is the multitrack's editing structures**: not freehand curves but clips, groups, snap, selection and the edit-back payloads, placed on a free plane (IanniX is the other kin). Becomes an L milestone when its design converges — it needs G22's clip bodies and L2/L3 landed first.
+- **Packaging.** An optional Tauri desktop wrapper reusing the web frontend; the GUI chapter in the docs; worked examples.
+- **The in-page shared-memory path — a track to open.** The browser engine shipped (the server's B track) and it talks over a **MessagePort**: OSC bytes both ways, commands crossing into the engine through the same in-memory ring the native embed uses. What did *not* ship is the half that would make a browser host look like the native one — a **`SharedArrayBuffer`** carrying the zero-message `BusSource` (control buses read each frame) and the bulk audio path *inside* the page, the roles `host::shm`/`mapfile` play natively. In a tab those still take the WS/`fetch` fallback built for a *remote* server, even when the engine is in the same document. It was left out **by requirement, not by omission**: SAB needs COOP/COEP isolation headers, and an embeddable component cannot demand those of a page it does not control (`docs/decisions.md`). That is also what makes it a **track rather than a milestone** — it is an optimization behind a build: a page that can isolate itself opts in, every other page keeps the MessagePort path, and both have to stay correct, which is a second backend for one seam and not a redesign (the ring seam was shaped to accept it). Opens when a page profile asks for it, and the number to have first is what a frame of `/bus_stream` costs on a page holding forty canvases — that is the whole argument.
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what
@@ -1533,6 +1585,10 @@ Two conventions, because the section only works if both hold. Every entry is a
 inferred from where it sits. And a fixed one **stays**, with the record of what
 was wrong and why the fix is the shape it is — that is what makes the list worth
 reading rather than a queue that empties.
+
+Anything unresolved lives here or under "Future directions", both **after** the
+tracks: never inside the milestone that happened to be open, and never among
+finished work, where a pending item reads as done.
 
 - ✅ **A query answers what a widget is, not what it was defined as** *(found 2026-08-10 while closing K5; fixed the same day)*. Two surfaces say what a widget holds and a gesture writes only one of them: the **registry** keeps the document (what the script sent, kept current by every `/gui_set`), the **render tree** keeps the widget as the user has since left it — so `/gui_query` reported a dragged control's def-time value forever, a moved clip's original placement, an edited curve's original points. It is the one answer a script cannot get any other way, since the `/gui_event` that announced the edit is a stream you had to be listening to.
 
@@ -1548,53 +1604,3 @@ reading rather than a queue that empties.
   **One real bug to fix with whichever shape wins**, found while reading this: `CLIP_EDGE_PX` is a literal `6.0` in **device** pixels, which is exactly what L6 forbids (no hit site names a number; `hit_slop` is the role) and what L8 makes visible — on a 2x display the grab zone is half the physical width it means, so a clip is hardest to resize on the screen where its edge is thinnest. Drawing the grip forces the number into the metrics table on the way, which is the right order: the affordance and the role are the same change.
 
   Becomes a milestone when the vocabulary is chosen — it is an L-track question (what the look says a part is) sitting on gestures the K track has already settled.
-
-## Future directions (to fold into milestones as they firm up)
-
-Captured here so the depth the editor-grade vision needs is not lost; each becomes a `Gx` when its design converges. (The former entries for scopes, the editor-grade views, edit-back-to-data and the BPF view converged into G18-G21 above.) **Ordering (decided):** the widget-deepening arc comes first because everything in it is immediately usable from the installed Python client over the existing protocol; the timeline and notation views follow as their designs firm up (both since converged - G22 and G31); **packaging and the in-browser audio engine are deliberately last** - they change how the system ships, not what it can show, and both keep constraining design in the meantime (the web frontend must stay Tauri-wrappable; the `Transport`/`ServerLink` seam must keep the wasm-engine variant open).
-
-- **DAW / timeline view.** Now firming up as the **G22** arc above (per-member placement, `track`/`clip` widgets, clip edit-back, an events piano-roll). Tracks with audio and MIDI/OSC sequencing; since the audio lives in the server, the view reads it from there. Builds directly on G20d's group navigation/placement seat and G21's edit-back pattern.
-- **The free arrangement plane (the blueprint view).** A second projection of the same arrangement: the L3 workspace with its x `View` joined to the window's navigation group, so the plane's x axis *is* the composition's time axis (ruler, selection, the playhead sweeping the whole plane as a vertical line — all existing group machinery), while y is **free spatial organization** — clips and visual elements placed like an architectural plan, not locked to lanes. The model (`clausters.form`) is untouched: `offset`/`dur` stay the temporal truth, and y is presentation geometry owned by the driver and persisted by the `Editor` beside the tree, exactly the P1 `"move"` pattern. A concrete `Group` draws as a bounding **zone** (visual containment as the group's projection) instead of a lane; the classic lane-stack multitrack becomes the *constrained* case of the free plane, the same general-to-constrained pattern L3 fixes for scrolling. One boundary to hold when this opens: **y means nothing to the render** — not pitch, not bus, not bounce order; presentation only, stated so the view never implies semantics the engine does not have (any later mapped-y is an explicit decision, not drift). The honest precedent is the graphic score — **a UPIC whose material is the multitrack's editing structures**: not freehand curves but clips, groups, snap, selection and the edit-back payloads, placed on a free plane (IanniX is the other kin). Becomes an L milestone when its design converges — it needs G22's clip bodies and L2/L3 landed first.
-- **Packaging.** An optional Tauri desktop wrapper reusing the web frontend; the GUI chapter in the docs; worked examples.
-- **In-browser audio engine.** The Web Audio / AudioWorklet track recorded in its own section below - it intersects the server track and is numbered on whichever track owns the engine port once its design converges.
-
-## In-browser audio engine (Web Audio / AudioWorklet) - now the server's B track
-
-**This track converged and is numbered on the server side: `PLAN.md` (root), "B track — the engine in the browser" (B0–B4).** The engine port, the AudioWorklet backend and the wasm-`Embed` link landed there because the engine is the server's; the GUI-host leg landed as B3 (`ServerLink::Page` + `GuiBridge.connect_page`/`server_reply`, the `host::bundle` boot replay, the standalone page), and the web-component packaging landed as B4 (the `clausters` package seeded in `clients/web/`). **Consolidation (with W0):** this crate no longer carries a `web/` directory — the harness/parity/standalone pages and the bundle tooling that G12/G16/B3 grew here live in the web package (`clients/web/examples`, `tests`, `tools`), which stages this crate's wasm-bindgen bundle into its `dist/gui-host/`; the milestone entries keep the original paths as the record of what shipped where. The design notes below are the original record that shaped it — note the SharedArrayBuffer route they sketch was *not* taken initially (no COOP/COEP on arbitrary pages; the MessagePort ring landed instead, with SAB kept open as a later optimization — see `docs/decisions.md`).
-
-Not part of G11-G16; recorded here because the G11 seam was deliberately shaped to accept it, and the G11 decision ("no in-process engine in the browser") is a scope boundary that this track relaxes. Through G16 the browser GUI host drives a *separate* audio server over WebSocket. The parallel, larger piece of work is to compile `clausters-server` itself to `wasm32` with a **Web Audio backend**, so the engine runs **in the browser** - the wasm analogue of the native `standalone`/`embed` mode.
-
-- **A new audio backend behind the existing engine seam, not a DSP rewrite.** The engine core (`Engine::process_block`) is already decoupled from the device: it feeds the real-time cpal callback and the offline `render()`/NRT path from the same block function (FTZ armed in both, NRT sample-identical to RT). A browser backend is a *third* driver - an **AudioWorklet** output whose process callback pulls blocks from the engine. cpal does not target Web Audio, so this is a genuine backend addition, which is exactly why it is its own track rather than a step inside G11-G16.
-- **An in-process browser link, the wasm `Embed`.** With the engine in the page, the GUI host reaches it through a new `ServerLink` variant (the wasm counterpart of `Embed`): OSC over an in-process channel, **not** WebSocket. This is the same second link kind the native host already has (`Udp` vs `Embed`); the `Transport` trait and the cfg-gated `ServerLink` from G11 take the variant without a protocol change. WebSocket stays the carrier for a *remote* server, so it never disappears - it stops being the browser's only option.
-- **The shared-memory paths return inside the browser.** An AudioWorklet runs on its own thread and shares state with the main thread through `SharedArrayBuffer` (which needs cross-origin isolation, COOP/COEP). That is the browser's shared-memory primitive: it can carry the zero-message `BusSource` (control buses read each frame) and the bulk audio path **inside** the page - the same roles `host::shm`/`mapfile` play natively - instead of the WS/`fetch` fallback G14/G15 build for the remote case. So a browser host paired with an in-page engine looks more like the native host than like the remote-server browser.
-- **RT-safety carries to the worklet.** The audio thread's no-alloc/no-lock discipline applies to the AudioWorklet thread, and the lock-free command/garbage FIFOs map onto `SharedArrayBuffer` ring buffers. A standalone-style bundle (a GuiDef + GraphDefs) could then boot entirely in a browser tab with no server process at all - the browser twin of `--standalone`.
-
-This intersects the server track, not only the GUI track, so it becomes a numbered milestone on whichever track owns the engine port once its design converges. The product TypeScript client (`clients/web`, see the G13 note) is still a separate concern from both.
-
-## Definition of done (per milestone)
-
-Following the project rule: code + tests, a clear commit message (the record of *what* shipped) and this file's checkbox updated; developer/user docs where the feature touches them; a commented example when the feature is user-facing — the example is also how new human-visible behavior gets checked by eye; and a `docs/decisions.md` note only when a choice has non-obvious context.
-
-- ✅ **G33 — Every live view names a bus and a rate; the sample ring is the
-  server's** *(done 2026-07-28)*: the four live data views took three different
-  kinds of number — a `meter` a control bus, a `scope` either a control bus or a
-  *tap* (an index into the segment's eight sample rings), the goniometer and the
-  spectroscope only taps — so the surface claimed two kinds of signal where the
-  server has one kind at two rates, and the ring index (which the caller had to
-  allocate, route and release) leaked through the wire, the host, both clients
-  and every example. Now each view takes **`bus`, `rate` and `channels`**
-  adjacent buses (the SuperCollider model; audio is the default and bus 0 is the
-  first hardware output, so a bare `scope()` is the console scope). `/bus_tap bus
-  watch` replaces `/bus_tap tapIndex bus`: the **server** picks the ring and
-  publishes the choice in a per-bus directory in the segment (ABI v3 → v4),
-  counting watches so views share one ring and the last one to stop frees it;
-  the **host** is what turns a widget into that command, diffing the audio buses
-  its open documents read on every def/free/set; a `/bus_tapStream` subscription
-  *is* a watch, so a browser client never sends it. A `meter` needed a path of
-  its own — eight rings cannot back a mixer, and a meter wants one number per
-  block, not samples — so the segment also carries a **per-bus level**, the
-  block peak held with a 20 dB/s decay (correct for a reader a dozen blocks
-  slower than the engine, and for several readers at once, which a
-  reader-clears-the-max scheme is not). Ported to both clients in the same
-  change; the Python and TypeScript tap allocators are gone. Rationale in
-  `docs/decisions.md`.
