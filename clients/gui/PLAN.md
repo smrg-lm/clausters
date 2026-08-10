@@ -901,7 +901,27 @@ The transitional aliases are **not** the rejected "presets on the wire" decision
   clippy, rustdoc and `check-wasm.sh`; `docs/architecture.md` and the
   `gui-widgets` skill now name the children.
 
-- ⬜ **E14 — The schema file keeps the schema** *(`widget/mod.rs`, 3222 lines)*: `build`/`apply`/`size`/`parse`/`axes` are already siblings, so what is left is the enum plus roughly 600 lines that are not the enum — the prop bundles (`EditorProps`, `GestureMap`/`GesturePlan`, `ScrollView`, `Flow`, `Range`, `Place`) to `widget/props.rs`, and the per-kind predicates that are really a query pass (`is_timeline`, `event_value`, `live_bus`, `editor`, `link_lanes`) to `widget/query.rs` — the same third-arm-per-kind shape `size.rs` already is, in the same direction. What stays is `WidgetKind` and its documentation, which is where a reader looking for the model should land. Ordered after E13 because it is the smaller of the two and the one the K track's registry rewrites anyway.
+- ✅ **E14 — The schema file keeps the schema** *(`widget/mod.rs`, 3222 lines)*: `build`/`apply`/`size`/`parse`/`axes` are already siblings, so what is left is the enum plus roughly 600 lines that are not the enum — the prop bundles (`EditorProps`, `GestureMap`/`GesturePlan`, `ScrollView`, `Flow`, `Range`, `Place`) to `widget/props.rs`, and the per-kind predicates that are really a query pass (`is_timeline`, `event_value`, `live_bus`, `editor`, `link_lanes`) to `widget/query.rs` — the same third-arm-per-kind shape `size.rs` already is, in the same direction. What stays is `WidgetKind` and its documentation, which is where a reader looking for the model should land. Ordered after E13 because it is the smaller of the two and the one the K track's registry rewrites anyway.
+
+  **What shipped, and the one thing the entry did not foresee.** `props.rs` and
+  `query.rs` landed as described — the bundles and their vocabularies (the
+  `Ruler`/`RulerY`/`Axis`/`GestureStep`/`Layout`/`Align`/`Rate` words go with the
+  bundles they are built from, since they are the same detail), and the query
+  pass took both halves: the per-kind readers *and* the **clip routing**
+  (`signal_target`, `kind_or_body`, `clip_body`), which is the same question
+  asked through a container and had no better home. But the file was 3222 lines
+  and the enum plus the bundles plus the queries only account for half of it:
+  **1466 lines were the test suite**, which no reading of the entry would have
+  guessed and which is why the file did not shrink the way the arithmetic
+  promised. It moved whole to `widget/tests.rs` — it is one suite with one
+  `node()` helper, testing the schema through `from_node`, and splitting it
+  three ways would have duplicated the helper without separating anything.
+  `mod.rs` is 661 lines: the enum, the `Widget` node and the tree walk.
+  One trap worth recording for the next move of this kind: **`pub(super)`
+  changes meaning when an item moves down a level.** Three doors that `host` had
+  reached (`EditorProps::parse` from `host::signal`) became invisible the moment
+  they were a level deeper, and the compiler said "private" about code nobody
+  had edited. They are `pub(crate)` now, which says what they always meant.
 
 - ⬜ **E15 — Notation gets a submodule, on both sides**: `host/score.rs` is 1664 flat lines, and unlike the other elements its growth is **semantic, not graphic** — the timemap, the identity of the element under the cursor, transposition in diatonic steps, the edit-back payloads, and everything G31g still owes (tuplets, voices, spelling, articulations). That is the argument that made `signal` a submodule, applied one element later. Host: `host/score/` — `list.rs` (display-list decode), `glyphs.rs` (the outline cache), `tess.rs` (the lyon fill and the painter's strokes), `cursor.rs` (timemap, playback cursor, element hit). Client: `clausters/gui/notation.py` (460 lines) becomes `clausters/gui/notation/` — `engrave.py` (verovio), `mei.py` (the encoder G31g extends, kept as the seam it already is), `timemap.py`, `edit.py`. The web client has **no** notation module at all, so per the packages-move-together rule this milestone leaves `clients/web/PLAN.md` naming the shape the port must follow rather than letting the two re-derive it. No wire change, no behavioral change; the host still never depends on verovio.
 
