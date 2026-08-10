@@ -4791,6 +4791,16 @@ and the next Tab enters the ring again. The core decides *that* focus left; only
 the shell knows what that means locally, which is the same seam every other
 platform difference in this crate goes through.
 
+**The desktop does not wrap**, and that was asked and answered rather than
+overlooked: the shell could perfectly well re-enter the ring on `FocusOut`, and
+every desktop toolkit does. It does not, because the platform that *cannot*
+wrap sets the rule for both — a window and a canvas behave the same way, so
+there is one behaviour to learn, one to document and one to test, rather than a
+divergence whose only reward is saving a keystroke on one of the two targets.
+The empty step is not a hole either: "nothing is focused" is a state the user
+reaches anyway by clicking on empty space, and seeing the ring go is what says
+the keyboard left.
+
 Two smaller calls follow it and are recorded here so they are not reopened.
 **`focus` is not a prop.** It rides on `/gui_set` because that is the wire's one
 mutation verb, but it says where the keyboard is pointing — host state, not a
