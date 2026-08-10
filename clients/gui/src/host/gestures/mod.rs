@@ -43,7 +43,6 @@ use clausters_core::osc::OscType;
 
 use super::interact::{self};
 use super::layout::Rect;
-use super::signal::Presentation;
 use super::widget::WidgetKind;
 use super::{piano, pianoroll};
 
@@ -73,9 +72,9 @@ pub enum GestureEffect {
 }
 
 /// The per-call context the front supplies: which window, its framebuffer size
-/// in device pixels, the modifier keys, and the heavy views' lane counts (the
-/// channel/lane split lives in the front's GPU slots, so the front snapshots it
-/// here; a widget missing from the maps counts as one lane).
+/// in device pixels, the modifier keys, and what the heavy views actually have
+/// on the card (which only the front's GPU slots know, so it is snapshotted
+/// here).
 pub struct GestureCtx {
     pub def_id: i32,
     pub fb_w: u32,
@@ -83,11 +82,12 @@ pub struct GestureCtx {
     pub shift: bool,
     pub ctrl: bool,
     pub alt: bool,
-    /// Channel count per `waveform` widget id (stacked lanes; `overlay` still
-    /// draws one lane and is resolved here, not in the map).
-    pub wave_lanes: HashMap<i32, usize>,
-    /// Lane (channel STFT) count per `spectrogram` widget id.
-    pub spect_lanes: HashMap<i32, usize>,
+    /// The channel count the front found in each widget's GPU slot, by widget
+    /// id — a waveform's channels, a spectrogram's analysis lanes: what is
+    /// actually on the card, which is the only half of the answer the front
+    /// has. How a widget *arranges* them is the widget's
+    /// ([`WidgetKind::lanes`]), and a widget missing here counts as one lane.
+    pub slot_channels: HashMap<i32, usize>,
     /// The server's sample rate (`0.0` when this front does not know it) — the
     /// same one the frame draws with. A gesture over a *measured* axis needs
     /// it: a frequency axis has a resolution, and the zoom is not allowed past
@@ -106,24 +106,16 @@ impl GestureCtx {
             shift: false,
             ctrl: false,
             alt: false,
-            wave_lanes: HashMap::new(),
-            spect_lanes: HashMap::new(),
+            slot_channels: HashMap::new(),
             sample_rate: 0.0,
         }
     }
 
-    /// The lane count a timeline view stacks on screen (overlaid waveform
-    /// traces share one lane) — the divisor for lane-relative y gestures.
+    /// The lane count a widget stacks on screen — the divisor for
+    /// lane-relative y gestures. The two halves of one answer: what the front
+    /// uploaded, and what the widget makes of it.
     fn lanes(&self, id: i32, kind: &WidgetKind) -> usize {
-        match kind.signal() {
-            // Overlaid traces share one lane, however many channels there are.
-            Some(el) if el.display.overlay => 1,
-            Some(el) if el.presentation == Presentation::TimeFrequency => {
-                self.spect_lanes.get(&id).copied().unwrap_or(1).max(1)
-            }
-            Some(_) => self.wave_lanes.get(&id).copied().unwrap_or(1).max(1),
-            None => 1,
-        }
+        kind.lanes(self.slot_channels.get(&id).copied().unwrap_or(1))
     }
 }
 

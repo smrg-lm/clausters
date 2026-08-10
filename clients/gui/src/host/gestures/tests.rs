@@ -675,6 +675,29 @@ fn wheel_zooms_the_time_axis_and_emits_the_view() {
     assert!(has_emit_tag(&effects, 60, "view"));
 }
 
+/// The lane count is two halves of one answer: the front knows how many
+/// channels reached the card, the widget knows what it does with them. An
+/// overlaid trace draws one lane out of four channels, a stacked one four —
+/// and the machine, which divides by it, asks rather than matching on a kind.
+#[test]
+fn a_widget_says_how_it_stacks_what_the_front_uploaded() {
+    let host = host_from(
+        r#"{"type":"window","children":[
+            {"id":60,"type":"signal","view":"trace","data":[0.0,1.0],"navigable":1},
+            {"id":61,"type":"signal","view":"trace","data":[0.0,1.0],"navigable":1,
+             "overlay":1},
+            {"id":62,"type":"label","text":"nothing on the card"}]}"#,
+    );
+    let tree = host.window_def(1).unwrap();
+    let mut ctx = GestureCtx::new(1, 800, 300);
+    ctx.slot_channels.insert(60, 4);
+    ctx.slot_channels.insert(61, 4);
+    assert_eq!(ctx.lanes(60, &tree.find(60).unwrap().kind), 4);
+    assert_eq!(ctx.lanes(61, &tree.find(61).unwrap().kind), 1);
+    // A widget with no slot was given nothing, and nothing is one lane.
+    assert_eq!(ctx.lanes(62, &tree.find(62).unwrap().kind), 1);
+}
+
 /// The amplitude axis zooms symmetrically: whatever lane the cursor is
 /// over, the window keeps its centre — so every channel's zero line stays
 /// at its lane's centre instead of sliding out of the lane. The regression
@@ -692,7 +715,7 @@ fn the_amplitude_axis_zooms_about_its_centre_whatever_lane_is_under_the_cursor()
     let mut g = Gestures::default();
     let mut ctx = GestureCtx::new(1, 800, 300);
     // Four channels: the body splits into four lanes.
-    ctx.wave_lanes.insert(61, 4);
+    ctx.slot_channels.insert(61, 4);
     // Wheel over the y-ruler strip (left of the body), high inside the
     // *last* lane — the worst case for a cursor-derived anchor.
     let effects = g.wheel(&mut host, &ctx, 10.0, 212.0, 4.0);

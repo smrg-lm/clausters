@@ -28,10 +28,10 @@ impl App {
             ctx.ctrl = ws.ctrl;
             ctx.alt = ws.alt;
             for (id, slot) in &ws.waveforms {
-                ctx.wave_lanes.insert(*id, slot.view.num_channels());
+                ctx.slot_channels.insert(*id, slot.view.num_channels());
             }
             for (id, slot) in &ws.spectrograms {
-                ctx.spect_lanes.insert(*id, slot.views.len());
+                ctx.slot_channels.insert(*id, slot.views.len());
             }
         }
         ctx

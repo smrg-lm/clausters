@@ -52,10 +52,10 @@ impl WebApp {
         ctx.alt = slot.alt;
         if let Some(render) = slot.render.as_ref() {
             for (id, view) in &render.waveforms {
-                ctx.wave_lanes.insert(*id, view.view.num_channels());
+                ctx.slot_channels.insert(*id, view.view.num_channels());
             }
             for (id, view) in &render.spectrograms {
-                ctx.spect_lanes.insert(*id, view.views.len());
+                ctx.slot_channels.insert(*id, view.views.len());
             }
         }
         Some((ctx, slot.cursor))

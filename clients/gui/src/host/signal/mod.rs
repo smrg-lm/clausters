@@ -418,6 +418,25 @@ impl SignalElement {
         matches!(self.source, Source::Bus(_))
     }
 
+    /// How many lanes this element stacks out of the `uploaded` channels the
+    /// front found in its slot: one when the channels are **overlaid**, however
+    /// many there are, else one per channel.
+    pub fn lanes(&self, uploaded: usize) -> usize {
+        if self.display.overlay {
+            1
+        } else {
+            uploaded.max(1)
+        }
+    }
+
+    /// Whether a y zoom over this element anchors at the centre of a lane: a
+    /// trace's axis measures **amplitude**, which is centred on zero in every
+    /// lane. A spectrogram's measures frequency, which is a value under the
+    /// pointer.
+    pub fn centres_y_zoom(&self) -> bool {
+        self.presentation == Presentation::Signal
+    }
+
     /// Whether the element navigates a **frequency** x axis of its own: a
     /// navigable spectrum, the one presentation whose horizontal domain is not
     /// the window's time.

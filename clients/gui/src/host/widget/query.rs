@@ -225,6 +225,34 @@ impl WidgetKind {
         needs
     }
 
+    /// **How many lanes this widget stacks**, out of the `uploaded` channel
+    /// count the front read off its GPU slot — the divisor for a lane-relative
+    /// y gesture. A widget with no slot was given nothing and is one lane.
+    ///
+    /// A built-in answers from its variant, an element for itself
+    /// ([`Element::lanes`](super::Element::lanes)).
+    pub fn lanes(&self, uploaded: usize) -> usize {
+        match self {
+            WidgetKind::Signal(el) => el.lanes(uploaded),
+            WidgetKind::Custom(el) => el.lanes(uploaded),
+            _ => uploaded.max(1),
+        }
+    }
+
+    /// Whether a y zoom over this widget anchors at the centre of a lane
+    /// instead of under the pointer — an **amplitude** axis, whose zero sits at
+    /// the centre of every lane.
+    ///
+    /// A built-in answers from its variant, an element for itself
+    /// ([`Element::centres_y_zoom`](super::Element::centres_y_zoom)).
+    pub fn centres_y_zoom(&self) -> bool {
+        match self {
+            WidgetKind::Signal(el) => el.centres_y_zoom(),
+            WidgetKind::Custom(el) => el.centres_y_zoom(),
+            _ => false,
+        }
+    }
+
     /// **The window one read of this widget's taps has to bring**, in frames at
     /// `sample_rate` — the one door the page's tap subscription is sized from.
     ///

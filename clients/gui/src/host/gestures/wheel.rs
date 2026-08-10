@@ -9,7 +9,6 @@
 use clausters_core::osc::OscType;
 
 use super::super::interact::{self, Hit};
-use super::super::signal::Presentation;
 use super::super::widget::{Axis, WidgetKind};
 use super::super::{Host, piano, scroll};
 use super::effects::*;
@@ -118,28 +117,20 @@ impl Gestures {
         if let Some((tid, axis)) = interact::time_of(&chain) {
             let factor = 0.85f64.powf(steps);
             match axis.y.filter(|y| y.strip.contains(cx, cy)) {
-                // The vertical anchor depends on what the axis *measures*,
-                // because one window is shared by every channel lane:
-                //
-                // - **Amplitude** (the waveform): the window keeps its own
-                //   centre, so zero stays at the centre of *every* lane and
-                //   the trace grows and shrinks inside its lane. An anchor
-                //   taken from the cursor's height would be meaningless for
-                //   the other lanes, and any off-centre window pushes the
-                //   wave out of the lane and clips it.
-                // - **Frequency** (the spectrogram) and **pitch** (the roll):
-                //   the cursor's height, which is the value under it. There the
-                //   shared window says the same thing in every lane -- all of
-                //   them show that band -- so anchoring at the cursor is both
-                //   meaningful and what the reader wants.
+                // The vertical anchor depends on what the axis *measures*, and
+                // the widget is what knows ([`WidgetKind::centres_y_zoom`]):
+                // an amplitude axis holds its own centre, so zero stays at the
+                // centre of every lane, and an axis of values (frequency,
+                // pitch) holds the value under the cursor. Only the second is
+                // arithmetic the machine can do, since it is the lane geometry
+                // it already has.
                 Some(y) => {
-                    let anchor = match kind.signal() {
-                        Some(el) if el.presentation == Presentation::Signal => 0.5,
-                        _ => {
-                            let lane_top = axis.body.y as f64
-                                + ((cy - axis.body.y as f64) / y.lane_h).floor() * y.lane_h;
-                            1.0 - ((cy - lane_top) / y.lane_h).clamp(0.0, 1.0)
-                        }
+                    let anchor = if kind.centres_y_zoom() {
+                        0.5
+                    } else {
+                        let lane_top = axis.body.y as f64
+                            + ((cy - axis.body.y as f64) / y.lane_h).floor() * y.lane_h;
+                        1.0 - ((cy - lane_top) / y.lane_h).clamp(0.0, 1.0)
                     };
                     zoom_timeline_y(host, &mut out, def_id, tid, factor, anchor);
                 }

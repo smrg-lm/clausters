@@ -712,6 +712,34 @@ pub trait Element: fmt::Debug {
         Needs::default()
     }
 
+    /// **How many lanes this element stacks on screen**, given the `uploaded`
+    /// count the front found in its GPU slot — the divisor for every
+    /// lane-relative y gesture.
+    ///
+    /// The front knows how many channels are actually on the card and nothing
+    /// about how they are arranged, which is why the two halves meet here: an
+    /// element that *overlays* its channels draws one lane however many it was
+    /// given, and one that stacks them draws as many as there are. The default
+    /// stacks.
+    fn lanes(&self, uploaded: usize) -> usize {
+        uploaded.max(1)
+    }
+
+    /// Whether a y zoom over this element anchors at the **centre** of a lane
+    /// rather than under the pointer. `false` by default: the pointer is where
+    /// a reader expects a zoom to hold still.
+    ///
+    /// It is a property of what the axis *measures*, because one vertical
+    /// window is shared by every lane. An axis of **values** — frequency,
+    /// pitch — says the same thing in each of them, so the value under the
+    /// cursor is meaningful and holding it still is what the reader wants. An
+    /// **amplitude** axis does not: zero sits at the centre of every lane, an
+    /// anchor taken from the pointer's height means nothing in the other lanes,
+    /// and any off-centre window pushes the trace out of its lane and clips it.
+    fn centres_y_zoom(&self) -> bool {
+        false
+    }
+
     /// **How wide a window of a tapped bus one read has to bring**, in frames
     /// at `sample_rate`, or `0` (the default) for an element that reads no
     /// taps.
