@@ -570,7 +570,7 @@ pub(super) fn collect_widgets(
                     signal_item(
                         id,
                         el,
-                        inputs.sample_rate,
+                        inputs.world.sample_rate,
                         p.rect,
                         p.indent,
                         p.clip,
@@ -772,7 +772,7 @@ pub(super) fn collect_widgets(
                     let mut resolved = *params;
                     for (slot, &bus) in resolved.iter_mut().zip(buses.iter()) {
                         if bus >= 0 {
-                            *slot = read_bus(inputs.bus, bus);
+                            *slot = inputs.world.control(bus);
                         }
                     }
                     canvas_frames.push(CanvasFrame {
@@ -791,7 +791,7 @@ pub(super) fn collect_widgets(
                 mesh.rect(p.rect, th.panel);
                 // The cursor sweeps off the engine clock while a pass plays
                 // (`playhead_at`), so playback costs no messages per frame.
-                let head = data.head_ms(inputs.sample_clock, inputs.sample_rate);
+                let head = data.head_ms(inputs.world.sample_clock, inputs.world.sample_rate);
                 data.render(
                     &mut *mesh,
                     p.rect,
@@ -808,7 +808,15 @@ pub(super) fn collect_widgets(
             // window's one mesh during this walk, with the placement's theme
             // and size table, and never becomes an item — it has nothing to
             // defer, which is also what keeps it inside the single batch.
-            WidgetKind::Custom(el) => el.draw(&mut Draw::new(mesh, m, th), p.rect, p.scale),
+            WidgetKind::Custom(el) => el.draw(
+                &mut Draw::new(mesh, m, th),
+                &Ctx {
+                    world: &inputs.world,
+                    metrics: m,
+                    rect: p.rect,
+                    scale: p.scale,
+                },
+            ),
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
             kind => {
                 // The open list of *this* menu, collected here because only the

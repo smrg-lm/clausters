@@ -68,6 +68,7 @@ pub mod timeline;
 pub mod track;
 pub mod waterfall;
 pub mod widget;
+pub mod world;
 
 // Booting a persisted bundle over the wire — the ordering/encoding half of the
 // browser standalone path, platform-agnostic and natively unit-tested (the
@@ -2052,8 +2053,7 @@ mod tests {
             fn draw(
                 &self,
                 _d: &mut crate::host::paint::Draw,
-                _rect: crate::host::layout::Rect,
-                _scale: f32,
+                _ctx: &crate::host::widget::element::Ctx,
             ) {
             }
             fn value(&self) -> Option<OscType> {

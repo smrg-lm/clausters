@@ -53,7 +53,30 @@ use serde_json::{Map, Value};
 use super::super::layout::Rect;
 use super::super::metrics::Metrics;
 use super::super::paint::Draw;
+use super::super::world::World;
 use super::size::Natural;
+
+/// Where an element is being drawn and what it is being drawn *into*: the
+/// placement, and the [`World`] the frame reads from.
+///
+/// One context for the whole trait rather than a widening argument list, so a
+/// later seam (the container's coordinate system) is a field here and not a
+/// signature change in every element ever written.
+pub struct Ctx<'a> {
+    /// The read-only per-frame facts no widget owns.
+    pub world: &'a World<'a>,
+    /// The size roles of this placement, resolved at its scale — the same table
+    /// [`Draw`] carries, for the methods that get no `Draw`.
+    pub metrics: &'a Metrics,
+    /// The rect this element was placed in, in the window's pixels.
+    pub rect: Rect,
+    /// The placement's zoom — 1.0 outside a `plane` workspace. The metrics
+    /// already carry it, so it is needed for exactly one thing: the element's
+    /// **own** `text_size` prop, which is a number the script sent and no table
+    /// resolved (`self.text_size * scale`), matching what
+    /// [`natural`](Element::natural) measured.
+    pub scale: f32,
+}
 
 /// What an element declares it reads from outside itself, collected by the
 /// tree walks that feed a frame. Empty by default: an element that draws only
@@ -93,16 +116,12 @@ pub trait Element: fmt::Debug {
     /// the unknown prop rather than silently dropping it.
     fn set(&mut self, key: &str, v: &Value) -> bool;
 
-    /// Draws into the window's one mesh, inside `rect`. `d` carries the
+    /// Draws into the window's one mesh, inside `ctx.rect`. `d` carries the
     /// resolved theme and the size table of the placement, so an element names
-    /// roles and never literals, the way every built-in does.
-    ///
-    /// `scale` is the placement's zoom — 1.0 outside a `plane` workspace. The
-    /// size table in `d` already carries it, so it is needed for exactly one
-    /// thing: the element's **own** `text_size` prop, which is a number the
-    /// script sent and no table resolved (`self.text_size * scale`), matching
-    /// what [`natural`](Element::natural) measured.
-    fn draw(&self, d: &mut Draw, rect: Rect, scale: f32);
+    /// roles and never literals, the way every built-in does; `ctx` carries the
+    /// placement and the [`World`] — the bus values, the sample clock, the
+    /// pointer — that the frame reads and no widget owns.
+    fn draw(&self, d: &mut Draw, ctx: &Ctx);
 
     /// How big this element wants to be, per axis — `None` meaning elastic.
     /// Pure over the metrics, the element's own *presentation* props and the
@@ -223,9 +242,9 @@ mod tests {
             }
         }
 
-        fn draw(&self, d: &mut Draw, rect: Rect, _scale: f32) {
+        fn draw(&self, d: &mut Draw, ctx: &Ctx) {
             let (mesh, _, theme) = d.parts();
-            mesh.rect(rect, theme.panel);
+            mesh.rect(ctx.rect, theme.panel);
         }
 
         fn natural(&self, m: &Metrics, scale: f32) -> Natural {

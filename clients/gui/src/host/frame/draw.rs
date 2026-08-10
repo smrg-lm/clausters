@@ -226,7 +226,7 @@ pub(super) fn draw_editor_overlay(
     }
     // Playhead: the engine clock relative to the widget's origin while playing,
     // else the static cursor of a located, stopped transport.
-    if let Some(pos) = chrome.head_at(inputs.sample_clock)
+    if let Some(pos) = chrome.head_at(inputs.world.sample_clock)
         && pos >= nav.start
         && pos <= nav.start + nav.len
     {
@@ -236,7 +236,7 @@ pub(super) fn draw_editor_overlay(
     // Cursor readout: time (per the ruler mode) plus value/frequency (per the
     // vertical unit / frequency scale), in the body's bottom-right corner —
     // pure math over the view mapping, within the lane under the cursor.
-    if let Some((cx, cy)) = inputs.cursor
+    if let Some((cx, cy)) = inputs.world.cursor
         && body.contains(cx, cy)
     {
         let s = nav.start + nav.len * ((cx - body.x as f64) / body.w.max(1.0) as f64);
@@ -315,7 +315,7 @@ pub(super) fn draw_live_meshes(
     for item in &collected.meter_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let value = read_level(inputs.bus, item.bus, item.rate);
+        let value = inputs.world.level(item.bus, item.rate);
         let frac = meters::fraction(value, item.min, item.max);
         meters::draw_meter(
             &mut Draw::new(mesh, m, th),
@@ -393,7 +393,7 @@ pub(super) fn draw_live_meshes(
                 item.rect,
                 states,
                 &spectrum::SpectrumParams {
-                    sample_rate: inputs.sample_rate,
+                    sample_rate: inputs.world.sample_rate,
                     fft_size: item.fft_size,
                     db_floor: item.db_floor,
                     db_ceil: item.db_ceil,
@@ -446,7 +446,7 @@ pub(super) fn draw_timeline_meshes(
                 let rate = if item.editor.sample_rate > 0.0 {
                     item.editor.sample_rate
                 } else {
-                    inputs.sample_rate
+                    inputs.world.sample_rate
                 };
                 draw_time_ruler(
                     &mut Draw::new(mesh, m, th),
@@ -594,7 +594,7 @@ pub(super) fn draw_static_meshes(
         plot::draw(&mut Draw::new(mesh, m, th), item.rect, &params);
         // The hover readout (hairline + the value under the cursor) rides the
         // overlay mesh, like the editor views' chrome.
-        if let Some(cursor) = inputs.cursor {
+        if let Some(cursor) = inputs.world.cursor {
             plot::draw_readout(&mut Draw::new(over, m, th), item.rect, &params, cursor);
         }
     }
@@ -620,10 +620,10 @@ pub(super) fn draw_static_meshes(
         nodetree::draw(
             &mut Draw::new(mesh, m, th),
             item.rect,
-            inputs.node_trees.get(&item.group),
+            inputs.world.node_tree(item.group),
             item.controls,
             item.label.as_deref(),
-            inputs.server_attached,
+            inputs.world.server_attached,
         );
     }
     // Multitrack lanes: the window's tracks share one time axis (aligned
@@ -640,7 +640,7 @@ pub(super) fn draw_static_meshes(
         let rate = if item.editor.sample_rate > 0.0 {
             item.editor.sample_rate
         } else {
-            inputs.sample_rate
+            inputs.world.sample_rate
         };
         // The strip is indented by its **group's** gutter, so its ticks stand
         // over the samples they label whatever it is stacked with -- the whole
@@ -683,7 +683,7 @@ pub(super) fn draw_static_meshes(
                 let rate = if item.editor.sample_rate > 0.0 {
                     item.editor.sample_rate
                 } else {
-                    inputs.sample_rate
+                    inputs.world.sample_rate
                 };
                 draw_time_ruler(
                     &mut Draw::new(mesh, m, th),
@@ -697,7 +697,7 @@ pub(super) fn draw_static_meshes(
             // The playhead, over the clips: the engine clock as a timeline
             // position (`playhead_at` anchors timeline sample 0 to a clock
             // value), so it sweeps the lane as the composition plays.
-            if let Some(pos) = chrome.head_at(inputs.sample_clock)
+            if let Some(pos) = chrome.head_at(inputs.world.sample_clock)
                 && let Some(x) = track::playhead_x(body, &nav, pos)
             {
                 over.rect(Rect::new(x, body.y, 1.5, body.h), th.playhead);
@@ -756,7 +756,7 @@ pub(super) fn draw_static_meshes(
         let rate = if item.editor.sample_rate > 0.0 {
             item.editor.sample_rate
         } else {
-            inputs.sample_rate
+            inputs.world.sample_rate
         };
         draw_pianoroll_item(
             &mut Draw::new(mesh, m, th),
@@ -764,8 +764,8 @@ pub(super) fn draw_static_meshes(
             item,
             &chrome,
             rate,
-            inputs.sample_clock,
-            inputs.cursor,
+            inputs.world.sample_clock,
+            inputs.world.cursor,
             item.indent,
         );
     }
@@ -777,6 +777,7 @@ pub(super) fn draw_static_meshes(
         over.set_clip(None);
         let th = item.theme.as_deref().unwrap_or(theme);
         let hover = inputs
+            .world
             .cursor
             .and_then(|(cx, cy)| controls::menu_row_at(item.popup, item.options.len(), cx, cy));
         controls::draw_menu_popup(

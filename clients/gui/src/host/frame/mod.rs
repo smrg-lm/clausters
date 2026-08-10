@@ -42,17 +42,19 @@ use crate::waveform::{WaveformData, WaveformView};
 use super::canvas::{self, CanvasView};
 use super::layout::{self, Rect};
 use super::metrics::Metrics;
-use super::nodetree::{self, NodeTree};
+use super::nodetree;
 use super::paint::{Draw, Mesh, Painter};
 use super::ruler::{self, TimeUnit};
 use super::signal::{self, Presentation};
 use super::spectrum::SpectrumState;
 use super::theme::{Theme, with_alpha};
-use super::timeline::{GroupState, TimelineGroups, group_key};
+use super::timeline::{GroupState, group_key};
+use super::widget::element::Ctx;
 use super::widget::{EditorProps, Rate, Ruler, RulerY, Widget, WidgetKind};
+use super::world::World;
 use super::{
-    BusSource, bpf, controls, font, live, meters, patch, phasescope, piano, pianoroll, plot, score,
-    spectrum, track,
+    bpf, controls, font, live, meters, patch, phasescope, piano, pianoroll, plot, score, spectrum,
+    track,
 };
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
@@ -282,36 +284,25 @@ pub(crate) fn timeline_body(
 /// The live inputs the frame needs beyond the tree and the GPU resources. The
 /// native front fills them from its state; the browser front passes the
 /// streamed equivalents.
+///
+/// Two kinds of thing, deliberately separated. [`world`](Self::world) is what
+/// nobody owns — the outside, identical for every element of the frame. The
+/// fields beside it are **one widget's own interaction state**, fed back down
+/// so that widget can draw itself mid-gesture; each of them is a widget that
+/// cannot yet hold its own state, and each disappears as its leaf moves behind
+/// [`Element`](super::widget::Element).
 pub(crate) struct FrameInputs<'a> {
     /// The host's size roles: every layout and paint site of this frame reads
     /// its spacing, control and text sizes from here (see
     /// [`super::metrics`]).
     pub(crate) metrics: &'a Metrics,
-    /// The control-bus source for `meter`/`canvas` reads (`None` reads zero).
-    pub(crate) bus: Option<&'a dyn BusSource>,
-    /// The server node trees the `nodetree` view draws, by group.
-    pub(crate) node_trees: &'a HashMap<i32, NodeTree>,
+    /// The read-only per-frame facts no widget owns (see [`World`]).
+    pub(crate) world: World<'a>,
     /// The id of a momentary button currently held down (drawn pressed).
     pub(crate) active_button: Option<i32>,
     /// The id of the focused editable `text` field in this window (drawn with a
     /// caret and its selection), if any.
     pub(crate) focused_text: Option<i32>,
-    /// Whether an audio server is attached (the `nodetree` placeholder text).
-    pub(crate) server_attached: bool,
-    /// The server's sample rate, placing the `spectrum` frequency axis and the
-    /// timeline rulers when a widget names no rate of its own (0.0 → unknown).
-    pub(crate) sample_rate: f64,
-    /// The engine's sample clock (samples since boot; the shm header natively,
-    /// the polled `/clock_query` in the browser). Drives the playhead: a timeline
-    /// view with `playhead_at >= 0` draws its line at
-    /// `sample_clock - playhead_at`.
-    pub(crate) sample_clock: f64,
-    /// The pointer position in device pixels, for the cursor readout of the
-    /// timeline views (`None` = no pointer over the window).
-    pub(crate) cursor: Option<(f64, f64)>,
-    /// The host's timeline navigation groups: each waveform/spectrogram draws
-    /// its group's shared window (linked views navigate as one).
-    pub(crate) timelines: &'a TimelineGroups,
     /// The `menu` whose option list is **open** and where it was placed
     /// ([`Gestures::menu_open`](super::gestures::Gestures::menu_open)). Drawn
     /// last, over everything: a list that opens covers what it opens over.
@@ -327,21 +318,14 @@ pub(crate) struct FrameInputs<'a> {
 
 impl Default for FrameInputs<'_> {
     fn default() -> Self {
-        // 'static empties for the no-transport case.
-        static EMPTY: std::sync::OnceLock<HashMap<i32, NodeTree>> = std::sync::OnceLock::new();
-        static NO_GROUPS: std::sync::OnceLock<TimelineGroups> = std::sync::OnceLock::new();
+        // A 'static empty table for the no-transport case (the world brings its
+        // own empties).
         static METRICS: std::sync::OnceLock<Metrics> = std::sync::OnceLock::new();
         Self {
             metrics: METRICS.get_or_init(Metrics::default),
-            bus: None,
-            node_trees: EMPTY.get_or_init(HashMap::new),
+            world: World::default(),
             active_button: None,
             focused_text: None,
-            server_attached: false,
-            sample_rate: 0.0,
-            sample_clock: 0.0,
-            cursor: None,
-            timelines: NO_GROUPS.get_or_init(TimelineGroups::default),
             wiring: None,
             menu_popup: None,
             marquee: None,
@@ -360,7 +344,7 @@ fn chrome_for(
     editor: &EditorProps,
     fallback: impl FnOnce() -> View,
 ) -> GroupState {
-    match inputs.timelines.state(group_key(id, editor.link)) {
+    match inputs.world.timelines.state(group_key(id, editor.link)) {
         Some(state) => *state,
         None => GroupState::seed(editor, fallback()),
     }
@@ -376,30 +360,6 @@ fn placed_nav(nav: &View, offset: f64) -> View {
     View {
         start: nav.start - offset,
         len: nav.len,
-    }
-}
-
-/// The current value of control bus `bus` from `source` (`0.0` without a source
-/// or for a negative/out-of-range bus) — the one rule, read by the frame and by
-/// the native front's scope tick alike.
-pub(crate) fn read_bus(source: Option<&dyn BusSource>, bus: i32) -> f32 {
-    if bus < 0 {
-        return 0.0;
-    }
-    source.map_or(0.0, |s| s.control(bus as usize))
-}
-
-/// What a meter draws for its bus, at its rate: the published block level of an
-/// audio bus, or the current value of a control bus. Both are one atomic load
-/// out of the same segment — neither costs a message, and the audio one costs
-/// no tap either.
-fn read_level(source: Option<&dyn BusSource>, bus: i32, rate: Rate) -> f32 {
-    if bus < 0 {
-        return 0.0;
-    }
-    match rate {
-        Rate::Audio => source.map_or(0.0, |s| s.level(bus)),
-        Rate::Control => read_bus(source, bus),
     }
 }
 
@@ -462,7 +422,7 @@ pub(crate) fn render(
     // The lanes' clips are placed on the axis their group currently stands at,
     // so the layout of a multitrack follows the zoom and the pan.
     let placed = layout::layout_on(area, tree, inputs.metrics, &|id, link| {
-        inputs.timelines.nav(group_key(id, link))
+        inputs.world.timelines.nav(group_key(id, link))
     });
     let mut mesh = Mesh::new();
     let mut over = Mesh::new();

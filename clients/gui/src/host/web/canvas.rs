@@ -10,6 +10,7 @@
 //! the desktop calls, which is what makes the two pixel-faithful.
 
 use super::*;
+use crate::host::world::World;
 
 /// The per-canvas GPU resources.
 pub(super) struct WindowRender {
@@ -263,14 +264,19 @@ impl WebApp {
         };
         let inputs = frame::FrameInputs {
             metrics: self.host.metrics_for(def),
-            bus: Some(self.buses.as_ref() as &dyn BusSource),
+            world: World {
+                bus: Some(self.buses.as_ref() as &dyn BusSource),
+                server_attached,
+                sample_rate: self.server_rate,
+                sample_clock: self.server_clock,
+                cursor: Some(slot.cursor),
+                timelines,
+                // The node tree stays empty until a browser node-tree path
+                // exists.
+                ..Default::default()
+            },
             active_button: slot.gestures.active_button(),
             focused_text,
-            server_attached,
-            sample_rate: self.server_rate,
-            sample_clock: self.server_clock,
-            cursor: Some(slot.cursor),
-            timelines,
             // A rewiring drag in flight draws its wire to the pointer.
             wiring: slot
                 .gestures

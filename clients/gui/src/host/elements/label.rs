@@ -9,10 +9,9 @@ use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
 use crate::host::controls;
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Element, Needs};
+use crate::host::widget::element::{Ctx, Element, Needs};
 use crate::host::widget::size::{Natural, line_box};
 use crate::host::widget::{Align, parse};
 
@@ -67,12 +66,12 @@ impl Element for Label {
         }
     }
 
-    fn draw(&self, d: &mut Draw, rect: Rect, scale: f32) {
+    fn draw(&self, d: &mut Draw, ctx: &Ctx) {
         controls::draw_label(
             d,
             &self.text,
-            rect,
-            self.text_size * scale,
+            ctx.rect,
+            self.text_size * ctx.scale,
             self.wrap,
             self.align,
         );

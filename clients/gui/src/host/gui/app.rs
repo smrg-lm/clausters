@@ -35,6 +35,7 @@ use crate::host::timeline::group_key;
 use crate::host::widget::Widget;
 #[cfg(feature = "midi")]
 use crate::host::widget::WidgetKind;
+use crate::host::world::World;
 use crate::host::{BusSource, ClientId, GUI_EVENT, Host, HostEffect};
 use crate::view::Renderers;
 
@@ -189,7 +190,11 @@ impl App {
         // `advance_tap_windows` uses, so both read the tick through the one
         // shared advance rather than a front-side copy of it.
         let shm = self.shm.clone();
-        let read = |bus: i32| frame::read_bus(shm.as_deref(), bus);
+        let world = World {
+            bus: shm.as_deref(),
+            ..Default::default()
+        };
+        let read = |bus: i32| world.control(bus);
         for (def_id, ws) in &mut self.windows {
             if let Some(tree) = self.host.window_def(*def_id) {
                 live::advance_scope_histories(tree, read, &mut ws.scopes);
@@ -431,19 +436,21 @@ impl App {
         let cursor = self.windows.get(&def_id).map(|w| w.cursor);
         let inputs = frame::FrameInputs {
             metrics: self.host.metrics_for(def_id),
-            bus: self.shm.as_deref(),
-            node_trees: &self.node_trees,
+            world: World {
+                bus: self.shm.as_deref(),
+                node_trees: &self.node_trees,
+                server_attached,
+                sample_rate: self.shm.as_ref().map_or(0.0, |s| s.sample_rate()),
+                sample_clock: self.shm.as_ref().map_or(0.0, |s| s.sample_clock()),
+                cursor,
+                timelines: self.host.timelines(),
+            },
             active_button,
             focused_text: self
                 .host
                 .focused_text()
                 .filter(|(d, _)| *d == def_id)
                 .map(|(_, id)| id),
-            server_attached,
-            sample_rate: self.shm.as_ref().map_or(0.0, |s| s.sample_rate()),
-            sample_clock: self.shm.as_ref().map_or(0.0, |s| s.sample_clock()),
-            cursor,
-            timelines: self.host.timelines(),
             // A rewiring drag in flight draws its wire to the pointer.
             wiring: self
                 .windows
