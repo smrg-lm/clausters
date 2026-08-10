@@ -1861,3 +1861,83 @@ fn cut_and_paste_move_text_through_the_clipboard() {
     g.text_key(&mut host, &ctx, TextKey::Char('v'), &mut clip);
     assert_eq!(text_value(&host, 5), "abcabc");
 }
+
+/// **A frequency axis does not zoom past its own analysis.** Below a few FFT
+/// bins across the whole body the curve is the interpolation between two
+/// neighbours -- a flat line that no longer answers to the signal -- so the
+/// zoom stops at a floor derived from `fft_size` and the sample rate rather
+/// than at a constant fraction of the display axis.
+#[test]
+fn the_frequency_zoom_stops_at_the_analysis_resolution() {
+    let mut host = spectrum_host();
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 300);
+    ctx.sample_rate = 48_000.0;
+    for _ in 0..40 {
+        g.wheel(&mut host, &ctx, 400.0, 150.0, 2.0);
+    }
+    let (start, len) = x_window(&host, 80);
+    // The window in bins, through the geometry the curve is drawn with.
+    let (nyquist, f_lo) = crate::host::spectrum::axis_geometry(48_000.0);
+    let bins = |d: f64| {
+        crate::host::ruler::display_to_hz(d, nyquist, crate::spectrogram::FreqScale::Log, f_lo)
+            * 2048.0
+            / 48_000.0
+    };
+    let span = bins(start + len) - bins(start);
+    assert!(
+        (3.5..=4.5).contains(&span),
+        "the window bottomed out at {span:.2} bins, not at the analysis floor"
+    );
+    // Far short of what the display axis alone would have allowed.
+    assert!(
+        len > crate::viewport::MIN_SPAN * 5.0,
+        "the floor is still the display constant ({len})"
+    );
+}
+
+/// A gesture that moves nothing says nothing: once the axis is against its
+/// floor, further wheel steps report no view. The bug this fixes filled the
+/// script's stream with an unchanged window, one event per wheel notch.
+#[test]
+fn a_wheel_against_the_floor_reports_nothing() {
+    let mut host = spectrum_host();
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 300);
+    ctx.sample_rate = 48_000.0;
+    let mut last = Vec::new();
+    for _ in 0..40 {
+        last = g.wheel(&mut host, &ctx, 400.0, 150.0, 2.0);
+    }
+    assert!(
+        !has_emit_tag(&last, 80, "view_x"),
+        "a wheel step that moved nothing still reported a view"
+    );
+    assert!(last.is_empty(), "and it asked for no repaint either");
+    // Zooming back out still reports, so the gate is on movement and not on
+    // the direction.
+    let out = g.wheel(&mut host, &ctx, 400.0, 150.0, -2.0);
+    assert!(has_emit_tag(&out, 80, "view_x"));
+}
+
+/// The same rule on the shared time axis: fully zoomed out, the wheel has
+/// nowhere to go and reports nothing.
+#[test]
+fn a_wheel_against_the_time_axis_bound_reports_nothing() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":60,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+    );
+    host.set_timeline_total(60, 1000);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    // Already showing the whole buffer: zooming out cannot move it.
+    let out = g.wheel(&mut host, &ctx, 400.0, 150.0, -4.0);
+    assert!(
+        !has_emit_tag(&out, 60, "view"),
+        "an unmovable axis reported"
+    );
+    // ...and zooming in still does.
+    let out = g.wheel(&mut host, &ctx, 400.0, 150.0, 4.0);
+    assert!(has_emit_tag(&out, 60, "view"));
+}

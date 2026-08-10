@@ -152,6 +152,65 @@ pub(crate) struct SpectrumRegions {
     pub strip_x: Option<Rect>,
 }
 
+/// **The absolute frequency geometry a spectrum's axis is placed by**: Nyquist,
+/// and the normalized floor the log axis starts at. One function, because the
+/// curve, the ruler and the gesture must not disagree about where a hertz sits;
+/// an unknown rate falls back to 48 kHz so the axis is still drawable.
+pub(crate) fn axis_geometry(sample_rate: f64) -> (f64, f64) {
+    let sr = if sample_rate > 0.0 {
+        sample_rate
+    } else {
+        FALLBACK_SR
+    };
+    let nyquist = sr * 0.5;
+    let f_lo = (F_LO_HZ as f64).min(nyquist * 0.5).max(1.0);
+    (nyquist, (f_lo / nyquist).clamp(1e-5, 0.5))
+}
+
+/// The fewest analysis bins a navigable frequency axis will show across its
+/// whole body. Below this the curve stops being a measurement and becomes the
+/// interpolation between two neighbouring bins — a straight line that no longer
+/// answers to the signal, which is what zooming past the analysis buys.
+const MIN_VISIBLE_BINS: f64 = 4.0;
+
+/// **The narrowest window a frequency axis may be zoomed to**, in display
+/// coordinates, at a window starting at `start`.
+///
+/// A display axis has no natural floor of its own — the normalized `Axis` uses
+/// a fraction of its extent, which is a number about the *screen* — but a
+/// spectrum's axis is over a measured domain, and that domain has a resolution:
+/// one FFT bin, `sample_rate / fft_size` hertz wide. So the floor is the
+/// display width of [`MIN_VISIBLE_BINS`] of them, measured through the very
+/// mapping the curve and the ruler are drawn with. It is not a constant because
+/// a bin is not one on a log (or mel, or bark) axis: at 500 Hz it is a
+/// twentieth of the visible axis, near Nyquist a thousandth, so a fixed floor
+/// is both far too coarse at the top and far too fine at the bottom.
+pub(crate) fn min_display_span(
+    fft_size: usize,
+    sample_rate: f64,
+    scale: FreqScale,
+    f_lo_norm: f64,
+    start: f64,
+) -> f64 {
+    let nyquist = sample_rate * 0.5;
+    if nyquist <= 0.0 || fft_size == 0 {
+        return crate::viewport::MIN_SPAN;
+    }
+    let bin_hz = sample_rate / fft_size as f64;
+    let lo = ruler::display_to_hz(start.clamp(0.0, 1.0), nyquist, scale, f_lo_norm);
+    let hi = (lo + MIN_VISIBLE_BINS * bin_hz).min(nyquist);
+    let span = ruler::hz_to_display(hi, nyquist, scale, f_lo_norm) - start;
+    // A window pressed against the top of the axis has nowhere forward to
+    // measure; the smallest span anywhere on the axis is the one at Nyquist,
+    // so fall back to measuring the last bins backwards from there.
+    if span > 0.0 {
+        span.min(1.0)
+    } else {
+        let back = (nyquist - MIN_VISIBLE_BINS * bin_hz).max(bin_hz);
+        (1.0 - ruler::hz_to_display(back, nyquist, scale, f_lo_norm)).clamp(1e-9, 1.0)
+    }
+}
+
 /// Splits a spectrum's rectangle into [`SpectrumRegions`], reserving a strip
 /// per ruler that is on and fits.
 pub(crate) fn regions(
@@ -237,14 +296,8 @@ pub(crate) fn draw_spectrum(
     let tag = format!("{:>4} {}", p.fft_size, ruler::scale_tag(p.freq_scale));
     super::meters::value_text(&mut Draw::new(mesh, m, theme), &tag, body);
 
-    let sr = if p.sample_rate > 0.0 {
-        p.sample_rate as f32
-    } else {
-        FALLBACK_SR as f32
-    };
-    let nyquist = sr * 0.5;
-    let f_lo = F_LO_HZ.min(nyquist * 0.5).max(1.0);
-    let f_lo_norm = (f_lo as f64 / nyquist as f64).clamp(1e-5, 0.5);
+    let (nyquist, f_lo_norm) = axis_geometry(p.sample_rate);
+    let (nyquist, sr) = (nyquist as f32, nyquist as f32 * 2.0);
     let (x0, x_len) = p.x_view;
     if let Some(strip) = x_strip {
         let ticks = ruler::hz_ticks_h(

@@ -36,7 +36,7 @@ impl Gestures {
         // A spectrum zooms its **frequency** axis, anchored at the cursor: the
         // one navigable axis in the host that is not the window's time, and the
         // one that needs no history behind it — every bin is there every frame.
-        if let Some(axis) = freq_axis(host, def_id, &found)
+        if let Some(axis) = freq_axis(host, ctx, &found)
             && axis.surface.contains(cx, cy)
         {
             let factor = 0.85f64.powf(steps);

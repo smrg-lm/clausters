@@ -305,6 +305,17 @@ impl Axis {
         self.clamp();
     }
 
+    /// Replaces the smallest window this axis may be zoomed to, in domain
+    /// units. The default is a fraction of the extent, which is right for an
+    /// axis whose domain is dense — but an axis over a *measured* domain has a
+    /// resolution of its own, and zooming past it magnifies interpolation
+    /// rather than revealing anything. The caller that knows the resolution
+    /// says so here.
+    pub fn set_min_span(&mut self, min: f64) {
+        self.min_len = min.clamp(f64::MIN_POSITIVE, self.extent);
+        self.clamp();
+    }
+
     /// Zoom by `factor` (< 1 zooms in) keeping the point under `anchor`
     /// (0..1 across the window) fixed.
     pub fn zoom(&mut self, factor: f64, anchor: f64) {

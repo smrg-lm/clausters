@@ -176,7 +176,11 @@ pub(super) fn pan_timeline(
     let Some((_, len, _)) = group_view(host, id) else {
         return;
     };
+    let before = group_view(host, id);
     let roots = host.pan_timeline(id, start - dx_fraction * len);
+    if !group_view_moved(host, id, before) {
+        return;
+    }
     emit_view(host, out, def_id, id);
     redraw_all(out, &roots);
 }
@@ -261,12 +265,17 @@ pub(super) fn set_y_view(
     let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
     axis.set_span(start, len);
     let (start, len) = axis.span();
+    let mut moved = true;
     if let Some(editor) = host
         .window_def_mut(def_id)
         .and_then(|t| t.find_mut(id))
         .and_then(|w| w.kind.editor_mut())
     {
+        moved = window_moved((editor.y_start, editor.y_len), (start, len));
         (editor.y_start, editor.y_len) = (start, len);
+    }
+    if !moved {
+        return;
     }
     emit(
         out,
@@ -298,12 +307,16 @@ pub(super) struct FreqAxis {
     pub(super) surface: Rect,
     pub(super) start: f64,
     pub(super) len: f64,
+    /// The rate the axis is placed by, so a hertz the gesture resolves is the
+    /// hertz the frame drew — and so the zoom knows the analysis' resolution.
+    pub(super) sample_rate: f64,
 }
 
 /// The frequency axis of the widget a hit landed on, if that widget is a
 /// navigable spectrum. Resolved through the renderer's own region split, so a
 /// zoom anchors at the hertz the reader has the pointer on.
-pub(super) fn freq_axis(host: &Host, def_id: i32, hit: &interact::Hit) -> Option<FreqAxis> {
+pub(super) fn freq_axis(host: &Host, ctx: &GestureCtx, hit: &interact::Hit) -> Option<FreqAxis> {
+    let def_id = ctx.def_id;
     let el = hit.kind.freq_nav()?;
     let r = super::super::spectrum::regions(
         hit.rect,
@@ -326,14 +339,66 @@ pub(super) fn freq_axis(host: &Host, def_id: i32, hit: &interact::Hit) -> Option
         surface,
         start,
         len,
+        sample_rate: ctx.sample_rate,
     })
 }
 
-/// Writes spectrum `id`'s **frequency** window (clamped through the same
-/// normalized axis the vertical one uses) and emits the `"view_x" start len`
+/// Writes spectrum `id`'s **frequency** window — clamped through the same
+/// normalized axis the vertical one uses, and floored at the resolution of the
+/// analysis behind it ([`freq_min_span`]) — and emits the `"view_x" start len`
 /// event — the horizontal sibling of [`set_y_view`], and deliberately not the
 /// group's `"view"`: this window belongs to the element, so nothing else moves
 /// with it.
+/// How far a view window has to move to count as having moved.
+///
+/// Not a fudge but the resolution the question is asked at. A normalized window
+/// spans a body of at most a few thousand pixels, so a billionth of it is a
+/// millionth of a pixel; a timeline window is measured in whole samples, so a
+/// billionth of one is nothing either. In both units this is float noise rather
+/// than a movement — and it matters because a bound that is itself a function
+/// of the window's position converges to it by last bits rather than landing on
+/// it, and each of those last bits would otherwise be an event.
+const VIEW_EPSILON: f64 = 1e-9;
+
+/// Whether a view window actually moved, past [`VIEW_EPSILON`].
+///
+/// **A gesture that moves nothing says nothing.** An axis pressed against a
+/// bound goes on receiving wheel steps and drag motion, and re-emitting the
+/// window it already had fills a script's event stream with a view that never
+/// changed — the reader turning the wheel at the end of an axis is not asking
+/// anything, and the script should not be told they were.
+fn window_moved(a: (f64, f64), b: (f64, f64)) -> bool {
+    (a.0 - b.0).abs() > VIEW_EPSILON || (a.1 - b.1).abs() > VIEW_EPSILON
+}
+
+/// The narrowest window spectrum `id`'s frequency axis may be written to: the
+/// display width of a handful of its own analysis bins.
+///
+/// Every writer of the window goes through it, so the floor is a property of
+/// the axis rather than of the gesture that happened to move it — a wheel, a
+/// drag and a `R` reset all land inside the same bound.
+pub(super) fn freq_min_span(
+    host: &Host,
+    def_id: i32,
+    id: i32,
+    sample_rate: f64,
+    start: f64,
+) -> f64 {
+    let Some(el) = host.widget_kind(def_id, id).and_then(WidgetKind::freq_nav) else {
+        return crate::viewport::MIN_SPAN;
+    };
+    // Through the very geometry the curve and the ruler are drawn with, the
+    // fallback rate included — the floor has to be the one the reader sees.
+    let (nyquist, f_lo_norm) = super::super::spectrum::axis_geometry(sample_rate);
+    super::super::spectrum::min_display_span(
+        el.spectral.fft_size,
+        nyquist * 2.0,
+        el.spectral.freq_scale,
+        f_lo_norm,
+        start,
+    )
+}
+
 pub(super) fn set_x_view(
     host: &mut Host,
     out: &mut Vec<GestureEffect>,
@@ -341,16 +406,23 @@ pub(super) fn set_x_view(
     id: i32,
     start: f64,
     len: f64,
+    sample_rate: f64,
 ) {
     let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
+    axis.set_min_span(freq_min_span(host, def_id, id, sample_rate, start));
     axis.set_span(start, len);
     let (start, len) = axis.span();
+    let mut moved = true;
     if let Some(editor) = host
         .window_def_mut(def_id)
         .and_then(|t| t.find_mut(id))
         .and_then(|w| w.kind.editor_mut())
     {
+        moved = window_moved((editor.x_start, editor.x_len), (start, len));
         (editor.x_start, editor.x_len) = (start, len);
+    }
+    if !moved {
+        return;
     }
     emit(
         out,
@@ -377,12 +449,18 @@ pub(super) fn zoom_freq(
     cx: f64,
     factor: f64,
 ) {
+    let sample_rate = axis.sample_rate;
     let anchor = ((cx - axis.body.x as f64) / axis.body.w.max(1.0) as f64).clamp(0.0, 1.0);
     let mut a = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
+    // The floor belongs to the *zoom*, not only to the write: clamping it
+    // afterwards would keep the anchor of a window narrower than the floor, so
+    // every further step at the bottom would slide the picture sideways instead
+    // of standing still.
+    a.set_min_span(freq_min_span(host, def_id, id, sample_rate, axis.start));
     a.set_span(axis.start, axis.len);
     a.zoom(factor, anchor);
     let (start, len) = a.span();
-    set_x_view(host, out, def_id, id, start, len);
+    set_x_view(host, out, def_id, id, start, len, sample_rate);
 }
 
 /// Anchor-preserving vertical zoom of timeline view `id`: `anchor` in display
@@ -419,7 +497,21 @@ pub(super) fn zoom_timeline(
     factor: f64,
 ) {
     let anchor = ((cx - body.x as f64) / body.w.max(1.0) as f64).clamp(0.0, 1.0);
+    let before = group_view(host, id);
     let roots = host.zoom_timeline(id, factor, anchor);
+    if !group_view_moved(host, id, before) {
+        return;
+    }
     emit_view(host, out, def_id, id);
     redraw_all(out, &roots);
+}
+
+/// Whether view `id`'s group window differs from the `before` snapshot — the
+/// timeline sibling of [`window_moved`], in samples rather than normalized
+/// units.
+fn group_view_moved(host: &Host, id: i32, before: Option<(f64, f64, usize)>) -> bool {
+    match (before, group_view(host, id)) {
+        (Some(a), Some(b)) => window_moved((a.0, a.1), (b.0, b.1)),
+        (a, b) => a.is_some() != b.is_some(),
+    }
 }

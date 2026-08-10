@@ -43,6 +43,9 @@ impl WebApp {
         let slot = self.canvases.get(&def)?;
         let (fb_w, fb_h) = slot.fb();
         let mut ctx = GestureCtx::new(def, fb_w, fb_h);
+        // The same rate the frame draws with, so a gesture over a measured
+        // axis resolves the same hertz the reader is looking at.
+        ctx.sample_rate = self.server_rate;
         ctx.shift = slot.shift;
         ctx.ctrl = slot.ctrl;
         ctx.alt = slot.alt;

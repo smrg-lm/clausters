@@ -360,7 +360,7 @@ impl Gestures {
             .map(freq_nav_ids)
             .unwrap_or_default();
         for id in spectra {
-            set_x_view(host, &mut out, def_id, id, 0.0, 1.0);
+            set_x_view(host, &mut out, def_id, id, 0.0, 1.0, ctx.sample_rate);
         }
         out.push(GestureEffect::Redraw(def_id));
         out

@@ -4664,3 +4664,48 @@ that surprise the next reader:
   existing `spectrum` on the wire says nothing about the capability — so
   defaulting it on would have changed what shipped defs do, to no one's
   request.
+
+
+## A navigable axis stops at the resolution of what it measures
+
+*2026-08-10, from a by-eye pass: zooming a live spectrum far enough left the
+widget showing a flat line that no longer answered to the sound.*
+
+The display axes have always been floored by a constant fraction of their own
+extent (`viewport::MIN_SPAN`), which is a number about the **screen**: it says
+how small a window may get before a view stops being drawable. That is the right
+question for a plane you pan, and the wrong one for an axis over a **measured**
+domain, which has a resolution of its own. A spectrum's x is frequency, and its
+frequency is an FFT of a given size: at `fft_size` 2048 and 48 kHz a bin is
+23.4 Hz, and the constant floor let a window shrink to a *fifth* of one — the
+whole widget then drawing the interpolation between two neighbouring bins, a
+straight line that no zoom, and no signal, will ever change.
+
+**The floor is derived from the analysis**, not from the display: the window may
+not go below the display width of a handful of bins. It cannot be a constant,
+because a bin is not one — on a log axis a bin is a twentieth of the visible
+axis at 500 Hz and a thousandth of it near Nyquist, so any fixed fraction is far
+too coarse at the bottom and far too fine at the top. It is measured through the
+very display↔hertz mapping the curve and the ruler are drawn with, which is also
+what keeps the three from disagreeing.
+
+Two consequences worth stating:
+
+- **The floor belongs to the axis, not to the gesture.** Every writer of the
+  window goes through it — the wheel, the drag, the `R` reset — so no path can
+  put the axis somewhere another path forbids. It also has to be applied to the
+  *zoom* and not only to the write: clamping afterwards keeps the anchor a
+  narrower window computed, so each further step at the bottom would slide the
+  picture sideways instead of standing still.
+- **The gesture needs the sample rate**, which the fronts knew and the gesture
+  context did not. It is one field on `GestureCtx`, filled from the same source
+  the frame draws with — because a gesture that resolved a different hertz than
+  the frame drew would anchor a zoom where the reader is not pointing.
+
+**And a gesture that moves nothing says nothing.** The same pass found the other
+half: an axis pressed against a bound goes on receiving wheel notches, and every
+one of them re-emitted the window it already had. The view events (`"view"`,
+`"view_x"`, `"view_y"`) now report movement rather than input. The comparison
+carries a small epsilon, and that is not a fudge: a bound that is itself a
+function of the window's position converges to it by last bits rather than
+landing on it, and a billionth of a normalized axis is a millionth of a pixel.

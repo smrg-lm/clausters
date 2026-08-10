@@ -245,6 +245,20 @@ reach that differently:
   reports. `spectrum` is also the one view where `navigable` is off unless you
   ask: without it, it is the watching spectroscope.
 
+  The zoom stops where the **analysis** does. A window narrower than a few FFT
+  bins across the whole widget shows the interpolation between two neighbouring
+  bins — a straight line that no longer answers to the signal — so the host
+  floors it at that resolution, computed from `fft_size` and the sample rate.
+  It is not a fixed fraction of the axis, because a bin is not one: on a log
+  axis one is a twentieth of what you see at 500 Hz and a thousandth of it near
+  Nyquist. Raise `fft_size` to zoom further; that is the only thing that buys
+  more detail, here as anywhere.
+
+  And an axis at a bound is quiet: once the window cannot move, the wheel
+  reports no `"view_x"` at all. That holds for every view window — `"view"` and
+  `"view_y"` too — so a handler counting events is counting movements, not
+  notches.
+
 ### Where the samples come from
 
 A view never carries a megabyte over OSC if it does not have to. In the host's

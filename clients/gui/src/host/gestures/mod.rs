@@ -80,6 +80,11 @@ pub struct GestureCtx {
     pub wave_lanes: HashMap<i32, usize>,
     /// Lane (channel STFT) count per `spectrogram` widget id.
     pub spect_lanes: HashMap<i32, usize>,
+    /// The server's sample rate (`0.0` when this front does not know it) — the
+    /// same one the frame draws with. A gesture over a *measured* axis needs
+    /// it: a frequency axis has a resolution, and the zoom is not allowed past
+    /// it.
+    pub sample_rate: f64,
 }
 
 impl GestureCtx {
@@ -95,6 +100,7 @@ impl GestureCtx {
             alt: false,
             wave_lanes: HashMap::new(),
             spect_lanes: HashMap::new(),
+            sample_rate: 0.0,
         }
     }
 

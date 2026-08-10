@@ -687,7 +687,7 @@ pub(crate) fn display_to_hz(d: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f
 
 /// Frequency in Hz → display coordinate under `scale`, the inverse of
 /// [`display_to_hz`] (the tick-placement direction).
-fn hz_to_display(f: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f64) -> f64 {
+pub(crate) fn hz_to_display(f: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f64) -> f64 {
     match scale {
         FreqScale::Linear => f / nyquist,
         FreqScale::Log => {

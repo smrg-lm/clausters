@@ -19,6 +19,9 @@ impl App {
     fn gesture_ctx(&self, def_id: i32) -> GestureCtx {
         let (fb_w, fb_h) = self.fb(def_id);
         let mut ctx = GestureCtx::new(def_id, fb_w, fb_h);
+        // The same rate the frame draws with, so a gesture over a measured
+        // axis resolves the same hertz the reader is looking at.
+        ctx.sample_rate = self.shm.as_ref().map_or(0.0, |s| s.sample_rate());
         if let Some(ws) = self.windows.get(&def_id) {
             ctx.shift = ws.shift;
             ctx.ctrl = ws.ctrl;

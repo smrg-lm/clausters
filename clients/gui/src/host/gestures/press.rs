@@ -95,7 +95,7 @@ impl Gestures {
         // any modifier and before the chain: the element is nobody's container,
         // so there is no coordinate system over it to offer a pan, and dragging
         // its curve sideways can mean nothing else.
-        if let Some(axis) = freq_axis(host, ctx.def_id, &hit)
+        if let Some(axis) = freq_axis(host, ctx, &hit)
             && axis.surface.contains(cx, cy)
         {
             self.drag = Some(Drag::PanX {
