@@ -1336,7 +1336,7 @@ The track opens the element at **two levels of usability that are deliberately d
 
 **Build order** is dependency-driven: K1 is the seam everything else rides, K2 makes it usable from Rust, K3–K6 are the general capabilities (cheap-first inside each), K7 is the gate that keeps their weight optional, K8 is what makes the whole thing someone else's to use.
 
-- ⬜ **K1 — `trait Element`: the leaf seam and the registry**: the enum keeps the **containers** — `window`, `layout`, `plane`, `field` and the clip — because the layout pass has to know them and a third-party coordinate system is a different, much larger promise. Every **leaf element** moves behind one object-safe trait that absorbs the passes that are eight matches today:
+- ⬜ **K1 — `trait Element`: the leaf seam and the registry** — *the seam has landed; the built-ins have not moved yet, so the box stays open.* `host/widget/element.rs` carries the trait, `Needs`, `Claim` and the thread-local registry; `WidgetKind::Custom` is wired through build, apply, size, the frame's flat draw, the query, the bus collector and the element step of the press, and `clausters_gui::{register, unregister}` is the public door. What remains is the port, one built-in per commit in the order below. The enum keeps the **containers** — `window`, `layout`, `plane`, `field` and the clip — because the layout pass has to know them and a third-party coordinate system is a different, much larger promise. Every **leaf element** moves behind one object-safe trait that absorbs the passes that are eight matches today:
 
   | Pass today | Becomes |
   |---|---|

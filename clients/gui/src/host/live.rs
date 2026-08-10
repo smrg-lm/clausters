@@ -656,6 +656,11 @@ pub(crate) fn collect_live_buses(tree: &Widget, out: &mut Vec<i32>) {
                 push(bus);
             }
         }
+        // A registered element reads through one declaration instead of a prop
+        // this walk would have to know the name of.
+        for bus in widget.kind.needs().buses {
+            push(bus);
+        }
     }
     out.sort_unstable();
 }

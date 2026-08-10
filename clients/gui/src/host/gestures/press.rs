@@ -17,7 +17,7 @@ use clausters_core::osc::OscType;
 
 use super::super::interact::{self, Hit, slider_t};
 use super::super::textedit;
-use super::super::widget::{GestureStep, WidgetKind};
+use super::super::widget::{Claim, GestureStep, WidgetKind};
 use super::super::{Host, bpf, controls, patch, piano, pianoroll};
 use super::effects::*;
 use super::nav::*;
@@ -672,6 +672,27 @@ impl Gestures {
                     return false;
                 };
                 self.pianoroll_press(host, out, ctx, id, &h, cx, cy);
+            }
+            // A registered element gets the press on the live widget (the `kind`
+            // matched above is the hit's copy), and answers the same way a
+            // built-in arm does by hand: it consumed it, or it declines and the
+            // press goes back up the chain. The claim is taken before anything
+            // is delivered, so the element's borrow of the tree is over by the
+            // time the event leaves.
+            WidgetKind::Custom(_) => {
+                let claim = match host.widget_kind_mut(def_id, id) {
+                    Some(WidgetKind::Custom(el)) => el.press((cx, cy), rect),
+                    _ => Claim::Decline,
+                };
+                match claim {
+                    Claim::Decline => return false,
+                    Claim::Take { value } => {
+                        if let Some(v) = value {
+                            deliver(host, out, def_id, id, v);
+                        }
+                        out.push(GestureEffect::Redraw(def_id));
+                    }
+                }
             }
             _ => {}
         }

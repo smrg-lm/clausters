@@ -60,6 +60,7 @@ use super::{bpf, piano, plot, score, signal, textedit};
 mod apply;
 mod axes;
 mod build;
+pub mod element;
 mod parse;
 mod props;
 mod query;
@@ -69,10 +70,12 @@ mod size;
 mod tests;
 
 pub(super) use axes::{AXES, flatten as flatten_axes, flatten_tree as flatten_tree_axes};
+pub use element::{Claim, Element, Needs};
 pub use props::{
     Align, Axis, EditorProps, Flow, GestureMap, GesturePlan, GestureStep, Layout, Place, Range,
     Rate, Ruler, RulerY, ScrollView,
 };
+pub use size::Natural;
 
 use parse::*;
 
@@ -389,6 +392,17 @@ pub enum WidgetKind {
         selected: Vec<usize>,
         label: Option<String>,
     },
+    /// A **registered element**: a leaf this build renders through the
+    /// [`Element`] trait rather than through an arm of this enum, built by the
+    /// constructor a program registered under the wire type it answers to
+    /// ([`element::register`]).
+    ///
+    /// It sits beside the built-ins rather than replacing them: the built-in
+    /// names are matched first, so a registration can neither shadow one nor
+    /// change what an existing def means, and a name nothing registered stays
+    /// [`Unknown`](WidgetKind::Unknown) — laid out and not painted, the
+    /// behavior an older host already has against a newer script.
+    Custom(Box<dyn Element>),
     /// A type this build does not render yet. Laid out so it reserves space, but
     /// not painted. Carries the type tag for logs.
     Unknown(String),

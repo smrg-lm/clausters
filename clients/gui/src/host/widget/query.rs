@@ -118,7 +118,20 @@ impl WidgetKind {
             WidgetKind::Menu { index, .. } => Some(OscType::Int(*index as i32)),
             WidgetKind::Text { value, .. } => Some(OscType::String(value.clone())),
             WidgetKind::Button { .. } => Some(OscType::Int(1)),
+            WidgetKind::Custom(el) => el.value(),
             _ => None,
+        }
+    }
+
+    /// What a registered element declares it reads from outside itself, empty
+    /// for every built-in — whose own needs are the specific queries above
+    /// ([`live_bus`](Self::live_bus), [`level_bus`](Self::level_bus),
+    /// [`audio_buses_read`](Self::audio_buses_read)), each answered by the arm
+    /// that knows the prop it comes from.
+    pub fn needs(&self) -> super::Needs {
+        match self {
+            WidgetKind::Custom(el) => el.needs(),
+            _ => super::Needs::default(),
         }
     }
 

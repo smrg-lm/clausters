@@ -135,6 +135,11 @@ impl WidgetKind {
             // A ruler is a strip: it spans its axis and knows its thickness.
             WidgetKind::TimeRuler { .. } => (None, Some(m.ruler_h)),
 
+            // A registered element declares its own, under the same rule the
+            // arms above follow: pure over the metrics, its presentation props
+            // and the scale — never over its data.
+            WidgetKind::Custom(el) => el.natural(m, scale),
+
             // -- Surfaces: the extent is the caller's --
             _ => (None, None),
         }

@@ -819,6 +819,11 @@ pub(super) fn collect_widgets(
                     },
                 );
             }
+            // A registered element is a flat widget: it draws straight into the
+            // window's one mesh during this walk, with the placement's theme
+            // and size table, and never becomes an item — it has nothing to
+            // defer, which is also what keeps it inside the single batch.
+            WidgetKind::Custom(el) => el.draw(&mut Draw::new(mesh, m, th), p.rect),
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
             kind => {
                 // The open list of *this* menu, collected here because only the

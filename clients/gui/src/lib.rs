@@ -34,6 +34,14 @@
 
 pub mod host;
 
+/// Adding an element **from a program that links this crate**: implement
+/// [`Element`], register a constructor under the wire name it answers to, and
+/// every def that names it — sent over OSC or built in Rust — gets it. The
+/// leaves the host ships are still enum arms; a registration sits beside them
+/// and is consulted only when no built-in name matched, so nothing an existing
+/// def means can change under it. See [`host::widget::element`].
+pub use host::widget::element::{self, Claim, Element, Needs, register, unregister};
+
 /// The peak pyramid lives in the shared core (general client functionality);
 /// re-exported here so the renderer (`waveform`) and the host keep using
 /// `crate::peaks`.

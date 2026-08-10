@@ -480,6 +480,10 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
                 .is_some(),
             _ => false,
         },
+        // A registered element answers for its own props, with the same
+        // contract every arm above has: `false` is "not my key", which the
+        // host logs rather than swallows.
+        WidgetKind::Custom(el) => el.set(key, v),
         _ => false,
     }
 }

@@ -255,7 +255,15 @@ pub(super) fn build_kind(
                 label: label(props),
             }
         }
-        other => WidgetKind::Unknown(other.to_string()),
+        // No built-in answers to this name: the registry gets it, and a miss
+        // there is what an unrecognized type has always been. Consulting it
+        // *after* the match is the invariant, not an ordering detail — it is
+        // what keeps a registration from shadowing a built-in and changing
+        // what a shipped def means.
+        other => match element::build_registered(other, props, blobs) {
+            Some(built) => WidgetKind::Custom(built?),
+            None => WidgetKind::Unknown(other.to_string()),
+        },
     })
 }
 
