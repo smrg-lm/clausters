@@ -24,7 +24,12 @@ The three readers are deliberately different, because the three sources are:
 * the host is read **statically** from the widget schema's two wire passes,
   ``build`` (construction) and ``apply`` (`/gui_set`), resolving the shared
   prop-reading helpers so a bundle like ``Flow`` or ``EditorProps`` contributes
-  its own keys to every widget that embeds it.
+  its own keys to every widget that embeds it — **and** from the leaves that
+  have moved behind the ``Element`` trait, which are not arms of those passes
+  at all: one file per widget under ``host/elements/``, its constructor and its
+  ``set`` reading the same shared helpers, named on the wire by the
+  ``elements::builtin`` table. A leaf that moves out of the schema must not
+  read here as a leaf that lost its props.
 """
 
 import inspect
@@ -35,6 +40,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 GUIDEF_TS = ROOT / "clients/web/src/gui/guidef.ts"
 WIDGET_DIR = ROOT / "clients/gui/src/host/widget"
+#: The leaves that have moved behind the `Element` trait: one file per widget,
+#: and `elements/mod.rs` is the table naming which wire type each answers to.
+ELEMENT_DIR = ROOT / "clients/gui/src/host/elements"
 #: Where the axis pair's key is declared.
 AXES_MOD = ROOT / "clients/gui/src/host/widget/axes.rs"
 MANIFEST = ROOT / "docs/gui-props.md"
@@ -325,6 +333,52 @@ OUTBOARD = {"field": ("clip_bodies", "apply_clip_body")}
 
 
 
+def _strip_tests(text: str) -> str:
+    """Everything before the file's own test module: a fixture there names props
+    the wire never carries, and counting them would widen the host's vocabulary
+    — the one direction that hides a divergence instead of reporting one."""
+    return text.split("#[cfg(test)]")[0]
+
+
+def element_props() -> dict:
+    """``{wire type: {prop}}`` for the leaves that live behind the trait.
+
+    Read **per file**, never concatenated: every element has a ``build``, a
+    ``from_props`` and a ``set``, so one namespace over all of them would let
+    one leaf's keys leak into another's. A leaf that delegates — to a shared
+    parse helper (``Range::parse``) or to a sibling element module
+    (``control::set``, ``curve::body``) — is read through the callee.
+    """
+    shared = _helper_keys()
+    named = dict(re.findall(r'"([a-z_]+)" => (\w+)::build', (ELEMENT_DIR / "mod.rs").read_text()))
+    assert named, "the elements::builtin table moved"
+
+    per_module = {}
+    for path in sorted(ELEMENT_DIR.glob("*.rs")):
+        if path.name != "mod.rs":
+            src = _strip_tests(path.read_text())
+            per_module[path.stem] = (src, _literal_keys(src) | _match_arm_keys(src))
+
+    out = {}
+    for wire, module in named.items():
+        assert module in per_module, f"{wire} names {module}, which is not a file"
+        src, keys = per_module[module]
+        keys = set(keys)
+        for callee in re.findall(r"(?<![.\w])((?:\w+::)?\w+)\(", src):
+            head, tail = callee.split("::")[0], callee.split("::")[-1]
+            if callee in shared:
+                keys |= shared[callee]
+            # The shared prop readers are free functions of `widget::parse`, so
+            # an element naming the module (`parse::options(props)`) resolves to
+            # the same helper an unqualified call does.
+            elif head == "parse" and tail in shared:
+                keys |= shared[tail]
+            elif head in per_module and head != module:
+                keys |= per_module[head][1]
+        out[wire] = keys - NOT_A_PROP
+    return out
+
+
 def host_props() -> dict:
     """``{widget kind: {prop}}`` from the schema's construction and set passes."""
     helpers, bodies = _helper_keys(), _helper_bodies()
@@ -377,6 +431,11 @@ def host_props() -> dict:
             for kind in variant_of.get(variant, []):
                 out.setdefault(kind, set())
                 out[kind] |= keys
+
+    # ...and the leaves that are no longer arms of either pass at all.
+    for kind, keys in element_props().items():
+        out.setdefault(kind, set())
+        out[kind] |= keys
 
     return {k: v - NOT_A_PROP for k, v in out.items()}
 
