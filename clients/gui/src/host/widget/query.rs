@@ -68,6 +68,37 @@ impl Widget {
 }
 
 impl WidgetKind {
+    /// **Whether these are pixels with nothing drawn on them**: a container's
+    /// own surface (its margin, the gap between its children, the slack under
+    /// the last one), a label, a lane's empty space, or a type this host does
+    /// not paint at all.
+    ///
+    /// The question a gesture asks before falling *through* a widget to
+    /// something behind it. In a window with one navigation group, empty pixels
+    /// are that axis with nothing on them, so the wheel over them means what it
+    /// means over a lane — but an element that draws a picture of its own and
+    /// simply has no wheel of its own is not empty, and turning the wheel over
+    /// a goniometer must not zoom the waterfall underneath it.
+    ///
+    /// Each gesture decides for itself whether to ask. The press does **not**:
+    /// Shift+drag pans the axis from anywhere at all, over any element, which
+    /// is the documented reach of that gesture rather than a fall-through.
+    pub fn is_bare_surface(&self) -> bool {
+        matches!(
+            self,
+            WidgetKind::Window { .. }
+                | WidgetKind::Panel { .. }
+                | WidgetKind::Stack { .. }
+                | WidgetKind::Scroll { .. }
+                | WidgetKind::Label { .. }
+                // A lane and the strip that rules it: their empty space *is*
+                // the axis, which is the case the fall-through was written for.
+                | WidgetKind::Track { .. }
+                | WidgetKind::TimeRuler { .. }
+                | WidgetKind::Unknown(_)
+        )
+    }
+
     /// The signal element this widget is, when it navigates its **own**
     /// frequency axis rather than the window's time — the one element that
     /// carries an x window instead of joining a navigation group.

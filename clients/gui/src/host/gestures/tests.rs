@@ -985,6 +985,55 @@ fn the_windows_one_axis_answers_off_the_lanes() {
     );
 }
 
+/// ...but the fall-through is for pixels with **nothing on them**. An element
+/// that draws a picture of its own and simply has no wheel is not empty: the
+/// reader pointed at it, and the wheel there must leave the window's one axis
+/// alone. Shift+drag is a different gesture with a documented reach, so it
+/// still pans from over that element.
+#[test]
+fn the_wheel_does_not_fall_through_an_element_that_draws() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","children":[
+            {"id":40,"type":"field","label":"lane","h":100,"link":7,"children":[
+               {"id":41,"type":"field","offset":0,"dur":1000}]},
+            {"id":50,"type":"signal","view":"phase","bus":0,"h":200}]}"#,
+    );
+    host.sync_track_totals();
+    let key = super::super::timeline::group_key(40, Some(7));
+    let nav = |h: &Host| h.timelines().nav(key).unwrap();
+    let mut ctx = GestureCtx::new(1, 800, 400);
+    let mut g = Gestures::default();
+
+    // Deep inside the goniometer, which has no wheel of its own.
+    let (over_x, over_y) = (400.0, 250.0);
+    assert_eq!(
+        host.window_def(1)
+            .unwrap()
+            .find(50)
+            .map(|w| w.kind.is_bare_surface()),
+        Some(false),
+        "the phasescope draws a picture of its own"
+    );
+    let before = nav(&host).len;
+    g.wheel(&mut host, &ctx, over_x, over_y, -1.0);
+    assert_eq!(
+        nav(&host).len,
+        before,
+        "the wheel over an element zoomed the axis behind it"
+    );
+
+    // Shift+drag from the same pixel still pans: a different gesture, and its
+    // reach over any element is the intended one.
+    let start = nav(&host).start;
+    ctx.shift = true;
+    g.press(&mut host, &ctx, over_x, over_y, &mut || false);
+    g.drag_to(&mut host, &ctx, over_x - 120.0, over_y);
+    assert!(
+        nav(&host).start > start,
+        "Shift+drag lost its reach over an element"
+    );
+}
+
 /// Shift+drag is the **lane's** gesture wherever it starts, clip or no
 /// clip. A clip is a container of its own local axis, so it must not answer
 /// for a pan; before it declined, a busy arrangement could only be panned

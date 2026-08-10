@@ -343,6 +343,8 @@ Live via `/gui_set gestures` (as a JSON string, the `theme` convention), and
 each set starts again from the kind's defaults — so the modifiers it does not
 name keep them. **Off the lanes.** A multitrack has pixels that are not a lane — the gap between two of them, the slack under the last one, a container's margin — and in a window with **exactly one** navigation group those are that axis with nothing drawn on them. So the axis' own gestures work there: the wheel zooms it, Ctrl+wheel resizes its lanes, Shift+drag pans it. A surface under the pointer that *can* act still wins (a `plane` with somewhere to scroll scrolls); one that cannot passes the gesture on instead of eating it. With two groups in a window there is no such answer, so there is no fallback.
 
+**The wheel needs the pixels to be empty; the drag does not.** The two gestures read the same one axis and mean it differently. The **wheel** falls through only over a container's own surface, a label or a lane's empty space — over an element that draws a picture of its own and simply has no wheel (a goniometer, a meter, a knob) it does nothing, because the reader pointed at that element. **Shift+drag** pans the axis from *anywhere*, over any element: that is the gesture's documented reach, not a fall-through.
+
 Two gestures are **not** in the table, because they are not
 ambiguous: a press on a view's vertical strip (a `ruler_y`, a `pianoroll`'s
 keyboard gutter) always pans that axis, and the wheel always zooms — the axis

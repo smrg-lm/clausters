@@ -171,11 +171,21 @@ impl Gestures {
                 return out;
             }
         }
-        // Nothing under the pointer claimed the wheel — a gap between lanes,
-        // the slack under the last one, a container's margin. In a window with
-        // **one** axis those pixels are that axis with nothing drawn on them,
-        // so the wheel means there what it means over a lane: Ctrl the lanes'
-        // thickness, otherwise the time zoom, anchored at the cursor.
+        // Nothing under the pointer claimed the wheel. The fall-through is for
+        // pixels with **nothing drawn on them** — a gap between lanes, the
+        // slack under the last one, a container's margin — where in a window
+        // with one axis those pixels *are* that axis, so the wheel means there
+        // what it means over a lane: Ctrl the lanes' thickness, otherwise the
+        // time zoom, anchored at the cursor.
+        //
+        // Over an element that draws a picture of its own and simply has no
+        // wheel, they are not empty: the reader pointed at that element. The
+        // press path shares the mechanism and means it differently — Shift+drag
+        // pans the axis from anywhere at all, over any element — so the
+        // question is asked here and not there.
+        if !kind.is_bare_surface() {
+            return out;
+        }
         if let Some(sole) =
             interact::sole_time_axis(host, def_id, ctx.fb_w, ctx.fb_h, &|id, kind| {
                 ctx.lanes(id, kind)

@@ -1281,7 +1281,7 @@ that lands somewhere the reader did not point.
   exactly what their widest label needs), clippy, `check-wasm.sh` and the doc
   build; `docs/architecture.md` carries the second pass.
 
-- ⬜ **E21 — The wheel's fall-through is for pixels with nothing on them**:
+- ✅ **E21 — The wheel's fall-through is for pixels with nothing on them** *(done 2026-08-10)*:
   when nothing under the pointer claims the wheel and the window has exactly one
   navigation group, `gestures::wheel` treats those pixels as that axis and zooms
   it. The justification written beside it names *"a gap between lanes, the slack
@@ -1308,6 +1308,17 @@ that lands somewhere the reader did not point.
   one of those places, including over an element. (E17 removed one instance of
   this by giving a navigable spectrum a wheel of its own — that is a coincidence
   of that milestone, not a fix of this one.)
+
+  **What shipped**: the second shape, and it did stay small. `WidgetKind`
+  answers `is_bare_surface` — a container's own surface, a label, a lane's empty
+  space (and the strip that rules it, whose empty pixels *are* the axis), an
+  unknown type this host does not paint — and the **wheel** asks it before
+  falling through while the **press** does not, which is the whole separation.
+  A one-line gate in `gestures::wheel`, a predicate beside the other kind
+  queries, and the prose in `docs/gui-protocol.md` now says both halves out
+  loud: the wheel needs the pixels to be empty, Shift+drag reaches from
+  anywhere over any element. The regression test asserts both from the same
+  pixel and fails without the gate.
 
 ## K track — the kit: opening the element, from Rust and from the wire
 
