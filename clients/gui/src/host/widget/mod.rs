@@ -61,10 +61,10 @@ mod apply;
 mod axes;
 mod build;
 pub mod element;
-mod parse;
+pub(crate) mod parse;
 mod props;
 mod query;
-mod size;
+pub(crate) mod size;
 
 #[cfg(test)]
 mod tests;
@@ -120,15 +120,6 @@ pub enum WidgetKind {
         layout: Layout,
         flow: Flow,
         view: ScrollView,
-    },
-    /// Static text. `wrap` word-wraps it on the font's fixed advance (off, a
-    /// single line clipped with an ellipsis); `align` places each line in the
-    /// rect (`start`, the default left edge / `center` / `end`).
-    Label {
-        text: String,
-        text_size: f32,
-        wrap: bool,
-        align: Align,
     },
     /// The **signal element**: every view of a signal, in one widget.
     ///

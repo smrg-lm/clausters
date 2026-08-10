@@ -560,21 +560,6 @@ pub(super) fn collect_widgets(
             WidgetKind::Panel { .. } | WidgetKind::Scroll { .. } | WidgetKind::Stack { .. } => {
                 mesh.rect(p.rect, th.panel)
             }
-            WidgetKind::Label {
-                text,
-                text_size,
-                wrap,
-                align,
-            } => {
-                controls::draw_label(
-                    &mut Draw::new(mesh, m, th),
-                    text,
-                    p.rect,
-                    *text_size * p.scale,
-                    *wrap,
-                    *align,
-                );
-            }
             // Every signal element, sorted to the renderer its presentation
             // picks: the two navigable heavy views to the GPU slots, the live
             // ones to their per-tick windows, the stored non-navigable ones to
@@ -823,7 +808,7 @@ pub(super) fn collect_widgets(
             // window's one mesh during this walk, with the placement's theme
             // and size table, and never becomes an item — it has nothing to
             // defer, which is also what keeps it inside the single batch.
-            WidgetKind::Custom(el) => el.draw(&mut Draw::new(mesh, m, th), p.rect),
+            WidgetKind::Custom(el) => el.draw(&mut Draw::new(mesh, m, th), p.rect, p.scale),
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
             kind => {
                 // The open list of *this* menu, collected here because only the

@@ -292,7 +292,7 @@ pub(super) fn index_suffix(key: &str, prefix: &str) -> Option<usize> {
 
 /// The `text_size` property: the glyph scale text draws at (font-pixels per
 /// cell pixel over the embedded 5x7 font), clamped to a legible range.
-pub(super) fn text_size(props: &serde_json::Map<String, Value>) -> f32 {
+pub(crate) fn text_size(props: &serde_json::Map<String, Value>) -> f32 {
     clamp_text_size(number(props, "text_size", crate::host::font::DEFAULT_SIZE))
 }
 
@@ -338,7 +338,7 @@ pub(super) fn flow(props: &serde_json::Map<String, Value>) -> Option<&str> {
     props.get("flow").and_then(Value::as_str)
 }
 
-pub(super) fn truthy(v: &Value) -> Option<bool> {
+pub(crate) fn truthy(v: &Value) -> Option<bool> {
     match v {
         Value::Bool(b) => Some(*b),
         Value::Number(n) => n.as_f64().map(|x| x != 0.0),

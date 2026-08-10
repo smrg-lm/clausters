@@ -464,22 +464,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             "text_size" => set_size(text_size, v),
             _ => false,
         },
-        WidgetKind::Label {
-            text,
-            text_size,
-            wrap,
-            align,
-        } => match key {
-            "text" => v.as_str().map(|s| *text = s.to_string()).is_some(),
-            "text_size" => set_size(text_size, v),
-            "wrap" => truthy(v).map(|b| *wrap = b).is_some(),
-            "align" => v
-                .as_str()
-                .and_then(Align::from_str)
-                .map(|a| *align = a)
-                .is_some(),
-            _ => false,
-        },
         // A registered element answers for its own props, with the same
         // contract every arm above has: `false` is "not my key", which the
         // host logs rather than swallows.

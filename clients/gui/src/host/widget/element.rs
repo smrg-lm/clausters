@@ -96,7 +96,13 @@ pub trait Element: fmt::Debug {
     /// Draws into the window's one mesh, inside `rect`. `d` carries the
     /// resolved theme and the size table of the placement, so an element names
     /// roles and never literals, the way every built-in does.
-    fn draw(&self, d: &mut Draw, rect: Rect);
+    ///
+    /// `scale` is the placement's zoom — 1.0 outside a `plane` workspace. The
+    /// size table in `d` already carries it, so it is needed for exactly one
+    /// thing: the element's **own** `text_size` prop, which is a number the
+    /// script sent and no table resolved (`self.text_size * scale`), matching
+    /// what [`natural`](Element::natural) measured.
+    fn draw(&self, d: &mut Draw, rect: Rect, scale: f32);
 
     /// How big this element wants to be, per axis — `None` meaning elastic.
     /// Pure over the metrics, the element's own *presentation* props and the
@@ -120,6 +126,17 @@ pub trait Element: fmt::Debug {
     /// What this element reads from outside itself.
     fn needs(&self) -> Needs {
         Needs::default()
+    }
+
+    /// Whether the wheel **falls through** this element to whatever is behind
+    /// it. True for something that only puts marks on its rect and has no
+    /// navigation of its own (a label, a level meter): in a window with one
+    /// navigation group, its pixels are that axis with something written on
+    /// them. False — the default — for anything drawing a picture it owns,
+    /// since turning the wheel over a goniometer must not zoom the waterfall
+    /// underneath it.
+    fn is_bare_surface(&self) -> bool {
+        false
     }
 
     /// The press landed on this element at `at`, in the window's pixels, inside
@@ -206,7 +223,7 @@ mod tests {
             }
         }
 
-        fn draw(&self, d: &mut Draw, rect: Rect) {
+        fn draw(&self, d: &mut Draw, rect: Rect, _scale: f32) {
             let (mesh, _, theme) = d.parts();
             mesh.rect(rect, theme.panel);
         }
@@ -302,7 +319,9 @@ mod tests {
     fn a_registration_never_shadows_a_built_in() {
         register("label", counter);
         let w = tree(r#"{"id":9,"type":"label","text":"hello"}"#);
-        assert!(matches!(w.kind, WidgetKind::Label { .. }), "{:?}", w.kind);
+        // The built-in label answered: it reports its text and has no value,
+        // where the registered counter would have reported a count.
+        assert_eq!(w.kind.event_value(), None, "{:?}", w.kind);
         unregister("label");
     }
 

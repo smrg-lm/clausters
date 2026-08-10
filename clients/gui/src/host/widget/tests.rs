@@ -74,38 +74,6 @@ fn a_plane_zoom_is_named_or_cleared() {
 }
 
 #[test]
-fn label_text_props_parse_and_default() {
-    let n = node(r#"{"type":"label","text":"hi","text_size":3.5,"wrap":1,"align":"center"}"#);
-    match Widget::from_node(1, &n, &[]).unwrap().kind {
-        WidgetKind::Label {
-            text_size,
-            wrap,
-            align,
-            ..
-        } => {
-            assert_eq!(text_size, 3.5);
-            assert!(wrap);
-            assert_eq!(align, Align::Center);
-        }
-        other => panic!("expected label, got {other:?}"),
-    }
-    let n = node(r#"{"type":"label","text":"hi"}"#);
-    match Widget::from_node(1, &n, &[]).unwrap().kind {
-        WidgetKind::Label {
-            text_size,
-            wrap,
-            align,
-            ..
-        } => {
-            assert_eq!(text_size, super::super::font::DEFAULT_SIZE);
-            assert!(!wrap);
-            assert_eq!(align, Align::Start);
-        }
-        other => panic!("expected label, got {other:?}"),
-    }
-}
-
-#[test]
 fn themes_resolve_recursively_at_the_mutation_point() {
     // A theme group on a container overlays its whole subtree; a nested
     // group overlays the *inherited* table; a `color` re-seeds one widget;

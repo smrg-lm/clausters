@@ -90,13 +90,12 @@ impl WidgetKind {
                 | WidgetKind::Panel { .. }
                 | WidgetKind::Stack { .. }
                 | WidgetKind::Scroll { .. }
-                | WidgetKind::Label { .. }
                 // A lane and the strip that rules it: their empty space *is*
                 // the axis, which is the case the fall-through was written for.
                 | WidgetKind::Track { .. }
                 | WidgetKind::TimeRuler { .. }
                 | WidgetKind::Unknown(_)
-        )
+        ) || matches!(self, WidgetKind::Custom(el) if el.is_bare_surface())
     }
 
     /// The signal element this widget is, when it navigates its **own**

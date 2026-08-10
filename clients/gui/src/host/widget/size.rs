@@ -40,20 +40,20 @@ pub type Natural = (Option<f32>, Option<f32>);
 
 /// The height of one row of text plus the padding above and below it — the box
 /// a line of content needs.
-fn line_box(size: f32, m: &Metrics) -> f32 {
+pub(crate) fn line_box(size: f32, m: &Metrics) -> f32 {
     font::height(size) + 2.0 * m.pad
 }
 
 /// The height of one line of *control*: a row of text and its padding, never
 /// under the shared `control_h`, so a button, a number field and a menu line up
 /// in a row unaided.
-fn control_box(size: f32, m: &Metrics) -> f32 {
+pub(crate) fn control_box(size: f32, m: &Metrics) -> f32 {
     line_box(size, m).max(m.control_h)
 }
 
 /// The strip a labelled control reserves above its body (zero when unlabelled)
 /// — [`super::super::controls::body_rect_at`]'s own reservation.
-fn label_strip(has_label: bool, size: f32, m: &Metrics) -> f32 {
+pub(crate) fn label_strip(has_label: bool, size: f32, m: &Metrics) -> f32 {
     if has_label {
         font::height(size) + m.pad
     } else {
@@ -62,7 +62,7 @@ fn label_strip(has_label: bool, size: f32, m: &Metrics) -> f32 {
 }
 
 /// The vertical inset a control's body takes inside its cell (top and bottom).
-fn body_inset(m: &Metrics) -> f32 {
+pub(crate) fn body_inset(m: &Metrics) -> f32 {
     2.0 * m.pad
 }
 
@@ -78,14 +78,6 @@ impl WidgetKind {
         let text = |size: &f32| *size * scale;
         match self {
             // -- Content: the widget knows its own extent --
-            WidgetKind::Label {
-                text_size, wrap, ..
-            } => (
-                None,
-                // A wrapped label's line count follows its string, which is
-                // data: it stays elastic and clips what does not fit.
-                (!wrap).then(|| line_box(text(text_size), m)),
-            ),
             WidgetKind::Button { text_size, .. } => (None, Some(control_box(text(text_size), m))),
             // A toggle owns its cell: the box and its label sit on one row, so
             // the box's own side is the floor its height cannot go under.
@@ -174,7 +166,7 @@ fn slider_across(m: &Metrics) -> f32 {
 
 /// A knob's height: the label strip, the body inset, the disc and the read-out
 /// strip the drawing reserves under it.
-fn knob_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
+pub(crate) fn knob_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
     let size = r.text_size * scale;
     label_strip(r.label.is_some(), size, m)
         + body_inset(m)

@@ -39,6 +39,7 @@ pub mod bind;
 pub mod bpf;
 pub mod canvas;
 pub mod controls;
+pub mod elements;
 pub mod fetch;
 pub mod font;
 pub mod frame;
@@ -2048,7 +2049,13 @@ mod tests {
             fn set(&mut self, _key: &str, _v: &Value) -> bool {
                 false
             }
-            fn draw(&self, _d: &mut crate::host::paint::Draw, _rect: crate::host::layout::Rect) {}
+            fn draw(
+                &self,
+                _d: &mut crate::host::paint::Draw,
+                _rect: crate::host::layout::Rect,
+                _scale: f32,
+            ) {
+            }
             fn value(&self) -> Option<OscType> {
                 Some(OscType::Int(self.0))
             }

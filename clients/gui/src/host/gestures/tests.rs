@@ -2103,7 +2103,13 @@ impl crate::Element for TestPad {
         false
     }
 
-    fn draw(&self, _d: &mut crate::host::paint::Draw, _rect: crate::host::layout::Rect) {}
+    fn draw(
+        &self,
+        _d: &mut crate::host::paint::Draw,
+        _rect: crate::host::layout::Rect,
+        _scale: f32,
+    ) {
+    }
 
     fn value(&self) -> Option<OscType> {
         Some(OscType::Int(self.taken))

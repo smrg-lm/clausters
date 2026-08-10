@@ -84,16 +84,6 @@ pub(super) fn build_kind(
             flow: Flow::parse(props),
             view: ScrollView::parse(props),
         },
-        "label" => WidgetKind::Label {
-            text: props
-                .get("text")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
-            text_size: text_size(props),
-            wrap: props.get("wrap").and_then(truthy).unwrap_or(false),
-            align: Align::parse(props),
-        },
         // Every view of a signal, in one arm because there is one element:
         // the props say which point of the product ([`super::signal::point`]).
         "signal" => build_signal(id, props, blobs)?,
@@ -255,15 +245,21 @@ pub(super) fn build_kind(
                 label: label(props),
             }
         }
-        // No built-in answers to this name: the registry gets it, and a miss
-        // there is what an unrecognized type has always been. Consulting it
-        // *after* the match is the invariant, not an ordering detail — it is
-        // what keeps a registration from shadowing a built-in and changing
-        // what a shipped def means.
-        other => match element::build_registered(other, props, blobs) {
-            Some(built) => WidgetKind::Custom(built?),
-            None => WidgetKind::Unknown(other.to_string()),
-        },
+        // No arm above answers to this name, so it is an **element**: a
+        // built-in that has moved behind the trait, else whatever a program
+        // registered, else nothing at all. The order is the invariant, not a
+        // detail — a built-in resolves first, so a registration can never
+        // shadow one or change what a shipped def means; and a miss on both is
+        // what an unrecognized type has always been.
+        other => {
+            let built = super::super::elements::builtin(other)
+                .map(|ctor| ctor(props, blobs))
+                .or_else(|| element::build_registered(other, props, blobs));
+            match built {
+                Some(built) => WidgetKind::Custom(built?),
+                None => WidgetKind::Unknown(other.to_string()),
+            }
+        }
     })
 }
 

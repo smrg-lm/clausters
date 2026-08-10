@@ -60,7 +60,7 @@ pub enum Align {
 
 impl Align {
     /// Parses the `align` property; defaults to `Start` (today's left edge).
-    pub(super) fn parse(props: &serde_json::Map<String, Value>) -> Align {
+    pub(crate) fn parse(props: &serde_json::Map<String, Value>) -> Align {
         props
             .get("align")
             .and_then(Value::as_str)
@@ -68,7 +68,7 @@ impl Align {
             .unwrap_or(Align::Start)
     }
 
-    pub(super) fn from_str(s: &str) -> Option<Align> {
+    pub(crate) fn from_str(s: &str) -> Option<Align> {
         match s {
             "start" => Some(Align::Start),
             "center" => Some(Align::Center),
