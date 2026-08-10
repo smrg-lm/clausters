@@ -106,6 +106,65 @@ pub struct Ctx<'a> {
     pub focused: bool,
 }
 
+/// **What an element is fed, once per tick** — the third moment of the trait,
+/// beside drawing ([`Ctx`]) and being dragged ([`Input`]).
+///
+/// A tick is where a live view *advances*: a rolling trace takes one sample, an
+/// oscilloscope re-triggers its window, a spectrum folds a new frame into its
+/// analysis. It is deliberately separate from the draw, which is why the
+/// context is separate too: the tick runs at a steady rate and mutates, so a
+/// window that repaints twice does not scroll twice, and one that repaints
+/// never still keeps its history.
+///
+/// It carries only what a *reader of data* needs — the source, the rate, and
+/// the retained pasts — and none of what a draw needs (the timeline groups, the
+/// node trees, the pointer), because those borrow out of the host tree the tick
+/// is walking mutably.
+pub struct Live<'a> {
+    /// The per-tick data source: control buses, tap windows, levels. `None`
+    /// reads nothing, which is the no-transport case and what a test uses.
+    pub bus: Option<&'a dyn super::super::BusSource>,
+    /// The server's sample rate (`0.0` = unknown; a reader falls back to 48 kHz
+    /// rather than dividing by zero).
+    pub sample_rate: f64,
+    /// The **retained past** of every bus something in this window watches. It
+    /// is here rather than in the element because a history is the *bus's*: one
+    /// per bus however many views watch it, and two views of one bus may
+    /// analyze it differently.
+    pub histories: &'a HashMap<i32, super::super::live::BusHistory>,
+}
+
+impl Live<'_> {
+    /// The current value of control bus `bus` — the same rule [`World`] states
+    /// for a draw, so a tick and a repaint never read one differently.
+    pub fn control(&self, bus: i32) -> f32 {
+        if bus < 0 {
+            return 0.0;
+        }
+        self.bus.map_or(0.0, |s| s.control(bus as usize))
+    }
+
+    /// Fills `out` with the newest raw samples of audio bus `bus`, returning
+    /// whether this source had any.
+    pub fn read(&self, bus: i32, out: &mut [f32]) -> bool {
+        self.bus.is_some_and(|s| s.read_bus(bus, out))
+    }
+
+    /// The retained history of `bus`, if anything asked for one.
+    pub fn history(&self, bus: i32) -> Option<&super::super::live::BusHistory> {
+        self.histories.get(&bus)
+    }
+
+    /// The rate to compute with: the server's, or 48 kHz when it is unknown.
+    pub fn rate(&self) -> f64 {
+        if self.sample_rate > 0.0 {
+            self.sample_rate
+        } else {
+            48_000.0
+        }
+    }
+}
+
 /// What an element declares it reads from outside itself. Empty by default: an
 /// element that draws only from its own props needs nothing.
 ///
@@ -556,6 +615,16 @@ pub trait Element: fmt::Debug {
     fn key(&mut self, _key: &Key, _input: &mut KeyInput) -> Option<Events> {
         None
     }
+
+    /// **One tick**: advance whatever this element keeps of the outside — a
+    /// rolling history, a triggered window, an analysis state.
+    ///
+    /// It runs at the front's steady tick rate and **not** per repaint, which
+    /// is the whole reason it is a method of its own: a scope scrolls at a rate
+    /// the reader can read, whatever the window's repaint rate happens to be.
+    /// Everything it produces is the element's own state, so the draw that
+    /// follows only ever *draws* it.
+    fn tick(&mut self, _live: &Live) {}
 
     /// The wheel turned over this element: `delta` in the front's scroll units,
     /// `None` to let it fall through to whatever is behind. Only reached when

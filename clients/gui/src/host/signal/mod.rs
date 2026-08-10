@@ -45,6 +45,9 @@ use crate::waveform::WaveformData;
 
 use super::widget::{EditorProps, Rate, Ruler, RulerY};
 
+mod live;
+pub use live::LiveState;
+
 /// The default peak-pyramid bucket of an element whose props name none: one
 /// level-0 summary per 256 source samples.
 pub const DEFAULT_BASE_BUCKET: usize = 256;
@@ -322,6 +325,11 @@ pub struct SignalElement {
     /// — recomputed at the element's mutation points (parse, a bulk load
     /// landing samples, a `/gui_set` touching what it reads), never per frame.
     pub analysis: Option<Arc<super::plot::PlotSpectrum>>,
+    /// What a **live** presentation has accumulated from its forward-only
+    /// source: the rolling history, the triggered window, the analysis states,
+    /// the rolling transform. Advanced once per tick ([`Self::tick`]) and only
+    /// drawn afterwards, so a repaint never advances anything.
+    pub live: LiveState,
 }
 
 impl SignalElement {
@@ -360,6 +368,7 @@ impl SignalElement {
             display: Display::default(),
             editor,
             analysis: None,
+            live: LiveState::default(),
         }
     }
 

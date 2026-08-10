@@ -25,7 +25,7 @@ use crate::spectrogram::{MAX_ROLLING_FRAMES, analysis_window, column_into};
 
 /// One retaining time-frequency view's rolling transform.
 #[derive(Clone, Debug)]
-pub(crate) struct Waterfall {
+pub struct Waterfall {
     /// The columns analyzed since the renderer last took them, frame-major.
     /// Retention is *not* kept here: the ring the picture rolls through belongs
     /// to the transform the GPU view owns, so a column is analyzed once, handed

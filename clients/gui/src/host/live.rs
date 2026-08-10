@@ -9,7 +9,7 @@
 //! decides it is animated — is platform-independent and lives here, so both
 //! fronts share one implementation and only the [`BusSource`] fill differs.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 use clausters_core::oscil;
@@ -19,22 +19,10 @@ use super::signal::Presentation;
 use super::timeline::{TimelineGroups, group_key};
 use super::widget::Widget;
 
-/// Most recent control-bus samples a `scope` keeps and plots.
-pub(crate) const SCOPE_HISTORY: usize = 512;
-
 /// The `/bus_stream` period the browser front subscribes with: the same ~30 fps
 /// the animation tick runs at, so every frame paints a fresh snapshot.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) const STREAM_PERIOD_MS: i32 = 33;
-
-/// Appends `(widget_id, bus)` for every **control-rate** `scope` in the tree,
-/// so the frame tick can sample each one's bus into its rolling history (an
-/// audio-rate scope reads a tap window instead — see [`collect_tap_scopes`]).
-pub(crate) fn collect_scopes(tree: &Widget) -> Vec<(i32, i32)> {
-    tree.descendants()
-        .filter_map(|w| Some((w.id?, w.kind.live_bus()?)))
-        .collect()
-}
 
 /// One tap consumer's per-tick display window: `channels` interleaved
 /// channels of samples (frame-major, like every interleaved buffer in the
@@ -42,7 +30,7 @@ pub(crate) fn collect_scopes(tree: &Widget) -> Vec<(i32, i32)> {
 /// `false` for a phasescope — it has no trigger). Stored per widget id by the
 /// tick; the render draws it verbatim.
 #[derive(Clone, PartialEq, Debug, Default)]
-pub(crate) struct TapWindow {
+pub struct TapWindow {
     pub samples: Vec<f32>,
     pub channels: usize,
     pub locked: bool,
@@ -154,61 +142,6 @@ pub(crate) fn tree_has_playhead(widget: &Widget, groups: &TimelineGroups) -> boo
             .any(|child| tree_has_playhead(child, groups))
 }
 
-/// Refreshes the aligned display window of every audio-rate scope in `tree`,
-/// once per animation tick. `read_raw` fills a raw window of one tap's
-/// samples (newest at the end) from wherever the platform gets them — the shm
-/// segment natively, the `/bus_tapStream.reply` store in the browser — returning `false`
-/// when no data is available yet. The trigger is searched in the **first**
-/// channel and the found alignment applied to every channel, so the channels
-/// keep their true relative phase; the stored [`TapWindow`] per widget id is
-/// what the render draws verbatim. A `hold` scope keeps its last window; a
-/// scope whose first channel has no data yet is skipped (later channels with
-/// no data draw silence, so a short run does not blank the whole scope).
-pub(crate) fn update_tap_windows(
-    tree: &Widget,
-    sample_rate: f64,
-    read_raw: impl Fn(i32, &mut [f32]) -> bool,
-    windows: &mut HashMap<i32, TapWindow>,
-) {
-    let specs = collect_tap_scopes(tree);
-    let mut raw = Vec::new();
-    let mut chans: Vec<Vec<f32>> = Vec::new();
-    for spec in specs {
-        if spec.hold {
-            continue;
-        }
-        let display = oscil::display_frames(spec.window_ms, sample_rate);
-        raw.resize(oscil::raw_frames(display), 0.0);
-        if !read_raw(spec.bus, &mut raw) {
-            continue;
-        }
-        let (start, locked) = oscil::align(&raw, display, spec.trigger);
-        let end = (start + display).min(raw.len());
-        chans.clear();
-        chans.push(raw[start..end].to_vec());
-        for k in 1..spec.channels {
-            raw.fill(0.0);
-            let _ = read_raw(spec.bus + k as i32, &mut raw);
-            chans.push(raw[start..end].to_vec());
-        }
-        let frames = end - start;
-        let mut samples = Vec::with_capacity(frames * spec.channels);
-        for f in 0..frames {
-            for ch in &chans {
-                samples.push(ch[f]);
-            }
-        }
-        windows.insert(
-            spec.widget_id,
-            TapWindow {
-                samples,
-                channels: spec.channels,
-                locked,
-            },
-        );
-    }
-}
-
 /// One phasescope's per-tick read spec: its two taps (left, right), how big a
 /// window of pairs to keep, and whether the trace is frozen.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -237,47 +170,6 @@ pub(crate) fn collect_phase_scopes(tree: &Widget) -> Vec<PhaseScope> {
         .collect()
 }
 
-/// Refreshes each phasescope's interleaved `[l, r, l, r, …]` window (the same
-/// `windows` map the oscilloscope uses — the widget ids do not collide) from the
-/// two taps' newest samples, once per tick. `read_raw` fills a channel's newest
-/// window (the shm rings natively, the `/bus_tapStream.reply` store in the browser); a
-/// `hold` scope keeps its last window, and a channel with no data yet is
-/// skipped. Unlike the oscilloscope there is no trigger — the goniometer shows
-/// the freshest pairs directly.
-pub(crate) fn update_phase_windows(
-    tree: &Widget,
-    sample_rate: f64,
-    read_raw: impl Fn(i32, &mut [f32]) -> bool,
-    windows: &mut HashMap<i32, TapWindow>,
-) {
-    let specs = collect_phase_scopes(tree);
-    let (mut l, mut r) = (Vec::new(), Vec::new());
-    for spec in specs {
-        if spec.hold {
-            continue;
-        }
-        let n = oscil::display_frames(spec.window_ms, sample_rate);
-        l.resize(n, 0.0);
-        r.resize(n, 0.0);
-        if !read_raw(spec.bus_l, &mut l) || !read_raw(spec.bus_r, &mut r) {
-            continue;
-        }
-        let mut inter = Vec::with_capacity(n * 2);
-        for i in 0..n {
-            inter.push(l[i]);
-            inter.push(r[i]);
-        }
-        windows.insert(
-            spec.widget_id,
-            TapWindow {
-                samples: inter,
-                channels: 2,
-                locked: false,
-            },
-        );
-    }
-}
-
 /// **A retained history of one bus** — the addressable past a forward-only
 /// source does not have, and the whole of what `retention` buys.
 ///
@@ -296,7 +188,7 @@ pub(crate) fn update_phase_windows(
 ///   skipped, so the time axis stays honest and the drop-out is visible instead
 ///   of being compressed away.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct BusHistory {
+pub struct BusHistory {
     /// The retained samples, oldest first. A plain `Vec` drained from the front
     /// rather than a wrapping index: the readers want a contiguous slice (an
     /// FFT window, a texture column run), and the drain is a memmove of at most
@@ -318,6 +210,7 @@ impl BusHistory {
     /// How many samples are retained. A test accessor: the readers want the
     /// slice, not its length.
     #[cfg(test)]
+    #[allow(clippy::len_without_is_empty)] // a history is read as a slice; `len` is the test's
     pub fn len(&self) -> usize {
         self.samples.len()
     }
@@ -501,90 +394,6 @@ pub(crate) fn collect_spectra(tree: &Widget) -> Vec<SpectrumSpec> {
         .collect()
 }
 
-/// Folds each spectrum channel's newest FFT window into its persistent
-/// [`SpectrumState`](super::spectrum::SpectrumState) (one state per channel,
-/// kept in step with the widget's
-/// `channels`), once per tick. `read_raw` fills a full FFT window of one tap;
-/// a tap with no data yet leaves that channel's state (and curve) as it was.
-pub(crate) fn update_spectra(
-    tree: &Widget,
-    read_raw: impl Fn(i32, &mut [f32]) -> bool,
-    states: &mut HashMap<i32, Vec<super::spectrum::SpectrumState>>,
-) {
-    let specs = collect_spectra(tree);
-    let mut raw = Vec::new();
-    for spec in specs {
-        let chans = states.entry(spec.widget_id).or_default();
-        chans.resize_with(spec.channels, || {
-            super::spectrum::SpectrumState::new(spec.fft_size)
-        });
-        for (k, state) in chans.iter_mut().enumerate() {
-            state.ensure_size(spec.fft_size);
-            raw.resize(state.window_len(), 0.0);
-            if read_raw(spec.bus + k as i32, &mut raw) {
-                state.update(&raw, spec.averaging, spec.peak_hold);
-            }
-        }
-    }
-}
-
-/// Advances every **retained time-frequency view**'s rolling analysis from the
-/// histories the tick just filled, and forgets the views that left the tree.
-///
-/// The two stores are deliberately keyed differently, and the split is the
-/// design rather than an accident: a **history is the bus's** (one per bus,
-/// shared by everything watching it) and a **transform is the view's** (two
-/// views of one bus may analyze it at different sizes). This is where the two
-/// meet, once per tick.
-pub(crate) fn update_waterfalls(
-    tree: &Widget,
-    sample_rate: f64,
-    histories: &HashMap<i32, BusHistory>,
-    rolls: &mut HashMap<i32, super::waterfall::Waterfall>,
-) {
-    let sr = if sample_rate > 0.0 {
-        sample_rate as f32
-    } else {
-        48_000.0
-    };
-    let mut live: Vec<i32> = Vec::new();
-    for widget in tree.descendants() {
-        let (Some(id), Some(el)) = (widget.id, widget.kind.signal()) else {
-            continue;
-        };
-        let Some(bus) = el.source.bus() else { continue };
-        if el.presentation != Presentation::TimeFrequency || bus.retention <= 0.0 {
-            continue;
-        }
-        live.push(id);
-        let (window_size, hop) = (el.spectral.fft_size, el.spectral.hop.max(1));
-        // The span in columns: the seconds the axis declared, at this
-        // transform's own hop. The texture's cap applies on top (`set_capacity`).
-        let columns = ((bus.retention as f64 * sr as f64) / hop as f64).ceil() as usize;
-        let roll = match rolls.get_mut(&id) {
-            // A `/gui_set` of the analysis restarts the roll: the columns of
-            // one transform are not the columns of another.
-            Some(roll) if roll.matches(window_size, hop, sr) => roll,
-            _ => rolls
-                .entry(id)
-                .insert_entry(super::waterfall::Waterfall::new(
-                    window_size,
-                    hop,
-                    sr,
-                    columns,
-                ))
-                .into_mut(),
-        };
-        roll.set_capacity(columns);
-        if let Some(history) = histories.get(&bus.bus)
-            && let Some(end) = history.end()
-        {
-            roll.advance(history.samples(), end);
-        }
-    }
-    rolls.retain(|id, _| live.contains(id));
-}
-
 /// The largest raw tap window any of a tree's tap consumers needs — an
 /// oscilloscope's `window_ms` (with the trigger slack), a phasescope's window,
 /// or a spectrum's FFT size — so the browser's `/bus_tapStream` subscription is
@@ -616,26 +425,18 @@ pub(crate) fn tree_animates(tree: &Widget) -> bool {
     tree.descendants().any(|w| w.kind.needs().animated)
 }
 
-/// Pushes one sample into a scope's rolling history, capped at [`SCOPE_HISTORY`].
-pub(crate) fn push_sample(history: &mut VecDeque<f32>, value: f32) {
-    history.push_back(value);
-    while history.len() > SCOPE_HISTORY {
-        history.pop_front();
-    }
-}
-
-/// Advances every `scope` history of one window's tree by one sample read from
-/// `read` (called once per animation tick, not per repaint, so the scroll speed
-/// stays time-based). The native front keeps its own two-phase variant across
-/// several windows; the single-window browser front uses this directly.
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
-pub(crate) fn advance_scope_histories(
-    tree: &Widget,
-    read: impl Fn(i32) -> f32,
-    scopes: &mut HashMap<i32, VecDeque<f32>>,
-) {
-    for (id, bus) in collect_scopes(tree) {
-        push_sample(scopes.entry(id).or_default(), read(bus));
+/// **The tick**: every widget of one window's tree advances whatever it keeps
+/// of the outside, once per animation frame.
+///
+/// One walk, one question — the four maps and four walks this replaced were the
+/// front holding a live view's state for it, which is what the element seam
+/// exists to end. The retained bus histories are the exception and are filled
+/// *before* this ([`update_retention`]), because a history is the bus's rather
+/// than any view's: this is where a view reads one.
+pub(crate) fn tick_tree(tree: &mut Widget, live: &super::widget::element::Live) {
+    tree.kind.tick(live);
+    for child in &mut tree.children {
+        tick_tree(child, live);
     }
 }
 
@@ -733,8 +534,8 @@ impl BusSource for StreamedBuses {
 
 /// The `/bus_tapStream.reply` store — the message-based counterpart of the shared-memory
 /// tap rings, for the browser. Keeps the newest streamed raw window per tap;
-/// the tick reads it through [`update_tap_windows`] exactly as the native
-/// front reads the segment. The `Mutex` is uncontended on the single-threaded
+/// the tick reads it through this source exactly as the native front reads the
+/// segment. The `Mutex` is uncontended on the single-threaded
 /// wasm runtime, as in [`StreamedBuses`].
 #[derive(Default)]
 pub struct StreamedTaps {
@@ -769,6 +570,34 @@ impl StreamedTaps {
         let start = out.len() - n;
         out[start..].copy_from_slice(&w[w.len() - n..]);
         Some(*at)
+    }
+}
+
+/// **The browser's one source**: the streamed control buses and the streamed
+/// tap windows behind a single [`BusSource`] door.
+///
+/// The native front has one object for both — the shared segment — and the tick
+/// asks it for a control value and for a tap window alike. The browser fills the
+/// two halves from two different subscriptions (`/bus_stream` and
+/// `/bus_tapStream`), and this is where they become one thing, so nothing above
+/// here has to know that a page reads its data twice.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
+pub struct StreamedSource {
+    pub buses: std::sync::Arc<StreamedBuses>,
+    pub taps: std::sync::Arc<StreamedTaps>,
+}
+
+impl BusSource for StreamedSource {
+    fn control(&self, index: usize) -> f32 {
+        self.buses.control(index)
+    }
+
+    fn read_bus(&self, bus: i32, out: &mut [f32]) -> bool {
+        self.taps.read_raw(bus, out)
+    }
+
+    fn read_bus_at(&self, bus: i32, out: &mut [f32]) -> Option<u64> {
+        self.taps.read_raw_at(bus, out)
     }
 }
 
@@ -1002,89 +831,6 @@ mod tests {
         );
         assert!(!tree_has_live_widget(&still, &groups()));
         assert!(!tree_has_playhead(&still, &groups()));
-    }
-
-    #[test]
-    fn scope_history_advances_and_caps() {
-        let w = tree(
-            r#"{"type":"window","children":[{"id":2,"type":"signal","view":"trace","bus":3,"rate":"control"}]}"#,
-        );
-        let mut scopes = HashMap::new();
-        for i in 0..(SCOPE_HISTORY + 10) {
-            advance_scope_histories(&w, |bus| bus as f32 + i as f32, &mut scopes);
-        }
-        let history = &scopes[&2];
-        assert_eq!(history.len(), SCOPE_HISTORY, "history is capped");
-        // Oldest samples fell off the front; the newest is the last push.
-        assert_eq!(
-            *history.back().unwrap(),
-            3.0 + (SCOPE_HISTORY + 9) as f32,
-            "newest sample read from the scope's bus"
-        );
-    }
-
-    #[test]
-    fn tap_windows_interleave_channels_aligned_on_the_first() {
-        // A 2-channel scope: the trigger crossing found in channel 0 aligns
-        // both channels, so their relative phase is preserved verbatim.
-        let w = tree(
-            r#"{"type":"window","children":[
-                {"id":7,"type":"signal","view":"trace","bus":0,"channels":2,"window_ms":1.0}]}"#,
-        );
-        let mut windows = HashMap::new();
-        // Channel 0 rises through zero at a known index; channel 1 counts, so
-        // the alignment applied to it is directly observable.
-        let read = |tap: i32, out: &mut [f32]| {
-            for (i, s) in out.iter_mut().enumerate() {
-                *s = if tap == 0 {
-                    if i % 24 < 12 { -1.0 } else { 1.0 }
-                } else {
-                    i as f32
-                };
-            }
-            true
-        };
-        update_tap_windows(&w, 48_000.0, read, &mut windows);
-        let win = &windows[&7];
-        assert_eq!(win.channels, 2);
-        assert!(win.locked, "a periodic square locks");
-        let frames = win.frames();
-        assert!(frames >= 16);
-        assert_eq!(win.samples.len(), frames * 2);
-        // Channel 0 starts at its rising crossing; channel 1 carries the same
-        // start index (a multiple of nothing in particular, but consecutive).
-        assert_eq!(win.samples[0], 1.0, "starts at the rising edge");
-        let ch1_start = win.samples[1];
-        assert_eq!(win.samples[3], ch1_start + 1.0, "channel 1 is consecutive");
-        assert_eq!(ch1_start % 24.0, 12.0, "aligned to channel 0's crossing");
-    }
-
-    #[test]
-    fn spectra_keep_one_state_per_channel() {
-        let w = tree(
-            r#"{"type":"window","children":[
-                {"id":9,"type":"signal","view":"spectrum","bus":2,"channels":2,"fft_size":256}]}"#,
-        );
-        let mut states = HashMap::new();
-        // Bus 2 carries a tone, bus 3 silence: the two channel states diverge.
-        let read = |bus: i32, out: &mut [f32]| {
-            for (i, s) in out.iter_mut().enumerate() {
-                *s = if bus == 2 {
-                    (std::f32::consts::TAU * i as f32 / 8.0).sin()
-                } else {
-                    0.0
-                };
-            }
-            true
-        };
-        update_spectra(&w, read, &mut states);
-        let chans = &states[&9];
-        assert_eq!(chans.len(), 2);
-        let peak = |s: &super::super::spectrum::SpectrumState| {
-            s.avg_db.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
-        };
-        assert!(peak(&chans[0]) > -6.0, "the tone channel peaks near 0 dB");
-        assert!(peak(&chans[1]) < -60.0, "the silent channel stays down");
     }
 
     #[test]

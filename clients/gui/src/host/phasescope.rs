@@ -11,7 +11,7 @@
 //! share it and it is unit-testable.
 //!
 //! The tick stores the two taps' windows interleaved `[l0, r0, l1, r1, …]` under
-//! the widget id (see [`super::live::update_phase_windows`]); the render draws
+//! the element itself (its `live` state, filled by the tick); the render draws
 //! that verbatim, so a `hold` phasescope simply keeps its last window.
 
 use clausters_core::measure::{correlation, lissajous_point};

@@ -302,9 +302,6 @@ pub(super) fn draw_editor_overlay(
 pub(super) fn draw_live_meshes(
     mesh: &mut Mesh,
     collected: &Collected,
-    scopes: &HashMap<i32, VecDeque<f32>>,
-    tap_windows: &HashMap<i32, live::TapWindow>,
-    spectra: &HashMap<i32, Vec<SpectrumState>>,
     inputs: &FrameInputs,
     theme: &Theme,
 ) {
@@ -317,10 +314,7 @@ pub(super) fn draw_live_meshes(
     for item in &collected.scope_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let samples: Vec<f32> = scopes
-            .get(&item.id)
-            .map(|h| h.iter().copied().collect())
-            .unwrap_or_default();
+        let samples: Vec<f32> = item.live.history.iter().copied().collect();
         meters::draw_scope(
             &mut Draw::new(mesh, m, th),
             item.rect,
@@ -333,11 +327,10 @@ pub(super) fn draw_live_meshes(
     // Audio-rate scopes likewise draw the triggered multichannel window stored
     // on the tick (`live::update_tap_windows`); an empty one draws just the
     // framed field.
-    let empty_window = live::TapWindow::default();
     for item in &collected.wave_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let window = tap_windows.get(&item.id).unwrap_or(&empty_window);
+        let window = &item.live.window;
         meters::draw_wave(
             &mut Draw::new(mesh, m, th),
             item.rect,
@@ -360,10 +353,7 @@ pub(super) fn draw_live_meshes(
     for item in &collected.phase_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let inter = tap_windows
-            .get(&item.id)
-            .map(|w| w.samples.as_slice())
-            .unwrap_or(&[]);
+        let inter = item.live.window.samples.as_slice();
         phasescope::draw_phasescope(
             &mut Draw::new(mesh, m, th),
             item.rect,
@@ -374,7 +364,8 @@ pub(super) fn draw_live_meshes(
     for item in &collected.spectrum_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        if let Some(states) = spectra.get(&item.id) {
+        {
+            let states = &item.live.spectra;
             spectrum::draw_spectrum(
                 &mut Draw::new(mesh, m, th),
                 item.rect,

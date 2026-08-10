@@ -302,6 +302,19 @@ impl WidgetKind {
         }
     }
 
+    /// **One tick** of whatever this widget accumulates from a live source.
+    ///
+    /// A built-in answers from its variant, an element for itself
+    /// ([`Element::tick`](super::Element::tick)) — the single door, so the
+    /// front drives one walk instead of one per kind of live view.
+    pub fn tick(&mut self, live: &super::element::Live) {
+        match self {
+            WidgetKind::Signal(el) => el.tick(live),
+            WidgetKind::Custom(el) => el.tick(live),
+            _ => {}
+        }
+    }
+
     /// Recomputes a stored spectrum's cached analysis from its current samples
     /// and props — a no-op for every other widget and every other
     /// presentation. Called at the element's mutation points (parse, a bulk

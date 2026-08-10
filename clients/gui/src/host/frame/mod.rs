@@ -30,7 +30,7 @@ pub(crate) use draw::ruler_strip_body;
 use draw::*;
 use items::*;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::gpu::Gpu;
@@ -46,13 +46,12 @@ use super::metrics::Metrics;
 use super::paint::{Draw, Mesh, Painter};
 use super::ruler::{self, TimeUnit};
 use super::signal::{self, Presentation};
-use super::spectrum::SpectrumState;
 use super::theme::{Theme, with_alpha};
 use super::timeline::{GroupState, group_key};
 use super::widget::element::{Ctx, SlotFrame, TimeSpace};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
-use super::{font, live, meters, patch, phasescope, piano, pianoroll, plot, spectrum, track};
+use super::{font, meters, patch, phasescope, piano, pianoroll, plot, spectrum, track};
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
 pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
@@ -399,9 +398,6 @@ pub(crate) fn render(
     waveforms: &mut HashMap<i32, WaveformSlot>,
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
     canvases: &mut HashMap<i32, CanvasView>,
-    scopes: &HashMap<i32, VecDeque<f32>>,
-    tap_windows: &HashMap<i32, live::TapWindow>,
-    spectra: &HashMap<i32, Vec<SpectrumState>>,
     tree: &Widget,
     inputs: &FrameInputs,
     theme: &Theme,
@@ -418,15 +414,7 @@ pub(crate) fn render(
     let mut over = Mesh::new();
     let collected = collect_widgets(&placed, &mut mesh, inputs, theme);
 
-    draw_live_meshes(
-        &mut mesh,
-        &collected,
-        scopes,
-        tap_windows,
-        spectra,
-        inputs,
-        theme,
-    );
+    draw_live_meshes(&mut mesh, &collected, inputs, theme);
     draw_timeline_meshes(
         &mut mesh,
         &mut over,

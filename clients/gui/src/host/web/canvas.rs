@@ -60,22 +60,11 @@ pub(super) struct CanvasSlot {
     pub(super) shift: bool,
     pub(super) ctrl: bool,
     pub(super) alt: bool,
-    /// Recent control-bus samples per `scope` widget id (oldest .. newest),
-    /// advanced on [`WebEvent::Tick`] exactly as the native tick does.
-    pub(super) scopes: HashMap<i32, VecDeque<f32>>,
-    /// Triggered display window per audio-rate scope widget id, refreshed on
-    /// the tick (`live::update_tap_windows`). Also holds each phasescope's
-    /// interleaved L/R window (ids do not collide).
-    pub(super) tap_windows: HashMap<i32, live::TapWindow>,
-    /// Persistent FFT analysis state per `spectrum` widget id, advanced on the
-    /// tick (`live::update_spectra`), exactly as the native front does.
-    pub(super) spectra: HashMap<i32, Vec<SpectrumState>>,
-    /// The retained history per watched **bus**, and the rolling
-    /// time-frequency analysis per retaining **widget** — the browser half of
+    /// The retained history per watched **bus** — the browser half of
     /// `retention`, filled from the `/bus_tapStream.reply` store exactly as the
-    /// native tick fills them from the segment.
+    /// native tick fills it from the segment. What each *view* makes of a
+    /// history is the view's own, and lives in the element.
     pub(super) histories: HashMap<i32, live::BusHistory>,
-    pub(super) rolls: HashMap<i32, crate::host::waterfall::Waterfall>,
     /// Fetched waveforms/spectrograms that arrived before the GPU was ready,
     /// placed on `GpuReady` (plots need no GPU and are placed immediately).
     pub(super) pending_bulk: Vec<(i32, BulkData)>,
@@ -94,11 +83,7 @@ impl CanvasSlot {
             shift: false,
             ctrl: false,
             alt: false,
-            scopes: HashMap::new(),
-            tap_windows: HashMap::new(),
-            spectra: HashMap::new(),
             histories: HashMap::new(),
-            rolls: HashMap::new(),
             pending_bulk: Vec::new(),
         }
     }
@@ -106,9 +91,6 @@ impl CanvasSlot {
     /// Forgets everything derived from a def's tree, keeping the canvas itself
     /// — the rebuild semantics of a re-`/gui_def` and of a `/gui_free`.
     pub(super) fn clear_def_state(&mut self) {
-        self.scopes.clear();
-        self.tap_windows.clear();
-        self.spectra.clear();
         self.pending_bulk.clear();
         if let Some(render) = self.render.as_mut() {
             render.waveforms.clear();
@@ -284,9 +266,6 @@ impl WebApp {
             marquee: slot.gestures.marquee(),
             ..Default::default()
         };
-        let scopes = &slot.scopes;
-        let tap_windows = &slot.tap_windows;
-        let spectra = &slot.spectra;
         let Some(render) = slot.render.as_mut() else {
             return;
         };
@@ -299,9 +278,6 @@ impl WebApp {
             &mut render.waveforms,
             &mut render.spectrograms,
             &mut canvases,
-            scopes,
-            tap_windows,
-            spectra,
             tree,
             &inputs,
             theme,

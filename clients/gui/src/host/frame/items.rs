@@ -64,9 +64,9 @@ impl PlotItem {
 /// the mesh — and it is deliberately the *only* place, so nothing downstream
 /// has to ask what a view "is".
 #[allow(clippy::too_many_arguments)] // one element, six destinations
-pub(super) fn signal_item(
+pub(super) fn signal_item<'a>(
     id: i32,
-    el: &signal::SignalElement,
+    el: &'a signal::SignalElement,
     // The server's rate, placing a frequency axis whose element names none.
     server_rate: f64,
     rect: Rect,
@@ -74,10 +74,10 @@ pub(super) fn signal_item(
     clip: Option<Rect>,
     theme: Option<Arc<Theme>>,
     timelines: &mut Vec<TimelineItem>,
-    waves: &mut Vec<WaveItem>,
-    scopes: &mut Vec<ScopeItem>,
-    phases: &mut Vec<PhaseItem>,
-    spectra: &mut Vec<SpectrumItem>,
+    waves: &mut Vec<WaveItem<'a>>,
+    scopes: &mut Vec<ScopeItem<'a>>,
+    phases: &mut Vec<PhaseItem<'a>>,
+    spectra: &mut Vec<SpectrumItem<'a>>,
     plots: &mut Vec<PlotItem>,
 ) {
     let (min, max) = (el.value.min.unwrap_or(-1.0), el.value.max.unwrap_or(1.0));
@@ -113,7 +113,7 @@ pub(super) fn signal_item(
         (Presentation::Signal, signal::Source::Bus(bus)) => {
             if bus.rate.is_audio() {
                 waves.push(WaveItem {
-                    id,
+                    live: &el.live,
                     rect,
                     clip,
                     theme,
@@ -128,7 +128,7 @@ pub(super) fn signal_item(
                 });
             } else {
                 scopes.push(ScopeItem {
-                    id,
+                    live: &el.live,
                     rect,
                     clip,
                     theme,
@@ -139,14 +139,14 @@ pub(super) fn signal_item(
             }
         }
         (Presentation::Phase, _) => phases.push(PhaseItem {
-            id,
+            live: &el.live,
             rect,
             clip,
             theme,
             label: el.display.label.clone(),
         }),
         (Presentation::Spectrum, signal::Source::Bus(_)) => spectra.push(SpectrumItem {
-            id,
+            live: &el.live,
             rect,
             clip,
             theme,
@@ -295,8 +295,10 @@ pub(super) struct PianoRollItem {
 
 /// A placed **control-rate** `scope`, copied out of the host tree: its id (to
 /// fetch the rolling history the tick advanced) and the scale it draws over.
-pub(super) struct ScopeItem {
-    pub(super) id: i32,
+pub(super) struct ScopeItem<'a> {
+    /// What the tick accumulated for this view — read straight off the
+    /// element, which is where a live view's state lives.
+    pub(super) live: &'a signal::LiveState,
     pub(super) rect: Rect,
     pub(super) clip: Option<Rect>,
     pub(super) theme: Option<Arc<Theme>>,
@@ -305,10 +307,11 @@ pub(super) struct ScopeItem {
     pub(super) label: Option<String>,
 }
 
-/// A placed audio-rate `scope`, copied out of the host tree: its id (to fetch
-/// the tick's aligned tap window) and display parameters.
-pub(super) struct WaveItem {
-    pub(super) id: i32,
+/// A placed audio-rate `scope`, copied out of the host tree: the window the
+/// tick aligned (borrowed from the element that keeps it) and the display
+/// parameters.
+pub(super) struct WaveItem<'a> {
+    pub(super) live: &'a signal::LiveState,
     pub(super) rect: Rect,
     pub(super) clip: Option<Rect>,
     pub(super) theme: Option<Arc<Theme>>,
@@ -324,8 +327,8 @@ pub(super) struct WaveItem {
 
 /// A placed `spectrum` widget, copied out of the host tree: its id (to fetch the
 /// analysis states), rect and display parameters (the dB window and axis flags).
-pub(super) struct SpectrumItem {
-    pub(super) id: i32,
+pub(super) struct SpectrumItem<'a> {
+    pub(super) live: &'a signal::LiveState,
     pub(super) rect: Rect,
     pub(super) clip: Option<Rect>,
     pub(super) theme: Option<Arc<Theme>>,
@@ -343,8 +346,8 @@ pub(super) struct SpectrumItem {
 
 /// A placed `phasescope`, copied out of the host tree (drawn from the
 /// interleaved L/R window the tick stored in `tap_windows`).
-pub(super) struct PhaseItem {
-    pub(super) id: i32,
+pub(super) struct PhaseItem<'a> {
+    pub(super) live: &'a signal::LiveState,
     pub(super) rect: Rect,
     pub(super) clip: Option<Rect>,
     pub(super) theme: Option<Arc<Theme>>,
@@ -391,12 +394,12 @@ pub(super) struct CanvasFrame {
 /// The data-driven widgets copied out of the host tree by [`collect_widgets`],
 /// grouped by kind. Each group is drawn in its own pass once the tree borrow is
 /// released, so the meshes and GPU uploads never touch the host tree.
-pub(super) struct Collected {
+pub(super) struct Collected<'a> {
     pub(super) timeline_items: Vec<TimelineItem>,
-    pub(super) scope_rects: Vec<ScopeItem>,
-    pub(super) wave_rects: Vec<WaveItem>,
-    pub(super) phase_rects: Vec<PhaseItem>,
-    pub(super) spectrum_rects: Vec<SpectrumItem>,
+    pub(super) scope_rects: Vec<ScopeItem<'a>>,
+    pub(super) wave_rects: Vec<WaveItem<'a>>,
+    pub(super) phase_rects: Vec<PhaseItem<'a>>,
+    pub(super) spectrum_rects: Vec<SpectrumItem<'a>>,
     pub(super) plot_rects: Vec<PlotItem>,
     pub(super) track_items: Vec<TrackItem>,
     pub(super) clip_items: Vec<ClipItem>,
@@ -412,12 +415,12 @@ pub(super) struct Collected {
 /// `mesh`; every data-driven widget is copied out of the host tree into the
 /// returned [`Collected`], so the heavier meshes and the GPU uploads are built
 /// after the tree borrow is released.
-pub(super) fn collect_widgets(
-    placed: &[layout::Placed],
+pub(super) fn collect_widgets<'a>(
+    placed: &'a [layout::Placed<'a>],
     mesh: &mut Mesh,
     inputs: &FrameInputs,
     theme: &Theme,
-) -> Collected {
+) -> Collected<'a> {
     let mut timeline_items: Vec<TimelineItem> = Vec::new();
     // Scope rects carry no bus: the value is sampled on the frame tick
     // (`advance_scopes`); the render only draws the stored history. Audio-rate

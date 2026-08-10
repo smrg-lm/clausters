@@ -3,7 +3,7 @@
 //! submodule drives — sending replies/events over the right transport, the
 //! bound-vs-event delivery door, the animation tick and the shared-frame render.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::net::{TcpStream, UdpSocket};
 use std::sync::Arc;
 use std::time::Instant;
@@ -25,17 +25,15 @@ use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::Gestures;
 #[cfg(feature = "midi")]
 use crate::host::interact;
-use crate::host::live::TapWindow;
 use crate::host::live::{self, tree_animates, tree_has_live_widget};
 use crate::host::nodetree::NodeTree;
 use crate::host::paint::Painter;
-use crate::host::spectrum::SpectrumState;
 #[cfg(feature = "midi")]
 use crate::host::timeline::group_key;
 use crate::host::widget::Widget;
 #[cfg(feature = "midi")]
 use crate::host::widget::WidgetKind;
-use crate::host::widget::element::Key as HostKey;
+use crate::host::widget::element::{Key as HostKey, Live};
 use crate::host::world::World;
 use crate::host::{BusSource, ClientId, GUI_EVENT, Host, HostEffect};
 use crate::view::Renderers;
@@ -72,23 +70,10 @@ pub(super) struct WindowState {
     pub(super) alt: bool,
     /// This window's gesture state (the shared machine's in-progress drag).
     pub(super) gestures: Gestures,
-    /// Recent control-bus samples per `scope` widget id (oldest .. newest).
-    pub(super) scopes: HashMap<i32, VecDeque<f32>>,
-    /// Triggered multichannel display window per audio-rate `scope` widget id,
-    /// refreshed on the frame tick from the shared segment's tap rings. Also
-    /// holds each `phasescope`'s interleaved L/R window (ids do not collide).
-    pub(super) tap_windows: HashMap<i32, TapWindow>,
-    /// Persistent FFT analysis states per `spectrum` widget id (the smoothed
-    /// and peak-hold curves, one entry per channel), advanced on the frame
-    /// tick.
-    pub(super) spectra: HashMap<i32, Vec<SpectrumState>>,
     /// The retained history of every bus this window's tree declares a
     /// `retention` span on — the addressable past a forward-only source has
     /// none of. Keyed by **bus**: one history, however many views read it.
     pub(super) histories: HashMap<i32, crate::host::live::BusHistory>,
-    /// The rolling time-frequency analysis of every retained waterfall, keyed
-    /// by **widget**: two views of one bus may analyze it differently.
-    pub(super) rolls: HashMap<i32, crate::host::waterfall::Waterfall>,
 }
 
 pub(super) struct App {
@@ -181,73 +166,41 @@ impl App {
         }
     }
 
-    /// Pushes one fresh sample into every `scope`'s rolling history, read from the
-    /// shared segment. Called once per animation frame tick (not per `render`), so
-    /// the scope scrolls at a steady, time-based rate regardless of how often the
-    /// window happens to repaint.
-    fn advance_scopes(&mut self) {
-        // The segment is taken out first (a cheap `Arc` clone), which is what
-        // frees `self` for the per-window mutation — the same shape
-        // `advance_tap_windows` uses, so both read the tick through the one
-        // shared advance rather than a front-side copy of it.
-        let shm = self.shm.clone();
-        let world = World {
-            bus: shm.as_deref(),
-            ..Default::default()
-        };
-        let read = |bus: i32| world.control(bus);
-        for (def_id, ws) in &mut self.windows {
-            if let Some(tree) = self.host.window_def(*def_id) {
-                live::advance_scope_histories(tree, read, &mut ws.scopes);
-            }
-        }
-    }
-
-    /// Refreshes every audio-tap consumer from the shared segment's tap rings,
-    /// once per animation frame tick (the same cadence as
-    /// [`Self::advance_scopes`]): the audio-rate scopes' triggered windows, the
-    /// phasescopes' interleaved L/R windows, and the spectra's FFT analysis.
-    /// Without a segment the views stay empty and draw their framed field.
-    fn advance_tap_windows(&mut self) {
+    /// **One tick of the outside**, once per animation frame (not per repaint,
+    /// so a scope scrolls at a steady, time-based rate however often a window
+    /// happens to redraw).
+    ///
+    /// Two steps, in this order and for one reason: a **history is the bus's**
+    /// and is filled first, then every widget of the tree advances whatever it
+    /// keeps of its own — a rolling trace, a triggered window, an analysis, a
+    /// waterfall's transform — reading a history where it needs one. Without a
+    /// segment there is nothing to read and the live views stay empty, drawing
+    /// their framed field.
+    fn advance_live(&mut self) {
         let Some(shm) = self.shm.clone() else {
             return;
         };
         let sample_rate = shm.sample_rate();
+        let window = live::retention_window(sample_rate, shm.window_limit());
         for (def_id, ws) in &mut self.windows {
-            if let Some(tree) = self.host.window_def(*def_id) {
-                crate::host::live::update_tap_windows(
-                    tree,
+            let Some(tree) = self.host.window_def_mut(*def_id) else {
+                continue;
+            };
+            live::update_retention(
+                tree,
+                sample_rate,
+                window,
+                |bus, out| shm.read_bus_at(bus, out),
+                &mut ws.histories,
+            );
+            live::tick_tree(
+                tree,
+                &Live {
+                    bus: Some(shm.as_ref()),
                     sample_rate,
-                    |bus, out| shm.read_bus(bus, out),
-                    &mut ws.tap_windows,
-                );
-                crate::host::live::update_phase_windows(
-                    tree,
-                    sample_rate,
-                    |bus, out| shm.read_bus(bus, out),
-                    &mut ws.tap_windows,
-                );
-                crate::host::live::update_spectra(
-                    tree,
-                    |bus, out| shm.read_bus(bus, out),
-                    &mut ws.spectra,
-                );
-                // The retained half: a history per watched bus, then the
-                // rolling transform each waterfall makes of it.
-                crate::host::live::update_retention(
-                    tree,
-                    sample_rate,
-                    crate::host::live::retention_window(sample_rate, shm.window_limit()),
-                    |bus, out| shm.read_bus_at(bus, out),
-                    &mut ws.histories,
-                );
-                crate::host::live::update_waterfalls(
-                    tree,
-                    sample_rate,
-                    &ws.histories,
-                    &mut ws.rolls,
-                );
-            }
+                    histories: &ws.histories,
+                },
+            );
         }
         self.refresh_waterfall_slots();
     }
@@ -256,15 +209,28 @@ impl App {
     /// and only the rolls that moved, so a still picture costs no upload.
     fn refresh_waterfall_slots(&mut self) {
         let mut totals: Vec<(i32, usize)> = Vec::new();
-        for ws in self.windows.values_mut() {
-            let dirty: Vec<i32> = ws
-                .rolls
-                .iter()
-                .filter(|(_, roll)| roll.is_dirty())
-                .map(|(id, _)| *id)
+        for (def_id, ws) in &mut self.windows {
+            let Some(tree) = self.host.window_def_mut(*def_id) else {
+                continue;
+            };
+            // The rolls that moved this tick, by id — asked of the tree, since
+            // the transform is the view's own state now.
+            let dirty: Vec<i32> = tree
+                .descendants()
+                .filter(|w| {
+                    w.kind
+                        .signal()
+                        .and_then(|el| el.live.roll.as_ref())
+                        .is_some_and(|roll| roll.is_dirty())
+                })
+                .filter_map(|w| w.id)
                 .collect();
             for id in dirty {
-                let Some(roll) = ws.rolls.get_mut(&id) else {
+                let Some(roll) = tree
+                    .find_mut(id)
+                    .and_then(|w| w.kind.signal_mut())
+                    .and_then(|el| el.live.roll.as_mut())
+                else {
                     continue;
                 };
                 if let Some(total) =
@@ -466,9 +432,6 @@ impl App {
             &mut ws.waveforms,
             &mut ws.spectrograms,
             &mut ws.canvases,
-            &ws.scopes,
-            &ws.tap_windows,
-            &ws.spectra,
             tree,
             &inputs,
             &self.host.theme,
@@ -589,8 +552,7 @@ impl ApplicationHandler<UserEvent> for App {
                 // keeps the scroll speed constant: extra repaints from a drag or a
                 // resize no longer push extra samples and speed the scope up. The
                 // audio-rate scopes refresh their triggered tap windows likewise.
-                self.advance_scopes();
-                self.advance_tap_windows();
+                self.advance_live();
                 for id in &animated {
                     if let Some(ws) = self.windows.get(id) {
                         ws.gpu.window.request_redraw();

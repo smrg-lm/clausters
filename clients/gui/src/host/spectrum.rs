@@ -43,6 +43,11 @@ const PEAK_DECAY_DB: f32 = 0.6;
 /// Persistent per-widget spectrum state, carried across animation ticks. Holds
 /// the smoothed and peak-hold dB curves (one entry per bin) the render draws,
 /// plus the scratch buffers the FFT reuses so a tick never allocates.
+///
+/// `Clone` because it lives in the element that reads it and a widget tree is
+/// cloned (a def is rebuilt by replacement); the scratch buffers come along,
+/// which is a copy of a few kilobytes at a mutation point and never per frame.
+#[derive(Clone)]
 pub struct SpectrumState {
     fft_size: usize,
     hann: Vec<f32>,

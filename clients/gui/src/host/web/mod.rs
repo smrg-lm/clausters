@@ -51,8 +51,7 @@ use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
 use super::pianoroll;
 use super::signal::{self, Presentation};
-use super::spectrum::SpectrumState;
-use super::widget::element::Key as HostKey;
+use super::widget::element::{Key as HostKey, Live};
 use super::widget::{Widget, WidgetKind};
 use super::{BusSource, ClientId, GUI_EVENT, Host, HostEffect, ServerLink};
 
@@ -405,52 +404,39 @@ impl WebApp {
         // host, which the loop holds a tree of.
         let mut waterfall_totals: Vec<(i32, usize)> = Vec::new();
         for def in self.visible_defs() {
-            let Some(tree) = self.host.window_def(def) else {
-                continue;
-            };
             let Some(slot) = self.canvases.get_mut(&def) else {
                 continue;
             };
-            let buses = &self.buses;
-            live::advance_scope_histories(
-                tree,
-                |bus| {
-                    if bus < 0 {
-                        0.0
-                    } else {
-                        buses.control(bus as usize)
-                    }
-                },
-                &mut slot.scopes,
-            );
-            let taps = &self.taps;
-            live::update_tap_windows(
-                tree,
-                self.server_rate,
-                |tap, out| taps.read_raw(tap, out),
-                &mut slot.tap_windows,
-            );
-            live::update_phase_windows(
-                tree,
-                self.server_rate,
-                |tap, out| taps.read_raw(tap, out),
-                &mut slot.tap_windows,
-            );
-            live::update_spectra(tree, |tap, out| taps.read_raw(tap, out), &mut slot.spectra);
-            // The retained half: a history per watched bus, then each
-            // waterfall's rolling transform of it. Same two calls as the
-            // desktop tick, over the streamed windows instead of the segment.
+            let Some(tree) = self.host.window_def_mut(def) else {
+                continue;
+            };
+            let source = live::StreamedSource {
+                buses: self.buses.clone(),
+                taps: self.taps.clone(),
+            };
             live::update_retention(
                 tree,
                 self.server_rate,
                 live::retention_window(self.server_rate, 0),
-                |tap, out| taps.read_raw_at(tap, out),
+                |tap, out| source.read_bus_at(tap, out),
                 &mut slot.histories,
             );
-            live::update_waterfalls(tree, self.server_rate, &slot.histories, &mut slot.rolls);
-            waterfall_totals.extend(refresh_waterfall_slots(slot));
-            wants_clock |= live::tree_has_playhead(tree, self.host.timelines());
+            live::tick_tree(
+                tree,
+                &Live {
+                    bus: Some(&source),
+                    sample_rate: self.server_rate,
+                    histories: &slot.histories,
+                },
+            );
+            waterfall_totals.extend(refresh_waterfall_slots(slot, tree));
             slot.request_redraw();
+            // Asked after the tick, so the mutable walk above is over: whether
+            // this tree draws a moving playhead is what makes the page poll the
+            // engine clock at all.
+            if let Some(tree) = self.host.window_def(def) {
+                wants_clock |= live::tree_has_playhead(tree, self.host.timelines());
+            }
         }
         // The retained axis has to know how long it is, or the navigation
         // window falls back to a span the size of the body in *samples* and the
@@ -764,19 +750,29 @@ fn web_proxy() -> Option<EventLoopProxy<HostEvent>> {
 /// upload. The browser twin of the desktop front's own pass, kept beside the
 /// tick that advances the rolls rather than inside the render, since a texture
 /// upload is not a drawing decision.
-fn refresh_waterfall_slots(slot: &mut CanvasSlot) -> Vec<(i32, usize)> {
+fn refresh_waterfall_slots(slot: &mut CanvasSlot, tree: &mut Widget) -> Vec<(i32, usize)> {
     let mut totals = Vec::new();
     let Some(render) = slot.render.as_mut() else {
         return totals;
     };
-    let dirty: Vec<i32> = slot
-        .rolls
-        .iter()
-        .filter(|(_, roll)| roll.is_dirty())
-        .map(|(id, _)| *id)
+    // The rolls that moved this tick, by id — asked of the tree, since the
+    // transform is the view's own state.
+    let dirty: Vec<i32> = tree
+        .descendants()
+        .filter(|w| {
+            w.kind
+                .signal()
+                .and_then(|el| el.live.roll.as_ref())
+                .is_some_and(|roll| roll.is_dirty())
+        })
+        .filter_map(|w| w.id)
         .collect();
     for id in dirty {
-        let Some(roll) = slot.rolls.get_mut(&id) else {
+        let Some(roll) = tree
+            .find_mut(id)
+            .and_then(|w| w.kind.signal_mut())
+            .and_then(|el| el.live.roll.as_mut())
+        else {
             continue;
         };
         if let Some(total) = crate::host::frame::roll_into_slot(
