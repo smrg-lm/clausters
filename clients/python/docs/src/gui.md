@@ -101,6 +101,35 @@ edits back is a choice over any presentation, not a different kind of widget.
 From here on the snippets are **trees**, not whole scripts: each one is
 something you pass to `gui.open(window(...))` on the host you already booted.
 
+## The keyboard, and where it points
+
+One widget at a time holds the **focus**, and it is the only one keys reach.
+Click a `text` field to focus it and type; press **Tab** to walk the window's
+focusable widgets in the order they are laid out, **Shift+Tab** back along
+them. The focused widget wears a ring in the theme's `focus` role, so where the
+keyboard is pointing is always visible.
+
+A script can point it too — for a field that should be ready to type into the
+moment its window opens:
+
+```python
+win["name"].focus()             # ...and .focus(False) gives it up
+win["name"].on_event(lambda *a: print(a))
+# ('focus', 1) when it gains the keyboard, ('focus', 0) when it loses it
+```
+
+Both ends of every move **the user makes** are reported, so a script that mirrors
+the focus hears about the widget that lost it as well as the one that gained it.
+Your own `focus()` is not echoed back — no `set` is, since you already know what
+you asked for. A widget that reads no keyboard refuses the focus rather than
+swallowing it.
+
+**Tab past the last widget hands the keyboard back.** A window in a web page
+sits inside a document, and a ring that wrapped would trap the keyboard in the
+canvas and leave the page around it unreachable — so the ring runs out, and the
+browser's own tab order carries on. On the desktop nothing is focused and the
+next Tab enters the ring again.
+
 ## Arranging: `layout` and its flows
 
 A `layout` has no axes; it arranges its children by `flow`:

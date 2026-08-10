@@ -53,7 +53,7 @@ use super::widget::element::{Ctx, SlotFrame, TimeSpace};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
 use super::{
-    controls, font, live, meters, patch, phasescope, piano, pianoroll, plot, score, spectrum, track,
+    font, live, meters, patch, phasescope, piano, pianoroll, plot, score, spectrum, track,
 };
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
@@ -297,9 +297,10 @@ pub(crate) struct FrameInputs<'a> {
     pub(crate) metrics: &'a Metrics,
     /// The read-only per-frame facts no widget owns (see [`World`]).
     pub(crate) world: World<'a>,
-    /// The id of the focused editable `text` field in this window (drawn with a
-    /// caret and its selection), if any.
-    pub(crate) focused_text: Option<i32>,
+    /// The id of the widget holding the keyboard focus in this window, if any:
+    /// the frame rings it, and the element draws whatever else being focused
+    /// means to it (a field's caret and selection).
+    pub(crate) focused: Option<i32>,
     /// A selection marquee in flight on a patch: the widget and the
     /// rectangle (device pixels), drawn over the canvas.
     pub(crate) marquee: Option<(i32, Rect)>,
@@ -317,7 +318,7 @@ impl Default for FrameInputs<'_> {
         Self {
             metrics: METRICS.get_or_init(Metrics::default),
             world: World::default(),
-            focused_text: None,
+            focused: None,
             wiring: None,
             marquee: None,
         }

@@ -692,6 +692,9 @@ pub(super) fn draw_static_meshes(
                         view: item.local,
                         span: item.dur,
                     }),
+                    // A body carries no id, so nothing can address the keyboard
+                    // at it: the focus is the clip's or nobody's.
+                    focused: false,
                 },
             ),
             kind => track::draw_body_widget(
@@ -782,6 +785,7 @@ pub(super) fn draw_element_overlays(
                 rect: p.rect,
                 scale: p.scale,
                 time: None,
+                focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
             },
         );
     }

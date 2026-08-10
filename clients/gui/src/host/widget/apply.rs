@@ -166,27 +166,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             "editable" => v.as_bool().map(|b| data.editable = b).is_some(),
             _ => false,
         },
-        WidgetKind::Text {
-            value,
-            label,
-            text_size,
-            multiline,
-            caret,
-        } => match key {
-            "value" => v
-                .as_str()
-                .map(|s| {
-                    *value = s.to_string();
-                    // The caret/selection may now point past the new string
-                    // or off a char boundary — re-land it.
-                    super::textedit::clamp(value, caret);
-                })
-                .is_some(),
-            "label" => set_label(label, v),
-            "text_size" => set_size(text_size, v),
-            "multiline" => truthy(v).map(|b| *multiline = b).is_some(),
-            _ => false,
-        },
         WidgetKind::Patch {
             patch,
             selected,

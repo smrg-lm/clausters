@@ -34,6 +34,7 @@ mod meter;
 mod nodes;
 mod number;
 mod slider;
+mod text;
 mod toggle;
 
 /// The constructor for a built-in element name, or `None` when no built-in
@@ -51,6 +52,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "nodes" => nodes::build,
         "number" => number::build,
         "slider" => slider::build,
+        "text" => text::build,
         "toggle" => toggle::build,
         _ => return None,
     })

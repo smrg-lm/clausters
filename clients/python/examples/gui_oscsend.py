@@ -18,6 +18,20 @@ A second, ``multiline`` field is a plain scratch pad -- Enter inserts a newline
 and the arrow keys move the caret across lines -- to show the multi-line mode; its
 contents are only printed here, not sent.
 
+**The keyboard, and where it points.** Only one widget at a time reads the
+keyboard, and it wears a ring saying so. Press **Tab** to walk between the two
+fields (**Shift+Tab** backwards), and press it once more from the scratch pad:
+the ring disappears, because Tab past the last field *hands the keyboard back* --
+on a desktop there is nothing outside the window to take it, in a web page the
+document's own tab order carries on. This script also points the keyboard itself
+with ``focus()``, so the message field is ready to type into the moment the
+window opens, and prints every move the *user* then makes: a widget hears when it
+gains the focus and when it loses it, as a ``("focus", 1)`` / ``("focus", 0)``
+payload beside its value. (The ``focus()`` call itself is not echoed back --
+no ``set`` is -- which is why the first line the console prints is the field
+*losing* the keyboard to the first Tab.) That is why the handlers below take ``*payload`` rather than one string --
+a widget's event stream carries tagged payloads next to plain values.
+
 The two fields are *named*, so the script wires a per-field ``on_event`` and
 never matches a widget id -- the `field` handler parses and sends, the `scratch`
 handler just prints.
@@ -112,17 +126,28 @@ print(f"synth {synth.id} playing at 220 Hz -- edit the freq in the field and the
 # %% [markdown]
 # ## Wire the fields by name
 # The `field` handler parses each edit and forwards it to the server (skipping a
-# repeat of the last line sent); the `scratch` handler just prints.
+# repeat of the last line sent); the `scratch` handler just prints. Both take
+# ``*payload``, because a field reports its focus moving as well as its value.
 
 # %%
 _last_sent = None
 _closed = False
 
 
-def on_field(value):
+def report_focus(who: str, payload) -> bool:
+    """Print and swallow a ``("focus", 1|0)`` payload, so the handlers below see
+    only the field's own value. Returns whether this was one."""
+    if len(payload) == 2 and payload[0] == "focus":
+        print(f"{who} {'has' if payload[1] else 'lost'} the keyboard")
+        return True
+    return False
+
+
+def on_field(*payload):
     global _last_sent
-    if not isinstance(value, str):
+    if report_focus("field", payload):
         return
+    (value,) = payload
     parsed = parse_osc(value)
     if parsed is None:
         return
@@ -137,9 +162,18 @@ def on_field(value):
         print(f"(not sent: {e})")
 
 
+def on_scratch(*payload):
+    if not report_focus("scratch", payload):
+        print(f"scratch: {payload[0]!r}")
+
+
 win["field"].on_event(on_field)
-win["scratch"].on_event(lambda value: print(f"scratch: {value!r}"))
+win["scratch"].on_event(on_scratch)
 win.on_closed(lambda: globals().__setitem__("_closed", True))
+
+# The message field starts focused, so the window opens ready to type into --
+# no click needed. Tab moves the keyboard to the scratch pad and out again.
+win["field"].focus()
 
 # %% [markdown]
 # ## Drive it

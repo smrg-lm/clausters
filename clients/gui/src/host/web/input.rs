@@ -10,26 +10,27 @@
 
 use super::*;
 
-/// Translates a winit key into the platform-neutral [`TextKey`] a focused
-/// `text` field edits with (the browser front's twin of the native
-/// `to_text_key`), or `None` for a key it does not handle.
-fn to_text_key(key: &Key) -> Option<TextKey> {
+/// Translates a winit key into the platform-neutral [`HostKey`] the focus reads
+/// (the browser front's twin of the native `to_key`), or `None` for a key
+/// nothing focusable answers.
+fn to_key(key: &Key) -> Option<HostKey> {
     match key {
-        Key::Named(NamedKey::Backspace) => Some(TextKey::Backspace),
-        Key::Named(NamedKey::Delete) => Some(TextKey::Delete),
-        Key::Named(NamedKey::ArrowLeft) => Some(TextKey::Left),
-        Key::Named(NamedKey::ArrowRight) => Some(TextKey::Right),
-        Key::Named(NamedKey::ArrowUp) => Some(TextKey::Up),
-        Key::Named(NamedKey::ArrowDown) => Some(TextKey::Down),
-        Key::Named(NamedKey::Home) => Some(TextKey::Home),
-        Key::Named(NamedKey::End) => Some(TextKey::End),
-        Key::Named(NamedKey::Enter) => Some(TextKey::Enter),
-        Key::Named(NamedKey::Space) => Some(TextKey::Char(' ')),
+        Key::Named(NamedKey::Backspace) => Some(HostKey::Backspace),
+        Key::Named(NamedKey::Delete) => Some(HostKey::Delete),
+        Key::Named(NamedKey::ArrowLeft) => Some(HostKey::Left),
+        Key::Named(NamedKey::ArrowRight) => Some(HostKey::Right),
+        Key::Named(NamedKey::ArrowUp) => Some(HostKey::Up),
+        Key::Named(NamedKey::ArrowDown) => Some(HostKey::Down),
+        Key::Named(NamedKey::Home) => Some(HostKey::Home),
+        Key::Named(NamedKey::End) => Some(HostKey::End),
+        Key::Named(NamedKey::Enter) => Some(HostKey::Enter),
+        Key::Named(NamedKey::Space) => Some(HostKey::Char(' ')),
+        Key::Named(NamedKey::Tab) => Some(HostKey::Tab),
         Key::Character(s) => s
             .chars()
             .next()
             .filter(|c| !c.is_control())
-            .map(TextKey::Char),
+            .map(HostKey::Char),
         _ => None,
     }
 }
@@ -81,6 +82,13 @@ impl WebApp {
                 }
                 GestureEffect::Redraw(def_id) => self.request_redraw(def_id),
                 GestureEffect::ReleasePointer(_) => {}
+                // The focus stepped past the ring: **blur the canvas**, so the
+                // browser's own tab order carries on to whatever the document
+                // holds after this GuiDef. Without it a mounted def is a
+                // keyboard trap — winit prevents the default on every key it
+                // sees, so the page around it would become unreachable, which
+                // is a worse regression than having no keyboard at all.
+                GestureEffect::FocusOut(def_id) => self.blur(def_id),
             }
         }
     }
@@ -156,15 +164,16 @@ impl WebApp {
             return;
         };
         let ctrl = ctx.ctrl;
-        // A focused text field consumes the key first (typing, caret motion,
-        // cut/copy/paste); only otherwise do the global shortcuts run.
-        if let Some(tk) = to_text_key(key) {
+        // The focus consumes the key first — Tab walks the ring, a focused
+        // element edits — and only what nothing there answered runs the global
+        // shortcuts, which are addressed to what is under the cursor.
+        if let Some(k) = to_key(key) {
             let Some(slot) = self.canvases.get_mut(&def) else {
                 return;
             };
             if let Some(effects) =
                 slot.gestures
-                    .text_key(&mut self.host, &ctx, tk, &mut self.text_clipboard)
+                    .key(&mut self.host, &ctx, k, &mut self.text_clipboard)
             {
                 self.apply_gesture_effects(effects);
                 return;

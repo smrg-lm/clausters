@@ -2,7 +2,7 @@
 //! reports it.
 //!
 //! Two kinds of reader, and they are the same question asked at two moments.
-//! The live value a drag starts from ([`value_of`], [`piano_key_active`]) —
+//! The live value a drag starts from ([`piano_key_active`]) —
 //! and the **edit-back payload** a finished edit sends
 //! ([`clip_event_args`], [`notes_event_args`], …), each a
 //! flat OSC list beginning with the tag that names what changed, so a script
@@ -46,12 +46,6 @@ pub(crate) fn plane_can_pan(
         Axis::Y => room(content.1, area.h),
         _ => room(content.0, area.w) || room(content.1, area.h),
     }
-}
-
-/// The current event value of widget `id` in `tree` (what a `/gui_event` or a
-/// bound forward carries).
-pub(crate) fn value_of(tree: &Widget, id: i32) -> Option<OscType> {
-    tree.find(id)?.kind.event_value()
 }
 
 /// A lane header control's edit-back payload: the control's own name plus its

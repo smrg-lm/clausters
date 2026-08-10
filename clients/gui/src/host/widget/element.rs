@@ -19,6 +19,7 @@
 //! | the frame's GPU slots | a [`SlotKind`] claimed in [`Needs`], fed by [`Element::slot`] |
 //! | the query pass | [`Element::value`] / [`Element::info`] |
 //! | the press walk | [`Element::press`] |
+//! | the keyboard arms + the host's focused field | [`Element::accepts_focus`] / [`Element::key`] |
 //! | the tree collectors | [`Element::needs`] |
 //!
 //! **Three things in, two things out**, and the boundary is narrow on purpose:
@@ -89,6 +90,11 @@ pub struct Ctx<'a> {
     /// one — a clip's own time axis. `None` for an element standing on its own
     /// rectangle, which is every element outside a `clip` today.
     pub time: Option<TimeSpace>,
+    /// Whether this element holds the window's keyboard focus. The host draws
+    /// the focus ring itself, in the theme's `focus` role, so an element reads
+    /// this only for what the ring cannot say — a field's caret and selection,
+    /// which exist while it is being typed into and not otherwise.
+    pub focused: bool,
 }
 
 /// What an element declares it reads from outside itself. Empty by default: an
@@ -238,6 +244,51 @@ pub struct Mods {
     pub shift: bool,
     pub ctrl: bool,
     pub alt: bool,
+}
+
+/// A **platform-neutral key**: what the fronts (winit natively, winit-on-canvas
+/// in a page) translate their key events into, so a keyboard behaves identically
+/// on a desktop and in a tab.
+///
+/// It is the editing alphabet and nothing more — a printable character and the
+/// motions every field answers to — because a shortcut over a *view* (`q`
+/// quantize, `r` reset) is not addressed to a focused element at all: it belongs
+/// to whatever is under the cursor, and the front runs it when nothing consumed
+/// the key.
+///
+/// The modifiers ride beside it in [`KeyInput`], not in the variants, so an
+/// element writes one arm per key rather than one per combination.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Key {
+    /// A printable character to insert (already resolved from the layout).
+    Char(char),
+    Backspace,
+    Delete,
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
+    /// Enter: a newline in a multiline field, ignored in a single-line one.
+    Enter,
+    /// Tab: **the focus ring's**, never an element's. The machine consumes it
+    /// before any element sees it (see
+    /// [`Gestures::key`](super::super::gestures::Gestures::key)), which is what
+    /// makes a window keyboard-navigable without every element agreeing to it.
+    Tab,
+}
+
+/// What a key arrives with: the modifiers held, and the host-wide clipboard a
+/// cut/copy/paste reads and writes.
+///
+/// The clipboard is here rather than in the element because it is not the
+/// element's: one string serves every field of every window (the front's
+/// internal one natively, the page's around this call in a browser), so a
+/// selection cut in one field pastes into another.
+pub struct KeyInput<'a> {
+    pub mods: Mods,
+    pub clipboard: &'a mut String,
 }
 
 /// The `/gui_event` messages an element asks to be sent for it: each entry is
@@ -467,6 +518,27 @@ pub trait Element: fmt::Debug {
         Events::none()
     }
 
+    /// Whether this element takes the **keyboard focus** — whether it is a stop
+    /// on the window's tab ring, and whether a press on it moves the focus
+    /// there. `false` by default: an element that answers no key has no reason
+    /// to be a stop, and a ring full of them is a ring nobody can use.
+    fn accepts_focus(&self) -> bool {
+        false
+    }
+
+    /// A key while this element holds the focus, with the modifiers and the
+    /// host-wide clipboard in [`KeyInput`]. `Some` is **consumed** — the window
+    /// repaints and whatever came back is reported — and `None` hands the key
+    /// on to the front's own shortcuts, which is what a key an element has no
+    /// arm for must do.
+    ///
+    /// It is the whole keyboard an element gets, and it never sees
+    /// [`Key::Tab`]: moving the focus is the window's, not the focused
+    /// element's.
+    fn key(&mut self, _key: &Key, _input: &mut KeyInput) -> Option<Events> {
+        None
+    }
+
     /// The wheel turned over this element: `delta` in the front's scroll units,
     /// `None` to let it fall through to whatever is behind. Only reached when
     /// [`is_bare_surface`](Element::is_bare_surface) is false — a bare surface
@@ -610,6 +682,21 @@ mod tests {
             Claim::value(OscType::Int(self.count))
         }
 
+        fn accepts_focus(&self) -> bool {
+            true
+        }
+
+        fn key(&mut self, key: &Key, _input: &mut KeyInput) -> Option<Events> {
+            // Up counts, down counts back; anything else is not this element's
+            // and falls through to the front's own shortcuts.
+            self.count += match key {
+                Key::Up => 1,
+                Key::Down => -1,
+                _ => return None,
+            };
+            Some(Events::value(OscType::Int(self.count)))
+        }
+
         fn clone_box(&self) -> Box<dyn Element> {
             Box::new(self.clone())
         }
@@ -654,6 +741,27 @@ mod tests {
             &Value::from(1)
         ));
         assert_eq!(w.kind.event_value(), Some(OscType::Int(11)));
+
+        // And it is a stop on the window's tab ring, which is the whole of
+        // what a keyboard costs an element: one declaration and one method.
+        assert!(w.kind.accepts_focus());
+        let WidgetKind::Custom(el) = &mut w.kind else {
+            unreachable!()
+        };
+        let mut clipboard = String::new();
+        let mut input = KeyInput {
+            mods: Mods::default(),
+            clipboard: &mut clipboard,
+        };
+        assert_eq!(
+            el.key(&Key::Up, &mut input),
+            Some(Events::value(OscType::Int(12)))
+        );
+        assert_eq!(
+            el.key(&Key::Char('q'), &mut input),
+            None,
+            "a key it has no arm for falls through to the front's shortcuts"
+        );
 
         unregister("test_counter");
     }

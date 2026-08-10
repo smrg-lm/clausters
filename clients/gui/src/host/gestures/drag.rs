@@ -119,23 +119,6 @@ impl Gestures {
                     element::report(host, &mut out, ctx, at.id, events);
                 }
             }
-            Drag::TextSelect {
-                id,
-                rect,
-                scale,
-                anchor,
-            } => {
-                // Extend the selection from the press anchor to the caret under
-                // the cursor. No emit: the string did not change, only the view
-                // state (the selection).
-                if let Some(pos) = interact::text_caret_at(host, def_id, id, rect, scale, cx, cy) {
-                    interact::text_edit(host, def_id, id, |_, caret, _| {
-                        caret.pos = pos;
-                        caret.anchor = Some(anchor);
-                    });
-                    out.push(GestureEffect::Redraw(def_id));
-                }
-            }
             Drag::Box {
                 id,
                 scale,

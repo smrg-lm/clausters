@@ -8,7 +8,7 @@
 
 use clausters_core::osc::OscType;
 
-use super::super::interact::{self, value_of};
+use super::super::interact;
 use super::super::widget::Widget;
 use super::super::{Host, HostEffect};
 use super::GestureEffect;
@@ -53,19 +53,6 @@ pub(super) fn redraws(out: &mut Vec<GestureEffect>, effects: Vec<HostEffect>) {
             HostEffect::Redraw(root) => out.push(GestureEffect::Redraw(root)),
             other => tracing::warn!("a binding's apply asked for {other:?}, which it cannot do"),
         }
-    }
-}
-
-/// Delivers a control's current value: straight to the audio server when the
-/// widget is bound, otherwise as a `/gui_event` to the script.
-pub(super) fn emit_value(
-    host: &mut Host,
-    out: &mut Vec<GestureEffect>,
-    def_id: i32,
-    widget_id: i32,
-) {
-    if let Some(value) = host.window_def(def_id).and_then(|t| value_of(t, widget_id)) {
-        deliver(host, out, def_id, widget_id, value);
     }
 }
 

@@ -8,7 +8,8 @@
 use tracing::debug;
 use winit::window::{CursorGrabMode, Window};
 
-use crate::host::gestures::{GestureCtx, GestureEffect, TextKey};
+use crate::host::gestures::{GestureCtx, GestureEffect};
+use crate::host::widget::element::Key as HostKey;
 
 use super::app::App;
 
@@ -77,6 +78,11 @@ impl App {
                 } => self.emit(def_id, widget_id, args),
                 GestureEffect::Redraw(def_id) => self.redraw(def_id),
                 GestureEffect::ReleasePointer(def_id) => self.release_pointer(def_id),
+                // A desktop window is not inside a document: there is nothing
+                // to hand the focus back to, so the ring simply runs out and
+                // the next Tab enters it again. (In a page this is what keeps a
+                // mounted GuiDef from trapping the keyboard — `web::input`.)
+                GestureEffect::FocusOut(_) => {}
             }
         }
     }
@@ -157,22 +163,21 @@ impl App {
 
     // ---- keyboard operations (dispatched from `window_event`) ----
 
-    /// Routes a key to the focused `text` field, if one is focused in this
-    /// window. Returns whether the field consumed it (so the caller skips the
-    /// global editor shortcuts).
-    pub(super) fn text_input(&mut self, def_id: i32, key: TextKey) -> bool {
+    /// Routes a key to the window's focus — the ring for Tab, the focused
+    /// element for everything else. Returns whether it was consumed (so the
+    /// caller skips the global editor shortcuts).
+    pub(super) fn key_input(&mut self, def_id: i32, key: HostKey) -> bool {
         let ctx = self.gesture_ctx(def_id);
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return false;
         };
-        let effects =
-            match ws
-                .gestures
-                .text_key(&mut self.host, &ctx, key, &mut self.text_clipboard)
-            {
-                Some(effects) => effects,
-                None => return false,
-            };
+        let effects = match ws
+            .gestures
+            .key(&mut self.host, &ctx, key, &mut self.text_clipboard)
+        {
+            Some(effects) => effects,
+            None => return false,
+        };
         self.apply_gesture_effects(effects);
         true
     }

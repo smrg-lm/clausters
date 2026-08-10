@@ -475,11 +475,16 @@ pub struct Host {
     /// ([`set_ui_scale`](Self::set_ui_scale)), which is the only side that may
     /// know one: the core never reads a platform API. Absent = scale 1.
     resolved_metrics: HashMap<i32, metrics::Metrics>,
-    /// The `text` field currently receiving keystrokes, as `(def_id, widget_id)`.
-    /// A press on a text field focuses it; a press elsewhere (or freeing the
-    /// widget) clears it. While set, key input edits that field instead of
-    /// running the global editor shortcuts (see [`textedit`]/[`gestures`]).
-    focused_text: Option<(i32, i32)>,
+    /// The widget currently receiving keystrokes, as `(def_id, widget_id)` —
+    /// **one focus per host**, not one per window, because there is one
+    /// keyboard.
+    ///
+    /// A press on a widget that accepts focus moves it there; a press elsewhere
+    /// (or freeing the widget) clears it, and Tab walks the window's ring. While
+    /// set, a key goes to that widget's
+    /// [`Element::key`](widget::Element::key) and only falls through to the
+    /// front's own shortcuts when the element does not answer it.
+    focused: Option<(i32, i32)>,
 }
 
 /// The base of the node-id window the host's piano voices allocate from —
@@ -511,25 +516,28 @@ impl Host {
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
             resolved_metrics: HashMap::new(),
-            focused_text: None,
+            focused: None,
         }
     }
 
-    /// The text field currently focused, as `(def_id, widget_id)`.
-    pub fn focused_text(&self) -> Option<(i32, i32)> {
-        self.focused_text
+    /// The widget currently holding the keyboard focus, as `(def_id,
+    /// widget_id)`.
+    pub fn focused(&self) -> Option<(i32, i32)> {
+        self.focused
     }
 
-    /// Focuses a text field for keyboard input (a press on it), replacing any
-    /// previous focus.
-    pub fn focus_text(&mut self, def_id: i32, widget_id: i32) {
-        self.focused_text = Some((def_id, widget_id));
+    /// Moves the focus to `widget_id` in window `def_id`, replacing whatever
+    /// held it. Returns the def id that lost it, when another window did (so the
+    /// front repaints that one too).
+    pub fn focus(&mut self, def_id: i32, widget_id: i32) -> Option<i32> {
+        let previous = self.focused.replace((def_id, widget_id));
+        previous.map(|(d, _)| d).filter(|d| *d != def_id)
     }
 
-    /// Clears the text focus, returning the def id that held it (so the front
-    /// can repaint it to drop the caret) when it changed.
-    pub fn clear_text_focus(&mut self) -> Option<i32> {
-        self.focused_text.take().map(|(def_id, _)| def_id)
+    /// Clears the focus, returning the def id that held it (so the front can
+    /// repaint it without its ring) when there was one.
+    pub fn clear_focus(&mut self) -> Option<i32> {
+        self.focused.take().map(|(def_id, _)| def_id)
     }
 
     /// Attaches the audio-server client leg (host -> audio server) over UDP.
@@ -838,7 +846,7 @@ impl Host {
         if outcome.replaced {
             self.prune_bindings();
             self.prune_voices();
-            self.prune_text_focus();
+            self.prune_focus();
         }
         // Inline `bind` props register a binding declaratively, so a saved GuiDef
         // carries its own bindings (the standalone path) and a live script may
@@ -935,6 +943,60 @@ impl Host {
         out
     }
 
+    /// Splits a `focus` pair out of `props`, returning the rest and what it
+    /// asked for. A `/gui_set` that does not name it — which is nearly all of
+    /// them — keeps its vector.
+    fn take_focus(props: Vec<(String, Value)>) -> (Vec<(String, Value)>, Option<bool>) {
+        if !props.iter().any(|(k, _)| k == "focus") {
+            return (props, None);
+        }
+        let mut focus = None;
+        let mut out = Vec::with_capacity(props.len());
+        for (key, value) in props {
+            if key != "focus" {
+                out.push((key, value));
+                continue;
+            }
+            match widget::parse::truthy(&value) {
+                Some(on) => focus = Some(on),
+                None => warn!("{GUI_SET}: focus is not a flag"),
+            }
+        }
+        (out, focus)
+    }
+
+    /// Points the keyboard at widget `id` (`focus 1`) or takes it away from it
+    /// (`focus 0`) — the script's half of what Tab and a press do.
+    ///
+    /// A widget that is not a stop on the ring is refused rather than focused
+    /// silently: focus that nothing can read is a script waiting for keystrokes
+    /// that will never arrive.
+    fn set_focused(&mut self, id: i32, on: bool, effects: &mut Vec<HostEffect>) {
+        let Some(root) = self.registry.root_of(id) else {
+            return;
+        };
+        if !on {
+            if self.focused == Some((root, id))
+                && let Some(old) = self.clear_focus()
+            {
+                effects.push(HostEffect::Redraw(old));
+            }
+            return;
+        }
+        let accepts = self
+            .window_defs
+            .get(&root)
+            .and_then(|tree| tree.find(id))
+            .is_some_and(|w| w.kind.accepts_focus());
+        if !accepts {
+            return warn!("{GUI_SET} {id}: this widget does not take the keyboard focus");
+        }
+        if let Some(other) = self.focus(root, id) {
+            effects.push(HostEffect::Redraw(other));
+        }
+        effects.push(HostEffect::Redraw(root));
+    }
+
     /// The mutation a `/gui_set` performs, without its wire form: apply `props`
     /// to widget `id` in the generic registry and, when it is inside an open
     /// window, in the typed render tree. Returns whether the widget exists.
@@ -953,9 +1015,17 @@ impl Host {
         // same relocation `/gui_def` accepts, so it goes through the same
         // table rather than a second one (see `widget::axes`).
         let props = Self::expand_axes(props);
+        // `focus` is the one key that is not a prop: it says where the keyboard
+        // points, which is the host's state and not the widget's. So it is taken
+        // out before the document is written — a query must not report it, and a
+        // reloaded def must not restore a focus nobody asked for.
+        let (props, focus) = Self::take_focus(props);
         let keys: Vec<&String> = props.iter().map(|(k, _)| k).collect();
         if !self.registry.set(id, props.clone()) {
             return false;
+        }
+        if let Some(on) = focus {
+            self.set_focused(id, on, effects);
         }
         // A set can retarget a view's source or widen its channel run, which
         // changes what has to be recorded; the diff below is a no-op otherwise.
@@ -1048,7 +1118,7 @@ impl Host {
         self.prune_bindings();
         self.prune_voices();
         self.prune_timeline_groups();
-        self.prune_text_focus();
+        self.prune_focus();
         if removed > 0 {
             info!("{from}: {GUI_FREE} {id}: freed {removed} widget(s)");
         } else {
@@ -1218,13 +1288,13 @@ impl Host {
         self.bindings.retain(|id, _| self.registry.contains(*id));
     }
 
-    /// Clears the text focus if the focused widget was freed or redefined away,
-    /// so keystrokes never edit a widget that no longer exists.
-    fn prune_text_focus(&mut self) {
-        if let Some((_, id)) = self.focused_text
+    /// Clears the focus if the focused widget was freed or redefined away, so
+    /// keystrokes never reach a widget that no longer exists.
+    fn prune_focus(&mut self) {
+        if let Some((_, id)) = self.focused
             && !self.registry.contains(id)
         {
-            self.focused_text = None;
+            self.focused = None;
         }
     }
 

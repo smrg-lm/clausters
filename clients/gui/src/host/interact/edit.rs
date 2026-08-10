@@ -6,7 +6,7 @@
 //! thing natively and in a page. Two shapes recur: a setter that writes the
 //! value ([`set_fraction`], [`clip_set`], [`piano_set_range`]) and a
 //! `…_edit`/`…_curve` door that hands a closure the element's own model
-//! ([`text_edit`], [`pianoroll_notes_edit`]) so the fronts never
+//! ([`pianoroll_notes_edit`]) so the fronts never
 //! unpack a [`WidgetKind`] variant themselves.
 //!
 //! What a write *reports* is not here: the edit-back payloads live in
@@ -51,28 +51,6 @@ pub(crate) fn scroll_set_view(
     // number, not the window's density (see `ScrollView::zoom`).
     (view.view_x, view.view_y, view.view_zoom) = (next.0, next.1, Some(next.2));
     Some(next)
-}
-
-/// Runs `f` over a `text` field's `(value, caret)` in the host tree — the one
-/// door every keystroke and click goes through, so the fronts never unpack the
-/// variant themselves. `f`'s
-/// return value is passed through (`None` when the widget is gone or not a
-/// `text` field).
-pub(crate) fn text_edit<R>(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    f: impl FnOnce(&mut String, &mut super::super::textedit::Caret, bool) -> R,
-) -> Option<R> {
-    match host.widget_kind_mut(def_id, widget_id)? {
-        WidgetKind::Text {
-            value,
-            caret,
-            multiline,
-            ..
-        } => Some(f(value, caret, *multiline)),
-        _ => None,
-    }
 }
 
 /// The thickness a lane may be dragged between (logical pixels): thin enough to

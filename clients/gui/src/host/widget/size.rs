@@ -72,28 +72,7 @@ impl WidgetKind {
     /// and the placement `scale` its text draws at (1.0 outside a workspace);
     /// see the module documentation for the content/surface split.
     pub fn natural_size(&self, m: &Metrics, scale: f32) -> Natural {
-        // Every text-derived extent is measured at the size the text will
-        // actually be drawn at, which is the widget's `text_size` through the
-        // placement's zoom.
-        let text = |size: &f32| *size * scale;
         match self {
-            // -- Content: the widget knows its own extent --
-            WidgetKind::Text {
-                label,
-                text_size,
-                multiline,
-                ..
-            } => (
-                None,
-                // A multiline field is a text *surface*: its height is the
-                // caller's, and it scrolls its rows inside it.
-                (!multiline).then(|| {
-                    label_strip(label.is_some(), text(text_size), m)
-                        + body_inset(m)
-                        + control_box(text(text_size), m)
-                }),
-            ),
-
             // -- Mixed: a thickness across the control's axis, elastic along it --
             // A ruler is a strip: it spans its axis and knows its thickness.
             WidgetKind::TimeRuler { .. } => (None, Some(m.ruler_h)),

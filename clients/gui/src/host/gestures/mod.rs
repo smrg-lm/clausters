@@ -62,6 +62,14 @@ pub enum GestureEffect {
     Redraw(i32),
     /// Release the pointer grab a knob/number drag took on window `def_id`.
     ReleasePointer(i32),
+    /// The keyboard focus **left this window's tree** — Tab stepped past the
+    /// last stop on the ring, or there was no ring at all.
+    ///
+    /// A desktop front has nothing to do about it (nothing is focused, and the
+    /// next Tab enters the ring again); a page **blurs its canvas**, so the
+    /// browser's own tab order carries on past the mounted GuiDef instead of
+    /// trapping the reader inside it.
+    FocusOut(i32),
 }
 
 /// The per-call context the front supplies: which window, its framebuffer size
@@ -340,37 +348,6 @@ enum Drag {
         origin_y: f64,
         steps: i32,
     },
-    /// Selecting text in an editable `text` field: `anchor` is the caret byte
-    /// offset the press landed on; dragging extends the selection from it to the
-    /// caret under the cursor. `rect`/`scale` reconstruct the field's layout so
-    /// the cursor maps to a caret exactly as the renderer drew it.
-    TextSelect {
-        id: i32,
-        rect: Rect,
-        scale: f32,
-        anchor: usize,
-    },
-}
-
-/// A platform-neutral key for editing a focused `text` field — the fronts
-/// (winit native, winit-on-wasm web) translate their key events into this so
-/// the editing behavior lives once in the machine. Modifier state rides in the
-/// [`GestureCtx`] (`shift` extends a selection, `ctrl` word-jumps and drives
-/// cut/copy/paste/select-all on the letter keys).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TextKey {
-    /// A printable character to insert (already resolved from the layout).
-    Char(char),
-    Backspace,
-    Delete,
-    Left,
-    Right,
-    Up,
-    Down,
-    Home,
-    End,
-    /// Enter: a newline in a multiline field, ignored in a single-line one.
-    Enter,
 }
 
 /// One window's gesture state: the in-progress drag, if any. The front holds
@@ -446,6 +423,7 @@ impl Gestures {
 mod drag;
 mod effects;
 mod element;
+mod focus;
 mod keys;
 mod nav;
 mod press;

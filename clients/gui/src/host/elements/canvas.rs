@@ -218,6 +218,7 @@ mod tests {
             rect: Rect::new(0.0, 0.0, 100.0, 60.0),
             scale: 1.0,
             time: None,
+            focused: false,
         };
         let Some(SlotFrame::Shader { body, params, .. }) = c.slot(&ctx) else {
             panic!("a canvas claims the shader slot");

@@ -1,173 +1,79 @@
-//! The keyboard half of the machine: editing a focused `text` field, and the
-//! block operations a timeline view answers to (quantize, cut/copy/paste over
-//! the multi-note selection, resetting every view to its full extent).
+//! The keyboard half of the machine: the focus ring, the key that goes to the
+//! focused element, and the block operations a timeline view answers to
+//! (quantize, cut/copy/paste over the multi-note selection, resetting every view
+//! to its full extent).
 //!
 //! Split from the pointer machine because it shares nothing with it but the
 //! `Gestures` state: no hit-test, no drag, no cursor — a key arrives already
 //! addressed to whatever the window has focused or selected.
+//!
+//! **Two addressees, in this order.** Tab is the window's, always
+//! ([`super::focus`]). Everything else is the focused element's, and only
+//! what the element declines falls through to the front's own shortcuts, which
+//! are addressed to what is under the *cursor* rather than to what holds the
+//! focus. That order is what lets a field swallow `q` while a piano-roll behind
+//! it still quantizes on the same key when nothing is focused.
 
 use crate::viewport::View;
 
-use super::super::interact::{self, Hit};
+use super::super::Host;
+use super::super::interact::Hit;
 use super::super::widget::WidgetKind;
-use super::super::{Host, pianoroll, textedit};
-use super::effects::{emit_notes, emit_value, emit_view, redraw_all};
+use super::super::widget::element::{Key, KeyInput, Mods};
+use super::super::{interact, pianoroll};
+use super::effects::{emit_notes, emit_view, redraw_all};
 use super::nav::{freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
-use super::{GestureCtx, GestureEffect, Gestures, TextKey};
+use super::{GestureCtx, GestureEffect, Gestures, element, focus};
 
 impl Gestures {
-    /// A key while a `text` field is focused: edit it and, on any content
-    /// change, deliver its new string exactly as a numeric control delivers on a
-    /// drag — bound → straight to the audio server, else a `/gui_event`, on
-    /// **every** keystroke (never gated on Enter). Modifiers ride in `ctx`
-    /// (`shift` extends a selection, `ctrl` word-jumps and drives
-    /// cut/copy/paste/select-all). Clipboard cut/copy/paste use the host-wide
-    /// `clipboard` (the native internal clipboard; the browser front swaps in the
-    /// OS clipboard around this call).
+    /// A key arriving at this window: Tab walks the focus ring, anything else
+    /// goes to the focused element's
+    /// [`Element::key`](crate::host::widget::Element::key) — which delivers
+    /// whatever it reports exactly as a drag would, bound → straight to the
+    /// audio server, else a `/gui_event`.
     ///
-    /// Returns `Some(effects)` when the key was consumed by the focused field
-    /// (the front then skips its global editor shortcuts), or `None` when no
-    /// text field is focused in this window (the front runs its shortcuts).
-    pub fn text_key(
+    /// `clipboard` is the host-wide text clipboard a cut/copy/paste reads and
+    /// writes (the native front's internal one; the browser front swaps in the
+    /// page's around this call).
+    ///
+    /// Returns `Some(effects)` when the key was consumed — the front then skips
+    /// its own shortcuts — and `None` when nothing here answered it.
+    pub fn key(
         &self,
         host: &mut Host,
         ctx: &GestureCtx,
-        key: TextKey,
+        key: Key,
         clipboard: &mut String,
     ) -> Option<Vec<GestureEffect>> {
-        let def_id = ctx.def_id;
-        // Only when a field in *this* window holds the focus.
-        let (fdef, id) = host.focused_text()?;
-        if fdef != def_id {
+        if key == Key::Tab {
+            return Some(focus::step(host, ctx, ctx.shift));
+        }
+        // Only an element focused in *this* window: a key is delivered by the
+        // window it was typed into.
+        let (fdef, id) = host.focused()?;
+        if fdef != ctx.def_id {
             return None;
         }
-        let mut out = Vec::new();
-        let mut changed = false;
-        let edit =
-            |host: &mut Host,
-             f: &mut dyn FnMut(&mut String, &mut textedit::Caret, bool) -> bool| {
-                interact::text_edit(host, def_id, id, |v, c, ml| f(v, c, ml)).unwrap_or(false)
-            };
-
-        match key {
-            TextKey::Char(c) if ctx.ctrl => match c.to_ascii_lowercase() {
-                'c' => {
-                    if let Some(Some(s)) = interact::text_edit(host, def_id, id, |v, c, _| {
-                        textedit::selected(v, c).map(str::to_string)
-                    }) {
-                        *clipboard = s;
-                    }
-                }
-                'x' => {
-                    let cut = &mut *clipboard;
-                    changed = edit(host, &mut |v, c, _| {
-                        if let Some(s) = textedit::selected(v, c) {
-                            *cut = s.to_string();
-                            textedit::delete_selection(v, c)
-                        } else {
-                            false
-                        }
-                    });
-                }
-                'v' => {
-                    let paste = clipboard.clone();
-                    if !paste.is_empty() {
-                        changed = edit(host, &mut |v, c, ml| {
-                            let text = if ml {
-                                paste.clone()
-                            } else {
-                                paste.replace('\n', " ")
-                            };
-                            textedit::insert(v, c, &text)
-                        });
-                    }
-                }
-                'a' => {
-                    edit(host, &mut |v, c, _| {
-                        textedit::select_all(v, c);
-                        false
-                    });
-                }
-                _ => {} // another Ctrl combo: consumed but inert
+        let placed = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h)?;
+        let (rect, scale) = placed
+            .iter()
+            .find(|p| p.widget.id == Some(id))
+            .map(|p| (p.rect, p.scale))?;
+        let mut input = KeyInput {
+            mods: Mods {
+                shift: ctx.shift,
+                ctrl: ctx.ctrl,
+                alt: ctx.alt,
             },
-            // A plain (or Alt-less) printable char inserts; Alt combos are inert.
-            TextKey::Char(c) if !ctx.alt => {
-                changed = edit(host, &mut |v, cc, _| {
-                    textedit::insert(v, cc, c.encode_utf8(&mut [0; 4]))
-                });
-            }
-            TextKey::Char(_) => {}
-            TextKey::Backspace => changed = edit(host, &mut |v, c, _| textedit::backspace(v, c)),
-            TextKey::Delete => changed = edit(host, &mut |v, c, _| textedit::delete(v, c)),
-            TextKey::Left => {
-                let word = ctx.ctrl;
-                let sel = ctx.shift;
-                edit(host, &mut |v, c, _| {
-                    if word {
-                        textedit::move_word_left(v, c, sel);
-                    } else {
-                        textedit::move_left(v, c, sel);
-                    }
-                    false
-                });
-            }
-            TextKey::Right => {
-                let word = ctx.ctrl;
-                let sel = ctx.shift;
-                edit(host, &mut |v, c, _| {
-                    if word {
-                        textedit::move_word_right(v, c, sel);
-                    } else {
-                        textedit::move_right(v, c, sel);
-                    }
-                    false
-                });
-            }
-            TextKey::Up => {
-                let sel = ctx.shift;
-                edit(host, &mut |v, c, _| {
-                    textedit::move_up(v, c, sel);
-                    false
-                });
-            }
-            TextKey::Down => {
-                let sel = ctx.shift;
-                edit(host, &mut |v, c, _| {
-                    textedit::move_down(v, c, sel);
-                    false
-                });
-            }
-            TextKey::Home => {
-                let sel = ctx.shift;
-                edit(host, &mut |v, c, _| {
-                    textedit::move_home(v, c, sel);
-                    false
-                });
-            }
-            TextKey::End => {
-                let sel = ctx.shift;
-                edit(host, &mut |v, c, _| {
-                    textedit::move_end(v, c, sel);
-                    false
-                });
-            }
-            TextKey::Enter => {
-                changed = edit(host, &mut |v, c, ml| {
-                    if ml {
-                        textedit::insert(v, c, "\n")
-                    } else {
-                        false // a single-line field ignores Enter (no send-on-Enter)
-                    }
-                });
-            }
-        }
-
-        // The focused field always repaints (the caret/selection moved); a
-        // content change also delivers the new value, ungated.
-        out.push(GestureEffect::Redraw(def_id));
-        if changed {
-            emit_value(host, &mut out, def_id, id);
-        }
+            clipboard,
+        };
+        let at = element::At::widget(id, rect, scale);
+        let events = element::with(host, ctx, at, |el, _| el.key(&key, &mut input)).flatten()?;
+        let mut out = Vec::new();
+        // The element consumed it, so the window repaints whether or not
+        // anything was reported: a caret that moved is a picture that changed.
+        element::report(host, &mut out, ctx, id, events);
+        out.push(GestureEffect::Redraw(ctx.def_id));
         Some(out)
     }
 

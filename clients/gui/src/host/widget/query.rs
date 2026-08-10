@@ -118,6 +118,19 @@ impl WidgetKind {
         }
     }
 
+    /// Whether this widget is a stop on its window's **tab ring**, and whether
+    /// a press on it moves the keyboard focus there.
+    ///
+    /// Only an element can be one ([`Element::accepts_focus`]): focus is where
+    /// keys go, and a key reaches a widget through
+    /// [`Element::key`](super::Element::key). A container is not a stop — it
+    /// arranges, it does not read.
+    ///
+    /// [`Element::accepts_focus`]: super::Element::accepts_focus
+    pub fn accepts_focus(&self) -> bool {
+        matches!(self, WidgetKind::Custom(el) if el.accepts_focus())
+    }
+
     /// The area this widget occupies **outside its own rect** — an open list, a
     /// popup — or `None` for one that stays inside its placement.
     ///
@@ -143,7 +156,6 @@ impl WidgetKind {
     /// is the event).
     pub fn event_value(&self) -> Option<OscType> {
         match self {
-            WidgetKind::Text { value, .. } => Some(OscType::String(value.clone())),
             WidgetKind::Custom(el) => el.value(),
             _ => None,
         }
@@ -167,9 +179,6 @@ impl WidgetKind {
     pub fn info(&self) -> Vec<(String, Value)> {
         match self {
             WidgetKind::Custom(el) => el.info(),
-            WidgetKind::Text { value, .. } => {
-                vec![("value".into(), Value::from(value.clone()))]
-            }
             WidgetKind::Clip { offset, dur, .. } => vec![
                 ("offset".into(), Value::from(*offset)),
                 ("dur".into(), Value::from(*dur)),

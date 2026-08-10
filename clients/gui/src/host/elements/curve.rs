@@ -481,6 +481,7 @@ mod tests {
                 rect,
                 scale: 1.0,
                 time: None,
+                focused: false,
             },
         );
         let mut body = Mesh::new();
@@ -495,6 +496,7 @@ mod tests {
                     view: View::full(100),
                     span: 100.0,
                 }),
+                focused: false,
             },
         );
         assert!(!alone.is_empty() && !body.is_empty());

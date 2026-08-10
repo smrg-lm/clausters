@@ -7,8 +7,7 @@
 //! resolved with it ([`time_axis`], [`view_of`]). Everything else here is the
 //! second question a gesture asks once it knows *which* element it hit: which
 //! part of a clip ([`clip_hit`]), which header control ([`header_hit`]), which
-//! note or region of a piano-roll ([`pianoroll_hit`]), which caret offset in a
-//! text field ([`text_caret_at`]).
+//! note or region of a piano-roll ([`pianoroll_hit`]).
 //!
 //! The rule that keeps these honest is that they reconstruct **the geometry the
 //! renderer drew through**, never a parallel derivation of it: a note is grabbed
@@ -16,7 +15,7 @@
 
 use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
-use super::super::{Host, controls, pianoroll, track};
+use super::super::{Host, pianoroll, track};
 use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis, clip_part};
 use super::{ClipPart, HeaderPart};
 use crate::viewport::View;
@@ -267,41 +266,6 @@ fn view_of(host: &Host, def_id: i32, p: &layout::Placed, body: Rect) -> View {
             View::full(pianoroll_span(notes, osc).ceil().max(1.0) as usize)
         }
         _ => View::full(body.w.max(1.0) as usize),
-    }
-}
-
-/// The caret byte offset a click at `(cx, cy)` lands on in the `text` field
-/// `widget_id` (its `rect` and workspace `scale` as the front hit-tested them).
-/// `None` when the widget is gone or not a text field.
-pub(crate) fn text_caret_at(
-    host: &Host,
-    def_id: i32,
-    widget_id: i32,
-    rect: Rect,
-    scale: f32,
-    cx: f64,
-    cy: f64,
-) -> Option<usize> {
-    match host.widget_kind(def_id, widget_id)? {
-        WidgetKind::Text {
-            value,
-            label,
-            text_size,
-            multiline,
-            caret,
-        } => Some(controls::caret_at(
-            rect,
-            value,
-            label.is_some(),
-            *text_size * scale,
-            *multiline,
-            *caret,
-            cx,
-            cy,
-            // The placement's table, the one the field was drawn with.
-            &host.metrics_for(def_id).at(scale),
-        )),
-        _ => None,
     }
 }
 

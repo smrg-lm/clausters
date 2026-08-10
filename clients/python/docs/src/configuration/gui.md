@@ -98,6 +98,7 @@ the same color to within the 8 bits of the notation:
 | `grid` | `#4c576699` | A view's reference grid (the phase scope's cross and square). |
 | `grid_line` | `#292e38` | A fine grid line (the piano roll's row lines). |
 | `baseline` | `#475261` | The zero baseline of a value axis. |
+| `focus` | `#73b2ffe6` | The ring around the widget holding the keyboard focus. Its own role rather than the accent: what is focused and what is *active* are two different questions, and a window answers both at once. |
 | `selection` | `#8cbff2` | The selection color; fills and edges derive by alpha. |
 | `playhead` | `#f28c4ce6` | The playhead line. |
 | `ruler_text` | `#a6adb8` | Ruler tick labels. |
@@ -184,6 +185,7 @@ The 24 roles, with the value each takes at `scale = 1.0`:
 | `ruler_w` | 46 | The width of a ruler strip beside a vertical axis (sized for its widest labels). |
 | `header_w` | 96 | The width of a row's header column (a lane's name and controls). |
 | `divider_w` | 1 | A hairline: a divider between lanes, a box edge. |
+| `focus_ring` | 2 | The weight of the ring around the widget holding the keyboard focus. Heavier than a hairline on purpose: it has to read *over* the edge a control already draws. |
 | `trace_w` | 1.5 | The weight of a drawn signal trace. |
 | `point_radius` | 4 | The radius of a placed point (a break-point, an automation node). |
 | `hit_slop` | 4 | The slack around a small target's geometry, so it stays clickable. |

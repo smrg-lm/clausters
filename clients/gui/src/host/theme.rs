@@ -124,6 +124,11 @@ theme_roles! {
     /// The zero baseline of a value axis.
     baseline = [0.28, 0.32, 0.38, 1.0];
 
+    /// The ring around the widget holding the keyboard focus. Its own role
+    /// rather than the accent: what is focused and what is *active* are two
+    /// different questions, and a window answers both at once.
+    focus = [0.45, 0.70, 1.00, 0.9];
+
     // -- Navigation chrome --
     /// The selection color; fills and edges derive by alpha.
     selection = [0.55, 0.75, 0.95, 1.0];

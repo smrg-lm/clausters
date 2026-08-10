@@ -266,6 +266,19 @@ class GuiHost:
             args += [k, v]
         self._osc.send_msg(self.target, "/gui_set", id, *args)
 
+    def focus(self, id: int, on: bool = True):
+        """``/gui_set <id> focus 1`` — point the keyboard at this widget
+        (``on=False`` gives the focus up).
+
+        The focused widget is the only one keys reach, and there is one focus
+        per host. The user moves it by clicking or with Tab; this is the
+        script's way, for a field that should be ready to type into the moment
+        its window opens. A widget that reads no keyboard refuses it, and the
+        move is reported back as a ``"focus"`` event on both the widget that
+        gained it and the one that lost it.
+        """
+        self.set(id, focus=int(bool(on)))
+
     def free(self, id: int):
         """``/gui_free <id>`` — free a widget and its subtree, returning its ids
         to the pool (the client-side mirror of the host freeing the subtree)."""

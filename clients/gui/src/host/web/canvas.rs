@@ -249,9 +249,9 @@ impl WebApp {
     /// browser node-tree path exists.
     pub(super) fn draw(&mut self, def: i32) {
         let server_attached = self.host.server().is_some();
-        let focused_text = self
+        let focused = self
             .host
-            .focused_text()
+            .focused()
             .filter(|(d, _)| *d == def)
             .map(|(_, id)| id);
         let timelines = self.host.timelines();
@@ -275,7 +275,7 @@ impl WebApp {
                 // exists.
                 ..Default::default()
             },
-            focused_text,
+            focused,
             // A rewiring drag in flight draws its wire to the pointer.
             wiring: slot
                 .gestures
@@ -314,6 +314,26 @@ impl WebApp {
     pub(super) fn request_redraw(&self, def: i32) {
         if let Some(slot) = self.canvases.get(&def) {
             slot.request_redraw();
+        }
+    }
+
+    /// **Hands the keyboard back to the document**: blurs this def's canvas, so
+    /// the browser's own sequential navigation carries on past the mounted
+    /// GuiDef instead of the canvas holding every key forever.
+    ///
+    /// It is the browser half of [`GestureEffect::FocusOut`] and the reason
+    /// that effect exists. A canvas is focusable (winit gives it a `tabindex`)
+    /// and winit prevents the default on the keys it sees, so Tab inside a
+    /// mounted def would otherwise never reach the page: blurring is what makes
+    /// the ring an *entrance and an exit* rather than a trap. The page decides
+    /// nothing here — it is the host that knows the ring ran out.
+    pub(super) fn blur(&self, def: i32) {
+        use winit::platform::web::WindowExtWebSys;
+        let Some(canvas) = self.canvases.get(&def).and_then(|s| s.window.canvas()) else {
+            return;
+        };
+        if let Err(e) = canvas.blur() {
+            log(&format!("def {def}: cannot release the keyboard: {e:?}"));
         }
     }
 }

@@ -46,12 +46,13 @@ use crate::waveform::WaveformData;
 
 use super::fetch::{BufferFetches, FetchStep};
 use super::frame::{self, SpectrogramSlot, WaveformSlot};
-use super::gestures::{GestureCtx, GestureEffect, Gestures, TextKey};
+use super::gestures::{GestureCtx, GestureEffect, Gestures};
 use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
 use super::pianoroll;
 use super::signal::{self, Presentation};
 use super::spectrum::SpectrumState;
+use super::widget::element::Key as HostKey;
 use super::widget::{Widget, WidgetKind};
 use super::{BusSource, ClientId, GUI_EVENT, Host, HostEffect, ServerLink};
 

@@ -54,7 +54,7 @@ use super::guidef::GuiNode;
 // so the `build`/`apply` child modules resolve the same paths (a descendant sees
 // the parent's private `use` items).
 use super::signal::{Presentation, SignalElement};
-use super::{piano, plot, score, signal, textedit};
+use super::{piano, plot, score, signal};
 
 mod apply;
 mod axes;
@@ -144,19 +144,6 @@ pub enum WidgetKind {
     /// the timeline views do. Read-only for now: the MEI xml:id travels on each
     /// primitive for a later interactive/edit-back pass.
     Score(super::score::ScoreData),
-    /// An editable text-entry field. `value` is the string (the event value it
-    /// emits on every edit, exactly as a numeric control emits on every drag —
-    /// never gated on a key); `multiline` allows embedded newlines (Enter
-    /// inserts one) and a growing field. `caret` is **native view state** — the
-    /// insertion point and selection while the field is focused, never parsed
-    /// from or sent over the wire (the `PianoRoll::selected` precedent).
-    Text {
-        value: String,
-        label: Option<String>,
-        text_size: f32,
-        multiline: bool,
-        caret: super::textedit::Caret,
-    },
     /// A multitrack lane: a horizontal strip of the shared timeline holding
     /// `clip` children placed by their `offset`/`dur`. A container (its clips
     /// are its children); `label` names the track in a left header, `height`

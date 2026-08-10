@@ -92,6 +92,19 @@ so a tree written for the desktop comes up the same size in a tab. That
 substitution is what makes a bundle mountable in the flow of a page: see
 [Components](components.md).
 
+**The keyboard is shared with the page.** A canvas is focusable, and while it
+holds the focus the host reads the keys: click a `text` field to type into it,
+Tab to walk the window's focusable widgets. **Tab past the last one gives the
+keyboard back to the document** — the canvas blurs and the browser's own tab
+order carries on — so a GuiDef mounted in the flow of a page is never a
+keyboard trap. A script points the focus itself with
+`win.widget("name").focus()`, and hears every move as a `"focus"` event.
+
+Composition (IME) and the system clipboard stay the **page's**: a canvas cannot
+host an input method, so the host reads the keys it is handed and no more, and
+the clipboard a field cuts and pastes through is its own, page-wide. Text that
+needs composing is not entered through a host field today.
+
 ## Bindings, and the page that runs without a script
 
 A widget's value can bypass this script entirely — to the audio server, or to

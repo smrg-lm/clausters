@@ -89,17 +89,6 @@ pub(super) fn build_kind(
         // the props say which point of the product ([`super::signal::point`]).
         "signal" => build_signal(id, props, blobs)?,
         "score" => WidgetKind::Score(super::score::ScoreData::parse(props)),
-        "text" => WidgetKind::Text {
-            value: props
-                .get("value")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
-            label: label(props),
-            text_size: text_size(props),
-            multiline: props.get("multiline").and_then(truthy).unwrap_or(false),
-            caret: super::textedit::Caret::default(),
-        },
         // Two independent axes, told apart by what is on it: a placement
         // makes it a clip on its parent's x axis, a bare strip of a given
         // thickness with nothing placed and no lane chrome is the

@@ -66,6 +66,11 @@ class WidgetHandle:
         self._host.unbind(self.id)
         return self
 
+    def focus(self, on: bool = True) -> "WidgetHandle":
+        """Point the keyboard at this widget (see `GuiHost.focus`)."""
+        self._host.focus(self.id, on)
+        return self
+
     def free(self):
         """Free this widget and its subtree (see `GuiHost.free`)."""
         self._host.free(self.id)

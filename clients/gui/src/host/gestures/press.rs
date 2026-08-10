@@ -14,13 +14,12 @@
 //! match is what makes a new widget kind impossible to forget here.
 
 use super::super::interact::{self, Hit};
-use super::super::textedit;
 use super::super::widget::element::TimeSpace;
 use super::super::widget::{Claim, GestureStep, WidgetKind};
 use super::super::{Host, patch, piano, pianoroll};
 use super::effects::*;
 use super::nav::*;
-use super::{Drag, GestureCtx, GestureEffect, Gestures, element};
+use super::{Drag, GestureCtx, GestureEffect, Gestures, element, focus};
 use crate::viewport::View;
 
 impl Gestures {
@@ -65,19 +64,15 @@ impl Gestures {
             return out;
         }
         let Some(hit) = hit(host, ctx, cx, cy) else {
-            // A press on empty space drops the text focus (the caret disappears).
-            if let Some(old) = host.clear_text_focus() {
-                out.push(GestureEffect::Redraw(old));
-            }
+            // A press on empty space drops the focus (a caret disappears).
+            focus::on_press(host, &mut out, ctx, None);
             self.pan_sole_axis(host, ctx, cx);
             return out;
         };
-        // A press on anything other than the focused text field defocuses it.
-        if !matches!(hit.kind, WidgetKind::Text { .. })
-            && let Some(old) = host.clear_text_focus()
-        {
-            out.push(GestureEffect::Redraw(old));
-        }
+        // The focus follows the press: onto a widget that takes one, off
+        // whatever held it otherwise. It is asked of the widget rather than
+        // matched on its kind, so a registered element is a stop like any other.
+        focus::on_press(host, &mut out, ctx, Some((hit.id, &hit.kind)));
         // The vertical axis is grabbed on its own strip, before any modifier: a
         // press on a y-ruler or a piano-roll's keyboard gutter means *that*
         // axis, whatever the container maps the drag to elsewhere.
@@ -366,25 +361,6 @@ impl Gestures {
         let def_id = ctx.def_id;
         let effects_before = out.len();
         match kind {
-            WidgetKind::Text { .. } => {
-                // Focus the field and drop the caret where the press landed; a
-                // drag from here extends a selection.
-                host.focus_text(def_id, id);
-                let pos =
-                    interact::text_caret_at(host, def_id, id, rect, scale, cx, cy).unwrap_or(0);
-                interact::text_edit(host, def_id, id, |value, caret, _| {
-                    textedit::clamp(value, caret); // guard a stale caret
-                    caret.pos = pos;
-                    caret.anchor = None;
-                });
-                self.drag = Some(Drag::TextSelect {
-                    id,
-                    rect,
-                    scale,
-                    anchor: pos,
-                });
-                out.push(GestureEffect::Redraw(def_id));
-            }
             WidgetKind::Patch {
                 ref patch,
                 ref selected,

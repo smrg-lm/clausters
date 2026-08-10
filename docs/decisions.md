@@ -4766,3 +4766,39 @@ What *is* typed is what a hand-written document actually loses: a prop is a Rust
 value, so an integer stays an integer and a continuous value stays continuous —
 the int/float distinction the host reads props by, kept by construction instead
 of by remembering to type `2.0`.
+
+## The keyboard focus can leave the tree, because a GuiDef is not always the whole screen
+
+*2026-08-10, generalizing the host's focus from "the focused text field" to a
+tab ring (`host/gestures/focus.rs`).*
+
+Every toolkit's tab ring **wraps**: Tab off the last control returns to the
+first, because the window is the world. That is true of a desktop window and
+false of the host's other target, where a GuiDef is mounted **inside a
+document** — a `<canvas>` among the page's own headings, links and forms. A
+canvas must carry a `tabindex` to receive keys at all, and the host's front
+prevents the browser's default on every key it handles, so a wrapping ring there
+would be a **keyboard trap**: once Tab entered the canvas, nothing else on the
+page could ever be reached again. That is a worse regression than shipping no
+keyboard at all, and it would land on the page author rather than on us.
+
+So the ring **runs out** instead of wrapping. Tab past its last stop clears the
+focus and reports it to the front (`GestureEffect::FocusOut`), which is the one
+thing the two platforms answer differently: the browser shell blurs its canvas
+and the document's own tab order carries on from there, while a desktop window
+— having nothing outside to hand the keyboard to — simply has nothing focused,
+and the next Tab enters the ring again. The core decides *that* focus left; only
+the shell knows what that means locally, which is the same seam every other
+platform difference in this crate goes through.
+
+Two smaller calls follow it and are recorded here so they are not reopened.
+**`focus` is not a prop.** It rides on `/gui_set` because that is the wire's one
+mutation verb, but it says where the keyboard is pointing — host state, not a
+widget's — so it is taken out before the document is written: a `/gui_query`
+does not report it, and reloading a persisted def does not restore a focus
+nobody asked for. It is also not echoed: the `"focus"` event reports what the
+*user* did, the way every other event on that stream does, and a `/gui_set` has
+never announced itself back to the script that sent it. And **composition (IME) stays the page's**: a canvas cannot
+host an input method, so the host reads the keys it is handed and never pretends
+to compose them. Text that needs composing is not entered through a host field,
+which is a stated limit rather than a bug to find.

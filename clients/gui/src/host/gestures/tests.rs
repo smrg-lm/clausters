@@ -5,6 +5,7 @@ use clausters_core::osc::{OscMessage, OscPacket};
 
 use super::super::metrics::Metrics;
 use super::super::widget::ScrollView;
+use super::super::widget::element::Key;
 use super::super::{ClientId, GUI_DEF, GUI_SET, Host, patch, scroll};
 use super::*;
 
@@ -1850,19 +1851,33 @@ fn piano_voice_mode_tracks_one_node_per_held_pitch() {
     assert!(host.piano_voices(70).is_empty());
 }
 
-// --- editable text field ------------------------------------------------
+// --- the keyboard: focus, the ring and the focused element ------------
 
-/// A window with one editable `text` field (id 5) filling it.
-/// A window holding one single-line field. It is **natural-sized**, so it
-/// is a control-high strip at the top of the window rather than the whole
-/// pane — every press below aims inside that strip.
+/// A window with one editable `text` field (id 5) filling it. It is
+/// **natural-sized**, so it is a control-high strip at the top of the window
+/// rather than the whole pane — every press below aims inside that strip.
 fn text_host() -> Host {
     host_from(r#"{"type":"window","margin":0,"children":[{"id":5,"type":"text"}]}"#)
 }
 
+/// Two fields side by side, which is the smallest tab ring there is.
+fn two_field_host() -> Host {
+    host_from(
+        r#"{"type":"window","margin":0,"flow":"row","children":[
+            {"id":5,"type":"text"},{"id":6,"type":"text"}]}"#,
+    )
+}
+
 fn text_value(host: &Host, id: i32) -> String {
-    match &host.window_def(1).unwrap().find(id).unwrap().kind {
-        WidgetKind::Text { value, .. } => value.clone(),
+    match host
+        .window_def(1)
+        .unwrap()
+        .find(id)
+        .unwrap()
+        .kind
+        .event_value()
+    {
+        Some(OscType::String(s)) => s,
         other => panic!("not a text field: {other:?}"),
     }
 }
@@ -1871,11 +1886,33 @@ fn text_value(host: &Host, id: i32) -> String {
 fn emitted_string(effects: &[GestureEffect]) -> Option<String> {
     effects.iter().find_map(|e| match e {
         GestureEffect::Emit { args, .. } => match args.first() {
-            Some(OscType::String(s)) => Some(s.clone()),
+            Some(OscType::String(s)) if s != "focus" => Some(s.clone()),
             _ => None,
         },
         _ => None,
     })
+}
+
+/// The `(widget, gained)` pairs the `"focus"` events in `effects` report.
+fn focus_events(effects: &[GestureEffect]) -> Vec<(i32, bool)> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            GestureEffect::Emit {
+                widget_id, args, ..
+            } => match args.as_slice() {
+                [OscType::String(tag), OscType::Int(on)] if tag == "focus" => {
+                    Some((*widget_id, *on == 1))
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+fn key(g: &Gestures, host: &mut Host, ctx: &GestureCtx, k: Key) -> Option<Vec<GestureEffect>> {
+    g.key(host, ctx, k, &mut String::new())
 }
 
 #[test]
@@ -1883,52 +1920,158 @@ fn a_press_focuses_the_field_and_typing_emits_on_every_keystroke() {
     let mut host = text_host();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    // A press focuses the field (no emit yet — a click is not an edit).
+    // A press focuses the field and says so — but does not edit it, so there
+    // is no value event: a click is not an edit.
     let e = g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
-    assert_eq!(host.focused_text(), Some((1, 5)));
+    assert_eq!(host.focused(), Some((1, 5)));
+    assert_eq!(focus_events(&e), vec![(5, true)]);
     assert!(emitted_string(&e).is_none());
     // Each character is delivered as the field's whole string, ungated.
     for (ch, expect) in [('h', "h"), ('i', "hi")] {
-        let e = g
-            .text_key(&mut host, &ctx, TextKey::Char(ch), &mut String::new())
-            .expect("the focused field consumes the key");
+        let e =
+            key(&g, &mut host, &ctx, Key::Char(ch)).expect("the focused field consumes the key");
         assert_eq!(emitted_string(&e).as_deref(), Some(expect));
         assert_eq!(text_value(&host, 5), expect);
     }
     // Backspace edits and re-emits.
-    let e = g
-        .text_key(&mut host, &ctx, TextKey::Backspace, &mut String::new())
-        .unwrap();
+    let e = key(&g, &mut host, &ctx, Key::Backspace).unwrap();
     assert_eq!(emitted_string(&e).as_deref(), Some("h"));
 }
 
 #[test]
-fn keys_are_ignored_when_no_field_is_focused() {
+fn keys_are_ignored_when_nothing_is_focused() {
     let mut host = text_host();
     let g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     // Nothing focused: the machine declines the key (the front runs its
     // global shortcuts instead).
-    assert!(
-        g.text_key(&mut host, &ctx, TextKey::Char('x'), &mut String::new())
-            .is_none()
-    );
+    assert!(key(&g, &mut host, &ctx, Key::Char('x')).is_none());
     assert_eq!(text_value(&host, 5), "");
 }
 
 #[test]
-fn a_press_elsewhere_defocuses_the_field() {
-    // Two fields; focusing one then pressing the other moves the focus.
-    let mut host = host_from(
-        r#"{"type":"window","margin":0,"flow":"row","children":[
-            {"id":5,"type":"text"},{"id":6,"type":"text"}]}"#,
-    );
+fn a_press_elsewhere_moves_the_focus_and_reports_both_ends() {
+    let mut host = two_field_host();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
-    assert_eq!(host.focused_text(), Some((1, 5)));
-    g.press(&mut host, &ctx, 330.0, 30.0, &mut || false);
-    assert_eq!(host.focused_text(), Some((1, 6)));
+    assert_eq!(host.focused(), Some((1, 5)));
+    let e = g.press(&mut host, &ctx, 330.0, 30.0, &mut || false);
+    assert_eq!(host.focused(), Some((1, 6)));
+    assert_eq!(
+        focus_events(&e),
+        vec![(5, false), (6, true)],
+        "the one that lost it is reported too, so a script can drop its caret"
+    );
+}
+
+/// A press on something that reads no keyboard drops the focus — which is how
+/// a caret disappears when you click away from a field.
+#[test]
+fn a_press_on_a_widget_that_takes_no_focus_clears_it() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","children":[
+            {"id":5,"type":"text"},{"id":7,"type":"button"}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    g.press(&mut host, &ctx, 30.0, 10.0, &mut || false);
+    assert_eq!(host.focused(), Some((1, 5)));
+    let e = g.press(&mut host, &ctx, 30.0, 60.0, &mut || false);
+    assert_eq!(host.focused(), None);
+    assert_eq!(focus_events(&e), vec![(5, false)]);
+}
+
+/// Tab walks the ring in **layout order**, and Shift+Tab back along it.
+#[test]
+fn tab_walks_the_ring_in_layout_order() {
+    let mut host = two_field_host();
+    let g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 600, 400);
+    key(&g, &mut host, &ctx, Key::Tab);
+    assert_eq!(
+        host.focused(),
+        Some((1, 5)),
+        "the ring is entered at its first stop"
+    );
+    key(&g, &mut host, &ctx, Key::Tab);
+    assert_eq!(host.focused(), Some((1, 6)));
+    ctx.shift = true;
+    key(&g, &mut host, &ctx, Key::Tab);
+    assert_eq!(host.focused(), Some((1, 5)));
+}
+
+/// **Past the last stop the focus leaves the tree**, and the front is told: in a
+/// page that is what blurs the canvas, so a mounted GuiDef is an entrance and an
+/// exit rather than a keyboard trap.
+#[test]
+fn tab_past_the_last_stop_hands_the_keyboard_back() {
+    let mut host = two_field_host();
+    let g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    for _ in 0..2 {
+        key(&g, &mut host, &ctx, Key::Tab);
+    }
+    assert_eq!(host.focused(), Some((1, 6)), "the last stop");
+    let e = key(&g, &mut host, &ctx, Key::Tab).expect("Tab is always the ring's");
+    assert_eq!(host.focused(), None);
+    assert_eq!(focus_events(&e), vec![(6, false)]);
+    assert!(
+        e.iter().any(|f| matches!(f, GestureEffect::FocusOut(1))),
+        "the front is told the focus left: {e:?}"
+    );
+}
+
+/// A window with nothing focusable hands Tab straight back, rather than
+/// swallowing it — the same exit, reached without ever entering.
+#[test]
+fn tab_in_a_window_with_no_ring_leaves_at_once() {
+    let mut host = host_from(r#"{"type":"window","children":[{"id":9,"type":"button"}]}"#);
+    let g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    let e = key(&g, &mut host, &ctx, Key::Tab).unwrap();
+    assert_eq!(host.focused(), None);
+    assert!(e.iter().any(|f| matches!(f, GestureEffect::FocusOut(1))));
+}
+
+/// A script may point the keyboard itself — and is refused when it points at
+/// something that reads none, rather than being left waiting for keystrokes
+/// that cannot arrive.
+#[test]
+fn a_script_can_set_the_focus_and_a_widget_that_reads_no_keys_refuses_it() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","children":[
+            {"id":5,"type":"text"},{"id":7,"type":"button"}]}"#,
+    );
+    let mut effects = Vec::new();
+    assert!(host.set_props(
+        5,
+        vec![("focus".into(), serde_json::json!(1))],
+        &mut effects
+    ));
+    assert_eq!(host.focused(), Some((1, 5)));
+    // ...and the key is not a prop: a query answers what the widget is, and
+    // `focus` is not part of that.
+    assert!(
+        !host
+            .registry()
+            .get(5)
+            .is_some_and(|w| w.props.contains_key("focus")),
+        "focus was written into the document"
+    );
+    host.set_props(
+        7,
+        vec![("focus".into(), serde_json::json!(1))],
+        &mut effects,
+    );
+    assert_eq!(host.focused(), Some((1, 5)), "the button refused it");
+    // `focus 0` gives it up.
+    host.set_props(
+        5,
+        vec![("focus".into(), serde_json::json!(0))],
+        &mut effects,
+    );
+    assert_eq!(host.focused(), None);
 }
 
 #[test]
@@ -1938,9 +2081,7 @@ fn enter_inserts_a_newline_only_in_a_multiline_field() {
     let mut host = text_host();
     let mut g = Gestures::default();
     g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
-    let e = g
-        .text_key(&mut host, &ctx, TextKey::Enter, &mut String::new())
-        .unwrap();
+    let e = key(&g, &mut host, &ctx, Key::Enter).unwrap();
     assert!(emitted_string(&e).is_none());
     assert_eq!(text_value(&host, 5), "");
     // Multiline: Enter inserts a newline and emits.
@@ -1949,10 +2090,8 @@ fn enter_inserts_a_newline_only_in_a_multiline_field() {
     );
     let mut g = Gestures::default();
     g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
-    g.text_key(&mut host, &ctx, TextKey::Char('a'), &mut String::new());
-    let e = g
-        .text_key(&mut host, &ctx, TextKey::Enter, &mut String::new())
-        .unwrap();
+    key(&g, &mut host, &ctx, Key::Char('a'));
+    let e = key(&g, &mut host, &ctx, Key::Enter).unwrap();
     assert_eq!(emitted_string(&e).as_deref(), Some("a\n"));
 }
 
@@ -1964,17 +2103,17 @@ fn cut_and_paste_move_text_through_the_clipboard() {
     let mut clip = String::new();
     g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
     for ch in "abc".chars() {
-        g.text_key(&mut host, &ctx, TextKey::Char(ch), &mut clip);
+        g.key(&mut host, &ctx, Key::Char(ch), &mut clip);
     }
     // Select all, then cut to the clipboard.
     ctx.ctrl = true;
-    g.text_key(&mut host, &ctx, TextKey::Char('a'), &mut clip);
-    g.text_key(&mut host, &ctx, TextKey::Char('x'), &mut clip);
+    g.key(&mut host, &ctx, Key::Char('a'), &mut clip);
+    g.key(&mut host, &ctx, Key::Char('x'), &mut clip);
     assert_eq!(clip, "abc");
     assert_eq!(text_value(&host, 5), "");
     // Paste it back twice.
-    g.text_key(&mut host, &ctx, TextKey::Char('v'), &mut clip);
-    g.text_key(&mut host, &ctx, TextKey::Char('v'), &mut clip);
+    g.key(&mut host, &ctx, Key::Char('v'), &mut clip);
+    g.key(&mut host, &ctx, Key::Char('v'), &mut clip);
     assert_eq!(text_value(&host, 5), "abcabc");
 }
 

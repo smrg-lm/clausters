@@ -668,6 +668,7 @@ pub(super) fn collect_widgets(
                     rect: p.rect,
                     scale: p.scale,
                     time: None,
+                    focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
                 };
                 el.draw(&mut Draw::new(mesh, m, th), &ctx);
                 // ...and, for a view the shared mesh cannot carry, what its
@@ -690,25 +691,16 @@ pub(super) fn collect_widgets(
                     }
                 }
             }
-            WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
-            kind => {
-                // A control draws its parts at its **natural** size — a label
-                // strip, a body, a read-out row — whatever cell it was given.
-                // Put in a strip shorter than that, it used to paint over its
-                // neighbours, so a too-thin toolbar came out as overlapping
-                // text; clipped to its own cell it comes out truncated, which
-                // says "make the strip taller" instead of hiding the widget
-                // next to it.
-                mesh.set_clip(Some(p.clip.map_or(p.rect, |c| c.intersect(p.rect))));
-                controls::draw(
-                    &mut Draw::new(mesh, m, th),
-                    kind,
-                    p.rect,
-                    p.widget.id.is_some() && p.widget.id == inputs.focused_text,
-                    p.scale,
-                );
-                mesh.set_clip(p.clip);
-            }
+            _ => {}
+        }
+        // The **focus ring**, drawn by the host over whatever the widget drew:
+        // one role, one look, and no element painting its own — the ring says
+        // where the keyboard points, which is a window's answer rather than a
+        // widget's. What being focused means *inside* an element (a field's
+        // caret) is the element's, and reaches it as `Ctx::focused`.
+        if p.widget.id.is_some() && p.widget.id == inputs.focused {
+            mesh.set_clip(p.clip);
+            mesh.border(p.rect, m.focus_ring, th.focus);
         }
     }
 

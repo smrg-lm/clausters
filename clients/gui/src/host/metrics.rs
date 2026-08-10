@@ -6,7 +6,7 @@
 //! ([`Metrics::pad`], `gap`, `margin`, `indent`), the control family
 //! (`control_h`, `row_h`, `track_thick`, `handle_thick`, `handle_grip`,
 //! `box_side`, `knob_d`), the chrome family (`ruler_h`, `ruler_w`, `header_w`,
-//! `divider_w`, `trace_w`, `point_radius`, `hit_slop`, `label_gap`,
+//! `divider_w`, `focus_ring`, `trace_w`, `point_radius`, `hit_slop`, `label_gap`,
 //! `tick_gap`) and the text family (`text_scale`, `label_scale`,
 //! `caption_scale`, `micro_scale`) — never by the widget that happens to read
 //! them, so one number serves every widget that means the same thing by it.
@@ -168,6 +168,10 @@ metrics_roles! {
     header_w,
     /// A hairline: a divider between lanes, a box edge.
     divider_w,
+    /// The weight of the ring around the widget holding the keyboard focus.
+    /// Heavier than a hairline on purpose: it has to read *over* the edge a
+    /// control already draws, or focus looks like a rendering artifact.
+    focus_ring,
     /// The weight of a drawn signal trace.
     trace_w,
     /// The radius of a placed point (a break-point, an automation node).
@@ -237,6 +241,7 @@ impl Metrics {
             // Eight characters of header text wide.
             header_w: grid(8.0 * advance(text_scale)),
             divider_w: hairline(k),
+            focus_ring: hairline(2.0 * k),
             trace_w: (1.5 * k).max(0.5),
             point_radius: pad,
             hit_slop: pad,
@@ -293,6 +298,7 @@ impl Metrics {
             ruler_w: grid(self.ruler_w * k),
             header_w: grid(self.header_w * k),
             divider_w: hairline(self.divider_w * k),
+            focus_ring: hairline(self.focus_ring * k),
             trace_w: (self.trace_w * k).max(0.5),
             point_radius: grid(self.point_radius * k),
             hit_slop: grid(self.hit_slop * k),
@@ -409,6 +415,7 @@ mod tests {
         assert_eq!(m.ruler_w, 46.0);
         assert_eq!(m.header_w, 96.0);
         assert_eq!(m.divider_w, 1.0);
+        assert_eq!(m.focus_ring, 2.0);
         assert_eq!(m.trace_w, 1.5);
         assert_eq!(m.point_radius, 4.0);
         assert_eq!(m.hit_slop, 4.0);
@@ -444,7 +451,7 @@ mod tests {
                 assert_eq!(v % GRID, 0.0, "{role} at {density} is off the grid: {v}");
                 assert!(v >= GRID, "{role} at {density} vanished: {v}");
             }
-            for role in ["divider_w", "tick_gap"] {
+            for role in ["divider_w", "focus_ring", "tick_gap"] {
                 let v = m.get(role).unwrap();
                 assert_eq!(v.fract(), 0.0, "{role} at {density} is not whole: {v}");
                 assert!(v >= 1.0);
@@ -544,7 +551,7 @@ mod tests {
                 let v = m.get(role).unwrap();
                 assert_eq!(v % GRID, 0.0, "{role} at {scale} is off the grid: {v}");
             }
-            for role in ["divider_w", "tick_gap"] {
+            for role in ["divider_w", "focus_ring", "tick_gap"] {
                 assert_eq!(m.get(role).unwrap().fract(), 0.0);
             }
             for role in ["text_scale", "caption_scale"] {

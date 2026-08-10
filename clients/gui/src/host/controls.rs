@@ -14,7 +14,7 @@ use super::layout::Rect;
 use super::metrics::Metrics;
 use super::paint::{Color, Draw, Mesh};
 use super::textedit;
-use super::widget::{Align, Range, WidgetKind};
+use super::widget::{Align, Range};
 
 /// The label strip height when a control carries a label, else 0 — **and 0 when
 /// the cell cannot hold both**.
@@ -99,32 +99,6 @@ pub fn slider_fraction_v(body: Rect, py: f64) -> f32 {
 pub fn drag_fraction_delta(dy: f64, body_h: f32) -> f32 {
     let span = body_h.max(40.0);
     (-(dy as f32)) / span
-}
-
-/// Draws a control. `scale` is the placement's accumulated workspace zoom
-/// ([`Placed::scale`]), which the text sizes pick up so a zoomed box keeps its
-/// proportions.
-///
-/// [`Placed::scale`]: super::layout::Placed::scale
-pub fn draw(d: &mut Draw, kind: &WidgetKind, rect: Rect, focused: bool, scale: f32) {
-    if let WidgetKind::Text {
-        value,
-        label,
-        text_size,
-        multiline,
-        caret,
-    } = kind
-    {
-        field(
-            d,
-            value,
-            label.as_deref(),
-            rect,
-            *text_size * scale,
-            *multiline,
-            focused.then_some(*caret),
-        );
-    }
 }
 
 /// Draws the label strip above a control body, if it has a label (clipped to
@@ -453,7 +427,10 @@ pub fn menu(d: &mut Draw, current: &str, label: Option<&str>, rect: Rect, size: 
     );
 }
 
-fn field(
+/// Draws an editable text field: its label strip, its body, the visible text —
+/// scrolled to the caret when `caret` is `Some` (the field is focused) — and,
+/// then, the selection and the caret themselves.
+pub fn field(
     d: &mut Draw,
     value: &str,
     label: Option<&str>,

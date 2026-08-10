@@ -69,6 +69,12 @@ export class WidgetHandle {
         return this;
     }
 
+    /** Point the keyboard at this widget (see `GuiHost.focus`). */
+    focus(on = true): this {
+        this.host.focus(this.id, on);
+        return this;
+    }
+
     /** Free this widget and its subtree. */
     free(): void {
         this.host.free(this.id);

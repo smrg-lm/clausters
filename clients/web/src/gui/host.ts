@@ -286,6 +286,21 @@ export class GuiHost {
     }
 
     /**
+     * `/gui_set <id> focus 1` — point the keyboard at this widget (`on: false`
+     * gives the focus up).
+     *
+     * The focused widget is the only one keys reach, and there is one focus per
+     * host. The user moves it by clicking or with Tab; this is the page's way,
+     * for a field that should be ready to type into the moment its window
+     * opens. A widget that reads no keyboard refuses it, and the move is
+     * reported back as a `"focus"` event on both the widget that gained it and
+     * the one that lost it.
+     */
+    focus(id: number, on = true): void {
+        this.set(id, { focus: on ? 1 : 0 });
+    }
+
+    /**
      * `/gui_free <id>` — free a widget and its subtree, returning its ids to
      * the pool (the client-side mirror of the host freeing the subtree).
      */

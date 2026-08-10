@@ -22,7 +22,7 @@ use crate::gpu::Gpu;
 use crate::host::canvas::CanvasView;
 use crate::host::fetch::BufferFetches;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
-use crate::host::gestures::{Gestures, TextKey};
+use crate::host::gestures::Gestures;
 #[cfg(feature = "midi")]
 use crate::host::interact;
 use crate::host::live::TapWindow;
@@ -35,6 +35,7 @@ use crate::host::timeline::group_key;
 use crate::host::widget::Widget;
 #[cfg(feature = "midi")]
 use crate::host::widget::WidgetKind;
+use crate::host::widget::element::Key as HostKey;
 use crate::host::world::World;
 use crate::host::{BusSource, ClientId, GUI_EVENT, Host, HostEffect};
 use crate::view::Renderers;
@@ -441,9 +442,9 @@ impl App {
                 cursor,
                 timelines: self.host.timelines(),
             },
-            focused_text: self
+            focused: self
                 .host
-                .focused_text()
+                .focused()
                 .filter(|(d, _)| *d == def_id)
                 .map(|(_, id)| id),
             // A rewiring drag in flight draws its wire to the pointer.
@@ -729,11 +730,12 @@ impl ApplicationHandler<UserEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 let ctrl = self.windows.get(&def_id).is_some_and(|w| w.ctrl);
-                // A focused text field consumes the key first (typing, caret
-                // motion, cut/copy/paste). Only when nothing is focused here do
-                // the global editor shortcuts below run.
-                if let Some(tk) = to_text_key(&event.logical_key)
-                    && self.text_input(def_id, tk)
+                // The focus consumes the key first — Tab walks the ring, and a
+                // focused element edits (typing, caret motion, cut/copy/paste).
+                // Only what nothing there answered reaches the global shortcuts
+                // below, which are addressed to what is under the cursor.
+                if let Some(k) = to_key(&event.logical_key)
+                    && self.key_input(def_id, k)
                 {
                     return;
                 }
@@ -806,27 +808,28 @@ impl App {
     }
 }
 
-/// Translates a winit key into the platform-neutral [`TextKey`] a focused
-/// `text` field edits with, or `None` for a key the field does not handle (the
-/// global shortcuts then run). A printable character (including Space) inserts;
-/// the named editing keys map one-to-one.
-pub(super) fn to_text_key(key: &Key) -> Option<TextKey> {
+/// Translates a winit key into the platform-neutral [`HostKey`] the focus reads,
+/// or `None` for one nothing focusable answers (the global shortcuts then run).
+/// A printable character (including Space) inserts; the named editing keys and
+/// Tab map one-to-one.
+pub(super) fn to_key(key: &Key) -> Option<HostKey> {
     match key {
-        Key::Named(NamedKey::Backspace) => Some(TextKey::Backspace),
-        Key::Named(NamedKey::Delete) => Some(TextKey::Delete),
-        Key::Named(NamedKey::ArrowLeft) => Some(TextKey::Left),
-        Key::Named(NamedKey::ArrowRight) => Some(TextKey::Right),
-        Key::Named(NamedKey::ArrowUp) => Some(TextKey::Up),
-        Key::Named(NamedKey::ArrowDown) => Some(TextKey::Down),
-        Key::Named(NamedKey::Home) => Some(TextKey::Home),
-        Key::Named(NamedKey::End) => Some(TextKey::End),
-        Key::Named(NamedKey::Enter) => Some(TextKey::Enter),
-        Key::Named(NamedKey::Space) => Some(TextKey::Char(' ')),
+        Key::Named(NamedKey::Backspace) => Some(HostKey::Backspace),
+        Key::Named(NamedKey::Delete) => Some(HostKey::Delete),
+        Key::Named(NamedKey::ArrowLeft) => Some(HostKey::Left),
+        Key::Named(NamedKey::ArrowRight) => Some(HostKey::Right),
+        Key::Named(NamedKey::ArrowUp) => Some(HostKey::Up),
+        Key::Named(NamedKey::ArrowDown) => Some(HostKey::Down),
+        Key::Named(NamedKey::Home) => Some(HostKey::Home),
+        Key::Named(NamedKey::End) => Some(HostKey::End),
+        Key::Named(NamedKey::Enter) => Some(HostKey::Enter),
+        Key::Named(NamedKey::Space) => Some(HostKey::Char(' ')),
+        Key::Named(NamedKey::Tab) => Some(HostKey::Tab),
         Key::Character(s) => s
             .chars()
             .next()
             .filter(|c| !c.is_control())
-            .map(TextKey::Char),
+            .map(HostKey::Char),
         _ => None,
     }
 }
