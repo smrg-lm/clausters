@@ -1095,8 +1095,8 @@ with an eye on the drawing was ever going to catch.
   clippy, `check-wasm.sh`, `pyright` at zero and the web suite; both builders,
   `docs/gui-protocol.md`, both books and `gui_analyzer` carry it.
 
-- ⬜ **E18 — The waterfall writes its new columns instead of re-uploading the
-  texture**: E16's rolling analysis is incremental — a hop's worth of samples
+- ✅ **E18 — The waterfall writes its new columns instead of re-uploading the
+  texture** *(done 2026-08-10)*: E16's rolling analysis is incremental — a hop's worth of samples
   costs one FFT, not a re-analysis of the span — but the *upload* is not: every
   tick that lands a column rebuilds a `SpectrogramView`, which allocates a
   texture and writes the whole magnitude image. **The number, so this is a
@@ -1117,6 +1117,37 @@ with an eye on the drawing was ever going to catch.
   transform is the degenerate case (cursor 0, never advanced) and draws
   byte-identically to what it draws today. Ordered after E17 because it changes
   nothing a user can see and E17 changes something they asked for.
+
+  **What shipped, and the one thing it did differently.** The ring is there and
+  the numbers are the ones above (`tests/gpu_slot_cost.rs` states them: 384 000
+  bytes a tick becomes 3 072, and eight times the retention leaves that
+  unchanged) — but **`spectrogram.wgsl` was not touched**. The entry assumed the
+  shader would unwrap a write cursor, and unwrapping is exactly what the shader
+  must not do: the sampler filters linearly, so a coordinate that wraps blends
+  the newest column into the oldest and sends a visible seam travelling through
+  the picture. Storing the ring **twice**, back to back, makes the visible window
+  one contiguous run of texels however far the cursor has advanced — and a
+  contiguous sub-range is *precisely* what the `time` uniform already expressed.
+  So the whole change is CPU-side: the invariant the entry asked for (a stored
+  transform draws byte-identically) is not a property the diff has to preserve
+  but one it cannot break, since a stored transform reaches the same shader
+  through the same uniform. The doubling costs the texture twice the memory and
+  halves the retained-column ceiling (`MAX_ROLLING_FRAMES`, 4096 — the pair still
+  has to fit the 8192-texel dimension a plain device guarantees).
+
+  Where the state landed follows from that: the **ring is the transform**, an
+  `Stft` in rolling form (`capacity` + `head`, columns read through `column`),
+  owned by the GPU view that draws it — so the renderer, the frequency ruler and
+  the cursor readout still see one type and never learn which form they have.
+  `host/waterfall.rs` correspondingly stops owning the retention: it analyzes and
+  hands over the columns that landed (`take_pending`), and both fronts push them
+  through one shared `frame::roll_into_slot`. A live `retention` change resizes
+  the ring around its newest columns and rebuilds the texture once — one full
+  upload per change, against one per tick before. Green on 521 tests (the ring's
+  wrap, its contiguity in the texture, the stored degenerate case, the resize,
+  and the property that a rolling transform *is* the stored one column for
+  column), clippy, `check-wasm.sh`, the doc build, and `gui_analyzer` by eye
+  including its live halving of the span.
 
 - ⬜ **E19 — A heavy view hanging off the window is cut, not squashed**:
   *(found by eye on 2026-08-10, checking the trace-weight fix in

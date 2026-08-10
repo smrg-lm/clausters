@@ -246,8 +246,8 @@ impl App {
         self.refresh_waterfall_slots();
     }
 
-    /// Uploads the transform of every waterfall whose roll moved this tick —
-    /// and only those, so a still picture costs no texture.
+    /// Pushes the columns every waterfall analyzed this tick into its ring —
+    /// and only the rolls that moved, so a still picture costs no upload.
     fn refresh_waterfall_slots(&mut self) {
         let mut totals: Vec<(i32, usize)> = Vec::new();
         for ws in self.windows.values_mut() {
@@ -258,12 +258,13 @@ impl App {
                 .map(|(id, _)| *id)
                 .collect();
             for id in dirty {
-                let Some(stft) = ws.rolls.get_mut(&id).and_then(|r| r.take_stft()) else {
+                let Some(roll) = ws.rolls.get_mut(&id) else {
                     continue;
                 };
-                totals.push((id, stft.total_samples()));
-                if let Some(slot) = frame::spectrogram_slot(vec![stft], &ws.gpu, &ws.renderers) {
-                    ws.spectrograms.insert(id, slot);
+                if let Some(total) =
+                    frame::roll_into_slot(&mut ws.spectrograms, id, roll, &ws.gpu, &ws.renderers)
+                {
+                    totals.push((id, total));
                 }
             }
         }

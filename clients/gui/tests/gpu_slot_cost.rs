@@ -13,6 +13,10 @@
 //!    widget compiled a shader module and two pipelines, and a spectrogram did
 //!    the same *per channel*. This counts the objects a composition allocates,
 //!    which is the number E6/E7 multiply by the element count.
+//! 3. **What does a retained waterfall upload per tick?** After E18, the new
+//!    columns; before it, the whole magnitude image. Counted below, because the
+//!    difference is not that one is cheaper at a given span but that one
+//!    follows the *hop* and the other the *span*.
 //!
 //! Run with `cargo test --release --test gpu_slot_cost -- --nocapture`. The
 //! timings need `--release` to mean anything; the counts do not.
@@ -181,4 +185,60 @@ fn pipelines_belong_to_the_window_not_to_the_element() {
             "the unshared shape grows with the {elements} elements"
         );
     }
+}
+
+/// A retained waterfall's per-tick upload, counted rather than timed: the
+/// texture is `R8Unorm`, one byte a texel, so the bytes are the texels.
+///
+/// This is E18's before/after. The "before" is what a tick cost until the ring
+/// existed — a fresh `Stft`, a fresh texture, and a write of every column in
+/// the span — and the "after" is the columns that actually landed, written
+/// twice because the ring is stored twice so its window never wraps. Kept as an
+/// executable statement of the invariant, so a change that goes back to
+/// rebuilding the picture per tick fails here.
+#[test]
+fn a_waterfall_uploads_the_hop_not_the_span() {
+    /// Bytes written for `landed` new columns of a `span`-column waterfall.
+    fn upload_bytes(span: usize, bins: usize, landed: usize, ring: bool) -> usize {
+        if ring {
+            // Two texels per bin per landing column, and no allocation.
+            landed * bins * 2
+        } else {
+            // The whole image, plus a texture allocated to write it into.
+            span * bins
+        }
+    }
+
+    // The milestone's own numbers: an eight-second span at hop 512 and
+    // fft_size 1024, 48 kHz, ticking at 30 fps — so a tick lands two or three
+    // columns.
+    let (bins, landed) = (512, 3);
+    let span_8s = (8.0 * 48_000.0 / 512.0f64).ceil() as usize;
+    assert_eq!(span_8s, 750);
+    let before = upload_bytes(span_8s, bins, landed, false);
+    let after = upload_bytes(span_8s, bins, landed, true);
+    println!("\n8 s at hop 512, {bins} bins, {landed} columns landing");
+    println!(
+        "  before E18: {before} bytes a tick (~{:.1} MB/s at 30 fps)",
+        before as f64 * 30.0 / 1e6
+    );
+    println!("  after  E18: {after} bytes a tick");
+    assert_eq!(before, 384_000);
+    assert_eq!(after, 3_072);
+
+    // The property is the shape, not the ratio: eight times the retention is
+    // eight times the old cost and exactly the same new one.
+    let span_64s = span_8s * 8;
+    assert_eq!(
+        upload_bytes(span_64s, bins, landed, false),
+        before * 8,
+        "the old upload follows the span"
+    );
+    assert_eq!(
+        upload_bytes(span_64s, bins, landed, true),
+        after,
+        "the ring's upload must not follow the span"
+    );
+    // ...and it does follow the hop: half the hop is twice the columns.
+    assert_eq!(upload_bytes(span_8s, bins, landed * 2, true), after * 2);
 }

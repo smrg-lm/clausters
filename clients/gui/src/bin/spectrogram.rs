@@ -7,8 +7,6 @@
 //! colormap; `R` resets time, `Esc` quits. Needs a display and a
 //! Vulkan/Metal/DX12/GL adapter.
 
-use std::sync::Arc;
-
 use clausters_gui::demo;
 use clausters_gui::native;
 use clausters_gui::spectrogram::{SpectrogramView, Stft};
@@ -21,12 +19,7 @@ fn main() {
     let samples = demo::sweep(SIGNAL_LEN);
     // The STFT is the one-time analysis (the cache); compute it before opening
     // the window so the factory just uploads it as a texture.
-    let stft = Arc::new(Stft::compute(
-        &samples,
-        WINDOW,
-        HOP,
-        demo::SAMPLE_RATE as f32,
-    ));
+    let stft = Stft::compute(&samples, WINDOW, HOP, demo::SAMPLE_RATE as f32);
     native::run(
         "Clausters - spectrogram (wheel: time, Shift+wheel: freq, L: lin/log, [ ]: dB, /: color)",
         Box::new(move |device, queue, renderers| {

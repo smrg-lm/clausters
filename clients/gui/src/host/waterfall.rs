@@ -12,19 +12,25 @@
 //! bus may analyze it differently (a different `fft_size`, a different `hop`) —
 //! the history they read is shared, the transform of it is not.
 //!
-//! What this module deliberately does *not* do is own a texture. It hands back
-//! an ordinary [`Stft`], the same type the stored path produces, so the
-//! renderer, the frequency ruler and the cursor readout stay one implementation
-//! and a retained waterfall is a spectrogram in every respect but where its
-//! samples came from.
+//! What this module deliberately does *not* do is own the picture. It analyzes,
+//! and hands the columns that landed to whoever holds the transform — the GPU
+//! view, whose [`Stft`] is the *same type* the stored path produces (a ring
+//! rather than a whole analysis, which the renderer, the frequency ruler and
+//! the cursor readout never have to know). A retained waterfall stays a
+//! spectrogram in every respect but where its samples came from.
+//!
+//! [`Stft`]: crate::spectrogram::Stft
 
-use crate::spectrogram::{MAX_FRAMES, Stft, analysis_window, column_into};
+use crate::spectrogram::{MAX_ROLLING_FRAMES, analysis_window, column_into};
 
 /// One retaining time-frequency view's rolling transform.
 #[derive(Clone, Debug)]
 pub(crate) struct Waterfall {
-    /// Frame-major magnitudes, oldest column first.
-    mags: Vec<f32>,
+    /// The columns analyzed since the renderer last took them, frame-major.
+    /// Retention is *not* kept here: the ring the picture rolls through belongs
+    /// to the transform the GPU view owns, so a column is analyzed once, handed
+    /// over once, and written into one texel.
+    pending: Vec<f32>,
     n_bins: usize,
     window_size: usize,
     hop: usize,
@@ -34,9 +40,12 @@ pub(crate) struct Waterfall {
     /// the history's start, so a column covers the same samples however much
     /// history happens to be retained around it.
     next: Option<u64>,
-    /// How many columns the span asks for.
+    /// How many columns the retained span asks for — carried here because this
+    /// is where the span is read off the tree, and handed to the view, which
+    /// sizes its ring by it.
     capacity: usize,
-    /// Whether a column landed since the last time the renderer asked.
+    /// Whether the picture moved since the last time the renderer asked: a
+    /// column landed, or the span changed under it.
     dirty: bool,
     /// The analysis window and its gain, plus the per-column scratch — held so
     /// a landing column allocates nothing.
@@ -51,13 +60,13 @@ impl Waterfall {
     pub fn new(window_size: usize, hop: usize, sample_rate: f32, capacity: usize) -> Waterfall {
         let (hann, gain) = analysis_window(window_size);
         Waterfall {
-            mags: Vec::new(),
+            pending: Vec::new(),
             n_bins: window_size / 2,
             window_size,
             hop: hop.max(1),
             sample_rate,
             next: None,
-            capacity: capacity.max(1),
+            capacity: capacity.clamp(1, MAX_ROLLING_FRAMES),
             dirty: false,
             hann,
             gain,
@@ -73,15 +82,25 @@ impl Waterfall {
         self.window_size == window_size && self.hop == hop.max(1) && self.sample_rate == sample_rate
     }
 
-    /// Resizes the retained span in columns, dropping the oldest when it
-    /// shrinks (a live `/gui_set retention`).
+    /// Sets the retained span in columns (a live `/gui_set retention`), marking
+    /// the picture moved so the view resizes its ring on the next pass.
     pub fn set_capacity(&mut self, capacity: usize) {
-        let capacity = capacity.clamp(1, MAX_FRAMES);
+        let capacity = capacity.clamp(1, MAX_ROLLING_FRAMES);
         if capacity != self.capacity {
             self.capacity = capacity;
-            self.trim();
             self.dirty = true;
         }
+    }
+
+    /// The retained span in columns, as the view should size its ring.
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    /// The analysis geometry a view is built against: window size, hop and
+    /// sample rate.
+    pub fn geometry(&self) -> (usize, usize, f32) {
+        (self.window_size, self.hop, self.sample_rate)
     }
 
     /// Analyzes every whole window that `history` now holds and this view has
@@ -120,41 +139,31 @@ impl Waterfall {
     /// stored transform uses — so a retained waterfall and an offline
     /// spectrogram of the same audio are the same picture.
     fn push(&mut self, frame: &[f32]) {
-        let at = self.mags.len();
-        self.mags.resize(at + self.n_bins, 0.0);
+        let at = self.pending.len();
+        self.pending.resize(at + self.n_bins, 0.0);
         column_into(
             frame,
             &self.hann,
             self.gain,
             &mut self.windowed,
             &mut self.spectrum,
-            &mut self.mags[at..],
+            &mut self.pending[at..],
         );
-        self.trim();
-    }
-
-    fn trim(&mut self) {
+        // A tick that fell far behind (a stalled window, a resumed stream) can
+        // land more columns than the span retains; only the newest ones would
+        // survive the ring, so the older ones never reach the GPU at all.
         let max = self.capacity * self.n_bins;
-        if self.mags.len() > max {
-            let excess = self.mags.len() - max;
-            self.mags.drain(..excess);
+        if self.pending.len() > max {
+            let excess = self.pending.len() - max;
+            self.pending.drain(..excess);
         }
     }
 
-    /// The retained columns as the transform the renderer uploads, or `None`
-    /// before the first column landed. Clears the dirty flag.
-    pub fn take_stft(&mut self) -> Option<Stft> {
-        if self.mags.is_empty() {
-            return None;
-        }
+    /// The columns analyzed since the last call, frame-major and oldest first,
+    /// for the view to push into its ring. Clears the dirty flag.
+    pub fn take_pending(&mut self) -> Vec<f32> {
         self.dirty = false;
-        Some(Stft::from_columns(
-            self.mags.clone(),
-            self.n_bins,
-            self.hop,
-            self.window_size,
-            self.sample_rate,
-        ))
+        std::mem::take(&mut self.pending)
     }
 
     /// Whether a column landed (or the span moved) since the renderer last
@@ -164,11 +173,11 @@ impl Waterfall {
         self.dirty
     }
 
-    /// How many columns are retained. A test accessor: what the renderer
-    /// wants is the transform, which carries its own frame count.
+    /// How many columns are waiting for the renderer. A test accessor: what the
+    /// renderer wants is the columns themselves.
     #[cfg(test)]
-    pub fn columns(&self) -> usize {
-        self.mags.len().checked_div(self.n_bins).unwrap_or(0)
+    pub fn pending_columns(&self) -> usize {
+        self.pending.len().checked_div(self.n_bins).unwrap_or(0)
     }
 }
 
@@ -192,10 +201,10 @@ mod tests {
         let landed = w.advance(&history, n as u64);
         // Windows at 0, hop, 2*hop, ... while a whole one still fits.
         assert_eq!(landed, 1 + (n - ws) / hop);
-        assert_eq!(w.columns(), landed);
-        let stft = w.take_stft().unwrap();
-        let bins = stft.n_bins();
-        let col = &stft.magnitudes()[..bins];
+        assert_eq!(w.pending_columns(), landed);
+        let cols = w.take_pending();
+        let bins = w.n_bins;
+        let col = &cols[..bins];
         let peak = col
             .iter()
             .enumerate()
@@ -204,7 +213,7 @@ mod tests {
             .0;
         assert_eq!(peak, 16, "the tone's bin");
         // ...and it is the same column the stored transform computes.
-        let stored = Stft::compute(&history, ws, hop, sr);
+        let stored = crate::spectrogram::Stft::compute(&history, ws, hop, sr);
         assert_eq!(&stored.magnitudes()[..bins], col);
     }
 
@@ -222,19 +231,22 @@ mod tests {
         // Sixty-four more samples: two more hops fit.
         let b: Vec<f32> = (0..192).map(|i| i as f32 * 0.001).collect();
         assert_eq!(w.advance(&b, 192), 2);
-        assert_eq!(w.columns(), first + 2);
+        assert_eq!(w.pending_columns(), first + 2);
     }
 
-    /// The span is a cap: the oldest columns fall off, and narrowing it live
-    /// takes effect at once rather than when the roll next fills.
+    /// The span caps what a single tick hands over: a backlog longer than the
+    /// retained span drops the columns the ring would have discarded anyway,
+    /// rather than uploading them to be overwritten. Narrowing it live marks
+    /// the picture moved, so the view resizes its ring on the next pass.
     #[test]
-    fn the_span_caps_the_columns_and_narrows_live() {
+    fn the_span_caps_what_a_tick_hands_over() {
         let mut w = Waterfall::new(64, 32, 48_000.0, 4);
         let s: Vec<f32> = (0..1024).map(|i| i as f32 * 0.001).collect();
         w.advance(&s, 1024);
-        assert_eq!(w.columns(), 4, "the oldest fall off");
+        assert_eq!(w.pending_columns(), 4, "the oldest are not handed over");
+        w.take_pending();
         w.set_capacity(2);
-        assert_eq!(w.columns(), 2);
+        assert_eq!(w.capacity(), 2);
         assert!(w.is_dirty());
     }
 
@@ -244,7 +256,7 @@ mod tests {
     fn a_history_shorter_than_a_window_lands_nothing() {
         let mut w = Waterfall::new(256, 128, 48_000.0, 10);
         assert_eq!(w.advance(&[0.0; 100], 100), 0);
-        assert_eq!(w.columns(), 0);
-        assert!(w.take_stft().is_none());
+        assert_eq!(w.pending_columns(), 0);
+        assert!(!w.is_dirty());
     }
 }

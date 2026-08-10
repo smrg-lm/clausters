@@ -758,11 +758,11 @@ fn web_proxy() -> Option<EventLoopProxy<HostEvent>> {
     WEB_PROXY.with(|p| p.borrow().clone())
 }
 
-/// Uploads the transform of every waterfall on this canvas whose roll moved
-/// this tick — and only those, so a still picture costs no texture. The
-/// browser twin of the desktop front's own pass, kept beside the tick that
-/// advances the rolls rather than inside the render, since a texture upload
-/// is not a drawing decision.
+/// Pushes the columns every waterfall on this canvas analyzed this tick into
+/// its ring — and only the rolls that moved, so a still picture costs no
+/// upload. The browser twin of the desktop front's own pass, kept beside the
+/// tick that advances the rolls rather than inside the render, since a texture
+/// upload is not a drawing decision.
 fn refresh_waterfall_slots(slot: &mut CanvasSlot) -> Vec<(i32, usize)> {
     let mut totals = Vec::new();
     let Some(render) = slot.render.as_mut() else {
@@ -775,14 +775,17 @@ fn refresh_waterfall_slots(slot: &mut CanvasSlot) -> Vec<(i32, usize)> {
         .map(|(id, _)| *id)
         .collect();
     for id in dirty {
-        let Some(stft) = slot.rolls.get_mut(&id).and_then(|r| r.take_stft()) else {
+        let Some(roll) = slot.rolls.get_mut(&id) else {
             continue;
         };
-        totals.push((id, stft.total_samples()));
-        if let Some(built) =
-            crate::host::frame::spectrogram_slot(vec![stft], &render.gpu, &render.renderers)
-        {
-            render.spectrograms.insert(id, built);
+        if let Some(total) = crate::host::frame::roll_into_slot(
+            &mut render.spectrograms,
+            id,
+            roll,
+            &render.gpu,
+            &render.renderers,
+        ) {
+            totals.push((id, total));
         }
     }
     totals

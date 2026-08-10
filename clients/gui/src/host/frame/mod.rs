@@ -102,16 +102,67 @@ pub(crate) fn spectrogram_slot(
     }
     let views = stfts
         .into_iter()
-        .map(|stft| {
-            SpectrogramView::new(
-                &gpu.device,
-                &gpu.queue,
-                &renderers.spectrogram,
-                Arc::new(stft),
-            )
-        })
+        .map(|stft| SpectrogramView::new(&gpu.device, &gpu.queue, &renderers.spectrogram, stft))
         .collect();
     Some(SpectrogramSlot { views })
+}
+
+/// Feeds a **retained** time-frequency view the columns its rolling analysis
+/// just produced, creating the slot the first time and following a live change
+/// of the retained span. Returns the view's length in samples when the picture
+/// moved, for the axis that has to know how long it is.
+///
+/// The upload is **the new columns only**. The texture is allocated once for
+/// the whole span and a landing column costs one texel write, so the cost
+/// follows the *hop* — where rebuilding the transform each tick made it follow
+/// the *span*, and a minute of retention cost eight times an eight-second one
+/// to show the same two new columns.
+///
+/// Both fronts call it, which is what keeps a browser waterfall and a desktop
+/// one the same picture built the same way.
+pub(crate) fn roll_into_slot(
+    slots: &mut HashMap<i32, SpectrogramSlot>,
+    id: i32,
+    roll: &mut super::waterfall::Waterfall,
+    gpu: &Gpu,
+    renderers: &Renderers,
+) -> Option<usize> {
+    let columns = roll.take_pending();
+    let (window_size, hop, sample_rate) = roll.geometry();
+    // A `/gui_set` of the analysis restarts the roll upstream, so a slot whose
+    // ring was built against the old geometry is not the same picture and is
+    // rebuilt rather than pushed into.
+    let stale = slots.get(&id).is_none_or(|slot| {
+        slot.views.first().is_none_or(|v| {
+            let s = v.stft();
+            !s.is_rolling()
+                || (s.window_size(), s.hop(), s.sample_rate()) != (window_size, hop, sample_rate)
+        })
+    });
+    if stale {
+        if columns.is_empty() {
+            return None;
+        }
+        let view = SpectrogramView::rolling(
+            &gpu.device,
+            &gpu.queue,
+            &renderers.spectrogram,
+            roll.capacity(),
+            window_size,
+            hop,
+            sample_rate,
+        );
+        slots.insert(id, SpectrogramSlot { views: vec![view] });
+    }
+    let view = slots.get_mut(&id)?.views.first_mut()?;
+    view.set_retention(
+        &gpu.device,
+        &gpu.queue,
+        &renderers.spectrogram,
+        roll.capacity(),
+    );
+    view.push_columns(&gpu.queue, &columns);
+    (view.stft().n_frames() > 0).then(|| view.total_samples())
 }
 
 /// One STFT per channel for a spectrogram lane set: de-interleaved `channels`,
