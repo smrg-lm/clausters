@@ -765,3 +765,40 @@ pub(super) fn draw_static_meshes(
         );
     }
 }
+
+/// The **overlays**: what an element draws outside its own rect, into the
+/// overlay mesh after everything else in it.
+///
+/// Last on purpose, and in a walk of its own rather than in the collect pass:
+/// an overlay covers whatever it opened over — the widgets in the base mesh,
+/// the heavy views the GPU pass paints between the two meshes, and the editor
+/// chrome already in this one. Which elements have one is declared
+/// ([`Element::overlay_rect`](super::super::widget::Element::overlay_rect)), so
+/// this asks the tree instead of being told.
+pub(super) fn draw_element_overlays(
+    over: &mut Mesh,
+    placed: &[layout::Placed],
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    let m = inputs.metrics;
+    for p in placed {
+        let WidgetKind::Custom(el) = &p.widget.kind else {
+            continue;
+        };
+        if el.overlay_rect().is_none() {
+            continue;
+        }
+        over.set_clip(None);
+        let th = p.widget.theme.as_deref().unwrap_or(theme);
+        el.overlay(
+            &mut Draw::new(over, m, th),
+            &Ctx {
+                world: &inputs.world,
+                metrics: m,
+                rect: p.rect,
+                scale: p.scale,
+            },
+        );
+    }
+}

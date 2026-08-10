@@ -158,16 +158,147 @@ pub enum SlotFrame {
     },
 }
 
+/// Where an element is and what the pointer is doing to it — the context of a
+/// **gesture**, as [`Ctx`] is the context of a draw.
+///
+/// It carries no [`World`], and that is a boundary rather than an omission: a
+/// gesture *mutates* the host tree, while the world borrows out of it (the
+/// timeline groups, the queried node trees), so nothing can hold both at once.
+/// An element reads the outside when it draws, and moves itself when it is
+/// dragged.
+pub struct Input<'a> {
+    /// The size roles of this placement, resolved at its scale — the same table
+    /// the renderer drew the element with, so a grab lands on the groove that
+    /// was painted.
+    pub metrics: &'a Metrics,
+    /// The rect the element was placed in when the press landed.
+    pub rect: Rect,
+    /// The placement's zoom (see [`Ctx::scale`]).
+    pub scale: f32,
+    /// The modifier keys held for this event.
+    pub mods: Mods,
+    /// The window in device pixels — what a popup that must stay on screen
+    /// clamps itself against.
+    pub viewport: (f32, f32),
+}
+
+/// The modifier keys a gesture was made with.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Mods {
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+}
+
+/// The `/gui_event` messages an element asks to be sent for it: each entry is
+/// **one message's arguments**, expressed in the owner's terms.
+///
+/// A control reports one value ([`Events::value`]) and an edit-back reports a
+/// payload. It is a list of messages rather than one because of the case that
+/// is neither: a patcher's release reports one `"move"` per box it moved.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Events(Vec<Vec<OscType>>);
+
+impl Events {
+    /// Nothing to report — the default.
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// The widget's value, the one-argument case every control uses.
+    pub fn value(v: OscType) -> Self {
+        Self(vec![vec![v]])
+    }
+
+    /// One message, its arguments in the owner's terms.
+    pub fn message(args: Vec<OscType>) -> Self {
+        Self(vec![args])
+    }
+
+    /// Appends another message.
+    pub fn and(mut self, args: Vec<OscType>) -> Self {
+        self.0.push(args);
+        self
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The messages, for the gesture machine that delivers them.
+    pub(crate) fn into_messages(self) -> Vec<Vec<OscType>> {
+        self.0
+    }
+}
+
 /// What an element did with a press it was offered.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Claim {
     /// Not this element's: hand the press back to the chain, exactly as a
     /// lane's empty space or a patcher's bare canvas does.
     Decline,
-    /// Consumed. `value`, when present, is emitted on `/gui_event` as the
-    /// widget's value — the same payload a built-in control delivers — and the
-    /// window is redrawn either way.
-    Take { value: Option<OscType> },
+    /// Consumed. The window is redrawn, whatever else the claim asks for, and
+    /// the press is **held**: motion reaches [`Element::drag`] and the button
+    /// coming up reaches [`Element::release`], however long that takes.
+    Take(Take),
+}
+
+/// A taken press: what to report for it, and the one thing the element cannot
+/// do for itself.
+///
+/// It is deliberately not a taxonomy of drags. The *kind* of drag — absolute
+/// (a position in a rect becomes a fraction), incremental (a delta re-anchored
+/// each step) or snapshotted (a press-time origin plus an axis) — is the
+/// element's own business, because the element holds the state. What is left is
+/// what only the front and the machine can do.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Take {
+    /// What to report on `/gui_event` for the press itself.
+    pub events: Events,
+    /// Ask the front for a **pointer grab**: the cursor stays put and motion
+    /// arrives as relative deltas ([`Element::drag_relative`]) instead of
+    /// positions. What a knob wants, so a turn is not bounded by the screen.
+    /// The front answers — a page has no pointer lock — and the machine routes
+    /// whichever way it answered.
+    ///
+    /// It is the only thing here because it is the only thing left: the *kind*
+    /// of drag is the element's, and the other job the machine alone can do —
+    /// ticking a drag held past a scrolling container's edge — belongs today to
+    /// a `clip`, which is a container and keeps its own drag. The flag for it
+    /// lands with the first **element** that runs off an edge, which is also
+    /// what will settle how the axis under it is panned.
+    pub grab: bool,
+}
+
+impl Claim {
+    /// Consumed, with nothing to report.
+    pub fn take() -> Self {
+        Claim::Take(Take::default())
+    }
+
+    /// Consumed, reporting the widget's value.
+    pub fn value(v: OscType) -> Self {
+        Claim::Take(Take {
+            events: Events::value(v),
+            ..Take::default()
+        })
+    }
+
+    /// Consumed, reporting these events.
+    pub fn events(events: Events) -> Self {
+        Claim::Take(Take {
+            events,
+            ..Take::default()
+        })
+    }
+
+    /// ...and grab the pointer for the drag this press opens.
+    pub fn grabbing(self) -> Self {
+        match self {
+            Claim::Take(t) => Claim::Take(Take { grab: true, ..t }),
+            decline => decline,
+        }
+    }
 }
 
 /// A leaf the renderer draws without knowing what it is.
@@ -235,11 +366,71 @@ pub trait Element: fmt::Debug {
         false
     }
 
-    /// The press landed on this element at `at`, in the window's pixels, inside
-    /// `rect`. Declining hands it back to the chain.
-    fn press(&mut self, _at: (f64, f64), _rect: Rect) -> Claim {
+    /// The press landed on this element at `at`, in the window's pixels.
+    /// Declining hands it back to the chain.
+    ///
+    /// **Which part of itself was hit is the element's own business**, here,
+    /// where it has both the point and its own geometry — a caret, a
+    /// break-point, a patcher's port. The host's hit-test answers *which
+    /// widget*, which is rect containment over the placements and is generic;
+    /// putting a part on this trait would make the host route by a type it
+    /// cannot interpret.
+    ///
+    /// A [`Claim::Take`] **holds the press**: everything that follows is this
+    /// element's until the button comes up.
+    fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
         Claim::Decline
     }
+
+    /// The cursor moved while this element held the press. It mutates *itself*
+    /// — the drag's state is the element's, because the element is the only
+    /// thing that knows what its drag means — and reports what changed.
+    fn drag(&mut self, _at: (f64, f64), _input: &Input) -> Events {
+        Events::none()
+    }
+
+    /// The same, for a drag the front **grabbed the pointer** for
+    /// ([`Take::grab`]): the cursor stays put, so motion arrives as a delta
+    /// rather than as a position. An element that asked for the grab must
+    /// implement this one; an element that did not never sees it.
+    fn drag_relative(&mut self, _delta: (f64, f64), _input: &Input) -> Events {
+        Events::none()
+    }
+
+    /// The button came up. What the drag *delivers* — the edit-back an owner
+    /// applies, a momentary control's zero — as against what it showed along
+    /// the way.
+    fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
+        Events::none()
+    }
+
+    /// The wheel turned over this element: `delta` in the front's scroll units,
+    /// `None` to let it fall through to whatever is behind. Only reached when
+    /// [`is_bare_surface`](Element::is_bare_surface) is false — a bare surface
+    /// never sees the wheel, because its pixels belong to the axis under them.
+    fn wheel(&mut self, _at: (f64, f64), _delta: (f64, f64), _input: &Input) -> Option<Events> {
+        None
+    }
+
+    /// The area this element occupies **outside its own rect**, in window
+    /// pixels — an open list, a popup — or `None` (the default) for an element
+    /// that stays inside its placement.
+    ///
+    /// Declaring it is what makes an overlay work, and it is declared rather
+    /// than flagged because two different passes need the same answer: the
+    /// frame draws [`overlay`](Element::overlay) over everything else, and the
+    /// press routes to this element **first**, before the tree, however the
+    /// layout places what happens to be under the point. An element with an
+    /// overlay open swallows the press either way — on its own area it acts,
+    /// anywhere else it closes — which is what a menu everywhere else does.
+    fn overlay_rect(&self) -> Option<Rect> {
+        None
+    }
+
+    /// Draws the [`overlay_rect`](Element::overlay_rect) area, into the
+    /// window's **overlay** mesh — the second pass, over the heavy views and
+    /// over every other widget. A list that opens covers what it opens over.
+    fn overlay(&self, _d: &mut Draw, _ctx: &Ctx) {}
 
     /// Clones this element into a fresh box (the tree is `Clone`).
     fn clone_box(&self) -> Box<dyn Element>;
@@ -351,11 +542,9 @@ mod tests {
             }
         }
 
-        fn press(&mut self, _at: (f64, f64), _rect: Rect) -> Claim {
+        fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
             self.count += 1;
-            Claim::Take {
-                value: Some(OscType::Int(self.count)),
-            }
+            Claim::value(OscType::Int(self.count))
         }
 
         fn clone_box(&self) -> Box<dyn Element> {

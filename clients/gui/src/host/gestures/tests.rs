@@ -2092,10 +2092,20 @@ fn a_scripted_window_finer_than_the_analysis_is_opened_too() {
 
 /// Two of the smallest possible elements: one that takes every press and
 /// reports how many it has taken, one that never takes any.
+/// A registered element that exercises the **whole** gesture sequence: it
+/// takes a press (optionally asking for the pointer grab), follows the cursor
+/// while it is held — absolutely, or by accumulating deltas when the grab was
+/// granted — and reports the total on release. Which of those a real leaf does
+/// is its own business; what the machine promises is that all four arrive.
 #[derive(Debug, Clone)]
 struct TestPad {
     taken: i32,
     claims: bool,
+    grabs: bool,
+    /// Where the cursor last was, or how far it has moved under a grab.
+    moved: (f64, f64),
+    /// How many `drag`/`drag_relative` steps arrived.
+    steps: i32,
 }
 
 impl crate::Element for TestPad {
@@ -2109,14 +2119,49 @@ impl crate::Element for TestPad {
         Some(OscType::Int(self.taken))
     }
 
-    fn press(&mut self, _at: (f64, f64), _rect: crate::host::layout::Rect) -> crate::Claim {
+    fn press(
+        &mut self,
+        _at: (f64, f64),
+        _input: &crate::host::widget::element::Input,
+    ) -> crate::Claim {
         if !self.claims {
             return crate::Claim::Decline;
         }
         self.taken += 1;
-        crate::Claim::Take {
-            value: Some(OscType::Int(self.taken)),
-        }
+        let claim = crate::Claim::value(OscType::Int(self.taken));
+        if self.grabs { claim.grabbing() } else { claim }
+    }
+
+    fn drag(
+        &mut self,
+        at: (f64, f64),
+        _input: &crate::host::widget::element::Input,
+    ) -> crate::host::widget::element::Events {
+        self.moved = at;
+        self.steps += 1;
+        crate::host::widget::element::Events::none()
+    }
+
+    fn drag_relative(
+        &mut self,
+        delta: (f64, f64),
+        _input: &crate::host::widget::element::Input,
+    ) -> crate::host::widget::element::Events {
+        self.moved = (self.moved.0 + delta.0, self.moved.1 + delta.1);
+        self.steps += 1;
+        crate::host::widget::element::Events::none()
+    }
+
+    fn release(
+        &mut self,
+        _at: (f64, f64),
+        _input: &crate::host::widget::element::Input,
+    ) -> crate::host::widget::element::Events {
+        crate::host::widget::element::Events::message(vec![
+            OscType::String("pad".into()),
+            OscType::Int(self.steps),
+            OscType::Float(self.moved.1 as f32),
+        ])
     }
 
     fn clone_box(&self) -> Box<dyn crate::Element> {
@@ -2134,7 +2179,27 @@ fn pad(
             .get("claims")
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
+        grabs: props
+            .get("grabs")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        moved: (0.0, 0.0),
+        steps: 0,
     }))
+}
+
+/// Every `/gui_event` a gesture asked for on `id`, in order — a list of
+/// messages, since a release may report several.
+fn emitted(effects: &[GestureEffect], id: i32) -> Vec<Vec<OscType>> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            GestureEffect::Emit {
+                widget_id, args, ..
+            } if *widget_id == id => Some(args.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn pad_taken(host: &Host, id: i32) -> i32 {
@@ -2174,6 +2239,91 @@ fn a_registered_element_takes_the_press_and_its_value_leaves() {
         )),
         "and its claim left as a value: {effects:?}"
     );
+    crate::unregister("test_pad");
+}
+
+/// The press is **held**: a claim opens a drag that carries no geometry, so
+/// every motion and the release land on the element that took it. What it
+/// reports on release travels as an edit-back payload (a tagged list), not as a
+/// value — the element says which by how many arguments it sends.
+#[test]
+fn a_claim_holds_the_press_through_the_drag_and_the_release() {
+    crate::register("test_pad", pad);
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":5,"type":"test_pad"}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    g.press(&mut host, &ctx, 300.0, 200.0, &mut || false);
+    assert!(g.dragging(), "a taken press is held");
+    assert!(!g.locked(), "and ungrabbed unless the element asked");
+    g.drag_to(&mut host, &ctx, 300.0, 260.0);
+    g.drag_to(&mut host, &ctx, 300.0, 290.0);
+    let effects = g.release(&mut host, &ctx, 300.0, 290.0);
+    assert!(!g.dragging(), "the release ends it");
+    assert_eq!(
+        emitted(&effects, 5),
+        vec![vec![
+            OscType::String("pad".into()),
+            OscType::Int(2),
+            OscType::Float(290.0)
+        ]],
+        "two drag steps, at the last cursor: {effects:?}"
+    );
+    crate::unregister("test_pad");
+}
+
+/// An element that asks for the **pointer grab** gets what the front granted,
+/// not what it wanted: the machine routes relative motion only when the grab
+/// actually happened, and gives the grab back on release.
+#[test]
+fn a_grabbed_drag_is_driven_by_relative_motion_and_released() {
+    crate::register("test_pad", pad);
+    let doc = r#"{"type":"window","margin":0,"children":[
+            {"id":5,"type":"test_pad","grabs":true}]}"#;
+
+    // The front granted it: cursor positions are not the gesture, deltas are.
+    let mut host = host_from(doc);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    g.press(&mut host, &ctx, 300.0, 200.0, &mut || true);
+    assert!(g.locked());
+    g.drag_to(&mut host, &ctx, 300.0, 999.0); // ignored while locked
+    g.relative_motion(&mut host, &ctx, 7.0);
+    g.relative_motion(&mut host, &ctx, 5.0);
+    let effects = g.release(&mut host, &ctx, 300.0, 200.0);
+    assert_eq!(
+        emitted(&effects, 5),
+        vec![vec![
+            OscType::String("pad".into()),
+            OscType::Int(2),
+            OscType::Float(12.0)
+        ]],
+        "the deltas accumulated, the positions did not: {effects:?}"
+    );
+    assert!(
+        effects.contains(&GestureEffect::ReleasePointer(1)),
+        "the grab goes back: {effects:?}"
+    );
+
+    // The front refused (a page has no pointer lock): the same element is
+    // driven by positions instead, and nothing is released.
+    let mut host = host_from(doc);
+    let mut g = Gestures::default();
+    g.press(&mut host, &ctx, 300.0, 200.0, &mut || false);
+    assert!(!g.locked());
+    g.drag_to(&mut host, &ctx, 300.0, 260.0);
+    let effects = g.release(&mut host, &ctx, 300.0, 260.0);
+    assert_eq!(
+        emitted(&effects, 5),
+        vec![vec![
+            OscType::String("pad".into()),
+            OscType::Int(1),
+            OscType::Float(260.0)
+        ]]
+    );
+    assert!(!effects.contains(&GestureEffect::ReleasePointer(1)));
     crate::unregister("test_pad");
 }
 

@@ -18,7 +18,7 @@ use super::super::widget::{Axis, WidgetKind};
 use super::super::{Host, bpf, controls, piano, pianoroll};
 use super::effects::*;
 use super::nav::*;
-use super::{Drag, GestureCtx, GestureEffect, Gestures};
+use super::{Drag, GestureCtx, GestureEffect, Gestures, element};
 use crate::viewport::View;
 
 impl Gestures {
@@ -112,6 +112,20 @@ impl Gestures {
             // knob drag is driven by relative motion (`relative_motion`), not by
             // these cursor positions.
             Drag::Button { .. } | Drag::Wire { .. } => {}
+            // A grabbed element is driven by `relative_motion` for the same
+            // reason: the cursor is not travelling, so these positions are not
+            // the gesture.
+            Drag::Element { grab: true, .. } => {}
+            Drag::Element {
+                id, rect, scale, ..
+            } => {
+                let events = element::with(host, ctx, id, rect, scale, |el, input| {
+                    el.drag((cx, cy), input)
+                });
+                if let Some(events) = events {
+                    element::report(host, &mut out, ctx, id, events);
+                }
+            }
             Drag::TextSelect {
                 id,
                 rect,
@@ -555,6 +569,25 @@ impl Gestures {
                 out.push(GestureEffect::Redraw(def_id));
             }
             Some(Drag::Vertical { .. }) => out.push(GestureEffect::ReleasePointer(def_id)),
+            Some(Drag::Element {
+                id,
+                rect,
+                scale,
+                grab,
+            }) => {
+                // What the drag *delivers*, as against what it showed along the
+                // way. The grab is the front's to undo, whatever came back.
+                let events = element::with(host, ctx, id, rect, scale, |el, input| {
+                    el.release((cx, cy), input)
+                });
+                if let Some(events) = events {
+                    element::report(host, &mut out, ctx, id, events);
+                }
+                if grab {
+                    out.push(GestureEffect::ReleasePointer(def_id));
+                }
+                out.push(GestureEffect::Redraw(def_id));
+            }
             Some(Drag::PianoKey {
                 id, pitch, channel, ..
             }) => {
@@ -659,6 +692,21 @@ impl Gestures {
         dy: f64,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
+        if let Some(Drag::Element {
+            id,
+            rect,
+            scale,
+            grab: true,
+        }) = self.drag
+        {
+            let events = element::with(host, ctx, id, rect, scale, |el, input| {
+                el.drag_relative((0.0, dy), input)
+            });
+            if let Some(events) = events {
+                element::report(host, &mut out, ctx, id, events);
+            }
+            return out;
+        }
         let Some(Drag::Vertical {
             id,
             body_h,

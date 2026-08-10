@@ -21,7 +21,7 @@ use super::super::widget::{Claim, GestureStep, WidgetKind};
 use super::super::{Host, bpf, controls, patch, piano, pianoroll};
 use super::effects::*;
 use super::nav::*;
-use super::{Drag, GestureCtx, GestureEffect, Gestures, MenuOpen};
+use super::{Drag, GestureCtx, GestureEffect, Gestures, MenuOpen, element};
 use crate::viewport::View;
 
 impl Gestures {
@@ -59,6 +59,21 @@ impl Gestures {
             if let Some(row) = self.menu_row(host, ctx, open, cx, cy) {
                 interact::set_menu_index(host, ctx.def_id, open.id, row);
                 emit_value(host, &mut out, ctx.def_id, open.id);
+            }
+            return out;
+        }
+        // The same rule for an element that **declared** an overlay: whatever
+        // the layout puts under the point, the press is that element's — on its
+        // own area it acts, anywhere else it closes. It is asked for the point
+        // and answers for both cases, since only it knows where its area is.
+        if let Some((id, rect, scale)) = element::overlay_owner(host, ctx) {
+            out.push(GestureEffect::Redraw(ctx.def_id));
+            let claim = element::with(host, ctx, id, rect, scale, |el, input| {
+                el.press((cx, cy), input)
+            })
+            .unwrap_or(Claim::Decline);
+            if let Claim::Take(take) = claim {
+                element::report(host, &mut out, ctx, id, take.events);
             }
             return out;
         }
@@ -680,19 +695,24 @@ impl Gestures {
             // is delivered, so the element's borrow of the tree is over by the
             // time the event leaves.
             WidgetKind::Custom(_) => {
-                let claim = match host.widget_kind_mut(def_id, id) {
-                    Some(WidgetKind::Custom(el)) => el.press((cx, cy), rect),
-                    _ => Claim::Decline,
+                let claim = element::with(host, ctx, id, rect, scale, |el, input| {
+                    el.press((cx, cy), input)
+                })
+                .unwrap_or(Claim::Decline);
+                let Claim::Take(take) = claim else {
+                    return false;
                 };
-                match claim {
-                    Claim::Decline => return false,
-                    Claim::Take { value } => {
-                        if let Some(v) = value {
-                            deliver(host, out, def_id, id, v);
-                        }
-                        out.push(GestureEffect::Redraw(def_id));
-                    }
-                }
+                // Held from here: the drag carries no geometry of its own,
+                // because what the drag *means* is the element's.
+                let grab = take.grab && grab();
+                self.drag = Some(Drag::Element {
+                    id,
+                    rect,
+                    scale,
+                    grab,
+                });
+                element::report(host, out, ctx, id, take.events);
+                out.push(GestureEffect::Redraw(def_id));
             }
             _ => {}
         }

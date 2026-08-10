@@ -14,7 +14,7 @@ use super::super::widget::{Axis, WidgetKind};
 use super::super::{Host, piano, scroll};
 use super::effects::*;
 use super::nav::*;
-use super::{GestureCtx, GestureEffect, Gestures};
+use super::{GestureCtx, GestureEffect, Gestures, element};
 
 impl Gestures {
     /// Wheel over a timeline view: zoom the shared time axis anchored at the
@@ -48,7 +48,7 @@ impl Gestures {
             rect,
             kind,
             chain,
-            ..
+            scale: found_scale,
         } = found;
         // The piano navigates its own MIDI range, not a timeline group: wheel
         // over the overview strip zooms the range (anchored at the cursor's
@@ -183,6 +183,19 @@ impl Gestures {
         // press path shares the mechanism and means it differently — Shift+drag
         // pans the axis from anywhere at all, over any element — so the
         // question is asked here and not there.
+        // An element gets its turn first: it draws a picture it owns, so a
+        // wheel over it may be its own — and `None` back means it has none,
+        // which is the swallow this test has always been.
+        if let WidgetKind::Custom(_) = kind {
+            let reported = element::with(host, ctx, id, rect, found_scale, |el, input| {
+                el.wheel((cx, cy), (0.0, steps), input)
+            })
+            .flatten();
+            if let Some(events) = reported {
+                element::report(host, &mut out, ctx, id, events);
+                return out;
+            }
+        }
         if !kind.is_bare_surface() {
             return out;
         }

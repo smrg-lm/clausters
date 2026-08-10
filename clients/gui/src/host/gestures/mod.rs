@@ -120,8 +120,25 @@ impl GestureCtx {
 }
 
 /// An in-progress pointer drag, by what it is driving.
+///
+/// A drag is either a **container's navigation plan** — panning, selecting,
+/// scrolling a coordinate system, which is a property of that system and not of
+/// anything drawn in it — or [`Drag::Element`], which carries no geometry at
+/// all: what the drag *means* lives in the element, where its state belongs,
+/// and what the machine keeps is the sequence and the pointer grab.
 #[derive(Clone)]
 enum Drag {
+    /// An element is holding the press. The machine remembers only what it
+    /// alone can answer for: who has it, where it was placed (the geometry the
+    /// press was measured against cannot change under a drag) and whether the
+    /// front granted a pointer grab, which decides whether motion arrives as a
+    /// position or as a delta.
+    Element {
+        id: i32,
+        rect: Rect,
+        scale: f32,
+        grab: bool,
+    },
     /// A slider: the value follows the cursor within `body` — along x, or along y
     /// when `vertical`.
     Slider { id: i32, body: Rect, vertical: bool },
@@ -473,10 +490,14 @@ impl Gestures {
         }
     }
 
-    /// Whether the active drag is a *locked* knob/number drag — driven by
-    /// relative deltas ([`Self::relative_motion`]), not by cursor positions.
+    /// Whether the active drag is a *locked* one — driven by relative deltas
+    /// ([`Self::relative_motion`]), not by cursor positions. What an element
+    /// asked for and the front granted.
     pub fn locked(&self) -> bool {
-        matches!(self.drag, Some(Drag::Vertical { locked: true, .. }))
+        matches!(
+            self.drag,
+            Some(Drag::Vertical { locked: true, .. } | Drag::Element { grab: true, .. })
+        )
     }
 
     /// Whether a clip drag is currently held against a lane's edge, so the
@@ -510,6 +531,7 @@ impl Gestures {
 
 mod drag;
 mod effects;
+mod element;
 mod keys;
 mod nav;
 mod press;

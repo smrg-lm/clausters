@@ -447,6 +447,7 @@ pub(crate) fn render(
         theme,
     );
     draw_static_meshes(&mut mesh, &mut over, &collected, inputs, theme, tree);
+    draw_element_overlays(&mut over, &placed, inputs, theme);
 
     mesh.set_clip(None);
     over.set_clip(None);
