@@ -85,15 +85,6 @@ pub(super) fn note_at(host: &Host, def_id: i32, id: i32, index: usize) -> Option
     }
 }
 
-/// The diatonic steps a vertical drag of `dy` pixels means on score `id`, whose
-/// page is fitted into `rect`.
-pub(super) fn score_steps(host: &Host, def_id: i32, id: i32, rect: Rect, dy: f64) -> Option<i32> {
-    match host.widget_kind(def_id, id)? {
-        WidgetKind::Score(data) => Some(data.steps_for(rect, dy as f32)),
-        _ => None,
-    }
-}
-
 /// Every timeline (waveform/spectrogram) widget id in the tree.
 pub(super) fn timeline_ids(tree: &Widget) -> Vec<i32> {
     tree.descendants()

@@ -528,37 +528,6 @@ impl Gestures {
                     out.push(GestureEffect::Redraw(def_id));
                 }
             }
-            WidgetKind::Score(ref data) => {
-                // A press names the engraved element under it by its MEI id —
-                // the same id the client engraved from, so a driver resolves it
-                // in its own score. Pressing blank paper clears the selection.
-                let picked = data.hit(rect, cx as f32, cy as f32).map(str::to_string);
-                if interact::score_select(host, def_id, id, picked.as_deref()) {
-                    out.push(GestureEffect::Emit {
-                        def_id,
-                        widget_id: id,
-                        args: interact::score_element_args(picked.as_deref()),
-                    });
-                    out.push(GestureEffect::Redraw(def_id));
-                }
-                // ...and, on an editable score, holding it drags the element's
-                // pitch. A press that does not move stays a plain selection: the
-                // release emits nothing more. A read-only page (the default)
-                // still selects and reports the element above, but a drag does
-                // nothing — the host holds no score, so an edit the client will
-                // not apply is a gesture it cannot fulfil.
-                if data.editable
-                    && let Some(element) = picked
-                {
-                    self.drag = Some(Drag::ScoreStep {
-                        id,
-                        element,
-                        rect,
-                        origin_y: cy,
-                        steps: 0,
-                    });
-                }
-            }
             WidgetKind::PianoRoll { .. } => {
                 let Some((_, axis)) = interact::time_of(chain) else {
                     return false;

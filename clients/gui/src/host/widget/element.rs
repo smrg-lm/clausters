@@ -80,6 +80,15 @@ pub struct Ctx<'a> {
     pub metrics: &'a Metrics,
     /// The rect this element was placed in, in the window's pixels.
     pub rect: Rect,
+    /// The clip rectangle of the container this was placed in — what a scrolled
+    /// widget's drawing is cut to — or `None` outside one.
+    ///
+    /// The frame has already applied it, so an element that draws plainly never
+    /// reads it. It is here for the one that **narrows the clip itself** (a
+    /// score fits a page into its rect and cuts to the fit): the placement is
+    /// data the frame holds, and an element must not have to ask the mesh what
+    /// state it was left in.
+    pub clip: Option<Rect>,
     /// The placement's zoom — 1.0 outside a `plane` workspace. The metrics
     /// already carry it, so it is needed for exactly one thing: the element's
     /// **own** `text_size` prop, which is a number the script sent and no table
@@ -128,6 +137,15 @@ pub struct Needs {
     /// Whether this element must be redrawn every tick even with no data
     /// arriving — a picture driven by the clock rather than by a value.
     pub animated: bool,
+    /// Whether this element reads the **engine sample clock** — a cursor that
+    /// sweeps on its own from an anchor, rather than being told where to go.
+    ///
+    /// It is a need and not a flavour of [`animated`](Self::animated) because
+    /// the two are answered by different machinery: a front with the server's
+    /// shared segment mapped reads the clock for free, while a page has to ask
+    /// for it (`/clock_query` per tick), and neither wants to pay when nothing
+    /// in the window follows a clock.
+    pub clock: bool,
     /// The GPU slot this element claims, for a view that cannot draw into the
     /// shared mesh. `None` — the default — is an element that draws.
     pub slot: Option<SlotKind>,
@@ -673,6 +691,7 @@ mod tests {
                 taps: vec![self.bus + 2],
                 node_groups: vec![self.bus + 3],
                 animated: true,
+                clock: true,
                 slot: None,
             }
         }

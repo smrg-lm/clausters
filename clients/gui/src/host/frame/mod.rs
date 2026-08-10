@@ -52,9 +52,7 @@ use super::timeline::{GroupState, group_key};
 use super::widget::element::{Ctx, SlotFrame, TimeSpace};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
-use super::{
-    font, live, meters, patch, phasescope, piano, pianoroll, plot, score, spectrum, track,
-};
+use super::{font, live, meters, patch, phasescope, piano, pianoroll, plot, spectrum, track};
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
 pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {

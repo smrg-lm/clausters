@@ -88,7 +88,6 @@ pub(super) fn build_kind(
         // Every view of a signal, in one arm because there is one element:
         // the props say which point of the product ([`super::signal::point`]).
         "signal" => build_signal(id, props, blobs)?,
-        "score" => WidgetKind::Score(super::score::ScoreData::parse(props)),
         // Two independent axes, told apart by what is on it: a placement
         // makes it a clip on its parent's x axis, a bare strip of a given
         // thickness with nothing placed and no lane chrome is the

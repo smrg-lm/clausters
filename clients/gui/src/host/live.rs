@@ -17,7 +17,7 @@ use clausters_core::oscil;
 use super::BusSource;
 use super::signal::Presentation;
 use super::timeline::{TimelineGroups, group_key};
-use super::widget::{Widget, WidgetKind};
+use super::widget::Widget;
 
 /// Most recent control-bus samples a `scope` keeps and plots.
 pub(crate) const SCOPE_HISTORY: usize = 512;
@@ -120,14 +120,16 @@ pub(crate) fn tree_has_live_widget(widget: &Widget, groups: &TimelineGroups) -> 
 }
 
 /// Whether `widget` shows a live playhead — so its window must animate, the
-/// line tracking the engine sample clock every frame. A timeline view has no
-/// anchor of its own: it draws its navigation group's, and only the group's
-/// props (its member's are the def-time seed) say whether one is running. A
-/// `score` carries its own and must be asked separately, or its cursor freezes
-/// where it was anchored.
+/// line tracking the engine sample clock every frame.
+///
+/// Two shapes, because a playhead has two owners. An element that carries its
+/// **own** anchor declares it ([`Needs::clock`](super::widget::Needs::clock)) —
+/// a `score`'s sweeping cursor. A timeline view has no anchor of its own: it
+/// draws its navigation *group*'s, and only the group's props (its member's are
+/// the def-time seed) say whether one is running.
 fn has_playhead(widget: &Widget, groups: &TimelineGroups) -> bool {
-    if let WidgetKind::Score(data) = &widget.kind {
-        return data.playhead_at >= 0.0;
+    if widget.kind.needs().clock {
+        return true;
     }
     let Some(editor) = widget.kind.editor() else {
         return false;

@@ -639,26 +639,6 @@ pub(super) fn collect_widgets(
                     },
                 );
             }
-            WidgetKind::Score(data) => {
-                // Notation tessellates straight into the shared triangle mesh:
-                // a paper panel under the engraving, glyphs and fills in ink,
-                // the playback cursor over it in the playhead accent.
-                mesh.rect(p.rect, th.panel);
-                // The cursor sweeps off the engine clock while a pass plays
-                // (`playhead_at`), so playback costs no messages per frame.
-                let head = data.head_ms(inputs.world.sample_clock, inputs.world.sample_rate);
-                data.render(
-                    &mut *mesh,
-                    p.rect,
-                    p.clip,
-                    head,
-                    score::ScoreColors {
-                        ink: th.text,
-                        playhead: th.playhead,
-                        selection: th.selection,
-                    },
-                );
-            }
             // A registered element draws straight into the window's one mesh
             // during this walk, with the placement's theme and size table...
             WidgetKind::Custom(el) => {
@@ -667,6 +647,7 @@ pub(super) fn collect_widgets(
                     metrics: m,
                     rect: p.rect,
                     scale: p.scale,
+                    clip: p.clip,
                     time: None,
                     focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
                 };

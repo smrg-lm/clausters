@@ -33,6 +33,7 @@ mod menu;
 mod meter;
 mod nodes;
 mod number;
+mod score;
 mod slider;
 mod text;
 mod toggle;
@@ -50,6 +51,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "meter" => meter::build,
         "menu" => menu::build,
         "nodes" => nodes::build,
+        "score" => score::build,
         "number" => number::build,
         "slider" => slider::build,
         "text" => text::build,

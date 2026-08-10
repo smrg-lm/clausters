@@ -149,26 +149,3 @@ pub(crate) fn piano_note_args(pitch: i32, velocity: i32, state: i32, channel: i3
         OscType::Int(channel),
     ]
 }
-
-/// A score selection event's payload — `"element" <xml:id>`, the empty string
-/// meaning the selection was cleared. The id is the MEI one the client engraved
-/// from, so a driver looks the element straight up in its own score.
-pub(crate) fn score_element_args(id: Option<&str>) -> Vec<OscType> {
-    vec![
-        OscType::String("element".into()),
-        OscType::String(id.unwrap_or_default().into()),
-    ]
-}
-
-/// A score pitch edit's payload — `"transpose" <xml:id> <steps>`, the element
-/// moved that many **diatonic** steps up the staff (negative = down). Steps,
-/// not a position: the client transposes by steps
-/// (`clausters.gui.notation.Score.transpose`), and a step is exact where a
-/// page coordinate would need the engraver's frame.
-pub(crate) fn score_transpose_args(id: &str, steps: i32) -> Vec<OscType> {
-    vec![
-        OscType::String("transpose".into()),
-        OscType::String(id.into()),
-        OscType::Int(steps),
-    ]
-}

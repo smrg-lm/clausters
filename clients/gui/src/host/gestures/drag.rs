@@ -116,7 +116,19 @@ impl Gestures {
             Drag::Element { at, .. } => {
                 let events = element::with(host, ctx, at, |el, input| el.drag((cx, cy), input));
                 if let Some(events) = events {
+                    // **A held drag always repaints**, whether or not it
+                    // reported: an element was given the drag because it
+                    // changes something, and what it changes is not always
+                    // deliverable — a text selection extending, a score's
+                    // element crossing a diatonic step. Reporting already asks
+                    // for the repaint, so this is the other case; only the
+                    // element that is *gone* (a widget freed under the drag)
+                    // skips both.
+                    let silent = events.is_empty();
                     element::report(host, &mut out, ctx, at.id, events);
+                    if silent {
+                        out.push(GestureEffect::Redraw(def_id));
+                    }
                 }
             }
             Drag::Box {
@@ -196,26 +208,6 @@ impl Gestures {
                     piano_note(host, &mut out, def_id, id, p, vel, 1, channel);
                     if let Some(Drag::PianoKey { pitch, .. }) = self.drag.as_mut() {
                         *pitch = p;
-                    }
-                    out.push(GestureEffect::Redraw(def_id));
-                }
-            }
-            Drag::ScoreStep {
-                id,
-                ref element,
-                rect,
-                origin_y,
-                steps,
-            } => {
-                // Absolute from the press, quantized to whole steps: the page
-                // is redrawn only when the drag crosses one, so the pixels
-                // between two pitches cost nothing.
-                let Some(n) = score_steps(host, def_id, id, rect, cy - origin_y) else {
-                    return out;
-                };
-                if n != steps && interact::score_drag(host, def_id, id, element, n) {
-                    if let Some(Drag::ScoreStep { steps, .. }) = self.drag.as_mut() {
-                        *steps = n;
                     }
                     out.push(GestureEffect::Redraw(def_id));
                 }
@@ -557,19 +549,6 @@ impl Gestures {
                 // drops the marquee chrome.
                 out.push(GestureEffect::Redraw(def_id));
             }
-            Some(Drag::ScoreStep { id, element, .. }) => {
-                // The element was displaced live; the release asks the client
-                // to make it true — the host holds no score, so the pitch edit
-                // is the driver's to apply and re-engrave (the clip pattern).
-                if let Some(steps) = interact::score_drag_end(host, def_id, id) {
-                    out.push(GestureEffect::Emit {
-                        def_id,
-                        widget_id: id,
-                        args: interact::score_transpose_args(&element, steps),
-                    });
-                }
-                out.push(GestureEffect::Redraw(def_id));
-            }
             _ => {}
         }
         out
@@ -590,7 +569,11 @@ impl Gestures {
                 el.drag_relative((0.0, dy), input)
             });
             if let Some(events) = events {
+                let silent = events.is_empty();
                 element::report(host, &mut out, ctx, at.id, events);
+                if silent {
+                    out.push(GestureEffect::Redraw(ctx.def_id));
+                }
             }
             return out;
         }

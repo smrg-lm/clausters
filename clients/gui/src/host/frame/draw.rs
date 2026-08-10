@@ -687,6 +687,7 @@ pub(super) fn draw_static_meshes(
                     world: &inputs.world,
                     metrics: &item.metrics,
                     rect: item.rect,
+                    clip: item.clip,
                     scale: item.scale,
                     time: Some(TimeSpace {
                         view: item.local,
@@ -783,6 +784,7 @@ pub(super) fn draw_element_overlays(
                 world: &inputs.world,
                 metrics: m,
                 rect: p.rect,
+                clip: p.clip,
                 scale: p.scale,
                 time: None,
                 focused: p.widget.id.is_some() && p.widget.id == inputs.focused,

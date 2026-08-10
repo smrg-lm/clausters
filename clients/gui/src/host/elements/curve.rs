@@ -481,6 +481,7 @@ mod tests {
                 rect,
                 scale: 1.0,
                 time: None,
+                clip: None,
                 focused: false,
             },
         );
@@ -496,6 +497,7 @@ mod tests {
                     view: View::full(100),
                     span: 100.0,
                 }),
+                clip: None,
                 focused: false,
             },
         );

@@ -31,7 +31,7 @@ pub(super) fn as_array_props(key: &str, v: &Value) -> serde_json::Map<String, Va
 /// stands, or a JSON string parsed into one — OSC carries no objects, so the
 /// wire form of a structural value is always a string. `None` for anything
 /// else, so a malformed set is refused rather than applied as an empty page.
-pub(super) fn as_props(v: &Value) -> Option<serde_json::Map<String, Value>> {
+pub(crate) fn as_props(v: &Value) -> Option<serde_json::Map<String, Value>> {
     match v {
         Value::String(s) => serde_json::from_str(s).ok(),
         Value::Object(o) => Some(o.clone()),

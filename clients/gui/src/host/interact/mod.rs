@@ -54,13 +54,13 @@ pub(crate) use coords::{
 pub(crate) use edit::{
     clear_element_selection, clip_set, graph_cord, graph_marquee, graph_move, graph_select,
     header_set, lane_resize, piano_press_key, piano_release_key, piano_set_range,
-    pianoroll_notes_edit, pianoroll_osc_edit, pianoroll_state_edit, score_drag, score_drag_end,
-    score_select, scroll_set_view, select_elements_in_rect,
+    pianoroll_notes_edit, pianoroll_osc_edit, pianoroll_state_edit, scroll_set_view,
+    select_elements_in_rect,
 };
 pub(crate) use hit::{
     ClipHit, PianoRollHit, PrRegion, clip_hit, header_hit, hit, pianoroll_hit, sole_time_axis,
 };
 pub(crate) use read::{
     clip_event_args, lane_event_args, notes_event_args, osc_event_args, piano_key_active,
-    piano_note_args, plane_can_pan, score_element_args, score_transpose_args,
+    piano_note_args, plane_can_pan,
 };

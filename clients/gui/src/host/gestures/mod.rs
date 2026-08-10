@@ -334,20 +334,6 @@ enum Drag {
         x0: f64,
         y0: f64,
     },
-    /// Dragging an engraved element up or down a `score`: the vertical
-    /// displacement quantizes to whole **diatonic steps** (the page's `step`),
-    /// which the widget draws as it moves and the release emits as a
-    /// `"transpose"` edit-back. `rect` is the page's laid-out area at press time
-    /// (the page→screen fit, which cannot change under a drag) and `origin_y`
-    /// the press, so the count is absolute from the snapshot rather than
-    /// accumulated.
-    ScoreStep {
-        id: i32,
-        element: String,
-        rect: Rect,
-        origin_y: f64,
-        steps: i32,
-    },
 }
 
 /// One window's gesture state: the in-progress drag, if any. The front holds

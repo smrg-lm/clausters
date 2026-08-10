@@ -54,7 +54,7 @@ use super::guidef::GuiNode;
 // so the `build`/`apply` child modules resolve the same paths (a descendant sees
 // the parent's private `use` items).
 use super::signal::{Presentation, SignalElement};
-use super::{piano, plot, score, signal};
+use super::{piano, plot, signal};
 
 mod apply;
 mod axes;
@@ -130,20 +130,6 @@ pub enum WidgetKind {
     /// `scope`, `spectrum`, `spectrogram`, `phasescope`) are six points of that
     /// product, so this one arm answers for all of them.
     Signal(Box<SignalElement>),
-    /// An engraved music-notation page. The rendering client (verovio, in the
-    /// Python `clausters.gui` submodule) engraves a score and sends a semantic
-    /// display list — a glyph-outline table keyed by SMuFL codepoint plus placed
-    /// primitives in verovio page units (see [`super::score::ScoreData`]). The
-    /// host fits the page into the widget rect and tessellates every primitive
-    /// into the shared triangle mesh (glyph outlines and engraving fills through
-    /// lyon; staff lines/stems/ledger lines as thick-line quads), so notation
-    /// draws through the same one-upload/one-draw pipeline as the rest of the
-    /// chrome, natively and in the browser. The playback cursor follows the
-    /// display list's own timemap, either located statically (`playhead`, in
-    /// ms) or sweeping off the engine sample clock (`playhead_at`), exactly as
-    /// the timeline views do. Read-only for now: the MEI xml:id travels on each
-    /// primitive for a later interactive/edit-back pass.
-    Score(super::score::ScoreData),
     /// A multitrack lane: a horizontal strip of the shared timeline holding
     /// `clip` children placed by their `offset`/`dur`. A container (its clips
     /// are its children); `label` names the track in a left header, `height`

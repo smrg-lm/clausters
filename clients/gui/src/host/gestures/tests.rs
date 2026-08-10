@@ -1456,10 +1456,14 @@ fn score_host() -> Host {
     )
 }
 
+/// What the page says is selected **now** — read the way a `/gui_query` reads
+/// it, since a ported leaf answers for itself rather than showing its variant.
 fn score_selected(host: &Host) -> Option<String> {
-    match &host.window_def(1).unwrap().find(80).unwrap().kind {
-        WidgetKind::Score(data) => data.selected.clone(),
-        other => panic!("not a score: {other:?}"),
+    let info = host.window_def(1).unwrap().find(80).unwrap().kind.info();
+    match info.iter().find(|(k, _)| k == "selected") {
+        Some((_, serde_json::Value::String(s))) if !s.is_empty() => Some(s.clone()),
+        Some(_) => None,
+        None => panic!("not a score: {info:?}"),
     }
 }
 
@@ -1489,20 +1493,17 @@ fn a_press_on_the_score_selects_the_element_and_emits_its_id() {
     let effects = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
     assert_eq!(element_emits(&effects), vec!["n1".to_string()]);
     assert_eq!(score_selected(&host).as_deref(), Some("n1"));
-    // pressing the same element again changes nothing: no event, no repaint
+    // Pressing the same element again selects nothing new, so the script hears
+    // nothing — the press is still held, because it may become a drag.
     let again = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
-    assert!(again.is_empty(), "a re-press on the selection is inert");
+    assert!(
+        element_emits(&again).is_empty(),
+        "a re-press re-reported the selection: {again:?}"
+    );
     // blank paper clears it, reported as an empty id
     let cleared = g.press(&mut host, &ctx, 106.0, 386.0, &mut || false);
     assert_eq!(element_emits(&cleared), vec![String::new()]);
     assert_eq!(score_selected(&host), None);
-}
-
-fn score_drag_preview(host: &Host) -> Option<(String, i32)> {
-    match &host.window_def(1).unwrap().find(80).unwrap().kind {
-        WidgetKind::Score(data) => data.drag.as_ref().map(|d| (d.id.clone(), d.steps)),
-        other => panic!("not a score: {other:?}"),
-    }
 }
 
 fn transpose_emits(effects: &[GestureEffect]) -> Vec<(String, i32)> {
@@ -1530,19 +1531,15 @@ fn dragging_a_note_up_the_staff_transposes_it_in_diatonic_steps() {
     // grab the notehead at page (500, 200); the page is fitted 1:1, so a
     // diatonic step is the default 90 page units = 90 px
     g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
-    // short of a step the page does not move
-    g.drag_to(&mut host, &ctx, 556.0, 156.0);
-    assert_eq!(score_drag_preview(&host), None);
-    // two steps up: drawn displaced while the drag lasts
-    g.drag_to(&mut host, &ctx, 556.0, 16.0);
-    assert_eq!(score_drag_preview(&host), Some(("n1".into(), 2)));
+    // Two steps up. The displacement is drawn while the drag lasts and reports
+    // nothing on the way — so what the machine owes it is the frame that draws
+    // it, and the edit only travels on release.
+    let moving = g.drag_to(&mut host, &ctx, 556.0, 16.0);
+    assert!(transpose_emits(&moving).is_empty(), "nothing until release");
+    assert!(moving.iter().any(|e| matches!(e, GestureEffect::Redraw(1))));
     // the release asks the client for the edit, in steps
     let effects = g.release(&mut host, &ctx, 556.0, 16.0);
     assert_eq!(transpose_emits(&effects), vec![("n1".to_string(), 2)]);
-    // and the displacement stands until the re-engraved page arrives
-    assert_eq!(score_drag_preview(&host), Some(("n1".into(), 2)));
-    set_prop(&mut host, 80, "display_list", r#"{"vb":[1000,400]}"#);
-    assert_eq!(score_drag_preview(&host), None);
 }
 
 #[test]
@@ -1555,7 +1552,6 @@ fn a_press_that_does_not_move_the_note_stays_a_selection() {
     g.drag_to(&mut host, &ctx, 556.0, 240.0);
     let effects = g.release(&mut host, &ctx, 556.0, 240.0);
     assert!(transpose_emits(&effects).is_empty(), "no step, no edit");
-    assert_eq!(score_drag_preview(&host), None);
     assert_eq!(score_selected(&host).as_deref(), Some("n1"));
 }
 
@@ -1576,9 +1572,12 @@ fn a_read_only_score_selects_but_a_drag_does_not_transpose() {
     let picked = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
     assert_eq!(element_emits(&picked), vec!["n1".to_string()]);
     assert_eq!(score_selected(&host).as_deref(), Some("n1"));
-    // two full steps up: no preview while dragging, no transpose on release
-    g.drag_to(&mut host, &ctx, 556.0, 16.0);
-    assert_eq!(score_drag_preview(&host), None);
+    // two full steps up: nothing is displaced, and nothing is asked for
+    let moving = g.drag_to(&mut host, &ctx, 556.0, 16.0);
+    assert!(
+        transpose_emits(&moving).is_empty(),
+        "a read-only page edited: {moving:?}"
+    );
     let effects = g.release(&mut host, &ctx, 556.0, 16.0);
     assert!(transpose_emits(&effects).is_empty(), "read-only: no edit");
 }
@@ -1936,6 +1935,31 @@ fn a_press_focuses_the_field_and_typing_emits_on_every_keystroke() {
     // Backspace edits and re-emits.
     let e = key(&g, &mut host, &ctx, Key::Backspace).unwrap();
     assert_eq!(emitted_string(&e).as_deref(), Some("h"));
+}
+
+/// **A drag that reports nothing still repaints.** Extending a text selection
+/// changes the picture and not the value, so there is nothing to deliver — and
+/// a window with no other frame source would have shown the old selection until
+/// something else moved.
+#[test]
+fn dragging_a_selection_repaints_even_though_it_reports_nothing() {
+    let mut host = text_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 400);
+    let mut clip = String::new();
+    g.press(&mut host, &ctx, 10.0, 15.0, &mut || false);
+    for ch in "hello".chars() {
+        g.key(&mut host, &ctx, Key::Char(ch), &mut clip);
+    }
+    let out = g.drag_to(&mut host, &ctx, 200.0, 15.0);
+    assert!(
+        emitted_string(&out).is_none(),
+        "a selection is not a value: {out:?}"
+    );
+    assert!(
+        out.iter().any(|e| matches!(e, GestureEffect::Redraw(1))),
+        "and it still asks for the frame that draws it: {out:?}"
+    );
 }
 
 #[test]

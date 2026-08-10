@@ -115,57 +115,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         // the source, the value axis, the spectral parameters, the chrome —
         // and a key a presentation does not read is simply not one of them.
         WidgetKind::Signal(el) => apply_signal(el, key, v),
-        WidgetKind::Score(data) => match key {
-            // Replace the engraved page in place — the answer to an edit, and
-            // the reason a score does not have to be redefined to change. Only
-            // the drawing travels: the chrome (playhead, selection) is the
-            // host's own state and survives, so the note the user is editing
-            // stays selected across the round trip. The drag preview is what
-            // this page *is* now, so it retires here.
-            "display_list" => match as_props(v) {
-                Some(props) => {
-                    let page = super::score::ScoreData::parse(&props);
-                    let keep = std::mem::replace(data, page);
-                    data.playhead = keep.playhead;
-                    data.playhead_at = keep.playhead_at;
-                    data.playhead_loop_start = keep.playhead_loop_start;
-                    data.playhead_loop_len = keep.playhead_loop_len;
-                    data.sample_rate = keep.sample_rate;
-                    data.selected = keep.selected;
-                    // A re-engraved page carries only the drawing; whether the
-                    // widget edits is the host's own state, like the chrome, so
-                    // an editor stays an editor across the round trip.
-                    data.editable = keep.editable;
-                    true
-                }
-                None => false,
-            },
-            // Locate the static playback cursor; a negative time hides it.
-            "playhead" => v.as_f64().map(|t| data.playhead = t as f32).is_some(),
-            // Anchor score time 0 to a sample-clock value: the cursor then
-            // sweeps on its own, one message per pass instead of per frame.
-            "playhead_at" => v.as_f64().map(|t| data.playhead_at = t).is_some(),
-            // Wrap the sweep inside a repeated passage (ms; <= 0 length = the
-            // straight pass).
-            "playhead_loop_start" => v
-                .as_f64()
-                .map(|t| data.playhead_loop_start = t as f32)
-                .is_some(),
-            "playhead_loop_len" => v
-                .as_f64()
-                .map(|t| data.playhead_loop_len = t as f32)
-                .is_some(),
-            "sample_rate" => v.as_f64().map(|r| data.sample_rate = r).is_some(),
-            // Select an element by its MEI id; the empty string clears it.
-            "selected" => v
-                .as_str()
-                .map(|s| data.selected = (!s.is_empty()).then(|| s.to_string()))
-                .is_some(),
-            // Turn editing on or off live (a view that becomes an editor, or the
-            // reverse). A drag only transposes while this is true.
-            "editable" => v.as_bool().map(|b| data.editable = b).is_some(),
-            _ => false,
-        },
         WidgetKind::Patch {
             patch,
             selected,

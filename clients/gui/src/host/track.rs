@@ -985,6 +985,7 @@ mod tests {
                     view: local,
                     span: 400.0,
                 }),
+                clip: None,
                 focused: false,
             },
         );
