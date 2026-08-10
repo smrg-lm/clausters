@@ -589,6 +589,23 @@ impl GestureMap {
         }
     }
 
+    /// A table from its four plans, one per modifier — how an element declares
+    /// the drag it wants when the wire says nothing
+    /// ([`Element::gesture_map`](super::Element::gesture_map)).
+    pub fn of_plans(
+        plain: &[GestureStep],
+        shift: &[GestureStep],
+        ctrl: &[GestureStep],
+        alt: &[GestureStep],
+    ) -> GestureMap {
+        GestureMap {
+            plain: GesturePlan::of(plain),
+            shift: GesturePlan::of(shift),
+            ctrl: GesturePlan::of(ctrl),
+            alt: GesturePlan::of(alt),
+        }
+    }
+
     /// The table a container of this kind carries unless the wire replaces it.
     ///
     /// The timeline views differ only in what a plain drag is for: a waveform
@@ -598,6 +615,10 @@ impl GestureMap {
     /// track shares — and a workspace pans with whatever is left over.
     pub fn of_kind(kind: &WidgetKind) -> GestureMap {
         use GestureStep::*;
+        // An element answers for itself; the arms below are the containers'.
+        if let Some(map) = kind.element_gesture_map() {
+            return map;
+        }
         let (plain, shift, ctrl, alt): (&[_], &[_], &[_], &[_]) = match kind {
             WidgetKind::Track { .. } => (
                 &[Element, Locate],
@@ -609,10 +630,6 @@ impl GestureMap {
                 (&[Element, Select], &[Pan], &[Element, Select], &[Element])
             }
             WidgetKind::TimeRuler { .. } => (&[Locate], &[Pan], &[Locate], &[Locate]),
-            // A navigable signal element: a plain drag selects, Shift pans.
-            WidgetKind::Signal(el) if el.caps.navigable => {
-                (&[Select], &[Pan], &[Select], &[Select])
-            }
             // The patcher: a plain drag on the empty canvas sweeps the box
             // marquee, Shift leaves the press to the workspace under it.
             WidgetKind::Patch { .. } => (
@@ -640,12 +657,7 @@ impl GestureMap {
             WidgetKind::Clip { .. } => (&[Element], &[], &[Element], &[Element]),
             _ => (&[Element], &[Element], &[Element], &[Element]),
         };
-        GestureMap {
-            plain: GesturePlan::of(plain),
-            shift: GesturePlan::of(shift),
-            ctrl: GesturePlan::of(ctrl),
-            alt: GesturePlan::of(alt),
-        }
+        GestureMap::of_plans(plain, shift, ctrl, alt)
     }
 
     /// Overlays the `gestures` prop on this table: an object keyed by modifier

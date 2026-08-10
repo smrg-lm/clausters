@@ -459,8 +459,7 @@ pub(super) fn collect_widgets<'a>(
             // The one body whose picture is not geometry: a time-frequency take
             // samples an uploaded texture, so it goes to the GPU pass with the
             // clip's own axis and the clip's id (the slot's key).
-            if let WidgetKind::Signal(el) = &p.widget.kind
-                && el.is_texture_view()
+            if let Some(look) = p.widget.kind.texture_body()
                 && let Some(id) = placed[parent].widget.id
             {
                 spectral_bodies.push(SpectralBodyItem {
@@ -468,10 +467,10 @@ pub(super) fn collect_widgets<'a>(
                     rect: p.rect,
                     local: p.time.unwrap_or_else(|| View::full(1)),
                     clip: p.clip,
-                    db_floor: el.spectral.db_floor,
-                    db_ceil: el.spectral.db_ceil,
-                    freq_scale: el.spectral.freq_scale,
-                    colormap: el.spectral.colormap,
+                    db_floor: look.db_floor,
+                    db_ceil: look.db_ceil,
+                    freq_scale: look.freq_scale,
+                    colormap: look.colormap,
                 });
                 continue;
             }

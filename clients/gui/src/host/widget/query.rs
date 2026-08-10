@@ -41,7 +41,7 @@ impl Widget {
     /// Whether this is a navigable signal element **on the time axis** — the
     /// view that zooms, pans, selects and shows a playhead over its own
     /// samples. A navigable *spectrum* is not one: it navigates frequency, on
-    /// a window of its own ([`WidgetKind::freq_nav`]).
+    /// a window of its own ([`WidgetKind::navigates_freq`]).
     pub fn is_nav_signal(&self) -> bool {
         self.signal().is_some_and(SignalElement::navigates_time)
     }
@@ -144,11 +144,52 @@ impl WidgetKind {
         }
     }
 
-    /// The signal element this widget is, when it navigates its **own**
-    /// frequency axis rather than the window's time — the one element that
-    /// carries an x window instead of joining a navigation group.
-    pub fn freq_nav(&self) -> Option<&SignalElement> {
-        self.signal().filter(|el| el.navigates_freq())
+    /// Whether this widget navigates a **measured x axis of its own** — a
+    /// frequency axis — instead of joining the window's shared time. The one
+    /// widget that carries an x window rather than a navigation group.
+    pub fn navigates_freq(&self) -> bool {
+        match self {
+            WidgetKind::Signal(el) => el.navigates_freq(),
+            WidgetKind::Custom(el) => el.navigates_freq(),
+            _ => false,
+        }
+    }
+
+    /// That axis inside the rect this widget was placed in
+    /// ([`Element::freq_axis`](super::Element::freq_axis)) — where it lies,
+    /// what it shows, and at what rate.
+    pub fn freq_axis(
+        &self,
+        rect: super::super::layout::Rect,
+        m: &super::super::metrics::Metrics,
+        sample_rate: f64,
+    ) -> Option<super::element::FreqAxis> {
+        match self {
+            WidgetKind::Signal(el) => el.freq_axis(rect, m, sample_rate),
+            WidgetKind::Custom(el) => el.freq_axis(rect, m, sample_rate),
+            _ => None,
+        }
+    }
+
+    /// What that axis would show for `want`, or shows now for `None` — the
+    /// request opened up to what the analysis behind it resolves
+    /// ([`Element::freq_window_of`](super::Element::freq_window_of)).
+    pub fn freq_window_of(&self, sample_rate: f64, want: Option<(f64, f64)>) -> Option<(f64, f64)> {
+        match self {
+            WidgetKind::Signal(el) => el.freq_window_shown(sample_rate, want),
+            WidgetKind::Custom(el) => el.freq_window_of(sample_rate, want),
+            _ => None,
+        }
+    }
+
+    /// The narrowest window that axis may be **asked** for at `start`
+    /// ([`Element::freq_min_span`](super::Element::freq_min_span)).
+    pub fn freq_min_span(&self, sample_rate: f64, start: f64) -> Option<f64> {
+        match self {
+            WidgetKind::Signal(el) => el.freq_min_span(sample_rate, start),
+            WidgetKind::Custom(el) => el.freq_min_span(sample_rate, start),
+            _ => None,
+        }
     }
 
     /// The current value as an OSC primitive for a `/gui_event`, or `None` for a
@@ -223,6 +264,62 @@ impl WidgetKind {
         };
         self.audio_buses_read(&mut needs.taps);
         needs
+    }
+
+    /// **The drag table an element declares for itself**, or `None` for a
+    /// widget whose table is its container kind's
+    /// ([`GestureMap::of_kind`](super::GestureMap::of_kind), which asks this
+    /// first).
+    pub fn element_gesture_map(&self) -> Option<super::GestureMap> {
+        match self {
+            WidgetKind::Signal(el) => el.gesture_map(),
+            WidgetKind::Custom(el) => el.gesture_map(),
+            _ => None,
+        }
+    }
+
+    /// **The look of a body whose picture is a texture** — the one body the
+    /// frame routes to the GPU pass itself, keyed by the clip that holds it
+    /// ([`Element::texture_body`](super::Element::texture_body)).
+    pub fn texture_body(&self) -> Option<super::element::TextureLook> {
+        match self {
+            WidgetKind::Signal(el) => el.texture_body(),
+            WidgetKind::Custom(el) => el.texture_body(),
+            _ => None,
+        }
+    }
+
+    /// **What this widget reserves left of its body** on a shared time axis: a
+    /// lane's header, a roll's keyboard, an element's value ruler. A
+    /// `timeruler` asks for nothing — it has no chrome, it only labels whatever
+    /// axis it follows.
+    ///
+    /// A container answers from its variant, an element for itself
+    /// ([`Element::gutter`](super::Element::gutter)).
+    pub fn gutter(&self, m: &super::super::metrics::Metrics) -> f32 {
+        match self {
+            WidgetKind::Track { header, .. } => header.width(m),
+            WidgetKind::PianoRoll { .. } => super::super::pianoroll::KEYBOARD_W,
+            WidgetKind::Signal(el) => el.gutter(m),
+            WidgetKind::Custom(el) => el.gutter(m),
+            _ => 0.0,
+        }
+    }
+
+    /// [`gutter`](Self::gutter) asked again of a widget that has been
+    /// **placed**, for the chrome whose width is a property of the data rather
+    /// than of the props. `None` — every container, and most elements — is a
+    /// widget whose first answer stands.
+    pub fn measured_gutter(
+        &self,
+        rect: super::super::layout::Rect,
+        m: &super::super::metrics::Metrics,
+    ) -> Option<f32> {
+        match self {
+            WidgetKind::Signal(el) => el.measured_gutter(rect, m),
+            WidgetKind::Custom(el) => el.measured_gutter(rect, m),
+            _ => None,
+        }
     }
 
     /// **How many lanes this widget stacks**, out of the `uploaded` channel

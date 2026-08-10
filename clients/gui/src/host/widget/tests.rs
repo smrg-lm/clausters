@@ -937,7 +937,7 @@ fn the_six_names_parse_to_their_point_of_the_product() {
     // It is opt-in — a bare `spectrum` is the spectroscope above — and it
     // joins **no** time axis, because the axis it navigates is frequency.
     assert_eq!(point(6), (Presentation::Spectrum, true, true));
-    assert!(w.children[6].kind.freq_nav().is_some());
+    assert!(w.children[6].kind.navigates_freq());
     assert!(!w.children[6].is_nav_signal(), "frequency is not time");
     // Only the views navigating *time* join the window's time axis.
     let timelines: Vec<bool> = (0..7).map(|i| w.children[i].is_timeline()).collect();

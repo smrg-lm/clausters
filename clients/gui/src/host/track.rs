@@ -414,23 +414,13 @@ pub fn draw_clip_label(d: &mut Draw, cr: Rect, label: &str) {
 pub fn draw_body_widget(d: &mut Draw, kind: &WidgetKind, cr: Rect, local: &View, dur: f64) {
     let (mesh, m, theme) = d.parts();
     match kind {
-        WidgetKind::Signal(el) => {
-            if let Some(data) = el.source.data() {
-                let (min, max) = el.value.resolved(-1.0, 1.0);
-                draw_take(
-                    &mut Draw::new(mesh, m, theme),
-                    cr,
-                    local,
-                    dur,
-                    &data.trace(),
-                    min,
-                    max,
-                );
-            }
-        }
         WidgetKind::PianoRoll {
             notes, min, max, ..
         } => draw_piano_roll(&mut Draw::new(mesh, m, theme), cr, local, notes, *min, *max),
+        // Every leaf answers for itself; a widget that fills no body role
+        // draws nothing here.
+        WidgetKind::Signal(el) => el.draw_body(&mut Draw::new(mesh, m, theme), cr, local, dur),
+        WidgetKind::Custom(el) => el.draw_body(&mut Draw::new(mesh, m, theme), cr, local, dur),
         _ => {}
     }
 }
@@ -488,7 +478,15 @@ pub fn clip_source_at(cr: Rect, local: &View, dur: f64, total: f64, x: f32) -> f
 /// the view instead of squashing into whatever slice is on screen. Never
 /// resolves finer than the screen — the one graphics rule.
 // mesh + rect + axis + span + source + range + look: one body's draw.
-fn draw_take(d: &mut Draw, cr: Rect, local: &View, dur: f64, trace: &Trace, min: f32, max: f32) {
+pub(crate) fn draw_take(
+    d: &mut Draw,
+    cr: Rect,
+    local: &View,
+    dur: f64,
+    trace: &Trace,
+    min: f32,
+    max: f32,
+) {
     let (mesh, m, theme) = d.parts();
     let total = trace.frames() as f64;
     if total < 2.0 || cr.w < 1.0 || cr.h <= 0.0 {

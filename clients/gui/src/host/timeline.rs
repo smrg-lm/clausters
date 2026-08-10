@@ -40,7 +40,7 @@ use crate::viewport::View;
 
 use super::layout::Rect;
 use super::metrics::Metrics;
-use super::widget::{EditorProps, RulerY, Widget, WidgetKind};
+use super::widget::{EditorProps, Widget};
 use super::{Host, HostEffect};
 
 /// The navigation group a timeline widget belongs to.
@@ -149,22 +149,6 @@ impl GroupState {
     }
 }
 
-/// What a timeline member would reserve **left of its body** for chrome of its
-/// own: a lane's header, a piano-roll's keyboard gutter, a heavy view's value
-/// ruler. A `timeruler` asks for nothing — it has no chrome, it only labels
-/// whatever axis it follows.
-///
-/// This is the member's *wish*, not where its body actually begins: that is
-/// [`group_indents`], the group's own. See it for why.
-pub(crate) fn own_gutter(kind: &WidgetKind, metrics: &Metrics) -> f32 {
-    match kind {
-        WidgetKind::Track { header, .. } => header.width(metrics),
-        WidgetKind::PianoRoll { .. } => super::pianoroll::KEYBOARD_W,
-        WidgetKind::Signal(el) if el.editor.ruler_y != RulerY::Off => metrics.ruler_w,
-        _ => 0.0,
-    }
-}
-
 /// The x offset, inside a member's own rect, where the shared time axis begins
 /// — and therefore where every member of the group draws its body.
 ///
@@ -192,7 +176,7 @@ pub(crate) fn group_indents(tree: &Widget, metrics: &Metrics) -> HashMap<GroupKe
     for widget in tree.descendants() {
         if let (Some(id), Some(editor)) = (widget.id, widget.kind.editor()) {
             let slot = out.entry(group_key(id, editor.link)).or_insert(0.0f32);
-            *slot = slot.max(own_gutter(&widget.kind, metrics));
+            *slot = slot.max(widget.kind.gutter(metrics));
         }
     }
     out
@@ -201,7 +185,7 @@ pub(crate) fn group_indents(tree: &Widget, metrics: &Metrics) -> HashMap<GroupKe
 /// The gutter each group actually needs once its members have been **placed**,
 /// or `None` when the role-sized `floor` already covers every one of them.
 ///
-/// [`own_gutter`] answers from the kind alone, which is what lets the layout
+/// [`super::widget::WidgetKind::gutter`] answers from the kind alone, which is what lets the layout
 /// place a lane's clips — but a value ruler's width is a property of the
 /// *data*, not of the kind: an amplitude axis zoomed onto a narrow range
 /// formats `-0.0625` where the same axis unzoomed formats `-1.0`, and the step
@@ -222,28 +206,13 @@ pub(crate) fn measured_indents(
 ) -> Option<HashMap<GroupKey, f32>> {
     let mut out: Option<HashMap<GroupKey, f32>> = None;
     for p in placed {
-        let (Some(id), WidgetKind::Signal(el)) = (p.widget.id, &p.widget.kind) else {
+        let (Some(id), Some(editor)) = (p.widget.id, p.widget.kind.editor()) else {
             continue;
         };
-        if !p.widget.is_nav_signal() || matches!(el.editor.ruler_y, RulerY::Off | RulerY::Hz) {
+        let Some(want) = p.widget.kind.measured_gutter(p.rect, &p.metrics) else {
             continue;
-        }
-        // The gutter is what we are solving for, so it is left out of the body:
-        // it moves the body's x, never its height, which is all the measure reads.
-        let body = super::frame::timeline_body(p.rect, &el.editor, 0.0, &p.metrics);
-        if body.h <= 0.0 {
-            continue;
-        }
-        let (y_start, y_len) = el.editor.y_view();
-        let want = super::ruler::amp_strip_w(
-            el.editor.ruler_y,
-            body.h,
-            el.editor.bit_depth,
-            y_start,
-            y_len,
-            &p.metrics,
-        );
-        let key = group_key(id, el.editor.link);
+        };
+        let key = group_key(id, editor.link);
         let have = floor.get(&key).copied().unwrap_or(0.0);
         if want > have {
             let table = out.get_or_insert_with(|| floor.clone());

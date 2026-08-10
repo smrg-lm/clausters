@@ -11,6 +11,7 @@ use clausters_core::osc::OscType;
 use super::super::Host;
 use super::super::interact::{self, Hit};
 use super::super::layout::Rect;
+use super::super::widget::element::FreqAxis;
 use super::super::widget::{ScrollView, Widget, WidgetKind};
 use super::effects::{emit, emit_clip, emit_view, redraw_all};
 use super::{GestureCtx, GestureEffect};
@@ -96,7 +97,7 @@ pub(super) fn timeline_ids(tree: &Widget) -> Vec<i32> {
 /// Every widget id in the tree that navigates a frequency axis of its own.
 pub(super) fn freq_nav_ids(tree: &Widget) -> Vec<i32> {
     tree.descendants()
-        .filter(|w| w.kind.freq_nav().is_some())
+        .filter(|w| w.kind.navigates_freq())
         .filter_map(|w| w.id)
         .collect()
 }
@@ -281,59 +282,12 @@ pub(super) fn set_y_view(
     out.push(GestureEffect::Redraw(def_id));
 }
 
-/// The **frequency axis** of a navigable spectrum: the body its curve is drawn
-/// in, the surface the axis is grabbed on and the window it stands at.
-///
-/// A spectrum is not a timeline container — it is nobody's coordinate system,
-/// so this is not a [`Coords`](super::super::interact::Coords) variant — and it
-/// is in no navigation group: the window is the element's own
-/// ([`EditorProps::x_view`](super::super::widget::EditorProps::x_view)), like
-/// the vertical window of every other axis that measures something.
-#[derive(Clone, Copy)]
-pub(super) struct FreqAxis {
-    /// Where the columns map, exactly what the renderer drew through.
-    pub(super) body: Rect,
-    /// Where the axis answers to the pointer: the body plus the hertz strip
-    /// under it, which is the axis with the ticks drawn on it.
-    pub(super) surface: Rect,
-    pub(super) start: f64,
-    pub(super) len: f64,
-    /// The rate the axis is placed by, so a hertz the gesture resolves is the
-    /// hertz the frame drew — and so the zoom knows the analysis' resolution.
-    pub(super) sample_rate: f64,
-}
-
-/// The frequency axis of the widget a hit landed on, if that widget is a
-/// navigable spectrum. Resolved through the renderer's own region split, so a
-/// zoom anchors at the hertz the reader has the pointer on.
+/// The [`FreqAxis`] of the widget a hit landed on, if it navigates one — the
+/// widget's own answer, since where the picture sits inside its rectangle is
+/// its region split and not the machine's.
 pub(super) fn freq_axis(host: &Host, ctx: &GestureCtx, hit: &interact::Hit) -> Option<FreqAxis> {
-    let def_id = ctx.def_id;
-    let el = hit.kind.freq_nav()?;
-    let r = super::super::spectrum::regions(
-        hit.rect,
-        el.display.label.is_some(),
-        el.editor.ruler != super::super::widget::Ruler::Off,
-        el.editor.ruler_y != super::super::widget::RulerY::Off,
-        (el.spectral.db_floor, el.spectral.db_ceil),
-        host.metrics_for(def_id),
-    );
-    if r.body.w <= 0.0 || r.body.h <= 0.0 {
-        return None;
-    }
-    let surface = match r.strip_x {
-        Some(strip) => Rect::new(r.body.x, r.body.y, r.body.w, r.body.h + strip.h),
-        None => r.body,
-    };
-    // What the axis is showing, not what was asked of it: a gesture anchors in
-    // the picture the reader is pointing at.
-    let (start, len) = el.freq_window(ctx.sample_rate);
-    Some(FreqAxis {
-        body: r.body,
-        surface,
-        start,
-        len,
-        sample_rate: ctx.sample_rate,
-    })
+    hit.kind
+        .freq_axis(hit.rect, host.metrics_for(ctx.def_id), ctx.sample_rate)
 }
 
 /// How far a view window has to move to count as having moved.
@@ -374,19 +328,9 @@ pub(super) fn freq_min_span(
     sample_rate: f64,
     start: f64,
 ) -> f64 {
-    let Some(el) = host.widget_kind(def_id, id).and_then(WidgetKind::freq_nav) else {
-        return crate::viewport::MIN_SPAN;
-    };
-    // Through the very geometry the curve and the ruler are drawn with, the
-    // fallback rate included — the floor has to be the one the reader sees.
-    let (nyquist, f_lo_norm) = super::super::spectrum::axis_geometry(el.freq_rate(sample_rate));
-    super::super::spectrum::min_display_span(
-        el.spectral.fft_size,
-        nyquist * 2.0,
-        el.spectral.freq_scale,
-        f_lo_norm,
-        start,
-    )
+    host.widget_kind(def_id, id)
+        .and_then(|kind| kind.freq_min_span(sample_rate, start))
+        .unwrap_or(crate::viewport::MIN_SPAN)
 }
 
 /// The window spectrum `id` is **showing**: its request opened up to what the
@@ -398,8 +342,7 @@ pub(super) fn freq_window(
     sample_rate: f64,
 ) -> Option<(f64, f64)> {
     host.widget_kind(def_id, id)?
-        .signal()
-        .map(|el| el.freq_window(sample_rate))
+        .freq_window_of(sample_rate, None)
 }
 
 /// The length spectrum `id`'s frequency window was last **asked** for, which is
@@ -458,8 +401,7 @@ pub(super) fn set_x_view(
     let shown = match (
         freq_window(host, def_id, id, sample_rate),
         host.widget_kind(def_id, id)
-            .and_then(WidgetKind::signal)
-            .map(|el| el.freq_window_of(sample_rate, start, len)),
+            .and_then(|kind| kind.freq_window_of(sample_rate, Some((start, len)))),
     ) {
         (Some(before), Some(after)) if !window_moved(before, after) => return,
         (_, after) => after.unwrap_or((start, len)),

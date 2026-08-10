@@ -20,7 +20,11 @@
 //! | the query pass | [`Element::value`] / [`Element::info`] |
 //! | the press walk | [`Element::press`] |
 //! | the keyboard arms + the host's focused field | [`Element::accepts_focus`] / [`Element::key`] |
-//! | the tree collectors | [`Element::needs`] |
+//! | the tree collectors | [`Element::needs`], with [`Element::tap_frames`] sizing a page's tap subscription |
+//! | a clip's body draw | [`Element::draw_body`], or [`Element::texture_body`] for the one the frame must route to the GPU |
+//! | the shared time axis' chrome | [`Element::gutter`] / [`Element::measured_gutter`] |
+//! | the default drag table | [`Element::gesture_map`] |
+//! | the gesture machine's reads | [`Element::lanes`] / [`Element::centres_y_zoom`], and [`Element::freq_axis`] & co. for an element that measures its own x |
 //!
 //! **Three things in, two things out**, and the boundary is narrow on purpose:
 //! most of what looks like "what a widget needs from the host" is the widget's
@@ -66,6 +70,7 @@ use super::super::layout::Rect;
 use super::super::metrics::Metrics;
 use super::super::paint::Draw;
 use super::super::world::World;
+use super::GestureMap;
 use super::size::Natural;
 
 /// Where an element is being drawn and what it is being drawn *into*: the
@@ -106,6 +111,47 @@ pub struct Ctx<'a> {
     /// this only for what the ring cannot say — a field's caret and selection,
     /// which exist while it is being typed into and not otherwise.
     pub focused: bool,
+}
+
+/// **How a body that draws through a texture slot samples it**: the dB window
+/// mapped onto the colormap, the shape of the frequency axis, and the colormap
+/// itself.
+///
+/// A clip's body is drawn against the *clip's* axis and with the clip's id (a
+/// body carries none), so it cannot go through the ordinary slot path — the
+/// frame has to route it to the texture pass itself. This is the whole of what
+/// it needs to know to do that, and an element that draws its body into the
+/// mesh instead answers `None` ([`Element::texture_body`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextureLook {
+    pub db_floor: f32,
+    pub db_ceil: f32,
+    pub freq_scale: crate::spectrogram::FreqScale,
+    /// The colormap index the texture pipeline resolves.
+    pub colormap: i32,
+}
+
+/// **An element's own measured x axis**: the body its picture is drawn in, the
+/// surface the axis answers to the pointer on, and the window it stands at.
+///
+/// The one axis in the host that is neither the window's shared time nor a
+/// container's coordinate system — a spectrum's frequency. It is the element's
+/// alone ([`Element::freq_axis`]), which is why the gesture machine asks for it
+/// instead of holding it: only the element knows where inside its rectangle the
+/// picture ended up, and what the analysis behind it can resolve.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FreqAxis {
+    /// Where the picture maps, exactly what the renderer drew through.
+    pub body: Rect,
+    /// Where the axis answers to the pointer: the body plus the ruler strip
+    /// under it, which is the axis with the ticks drawn on it.
+    pub surface: Rect,
+    /// The window shown, as a normalized `(start, len)` of the whole axis.
+    pub start: f64,
+    pub len: f64,
+    /// The rate the axis is placed by, so a hertz the gesture resolves is the
+    /// hertz the frame drew — and so a zoom knows the analysis' resolution.
+    pub sample_rate: f64,
 }
 
 /// **What an element is fed, once per tick** — the third moment of the trait,
@@ -712,6 +758,116 @@ pub trait Element: fmt::Debug {
         Needs::default()
     }
 
+    /// Whether this element navigates a **measured x axis of its own** — a
+    /// frequency axis — instead of joining the window's shared time. `false`
+    /// by default.
+    ///
+    /// Such an axis needs no history behind it (every bin is there every
+    /// frame) and no navigation group (nothing else in a window measures in
+    /// hertz along x), so it is one normalized window the element carries
+    /// alone.
+    fn navigates_freq(&self) -> bool {
+        false
+    }
+
+    /// This element's [`FreqAxis`] inside the rect it was placed in, or `None`
+    /// for one that navigates no axis of its own.
+    ///
+    /// The gesture machine cannot work it out: where the picture sits inside
+    /// the rectangle is the element's own region split — a label above it, a
+    /// ruler strip below, a value strip beside — and it must be the *same* one
+    /// the renderer drew through, or a zoom anchors at a hertz the reader is
+    /// not pointing at.
+    fn freq_axis(&self, _rect: Rect, _m: &Metrics, _sample_rate: f64) -> Option<FreqAxis> {
+        None
+    }
+
+    /// **What this element's measured axis would actually show**: `want` opened
+    /// up wherever it is finer than the analysis behind it resolves, or its
+    /// current request when `want` is `None`. `None` for an element with no
+    /// such axis.
+    ///
+    /// Request and display are deliberately kept apart, which is why this is a
+    /// question and not a stored value: the floor is a function of *where* the
+    /// window sits — on a log axis a window narrow enough at 12 kHz cannot
+    /// exist at 100 Hz — so writing the opening back would spend the reader's
+    /// zoom on the way down the axis and never give it back.
+    fn freq_window_of(&self, _sample_rate: f64, _want: Option<(f64, f64)>) -> Option<(f64, f64)> {
+        None
+    }
+
+    /// The narrowest window this element's measured axis may be **asked** for
+    /// at `start`, or `None` for an element with no such axis.
+    ///
+    /// A zoom needs it as a number rather than as a clamp applied afterwards:
+    /// a step that overshot the floor and was corrected later would have
+    /// anchored a window narrower than the one it ends up with, sliding the
+    /// picture sideways at every further step.
+    fn freq_min_span(&self, _sample_rate: f64, _start: f64) -> Option<f64> {
+        None
+    }
+
+    /// **The drag table this element wants** when the wire declares none, or
+    /// `None` (the default) to take the generic one — the press goes to the
+    /// element and every modifier with it.
+    ///
+    /// An element that is placed on a **container's axis** usually wants
+    /// otherwise: a navigable view lets a plain drag sweep the container's
+    /// selection and Shift pan its window, because those gestures are the
+    /// axis's and not the picture's.
+    fn gesture_map(&self) -> Option<GestureMap> {
+        None
+    }
+
+    /// **The look of a body whose picture is a texture**, or `None` (the
+    /// default) for one that draws into the shared mesh
+    /// ([`draw_body`](Element::draw_body)).
+    ///
+    /// The one body the frame cannot let draw itself: a time-frequency picture
+    /// samples an uploaded texture, so it goes to the GPU pass with the clip's
+    /// own axis and the clip's id — the key its slot was filled under.
+    fn texture_body(&self) -> Option<TextureLook> {
+        None
+    }
+
+    /// **What this element draws as a clip's body**, into the clip's rectangle
+    /// and against the clip's own local axis (`dur` is the clip's span).
+    ///
+    /// The whole of what "a clip is a container" buys: the element says what it
+    /// is, the container says where it is, and neither knows about the lane,
+    /// the group's window or the clip's offset on it. It is a separate draw
+    /// from [`draw`](Element::draw) because a body carries **no chrome** — no
+    /// ruler, no gutter, no navigation of its own — so the two are different
+    /// pictures of the same data. The default draws nothing.
+    fn draw_body(&self, _d: &mut Draw, _rect: Rect, _local: &crate::viewport::View, _dur: f64) {}
+
+    /// **What this element reserves left of its body** for chrome of its own —
+    /// a value ruler — when it sits on a shared time axis. `0.0` by default.
+    ///
+    /// It is a *wish*, not a placement: the indent every member of a navigation
+    /// group draws at is the widest wish on that axis, because the axis is
+    /// shared and the same sample must sit at the same pixel in all of them.
+    /// Answered from the props alone, so the layout knows it before a single
+    /// rectangle exists.
+    fn gutter(&self, _m: &Metrics) -> f32 {
+        0.0
+    }
+
+    /// The gutter this element wants once it has been **placed**, or `None`
+    /// (the default) when its wish did not depend on the placement after all.
+    ///
+    /// A ruler's width can be a property of the *data* rather than of the
+    /// props: an amplitude axis zoomed onto a narrow range formats `-0.0625`
+    /// where the same axis unzoomed formats `-1.0`, and the step it labels at
+    /// depends on how tall the element ended up. That is one pass later than
+    /// [`gutter`](Element::gutter), so it is a second question and not the same
+    /// one — and an element answers `None` unless the measure would actually
+    /// widen the band, since a second layout pass is only taken when one is
+    /// owed.
+    fn measured_gutter(&self, _rect: Rect, _m: &Metrics) -> Option<f32> {
+        None
+    }
+
     /// **How many lanes this element stacks on screen**, given the `uploaded`
     /// count the front found in its GPU slot — the divisor for every
     /// lane-relative y gesture.
@@ -1046,6 +1202,23 @@ mod tests {
             (sample_rate / 100.0) as usize
         }
 
+        fn gutter(&self, m: &Metrics) -> f32 {
+            // A band of its own left of the body, like a value ruler's.
+            m.ruler_w
+        }
+
+        fn gesture_map(&self) -> Option<GestureMap> {
+            // Placed on somebody's axis: a plain drag is the axis' selection,
+            // Shift its pan -- the table a navigable view wants.
+            use super::super::GestureStep::*;
+            Some(GestureMap::of_plans(
+                &[Select],
+                &[Pan],
+                &[Select],
+                &[Select],
+            ))
+        }
+
         fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
             self.count += 1;
             Claim::value(OscType::Int(self.count))
@@ -1115,6 +1288,20 @@ mod tests {
             &Value::from(1)
         ));
         assert_eq!(w.kind.event_value(), Some(OscType::Int(11)));
+
+        // The chrome and the drag are the element's too: the band it reserves
+        // left of its body on a shared axis, and the table the press walk
+        // reads when the wire declares none.
+        assert_eq!(w.kind.gutter(&m), m.ruler_w);
+        assert_eq!(
+            super::super::GestureMap::of_kind(&w.kind),
+            super::super::GestureMap::of_plans(
+                &[super::super::GestureStep::Select],
+                &[super::super::GestureStep::Pan],
+                &[super::super::GestureStep::Select],
+                &[super::super::GestureStep::Select],
+            )
+        );
 
         // And it is a stop on the window's tab ring, which is the whole of
         // what a keyboard costs an element: one declaration and one method.
