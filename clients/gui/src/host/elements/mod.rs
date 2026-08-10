@@ -24,9 +24,13 @@
 use super::widget::element::Constructor;
 
 mod canvas;
+mod control;
+mod knob;
 mod label;
 mod meter;
 mod nodes;
+mod number;
+mod slider;
 
 /// The constructor for a built-in element name, or `None` when no built-in
 /// answers to it — in which case the caller consults the registry, and then
@@ -34,9 +38,12 @@ mod nodes;
 pub(crate) fn builtin(name: &str) -> Option<Constructor> {
     Some(match name {
         "canvas" => canvas::build,
+        "knob" => knob::build,
         "label" => label::build,
         "meter" => meter::build,
         "nodes" => nodes::build,
+        "number" => number::build,
+        "slider" => slider::build,
         _ => return None,
     })
 }

@@ -150,8 +150,15 @@ fn a_list_with_no_room_below_opens_upwards() {
 }
 
 fn slider_value(host: &Host, id: i32) -> f32 {
-    match &host.window_def(1).unwrap().find(id).unwrap().kind {
-        WidgetKind::Slider { range, .. } => range.value,
+    match host
+        .window_def(1)
+        .unwrap()
+        .find(id)
+        .unwrap()
+        .kind
+        .event_value()
+    {
+        Some(OscType::Float(v)) => v,
         other => panic!("not a slider: {other:?}"),
     }
 }
@@ -526,7 +533,10 @@ fn slider_press_and_drag_set_the_value_and_emit() {
     // Dragging to the far right pins the value at max.
     g.drag_to(&mut host, &ctx, 399.0, 25.0);
     assert_eq!(slider_value(&host, 10), 10.0);
-    assert!(g.release(&mut host, &ctx, 399.0, 25.0).is_empty());
+    // The release reports nothing — the value left on every step — but the
+    // window repaints: an element that drew itself held has to be drawn let go.
+    let effects = g.release(&mut host, &ctx, 399.0, 25.0);
+    assert_eq!(effects, vec![GestureEffect::Redraw(1)]);
     assert!(!g.dragging());
 }
 

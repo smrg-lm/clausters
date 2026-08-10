@@ -108,11 +108,6 @@ pub fn drag_fraction_delta(dy: f64, body_h: f32) -> f32 {
 /// [`Placed::scale`]: super::layout::Placed::scale
 pub fn draw(d: &mut Draw, kind: &WidgetKind, rect: Rect, active: bool, focused: bool, scale: f32) {
     match kind {
-        WidgetKind::Slider { range, vertical } => {
-            slider(d, range, rect, *vertical, range.text_size * scale)
-        }
-        WidgetKind::Knob(r) => knob(d, r, rect, r.text_size * scale),
-        WidgetKind::Number(r) => number(d, r, rect, r.text_size * scale),
         WidgetKind::Button { label, text_size } => {
             button(d, label.as_deref(), rect, active, *text_size * scale)
         }
@@ -172,7 +167,7 @@ fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect, size: f32) {
     }
 }
 
-fn slider(d: &mut Draw, r: &Range, rect: Rect, vertical: bool, size: f32) {
+pub fn slider(d: &mut Draw, r: &Range, rect: Rect, vertical: bool, size: f32) {
     label_strip(d, r.label.as_deref(), rect, size);
     // The groove lives in the track area, the number in the strip under it (the
     // knob's posture): the read-out is beside what it reads, never over it.
@@ -235,7 +230,7 @@ fn slider(d: &mut Draw, r: &Range, rect: Rect, vertical: bool, size: f32) {
     value_text(d, &fmt(r.value), readout, size);
 }
 
-fn knob(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
+pub fn knob(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
     label_strip(d, r.label.as_deref(), rect, size);
     let body = body_rect_at(rect, r.label.is_some(), size, d.m);
     let (mesh, m, theme) = d.parts();
@@ -257,7 +252,7 @@ fn knob(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
     value_text(d, &fmt(r.value), readout, size);
 }
 
-fn number(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
+pub fn number(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
     label_strip(d, r.label.as_deref(), rect, size);
     let body = body_rect_at(rect, r.label.is_some(), size, d.m);
     let (mesh, m, theme) = d.parts();

@@ -54,20 +54,6 @@ pub(crate) fn scroll_set_view(
     Some(next)
 }
 
-/// Sets a continuous control's value from a 0..1 fraction, in the host tree.
-pub(crate) fn set_fraction(host: &mut Host, def_id: i32, widget_id: i32, t: f32) {
-    if let Some(tree) = host.window_def_mut(def_id)
-        && let Some(w) = tree.find_mut(widget_id)
-    {
-        match &mut w.kind {
-            WidgetKind::Slider { range: r, .. } | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
-                r.set_fraction(t)
-            }
-            _ => {}
-        }
-    }
-}
-
 /// Runs `f` over a `text` field's `(value, caret)` in the host tree — the one
 /// door every keystroke and click goes through, so the fronts never unpack the
 /// variant themselves (the sibling of [`set_fraction`]/[`bpf_edit`]). `f`'s

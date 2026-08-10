@@ -110,9 +110,6 @@ impl WidgetKind {
     /// is the event).
     pub fn event_value(&self) -> Option<OscType> {
         match self {
-            WidgetKind::Slider { range: r, .. } | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
-                Some(OscType::Float(r.value))
-            }
             WidgetKind::Toggle { value, .. } => Some(OscType::Int(*value as i32)),
             WidgetKind::Menu { index, .. } => Some(OscType::Int(*index as i32)),
             WidgetKind::Text { value, .. } => Some(OscType::String(value.clone())),

@@ -105,12 +105,6 @@ pub(super) fn build_kind(
             }
         }
         "score" => WidgetKind::Score(super::score::ScoreData::parse(props)),
-        "slider" => WidgetKind::Slider {
-            range: Range::parse(props),
-            vertical: props.get("vertical").and_then(truthy).unwrap_or(false),
-        },
-        "knob" => WidgetKind::Knob(Range::parse(props)),
-        "number" => WidgetKind::Number(Range::parse(props)),
         "button" => WidgetKind::Button {
             label: label(props),
             text_size: text_size(props),

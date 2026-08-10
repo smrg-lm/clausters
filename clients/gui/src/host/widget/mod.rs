@@ -161,13 +161,6 @@ pub enum WidgetKind {
     /// the timeline views do. Read-only for now: the MEI xml:id travels on each
     /// primitive for a later interactive/edit-back pass.
     Score(super::score::ScoreData),
-    /// A continuous slider over `[min, max]`. `vertical` lays it out along the
-    /// y axis (min at the bottom, max at the top) instead of the x axis.
-    Slider { range: Range, vertical: bool },
-    /// A rotary control over `[min, max]`.
-    Knob(Range),
-    /// A draggable numeric read-out over `[min, max]`.
-    Number(Range),
     /// A momentary push button.
     Button {
         label: Option<String>,

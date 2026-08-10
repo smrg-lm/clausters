@@ -13,9 +13,9 @@
 
 use clausters_core::osc::OscType;
 
-use super::super::interact::{self, slider_t};
+use super::super::interact::{self};
 use super::super::widget::{Axis, WidgetKind};
-use super::super::{Host, bpf, controls, piano, pianoroll};
+use super::super::{Host, bpf, piano, pianoroll};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element};
@@ -175,28 +175,6 @@ impl Gestures {
                 if let Some(Drag::Marquee { cursor, .. }) = self.drag.as_mut() {
                     *cursor = (cx, cy);
                 }
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            Drag::Vertical { locked: true, .. } => {}
-            Drag::Slider { id, body, vertical } => {
-                let t = slider_t(body, cx, cy, vertical);
-                interact::set_fraction(host, def_id, id, t);
-                emit_value(host, &mut out, def_id, id);
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            Drag::Vertical {
-                id, last_y, body_h, ..
-            } => {
-                // Incremental: add this step's delta to the *current* (clamped)
-                // fraction and re-anchor `last_y`. A value pinned at an end stays
-                // put, but reversing moves it immediately — no snapshot dead zone.
-                let cur = interact::fraction_of(host, def_id, id).unwrap_or(0.0);
-                let t = (cur + controls::drag_fraction_delta(cy - last_y, body_h)).clamp(0.0, 1.0);
-                interact::set_fraction(host, def_id, id, t);
-                if let Some(Drag::Vertical { last_y, .. }) = self.drag.as_mut() {
-                    *last_y = cy;
-                }
-                emit_value(host, &mut out, def_id, id);
                 out.push(GestureEffect::Redraw(def_id));
             }
             Drag::Pan {
@@ -568,7 +546,6 @@ impl Gestures {
                 deliver(host, &mut out, def_id, id, OscType::Int(0));
                 out.push(GestureEffect::Redraw(def_id));
             }
-            Some(Drag::Vertical { .. }) => out.push(GestureEffect::ReleasePointer(def_id)),
             Some(Drag::Element {
                 id,
                 rect,
@@ -707,21 +684,6 @@ impl Gestures {
             }
             return out;
         }
-        let Some(Drag::Vertical {
-            id,
-            body_h,
-            locked: true,
-            ..
-        }) = self.drag
-        else {
-            return out;
-        };
-        let def_id = ctx.def_id;
-        let cur = interact::fraction_of(host, def_id, id).unwrap_or(0.0);
-        let t = (cur + controls::drag_fraction_delta(dy, body_h)).clamp(0.0, 1.0);
-        interact::set_fraction(host, def_id, id, t);
-        emit_value(host, &mut out, def_id, id);
-        out.push(GestureEffect::Redraw(def_id));
         out
     }
 }

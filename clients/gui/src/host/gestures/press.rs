@@ -15,7 +15,7 @@
 
 use clausters_core::osc::OscType;
 
-use super::super::interact::{self, Hit, slider_t};
+use super::super::interact::{self, Hit};
 use super::super::textedit;
 use super::super::widget::{Claim, GestureStep, WidgetKind};
 use super::super::{Host, bpf, controls, patch, piano, pianoroll};
@@ -325,37 +325,6 @@ impl Gestures {
         let def_id = ctx.def_id;
         let effects_before = out.len();
         match kind {
-            WidgetKind::Slider { range: r, vertical } => {
-                // The track area, not the whole body: the grab has to agree with
-                // the groove the renderer drew (`controls::slider_track`) — at
-                // the placement's own table, which is what the renderer used.
-                let body = controls::slider_track(
-                    rect,
-                    r.label.is_some(),
-                    r.text_size * scale,
-                    &host.metrics_for(def_id).at(scale),
-                );
-                let t = slider_t(body, cx, cy, vertical);
-                interact::set_fraction(host, def_id, id, t);
-                emit_value(host, out, def_id, id);
-                self.drag = Some(Drag::Slider { id, body, vertical });
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            WidgetKind::Knob(r) | WidgetKind::Number(r) => {
-                let body = controls::body_rect_at(
-                    rect,
-                    r.label.is_some(),
-                    r.text_size * scale,
-                    &host.metrics_for(def_id).at(scale),
-                );
-                let locked = grab();
-                self.drag = Some(Drag::Vertical {
-                    id,
-                    last_y: cy,
-                    body_h: body.h,
-                    locked,
-                });
-            }
             WidgetKind::Button { .. } => {
                 deliver(host, out, def_id, id, OscType::Int(1));
                 self.drag = Some(Drag::Button { id });

@@ -139,22 +139,6 @@ enum Drag {
         scale: f32,
         grab: bool,
     },
-    /// A slider: the value follows the cursor within `body` — along x, or along y
-    /// when `vertical`.
-    Slider { id: i32, body: Rect, vertical: bool },
-    /// A knob or number: the value moves incrementally with the vertical drag.
-    /// On press the front is asked to grab the pointer; `locked` records which
-    /// grab won: when `true` the pointer is locked and motion arrives as
-    /// relative deltas ([`Gestures::relative_motion`]); when `false` (confined
-    /// or ungrabbed) cursor motion still drives it, and `last_y` re-anchors on
-    /// every step so a value pinned at an end has no dead zone — reversing
-    /// direction moves it at once instead of sticking and jumping.
-    Vertical {
-        id: i32,
-        last_y: f64,
-        body_h: f32,
-        locked: bool,
-    },
     /// A momentary button held down (emits 0 on release).
     Button { id: i32 },
     /// Panning a timeline view's (waveform/spectrogram) window from a snapshot
@@ -494,10 +478,7 @@ impl Gestures {
     /// ([`Self::relative_motion`]), not by cursor positions. What an element
     /// asked for and the front granted.
     pub fn locked(&self) -> bool {
-        matches!(
-            self.drag,
-            Some(Drag::Vertical { locked: true, .. } | Drag::Element { grab: true, .. })
-        )
+        matches!(self.drag, Some(Drag::Element { grab: true, .. }))
     }
 
     /// Whether a clip drag is currently held against a lane's edge, so the

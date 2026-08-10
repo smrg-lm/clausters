@@ -47,17 +47,6 @@ pub(crate) fn plane_can_pan(
     }
 }
 
-/// The current 0..1 fraction of a continuous control (slider/knob/number) in the
-/// host tree — the live value used to drive an incremental drag.
-pub(crate) fn fraction_of(host: &Host, def_id: i32, widget_id: i32) -> Option<f32> {
-    match &host.window_def(def_id)?.find(widget_id)?.kind {
-        WidgetKind::Slider { range: r, .. } | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
-            Some(r.fraction())
-        }
-        _ => None,
-    }
-}
-
 /// The current event value of widget `id` in `tree` (what a `/gui_event` or a
 /// bound forward carries).
 pub(crate) fn value_of(tree: &Widget, id: i32) -> Option<OscType> {

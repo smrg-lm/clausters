@@ -20,7 +20,6 @@
 //! [`read`]: super::read
 //! [`edit`]: super::edit
 
-use super::super::controls;
 use super::super::layout::Rect;
 use super::super::pianoroll;
 use super::super::widget::{GestureMap, ScrollView, WidgetKind};
@@ -254,17 +253,6 @@ pub(crate) fn clip_drag_placement(
             let new_off = snap(orig_offset + delta, grid).clamp(0.0, end);
             (new_off, end - new_off)
         }
-    }
-}
-
-/// The 0..1 fraction a slider press/drag at `(cx, cy)` maps to, by orientation:
-/// the cursor x along a horizontal track, or y (bottom = 0, top = 1) on a
-/// `vertical` one.
-pub(crate) fn slider_t(body: Rect, cx: f64, cy: f64, vertical: bool) -> f32 {
-    if vertical {
-        controls::slider_fraction_v(body, cy)
-    } else {
-        controls::slider_fraction(body, cx)
     }
 }
 

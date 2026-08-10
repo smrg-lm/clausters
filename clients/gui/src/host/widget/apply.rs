@@ -193,16 +193,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             "editable" => v.as_bool().map(|b| data.editable = b).is_some(),
             _ => false,
         },
-        WidgetKind::Slider { range: r, .. } | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
-            match key {
-                "value" => set_f(&mut r.value, v),
-                "min" => set_f(&mut r.min, v),
-                "max" => set_f(&mut r.max, v),
-                "label" => set_label(&mut r.label, v),
-                "text_size" => set_size(&mut r.text_size, v),
-                _ => false,
-            }
-        }
         WidgetKind::Toggle {
             value,
             label,

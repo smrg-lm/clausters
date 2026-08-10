@@ -84,7 +84,6 @@ impl WidgetKind {
             WidgetKind::Toggle { text_size, .. } => {
                 (None, Some(control_box(text(text_size), m).max(m.box_side)))
             }
-            WidgetKind::Number(r) => (None, Some(field_h(r, m, scale))),
             WidgetKind::Menu {
                 label, text_size, ..
             } => (
@@ -112,18 +111,6 @@ impl WidgetKind {
             ),
 
             // -- Mixed: a thickness across the control's axis, elastic along it --
-            WidgetKind::Slider { range, vertical } => {
-                if *vertical {
-                    (Some(slider_across(m)), None)
-                } else {
-                    (None, Some(slider_thick(range, m, scale)))
-                }
-            }
-            // A knob knows its height, not its width: the disc sizes itself to
-            // the shorter side of its body and centres there, so extra width is
-            // slack it absorbs, while extra height would stack it under dead
-            // space. Elastic across, so a row of knobs still spreads.
-            WidgetKind::Knob(r) => (None, Some(knob_h(r, m, scale))),
             // A ruler is a strip: it spans its axis and knows its thickness.
             WidgetKind::TimeRuler { .. } => (None, Some(m.ruler_h)),
 
@@ -140,7 +127,7 @@ impl WidgetKind {
 
 /// A labelled field's height: its label strip, its body inset and one control
 /// line (the read-out row).
-fn field_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
+pub(crate) fn field_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
     let size = r.text_size * scale;
     label_strip(r.label.is_some(), size, m) + body_inset(m) + control_box(size, m)
 }
@@ -149,7 +136,7 @@ fn field_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
 /// handle's grip across the track and the read-out strip under it — the same
 /// reservation the drawing makes ([`controls::slider_track`]), so the groove
 /// gets the grip it asked for and the number gets its own row.
-fn slider_thick(r: &Range, m: &Metrics, scale: f32) -> f32 {
+pub(crate) fn slider_thick(r: &Range, m: &Metrics, scale: f32) -> f32 {
     let size = r.text_size * scale;
     label_strip(r.label.is_some(), size, m)
         + body_inset(m)
@@ -160,7 +147,7 @@ fn slider_thick(r: &Range, m: &Metrics, scale: f32) -> f32 {
 /// A vertical slider's width: the grip across the track, inset in the body.
 /// The value read-out shares that width and ellipsizes — a number's own length
 /// is data, and no size here may follow it.
-fn slider_across(m: &Metrics) -> f32 {
+pub(crate) fn slider_across(m: &Metrics) -> f32 {
     body_inset(m) + m.handle_grip.max(m.box_side)
 }
 

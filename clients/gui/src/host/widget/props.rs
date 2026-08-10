@@ -881,7 +881,7 @@ pub struct Range {
 }
 
 impl Range {
-    pub(super) fn parse(props: &serde_json::Map<String, Value>) -> Range {
+    pub(crate) fn parse(props: &serde_json::Map<String, Value>) -> Range {
         let min = number(props, "min", 0.0);
         let max = number(props, "max", 1.0);
         let value = number(props, "value", min).clamp(min.min(max), min.max(max));
@@ -895,7 +895,7 @@ impl Range {
     }
 
     /// This control's value axis — the range its handle travels.
-    pub(super) fn axis(&self) -> crate::viewport::Axis {
+    pub(crate) fn axis(&self) -> crate::viewport::Axis {
         crate::viewport::Axis::ranged(
             self.min as f64,
             self.max as f64,

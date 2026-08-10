@@ -304,7 +304,7 @@ pub(super) fn clamp_text_size(s: f32) -> f32 {
 }
 
 /// Sets a `text_size` slot from a numeric JSON value, clamped.
-pub(super) fn set_size(slot: &mut f32, v: &Value) -> bool {
+pub(crate) fn set_size(slot: &mut f32, v: &Value) -> bool {
     match v.as_f64() {
         Some(x) => {
             *slot = clamp_text_size(x as f32);
