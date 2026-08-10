@@ -406,40 +406,12 @@ pub enum TextKey {
 #[derive(Default)]
 pub struct Gestures {
     drag: Option<Drag>,
-    /// The `menu` whose option list is **open**, and where that list was
-    /// placed. A popup is the one thing on screen that is not a placement, so
-    /// it lives here with the rest of the interaction state and reaches the
-    /// renderer through [`FrameInputs`](super::frame::FrameInputs) — the same
-    /// road the marquee takes.
-    menu: Option<MenuOpen>,
-}
-
-/// An open `menu`'s list: which widget opened it and the rectangle it occupies
-/// (device pixels), resolved once at the press so the drawing and the click
-/// cannot disagree about where the rows are.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MenuOpen {
-    pub id: i32,
-    pub popup: Rect,
 }
 
 impl Gestures {
     /// Whether a drag is in progress (the front routes cursor motion here).
     pub fn dragging(&self) -> bool {
         self.drag.is_some()
-    }
-
-    /// The open `menu`'s list, if one is open — what the renderer draws over
-    /// the window and what the next press is tested against first.
-    pub fn menu_open(&self) -> Option<MenuOpen> {
-        self.menu
-    }
-
-    /// Closes an open list, if any; `true` when there was one (the caller
-    /// repaints). A def that replaces the tree, a window that closes and a
-    /// press outside all end the same way.
-    pub fn close_menu(&mut self) -> bool {
-        self.menu.take().is_some()
     }
 
     /// The selection marquee in flight, if any: the `patch` widget and the

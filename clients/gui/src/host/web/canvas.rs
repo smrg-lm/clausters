@@ -281,7 +281,6 @@ impl WebApp {
                 .gestures
                 .wiring()
                 .map(|(id, port)| (id, port, (slot.cursor.0 as f32, slot.cursor.1 as f32))),
-            menu_popup: slot.gestures.menu_open(),
             marquee: slot.gestures.marquee(),
             ..Default::default()
         };

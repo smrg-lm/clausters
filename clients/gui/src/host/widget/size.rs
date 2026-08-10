@@ -78,16 +78,6 @@ impl WidgetKind {
         let text = |size: &f32| *size * scale;
         match self {
             // -- Content: the widget knows its own extent --
-            WidgetKind::Menu {
-                label, text_size, ..
-            } => (
-                None,
-                Some(
-                    label_strip(label.is_some(), text(text_size), m)
-                        + body_inset(m)
-                        + control_box(text(text_size), m),
-                ),
-            ),
             WidgetKind::Text {
                 label,
                 text_size,

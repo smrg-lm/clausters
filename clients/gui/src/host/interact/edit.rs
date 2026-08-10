@@ -110,18 +110,6 @@ pub(crate) fn lane_resize(
     Some(to)
 }
 
-/// Sets a `menu`'s selected option in the host tree (a pick from its open
-/// list), ignoring an index the list does not have.
-pub(crate) fn set_menu_index(host: &mut Host, def_id: i32, id: i32, to: usize) {
-    if let Some(tree) = host.window_def_mut(def_id)
-        && let Some(w) = tree.find_mut(id)
-        && let WidgetKind::Menu { index, options, .. } = &mut w.kind
-        && to < options.len()
-    {
-        *index = to;
-    }
-}
-
 /// Runs `f` over a `bpf` widget's model in the host tree — the one door every
 /// envelope edit goes through, so the fronts never unpack the variant
 /// themselves. `f` gets the breakpoints and the display mapping (the time

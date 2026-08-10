@@ -272,25 +272,6 @@ pub(super) struct ClipBodyItem {
     pub(super) kind: WidgetKind,
 }
 
-/// One placed **spectral clip body**: the time-frequency take of a clip, whose
-/// picture is a texture rather than mesh geometry, so it is collected apart
-/// from the mesh-drawn bodies and drawn in the GPU pass.
-///
-/// `id` is the **clip's** — a body carries none of its own, and the slot the
-/// texture lives in is keyed by whatever addresses the widget. `local` is the
-/// clip's own axis (the slice of `[0, dur]` its rectangle shows), which is what
-/// makes the analysis end where the clip ends instead of spanning the lane.
-/// The open list of a `menu`, copied out of the tree: where it goes, what is in
-/// it and the size its rows draw at. Collected with the placements (only they
-/// know the scale) and drawn last, into the overlay.
-pub(super) struct MenuPopupItem {
-    pub(super) popup: Rect,
-    pub(super) options: Vec<String>,
-    pub(super) index: usize,
-    pub(super) size: f32,
-    pub(super) theme: Option<Arc<Theme>>,
-}
-
 pub(super) struct SpectralBodyItem {
     pub(super) id: i32,
     pub(super) rect: Rect,
@@ -432,7 +413,6 @@ pub(super) struct Collected {
     pub(super) clip_items: Vec<ClipItem>,
     pub(super) clip_bodies: Vec<ClipBodyItem>,
     pub(super) spectral_bodies: Vec<SpectralBodyItem>,
-    pub(super) menu_popup: Option<MenuPopupItem>,
     pub(super) ruler_items: Vec<RulerItem>,
     pub(super) pianoroll_items: Vec<PianoRollItem>,
     pub(super) canvas_frames: Vec<CanvasFrame>,
@@ -470,7 +450,6 @@ pub(super) fn collect_widgets(
     // emits parent-before-child), which is the layering the drawing needs.
     let mut clip_items: Vec<ClipItem> = Vec::new();
     let mut clip_bodies: Vec<ClipBodyItem> = Vec::new();
-    let mut menu_popup: Option<MenuPopupItem> = None;
     let mut spectral_bodies: Vec<SpectralBodyItem> = Vec::new();
     let mut ruler_items: Vec<RulerItem> = Vec::new();
     let mut pianoroll_items: Vec<PianoRollItem> = Vec::new();
@@ -740,27 +719,6 @@ pub(super) fn collect_widgets(
             }
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
             kind => {
-                // The open list of *this* menu, collected here because only the
-                // placement knows the scale its text is drawn at.
-                if let (
-                    WidgetKind::Menu {
-                        options,
-                        index,
-                        text_size,
-                        ..
-                    },
-                    Some(open),
-                ) = (kind, inputs.menu_popup)
-                    && p.widget.id == Some(open.id)
-                {
-                    menu_popup = Some(MenuPopupItem {
-                        popup: open.popup,
-                        options: options.clone(),
-                        index: *index,
-                        size: *text_size * p.scale,
-                        theme: p.widget.theme.clone(),
-                    });
-                }
                 // A control draws its parts at its **natural** size — a label
                 // strip, a body, a read-out row — whatever cell it was given.
                 // Put in a strip shorter than that, it used to paint over its
@@ -793,7 +751,6 @@ pub(super) fn collect_widgets(
         clip_items,
         clip_bodies,
         spectral_bodies,
-        menu_popup,
         ruler_items,
         pianoroll_items,
         canvas_frames,

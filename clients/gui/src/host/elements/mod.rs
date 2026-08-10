@@ -28,6 +28,7 @@ mod canvas;
 mod control;
 mod knob;
 mod label;
+mod menu;
 mod meter;
 mod nodes;
 mod number;
@@ -44,6 +45,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "knob" => knob::build,
         "label" => label::build,
         "meter" => meter::build,
+        "menu" => menu::build,
         "nodes" => nodes::build,
         "number" => number::build,
         "slider" => slider::build,

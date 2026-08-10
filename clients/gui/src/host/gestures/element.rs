@@ -94,10 +94,8 @@ pub(super) fn report(
 /// closed one, and a def that replaced the tree takes its overlays with it.
 pub(super) fn overlay_owner(host: &Host, ctx: &GestureCtx) -> Option<(i32, Rect, f32)> {
     let placed = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h)?;
-    placed.iter().find_map(|p| match &p.widget.kind {
-        WidgetKind::Custom(el) if el.overlay_rect().is_some() => {
-            Some((p.widget.id?, p.rect, p.scale))
-        }
-        _ => None,
-    })
+    placed
+        .iter()
+        .find(|p| p.widget.kind.overlay_rect().is_some())
+        .and_then(|p| Some((p.widget.id?, p.rect, p.scale)))
 }

@@ -323,7 +323,7 @@ pub(crate) fn label(props: &serde_json::Map<String, Value>) -> Option<String> {
 }
 
 /// The `options` property as a list of strings (for a menu).
-pub(super) fn options(props: &serde_json::Map<String, Value>) -> Vec<String> {
+pub(crate) fn options(props: &serde_json::Map<String, Value>) -> Vec<String> {
     match props.get("options") {
         Some(Value::Array(items)) => items
             .iter()

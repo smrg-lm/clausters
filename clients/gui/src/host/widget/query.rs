@@ -98,6 +98,19 @@ impl WidgetKind {
         ) || matches!(self, WidgetKind::Custom(el) if el.is_bare_surface())
     }
 
+    /// The area this widget occupies **outside its own rect** — an open list, a
+    /// popup — or `None` for one that stays inside its placement.
+    ///
+    /// Only an element can have one, and it *declares* it, which is what lets
+    /// the frame draw it last and the press route to it first without either
+    /// pass keeping state about who opened what.
+    pub fn overlay_rect(&self) -> Option<super::super::layout::Rect> {
+        match self {
+            WidgetKind::Custom(el) => el.overlay_rect(),
+            _ => None,
+        }
+    }
+
     /// The signal element this widget is, when it navigates its **own**
     /// frequency axis rather than the window's time — the one element that
     /// carries an x window instead of joining a navigation group.
@@ -110,7 +123,6 @@ impl WidgetKind {
     /// is the event).
     pub fn event_value(&self) -> Option<OscType> {
         match self {
-            WidgetKind::Menu { index, .. } => Some(OscType::Int(*index as i32)),
             WidgetKind::Text { value, .. } => Some(OscType::String(value.clone())),
             WidgetKind::Custom(el) => el.value(),
             _ => None,

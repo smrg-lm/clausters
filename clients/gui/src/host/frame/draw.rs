@@ -744,26 +744,6 @@ pub(super) fn draw_static_meshes(
             item.indent,
         );
     }
-    // The open menu list, last of everything drawn here and into the overlay:
-    // it covers whatever it opened over, including the heavy views the GPU pass
-    // paints between the two meshes. The row under the cursor highlights, which
-    // is read straight off the frame's cursor — a hover is not a gesture.
-    if let Some(item) = &collected.menu_popup {
-        over.set_clip(None);
-        let th = item.theme.as_deref().unwrap_or(theme);
-        let hover = inputs
-            .world
-            .cursor
-            .and_then(|(cx, cy)| controls::menu_row_at(item.popup, item.options.len(), cx, cy));
-        controls::draw_menu_popup(
-            &mut Draw::new(over, m, th),
-            item.popup,
-            &item.options,
-            item.index,
-            hover,
-            item.size,
-        );
-    }
 }
 
 /// The **overlays**: what an element draws outside its own rect, into the
@@ -783,12 +763,10 @@ pub(super) fn draw_element_overlays(
 ) {
     let m = inputs.metrics;
     for p in placed {
-        let WidgetKind::Custom(el) = &p.widget.kind else {
+        let (WidgetKind::Custom(el), Some(_)) = (&p.widget.kind, p.widget.kind.overlay_rect())
+        else {
             continue;
         };
-        if el.overlay_rect().is_none() {
-            continue;
-        }
         over.set_clip(None);
         let th = p.widget.theme.as_deref().unwrap_or(theme);
         el.overlay(

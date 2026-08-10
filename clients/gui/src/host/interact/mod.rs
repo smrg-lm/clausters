@@ -56,7 +56,7 @@ pub(crate) use edit::{
     graph_marquee, graph_move, graph_select, header_set, lane_resize, piano_press_key,
     piano_release_key, piano_set_range, pianoroll_notes_edit, pianoroll_osc_edit,
     pianoroll_state_edit, score_drag, score_drag_end, score_select, scroll_set_view,
-    select_elements_in_rect, set_menu_index, text_edit,
+    select_elements_in_rect, text_edit,
 };
 pub(crate) use hit::{
     PianoRollHit, PrRegion, clip_hit, header_hit, hit, pianoroll_hit, sole_time_axis, text_caret_at,

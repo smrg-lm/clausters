@@ -16,10 +16,10 @@
 use super::super::interact::{self, Hit};
 use super::super::textedit;
 use super::super::widget::{Claim, GestureStep, WidgetKind};
-use super::super::{Host, bpf, controls, patch, piano, pianoroll};
+use super::super::{Host, bpf, patch, piano, pianoroll};
 use super::effects::*;
 use super::nav::*;
-use super::{Drag, GestureCtx, GestureEffect, Gestures, MenuOpen, element};
+use super::{Drag, GestureCtx, GestureEffect, Gestures, element};
 use crate::viewport::View;
 
 impl Gestures {
@@ -48,22 +48,11 @@ impl Gestures {
         grab: &mut dyn FnMut() -> bool,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
-        // An **open list is modal**: it is over everything, so it is tested
-        // before the tree, and it swallows the press either way — on a row it
-        // picks that option, anywhere else it just closes, the way a menu
-        // everywhere else behaves.
-        if let Some(open) = self.menu.take() {
-            out.push(GestureEffect::Redraw(ctx.def_id));
-            if let Some(row) = self.menu_row(host, ctx, open, cx, cy) {
-                interact::set_menu_index(host, ctx.def_id, open.id, row);
-                emit_value(host, &mut out, ctx.def_id, open.id);
-            }
-            return out;
-        }
-        // The same rule for an element that **declared** an overlay: whatever
-        // the layout puts under the point, the press is that element's — on its
-        // own area it acts, anywhere else it closes. It is asked for the point
-        // and answers for both cases, since only it knows where its area is.
+        // An element that **declared** an overlay is modal: it is over
+        // everything, so it is tested before the tree and it swallows the press
+        // either way — on its own area it acts, anywhere else it closes, the
+        // way a menu everywhere else behaves. It is asked for the point and
+        // answers for both cases, since only it knows where its area is.
         if let Some((id, rect, scale)) = element::overlay_owner(host, ctx) {
             out.push(GestureEffect::Redraw(ctx.def_id));
             let claim = element::with(host, ctx, id, rect, scale, |el, input| {
@@ -164,28 +153,6 @@ impl Gestures {
             body_w: sole.axis.body.w.max(1.0) as f64,
         });
         true
-    }
-
-    /// The option row an open list has under `(cx, cy)` — `None` when the press
-    /// landed outside the list (which closes it and picks nothing). The option
-    /// count comes from the tree, so a list left open over a widget that is
-    /// gone resolves to nothing rather than to a stale row.
-    fn menu_row(
-        &self,
-        host: &Host,
-        ctx: &GestureCtx,
-        open: MenuOpen,
-        cx: f64,
-        cy: f64,
-    ) -> Option<usize> {
-        let options = host
-            .window_def(ctx.def_id)
-            .and_then(|tree| tree.find(open.id))
-            .and_then(|w| match &w.kind {
-                WidgetKind::Menu { options, .. } => Some(options.len()),
-                _ => None,
-            })?;
-        controls::menu_row_at(open.popup, options, cx, cy)
     }
 
     /// One container-level step of a press: the gestures that belong to the
@@ -323,24 +290,6 @@ impl Gestures {
         let def_id = ctx.def_id;
         let effects_before = out.len();
         match kind {
-            WidgetKind::Menu {
-                ref options,
-                ref label,
-                text_size,
-                ..
-            } => {
-                // The list hangs off the menu's **body** (the field the chosen
-                // option is drawn in), not off the whole cell, so it lines up
-                // with what it is replacing rather than with the label over it.
-                let m = host.metrics_for(def_id).at(scale);
-                let size = text_size * scale;
-                let body = controls::body_rect_at(rect, label.is_some(), size, &m);
-                self.menu = Some(MenuOpen {
-                    id,
-                    popup: controls::menu_popup(body, options.len(), size, ctx.fb_h as f32, &m),
-                });
-                out.push(GestureEffect::Redraw(def_id));
-            }
             WidgetKind::Text { .. } => {
                 // Focus the field and drop the caret where the press landed; a
                 // drag from here extends a selection.

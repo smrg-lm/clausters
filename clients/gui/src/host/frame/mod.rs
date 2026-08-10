@@ -301,10 +301,6 @@ pub(crate) struct FrameInputs<'a> {
     /// The id of the focused editable `text` field in this window (drawn with a
     /// caret and its selection), if any.
     pub(crate) focused_text: Option<i32>,
-    /// The `menu` whose option list is **open** and where it was placed
-    /// ([`Gestures::menu_open`](super::gestures::Gestures::menu_open)). Drawn
-    /// last, over everything: a list that opens covers what it opens over.
-    pub(crate) menu_popup: Option<super::gestures::MenuOpen>,
     /// A selection marquee in flight on a patch: the widget and the
     /// rectangle (device pixels), drawn over the canvas.
     pub(crate) marquee: Option<(i32, Rect)>,
@@ -324,7 +320,6 @@ impl Default for FrameInputs<'_> {
             world: World::default(),
             focused_text: None,
             wiring: None,
-            menu_popup: None,
             marquee: None,
         }
     }

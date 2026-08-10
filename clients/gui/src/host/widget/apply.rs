@@ -214,20 +214,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             "multiline" => truthy(v).map(|b| *multiline = b).is_some(),
             _ => false,
         },
-        WidgetKind::Menu {
-            index,
-            options,
-            label,
-            text_size,
-        } => match key {
-            "index" => v
-                .as_u64()
-                .map(|n| *index = (n as usize).min(options.len().saturating_sub(1)))
-                .is_some(),
-            "label" => set_label(label, v),
-            "text_size" => set_size(text_size, v),
-            _ => false,
-        },
         WidgetKind::Patch {
             patch,
             selected,

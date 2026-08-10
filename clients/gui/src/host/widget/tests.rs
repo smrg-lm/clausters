@@ -1176,10 +1176,11 @@ fn parses_controls_and_clamps_value() {
         Some(OscType::Int(1)),
         "the toggle parsed its state"
     );
-    assert!(matches!(
-        &w.children[2].kind,
-        WidgetKind::Menu { index: 1, .. }
-    ));
+    assert_eq!(
+        w.children[2].kind.event_value(),
+        Some(OscType::Int(1)),
+        "the menu parsed its index"
+    );
 }
 
 #[test]

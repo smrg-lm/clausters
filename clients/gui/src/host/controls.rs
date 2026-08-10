@@ -442,7 +442,7 @@ pub fn draw_menu_popup(
 /// label, and then the click that changes the value comes as a surprise. The
 /// gutter is reserved out of the text's width, so a long option ellipsizes
 /// before it reaches the marker.
-fn menu(d: &mut Draw, current: &str, label: Option<&str>, rect: Rect, size: f32) {
+pub fn menu(d: &mut Draw, current: &str, label: Option<&str>, rect: Rect, size: f32) {
     let gutter = font::height(size) + d.m.pad;
     let text_cell = Rect::new(rect.x, rect.y, (rect.w - gutter).max(0.0), rect.h);
     field(d, current, label, text_cell, size, false, None);

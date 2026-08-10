@@ -62,10 +62,28 @@ fn menu_host() -> Host {
 }
 
 fn menu_index(host: &Host, id: i32) -> usize {
-    match &host.window_def(1).unwrap().find(id).unwrap().kind {
-        WidgetKind::Menu { index, .. } => *index,
+    match host
+        .window_def(1)
+        .unwrap()
+        .find(id)
+        .unwrap()
+        .kind
+        .event_value()
+    {
+        Some(OscType::Int(n)) => n as usize,
         other => panic!("not a menu: {other:?}"),
     }
+}
+
+/// The open list of menu `id`, read off the widget — which is where it lives:
+/// the machine keeps no note of who opened what.
+fn menu_popup(host: &Host, id: i32) -> Option<crate::host::layout::Rect> {
+    host.window_def(1)
+        .unwrap()
+        .find(id)
+        .unwrap()
+        .kind
+        .overlay_rect()
 }
 
 #[test]
@@ -74,9 +92,8 @@ fn a_press_opens_the_menus_list_and_changes_nothing_yet() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     let effects = g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
-    let open = g.menu_open().expect("the list is open");
-    assert_eq!(open.id, 7);
-    assert!(open.popup.h > 0.0 && open.popup.w > 0.0);
+    let popup = menu_popup(&host, 7).expect("the list is open");
+    assert!(popup.h > 0.0 && popup.w > 0.0);
     assert_eq!(menu_index(&host, 7), 0, "opening picks nothing");
     assert!(
         !effects
@@ -92,7 +109,7 @@ fn a_press_on_a_row_picks_that_option_and_closes() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
-    let popup = g.menu_open().unwrap().popup;
+    let popup = menu_popup(&host, 7).unwrap();
     // The middle row: the option a click on it means, wherever the list
     // was placed (it hangs below the field, or above it near an edge).
     let row_h = popup.h as f64 / 3.0;
@@ -103,7 +120,7 @@ fn a_press_on_a_row_picks_that_option_and_closes() {
         popup.y as f64 + row_h * 1.5,
         &mut || false,
     );
-    assert!(g.menu_open().is_none(), "the list closes");
+    assert!(menu_popup(&host, 7).is_none(), "the list closes");
     assert_eq!(menu_index(&host, 7), 1);
     assert!(
         effects.iter().any(|e| matches!(
@@ -122,7 +139,7 @@ fn a_press_outside_the_list_only_closes_it() {
     let ctx = GestureCtx::new(1, 600, 400);
     g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
     let effects = g.press(&mut host, &ctx, 550.0, 380.0, &mut || false);
-    assert!(g.menu_open().is_none());
+    assert!(menu_popup(&host, 7).is_none());
     assert_eq!(menu_index(&host, 7), 0, "nothing picked");
     assert!(
         !effects
@@ -145,7 +162,7 @@ fn a_list_with_no_room_below_opens_upwards() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 200);
     g.press(&mut host, &ctx, 40.0, 180.0, &mut || false);
-    let popup = g.menu_open().unwrap().popup;
+    let popup = menu_popup(&host, 7).unwrap();
     assert!(popup.y + popup.h <= 200.0, "the list fits in the window");
 }
 
