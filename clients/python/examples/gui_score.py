@@ -220,7 +220,9 @@ def on_score(tag, *rest):
     selects it and sounds it; a drag reports a ``"transpose"`` by whole
     diatonic steps — this side makes it true, re-engraves and sends the
     page back. The handlers read `dl`/`by_id` when they run, so an edit
-    made meanwhile is simply played."""
+    made meanwhile is simply played. An event handler runs on the client's
+    reply thread, and the ambient session is per-thread, so every `play`
+    here names its `server` instead of letting it resolve."""
     global selected
     if tag == "element" and rest:
         selected = rest[0] or None
@@ -231,7 +233,7 @@ def on_score(tag, *rest):
         print(f"  clicked note {rest[0]}: MIDI {note['pitch']} "
               f"at {note['t']:.0f} ms")
         play(Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
-                   amp=0.15))
+                   amp=0.15), server=server)
     elif tag == "transpose" and len(rest) >= 2:
         # The host drew the drag; this side makes it true -- transpose by
         # those diatonic steps, re-engrave, and send the page back, which
@@ -248,8 +250,8 @@ def on_score(tag, *rest):
         print(f"  transposed {element} by {steps:+d} steps"
               + (f" -> MIDI {note['pitch']}" if note else ""))
         if note is not None:
-            play(Event(midinote=note["pitch"],
-                       dur=note["dur"] / 1000.0, amp=0.15))
+            play(Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
+                       amp=0.15), server=server)
 
 # Wire every widget by name: each button acts on its press (1) — `locate`
 # doubles as rewind, so playing it starts a fresh pass from the top — and
