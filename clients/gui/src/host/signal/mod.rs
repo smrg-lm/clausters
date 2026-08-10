@@ -47,6 +47,7 @@ use super::widget::{EditorProps, Rate, Ruler, RulerY};
 
 mod bulk;
 mod live;
+mod slot;
 pub use live::LiveState;
 
 /// The default peak-pyramid bucket of an element whose props name none: one
@@ -331,6 +332,12 @@ pub struct SignalElement {
     /// the rolling transform. Advanced once per tick ([`Self::tick`]) and only
     /// drawn afterwards, so a repaint never advances anything.
     pub live: LiveState,
+    /// Whether the element's **claimed GPU slot** has content it has not handed
+    /// the frame yet ([`Self::fill`]). True on a fresh element and at every
+    /// mutation point that changes what the slot would be built from; cleared
+    /// when the fill is taken, which is what keeps a still picture at zero
+    /// uploads.
+    pub slot_dirty: bool,
 }
 
 impl SignalElement {
@@ -370,6 +377,7 @@ impl SignalElement {
             editor,
             analysis: None,
             live: LiveState::default(),
+            slot_dirty: true,
         }
     }
 

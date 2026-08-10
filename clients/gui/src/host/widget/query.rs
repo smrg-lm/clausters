@@ -330,6 +330,32 @@ impl WidgetKind {
         }
     }
 
+    /// **What this widget's claimed GPU slot is fed**, when it has something
+    /// new for it.
+    ///
+    /// A built-in answers from its variant, an element for itself
+    /// ([`Element::fill`](super::Element::fill)) — the single door, so the
+    /// front's upload walk asks the tree what to upload instead of deriving it
+    /// from what each kind happens to be.
+    pub fn fill(&mut self) -> Option<super::element::SlotFill> {
+        match self {
+            WidgetKind::Signal(el) => el.fill(),
+            WidgetKind::Custom(el) => el.fill(),
+            _ => None,
+        }
+    }
+
+    /// **The window's GPU slots are gone** (a device rebuilt, a canvas
+    /// re-attached): whatever this widget handed over has to be handed over
+    /// again.
+    pub fn slot_dropped(&mut self) {
+        match self {
+            WidgetKind::Signal(el) => el.slot_dirty = true,
+            WidgetKind::Custom(el) => el.slot_dropped(),
+            _ => {}
+        }
+    }
+
     /// Recomputes a stored spectrum's cached analysis from its current samples
     /// and props — a no-op for every other widget and every other
     /// presentation. Called at the element's mutation points (parse, a bulk

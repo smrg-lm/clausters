@@ -202,51 +202,61 @@ impl App {
                 },
             );
         }
-        self.refresh_waterfall_slots();
+        self.refresh_slots();
     }
 
-    /// Pushes the columns every waterfall analyzed this tick into its ring —
-    /// and only the rolls that moved, so a still picture costs no upload.
-    fn refresh_waterfall_slots(&mut self) {
-        let mut totals: Vec<(i32, usize)> = Vec::new();
-        for (def_id, ws) in &mut self.windows {
-            let Some(tree) = self.host.window_def_mut(*def_id) else {
-                continue;
-            };
-            // The rolls that moved this tick, by id — asked of the tree, since
-            // the transform is the view's own state now.
-            let dirty: Vec<i32> = tree
-                .descendants()
-                .filter(|w| {
-                    w.kind
-                        .signal()
-                        .and_then(|el| el.live.roll.as_ref())
-                        .is_some_and(|roll| roll.is_dirty())
-                })
-                .filter_map(|w| w.id)
-                .collect();
-            for id in dirty {
-                let Some(roll) = tree
-                    .find_mut(id)
-                    .and_then(|w| w.kind.signal_mut())
-                    .and_then(|el| el.live.roll.as_mut())
-                else {
-                    continue;
-                };
-                if let Some(total) =
-                    frame::roll_into_slot(&mut ws.spectrograms, id, roll, &ws.gpu, &ws.renderers)
-                {
-                    totals.push((id, total));
-                }
-            }
+    /// Uploads whatever the trees have for their GPU slots this tick — the
+    /// columns a waterfall just analyzed, the picture an element that got its
+    /// data rebuilt — and only what moved, so a still window costs no upload.
+    ///
+    /// One walk over each window, asking the widgets rather than looking for
+    /// them: the front knows nothing here about what a rolling transform is or
+    /// which presentation makes a texture of its samples.
+    fn refresh_slots(&mut self) {
+        for def_id in self.windows.keys().copied().collect::<Vec<_>>() {
+            self.refresh_slots_for(def_id);
         }
-        // The axis has to know how long it is, or the navigation window falls
-        // back to a span the size of the body in *samples* and the whole
-        // history draws as one stretched column. It is the *live* setter: a
-        // retained axis slides, so it follows the newest until someone
-        // navigates it and then holds where they left it.
-        for (id, total) in totals {
-            self.host.set_live_timeline_total(id, total);
+    }
+
+    /// One window's share of [`refresh_slots`](Self::refresh_slots). Also run
+    /// **before a repaint**, since a window with nothing live in it never ticks
+    /// at all: a `/gui_set` that rebuilt a picture would otherwise wait for a
+    /// tick that never comes.
+    pub(super) fn refresh_slots_for(&mut self, def_id: i32) {
+        let mut extents: Vec<(i32, frame::Extent)> = Vec::new();
+        // Disjoint field borrows: the tree is the host's, the slots the
+        // window's.
+        if let (Some(ws), Some(tree)) = (
+            self.windows.get_mut(&def_id),
+            self.host.window_def_mut(def_id),
+        ) {
+            frame::fill_slots(
+                tree,
+                None,
+                &ws.gpu,
+                &ws.renderers,
+                &mut ws.waveforms,
+                &mut ws.spectrograms,
+                &mut extents,
+            );
+        }
+        self.apply_extents(extents);
+    }
+
+    /// Registers what a fill turned out to be worth with the widget's
+    /// navigation axis, which has to know how long it is or the visible window
+    /// falls back to a span the size of the body in *samples* and the whole
+    /// picture draws as one stretched column.
+    ///
+    /// A **rolling** extent goes through the live setter: a retained axis
+    /// slides, so it follows the newest column until someone navigates it and
+    /// then holds where they left it.
+    pub(super) fn apply_extents(&mut self, extents: Vec<(i32, frame::Extent)>) {
+        for (id, extent) in extents {
+            match extent {
+                frame::Extent::Stored(total) => self.host.set_timeline_total(id, total),
+                frame::Extent::Rolling(total) => self.host.set_live_timeline_total(id, total),
+            }
         }
     }
 
@@ -390,6 +400,9 @@ impl App {
     /// shared-memory bus, the scope histories, the node trees, the held button).
     fn render(&mut self, def_id: i32) {
         tracing::trace!("rendering window {def_id}");
+        // Whatever an element has for its slot reaches the card before the
+        // frame that draws it.
+        self.refresh_slots_for(def_id);
         let server_attached = self.host.server().is_some();
         // Disjoint field borrows: the tree (host), the bus (shm), the node trees,
         // and the window's GPU resources are separate fields of `self`.

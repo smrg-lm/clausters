@@ -15,30 +15,6 @@
 use super::*;
 use crate::host::widget::element::Bulk;
 
-/// Builds the GPU slot for every inline-data `waveform`/`spectrogram` in the
-/// tree (the zero-latency bulk source; `path`/`cache`/`buffer` references load
-/// async through [`fetch_bulk`] and the fetch machine).
-pub(super) fn build_inline_timelines(
-    widget: &Widget,
-    owner: Option<i32>,
-    gpu: &Gpu,
-    renderers: &Renderers,
-    waveforms: &mut HashMap<i32, WaveformSlot>,
-    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
-) {
-    frame::visit_elements(widget, owner, &mut |owner, el| {
-        // Only what is already here: an element still naming a `path`/`cache`/
-        // `buffer` has empty samples at this point and is the fetch machine's,
-        // so building its slot now would show an empty view until the data
-        // lands and replaces it.
-        if let (Some(id), true) = (owner, el.needs_gpu_slot())
-            && let Some(data) = el.source.data().filter(|d| !d.samples.is_empty())
-        {
-            frame::inline_slot(id, el, data, gpu, renderers, waveforms, spectrograms);
-        }
-    });
-}
-
 /// Every element's **declared** bulk resource, as fetches to start — and the
 /// server buffers to pull over the client leg, which are the one resource a
 /// page cannot fetch for itself.

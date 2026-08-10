@@ -16,7 +16,7 @@
 //! | [`apply`](super::apply) | [`Element::set`] |
 //! | [`size`](super::size) | [`Element::natural`] |
 //! | the frame's flat draw | [`Element::draw`] |
-//! | the frame's GPU slots | a [`SlotKind`] claimed in [`Needs`], fed by [`Element::slot`] |
+//! | the frame's GPU slots | a [`SlotKind`] claimed in [`Needs`], drawn by [`Element::slot`] and fed by [`Element::fill`] |
 //! | the query pass | [`Element::value`] / [`Element::info`] |
 //! | the press walk | [`Element::press`] |
 //! | the keyboard arms + the host's focused field | [`Element::accepts_focus`] / [`Element::key`] |
@@ -389,6 +389,82 @@ pub enum SlotFrame {
     },
 }
 
+/// **What an element hands its claimed slot to upload**, when it has something
+/// new for it — the other half of [`SlotFrame`], which says what that slot
+/// *draws* once it is filled.
+///
+/// The two are separate because they run on different rhythms and in different
+/// directions. A [`SlotFrame`] is produced per repaint out of a borrowed
+/// element, and carries the frame's own reading of the world; a `SlotFill` is
+/// **taken** from the element ([`Element::fill`]) at the front's tick, and is
+/// the data itself. An element with nothing new hands back `None`, which is
+/// what keeps a still picture at zero uploads.
+///
+/// The variants answer the two slot kinds an element can claim, and the third
+/// is the rolling case: an analysis that grows forward and is pushed in
+/// column by column rather than rebuilt.
+pub enum SlotFill {
+    /// A [`SlotKind::Geometry`] slot's whole content: the peak data the
+    /// per-frame columns are decimated from, summarized at the element's own
+    /// bucket.
+    Geometry(crate::waveform::WaveformData),
+    /// A [`SlotKind::Texture`] slot's whole content: one analysis per channel
+    /// lane, uploaded once and sampled one texel per pixel.
+    Texture(Vec<crate::spectrogram::Stft>),
+    /// A [`SlotKind::Texture`] slot's **new columns**, frame-major and oldest
+    /// first: a retained time-frequency picture grows forward, so the upload is
+    /// what landed since the last fill and costs one texel write per bin —
+    /// where rebuilding the transform each tick made the cost follow the whole
+    /// retained span.
+    ///
+    /// The geometry rides along because a `/gui_set` of the analysis restarts
+    /// the roll upstream: a ring built against the old one is not the same
+    /// picture and is rebuilt rather than pushed into.
+    Columns {
+        columns: Vec<f32>,
+        window_size: usize,
+        hop: usize,
+        sample_rate: f32,
+        /// The retained span in columns, which a `/gui_set` of the retention
+        /// moves under a live view.
+        capacity: usize,
+    },
+}
+
+impl fmt::Debug for SlotFill {
+    /// The payload is megabytes of analysis and says nothing a reader of a
+    /// `{:?}` wants: the shape is the state, exactly as it is for the live
+    /// windows a tick accumulates.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SlotFill::Geometry(data) => f
+                .debug_struct("Geometry")
+                .field("samples", &data.total_samples())
+                .field("channels", &data.num_channels())
+                .finish(),
+            SlotFill::Texture(stfts) => f
+                .debug_struct("Texture")
+                .field("lanes", &stfts.len())
+                .field("frames", &stfts.first().map(|s| s.n_frames()))
+                .finish(),
+            SlotFill::Columns {
+                columns,
+                window_size,
+                hop,
+                sample_rate,
+                capacity,
+            } => f
+                .debug_struct("Columns")
+                .field("values", &columns.len())
+                .field("window_size", window_size)
+                .field("hop", hop)
+                .field("sample_rate", sample_rate)
+                .field("capacity", capacity)
+                .finish(),
+        }
+    }
+}
+
 /// Where an element is and what the pointer is doing to it — the context of a
 /// **gesture**, as [`Ctx`] is the context of a draw.
 ///
@@ -657,6 +733,35 @@ pub trait Element: fmt::Debug {
     fn slot(&self, _ctx: &Ctx) -> Option<SlotFrame> {
         None
     }
+
+    /// **What the claimed slot is fed**, or `None` (the default) when the
+    /// element has nothing new for it — which is every element that claimed no
+    /// slot, and every frame of one whose picture did not move.
+    ///
+    /// It is a *taking*: the element hands the content over and marks itself
+    /// clean, so the front's walk uploads once per change rather than once per
+    /// tick. That is why it is separate from [`slot`](Element::slot), which
+    /// describes a draw and borrows.
+    ///
+    /// Only the element knows when its picture moved and what shape the upload
+    /// has — a pyramid at its own bucket, an analysis at its own window and
+    /// hop, the columns a rolling transform just produced — so the front's walk
+    /// asks every widget the same question and learns nothing about any of
+    /// them.
+    fn fill(&mut self) -> Option<SlotFill> {
+        None
+    }
+
+    /// **The slot's contents are gone**: the window's GPU resources were
+    /// rebuilt (a fresh device, a page's canvas re-attached), so whatever this
+    /// element handed over is no longer on the card and the next
+    /// [`fill`](Element::fill) has to hand it over again.
+    ///
+    /// It is the one thing a filling element cannot work out for itself — the
+    /// device is the front's — and it is why a fill can be a taking at all: an
+    /// element marks itself clean because the frame kept what it gave, and this
+    /// is how it is told that it did not.
+    fn slot_dropped(&mut self) {}
 
     /// Whether the wheel **falls through** this element to whatever is behind
     /// it. True for something that only puts marks on its rect and has no

@@ -185,44 +185,38 @@ impl WebApp {
         self.on_tree_changed();
     }
 
-    /// (Re)builds one canvas' GPU resources: the inline-data waveform/
-    /// spectrogram views (`path`/`cache`/`buffer` references load async through
+    /// (Re)builds one canvas' GPU resources from what the tree already holds:
+    /// every element that claimed a slot fills it here (`path`/`cache`/`buffer`
+    /// references load async through
     /// [`fetch_bulk`](super::bulk::fetch_bulk) and the fetch machine).
+    ///
+    /// Called with a **fresh device** — a canvas attached, a GPU that just came
+    /// up — so the slots start empty and the tree is told that whatever it had
+    /// handed over is gone.
     pub(super) fn build_resources(&mut self, def: i32) {
-        let Some(slot) = self.canvases.get(&def) else {
+        let Some(slot) = self.canvases.get_mut(&def) else {
             return;
         };
-        let Some(render) = slot.render.as_ref() else {
+        let Some(render) = slot.render.as_mut() else {
             return;
         };
-        let Some(tree) = self.host.window_def(def) else {
+        let Some(tree) = self.host.window_def_mut(def) else {
             return;
         };
-        let mut waveforms = HashMap::new();
-        let mut spectrograms = HashMap::new();
-        build_inline_timelines(
+        render.waveforms.clear();
+        render.spectrograms.clear();
+        frame::slots_dropped(tree);
+        let mut extents = Vec::new();
+        frame::fill_slots(
             tree,
             None,
             &render.gpu,
             &render.renderers,
-            &mut waveforms,
-            &mut spectrograms,
+            &mut render.waveforms,
+            &mut render.spectrograms,
+            &mut extents,
         );
-        // Each inline view's extent joins its navigation group.
-        let mut totals: Vec<(i32, usize)> = Vec::new();
-        totals.extend(
-            waveforms
-                .iter()
-                .map(|(id, s)| (*id, s.view.total_samples())),
-        );
-        totals.extend(spectrograms.iter().map(|(id, s)| (*id, s.total_samples())));
-        if let Some(render) = self.canvases.get_mut(&def).and_then(|s| s.render.as_mut()) {
-            render.waveforms = waveforms;
-            render.spectrograms = spectrograms;
-        }
-        for (id, total) in totals {
-            self.host.set_timeline_total(id, total);
-        }
+        self.apply_extents(extents);
     }
 
     /// Renders one canvas' def through the shared frame path. The live inputs
@@ -230,6 +224,14 @@ impl WebApp {
     /// scopes their tick-fed histories); the node tree stays empty until a
     /// browser node-tree path exists.
     pub(super) fn draw(&mut self, def: i32) {
+        // Whatever an element has for its slot reaches the card before the
+        // frame that draws it — a canvas with nothing live in it never ticks.
+        if let (Some(slot), Some(tree)) =
+            (self.canvases.get_mut(&def), self.host.window_def_mut(def))
+        {
+            let extents = refresh_slots(slot, tree);
+            self.apply_extents(extents);
+        }
         let server_attached = self.host.server().is_some();
         let focused = self
             .host

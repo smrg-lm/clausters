@@ -48,7 +48,7 @@ use super::ruler::{self, TimeUnit};
 use super::signal::{self, Presentation};
 use super::theme::{Theme, with_alpha};
 use super::timeline::{GroupState, group_key};
-use super::widget::element::{Ctx, SlotFrame, TimeSpace};
+use super::widget::element::{Ctx, SlotFill, SlotFrame, TimeSpace};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
 use super::{font, meters, patch, phasescope, piano, pianoroll, plot, spectrum, track};
@@ -118,15 +118,15 @@ pub(crate) fn spectrogram_slot(
 ///
 /// Both fronts call it, which is what keeps a browser waterfall and a desktop
 /// one the same picture built the same way.
-pub(crate) fn roll_into_slot(
+fn roll_into_slot(
     slots: &mut HashMap<i32, SpectrogramSlot>,
     id: i32,
-    roll: &mut super::waterfall::Waterfall,
+    columns: &[f32],
+    (window_size, hop, sample_rate): (usize, usize, f32),
+    capacity: usize,
     gpu: &Gpu,
     renderers: &Renderers,
 ) -> Option<usize> {
-    let columns = roll.take_pending();
-    let (window_size, hop, sample_rate) = roll.geometry();
     // A `/gui_set` of the analysis restarts the roll upstream, so a slot whose
     // ring was built against the old geometry is not the same picture and is
     // rebuilt rather than pushed into.
@@ -145,7 +145,7 @@ pub(crate) fn roll_into_slot(
             &gpu.device,
             &gpu.queue,
             &renderers.spectrogram,
-            roll.capacity(),
+            capacity,
             window_size,
             hop,
             sample_rate,
@@ -153,13 +153,8 @@ pub(crate) fn roll_into_slot(
         slots.insert(id, SpectrogramSlot { views: vec![view] });
     }
     let view = slots.get_mut(&id)?.views.first_mut()?;
-    view.set_retention(
-        &gpu.device,
-        &gpu.queue,
-        &renderers.spectrogram,
-        roll.capacity(),
-    );
-    view.push_columns(&gpu.queue, &columns);
+    view.set_retention(&gpu.device, &gpu.queue, &renderers.spectrogram, capacity);
+    view.push_columns(&gpu.queue, columns);
     (view.stft().n_frames() > 0).then(|| view.total_samples())
 }
 
@@ -198,60 +193,90 @@ pub(crate) fn deinterleave(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
         .collect()
 }
 
-/// Visits every signal element in the tree, each with the id that **addresses**
-/// it: its own, or — for a clip's body, which carries none — its container's.
+/// How long a filled slot's picture turned out to be, in samples — what the
+/// widget's navigation axis has to know, or the visible window falls back to a
+/// span the size of the body and the whole picture draws stretched.
 ///
-/// The slot walk both fronts do, so the addressing rule is written once. What
-/// each front does per element still differs (the native one maps local files
-/// and defers a server buffer to its leg, the browser one fetches over HTTP),
-/// but neither gets to decide on its own *which* elements are visited or what
-/// key their slots hang on.
-pub(crate) fn visit_elements(
-    widget: &Widget,
-    owner: Option<i32>,
-    f: &mut dyn FnMut(Option<i32>, &signal::SignalElement),
-) {
-    // Not a flat `descendants` walk: an element's *owner* is the nearest id
-    // above it, which only a walk carrying that id down knows.
-    let owner = widget.id.or(owner);
-    if let WidgetKind::Signal(el) = &widget.kind {
-        f(owner, el);
-    }
-    for child in &widget.children {
-        visit_elements(child, owner, f);
+/// The two are set through different doors: a stored extent is fixed and joins
+/// the navigation group as it is, while a **rolling** one slides — the axis
+/// follows the newest column until someone navigates it and then holds where
+/// they left it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Extent {
+    Stored(usize),
+    Rolling(usize),
+}
+
+/// **The window's GPU slots are gone** — a fresh device, a re-attached canvas
+/// — so every widget that had filled one hands its content over again on the
+/// next [`fill_slots`]. The device is the front's, and this is how the tree is
+/// told that what it gave away did not survive it.
+pub(crate) fn slots_dropped(widget: &mut Widget) {
+    widget.kind.slot_dropped();
+    for child in &mut widget.children {
+        slots_dropped(child);
     }
 }
 
-/// Builds the GPU slot an element's **inline** samples ask for, keyed by the id
-/// that addresses it: the peak pyramid of a trace, one STFT lane per channel of
-/// a spectrogram.
+/// **Uploads whatever the tree has for its GPU slots**, keyed by the id that
+/// addresses each widget: its own, or — for a clip's body, which carries none —
+/// its container's. Returns the extents the fills produced, for the caller to
+/// register with the navigation groups once the tree borrow is over.
 ///
-/// The one place a slot is built out of samples the host already holds — the
-/// native front falls through to it once its mapped and deferred sources are
-/// ruled out, the browser front has no other case — so a new heavy view becomes
-/// drawable on both fronts at once instead of in whichever one was edited.
-pub(crate) fn inline_slot(
-    id: i32,
-    el: &signal::SignalElement,
-    data: &signal::Data,
+/// This is the filling half of the slot seam, and the whole of it: an element
+/// hands over a pyramid, a set of analyses or the columns its rolling transform
+/// just produced ([`WidgetKind::fill`]), and this walk uploads them. It asks
+/// every widget the same question and learns nothing about any of them — where
+/// the two fronts each used to walk the tree twice, once matching on the
+/// presentation to build a slot out of an element's inline samples and once
+/// reaching into a waterfall's transform for the columns of the tick.
+///
+/// Cheap to call every tick by construction: an element with nothing new hands
+/// back `None`, so a still window uploads nothing.
+pub(crate) fn fill_slots(
+    widget: &mut Widget,
+    owner: Option<i32>,
     gpu: &Gpu,
     renderers: &Renderers,
     waveforms: &mut HashMap<i32, WaveformSlot>,
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
+    out: &mut Vec<(i32, Extent)>,
 ) {
-    if el.presentation == Presentation::Signal {
-        let loaded = WaveformData::from_interleaved(&data.samples, data.channels, data.base_bucket);
-        waveforms.insert(id, waveform_slot(loaded, gpu));
-    } else if !data.samples.is_empty() {
-        let stfts = stft_lanes(
-            deinterleave(&data.samples, data.channels),
-            el.spectral.fft_size,
-            el.spectral.hop,
-            el.editor.sample_rate,
-        );
-        if let Some(slot) = spectrogram_slot(stfts, gpu, renderers) {
-            spectrograms.insert(id, slot);
-        }
+    let owner = widget.id.or(owner);
+    if let (Some(id), Some(fill)) = (owner, widget.kind.fill()) {
+        let extent = match fill {
+            SlotFill::Geometry(data) => {
+                let slot = waveform_slot(data, gpu);
+                let total = slot.view.total_samples();
+                waveforms.insert(id, slot);
+                Some(Extent::Stored(total))
+            }
+            SlotFill::Texture(stfts) => spectrogram_slot(stfts, gpu, renderers).map(|slot| {
+                let total = slot.total_samples();
+                spectrograms.insert(id, slot);
+                Extent::Stored(total)
+            }),
+            SlotFill::Columns {
+                columns,
+                window_size,
+                hop,
+                sample_rate,
+                capacity,
+            } => roll_into_slot(
+                spectrograms,
+                id,
+                &columns,
+                (window_size, hop, sample_rate),
+                capacity,
+                gpu,
+                renderers,
+            )
+            .map(Extent::Rolling),
+        };
+        out.extend(extent.map(|e| (id, e)));
+    }
+    for child in &mut widget.children {
+        fill_slots(child, owner, gpu, renderers, waveforms, spectrograms, out);
     }
 }
 

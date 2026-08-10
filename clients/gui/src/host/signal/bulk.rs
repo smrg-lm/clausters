@@ -145,6 +145,7 @@ impl SignalElement {
                     source.channels = channels.max(1);
                     source.samples = samples.into();
                     self.refresh_analysis();
+                    self.slot_dirty = true;
                 }
                 true
             }
@@ -155,6 +156,7 @@ impl SignalElement {
             Loaded::Samples(samples) => {
                 source.samples = samples;
                 self.refresh_analysis();
+                self.slot_dirty = true;
                 true
             }
             Loaded::Stfts(_) => false,

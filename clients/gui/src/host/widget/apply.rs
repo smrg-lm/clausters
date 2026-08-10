@@ -394,5 +394,17 @@ fn apply_signal(el: &mut signal::SignalElement, key: &str, v: &Value) -> bool {
     if handled && matches!(key, "view" | "fft_size" | "window_size" | "sample_rate") {
         el.refresh_analysis();
     }
+    // ...and so does what a claimed slot is built from, plus the channel count
+    // that splits the samples into lanes. A `/gui_set` of one of these is a
+    // mutation point of the fill, which is the only way an already-uploaded
+    // picture is rebuilt.
+    if handled
+        && matches!(
+            key,
+            "view" | "fft_size" | "window_size" | "sample_rate" | "channels"
+        )
+    {
+        el.slot_dirty = true;
+    }
     handled
 }

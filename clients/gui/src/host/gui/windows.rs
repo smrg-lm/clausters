@@ -90,6 +90,25 @@ impl App {
             );
             collect_canvases(tree, &gpu, &mut canvases);
         }
+        // ...and whatever the elements themselves hold goes up through the same
+        // door the tick uses: an element with inline samples fills its slot
+        // here, on the window's first frame rather than on its second. The
+        // device is new, so the tree is told that whatever it handed a previous
+        // one is gone with it.
+        let mut extents = Vec::new();
+        if let Some(tree) = self.host.window_def_mut(id) {
+            frame::slots_dropped(tree);
+            frame::fill_slots(
+                tree,
+                None,
+                &gpu,
+                &renderers,
+                &mut waveforms,
+                &mut spectrograms,
+                &mut extents,
+            );
+        }
+        self.apply_extents(extents);
         // Register each loaded view's data extent with its navigation group
         // (the group timeline spans the longest member).
         for (wid, slot) in &waveforms {
@@ -188,11 +207,34 @@ impl App {
     }
 }
 
-/// Walks the tree building the timeline views (waveform and spectrogram). A
-/// `cache`/`path` resource is loaded **now** from a mapped local file (the
-/// bulk path, no OSC); a server-`buffer` reference with no data is deferred as
-/// a `(widget_id, bufnum)` entry in `buffer_refs` for the client leg to fetch;
-/// inline/blob (and empty) samples build a slot directly.
+/// Visits every signal element in the tree, each with the id that **addresses**
+/// it: its own, or -- for a clip's body, which carries none -- its container's.
+///
+/// The addressing rule the slot maps are keyed by, which the shared fill walk
+/// ([`frame::fill_slots`]) states for the tree at large; this is the native
+/// loader's own version of it, over the elements whose *resources* it resolves.
+fn visit_elements(
+    widget: &Widget,
+    owner: Option<i32>,
+    f: &mut dyn FnMut(Option<i32>, &signal::SignalElement),
+) {
+    // Not a flat `descendants` walk: an element's *owner* is the nearest id
+    // above it, which only a walk carrying that id down knows.
+    let owner = widget.id.or(owner);
+    if let WidgetKind::Signal(el) = &widget.kind {
+        f(owner, el);
+    }
+    for child in &widget.children {
+        visit_elements(child, owner, f);
+    }
+}
+
+/// Walks the tree building the timeline views (waveform and spectrogram) out
+/// of the resources a **loader** resolves. A `cache`/`path` is mapped **now**
+/// from a local file (the bulk path, no OSC); a server-`buffer` reference with
+/// no data is deferred as a `(widget_id, bufnum)` entry in `buffer_refs` for
+/// the client leg to fetch. Data the element already holds is not this walk's:
+/// the element fills its own slot with it ([`frame::fill_slots`]).
 fn collect_timelines(
     widget: &Widget,
     owner: Option<i32>,
@@ -202,7 +244,7 @@ fn collect_timelines(
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
     buffer_refs: &mut Vec<(i32, i32)>,
 ) {
-    frame::visit_elements(widget, owner, &mut |owner, el| {
+    visit_elements(widget, owner, &mut |owner, el| {
         let (Some(id), Some(data)) = (owner, el.source.data()) else {
             return;
         };
@@ -277,11 +319,11 @@ fn collect_timelines(
             return;
         }
         // No local resource named: a server buffer with no inline data is
-        // deferred to the leg, anything else builds its slot from what the
-        // host already holds.
-        match data.buffer.filter(|_| data.samples.is_empty()) {
-            Some(bufnum) => buffer_refs.push((id, bufnum)),
-            None => frame::inline_slot(id, el, data, gpu, renderers, waveforms, spectrograms),
+        // deferred to the leg. Anything else is data the element already holds,
+        // and it fills its own slot with it (`frame::fill_slots`) — nothing
+        // here has to know what a presentation makes of its samples.
+        if let Some(bufnum) = data.buffer.filter(|_| data.samples.is_empty()) {
+            buffer_refs.push((id, bufnum));
         }
     });
 }

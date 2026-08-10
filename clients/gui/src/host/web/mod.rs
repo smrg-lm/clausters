@@ -61,7 +61,6 @@ mod input;
 mod serverleg;
 
 pub use bridge::{GuiBridge, bundle_boot_packets, start};
-use bulk::build_inline_timelines;
 use canvas::{CanvasSlot, WindowRender};
 pub use serverleg::{PageServerLink, WsServerLink};
 
@@ -393,15 +392,32 @@ impl WebApp {
         }
     }
 
+    /// Registers what a fill turned out to be worth with the widget's
+    /// navigation axis, which has to know how long it is or the visible window
+    /// falls back to a span the size of the body in *samples* and the whole
+    /// picture draws as one stretched column.
+    ///
+    /// A **rolling** extent goes through the live setter: a retained axis
+    /// slides, so it follows the newest column until someone navigates it and
+    /// then holds where they left it.
+    pub(super) fn apply_extents(&mut self, extents: Vec<(i32, frame::Extent)>) {
+        for (id, extent) in extents {
+            match extent {
+                frame::Extent::Stored(total) => self.host.set_timeline_total(id, total),
+                frame::Extent::Rolling(total) => self.host.set_live_timeline_total(id, total),
+            }
+        }
+    }
+
     /// One animation tick: push a fresh streamed-bus sample into every scope's
     /// rolling history and refresh the audio-rate scopes' triggered windows
     /// from the `/bus_tapStream.reply` store (time-based, exactly like the native tick),
     /// then repaint.
     fn on_tick(&mut self) {
         let mut wants_clock = false;
-        // Applied after the loop: registering a live axis' length borrows the
+        // Applied after the loop: registering an axis' length borrows the
         // host, which the loop holds a tree of.
-        let mut waterfall_totals: Vec<(i32, usize)> = Vec::new();
+        let mut extents: Vec<(i32, frame::Extent)> = Vec::new();
         for def in self.visible_defs() {
             let Some(slot) = self.canvases.get_mut(&def) else {
                 continue;
@@ -428,7 +444,7 @@ impl WebApp {
                     histories: &slot.histories,
                 },
             );
-            waterfall_totals.extend(refresh_waterfall_slots(slot, tree));
+            extents.extend(refresh_slots(slot, tree));
             slot.request_redraw();
             // Asked after the tick, so the mutable walk above is over: whether
             // this tree draws a moving playhead is what makes the page poll the
@@ -437,13 +453,7 @@ impl WebApp {
                 wants_clock |= live::tree_has_playhead(tree, self.host.timelines());
             }
         }
-        // The retained axis has to know how long it is, or the navigation
-        // window falls back to a span the size of the body in *samples* and the
-        // whole history draws as one stretched column. It is the *live*
-        // setter: the axis follows the newest until someone navigates it.
-        for (id, total) in waterfall_totals {
-            self.host.set_live_timeline_total(id, total);
-        }
+        self.apply_extents(extents);
         // A visible playhead needs the engine clock: poll it once per tick (the
         // browser's stand-in for the shm header's sample clock) — once for the
         // page, however many canvases show one.
@@ -744,45 +754,26 @@ fn web_proxy() -> Option<EventLoopProxy<HostEvent>> {
     WEB_PROXY.with(|p| p.borrow().clone())
 }
 
-/// Pushes the columns every waterfall on this canvas analyzed this tick into
-/// its ring — and only the rolls that moved, so a still picture costs no
-/// upload. The browser twin of the desktop front's own pass, kept beside the
-/// tick that advances the rolls rather than inside the render, since a texture
-/// upload is not a drawing decision.
-fn refresh_waterfall_slots(slot: &mut CanvasSlot, tree: &mut Widget) -> Vec<(i32, usize)> {
-    let mut totals = Vec::new();
+/// Uploads whatever this canvas' tree has for its GPU slots this tick — the
+/// columns a waterfall just analyzed, the picture an element that got its data
+/// rebuilt — and only what moved, so a still page costs no upload.
+///
+/// The browser twin of the desktop front's own pass, kept beside the tick that
+/// advances the elements rather than inside the render, since an upload is not
+/// a drawing decision.
+fn refresh_slots(slot: &mut CanvasSlot, tree: &mut Widget) -> Vec<(i32, frame::Extent)> {
+    let mut extents = Vec::new();
     let Some(render) = slot.render.as_mut() else {
-        return totals;
+        return extents;
     };
-    // The rolls that moved this tick, by id — asked of the tree, since the
-    // transform is the view's own state.
-    let dirty: Vec<i32> = tree
-        .descendants()
-        .filter(|w| {
-            w.kind
-                .signal()
-                .and_then(|el| el.live.roll.as_ref())
-                .is_some_and(|roll| roll.is_dirty())
-        })
-        .filter_map(|w| w.id)
-        .collect();
-    for id in dirty {
-        let Some(roll) = tree
-            .find_mut(id)
-            .and_then(|w| w.kind.signal_mut())
-            .and_then(|el| el.live.roll.as_mut())
-        else {
-            continue;
-        };
-        if let Some(total) = crate::host::frame::roll_into_slot(
-            &mut render.spectrograms,
-            id,
-            roll,
-            &render.gpu,
-            &render.renderers,
-        ) {
-            totals.push((id, total));
-        }
-    }
-    totals
+    frame::fill_slots(
+        tree,
+        None,
+        &render.gpu,
+        &render.renderers,
+        &mut render.waveforms,
+        &mut render.spectrograms,
+        &mut extents,
+    );
+    extents
 }
