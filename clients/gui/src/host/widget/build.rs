@@ -513,7 +513,15 @@ fn build_signal(
         .and_then(Presentation::parse)
         .unwrap_or_default();
     let live = props.contains_key("bus");
-    let navigable = props.get("navigable").and_then(truthy).unwrap_or(true);
+    // Whether a view navigates defaults **per presentation**: the views the
+    // catalog grew as editors navigate unless told not to, and a spectrum is
+    // the watching spectroscope unless it is asked to navigate — its axis is
+    // frequency, and a curve that pans under an idle drag is not what a
+    // meter-like view has ever done.
+    let navigable = props
+        .get("navigable")
+        .and_then(truthy)
+        .unwrap_or(view != Presentation::Spectrum);
     let p = signal::point(view, live, navigable);
     let mut el = signal::SignalElement::from_preset(&p);
 

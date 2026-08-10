@@ -36,10 +36,12 @@ impl Widget {
         self.kind.signal()
     }
 
-    /// Whether this is a navigable signal element — the view that zooms, pans,
-    /// selects and shows a playhead over its own samples.
+    /// Whether this is a navigable signal element **on the time axis** — the
+    /// view that zooms, pans, selects and shows a playhead over its own
+    /// samples. A navigable *spectrum* is not one: it navigates frequency, on
+    /// a window of its own ([`WidgetKind::freq_nav`]).
     pub fn is_nav_signal(&self) -> bool {
-        self.signal().is_some_and(|el| el.caps.navigable)
+        self.signal().is_some_and(SignalElement::navigates_time)
     }
 
     /// Whether this widget navigates the window's shared time axis: a navigable
@@ -66,6 +68,13 @@ impl Widget {
 }
 
 impl WidgetKind {
+    /// The signal element this widget is, when it navigates its **own**
+    /// frequency axis rather than the window's time — the one element that
+    /// carries an x window instead of joining a navigation group.
+    pub fn freq_nav(&self) -> Option<&SignalElement> {
+        self.signal().filter(|el| el.navigates_freq())
+    }
+
     /// The current value as an OSC primitive for a `/gui_event`, or `None` for a
     /// non-interactive widget. A `button` reports `1` (it is momentary; the press
     /// is the event).

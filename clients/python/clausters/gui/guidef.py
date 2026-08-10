@@ -22,8 +22,9 @@ The builders named after widgets (`panel`, `stack`, `scroll`, `waveform`,
 builds a model node with the props of one common case, and takes its axis
 chrome as flat keywords (``ruler=``, ``link=``, ``min=``) which it packs into
 the pair for you. `layout`, `plane`, `field` and `signal` are the general
-builders beside them, for the cases no shortcut names — a navigable spectrum,
-a lane that is also a clip, a plane that is neither a scroll view nor a patcher.
+builders beside them, for the cases no shortcut names — a lane that is also a
+clip, a plane that is neither a scroll view nor a patcher, a presentation over
+a source the shortcuts do not pair.
 
 **Address a widget by name, not by id.** Pass ``name="cutoff"`` to any builder
 and `GuiHost.open` hands back a window handle you index by that name —
@@ -329,6 +330,11 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       de-interleaves it, ``base_bucket`` sizes the peak pyramid.
     - the **capabilities** — ``navigable`` (zooms and pans its axes, and joins
       the navigation group its x axis names), ``selectable``, ``editable``.
+      Over ``view="spectrum"`` it means the **frequency** axis instead: that x
+      is not time, so it navigates on a window of its own
+      (``axes={"x": {"start": ..., "len": ...}}``, normalized over
+      ``[0, Nyquist]``, reported as ``"view_x"``) and joins no group. It is the
+      one view where ``navigable`` is off unless asked for.
     - ``retention`` — **seconds of history the host keeps of a ``bus``** (0 =
       none, the default). A forward-only source has no addressable past, which
       is what stops it being navigable: there is nothing behind the newest
@@ -814,6 +820,8 @@ def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None 
              db_floor: float | None = None, db_ceil: float | None = None,
              freq_scale: str | None = None, log_freq: bool | None = None,
              averaging: float | None = None, peak_hold: bool | None = None,
+             navigable: bool | None = None,
+             view_start: float | None = None, view_len: float | None = None,
              ruler: "bool | str | None" = None, ruler_y: "bool | str | None" = None,
              label: str | None = None, color: str | None = None, axes: dict | None = None, id: int | None = None, **props
              ) -> dict:
@@ -831,6 +839,15 @@ def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None 
     is all a script does, the host has the server record it. The analysis
     reuses the shared-core FFT and Hann window, so it agrees with the
     spectrogram exactly.
+
+    ``navigable`` turns the **frequency axis** into one you can move: drag it
+    to pan, wheel over it to zoom under the cursor, ``R`` to see all of it
+    again. It needs no history behind it — unlike a live time axis, every bin
+    is there every frame — so it is one window the view carries alone, in
+    normalized units over ``[0, Nyquist]``: ``view_start``/``view_len``
+    (``0, 1`` = the whole axis), live via `GuiHost.set` and reported as a
+    ``"view_x"`` event. It is off by default; without it this is the watching
+    spectroscope it has always been.
     """
     extra = _drop_none(channels=channels, fft_size=fft_size,
                        db_floor=db_floor, db_ceil=db_ceil,
@@ -839,7 +856,10 @@ def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None 
         extra["log_freq"] = 1 if log_freq else 0
     if peak_hold is not None:
         extra["peak_hold"] = 1 if peak_hold else 0
-    extra.update(_axes(axes, **_strips(ruler=ruler, ruler_y=ruler_y)))
+    if navigable is not None:
+        extra["navigable"] = 1 if navigable else 0
+    extra.update(_axes(axes, view_start=view_start, view_len=view_len,
+                       **_strips(ruler=ruler, ruler_y=ruler_y)))
     return node("signal", bus=bus, view="spectrum", **extra, **props, id=id)
 
 

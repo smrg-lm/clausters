@@ -401,6 +401,7 @@ pub(super) fn draw_live_meshes(
                     peak_hold: item.peak_hold,
                     ruler: item.ruler,
                     ruler_y: item.ruler_y,
+                    x_view: item.x_view,
                     label: item.label.as_deref(),
                 },
             );

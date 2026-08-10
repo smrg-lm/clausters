@@ -667,6 +667,92 @@ fn the_amplitude_axis_zooms_about_its_centre_whatever_lane_is_under_the_cursor()
     );
 }
 
+// ---- the one navigable axis that is not time: a spectrum's frequency ----
+
+fn spectrum_host() -> Host {
+    host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":80,"type":"signal","view":"spectrum","bus":0,"navigable":1,"w":800,"h":300}]}"#,
+    )
+}
+
+fn x_window(host: &Host, id: i32) -> (f64, f64) {
+    host.window_def(1)
+        .unwrap()
+        .find(id)
+        .unwrap()
+        .kind
+        .editor()
+        .unwrap()
+        .x_view()
+}
+
+/// The wheel over a navigable spectrum zooms its **frequency** axis, anchored
+/// at the cursor — and it reports the element's own `"view_x"`, not a group's
+/// `"view"`, because there is no group: the axis belongs to the element the way
+/// every vertical axis already does.
+#[test]
+fn the_wheel_zooms_a_spectrums_frequency_axis_under_the_cursor() {
+    let mut host = spectrum_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    assert_eq!(x_window(&host, 80), (0.0, 1.0));
+    // Near the right end of the body, so the anchor is unambiguous.
+    let effects = g.wheel(&mut host, &ctx, 700.0, 150.0, 4.0);
+    assert!(has_emit_tag(&effects, 80, "view_x"));
+    let (start, len) = x_window(&host, 80);
+    assert!(len < 1.0, "wheel-in shrinks the frequency window");
+    assert!(
+        start + len > 0.8,
+        "the window keeps the frequency under the cursor: got ({start}, {len})"
+    );
+    // Nothing joined a time axis on the way: a spectrum is in no group.
+    assert!(!host.window_def(1).unwrap().find(80).unwrap().is_timeline());
+}
+
+/// A drag anywhere on the axis pans it, absolutely from the press snapshot,
+/// and `R` puts the whole axis back — the same key that resets the timelines,
+/// since to a reader it is the same "show me all of it".
+#[test]
+fn a_drag_pans_the_frequency_axis_and_r_resets_it() {
+    let mut host = spectrum_host();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    g.wheel(&mut host, &ctx, 400.0, 150.0, 6.0); // zoom in, so there is slack
+    let (start, len) = x_window(&host, 80);
+    assert!(len < 1.0 && start > 0.0);
+    g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    assert!(g.dragging(), "the axis was grabbed");
+    let effects = g.drag_to(&mut host, &ctx, 500.0, 150.0);
+    assert!(has_emit_tag(&effects, 80, "view_x"));
+    let (panned, panned_len) = x_window(&host, 80);
+    assert!(
+        panned < start && (panned_len - len).abs() < 1e-9,
+        "dragging right walks the window down at a fixed zoom: ({panned}, {panned_len})"
+    );
+    g.release(&mut host, &ctx, 500.0, 150.0);
+    // ...and the same window arrives from the other side: `/gui_set` of the x
+    // axis' own keys reaches the element, rather than being swallowed by the
+    // group model that owns those keys on a timeline member.
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_SET.into(),
+            args: vec![
+                OscType::Int(80),
+                OscType::String("view_start".into()),
+                OscType::Float(0.25),
+                OscType::String("view_len".into()),
+                OscType::Float(0.5),
+            ],
+        }),
+        from(),
+    );
+    assert_eq!(x_window(&host, 80), (0.25, 0.5));
+    let effects = g.reset_timelines(&mut host, &ctx);
+    assert!(has_emit_tag(&effects, 80, "view_x"));
+    assert_eq!(x_window(&host, 80), (0.0, 1.0), "R restores the whole axis");
+}
+
 /// The container's plan decides, and the element takes what it is handed:
 /// on a lane, the clip under the cursor moves, empty lane space locates the
 /// transport, and the header — beside the axis, on no position at all —

@@ -874,6 +874,40 @@ fn editor_y_view_parses_clamps_and_applies() {
     assert_eq!(editor.y_view(), (0.0, 1.0));
 }
 
+/// A navigable spectrum's frequency window is the x sibling of `y_view`: the
+/// same normalized reading, the same clamp, the same order-independence — and
+/// it arrives under the x axis' own `view_start`/`view_len`, which on a
+/// timeline member the group model takes instead.
+#[test]
+fn editor_x_view_parses_clamps_and_applies() {
+    let n = node(
+        r#"{"type":"window","children":[
+            {"id":1,"type":"signal","view":"spectrum","bus":0,"navigable":1,
+             "axes":{"x":{"start":0.8,"len":0.5}}},
+            {"id":2,"type":"signal","view":"spectrum","bus":0,"navigable":1}
+        ]}"#,
+    );
+    let mut n = n;
+    super::axes::flatten_tree(&mut n); // the pass a def makes on the way in
+    let mut w = Widget::from_node(9, &n, &[]).unwrap();
+    // The nested axis spelling reaches it, and the read-time window clamps
+    // inside the axis: 0.8 + 0.5 spills, so the start pulls back.
+    assert_eq!(w.children[0].kind.editor().unwrap().x_view(), (0.5, 0.5));
+    // The default is the whole frequency axis.
+    assert_eq!(w.children[1].kind.editor().unwrap().x_view(), (0.0, 1.0));
+    let sp = w.find_mut(2).unwrap();
+    assert!(sp.kind.apply("view_start", &Value::from(0.25)));
+    assert!(sp.kind.apply("view_len", &Value::from(0.5)));
+    assert_eq!(sp.kind.editor().unwrap().x_view(), (0.25, 0.5));
+    // Either key order lands on the same window, and a non-positive length
+    // resets to the whole axis.
+    assert!(sp.kind.apply("view_start", &Value::from(0.5)));
+    assert!(sp.kind.apply("view_len", &Value::from(0.5)));
+    assert_eq!(sp.kind.editor().unwrap().x_view(), (0.5, 0.5));
+    assert!(sp.kind.apply("view_len", &Value::from(0.0)));
+    assert_eq!(sp.kind.editor().unwrap().x_view(), (0.0, 1.0));
+}
+
 #[test]
 fn spectrogram_parses_with_defaults_and_applies() {
     let n = node(
@@ -948,7 +982,8 @@ fn the_six_names_parse_to_their_point_of_the_product() {
             {"id":3,"type":"signal","navigable":0,"data":[0.0,1.0]},
             {"id":4,"type":"signal","view":"trace","bus":0},
             {"id":5,"type":"signal","view":"spectrum","bus":0},
-            {"id":6,"type":"signal","view":"phase","bus":0}
+            {"id":6,"type":"signal","view":"phase","bus":0},
+            {"id":7,"type":"signal","view":"spectrum","bus":0,"navigable":1}
         ]}"#,
     );
     let w = Widget::from_node(9, &n, &[]).unwrap();
@@ -962,9 +997,15 @@ fn the_six_names_parse_to_their_point_of_the_product() {
     assert_eq!(point(3), (Presentation::Signal, true, false));
     assert_eq!(point(4), (Presentation::Spectrum, true, false));
     assert_eq!(point(5), (Presentation::Phase, true, false));
-    // Only the navigable ones join the window's time axis.
-    let timelines: Vec<bool> = (0..6).map(|i| w.children[i].is_timeline()).collect();
-    assert_eq!(timelines, [true, true, false, false, false, false]);
+    // The seventh point the six names never had: a spectrum that navigates.
+    // It is opt-in — a bare `spectrum` is the spectroscope above — and it
+    // joins **no** time axis, because the axis it navigates is frequency.
+    assert_eq!(point(6), (Presentation::Spectrum, true, true));
+    assert!(w.children[6].kind.freq_nav().is_some());
+    assert!(!w.children[6].is_nav_signal(), "frequency is not time");
+    // Only the views navigating *time* join the window's time axis.
+    let timelines: Vec<bool> = (0..7).map(|i| w.children[i].is_timeline()).collect();
+    assert_eq!(timelines, [true, true, false, false, false, false, false]);
 }
 
 /// A `/gui_set` key lands on the part of the model it names, and is refused

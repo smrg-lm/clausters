@@ -167,6 +167,17 @@ enum Drag {
         y_start: f64,
         lane_h: f64,
     },
+    /// Panning a spectrum's **frequency** window from a drag anywhere on its
+    /// axis: `x_start` is the window snapshot at the press, `body_w` the pixels
+    /// one window's worth spans. Absolute from the snapshot, exactly like
+    /// [`Drag::PanY`], and per-element for the same reason — a frequency axis
+    /// is in no navigation group.
+    PanX {
+        id: i32,
+        origin_x: f64,
+        x_start: f64,
+        body_w: f64,
+    },
     /// Dragging a `bpf` breakpoint: the point follows the cursor within
     /// `body`, times clamped monotonic between its neighbors.
     BpfPoint { id: i32, index: usize, body: Rect },

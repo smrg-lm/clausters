@@ -12,7 +12,7 @@ use super::super::interact::{self, Hit};
 use super::super::widget::WidgetKind;
 use super::super::{Host, pianoroll, textedit};
 use super::effects::{emit_notes, emit_value, emit_view, redraw_all};
-use super::nav::{hit, set_y_view, timeline_ids};
+use super::nav::{freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
 use super::{GestureCtx, GestureEffect, Gestures, TextKey};
 
 impl Gestures {
@@ -333,10 +333,11 @@ impl Gestures {
         out
     }
 
-    /// `R` over a window: reset every timeline view's navigation (the whole
-    /// group, linked members in other windows too) and its vertical axis. The
-    /// views are found by walking the window's tree (waveform/spectrogram
-    /// widgets), so no front slot list is needed.
+    /// `R` over a window: reset every navigable view's axes — a timeline's
+    /// navigation (the whole group, linked members in other windows too) and
+    /// its vertical window, and a navigable spectrum's frequency window. The
+    /// views are found by walking the window's tree, so no front slot list is
+    /// needed.
     pub fn reset_timelines(&mut self, host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
@@ -351,6 +352,15 @@ impl Gestures {
             emit_view(host, &mut out, def_id, id);
             // The reset also restores the full vertical axis (and reports it).
             set_y_view(host, &mut out, def_id, id, 0.0, 1.0);
+        }
+        // A spectrum is in no group, so its frequency window resets on its own
+        // — the same key, since to a reader it is the same "show me all of it".
+        let spectra = host
+            .window_def(def_id)
+            .map(freq_nav_ids)
+            .unwrap_or_default();
+        for id in spectra {
+            set_x_view(host, &mut out, def_id, id, 0.0, 1.0);
         }
         out.push(GestureEffect::Redraw(def_id));
         out

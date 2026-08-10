@@ -162,6 +162,10 @@ pub struct PlotParams<'a> {
     pub db_floor: f32,
     pub db_ceil: f32,
     pub freq_scale: FreqScale,
+    /// The visible slice of the frequency display axis, normalized (`0, 1` =
+    /// the whole axis) — a navigable stored spectrum's own x window, read the
+    /// same way the live one reads it.
+    pub x_view: (f64, f64),
     pub label: Option<&'a str>,
 }
 
@@ -337,7 +341,15 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
     let nyquist = spec.nyquist.max(1.0);
     let f_lo = (F_LO_HZ / nyquist).clamp(1e-5, 0.5);
     if let Some(strip) = g.x_strip {
-        let ticks = ruler::hz_ticks_h(nyquist, p.freq_scale, f_lo, strip.w as f64, m);
+        let ticks = ruler::hz_ticks_h(
+            nyquist,
+            p.freq_scale,
+            f_lo,
+            strip.w as f64,
+            p.x_view.0,
+            p.x_view.1,
+            m,
+        );
         ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks);
     }
     let (dlo, dhi) = (p.db_floor, p.db_ceil.max(p.db_floor + 1.0));
@@ -360,7 +372,7 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
         }
         let color = theme.series(ch);
         let columns = lane.w.max(1.0) as usize;
-        let bin_at = |c: usize| bin_at_column(c, columns, spec, p.freq_scale, f_lo);
+        let bin_at = |c: usize| bin_at_column(c, columns, spec, p.freq_scale, f_lo, p.x_view);
         let y_at = |db: f32| lane.y + lane.h * (1.0 - fraction(db, dlo, dhi));
         super::spectrum::polyline(
             mesh, &lane, columns, &bin_at, &y_at, curve, color, m.trace_w,
@@ -376,13 +388,14 @@ fn bin_at_column(
     spec: &PlotSpectrum,
     scale: FreqScale,
     f_lo: f64,
+    x_view: (f64, f64),
 ) -> f32 {
     let frac = if columns <= 1 {
         0.0
     } else {
         c as f64 / (columns - 1) as f64
     };
-    let hz = ruler::display_to_hz(frac, spec.nyquist, scale, f_lo);
+    let hz = ruler::display_to_hz(x_view.0 + frac * x_view.1, spec.nyquist, scale, f_lo);
     let n_bins = spec.fft_size / 2;
     ((hz * spec.fft_size as f64 / (spec.nyquist * 2.0)) as f32).clamp(0.0, (n_bins - 1) as f32)
 }
@@ -435,7 +448,8 @@ pub fn draw_readout(d: &mut Draw, rect: Rect, p: &PlotParams, cursor: (f64, f64)
             };
             let nyquist = spec.nyquist.max(1.0);
             let f_lo = (F_LO_HZ / nyquist).clamp(1e-5, 0.5);
-            let hz = ruler::display_to_hz(frac, nyquist, p.freq_scale, f_lo);
+            let hz =
+                ruler::display_to_hz(p.x_view.0 + frac * p.x_view.1, nyquist, p.freq_scale, f_lo);
             let ch = if p.overlay {
                 0
             } else {
@@ -528,6 +542,7 @@ mod tests {
             db_floor: -100.0,
             db_ceil: 0.0,
             freq_scale: FreqScale::Log,
+            x_view: (0.0, 1.0),
             label: None,
         }
     }

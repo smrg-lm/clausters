@@ -438,7 +438,11 @@ export function field(
  * which is what lets a view navigate, slice and select. `navigable`,
  * `selectable` and `editable` are the capabilities over it. So
  * `signal({ view: "trace", path: take })` is the heavy waveform and
- * `signal({ view: "trace", bus: 0 })` the oscilloscope.
+ * `signal({ view: "trace", bus: 0 })` the oscilloscope. Over
+ * `view: "spectrum"` the navigable axis is **frequency**, not time: it is a
+ * window the element carries alone (`axes: { x: { start, len } }`, normalized
+ * over `[0, Nyquist]`, reported as `"view_x"`) and joins no navigation group,
+ * and it is the one view where `navigable` is off unless asked for.
  *
  * The presentation's own parameters (`fft_size`/`window_size`, `hop`,
  * `db_floor`/`db_ceil`, `freq_scale`, `colormap`, `window_ms`, `trigger`,
@@ -1043,6 +1047,14 @@ export function phasescope(
  * magnitude curve per channel. `averaging` (0..1) smooths each bin and
  * `peakHold` overlays a decaying peak trace; `freqScale` is the spectrogram's
  * set. Audio rate only.
+ *
+ * `navigable` turns the **frequency axis** into one you can move: drag it to
+ * pan, wheel over it to zoom under the cursor, `R` to see all of it again. It
+ * needs no history behind it — unlike a live time axis, every bin is there
+ * every frame — so it is one window the view carries alone, in normalized
+ * units over `[0, Nyquist]`: `viewStart`/`viewLen` (`0, 1` = the whole axis),
+ * live via `GuiHost.set` and reported as a `"view_x"` event. It is off by
+ * default; without it this is the watching spectroscope it has always been.
  */
 export function spectrum(
     bus = 0,
@@ -1056,6 +1068,11 @@ export function spectrum(
         logFreq?: boolean;
         averaging?: number;
         peakHold?: boolean;
+        /** Whether the frequency axis zooms and pans (off by default). */
+        navigable?: boolean;
+        /** The visible slice of the frequency axis, normalized (`0, 1` = all). */
+        viewStart?: number;
+        viewLen?: number;
         ruler?: boolean | string;
         rulerY?: boolean | string;
         label?: string;
@@ -1063,13 +1080,21 @@ export function spectrum(
 ): GuiNode {
     const {
         channels, fftSize, dbFloor, dbCeil, freqScale, logFreq, averaging,
-        peakHold, ruler, rulerY, label: text, ...rest
+        peakHold, navigable, viewStart, viewLen, ruler, rulerY,
+        label: text, ...rest
     } = options;
     return node("signal", {
         ...rest,
         bus,
         view: "spectrum",
-        ...axes(drop([["unit", strip(ruler)]]), drop([["unit", strip(rulerY)]])),
+        ...axes(
+            drop([
+                ["unit", strip(ruler)],
+                ["start", viewStart],
+                ["len", viewLen],
+            ]),
+            drop([["unit", strip(rulerY)]]),
+        ),
         ...drop([
             ["channels", channels],
             ["fft_size", fftSize],
@@ -1079,6 +1104,7 @@ export function spectrum(
             ["log_freq", flag(logFreq)],
             ["averaging", averaging],
             ["peak_hold", flag(peakHold)],
+            ["navigable", flag(navigable)],
             ["label", text],
         ]),
     });

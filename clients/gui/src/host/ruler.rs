@@ -838,25 +838,39 @@ pub(crate) fn hz_ticks(
     out
 }
 
-/// The ticks of a **horizontal** frequency axis spanning `[0, Nyquist]` over
-/// `width_px` device pixels — the `plot`'s spectral x ruler. Same display→Hz
-/// geometry as [`hz_ticks`] (`display_to_hz` per `scale`), but the labels fit
-/// by their measured *width* (edge-clamped like the frame renderer draws
-/// them), since they sit side by side. The log and perceptual scales walk the
-/// decade scheme; the linear axis fits a 1-2-5 ladder in hertz. `frac` is 0
-/// at the axis start (left), 1 at Nyquist.
+/// The ticks of a **horizontal** frequency axis over the visible display
+/// window `[x_start, x_start + x_len)` of `[0, Nyquist]`, across `width_px`
+/// device pixels — the spectral x ruler. The horizontal twin of [`hz_ticks`],
+/// down to the two schemes it picks between: a **wide** window (a decade or
+/// more, on a non-linear scale) walks the decades with 1/2/5 labeled, and a
+/// **narrow** (zoomed) one — like the linear axis at any zoom — fits a plain
+/// 1-2-5 ladder in hertz over what is actually visible, so zooming keeps
+/// revealing finer round frequencies. What differs is only how a label is
+/// measured: by its *width*, edge-clamped exactly as the renderer draws it,
+/// since these sit side by side. `frac` is 0 at the window's left edge, 1 at
+/// its right; `x_start = 0, x_len = 1` is the whole axis.
 pub(crate) fn hz_ticks_h(
     nyquist: f64,
     scale: FreqScale,
     f_lo_norm: f64,
     width_px: f64,
+    x_start: f64,
+    x_len: f64,
     metrics: &Metrics,
 ) -> Vec<Tick> {
-    if nyquist <= 0.0 || width_px <= 0.0 {
+    if nyquist <= 0.0 || width_px <= 0.0 || x_len <= 0.0 {
         return Vec::new();
     }
     let g = Gaps::of(metrics);
-    let to_px = |f: f64| hz_to_display(f, nyquist, scale, f_lo_norm) * width_px;
+    let to_px = |f: f64| (hz_to_display(f, nyquist, scale, f_lo_norm) - x_start) / x_len * width_px;
+    // What the window actually shows, in hertz: the range every scheme below
+    // walks, so a zoomed ruler never spends its candidates on rungs off screen.
+    let f_lo_vis = display_to_hz(x_start.max(0.0), nyquist, scale, f_lo_norm).max(0.0);
+    let f_hi_vis =
+        display_to_hz((x_start + x_len).min(1.0), nyquist, scale, f_lo_norm).min(nyquist);
+    if f_hi_vis <= f_lo_vis {
+        return Vec::new();
+    }
     // A label centered at `p`, edge-clamped into the strip: its drawn span.
     let span_of = |label: &str, p: f64| {
         let w = font::width(label, g.scale) as f64;
@@ -890,21 +904,22 @@ pub(crate) fn hz_ticks_h(
             label,
         });
     };
-    if scale != FreqScale::Linear {
+    if scale != FreqScale::Linear && f_hi_vis / f_lo_vis.max(1.0) >= 10.0 {
         // Decade scheme: 1/2/5 multiples labeled (as they fit), the rest minors.
         if scale != FreqScale::Log {
             push(0.0, true, &mut out); // the perceptual scales reach a true 0
         }
-        let floor = if scale == FreqScale::Log {
+        let axis_floor = if scale == FreqScale::Log {
             (f_lo_norm.clamp(1e-5, 0.5) * nyquist).max(1.0)
         } else {
             1.0
         };
+        let floor = axis_floor.max(f_lo_vis);
         let mut decade = 10f64.powf(floor.log10().floor()).max(1.0);
-        while decade <= nyquist {
+        while decade <= f_hi_vis {
             for mult in 1..10 {
                 let f = decade * mult as f64;
-                if f < floor || f > nyquist {
+                if f < floor || f > f_hi_vis {
                     continue;
                 }
                 push(f, matches!(mult, 1 | 2 | 5), &mut out);
@@ -912,15 +927,37 @@ pub(crate) fn hz_ticks_h(
             decade *= 10.0;
         }
     } else {
-        // The linear axis: the smallest 1-2-5 step in hertz whose labels fit.
-        let fmt = |f: f64, _s: f64| fmt_hz(f);
-        let candidates = decimal_steps(nyquist, width_px, 1.0, g);
-        let step = fit_step(&candidates, 0.0, nyquist, width_px, &fmt, g);
+        // A 1-2-5 ladder in hertz over the visible range: the smallest step
+        // whose labels fit at their **actual** (possibly nonlinear) positions,
+        // which is what the log scale needs once it is zoomed past a decade.
+        let span = f_hi_vis - f_lo_vis;
+        let candidates = decimal_steps(span, width_px, 1.0, g);
+        let fits = |step: f64| {
+            let mut prev_end = f64::NEG_INFINITY;
+            let mut k = (f_lo_vis / step).ceil() as i64;
+            loop {
+                let f = k as f64 * step;
+                if f > f_hi_vis + step * 1e-9 {
+                    return true;
+                }
+                let (lx, rx) = span_of(&fmt_hz(f), to_px(f));
+                if lx < prev_end + g.label {
+                    return false;
+                }
+                prev_end = rx;
+                k += 1;
+            }
+        };
+        let step = candidates
+            .iter()
+            .copied()
+            .find(|&s| fits(s))
+            .unwrap_or(span * 1.001);
         let minor = step / 5.0;
-        let mut k = 0i64;
+        let mut k = (f_lo_vis / minor).floor() as i64;
         loop {
             let f = k as f64 * minor;
-            if f > nyquist + minor * 1e-9 {
+            if f > f_hi_vis + minor * 1e-9 {
                 break;
             }
             let major = (f / step - (f / step).round()).abs() < 1e-6;
@@ -1644,7 +1681,7 @@ mod tests {
             FreqScale::Mel,
             FreqScale::Bark,
         ] {
-            let ticks = hz_ticks_h(nyq, scale, f_lo, 800.0, &Metrics::default());
+            let ticks = hz_ticks_h(nyq, scale, f_lo, 800.0, 0.0, 1.0, &Metrics::default());
             let l = labels(&ticks);
             assert!(l.contains(&"1K") || l.contains(&"2K"), "{scale:?}: {l:?}");
             // Every label sits exactly on the shared display mapping.
@@ -1663,11 +1700,78 @@ mod tests {
             }
             assert_no_h_collisions(&ticks, 800.0, &format!("{scale:?} horizontal"));
             // A narrow strip keeps fewer labels, still collision-free.
-            let narrow = hz_ticks_h(nyq, scale, f_lo, 120.0, &Metrics::default());
+            let narrow = hz_ticks_h(nyq, scale, f_lo, 120.0, 0.0, 1.0, &Metrics::default());
             assert!(labels(&narrow).len() <= l.len());
             assert_no_h_collisions(&narrow, 120.0, &format!("{scale:?} narrow"));
         }
-        assert!(hz_ticks_h(0.0, FreqScale::Log, 0.001, 800.0, &Metrics::default()).is_empty());
+        assert!(
+            hz_ticks_h(
+                0.0,
+                FreqScale::Log,
+                0.001,
+                800.0,
+                0.0,
+                1.0,
+                &Metrics::default()
+            )
+            .is_empty()
+        );
+    }
+
+    /// Zooming a frequency x axis reveals **finer** round frequencies inside
+    /// the window and drops everything outside it — the property L8 fixed for
+    /// every other axis, now that this one navigates too. The vertical twin
+    /// has had it since the spectrogram's frequency window; this is the same
+    /// rule read across the strip instead of up it.
+    #[test]
+    fn a_zoomed_horizontal_hz_ruler_reveals_finer_rungs() {
+        let (nyq, f_lo, m) = (24_000.0, 20.0 / 24_000.0, Metrics::default());
+        for scale in [
+            FreqScale::Linear,
+            FreqScale::Log,
+            FreqScale::Mel,
+            FreqScale::Bark,
+        ] {
+            let full = hz_ticks_h(nyq, scale, f_lo, 800.0, 0.0, 1.0, &m);
+            // A tenth of the axis around the middle: whatever hertz that is
+            // per scale, the ruler must name frequencies inside it and only
+            // inside it, without colliding.
+            let (x0, x_len) = (0.45, 0.1);
+            let zoomed = hz_ticks_h(nyq, scale, f_lo, 800.0, x0, x_len, &m);
+            assert!(!zoomed.is_empty(), "{scale:?}: a zoomed window has ticks");
+            assert_no_h_collisions(&zoomed, 800.0, &format!("{scale:?} zoomed"));
+            let lo = display_to_hz(x0, nyq, scale, f_lo);
+            let hi = display_to_hz(x0 + x_len, nyq, scale, f_lo);
+            for t in &zoomed {
+                let f = display_to_hz(x0 + t.frac * x_len, nyq, scale, f_lo);
+                assert!(
+                    f >= lo - (hi - lo) * 1e-6 && f <= hi + (hi - lo) * 1e-6,
+                    "{scale:?}: {f} Hz drawn outside [{lo}, {hi}]"
+                );
+            }
+            // Finer, measured where the comparison is fair — inside the
+            // window, which is the only place both rulers describe. (A
+            // nonlinear axis packs its bottom decade tightly, so the smallest
+            // gap over the *whole* ruler says nothing about the zoom.)
+            let named = |ticks: &[Tick], start: f64, len: f64| -> Vec<f64> {
+                ticks
+                    .iter()
+                    .filter(|t| t.label.is_some())
+                    .map(|t| display_to_hz(start + t.frac * len, nyq, scale, f_lo))
+                    .filter(|f| *f >= lo && *f <= hi)
+                    .collect()
+            };
+            let before = named(&full, 0.0, 1.0);
+            let after = named(&zoomed, x0, x_len);
+            assert!(
+                after.len() > before.len(),
+                "{scale:?}: the window names {} frequencies zoomed in, {} zoomed out",
+                after.len(),
+                before.len()
+            );
+        }
+        // An empty window draws nothing rather than dividing by zero.
+        assert!(hz_ticks_h(24_000.0, FreqScale::Log, 1e-3, 800.0, 0.0, 0.0, &m).is_empty());
     }
 
     #[test]

@@ -196,6 +196,15 @@ impl RulerY {
     }
 }
 
+/// One view window as a valid display-axis slice: a non-positive length is the
+/// whole axis, anything else clamps into `[0, 1]` with the shared zoom floor.
+/// The one reading both of an element's own axes go through.
+fn normalized_window(start: f64, len: f64) -> (f64, f64) {
+    let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
+    axis.set_span(start, len);
+    axis.span()
+}
+
 /// The editor chrome both heavy views share: the time-ruler (x) mode and the
 /// vertical (y) ruler unit — each independently switchable off, each drawn in
 /// its own strip beside the body — the sample rate placing the time labels
@@ -214,6 +223,18 @@ impl RulerY {
 /// panned with the pointer on the y-ruler strip, settable via `/gui_set` and
 /// reported live as a `"view_y"` event (a non-positive `y_len` resets to the
 /// full axis).
+///
+/// `x_start`/`x_len` are the **horizontal** window of an element that owns its
+/// own x axis — a navigable spectrum, whose x measures frequency rather than
+/// the window's time — in the same normalized display units and with the same
+/// rule (`0, 1` = the whole axis, a non-positive length resets to it), reported
+/// as a `"view_x"` event. They arrive on the wire as the x axis' own
+/// `view_start`/`view_len` (`axes.x.start`/`len`), which is the same *question*
+/// a timeline member's window answers and the reason it is not a second pair of
+/// names; what differs is who owns the answer. On a member of a navigation
+/// group those keys never reach here — the group model takes them, in samples
+/// (see `host::timeline`) — so exactly one of the two readings is ever live for
+/// a given widget.
 ///
 /// `link` is the widget's **navigation group** (see `host::timeline`): every
 /// timeline view declaring the same link id shares one horizontal view,
@@ -256,6 +277,8 @@ pub struct EditorProps {
     pub playhead_loop_len: f64,
     pub y_start: f64,
     pub y_len: f64,
+    pub x_start: f64,
+    pub x_len: f64,
     pub link: Option<i32>,
     pub offset: f64,
 }
@@ -284,6 +307,8 @@ impl EditorProps {
             playhead_loop_len: number_f64(props, "playhead_loop_len", 0.0),
             y_start: number_f64(props, "y_start", 0.0),
             y_len: number_f64(props, "y_len", 1.0),
+            x_start: number_f64(props, "view_start", 0.0),
+            x_len: number_f64(props, "view_len", 1.0),
             link: props
                 .get("link")
                 .and_then(Value::as_i64)
@@ -325,9 +350,15 @@ impl EditorProps {
     /// (`y_start` would clamp against the *old* `y_len` before the new one
     /// lands).
     pub fn y_view(&self) -> (f64, f64) {
-        let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
-        axis.set_span(self.y_start, self.y_len);
-        axis.span()
+        normalized_window(self.y_start, self.y_len)
+    }
+
+    /// The horizontal view window of an element that owns its x axis, read the
+    /// same way [`Self::y_view`] reads the vertical one — validated here rather
+    /// than in `apply`, for the same reason: one `/gui_set` carrying both keys
+    /// must not depend on their order.
+    pub fn x_view(&self) -> (f64, f64) {
+        normalized_window(self.x_start, self.x_len)
     }
 
     pub(super) fn apply(&mut self, key: &str, v: &Value) -> bool {
@@ -350,6 +381,8 @@ impl EditorProps {
             "playhead_loop_len" => set_f64(&mut self.playhead_loop_len, v),
             "y_start" => set_f64(&mut self.y_start, v),
             "y_len" => set_f64(&mut self.y_len, v),
+            "view_start" => set_f64(&mut self.x_start, v),
+            "view_len" => set_f64(&mut self.x_len, v),
             _ => false,
         }
     }

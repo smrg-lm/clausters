@@ -400,6 +400,27 @@ impl SignalElement {
         matches!(self.source, Source::Bus(_))
     }
 
+    /// Whether the element navigates a **frequency** x axis of its own: a
+    /// navigable spectrum, the one presentation whose horizontal domain is not
+    /// the window's time.
+    ///
+    /// Such an axis is addressable with no retention at all — every bin is
+    /// there every frame — so navigating it needs no history and no navigation
+    /// group: it is one normalized window the element carries alone
+    /// ([`EditorProps::x_view`]), exactly as the vertical window of a
+    /// spectrogram's frequency axis already is. Nothing else in a window
+    /// measures in hertz along x, so there is no axis to share.
+    pub fn navigates_freq(&self) -> bool {
+        self.caps.navigable && self.presentation == Presentation::Spectrum
+    }
+
+    /// Whether the element navigates the window's shared **time** axis — the
+    /// capability that joins a navigation group, which is every navigable
+    /// presentation but the spectrum.
+    pub fn navigates_time(&self) -> bool {
+        self.caps.navigable && !self.navigates_freq()
+    }
+
     /// Recomputes [`Self::analysis`] from the current samples and parameters. A
     /// no-op unless this is a stored-signal spectrum with samples to analyze.
     pub fn refresh_analysis(&mut self) {
@@ -462,6 +483,13 @@ const WATCH: Caps = Caps {
     editable: false,
 };
 
+/// A spectrum's capabilities: navigating its frequency axis, and nothing else.
+/// Selecting on it would be a span of hertz with no source to slice, and
+/// editing a magnitude is not a thing this model expresses.
+fn freq_nav(navigable: bool) -> Caps {
+    Caps { navigable, ..WATCH }
+}
+
 /// The point of the product a wire node describes: its `view` (the
 /// presentation), whether its source is forward-only, and whether it
 /// navigates.
@@ -507,13 +535,19 @@ pub fn point(view: Presentation, live: bool, navigable: bool) -> Preset {
             window_ms: 30.0,
             ..base
         },
+        // The spectrum navigates **frequency**, so `navigable` costs it no
+        // history and no group — but not a selection either: a span of hertz is
+        // not something the model can hand back to a source that has no such
+        // axis to slice.
         (Presentation::Spectrum, true) => Preset {
+            caps: freq_nav(navigable),
             ruler_y: RulerY::Db,
             ..base
         },
         // A stored spectrum measures an arbitrary sequence, so its value axis
         // auto-fits like any still view's.
         (Presentation::Spectrum, false) => Preset {
+            caps: freq_nav(navigable),
             value: ValueRange::auto(),
             ..base
         },

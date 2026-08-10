@@ -102,6 +102,14 @@ pub(super) fn timeline_ids(tree: &Widget) -> Vec<i32> {
         .collect()
 }
 
+/// Every widget id in the tree that navigates a frequency axis of its own.
+pub(super) fn freq_nav_ids(tree: &Widget) -> Vec<i32> {
+    tree.descendants()
+        .filter(|w| w.kind.freq_nav().is_some())
+        .filter_map(|w| w.id)
+        .collect()
+}
+
 /// Writes the selection spanning samples `a..b` (any order, clamped to the
 /// timeline) into view `id`'s navigation group — every member follows — and
 /// emits **one** `"selection" start len` event, carrying the interacted
@@ -271,6 +279,109 @@ pub(super) fn set_y_view(
         ],
     );
     out.push(GestureEffect::Redraw(def_id));
+}
+
+/// The **frequency axis** of a navigable spectrum: the body its curve is drawn
+/// in, the surface the axis is grabbed on and the window it stands at.
+///
+/// A spectrum is not a timeline container — it is nobody's coordinate system,
+/// so this is not a [`Coords`](super::super::interact::Coords) variant — and it
+/// is in no navigation group: the window is the element's own
+/// ([`EditorProps::x_view`](super::super::widget::EditorProps::x_view)), like
+/// the vertical window of every other axis that measures something.
+#[derive(Clone, Copy)]
+pub(super) struct FreqAxis {
+    /// Where the columns map, exactly what the renderer drew through.
+    pub(super) body: Rect,
+    /// Where the axis answers to the pointer: the body plus the hertz strip
+    /// under it, which is the axis with the ticks drawn on it.
+    pub(super) surface: Rect,
+    pub(super) start: f64,
+    pub(super) len: f64,
+}
+
+/// The frequency axis of the widget a hit landed on, if that widget is a
+/// navigable spectrum. Resolved through the renderer's own region split, so a
+/// zoom anchors at the hertz the reader has the pointer on.
+pub(super) fn freq_axis(host: &Host, def_id: i32, hit: &interact::Hit) -> Option<FreqAxis> {
+    let el = hit.kind.freq_nav()?;
+    let r = super::super::spectrum::regions(
+        hit.rect,
+        el.display.label.is_some(),
+        el.editor.ruler != super::super::widget::Ruler::Off,
+        el.editor.ruler_y != super::super::widget::RulerY::Off,
+        host.metrics_for(def_id),
+    );
+    if r.body.w <= 0.0 || r.body.h <= 0.0 {
+        return None;
+    }
+    let surface = match r.strip_x {
+        Some(strip) => Rect::new(r.body.x, r.body.y, r.body.w, r.body.h + strip.h),
+        None => r.body,
+    };
+    let (start, len) = el.editor.x_view();
+    Some(FreqAxis {
+        body: r.body,
+        surface,
+        start,
+        len,
+    })
+}
+
+/// Writes spectrum `id`'s **frequency** window (clamped through the same
+/// normalized axis the vertical one uses) and emits the `"view_x" start len`
+/// event — the horizontal sibling of [`set_y_view`], and deliberately not the
+/// group's `"view"`: this window belongs to the element, so nothing else moves
+/// with it.
+pub(super) fn set_x_view(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    id: i32,
+    start: f64,
+    len: f64,
+) {
+    let mut axis = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
+    axis.set_span(start, len);
+    let (start, len) = axis.span();
+    if let Some(editor) = host
+        .window_def_mut(def_id)
+        .and_then(|t| t.find_mut(id))
+        .and_then(|w| w.kind.editor_mut())
+    {
+        (editor.x_start, editor.x_len) = (start, len);
+    }
+    emit(
+        out,
+        def_id,
+        id,
+        vec![
+            OscType::String("view_x".into()),
+            OscType::Float(start as f32),
+            OscType::Float(len as f32),
+        ],
+    );
+    out.push(GestureEffect::Redraw(def_id));
+}
+
+/// Anchor-preserving zoom of a spectrum's frequency axis: `anchor` is the
+/// cursor's position across the body (0 = its left edge, 1 = its right), so
+/// the frequency under the pointer stays under it.
+pub(super) fn zoom_freq(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    id: i32,
+    axis: FreqAxis,
+    cx: f64,
+    factor: f64,
+) {
+    let anchor = ((cx - axis.body.x as f64) / axis.body.w.max(1.0) as f64).clamp(0.0, 1.0);
+    let mut a = crate::viewport::Axis::normalized(crate::viewport::Unit::Norm);
+    a.set_span(axis.start, axis.len);
+    a.zoom(factor, anchor);
+    let (start, len) = a.span();
+    set_x_view(host, out, def_id, id, start, len);
 }
 
 /// Anchor-preserving vertical zoom of timeline view `id`: `anchor` in display

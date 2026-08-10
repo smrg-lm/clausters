@@ -10,7 +10,12 @@ shared-memory segment (the same path the oscilloscope uses, ``gui_scope.py``):
   correlation read-out (Pearson's r) beneath;
 - a ``spectrum`` (spectroscope) reads one bus and draws one forward FFT per
   frame as a magnitude curve on a log frequency axis, with per-bin averaging
-  and a decaying peak-hold so it does not flicker;
+  and a decaying peak-hold so it does not flicker. This one is **navigable**,
+  which over a spectrum means its *frequency* axis: drag it to pan, wheel over
+  it to zoom under the cursor, ``R`` to see all of it again. That axis needs no
+  retention behind it -- unlike a time axis, every bin is there every frame --
+  so the window is one the view carries alone, normalized over
+  ``[0, Nyquist]``, settable from the script and reported back as ``view_x``;
 - a **waterfall** -- the spectrogram presentation over the same live bus, with a
   ``retention`` span. That prop is the whole point of the third view: a
   forward-only source has no addressable past, so ``navigable`` over one is a
@@ -104,7 +109,8 @@ win = gui.open(window(
     panel(phasescope(0, name="gonio", window_ms=30.0,
                      label="goniometer (stereo pair)"),
           spectrum(0, name="spectrum", fft_size=2048, log_freq=True,
-                   peak_hold=True, label="spectrum (left tap, log Hz)"),
+                   peak_hold=True, navigable=True,
+                   label="spectrum (left tap, log Hz -- navigable)"),
           layout="row", h=200),
     signal(view="spectrogram", bus=0, retention=RETAIN, navigable=True,
            name="waterfall", window_size=1024, freq_scale="log",
@@ -112,8 +118,24 @@ win = gui.open(window(
            axes={"x": {"ruler": "time"}, "y": {"ruler": "hz"}}),
     title="Phasescope + live spectrum + waterfall", w=760, h=640, layout="col"))
 win.on_closed(lambda: globals().__setitem__("_closed", True))
+
+
+def on_spectrum(tag, *vals):
+    """The frequency window, reported as it is navigated -- named in hertz,
+    since the normalized pair is a display coordinate and the reader is
+    looking at a frequency axis."""
+    if tag == "view_x" and len(vals) >= 2:
+        nyquist = float(server.options.sample_rate) / 2.0
+        lo = 20.0 * (nyquist / 20.0) ** vals[0]
+        hi = 20.0 * (nyquist / 20.0) ** min(vals[0] + vals[1], 1.0)
+        print(f"  spectrum: {lo:.0f} Hz .. {hi:.0f} Hz")
+
+
+win["spectrum"].on_event(on_spectrum)
 print("goniometer: vertical=mono (r=+1), lozenge=wide (r~0), "
       "horizontal=anti-phase (r=-1)")
+print("spectrum: drag the curve to pan its frequency axis, wheel to zoom under "
+      "the cursor, R to see the whole axis again")
 print(f"waterfall: the last {RETAIN:.0f} s of the same bus, and because the "
       "host retains them the axis is navigable -- wheel to zoom the time axis, "
       "drag to pan, as on a file; close the window to stop")
@@ -147,6 +169,16 @@ def run(seconds: float) -> None:
         gui.pump(timeout=0.03)
 
 
+def focus(start: float, length: float) -> None:
+    """Points the spectrum's frequency window at a slice of its axis, in
+    normalized display units (``0, 1`` = all of it) -- the same window the
+    pointer moves, set the way any other prop is set. The gesture and the
+    script write one window, so navigating by hand from here just continues
+    from where this left it."""
+    win["spectrum"].set(view_start=start, view_len=length)
+    print(f"  spectrum window -> {start:.2f} +{length:.2f}")
+
+
 def retain(seconds: float) -> None:
     """Resizes the retained span live -- the axis's own policy, set the way
     any other prop is set. Narrowing it drops the oldest history at once
@@ -166,9 +198,15 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
         retain(RETAIN / 2)
         run(8.0)
         retain(RETAIN)
+        # ...and so is the spectrum's frequency window: zoom into the upper
+        # half of the axis, where the swept fifth lives, then release it.
+        focus(0.5, 0.5)
+        run(8.0)
+        focus(0.0, 1.0)
         run(15.0)
     finally:
         session.close()
 else:
     print("analyzer up - run(10) to sweep the image, retain(4) to narrow the "
-          "waterfall's span, session.close() to end")
+          "waterfall's span, focus(0.5, 0.5) to zoom the spectrum's frequency "
+          "axis, session.close() to end")

@@ -132,7 +132,51 @@ pub(crate) struct SpectrumParams<'a> {
     pub peak_hold: bool,
     pub ruler: bool,
     pub ruler_y: bool,
+    /// The visible slice of the frequency display axis, normalized (`0, 1` =
+    /// the whole axis): a navigable spectrum's own x window
+    /// ([`EditorProps::x_view`](super::widget::EditorProps::x_view)).
+    pub x_view: (f64, f64),
     pub label: Option<&'a str>,
+}
+
+/// The three regions of a spectrum's rectangle: the field the curve is drawn
+/// in, the x-position the dB strip starts at (when it has one) and the
+/// frequency strip under the body (when it has one).
+///
+/// Resolved here, once, because the gesture side needs the same body the
+/// renderer drew through: a zoom anchored anywhere else than where the reader
+/// sees the frequency would be anchored at the wrong hertz.
+pub(crate) struct SpectrumRegions {
+    pub body: Rect,
+    pub strip_y_x: Option<f32>,
+    pub strip_x: Option<Rect>,
+}
+
+/// Splits a spectrum's rectangle into [`SpectrumRegions`], reserving a strip
+/// per ruler that is on and fits.
+pub(crate) fn regions(
+    rect: Rect,
+    label: bool,
+    ruler: bool,
+    ruler_y: bool,
+    m: &super::metrics::Metrics,
+) -> SpectrumRegions {
+    let mut body = body_rect(rect, label, m);
+    let strip_y_x = (ruler_y && body.w > m.ruler_w * 2.0).then(|| {
+        let x = body.x;
+        body.x += m.ruler_w;
+        body.w -= m.ruler_w;
+        x
+    });
+    let strip_x = (ruler && body.h > m.ruler_h * 2.0).then(|| {
+        body.h -= m.ruler_h;
+        Rect::new(body.x, body.y + body.h, body.w, m.ruler_h)
+    });
+    SpectrumRegions {
+        body,
+        strip_y_x,
+        strip_x,
+    }
 }
 
 /// Draws a spectrum: a framed field with one smoothed magnitude polyline per
@@ -159,17 +203,11 @@ pub(crate) fn draw_spectrum(
             theme.text,
         );
     }
-    let mut body = body_rect(rect, p.label.is_some(), m);
-    let strip_x = (p.ruler_y && body.w > m.ruler_w * 2.0).then(|| {
-        let x = body.x;
-        body.x += m.ruler_w;
-        body.w -= m.ruler_w;
-        x
-    });
-    let x_strip = (p.ruler && body.h > m.ruler_h * 2.0).then(|| {
-        body.h -= m.ruler_h;
-        Rect::new(body.x, body.y + body.h, body.w, m.ruler_h)
-    });
+    let SpectrumRegions {
+        body,
+        strip_y_x: strip_x,
+        strip_x: x_strip,
+    } = regions(rect, p.label.is_some(), p.ruler, p.ruler_y, m);
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
@@ -189,8 +227,17 @@ pub(crate) fn draw_spectrum(
     let nyquist = sr * 0.5;
     let f_lo = F_LO_HZ.min(nyquist * 0.5).max(1.0);
     let f_lo_norm = (f_lo as f64 / nyquist as f64).clamp(1e-5, 0.5);
+    let (x0, x_len) = p.x_view;
     if let Some(strip) = x_strip {
-        let ticks = ruler::hz_ticks_h(nyquist as f64, p.freq_scale, f_lo_norm, strip.w as f64, m);
+        let ticks = ruler::hz_ticks_h(
+            nyquist as f64,
+            p.freq_scale,
+            f_lo_norm,
+            strip.w as f64,
+            x0,
+            x_len,
+            m,
+        );
         ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks);
     }
     if let Some(strip_x) = strip_x {
@@ -212,14 +259,17 @@ pub(crate) fn draw_spectrum(
             continue;
         }
         // The bin (fractional) a screen column maps to, through the display→Hz
-        // geometry shared with the spectrogram and its rulers.
+        // geometry shared with the spectrogram and its rulers — the column's
+        // position across the *visible window* of the axis, which is the one
+        // remapping a navigable frequency axis costs the drawing.
         let bin_at = |c: usize| -> f32 {
             let frac = if columns <= 1 {
                 0.0
             } else {
                 c as f64 / (columns - 1) as f64
             };
-            let hz = ruler::display_to_hz(frac, nyquist as f64, p.freq_scale, f_lo_norm) as f32;
+            let d = x0 + frac * x_len;
+            let hz = ruler::display_to_hz(d, nyquist as f64, p.freq_scale, f_lo_norm) as f32;
             (hz * state.fft_size as f32 / sr).clamp(0.0, (n_bins - 1) as f32)
         };
         let color = if states.len() > 1 {

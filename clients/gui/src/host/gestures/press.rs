@@ -91,6 +91,21 @@ impl Gestures {
             });
             return out;
         }
+        // A spectrum's **frequency** axis is grabbed on the axis itself, before
+        // any modifier and before the chain: the element is nobody's container,
+        // so there is no coordinate system over it to offer a pan, and dragging
+        // its curve sideways can mean nothing else.
+        if let Some(axis) = freq_axis(host, ctx.def_id, &hit)
+            && axis.surface.contains(cx, cy)
+        {
+            self.drag = Some(Drag::PanX {
+                id: hit.id,
+                origin_x: cx,
+                x_start: axis.start,
+                body_w: axis.body.w.max(1.0) as f64,
+            });
+            return out;
+        }
         let mut element_ran = false;
         for frame in hit.chain.iter().rev() {
             for step in frame.map.plan(ctx.shift, ctx.ctrl, ctx.alt).steps() {

@@ -30,6 +30,8 @@ pub(super) struct PlotItem {
     pub(super) db_floor: f32,
     pub(super) db_ceil: f32,
     pub(super) freq_scale: FreqScale,
+    /// The element's own frequency window, normalized (a spectrum view only).
+    pub(super) x_view: (f64, f64),
     pub(super) label: Option<String>,
 }
 
@@ -49,6 +51,7 @@ impl PlotItem {
             db_floor: self.db_floor,
             db_ceil: self.db_ceil,
             freq_scale: self.freq_scale,
+            x_view: self.x_view,
             label: self.label.as_deref(),
         }
     }
@@ -152,6 +155,7 @@ pub(super) fn signal_item(
             peak_hold: el.spectral.peak_hold,
             ruler: strip_x,
             ruler_y: strip_y,
+            x_view: el.editor.x_view(),
             label: el.display.label.clone(),
         }),
         // A stored signal nobody navigates: the mesh renderer, whichever of
@@ -177,6 +181,7 @@ pub(super) fn signal_item(
             db_floor: el.spectral.db_floor,
             db_ceil: el.spectral.db_ceil,
             freq_scale: el.spectral.freq_scale,
+            x_view: el.editor.x_view(),
             label: el.display.label.clone(),
         }),
         // A live source with no live renderer for its presentation (a stored
@@ -381,6 +386,8 @@ pub(super) struct SpectrumItem {
     pub(super) peak_hold: bool,
     pub(super) ruler: bool,
     pub(super) ruler_y: bool,
+    /// The element's own frequency window, normalized.
+    pub(super) x_view: (f64, f64),
     pub(super) label: Option<String>,
 }
 

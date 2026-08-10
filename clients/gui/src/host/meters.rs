@@ -130,6 +130,8 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
             FreqScale::Linear,
             1e-4,
             strip.w as f64,
+            0.0,
+            1.0,
             m,
         );
         ruler::draw_ticks_h(d, strip, &ticks);

@@ -30,16 +30,26 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
-        let Some(Hit {
+        let Some(found) = hit(host, ctx, cx, cy) else {
+            return out;
+        };
+        // A spectrum zooms its **frequency** axis, anchored at the cursor: the
+        // one navigable axis in the host that is not the window's time, and the
+        // one that needs no history behind it — every bin is there every frame.
+        if let Some(axis) = freq_axis(host, def_id, &found)
+            && axis.surface.contains(cx, cy)
+        {
+            let factor = 0.85f64.powf(steps);
+            zoom_freq(host, &mut out, def_id, found.id, axis, cx, factor);
+            return out;
+        }
+        let Hit {
             id,
             rect,
             kind,
             chain,
             ..
-        }) = hit(host, ctx, cx, cy)
-        else {
-            return out;
-        };
+        } = found;
         // The piano navigates its own MIDI range, not a timeline group: wheel
         // over the overview strip zooms the range (anchored at the cursor's
         // key), over the keys it pans by whole white keys. Both gated by `pan`.

@@ -4610,3 +4610,57 @@ for a patcher's box, and turning a plane's `boxes` prop into child elements
 changes behavior (ids, layout, per-box hit-testing and edit-back), not spelling.
 The name is now unclaimed and the prop unchanged, waiting for the element rather
 than for a rename.
+
+## A frequency axis is navigated by the element, not by a group
+
+*(decided while making `navigable` mean something over a spectrum)*
+
+Retention had just made a live *time* axis navigable, and the acceptance line it
+came with also asked for a zoomable live **spectrum** — which turned out not to
+be the same mechanism at all. Everything navigable in the host navigates time: a
+navigation group is keyed by `link` over a shared time axis, the group's window
+is measured in samples, and joining one is what `is_timeline` answers. A
+spectrum's x is **frequency**, a domain that is addressable with no retention
+whatsoever — every bin is there every frame — so the capability parsed and had
+nowhere to go, and the code said so honestly by dropping it.
+
+Two shapes were open. A **second axis kind** beside the time one (a coordinate
+system carrying its unit, so frequency axes group with frequency axes and never
+with a lane) generalizes to a pair of spectra comparing two buses, and to an
+arbitrary-domain plot later. Or the **element's own window**, no group at all,
+in the shape the vertical axis already has: a normalized `[start, len]` the
+element carries alone.
+
+**It is the element's own window**, and the argument that settled it is not the
+size of the diff. *Frequency is already navigated this way in this host.* The
+spectrogram's frequency axis is its vertical one, and that axis is a normalized
+per-element window with no group behind it — because a display axis over
+`[0, Nyquist]` on a log/mel/bark scale is a display coordinate, inverted through
+one shared mapping, and nothing else in a window measures in hertz to share it
+with. Making the curve's frequency axis a *grouped* axis would have given one
+domain two mechanisms depending on which way it happened to be drawn, and left
+the reader unable to guess which. So the horizontal window is the vertical one's
+sibling in every respect: same normalized units, same clamp, same read-at-use
+validation, and a `"view_x"` event beside `"view_y"`.
+
+**What it costs, if the pair of spectra ever wants a group.** Nothing that is
+lost: the per-element window remains where the answer is stored, and a group
+would be a layer that writes it, exactly as a timeline group writes its members'
+view today. That is the reason this order is safe — the general case can still
+arrive, and it will not have to undo this.
+
+Two smaller things fell out of it, both worth stating because they are the kind
+that surprise the next reader:
+
+- **The wire keys are the x axis' own `view_start`/`view_len`** (`axes.x.start`
+  / `len`) rather than a new pair. It is the same question a timeline member's
+  window answers — what slice of the x axis is visible — and only the owner of
+  the answer differs. Exactly one reading is live for a given widget: on a
+  member of a navigation group those keys never reach the element at all, the
+  group model takes them, in samples.
+- **`navigable` is off by default here, and only here.** Everywhere else the
+  prop defaults to on, because the views the catalog grew as editors navigate.
+  A spectrum is a meter-like view that has never moved under a drag, and every
+  existing `spectrum` on the wire says nothing about the capability — so
+  defaulting it on would have changed what shipped defs do, to no one's
+  request.

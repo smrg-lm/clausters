@@ -715,6 +715,8 @@ mod tests {
             quant: 4.0,
             sel_start: 0.0,
             sel_len: 0.0,
+            x_start: 0.0,
+            x_len: 1.0,
             playhead_at: -1.0,
             playhead: -1.0,
             playhead_loop_start: 0.0,

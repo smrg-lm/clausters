@@ -208,14 +208,42 @@ spectrogram(path="take.f32")              # signal(view="spectrogram")
 phasescope(0)                             # signal(view="phase", bus=0)
 ```
 
-They are shortcuts, not the catalog: a *navigable spectrum* has no name of its
-own and needs none —
+They are shortcuts, not the catalog: a point the six names never froze is
+written by naming the point, not by finding a name for it —
 
 ```python
 from clausters.gui import signal
 
-signal(view="spectrum", path="take.f32", navigable=True)
+signal(view="spectrogram", bus=0, retention=8.0, navigable=True)   # a waterfall
 ```
+
+### What `navigable` navigates
+
+An axis is navigable when its domain is **addressable**, and the two live axes
+reach that differently:
+
+- **time**, on a forward-only source, is not addressable at all: there is
+  nothing behind the newest window to zoom out to. `retention` (in seconds) is
+  the policy that supplies a past — the host keeps that many seconds of the bus
+  and the view reads *that* — which is what makes the waterfall above a
+  spectrogram you can zoom and pan like a file's. A live axis follows the
+  newest until you navigate it, and then stays where you put it.
+- **frequency** is addressable with no history at all: every bin is there every
+  frame. So `navigable` over a `spectrum` costs nothing but the gesture — drag
+  the curve to pan its frequency axis, wheel over it to zoom under the cursor,
+  `R` to see all of it again:
+
+  ```python
+  spectrum(0, navigable=True, view_start=0.5, view_len=0.5)   # the top half
+  ```
+
+  That window is the element's **own** — normalized over `[0, Nyquist]`,
+  `0, 1` being the whole axis — not a navigation group's: nothing else in a
+  window measures in hertz along x, so there is no axis to share. It is live
+  through `set(view_start=…, view_len=…)` and comes back as a `"view_x"` event,
+  the horizontal sibling of the `"view_y"` every other element's vertical axis
+  reports. `spectrum` is also the one view where `navigable` is off unless you
+  ask: without it, it is the watching spectroscope.
 
 ### Where the samples come from
 

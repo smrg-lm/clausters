@@ -288,6 +288,21 @@ impl Gestures {
                 };
                 set_scroll_view(host, &mut out, def_id, id, area, (nx, ny, zoom));
             }
+            Drag::PanX {
+                id,
+                origin_x,
+                x_start,
+                body_w,
+            } => {
+                // Dragging right moves the axis right with the cursor: the
+                // frequency grabbed stays under it.
+                let x_len = host
+                    .widget_kind(def_id, id)
+                    .and_then(WidgetKind::editor)
+                    .map_or(1.0, |e| e.x_view().1);
+                let start = x_start - (cx - origin_x) / body_w * x_len;
+                set_x_view(host, &mut out, def_id, id, start, x_len);
+            }
             Drag::BpfPoint { id, index, body } => {
                 interact::bpf_edit(host, def_id, id, |p, duration, lo, hi, exp| {
                     bpf::move_point(p, index, body, duration, lo, hi, exp, cx, cy);

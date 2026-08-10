@@ -1022,7 +1022,7 @@ that are genuinely missing rather than merely unbuilt. Neither is a refactor:
 one is a capability the acceptance line asked for and did not get, the other is
 a cost the first landing knowingly paid.
 
-- ⬜ **E17 — A navigable axis whose domain is not time**: E16 shipped the
+- ✅ **E17 — A navigable axis whose domain is not time**: E16 shipped the
   retained waterfall and **not** the zoomable live `spectrum` its acceptance
   line also named, because the two are not the same mechanism and the second has
   no staged design. Everything navigable in the host today navigates *time*: a
@@ -1056,6 +1056,41 @@ a cost the first landing knowingly paid.
   zoomed and panned on its frequency axis, the window round-tripping through
   `/gui_set` and a `"view_x"`-shaped event, and the ruler revealing finer rungs
   as it zooms — the property L8 already fixed for every other axis.
+
+  **The decision, and the argument that settled it.** It is the **element's own
+  window**, and not because the diff is smaller: *frequency is already navigated
+  that way in this host*. A spectrogram's frequency axis is its vertical one,
+  and that axis is a normalized per-element window with no group behind it —
+  because a display axis over `[0, Nyquist]` on a log/mel/bark scale is a
+  display coordinate inverted through one shared mapping, and nothing else in a
+  window measures in hertz to share it with. A grouped x would have given one
+  domain two mechanisms depending on which way it happened to be drawn. So
+  `EditorProps` grew `x_start`/`x_len` beside `y_start`/`y_len`, read through
+  `x_view()` with the same clamp and the same read-at-use validation, reported
+  as `"view_x"` beside `"view_y"`. The general case is not foreclosed: the
+  per-element window stays where the answer is stored, so a future group would
+  *write* it, exactly as a timeline group writes its members' view today.
+  `docs/decisions.md` carries the record.
+
+  **What shipped, and the three things the entry did not foresee.** The draw
+  side was as cheap as promised — one remapping in `draw_spectrum`'s `bin_at`,
+  one in `plot`'s (the stored spectrum navigates on the same window, for free)
+  and a windowed `ruler::hz_ticks_h`. *(1)* That ruler needed more than a
+  remapping to keep L8's property: the horizontal twin only walked decades, so
+  zoomed past one it had nothing finer to show. It now picks between the two
+  schemes its **vertical** twin already picked between — decades over a wide
+  window, a 1-2-5 ladder in hertz fitted at the actual (nonlinear) positions
+  over a narrow one — which is what makes zooming reveal finer round
+  frequencies. *(2)* `navigable` had to become **opt-in for this one view**:
+  the prop defaults to on everywhere else, and letting it default on here would
+  have made every shipped `spectrum` start panning under a drag, unasked. *(3)*
+  `is_nav_signal` had to stop meaning "navigable signal" and start meaning
+  "navigates *time*" — otherwise a navigable spectrum joins `is_timeline`, and
+  a curve over frequency lands in a navigation group measured in samples. That
+  one line is the whole seam between the two axes. Green on 515 tests (the
+  ruler property, the props round trip, and press/wheel/`R` over the new axis),
+  clippy, `check-wasm.sh`, `pyright` at zero and the web suite; both builders,
+  `docs/gui-protocol.md`, both books and `gui_analyzer` carry it.
 
 - ⬜ **E18 — The waterfall writes its new columns instead of re-uploading the
   texture**: E16's rolling analysis is incremental — a hop's worth of samples
