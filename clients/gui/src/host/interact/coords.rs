@@ -6,9 +6,8 @@
 //! ([`TimeAxis`]/[`YAxis`]), the chain of containers over a point ([`Frame`],
 //! [`Hit`]) and the readers that pick one system out of a chain ([`plane_of`],
 //! [`time_of`], [`local_time_of`]). Beside them sits the small arithmetic that
-//! inverts the renderer's maps — a pixel back to a sample ([`sample_at`]), to a
-//! value ([`value_at`]) — and the placement one
-//! drag step produces ([`clip_drag_placement`]).
+//! inverts the renderer's maps — a pixel back to a sample ([`sample_at`]) — and
+//! the placement one drag step produces ([`clip_drag_placement`]).
 //!
 //! **Nothing here mentions the [`Host`]**, which is the line that keeps this
 //! module the vocabulary rather than a fourth door: it is geometry and types,

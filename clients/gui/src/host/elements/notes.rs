@@ -13,7 +13,8 @@
 //! that note's position, and every step is measured against the *current* axis
 //! rather than a press-time copy of it. That is not a stylistic choice — a drag
 //! held past the edge of a lane asks the machine to keep scrolling
-//! ([`Take::edge_scroll`]), so the window moves under the drag and a snapshot
+//! ([`Take::edge_scroll`](crate::host::widget::element::Take::edge_scroll)), so
+//! the window moves under the drag and a snapshot
 //! of it would freeze the note where the axis used to be.
 //!
 //! **Two things it cannot do for itself**, and it asks for both the way `keys`
