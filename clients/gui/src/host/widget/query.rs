@@ -382,6 +382,16 @@ impl WidgetKind {
 
     /// Applies one `/gui_set` key/value to a live widget, returning whether it
     /// changed anything the renderer cares about.
+    /// **The boxed element this kind is**, if it is one — the door a caller
+    /// that wants the concrete leaf goes through
+    /// ([`Element::as_any`](super::Element::as_any) does the rest).
+    pub fn as_element(&self) -> Option<&dyn super::Element> {
+        match self {
+            WidgetKind::Custom(el) => Some(&**el),
+            _ => None,
+        }
+    }
+
     /// The signal element this kind is, if it is one — see
     /// [`Widget::signal`] for why this is a downcast and not a match.
     pub fn signal(&self) -> Option<&SignalElement> {

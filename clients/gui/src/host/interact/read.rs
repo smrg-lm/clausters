@@ -2,7 +2,7 @@
 //! reports it.
 //!
 //! Two kinds of reader, and they are the same question asked at two moments.
-//! The live value a drag starts from ([`piano_key_active`]) —
+//! The live value a drag starts from ([`plane_can_pan`]) —
 //! and the **edit-back payload** a finished edit sends
 //! ([`clip_event_args`], [`notes_event_args`], …), each a
 //! flat OSC list beginning with the tag that names what changed, so a script
@@ -120,32 +120,4 @@ pub(crate) fn osc_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
         args.push(OscType::String(m.label.clone().unwrap_or_default()));
     }
     Some(args)
-}
-
-/// Whether a piano key is inside the widget's active (non-grayed) range — a
-/// press outside it is inert.
-pub(crate) fn piano_key_active(host: &Host, def_id: i32, widget_id: i32, pitch: i32) -> bool {
-    match host.widget_kind(def_id, widget_id) {
-        Some(WidgetKind::Piano {
-            active_min,
-            active_max,
-            ..
-        }) => (*active_min..=*active_max).contains(&pitch),
-        _ => false,
-    }
-}
-
-/// A piano note event's payload — the MIDI-shaped
-/// `"note" pitch velocity state channel` flat list (state 1 = on, 0 = off): a
-/// `/gui_event` carries it to the script; a bound piano forwards it (minus the
-/// tag) to the audio server; a future MIDI consumer translates it 1:1 to
-/// note-on/note-off.
-pub(crate) fn piano_note_args(pitch: i32, velocity: i32, state: i32, channel: i32) -> Vec<OscType> {
-    vec![
-        OscType::String("note".into()),
-        OscType::Int(pitch),
-        OscType::Int(velocity),
-        OscType::Int(state),
-        OscType::Int(channel),
-    ]
 }

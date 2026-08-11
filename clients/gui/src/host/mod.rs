@@ -1298,26 +1298,29 @@ impl Host {
         }
     }
 
-    /// Starts a host-managed voice for a held piano key, when widget
-    /// `widget_id` is a `piano` in voice mode (`voice` set): allocates an
+    /// Starts a host-managed voice for a widget that **declared one**
+    /// ([`Element::voice`](widget::element::Element::voice)): allocates an
     /// explicit node id, sends the `/synth_new` and records the `(pitch, node)`
     /// pair so the release can gate it. A re-press of an already-sounding
     /// pitch releases the old voice first. Bookkeeping happens even with no
     /// server attached, so the logic is testable without a transport.
-    pub fn piano_voice_on(&mut self, def_id: i32, widget_id: i32, pitch: i32, velocity: i32) {
-        let Some(widget::WidgetKind::Piano {
-            voice: Some(name),
-            voice_args,
-            ..
-        }) = self
+    ///
+    /// It is the host's because only the host has a leg to the audio server;
+    /// *when* to sound is the element's, and arrives as a
+    /// [`Voice`](widget::element::Voice) beside what it reported.
+    pub fn voice_on(&mut self, def_id: i32, widget_id: i32, pitch: i32, velocity: i32) {
+        let Some(spec) = self
             .window_def(def_id)
             .and_then(|t| t.find(widget_id))
-            .map(|w| &w.kind)
+            .and_then(|w| match &w.kind {
+                widget::WidgetKind::Custom(el) => el.voice(),
+                _ => None,
+            })
         else {
             return;
         };
-        let (name, extra) = (name.clone(), voice_args.clone());
-        self.piano_voice_off(widget_id, pitch);
+        let (name, extra) = (spec.def, spec.args);
+        self.voice_off(widget_id, pitch);
         let node = VOICE_ID_BASE + self.voice_counter;
         self.voice_counter = (self.voice_counter + 1) % VOICE_ID_SPAN;
         self.send_to_server(piano::voice_on_msg(&name, node, pitch, velocity, &extra));
@@ -1327,11 +1330,11 @@ impl Host {
             .push((pitch, node));
     }
 
-    /// Releases the host-managed voice of a piano key (`gate 0`; the def frees
-    /// the node itself). A no-op when no voice is sounding for the pitch —
-    /// including when `voice` was unset mid-hold, so a recorded voice always
-    /// gets its release.
-    pub fn piano_voice_off(&mut self, widget_id: i32, pitch: i32) {
+    /// Releases a host-managed voice (`gate 0`; the def frees the node
+    /// itself). A no-op when no voice is sounding for the pitch — including
+    /// when `voice` was unset mid-hold, so a recorded voice always gets its
+    /// release.
+    pub fn voice_off(&mut self, widget_id: i32, pitch: i32) {
         let Some(list) = self.voices.get_mut(&widget_id) else {
             return;
         };
@@ -1353,7 +1356,7 @@ impl Host {
     }
 
     /// The live voice nodes of widget `widget_id` (for tests/introspection).
-    pub fn piano_voices(&self, widget_id: i32) -> &[(i32, i32)] {
+    pub fn voices_of(&self, widget_id: i32) -> &[(i32, i32)] {
         self.voices.get(&widget_id).map_or(&[], Vec::as_slice)
     }
 

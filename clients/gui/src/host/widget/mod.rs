@@ -51,7 +51,7 @@ use super::guidef::GuiNode;
 // Sibling widget modules the wire matches reach via `super::` — re-imported here
 // so the `build`/`apply` child modules resolve the same paths (a descendant sees
 // the parent's private `use` items).
-use super::{piano, signal};
+use super::signal;
 
 mod apply;
 mod axes;
@@ -189,40 +189,6 @@ pub enum WidgetKind {
         midi_in: bool,
         label: Option<String>,
         editor: EditorProps,
-    },
-    /// The playable virtual piano keyboard, laid out with real piano
-    /// proportions ([`super::piano`]) so it resizes freely. `min`/`max` are
-    /// the visible MIDI range (min snapped down to a white key); the
-    /// `overview` strip — a miniature of the full `0..=127` range with the
-    /// visible window marked — is the keyboard's zoom/pan "ruler", and `pan`
-    /// gates all range navigation (drag/wheel) when off. Keys outside
-    /// `active_min..=active_max` draw grayed and are inert — the visual of
-    /// the mapped range. Pressing a key emits the MIDI-shaped
-    /// `"note" pitch velocity state channel` event (state 1 on press, 0 on
-    /// release; dragging across keys glissandos), with `velocity` fixed by
-    /// prop or mapped from the press height (front of the key = louder).
-    /// With `voice` set, the **host** additionally manages one server voice
-    /// per held key: `/synth_new <voice> … freq amp gate 1 <voice_args…>` on
-    /// press, `gate 0` on release (the def frees itself).
-    Piano {
-        min: i32,
-        max: i32,
-        active_min: i32,
-        active_max: i32,
-        pan: bool,
-        overview: bool,
-        /// A fixed press velocity; `None` maps velocity from the press height.
-        velocity: Option<i32>,
-        /// The MIDI channel carried in the `"note"` event (0..15).
-        channel: i32,
-        /// Host-voice mode: the server def one voice per held key plays.
-        voice: Option<String>,
-        /// Extra `/synth_new` control pairs appended after `freq`/`amp`/`gate`.
-        voice_args: Vec<(String, f32)>,
-        /// The held keys — native view state, never parsed from the wire: the
-        /// press/glissando/release gestures build it, the drawing reads it.
-        pressed: Vec<i32>,
-        label: Option<String>,
     },
     /// One clip on a `track`: a placed rectangle spanning `[offset, offset +
     /// dur]` in timeline sample units (the graphic unit — length = duration),

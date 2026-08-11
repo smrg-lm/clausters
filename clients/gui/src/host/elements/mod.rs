@@ -27,6 +27,7 @@ mod button;
 mod canvas;
 mod control;
 pub(crate) mod curve;
+pub(crate) mod keys;
 mod knob;
 mod label;
 mod menu;
@@ -46,6 +47,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "button" => button::build,
         "canvas" => canvas::build,
         "curve" => curve::build,
+        "keys" => keys::build,
         "knob" => knob::build,
         "label" => label::build,
         "meter" => meter::build,

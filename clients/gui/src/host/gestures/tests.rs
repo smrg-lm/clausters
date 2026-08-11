@@ -8,6 +8,7 @@ use super::super::widget::ScrollView;
 use super::super::widget::element::Key;
 use super::super::{ClientId, GUI_DEF, GUI_SET, Host, patch, scroll};
 use super::*;
+use crate::host::piano;
 
 fn from() -> ClientId {
     ClientId::Udp(std::net::SocketAddr::from((
@@ -1649,11 +1650,22 @@ fn note_emits(effects: &[GestureEffect]) -> Vec<(i32, i32, i32, i32)> {
         .collect()
 }
 
+/// The keyboard element behind widget 70 — the concrete leaf, through the
+/// trait's downcast door, which is what an element's own state is asserted on.
+fn keys_of(host: &Host) -> &crate::host::elements::keys::Keys {
+    host.window_def(1)
+        .unwrap()
+        .find(70)
+        .unwrap()
+        .kind
+        .as_element()
+        .and_then(|el| el.as_any())
+        .and_then(|any| any.downcast_ref())
+        .expect("widget 70 is a keyboard")
+}
+
 fn piano_pressed(host: &Host) -> Vec<i32> {
-    match &host.window_def(1).unwrap().find(70).unwrap().kind {
-        WidgetKind::Piano { pressed, .. } => pressed.clone(),
-        other => panic!("not a piano: {other:?}"),
-    }
+    keys_of(host).pressed.clone()
 }
 
 #[test]
@@ -1765,8 +1777,13 @@ fn piano_fixed_velocity_and_grayed_keys() {
         &mut || false,
     );
     assert!(note_emits(&effects).is_empty());
-    assert!(!g.dragging());
     assert!(piano_pressed(&host).is_empty());
+    // The press is still **taken** — the keyboard is what the reader pointed
+    // at, and letting it through would pan whatever is behind it — so it is
+    // held like any other, and lets go with nothing to report.
+    let effects = g.release(&mut host, &ctx, c.x as f64, c.y as f64);
+    assert!(note_emits(&effects).is_empty());
+    assert!(!g.dragging());
 }
 
 #[test]
@@ -1778,18 +1795,14 @@ fn piano_wheel_pans_the_range_and_pan_zero_freezes_it() {
     let (cx, cy) = ((c.x + c.w * 0.5) as f64, (c.y + c.h - 1.0) as f64);
     let effects = g.wheel(&mut host, &ctx, cx, cy, 1.0);
     assert!(has_emit_tag(&effects, 70, "range"));
-    match &host.window_def(1).unwrap().find(70).unwrap().kind {
-        WidgetKind::Piano { min, max, .. } => assert_eq!((*min, *max), (62, 74)),
-        other => panic!("not a piano: {other:?}"),
-    }
+    let k = keys_of(&host);
+    assert_eq!((k.min, k.max), (62, 74));
     // `pan: 0` silences every range gesture.
     let (mut host, _) = piano_host(r#","pan":0"#);
     let effects = g.wheel(&mut host, &ctx, cx, cy, 1.0);
     assert!(effects.is_empty());
-    match &host.window_def(1).unwrap().find(70).unwrap().kind {
-        WidgetKind::Piano { min, max, .. } => assert_eq!((*min, *max), (60, 72)),
-        other => panic!("not a piano: {other:?}"),
-    }
+    let k = keys_of(&host);
+    assert_eq!((k.min, k.max), (60, 72));
 }
 
 #[test]
@@ -1817,21 +1830,15 @@ fn piano_overview_drag_pans_and_wheel_zooms() {
     assert!(note_emits(&effects).is_empty(), "the strip plays no note");
     let effects = g.drag_to(&mut host, &ctx, x1, sy);
     assert!(has_emit_tag(&effects, 70, "range"));
-    match &host.window_def(1).unwrap().find(70).unwrap().kind {
-        WidgetKind::Piano { min, max, .. } => {
-            assert_eq!(max - min, 12, "pan keeps the span");
-            assert!(*min > 60, "the window moved right");
-        }
-        other => panic!("not a piano: {other:?}"),
-    }
+    let k = keys_of(&host);
+    assert_eq!(k.max - k.min, 12, "pan keeps the span");
+    assert!(k.min > 60, "the window moved right");
     g.release(&mut host, &ctx, x1, sy);
     // Wheel over the strip zooms out (steps < 0 widens the span).
     let effects = g.wheel(&mut host, &ctx, x1, sy, -2.0);
     assert!(has_emit_tag(&effects, 70, "range"));
-    match &host.window_def(1).unwrap().find(70).unwrap().kind {
-        WidgetKind::Piano { min, max, .. } => assert!(max - min > 12),
-        other => panic!("not a piano: {other:?}"),
-    }
+    let k = keys_of(&host);
+    assert!(k.max - k.min > 12);
 }
 
 #[test]
@@ -1842,7 +1849,7 @@ fn piano_voice_mode_tracks_one_node_per_held_pitch() {
     let c = piano::key_rect(&l, 60).unwrap();
     let (cx, cy) = ((c.x + 2.0) as f64, (c.y + c.h - 1.0) as f64);
     g.press(&mut host, &ctx, cx, cy, &mut || false);
-    let voices = host.piano_voices(70).to_vec();
+    let voices = host.voices_of(70).to_vec();
     assert_eq!(voices.len(), 1);
     assert_eq!(voices[0].0, 60);
     // Glissando: the old voice is released, a new node sounds the new key.
@@ -1853,16 +1860,16 @@ fn piano_voice_mode_tracks_one_node_per_held_pitch() {
         (d.x + d.w * 0.5) as f64,
         (d.y + 1.0) as f64,
     );
-    let after = host.piano_voices(70).to_vec();
+    let after = host.voices_of(70).to_vec();
     assert_eq!(after.len(), 1);
     assert_eq!(after[0].0, 62);
     assert_ne!(after[0].1, voices[0].1, "a fresh node id per voice");
     // Release clears the bookkeeping.
     g.release(&mut host, &ctx, cx, cy);
-    assert!(host.piano_voices(70).is_empty());
+    assert!(host.voices_of(70).is_empty());
     // A freed widget releases whatever is still held.
     g.press(&mut host, &ctx, cx, cy, &mut || false);
-    assert!(!host.piano_voices(70).is_empty());
+    assert!(!host.voices_of(70).is_empty());
     host.handle_packet(
         OscPacket::Message(OscMessage {
             addr: super::super::GUI_FREE.into(),
@@ -1870,7 +1877,7 @@ fn piano_voice_mode_tracks_one_node_per_held_pitch() {
         }),
         from(),
     );
-    assert!(host.piano_voices(70).is_empty());
+    assert!(host.voices_of(70).is_empty());
 }
 
 // --- the keyboard: focus, the ring and the focused element ------------

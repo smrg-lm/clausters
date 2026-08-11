@@ -640,7 +640,53 @@ pub struct KeyInput<'a> {
 /// payload. It is a list of messages rather than one because of the case that
 /// is neither: a patcher's release reports one `"move"` per box it moved.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Events(Vec<Vec<OscType>>);
+pub struct Events {
+    msgs: Vec<Vec<OscType>>,
+    voices: Vec<Voice>,
+}
+
+/// **A voice an element asks the host to sound**, beside the event it reports.
+///
+/// The one thing a keyboard cannot do for itself: sounding a held key is a
+/// `/synth_new` on the audio server, and only the host has a leg to it. So the
+/// element names the pitch and the host performs it, using the
+/// [`VoiceSpec`] the same element declares — the shape a pointer grab already
+/// has, which is *what only the front can do, named in what the element
+/// returns*.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Voice {
+    pub pitch: i32,
+    pub velocity: i32,
+    /// Start it, or gate the one sounding at this pitch.
+    pub on: bool,
+}
+
+impl Voice {
+    pub fn on(pitch: i32, velocity: i32) -> Self {
+        Voice {
+            pitch,
+            velocity,
+            on: true,
+        }
+    }
+
+    pub fn off(pitch: i32) -> Self {
+        Voice {
+            pitch,
+            velocity: 0,
+            on: false,
+        }
+    }
+}
+
+/// **What one of this element's voices is**: the server def it plays and the
+/// extra `/synth_new` controls it is started with (appended after the
+/// `freq`/`amp`/`gate` the host fills in).
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceSpec {
+    pub def: String,
+    pub args: Vec<(String, f32)>,
+}
 
 impl Events {
     /// Nothing to report — the default.
@@ -650,27 +696,52 @@ impl Events {
 
     /// The widget's value, the one-argument case every control uses.
     pub fn value(v: OscType) -> Self {
-        Self(vec![vec![v]])
+        Self {
+            msgs: vec![vec![v]],
+            voices: Vec::new(),
+        }
     }
 
     /// One message, its arguments in the owner's terms.
     pub fn message(args: Vec<OscType>) -> Self {
-        Self(vec![args])
+        Self {
+            msgs: vec![args],
+            voices: Vec::new(),
+        }
     }
 
     /// Appends another message.
     pub fn and(mut self, args: Vec<OscType>) -> Self {
-        self.0.push(args);
+        self.msgs.push(args);
+        self
+    }
+
+    /// Asks for a voice beside what is reported.
+    pub fn and_voice(mut self, voice: Voice) -> Self {
+        self.voices.push(voice);
+        self
+    }
+
+    /// Everything of `other`, after this — a gesture that both ends one thing
+    /// and starts another (a glissando: a note off, then a note on).
+    pub fn chain(mut self, other: Events) -> Self {
+        self.msgs.extend(other.msgs);
+        self.voices.extend(other.voices);
         self
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.msgs.is_empty() && self.voices.is_empty()
     }
 
     /// The messages, for the gesture machine that delivers them.
     pub(crate) fn into_messages(self) -> Vec<Vec<OscType>> {
-        self.0
+        self.msgs
+    }
+
+    /// The voices asked for, for the machine that performs them.
+    pub(crate) fn voices(&self) -> &[Voice] {
+        &self.voices
     }
 }
 
@@ -823,6 +894,18 @@ pub trait Element: fmt::Debug {
     /// other frame source and a live one is being repainted anyway.
     fn hover_readout(&self) -> bool {
         false
+    }
+
+    /// **The def one of this element's voices plays**, or `None` (the default)
+    /// for an element that asks for no voices.
+    ///
+    /// Declared separately from the [`Voice`] requests themselves because the
+    /// two answer different questions: *what to play* is a prop a script sets
+    /// and changes mid-hold, while *play it now* is a gesture's. The host reads
+    /// this when it performs a request, so a `/gui_set` of the def takes effect
+    /// on the next key rather than on the next frame.
+    fn voice(&self) -> Option<VoiceSpec> {
+        None
     }
 
     /// **The concrete element behind the trait object**, for the few callers

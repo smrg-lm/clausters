@@ -10,7 +10,7 @@ use clausters_core::osc::OscType;
 
 use super::super::interact::{self, Hit};
 use super::super::widget::{Axis, WidgetKind};
-use super::super::{Host, piano, scroll};
+use super::super::{Host, scroll};
 use super::effects::*;
 use super::nav::*;
 use super::{GestureCtx, GestureEffect, Gestures, element};
@@ -49,38 +49,22 @@ impl Gestures {
             chain,
             scale: found_scale,
         } = found;
-        // The piano navigates its own MIDI range, not a timeline group: wheel
-        // over the overview strip zooms the range (anchored at the cursor's
-        // key), over the keys it pans by whole white keys. Both gated by `pan`.
-        if let WidgetKind::Piano {
-            min,
-            max,
-            pan,
-            overview,
-            ref label,
-            ..
-        } = kind
-        {
-            if pan {
-                let l = piano::layout(
-                    rect,
-                    min,
-                    max,
-                    overview,
-                    label.is_some(),
-                    host.metrics_for(def_id),
-                );
-                let (nmin, nmax) = match l.overview.filter(|s| s.contains(cx, cy)) {
-                    Some(strip) => {
-                        let anchor = piano::overview_hit(strip, cx as f32) as f64;
-                        piano::zoom_range(l.min, l.max, 0.85f64.powf(steps), anchor)
-                    }
-                    None => piano::pan_white(l.min, l.max, steps.round() as i32),
-                };
-                set_piano_range(host, &mut out, def_id, id, nmin, nmax);
+        // **An element with a wheel of its own wins over the container it sits
+        // in**: a keyboard's range, and whatever a registered element navigates
+        // — a picture it owns is what the reader pointed at. `None` back means
+        // it has none, and the container gets its turn below.
+        if let WidgetKind::Custom(_) = kind {
+            let at = element::At::widget(id, rect, found_scale);
+            let reported = element::with(host, ctx, at, |el, input| {
+                el.wheel((cx, cy), (0.0, steps), input)
+            })
+            .flatten();
+            if let Some(events) = reported {
+                element::report(host, &mut out, ctx, id, events);
+                return out;
             }
-            return out;
         }
+
         // **Ctrl+wheel over a lane is the other axis of the view**: not time,
         // which the bare wheel already zooms, but how thick the lane is. The
         // stack it lives in cannot do it — a plane's zoom is uniform over both
@@ -170,24 +154,10 @@ impl Gestures {
         // time zoom, anchored at the cursor.
         //
         // Over an element that draws a picture of its own and simply has no
-        // wheel, they are not empty: the reader pointed at that element. The
-        // press path shares the mechanism and means it differently — Shift+drag
-        // pans the axis from anywhere at all, over any element — so the
-        // question is asked here and not there.
-        // An element gets its turn first: it draws a picture it owns, so a
-        // wheel over it may be its own — and `None` back means it has none,
-        // which is the swallow this test has always been.
-        if let WidgetKind::Custom(_) = kind {
-            let at = element::At::widget(id, rect, found_scale);
-            let reported = element::with(host, ctx, at, |el, input| {
-                el.wheel((cx, cy), (0.0, steps), input)
-            })
-            .flatten();
-            if let Some(events) = reported {
-                element::report(host, &mut out, ctx, id, events);
-                return out;
-            }
-        }
+        // wheel, they are not empty: the reader pointed at that element (it was
+        // asked above and declined). The press path shares the mechanism and
+        // means it differently — Shift+drag pans the axis from anywhere at all,
+        // over any element — so the question is asked here and not there.
         if !kind.is_bare_surface() {
             return out;
         }

@@ -120,61 +120,6 @@ pub(super) fn emit_clip(
 /// the host-managed voice when the widget is in voice mode, and delivers the
 /// MIDI-shaped `"note" pitch velocity state channel` payload — to the audio
 /// server when the piano is bound, to the script as a `/gui_event` otherwise.
-#[allow(clippy::too_many_arguments)] // one note event, all scalars
-pub(super) fn piano_note(
-    host: &mut Host,
-    out: &mut Vec<GestureEffect>,
-    def_id: i32,
-    widget_id: i32,
-    pitch: i32,
-    velocity: i32,
-    state: i32,
-    channel: i32,
-) {
-    if state != 0 {
-        interact::piano_press_key(host, def_id, widget_id, pitch);
-        host.piano_voice_on(def_id, widget_id, pitch, velocity);
-    } else {
-        interact::piano_release_key(host, def_id, widget_id, pitch);
-        host.piano_voice_off(widget_id, pitch);
-    }
-    deliver_args(
-        host,
-        out,
-        def_id,
-        widget_id,
-        Some(interact::piano_note_args(pitch, velocity, state, channel)),
-    );
-}
-
-/// Applies a `piano` range change (pan/zoom) and, when it actually moved,
-/// emits the `"range" min max` event and repaints — the `"view"` posture on
-/// the keyboard's own MIDI axis.
-pub(super) fn set_piano_range(
-    host: &mut Host,
-    out: &mut Vec<GestureEffect>,
-    def_id: i32,
-    id: i32,
-    min: i32,
-    max: i32,
-) {
-    if let Some((min, max)) = interact::piano_set_range(host, def_id, id, min, max) {
-        // Always an event, never a bound forward: a binding carries the note
-        // payload, the range is view state (the timeline views' "view" posture).
-        emit(
-            out,
-            def_id,
-            id,
-            vec![
-                OscType::String("range".into()),
-                OscType::Int(min),
-                OscType::Int(max),
-            ],
-        );
-        out.push(GestureEffect::Redraw(def_id));
-    }
-}
-
 /// Delivers a piano-roll's edited notes (`"notes" start dur pitch vel ch …`).
 pub(super) fn emit_notes(
     host: &mut Host,

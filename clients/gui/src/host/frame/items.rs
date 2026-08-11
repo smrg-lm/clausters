@@ -243,26 +243,6 @@ pub(super) fn collect_widgets(
             WidgetKind::Panel { .. } | WidgetKind::Scroll { .. } | WidgetKind::Stack { .. } => {
                 mesh.rect(p.rect, th.panel)
             }
-            WidgetKind::Piano {
-                min,
-                max,
-                active_min,
-                active_max,
-                overview,
-                pressed,
-                label,
-                ..
-            } => piano::draw_widget(
-                &mut Draw::new(mesh, m, th),
-                p.rect,
-                *min,
-                *max,
-                *overview,
-                *active_min,
-                *active_max,
-                pressed,
-                label.as_deref(),
-            ),
             WidgetKind::TimeRuler { editor, .. } => {
                 ruler_items.push(RulerItem {
                     id: p.widget.id.unwrap_or(-1),

@@ -15,7 +15,7 @@ use clausters_core::osc::OscType;
 
 use super::super::interact::{self};
 use super::super::widget::{Axis, WidgetKind};
-use super::super::{Host, piano, pianoroll};
+use super::super::{Host, pianoroll};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element};
@@ -187,41 +187,6 @@ impl Gestures {
                     .map_or(1.0, |e| e.y_view().1);
                 let start = y_start + (cy - origin_y) / lane_h * y_len;
                 set_y_view(host, &mut out, def_id, id, start, y_len);
-            }
-            Drag::PianoKey {
-                id,
-                layout,
-                pitch,
-                fixed_vel,
-                channel,
-            } => {
-                // Glissando: crossing into another (active) key releases the
-                // held one and presses the new; leaving the keyboard keeps the
-                // note held until release.
-                if let Some(p) = piano::hit(&layout, cx as f32, cy as f32)
-                    && p != pitch
-                    && interact::piano_key_active(host, def_id, id, p)
-                {
-                    let vel =
-                        fixed_vel.unwrap_or_else(|| piano::velocity_at(&layout, p, cy as f32));
-                    piano_note(host, &mut out, def_id, id, pitch, 0, 0, channel);
-                    piano_note(host, &mut out, def_id, id, p, vel, 1, channel);
-                    if let Some(Drag::PianoKey { pitch, .. }) = self.drag.as_mut() {
-                        *pitch = p;
-                    }
-                    out.push(GestureEffect::Redraw(def_id));
-                }
-            }
-            Drag::PianoView {
-                id,
-                strip,
-                min0,
-                max0,
-                anchor,
-            } => {
-                let cur = piano::overview_hit(strip, cx as f32);
-                let (nmin, nmax) = piano::pan_range(min0, max0, cur - anchor);
-                set_piano_range(host, &mut out, def_id, id, nmin, nmax);
             }
             Drag::ScrollPan {
                 id,
@@ -471,12 +436,6 @@ impl Gestures {
                 if grab {
                     out.push(GestureEffect::ReleasePointer(def_id));
                 }
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            Some(Drag::PianoKey {
-                id, pitch, channel, ..
-            }) => {
-                piano_note(host, &mut out, def_id, id, pitch, 0, 0, channel);
                 out.push(GestureEffect::Redraw(def_id));
             }
             Some(Drag::Wire {

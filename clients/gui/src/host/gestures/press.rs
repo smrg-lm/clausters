@@ -16,7 +16,7 @@
 use super::super::interact::{self, Hit};
 use super::super::widget::element::TimeSpace;
 use super::super::widget::{Claim, GestureStep, WidgetKind};
-use super::super::{Host, patch, piano, pianoroll};
+use super::super::{Host, patch, pianoroll};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element, focus};
@@ -472,60 +472,6 @@ impl Gestures {
                         orig_dur: h.dur,
                         grid: snap,
                     });
-                }
-            }
-            WidgetKind::Piano {
-                min,
-                max,
-                active_min,
-                active_max,
-                pan,
-                overview,
-                velocity,
-                channel,
-                ref label,
-                ..
-            } => {
-                let l = piano::layout(
-                    rect,
-                    min,
-                    max,
-                    overview,
-                    label.is_some(),
-                    host.metrics_for(def_id),
-                );
-                // A press on the overview strip grabs the visible window: the
-                // drag pans it (relative, from the press snapshot). Gated by
-                // `pan` — a fixed-range piano ignores the strip.
-                if let Some(strip) = l.overview
-                    && strip.contains(cx, cy)
-                {
-                    if pan {
-                        self.drag = Some(Drag::PianoView {
-                            id,
-                            strip,
-                            min0: l.min,
-                            max0: l.max,
-                            anchor: piano::overview_hit(strip, cx as f32),
-                        });
-                    }
-                    return true;
-                }
-                // A press on a key plays it — inert outside the active range.
-                if let Some(p) = piano::hit(&l, cx as f32, cy as f32) {
-                    if !(active_min..=active_max).contains(&p) {
-                        return true;
-                    }
-                    let vel = velocity.unwrap_or_else(|| piano::velocity_at(&l, p, cy as f32));
-                    piano_note(host, out, def_id, id, p, vel, 1, channel);
-                    self.drag = Some(Drag::PianoKey {
-                        id,
-                        layout: l,
-                        pitch: p,
-                        fixed_vel: velocity,
-                        channel,
-                    });
-                    out.push(GestureEffect::Redraw(def_id));
                 }
             }
             WidgetKind::PianoRoll { .. } => {

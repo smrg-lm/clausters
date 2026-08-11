@@ -110,8 +110,22 @@ pub(super) fn report(
     id: i32,
     events: Events,
 ) {
+    // The voices first: a note that both sounds and reports must sound in the
+    // order the element asked, and the host is the only one with a leg to the
+    // server.
+    for voice in events.voices() {
+        if voice.on {
+            host.voice_on(ctx.def_id, id, voice.pitch, voice.velocity);
+        } else {
+            host.voice_off(id, voice.pitch);
+        }
+    }
+    let voiced = !events.voices().is_empty();
     let messages = events.into_messages();
     if messages.is_empty() {
+        if voiced {
+            out.push(GestureEffect::Redraw(ctx.def_id));
+        }
         return;
     }
     for mut args in messages {

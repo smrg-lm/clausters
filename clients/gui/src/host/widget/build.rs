@@ -140,33 +140,6 @@ pub(super) fn build_kind(
                 editor: EditorProps::parse(props, RulerY::Off),
             }
         }
-        "keys" => {
-            let min = number(props, "min", 36.0) as i32;
-            let max = number(props, "max", 96.0) as i32;
-            WidgetKind::Piano {
-                min: super::piano::snap_white_down(min.min(max).clamp(0, 127)),
-                max: max.max(min).clamp(0, 127),
-                active_min: number(props, "active_min", 0.0) as i32,
-                active_max: number(props, "active_max", 127.0) as i32,
-                pan: props.get("pan").and_then(truthy).unwrap_or(true),
-                overview: props.get("overview").and_then(truthy).unwrap_or(true),
-                // Absent or negative = dynamic (mapped from the press height).
-                velocity: props
-                    .get("velocity")
-                    .and_then(Value::as_i64)
-                    .filter(|&v| v >= 0)
-                    .map(|v| (v as i32).clamp(1, 127)),
-                channel: (number(props, "channel", 0.0) as i32).clamp(0, 15),
-                voice: props
-                    .get("voice")
-                    .and_then(Value::as_str)
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_string),
-                voice_args: parse_voice_args(props),
-                pressed: Vec::new(),
-                label: label(props),
-            }
-        }
         // No arm above answers to this name, so it is an **element**: a
         // built-in that has moved behind the trait, else whatever a program
         // registered, else nothing at all. The order is the invariant, not a

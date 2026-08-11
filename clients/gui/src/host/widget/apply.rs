@@ -224,65 +224,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         // was recorded in the registry and never reached the drawing — a
         // script could not change the unit of the strip it had just built.
         WidgetKind::TimeRuler { editor } => editor.apply(key, v),
-        WidgetKind::Piano {
-            min,
-            max,
-            active_min,
-            active_max,
-            pan,
-            overview,
-            velocity,
-            channel,
-            voice,
-            voice_args,
-            pressed,
-            label,
-        } => match key {
-            // A range change re-normalizes (min white-snapped) and drops
-            // held keys that left the visible window (their rects are gone;
-            // the release gesture tolerates the miss).
-            "min" => v
-                .as_i64()
-                .map(|n| {
-                    *min = super::piano::snap_white_down((n as i32).clamp(0, 127).min(*max));
-                    pressed.retain(|p| *p >= *min);
-                })
-                .is_some(),
-            "max" => v
-                .as_i64()
-                .map(|n| {
-                    *max = (n as i32).clamp(0, 127).max(*min);
-                    pressed.retain(|p| *p <= *max);
-                })
-                .is_some(),
-            "active_min" => v.as_i64().map(|n| *active_min = n as i32).is_some(),
-            "active_max" => v.as_i64().map(|n| *active_max = n as i32).is_some(),
-            "pan" => truthy(v).map(|b| *pan = b).is_some(),
-            "overview" => truthy(v).map(|b| *overview = b).is_some(),
-            // A negative velocity restores the dynamic (press-height) map.
-            "velocity" => v
-                .as_i64()
-                .map(|n| *velocity = (n >= 0).then(|| (n as i32).clamp(1, 127)))
-                .is_some(),
-            "channel" => v
-                .as_i64()
-                .map(|n| *channel = (n as i32).clamp(0, 15))
-                .is_some(),
-            // An empty string leaves voice mode (events only).
-            "voice" => v
-                .as_str()
-                .map(|s| *voice = (!s.is_empty()).then(|| s.to_string()))
-                .is_some(),
-            "voice_args" => {
-                *voice_args = parse_voice_args(&as_array_props("voice_args", v));
-                true
-            }
-            "label" => set_label(label, v),
-            _ => false,
-        },
-        // A registered element answers for its own props, with the same
-        // contract every arm above has: `false` is "not my key", which the
-        // host logs rather than swallows.
         WidgetKind::Custom(el) => el.set(key, v),
         _ => false,
     }

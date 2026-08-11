@@ -43,8 +43,8 @@ use clausters_core::osc::OscType;
 
 use super::interact::{self};
 use super::layout::Rect;
+use super::pianoroll;
 use super::widget::WidgetKind;
-use super::{piano, pianoroll};
 
 /// What a gesture asks of the front: everything the machine cannot do itself
 /// because it owns no transport, no window and no GPU.
@@ -293,26 +293,6 @@ enum Drag {
         /// The lane velocity under the press (the delta's zero).
         press_velocity: i32,
         orig: Vec<(usize, i32)>,
-    },
-    /// A held `piano` key: crossing into another key glissandos (note-off of
-    /// the old, note-on of the new); release sends the note-off. The layout is
-    /// snapshotted at press time (the range cannot change under a key drag).
-    PianoKey {
-        id: i32,
-        layout: piano::Layout,
-        pitch: i32,
-        /// The widget's fixed velocity, or `None` for the press-height map.
-        fixed_vel: Option<i32>,
-        channel: i32,
-    },
-    /// Dragging the `piano`'s overview strip pans the visible range relative to
-    /// the press snapshot (`min0`/`max0`, the key under the press as `anchor`).
-    PianoView {
-        id: i32,
-        strip: Rect,
-        min0: i32,
-        max0: i32,
-        anchor: i32,
     },
     /// Panning a `scroll` workspace from a press on its empty area: the view
     /// follows the cursor absolutely from the press snapshot (`x0`/`y0`), so a

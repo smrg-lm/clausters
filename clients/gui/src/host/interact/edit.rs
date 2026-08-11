@@ -4,7 +4,7 @@
 //! Each element gets *one* door, and both fronts go through it — which is what
 //! keeps a turned knob, a dragged break-point or a moved clip meaning the same
 //! thing natively and in a page. Two shapes recur: a setter that writes the
-//! value ([`clip_set`], [`piano_set_range`]) and a
+//! value ([`clip_set`], [`header_set`]) and a
 //! `…_edit`/`…_curve` door that hands a closure the element's own model
 //! ([`pianoroll_notes_edit`]) so the fronts never
 //! unpack a [`WidgetKind`] variant themselves.
@@ -315,68 +315,4 @@ pub(crate) fn pianoroll_osc_edit<R>(
         WidgetKind::PianoRoll { osc, .. } => Some(f(osc)),
         _ => None,
     }
-}
-
-/// Mark a piano key held (the press/glissando write path). `true` when the key
-/// was not already held.
-pub(crate) fn piano_press_key(host: &mut Host, def_id: i32, widget_id: i32, pitch: i32) -> bool {
-    piano_state(host, def_id, widget_id, |pressed| {
-        if pressed.contains(&pitch) {
-            false
-        } else {
-            pressed.push(pitch);
-            true
-        }
-    })
-    .unwrap_or(false)
-}
-
-/// Mark a piano key released. `true` when it was held.
-pub(crate) fn piano_release_key(host: &mut Host, def_id: i32, widget_id: i32, pitch: i32) -> bool {
-    piano_state(host, def_id, widget_id, |pressed| {
-        let before = pressed.len();
-        pressed.retain(|&p| p != pitch);
-        pressed.len() != before
-    })
-    .unwrap_or(false)
-}
-
-/// Run `f` over a piano's held-key set in the host tree.
-fn piano_state<R>(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    f: impl FnOnce(&mut Vec<i32>) -> R,
-) -> Option<R> {
-    match host.widget_kind_mut(def_id, widget_id)? {
-        WidgetKind::Piano { pressed, .. } => Some(f(pressed)),
-        _ => None,
-    }
-}
-
-/// Write a piano's visible range (the pan/zoom write path): the min white-snaps,
-/// held keys that left the window drop. Returns the applied range when it
-/// actually changed (`None` for a no-op or a non-piano widget).
-pub(crate) fn piano_set_range(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    new_min: i32,
-    new_max: i32,
-) -> Option<(i32, i32)> {
-    let WidgetKind::Piano {
-        min, max, pressed, ..
-    } = host.widget_kind_mut(def_id, widget_id)?
-    else {
-        return None;
-    };
-    let nm = super::super::piano::snap_white_down(new_min.clamp(0, 127).min(new_max));
-    let nx = new_max.clamp(0, 127).max(nm);
-    if (nm, nx) == (*min, *max) {
-        return None;
-    }
-    *min = nm;
-    *max = nx;
-    pressed.retain(|p| (nm..=nx).contains(p));
-    Some((nm, nx))
 }

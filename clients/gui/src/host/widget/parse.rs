@@ -18,7 +18,7 @@ use crate::spectrogram::FreqScale;
 /// or an array encoded as a JSON string — the scalar-wire carrier `points`/
 /// `notes`/`members` use) into a one-entry props map under `key`, for the
 /// `parse_*` helpers to read.
-pub(super) fn as_array_props(key: &str, v: &Value) -> serde_json::Map<String, Value> {
+pub(crate) fn as_array_props(key: &str, v: &Value) -> serde_json::Map<String, Value> {
     let value = match v {
         Value::String(s) => serde_json::from_str::<Value>(s).unwrap_or(Value::Null),
         other => other.clone(),
@@ -92,7 +92,7 @@ pub(super) fn parse_osc(
 /// Parse a `piano`'s `voice_args` — a flat `[name, value, name, value, …]`
 /// list of extra `/synth_new` control pairs (the `bind`-prefix posture: names are
 /// strings, values numbers). A trailing partial pair is dropped.
-pub(super) fn parse_voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String, f32)> {
+pub(crate) fn voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String, f32)> {
     let Some(Value::Array(items)) = props.get("voice_args") else {
         return Vec::new();
     };
