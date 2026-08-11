@@ -56,9 +56,14 @@ fi
 # shellcheck disable=SC2086
 (cd ../.. && cargo build -p clausters-web -p clausters-core-web --lib $flag \
     --target wasm32-unknown-unknown)
-# The GUI host (its own workspace under clients/gui).
+# The GUI host (its own workspace under clients/gui). `font-atlas` compiles in
+# its glyph rasterizer, so a page may draw text with a real typeface — it ships
+# none, so the page fetches one and hands it over (`gui.bridge.font(bytes)`), and
+# until it does the host draws its embedded bitmap face exactly as a build
+# without the feature would.
 # shellcheck disable=SC2086
-(cd ../gui && cargo build --lib $flag --target wasm32-unknown-unknown)
+(cd ../gui && cargo build --lib $flag --target wasm32-unknown-unknown \
+    --features font-atlas)
 
 wasm-bindgen --target web --out-dir dist/engine \
     "../../target/wasm32-unknown-unknown/$profile/clausters_web.wasm"

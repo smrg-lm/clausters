@@ -312,7 +312,10 @@ One feature is deliberately **not** in the wheel: the GUI host's `font-atlas`
 (an outline typeface behind a glyph rasterizer, `clients/gui/README.md`). It is
 weight for something the embedded bitmap face already does, and it ships no
 typeface of its own — a build that wants it points at a face on the machine, so
-it is a local build rather than a packaging default.
+it is a local build rather than a packaging default. The **web** package makes
+the opposite call and compiles it in (`clients/web/build.sh`): a page cannot
+rebuild its own wasm, the cost with no face bundled is the rasterizer alone
+(+46 KB gzipped), and the page fetches whatever typeface it wants.
 
 ### Building a package with a piece left out
 

@@ -100,6 +100,24 @@ order carries on — so a GuiDef mounted in the flow of a page is never a
 keyboard trap. A script points the focus itself with
 `win.widget("name").focus()`, and hears every move as a `"focus"` event.
 
+**The typeface is the page's to hand over.** The browser bundle carries the
+host's glyph rasterizer but no face, so text draws with the embedded bitmap one
+until the page fetches an outline font and passes the bytes:
+
+```ts
+const face = await fetch("/fonts/DejaVuSansMono.ttf").then((r) => r.arrayBuffer());
+(await guiHost()).bridge.font(new Uint8Array(face));
+```
+
+It must be a raw **TrueType/OpenType** file (the rasterizer does not decompress
+WOFF2, so a Google Fonts CSS URL is not one), served with CORS if it comes from
+another origin — a CSS `@font-face` cannot serve here, since the host draws into
+a canvas and never reads the document's fonts. Loading one relayouts nothing:
+the sizing table never followed the typeface, so the same tree comes up the same
+size before and after, and it may be handed over at any point. What changes is
+that `textSize` is then continuous rather than quantized to half-steps of the
+cell, which a bitmap glyph's own pixels require.
+
 Composition (IME) and the system clipboard stay the **page's**: a canvas cannot
 host an input method, so the host reads the keys it is handed and no more, and
 the clipboard a field cuts and pastes through is its own, page-wide. Text that

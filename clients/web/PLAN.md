@@ -1653,4 +1653,8 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-*(Nothing open here yet.)*
+- ✅ **The browser bundle carries the glyph rasterizer** *(enabled 2026-08-11, with the GUI track's K10)*. `build.sh` compiles the host's wasm with `--features font-atlas`, so a page may draw text with a real typeface: it fetches a **raw TrueType/OpenType** file (the rasterizer does not decompress WOFF2, so a Google Fonts CSS URL is not one) and hands the bytes over with `(await guiHost()).bridge.font(bytes)`. A CSS `@font-face` cannot serve here — the host draws into a canvas and never reads the document's fonts.
+
+  **The bundle ships no face**, which is what makes this affordable: the cost is the rasterizer alone, **+130 KB uncompressed, +46 KB gzipped** on a 5.8 MB / 1.7 MB bundle, and a page that hands over nothing draws the embedded bitmap face exactly as a build without the feature does. Loading one relayouts nothing — the sizing table never followed the typeface — so it may be handed over at any point, before or after the first `/gui_def`.
+
+  Checked by eye rather than by a suite, and deliberately: verifying it needs a face, and committing one to the repository is the cost this whole design avoids. Two headless-Chrome screenshots of the same tree, one with a fetched face and one without, showed the same layout in the two faces — which is also what proves the floor holds in the browser.
