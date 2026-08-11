@@ -173,31 +173,102 @@ fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+/// The start of the **run** left of `pos`: a run of word chars or a run of
+/// everything else, whichever the character before `pos` belongs to.
+///
+/// One run is the unit both word-wise operations are built from, and it is the
+/// unit a **delete** takes: in `"a, b"` the first Ctrl+Backspace removes `b`
+/// and the second removes `", "`, rather than swallowing the separators and
+/// the word before them in one press. Deleting is destructive and a motion is
+/// not, so the smaller step is the right default for it.
+fn run_start_left(value: &str, pos: usize) -> usize {
+    if pos == 0 {
+        return 0;
+    }
+    let word = is_word(char_before(value, pos));
+    let mut p = pos;
+    while p > 0 && is_word(char_before(value, p)) == word {
+        p = prev_boundary(value, p);
+    }
+    p
+}
+
+/// ...and its mirror: the end of the run right of `pos`.
+fn run_end_right(value: &str, pos: usize) -> usize {
+    if pos >= value.len() {
+        return value.len();
+    }
+    let word = is_word(char_at(value, pos));
+    let mut p = pos;
+    while p < value.len() && is_word(char_at(value, p)) == word {
+        p = next_boundary(value, p);
+    }
+    p
+}
+
+/// Where the start of the word left of `pos` is — **two** runs when the first
+/// is separators, since a motion lands on a word rather than between two of
+/// them. Built on the same scan the delete takes, so the two can never drift
+/// into disagreeing about where a word begins.
+fn word_start_left(value: &str, pos: usize) -> usize {
+    let p = run_start_left(value, pos);
+    if p > 0 && !is_word(char_before(value, pos)) {
+        run_start_left(value, p)
+    } else {
+        p
+    }
+}
+
+/// ...and its mirror, past the end of the word right of `pos`.
+fn word_end_right(value: &str, pos: usize) -> usize {
+    let p = run_end_right(value, pos);
+    if p < value.len() && !is_word(char_at(value, pos)) {
+        run_end_right(value, p)
+    } else {
+        p
+    }
+}
+
 /// Moves the caret to the start of the word to its left (skipping any run of
 /// non-word chars first) — Ctrl+Left.
 pub fn move_word_left(value: &str, caret: &mut Caret, select: bool) {
     begin_move_extend(caret, select);
-    let mut p = caret.pos;
-    while p > 0 && !is_word(char_before(value, p)) {
-        p = prev_boundary(value, p);
-    }
-    while p > 0 && is_word(char_before(value, p)) {
-        p = prev_boundary(value, p);
-    }
-    caret.pos = p;
+    caret.pos = word_start_left(value, caret.pos);
 }
 
 /// Moves the caret past the word to its right — Ctrl+Right.
 pub fn move_word_right(value: &str, caret: &mut Caret, select: bool) {
     begin_move_extend(caret, select);
-    let mut p = caret.pos;
-    while p < value.len() && !is_word(char_at(value, p)) {
-        p = next_boundary(value, p);
+    caret.pos = word_end_right(value, caret.pos);
+}
+
+/// Ctrl+Backspace: deletes the selection, else the **run** to the caret's left
+/// — the word it is sitting after, or the separators between it and the
+/// previous word (see [`run_start_left`]). Returns whether the content changed.
+pub fn backspace_word(value: &mut String, caret: &mut Caret) -> bool {
+    if delete_selection(value, caret) {
+        return true;
     }
-    while p < value.len() && is_word(char_at(value, p)) {
-        p = next_boundary(value, p);
+    let start = run_start_left(value, caret.pos);
+    if start == caret.pos {
+        return false;
     }
-    caret.pos = p;
+    value.replace_range(start..caret.pos, "");
+    caret.set(start);
+    true
+}
+
+/// Ctrl+Delete: the same forward — the run to the caret's right.
+pub fn delete_word(value: &mut String, caret: &mut Caret) -> bool {
+    if delete_selection(value, caret) {
+        return true;
+    }
+    let end = run_end_right(value, caret.pos);
+    if end == caret.pos {
+        return false;
+    }
+    value.replace_range(caret.pos..end, "");
+    true
 }
 
 /// Seeds/clears the anchor for a word/vertical motion (no collapse-skip: these
@@ -401,6 +472,68 @@ mod tests {
         assert_eq!(&s[c.pos..], "foo_bar baz"); // whole first word (with `_`)
         move_word_right(&s, &mut c, false);
         assert_eq!(&s[..c.pos], "foo_bar");
+    }
+
+    /// A word-wise delete takes **one run** per press — the word, then the
+    /// separators — where the motion crosses both in one step. Deleting is
+    /// destructive, so it steps smaller than the caret does.
+    #[test]
+    fn word_delete_takes_one_run_per_press() {
+        let mut s = "a, b".to_string();
+        let mut c = caret(s.len());
+        assert!(backspace_word(&mut s, &mut c));
+        assert_eq!((s.as_str(), c.pos), ("a, ", 3), "the word alone");
+        assert!(backspace_word(&mut s, &mut c));
+        assert_eq!(
+            (s.as_str(), c.pos),
+            ("a", 1),
+            "then the comma and the space"
+        );
+        assert!(backspace_word(&mut s, &mut c));
+        assert_eq!((s.as_str(), c.pos), ("", 0));
+        // Nothing left to remove: no change, and no event behind it.
+        assert!(!backspace_word(&mut s, &mut c));
+
+        let mut s = "a, b".to_string();
+        let mut c = caret(0);
+        assert!(delete_word(&mut s, &mut c));
+        assert_eq!((s.as_str(), c.pos), (", b", 0));
+        assert!(delete_word(&mut s, &mut c));
+        assert_eq!((s.as_str(), c.pos), ("b", 0));
+        assert!(delete_word(&mut s, &mut c));
+        assert_eq!(s, "");
+        assert!(!delete_word(&mut s, &mut c));
+    }
+
+    /// ...and the motion still crosses to a word, which is the one place the
+    /// two deliberately differ.
+    #[test]
+    fn word_motion_still_lands_on_a_word() {
+        let s = "a, b".to_string();
+        let mut c = caret(s.len());
+        move_word_left(&s, &mut c, false);
+        assert_eq!(c.pos, 3, "to the start of \"b\"");
+        move_word_left(&s, &mut c, false);
+        assert_eq!(c.pos, 0, "past the separators, to the start of \"a\"");
+    }
+
+    /// A selection wins over the word, in both directions — the rule the plain
+    /// Backspace/Delete already follow.
+    #[test]
+    fn word_delete_takes_the_selection_when_there_is_one() {
+        for forward in [false, true] {
+            let mut s = "hello world".to_string();
+            let mut c = Caret {
+                pos: 5,
+                anchor: Some(0),
+            };
+            assert!(if forward {
+                delete_word(&mut s, &mut c)
+            } else {
+                backspace_word(&mut s, &mut c)
+            });
+            assert_eq!((s.as_str(), c.pos), (" world", 0));
+        }
     }
 
     #[test]

@@ -220,7 +220,13 @@ impl Element for Text {
                     textedit::insert(&mut self.value, &mut self.caret, c.encode_utf8(&mut [0; 4]));
             }
             Key::Char(_) => {}
+            Key::Backspace if mods.ctrl => {
+                changed = textedit::backspace_word(&mut self.value, &mut self.caret)
+            }
             Key::Backspace => changed = textedit::backspace(&mut self.value, &mut self.caret),
+            Key::Delete if mods.ctrl => {
+                changed = textedit::delete_word(&mut self.value, &mut self.caret)
+            }
             Key::Delete => changed = textedit::delete(&mut self.value, &mut self.caret),
             Key::Left if mods.ctrl => {
                 textedit::move_word_left(&self.value, &mut self.caret, mods.shift)
@@ -373,6 +379,28 @@ mod tests {
         let events = other.key(&Key::Char('v'), &mut input);
         assert_eq!(other.value, "hola");
         assert_eq!(events, Some(Events::value(OscType::String("hola".into()))));
+    }
+
+    /// Ctrl+Backspace deletes a whole word, and delivers the new value the way
+    /// every other edit does.
+    #[test]
+    fn ctrl_backspace_deletes_a_word() {
+        let ctrl = Mods {
+            ctrl: true,
+            ..Mods::default()
+        };
+        let mut field = from_props(&props(r#"{"value":"hola mundo"}"#));
+        field.caret.pos = field.value.len();
+        let events = type_keys(&mut field, ctrl, &[Key::Backspace]);
+        assert_eq!(field.value, "hola ");
+        assert_eq!(
+            events,
+            Some(Events::value(OscType::String("hola ".into()))),
+            "a word delete is an edit like any other"
+        );
+        // Without the modifier it is still one character.
+        type_keys(&mut field, Mods::default(), &[Key::Backspace]);
+        assert_eq!(field.value, "hola");
     }
 
     /// Tab is the ring's: the field declines it, whatever it is in the middle

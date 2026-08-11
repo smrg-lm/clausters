@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """An editable ``text`` field types an OSC message straight to the server.
 
-The editable ``text`` field: you click into it, type, move the caret, select and
-delete, and cut/copy/paste (Ctrl+C/X/V) -- the ordinary editing of a one-line
-entry. What it emits is a **string**, delivered exactly the way a slider delivers
+The editable ``text`` field: you click into it, type, move the caret (word-wise
+with Ctrl), select, delete -- a character, or a whole word with
+**Ctrl+Backspace** / **Ctrl+Delete**, one run per press (in ``a, b`` the first
+removes ``b`` and the second the ``", "`` before it) -- and cut/copy/paste
+(Ctrl+C/X/V): the ordinary editing of a one-line entry. What it emits is a **string**, delivered exactly the way a slider delivers
 its float: as a ``/gui_event`` on **every** edit, never gated on Enter. This
 script consumes that stream, parses each line into an OSC address plus typed
 arguments, and sends it to the audio server.
