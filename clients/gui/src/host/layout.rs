@@ -882,15 +882,10 @@ mod tests {
             .cloned()
             .collect();
         assert_eq!(bodies.len(), 3, "a take, a roll and a curve");
+        use crate::host::widget::element::BodyRole;
         assert!(bodies[0].widget.signal().is_some());
-        assert!(matches!(
-            bodies[1].widget.kind,
-            WidgetKind::PianoRoll { .. }
-        ));
-        assert_eq!(
-            bodies[2].widget.kind.body_role(),
-            Some(crate::host::widget::element::BodyRole::Curve)
-        );
+        assert_eq!(bodies[1].widget.kind.body_role(), Some(BodyRole::Notes));
+        assert_eq!(bodies[2].widget.kind.body_role(), Some(BodyRole::Curve));
 
         for b in &bodies {
             assert_eq!(

@@ -160,43 +160,13 @@ pub enum WidgetKind {
     /// transport, as a lane's own ruler strip does. Its thickness is the `h`
     /// place prop, like any other widget's — the builders default it.
     TimeRuler { editor: EditorProps },
-    /// The dedicated editor-grade piano-roll view: a keyboard gutter, a note
-    /// grid, and optional velocity / OSC-event strips — the editor sibling of
-    /// the compact `clip` roll, sharing its drawing/hit-test primitives
-    /// ([`super::pianoroll`]). MIDI `notes` (`start`/`dur` in timeline samples,
-    /// `pitch` a MIDI note over `[min, max]`, plus velocity/channel) draw in the
-    /// grid; `osc` events draw as flags in their lane. A timeline widget
-    /// (`is_timeline`): it joins a navigation group and carries the ruler /
-    /// selection / playhead chrome in `editor`, so it zooms/pans/plays in lockstep
-    /// with sibling views. Editing (drag a note, resize an edge, Ctrl+click
-    /// add/remove) flows back per the edit-back pattern.
-    PianoRoll {
-        notes: Vec<super::track::Note>,
-        osc: Vec<super::pianoroll::OscMark>,
-        /// The multi-note selection (note indices) — native view state, never
-        /// parsed from the wire: the marquee/Alt+click gestures build it, block
-        /// edits (move, delete, velocity) consume it, and it clears when the
-        /// script replaces `notes` (the indices would dangle).
-        selected: Vec<usize>,
-        min: f32,
-        max: f32,
-        snap: f64,
-        velocity_lane: bool,
-        osc_lane: bool,
-        /// Live MIDI input: when on, the native host opens its virtual MIDI
-        /// input port and **paints** incoming notes into this roll — at the
-        /// running playhead, or step-entry on the snap grid when stopped.
-        midi_in: bool,
-        label: Option<String>,
-        editor: EditorProps,
-    },
     /// One clip on a `track`: a placed rectangle spanning `[offset, offset +
     /// dur]` in timeline sample units (the graphic unit — length = duration),
     /// with a `label`. Interaction (drag to move `offset`, drag an edge to
     /// resize `dur`) writes back through the edit-back path.
     ///
     /// **A clip is a container, and its bodies are its children.** A take is a
-    /// **signal** element, a roll of events a [`PianoRoll`], an automation
+    /// **signal** element, a roll of events a `notes` element, an automation
     /// curve a `curve` element — the same elements that stand on their own
     /// composed here rather than reimplemented, and **layered** back to front
     /// rather than selected by precedence: an envelope drawn over the material
@@ -208,8 +178,6 @@ pub enum WidgetKind {
     /// a thing with bodies; moving the wire onto the containment is a separate
     /// step. So they carry **no id**: a script addresses the clip, and a
     /// `/gui_set` of a body prop routes into the child that owns it.
-    ///
-    /// [`PianoRoll`]: WidgetKind::PianoRoll
     Clip {
         offset: f64,
         dur: f64,

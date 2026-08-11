@@ -292,75 +292,16 @@ fn a_clip_parses_its_piano_roll_notes() {
     );
     let w = Widget::from_node(9, &n, &[]).unwrap();
     let clip = &w.children[0].children[0];
-    match clip.children.first().map(|c| &c.kind) {
-        Some(WidgetKind::PianoRoll {
-            notes, min, max, ..
-        }) => {
-            // Two complete triples; the trailing lone number is dropped.
-            assert_eq!(notes.len(), 2);
-            assert_eq!(
-                (notes[0].start, notes[0].dur, notes[0].pitch),
-                (0.0, 100.0, 60.0)
-            );
-            assert_eq!(notes[1].pitch, 67.0);
-            assert_eq!((*min, *max), (48.0, 72.0));
-        }
-        other => panic!("expected a roll body, got {other:?}"),
-    }
-}
-
-#[test]
-fn a_pianoroll_parses_its_notes_osc_and_pitch_window() {
-    let n = node(
-        r#"{"type":"window","children":[
-            {"id":5,"type":"notes","min":36.0,"max":84.0,"snap":100.0,
-             "notes":[0.0,200.0,60.0,90,0, 200.0,200.0,64.0,110,1],
-             "osc":[400.0,"/trig", 800.0,""]}
-        ]}"#,
+    let body = clip.children.first().expect("the clip grew a roll body");
+    assert_eq!(
+        body.kind.body_role(),
+        Some(super::element::BodyRole::Notes),
+        "{:?}",
+        body.kind
     );
-    let w = Widget::from_node(1, &n, &[]).unwrap();
-    match &w.children[0].kind {
-        WidgetKind::PianoRoll {
-            notes,
-            osc,
-            min,
-            max,
-            snap,
-            velocity_lane,
-            osc_lane,
-            ..
-        } => {
-            assert_eq!(notes.len(), 2);
-            assert_eq!(
-                (notes[0].pitch, notes[0].velocity, notes[0].channel),
-                (60.0, 90, 0)
-            );
-            assert_eq!((notes[1].velocity, notes[1].channel), (110, 1));
-            assert_eq!(osc.len(), 2);
-            assert_eq!(osc[0].label.as_deref(), Some("/trig"));
-            assert_eq!(osc[1].label, None); // the empty string is no label
-            assert_eq!((*min, *max, *snap), (36.0, 84.0, 100.0));
-            assert!(*velocity_lane, "the velocity lane is on by default");
-            assert!(*osc_lane, "the OSC lane opens because there are events");
-        }
-        other => panic!("expected pianoroll, got {other:?}"),
-    }
-}
-
-#[test]
-fn a_pianoroll_midi_in_parses_and_defaults_off() {
-    let on = node(r#"{"type":"window","children":[{"id":5,"type":"notes","midi_in":true}]}"#);
-    let w = Widget::from_node(1, &on, &[]).unwrap();
-    assert!(matches!(
-        &w.children[0].kind,
-        WidgetKind::PianoRoll { midi_in: true, .. }
-    ));
-    let off = node(r#"{"type":"window","children":[{"id":5,"type":"notes"}]}"#);
-    let w = Widget::from_node(1, &off, &[]).unwrap();
-    assert!(matches!(
-        &w.children[0].kind,
-        WidgetKind::PianoRoll { midi_in: false, .. }
-    ));
+    // Two complete triples; the trailing lone number is dropped, so the roll
+    // reaches the end of the second note and no further.
+    assert_eq!(body.kind.content_span(), Some(200.0));
 }
 
 #[test]

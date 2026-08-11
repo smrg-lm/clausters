@@ -21,7 +21,6 @@
 //! [`edit`]: super::edit
 
 use super::super::layout::Rect;
-use super::super::pianoroll;
 use super::super::widget::{GestureMap, ScrollView, WidgetKind};
 use crate::viewport::View;
 
@@ -89,8 +88,8 @@ impl TimeAxis {
 }
 
 /// A timeline view's vertical axis: the strip that is its gesture surface (a
-/// y-ruler, a piano-roll's keyboard gutter), the display window it stands at,
-/// and the pixels one window's worth spans.
+/// y-ruler, a roll's keyboard gutter), the display window it stands at, and the
+/// pixels one window's worth spans.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct YAxis {
     /// The band left of the body — a press there pans the axis, a wheel over it
@@ -102,10 +101,6 @@ pub(crate) struct YAxis {
     /// How many pixels one window's worth spans: a **lane's** height, since one
     /// vertical window is shared by every channel lane of a stacked view.
     pub lane_h: f64,
-    /// The visible slice of the axis **in its own units**, when the axis has a
-    /// domain to measure in: a piano-roll's pitch window. A selection swept on
-    /// such an axis is a rectangle (time x value), not just a time span.
-    pub window: Option<(f64, f64)>,
 }
 
 /// One container over a hit, with the rectangle its coordinate system occupies
@@ -138,6 +133,10 @@ pub(crate) struct Frame {
 pub(crate) struct Hit {
     pub id: i32,
     pub rect: Rect,
+    /// Where the widget's navigation group starts its body inside `rect`
+    /// ([`super::super::layout::Placed::indent`]) — the group's answer, so a
+    /// press on a member lands on the same pixels the frame painted.
+    pub indent: f32,
     /// The accumulated workspace zoom ([`super::super::layout::Placed::scale`], which the control
     /// hit-math shares with the drawing).
     pub scale: f32,
@@ -202,14 +201,6 @@ pub(crate) fn clip_part(x0: f32, x1: f32, x: f32) -> ClipPart {
     } else {
         ClipPart::Body
     }
-}
-
-/// The value a timeline container's **vertical** axis reads under the cursor,
-/// on the window `[lo, hi]` it is seen at. Discrete today (a piano-roll's
-/// pitch, whose rows are centred on whole semitones), which is the only ranged
-/// vertical axis there is; a continuous one lands here beside it.
-pub(crate) fn value_at(body: Rect, lo: f64, hi: f64, cy: f64) -> f64 {
-    pianoroll::y_to_pitch(cy as f32, lo as f32, hi as f32, body) as f64
 }
 
 /// Snaps a timeline sample value to a drag grid: to the nearest multiple of

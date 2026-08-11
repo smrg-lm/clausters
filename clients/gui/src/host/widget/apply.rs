@@ -181,43 +181,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             "label" => set_label(label, v),
             _ => false,
         },
-        WidgetKind::PianoRoll {
-            notes,
-            osc,
-            selected,
-            min,
-            max,
-            snap,
-            velocity_lane,
-            osc_lane,
-            midi_in,
-            label,
-            editor,
-        } => match key {
-            // Arrays ride a `/gui_set` as their JSON (a scalar wire value),
-            // exactly like the clip's `notes`/`points` and the patch's parts.
-            "notes" => {
-                *notes = parse_notes(&as_array_props("notes", v));
-                // The indices would dangle over the new list.
-                selected.clear();
-                true
-            }
-            "osc" => {
-                *osc = parse_osc(&as_array_props("osc", v));
-                true
-            }
-            "min" => set_f(min, v),
-            "max" => set_f(max, v),
-            "snap" => v.as_f64().map(|x| *snap = x.max(0.0)).is_some(),
-            "velocity" => truthy(v).map(|b| *velocity_lane = b).is_some(),
-            "osc_lane" => truthy(v).map(|b| *osc_lane = b).is_some(),
-            "midi_in" => truthy(v).map(|b| *midi_in = b).is_some(),
-            "label" => set_label(label, v),
-            // The editor chrome (ruler, selection, playhead, the pitch
-            // window `y_start`/`y_len`, `link`, view keys) — routed to the
-            // group model by the host `on_set` for the timeline keys.
-            _ => editor.apply(key, v),
-        },
         // A free-standing ruler is its editor chrome and nothing else: the
         // unit it labels (`ruler`), the rate and the beat grid, the link that
         // joins it to the lanes. Without this arm a `/gui_set` of any of them

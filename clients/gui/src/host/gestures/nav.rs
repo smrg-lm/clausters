@@ -78,14 +78,6 @@ pub(super) fn group_view(host: &Host, id: i32) -> Option<(f64, f64, usize)> {
         .map(|(nav, total)| (nav.start, nav.len, total))
 }
 
-/// A piano-roll note's current `(start, dur)` in the host tree.
-pub(super) fn note_at(host: &Host, def_id: i32, id: i32, index: usize) -> Option<(f64, f64)> {
-    match host.widget_kind(def_id, id)? {
-        WidgetKind::PianoRoll { notes, .. } => notes.get(index).map(|n| (n.start, n.dur)),
-        _ => None,
-    }
-}
-
 /// Every timeline (waveform/spectrogram) widget id in the tree.
 pub(super) fn timeline_ids(tree: &Widget) -> Vec<i32> {
     tree.descendants()

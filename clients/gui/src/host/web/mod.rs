@@ -48,7 +48,6 @@ use super::frame::{self, SpectrogramSlot, WaveformSlot};
 use super::gestures::{GestureCtx, GestureEffect, Gestures};
 use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
-use super::pianoroll;
 use super::widget::Widget;
 use super::widget::element::{Key as HostKey, Live, Loaded, SlotKind};
 use super::{BusSource, ClientId, GUI_EVENT, Host, HostEffect, ServerLink};
@@ -192,9 +191,7 @@ struct WebApp {
     /// so an `attach` that arrives first waits here.
     resumed: bool,
     pending_attach: Vec<(i32, Option<web_sys::HtmlCanvasElement>)>,
-    /// The piano-roll note clipboard (Ctrl+C/X/V), page-wide.
-    clipboard: Vec<pianoroll::Note>,
-    /// The `text` field clipboard (Ctrl+C/X/V), page-wide. An in-page clipboard
+    /// The host-wide clipboard (Ctrl+C/X/V), page-wide. An in-page clipboard
     /// like the native front's; binding it to the browser's OS clipboard (a
     /// `writeText` out plus a `paste`-event listener in) is a later refinement.
     text_clipboard: String,
@@ -239,7 +236,6 @@ impl WebApp {
             by_winit: HashMap::new(),
             resumed: false,
             pending_attach: Vec::new(),
-            clipboard: Vec::new(),
             text_clipboard: String::new(),
             buses: Arc::new(StreamedBuses::default()),
             streamed: Vec::new(),
@@ -477,13 +473,13 @@ impl WebApp {
             .map(|(def, _)| *def)
             .collect();
         for def in dragging {
-            let Some((ctx, (cx, _cy))) = self.gesture_ctx(def) else {
+            let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
                 continue;
             };
             let Some(slot) = self.canvases.get_mut(&def) else {
                 continue;
             };
-            let effects = slot.gestures.tick(&mut self.host, &ctx, cx, dt);
+            let effects = slot.gestures.tick(&mut self.host, &ctx, cx, cy, dt);
             self.apply_gesture_effects(effects);
         }
     }

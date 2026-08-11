@@ -7,7 +7,6 @@
 //! resolved with it ([`time_axis`], [`view_of`]). Everything else here is the
 //! second question a gesture asks once it knows *which* element it hit: which
 //! part of a clip ([`clip_hit`]), which header control ([`header_hit`]), which
-//! note or region of a piano-roll ([`pianoroll_hit`]).
 //!
 //! The rule that keeps these honest is that they reconstruct **the geometry the
 //! renderer drew through**, never a parallel derivation of it: a note is grabbed
@@ -15,7 +14,7 @@
 
 use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
-use super::super::{Host, pianoroll, track};
+use super::super::{Host, track};
 use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis, clip_part};
 use super::{ClipPart, HeaderPart};
 use crate::viewport::View;
@@ -59,6 +58,7 @@ pub(crate) fn hit(
     Some(Hit {
         id: p.widget.id?,
         rect: p.rect,
+        indent: p.indent,
         scale: p.scale,
         kind: p.widget.kind.clone(),
         chain: chain_of(host, def_id, &placed, i, lanes),
@@ -185,51 +185,21 @@ fn time_axis(
 ) -> Option<TimeAxis> {
     let metrics = host.metrics_for(def_id);
     let ruler_on = p.widget.kind.editor()?.ruler != super::super::widget::Ruler::Off;
-    // The body samples map onto, whether the axis has a vertical gesture
-    // surface, and the vertical axis' own window when it measures something.
-    let (body, y_surface, window) = match &p.widget.kind {
-        WidgetKind::Track { .. } => (
-            track::lane_body(p.rect, ruler_on, indent, metrics),
-            false,
-            None,
-        ),
-        WidgetKind::TimeRuler { .. } => (
-            super::super::frame::ruler_strip_body(p.rect, indent),
-            false,
-            None,
-        ),
-        WidgetKind::PianoRoll {
-            osc_lane,
-            velocity_lane,
-            min,
-            max,
-            editor,
-            ..
-        } => {
-            let (lo, hi) = pitch_window(editor, *min, *max);
-            (
-                super::super::pianoroll::regions(
-                    p.rect,
-                    ruler_on,
-                    *osc_lane,
-                    *velocity_lane,
-                    indent,
-                    metrics,
-                )
-                .grid,
-                // The keyboard gutter is the roll's vertical axis surface,
-                // always drawn (there is no `ruler_y: off` for a piano-roll).
-                true,
-                // ...and pitch is a domain, so a sweep on this axis picks notes
-                // by a rectangle rather than by a time span alone.
-                Some((lo as f64, hi as f64)),
-            )
+    // The body samples map onto, and whether the axis has a vertical gesture
+    // surface beside it.
+    let (body, y_surface) = match &p.widget.kind {
+        WidgetKind::Track { .. } => (track::lane_body(p.rect, ruler_on, indent, metrics), false),
+        WidgetKind::TimeRuler { .. } => {
+            (super::super::frame::ruler_strip_body(p.rect, indent), false)
         }
-        kind => (
+        // Every other member answers for itself: where the axis lies inside
+        // its rect and whether it offers a vertical surface beside it. Only a
+        // leaf whose picture is not "the rect minus its chrome" overrides the
+        // generic body — a roll's grid, with its strips stacked under it.
+        kind => kind.axis_body(p.rect, indent, metrics).unwrap_or((
             super::super::frame::timeline_body(p.rect, kind.editor()?, indent, metrics),
             kind.editor()?.ruler_y != super::super::widget::RulerY::Off,
-            None,
-        ),
+        )),
     };
     let (start, len) = p.widget.kind.editor()?.y_view();
     Some(TimeAxis {
@@ -245,7 +215,6 @@ fn time_axis(
             lane_h: (body.h as f64
                 / p.widget.id.map_or(1, |id| lanes(id, &p.widget.kind)).max(1) as f64)
                 .max(1.0),
-            window,
         }),
     })
 }
@@ -262,8 +231,10 @@ fn view_of(host: &Host, def_id: i32, p: &layout::Placed, body: Rect) -> View {
         WidgetKind::Track { .. } => host
             .window_def(def_id)
             .map_or(View::full(1), track::window_nav),
-        WidgetKind::PianoRoll { notes, osc, .. } => {
-            View::full(pianoroll_span(notes, osc).ceil().max(1.0) as usize)
+        // A surface that is *authored* rather than loaded spans its own
+        // content until it joins a group.
+        kind if kind.content_span().is_some() => {
+            View::full(kind.content_span().unwrap_or(0.0).ceil().max(1.0) as usize)
         }
         _ => View::full(body.w.max(1.0) as usize),
     }
@@ -364,155 +335,4 @@ pub(crate) fn clip_hit(
         local: local.nav,
         part: clip_part(rect.x, rect.x + rect.w, x as f32),
     })
-}
-
-// --- Piano-roll interaction (native gestures) -----------------------------
-
-/// Which region of a `pianoroll` a press landed on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PrRegion {
-    Grid,
-    Velocity,
-    Osc,
-}
-
-/// A piano-roll press: the widget id, the reconstructed grid rect and shared
-/// navigation window the drag maps through, the visible pitch window, the note
-/// snap grid, which region was hit, and the note/OSC-marker under the cursor (if
-/// any). The renderer's geometry is reconstructed here so a note is grabbed by
-/// the pixels it is drawn on, exactly as `clip_hit` does for a clip.
-pub(crate) struct PianoRollHit {
-    pub grid: Rect,
-    /// The rect of the region that was hit (the grid, the velocity lane or the
-    /// OSC lane) — the velocity drag maps the cursor's height through it.
-    pub region_rect: Rect,
-    pub nav: View,
-    pub lo: f32,
-    pub hi: f32,
-    pub snap: f64,
-    pub region: PrRegion,
-    pub note: Option<pianoroll::NoteHit>,
-    pub osc_index: Option<usize>,
-}
-
-/// The pitch window `[lo, hi]` a piano-roll draws through — its `[min, max]`
-/// axis sliced by the vertical display window (`y_start`/`y_len`), the same math
-/// the renderer's `pitch_window` uses so the hit-test matches the pixels.
-fn pitch_window(editor: &super::super::widget::EditorProps, min: f32, max: f32) -> (f32, f32) {
-    let (y0, yl) = editor.y_view();
-    let mut axis =
-        crate::viewport::Axis::ranged(min as f64, max as f64, crate::viewport::Unit::Pitch);
-    axis.slice_normalized(y0, yl);
-    let (start, len) = axis.span();
-    (start as f32, (start + len) as f32)
-}
-
-/// The content extent (samples) of a piano-roll's notes and OSC events — the
-/// fallback navigation window when the widget is in no group yet.
-fn pianoroll_span(notes: &[pianoroll::Note], osc: &[pianoroll::OscMark]) -> f64 {
-    let mut span = 0.0f64;
-    for n in notes {
-        span = span.max(n.start + n.dur);
-    }
-    for m in osc {
-        span = span.max(m.time);
-    }
-    span
-}
-
-/// Hit-test a press against the `pianoroll` `roll` — its id, the rectangle the
-/// hit placed it at and the time axis the hit resolved — against the same
-/// regions and navigation window the renderer drew. Native-only, the edit-back
-/// gesture posture.
-pub(crate) fn pianoroll_hit(
-    host: &Host,
-    def_id: i32,
-    roll: (i32, Rect, TimeAxis),
-    x: f64,
-    y: f64,
-) -> Option<PianoRollHit> {
-    let (id, rect, axis) = roll;
-    let WidgetKind::PianoRoll {
-        notes,
-        osc,
-        min,
-        max,
-        snap,
-        velocity_lane,
-        osc_lane,
-        editor,
-        ..
-    } = host.widget_kind(def_id, id)?
-    else {
-        return None;
-    };
-    let ruler_on = editor.ruler != super::super::widget::Ruler::Off;
-    let r = pianoroll::regions(
-        rect,
-        ruler_on,
-        *osc_lane,
-        *velocity_lane,
-        // The band the hit already resolved: a roll's keyboard fills its
-        // group's indent, so the strip beside the grid *is* that indent.
-        axis.y.map_or(0.0, |y| y.strip.w),
-        host.metrics_for(def_id),
-    );
-    let nav = axis.nav;
-    let (lo, hi) = pitch_window(editor, *min, *max);
-    let (fx, fy) = (x as f32, y as f32);
-    let (region, note, osc_index) = if *osc_lane && r.osc.contains(x, y) {
-        (PrRegion::Osc, None, nearest_osc(r.osc, &nav, osc, fx))
-    } else if *velocity_lane && r.velocity.contains(x, y) {
-        // A velocity-lane press picks the note whose bar it is nearest; the
-        // hit rides in `note` as a body hit so the caller reads its index.
-        let picked = nearest_note(r.velocity, &nav, notes, fx).map(|index| pianoroll::NoteHit {
-            index,
-            part: pianoroll::NotePart::Body,
-        });
-        (PrRegion::Velocity, picked, None)
-    } else {
-        let note = pianoroll::note_hit(r.grid, &nav, 0.0, notes, lo, hi, fx, fy);
-        (PrRegion::Grid, note, None)
-    };
-    let region_rect = match region {
-        PrRegion::Grid => r.grid,
-        PrRegion::Velocity => r.velocity,
-        PrRegion::Osc => r.osc,
-    };
-    Some(PianoRollHit {
-        grid: r.grid,
-        region_rect,
-        nav,
-        lo,
-        hi,
-        snap: *snap,
-        region,
-        note,
-        osc_index,
-    })
-}
-
-/// The index of the note whose start is nearest the cursor x (within a small
-/// pixel tolerance) — the velocity lane's bar picker.
-fn nearest_note(lane: Rect, nav: &View, notes: &[pianoroll::Note], x: f32) -> Option<usize> {
-    let to_x = |s: f64| lane.x + ((s - nav.start) / nav.len.max(1.0) * lane.w as f64) as f32;
-    notes
-        .iter()
-        .enumerate()
-        .map(|(i, n)| (i, (to_x(n.start) - x).abs()))
-        .filter(|(_, d)| *d <= 5.0)
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(i, _)| i)
-}
-
-/// The index of the OSC marker whose time is nearest the cursor x.
-fn nearest_osc(lane: Rect, nav: &View, marks: &[pianoroll::OscMark], x: f32) -> Option<usize> {
-    let to_x = |s: f64| lane.x + ((s - nav.start) / nav.len.max(1.0) * lane.w as f64) as f32;
-    marks
-        .iter()
-        .enumerate()
-        .map(|(i, m)| (i, (to_x(m.time) - x).abs()))
-        .filter(|(_, d)| *d <= 5.0)
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(i, _)| i)
 }

@@ -626,9 +626,6 @@ impl GestureMap {
                 &[Element, Locate],
                 &[Element, Locate],
             ),
-            WidgetKind::PianoRoll { .. } => {
-                (&[Element, Select], &[Pan], &[Element, Select], &[Element])
-            }
             WidgetKind::TimeRuler { .. } => (&[Locate], &[Pan], &[Locate], &[Locate]),
             // The patcher: a plain drag on the empty canvas sweeps the box
             // marquee, Shift leaves the press to the workspace under it.

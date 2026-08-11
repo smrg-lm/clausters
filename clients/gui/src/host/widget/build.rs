@@ -24,12 +24,6 @@ fn is_bare_ruler(props: &Map<String, Value>, has_children: bool) -> bool {
         .any(|k| props.contains_key(*k))
 }
 
-/// The default pitch window of a note view — a piano's compass (A0..C8),
-/// shared by the `pianoroll` widget and by a `clip` whose body is a roll, so
-/// the two cannot drift apart.
-const PITCH_MIN: f32 = 21.0;
-const PITCH_MAX: f32 = 108.0;
-
 /// Builds the [`WidgetKind`] a GuiDef `node` names (an unknown type becomes
 /// [`WidgetKind::Unknown`]). `blobs` are the `/gui_def` message's trailing bulk
 /// payloads.
@@ -118,28 +112,6 @@ pub(super) fn build_kind(
             },
             editor: EditorProps::parse_lane(props),
         },
-        "notes" => {
-            let osc = parse_osc(props);
-            WidgetKind::PianoRoll {
-                notes: parse_notes(props),
-                selected: Vec::new(),
-                // The velocity lane is on by default; the OSC lane shows when
-                // there are events or it is explicitly asked for (so an empty
-                // lane can still be opened to author events).
-                velocity_lane: props.get("velocity").and_then(truthy).unwrap_or(true),
-                osc_lane: props
-                    .get("osc_lane")
-                    .and_then(truthy)
-                    .unwrap_or(!osc.is_empty()),
-                osc,
-                min: number(props, "min", PITCH_MIN),
-                max: number(props, "max", PITCH_MAX),
-                snap: number_f64(props, "snap", 0.0).max(0.0),
-                midi_in: props.get("midi_in").and_then(truthy).unwrap_or(false),
-                label: label(props),
-                editor: EditorProps::parse(props, RulerY::Off),
-            }
-        }
         // No arm above answers to this name, so it is an **element**: a
         // built-in that has moved behind the trait, else whatever a program
         // registered, else nothing at all. The order is the invariant, not a
@@ -165,7 +137,7 @@ pub(super) fn build_kind(
 ///
 /// This is the one place a clip's wire props become elements. The elements
 /// themselves are the ordinary ones — a signal element for the take, a
-/// piano-roll for the events, a break-point curve for the automation — so
+/// roll for the events, a break-point curve for the automation — so
 /// nothing here re-describes what they are; it only says which props feed
 /// which, and with what default axis.
 pub(super) fn clip_bodies(
@@ -176,8 +148,8 @@ pub(super) fn clip_bodies(
     if let Some(take) = clip_take(props, blobs)? {
         out.push(body_widget(take));
     }
-    if let Some(roll) = clip_roll(props) {
-        out.push(body_widget(roll));
+    if let Some(roll) = super::super::elements::notes::body(props) {
+        out.push(body_widget(WidgetKind::Custom(Box::new(roll))));
     }
     if let Some(curve) = super::super::elements::curve::body(props) {
         out.push(body_widget(WidgetKind::Custom(Box::new(curve))));
@@ -220,19 +192,7 @@ pub(super) fn empty_clip_body(role: BodyRole) -> Option<WidgetKind> {
             },
             Presentation::Signal,
         ))),
-        WidgetKind::PianoRoll {
-            notes: Vec::new(),
-            osc: Vec::new(),
-            selected: Vec::new(),
-            min: PITCH_MIN,
-            max: PITCH_MAX,
-            snap: 0.0,
-            velocity_lane: false,
-            osc_lane: false,
-            midi_in: false,
-            label: None,
-            editor: EditorProps::body(),
-        },
+        WidgetKind::Custom(Box::new(super::super::elements::notes::empty_body())),
         WidgetKind::Custom(Box::new(super::super::elements::curve::empty_body())),
     ];
     candidates
@@ -341,30 +301,6 @@ fn spectral_props(
         peak_hold: props.get("peak_hold").and_then(truthy).unwrap_or(false),
         colormap: int_prop(props, "colormap", base.colormap),
     }
-}
-
-/// A clip's **roll**: the note events over a pitch window. The window defaults
-/// to the `pianoroll` widget's own compass rather than to an amplitude range —
-/// a pitch axis of `[-1, 1]` would clamp every note to the clip's top edge,
-/// silently, since nothing about the drawing would say why.
-fn clip_roll(props: &Map<String, Value>) -> Option<WidgetKind> {
-    let notes = parse_notes(props);
-    if notes.is_empty() {
-        return None;
-    }
-    Some(WidgetKind::PianoRoll {
-        notes,
-        osc: Vec::new(),
-        selected: Vec::new(),
-        min: number(props, "min", PITCH_MIN),
-        max: number(props, "max", PITCH_MAX),
-        snap: 0.0,
-        velocity_lane: false,
-        osc_lane: false,
-        midi_in: false,
-        label: None,
-        editor: EditorProps::body(),
-    })
 }
 
 /// Builds the signal element from the wire node: `view`, the source props and

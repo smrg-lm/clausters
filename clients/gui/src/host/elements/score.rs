@@ -254,6 +254,7 @@ mod tests {
     fn input<'a>(m: &'a Metrics) -> Input<'a> {
         Input {
             metrics: m,
+            indent: 0.0,
             rect: Rect::new(0.0, 0.0, 500.0, 200.0),
             scale: 1.0,
             mods: Mods::default(),

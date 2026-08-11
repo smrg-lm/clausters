@@ -24,7 +24,6 @@ use crate::host::fetch::BufferFetches;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::Gestures;
 #[cfg(feature = "midi")]
-use crate::host::interact;
 use crate::host::live::{self, tree_animates, tree_has_live_widget};
 use crate::host::nodetree::NodeTree;
 use crate::host::paint::Painter;
@@ -32,7 +31,6 @@ use crate::host::paint::Painter;
 use crate::host::timeline::group_key;
 use crate::host::widget::Widget;
 #[cfg(feature = "midi")]
-use crate::host::widget::WidgetKind;
 use crate::host::widget::element::{Key as HostKey, Live};
 use crate::host::world::World;
 use crate::host::{BusSource, ClientId, GUI_EVENT, Host, HostEffect};
@@ -111,27 +109,18 @@ pub(super) struct App {
     /// embedded audio server is dropped (and `/server_quit`ed) instead of left running.
     pub(super) standalone: bool,
     /// Live MIDI input: the virtual input port, held open while any open
-    /// window has a `midi_in` piano-roll (dropping it closes the port).
+    /// window holds an element that declared it reads MIDI (dropping it closes
+    /// the port).
     #[cfg(feature = "midi")]
     pub(super) midi_in: Option<clausters_midi::live::Input>,
     /// Whether the port-open failure was already reported (retrying is cheap,
     /// warning every frame is not).
     #[cfg(feature = "midi")]
     pub(super) midi_warned: bool,
-    /// Held keys being painted: `(window, widget, channel, pitch)` → the index
-    /// of the note the matching note-off will close.
-    #[cfg(feature = "midi")]
-    pub(super) held: HashMap<(i32, i32, u8, u8), usize>,
-    /// Step-entry cursor per `(window, widget)` (timeline samples), used while
-    /// the shared playhead is stopped; the last note-off advances it a grid.
-    #[cfg(feature = "midi")]
-    pub(super) step: HashMap<(i32, i32), f64>,
-    /// The piano-roll note clipboard (Ctrl+C/X/V), normalized to the block's
-    /// first onset — host-wide, so notes travel between rolls and windows.
-    pub(super) clipboard: Vec<crate::host::pianoroll::Note>,
-    /// The `text` field clipboard (Ctrl+C/X/V) — the native front's internal
-    /// clipboard (no OS-clipboard dependency); host-wide so text travels between
-    /// fields and windows.
+    /// The host-wide clipboard (Ctrl+C/X/V) — the native front's internal one,
+    /// no OS-clipboard dependency — so what is cut in one window pastes into
+    /// another. A block of notes rides it in the same JSON a `/gui_set notes`
+    /// takes, which is the carrier every non-scalar already uses.
     pub(super) text_clipboard: String,
 }
 
@@ -157,11 +146,6 @@ impl App {
             midi_in: None,
             #[cfg(feature = "midi")]
             midi_warned: false,
-            #[cfg(feature = "midi")]
-            held: HashMap::new(),
-            #[cfg(feature = "midi")]
-            step: HashMap::new(),
-            clipboard: Vec::new(),
             text_clipboard: String::new(),
         }
     }
@@ -341,24 +325,21 @@ impl App {
         );
     }
 
-    /// Delivers a piano-roll's edited notes (the MIDI painting path; gesture
-    /// edits go through the machine's own delivery): a **bound** roll forwards
-    /// the flat note list straight to the audio server (without the `"notes"`
-    /// tag); an unbound one emits `/gui_event id "notes" start dur pitch vel
-    /// channel …` to the script.
+    /// Delivers what an element reported outside the gesture machine — the
+    /// live-MIDI painting path — by the one rule the machine also follows: a
+    /// **bound** widget forwards the payload without its tag straight to the
+    /// audio server, an unbound one emits the whole tagged list to the script.
     #[cfg(feature = "midi")]
-    pub(super) fn emit_notes(&mut self, def_id: i32, widget_id: i32) {
-        let Some(args) = self
-            .host
-            .window_def(def_id)
-            .and_then(|t| interact::notes_event_args(t, widget_id))
-        else {
-            return;
-        };
+    pub(super) fn emit_element(
+        &mut self,
+        def_id: i32,
+        widget_id: i32,
+        args: Vec<clausters_core::osc::OscType>,
+    ) {
         if self.host.is_bound(widget_id) {
-            // A bound roll may be driving another widget, whose window then
-            // has to repaint: the apply behind a widget binding reports it the
-            // same way a `/gui_set` does.
+            // A bound widget may be driving another one, whose window then has
+            // to repaint: the apply behind a widget binding reports it the same
+            // way a `/gui_set` does.
             let mut effects = Vec::new();
             self.host
                 .forward_args(widget_id, args[1..].to_vec(), &mut effects);
@@ -384,15 +365,6 @@ impl App {
         if let Some(ws) = self.windows.get(&def_id) {
             ws.gpu.window.request_redraw();
         }
-    }
-
-    /// The navigation window of timeline view `id`'s group:
-    /// `(start, len, total)` in timeline samples.
-    #[cfg(feature = "midi")]
-    pub(super) fn timeline_nav(&self, id: i32) -> Option<(f64, f64, usize)> {
-        self.host
-            .timeline_nav(id)
-            .map(|(nav, total)| (nav.start, nav.len, total))
     }
 
     /// Renders window `def_id` through the shared frame path ([`frame::render`]),
@@ -576,14 +548,14 @@ impl ApplicationHandler<UserEvent> for App {
             next_wake = Some(self.next_frame);
         }
 
-        // Live MIDI input painting notes: while any open window has a
-        // `midi_in` roll, the virtual input port is held open and drained at
-        // the frame cadence (dropping it when the last such roll goes closes
+        // Live MIDI input: while any open window holds an element that
+        // declared it reads MIDI, the virtual input port is held open and
+        // drained at the frame cadence (the last such element closing drops
         // the port).
         #[cfg(feature = "midi")]
         {
-            let rolls = self.midi_rolls();
-            if rolls.is_empty() {
+            let readers = self.midi_readers();
+            if readers.is_empty() {
                 self.midi_in = None;
             } else {
                 if self.midi_in.is_none() {
@@ -593,7 +565,7 @@ impl ApplicationHandler<UserEvent> for App {
                         self.midi_warned = true;
                     }
                 }
-                self.drain_midi(&rolls);
+                self.drain_midi(&readers);
                 let t = now + FRAME;
                 next_wake = Some(next_wake.map_or(t, |w| w.min(t)));
             }
@@ -704,7 +676,6 @@ impl ApplicationHandler<UserEvent> for App {
                 self.on_wheel(def_id, steps);
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                let ctrl = self.windows.get(&def_id).is_some_and(|w| w.ctrl);
                 // The focus consumes the key first — Tab walks the ring, and a
                 // focused element edits (typing, caret motion, cut/copy/paste).
                 // Only what nothing there answered reaches the global shortcuts
@@ -714,23 +685,17 @@ impl ApplicationHandler<UserEvent> for App {
                 {
                     return;
                 }
+                // ...then the element **under the cursor**, which is where a
+                // block operation is addressed: a selection is already where
+                // the pointer has been. Only what nothing there answered
+                // reaches the window's own shortcuts.
+                if let Some(k) = to_key(&event.logical_key)
+                    && self.key_at_cursor(def_id, k)
+                {
+                    return;
+                }
                 match event.logical_key {
                     Key::Named(NamedKey::Escape) => self.user_close(def_id, event_loop),
-                    Key::Named(NamedKey::Delete) | Key::Named(NamedKey::Backspace) => {
-                        self.delete_selected_notes(def_id)
-                    }
-                    Key::Character(ref c) if ctrl && c.eq_ignore_ascii_case("c") => {
-                        self.copy_selected_notes(def_id, false)
-                    }
-                    Key::Character(ref c) if ctrl && c.eq_ignore_ascii_case("x") => {
-                        self.copy_selected_notes(def_id, true)
-                    }
-                    Key::Character(ref c) if ctrl && c.eq_ignore_ascii_case("v") => {
-                        self.paste_notes_at_cursor(def_id)
-                    }
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("q") => {
-                        self.quantize_roll(def_id)
-                    }
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         self.reset_timelines(def_id)
                     }
@@ -745,17 +710,18 @@ impl ApplicationHandler<UserEvent> for App {
 
 #[cfg(feature = "midi")]
 impl App {
-    /// Every `midi_in` piano-roll in an open window, as `(window, widget)`.
-    pub(super) fn midi_rolls(&self) -> Vec<(i32, i32)> {
+    /// Every element that **declared** it reads live MIDI, as `(window,
+    /// widget)` — what the front opens its input port for.
+    pub(super) fn midi_readers(&self) -> Vec<(i32, i32)> {
         let mut out = Vec::new();
         for &def_id in self.windows.keys() {
             let Some(tree) = self.host.window_def(def_id) else {
                 continue;
             };
-            out.extend(tree.descendants().filter_map(|w| {
-                matches!(w.kind, WidgetKind::PianoRoll { midi_in: true, .. })
-                    .then_some((def_id, w.id?))
-            }));
+            out.extend(
+                tree.descendants()
+                    .filter_map(|w| w.kind.needs().midi.then_some((def_id, w.id?))),
+            );
         }
         out
     }
@@ -772,14 +738,6 @@ impl App {
             .timelines()
             .state(group_key(id, e.link))?
             .swept_at(clock)
-    }
-
-    /// A piano-roll's `snap` grid (0 when none or not a roll).
-    pub(super) fn roll_snap(&self, def_id: i32, id: i32) -> f64 {
-        match self.host.widget_kind(def_id, id) {
-            Some(WidgetKind::PianoRoll { snap, .. }) => *snap,
-            _ => 0.0,
-        }
     }
 }
 

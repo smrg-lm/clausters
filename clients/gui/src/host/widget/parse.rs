@@ -43,7 +43,7 @@ pub(crate) fn as_props(v: &Value) -> Option<serde_json::Map<String, Value>> {
 /// (three numbers per note, the flat convention the `bpf` points use), each a
 /// [`crate::host::track::Note`]. A short/absent/malformed array yields no notes (the
 /// clip then draws a waveform body).
-pub(super) fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<crate::host::track::Note> {
+pub(crate) fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<crate::host::track::Note> {
     let Some(Value::Array(items)) = props.get("notes") else {
         return Vec::new();
     };
@@ -73,7 +73,7 @@ pub(super) fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<crate::
 /// Parse a `pianoroll`'s `osc` prop — a flat `[time, label, time, label, …]`
 /// list of OSC event markers (the label a short address/tag, an empty string
 /// meaning none). A trailing partial pair is dropped.
-pub(super) fn parse_osc(
+pub(crate) fn parse_osc(
     props: &serde_json::Map<String, Value>,
 ) -> Vec<crate::host::pianoroll::OscMark> {
     let Some(Value::Array(items)) = props.get("osc") else {

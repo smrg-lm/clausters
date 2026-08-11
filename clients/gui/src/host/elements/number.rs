@@ -102,6 +102,7 @@ mod tests {
 
         let input = Input {
             metrics: &m,
+            indent: 0.0,
             rect: Rect::new(0.0, 0.0, 80.0, 24.0),
             scale: 1.0,
             mods: Mods::default(),

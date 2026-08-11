@@ -276,6 +276,16 @@ pub struct Needs {
     /// The GPU slot this element claims, for a view that cannot draw into the
     /// shared mesh. `None` — the default — is an element that draws.
     pub slot: Option<SlotKind>,
+    /// Whether this element **reads live MIDI input**: a note played on a
+    /// keyboard reaches it ([`Element::midi`]) rather than only a script's
+    /// `/gui_set`.
+    ///
+    /// It is a need like the others because it is a *device* the front has to
+    /// open — a virtual input port, native-only — and one nothing in the window
+    /// asked for is one nothing opens. What arrives is the platform-neutral
+    /// [`MidiNote`], the same posture [`Key`] takes: the front translates, and
+    /// the element answers identically wherever it is compiled.
+    pub midi: bool,
     /// The **bulk resource** this element wants resolved, and in which form.
     ///
     /// Bulk is the data too big for the wire — a minutes-long take, a peaks
@@ -439,6 +449,32 @@ pub struct TimeSpace {
     /// The full span of that axis (a clip's `dur`): the domain a time is
     /// clamped into, whatever part of it is on screen.
     pub span: f64,
+    /// The axis' **shared time selection**, or `None` when nothing is selected
+    /// — the band every linked view draws, which is the axis' state and not
+    /// any one member's. An element that draws it reads it here; an element
+    /// that *moves* it asks ([`Events::and_select`]).
+    pub sel: Option<(f64, f64)>,
+    /// Where the axis' **playhead** stands, in its units, or `None` for an
+    /// axis with no transport on it.
+    ///
+    /// It is a **draw-time** fact: the engine sample clock is the front's, and
+    /// a gesture is handed no clock, so this reads `None` in an [`Input`] and
+    /// carries the position in a [`Ctx`]. Nothing a drag decides depends on
+    /// where the playhead is.
+    pub head: Option<f64>,
+}
+
+impl TimeSpace {
+    /// A bare axis: a window over a span, with no selection and no transport on
+    /// it — what a container hands a body, and what a test draws against.
+    pub fn of(view: crate::viewport::View, span: f64) -> Self {
+        Self {
+            view,
+            span,
+            sel: None,
+            head: None,
+        }
+    }
 }
 
 /// What a claimed slot is fed **this frame** — the live counterpart of
@@ -568,6 +604,10 @@ pub struct Input<'a> {
     pub metrics: &'a Metrics,
     /// The rect the element was placed in when the press landed.
     pub rect: Rect,
+    /// Where this element's **shared axis** begins inside its rect — the same
+    /// group answer [`Ctx::indent`] carries, so a press lands on the pixels
+    /// that were painted. `0.0` for an element on no shared axis.
+    pub indent: f32,
     /// The placement's zoom (see [`Ctx::scale`]).
     pub scale: f32,
     /// The modifier keys held for this event.
@@ -621,6 +661,21 @@ pub enum Key {
     Tab,
 }
 
+/// A **platform-neutral MIDI note event**: what a front's live input port
+/// translates its channel-voice messages into, so an element paints the same
+/// note wherever it runs.
+///
+/// Note-on with velocity 0 is a note-off before it gets here — the parse is the
+/// front's, exactly as resolving a keyboard layout into a [`Key::Char`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MidiNote {
+    /// Start it, or release the one sounding at this pitch and channel.
+    pub on: bool,
+    pub channel: i32,
+    pub pitch: i32,
+    pub velocity: i32,
+}
+
 /// What a key arrives with: the modifiers held, and the host-wide clipboard a
 /// cut/copy/paste reads and writes.
 ///
@@ -643,6 +698,7 @@ pub struct KeyInput<'a> {
 pub struct Events {
     msgs: Vec<Vec<OscType>>,
     voices: Vec<Voice>,
+    select: Option<(f64, f64)>,
 }
 
 /// **A voice an element asks the host to sound**, beside the event it reports.
@@ -698,7 +754,7 @@ impl Events {
     pub fn value(v: OscType) -> Self {
         Self {
             msgs: vec![vec![v]],
-            voices: Vec::new(),
+            ..Self::default()
         }
     }
 
@@ -706,7 +762,7 @@ impl Events {
     pub fn message(args: Vec<OscType>) -> Self {
         Self {
             msgs: vec![args],
-            voices: Vec::new(),
+            ..Self::default()
         }
     }
 
@@ -722,16 +778,30 @@ impl Events {
         self
     }
 
+    /// Asks the machine to move the **container's time selection** to
+    /// `(start, end)` in the axis' own units (either order).
+    ///
+    /// The second thing an element cannot do for itself, and the same shape as
+    /// [`Voice`]: a marquee swept over a roll sets the selection *every linked
+    /// view follows*, which is the navigation group's state and not the roll's
+    /// — so the element names the span and the machine writes it, repaints the
+    /// linked windows and reports the `"selection"` the group already emits.
+    pub fn and_select(mut self, start: f64, end: f64) -> Self {
+        self.select = Some((start, end));
+        self
+    }
+
     /// Everything of `other`, after this — a gesture that both ends one thing
     /// and starts another (a glissando: a note off, then a note on).
     pub fn chain(mut self, other: Events) -> Self {
         self.msgs.extend(other.msgs);
         self.voices.extend(other.voices);
+        self.select = other.select.or(self.select);
         self
     }
 
     pub fn is_empty(&self) -> bool {
-        self.msgs.is_empty() && self.voices.is_empty()
+        self.msgs.is_empty() && self.voices.is_empty() && self.select.is_none()
     }
 
     /// The messages, for the gesture machine that delivers them.
@@ -742,6 +812,11 @@ impl Events {
     /// The voices asked for, for the machine that performs them.
     pub(crate) fn voices(&self) -> &[Voice] {
         &self.voices
+    }
+
+    /// The container-selection request, for the machine that performs it.
+    pub(crate) fn selection(&self) -> Option<(f64, f64)> {
+        self.select
     }
 }
 
@@ -775,13 +850,21 @@ pub struct Take {
     /// The front answers — a page has no pointer lock — and the machine routes
     /// whichever way it answered.
     ///
-    /// It is the only thing here because it is the only thing left: the *kind*
-    /// of drag is the element's, and the other job the machine alone can do —
-    /// ticking a drag held past a scrolling container's edge — belongs today to
-    /// a `clip`, which is a container and keeps its own drag. The flag for it
-    /// lands with the first **element** that runs off an edge, which is also
-    /// what will settle how the axis under it is panned.
+    /// It is one of the two things only the front and the machine can do: the
+    /// *kind* of drag is the element's, because the element holds the state.
     pub grab: bool,
+    /// Ask the machine to keep **ticking** this drag while the cursor is held
+    /// past the edge of the axis the element sits on, panning that axis under
+    /// it — what a note dragged off the right of a lane needs, since a held
+    /// cursor produces no motion events and the view has to keep moving anyway.
+    ///
+    /// It is the machine's rather than the element's because the axis is the
+    /// *group's*: panning it repaints every linked window and re-reports the
+    /// view, none of which an element can reach. What the element gets back is
+    /// an ordinary [`drag`](Element::drag) per tick, against a window that has
+    /// moved — which is why the drag must read its axis from
+    /// [`Input::time`] each step rather than snapshotting it.
+    pub edge_scroll: bool,
 }
 
 impl Claim {
@@ -810,6 +893,17 @@ impl Claim {
     pub fn grabbing(self) -> Self {
         match self {
             Claim::Take(t) => Claim::Take(Take { grab: true, ..t }),
+            decline => decline,
+        }
+    }
+
+    /// ...and keep the axis scrolling while the drag is held past its edge.
+    pub fn edge_scrolling(self) -> Self {
+        match self {
+            Claim::Take(t) => Claim::Take(Take {
+                edge_scroll: true,
+                ..t
+            }),
             decline => decline,
         }
     }
@@ -1002,6 +1096,34 @@ pub trait Element: fmt::Debug {
     /// ruler, no gutter, no navigation of its own — so the two are different
     /// pictures of the same data. The default draws nothing.
     fn draw_body(&self, _d: &mut Draw, _rect: Rect, _local: &crate::viewport::View, _dur: f64) {}
+
+    /// **Where the shared time axis lies inside this element's rect**, and
+    /// whether it offers a vertical gesture surface beside it — or `None` (the
+    /// default) to take the generic timeline body, which is what every
+    /// element on that axis but one wants.
+    ///
+    /// It is a door because the roll is the one leaf whose picture is *not* the
+    /// rectangle minus its chrome: strips are stacked under its grid (a
+    /// velocity lane, an event lane) that read the same time and are not part
+    /// of the body a sample maps into, and its keyboard gutter is a vertical
+    /// surface whatever `ruler_y` says. The hit-test has to place the axis
+    /// exactly where the drawing did, so it asks.
+    fn axis_body(&self, _rect: Rect, _indent: f32, _m: &Metrics) -> Option<(Rect, bool)> {
+        None
+    }
+
+    /// **The axis length this element's own content occupies**, or `None` (the
+    /// default) for an element whose extent is registered from outside — a
+    /// loaded take, a streamed history.
+    ///
+    /// A navigation group's timeline is the longest of its members' extents, so
+    /// a surface that is *authored* rather than loaded — a roll being written
+    /// note by note — has to say how far its content now reaches, or the axis
+    /// stays the length it was defined with and everything painted past it
+    /// lands outside the window.
+    fn content_span(&self) -> Option<f64> {
+        None
+    }
 
     /// **What this element reserves left of its body** for chrome of its own —
     /// a value ruler — when it sits on a shared time axis. `0.0` by default.
@@ -1207,6 +1329,20 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// A **live MIDI note** for an element that declared [`Needs::midi`].
+    ///
+    /// `playhead` is where the axis' transport stands, in the element's own
+    /// units, or `None` when it is stopped — the one fact the element cannot
+    /// read for itself (the engine clock is the front's) and the whole
+    /// difference between *recording* a note at the playhead and *entering* one
+    /// on a step cursor the element keeps itself.
+    ///
+    /// Whatever comes back is delivered exactly as a drag's is, so a painted
+    /// note reports the same payload an edited one does.
+    fn midi(&mut self, _note: MidiNote, _playhead: Option<f64>) -> Option<Events> {
+        None
+    }
+
     /// **One tick**: advance whatever this element keeps of the outside — a
     /// rolling history, a triggered window, an analysis state.
     ///
@@ -1353,6 +1489,7 @@ mod tests {
                 node_groups: vec![self.bus + 3],
                 animated: true,
                 clock: true,
+                midi: false,
                 slot: None,
                 bulk: Some(Bulk::Buffer(self.bus + 4)),
             }

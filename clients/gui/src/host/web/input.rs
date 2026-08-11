@@ -156,14 +156,14 @@ impl WebApp {
         self.apply_gesture_effects(effects);
     }
 
-    /// Keyboard: the same editing operations the desktop front maps (Delete,
-    /// Ctrl+C/X/V, `q` quantize, `r` reset) — minus Escape, which closes an OS
-    /// window there but has no window to close here.
+    /// Keyboard: the same two addressees the desktop front has — the window's
+    /// focus, then the element under the cursor — and the same window shortcut
+    /// after them (`r` resets every axis). Escape is missing on purpose: it
+    /// closes an OS window there and has no window to close here.
     fn on_key(&mut self, def: i32, key: &Key) {
         let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
             return;
         };
-        let ctrl = ctx.ctrl;
         // The focus consumes the key first — Tab walks the ring, a focused
         // element edits — and only what nothing there answered runs the global
         // shortcuts, which are addressed to what is under the cursor.
@@ -179,25 +179,28 @@ impl WebApp {
                 return;
             }
         }
+        // ...then the element under the cursor, which is where a block
+        // operation is addressed.
+        if let Some(k) = to_key(key) {
+            let Some(slot) = self.canvases.get_mut(&def) else {
+                return;
+            };
+            if let Some(effects) = slot.gestures.key_at_cursor(
+                &mut self.host,
+                &ctx,
+                k,
+                cx,
+                cy,
+                &mut self.text_clipboard,
+            ) {
+                self.apply_gesture_effects(effects);
+                return;
+            }
+        }
         let Some(slot) = self.canvases.get_mut(&def) else {
             return;
         };
         let effects = match key {
-            Key::Named(NamedKey::Delete) | Key::Named(NamedKey::Backspace) => {
-                slot.gestures.delete_selected(&mut self.host, &ctx, cx, cy)
-            }
-            Key::Character(c) if ctrl && c.eq_ignore_ascii_case("c") => slot
-                .gestures
-                .copy_selected(&mut self.host, &ctx, cx, cy, false, &mut self.clipboard),
-            Key::Character(c) if ctrl && c.eq_ignore_ascii_case("x") => slot
-                .gestures
-                .copy_selected(&mut self.host, &ctx, cx, cy, true, &mut self.clipboard),
-            Key::Character(c) if ctrl && c.eq_ignore_ascii_case("v") => slot
-                .gestures
-                .paste_at_cursor(&mut self.host, &ctx, cx, cy, &self.clipboard),
-            Key::Character(c) if c.eq_ignore_ascii_case("q") => {
-                slot.gestures.quantize(&mut self.host, &ctx, cx, cy)
-            }
             Key::Character(c) if c.eq_ignore_ascii_case("r") => {
                 slot.gestures.reset_timelines(&mut self.host, &ctx)
             }

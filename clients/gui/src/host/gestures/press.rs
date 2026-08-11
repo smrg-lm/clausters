@@ -16,11 +16,10 @@
 use super::super::interact::{self, Hit};
 use super::super::widget::element::TimeSpace;
 use super::super::widget::{Claim, GestureStep, WidgetKind};
-use super::super::{Host, patch, pianoroll};
+use super::super::{Host, patch};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element, focus};
-use crate::viewport::View;
 
 impl Gestures {
     /// Press: run the **containers' gesture plans** over the hit, innermost
@@ -55,7 +54,8 @@ impl Gestures {
         // answers for both cases, since only it knows where its area is.
         if let Some((id, rect, scale)) = element::overlay_owner(host, ctx) {
             out.push(GestureEffect::Redraw(ctx.def_id));
-            let at = element::At::widget(id, rect, scale);
+            // An overlay stands over the window, on nobody's axis.
+            let at = element::At::widget(id, rect, scale, 0.0);
             let claim = element::with(host, ctx, at, |el, input| el.press((cx, cy), input))
                 .unwrap_or(Claim::Decline);
             if let Claim::Take(take) = claim {
@@ -206,11 +206,11 @@ impl Gestures {
                     return false;
                 }
                 // The press collapses the shared selection to the sample under
-                // it; the drag sweeps from there. On an axis that measures a
-                // value too (a roll's pitch), the sweep is a rectangle and the
-                // container's own elements inside it become its selection --
-                // but only when the press is on the body, since the strips
-                // under it (a velocity lane, a ruler) read the time axis alone.
+                // it; the drag sweeps from there. An element that sweeps a
+                // *rectangle* over that span -- a roll picking the notes inside
+                // it -- claims the press itself and asks for the selection
+                // (`Events::and_select`), so the container's plan is the plain
+                // time sweep it always was.
                 let anchor = interact::sample_at(
                     axis.nav.start,
                     axis.nav.len,
@@ -218,16 +218,6 @@ impl Gestures {
                     axis.body.w as f64,
                     cx,
                 );
-                let window = axis
-                    .y
-                    .filter(|_| axis.body.contains(cx, cy))
-                    .and_then(|y| y.window);
-                if window.is_some() {
-                    // A fresh sweep drops the set the previous one left.
-                    interact::clear_element_selection(host, def_id, id);
-                }
-                let value =
-                    window.map(|(lo, hi)| (lo, hi, interact::value_at(axis.body, lo, hi, cy)));
                 set_selection(host, out, def_id, id, anchor, anchor);
                 self.drag = Some(Drag::Select {
                     id,
@@ -235,7 +225,6 @@ impl Gestures {
                     nav_start: axis.nav.start,
                     nav_len: axis.nav.len,
                     anchor,
-                    value,
                 });
                 out.push(GestureEffect::Redraw(def_id));
                 true
@@ -287,7 +276,11 @@ impl Gestures {
             return false;
         };
         let grab = take.grab && grab();
-        self.drag = Some(Drag::Element { at, grab });
+        self.drag = Some(Drag::Element {
+            at,
+            grab,
+            edge: take.edge_scroll,
+        });
         element::report(host, out, ctx, at.id, take.events);
         out.push(GestureEffect::Redraw(ctx.def_id));
         true
@@ -326,11 +319,9 @@ impl Gestures {
                 id: h.id,
                 body: Some(body),
                 rect: h.rect,
+                indent: 0.0,
                 scale: 1.0,
-                time: Some(TimeSpace {
-                    view: h.local,
-                    span: h.dur,
-                }),
+                time: Some(TimeSpace::of(h.local, h.dur)),
             };
             if self.element_at(host, ctx, at, cx, cy, grab, out) {
                 return true;
@@ -355,7 +346,11 @@ impl Gestures {
         out: &mut Vec<GestureEffect>,
     ) -> bool {
         let Hit {
-            id, rect, scale, ..
+            id,
+            rect,
+            scale,
+            indent,
+            ..
         } = *hit;
         let (chain, kind) = (&hit.chain, hit.kind.clone());
         let def_id = ctx.def_id;
@@ -474,16 +469,6 @@ impl Gestures {
                     });
                 }
             }
-            WidgetKind::PianoRoll { .. } => {
-                let Some((_, axis)) = interact::time_of(chain) else {
-                    return false;
-                };
-                let Some(h) = interact::pianoroll_hit(host, def_id, (id, rect, axis), cx, cy)
-                else {
-                    return false;
-                };
-                self.pianoroll_press(host, out, ctx, id, &h, cx, cy);
-            }
             // A registered element gets the press on the live widget (the `kind`
             // matched above is the hit's copy), and answers the same way a
             // built-in arm does by hand: it consumed it, or it declines and the
@@ -494,7 +479,7 @@ impl Gestures {
                 return self.element_at(
                     host,
                     ctx,
-                    element::At::widget(id, rect, scale),
+                    element::At::widget(id, rect, scale, indent),
                     cx,
                     cy,
                     grab,
@@ -505,226 +490,5 @@ impl Gestures {
         }
         // Nothing the element wanted: the press goes back to the chain.
         self.drag.is_some() || out.len() > effects_before
-    }
-
-    /// Handles a plain (non-Shift) press on a `pianoroll`: start a note
-    /// move/resize (a **selected** note moves the whole selection), a velocity
-    /// drag (over a selected note, the whole selection's) or an OSC-marker
-    /// drag; Ctrl+click adds or removes a note/marker; Alt+click toggles a note
-    /// in/out of the multi-note selection; a press on empty grid drags the
-    /// marquee — the shared time selection restricted in pitch, which fills the
-    /// selected set.
-    #[allow(clippy::too_many_arguments)] // one press: a hit, the context, a cursor
-    fn pianoroll_press(
-        &mut self,
-        host: &mut Host,
-        out: &mut Vec<GestureEffect>,
-        ctx: &GestureCtx,
-        id: i32,
-        h: &interact::PianoRollHit,
-        cx: f64,
-        cy: f64,
-    ) {
-        let def_id = ctx.def_id;
-        let nav = View {
-            start: h.nav.start,
-            len: h.nav.len,
-        };
-        match h.region {
-            interact::PrRegion::Grid => {
-                // Alt+click toggles a note in/out of the multi-note selection
-                // (a non-rectangular selection, one note at a time).
-                if ctx.alt {
-                    if let Some(nh) = h.note {
-                        interact::pianoroll_state_edit(host, def_id, id, |_, sel| {
-                            pianoroll::toggle_selected(sel, nh.index);
-                        });
-                        out.push(GestureEffect::Redraw(def_id));
-                    }
-                    return;
-                }
-                if ctx.ctrl {
-                    match h.note {
-                        // Ctrl+click on a note removes it (the selection's
-                        // indices shift down past it).
-                        Some(nh) => {
-                            interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
-                                pianoroll::remove_note(notes, nh.index);
-                                *sel = pianoroll::selection_after_removal(sel, nh.index);
-                            });
-                        }
-                        // Ctrl+click on empty grid adds a note there, then drags
-                        // its end to set the length until release.
-                        None => {
-                            let time = interact::snap(
-                                pianoroll::time_at(h.grid, &nav, 0.0, cx as f32),
-                                h.snap,
-                            )
-                            .max(0.0);
-                            let pitch = pianoroll::y_to_pitch(cy as f32, h.lo, h.hi, h.grid)
-                                .round()
-                                .clamp(h.lo, h.hi);
-                            let dur = if h.snap > 0.0 {
-                                h.snap
-                            } else {
-                                (h.nav.len * 0.05).max(1.0)
-                            };
-                            let index = interact::pianoroll_notes_edit(host, def_id, id, |notes| {
-                                pianoroll::insert_note(
-                                    notes,
-                                    pianoroll::Note::new(time, dur, pitch),
-                                )
-                            });
-                            if let Some(index) = index {
-                                self.drag = Some(Drag::Note {
-                                    id,
-                                    index,
-                                    part: pianoroll::NotePart::End,
-                                    grid: h.grid,
-                                    nav_start: h.nav.start,
-                                    nav_len: h.nav.len,
-                                    lo: h.lo,
-                                    hi: h.hi,
-                                    press_time: time,
-                                    orig_start: time,
-                                    orig_dur: dur,
-                                    snap: h.snap,
-                                });
-                            }
-                        }
-                    }
-                    host.sync_track_totals();
-                    emit_notes(host, out, def_id, id);
-                    out.push(GestureEffect::Redraw(def_id));
-                    return;
-                }
-                // Move (body) or resize (edge) the note under the cursor.
-                // Grabbing the body of a **selected** note moves the whole
-                // selection rigidly; grabbing an unselected one drops the
-                // selection first (the single-note gesture, as before). Empty
-                // grid is nothing of the element's: the press goes back to the
-                // roll's own plan, whose plain drag sweeps the selection --
-                // the shared time span, restricted in pitch.
-                if let Some(nh) = h.note {
-                    let press_time = pianoroll::time_at(h.grid, &nav, 0.0, cx as f32);
-                    if nh.part == pianoroll::NotePart::Body {
-                        let orig =
-                            interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
-                                if !sel.contains(&nh.index) {
-                                    sel.clear();
-                                    return Vec::new();
-                                }
-                                // The grabbed note's snapshot leads (the
-                                // snap anchor).
-                                let mut idx = sel.clone();
-                                idx.retain(|&i| i != nh.index);
-                                idx.insert(0, nh.index);
-                                idx.iter()
-                                    .filter_map(|&i| notes.get(i).map(|n| (i, n.start, n.pitch)))
-                                    .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default();
-                        if !orig.is_empty() {
-                            let press_pitch = pianoroll::y_to_pitch(cy as f32, h.lo, h.hi, h.grid);
-                            self.drag = Some(Drag::NoteBlock {
-                                id,
-                                grid: h.grid,
-                                nav_start: h.nav.start,
-                                nav_len: h.nav.len,
-                                lo: h.lo,
-                                hi: h.hi,
-                                press_time,
-                                press_pitch,
-                                snap: h.snap,
-                                orig,
-                            });
-                            return;
-                        }
-                    }
-                    let (orig_start, orig_dur) =
-                        note_at(host, def_id, id, nh.index).unwrap_or((0.0, 0.0));
-                    self.drag = Some(Drag::Note {
-                        id,
-                        index: nh.index,
-                        part: nh.part,
-                        grid: h.grid,
-                        nav_start: h.nav.start,
-                        nav_len: h.nav.len,
-                        lo: h.lo,
-                        hi: h.hi,
-                        press_time,
-                        orig_start,
-                        orig_dur,
-                        snap: h.snap,
-                    });
-                }
-            }
-            interact::PrRegion::Velocity => {
-                if let Some(nh) = h.note {
-                    // Over a **selected** note the whole selection's velocities
-                    // nudge together (relative, from a press snapshot); over an
-                    // unselected one the single bar follows the cursor.
-                    let orig = interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
-                        if !sel.contains(&nh.index) {
-                            return Vec::new();
-                        }
-                        sel.iter()
-                            .filter_map(|&i| notes.get(i).map(|n| (i, n.velocity)))
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                    if !orig.is_empty() {
-                        let lane = h.region_rect;
-                        self.drag = Some(Drag::VelocityBlock {
-                            id,
-                            lane,
-                            press_velocity: pianoroll::velocity_at(lane, cy),
-                            orig,
-                        });
-                        return;
-                    }
-                    self.drag = Some(Drag::Velocity {
-                        id,
-                        index: nh.index,
-                        lane: h.region_rect,
-                    });
-                }
-            }
-            interact::PrRegion::Osc => {
-                if ctx.ctrl {
-                    match h.osc_index {
-                        Some(index) => {
-                            interact::pianoroll_osc_edit(host, def_id, id, |osc| {
-                                if index < osc.len() {
-                                    osc.remove(index);
-                                }
-                            });
-                        }
-                        None => {
-                            let time = interact::snap(
-                                pianoroll::time_at(h.grid, &nav, 0.0, cx as f32),
-                                h.snap,
-                            )
-                            .max(0.0);
-                            interact::pianoroll_osc_edit(host, def_id, id, |osc| {
-                                osc.push(pianoroll::OscMark { time, label: None });
-                            });
-                        }
-                    }
-                    host.sync_track_totals();
-                    emit_osc(host, out, def_id, id);
-                    out.push(GestureEffect::Redraw(def_id));
-                } else if let Some(index) = h.osc_index {
-                    self.drag = Some(Drag::OscMark {
-                        id,
-                        index,
-                        grid: h.grid,
-                        nav_start: h.nav.start,
-                        nav_len: h.nav.len,
-                        snap: h.snap,
-                    });
-                }
-            }
-        }
     }
 }

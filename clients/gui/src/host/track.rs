@@ -20,7 +20,6 @@ use super::layout::Rect;
 use super::meters::fraction;
 use super::metrics::Metrics;
 use super::paint::Draw;
-use super::pianoroll;
 use super::signal::{
     self,
     trace::{Trace, TraceStyle},
@@ -413,45 +412,11 @@ pub fn draw_clip_label(d: &mut Draw, cr: Rect, label: &str) {
 /// each body keeps its own value axis.
 pub fn draw_body_widget(d: &mut Draw, kind: &WidgetKind, cr: Rect, local: &View, dur: f64) {
     let (mesh, m, theme) = d.parts();
-    match kind {
-        WidgetKind::PianoRoll {
-            notes, min, max, ..
-        } => draw_piano_roll(&mut Draw::new(mesh, m, theme), cr, local, notes, *min, *max),
-        // Every leaf answers for itself; a widget that fills no body role
-        // draws nothing here.
-        WidgetKind::Custom(el) => el.draw_body(&mut Draw::new(mesh, m, theme), cr, local, dur),
-        _ => {}
+    // Every leaf answers for itself; a widget that fills no body role draws
+    // nothing here.
+    if let WidgetKind::Custom(el) = kind {
+        el.draw_body(&mut Draw::new(mesh, m, theme), cr, local, dur);
     }
-}
-
-/// Draws a clip's notes as a compact piano-roll inside `cr`: the clip body is
-/// the grid, its `[min, max]` the pitch window, and the notes ride the clip's
-/// own time axis (so the whole roll moves when the clip does). The geometry is
-/// the shared [`super::pianoroll::draw_notes`] primitive — the same one the
-/// dedicated `pianoroll` view draws with, so a clip's roll and the editor never
-/// disagree. The clip body uses only that one layer (no keyboard/lanes).
-fn draw_piano_roll(d: &mut Draw, cr: Rect, local: &View, notes: &[Note], min: f32, max: f32) {
-    let (mesh, m, theme) = d.parts();
-    if notes.is_empty() {
-        return;
-    }
-    // The compact pitch ruler: each C named at the clip's left edge (there is
-    // no keyboard gutter here), only when the rows are tall enough to read.
-    pianoroll::draw_pitch_labels(&mut Draw::new(mesh, m, theme), cr, min, max);
-    // The clip rect is both the note primitive's pixel domain and its clamp:
-    // note times are clip-local, so there is no offset to subtract any more.
-    pianoroll::draw_notes(
-        &mut Draw::new(mesh, m, theme),
-        cr,
-        cr,
-        local,
-        0.0,
-        notes,
-        min,
-        max,
-        false,
-        &[],
-    );
 }
 
 /// The **source** sample position an x pixel of a clip's body falls on: the
@@ -520,7 +485,6 @@ mod tests {
     use super::*;
     use crate::host::paint::Mesh;
     use crate::host::theme::Theme;
-    use crate::host::widget::EditorProps;
     use crate::waveform::WaveformData;
 
     fn lane() -> Rect {
@@ -808,26 +772,38 @@ mod tests {
     }
 
     fn roll_body(notes: Vec<Note>, min: f32, max: f32) -> WidgetKind {
-        WidgetKind::PianoRoll {
-            notes,
-            osc: Vec::new(),
-            selected: Vec::new(),
-            min,
-            max,
-            snap: 0.0,
-            velocity_lane: false,
-            osc_lane: false,
-            midi_in: false,
-            label: None,
-            editor: EditorProps::body(),
-        }
+        let mut props = serde_json::Map::new();
+        props.insert(
+            "notes".into(),
+            serde_json::Value::Array(
+                notes
+                    .iter()
+                    .flat_map(|n| {
+                        [
+                            serde_json::Value::from(n.start),
+                            serde_json::Value::from(n.dur),
+                            serde_json::Value::from(n.pitch),
+                            serde_json::Value::from(n.velocity),
+                            serde_json::Value::from(n.channel),
+                        ]
+                    })
+                    .collect(),
+            ),
+        );
+        props.insert("min".into(), serde_json::Value::from(min));
+        props.insert("max".into(), serde_json::Value::from(max));
+        // No notes at all is a clip that has none: the body it grows is the
+        // empty one, exactly as `clip_bodies` builds it.
+        WidgetKind::Custom(match super::super::elements::notes::body(&props) {
+            Some(roll) => Box::new(roll),
+            None => Box::new(super::super::elements::notes::empty_body()),
+        })
     }
 
     #[test]
     fn each_body_draws_only_what_it_is() {
-        // Two built-in bodies, two drawings, no precedence between them: a
-        // body draws its own data and nothing else's. (The curve is an
-        // element and draws itself -- see `elements::curve`.)
+        // Two bodies, two drawings, no precedence between them: a body draws
+        // its own data and nothing else's.
         let roll = body_mesh(
             &roll_body(vec![Note::new(0.0, 100.0, 60.0)], 48.0, 72.0),
             400.0,
@@ -866,14 +842,12 @@ mod tests {
         .expect("the props carry a curve");
         let input = Input {
             metrics: &m,
+            indent: 0.0,
             rect: cr,
             scale: 1.0,
             mods: Mods::default(),
             viewport: (lane_rect.w, lane_rect.h),
-            time: Some(TimeSpace {
-                view: local,
-                span: 200.0,
-            }),
+            time: Some(TimeSpace::of(local, 200.0)),
         };
 
         // The peak point (t=100, value=1 -> the top of the clip).
@@ -979,10 +953,7 @@ mod tests {
                 rect: cr,
                 indent: 0.0,
                 scale: 1.0,
-                time: Some(TimeSpace {
-                    view: local,
-                    span: 400.0,
-                }),
+                time: Some(TimeSpace::of(local, 400.0)),
                 clip: None,
                 focused: false,
             },

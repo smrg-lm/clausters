@@ -102,6 +102,7 @@ mod tests {
     fn input<'a>(m: &'a Metrics) -> Input<'a> {
         Input {
             metrics: m,
+            indent: 0.0,
             rect: Rect::new(0.0, 0.0, 60.0, 80.0),
             scale: 1.0,
             mods: Mods::default(),
@@ -118,7 +119,7 @@ mod tests {
         let m = Metrics::default();
         let mut k = from_props(&props(r#"{"value":0.5}"#));
         match k.press((30.0, 40.0), &input(&m)) {
-            Claim::Take(Take { events, grab }) => {
+            Claim::Take(Take { events, grab, .. }) => {
                 assert!(grab, "a knob wants the pointer");
                 assert!(events.is_empty(), "and reports nothing yet");
             }

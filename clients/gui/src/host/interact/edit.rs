@@ -5,9 +5,8 @@
 //! keeps a turned knob, a dragged break-point or a moved clip meaning the same
 //! thing natively and in a page. Two shapes recur: a setter that writes the
 //! value ([`clip_set`], [`header_set`]) and a
-//! `…_edit`/`…_curve` door that hands a closure the element's own model
-//! ([`pianoroll_notes_edit`]) so the fronts never
-//! unpack a [`WidgetKind`] variant themselves.
+//! `…_edit` door that hands a closure the element's own model, so the fronts
+//! never unpack a [`WidgetKind`] variant themselves.
 //!
 //! What a write *reports* is not here: the edit-back payloads live in
 //! [`read`](super::read), so the mutation and the message it produces stay
@@ -15,7 +14,7 @@
 
 use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
-use super::super::{Host, pianoroll, track};
+use super::super::{Host, track};
 use super::HeaderPart;
 use super::coords::CanvasAt;
 
@@ -246,73 +245,5 @@ pub(crate) fn clip_set(
         if let Some(d) = new_dur {
             *dur = d.max(0.0);
         }
-    }
-}
-
-/// Mutate a piano-roll's note list in the host tree (the drag's write path, the
-/// Returns `None` when the widget is gone or not a
-/// piano-roll.
-pub(crate) fn pianoroll_notes_edit<R>(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    f: impl FnOnce(&mut Vec<pianoroll::Note>) -> R,
-) -> Option<R> {
-    match host.widget_kind_mut(def_id, widget_id)? {
-        WidgetKind::PianoRoll { notes, .. } => Some(f(notes)),
-        _ => None,
-    }
-}
-
-/// Mutate a piano-roll's notes **and** its multi-note selection together (the
-/// block edits' write path: a marquee fills the selection, a block move/delete/
-/// velocity nudge reads it while rewriting the notes).
-pub(crate) fn pianoroll_state_edit<R>(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    f: impl FnOnce(&mut Vec<pianoroll::Note>, &mut Vec<usize>) -> R,
-) -> Option<R> {
-    match host.widget_kind_mut(def_id, widget_id)? {
-        WidgetKind::PianoRoll {
-            notes, selected, ..
-        } => Some(f(notes, selected)),
-        _ => None,
-    }
-}
-
-/// Drops the element selection a container holds — the multi-note set of a
-/// piano-roll today. The sweep's opening move: a new marquee starts from
-/// nothing.
-pub(crate) fn clear_element_selection(host: &mut Host, def_id: i32, id: i32) {
-    pianoroll_state_edit(host, def_id, id, |_, sel| sel.clear());
-}
-
-/// Selects the container's elements inside the swept rectangle — time along the
-/// shared axis, value along the vertical one. The container decides what an
-/// element is: a piano-roll's notes today, and whatever a timeline container
-/// places on its axis next.
-pub(crate) fn select_elements_in_rect(
-    host: &mut Host,
-    def_id: i32,
-    id: i32,
-    time: (f64, f64),
-    value: (f64, f64),
-) {
-    pianoroll_state_edit(host, def_id, id, |notes, sel| {
-        *sel = pianoroll::notes_in_rect(notes, time.0, time.1, value.0 as f32, value.1 as f32);
-    });
-}
-
-/// Mutate a piano-roll's OSC-event list in the host tree.
-pub(crate) fn pianoroll_osc_edit<R>(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    f: impl FnOnce(&mut Vec<pianoroll::OscMark>) -> R,
-) -> Option<R> {
-    match host.widget_kind_mut(def_id, widget_id)? {
-        WidgetKind::PianoRoll { osc, .. } => Some(f(osc)),
-        _ => None,
     }
 }

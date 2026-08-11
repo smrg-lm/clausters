@@ -33,6 +33,7 @@ mod label;
 mod menu;
 mod meter;
 mod nodes;
+pub(crate) mod notes;
 mod number;
 mod score;
 mod slider;
@@ -53,6 +54,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "meter" => meter::build,
         "menu" => menu::build,
         "nodes" => nodes::build,
+        "notes" => notes::build,
         "score" => score::build,
         // Every view of a signal is one element: the props say which point of
         // the product it is (`host::signal`), so one name answers for six.

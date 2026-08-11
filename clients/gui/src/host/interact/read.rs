@@ -4,7 +4,7 @@
 //! Two kinds of reader, and they are the same question asked at two moments.
 //! The live value a drag starts from ([`plane_can_pan`]) —
 //! and the **edit-back payload** a finished edit sends
-//! ([`clip_event_args`], [`notes_event_args`], …), each a
+//! ([`clip_event_args`], [`lane_event_args`], …), each a
 //! flat OSC list beginning with the tag that names what changed, so a script
 //! and a bound forward read the same message.
 //!
@@ -13,7 +13,6 @@
 
 use super::super::layout;
 use super::super::layout::Rect;
-use super::super::widget::element::BodyRole;
 use super::super::widget::{Axis, ScrollView, Widget, WidgetKind};
 use super::super::{Host, track};
 use clausters_core::osc::OscType;
@@ -86,38 +85,4 @@ pub(crate) fn clip_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
         ]),
         _ => None,
     }
-}
-
-/// A piano-roll's notes edit-back payload: the `"notes"` tag plus the flat
-/// quintuple list (`start dur pitch velocity channel` per note) — the wire form
-/// the `pianoroll` and `clip` share. A `/gui_event` carries it to the script; a
-/// bound editor forwards it (minus the tag) to the audio server.
-pub(crate) fn notes_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
-    let notes = match tree.find(id)?.kind_or_body(BodyRole::Notes)? {
-        WidgetKind::PianoRoll { notes, .. } => notes,
-        _ => return None,
-    };
-    let mut args = vec![OscType::String("notes".into())];
-    for n in notes {
-        args.push(OscType::Float(n.start as f32));
-        args.push(OscType::Float(n.dur as f32));
-        args.push(OscType::Float(n.pitch));
-        args.push(OscType::Int(n.velocity));
-        args.push(OscType::Int(n.channel));
-    }
-    Some(args)
-}
-
-/// A piano-roll's OSC-events edit-back payload: the `"osc"` tag plus the flat
-/// `time label` pairs (an empty string when a marker has no label).
-pub(crate) fn osc_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
-    let WidgetKind::PianoRoll { osc, .. } = &tree.find(id)?.kind else {
-        return None;
-    };
-    let mut args = vec![OscType::String("osc".into())];
-    for m in osc {
-        args.push(OscType::Float(m.time as f32));
-        args.push(OscType::String(m.label.clone().unwrap_or_default()));
-    }
-    Some(args)
 }

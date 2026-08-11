@@ -1038,7 +1038,9 @@ impl Host {
         // member applies group-wide (linked views).
         let mut is_timeline = false;
         let mut is_clip = false;
-        let mut is_roll = false;
+        // The extent an authored surface reaches before the props are applied,
+        // so a set that *wrote into* it can be told from one that did not.
+        let mut span_before = None;
         if let Some(root) = self.registry.root_of(id)
             && let Some(tree) = self.window_defs.get_mut(&root)
         {
@@ -1047,7 +1049,7 @@ impl Host {
             if let Some(widget) = tree.find_mut(id) {
                 is_timeline = widget.is_timeline();
                 is_clip = matches!(widget.kind, widget::WidgetKind::Clip { .. });
-                is_roll = matches!(widget.kind, widget::WidgetKind::PianoRoll { .. });
+                span_before = widget.kind.content_span();
                 for (k, v) in &props {
                     if !(is_timeline && timeline::is_timeline_key(k)) {
                         // The generic place props (`w`/`h`/`weight`/`x`/`y`)
@@ -1075,15 +1077,16 @@ impl Host {
             self.set_timeline_props(id, &props, effects);
         }
         // A content change moves the extent the shared axis spans, so it has to
-        // be re-registered: a moved or resized clip lengthens its lane, and a
-        // piano-roll's extent *is* its notes and OSC events. Without this a roll
-        // stays on the axis it was defined with, so everything written into an
-        // empty one lands outside the window -- the roll never shows what is
-        // painted into it. (The host's own MIDI painting already re-registers;
-        // see `gui::midi`.)
+        // be re-registered: a moved or resized clip lengthens its lane, and an
+        // **authored** surface's extent *is* what has been written into it.
+        // Without this a roll stays on the axis it was defined with, so
+        // everything painted into an empty one lands outside the window.
+        let span_after = self
+            .widget_kind(self.registry.root_of(id).unwrap_or(id), id)
+            .and_then(|k| k.content_span());
         if is_clip {
             self.sync_track_totals();
-        } else if is_roll && keys.iter().any(|k| matches!(k.as_str(), "notes" | "osc")) {
+        } else if span_after.is_some() && span_after != span_before {
             // Keeping the window, not refitting it: a roll is *written into*, a
             // note at a time, so a take that grows must scroll under a still
             // axis rather than zoom it out from under the notes just drawn --
@@ -1308,6 +1311,25 @@ impl Host {
     /// It is the host's because only the host has a leg to the audio server;
     /// *when* to sound is the element's, and arrives as a
     /// [`Voice`](widget::element::Voice) beside what it reported.
+    /// Delivers a live MIDI note to the element `widget_id`, returning the
+    /// message arguments it reported (empty when it consumed the note
+    /// silently, `None` when it is not an element or reads no MIDI).
+    ///
+    /// The one door the native front's input port goes through, so what a note
+    /// does to a picture stays the element's.
+    pub fn element_midi(
+        &mut self,
+        def_id: i32,
+        widget_id: i32,
+        note: widget::element::MidiNote,
+        playhead: Option<f64>,
+    ) -> Option<Vec<Vec<clausters_core::osc::OscType>>> {
+        let widget::WidgetKind::Custom(el) = self.widget_kind_mut(def_id, widget_id)? else {
+            return None;
+        };
+        Some(el.midi(note, playhead)?.into_messages())
+    }
+
     pub fn voice_on(&mut self, def_id: i32, widget_id: i32, pitch: i32, velocity: i32) {
         let Some(spec) = self
             .window_def(def_id)

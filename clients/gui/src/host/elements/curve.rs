@@ -294,6 +294,7 @@ mod tests {
     fn input<'a>(m: &'a Metrics, rect: Rect, time: Option<TimeSpace>) -> Input<'a> {
         Input {
             metrics: m,
+            indent: 0.0,
             rect,
             scale: 1.0,
             mods: Mods::default(),
@@ -355,13 +356,13 @@ mod tests {
         // it hands down is what maps time to pixels — here the second half of
         // the clip, so the same last point sits at the same right edge.
         let mut c = ramp();
-        let time = Some(TimeSpace {
-            view: View {
+        let time = Some(TimeSpace::of(
+            View {
                 start: 50.0,
                 len: 50.0,
             },
-            span: 100.0,
-        });
+            100.0,
+        ));
         let at = (rect.w as f64, rect.y as f64);
         assert!(matches!(
             c.press(at, &input(&m, rect, time)),
@@ -495,10 +496,7 @@ mod tests {
                 rect,
                 indent: 0.0,
                 scale: 1.0,
-                time: Some(TimeSpace {
-                    view: View::full(100),
-                    span: 100.0,
-                }),
+                time: Some(TimeSpace::of(View::full(100), 100.0)),
                 clip: None,
                 focused: false,
             },

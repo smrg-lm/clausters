@@ -14,14 +14,10 @@
 //! focus. That order is what lets a field swallow `q` while a piano-roll behind
 //! it still quantizes on the same key when nothing is focused.
 
-use crate::viewport::View;
-
 use super::super::Host;
 use super::super::interact::Hit;
-use super::super::widget::WidgetKind;
 use super::super::widget::element::{Key, KeyInput, Mods};
-use super::super::{interact, pianoroll};
-use super::effects::{emit_notes, emit_view, redraw_all};
+use super::effects::{emit_view, redraw_all};
 use super::nav::{freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
 use super::{GestureCtx, GestureEffect, Gestures, element, focus};
 
@@ -55,10 +51,10 @@ impl Gestures {
             return None;
         }
         let placed = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h)?;
-        let (rect, scale) = placed
+        let (rect, scale, indent) = placed
             .iter()
             .find(|p| p.widget.id == Some(id))
-            .map(|p| (p.rect, p.scale))?;
+            .map(|p| (p.rect, p.scale, p.indent))?;
         let mut input = KeyInput {
             mods: Mods {
                 shift: ctx.shift,
@@ -67,7 +63,7 @@ impl Gestures {
             },
             clipboard,
         };
-        let at = element::At::widget(id, rect, scale);
+        let at = element::At::widget(id, rect, scale, indent);
         let events = element::with(host, ctx, at, |el, _| el.key(&key, &mut input)).flatten()?;
         let mut out = Vec::new();
         // The element consumed it, so the window repaints whether or not
@@ -77,166 +73,47 @@ impl Gestures {
         Some(out)
     }
 
-    /// `q` over a piano-roll: quantize the selected notes' onsets (all of them
-    /// when nothing is selected) to the widget's `snap` grid — the same grid a
-    /// drag snaps to. Durations are kept; a roll with no grid is left alone.
-    /// (The client-side counterpart, in beats over the model, is the Python
-    /// `Timeline.quantize` — the standalone host cannot reach it, hence both.)
-    pub fn quantize(
-        &mut self,
+    /// A key the focus did not answer, offered to the **element under the
+    /// cursor** — the other addressee, and the reason a field can swallow `q`
+    /// while a roll behind it keeps quantizing on the same key.
+    ///
+    /// It is the same call [`key`](Self::key) makes, at a different address:
+    /// what an element does with a key is the element's, and the machine only
+    /// decides *who* is asked. Returns `Some` when it was consumed, so the
+    /// front runs its own shortcuts only on what nothing wanted.
+    pub fn key_at_cursor(
+        &self,
         host: &mut Host,
         ctx: &GestureCtx,
+        key: Key,
         cx: f64,
         cy: f64,
-    ) -> Vec<GestureEffect> {
-        let mut out = Vec::new();
-        let def_id = ctx.def_id;
-        let Some(Hit {
-            id,
-            kind: WidgetKind::PianoRoll { snap, .. },
-            ..
-        }) = hit(host, ctx, cx, cy)
-        else {
-            return out;
-        };
-        let moved = interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
-            pianoroll::quantize_notes(notes, sel, snap)
-        })
-        .unwrap_or(false);
-        if moved {
-            host.sync_track_totals();
-            emit_notes(host, &mut out, def_id, id);
-            out.push(GestureEffect::Redraw(def_id));
-        }
-        out
-    }
-
-    /// Ctrl+C / Ctrl+X over a piano-roll: copy the selected notes to the
-    /// host-wide `clipboard`, normalized to the block's first onset (a cut also
-    /// removes them) — host-wide so a block travels between rolls and windows.
-    /// A no-op when the cursor is elsewhere or nothing is selected.
-    pub fn copy_selected(
-        &mut self,
-        host: &mut Host,
-        ctx: &GestureCtx,
-        cx: f64,
-        cy: f64,
-        cut: bool,
-        clipboard: &mut Vec<pianoroll::Note>,
-    ) -> Vec<GestureEffect> {
-        let mut out = Vec::new();
-        let def_id = ctx.def_id;
-        let Some(Hit {
-            id,
-            kind: WidgetKind::PianoRoll { .. },
-            ..
-        }) = hit(host, ctx, cx, cy)
-        else {
-            return out;
-        };
-        let copied = interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
-            let clip = pianoroll::copy_notes(notes, sel);
-            if cut && !clip.is_empty() {
-                pianoroll::remove_notes(notes, sel);
-                sel.clear();
-            }
-            clip
-        })
-        .unwrap_or_default();
-        if copied.is_empty() {
-            return out;
-        }
-        *clipboard = copied;
-        if cut {
-            host.sync_track_totals();
-            emit_notes(host, &mut out, def_id, id);
-            out.push(GestureEffect::Redraw(def_id));
-        }
-        out
-    }
-
-    /// Ctrl+V over a piano-roll: paste the clipboard with its first onset at
-    /// the cursor's time (snapped to the note grid), original pitches and
-    /// spread kept. The pasted block becomes the new selection, ready to drag
-    /// into place.
-    pub fn paste_at_cursor(
-        &mut self,
-        host: &mut Host,
-        ctx: &GestureCtx,
-        cx: f64,
-        cy: f64,
-        clipboard: &[pianoroll::Note],
-    ) -> Vec<GestureEffect> {
-        let mut out = Vec::new();
-        let def_id = ctx.def_id;
-        if clipboard.is_empty() {
-            return out;
-        }
-        let Some(Hit {
+        clipboard: &mut String,
+    ) -> Option<Vec<GestureEffect>> {
+        let Hit {
             id,
             rect,
-            kind: WidgetKind::PianoRoll { .. },
-            chain,
+            scale,
+            indent,
             ..
-        }) = hit(host, ctx, cx, cy)
-        else {
-            return out;
+        } = hit(host, ctx, cx, cy)?;
+        let mut input = KeyInput {
+            mods: Mods {
+                shift: ctx.shift,
+                ctrl: ctx.ctrl,
+                alt: ctx.alt,
+            },
+            clipboard,
         };
-        let Some((_, axis)) = interact::time_of(&chain) else {
-            return out;
-        };
-        let Some(h) = interact::pianoroll_hit(host, def_id, (id, rect, axis), cx, cy) else {
-            return out;
-        };
-        let nav = View {
-            start: h.nav.start,
-            len: h.nav.len,
-        };
-        let at = interact::snap(pianoroll::time_at(h.grid, &nav, 0.0, cx as f32), h.snap);
-        interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
-            *sel = pianoroll::paste_notes(notes, clipboard, at);
-        });
-        host.sync_track_totals();
-        emit_notes(host, &mut out, def_id, id);
-        out.push(GestureEffect::Redraw(def_id));
-        out
-    }
-
-    /// Delete/Backspace: remove every selected note of the piano-roll under the
-    /// cursor — the block delete (Ctrl+click removes one). A no-op when the
-    /// cursor is elsewhere or nothing is selected.
-    pub fn delete_selected(
-        &mut self,
-        host: &mut Host,
-        ctx: &GestureCtx,
-        cx: f64,
-        cy: f64,
-    ) -> Vec<GestureEffect> {
+        let at = element::At::widget(id, rect, scale, indent);
+        let events = element::with(host, ctx, at, |el, _| el.key(&key, &mut input)).flatten()?;
         let mut out = Vec::new();
-        let def_id = ctx.def_id;
-        let Some(Hit {
-            id,
-            kind: WidgetKind::PianoRoll { .. },
-            ..
-        }) = hit(host, ctx, cx, cy)
-        else {
-            return out;
-        };
-        let removed = interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
-            if sel.is_empty() {
-                return false;
-            }
-            pianoroll::remove_notes(notes, sel);
-            sel.clear();
-            true
-        })
-        .unwrap_or(false);
-        if removed {
-            host.sync_track_totals();
-            emit_notes(host, &mut out, def_id, id);
-            out.push(GestureEffect::Redraw(def_id));
-        }
-        out
+        element::report(host, &mut out, ctx, id, events);
+        // A content edit moves the extent the shared axis spans, and the window
+        // repaints whether or not anything was reported.
+        host.sync_track_totals_keeping_view();
+        out.push(GestureEffect::Redraw(ctx.def_id));
+        Some(out)
     }
 
     /// `R` over a window: reset every navigable view's axes — a timeline's

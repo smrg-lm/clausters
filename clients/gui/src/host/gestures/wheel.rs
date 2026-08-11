@@ -47,6 +47,7 @@ impl Gestures {
             rect,
             kind,
             chain,
+            indent,
             scale: found_scale,
         } = found;
         // **An element with a wheel of its own wins over the container it sits
@@ -54,7 +55,7 @@ impl Gestures {
         // — a picture it owns is what the reader pointed at. `None` back means
         // it has none, and the container gets its turn below.
         if let WidgetKind::Custom(_) = kind {
-            let at = element::At::widget(id, rect, found_scale);
+            let at = element::At::widget(id, rect, found_scale, indent);
             let reported = element::with(host, ctx, at, |el, input| {
                 el.wheel((cx, cy), (0.0, steps), input)
             })

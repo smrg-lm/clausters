@@ -40,6 +40,7 @@ use crate::viewport::View;
 
 use super::layout::Rect;
 use super::metrics::Metrics;
+use super::widget::element::TimeSpace;
 use super::widget::{EditorProps, Widget};
 use super::{Host, HostEffect};
 
@@ -256,6 +257,29 @@ impl TimelineGroups {
     pub fn total_of(&self, id: i32) -> usize {
         self.totals.get(&id).copied().unwrap_or(0)
     }
+
+    /// **The axis widget `id` was placed on**, as the coordinate system an
+    /// element is handed ([`TimeSpace`]): the group's window, this member's own
+    /// registered extent on it, the shared selection, and — for a caller that
+    /// has the engine `clock` — where the playhead stands.
+    ///
+    /// One function, called by the frame when it draws an element and by the
+    /// machine when it drags one, so a note is grabbed by the pixels it was
+    /// painted on and a drag follows an axis that pans under it.
+    pub(crate) fn space_of(
+        &self,
+        id: i32,
+        link: Option<i32>,
+        clock: Option<f64>,
+    ) -> Option<TimeSpace> {
+        let state = self.state(group_key(id, link))?;
+        Some(TimeSpace {
+            view: state.nav,
+            span: self.total_of(id) as f64,
+            sel: state.selection(),
+            head: clock.and_then(|c| state.head_at(c)),
+        })
+    }
 }
 
 /// One timeline widget in some window: where it lives, which group it is in,
@@ -379,14 +403,14 @@ impl Host {
         (rate * Self::EMPTY_BEATS / tempo).ceil() as usize
     }
 
-    /// The `(sample_rate, tempo)` grid of the first `pianoroll` in group `key`,
-    /// if it holds one — the surface whose axis exists before its content.
+    /// The `(sample_rate, tempo)` grid of the first **authored** surface in
+    /// group `key` — one whose content it holds itself rather than loading,
+    /// which is the surface whose axis exists before anything is on it.
     fn roll_grid(&self, key: GroupKey) -> Option<(f64, f64)> {
         self.window_defs.values().find_map(|tree| {
             tree.descendants().find_map(|w| {
                 let editor = w.kind.editor()?;
-                (matches!(w.kind, super::widget::WidgetKind::PianoRoll { .. })
-                    && group_key(w.id?, editor.link) == key)
+                (w.kind.content_span().is_some() && group_key(w.id?, editor.link) == key)
                     .then_some((editor.sample_rate, editor.tempo))
             })
         })
@@ -509,17 +533,13 @@ impl Host {
     }
 
     fn sync_track_totals_inner(&mut self, refit: bool) {
-        /// A surface's own extent in samples: a lane spans its clips, a roll
-        /// spans its material (the end of its last note and its last event).
+        /// A surface's own extent in samples: a lane spans its clips, and an
+        /// element that holds its own content says how far it reaches
+        /// ([`Element::content_span`](super::widget::Element::content_span)).
         fn extent(widget: &Widget) -> Option<(i32, usize)> {
-            let span = match (&widget.id?, &widget.kind) {
-                (_, super::widget::WidgetKind::Track { .. }) => super::track::clips_span(widget),
-                (_, super::widget::WidgetKind::PianoRoll { notes, osc, .. }) => {
-                    let notes = notes.iter().map(|n| n.start + n.dur);
-                    let events = osc.iter().map(|m| m.time);
-                    notes.chain(events).fold(0.0f64, f64::max)
-                }
-                _ => return None,
+            let span = match &widget.kind {
+                super::widget::WidgetKind::Track { .. } => super::track::clips_span(widget),
+                kind => kind.content_span()?,
             };
             Some((widget.id?, span.ceil().max(0.0) as usize))
         }

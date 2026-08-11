@@ -26,8 +26,8 @@
 mod draw;
 mod items;
 
-pub(crate) use draw::ruler_strip_body;
 use draw::*;
+pub(crate) use draw::{draw_time_ruler, ruler_strip_body};
 use items::*;
 
 use std::collections::HashMap;
@@ -52,7 +52,7 @@ use super::timeline::{GroupState, group_key};
 use super::widget::element::{Ctx, Loaded, SlotFill, SlotFrame, TimeSpace};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
-use super::{font, meters, patch, pianoroll, track};
+use super::{font, meters, patch, track};
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
 pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {

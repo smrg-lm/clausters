@@ -60,8 +60,8 @@ impl App {
             let Some(ws) = self.windows.get_mut(&def_id) else {
                 continue;
             };
-            let cx = ws.cursor.0;
-            let effects = ws.gestures.tick(&mut self.host, &ctx, cx, dt);
+            let (cx, cy) = ws.cursor;
+            let effects = ws.gestures.tick(&mut self.host, &ctx, cx, cy, dt);
             self.apply_gesture_effects(effects);
         }
     }
@@ -182,56 +182,30 @@ impl App {
         true
     }
 
-    pub(super) fn quantize_roll(&mut self, def_id: i32) {
+    /// Routes a key the focus did not answer to the element **under the
+    /// cursor** — the block operations of a view, addressed where the pointer
+    /// already is. Returns whether it was consumed.
+    pub(super) fn key_at_cursor(&mut self, def_id: i32, key: HostKey) -> bool {
         let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
-            return;
+            return false;
         };
         let ctx = self.gesture_ctx(def_id);
         let Some(ws) = self.windows.get_mut(&def_id) else {
-            return;
+            return false;
         };
-        let effects = ws.gestures.quantize(&mut self.host, &ctx, cx, cy);
+        let effects = match ws.gestures.key_at_cursor(
+            &mut self.host,
+            &ctx,
+            key,
+            cx,
+            cy,
+            &mut self.text_clipboard,
+        ) {
+            Some(effects) => effects,
+            None => return false,
+        };
         self.apply_gesture_effects(effects);
-    }
-
-    pub(super) fn copy_selected_notes(&mut self, def_id: i32, cut: bool) {
-        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
-            return;
-        };
-        let ctx = self.gesture_ctx(def_id);
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return;
-        };
-        let effects =
-            ws.gestures
-                .copy_selected(&mut self.host, &ctx, cx, cy, cut, &mut self.clipboard);
-        self.apply_gesture_effects(effects);
-    }
-
-    pub(super) fn paste_notes_at_cursor(&mut self, def_id: i32) {
-        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
-            return;
-        };
-        let ctx = self.gesture_ctx(def_id);
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return;
-        };
-        let effects = ws
-            .gestures
-            .paste_at_cursor(&mut self.host, &ctx, cx, cy, &self.clipboard);
-        self.apply_gesture_effects(effects);
-    }
-
-    pub(super) fn delete_selected_notes(&mut self, def_id: i32) {
-        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
-            return;
-        };
-        let ctx = self.gesture_ctx(def_id);
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return;
-        };
-        let effects = ws.gestures.delete_selected(&mut self.host, &ctx, cx, cy);
-        self.apply_gesture_effects(effects);
+        true
     }
 
     pub(super) fn reset_timelines(&mut self, def_id: i32) {

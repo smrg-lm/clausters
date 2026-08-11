@@ -43,7 +43,6 @@ use clausters_core::osc::OscType;
 
 use super::interact::{self};
 use super::layout::Rect;
-use super::pianoroll;
 use super::widget::WidgetKind;
 
 /// What a gesture asks of the front: everything the machine cannot do itself
@@ -133,8 +132,14 @@ enum Drag {
     /// which body of which container, the placement the press was measured
     /// against, the axis it was placed on) and whether the front granted a
     /// pointer grab, which decides whether motion arrives as a position or as a
-    /// delta.
-    Element { at: element::At, grab: bool },
+    /// delta — plus whether it asked for the axis under it to keep scrolling
+    /// while the cursor is held past an edge, which is the group's to pan and
+    /// not the element's ([`Take::edge_scroll`](super::widget::element::Take::edge_scroll)).
+    Element {
+        at: element::At,
+        grab: bool,
+        edge: bool,
+    },
     /// Panning a timeline view's (waveform/spectrogram) window from a snapshot
     /// (Shift+drag).
     Pan {
@@ -147,16 +152,16 @@ enum Drag {
     /// under the press, and the selection spans from it to the cursor's sample.
     /// On an axis that measures a **value** as well (a piano-roll's pitch,
     /// `value` carrying its window and the value under the press) the sweep is
-    /// a rectangle: the time span still drives the shared selection every
-    /// linked view follows, and the elements inside the rectangle become the
-    /// container's own selection.
+    /// the shared selection every linked view follows. An element that sweeps
+    /// a *rectangle* over that span — a roll picking the notes inside it —
+    /// takes the press itself and asks for the selection, so this stays the
+    /// container's plain time sweep.
     Select {
         id: i32,
         body: Rect,
         nav_start: f64,
         nav_len: f64,
         anchor: f64,
-        value: Option<(f64, f64, f64)>,
     },
     /// Panning a timeline view's **vertical** display window from a drag on
     /// its y-ruler strip: `y_start` is the window snapshot at the press,
@@ -236,64 +241,6 @@ enum Drag {
     /// Dragging a lane header's level fader: the cursor's x over the fader's
     /// rectangle is the value, so the press itself already sets it.
     LaneLevel { id: i32, rect: Rect },
-    /// Dragging a piano-roll note: the body moves it in time and pitch, an edge
-    /// resizes its duration. The cursor maps to a region-relative time through
-    /// the grid and the shared `nav`, and to a pitch through the visible window
-    /// `[lo, hi]`; a press-time snapshot (`press_time`, `orig_*`) keeps a clamped
-    /// edge from drifting, snapped to `grid`.
-    Note {
-        id: i32,
-        index: usize,
-        part: pianoroll::NotePart,
-        grid: Rect,
-        nav_start: f64,
-        nav_len: f64,
-        lo: f32,
-        hi: f32,
-        press_time: f64,
-        orig_start: f64,
-        orig_dur: f64,
-        snap: f64,
-    },
-    /// Dragging a note's velocity bar in the velocity lane: the velocity follows
-    /// the cursor's height within `lane`.
-    Velocity { id: i32, index: usize, lane: Rect },
-    /// Dragging an OSC-event marker along the time axis (its `time` follows the
-    /// cursor through the grid's shared `nav`, snapped to `grid`).
-    OscMark {
-        id: i32,
-        index: usize,
-        grid: Rect,
-        nav_start: f64,
-        nav_len: f64,
-        snap: f64,
-    },
-    /// Dragging a **selected** note moves the whole selection rigidly in time
-    /// and pitch. `orig` is the `(index, start, pitch)` snapshot at press time
-    /// — the grabbed note's entry leads it (the snap anchor) — so a clamped
-    /// block never drifts.
-    NoteBlock {
-        id: i32,
-        grid: Rect,
-        nav_start: f64,
-        nav_len: f64,
-        lo: f32,
-        hi: f32,
-        press_time: f64,
-        press_pitch: f32,
-        snap: f64,
-        orig: Vec<(usize, f64, f32)>,
-    },
-    /// Dragging the velocity lane over a **selected** note nudges every selected
-    /// velocity by the same delta (relative, from the `(index, velocity)` press
-    /// snapshot — each note saturates on its own).
-    VelocityBlock {
-        id: i32,
-        lane: Rect,
-        /// The lane velocity under the press (the delta's zero).
-        press_velocity: i32,
-        orig: Vec<(usize, i32)>,
-    },
     /// Panning a `scroll` workspace from a press on its empty area: the view
     /// follows the cursor absolutely from the press snapshot (`x0`/`y0`), so a
     /// clamped edge never drifts. `area` is the container's laid-out rect at
@@ -349,21 +296,30 @@ impl Gestures {
         matches!(self.drag, Some(Drag::Element { grab: true, .. }))
     }
 
-    /// Whether a clip drag is currently held against a lane's edge, so the
-    /// front must keep ticking ([`Self::tick`]) even though the pointer is
-    /// standing still — a held cursor produces no events, and the view has to
-    /// keep moving under it.
+    /// Whether a drag is currently held against the edge of the axis it is on,
+    /// so the front must keep ticking ([`Self::tick`]) even though the pointer
+    /// is standing still — a held cursor produces no events, and the view has
+    /// to keep moving under it.
     pub fn edge_scrolling(&self, cx: f64) -> bool {
         self.edge_direction(cx) != 0.0
     }
 
-    /// Which way a clip drag at `cx` pulls the view: `-1` past the left edge,
-    /// `+1` past the right, `0` when the cursor is clear of both margins (or no
-    /// clip drag is in flight). The margin reaches *outside* the body too, so a
-    /// cursor pinned at the window's own edge keeps scrolling.
+    /// Which way the drag at `cx` pulls the view: `-1` past the left edge, `+1`
+    /// past the right, `0` when the cursor is clear of both margins (or no
+    /// scrolling drag is in flight). The margin reaches *outside* the body too,
+    /// so a cursor pinned at the window's own edge keeps scrolling.
+    ///
+    /// The two drags that ask for it name their body differently — a clip's is
+    /// the lane's, an element's is its own rect past the group's gutter — and
+    /// the arithmetic after that is one.
     fn edge_direction(&self, cx: f64) -> f64 {
-        let Some(Drag::Clip { body_x, body_w, .. }) = self.drag else {
-            return 0.0;
+        let (body_x, body_w) = match self.drag {
+            Some(Drag::Clip { body_x, body_w, .. }) => (body_x, body_w),
+            Some(Drag::Element { at, edge: true, .. }) => (
+                (at.rect.x + at.indent) as f64,
+                (at.rect.w - at.indent).max(0.0) as f64,
+            ),
+            _ => return 0.0,
         };
         if body_w <= 2.0 * EDGE_MARGIN {
             return 0.0;

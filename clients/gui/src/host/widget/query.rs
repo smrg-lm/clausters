@@ -51,15 +51,14 @@ impl Widget {
         self.signal().is_some_and(SignalElement::navigates_time)
     }
 
-    /// Whether this widget navigates the window's shared time axis: a navigable
-    /// signal element, or one of the containers placed on that axis.
+    /// Whether this widget navigates the window's shared time axis: an element
+    /// that says it does ([`Element::navigates_time`](super::Element::navigates_time)),
+    /// or one of the containers placed on that axis.
     pub fn is_timeline(&self) -> bool {
-        self.is_nav_signal()
+        self.kind.navigates_time()
             || matches!(
                 self.kind,
-                WidgetKind::Track { .. }
-                    | WidgetKind::PianoRoll { .. }
-                    | WidgetKind::TimeRuler { .. }
+                WidgetKind::Track { .. } | WidgetKind::TimeRuler { .. }
             )
     }
 
@@ -116,7 +115,6 @@ impl WidgetKind {
     /// be one.
     pub fn body_role(&self) -> Option<BodyRole> {
         match self {
-            WidgetKind::PianoRoll { .. } => Some(BodyRole::Notes),
             WidgetKind::Custom(el) => el.body_role(),
             _ => None,
         }
@@ -231,16 +229,6 @@ impl WidgetKind {
                 .chain(header.solo.map(|b| ("solo".into(), Value::from(b))))
                 .chain(header.level.map(|v| ("level".into(), Value::from(v))))
                 .collect(),
-            WidgetKind::PianoRoll { notes, osc, .. } => vec![
-                (
-                    "notes".into(),
-                    Value::from(super::super::pianoroll::notes_json(notes).to_string()),
-                ),
-                (
-                    "osc".into(),
-                    Value::from(super::super::pianoroll::osc_json(osc).to_string()),
-                ),
-            ],
             WidgetKind::Scroll { view, .. } => view.info(),
             _ => Vec::new(),
         }
@@ -291,9 +279,39 @@ impl WidgetKind {
     pub fn gutter(&self, m: &super::super::metrics::Metrics) -> f32 {
         match self {
             WidgetKind::Track { header, .. } => header.width(m),
-            WidgetKind::PianoRoll { .. } => super::super::pianoroll::KEYBOARD_W,
             WidgetKind::Custom(el) => el.gutter(m),
             _ => 0.0,
+        }
+    }
+
+    /// [`axis_body`](super::Element::axis_body) of an element, or `None` for a
+    /// container (whose body is the container's own geometry).
+    pub fn axis_body(
+        &self,
+        rect: super::super::layout::Rect,
+        indent: f32,
+        m: &super::super::metrics::Metrics,
+    ) -> Option<(super::super::layout::Rect, bool)> {
+        match self {
+            WidgetKind::Custom(el) => el.axis_body(rect, indent, m),
+            _ => None,
+        }
+    }
+
+    /// [`content_span`](super::Element::content_span) of an element.
+    pub fn content_span(&self) -> Option<f64> {
+        match self {
+            WidgetKind::Custom(el) => el.content_span(),
+            _ => None,
+        }
+    }
+
+    /// Whether this widget navigates the window's shared time axis
+    /// ([`Element::navigates_time`](super::Element::navigates_time)).
+    pub fn navigates_time(&self) -> bool {
+        match self {
+            WidgetKind::Custom(el) => el.navigates_time(),
+            _ => false,
         }
     }
 
@@ -361,9 +379,7 @@ impl WidgetKind {
     pub fn editor(&self) -> Option<&EditorProps> {
         match self {
             WidgetKind::Custom(el) => el.editor(),
-            WidgetKind::Track { editor, .. }
-            | WidgetKind::PianoRoll { editor, .. }
-            | WidgetKind::TimeRuler { editor, .. } => Some(editor),
+            WidgetKind::Track { editor, .. } | WidgetKind::TimeRuler { editor, .. } => Some(editor),
             _ => None,
         }
     }
@@ -373,9 +389,7 @@ impl WidgetKind {
     pub fn editor_mut(&mut self) -> Option<&mut EditorProps> {
         match self {
             WidgetKind::Custom(el) => el.editor_mut(),
-            WidgetKind::Track { editor, .. }
-            | WidgetKind::PianoRoll { editor, .. }
-            | WidgetKind::TimeRuler { editor, .. } => Some(editor),
+            WidgetKind::Track { editor, .. } | WidgetKind::TimeRuler { editor, .. } => Some(editor),
             _ => None,
         }
     }
@@ -531,17 +545,6 @@ impl Widget {
             .position(|c| c.kind.body_role() > Some(role))
             .unwrap_or(self.children.len());
         self.children.insert(at, build::body_widget(kind));
-    }
-
-    /// This widget's own kind when it fills `role`, else the body filling it
-    /// among its children. The reader's half of the routing `apply_widget`
-    /// does for writes: an edit-back payload asks the widget it was addressed
-    /// to, and a clip answers with the body that owns the data.
-    pub(crate) fn kind_or_body(&self, role: BodyRole) -> Option<&WidgetKind> {
-        if self.kind.body_role() == Some(role) {
-            return Some(&self.kind);
-        }
-        self.clip_body(role)
     }
 
     /// The body filling `role` among a clip's children.

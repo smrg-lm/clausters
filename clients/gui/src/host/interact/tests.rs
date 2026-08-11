@@ -8,6 +8,7 @@ use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
 use super::super::{ClientId, GUI_DEF, Host, pianoroll, track};
 use super::coords::clip_part;
+use super::coords::snap;
 use super::*;
 use crate::viewport::View;
 
@@ -256,13 +257,15 @@ fn pianoroll_host() -> Host {
     host
 }
 
+/// **An element says where the shared axis lies inside it.** A roll's is its
+/// note grid, not its rectangle minus the chrome: the velocity and event
+/// strips are stacked *under* the grid and read the same time, and the keyboard
+/// gutter is a vertical surface whatever `ruler_y` says. The hit-test has to
+/// place the axis exactly where the drawing did, so it asks the leaf.
 #[test]
-fn pianoroll_hit_finds_a_note_and_the_edit_reports_it() {
+fn the_axis_of_a_roll_is_the_grid_it_draws_its_notes_in() {
     let host = pianoroll_host();
     let (fb_w, fb_h) = (800u32, 400u32);
-    // Reconstruct the grid the renderer draws (the default time ruler on, no
-    // osc lane, velocity on) so the test aims at real pixels, then hit MIDI
-    // 60's row center.
     let tree = host.window_def(1).unwrap();
     let rect = layout::layout(
         Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32),
@@ -270,7 +273,7 @@ fn pianoroll_hit_finds_a_note_and_the_edit_reports_it() {
         host.metrics_for(1),
     )
     .into_iter()
-    .find(|p| matches!(p.widget.kind, WidgetKind::PianoRoll { .. }))
+    .find(|p| p.widget.id == Some(5))
     .unwrap()
     .rect;
     let r = pianoroll::regions(
@@ -283,57 +286,16 @@ fn pianoroll_hit_finds_a_note_and_the_edit_reports_it() {
     );
     let cy = pianoroll::pitch_to_y(60.0, 48.0, 72.0, r.grid) as f64;
     let cx = (r.grid.x + r.grid.w * 0.5) as f64;
-
-    // The roll's own time axis, off the hit's chain — the grid it draws
-    // through, which is what the note hit-test measures against.
-    let axis = |x: f64, y: f64| {
-        let h = hit(&host, 1, fb_w, fb_h, x, y, &mono).unwrap();
-        let (id, axis) = time_of(&h.chain).unwrap();
-        assert_eq!((id, axis.body), (5, r.grid), "the roll is its own axis");
-        axis
-    };
-
-    let h = pianoroll_hit(&host, 1, (5, rect, axis(cx, cy)), cx, cy).unwrap();
-    assert_eq!(h.region, PrRegion::Grid);
-    assert_eq!(h.note.unwrap().index, 0);
-    // A press in the velocity lane picks the note under it (its bar sits at
-    // the note's start, x ~ grid.x).
-    let vy = (r.velocity.y + r.velocity.h * 0.5) as f64;
-    let vx = (r.grid.x + 1.0) as f64;
-    let hv = pianoroll_hit(&host, 1, (5, rect, axis(vx, vy)), vx, vy).unwrap();
-    assert_eq!(hv.region, PrRegion::Velocity);
-    assert_eq!(hv.note.unwrap().index, 0);
-}
-
-#[test]
-fn pianoroll_edit_back_reports_the_notes_as_quintuples() {
-    let mut host = pianoroll_host();
-    pianoroll_notes_edit(&mut host, 1, 5, |notes| {
-        pianoroll::set_velocity(notes, 0, 42)
-    });
-    let tree = host.window_def(1).unwrap();
-    let args = notes_event_args(tree, 5).unwrap();
-    assert_eq!(args[0], OscType::String("notes".into()));
-    assert_eq!(args.len(), 6); // the tag + one quintuple
-    assert_eq!(args[3], OscType::Float(60.0)); // pitch
-    assert_eq!(args[4], OscType::Int(42)); // the velocity we set
-    assert_eq!(args[5], OscType::Int(0)); // channel
-}
-
-#[test]
-fn pianoroll_osc_edit_adds_and_reports_a_marker() {
-    let mut host = pianoroll_host();
-    pianoroll_osc_edit(&mut host, 1, 5, |osc| {
-        osc.push(pianoroll::OscMark {
-            time: 500.0,
-            label: Some("/cue".into()),
-        });
-    });
-    let tree = host.window_def(1).unwrap();
-    let args = osc_event_args(tree, 5).unwrap();
-    assert_eq!(args[0], OscType::String("osc".into()));
-    assert_eq!(args[1], OscType::Float(500.0));
-    assert_eq!(args[2], OscType::String("/cue".into()));
+    let h = hit(&host, 1, fb_w, fb_h, cx, cy, &mono).unwrap();
+    let (id, axis) = time_of(&h.chain).unwrap();
+    assert_eq!((id, axis.body), (5, r.grid), "the roll is its own axis");
+    // ...and the band left of the grid is its vertical surface, which is what a
+    // wheel over the keyboard navigates.
+    let y = axis.y.expect("a roll always offers a pitch axis");
+    assert_eq!(y.strip.w, r.grid.x - rect.x);
+    // The strips under the grid are on the same axis: a press there reads a
+    // time, which is why they are not part of the body.
+    assert!(axis.spans(cx));
 }
 
 /// A window (id 1) with a directed patch (id 7): a source and a sink,

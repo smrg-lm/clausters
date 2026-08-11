@@ -49,16 +49,11 @@ pub(crate) use super::track::HeaderPart;
 
 pub(crate) use coords::{
     CanvasAt, ClipPart, Coords, Frame, Hit, clip_drag_placement, local_time_of, plane_of,
-    sample_at, snap, time_of, value_at,
+    sample_at, time_of,
 };
 pub(crate) use edit::{
-    clear_element_selection, clip_set, graph_cord, graph_marquee, graph_move, graph_select,
-    header_set, lane_resize, pianoroll_notes_edit, pianoroll_osc_edit, pianoroll_state_edit,
-    scroll_set_view, select_elements_in_rect,
+    clip_set, graph_cord, graph_marquee, graph_move, graph_select, header_set, lane_resize,
+    scroll_set_view,
 };
-pub(crate) use hit::{
-    ClipHit, PianoRollHit, PrRegion, clip_hit, header_hit, hit, pianoroll_hit, sole_time_axis,
-};
-pub(crate) use read::{
-    clip_event_args, lane_event_args, notes_event_args, osc_event_args, plane_can_pan,
-};
+pub(crate) use hit::{ClipHit, clip_hit, header_hit, hit, sole_time_axis};
+pub(crate) use read::{clip_event_args, lane_event_args, plane_can_pan};

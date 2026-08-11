@@ -116,25 +116,6 @@ pub(super) fn emit_clip(
     emit_read(host, out, def_id, widget_id, interact::clip_event_args);
 }
 
-/// Plays or releases one `piano` key: updates the held-key view state, drives
-/// the host-managed voice when the widget is in voice mode, and delivers the
-/// MIDI-shaped `"note" pitch velocity state channel` payload — to the audio
-/// server when the piano is bound, to the script as a `/gui_event` otherwise.
-/// Delivers a piano-roll's edited notes (`"notes" start dur pitch vel ch …`).
-pub(super) fn emit_notes(
-    host: &mut Host,
-    out: &mut Vec<GestureEffect>,
-    def_id: i32,
-    widget_id: i32,
-) {
-    emit_read(host, out, def_id, widget_id, interact::notes_event_args);
-}
-
-/// Delivers a piano-roll's edited OSC events (`"osc" time label …`).
-pub(super) fn emit_osc(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
-    emit_read(host, out, def_id, widget_id, interact::osc_event_args);
-}
-
 /// Repaints every window in `roots` (the windows a group mutation touched).
 pub(super) fn redraw_all(out: &mut Vec<GestureEffect>, roots: &[i32]) {
     for root in roots {

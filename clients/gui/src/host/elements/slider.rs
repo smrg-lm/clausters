@@ -124,6 +124,7 @@ mod tests {
     fn input<'a>(m: &'a Metrics, rect: crate::host::layout::Rect) -> Input<'a> {
         Input {
             metrics: m,
+            indent: 0.0,
             rect,
             scale: 1.0,
             mods: Mods::default(),

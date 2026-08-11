@@ -13,30 +13,54 @@
 
 use clausters_core::osc::OscType;
 
+use super::super::Host;
 use super::super::interact::{self};
 use super::super::widget::{Axis, WidgetKind};
-use super::super::{Host, pianoroll};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element};
 
 impl Gestures {
-    /// Advances an edge-held clip drag by `dt` seconds: pans the group's window
-    /// in the held direction and re-applies the drag at the standing cursor, so
-    /// the clip travels with the view.
+    /// Advances an edge-held drag by `dt` seconds: pans the group's window in
+    /// the held direction and re-applies the drag at the standing cursor, so
+    /// what is being dragged travels with the view.
     ///
-    /// This is what lets a clip be moved further than one window's worth. The
-    /// drag itself maps the cursor through the *current* window, so panning is
-    /// the whole mechanism — nothing here touches the placement math.
+    /// This is what lets a clip — or a note — be moved further than one
+    /// window's worth. The drag itself maps the cursor through the *current*
+    /// window, so panning is the whole mechanism: nothing here touches the
+    /// placement math, and an element that asked for this reads its axis from
+    /// [`Input::time`](crate::host::widget::element::Input::time) each step for
+    /// exactly the same reason.
     pub fn tick(
         &mut self,
         host: &mut Host,
         ctx: &GestureCtx,
         cx: f64,
+        cy: f64,
         dt: f64,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let dir = self.edge_direction(cx);
+        if dir == 0.0 || dt <= 0.0 {
+            return out;
+        }
+        // An element's edge scroll is the pan plus an ordinary drag step: the
+        // element mutates itself against the window it is left with, which is
+        // the same mechanism the clip's arm below spells out by hand because a
+        // clip is a container and keeps its own drag.
+        if let Some(Drag::Element { at, edge: true, .. }) = self.drag {
+            let Some((start, len, _)) = group_view(host, at.id) else {
+                return out;
+            };
+            let roots = host.pan_timeline(at.id, start + dir * len * EDGE_SCROLL_PER_SEC * dt);
+            redraw_all(&mut out, &roots);
+            emit_view(host, &mut out, ctx.def_id, at.id);
+            let events = element::with(host, ctx, at, |el, input| el.drag((cx, cy), input));
+            if let Some(events) = events {
+                element::report(host, &mut out, ctx, at.id, events);
+            }
+            return out;
+        }
         let Some(Drag::Clip {
             id,
             lane,
@@ -53,9 +77,6 @@ impl Gestures {
         else {
             return out;
         };
-        if dir == 0.0 || dt <= 0.0 {
-            return out;
-        }
         let Some((start, len, _)) = group_view(host, lane) else {
             return out;
         };
@@ -234,7 +255,6 @@ impl Gestures {
                 nav_start,
                 nav_len,
                 anchor,
-                value,
             } => {
                 // Against the group's **current** window (the press-time one is
                 // the fallback for a view that is in no group): the axis may
@@ -244,17 +264,6 @@ impl Gestures {
                     group_view(host, id).map_or((nav_start, nav_len), |(s, l, _)| (s, l));
                 let cur = interact::sample_at(start, len, body.x as f64, body.w as f64, cx);
                 set_selection(host, &mut out, def_id, id, anchor, cur);
-                if let Some((lo, hi, anchor_value)) = value {
-                    let v = interact::value_at(body, lo, hi, cy);
-                    interact::select_elements_in_rect(
-                        host,
-                        def_id,
-                        id,
-                        (anchor, cur),
-                        (anchor_value, v),
-                    );
-                    out.push(GestureEffect::Redraw(def_id));
-                }
             }
             Drag::Clip {
                 id,
@@ -295,120 +304,6 @@ impl Gestures {
                 emit_lane(host, &mut out, def_id, id, part);
                 out.push(GestureEffect::Redraw(def_id));
             }
-            Drag::Note {
-                id,
-                index,
-                part,
-                grid,
-                nav_start,
-                nav_len,
-                lo,
-                hi,
-                press_time,
-                orig_start,
-                orig_dur,
-                snap,
-            } => {
-                // Map the cursor to a region-relative time and (for a body move)
-                // a pitch; a press-time snapshot keeps a clamped edge from
-                // drifting, snapped to the note grid.
-                let time =
-                    interact::sample_at(nav_start, nav_len, grid.x as f64, grid.w as f64, cx);
-                interact::pianoroll_notes_edit(host, def_id, id, |notes| match part {
-                    pianoroll::NotePart::Body => {
-                        let delta = time - press_time;
-                        let new_start = interact::snap(orig_start + delta, snap);
-                        let pitch = pianoroll::y_to_pitch(cy as f32, lo, hi, grid);
-                        pianoroll::move_note(notes, index, new_start, pitch, lo, hi);
-                        // The duration is preserved by move_note; re-assert it in
-                        // case a prior edit changed it under a running drag.
-                        if let Some(n) = notes.get_mut(index) {
-                            n.dur = orig_dur;
-                        }
-                    }
-                    other => {
-                        pianoroll::resize_note(
-                            notes,
-                            index,
-                            other,
-                            interact::snap(time, snap),
-                            1.0,
-                        );
-                    }
-                });
-                host.sync_track_totals();
-                emit_notes(host, &mut out, def_id, id);
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            Drag::Velocity { id, index, lane } => {
-                let vel = pianoroll::velocity_at(lane, cy);
-                interact::pianoroll_notes_edit(host, def_id, id, |notes| {
-                    pianoroll::set_velocity(notes, index, vel);
-                });
-                emit_notes(host, &mut out, def_id, id);
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            Drag::OscMark {
-                id,
-                index,
-                grid,
-                nav_start,
-                nav_len,
-                snap,
-            } => {
-                let time =
-                    interact::sample_at(nav_start, nav_len, grid.x as f64, grid.w as f64, cx);
-                interact::pianoroll_osc_edit(host, def_id, id, |osc| {
-                    if let Some(m) = osc.get_mut(index) {
-                        m.time = interact::snap(time, snap).max(0.0);
-                    }
-                });
-                host.sync_track_totals();
-                emit_osc(host, &mut out, def_id, id);
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            Drag::NoteBlock {
-                id,
-                grid,
-                nav_start,
-                nav_len,
-                lo,
-                hi,
-                press_time,
-                press_pitch,
-                snap,
-                orig,
-            } => {
-                // The block move: the grabbed note (the leading snapshot entry)
-                // snaps to the note grid, and the whole selection moves rigidly
-                // by that delta — the core clamps it as one.
-                let time =
-                    interact::sample_at(nav_start, nav_len, grid.x as f64, grid.w as f64, cx);
-                let dt = match orig.first() {
-                    Some((_, s0, _)) => interact::snap(s0 + (time - press_time), snap) - s0,
-                    None => 0.0,
-                };
-                let dp = pianoroll::y_to_pitch(cy as f32, lo, hi, grid) - press_pitch;
-                interact::pianoroll_notes_edit(host, def_id, id, |notes| {
-                    pianoroll::move_notes_from(notes, &orig, dt, dp, lo, hi);
-                });
-                host.sync_track_totals();
-                emit_notes(host, &mut out, def_id, id);
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            Drag::VelocityBlock {
-                id,
-                lane,
-                press_velocity,
-                orig,
-            } => {
-                let dv = pianoroll::velocity_at(lane, cy) - press_velocity;
-                interact::pianoroll_notes_edit(host, def_id, id, |notes| {
-                    pianoroll::nudge_velocities_from(notes, &orig, dv);
-                });
-                emit_notes(host, &mut out, def_id, id);
-                out.push(GestureEffect::Redraw(def_id));
-            }
         }
         out
     }
@@ -426,7 +321,7 @@ impl Gestures {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
         match self.drag.take() {
-            Some(Drag::Element { at, grab }) => {
+            Some(Drag::Element { at, grab, .. }) => {
                 // What the drag *delivers*, as against what it showed along the
                 // way. The grab is the front's to undo, whatever came back.
                 let events = element::with(host, ctx, at, |el, input| el.release((cx, cy), input));
@@ -523,7 +418,7 @@ impl Gestures {
         dy: f64,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
-        if let Some(Drag::Element { at, grab: true }) = self.drag {
+        if let Some(Drag::Element { at, grab: true, .. }) = self.drag {
             let events = element::with(host, ctx, at, |el, input| {
                 el.drag_relative((0.0, dy), input)
             });

@@ -30,19 +30,30 @@ pub(super) struct At {
     /// Which body of that widget, or `None` for the widget itself.
     pub body: Option<BodyRole>,
     pub rect: Rect,
+    /// Where the shared axis begins inside `rect` (see [`Input::indent`]).
+    pub indent: f32,
     pub scale: f32,
-    /// The container's axis, when it placed the element on one.
+    /// The **container's** axis, for a body — a clip's own span, resolved by
+    /// the container that offered the press.
+    ///
+    /// A widget addressed directly carries none: its axis is its *navigation
+    /// group's*, which is looked up per call ([`with`]) rather than
+    /// snapshotted, because the group's window moves under a drag — a note
+    /// held past the edge of a lane is dragged against an axis that is
+    /// scrolling.
     pub time: Option<TimeSpace>,
 }
 
 impl At {
-    /// A widget addressed directly, on no container's axis — every element
-    /// outside a clip.
-    pub(super) fn widget(id: i32, rect: Rect, scale: f32) -> Self {
+    /// A widget addressed directly, on no *container's* axis — every element
+    /// outside a clip. `indent` is where its navigation group starts its body
+    /// inside `rect`, `0.0` for an element on no shared axis.
+    pub(super) fn widget(id: i32, rect: Rect, scale: f32, indent: f32) -> Self {
         Self {
             id,
             body: None,
             rect,
+            indent,
             scale,
             time: None,
         }
@@ -58,10 +69,12 @@ pub(super) fn input<'a>(
     metrics: &'a super::super::metrics::Metrics,
     ctx: &GestureCtx,
     at: At,
+    time: Option<TimeSpace>,
 ) -> Input<'a> {
     Input {
         metrics,
         rect: at.rect,
+        indent: at.indent,
         scale: at.scale,
         mods: Mods {
             shift: ctx.shift,
@@ -69,8 +82,22 @@ pub(super) fn input<'a>(
             alt: ctx.alt,
         },
         viewport: (ctx.fb_w as f32, ctx.fb_h as f32),
-        time: at.time,
+        time,
     }
+}
+
+/// The coordinate system this address stands on: a container's axis for a body
+/// (the press resolved it), else the widget's own **navigation group** looked
+/// up now.
+///
+/// The playhead is deliberately absent — the engine clock is the front's, and
+/// no gesture is decided by where the line is (see [`TimeSpace::head`]).
+fn time_of(host: &Host, ctx: &GestureCtx, at: At) -> Option<TimeSpace> {
+    if at.body.is_some() {
+        return at.time;
+    }
+    let link = host.widget_kind(ctx.def_id, at.id)?.editor()?.link;
+    host.timelines().space_of(at.id, link, None)
 }
 
 /// Runs `f` on the element `at` addresses, with the [`Input`] its placement
@@ -84,7 +111,8 @@ pub(super) fn with<R>(
     f: impl FnOnce(&mut dyn Element, &Input) -> R,
 ) -> Option<R> {
     let metrics = host.metrics_for(ctx.def_id).at(at.scale);
-    let input = input(&metrics, ctx, at);
+    let time = time_of(host, ctx, at);
+    let input = input(&metrics, ctx, at, time);
     let widget = host.window_def_mut(ctx.def_id)?.find_mut(at.id)?;
     let kind = match at.body {
         Some(role) => widget.clip_body_mut(role)?,
@@ -120,7 +148,13 @@ pub(super) fn report(
             host.voice_off(id, voice.pitch);
         }
     }
-    let voiced = !events.voices().is_empty();
+    // ...then the container's selection, if the element asked for it: a
+    // marquee sweeping a roll moves the axis' shared selection, which every
+    // linked view follows and no element can reach.
+    let selected = events.selection().inspect(|&(a, b)| {
+        super::nav::set_selection(host, out, ctx.def_id, id, a, b);
+    });
+    let voiced = !events.voices().is_empty() || selected.is_some();
     let messages = events.into_messages();
     if messages.is_empty() {
         if voiced {

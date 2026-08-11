@@ -926,11 +926,9 @@ fn a_sweep_on_the_roll_selects_the_time_span_and_the_notes_inside_it() {
     host.set_timeline_total(90, 10000);
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 400);
-    let (grid, lo, hi) = {
+    let grid = {
         let h = interact::hit(&host, 1, 800, 400, 400.0, 100.0, &|_, _| 1).unwrap();
-        let axis = interact::time_of(&h.chain).unwrap().1;
-        let (lo, hi) = axis.y.unwrap().window.unwrap();
-        (axis.body, lo, hi)
+        interact::time_of(&h.chain).unwrap().1.body
     };
     // Sweep the first tenth of the axis, over every pitch the window shows.
     let x0 = grid.x as f64 + 1.0;
@@ -949,16 +947,21 @@ fn a_sweep_on_the_roll_selects_the_time_span_and_the_notes_inside_it() {
     assert_eq!(
         selected_notes(&host, 90),
         vec![0],
-        "only the note inside the swept rectangle ({lo}..{hi})"
+        "only the note inside the swept rectangle"
     );
 }
 
-/// The multi-note selection of a `pianoroll`.
+/// The multi-note selection of a roll — view state no query reports, reached
+/// through the element's own `as_any` door, which is what it is for.
 fn selected_notes(host: &Host, id: i32) -> Vec<usize> {
-    match &host.window_def(1).unwrap().find(id).unwrap().kind {
-        WidgetKind::PianoRoll { selected, .. } => selected.clone(),
-        other => panic!("not a roll: {other:?}"),
-    }
+    let WidgetKind::Custom(el) = &host.window_def(1).unwrap().find(id).unwrap().kind else {
+        panic!("not an element")
+    };
+    el.as_any()
+        .and_then(|a| a.downcast_ref::<crate::host::elements::notes::Notes>())
+        .expect("a roll")
+        .selected()
+        .to_vec()
 }
 
 /// The table is the container's, and the wire can set it: a waveform told
@@ -1357,7 +1360,7 @@ fn a_clip_dragged_to_the_edge_pulls_the_view_along() {
     // Now hold there: every tick pans the view and carries the clip.
     let mut effects = Vec::new();
     for _ in 0..10 {
-        effects = g.tick(&mut host, &ctx, 790.0, 1.0 / 30.0);
+        effects = g.tick(&mut host, &ctx, 790.0, 0.0, 1.0 / 30.0);
     }
     let (after, _) = host.timeline_nav(70).unwrap();
     assert!(
@@ -1378,14 +1381,14 @@ fn a_clip_dragged_to_the_edge_pulls_the_view_along() {
 
     // A cursor clear of the margins scrolls nothing.
     let (held, _) = host.timeline_nav(70).unwrap();
-    let idle = g.tick(&mut host, &ctx, 400.0, 1.0 / 30.0);
+    let idle = g.tick(&mut host, &ctx, 400.0, 0.0, 1.0 / 30.0);
     assert_eq!(host.timeline_nav(70).unwrap().0.start, held.start);
     assert!(idle.is_empty());
 
     // And the scroll stops with the drag.
     g.release(&mut host, &ctx, 790.0, 100.0);
     let (dropped, _) = host.timeline_nav(70).unwrap();
-    g.tick(&mut host, &ctx, 790.0, 1.0 / 30.0);
+    g.tick(&mut host, &ctx, 790.0, 0.0, 1.0 / 30.0);
     assert_eq!(host.timeline_nav(70).unwrap().0.start, dropped.start);
 }
 
@@ -1413,7 +1416,7 @@ fn dragging_from_the_full_view_scrolls_instead_of_zooming_out() {
     assert!(g.dragging(), "the press grabbed the far clip");
     g.drag_to(&mut host, &ctx, 790.0, 100.0);
     for _ in 0..20 {
-        g.tick(&mut host, &ctx, 790.0, 1.0 / 30.0);
+        g.tick(&mut host, &ctx, 790.0, 0.0, 1.0 / 30.0);
     }
     let (after, grown) = host.timeline_nav(70).unwrap();
     assert!(grown > total, "the content grew with the clip");
@@ -1449,13 +1452,13 @@ fn the_left_edge_scrolls_back_and_stops_at_the_origin() {
     g.press(&mut host, &ctx, 400.0, 100.0, &mut || false);
     g.drag_to(&mut host, &ctx, 10.0, 100.0);
     for _ in 0..10 {
-        g.tick(&mut host, &ctx, 10.0, 1.0 / 30.0);
+        g.tick(&mut host, &ctx, 10.0, 0.0, 1.0 / 30.0);
     }
     let (after, _) = host.timeline_nav(70).unwrap();
     assert!(after.start < before.start, "the window walked back");
     // Keep holding: it parks at the origin instead of running negative.
     for _ in 0..2000 {
-        g.tick(&mut host, &ctx, 10.0, 1.0 / 30.0);
+        g.tick(&mut host, &ctx, 10.0, 0.0, 1.0 / 30.0);
     }
     assert_eq!(host.timeline_nav(70).unwrap().0.start, 0.0);
     assert!(

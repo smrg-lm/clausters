@@ -90,26 +90,6 @@ pub(super) struct SpectralBodyItem {
     pub(super) colormap: i32,
 }
 
-pub(super) struct PianoRollItem {
-    pub(super) id: i32,
-    pub(super) rect: Rect,
-    /// Where this member's group starts its body inside `rect`
-    /// ([`layout::Placed::indent`]).
-    pub(super) indent: f32,
-    pub(super) clip: Option<Rect>,
-    pub(super) theme: Option<Arc<Theme>>,
-    pub(super) notes: Vec<pianoroll::Note>,
-    pub(super) osc: Vec<pianoroll::OscMark>,
-    /// The multi-note selection (note indices), drawn highlighted.
-    pub(super) selected: Vec<usize>,
-    pub(super) min: f32,
-    pub(super) max: f32,
-    pub(super) velocity_lane: bool,
-    pub(super) osc_lane: bool,
-    pub(super) label: Option<String>,
-    pub(super) editor: EditorProps,
-}
-
 /// Which timeline view a placed editor-grade widget is, with its display props.
 pub(super) enum TimelineKind {
     Waveform {
@@ -164,7 +144,6 @@ pub(super) struct Collected {
     pub(super) clip_bodies: Vec<ClipBodyItem>,
     pub(super) spectral_bodies: Vec<SpectralBodyItem>,
     pub(super) ruler_items: Vec<RulerItem>,
-    pub(super) pianoroll_items: Vec<PianoRollItem>,
     pub(super) canvas_frames: Vec<CanvasFrame>,
 }
 
@@ -188,7 +167,6 @@ pub(super) fn collect_widgets(
     let mut clip_bodies: Vec<ClipBodyItem> = Vec::new();
     let mut spectral_bodies: Vec<SpectralBodyItem> = Vec::new();
     let mut ruler_items: Vec<RulerItem> = Vec::new();
-    let mut pianoroll_items: Vec<PianoRollItem> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
     for p in placed {
         // Everything a scrolled widget paints clips to its container's area.
@@ -281,37 +259,6 @@ pub(super) fn collect_widgets(
                     label: label.clone(),
                 });
             }
-            WidgetKind::PianoRoll {
-                notes,
-                osc,
-                selected,
-                min,
-                max,
-                velocity_lane,
-                osc_lane,
-                label,
-                editor,
-                ..
-            } => {
-                if let Some(id) = p.widget.id {
-                    pianoroll_items.push(PianoRollItem {
-                        id,
-                        rect: p.rect,
-                        indent: p.indent,
-                        clip: p.clip,
-                        theme: p.widget.theme.clone(),
-                        notes: notes.clone(),
-                        osc: osc.clone(),
-                        selected: selected.clone(),
-                        min: *min,
-                        max: *max,
-                        velocity_lane: *velocity_lane,
-                        osc_lane: *osc_lane,
-                        label: label.clone(),
-                        editor: editor.clone(),
-                    });
-                }
-            }
             WidgetKind::Patch {
                 patch,
                 selected,
@@ -352,7 +299,18 @@ pub(super) fn collect_widgets(
                     indent: p.indent,
                     scale: p.scale,
                     clip: p.clip,
-                    time: None,
+                    // The axis this element was **placed on**, when it is a
+                    // member of a navigation group: the group's window, its
+                    // shared selection and where its playhead stands. A leaf
+                    // that draws on that axis reads it here rather than being
+                    // handed a picture of it, which is what makes one element
+                    // both a standalone view and a lane's content.
+                    time: p.widget.id.zip(p.widget.kind.editor()).and_then(|(id, e)| {
+                        inputs
+                            .world
+                            .timelines
+                            .space_of(id, e.link, Some(inputs.world.sample_clock))
+                    }),
                     focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
                 };
                 el.draw(&mut Draw::new(mesh, m, th), &ctx);
@@ -418,7 +376,6 @@ pub(super) fn collect_widgets(
         clip_bodies,
         spectral_bodies,
         ruler_items,
-        pianoroll_items,
         canvas_frames,
     }
 }
