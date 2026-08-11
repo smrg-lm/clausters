@@ -3,8 +3,15 @@
 
 Every text-bearing light widget -- ``label``, ``button``, ``toggle``, ``text``,
 ``number``, ``menu`` and the control labels on ``slider``/``knob`` -- takes a
-``text_size``: a glyph scale over the host's embedded 5x7 bitmap font, whose
-default 2.0 is exactly the size everything drew at before the prop existed.
+``text_size``: a glyph scale over the host's embedded bitmap font, whose default
+2.0 is exactly the size everything drew at before the prop existed.
+
+The face writes **both cases** and the **Latin-1** letters, so a label, a track
+name or a file path in Spanish, French or German reads as written. Its cell is 5
+columns by a 7-row body -- the height a line reserves -- and a diacritic draws
+above that body while a descender draws below it, which is why an accented line
+needs no more room than an unaccented one.
+
 ``label`` additionally takes:
 
 - ``wrap=True`` -- word wrap on the font's fixed advance (a cheap width
@@ -37,11 +44,17 @@ import sys
 import time
 
 from clausters.gui import (GuiHost, button, knob, label, menu, panel, slider,
-                           toggle, window)
+                           text, toggle, window)
 
 LOREM = ("a wrapped label lays its words out on the font's fixed advance, "
          "drops the lines that overflow its rect, and aligns each line "
          "start, center or end")
+
+# The face, spelled out: both cases, then the accented letters a Latin-1 label
+# actually reaches for. Read the descenders (g j p q y) hanging under the body
+# box and the marks sitting over it.
+ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ / abcdefghijklmnopqrstuvwxyz / 0123456789"
+ACCENTED = "canción, año, ¿qué? ¡olé! Ñandú Ángel  ---  crème brûlée, Grüße, mañana"
 
 
 # %% [markdown]
@@ -65,6 +78,18 @@ def alignments() -> dict:
                  layout="row")
 
 
+def alphabet() -> dict:
+    """What the face carries, at the size the chrome is drawn at."""
+    return panel(label(ALPHABET),
+                 label(ACCENTED),
+                 # The same string in a field you can type into: the caret and
+                 # the selection measure by the cell, so an accent costs no
+                 # width and a descender no height.
+                 text(name="field", value="una canción, un año, ¡qué más!",
+                      label="editable"),
+                 layout="col", h=140.0)
+
+
 def controls() -> dict:
     """The controls at two text sizes, with labels long enough to clip."""
     return panel(slider(label="a deliberately long slider label", value=0.4),
@@ -82,9 +107,10 @@ def controls() -> dict:
 gui = GuiHost().boot()
 win = gui.open(window(
     label(name="title", text="title", text_size=3.0, align="center", h=40.0),
-    sizes(), alignments(), controls(),
-    title="Text", w=980, h=680, layout="col"))
-print("one window: sizes, wrapped alignments, and clipped controls")
+    sizes(), alphabet(), alignments(), controls(),
+    title="Text", w=980, h=820, layout="col"))
+print("one window: sizes, the face's own alphabet, wrapped alignments, "
+      "and clipped controls")
 
 # %% [markdown]
 # ## The props are live
@@ -98,7 +124,7 @@ win["center"].set(align="end")
 # %% [markdown]
 # ## Drive it
 # Cell-run: set the named widgets from the cell above. Script-run: replay the
-# timed changes once, pumping for the window-close in between.
+# timed changes once and then hold the window open until you close it.
 
 # %%
 _closed = False
@@ -109,13 +135,20 @@ CHANGES = [
     (3.0, "title", {"text": "TEXT_SIZE IS LIVE", "text_size": 4.0}),
     (6.0, "center", {"align": "start"}),
     (9.0, "center", {"align": "end"}),
+    (12.0, "field", {"value": "el título cambió: ¿seguís ahí?"}),
 ]
 
 
-def run(seconds: float) -> None:
+def run(seconds: float | None = None) -> None:
+    """Replay the timed changes, then keep pumping.
+
+    ``seconds`` bounds the run from a cell; script-run it is ``None`` and the
+    loop ends when **you** close the window -- the text is here to be read, and
+    a window that times out is a manual test you cannot finish.
+    """
     start = time.monotonic()
     pending = list(CHANGES)
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         gui.pump(timeout=0.1)
         while pending and time.monotonic() - start > pending[0][0]:
             _, name, props = pending.pop(0)
@@ -126,7 +159,7 @@ def run(seconds: float) -> None:
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(30.0)
+        run()
     finally:
         gui.close(win)
     sys.exit(0)

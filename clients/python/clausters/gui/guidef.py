@@ -487,7 +487,7 @@ def label(text: str = "", *, text_size: float | None = None, wrap: bool | None =
           ) -> dict:
     """Static ``label`` text, passed positionally: ``label("hello")``.
 
-    ``text_size`` is the glyph scale over the host's embedded 5x7 font
+    ``text_size`` is the glyph scale over the host's embedded bitmap font
     (default 2.0 — every text-bearing widget takes it). ``wrap=True``
     word-wraps the text to the label's width; off, a single line that
     overflows clips with an ellipsis. ``align`` places each line in the rect:

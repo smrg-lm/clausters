@@ -447,7 +447,7 @@ pub fn field(
     let text_x = body.x + m.pad;
     let text_w = (body.w - 2.0 * m.pad).max(0.0);
     let cols = font::fit_chars(text_w, size);
-    let cell = font::width(" ", size); // one glyph cell advance in device px
+    let cell = font::advance(size); // one glyph cell advance in device px
     // Unfocused: lay out around a caret at the start (no scroll, no caret drawn).
     let lay = caret.unwrap_or_default();
 
@@ -572,7 +572,7 @@ pub fn caret_at(
     let text_x = body.x + m.pad;
     let text_w = (body.w - 2.0 * m.pad).max(0.0);
     let cols = font::fit_chars(text_w, size);
-    let cell = font::width(" ", size).max(1.0);
+    let cell = font::advance(size).max(1.0);
     let col_at = |lx: f64| (((lx as f32 - text_x) / cell).round().max(0.0)) as usize;
     let caret_col = textedit::line_col(value, current.pos).1;
 

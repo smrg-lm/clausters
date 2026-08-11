@@ -12,8 +12,8 @@
 //! them, so one number serves every widget that means the same thing by it.
 //!
 //! **The defaults are generated, not invented.** [`Metrics::generated`] is one
-//! quantized modular scale over the font cell ([`CELL`]: `font::GLYPH_H` at
-//! `font::DEFAULT_SIZE`, 14 px — not a round decimal, because every readable
+//! quantized modular scale over the font cell ([`CELL`], 14 logical px — not
+//! a round decimal, because every readable
 //! widget is text plus padding and the cell is what makes a button, a number
 //! field and a menu line up unaided). Spacings and extents land on a 2-px
 //! grid, hairlines on whole pixels, text scales on half-steps of the bitmap
@@ -45,21 +45,25 @@
 
 use super::font;
 
-/// The base unit of every size role: the font cell at the default text scale,
-/// in logical pixels.
-pub const CELL: f32 = font::GLYPH_H as f32 * font::DEFAULT_SIZE;
+/// The base unit of every size role: the height of a line of text at the
+/// default scale, in logical pixels.
+///
+/// **Declared, not derived** — and that is the whole of its documentation.
+/// It used to be `font::GLYPH_H * font::DEFAULT_SIZE`, which made the layout of
+/// every window a consequence of how the *face* was drawn: a glyph box that
+/// grew two rows to hold a descender would have taken this from 14 to 18 and
+/// moved every padding, control height and ruler in the host with it, for a
+/// reason that has nothing to do with how big anything should be. The
+/// dependency runs the other way now — the cell is declared and the face is
+/// drawn to fit it — so a typeface may change without relaying out a window,
+/// which is also the property [`super::font`]'s successor will need.
+pub const CELL: f32 = 14.0;
 
 /// The grid the spacing and extent roles land on, logical pixels. Two rather
 /// than four (which the roadmap sketched): the shipped spacing pair is 6 and
 /// every shipped chrome extent is even, so a 4-px grid would have moved them
 /// and cost this refactor its zero-visual-change guarantee.
 const GRID: f32 = 2.0;
-
-/// One character's advance at glyph scale `scale` — the unit of the roles that
-/// are sized to hold text (a lane header, a ruler's labels).
-fn advance(scale: f32) -> f32 {
-    (font::GLYPH_W + 1) as f32 * scale
-}
 
 /// Quantizes an extent onto the [`GRID`], at least one grid step.
 fn grid(v: f32) -> f32 {
@@ -237,9 +241,9 @@ impl Metrics {
             // Five captions wide: the widest labels of the *fixed* vertical
             // vocabularies, `-32768`, `20K` and `-INF`. A data-dependent axis
             // measures its own and asks for more when it needs it.
-            ruler_w: grid(5.0 * advance(caption_scale)),
+            ruler_w: grid(5.0 * font::advance(caption_scale)),
             // Eight characters of header text wide.
-            header_w: grid(8.0 * advance(text_scale)),
+            header_w: grid(8.0 * font::advance(text_scale)),
             divider_w: hairline(k),
             focus_ring: hairline(2.0 * k),
             trace_w: (1.5 * k).max(0.5),
