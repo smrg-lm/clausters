@@ -114,6 +114,13 @@ pub mod mapfile;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bulk;
 
+// The native [`FontSource`] (the `font-atlas` feature): the typeface a build
+// draws with, read from a file the command line names or from the system's own
+// faces. The browser fetches one instead and pushes the bytes through the same
+// seam.
+#[cfg(all(not(target_arch = "wasm32"), feature = "font-atlas"))]
+pub mod fontfile;
+
 // The shared pointer-gesture state machine (no winit, no web-sys): both the
 // native windowed front and the browser front drive it, so every editing
 // gesture behaves identically on either platform by construction.
@@ -326,6 +333,26 @@ pub trait BulkLoader {
     /// spectrogram parses with `Stft::from_bytes`). `None` on an unsupported
     /// platform or an I/O error.
     fn file_bytes(&self, path: &Path) -> Option<Vec<u8>>;
+}
+
+/// Where the host's **typeface** comes from — the fifth platform seam, and the
+/// one that only exists when the crate was built with a rasterizer (the
+/// `font-atlas` feature).
+///
+/// A face is bytes, and every platform has its own way of reaching them: a
+/// native host maps a file (`fontfile::FontFile` — one the command line names,
+/// or one of the system's), a page fetches a URL and pushes what came back
+/// (`web::FetchedFace`). Above the seam neither is named: the host asks
+/// for bytes once ([`Host::load_face`]) and every window draws with them.
+///
+/// Answering `None` is ordinary, not an error: the embedded bitmap face is the
+/// floor this crate always draws on, so a host with no typeface renders exactly
+/// what a host built without the feature renders.
+#[cfg(feature = "font-atlas")]
+pub trait FontSource {
+    /// The bytes of the face to draw with (TrueType/OpenType), or `None` where
+    /// this platform has none to offer.
+    fn face(&self) -> Option<Vec<u8>>;
 }
 
 /// A source of live control-bus values for the meter/scope views. Implemented by
@@ -566,6 +593,21 @@ impl Host {
     pub fn with_store<S: DefStore + 'static>(mut self, store: S) -> Self {
         self.store = Some(Box::new(store));
         self
+    }
+
+    /// Loads the typeface `source` offers, if it offers one and the rasterizer
+    /// reads it — returning whether text now draws through the glyph atlas.
+    ///
+    /// It is the host that asks, and it asks **once**: a face is a property of
+    /// the build (one `--font`, one fetched URL), not of a window, so every
+    /// window that opens afterwards draws with it and no size table changes.
+    /// A refusal is silent to the drawing code — the bitmap face keeps
+    /// drawing — and the caller logs it.
+    #[cfg(feature = "font-atlas")]
+    pub fn load_face(&mut self, source: &dyn FontSource) -> bool {
+        source
+            .face()
+            .is_some_and(|bytes| font::atlas::set_face(&bytes))
     }
 
     /// The GuiDef store, if persistence was configured.

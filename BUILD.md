@@ -308,6 +308,12 @@ edits notation on that clean install, and the client keeps `dependencies = []`. 
 *adds* to the defaults (only `--no-default-features` replaces them), so the embed
 cdylib keeps `faust`, `synth`, `midi`, … too.
 
+One feature is deliberately **not** in the wheel: the GUI host's `font-atlas`
+(an outline typeface behind a glyph rasterizer, `clients/gui/README.md`). It is
+weight for something the embedded bitmap face already does, and it ships no
+typeface of its own — a build that wants it points at a face on the machine, so
+it is a local build rather than a packaging default.
+
 ### Building a package with a piece left out
 
 `build_native.py` requires both vendored libraries by default and stops on one

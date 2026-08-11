@@ -142,6 +142,11 @@ pub struct GuiConfig {
     pub data_dir: Option<String>,
     /// Run with no display (`--headless`).
     pub headless: Option<bool>,
+    /// Path to the typeface the host draws text with (`--font`). Read only by a
+    /// GUI host built with a rasterizer (the `font-atlas` feature); any other
+    /// build draws with its embedded bitmap face and ignores this. With the
+    /// feature and no path, the host looks for one of the system's own faces.
+    pub font: Option<String>,
     /// `[gui.theme]` — color-role overrides for the host's look, each entry
     /// `role = "#rrggbb[aa]"`. A partial table: unlisted roles keep the
     /// default theme. The role names are the GUI host's `Theme` fields
@@ -390,6 +395,7 @@ impl GuiConfig {
             shm: pick(self.shm, h.shm),
             data_dir: pick(self.data_dir, h.data_dir),
             headless: pick(self.headless, h.headless),
+            font: pick(self.font, h.font),
             // The theme and metrics tables merge per key (the overlay
             // semantics): the higher layer's roles win, its unlisted roles fall
             // through.

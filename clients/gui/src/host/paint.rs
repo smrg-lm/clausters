@@ -57,6 +57,11 @@ impl<'a> Draw<'a> {
 /// `[x, y, r, g, b, a]` per vertex, position in device pixels.
 const FLOATS_PER_VERTEX: usize = 6;
 
+/// `[x, y, u, v, r, g, b, a]` per glyph vertex — the same, plus where in the
+/// atlas texture it samples.
+#[cfg(feature = "font-atlas")]
+const FLOATS_PER_GLYPH_VERTEX: usize = 8;
+
 /// An RGBA color.
 pub type Color = [f32; 4];
 
@@ -90,6 +95,15 @@ fn axis_aligned(p: &[[f32; 2]; 4]) -> Option<Rect> {
 #[derive(Default)]
 pub struct Mesh {
     verts: Vec<f32>,
+    /// The **glyph** vertices of the `font-atlas` feature, when a face is
+    /// loaded: `[x, y, u, v, r, g, b, a]` each, sampling the window's atlas
+    /// texture. A second list rather than a second `Mesh` because the two are
+    /// one picture: they share this batch's clip rectangle, they are uploaded
+    /// together, and they are drawn back to back — the glyphs over the flat
+    /// geometry of *their own* batch, which is where text always sat (the
+    /// overlay batch still paints over both).
+    #[cfg(feature = "font-atlas")]
+    glyphs: Vec<f32>,
     /// The active clip rectangle, if any: every triangle emitted while it is
     /// set is clipped to it geometrically (so a scrolled widget's chrome never
     /// bleeds outside its `scroll` container). Geometry, not a GPU scissor —
@@ -104,18 +118,89 @@ impl Mesh {
 
     pub fn clear(&mut self) {
         self.verts.clear();
+        #[cfg(feature = "font-atlas")]
+        self.glyphs.clear();
     }
 
     pub fn is_empty(&self) -> bool {
+        #[cfg(feature = "font-atlas")]
+        if !self.glyphs.is_empty() {
+            return false;
+        }
         self.verts.is_empty()
     }
 
-    /// The `(x, y)` of every accumulated vertex, for bounds/layout tests.
+    /// A glyph quad: `r` in device pixels, textured with `uv` (`[u0, v0, u1,
+    /// v1]` of the atlas) and tinted `color`.
+    ///
+    /// Clipping is the same clamp an axis-aligned [`quad`](Self::quad) takes —
+    /// a glyph is always axis-aligned — with the texture coordinates cut in the
+    /// same proportion, so half a letter at a `scroll`'s edge shows exactly its
+    /// left half rather than a squeezed whole one.
+    #[cfg(feature = "font-atlas")]
+    pub fn glyph(&mut self, r: Rect, uv: [f32; 4], color: Color) {
+        if r.w <= 0.0 || r.h <= 0.0 {
+            return;
+        }
+        let (mut x0, mut y0, mut x1, mut y1) = (r.x, r.y, r.x + r.w, r.y + r.h);
+        let [mut u0, mut v0, mut u1, mut v1] = uv;
+        if let Some(clip) = self.clip {
+            let (cx0, cy0) = (clip.x, clip.y);
+            let (cx1, cy1) = (clip.x + clip.w, clip.y + clip.h);
+            if x1 <= cx0 || x0 >= cx1 || y1 <= cy0 || y0 >= cy1 {
+                return; // fully outside
+            }
+            let (du, dv) = ((u1 - u0) / r.w, (v1 - v0) / r.h);
+            if x0 < cx0 {
+                u0 += (cx0 - x0) * du;
+                x0 = cx0;
+            }
+            if x1 > cx1 {
+                u1 -= (x1 - cx1) * du;
+                x1 = cx1;
+            }
+            if y0 < cy0 {
+                v0 += (cy0 - y0) * dv;
+                y0 = cy0;
+            }
+            if y1 > cy1 {
+                v1 -= (y1 - cy1) * dv;
+                y1 = cy1;
+            }
+        }
+        let mut vertex = |x: f32, y: f32, u: f32, v: f32| {
+            self.glyphs
+                .extend_from_slice(&[x, y, u, v, color[0], color[1], color[2], color[3]]);
+        };
+        vertex(x0, y1, u0, v1);
+        vertex(x1, y1, u1, v1);
+        vertex(x1, y0, u1, v0);
+        vertex(x0, y1, u0, v1);
+        vertex(x1, y0, u1, v0);
+        vertex(x0, y0, u0, v0);
+    }
+
+    /// The glyph vertices accumulated, `[x, y, u, v, r, g, b, a]` each.
+    #[cfg(feature = "font-atlas")]
+    pub(crate) fn glyph_vertices(&self) -> &[f32] {
+        &self.glyphs
+    }
+
+    /// The `(x, y)` of every accumulated vertex, for bounds/layout tests —
+    /// the flat geometry's and, where a face is drawing them, the glyphs'.
     #[cfg(test)]
     pub(crate) fn positions(&self) -> impl Iterator<Item = (f32, f32)> + '_ {
-        self.verts
+        let flat = self
+            .verts
             .chunks_exact(FLOATS_PER_VERTEX)
-            .map(|v| (v[0], v[1]))
+            .map(|v| (v[0], v[1]));
+        #[cfg(feature = "font-atlas")]
+        let flat = flat.chain(
+            self.glyphs
+                .chunks_exact(FLOATS_PER_GLYPH_VERTEX)
+                .map(|v| (v[0], v[1])),
+        );
+        flat
     }
 
     fn vertex(&mut self, p: [f32; 2], c: Color) {
@@ -300,15 +385,15 @@ impl Mesh {
     /// test can ask about a picture without a window.
     #[cfg(test)]
     pub(crate) fn extent(&self) -> Option<Rect> {
-        let mut it = self.verts.chunks_exact(FLOATS_PER_VERTEX);
-        let first = it.next()?;
-        let (mut x0, mut x1) = (first[0], first[0]);
-        let (mut y0, mut y1) = (first[1], first[1]);
-        for v in it {
-            x0 = x0.min(v[0]);
-            x1 = x1.max(v[0]);
-            y0 = y0.min(v[1]);
-            y1 = y1.max(v[1]);
+        let mut it = self.positions();
+        let (fx, fy) = it.next()?;
+        let (mut x0, mut x1) = (fx, fx);
+        let (mut y0, mut y1) = (fy, fy);
+        for (x, y) in it {
+            x0 = x0.min(x);
+            x1 = x1.max(x);
+            y0 = y0.min(y);
+            y1 = y1.max(y);
         }
         Some(Rect::new(x0, y0, x1 - x0, y1 - y0))
     }
@@ -320,6 +405,198 @@ pub struct Painter {
     vertex_buffer: wgpu::Buffer,
     capacity_vertices: u64,
     num_vertices: u32,
+    /// The glyph half of this batch, when the crate was built with a
+    /// rasterizer. Absent until the batch first carries a glyph, so a build
+    /// with the feature on and no face pays no texture.
+    #[cfg(feature = "font-atlas")]
+    text: Option<TextLayer>,
+    #[cfg(feature = "font-atlas")]
+    format: wgpu::TextureFormat,
+}
+
+/// The textured pipeline and this window's copy of the glyph atlas.
+#[cfg(feature = "font-atlas")]
+struct TextLayer {
+    pipeline: wgpu::RenderPipeline,
+    texture: wgpu::Texture,
+    bind_group: wgpu::BindGroup,
+    vertex_buffer: wgpu::Buffer,
+    capacity_vertices: u64,
+    num_vertices: u32,
+    /// The atlas version this texture holds: the sheet is re-uploaded only when
+    /// the shared cache has rasterized something new.
+    version: u64,
+}
+
+#[cfg(feature = "font-atlas")]
+impl TextLayer {
+    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("glyph shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("paint_text.wgsl").into()),
+        });
+        let side = super::font::atlas::SIDE;
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("glyph atlas"),
+            size: wgpu::Extent3d {
+                width: side,
+                height: side,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            // One coverage byte per texel: the smallest thing WebGL2 and
+            // WebGPU both sample, which is what a glyph sheet is.
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // Nearest: a glyph is rasterized at the size it draws at and its quad
+        // is snapped to whole pixels, so every texel lands on its own pixel.
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("glyph atlas sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("glyph bind layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("glyph bind group"),
+            layout: &bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("glyph pipeline layout"),
+            bind_group_layouts: &[Some(&bind_layout)],
+            immediate_size: 0,
+        });
+        let float = std::mem::size_of::<f32>() as wgpu::BufferAddress;
+        let vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: FLOATS_PER_GLYPH_VERTEX as wgpu::BufferAddress * float,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 2 * float,
+                    shader_location: 1,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 4 * float,
+                    shader_location: 2,
+                },
+            ],
+        };
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("glyph pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: std::slice::from_ref(&vertex_layout),
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        let capacity_vertices = 6 * 256;
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("glyph vertices"),
+            size: capacity_vertices * FLOATS_PER_GLYPH_VERTEX as u64 * float,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        Self {
+            pipeline,
+            texture,
+            bind_group,
+            vertex_buffer,
+            capacity_vertices,
+            num_vertices: 0,
+            // 0 is "nothing uploaded": the atlas starts at 0 too and only
+            // counts up once it holds a glyph, so the first sheet is copied.
+            version: 0,
+        }
+    }
+
+    /// Copies the shared cache's coverage sheet into this window's texture, if
+    /// this copy is behind it.
+    fn sync(&mut self, queue: &wgpu::Queue, atlas: &super::font::atlas::Atlas) {
+        let pixels = atlas.pixels();
+        if self.version == atlas.version() || pixels.is_empty() {
+            return;
+        }
+        let side = super::font::atlas::SIDE;
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(side),
+                rows_per_image: Some(side),
+            },
+            wgpu::Extent3d {
+                width: side,
+                height: side,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.version = atlas.version();
+    }
 }
 
 impl Painter {
@@ -386,6 +663,10 @@ impl Painter {
             vertex_buffer,
             capacity_vertices,
             num_vertices: 0,
+            #[cfg(feature = "font-atlas")]
+            text: None,
+            #[cfg(feature = "font-atlas")]
+            format,
         }
     }
 
@@ -420,15 +701,72 @@ impl Painter {
         }
         queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&clip));
         self.num_vertices = needed as u32;
+        #[cfg(feature = "font-atlas")]
+        self.upload_glyphs(device, queue, mesh, fw, fh);
+    }
+
+    /// The glyph half of the same batch: the vertices into this painter's
+    /// buffer, and — only when the shared cache has rasterized something new —
+    /// the coverage sheet into this window's texture.
+    #[cfg(feature = "font-atlas")]
+    fn upload_glyphs(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        mesh: &Mesh,
+        fw: f32,
+        fh: f32,
+    ) {
+        let verts = mesh.glyph_vertices();
+        if verts.is_empty() {
+            if let Some(text) = &mut self.text {
+                text.num_vertices = 0;
+            }
+            return;
+        }
+        let text = self
+            .text
+            .get_or_insert_with(|| TextLayer::new(device, self.format));
+        let mut clip = Vec::with_capacity(verts.len());
+        for v in verts.chunks_exact(FLOATS_PER_GLYPH_VERTEX) {
+            clip.push((v[0] / fw) * 2.0 - 1.0);
+            clip.push(1.0 - (v[1] / fh) * 2.0);
+            clip.extend_from_slice(&v[2..FLOATS_PER_GLYPH_VERTEX]);
+        }
+        let needed = (verts.len() / FLOATS_PER_GLYPH_VERTEX) as u64;
+        if needed > text.capacity_vertices {
+            text.capacity_vertices = needed.next_power_of_two();
+            text.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("glyph vertices"),
+                size: text.capacity_vertices
+                    * FLOATS_PER_GLYPH_VERTEX as u64
+                    * std::mem::size_of::<f32>() as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        queue.write_buffer(&text.vertex_buffer, 0, bytemuck::cast_slice(&clip));
+        text.num_vertices = needed as u32;
+        super::font::atlas::with(|atlas| text.sync(queue, atlas));
     }
 
     pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
-        if self.num_vertices == 0 {
-            return;
+        if self.num_vertices > 0 {
+            pass.set_pipeline(&self.pipeline);
+            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            pass.draw(0..self.num_vertices, 0..1);
         }
-        pass.set_pipeline(&self.pipeline);
-        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..self.num_vertices, 0..1);
+        // The glyphs of this batch, over its own flat geometry: one bind group
+        // and one draw for every letter in the window.
+        #[cfg(feature = "font-atlas")]
+        if let Some(text) = &self.text
+            && text.num_vertices > 0
+        {
+            pass.set_pipeline(&text.pipeline);
+            pass.set_bind_group(0, &text.bind_group, &[]);
+            pass.set_vertex_buffer(0, text.vertex_buffer.slice(..));
+            pass.draw(0..text.num_vertices, 0..1);
+        }
     }
 }
 

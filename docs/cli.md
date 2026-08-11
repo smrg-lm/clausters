@@ -109,7 +109,7 @@ score with one that makes no sound (a final `/node_free`) to set the duration.
 clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
               [--tcp [port] | --no-tcp] [--ws [port]] [--max-frame <bytes>]
               [--data-dir <dir>] [--standalone [name]] [--config <path>]
-              [--theme <path>]
+              [--theme <path>] [--font <path>]
 ```
 
 The host has two legs: a **server front** a script sends `/gui_*` to, and an
@@ -129,5 +129,6 @@ optional **client leg** into a running audio server. What travels over each is
 | `--standalone` | name (optional) | — | Boot the saved GuiDef against an **embedded** audio server — no separate server, no language client. With no name, `[standalone].gui` from the configuration is used. |
 | `--config` | path | the user+project chain | Read the configuration from this TOML file instead. |
 | `--theme` | path | — | Read the color theme from this TOML file, laid over `[gui.theme]`. A flat, partial table of `role = "#rrggbb[aa]"`. |
+| `--font` | path | — | Draw text with this typeface (TrueType/OpenType) instead of the embedded bitmap face. Read only by a host built with a rasterizer (its optional `font-atlas` feature); any other build warns and keeps its bitmap face. With the feature and no path, one of the system's own faces is used when there is one. |
 | `--headless` | — | — | Run the protocol with no display, for tests and machines with no GPU. The default opens windows. |
 | `-v`, `-vv`, `-vvv` | — | warn | Log verbosity, as the server's. |

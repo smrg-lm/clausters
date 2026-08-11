@@ -231,8 +231,7 @@ pub fn draw_label(d: &mut Draw, text: &str, rect: Rect, size: f32, wrap: bool, a
     let left = rect.x + m.pad;
     let avail = (rect.w - 2.0 * m.pad).max(0.0);
     if wrap {
-        let cols = font::fit_chars(avail, size).max(1);
-        let lines = font::wrap(text, cols);
+        let lines = font::wrap(text, avail, size);
         let advance = font::line_advance(size);
         let block_h = lines.len() as f32 * advance;
         let mut y = (rect.y + (rect.h - block_h) * 0.5).max(rect.y);
@@ -446,8 +445,11 @@ pub fn field(
 
     let text_x = body.x + m.pad;
     let text_w = (body.w - 2.0 * m.pad).max(0.0);
+    // The scroll window is still counted in characters -- a caret moves by
+    // characters, so what has to stay visible is a character -- while every
+    // *position* inside the line is measured, which is what a proportional
+    // face needs (see `visible_line`).
     let cols = font::fit_chars(text_w, size);
-    let cell = font::advance(size); // one glyph cell advance in device px
     // Unfocused: lay out around a caret at the start (no scroll, no caret drawn).
     let lay = caret.unwrap_or_default();
 
@@ -461,7 +463,7 @@ pub fn field(
             return;
         }
         let hstart = textedit::h_scroll(textedit::line_col(value, lay.pos).1, cols);
-        draw_line(d, value, 0, text_x, ty, hstart, cols, cell, size, caret);
+        draw_line(d, value, 0, text_x, ty, hstart, cols, text_w, size, caret);
         return;
     }
 
@@ -475,14 +477,38 @@ pub fn field(
     for (i, line) in value.split('\n').enumerate() {
         if i >= row_start && i < row_start + rows {
             let ty = body.y + m.pad + (i - row_start) as f32 * row_h;
-            draw_line(d, value, byte, text_x, ty, hstart, cols, cell, size, caret);
+            draw_line(
+                d, value, byte, text_x, ty, hstart, cols, text_w, size, caret,
+            );
         }
         byte += line.len() + 1; // + the '\n'
     }
 }
 
+/// The part of `line` a field shows: from column `hstart`, at most `cols`
+/// characters and never wider than `text_w` pixels.
+///
+/// The two limits are one under the fixed-pitch bitmap (`cols` *is* `text_w`
+/// divided by the cell) and two under a proportional face, where a window of N
+/// characters may be wider or narrower than the box. The width is the one that
+/// binds: a field's text is not clipped by a scissor, so a line that overflowed
+/// would bleed over the chrome beside it.
+fn visible_line(line: &str, hstart: usize, cols: usize, text_w: f32, size: f32) -> String {
+    let mut out = String::new();
+    let mut w = 0.0;
+    for c in line.chars().skip(hstart).take(cols) {
+        let step = font::advance_of(c, size);
+        if w + step > text_w && !out.is_empty() {
+            break;
+        }
+        w += step;
+        out.push(c);
+    }
+    out
+}
+
 /// Draws one line of a field: its visible glyphs (scrolled by `hstart` columns,
-/// clipped to `cols`), and — only when `caret` is `Some` (focused) — the
+/// clipped to the body), and — only when `caret` is `Some` (focused) — the
 /// selection highlight over its selected span and the caret when it falls on
 /// this line. `line_byte` is the byte offset of the line's start in `value`.
 #[allow(clippy::too_many_arguments)] // the line and its window, past the context
@@ -494,7 +520,7 @@ fn draw_line(
     y: f32,
     hstart: usize,
     cols: usize,
-    cell: f32,
+    text_w: f32,
     size: f32,
     caret: Option<textedit::Caret>,
 ) {
@@ -503,25 +529,24 @@ fn draw_line(
         .find('\n')
         .map_or(value.len(), |i| line_byte + i);
     let line = &value[line_byte..end_byte];
+    let visible = visible_line(line, hstart, cols, text_w, size);
+    let shown = visible.chars().count();
 
     // Selection highlight (drawn under the text): the part of this line inside
-    // the selection, mapped to visible columns.
+    // the selection, mapped to visible columns and measured from the glyphs.
     if let Some((s, e)) = caret.and_then(|c| c.selection()) {
         let a = s.clamp(line_byte, end_byte);
         let b = e.clamp(line_byte, end_byte);
         if b > a || (s <= line_byte && e > end_byte) {
             let ca = value[line_byte..a].chars().count();
             let cb = value[line_byte..b].chars().count();
-            let va = ca.max(hstart).saturating_sub(hstart);
-            let vb = cb.min(hstart + cols).saturating_sub(hstart);
+            let va = ca.saturating_sub(hstart).min(shown);
+            let vb = cb.saturating_sub(hstart).min(shown);
             if vb > va {
+                let x0 = font::prefix_width(&visible, va, size);
+                let x1 = font::prefix_width(&visible, vb, size);
                 mesh.rect(
-                    Rect::new(
-                        x + va as f32 * cell,
-                        y,
-                        (vb - va) as f32 * cell,
-                        font::height(size),
-                    ),
+                    Rect::new(x + x0, y, x1 - x0, font::height(size)),
                     theme.selection,
                 );
             }
@@ -529,7 +554,6 @@ fn draw_line(
     }
 
     // The visible glyphs.
-    let visible: String = line.chars().skip(hstart).take(cols).collect();
     font::text(mesh, &visible, x, y, size, theme.text);
 
     // The caret, when focused and sitting on this line within the visible window.
@@ -540,8 +564,8 @@ fn draw_line(
             let col = value[line_byte..caret.pos.clamp(line_byte, end_byte)]
                 .chars()
                 .count();
-            if col >= hstart && col <= hstart + cols {
-                let cx = x + (col - hstart) as f32 * cell;
+            if col >= hstart && col <= hstart + shown {
+                let cx = x + font::prefix_width(&visible, col - hstart, size);
                 mesh.rect(
                     Rect::new(cx, y, size.max(1.0), font::height(size)),
                     theme.accent,
@@ -572,13 +596,20 @@ pub fn caret_at(
     let text_x = body.x + m.pad;
     let text_w = (body.w - 2.0 * m.pad).max(0.0);
     let cols = font::fit_chars(text_w, size);
-    let cell = font::advance(size).max(1.0);
-    let col_at = |lx: f64| (((lx as f32 - text_x) / cell).round().max(0.0)) as usize;
     let caret_col = textedit::line_col(value, current.pos).1;
+    // The column a click lands on is **measured against the glyphs actually
+    // shown**, the same string `draw_line` drew — which is what makes a click
+    // land on the letter it points at with a proportional face, and is exactly
+    // the old cell division under the fixed-pitch one.
+    let col_at = |line: &str, hstart: usize| {
+        let shown = visible_line(line, hstart, cols, text_w, size);
+        font::column_at(&shown, x as f32 - text_x, size)
+    };
+    let line_of = |i: usize| value.split('\n').nth(i).unwrap_or("");
 
     if !multiline {
         let hstart = textedit::h_scroll(caret_col, cols);
-        return textedit::offset_of(value, 0, hstart + col_at(x));
+        return textedit::offset_of(value, 0, hstart + col_at(line_of(0), hstart));
     }
 
     let caret_line = textedit::line_col(value, current.pos).0;
@@ -589,7 +620,7 @@ pub fn caret_at(
     let n_lines = value.split('\n').count();
     let rel = ((y as f32 - (body.y + m.pad)) / row_h).max(0.0) as usize;
     let line = (row_start + rel).min(n_lines.saturating_sub(1));
-    textedit::offset_of(value, line, hstart + col_at(x))
+    textedit::offset_of(value, line, hstart + col_at(line_of(line), hstart))
 }
 
 /// A value read-out at the bottom-right of a body (clipped with an ellipsis

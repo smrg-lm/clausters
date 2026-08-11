@@ -41,6 +41,20 @@ and launches the host for you (`Session.gui()`).
 > refresh it (or set `CLAUSTERS_GUI_BIN`) after rebuilding. See the repo
 > `CLAUDE.md` / `clients/python/README.md`.
 
+**Drawing text with a real typeface** is an opt-in build: the crate's own
+`font-atlas` feature adds a glyph rasterizer and one atlas texture per window,
+where the default build draws its embedded 5x7 bitmap face. It ships no face —
+point it at one, or let it find one of the system's:
+
+```sh
+cargo build --release --features font-atlas
+./target/release/clausters-gui --font /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
+```
+
+Nothing else changes: the sizing table never followed the typeface, so the same
+GuiDef lays out identically either way, and a build with the feature but no face
+draws exactly what the default build draws.
+
 Two standalone prototypes double as demos of the rendering machinery:
 `cargo run --release --bin waveform` (a navigable GPU waveform of a large
 buffer) and `--bin spectrogram` (the STFT view sharing the same navigation).

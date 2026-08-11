@@ -39,6 +39,14 @@ standalone = ["dep:clausters"]
 # runs, just skipping FaustDefs (with a warning). Build with
 # `cargo build --features standalone-faust`.
 standalone-faust = ["standalone", "clausters/faust"]
+# A real (outline) typeface behind a glyph atlas, instead of the embedded 5x7
+# bitmap. Off by default because it is weight: the rasterizer plus the face a
+# build points at are hundreds of kilobytes in a wasm bundle, and a page holding
+# forty canvases is the profile this crate optimizes for. With the feature on
+# but no face loaded (`--font <path>` natively, `GuiBridge::font` in the page)
+# the host draws exactly as it does without it — the bitmap face is the floor,
+# never a fallback that has to be reasoned about.
+font-atlas = ["dep:fontdue"]
 
 [dependencies]
 # The shared OSC seam (single `decode_packet` door, encode/bundle/message,
@@ -67,6 +75,11 @@ lyon = "1.0"
 pollster = "0.4.0"
 wgpu = "29.0.3"
 winit = "0.30.13"
+# The glyph rasterizer of the `font-atlas` feature: pure Rust, `no_std` by
+# default (hashbrown + simd, no `parallel`), so it compiles for wasm32 with no
+# system dependency and no C toolchain — which is the whole reason it is this
+# crate rather than a FreeType binding.
+fontdue = { version = "0.9", optional = true }
 
 # Read-only mmap of the audio server's shared-memory segment, for zero-message
 # meters/scopes (`host::shm`). Unix-only — the same raw-mmap path the server's

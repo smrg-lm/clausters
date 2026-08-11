@@ -4812,3 +4812,66 @@ never announced itself back to the script that sent it. And **composition (IME) 
 host an input method, so the host reads the keys it is handed and never pretends
 to compose them. Text that needs composing is not entered through a host field,
 which is a stated limit rather than a bug to find.
+
+## The crate embeds no typeface, because a face is licensed, heavy and already installed
+
+A GUI host built with a rasterizer draws with a face, and the obvious way to
+ship one is to embed it: `include_bytes!`, one file, nothing to configure. That
+is not what happened, and the reason is worth keeping so the question is not
+reopened as an oversight.
+
+A face is **three costs at once**. It is hundreds of kilobytes in a repository
+that carries no other binary asset, in a wasm bundle whose whole argument is
+that a page may hold forty canvases, and in a wheel that already carries a
+JIT compiler. It carries a **license of its own** — its own attribution and
+redistribution terms — inside a GPL crate, which is a bookkeeping obligation for
+every downstream that copies the artifact. And it answers a question the
+platform has already answered: every desktop has faces installed, and every page
+can fetch one from the origin it was served from.
+
+So the face arrives through a **seam**, the fifth platform trait
+(`FontSource`): a file natively (`--font <path>`, `[gui] font`, or one of the
+system's own when neither names one) and fetched bytes in the page
+(`GuiBridge::font`). What the feature compiles in is the *rasterizer*, not a
+typeface.
+
+**And no face is an ordinary state, not a failure.** The embedded 5x7 bitmap is
+the floor this crate always draws on, so a host with the feature and nothing
+loaded renders exactly what a host built without it renders — which is the same
+degradation rule the protocol already has for a widget an older host does not
+know. That is what makes the runtime half of the seam safe to leave optional:
+there is no error path to design, no boot to block on a font, and a machine with
+no fonts at all still draws every label.
+
+## The cell is declared and the face is fitted to it, in both faces
+
+The bitmap face landed under one rule — the layout declares a cell
+(`metrics::CELL`) and the glyphs are drawn to fit it, never the reverse — and
+the atlas keeps it rather than inheriting a typeface's own metrics. A scale
+rasterizes at the pixel size whose **cap height** is the body box, so a capital
+through the atlas is exactly as tall as the capital the bitmap drew.
+
+The property that buys is the one the sizing model paid for: the metrics table
+is constant data resolved once per scale change, so **changing the typeface
+never relayouts a window**. Loading a face mid-session is a redraw, not a
+re-measure; a document laid out by a host with a face and one without is the
+same document.
+
+What legitimately *does* follow the face is the width of a **string**, and it is
+asked for where a string changes — a label's text, a field's line, a wrapped
+paragraph — never in a layout pass. That is the seam the bitmap face already
+left when it separated its own nominal advance (a property of the face, which
+the size roles that reserve room for N characters ask for) from the measurement
+of a run of characters. Making that measurement proportional was the whole of
+the port: the caret, the selection band, the click-to-column hit-test, the
+ellipsis cut and the word wrap were all counting cells, and each of them now
+measures the glyphs it is actually drawing — which is the same arithmetic under
+a fixed-pitch face, and correct under either.
+
+One consequence is deliberately visible and is the **only** place two builds of
+this host differ: `text_size` quantizes to half-steps of the cell without the
+feature, because a bitmap glyph is scaled by repeating its own pixels and an
+uneven scale makes them ragged, and is continuous with it, because an outline is
+rasterized at whatever size is asked for. A user who wants larger type still
+asks for it where density lives — the `scale` key of `[gui.metrics]`, resolved
+once — never by choosing a different face.

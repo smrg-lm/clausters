@@ -3,8 +3,8 @@
 
 Every text-bearing light widget -- ``label``, ``button``, ``toggle``, ``text``,
 ``number``, ``menu`` and the control labels on ``slider``/``knob`` -- takes a
-``text_size``: a glyph scale over the host's embedded bitmap font, whose default
-2.0 is exactly the size everything drew at before the prop existed.
+``text_size``: a glyph scale over the host's font, whose default 2.0 is exactly
+the size everything drew at before the prop existed.
 
 The face writes **both cases** and the **Latin-1** letters, so a label, a track
 name or a file path in Spanish, French or German reads as written. Its cell is 5
@@ -14,7 +14,7 @@ needs no more room than an unaccented one.
 
 ``label`` additionally takes:
 
-- ``wrap=True`` -- word wrap on the font's fixed advance (a cheap width
+- ``wrap=True`` -- word wrap on the measured width of the words (a cheap width
   computation, no shaping); lines past the label's bottom edge are dropped;
 - ``align`` -- ``"start"`` (the default left edge), ``"center"`` or ``"end"``,
   applied per line.
@@ -22,6 +22,20 @@ needs no more room than an unaccented one.
 Single-line text that overflows its rect -- a long label on a narrow control, a
 value read-out wider than a knob -- clips with an ellipsis instead of bleeding
 into its neighbor.
+
+**The same window in a real typeface.** A GUI host built with its optional
+``font-atlas`` feature draws through a glyph rasterizer instead of the bitmap
+face, and takes ``text_size`` continuously rather than on half-steps -- nothing
+else changes, because the sizing table never followed the typeface. To see this
+window either way, build the host with the feature and point the launcher at
+it::
+
+    cd clients/gui && cargo build --release --features font-atlas --bin clausters-gui
+    CLAUSTERS_GUI_BIN=$PWD/target/release/clausters-gui \
+        python clients/python/examples/gui_text.py
+
+With no ``--font``, that host draws with one of the system's own faces; it ships
+none.
 
 The example opens one window showing all of it side by side, then exercises the
 props live over ``set`` (a growing title, a re-aligned paragraph) -- addressed by
@@ -46,7 +60,7 @@ import time
 from clausters.gui import (GuiHost, button, knob, label, menu, panel, slider,
                            text, toggle, window)
 
-LOREM = ("a wrapped label lays its words out on the font's fixed advance, "
+LOREM = ("a wrapped label lays its words out on their own measured width, "
          "drops the lines that overflow its rect, and aligns each line "
          "start, center or end")
 

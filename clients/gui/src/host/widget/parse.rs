@@ -299,8 +299,12 @@ pub(crate) fn text_size(props: &serde_json::Map<String, Value>) -> f32 {
     clamp_text_size(number(props, "text_size", crate::host::font::DEFAULT_SIZE))
 }
 
-pub(super) fn clamp_text_size(s: f32) -> f32 {
-    s.clamp(1.0, 16.0)
+/// Clamped to a legible range, and quantized to what the face this build draws
+/// with can actually render evenly — half-steps of the cell for the bitmap,
+/// the number itself once a typeface is loaded (see
+/// [`font::quantize_size`](crate::host::font::quantize_size)).
+pub(crate) fn clamp_text_size(s: f32) -> f32 {
+    crate::host::font::quantize_size(s.clamp(1.0, 16.0))
 }
 
 /// Sets a `text_size` slot from a numeric JSON value, clamped.

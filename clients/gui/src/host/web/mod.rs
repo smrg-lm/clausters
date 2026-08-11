@@ -171,6 +171,23 @@ enum WebEvent {
     /// A metrics overlay from the page: role -> number pairs (the same table
     /// `[gui.metrics]` carries natively, `scale` included).
     Metrics(Vec<(String, f64)>),
+    /// The bytes of a typeface the page fetched — the browser's half of the
+    /// [`FontSource`](crate::host::FontSource) seam, which a native host fills
+    /// by mapping a file.
+    #[cfg(feature = "font-atlas")]
+    Face(Vec<u8>),
+}
+
+/// A typeface the page fetched, as the platform seam sees it: bytes that came
+/// from somewhere this core does not name.
+#[cfg(feature = "font-atlas")]
+pub struct FetchedFace(pub Vec<u8>);
+
+#[cfg(feature = "font-atlas")]
+impl crate::host::FontSource for FetchedFace {
+    fn face(&self) -> Option<Vec<u8>> {
+        (!self.0.is_empty()).then(|| self.0.clone())
+    }
 }
 
 /// The browser host application: the live [`Host`], one [`CanvasSlot`] per
@@ -641,6 +658,19 @@ impl WebApp {
                 self.host.refresh_metrics();
                 for def in self.canvases.keys().copied().collect::<Vec<_>>() {
                     self.draw(def);
+                }
+            }
+            #[cfg(feature = "font-atlas")]
+            WebEvent::Face(bytes) => {
+                if self.host.load_face(&FetchedFace(bytes)) {
+                    // Nothing was measured differently until now, so a redraw
+                    // is the whole update: no size table moved, and no window
+                    // was laid out against the face.
+                    for def in self.canvases.keys().copied().collect::<Vec<_>>() {
+                        self.draw(def);
+                    }
+                } else {
+                    log("those bytes are not a typeface this host can read");
                 }
             }
         }

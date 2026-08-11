@@ -21,9 +21,21 @@
 //! with an acute, `Ñ` is `N` with a tilde, and adding a mark is one row of a
 //! table rather than ninety-six hand-drawn bitmaps. Anything else falls back to
 //! a box.
+//!
+//! **A build may draw with a real typeface instead** (`atlas`, the `font-atlas`
+//! feature): the same entry points then measure and emit through a rasterized
+//! glyph atlas. Every one of them asks `atlas::has_face` first, so the bitmap is
+//! the floor and a face is the option — a host built with the feature and pointed at no face
+//! draws exactly what a host built without it draws. The two differ in one
+//! visible way, and deliberately: a bitmap glyph's own pixels must stay equal,
+//! so a script's `text_size` is quantized to half-steps of the cell
+//! ([`quantize_size`]), while with an atlas the prop is continuous.
 
 use super::layout::Rect;
 use super::paint::{Color, Mesh};
+
+#[cfg(feature = "font-atlas")]
+pub mod atlas;
 
 /// Glyph cell width: 5 columns, with one column of spacing after each glyph.
 pub const GLYPH_W: usize = 5;
@@ -341,12 +353,75 @@ fn glyph(c: char) -> Bitmap {
 /// would make variable is the width of a **string** ([`width`]), which is
 /// measured where the string changes, never in a layout pass.
 pub fn advance(scale: f32) -> f32 {
+    #[cfg(feature = "font-atlas")]
+    if atlas::has_face() {
+        return atlas::with(|a| a.nominal_advance(scale));
+    }
     ADVANCE as f32 * scale
+}
+
+/// How far the pen steps over **one character** at `scale`: the nominal cell
+/// for the fixed-pitch bitmap, the face's own advance for a loaded typeface.
+///
+/// This is the proportional seam, and it is what [`width`] is a sum of. Nothing
+/// in a layout pass calls it — a measurement happens where a string changes.
+pub fn advance_of(c: char, scale: f32) -> f32 {
+    #[cfg(feature = "font-atlas")]
+    if atlas::has_face() {
+        return atlas::with(|a| a.advance_of(c, scale));
+    }
+    let _ = c;
+    advance(scale)
 }
 
 /// The pixel width of `s` rendered at `scale` (font-pixels per cell-pixel).
 pub fn width(s: &str, scale: f32) -> f32 {
+    #[cfg(feature = "font-atlas")]
+    if atlas::has_face() {
+        return atlas::with(|a| s.chars().map(|c| a.advance_of(c, scale)).sum());
+    }
     s.chars().count() as f32 * advance(scale)
+}
+
+/// The width of the first `cols` characters of `s` — where a caret sits, and
+/// where a selection band starts and ends.
+pub fn prefix_width(s: &str, cols: usize, scale: f32) -> f32 {
+    let taken: String = s.chars().take(cols).collect();
+    width(&taken, scale)
+}
+
+/// The inverse: the character boundary of `s` nearest `dx` pixels from its
+/// start — where a click lands. Past the end of `s` it keeps counting in
+/// nominal cells, so a click in the empty space right of a line still answers
+/// a column (which the caller clamps to the line).
+pub fn column_at(s: &str, dx: f32, scale: f32) -> usize {
+    let mut x = 0.0;
+    for (i, c) in s.chars().enumerate() {
+        let step = advance_of(c, scale);
+        if dx < x + step * 0.5 {
+            return i;
+        }
+        x += step;
+    }
+    let cell = advance(scale).max(1.0);
+    s.chars().count() + ((dx - x) / cell).round().max(0.0) as usize
+}
+
+/// The size a script's `text_size` actually draws at — **the one place two
+/// builds of this host legitimately differ**.
+///
+/// A bitmap glyph is scaled by repeating its own pixels, so a scale that does
+/// not divide the cell evenly makes those pixels unequal: ragged rather than
+/// soft. Half-steps are the rung the metrics table already quantizes its text
+/// roles to, and this puts the prop on the same one. An outline face has no
+/// such constraint — it is rasterized at whatever pixel size is asked for — so
+/// with a face loaded the prop is the number the script sent.
+pub fn quantize_size(scale: f32) -> f32 {
+    #[cfg(feature = "font-atlas")]
+    if atlas::has_face() {
+        return scale;
+    }
+    (scale * 2.0).round().max(2.0) / 2.0
 }
 
 /// The pixel height of one line at `scale` — the **body box**, which is what a
@@ -363,6 +438,27 @@ pub fn height(scale: f32) -> f32 {
 /// as an unaccented one, and what kept this whole family of glyphs from moving
 /// any text that was already on screen.
 pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) {
+    #[cfg(feature = "font-atlas")]
+    if atlas::has_face() {
+        atlas::with(|a| {
+            // The baseline is the body box's bottom, which is where the face's
+            // cap height was fitted: an accented capital overshoots above `y`
+            // and a tail hangs below the box, exactly as the bitmap's do.
+            let baseline = y + a.baseline(scale);
+            let mut pen = x;
+            for ch in s.chars() {
+                let Some(g) = a.glyph(ch, scale) else { break };
+                if g.w > 0.0 {
+                    // Whole pixels: the glyph was rasterized at this size, so a
+                    // quad on the pixel grid samples its texels one to one.
+                    let quad = Rect::new((pen + g.dx).round(), (baseline + g.dy).round(), g.w, g.h);
+                    mesh.glyph(quad, g.uv, color);
+                }
+                pen += g.advance;
+            }
+        });
+        return;
+    }
     let mut pen_x = x;
     let top = y - ASCENT as f32 * scale;
     for ch in s.chars() {
@@ -393,9 +489,13 @@ pub fn fit_chars(max_w: f32, scale: f32) -> usize {
     (max_w / advance(scale)) as usize
 }
 
-/// Appends `s` clipped to `max_w`: text that fits draws whole; longer text
-/// draws one cell short and ends in an ellipsis instead of bleeding past the
-/// edge into a neighbor.
+/// Appends `s` clipped to `max_w`: text that fits draws whole; longer text is
+/// cut where the ellipsis still fits and ends in one, instead of bleeding past
+/// the edge into a neighbor.
+///
+/// The cut is **measured**, not counted, so it holds for a proportional face
+/// too: characters are taken while the prefix plus the ellipsis fits. With the
+/// fixed-pitch bitmap that is the same cut as counting cells.
 pub fn text_ellipsis(
     mesh: &mut Mesh,
     s: &str,
@@ -405,42 +505,68 @@ pub fn text_ellipsis(
     scale: f32,
     color: Color,
 ) {
-    let fit = fit_chars(max_w, scale);
-    if s.chars().count() <= fit {
+    if width(s, scale) <= max_w {
         text(mesh, s, x, y, scale, color);
-    } else if fit > 0 {
-        let cut: String = s.chars().take(fit - 1).collect();
-        text(mesh, &format!("{cut}\u{2026}"), x, y, scale, color);
+        return;
     }
+    let ellipsis = '\u{2026}';
+    let mut cut = String::new();
+    let mut w = advance_of(ellipsis, scale);
+    if w > max_w {
+        return; // not even the ellipsis fits
+    }
+    for c in s.chars() {
+        let step = advance_of(c, scale);
+        if w + step > max_w {
+            break;
+        }
+        w += step;
+        cut.push(c);
+    }
+    cut.push(ellipsis);
+    text(mesh, &cut, x, y, scale, color);
 }
 
-/// Greedy word wrap on the font's fixed advance: `s` split into lines of at
-/// most `max_cols` cells, breaking at whitespace (a single word longer than a
-/// line hard-breaks mid-word). Cheap width math, no shaping.
-pub fn wrap(s: &str, max_cols: usize) -> Vec<String> {
-    let max_cols = max_cols.max(1);
+/// Greedy word wrap: `s` split into lines no wider than `max_w` pixels at
+/// `scale`, breaking at whitespace (a single word too long for a line
+/// hard-breaks mid-word). Measured per character, so it holds for either face;
+/// cheap width math, no shaping.
+pub fn wrap(s: &str, max_w: f32, scale: f32) -> Vec<String> {
+    let space = advance_of(' ', scale);
+    let max_w = max_w.max(advance(scale));
     let mut lines = Vec::new();
     let mut line = String::new();
-    let mut cols = 0usize;
+    let mut used = 0.0f32;
     for word in s.split_whitespace() {
         let mut chars: Vec<char> = word.chars().collect();
         while !chars.is_empty() {
-            let sep = if cols > 0 { 1 } else { 0 };
-            let room = max_cols.saturating_sub(cols + sep);
-            if chars.len() <= room {
-                if sep == 1 {
+            let sep = if line.is_empty() { 0.0 } else { space };
+            let word_w: f32 = chars.iter().map(|&c| advance_of(c, scale)).sum();
+            if used + sep + word_w <= max_w {
+                if sep > 0.0 {
                     line.push(' ');
                 }
                 line.extend(chars.drain(..));
-                cols = line.chars().count();
-            } else if cols == 0 {
-                // A word longer than a whole line: hard-break it.
-                line.extend(chars.drain(..max_cols));
+                used = width(&line, scale);
+            } else if line.is_empty() {
+                // A word wider than a whole line: hard-break it at the last
+                // character that still fits (at least one, or nothing ends).
+                let mut fits = 0;
+                let mut w = 0.0;
+                for &c in &chars {
+                    let step = advance_of(c, scale);
+                    if w + step > max_w && fits > 0 {
+                        break;
+                    }
+                    w += step;
+                    fits += 1;
+                }
+                line.extend(chars.drain(..fits));
                 lines.push(std::mem::take(&mut line));
-                cols = 0;
+                used = 0.0;
             } else {
                 lines.push(std::mem::take(&mut line));
-                cols = 0;
+                used = 0.0;
             }
         }
     }
@@ -454,7 +580,12 @@ pub fn wrap(s: &str, max_cols: usize) -> Vec<String> {
 /// glyph — the body box plus the room a diacritic and a descender may take —
 /// so a line with tails never touches the accents of the line under it.
 pub fn line_advance(scale: f32) -> f32 {
-    ROWS as f32 * scale
+    let bitmap = ROWS as f32 * scale;
+    #[cfg(feature = "font-atlas")]
+    if atlas::has_face() {
+        return atlas::with(|a| a.line_advance(scale)).max(bitmap);
+    }
+    bitmap
 }
 
 /// Appends `s` centered horizontally in `area` and vertically, clipped to it
@@ -600,23 +731,131 @@ mod tests {
         assert!(line_advance(2.0) >= (height(2.0) + (ASCENT + DESCENT) as f32 * 2.0));
     }
 
+    /// The wrap's width is measured, so a column count is one multiplication
+    /// away under the fixed-pitch face — which is how these cases read.
+    fn cols(n: usize) -> f32 {
+        (n * ADVANCE) as f32
+    }
+
     #[test]
     fn wrap_breaks_at_spaces() {
-        assert_eq!(wrap("one two three", 7), ["one two", "three"]);
-        assert_eq!(wrap("one two three", 13), ["one two three"]);
-        assert_eq!(wrap("a b", 1), ["a", "b"]);
+        assert_eq!(wrap("one two three", cols(7), 1.0), ["one two", "three"]);
+        assert_eq!(wrap("one two three", cols(13), 1.0), ["one two three"]);
+        assert_eq!(wrap("a b", cols(1), 1.0), ["a", "b"]);
     }
 
     #[test]
     fn wrap_hard_breaks_a_long_word() {
-        assert_eq!(wrap("abcdefgh", 3), ["abc", "def", "gh"]);
+        assert_eq!(wrap("abcdefgh", cols(3), 1.0), ["abc", "def", "gh"]);
         // A long word after a short one starts on its own line.
-        assert_eq!(wrap("hi abcdef", 5), ["hi", "abcde", "f"]);
+        assert_eq!(wrap("hi abcdef", cols(5), 1.0), ["hi", "abcde", "f"]);
     }
 
     #[test]
     fn wrap_collapses_whitespace_and_empty() {
-        assert_eq!(wrap("  a   b  ", 10), ["a b"]);
-        assert!(wrap("", 10).is_empty());
+        assert_eq!(wrap("  a   b  ", cols(10), 1.0), ["a b"]);
+        assert!(wrap("", cols(10), 1.0).is_empty());
+    }
+
+    /// A width too narrow for even one cell still ends: the line takes one
+    /// character rather than looping forever on a word that never fits.
+    #[test]
+    fn wrap_survives_a_width_narrower_than_a_glyph() {
+        assert_eq!(wrap("ab", 0.0, 1.0), ["a", "b"]);
+    }
+
+    /// A click lands on the character it points at, and past the end of the
+    /// string it keeps counting in cells (which is what a caret needs).
+    #[test]
+    fn column_at_finds_the_boundary_nearest_the_pixel() {
+        let cell = advance(2.0);
+        assert_eq!(column_at("abc", 0.0, 2.0), 0);
+        assert_eq!(column_at("abc", cell * 0.6, 2.0), 1);
+        assert_eq!(column_at("abc", cell * 2.5, 2.0), 3);
+        assert_eq!(column_at("abc", cell * 5.0, 2.0), 5);
+        assert_eq!(prefix_width("abc", 2, 2.0), 2.0 * cell);
+    }
+
+    /// The `font-atlas` build with a face loaded: what changes, and what must
+    /// not. Each test runs on its own thread, so the face one loads is never
+    /// seen by the bitmap tests above.
+    #[cfg(feature = "font-atlas")]
+    mod with_a_face {
+        use super::*;
+
+        /// Loads the system face into this thread's atlas, or reports that
+        /// there is none to load (a machine with no fonts still tests the rest).
+        fn face_loaded() -> bool {
+            atlas::system_face().is_some_and(|bytes| atlas::set_face(&bytes))
+        }
+
+        /// The whole feature in one assertion: text is *quads of a texture*
+        /// now, and it is still exactly as tall as the cell the layout
+        /// reserved.
+        #[test]
+        fn text_draws_through_the_atlas_at_the_declared_height() {
+            if !face_loaded() {
+                return;
+            }
+            let mut m = Mesh::new();
+            text(&mut m, "Hxg", 0.0, 0.0, 2.0, [1.0; 4]);
+            assert!(!m.is_empty(), "a loaded face draws something");
+            // Six vertices per inked glyph, and not one lit-pixel rectangle.
+            assert_eq!(m.glyph_vertices().len() / 8, 18);
+            assert_eq!(height(2.0), GLYPH_H as f32 * 2.0, "the cell is declared");
+        }
+
+        /// The proportional seam: a string's width is the sum of its own
+        /// characters', not a count of cells.
+        #[test]
+        fn a_string_is_measured_rather_than_counted() {
+            if !face_loaded() {
+                return;
+            }
+            assert!(width("iiii", 2.0) < width("MMMM", 2.0));
+            assert!(advance_of('i', 2.0) < advance_of('M', 2.0));
+            assert!(advance(2.0) > 0.0, "the nominal cell still answers");
+        }
+
+        /// And the field's two directions stay inverse of each other, which is
+        /// what makes a click land on the letter it points at.
+        #[test]
+        fn a_measured_column_round_trips() {
+            if !face_loaded() {
+                return;
+            }
+            let s = "Wilmington";
+            for col in 0..s.chars().count() {
+                let x = prefix_width(s, col, 2.0);
+                assert_eq!(column_at(s, x, 2.0), col, "column {col} of {s}");
+            }
+        }
+
+        /// A clipped glyph shows the part of itself that is inside, not a
+        /// squeezed whole one: the quad and its texture window are cut
+        /// together.
+        #[test]
+        fn a_clipped_glyph_cuts_its_texture_with_its_quad() {
+            if !face_loaded() {
+                return;
+            }
+            let mut whole = Mesh::new();
+            text(&mut whole, "M", 0.0, 0.0, 4.0, [1.0; 4]);
+            let full = whole.extent().expect("an inked glyph");
+            let mut cut = Mesh::new();
+            cut.set_clip(Some(Rect::new(0.0, 0.0, full.w * 0.5, full.h)));
+            text(&mut cut, "M", 0.0, 0.0, 4.0, [1.0; 4]);
+            let half = cut.extent().expect("half a glyph is still ink");
+            assert!(half.w < full.w, "the quad was cut");
+            let (u_full, u_half) = (uv_span(&whole), uv_span(&cut));
+            assert!(u_half < u_full, "and so was the texture window");
+        }
+
+        /// The horizontal span of a mesh's texture coordinates.
+        fn uv_span(m: &Mesh) -> f32 {
+            let us: Vec<f32> = m.glyph_vertices().chunks_exact(8).map(|v| v[2]).collect();
+            us.iter().cloned().fold(f32::MIN, f32::max)
+                - us.iter().cloned().fold(f32::MAX, f32::min)
+        }
     }
 }

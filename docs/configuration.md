@@ -100,6 +100,9 @@ host_port = 57210        # port for the host's script-facing front (UDP + TCP)
 # server = "127.0.0.1:57110"  # also attach the client leg to this audio server
 # shm = "/clausters"          # map this segment for meters/scopes
 # data_dir = "/path"          # GuiDef store location
+# font = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+#                             # the typeface to draw text with, on a host built
+#                             # with a rasterizer (its `font-atlas` feature)
 
 [gui.theme]              # color-role overrides for the host's look (optional)
 # accent = "#ff8c40"     # each entry is role = "#rrggbb" or "#rrggbbaa"; the

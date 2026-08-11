@@ -38,7 +38,7 @@ usage:
   clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
                 [--tcp [port] | --no-tcp] [--ws [port]] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
-                [--theme <path>]
+                [--theme <path>] [--font <path>]
       --port <n>            port for the GUI host's server front
                             (script -> host, UDP and TCP); default 57210
       --tcp [port]          length-prefixed OSC over TCP — on by default at the
@@ -77,6 +77,12 @@ usage:
                             flat table of role = \"#rrggbb[aa]\" entries, laid
                             over [gui.theme] from the config. A partial table
                             is fine — unlisted roles keep the default look.
+      --font <path>         draw text with this typeface (TrueType/OpenType)
+                            instead of the embedded bitmap face. Only a host
+                            built with `--features font-atlas` reads it; any
+                            other build warns and keeps its bitmap face. With
+                            the feature and no path, one of the system's own
+                            faces is used when there is one.
       --headless            run the protocol with no display (tests / no GPU);
                             the default opens windows (winit + wgpu)
   -v, -vv, -vvv             log verbosity: warn (default) -> info -> debug ->
@@ -132,6 +138,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut cli_standalone_name: Option<String> = None;
     let mut config_path: Option<String> = None;
     let mut theme_path: Option<String> = None;
+    let mut font_path: Option<String> = None;
     let mut it = args.iter().peekable();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -194,6 +201,13 @@ fn run(args: &[String]) -> Result<(), String> {
                 theme_path = Some(
                     it.next()
                         .ok_or_else(|| format!("--theme needs a path\n{USAGE}"))?
+                        .clone(),
+                );
+            }
+            "--font" => {
+                font_path = Some(
+                    it.next()
+                        .ok_or_else(|| format!("--font needs a path\n{USAGE}"))?
                         .clone(),
                 );
             }
@@ -326,6 +340,11 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut host = Host::new();
     host.theme = theme;
     host.metrics = metrics;
+    load_face(
+        &mut host,
+        font_path.or_else(|| cfg.gui.font.clone()),
+        headless,
+    );
     if let Some(store) = store {
         host = host.with_store(store);
     }
@@ -375,6 +394,47 @@ fn run(args: &[String]) -> Result<(), String> {
             tcp_port.map(|p| (p, max_frame)),
             ws_port.map(|p| (p, max_frame)),
         )
+    }
+}
+
+/// Points the host at the typeface it draws with: the path the command line or
+/// the config named, or one of the system's faces. Only a build with a
+/// rasterizer can use one — without the feature a named path is a warning, not
+/// an error, since the bitmap face draws either way.
+fn load_face(host: &mut Host, path: Option<String>, headless: bool) {
+    #[cfg(feature = "font-atlas")]
+    {
+        if headless {
+            return; // nothing draws; a face would be read for nobody
+        }
+        let source = match &path {
+            Some(p) => Some(clausters_gui::host::fontfile::FontFile::at(p)),
+            None => clausters_gui::host::fontfile::FontFile::system(),
+        };
+        match source {
+            Some(face) => {
+                let at = face.path().display().to_string();
+                if host.load_face(&face) {
+                    tracing::info!("drawing text with the typeface at {at}");
+                } else {
+                    tracing::warn!(
+                        "{at} is not a typeface this host can read; \
+                                    drawing with the embedded bitmap face"
+                    );
+                }
+            }
+            None => tracing::info!("no typeface found; drawing with the embedded bitmap face"),
+        }
+    }
+    #[cfg(not(feature = "font-atlas"))]
+    {
+        let _ = (host, headless);
+        if path.is_some() {
+            tracing::warn!(
+                "--font needs a host built with `--features font-atlas`; \
+                 drawing with the embedded bitmap face"
+            );
+        }
     }
 }
 

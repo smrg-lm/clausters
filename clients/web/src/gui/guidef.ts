@@ -656,8 +656,10 @@ export function scroll(
 // ---- the light controls ----
 
 /**
- * Static `label` text. `textSize` is the glyph scale over the host's embedded
- * 5x7 font (default 2.0 — every text-bearing widget takes it); `wrap` word-
+ * Static `label` text. `textSize` is the glyph scale over the host's font
+ * (default 2.0 — every text-bearing widget takes it; a host drawing with its
+ * embedded 5x7 face quantizes it to half-steps, one built with a rasterizer
+ * takes it as sent); `wrap` word-
  * wraps to the label's width (off, an overflowing line clips with an
  * ellipsis); `align` places each line: `"start"` (the default), `"center"` or
  * `"end"`.
