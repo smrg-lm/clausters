@@ -250,6 +250,27 @@ Under an axis a property drops the axis marker — `x.start` is the old
 | `x` | `unit` (`time`/`samples`/`beats`/`off`; `ruler` is accepted as its old name), `start`, `len`, `tempo` (beats per second), `beat_at`, `quant` (**beats per bar** — the grid a `bar:beat` label counts on, not a length in samples), `sample_rate`, `link`, `sel_start`, `sel_len`, `playhead`, `playhead_at`, `playhead_loop_start`, `playhead_loop_len` |
 | `y` | `unit` (`norm`/`db`/`bits`/`percent`/`hz`/`off`), `start`, `len`, `min`, `max`, `bit_depth` |
 
+**`min`/`max` are the value domain, and every view of a signal is drawn over
+it** — the trace of a take, a plot, a live scope, and the navigable waveform,
+which used to ignore the pair and pin itself to full-scale amplitude. Omitted, the domain is `[-1, 1]`: audio.
+
+- **A named domain is ruled as a plain value axis.** `db`, `bits` and `percent`
+  are units of *full scale* — a rung at -6 dB says nothing over `[20, 20000]` —
+  so they apply to the default domain, and an axis with a domain of its own is
+  labelled with its own numbers whatever `unit` says.
+
+**How a trace is inked, in every view of a signal.** A column is the **min/max
+of what the signal did in that pixel**, and it is never extended to reach the
+zero line: the solid body of a zoomed-out waveform is the data filling it, not a
+fill the drawing adds. That is why there is no "filled" switch and no zoom at
+which one would belong — a subsonic signal has far more samples than the screen
+has pixels and is still a curve, while audio crosses the whole span inside one
+column and is still a body. Two floors keep it legible: a column is inked at
+least one pixel in each direction, so a flat stretch stays visible, and once the
+zoom is deep enough that consecutive samples stand three `point_radius` apart,
+each sample is **marked with a dot** — the line between them is interpolation,
+the dots are the data.
+
 An `axes` pair works on `/gui_def` and on `/gui_set` alike (there it rides as
 its JSON string, the `theme` convention). Everything the container does **not**
 own stays where it is: an element's source (`data`, `buffer`, `path`, `cache`,

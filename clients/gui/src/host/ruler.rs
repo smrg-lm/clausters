@@ -478,7 +478,7 @@ pub(crate) fn readout_amp(amp: f64, unit: RulerY, bit_depth: u32, amp_per_px: f6
 
 /// A decimal label with just enough decimals for `step` (so deep zoom never
 /// prints two ticks the same), trailing zeros trimmed (`0.5`, `-0.25`, `1`).
-fn fmt_decimal(v: f64, step: f64) -> String {
+pub(crate) fn fmt_decimal(v: f64, step: f64) -> String {
     let decimals = if step >= 1.0 {
         0
     } else {

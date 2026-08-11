@@ -509,7 +509,7 @@ pub(crate) fn render(
         // rectangle, so the picture and the chrome around it agree.
         let body = item.body;
         match &item.kind {
-            TimelineKind::Waveform { amp, .. } => {
+            TimelineKind::Waveform { domain, amp, .. } => {
                 if let Some(slot) = waveforms.get_mut(&item.id) {
                     let nav = chrome_for(inputs, item.id, &item.editor, || {
                         View::full(slot.view.total_samples())
@@ -517,12 +517,24 @@ pub(crate) fn render(
                     .nav;
                     let nav = placed_nav(&nav, item.editor.offset);
                     slot.view.set_amp_window(amp.0, amp.1);
+                    slot.view.set_domain(domain.0, domain.1);
                     let th = item.theme.as_deref().unwrap_or(theme);
                     slot.view
                         .set_palette([th.series_1, th.series_2, th.series_3, th.series_4]);
                     let lanes = slot.view.num_channels();
                     let overlaid =
                         matches!(item.kind, TimelineKind::Waveform { overlay: true, .. });
+                    let lane_h = if overlaid || lanes == 1 {
+                        body.h
+                    } else {
+                        lane_rect(body, lanes, 0).h
+                    };
+                    // The floor a column's ink is held above, in the physical
+                    // pixels the lane is actually drawn at — and the radius a
+                    // sample dot takes once the samples stand far enough apart
+                    // to carry one.
+                    slot.view.set_lane_height(lane_h);
+                    slot.view.set_dot_radius(inputs.metrics.point_radius);
                     let framings: Vec<Framing> = if overlaid || lanes == 1 {
                         vec![framing_of(body, fb_w, fb_h)]
                     } else {

@@ -397,6 +397,18 @@ impl SignalElement {
         self.display.label.as_deref()
     }
 
+    /// The **value domain** the element's picture is drawn over: its declared
+    /// `min`/`max`, defaulting to full-scale amplitude
+    /// ([`crate::waveform::DEFAULT_DOMAIN`]).
+    ///
+    /// Every presentation reads it — the take in a clip, the plot, the live
+    /// scope and, since the divergence closed, the navigable GPU trace, which
+    /// used to be pinned to ±1 and drop a declared range on the floor.
+    pub fn domain(&self) -> (f32, f32) {
+        let (lo, hi) = crate::waveform::DEFAULT_DOMAIN;
+        self.value.resolved(lo, hi)
+    }
+
     /// Whether the element owns a GPU slot: a navigable heavy presentation.
     /// Everything else — a plot, a live curve, a clip's take — draws into the
     /// window's shared mesh.

@@ -306,9 +306,10 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
                     &ticks,
                 );
             }
-            // A zero baseline, when 0 is within the displayed range.
-            if lo < 0.0 && hi > 0.0 {
-                let y = lane.y + lane.h * (1.0 - fraction(0.0, lo, hi));
+            // A zero baseline, when 0 is within the displayed range — the same
+            // rule the columns are filled to.
+            if let Some(b) = crate::waveform::baseline_of(lo, hi) {
+                let y = lane.y + lane.h * (1.0 - fraction(b, lo, hi));
                 mesh.line(
                     [lane.x, y],
                     [lane.x + lane.w, y],
@@ -332,10 +333,7 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
             |x| (x - lane.x) as f64 / lane.w.max(1.0) as f64 * span,
             |s| lane.x + (s / span) as f32 * lane.w,
             |v| lane.y + lane.h * (1.0 - fraction(v, lo, hi)),
-            TraceStyle {
-                color: theme.series(ch),
-                width: m.trace_w,
-            },
+            TraceStyle::new(theme.series(ch), m.trace_w).with_dots(m.point_radius),
         );
     }
 }

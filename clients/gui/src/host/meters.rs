@@ -18,6 +18,7 @@ use super::layout::Rect;
 use super::live::TapWindow;
 use super::paint::{Color, Draw};
 use super::ruler;
+use super::signal::trace;
 use crate::viewport::{Axis, Unit};
 
 /// The 0..1 position of `value` in `[min, max]`, clamped. A degenerate range
@@ -68,16 +69,11 @@ pub fn draw_scope(
     }
     mesh.rect(body, theme.field);
     mesh.border(body, m.divider_w, theme.accent);
-    if history.len() >= 2 {
-        let dx = body.w / (history.len() - 1) as f32;
-        let y_at = |v: &f32| body.y + body.h * (1.0 - fraction(*v, min, max));
-        let mut prev = [body.x, y_at(&history[0])];
-        for (i, v) in history.iter().enumerate().skip(1) {
-            let p = [body.x + i as f32 * dx, y_at(v)];
-            mesh.line(prev, p, m.trace_w, theme.trace);
-            prev = p;
-        }
-    }
+    let color = theme.trace;
+    // A control bus's history is one channel of a live source: the same
+    // renderer, so a history longer than the body's pixels summarizes instead
+    // of aliasing — which a polyline of its own never did.
+    trace_lane(d, body, history, 1, 0, (min, max), color);
 }
 
 /// The display parameters of one audio-rate oscilloscope draw, alongside its
@@ -173,54 +169,58 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
         } else {
             d.theme.trace
         };
-        let at = |f: usize| p.window.samples[f * channels + ch];
-        trace_lane(d, lane, frames, &at, p.min, p.max, color);
+        trace_lane(
+            d,
+            lane,
+            &p.window.samples,
+            channels,
+            ch,
+            (p.min, p.max),
+            color,
+        );
     }
     if frames > 0 {
         value_text(d, if p.window.locked { "lock" } else { "free" }, body);
     }
 }
 
-/// One channel's trace into `lane`: a per-column min/max envelope when the
-/// frames outnumber the pixels, a polyline otherwise.
+/// One channel of a live source into `lane`, through the **one** column source
+/// and mesh renderer every view of a signal against time reads
+/// ([`trace::draw_channel`]): a per-column min/max envelope while the frames
+/// outnumber the pixels, a polyline once they do not.
+///
+/// It used to be this module's own loop — the copy the signal element's
+/// collapse left outside, with a regime rule of its own (`frames > columns *
+/// 2`), a column inked one hairline wide however wide the pixel column was,
+/// and no baseline. A live view is the same drawing of the same signal as a
+/// stored one; only where the samples come from differs.
 fn trace_lane(
     d: &mut Draw,
     lane: Rect,
-    frames: usize,
-    at: &impl Fn(usize) -> f32,
-    min: f32,
-    max: f32,
+    samples: &[f32],
+    channels: usize,
+    ch: usize,
+    domain: (f32, f32),
     color: Color,
 ) {
+    let (min, max) = domain;
     let (mesh, m, _theme) = d.parts();
-    let columns = lane.w.max(1.0) as usize;
-    let y_at = |v: f32| lane.y + lane.h * (1.0 - fraction(v, min, max));
-    if frames > columns * 2 {
-        for c in 0..columns {
-            let f0 = c * frames / columns;
-            let f1 = ((c + 1) * frames / columns).max(f0 + 1);
-            let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
-            for f in f0..f1 {
-                let s = at(f);
-                lo = lo.min(s);
-                hi = hi.max(s);
-            }
-            let (y0, y1) = (y_at(hi), y_at(lo));
-            let x = lane.x + c as f32;
-            mesh.rect(
-                Rect::new(x, y0, m.divider_w, (y1 - y0).max(m.divider_w)),
-                color,
-            );
-        }
-    } else if frames >= 2 {
-        let dx = lane.w / (frames - 1) as f32;
-        let mut prev = [lane.x, y_at(at(0))];
-        for f in 1..frames {
-            let p = [lane.x + f as f32 * dx, y_at(at(f))];
-            mesh.line(prev, p, m.trace_w, color);
-            prev = p;
-        }
+    let frames = samples.len() / channels.max(1);
+    if frames < 2 {
+        return;
     }
+    // A live window is drawn whole: its span is the lane, end to end.
+    let span = (frames - 1) as f64;
+    trace::draw_channel(
+        mesh,
+        lane,
+        &trace::Trace::samples(samples, channels),
+        ch,
+        |x| (x - lane.x) as f64 / lane.w.max(1.0) as f64 * span,
+        |s| lane.x + (s / span) as f32 * lane.w,
+        |v| lane.y + lane.h * (1.0 - fraction(v, min, max)),
+        trace::TraceStyle::new(color, m.trace_w).with_dots(m.point_radius),
+    );
 }
 
 /// Draws the label strip above a view body, if it has a label.
@@ -310,6 +310,69 @@ mod tests {
         assert!(
             many.vertex_count() > with_one,
             "more history points add line segments"
+        );
+    }
+
+    /// The live views read the **one** trace renderer now, so a history longer
+    /// than the body's pixels summarizes into min/max columns instead of
+    /// drawing a segment per sample. This module used to have a polyline of its
+    /// own that stepped `lane.w / (frames - 1)` however many frames there were,
+    /// which aliases and costs the data rather than the screen — the rule every
+    /// other view of a signal has always followed.
+    #[test]
+    fn a_long_history_costs_the_body_not_its_samples() {
+        let body = Rect::new(0.0, 0.0, 80.0, 60.0);
+        let history: Vec<f32> = (0..20_000).map(|i| (i as f32 * 0.01).sin()).collect();
+        let mut mesh = Mesh::new();
+        draw_scope(
+            &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
+            body,
+            &history,
+            -1.0,
+            1.0,
+            None,
+        );
+        // The field, its border and at most one six-vertex column per pixel.
+        let columns = (mesh.vertex_count() as f32 - 60.0) / 6.0;
+        assert!(
+            columns <= body.w + 2.0,
+            "a screenful of columns, not 20000 segments: {columns}"
+        );
+        assert!(!mesh.is_empty());
+    }
+
+    /// A live lane is drawn by the shared renderer, so it inks what the other
+    /// two ink: an offset signal is a band at its own level (never a fill from
+    /// the baseline) and a signal that swings across zero is the solid body.
+    /// Before the fold this module drew a hairline envelope of its own, so a
+    /// live view never quite matched the stored view beside it.
+    #[test]
+    fn a_live_lane_inks_what_every_other_trace_inks() {
+        let lane = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let draw = |samples: &[f32], min: f32, max: f32| {
+            let mut mesh = Mesh::new();
+            trace_lane(
+                &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
+                lane,
+                samples,
+                1,
+                0,
+                (min, max),
+                [1.0, 1.0, 1.0, 1.0],
+            );
+            mesh.extent().expect("the lane drew").h
+        };
+        let offset = vec![0.8f32; 4_000];
+        assert!(
+            draw(&offset, -1.0, 1.0) < lane.h * 0.05,
+            "an offset signal is a band where the samples are"
+        );
+        let swinging: Vec<f32> = (0..4_000)
+            .map(|i| if i % 2 == 0 { 0.9 } else { -0.9 })
+            .collect();
+        assert!(
+            draw(&swinging, -1.0, 1.0) > lane.h * 0.8,
+            "and a swinging one is the body its own data fills"
         );
     }
 }

@@ -874,15 +874,31 @@ export function waveform(
         rulerY?: string;
         /** The integer resolution `rulerY: "bits"` labels (default 16). */
         bitDepth?: number;
+        /**
+         * The value domain the trace is drawn over, `[-1, 1]` (full-scale
+         * audio) when omitted. A named domain is ruled with its own numbers,
+         * since `db`/`bits`/`percent` are units of full scale.
+         *
+         * A column is the min/max of what the signal did in that pixel, never
+         * extended to the zero line — the body of a zoomed-out waveform is the
+         * data filling it, not a fill the drawing adds. Zoomed in far enough,
+         * each sample is marked with a dot.
+         */
+        min?: number;
+        /** The top of the value domain (see `min`). */
+        max?: number;
     } = {},
 ): GuiNode {
     const {
         cache, path, buffer, data, blob, channels, baseBucket, overlay,
-        rulerY, bitDepth, ...timeline
+        rulerY, bitDepth, min, max, ...timeline
     } = options;
     return node("signal", {
         view: "trace",
-        ...timelineProps(timeline, drop([["unit", rulerY], ["bit_depth", bitDepth]])),
+        ...timelineProps(
+            timeline,
+            drop([["unit", rulerY], ["bit_depth", bitDepth], ["min", min], ["max", max]]),
+        ),
         ...sourceProps({ cache, path, buffer, data, blob, channels }),
         ...drop([["base_bucket", baseBucket], ["overlay", flag(overlay)]]),
     });

@@ -630,6 +630,7 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
              path: str | None = None, cache: str | None = None, channels: int | None = None,
              base_bucket: int | None = None, overlay: bool | None = None, ruler: str | None = None,
              ruler_y: str | None = None, bit_depth: int | None = None,
+             min: float | None = None, max: float | None = None,
              sample_rate: float | None = None, tempo: float | None = None,
              beat_at: float | None = None, quant: float | None = None,
              sel_start: float | None = None, sel_len: float | None = None,
@@ -673,6 +674,19 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     the ``bit_depth`` resolution, default 16), ``"percent"`` (0-100% of full
     scale), or ``"off"``.
 
+    ``min``/``max`` are the **value domain** the trace is drawn over, ``[-1,
+    1]`` (full-scale audio) when omitted. A named domain is **ruled with its
+    own numbers** whatever ``ruler_y`` says, since ``"db"``, ``"bits"`` and
+    ``"percent"`` are units of full scale.
+
+    A column is the **min/max of what the signal did in that pixel**, never
+    extended to the zero line: the solid body of a zoomed-out waveform is the
+    data filling it, not a fill the drawing adds — which is why a subsonic
+    signal (a 1 Hz curve, whose samples do not fit the screen either) draws as
+    the curve it is. Zoom in far enough that consecutive samples stand apart
+    and each one is **marked with a dot**: the line between them is
+    interpolation, the dots are the data.
+
     The rest of the editor chrome: ``sel_start``/``sel_len`` set the selection
     in samples (dragging on the view updates it and emits
     ``/gui_event id "selection" start len``; Shift+drag pans, the wheel zooms).
@@ -711,6 +725,7 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket, color=color)
     extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
+                       min=min, max=max,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
                        playhead_at=playhead_at, playhead=playhead,

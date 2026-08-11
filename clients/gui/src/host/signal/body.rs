@@ -49,7 +49,7 @@ impl SignalElement {
         let Some(data) = self.source.data() else {
             return;
         };
-        let (min, max) = self.value.resolved(-1.0, 1.0);
+        let (min, max) = self.domain();
         super::super::track::draw_take(d, rect, local, dur, &data.trace(), min, max);
     }
 }

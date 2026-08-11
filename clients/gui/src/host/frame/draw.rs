@@ -50,6 +50,49 @@ pub(crate) fn ruler_strip_body(rect: Rect, indent: f32) -> Rect {
     Rect::new(rect.x + hw, rect.y, (rect.w - hw).max(0.0), 0.0)
 }
 
+/// The ticks of a trace's vertical strip, over the value domain its geometry
+/// was built through and the visible window `(y0, y_len)`.
+///
+/// **The amplitude axis *is* the full-scale domain.** `dbfs`, `bits` and
+/// `percent` are units of full scale — a rung at -6 dB or at 2^15 says nothing
+/// over a range of, say, `[0, 400]` — so an element that names a domain of its
+/// own is ruled as a plain value axis instead, over the slice its window shows.
+/// The default domain keeps the amplitude ladders untouched, which is every
+/// view that has ever been drawn.
+fn amp_or_value_ticks(
+    domain: (f32, f32),
+    unit: RulerY,
+    bit_depth: u32,
+    lane_h: f64,
+    (y0, y_len): (f64, f64),
+    m: &Metrics,
+) -> Vec<ruler::Tick> {
+    if domain == crate::waveform::DEFAULT_DOMAIN {
+        return ruler::amp_ticks(unit, lane_h, bit_depth, y0, y_len, m);
+    }
+    // The visible slice of the domain. `value_to_display` is affine, so a
+    // value's fraction of this slice is exactly its fraction of the window —
+    // the ticks land on the samples they name with no margin arithmetic here.
+    let lo = crate::waveform::display_to_value(y0, domain.0, domain.1);
+    let hi = crate::waveform::display_to_value(y0 + y_len, domain.0, domain.1);
+    ruler::value_ticks(lo as f64, hi as f64, lane_h, m)
+}
+
+/// What a timeline view's **vertical** axis measures, which is what its cursor
+/// readout names. It used to be an `Option<(f64, FreqScale, f64)>` where
+/// `None` silently meant "a waveform, in amplitude" — and amplitude is the
+/// default of a value domain, not the only one, so the absence had to become a
+/// case that carries its own answer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum Vertical {
+    /// A trace over its value domain (`min`/`max`,
+    /// [`crate::waveform::DEFAULT_DOMAIN`] for full-scale amplitude).
+    Value((f32, f32)),
+    /// A time-frequency texture: the Nyquist, the display scale and the log
+    /// floor its shader maps through.
+    Frequency(f64, FreqScale, f64),
+}
+
 /// Draws the selection overlay and playhead of one timeline view — both read
 /// off `chrome`, its navigation group's shared state — plus its cursor readout
 /// when the pointer is inside the body. `lanes` is the lane
@@ -64,7 +107,7 @@ pub(super) fn draw_editor_overlay(
     rate: f64,
     lanes: usize,
     inputs: &FrameInputs,
-    nyquist_scale: Option<(f64, FreqScale, f64)>,
+    vertical: Vertical,
     theme: &Theme,
 ) {
     let m = inputs.metrics;
@@ -128,21 +171,29 @@ pub(super) fn draw_editor_overlay(
         // names exactly what is under the cursor at any vertical zoom/pan.
         let (y0, y_len) = editor.y_view();
         let display = y0 + (1.0 - rel) * y_len;
-        let text = match nyquist_scale {
+        let text = match vertical {
             // Spectrogram: invert the shader's display→bin mapping at the
             // cursor's height for the frequency under it.
-            Some((nyquist, scale, f_lo)) => {
+            Vertical::Frequency(nyquist, scale, f_lo) => {
                 let f = ruler::display_to_hz(display, nyquist, scale, f_lo);
                 format!("{time}  {} HZ", f.round() as i64)
             }
-            // Waveform: the amplitude at the cursor's height within its lane,
-            // in the vertical ruler's unit.
-            None => {
-                let amp = (2.0 * display - 1.0) / crate::waveform::AMP_MARGIN as f64;
-                let amp = amp.clamp(-1.0, 1.0);
-                let amp_per_px =
-                    2.0 * y_len / crate::waveform::AMP_MARGIN as f64 / lane.h.max(1.0) as f64;
-                let value = ruler::readout_amp(amp, editor.ruler_y, editor.bit_depth, amp_per_px);
+            // A trace: the value at the cursor's height within its lane, read
+            // through the same domain the geometry was built with — so the
+            // readout names what is under the pointer whatever range the
+            // element declared, and not an amplitude it never drew.
+            Vertical::Value(domain) => {
+                let v = crate::waveform::display_to_value(display, domain.0, domain.1);
+                let v = v.clamp(domain.0.min(domain.1), domain.0.max(domain.1));
+                let per_px = crate::waveform::value_per_display(domain.0, domain.1) * y_len
+                    / lane.h.max(1.0) as f64;
+                let value = if domain == crate::waveform::DEFAULT_DOMAIN {
+                    ruler::readout_amp(v as f64, editor.ruler_y, editor.bit_depth, per_px)
+                } else {
+                    // A named domain is a plain value axis (see
+                    // `amp_or_value_ticks`), so its readout is the number.
+                    ruler::fmt_decimal(v as f64, per_px)
+                };
                 format!("{time}  {value}")
             }
         };
@@ -191,6 +242,7 @@ pub(super) fn draw_timeline_meshes(
         match &item.kind {
             TimelineKind::Waveform {
                 overlay: overlaid,
+                domain,
                 amp,
             } => {
                 let Some(slot) = waveforms.get(&item.id) else {
@@ -223,12 +275,12 @@ pub(super) fn draw_timeline_meshes(
                     let (y0, y_len) = (amp.0, amp.1);
                     for ch in 0..draw_lanes {
                         let lane = lane_rect(body, draw_lanes, ch);
-                        let ticks = ruler::amp_ticks(
+                        let ticks = amp_or_value_ticks(
+                            *domain,
                             item.editor.ruler_y,
-                            lane.h as f64,
                             item.editor.bit_depth,
-                            y0,
-                            y_len,
+                            lane.h as f64,
+                            (y0, y_len),
                             m,
                         );
                         ruler::draw_ticks_v(
@@ -245,7 +297,15 @@ pub(super) fn draw_timeline_meshes(
                     over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), th.lane_divider);
                 }
                 draw_editor_overlay(
-                    &mut *over, item, body, &chrome, rate, draw_lanes, inputs, None, th,
+                    &mut *over,
+                    item,
+                    body,
+                    &chrome,
+                    rate,
+                    draw_lanes,
+                    inputs,
+                    Vertical::Value(*domain),
+                    th,
                 );
             }
             TimelineKind::Spectrogram { freq, look } => {
@@ -319,7 +379,7 @@ pub(super) fn draw_timeline_meshes(
                     rate,
                     lanes,
                     inputs,
-                    Some((nyquist, look.freq_scale, f_lo)),
+                    Vertical::Frequency(nyquist, look.freq_scale, f_lo),
                     th,
                 );
             }
@@ -525,5 +585,63 @@ pub(super) fn draw_element_overlays(
                 focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::waveform::DEFAULT_DOMAIN;
+
+    /// The vertical strip follows the domain the geometry was built through.
+    /// Full scale keeps the amplitude ladders — dBFS rungs walking outward from
+    /// a silence line — and a domain of the element's own is ruled as the plain
+    /// value axis, because a rung at -6 dB says nothing over `[20, 20000]`.
+    #[test]
+    fn a_named_domain_is_ruled_as_a_value_axis() {
+        let m = Metrics::default();
+        let amp = amp_or_value_ticks(DEFAULT_DOMAIN, RulerY::Db, 16, 300.0, (0.0, 1.0), &m);
+        assert!(
+            amp.iter().any(|t| t.label.as_deref() == Some("-INF")),
+            "full scale keeps the dBFS ladder: {amp:?}"
+        );
+        let named = amp_or_value_ticks((20.0, 20_000.0), RulerY::Db, 16, 300.0, (0.0, 1.0), &m);
+        assert!(
+            !named.iter().any(|t| t.label.as_deref() == Some("-INF")),
+            "a named domain is not an amplitude axis: {named:?}"
+        );
+        assert!(
+            named.iter().any(|t| t
+                .label
+                .as_deref()
+                .and_then(|l| l.replace(['k', 'K'], "").parse::<f64>().ok())
+                .is_some_and(|v| v > 1.0)),
+            "it labels its own values: {named:?}"
+        );
+    }
+
+    /// The ticks of a named domain land on the values they name: a value's
+    /// fraction of the visible slice is its fraction of the lane, margin
+    /// included, so the strip and the geometry cannot disagree.
+    #[test]
+    fn a_named_domains_ticks_land_where_the_geometry_puts_the_value() {
+        let m = Metrics::default();
+        let domain = (0.0f32, 400.0f32);
+        let window = (0.2, 0.5);
+        let ticks = amp_or_value_ticks(domain, RulerY::Norm, 16, 400.0, window, &m);
+        assert!(!ticks.is_empty());
+        for t in &ticks {
+            let Some(v) = t.label.as_deref().and_then(|l| l.parse::<f64>().ok()) else {
+                continue;
+            };
+            // Where the geometry puts that value, as a fraction of the lane.
+            let d = crate::waveform::value_to_display(v as f32, domain.0, domain.1);
+            let geometry = (d - window.0) / window.1;
+            assert!(
+                (geometry - t.frac).abs() < 1e-6,
+                "tick {v} at {}, geometry at {geometry}",
+                t.frac
+            );
+        }
     }
 }

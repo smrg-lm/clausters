@@ -457,8 +457,10 @@ pub(crate) fn draw_take(
         return;
     }
     let y_at = |v: f32| cr.y + cr.h * (1.0 - fraction(v, min, max));
-    if min < 0.0 && max > 0.0 {
-        let y = y_at(0.0);
+    // The line and the fill read one rule, so a take cannot be filled to a
+    // baseline that was never drawn (or drawn one it does not reach).
+    if let Some(b) = crate::waveform::baseline_of(min, max) {
+        let y = y_at(b);
         mesh.line([cr.x, y], [cr.x + cr.w, y], m.divider_w, theme.baseline);
     }
     signal::trace::draw_channel(
@@ -471,10 +473,7 @@ pub(crate) fn draw_take(
         // clip's span, seen through the clip's visible window.
         |s| local_x(cr, local, s / total * dur),
         y_at,
-        TraceStyle {
-            color: theme.selection,
-            width: m.divider_w,
-        },
+        TraceStyle::new(theme.selection, m.divider_w).with_dots(m.point_radius),
     );
 }
 

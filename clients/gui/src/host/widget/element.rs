@@ -499,6 +499,13 @@ pub enum SlotFrame {
     /// about the lanes that is the element's: whether they stack or share one.
     Waveform {
         body: Rect,
+        /// The **value domain** the geometry is mapped through — the element's
+        /// `min`/`max`, [`crate::waveform::DEFAULT_DOMAIN`] when it names
+        /// neither. It is the element's because the same pair decides what the
+        /// mesh renderers draw, and a prop that means something in four of an
+        /// element's presentations and nothing in the fifth is the divergence
+        /// this closed.
+        domain: (f32, f32),
         /// The amplitude window, as a normalized `(start, len)`.
         amp: (f64, f64),
         overlay: bool,

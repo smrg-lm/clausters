@@ -22,10 +22,12 @@ use crate::host::layout::Rect;
 use crate::host::paint::{Color, Mesh};
 
 /// At or below this many samples per pixel the trace is drawn as a polyline
-/// through the raw samples rather than as min/max columns — the same regime
-/// boundary the GPU waveform picks (`crate::waveform`'s `LINE_THRESHOLD`), so
-/// a signal looks the same whichever destination draws it.
-pub const LINE_THRESHOLD: f64 = 2.0;
+/// through the raw samples rather than as min/max columns.
+///
+/// It **is** the GPU waveform's threshold, not a copy of it: the two were two
+/// literals with a comment asking them not to drift, which is the weakest form
+/// a shared constant can take.
+pub use crate::waveform::LINE_THRESHOLD;
 
 /// A signal's samples, read per pixel column. The two arms are the two shapes
 /// a source arrives in: an interleaved buffer held in full (an inline body, a
@@ -110,15 +112,50 @@ impl<'a> Trace<'a> {
     }
 }
 
-/// How a trace is inked: the color of its columns and polyline, and the trace's
-/// **weight** — the width the polyline is stroked with, and the least a column
-/// is ever inked, so a signal keeps one optical weight across the regime
+/// How a trace is inked: the color of its columns and polyline, and the
+/// trace's **weight** — the width the polyline is stroked with, and the least a
+/// column is ever inked, so a signal keeps one optical weight across the regime
 /// boundary (a column is as wide as the pixel column it fills, which is what
 /// makes the columns tile).
 #[derive(Debug, Clone, Copy)]
 pub struct TraceStyle {
     pub color: Color,
     pub width: f32,
+    /// The radius a **sample dot** is drawn at once the samples are far enough
+    /// apart to carry one ([`dots_fit`]); `0` draws none.
+    ///
+    /// It is `point_radius` — the role a break-point is drawn at — and that is
+    /// the point rather than a coincidence: a dot says *this is a sample, and
+    /// it is a thing you could take hold of*, which is what sample-level
+    /// editing will grab. Sizing it as a curve's break-point means the two
+    /// affordances read as the same kind of target the day the second one
+    /// becomes draggable.
+    pub dot_radius: f32,
+}
+
+/// Whether sample dots are drawn at `spacing` pixels apart: they need to read
+/// as separate points, so a dot is drawn only once its neighbour is three radii
+/// away — a full diameter of air between them. Below that the line is the
+/// picture and a row of touching dots would just thicken it.
+pub fn dots_fit(spacing: f32, radius: f32) -> bool {
+    radius > 0.0 && spacing >= 3.0 * radius
+}
+
+impl TraceStyle {
+    /// A trace inked at `width`, with no sample dots.
+    pub fn new(color: Color, width: f32) -> Self {
+        TraceStyle {
+            color,
+            width,
+            dot_radius: 0.0,
+        }
+    }
+
+    /// The same trace, marking each sample once they are far enough apart.
+    pub fn with_dots(mut self, radius: f32) -> Self {
+        self.dot_radius = radius;
+        self
+    }
 }
 
 /// Draws one channel of `trace` into `rect`, resolved to the rect's own pixel
@@ -180,11 +217,19 @@ pub fn draw_channel(
         // sample, not by pixel, so nothing visible is skipped.
         let first = src(rect.x).floor().max(0.0) as usize;
         let last = (src(rect.x + rect.w).ceil().max(0.0) as usize).min(frames - 1);
+        // Where the samples land decides whether each one is marked: the line
+        // is an interpolation the drawing invents, and a dot is what says which
+        // points of it are data.
+        let spacing = (x_of(1.0) - x_of(0.0)).abs();
+        let dots = dots_fit(spacing, style.dot_radius);
         let mut prev: Option<[f32; 2]> = None;
         for f in first..=last.max(first) {
             let p = [x_of(f as f64), y_at(trace.at(ch, f as f64))];
             if let Some(q) = prev {
                 mesh.line(q, p, style.width, style.color);
+            }
+            if dots {
+                mesh.disc(p[0], p[1], style.dot_radius, style.color);
             }
             prev = Some(p);
         }
@@ -254,10 +299,7 @@ mod tests {
             |x| (x - rect.x) as f64 / rect.w as f64 * n,
             |s| rect.x + (s / n) as f32 * rect.w,
             |v| rect.y + rect.h * 0.5 * (1.0 - v),
-            TraceStyle {
-                color: [1.0, 1.0, 1.0, 1.0],
-                width: 1.0,
-            },
+            TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0),
         );
         // Two triangles (six vertices) per column, at most one column per pixel.
         assert!(mesh.vertex_count() <= (rect.w as u32 + 2) * 6);
@@ -287,10 +329,7 @@ mod tests {
             |x| (x - rect.x) as f64 / rect.w as f64 * n,
             |s| rect.x + (s / n) as f32 * rect.w,
             |v| rect.y + rect.h * 0.5 * (1.0 - v),
-            TraceStyle {
-                color: [1.0, 1.0, 1.0, 1.0],
-                width: 1.5,
-            },
+            TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.5),
         );
         // Every column drew: six vertices each, none collapsed away.
         assert_eq!(mesh.vertex_count(), rect.w as u32 * 6);
@@ -308,6 +347,150 @@ mod tests {
             "columns span the rect, widened to the weight, got {}",
             inked.w
         );
+    }
+
+    /// **A column is its own envelope, never a fill to the baseline** — the
+    /// divergence this closed, and it closed the other way from the first
+    /// attempt. The GPU pipeline used to clamp every column to zero; clamping
+    /// everywhere would have inked a band the signal was never in.
+    ///
+    /// The two cases are the whole argument. A signal sitting at +0.8 draws a
+    /// thin band at +0.8 whatever its domain says, because that is where it
+    /// was; and a signal that swings across zero draws the solid body every
+    /// editor draws, because *the data fills it* — no rule, no threshold, and
+    /// nothing that has to know the zoom.
+    #[test]
+    fn a_column_is_its_own_envelope_and_the_data_is_what_fills_it() {
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let draw = |samples: &[f32], min: f32, max: f32| {
+            let trace = Trace::samples(samples, 1);
+            let n = samples.len() as f64;
+            let mut mesh = Mesh::new();
+            draw_channel(
+                &mut mesh,
+                rect,
+                &trace,
+                0,
+                |x| (x - rect.x) as f64 / rect.w as f64 * n,
+                |s| rect.x + (s / n) as f32 * rect.w,
+                move |v| {
+                    rect.y + rect.h * (1.0 - super::super::super::meters::fraction(v, min, max))
+                },
+                TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0),
+            );
+            mesh.extent().expect("the signal drew").h
+        };
+        // A signal that never comes near zero is a band at its own level, in a
+        // bipolar domain exactly as in a unipolar one.
+        let offset = vec![0.8f32; 4_000];
+        assert!(
+            draw(&offset, -1.0, 1.0) < rect.h * 0.05,
+            "an offset signal is not filled from the baseline"
+        );
+        assert!(
+            draw(&offset, 0.0, 1.0) < rect.h * 0.05,
+            "...and its domain does not change that"
+        );
+        // A signal that does cross zero fills, and the data is what fills it:
+        // every column's own min/max spans the lane.
+        let swinging: Vec<f32> = (0..4_000)
+            .map(|i| if i % 2 == 0 { 0.9 } else { -0.9 })
+            .collect();
+        assert!(
+            draw(&swinging, -1.0, 1.0) > rect.h * 0.8,
+            "audio at overview zoom is the solid body it always was"
+        );
+    }
+
+    /// A **subsonic** signal is the case that proves the zoom could not have
+    /// been the criterion: a cycle a second has far more samples than the
+    /// screen has pixels — deep in the column regime — and is a curve, not a
+    /// body. Every column is a thin band, and the bands trace the wave.
+    #[test]
+    fn a_subsonic_signal_draws_a_curve_not_a_body() {
+        // One cycle of a 1 Hz sine at 48 kHz: 48000 samples over 100 px.
+        let samples: Vec<f32> = (0..48_000)
+            .map(|i| (i as f32 / 48_000.0 * std::f32::consts::TAU).sin())
+            .collect();
+        let trace = Trace::samples(&samples, 1);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let n = samples.len() as f64;
+        let mut mesh = Mesh::new();
+        draw_channel(
+            &mut mesh,
+            rect,
+            &trace,
+            0,
+            |x| (x - rect.x) as f64 / rect.w as f64 * n,
+            |s| rect.x + (s / n) as f32 * rect.w,
+            |v| rect.y + rect.h * 0.5 * (1.0 - v),
+            TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0),
+        );
+        // Well past the polyline threshold — this is the column regime.
+        assert!(n / rect.w as f64 > LINE_THRESHOLD * 100.0);
+        // The column at the peak barely moves: a thin band near the top, not a
+        // slab reaching down to the zero line.
+        let peak_col = (rect.w * 0.25) as usize;
+        let x = rect.x + peak_col as f32;
+        let per_px = n / rect.w as f64;
+        let (lo, hi) = trace.column(0, per_px, x as f64 * per_px, (x as f64 + 1.0) * per_px);
+        assert!(lo > 0.9 && hi <= 1.0, "the peak column is [{lo}, {hi}]");
+        assert!(
+            (hi - lo) < 0.05,
+            "a slow cycle hardly moves inside one column"
+        );
+    }
+
+    /// **Sample dots**: once the samples stand far enough apart to read as
+    /// separate points, each one is marked. The line between them is an
+    /// interpolation the drawing invents — the dot is what says which points of
+    /// it are data, and what sample-level editing will take hold of, which is
+    /// why it is sized as a curve's break-point.
+    #[test]
+    fn samples_are_marked_once_they_stand_apart() {
+        let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
+        let draw = |n: usize, radius: f32| {
+            let samples: Vec<f32> = (0..n).map(|i| (i as f32 * 0.3).sin()).collect();
+            let trace = Trace::samples(&samples, 1);
+            let span = (n - 1) as f64;
+            let mut mesh = Mesh::new();
+            draw_channel(
+                &mut mesh,
+                rect,
+                &trace,
+                0,
+                |x| (x - rect.x) as f64 / rect.w as f64 * span,
+                |s| rect.x + (s / span) as f32 * rect.w,
+                |v| rect.y + rect.h * 0.5 * (1.0 - v),
+                TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0).with_dots(radius),
+            );
+            mesh.vertex_count()
+        };
+        // 20 samples over 200 px: 10 px apart, past three radii — marked.
+        let marked = draw(20, 3.0);
+        let bare = draw(20, 0.0);
+        assert!(
+            marked > bare,
+            "deep zoom marks each sample: {marked} vs {bare}"
+        );
+        // 100 samples over the same width: 2 px apart, so a row of dots would
+        // just thicken the line. None are drawn, and the picture is the line
+        // it was.
+        assert_eq!(
+            draw(100, 3.0),
+            draw(100, 0.0),
+            "dots that would touch are not drawn"
+        );
+    }
+
+    /// The rule itself, stated where both renderers read it: three radii of
+    /// separation, so a dot has a full diameter of air around it.
+    #[test]
+    fn dots_need_a_diameter_of_air() {
+        assert!(!dots_fit(5.0, 0.0), "no radius, no dots");
+        assert!(!dots_fit(8.0, 3.0));
+        assert!(dots_fit(9.0, 3.0));
+        assert!(dots_fit(40.0, 4.0));
     }
 
     /// Zoomed in past the threshold, every sample in range is a polyline
@@ -330,10 +513,7 @@ mod tests {
             |x| (x - rect.x) as f64 / rect.w as f64 * n,
             |s| rect.x + (s / n) as f32 * rect.w,
             |v| rect.y + rect.h * 0.5 * (1.0 - v),
-            TraceStyle {
-                color: [1.0, 1.0, 1.0, 1.0],
-                width: 1.0,
-            },
+            TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0),
         );
         // 64 samples -> 63 segments, six vertices each.
         assert_eq!(mesh.vertex_count(), 63 * 6);

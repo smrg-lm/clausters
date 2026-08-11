@@ -67,8 +67,8 @@ impl Element for SignalElement {
                         rect,
                         &meters::WaveParams {
                             window: &self.live.window,
-                            min: self.value.min.unwrap_or(-1.0),
-                            max: self.value.max.unwrap_or(1.0),
+                            min: self.domain().0,
+                            max: self.domain().1,
                             window_ms: bus.window_ms,
                             trigger: bus.trigger,
                             overlay: self.display.overlay,
@@ -83,8 +83,8 @@ impl Element for SignalElement {
                         d,
                         rect,
                         &samples,
-                        self.value.min.unwrap_or(-1.0),
-                        self.value.max.unwrap_or(1.0),
+                        self.domain().0,
+                        self.domain().1,
                         self.display.label.as_deref(),
                     );
                 }
@@ -195,6 +195,7 @@ impl Element for SignalElement {
         match self.presentation {
             Presentation::Signal => Some(SlotFrame::Waveform {
                 body,
+                domain: self.domain(),
                 amp: self.editor.y_view(),
                 overlay: self.display.overlay,
             }),

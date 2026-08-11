@@ -105,6 +105,11 @@ pub(super) struct SpectralBodyItem {
 /// Which timeline view a placed editor-grade widget is, with its display props.
 pub(super) enum TimelineKind {
     Waveform {
+        /// The value domain the geometry is mapped through, as the element
+        /// stated it — [`crate::waveform::DEFAULT_DOMAIN`] is the amplitude
+        /// axis, and anything else is a plain value axis (dBFS, bits and
+        /// percent are full-scale amplitude units).
+        domain: (f32, f32),
         /// The amplitude window, as the element stated it.
         amp: (f64, f64),
         overlay: bool,
@@ -342,9 +347,19 @@ pub(super) fn collect_widgets(
                             shader: source,
                             params,
                         }),
-                        SlotFrame::Waveform { body, amp, overlay } => {
-                            timeline(body, TimelineKind::Waveform { amp, overlay })
-                        }
+                        SlotFrame::Waveform {
+                            body,
+                            domain,
+                            amp,
+                            overlay,
+                        } => timeline(
+                            body,
+                            TimelineKind::Waveform {
+                                domain,
+                                amp,
+                                overlay,
+                            },
+                        ),
                         SlotFrame::Spectrogram { body, freq, look } => {
                             timeline(body, TimelineKind::Spectrogram { freq, look })
                         }
