@@ -495,8 +495,11 @@ pub enum GestureStep {
     Element,
     /// Pan the container's axis: time on a timeline, the plane on a workspace.
     Pan,
-    /// Sweep a selection: the shared time selection on a timeline (restricted
-    /// in pitch where the axis has a vertical one), the marquee on a canvas.
+    /// Sweep a selection: the shared time selection on a timeline, restricted
+    /// in pitch where the axis has a vertical one. A selection that is the
+    /// *element's* — a patcher's box marquee — is not this: the element claims
+    /// the press and sweeps it itself, since nothing outside it can say what
+    /// the rectangle caught.
     Select,
     /// Put the transport's cursor under the pointer (a timeline locate).
     Locate,
@@ -627,14 +630,6 @@ impl GestureMap {
                 &[Element, Locate],
             ),
             WidgetKind::TimeRuler { .. } => (&[Locate], &[Pan], &[Locate], &[Locate]),
-            // The patcher: a plain drag on the empty canvas sweeps the box
-            // marquee, Shift leaves the press to the workspace under it.
-            WidgetKind::Patch { .. } => (
-                &[Element, Select],
-                &[Element],
-                &[Element, Select],
-                &[Element, Select],
-            ),
             // A workspace claims nothing: whatever no element and no inner
             // container took pans the plane.
             WidgetKind::Scroll { .. } => (

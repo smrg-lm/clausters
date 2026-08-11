@@ -55,10 +55,6 @@ pub(crate) enum Coords {
     ///
     /// [`Placed::time`]: super::super::layout::Placed::time
     Local(TimeAxis),
-    /// A `patch`'s own canvas: boxes and cords placed in canvas units, seen
-    /// through the workspace `scale` the frame carries. Its elements are drawn,
-    /// not laid out, so the canvas is what a marquee sweeps.
-    Canvas,
 }
 
 /// The time axis a timeline container gives its contents: where its samples
@@ -111,10 +107,6 @@ pub(crate) struct Frame {
     pub id: Option<i32>,
     /// Where the container sits, in window pixels.
     pub rect: Rect,
-    /// The accumulated workspace zoom the container is drawn at
-    /// ([`super::super::layout::Placed::scale`]), which its own contents' geometry is
-    /// measured at.
-    pub scale: f32,
     /// What a press on this container does, by modifier — the container's own
     /// table, or the default its kind carries.
     pub map: GestureMap,
@@ -245,19 +237,4 @@ pub(crate) fn clip_drag_placement(
             (new_off, end - new_off)
         }
     }
-}
-
-/// **A cursor on a patch's canvas**: the area the patcher was drawn in, the
-/// workspace `scale` it was drawn at, and where the pointer is on it.
-///
-/// The three travel together through every canvas question — a box's rectangle,
-/// a port's pin, a cord's drop — because none of them means anything without
-/// the other two: an area without a scale places nothing, and a cursor without
-/// an area is not on the canvas at all.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct CanvasAt {
-    pub area: Rect,
-    pub scale: f32,
-    pub cx: f64,
-    pub cy: f64,
 }

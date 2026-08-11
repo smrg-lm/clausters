@@ -63,11 +63,7 @@ pub(super) fn build_kind(
         // boxes and the cords between them, so their presence is what tells
         // the two constructions apart.
         "plane" if props.contains_key("boxes") || props.contains_key("cords") => {
-            WidgetKind::Patch {
-                selected: Vec::new(),
-                patch: parse_patch(props),
-                label: label(props),
-            }
+            WidgetKind::Custom(super::super::elements::patch::build(props, blobs)?)
         }
         "plane" => WidgetKind::Scroll {
             // The workspace's natural arrangement is free placement (the

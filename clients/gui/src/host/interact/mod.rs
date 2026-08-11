@@ -48,12 +48,8 @@ mod tests;
 pub(crate) use super::track::HeaderPart;
 
 pub(crate) use coords::{
-    CanvasAt, ClipPart, Coords, Frame, Hit, clip_drag_placement, local_time_of, plane_of,
-    sample_at, time_of,
+    ClipPart, Coords, Frame, Hit, clip_drag_placement, local_time_of, plane_of, sample_at, time_of,
 };
-pub(crate) use edit::{
-    clip_set, graph_cord, graph_marquee, graph_move, graph_select, header_set, lane_resize,
-    scroll_set_view,
-};
+pub(crate) use edit::{clip_set, header_set, lane_resize, scroll_set_view};
 pub(crate) use hit::{ClipHit, clip_hit, header_hit, hit, sole_time_axis};
 pub(crate) use read::{clip_event_args, lane_event_args, plane_can_pan};

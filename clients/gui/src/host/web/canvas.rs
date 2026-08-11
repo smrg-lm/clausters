@@ -260,12 +260,6 @@ impl WebApp {
                 ..Default::default()
             },
             focused,
-            // A rewiring drag in flight draws its wire to the pointer.
-            wiring: slot
-                .gestures
-                .wiring()
-                .map(|(id, port)| (id, port, (slot.cursor.0 as f32, slot.cursor.1 as f32))),
-            marquee: slot.gestures.marquee(),
             ..Default::default()
         };
         let Some(render) = slot.render.as_mut() else {

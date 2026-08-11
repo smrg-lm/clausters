@@ -58,8 +58,8 @@ pub(crate) fn hit(
     Some(Hit {
         id: p.widget.id?,
         rect: p.rect,
-        indent: p.indent,
         scale: p.scale,
+        indent: p.indent,
         kind: p.widget.kind.clone(),
         chain: chain_of(host, def_id, &placed, i, lanes),
     })
@@ -138,7 +138,6 @@ fn chain_of(
                 Some(Coords::Layout)
             }
             WidgetKind::Scroll { view, .. } => Some(Coords::Plane(*view)),
-            WidgetKind::Patch { .. } => Some(Coords::Canvas),
             // A clip carries the axis the layout gave it, which is the whole
             // point of the layout placing clips: the rectangle and the window
             // are one fact, resolved once, read by the renderer and by this.
@@ -161,7 +160,6 @@ fn chain_of(
             chain.push(Frame {
                 id: p.widget.id,
                 rect: p.rect,
-                scale: p.scale,
                 map: p.widget.gesture_map(),
                 coords,
             });

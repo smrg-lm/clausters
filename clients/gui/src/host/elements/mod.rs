@@ -35,6 +35,7 @@ mod meter;
 mod nodes;
 pub(crate) mod notes;
 mod number;
+pub(crate) mod patch;
 mod score;
 mod slider;
 mod text;
@@ -63,6 +64,11 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "slider" => slider::build,
         "text" => text::build,
         "toggle" => toggle::build,
+        // Note what is **not** here: the patcher, whose wire type is `plane`
+        // — the same name the scroll workspace answers to, told apart by the
+        // props (`boxes`/`cords`). A name that means two constructions is the
+        // schema's business, so `build_kind` resolves it and calls
+        // [`patch::build`] directly, exactly as it does for a `field`.
         _ => return None,
     })
 }

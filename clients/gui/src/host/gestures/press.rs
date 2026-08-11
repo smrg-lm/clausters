@@ -13,10 +13,10 @@
 //! the arms are short (a hit-test, a snapshot, a `Drag`), and the exhaustive
 //! match is what makes a new widget kind impossible to forget here.
 
+use super::super::Host;
 use super::super::interact::{self, Hit};
 use super::super::widget::element::TimeSpace;
 use super::super::widget::{Claim, GestureStep, WidgetKind};
-use super::super::{Host, patch};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element, focus};
@@ -229,18 +229,6 @@ impl Gestures {
                 out.push(GestureEffect::Redraw(def_id));
                 true
             }
-            (GestureStep::Select, interact::Coords::Canvas) => {
-                interact::graph_select(host, def_id, id, Vec::new());
-                self.drag = Some(Drag::Marquee {
-                    id,
-                    area: frame.rect,
-                    scale: frame.scale,
-                    origin: (cx, cy),
-                    cursor: (cx, cy),
-                });
-                out.push(GestureEffect::Redraw(def_id));
-                true
-            }
             (GestureStep::Locate, interact::Coords::Time(axis)) => {
                 if !axis.spans(cx) {
                     return false; // beside the axis (a lane's header): no position
@@ -356,48 +344,6 @@ impl Gestures {
         let def_id = ctx.def_id;
         let effects_before = out.len();
         match kind {
-            WidgetKind::Patch {
-                ref patch,
-                ref selected,
-                ..
-            } => {
-                // A port wins: the cord drag. Then a box: select it and start a
-                // move (a press on an already-selected box keeps the set, so the
-                // drag moves the whole selection). The empty canvas is not the
-                // element's: the press goes back to the canvas' own plan, which
-                // sweeps the marquee on a plain drag and leaves Shift to the
-                // workspace outside it.
-                if let Some(port) = patch::port_hit(rect, patch, cx, cy, scale) {
-                    self.drag = Some(Drag::Wire {
-                        id,
-                        port,
-                        area: rect,
-                        scale,
-                    });
-                } else if let Some(hit_box) = patch::box_hit(rect, patch, cx, cy, scale) {
-                    let set = if selected.contains(&hit_box) {
-                        selected.clone()
-                    } else {
-                        vec![hit_box]
-                    };
-                    let grabbed = set
-                        .iter()
-                        .map(|&i| {
-                            let (x, y) = patch::box_pos(rect, patch, i, scale);
-                            (i, x, y)
-                        })
-                        .collect();
-                    interact::graph_select(host, def_id, id, set);
-                    self.drag = Some(Drag::Box {
-                        id,
-                        scale,
-                        origin: (cx, cy),
-                        grabbed,
-                        moved: false,
-                    });
-                    out.push(GestureEffect::Redraw(def_id));
-                }
-            }
             // A lane's **header** is the element: the band beside the axis
             // carries the controls, so a press there is a mute, a solo or a
             // fader rather than a position. A press on the band's empty space

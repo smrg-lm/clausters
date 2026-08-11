@@ -52,7 +52,7 @@ use super::timeline::{GroupState, group_key};
 use super::widget::element::{Ctx, Loaded, SlotFill, SlotFrame, TimeSpace};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
-use super::{font, meters, patch, track};
+use super::{font, meters, track};
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
 pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
@@ -362,13 +362,6 @@ pub(crate) struct FrameInputs<'a> {
     /// the frame rings it, and the element draws whatever else being focused
     /// means to it (a field's caret and selection).
     pub(crate) focused: Option<i32>,
-    /// A selection marquee in flight on a patch: the widget and the
-    /// rectangle (device pixels), drawn over the canvas.
-    pub(crate) marquee: Option<(i32, Rect)>,
-    /// A cord drag in flight on a patch: the widget, the grabbed port
-    /// (box, side, index) and the cursor — drawn as a cord following the pointer.
-    #[allow(clippy::type_complexity)] // node id, (port), (cursor) — documented above
-    pub(crate) wiring: Option<(i32, (usize, super::patch::Side, usize), (f32, f32))>,
 }
 
 impl Default for FrameInputs<'_> {
@@ -380,8 +373,6 @@ impl Default for FrameInputs<'_> {
             metrics: METRICS.get_or_init(Metrics::default),
             world: World::default(),
             focused: None,
-            wiring: None,
-            marquee: None,
         }
     }
 }

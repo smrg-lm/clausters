@@ -206,38 +206,6 @@ enum Drag {
         orig_dur: f64,
         grid: f64,
     },
-    /// A cord being pulled from a patch's port: the widget, the grabbed
-    /// port `(box, side, index)` and the widget's area — released over a
-    /// compatible port (an outlet↔inlet of matching rate) to draw a cord, over
-    /// anything else to cancel. `scale` is the workspace zoom the patch is seen
-    /// through, so the pin geometry matches the drawing.
-    Wire {
-        id: i32,
-        port: (usize, super::patch::Side, usize),
-        area: Rect,
-        scale: f32,
-    },
-    /// A `patch` box (or the whole selection) being moved on the patch
-    /// canvas: the grabbed boxes with their positions at press time (canvas
-    /// units), moved together by the cursor delta and emitted as one
-    /// `"move"` event per box on release.
-    Box {
-        id: i32,
-        scale: f32,
-        origin: (f64, f64),
-        grabbed: Vec<(usize, f32, f32)>,
-        moved: bool,
-    },
-    /// The selection marquee on a patch's empty canvas: the selected
-    /// set follows the rectangle live; the rectangle itself draws through
-    /// [`Gestures::marquee`].
-    Marquee {
-        id: i32,
-        area: Rect,
-        scale: f32,
-        origin: (f64, f64),
-        cursor: (f64, f64),
-    },
     /// Dragging a lane header's level fader: the cursor's x over the fader's
     /// rectangle is the value, so the press itself already sets it.
     LaneLevel { id: i32, rect: Rect },
@@ -266,27 +234,6 @@ impl Gestures {
     /// Whether a drag is in progress (the front routes cursor motion here).
     pub fn dragging(&self) -> bool {
         self.drag.is_some()
-    }
-
-    /// The selection marquee in flight, if any: the `patch` widget and the
-    /// rectangle between the press and the cursor (device pixels), for the
-    /// renderer to draw over the patch.
-    pub fn marquee(&self) -> Option<(i32, Rect)> {
-        match &self.drag {
-            Some(Drag::Marquee {
-                id, origin, cursor, ..
-            }) => Some((*id, corner_rect(*origin, *cursor))),
-            _ => None,
-        }
-    }
-
-    /// The cord drag in flight, if any: the `patch` widget and the grabbed port
-    /// `(box, side, index)` (the renderer draws the cord to the pointer).
-    pub fn wiring(&self) -> Option<(i32, (usize, super::patch::Side, usize))> {
-        match &self.drag {
-            Some(Drag::Wire { id, port, .. }) => Some((*id, *port)),
-            _ => None,
-        }
     }
 
     /// Whether the active drag is a *locked* one — driven by relative deltas

@@ -259,36 +259,6 @@ pub(super) fn collect_widgets(
                     label: label.clone(),
                 });
             }
-            WidgetKind::Patch {
-                patch,
-                selected,
-                label,
-            } => {
-                // The patcher view of a logical group: drawn in the base mesh
-                // (flat geometry, like the other static views). The canvas
-                // scales with the enclosing workspace's zoom (`p.scale`), so
-                // boxes, wires and text zoom together.
-                let live = inputs
-                    .wiring
-                    .filter(|(id, _, _)| Some(*id) == p.widget.id)
-                    .map(|(_, port, cursor)| (port, cursor));
-                let marquee = inputs
-                    .marquee
-                    .filter(|(id, _)| Some(*id) == p.widget.id)
-                    .map(|(_, r)| r);
-                patch::draw(
-                    &mut Draw::new(mesh, m, th),
-                    p.rect,
-                    patch,
-                    label.as_deref(),
-                    &patch::CanvasState {
-                        live,
-                        selected,
-                        marquee,
-                        scale: p.scale,
-                    },
-                );
-            }
             // A registered element draws straight into the window's one mesh
             // during this walk, with the placement's theme and size table...
             WidgetKind::Custom(el) => {

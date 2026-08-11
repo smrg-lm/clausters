@@ -11,8 +11,6 @@
 //! held against a lane's edge, which pans the view and carries the drag with
 //! it, and it exists for no other reason.
 
-use clausters_core::osc::OscType;
-
 use super::super::Host;
 use super::super::interact::{self};
 use super::super::widget::{Axis, WidgetKind};
@@ -128,8 +126,6 @@ impl Gestures {
             return out;
         };
         match drag {
-            // A wire in flight only acts on release.
-            Drag::Wire { .. } => {}
             // A grabbed element is driven by `relative_motion` for the same
             // reason: the cursor is not travelling, so these positions are not
             // the gesture.
@@ -151,40 +147,6 @@ impl Gestures {
                         out.push(GestureEffect::Redraw(def_id));
                     }
                 }
-            }
-            Drag::Box {
-                id,
-                scale,
-                origin,
-                ref grabbed,
-                ..
-            } => {
-                // The whole grabbed set moves by the cursor delta, in canvas
-                // units (the screen delta divided by the workspace zoom).
-                let dx = ((cx - origin.0) / scale as f64) as f32;
-                let dy = ((cy - origin.1) / scale as f64) as f32;
-                let moves: Vec<_> = grabbed
-                    .iter()
-                    .map(|&(i, x0, y0)| (i, x0 + dx, y0 + dy))
-                    .collect();
-                interact::graph_move(host, def_id, id, &moves);
-                if let Some(Drag::Box { moved, .. }) = self.drag.as_mut() {
-                    *moved = true;
-                }
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            Drag::Marquee {
-                id,
-                area,
-                scale,
-                origin,
-                ..
-            } => {
-                interact::graph_marquee(host, def_id, id, area, origin, (cx, cy), scale);
-                if let Some(Drag::Marquee { cursor, .. }) = self.drag.as_mut() {
-                    *cursor = (cx, cy);
-                }
-                out.push(GestureEffect::Redraw(def_id));
             }
             Drag::Pan {
                 id,
@@ -320,90 +282,20 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
-        match self.drag.take() {
-            Some(Drag::Element { at, grab, .. }) => {
-                // What the drag *delivers*, as against what it showed along the
-                // way. The grab is the front's to undo, whatever came back.
-                let events = element::with(host, ctx, at, |el, input| el.release((cx, cy), input));
-                if let Some(events) = events {
-                    element::report(host, &mut out, ctx, at.id, events);
-                }
-                if grab {
-                    out.push(GestureEffect::ReleasePointer(def_id));
-                }
-                out.push(GestureEffect::Redraw(def_id));
+        // **One arm**, which is what the port left behind: every other drag the
+        // machine holds is a container's navigation, and a plan acts along the
+        // way rather than at the end.
+        if let Some(Drag::Element { at, grab, .. }) = self.drag.take() {
+            // What the drag *delivers*, as against what it showed along the
+            // way. The grab is the front's to undo, whatever came back.
+            let events = element::with(host, ctx, at, |el, input| el.release((cx, cy), input));
+            if let Some(events) = events {
+                element::report(host, &mut out, ctx, at.id, events);
             }
-            Some(Drag::Wire {
-                id,
-                port,
-                area,
-                scale,
-            }) => {
-                // Released over a compatible port: a directed cord is drawn
-                // (outlet -> inlet, matching rate) and the edit leaves as the
-                // flat directed `"wire" src_box outlet dst_box inlet` event, so
-                // the driver adds the cord and re-renders. Anything else cancels.
-                if let Some((from, outlet, to, inlet)) = interact::graph_cord(
-                    host,
-                    def_id,
-                    id,
-                    port,
-                    interact::CanvasAt {
-                        area,
-                        scale,
-                        cx,
-                        cy,
-                    },
-                ) {
-                    out.push(GestureEffect::Emit {
-                        def_id,
-                        widget_id: id,
-                        args: vec![
-                            OscType::String("wire".into()),
-                            OscType::Int(from as i32),
-                            OscType::String(outlet),
-                            OscType::Int(to as i32),
-                            OscType::String(inlet),
-                        ],
-                    });
-                    out.push(GestureEffect::Redraw(def_id));
-                }
+            if grab {
+                out.push(GestureEffect::ReleasePointer(def_id));
             }
-            Some(Drag::Box {
-                id,
-                scale,
-                origin,
-                grabbed,
-                moved,
-                ..
-            }) => {
-                // The boxes were moved live along the drag; the release emits
-                // the round trip — one `"move" index x y` per box, so the driver
-                // owns the geometry (the clip pattern).
-                if moved {
-                    let dx = ((cx - origin.0) / scale as f64) as f32;
-                    let dy = ((cy - origin.1) / scale as f64) as f32;
-                    for (index, x0, y0) in grabbed {
-                        out.push(GestureEffect::Emit {
-                            def_id,
-                            widget_id: id,
-                            args: vec![
-                                OscType::String("move".into()),
-                                OscType::Int(index as i32),
-                                OscType::Float(x0 + dx),
-                                OscType::Float(y0 + dy),
-                            ],
-                        });
-                    }
-                    out.push(GestureEffect::Redraw(def_id));
-                }
-            }
-            Some(Drag::Marquee { .. }) => {
-                // The selection followed the rectangle live; the release just
-                // drops the marquee chrome.
-                out.push(GestureEffect::Redraw(def_id));
-            }
-            _ => {}
+            out.push(GestureEffect::Redraw(def_id));
         }
         out
     }

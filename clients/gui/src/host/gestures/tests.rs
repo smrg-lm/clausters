@@ -213,18 +213,23 @@ fn patch_host() -> Host {
     )
 }
 
+/// The patcher element behind widget 7 — its graph and its selection are view
+/// state, reached through the element's own `as_any` door.
+fn patcher(host: &Host) -> &crate::host::elements::patch::Patch {
+    let WidgetKind::Custom(el) = &host.window_def(1).unwrap().find(7).unwrap().kind else {
+        panic!("not an element")
+    };
+    el.as_any()
+        .and_then(|a| a.downcast_ref::<crate::host::elements::patch::Patch>())
+        .expect("a patcher")
+}
+
 fn patch_of(host: &Host) -> super::super::patch::PatchDraw {
-    match &host.window_def(1).unwrap().find(7).unwrap().kind {
-        WidgetKind::Patch { patch, .. } => patch.clone(),
-        other => panic!("not a patch: {other:?}"),
-    }
+    patcher(host).draw_state().clone()
 }
 
 fn selection_of(host: &Host) -> Vec<usize> {
-    match &host.window_def(1).unwrap().find(7).unwrap().kind {
-        WidgetKind::Patch { selected, .. } => selected.clone(),
-        other => panic!("not a patch: {other:?}"),
-    }
+    patcher(host).selected().to_vec()
 }
 
 /// The whole widget-binding chain from a real press: a toggle bound to a
@@ -311,14 +316,18 @@ fn a_plain_drag_marquees_and_shift_pans_leaving_the_selection() {
         vec![0, 1],
         "the marquee spans both boxes"
     );
-    assert!(g.marquee().is_some(), "the rectangle draws while dragging");
+    assert!(g.dragging(), "the element holds the sweep, and draws it");
     g.release(&mut host, &plain, (b1.x - 2.0) as f64, 2.0);
-    assert!(g.marquee().is_none());
+    assert!(!g.dragging());
     // Shift+drag on empty canvas pans (the heavy-view convention): it starts
     // no marquee and leaves the selection untouched.
     g.press(&mut host, &shift, 300.0, 390.0, &mut || false);
     g.drag_to(&mut host, &shift, 330.0, 360.0);
-    assert!(g.marquee().is_none(), "Shift pans, it does not marquee");
+    assert_eq!(
+        selection_of(&host),
+        vec![0, 1],
+        "Shift pans: the element never saw the press"
+    );
     g.release(&mut host, &shift, 330.0, 360.0);
     assert_eq!(selection_of(&host), vec![0, 1], "Shift+drag does not clear");
     // A plain click on empty canvas (a zero-size marquee) clears the set.
@@ -337,7 +346,7 @@ fn a_cord_drag_from_an_outlet_lands_on_an_inlet() {
     // Grab dac's outlet, drop on... first detach: grab tone's outlet.
     let (px, py) = patch::port_pin(area, &before, 0, patch::Side::Out, 0, 1.0);
     g.press(&mut host, &ctx, px as f64, py as f64, &mut || false);
-    assert!(g.wiring().is_some(), "a press on a port starts the cord");
+    assert!(g.dragging(), "a press on a port starts the cord");
     // Released over dac's inlet: the cord lands, no move is emitted.
     let (ix, iy) = patch::port_pin(area, &before, 1, patch::Side::In, 0, 1.0);
     let effects = g.release(&mut host, &ctx, ix as f64, iy as f64);

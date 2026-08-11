@@ -323,7 +323,7 @@ modifier (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value a
 | --- | --- |
 | `element` | Hands the press to whatever is under the cursor — the widget the pointer found, or the clip, note or box the container drew there. It may decline (empty space), and the plan goes on |
 | `pan` | Pans the container's axis: time on a `field`, the plane on a `plane` |
-| `select` | Sweeps a selection: the shared time selection on a timeline (a rectangle in time x pitch on a `notes` element, which also picks its notes), the box marquee on a patcher `plane` |
+| `select` | Sweeps the container's **shared time selection** on a timeline (a rectangle in time x pitch on a `notes` element, which also picks its notes). A selection that belongs to *one widget* — a patcher's box marquee — is not this step: that widget claims the press under `element` and sweeps it itself |
 | `locate` | Puts the transport's cursor under the pointer and emits `"locate"` |
 | `none` | Nothing |
 

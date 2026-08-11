@@ -1125,6 +1125,21 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// **The content extent this element drives**, in the plane's own units, or
+    /// `None` for the element that drives none — which is every one but a
+    /// patcher, whose graph the host lays out.
+    ///
+    /// It is the two-dimensional twin of [`content_span`](Element::content_span)
+    /// and the deliberate opposite of [`natural`](Element::natural): a natural
+    /// size is pure over the metrics and the presentation props and must never
+    /// follow the data, because it resolves on the layout's main axis; this
+    /// *is* the data, and it sizes the workspace a plane scrolls over — where a
+    /// content extent is the one thing a container cannot compute for a child
+    /// it does not interpret.
+    fn content_size(&self) -> Option<(f32, f32)> {
+        None
+    }
+
     /// **What this element reserves left of its body** for chrome of its own —
     /// a value ruler — when it sits on a shared time axis. `0.0` by default.
     ///

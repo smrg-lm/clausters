@@ -398,13 +398,6 @@ impl App {
                 .focused()
                 .filter(|(d, _)| *d == def_id)
                 .map(|(_, id)| id),
-            // A rewiring drag in flight draws its wire to the pointer.
-            wiring: self
-                .windows
-                .get(&def_id)
-                .and_then(|w| w.gestures.wiring())
-                .and_then(|(id, port)| cursor.map(|(cx, cy)| (id, port, (cx as f32, cy as f32)))),
-            marquee: self.windows.get(&def_id).and_then(|w| w.gestures.marquee()),
         };
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;

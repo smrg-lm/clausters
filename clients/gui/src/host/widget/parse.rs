@@ -106,7 +106,7 @@ pub(crate) fn voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String,
 /// control `ports`), `buses` (names, `OUT` among them) and `wires` (flat triples
 /// `[member, control, bus]`). A malformed entry is skipped, so a partial patch
 /// still draws.
-pub(super) fn parse_patch(props: &serde_json::Map<String, Value>) -> crate::host::patch::PatchDraw {
+pub(crate) fn parse_patch(props: &serde_json::Map<String, Value>) -> crate::host::patch::PatchDraw {
     use crate::host::patch::{BoxRole, Cord, Obj, PatchDraw};
 
     let boxes = props
@@ -156,7 +156,7 @@ pub(super) fn parse_patch(props: &serde_json::Map<String, Value>) -> crate::host
 
 /// Parses a box's port array: each entry a plain name string (audio, the
 /// default) or an object `{"name": …, "rate": "audio"|"control"|"init"}`.
-pub(super) fn parse_ports(v: Option<&Value>) -> Vec<crate::host::patch::Port> {
+pub(crate) fn parse_ports(v: Option<&Value>) -> Vec<crate::host::patch::Port> {
     use crate::host::patch::Port;
     v.and_then(Value::as_array)
         .map(|ps| {

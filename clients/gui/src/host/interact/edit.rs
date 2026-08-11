@@ -16,7 +16,6 @@ use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
 use super::super::{Host, track};
 use super::HeaderPart;
-use super::coords::CanvasAt;
 
 /// Sets a `scroll`'s view state (clamped against its content in `area`),
 /// returning the clamped `(view_x, view_y, view_zoom)` when something actually
@@ -84,112 +83,6 @@ pub(crate) fn lane_resize(
     }
     widget.place.h = Some(to);
     Some(to)
-}
-
-/// Completes a cord drag on a patch: the grabbed `port` is paired with
-/// the port under the cursor into a directed cord (`outlet → inlet`, matching
-/// rate, either grab order), added to the patch (deduped). Returns the edit as
-/// `(from_box, outlet, to_box, inlet)` with the port *names* — the payload of the
-/// directed `"wire"` event a script mirrors. `None` when the release is not on a
-/// compatible port (empty space, the same side, or a rate mismatch).
-pub(crate) fn graph_cord(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    port: (usize, super::super::patch::Side, usize),
-    at: CanvasAt,
-) -> Option<(usize, String, usize, String)> {
-    let WidgetKind::Patch { patch, .. } = host.widget_kind_mut(def_id, widget_id)? else {
-        return None;
-    };
-    let drop = super::super::patch::port_hit(at.area, patch, at.cx, at.cy, at.scale)?;
-    let cord = super::super::patch::cord_between(patch, port, drop)?;
-    let outlet = patch
-        .boxes
-        .get(cord.from)?
-        .outlets
-        .get(cord.from_out)?
-        .name
-        .clone();
-    let inlet = patch
-        .boxes
-        .get(cord.to)?
-        .inlets
-        .get(cord.to_in)?
-        .name
-        .clone();
-    if !patch.cords.contains(&cord) {
-        patch.cords.push(cord);
-    }
-    Some((cord.from, outlet, cord.to, inlet))
-}
-
-/// Sets a patch's selected set (the click/marquee gestures' write).
-pub(crate) fn graph_select(host: &mut Host, def_id: i32, widget_id: i32, set: Vec<usize>) {
-    if let Some(w) = host
-        .window_def_mut(def_id)
-        .and_then(|t| t.find_mut(widget_id))
-        && let WidgetKind::Patch { selected, .. } = &mut w.kind
-    {
-        *selected = set;
-    }
-}
-
-/// Moves `patch` boxes to explicit canvas positions (the move drag's write):
-/// each `(index, x, y)` lands on the box's `x`/`y`, making an auto-placed box's
-/// position explicit from its first drag.
-pub(crate) fn graph_move(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    moves: &[(usize, f32, f32)],
-) {
-    let Some(w) = host
-        .window_def_mut(def_id)
-        .and_then(|t| t.find_mut(widget_id))
-    else {
-        return;
-    };
-    let WidgetKind::Patch { patch, .. } = &mut w.kind else {
-        return;
-    };
-    for &(i, x, y) in moves {
-        if let Some(o) = patch.boxes.get_mut(i) {
-            (o.x, o.y) = (Some(x), Some(y));
-        }
-    }
-}
-
-/// Sets a `patch`'s selection to the boxes intersecting the marquee between
-/// `a` and `b` (device pixels) — the box-selection drag, live on every move.
-pub(crate) fn graph_marquee(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    area: Rect,
-    a: (f64, f64),
-    b: (f64, f64),
-    scale: f32,
-) {
-    let Some(w) = host
-        .window_def_mut(def_id)
-        .and_then(|t| t.find_mut(widget_id))
-    else {
-        return;
-    };
-    let WidgetKind::Patch {
-        patch, selected, ..
-    } = &mut w.kind
-    else {
-        return;
-    };
-    let sel = super::super::gestures::corner_rect(a, b);
-    let overlaps = |r: Rect| {
-        r.x < sel.x + sel.w && sel.x < r.x + r.w && r.y < sel.y + sel.h && sel.y < r.y + r.h
-    };
-    *selected = (0..patch.boxes.len())
-        .filter(|&i| overlaps(super::super::patch::obj_rect(area, patch, i, scale)))
-        .collect();
 }
 
 /// Runs `f` over a lane's header in the host tree — the one door a header

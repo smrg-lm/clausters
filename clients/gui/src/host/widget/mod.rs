@@ -183,23 +183,6 @@ pub enum WidgetKind {
         dur: f64,
         label: Option<String>,
     },
-    /// A **directed, typed** patcher (a GraphDef at level 1, a SynthDef/FaustDef
-    /// at level 2): boxes with inlets on their top edge and outlets on their
-    /// bottom, and a cord per `outlet → inlet` connection, weighted by rate (audio
-    /// heavy, control thin, init dashed). Dragging an outlet to an inlet (either
-    /// grab order) draws a cord, refusing a rate mismatch; the edit leaves as a
-    /// flat directed `"wire"` event. At level 1 the buses are not drawn — a cord
-    /// *is* a bus (the client names them); at level 2 a cord is an internal wire.
-    /// A leaf.
-    Patch {
-        patch: super::patch::PatchDraw,
-        /// The multi-box selection (box indices) — native view state, never
-        /// parsed from the wire: the click/marquee gestures build it, the move
-        /// drag consumes it, and it clears when the script replaces `boxes`
-        /// (the indices would dangle).
-        selected: Vec<usize>,
-        label: Option<String>,
-    },
     /// A **registered element**: a leaf this build renders through the
     /// [`Element`] trait rather than through an arm of this enum, built by the
     /// constructor a program registered under the wire type it answers to

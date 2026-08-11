@@ -111,39 +111,6 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
                 .is_some(),
             _ => view.apply(key, v) || flow.apply(key, v),
         },
-        WidgetKind::Patch {
-            patch,
-            selected,
-            label,
-        } => match key {
-            // The whole patch at once (its parts are arrays, and a `/gui_set`
-            // value is a scalar — so they ride as their JSON, like `points`).
-            "boxes" | "cords" => {
-                // A `/gui_set` value is a scalar, so an array rides as its
-                // JSON string (the `points` carrier, again).
-                let value = match v {
-                    Value::String(s) => match serde_json::from_str::<Value>(s) {
-                        Ok(parsed) => parsed,
-                        Err(_) => return false,
-                    },
-                    other => other.clone(),
-                };
-                let props = std::iter::once((key.to_string(), value)).collect();
-                let parsed = parse_patch(&props);
-                match key {
-                    "boxes" if !parsed.boxes.is_empty() => patch.boxes = parsed.boxes,
-                    "cords" => patch.cords = parsed.cords,
-                    _ => return false,
-                }
-                // The box selection would dangle over a replaced `boxes` list.
-                if key == "boxes" {
-                    selected.clear();
-                }
-                true
-            }
-            "label" => set_label(label, v),
-            _ => false,
-        },
         WidgetKind::Track {
             label,
             height,
