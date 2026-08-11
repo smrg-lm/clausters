@@ -22,7 +22,7 @@ crate-type = ["cdylib", "rlib"]
 # headless GUI host `clausters-gui`).
 
 [features]
-default = ["midi"]
+default = ["midi", "notation", "patcher"]
 # Live MIDI input painting piano-roll notes (a `midi_in` roll opens a virtual
 # input port other apps/devices route into). On by default — the host must
 # paint notes when it runs standalone, with no language client to do it — and
@@ -46,6 +46,17 @@ standalone = ["dep:clausters", "clausters/synth"]
 # runs, just skipping FaustDefs (with a warning). Build with
 # `cargo build --features standalone-faust`.
 standalone-faust = ["standalone", "clausters/faust"]
+# The `score` element: music notation, and the fill tessellation (`lyon`) that
+# turns SMuFL glyph outlines and engraving fills into the mesh. On by default —
+# it is shipped behaviour, and a feature exists so a build can *drop* it, never
+# so it has to be asked for. A build with it out drops the `score` row from
+# `elements::builtin`, and a def naming one is `Unknown`: laid out, not painted,
+# exactly as a host older than that def already behaves.
+notation = ["dep:lyon"]
+# The `plane`-with-boxes patcher: the graph view and its cord editing. Same
+# shape as `notation` — on by default, and a build without it reads a patcher
+# node as the ordinary scroll workspace the `plane` name otherwise means.
+patcher = []
 # A real (outline) typeface behind a glyph atlas, instead of the embedded 5x7
 # bitmap. Off by default because it is weight: the rasterizer plus the face a
 # build points at are hundreds of kilobytes in a wasm bundle, and a page holding
@@ -78,7 +89,7 @@ bytemuck = { version = "1.25.0", features = ["derive"] }
 # engraving fills (beams, slurs, ties) — bezier paths — into the triangle mesh
 # the existing painter already draws. Pure Rust, wasm-safe (no compute/storage),
 # so the score renderer runs natively and in the browser through one pipeline.
-lyon = "1.0"
+lyon = { version = "1.0", optional = true }
 pollster = "0.4.0"
 wgpu = "29.0.3"
 winit = "0.30.13"

@@ -13,6 +13,8 @@ cargo doc --no-deps         # the API reference
 
 The core **must always build and test without any feature and without libfaust installed**, and with any combination of the def-family features `synth`/`faust` (both, either alone, or neither — most integration suites are gated on `synth`, so the featureless run is thin by design).
 
+The GUI host is a **separate workspace** with a feature set of its own, so it is built and tested from inside `clients/gui` (from the repo root `cargo` resolves the server crate instead) and it carries the same rule: it must build with any combination of its optional families (`notation`, `patcher`), with and without `midi`, `font-atlas` and `standalone`. `clients/gui/check-features.sh` runs that matrix — clippy, rustdoc, the wasm gate and the suite over each configuration — and is the sibling of the def-family matrix below.
+
 ## System build dependencies (Ubuntu 26.04)
 
 ```sh
@@ -97,7 +99,12 @@ is reproducible with the same line:
   default, `--no-default-features`, `--no-default-features --features synth`,
   and default plus `embed`.
 - **gui** — `cargo test` in `clients/gui` plus the wasm build gate
-  (`clients/gui/check-wasm.sh`).
+  (`clients/gui/check-wasm.sh`). Both run with the crate's **default**
+  features, which is the whole of what CI knows about it: the host's own
+  feature matrix (a family compiled out, `font-atlas`, `standalone`) is
+  covered by `clients/gui/check-features.sh` and by nothing else — run it
+  before committing anything feature-gated there, the way the def-family
+  matrix is run for the server.
 - **python** — `python clients/python/build_native.py --debug`, then `pytest`
   in `clients/python`. pytest is the client's one development dependency,
   declared as the `dev` group in its `pyproject.toml`

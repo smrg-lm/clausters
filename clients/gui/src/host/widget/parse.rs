@@ -31,6 +31,7 @@ pub(crate) fn as_array_props(key: &str, v: &Value) -> serde_json::Map<String, Va
 /// stands, or a JSON string parsed into one — OSC carries no objects, so the
 /// wire form of a structural value is always a string. `None` for anything
 /// else, so a malformed set is refused rather than applied as an empty page.
+#[cfg(feature = "notation")]
 pub(crate) fn as_props(v: &Value) -> Option<serde_json::Map<String, Value>> {
     match v {
         Value::String(s) => serde_json::from_str(s).ok(),
@@ -106,6 +107,7 @@ pub(crate) fn voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String,
 /// control `ports`), `buses` (names, `OUT` among them) and `wires` (flat triples
 /// `[member, control, bus]`). A malformed entry is skipped, so a partial patch
 /// still draws.
+#[cfg(feature = "patcher")]
 pub(crate) fn parse_patch(props: &serde_json::Map<String, Value>) -> crate::host::patch::PatchDraw {
     use crate::host::patch::{BoxRole, Cord, Obj, PatchDraw};
 
@@ -156,6 +158,7 @@ pub(crate) fn parse_patch(props: &serde_json::Map<String, Value>) -> crate::host
 
 /// Parses a box's port array: each entry a plain name string (audio, the
 /// default) or an object `{"name": …, "rate": "audio"|"control"|"init"}`.
+#[cfg(feature = "patcher")]
 pub(crate) fn parse_ports(v: Option<&Value>) -> Vec<crate::host::patch::Port> {
     use crate::host::patch::Port;
     v.and_then(Value::as_array)

@@ -15,11 +15,13 @@
 //! two lookups separate is what states that, rather than relying on whoever
 //! inserted first.
 //!
-//! It is also the seam the crate's features will hang on: a family compiled out
+//! It is also the seam the crate's features hang on: a family compiled out
 //! drops its rows from this table, the lookup falls through to the registry and
 //! then to `Unknown` — laid out, not painted — which is exactly how a host
 //! older than the def already behaves. No new failure mode, and nothing for a
-//! script to learn.
+//! script to learn. `notation` (the `score` row) and `patcher` are the two that
+//! use it today; both are on by default, since a feature is here so a build can
+//! *drop* a family and never so it has to ask for one.
 
 use super::widget::element::Constructor;
 
@@ -35,7 +37,9 @@ mod meter;
 mod nodes;
 pub(crate) mod notes;
 mod number;
+#[cfg(feature = "patcher")]
 pub(crate) mod patch;
+#[cfg(feature = "notation")]
 mod score;
 mod slider;
 mod text;
@@ -56,6 +60,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "menu" => menu::build,
         "nodes" => nodes::build,
         "notes" => notes::build,
+        #[cfg(feature = "notation")]
         "score" => score::build,
         // Every view of a signal is one element: the props say which point of
         // the product it is (`host::signal`), so one name answers for six.

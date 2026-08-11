@@ -292,6 +292,8 @@ mod wheel;
 
 use nav::*;
 
+// The rubber band is the patcher's alone (a marquee over its boxes).
+#[cfg(feature = "patcher")]
 pub(crate) use nav::corner_rect;
 
 #[cfg(test)]

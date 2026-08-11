@@ -17,6 +17,7 @@ use super::effects::{emit, emit_clip, emit_view, redraw_all};
 use super::{GestureCtx, GestureEffect};
 
 /// The rectangle spanned by two corner points, whatever their order.
+#[cfg(feature = "patcher")]
 pub(crate) fn corner_rect(a: (f64, f64), b: (f64, f64)) -> Rect {
     let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
     let (y0, y1) = (a.1.min(b.1), a.1.max(b.1));

@@ -4,9 +4,11 @@
 use clausters_core::osc::{OscMessage, OscPacket};
 
 use super::super::metrics::Metrics;
+#[cfg(feature = "patcher")]
+use super::super::patch;
 use super::super::widget::ScrollView;
 use super::super::widget::element::Key;
-use super::super::{ClientId, GUI_DEF, GUI_SET, Host, patch, scroll};
+use super::super::{ClientId, GUI_DEF, GUI_SET, Host, scroll};
 use super::*;
 use crate::host::piano;
 
@@ -203,6 +205,7 @@ fn workspace(extra: &str) -> Host {
 
 /// A window holding one full-area directed patch: `tone` (an outlet)
 /// and `dac` (an inlet and an outlet), a cord tone.out → dac.in.
+#[cfg(feature = "patcher")]
 fn patch_host() -> Host {
     host_from(
         r#"{"type":"window","margin":0,"children":[
@@ -215,6 +218,7 @@ fn patch_host() -> Host {
 
 /// The patcher element behind widget 7 — its graph and its selection are view
 /// state, reached through the element's own `as_any` door.
+#[cfg(feature = "patcher")]
 fn patcher(host: &Host) -> &crate::host::elements::patch::Patch {
     let WidgetKind::Custom(el) = &host.window_def(1).unwrap().find(7).unwrap().kind else {
         panic!("not an element")
@@ -224,10 +228,12 @@ fn patcher(host: &Host) -> &crate::host::elements::patch::Patch {
         .expect("a patcher")
 }
 
+#[cfg(feature = "patcher")]
 fn patch_of(host: &Host) -> super::super::patch::PatchDraw {
     patcher(host).draw_state().clone()
 }
 
+#[cfg(feature = "patcher")]
 fn selection_of(host: &Host) -> Vec<usize> {
     patcher(host).selected().to_vec()
 }
@@ -273,6 +279,7 @@ fn a_press_on_a_bound_toggle_flips_the_stack_it_drives() {
     );
 }
 
+#[cfg(feature = "patcher")]
 #[test]
 fn dragging_a_box_selects_it_moves_it_and_emits_the_move() {
     let mut host = patch_host();
@@ -298,6 +305,7 @@ fn dragging_a_box_selects_it_moves_it_and_emits_the_move() {
     assert_eq!(after.boxes[1].x, None);
 }
 
+#[cfg(feature = "patcher")]
 #[test]
 fn a_plain_drag_marquees_and_shift_pans_leaving_the_selection() {
     let mut host = patch_host();
@@ -336,6 +344,7 @@ fn a_plain_drag_marquees_and_shift_pans_leaving_the_selection() {
     assert!(selection_of(&host).is_empty());
 }
 
+#[cfg(feature = "patcher")]
 #[test]
 fn a_cord_drag_from_an_outlet_lands_on_an_inlet() {
     let mut host = patch_host();
@@ -422,6 +431,9 @@ fn the_plane_pans_every_direction_from_its_origin() {
 /// content of the *old* zoom slid the plane out from under the cursor —
 /// invisible on a plane with an explicit `content_w`, which is why the test
 /// above did not catch it.
+// A graph-sized plane is a patcher's: without the family the same node is the
+// ordinary workspace, whose content extent is not the graph's.
+#[cfg(feature = "patcher")]
 #[test]
 fn wheel_zoom_over_a_graph_sized_plane_holds_the_cursor_too() {
     let mut host = host_from(
@@ -1480,6 +1492,7 @@ fn the_left_edge_scrolls_back_and_stops_at_the_origin() {
 
 /// A one-score window, the page fitted 1:1 into the child rect: a window of
 /// 1012x412 gives the child (6,6,1000,400), matching the 1000x400 viewBox.
+#[cfg(feature = "notation")]
 fn score_host() -> Host {
     // Editable, so the drag tests exercise the transpose gesture; the
     // read-only default is covered by its own test below.
@@ -1494,6 +1507,7 @@ fn score_host() -> Host {
 
 /// What the page says is selected **now** — read the way a `/gui_query` reads
 /// it, since a ported leaf answers for itself rather than showing its variant.
+#[cfg(feature = "notation")]
 fn score_selected(host: &Host) -> Option<String> {
     let info = host.window_def(1).unwrap().find(80).unwrap().kind.info();
     match info.iter().find(|(k, _)| k == "selected") {
@@ -1503,6 +1517,7 @@ fn score_selected(host: &Host) -> Option<String> {
     }
 }
 
+#[cfg(feature = "notation")]
 fn element_emits(effects: &[GestureEffect]) -> Vec<String> {
     effects
         .iter()
@@ -1520,7 +1535,9 @@ fn element_emits(effects: &[GestureEffect]) -> Vec<String> {
         .collect()
 }
 
+#[cfg(feature = "notation")]
 #[test]
+#[cfg(feature = "notation")]
 fn a_press_on_the_score_selects_the_element_and_emits_its_id() {
     let mut host = score_host();
     let mut g = Gestures::default();
@@ -1542,6 +1559,7 @@ fn a_press_on_the_score_selects_the_element_and_emits_its_id() {
     assert_eq!(score_selected(&host), None);
 }
 
+#[cfg(feature = "notation")]
 fn transpose_emits(effects: &[GestureEffect]) -> Vec<(String, i32)> {
     effects
         .iter()
@@ -1559,7 +1577,9 @@ fn transpose_emits(effects: &[GestureEffect]) -> Vec<(String, i32)> {
         .collect()
 }
 
+#[cfg(feature = "notation")]
 #[test]
+#[cfg(feature = "notation")]
 fn dragging_a_note_up_the_staff_transposes_it_in_diatonic_steps() {
     let mut host = score_host();
     let mut g = Gestures::default();
@@ -1578,7 +1598,9 @@ fn dragging_a_note_up_the_staff_transposes_it_in_diatonic_steps() {
     assert_eq!(transpose_emits(&effects), vec![("n1".to_string(), 2)]);
 }
 
+#[cfg(feature = "notation")]
 #[test]
+#[cfg(feature = "notation")]
 fn a_press_that_does_not_move_the_note_stays_a_selection() {
     let mut host = score_host();
     let mut g = Gestures::default();
@@ -1591,7 +1613,9 @@ fn a_press_that_does_not_move_the_note_stays_a_selection() {
     assert_eq!(score_selected(&host).as_deref(), Some("n1"));
 }
 
+#[cfg(feature = "notation")]
 #[test]
+#[cfg(feature = "notation")]
 fn a_read_only_score_selects_but_a_drag_does_not_transpose() {
     // The same host without `editable`: a press still selects and reports
     // the element (inspecting a page is not editing it), but dragging it a

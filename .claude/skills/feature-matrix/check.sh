@@ -12,6 +12,10 @@
 # lints (broken intra-doc links above all) were watched by nothing until they
 # were added here.
 #
+# The GUI host is a separate workspace with a feature set of its own; its matrix
+# lives beside it (`clients/gui/check-features.sh`) and runs from here as one
+# row, so this stays the single command.
+#
 # It only ever reads. Nothing here writes to your working tree: this is the gate
 # that says whether the code is committable, and a gate that edits the thing it
 # is judging cannot be trusted to report on it. `cargo clippy --fix` exists and
@@ -127,20 +131,30 @@ doc "rustdoc: synth alone" \
     cargo doc --no-deps --workspace --no-default-features --features synth
 doc "rustdoc: faust alone" \
     cargo doc --no-deps --workspace --no-default-features --features faust
-doc "rustdoc: gui host" \
-    env -C clients/gui cargo doc --no-deps --document-private-items
 
 # --- Covered by CI, run unless --fast ----------------------------------------
 
 if [ "$fast" = 0 ]; then
     clippy "clippy: workspace (core, ffi, midi, ...)" --workspace --all-targets
-    # A separate workspace. `--manifest-path` resolves it correctly too — it
-    # carries its own [workspace] and lockfile — but cargo reads
-    # `.cargo/config.toml` from the *current directory* upward, not from the
-    # manifest's, so only running there sees a config the GUI crate might one
-    # day carry. It is also the form CLAUDE.md's command list spells out.
-    run "clippy: gui host" \
-        env -C clients/gui cargo clippy --all-targets -- -D warnings
+fi
+
+# --- The GUI host's own matrix -----------------------------------------------
+#
+# That crate has a feature set of its own (its element families, `font-atlas`,
+# `standalone`) and CI lints exactly one point of it. Its matrix is its own
+# script, run from its own directory, and reported as one row here so a single
+# command still answers "is the tree committable?". It runs *there* rather than
+# through `--manifest-path` because cargo reads `.cargo/config.toml` from the
+# current directory upward, not from the manifest's — and it subsumes the two
+# rows this script used to spend on that crate (its clippy and its rustdoc are
+# two of its own configurations, over more of them).
+#
+# `--fast` passes through: there it skips what CI covers and the standalone
+# builds that link the server crate.
+if [ "$fast" = 1 ]; then
+    run "gui host: feature matrix (--fast)" clients/gui/check-features.sh --fast
+else
+    run "gui host: feature matrix" clients/gui/check-features.sh
 fi
 
 # --- Report -------------------------------------------------------------------

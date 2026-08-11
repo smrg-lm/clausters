@@ -58,6 +58,7 @@ pub mod pianoroll;
 pub mod plot;
 pub mod registry;
 pub mod ruler;
+#[cfg(feature = "notation")]
 pub mod score;
 pub mod scroll;
 pub mod signal;

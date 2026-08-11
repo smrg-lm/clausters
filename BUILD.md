@@ -308,6 +308,11 @@ edits notation on that clean install, and the client keeps `dependencies = []`. 
 *adds* to the defaults (only `--no-default-features` replaces them), so the embed
 cdylib keeps `faust`, `synth`, `midi`, … too.
 
+The GUI host's **element families** are features too (`notation`, `patcher`),
+both on by default, so the wheel's host draws every widget the protocol has; a
+build that drops one is an opt-out for a program embedding the crate, not a
+packaging choice here (`clients/gui/README.md`).
+
 One feature is deliberately **not** in the wheel: the GUI host's `font-atlas`
 (an outline typeface behind a glyph rasterizer, `clients/gui/README.md`). It is
 weight for something the embedded bitmap face already does, and it ships no

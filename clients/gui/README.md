@@ -55,6 +55,29 @@ Nothing else changes: the sizing table never followed the typeface, so the same
 GuiDef lays out identically either way, and a build with the feature but no face
 draws exactly what the default build draws.
 
+**What a build pays for** is the rest of the feature set. Two element families
+are optional and **on by default** — `notation` (the `score` element and the
+`lyon` tessellation behind it) and `patcher` (the `plane`-with-boxes graph
+view) — so a program that links this crate for its controls can drop what it
+never draws:
+
+```sh
+cargo build --release --no-default-features --features midi
+```
+
+A family compiled out drops its rows from the element table, and a def naming
+one becomes an unknown widget: laid out, not painted — exactly how a host older
+than that def already behaves, so a slim build has no new failure mode to learn.
+(`plane` is the one shared name: without `patcher`, a patcher node reads as the
+scroll workspace it also is.) `midi` (live note painting) is default too;
+`standalone` / `standalone-faust` (an embedded audio server) are not, because
+they link the server crate.
+
+Since CI only ever lints the default set, **`./check-features.sh`** runs the
+matrix — clippy, rustdoc, the wasm gate and the suite over the floor, each
+family alone, and both text and standalone builds — and `./check-wasm.sh` is the
+browser-readiness gate it calls.
+
 Two standalone prototypes double as demos of the rendering machinery:
 `cargo run --release --bin waveform` (a navigable GPU waveform of a large
 buffer) and `--bin spectrogram` (the STFT view sharing the same navigation).

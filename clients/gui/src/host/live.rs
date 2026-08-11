@@ -761,6 +761,7 @@ mod tests {
         assert_eq!(buses, vec![3, 7, 9]);
     }
 
+    #[cfg(feature = "notation")]
     #[test]
     fn an_anchored_score_makes_its_window_animate() {
         // A score whose cursor is anchored to the engine clock has to be a live

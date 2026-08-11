@@ -71,7 +71,11 @@ pub(super) fn build_kind(
         },
         // Two axes locked to one scale. What a patcher adds to a plane is its
         // boxes and the cords between them, so their presence is what tells
-        // the two constructions apart.
+        // the two constructions apart. Without the `patcher` feature the fork
+        // is not compiled and both readings are the workspace below — the one
+        // place a dropped family degrades to *something* rather than to
+        // `Unknown`, because the wire name it shares is still a real widget.
+        #[cfg(feature = "patcher")]
         "plane" if props.contains_key("boxes") || props.contains_key("cords") => {
             WidgetKind::Custom(super::super::elements::patch::build(props, blobs)?)
         }
