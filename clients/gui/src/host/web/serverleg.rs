@@ -349,13 +349,7 @@ impl WebApp {
                                     samples: samples.to_vec(),
                                     channels,
                                 };
-                                if !w.take_bulk(raw()) {
-                                    for body in &mut w.children {
-                                        if body.take_bulk(raw()) {
-                                            break;
-                                        }
-                                    }
-                                }
+                                w.take_bulk(raw);
                             }
                         }
                     }

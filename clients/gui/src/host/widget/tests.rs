@@ -1130,3 +1130,91 @@ fn a_free_standing_ruler_changes_its_unit_live() {
     assert!(apply_widget(&mut w, "ruler", &serde_json::json!("time")));
     assert_eq!(unit(&w), Ruler::Time);
 }
+
+/// **The enum is the containers, and this is the test that says so.**
+///
+/// The K track spent seven milestones taking the leaves out of `WidgetKind`,
+/// and what made them accumulate in the first place was a convention nobody
+/// checked: an arm is the cheapest thing to add and the eighth pass only shows
+/// up much later. So the variant list is pinned here, in source, and adding one
+/// fails until whoever added it has read why.
+///
+/// The rule, if this test brought you here: **a container arranges and defines
+/// a coordinate system** — the layout pass has to know each one it places into,
+/// which is why they are a closed set — and **an element draws in one**, which
+/// nothing outside it has to know at all. A leaf is a file in `host/elements/`
+/// implementing [`Element`] plus a row in `elements::builtin`; from outside the
+/// crate it is `clausters_gui::register`. A *third-party container* is
+/// deliberately not offered: a coordinate system is a much larger promise than
+/// a drawing.
+#[test]
+fn the_enum_is_the_containers_plus_the_two_that_are_not_widgets() {
+    let src = include_str!("mod.rs");
+    let declared: Vec<&str> = src
+        .split("pub enum WidgetKind {")
+        .nth(1)
+        .expect("the enum moved out of widget/mod.rs")
+        .split("\n}\n")
+        .next()
+        .unwrap()
+        .lines()
+        .filter_map(|l| l.strip_prefix("    "))
+        .filter(|l| !l.starts_with([' ', '/', '#', '}']))
+        .map(|l| l.split(['{', '(', ',', ' ']).next().unwrap())
+        .collect();
+    assert_eq!(
+        declared,
+        [
+            // The coordinate systems: a window and the two arrangements over
+            // it, a plane, the two halves of a timeline, and a clip's own span.
+            "Window",
+            "Panel",
+            "Stack",
+            "Scroll",
+            "Track",
+            "TimeRuler",
+            "Clip",
+            // ...and the two that are not a kind of widget at all: whatever
+            // this build renders through the trait, and whatever it does not
+            // recognize (laid out, never painted).
+            "Custom",
+            "Unknown",
+        ],
+        "see this test's documentation before adding a variant"
+    );
+}
+
+/// The other half of the same rule, asked of the widgets rather than of the
+/// source: **a container declares nothing and reads nothing.** Every question
+/// a leaf answers has one door, and a container's answer through it is the
+/// neutral one — so a pass that forgets to ask gets a container's silence, not
+/// a wrong answer.
+#[test]
+fn a_container_declares_nothing_and_reads_nothing() {
+    let containers = r#"{"type":"window","children":[
+        {"id":1,"type":"layout","children":[]},
+        {"id":2,"type":"layout","flow":"stack","children":[]},
+        {"id":3,"type":"plane","children":[]},
+        {"id":4,"type":"field","label":"lane","children":[]},
+        {"id":5,"type":"field","h":18},
+        {"id":6,"type":"field","offset":0.0,"dur":10.0}]}"#;
+    let tree = Widget::from_node(1, &node(containers), &[]).unwrap();
+    for w in tree.descendants() {
+        let kind = &w.kind;
+        assert!(kind.as_element().is_none(), "{kind:?} is not an element");
+        assert_eq!(kind.needs(), Needs::default(), "{kind:?} reads nothing");
+        assert!(!kind.accepts_focus(), "{kind:?} takes no keyboard");
+        assert!(kind.body_role().is_none(), "{kind:?} fills no clip body");
+        assert!(
+            kind.overlay_rect().is_none(),
+            "{kind:?} draws inside itself"
+        );
+        assert!(kind.event_value().is_none(), "{kind:?} has no value");
+        assert!(!kind.navigates_freq(), "{kind:?} has no axis of its own");
+        assert_eq!(kind.tap_frames(48_000.0), 0, "{kind:?} taps nothing");
+        assert!(kind.content_span().is_none(), "{kind:?} authors nothing");
+    }
+    // ...and the seven of them really are the seven: the document above builds
+    // one of each, so a variant added without a case here is caught too.
+    assert_eq!(tree.descendants().count(), 7);
+}

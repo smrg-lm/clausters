@@ -284,14 +284,9 @@ impl App {
                             samples: samples.to_vec(),
                             channels,
                         };
-                        if !w.take_bulk(raw()) {
-                            // A clip addressed the fetch for its body.
-                            for body in &mut w.children {
-                                if body.take_bulk(raw()) {
-                                    break;
-                                }
-                            }
-                        }
+                        // A clip addressed the fetch for its body, so the
+                        // door looks one level in for itself.
+                        w.take_bulk(raw);
                     }
                     continue; // no navigation group, no ruler rate: a lane owns those
                 }
