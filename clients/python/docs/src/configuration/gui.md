@@ -30,6 +30,7 @@ Every key is optional, and unknown keys are ignored.
 | `data_dir` | string (path) | the same place the server uses | `--data-dir` | The GuiDef store: where a named GuiDef persists and `/gui_load` reads from |
 | `headless` | boolean | `false` | `--headless` | Run the protocol with no display (tests, machines with no GPU) |
 | `font` | string (path) | off — the host's own face | `--font` | The typeface to draw text with, on a host built with a rasterizer (its optional `font-atlas` feature); with the feature and no path, one of the system's faces. Any other build draws its embedded bitmap face and ignores this |
+| `msaa` | integer | `1` — off | `--msaa` | Antialiasing: the MSAA sample count of every window's render pass (`4` is the usual smoothing). One multisampled attachment per window and nothing per widget; a count the GPU does not offer for the surface format falls back to `1` |
 | `theme` | table | the built-in dark theme | `--theme <path>` | Color-role overrides — [the table below](#guitheme) |
 | `metrics` | table | the generated table | — | Size-role overrides — [the table below](#guimetrics) |
 

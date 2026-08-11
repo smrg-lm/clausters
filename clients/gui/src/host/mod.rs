@@ -497,6 +497,13 @@ pub struct Host {
     /// changing this table once windows exist means calling
     /// [`refresh_metrics`](Self::refresh_metrics) after it.
     pub metrics: metrics::Metrics,
+    /// The antialiasing every window this host opens is drawn with: the MSAA
+    /// sample count of its render pass (`1` = none, the default). Like
+    /// [`theme`](Self::theme) and [`metrics`](Self::metrics) it is one setting
+    /// per host that the *shell* consumes — a window reads it when its GPU
+    /// comes up, and a window already open keeps the pass it was built with,
+    /// since every pipeline in a pass agrees on the count.
+    pub msaa: u32,
     /// The resolved (physical) metrics of each window, by def id — this table
     /// at that window's `ui_scale`. Written when a shell reports a scale
     /// ([`set_ui_scale`](Self::set_ui_scale)), which is the only side that may
@@ -542,6 +549,7 @@ impl Host {
             voice_counter: 0,
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
+            msaa: 1,
             resolved_metrics: HashMap::new(),
             focused: None,
         }
@@ -937,7 +945,7 @@ impl Host {
                 Ok(mut tree) => {
                     // Theme groups and per-widget accents resolve here — at
                     // the mutation point, never per frame.
-                    widget::resolve_themes(&mut tree, &Arc::new(self.theme.clone()));
+                    widget::resolve_style(&mut tree, &Arc::new(self.theme.clone()));
                     self.window_defs.insert(id, tree);
                     self.sync_bus_watches();
                     // The def's timeline views (re)join their navigation
@@ -1174,7 +1182,7 @@ impl Host {
             // A style change re-resolves the window's theme references — the
             // mutation point where a theme group cascades to its subtree.
             if styled {
-                widget::resolve_themes(tree, &Arc::new(self.theme.clone()));
+                widget::resolve_style(tree, &Arc::new(self.theme.clone()));
             }
             if changed {
                 effects.push(HostEffect::Redraw(root));

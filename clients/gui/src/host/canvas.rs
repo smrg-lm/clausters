@@ -87,7 +87,7 @@ pub struct CanvasView {
     uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     pipeline_layout: wgpu::PipelineLayout,
-    format: wgpu::TextureFormat,
+    target: crate::view::Target,
     /// The user `shade` source the current pipeline was built from, to skip
     /// recompiling unchanged shaders (and to avoid retrying a broken one).
     shader_src: String,
@@ -96,7 +96,7 @@ pub struct CanvasView {
 }
 
 impl CanvasView {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, shader_src: &str) -> Self {
+    pub fn new(device: &wgpu::Device, target: crate::view::Target, shader_src: &str) -> Self {
         // 8 f32: resolution.xy, time, pad, params.xyzw.
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("canvas uniforms"),
@@ -130,13 +130,13 @@ impl CanvasView {
             bind_group_layouts: &[Some(&bind_group_layout)],
             immediate_size: 0,
         });
-        let pipeline = build_pipeline(device, format, &pipeline_layout, shader_src);
+        let pipeline = build_pipeline(device, target, &pipeline_layout, shader_src);
         Self {
             pipeline,
             uniform_buffer,
             bind_group,
             pipeline_layout,
-            format,
+            target,
             shader_src: shader_src.to_string(),
             start: Instant::now(),
         }
@@ -149,7 +149,7 @@ impl CanvasView {
         if shader_src == self.shader_src {
             return;
         }
-        self.pipeline = build_pipeline(device, self.format, &self.pipeline_layout, shader_src);
+        self.pipeline = build_pipeline(device, self.target, &self.pipeline_layout, shader_src);
         self.shader_src = shader_src.to_string();
     }
 
@@ -200,7 +200,7 @@ impl CanvasView {
 /// capturing any WGSL validation error instead of letting it panic the host.
 fn build_pipeline(
     device: &wgpu::Device,
-    format: wgpu::TextureFormat,
+    target: crate::view::Target,
     layout: &wgpu::PipelineLayout,
     user_src: &str,
 ) -> Option<wgpu::RenderPipeline> {
@@ -223,7 +223,7 @@ fn build_pipeline(
             module: &module,
             entry_point: Some("fs_main"),
             targets: &[Some(wgpu::ColorTargetState {
-                format,
+                format: target.format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
@@ -231,7 +231,7 @@ fn build_pipeline(
         }),
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
+        multisample: target.multisample(),
         multiview_mask: None,
         cache: None,
     });

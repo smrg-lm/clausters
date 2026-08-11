@@ -70,7 +70,7 @@ impl App {
         if let Some((w, h)) = self.host.window_size_px(id) {
             let _ = window.request_inner_size(PhysicalSize::new(w, h));
         }
-        let gpu = match pollster::block_on(Gpu::new(window)) {
+        let gpu = match pollster::block_on(Gpu::new(window, self.host.msaa)) {
             Ok(gpu) => gpu,
             Err(e) => return warn!("gui_def {id}: cannot start the GPU: {e}"),
         };
@@ -81,7 +81,7 @@ impl App {
         let mut canvases = HashMap::new();
         // The window's shared pipelines come first: a spectrogram slot binds its
         // textures against their layout.
-        let renderers = Renderers::new(&gpu.device, gpu.config.format);
+        let renderers = Renderers::new(&gpu.device, gpu.target());
         if let Some(tree) = self.host.window_def_mut(id) {
             load_bulk(
                 tree,
@@ -124,8 +124,8 @@ impl App {
         for (wid, slot) in &spectrograms {
             self.host.set_timeline_total(*wid, slot.total_samples());
         }
-        let painter = Painter::new(&gpu.device, gpu.config.format);
-        let overlay = Painter::new(&gpu.device, gpu.config.format);
+        let painter = Painter::new(&gpu.device, gpu.target());
+        let overlay = Painter::new(&gpu.device, gpu.target());
 
         self.by_winit.insert(winit_id, id);
         self.windows.insert(
@@ -272,7 +272,7 @@ fn collect_canvases(tree: &Widget, gpu: &Gpu, out: &mut HashMap<i32, CanvasView>
         if let Some(SlotKind::Shader { source }) = widget.kind.needs().slot
             && let Some(id) = widget.id
         {
-            out.insert(id, CanvasView::new(&gpu.device, gpu.config.format, &source));
+            out.insert(id, CanvasView::new(&gpu.device, gpu.target(), &source));
         }
     }
 }

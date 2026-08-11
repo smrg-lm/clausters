@@ -122,6 +122,18 @@ strip) are that same widget configured down.
   TOML style file) overlaying the parent's theme for the whole subtree — a
   **theme group**, recursive by construction. On a window root it persists
   with a named def. An empty table clears the group.
+- ``opacity`` — how opaque the widget draws, ``0.0``–``1.0``. Like ``theme`` it
+  is a **group's** property: it multiplies down the whole subtree, so a control
+  inside a panel at ``0.5`` that is itself at ``0.5`` draws at ``0.25``. A
+  negative number clears it. It fades the flat drawing — the chrome, the
+  controls and the text; a heavy view's picture (a waveform's trace, a
+  spectrogram's texture, a ``canvas`` shader) is drawn by its own pipeline and
+  keeps its own.
+- ``radius`` — the corner radius of the boxes this widget draws, in logical
+  pixels. Unlike ``opacity`` it applies to the widget alone: a rounded panel
+  says nothing about the controls in it. Each box clamps it to half its shorter
+  side, so a widget's own frame rounds while the hairlines inside it (a
+  divider, a tick, a track edge) keep their shape. A negative number clears it.
 
 **A container also declares its gestures.** Panning, sweeping a selection and
 locating the transport belong to the coordinate system a container gives its

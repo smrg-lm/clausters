@@ -175,7 +175,10 @@ pub(super) fn body_widget(kind: WidgetKind) -> Widget {
         gestures: None,
         theme_over: None,
         color: None,
+        opacity: None,
+        radius: None,
         theme: None,
+        alpha: 1.0,
         children: Vec::new(),
     }
 }

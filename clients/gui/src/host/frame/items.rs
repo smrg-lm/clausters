@@ -23,6 +23,9 @@ pub(super) struct RulerItem {
     /// ([`layout::Placed::indent`]).
     pub(super) indent: f32,
     pub(super) clip: Option<Rect>,
+    /// The opacity and corner radius this widget draws with
+    /// ([`super::ink_of`]).
+    pub(super) ink: Ink,
     pub(super) theme: Option<Arc<Theme>>,
     pub(super) editor: EditorProps,
 }
@@ -34,6 +37,9 @@ pub(super) struct TrackItem {
     /// ([`layout::Placed::indent`]).
     pub(super) indent: f32,
     pub(super) clip: Option<Rect>,
+    /// The opacity and corner radius this widget draws with
+    /// ([`super::ink_of`]).
+    pub(super) ink: Ink,
     pub(super) theme: Option<Arc<Theme>>,
     pub(super) label: Option<String>,
     /// The lane's gutter: its width and the controls it carries.
@@ -56,6 +62,9 @@ pub(super) struct TrackItem {
 pub(super) struct ClipItem {
     pub(super) rect: Rect,
     pub(super) clip: Option<Rect>,
+    /// The opacity and corner radius this widget draws with
+    /// ([`super::ink_of`]).
+    pub(super) ink: Ink,
     pub(super) theme: Option<Arc<Theme>>,
     pub(super) label: Option<String>,
 }
@@ -71,6 +80,9 @@ pub(super) struct ClipBodyItem {
     pub(super) local: View,
     pub(super) dur: f64,
     pub(super) clip: Option<Rect>,
+    /// The opacity and corner radius this widget draws with
+    /// ([`super::ink_of`]).
+    pub(super) ink: Ink,
     pub(super) theme: Option<Arc<Theme>>,
     /// The placement's size table and zoom — an element body draws through
     /// them exactly as it does anywhere else.
@@ -118,6 +130,9 @@ pub(super) struct TimelineItem {
     /// Where the picture goes, as the element resolved it out of `rect`.
     pub(super) body: Rect,
     pub(super) clip: Option<Rect>,
+    /// The opacity and corner radius this widget draws with
+    /// ([`super::ink_of`]).
+    pub(super) ink: Ink,
     pub(super) theme: Option<Arc<Theme>>,
     pub(super) kind: TimelineKind,
     pub(super) editor: EditorProps,
@@ -169,8 +184,13 @@ pub(super) fn collect_widgets(
     let mut ruler_items: Vec<RulerItem> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
     for p in placed {
-        // Everything a scrolled widget paints clips to its container's area.
+        // Everything a scrolled widget paints clips to its container's area...
         mesh.set_clip(p.clip);
+        // ...and everything it paints carries its own opacity and corner
+        // radius, set here for the whole run of triangles this widget is about
+        // to contribute — an element draws what it always drew.
+        let ink = super::ink_of(p);
+        mesh.set_ink(ink);
         // A **clip body** is drawn as a body, not as the element it also is:
         // it has no chrome of its own (no ruler, no keyboard gutter, no
         // navigation), because it is drawn against the axes of the clip
@@ -202,6 +222,7 @@ pub(super) fn collect_widgets(
                 local: p.time.unwrap_or_else(|| View::full(1)),
                 dur,
                 clip: p.clip,
+                ink,
                 theme: p.widget.theme.clone(),
                 metrics: p.metrics,
                 scale: p.scale,
@@ -227,6 +248,7 @@ pub(super) fn collect_widgets(
                     rect: p.rect,
                     indent: p.indent,
                     clip: p.clip,
+                    ink,
                     theme: p.widget.theme.clone(),
                     editor: editor.clone(),
                 });
@@ -245,6 +267,7 @@ pub(super) fn collect_widgets(
                     rect: p.rect,
                     indent: p.indent,
                     clip: p.clip,
+                    ink,
                     theme: p.widget.theme.clone(),
                     label: label.clone(),
                     header: header.clone(),
@@ -255,6 +278,7 @@ pub(super) fn collect_widgets(
                 clip_items.push(ClipItem {
                     rect: p.rect,
                     clip: p.clip,
+                    ink,
                     theme: p.widget.theme.clone(),
                     label: label.clone(),
                 });
@@ -299,6 +323,7 @@ pub(super) fn collect_widgets(
                                 rect: p.rect,
                                 body,
                                 clip: p.clip,
+                                ink,
                                 theme: p.widget.theme.clone(),
                                 kind,
                                 editor: editor.clone(),

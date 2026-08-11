@@ -155,8 +155,9 @@ impl WebApp {
             "def {def_id}: canvas attached; requesting GPU adapter"
         ));
         let (proxy, host) = (web_proxy(), self.id);
+        let samples = self.host.msaa;
         wasm_bindgen_futures::spawn_local(async move {
-            match Gpu::new(window).await {
+            match Gpu::new(window, samples).await {
                 Ok(gpu) => {
                     if let Some(proxy) = proxy {
                         let _ = proxy

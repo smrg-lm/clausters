@@ -181,6 +181,8 @@ pub(super) fn draw_timeline_meshes(
     for item in &collected.timeline_items {
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
+        mesh.set_ink(item.ink);
+        over.set_ink(item.ink);
         let th = item.theme.as_deref().unwrap_or(theme);
         // The body the element stated when it described its frame: one
         // rectangle, so the picture and the chrome around it agree.
@@ -355,6 +357,7 @@ pub(super) fn draw_static_meshes(
     // chrome still reads over it where both exist.
     for item in &collected.ruler_items {
         mesh.set_clip(item.clip);
+        mesh.set_ink(item.ink);
         let th = item.theme.as_deref().unwrap_or(theme);
         let nav = chrome_for(inputs, item.id, &item.editor, || track::window_nav(tree)).nav;
         let rate = if item.editor.sample_rate > 0.0 {
@@ -383,6 +386,8 @@ pub(super) fn draw_static_meshes(
         for item in &collected.track_items {
             mesh.set_clip(item.clip);
             over.set_clip(item.clip);
+            mesh.set_ink(item.ink);
+            over.set_ink(item.ink);
             let th = item.theme.as_deref().unwrap_or(theme);
             let chrome = chrome_for(inputs, item.id, &item.editor, || full);
             let nav = chrome.nav;
@@ -429,11 +434,13 @@ pub(super) fn draw_static_meshes(
     // box is under every body, and the layout emitted them in that order.
     for item in &collected.clip_items {
         mesh.set_clip(item.clip);
+        mesh.set_ink(item.ink);
         let th = item.theme.as_deref().unwrap_or(theme);
         track::draw_clip(&mut Draw::new(mesh, m, th), item.rect);
     }
     for item in &collected.clip_bodies {
         mesh.set_clip(item.clip);
+        mesh.set_ink(item.ink);
         let th = item.theme.as_deref().unwrap_or(theme);
         match &item.kind {
             // An **element** body draws itself, told which coordinate system
@@ -475,6 +482,7 @@ pub(super) fn draw_static_meshes(
             continue;
         };
         over.set_clip(item.clip);
+        over.set_ink(item.ink);
         let th = item.theme.as_deref().unwrap_or(theme);
         track::draw_clip_label(&mut Draw::new(over, m, th), item.rect, label);
     }
@@ -502,6 +510,7 @@ pub(super) fn draw_element_overlays(
             continue;
         };
         over.set_clip(None);
+        over.set_ink(super::ink_of(p));
         let th = p.widget.theme.as_deref().unwrap_or(theme);
         el.overlay(
             &mut Draw::new(over, m, th),

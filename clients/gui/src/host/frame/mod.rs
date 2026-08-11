@@ -45,7 +45,7 @@ use super::canvas::{self, CanvasView};
 use super::layout::{self, Rect};
 use super::metrics::Metrics;
 
-use super::paint::{Draw, Mesh, Painter};
+use super::paint::{Draw, Ink, Mesh, Painter};
 use super::ruler::{self, TimeUnit};
 use super::theme::{Theme, with_alpha};
 use super::timeline::{GroupState, group_key};
@@ -412,6 +412,24 @@ fn sample_to_x(s: f64, nav: &View, body: Rect) -> f32 {
     (body.x as f64 + (s - nav.start) / nav.len * body.w as f64) as f32
 }
 
+/// **The ink a placed widget draws with**: the opacity its subtree resolved to
+/// ([`Widget::alpha`]) and its declared corner radius in the pixels of the
+/// space it was placed in — the wire's number through the placement's own
+/// table, exactly like every other declared length, so a widget inside a zoomed
+/// workspace rounds by as much as it grew.
+///
+/// One function because both meshes and every draw pass ask the same question,
+/// and because it is the only place the two props meet the frame at all: an
+/// element is never told it is being faded.
+///
+/// [`Widget::alpha`]: super::widget::Widget::alpha
+pub(crate) fn ink_of(p: &layout::Placed) -> Ink {
+    Ink {
+        alpha: p.widget.alpha,
+        radius: p.widget.radius.map_or(0.0, |r| p.metrics.px(r)),
+    }
+}
+
 /// The lane sub-rectangle `ch` of `lanes` inside `body` (stacked top to
 /// bottom, no gap — the divider line is overlay chrome).
 pub(crate) fn lane_rect(body: Rect, lanes: usize, ch: usize) -> Rect {
@@ -482,6 +500,8 @@ pub(crate) fn render(
 
     mesh.set_clip(None);
     over.set_clip(None);
+    mesh.set_ink(Ink::default());
+    over.set_ink(Ink::default());
     painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);
     overlay.upload(&gpu.device, &gpu.queue, &over, fb_w, fb_h);
     for item in &collected.timeline_items {
@@ -606,12 +626,20 @@ pub(crate) fn render(
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("gui frame"),
         });
+    // Antialiasing is a property of the **attachment**, so it is the whole of
+    // what MSAA changes here: with it on, every pipeline draws into the
+    // multisampled texture and the GPU resolves that into the surface as the
+    // pass ends. One flag, one texture per window, nothing per widget.
+    let (attachment, resolve_target) = match gpu.msaa_view() {
+        Some(ms) => (ms, Some(&target)),
+        None => (&target, None),
+    };
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("gui pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target,
-                resolve_target: None,
+                view: attachment,
+                resolve_target,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(clear_color(theme)),
                     store: wgpu::StoreOp::Store,
@@ -926,6 +954,40 @@ mod tests {
             body.local.start.abs() < 0.5 && (body.local.len - 400.0).abs() < 1.0,
             "the clip's own axis, not the lane's window"
         );
+    }
+
+    /// The two paint props reach the frame through one door, and each in its
+    /// own units: the opacity is already resolved (it composed down the tree at
+    /// the mutation point), while the radius is a **logical** length that the
+    /// placement's own table turns into pixels — so a widget seen at a HiDPI
+    /// scale rounds by as much as it grew, and one that asked for neither draws
+    /// exactly what it always drew.
+    #[test]
+    fn the_ink_of_a_placement_carries_the_opacity_and_scales_the_radius() {
+        use crate::host::guidef::GuiNode;
+        use crate::host::widget::{Widget, resolve_style};
+
+        let json = r#"{"type":"window","margin":0,"opacity":0.5,"children":[
+            {"id":7,"type":"button","label":"go","radius":6},
+            {"id":8,"type":"button","label":"plain"}]}"#;
+        let mut tree =
+            Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+        resolve_style(&mut tree, &Arc::new(Theme::default()));
+        for (scale, want_radius) in [(1.0, 6.0), (2.0, 12.0)] {
+            let m = Metrics::default().resolved(scale);
+            let placed = layout::layout(Rect::new(0.0, 0.0, 400.0, 200.0), &tree, &m);
+            let ink = |id: i32| {
+                ink_of(
+                    placed
+                        .iter()
+                        .find(|p| p.widget.id == Some(id))
+                        .expect("placed"),
+                )
+            };
+            assert_eq!(ink(7).radius, want_radius);
+            assert_eq!(ink(7).alpha, 0.5, "the window's fade reaches its buttons");
+            assert_eq!(ink(8).radius, 0.0, "a widget that said nothing is square");
+        }
     }
 
     #[test]

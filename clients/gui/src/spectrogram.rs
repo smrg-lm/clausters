@@ -603,7 +603,7 @@ impl SpectrogramTexture {
 }
 
 impl SpectrogramRenderer {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, target: crate::view::Target) -> Self {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("spectrogram bgl"),
             entries: &[
@@ -659,7 +659,7 @@ impl SpectrogramRenderer {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format,
+                    format: target.format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -667,7 +667,7 @@ impl SpectrogramRenderer {
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: target.multisample(),
             multiview_mask: None,
             cache: None,
         });

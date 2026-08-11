@@ -92,6 +92,19 @@ export class GuiBridge {
      */
     metrics(json: string): void;
     /**
+     * Draws the host's windows with `samples`x multisampling — the browser
+     * form of the native `[gui] msaa` / `--msaa`, and the same bounded
+     * capability: `1` (the default) draws the flat picture, a higher count
+     * smooths every edge in the pass at the cost of one multisampled
+     * attachment per canvas. A count the GPU does not offer for the surface
+     * format falls back to `1` with a message.
+     *
+     * It applies to canvases attached **after** it, since every pipeline in a
+     * pass agrees on the count: call it before mounting, and re-attach a
+     * canvas to change it.
+     */
+    msaa(samples: number): void;
+    /**
      * Pops the next outbound OSC packet (`/gui_event`/`/gui_closed`/`/gui_info`)
      * for the page to decode, or `undefined` when the queue is empty.
      */
@@ -185,6 +198,7 @@ export interface InitOutput {
     readonly guibridge_feed: (a: number, b: number, c: number) => void;
     readonly guibridge_font: (a: number, b: number, c: number) => void;
     readonly guibridge_metrics: (a: number, b: number, c: number) => void;
+    readonly guibridge_msaa: (a: number, b: number) => void;
     readonly guibridge_poll: (a: number) => [number, number];
     readonly guibridge_resize: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly guibridge_server_reply: (a: number, b: number, c: number) => void;

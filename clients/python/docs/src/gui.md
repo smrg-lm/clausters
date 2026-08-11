@@ -517,6 +517,27 @@ panel(knob(color="#40c0a0"), theme={"panel_fill": "#101018", "accent": "#c08040"
 Both are live through `set` (a theme rides as its JSON string), and a theme on
 the root persists with a named def, so a bundle ships its look.
 
+Two props shape the drawing rather than its colour, both on any widget and both
+live: `opacity` (`0`–`1`) and `radius` (a corner radius in logical pixels).
+
+```python
+panel(button(label="arm", radius=6), opacity=0.5)
+```
+
+`opacity` behaves like a theme group — it multiplies down the whole subtree, so
+a control at `0.5` inside a panel at `0.5` draws at `0.25` — while `radius`
+applies to the widget alone; a negative number clears either. Each box clamps
+the radius to half its shorter side, so a widget's own frame rounds and the
+hairlines inside it keep their shape. What the fade covers is the flat drawing:
+the chrome, the controls and the text. A heavy view's picture — a waveform's
+trace, a spectrogram's texture, a `canvas` shader — is drawn by its own
+pipeline and keeps its own opacity, and two overlapping shapes inside a faded
+widget show through each other, because the fade is per-shape and not a layer.
+
+Antialiasing is not a prop at all: smoothing every edge is one setting of the
+**host** (`--msaa 4`, or `msaa = 4` under `[gui]`), because it is the render
+pass that is multisampled — one attachment per window, nothing per widget.
+
 Panning, sweeping a selection and locating the transport are the
 **container's** gestures, so any container may carry a `gestures` table keyed
 by modifier chord, each value a plan of steps in order:

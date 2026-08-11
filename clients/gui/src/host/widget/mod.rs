@@ -242,11 +242,28 @@ pub struct Widget {
     /// overwhelming majority of widgets, which are not containers and whose
     /// press is the element's.
     pub gestures: Option<GestureMap>,
+    /// The `opacity` prop: how opaque this widget's **subtree** draws, `1.0`
+    /// (fully opaque) when it says nothing. Declared here and resolved into
+    /// [`alpha`](Self::alpha) — a group's opacity multiplies its children's,
+    /// the way a theme group's overlay reaches them.
+    pub opacity: Option<f32>,
+    /// The `radius` prop: the corner radius this widget's own boxes are drawn
+    /// with, in **logical** pixels (the placement's scale resolves it, like
+    /// every other length on the wire). `None` is a square corner. Unlike
+    /// `opacity` it is this widget's alone — a container's rounding says
+    /// nothing about the controls inside it.
+    pub radius: Option<f32>,
     /// The resolved theme this widget draws with, produced at mutation points
-    /// by [`resolve_themes`] (an [`Arc`] clone per widget, so the per-frame
+    /// by [`resolve_style`] (an [`Arc`] clone per widget, so the per-frame
     /// path reads exactly one theme and pays nothing). `None` until the first
     /// resolve — the renderer falls back to the host theme.
     pub theme: Option<Arc<super::theme::Theme>>,
+    /// The resolved opacity of this widget, the product of its own `opacity`
+    /// and every ancestor's — written at the same mutation point as
+    /// [`theme`](Self::theme), never per frame. The radius is not here because
+    /// it does not inherit and because it is logical: the frame resolves it
+    /// against the placement's scale.
+    pub alpha: f32,
     pub children: Vec<Widget>,
 }
 
@@ -257,12 +274,61 @@ pub fn apply_widget(widget: &mut Widget, key: &str, v: &Value) -> bool {
     apply::apply_widget(widget, key, v)
 }
 
-/// Resolves every widget's theme reference: walking from `base` (the host
-/// theme), a `theme` prop overlays the inherited table for its subtree and a
-/// `color` prop re-seeds the function roles for its one widget — both at this
-/// **mutation point**, never per frame. Recursive and cheap by construction:
-/// a widget with neither prop shares its parent's `Arc`.
-pub fn resolve_themes(widget: &mut Widget, base: &Arc<super::theme::Theme>) {
+/// The `opacity` prop's value: a fraction, clamped to `[0, 1]`.
+fn opacity_value(v: &Value) -> Option<f32> {
+    let n = v.as_f64()?;
+    n.is_finite().then(|| (n as f32).clamp(0.0, 1.0))
+}
+
+/// The `radius` prop's value: a **logical** length, so it is left as declared
+/// (the frame scales it and each box clamps it to half its shorter side).
+fn radius_value(v: &Value) -> Option<f32> {
+    let n = v.as_f64()?;
+    (n.is_finite() && n >= 0.0).then_some(n as f32)
+}
+
+/// Applies one numeric style prop from a `/gui_set`: a negative number clears
+/// it back to the default, any other usable one sets it, and anything else is
+/// not this key's value at all.
+fn set_style_number(
+    slot: &mut Option<f32>,
+    v: &Value,
+    read: impl Fn(&Value) -> Option<f32>,
+) -> bool {
+    match v.as_f64() {
+        Some(n) if n.is_finite() && n < 0.0 => {
+            *slot = None;
+            true
+        }
+        Some(_) => match read(v) {
+            Some(n) => {
+                *slot = Some(n);
+                true
+            }
+            None => false,
+        },
+        None => false,
+    }
+}
+
+/// Resolves every widget's **style** references: its theme and its opacity.
+///
+/// Walking from `base` (the host theme), a `theme` prop overlays the inherited
+/// table for its subtree, a `color` prop re-seeds the function roles for its
+/// one widget, and an `opacity` prop multiplies the opacity its subtree draws
+/// at — all at this **mutation point** (a `/gui_def`, a `/gui_set`), never per
+/// frame. Recursive and cheap by construction: a widget with none of them
+/// shares its parent's `Arc` and its parent's alpha.
+pub fn resolve_style(widget: &mut Widget, base: &Arc<super::theme::Theme>) {
+    resolve_style_under(widget, base, 1.0);
+}
+
+fn resolve_style_under(widget: &mut Widget, base: &Arc<super::theme::Theme>, alpha: f32) {
+    // Opacity **composes**: a control at 0.5 inside a panel at 0.5 draws at
+    // 0.25, which is what makes a fade a property of a group rather than of one
+    // box. What it is not is layer compositing — see [`super::paint::Ink`].
+    let alpha = (alpha * widget.opacity.unwrap_or(1.0)).clamp(0.0, 1.0);
+    widget.alpha = alpha;
     let group = match &widget.theme_over {
         Some(table) => {
             let mut t = (**base).clone();
@@ -278,7 +344,7 @@ pub fn resolve_themes(widget: &mut Widget, base: &Arc<super::theme::Theme>) {
         None => group.clone(),
     });
     for child in &mut widget.children {
-        resolve_themes(child, &group);
+        resolve_style_under(child, &group, alpha);
     }
 }
 
@@ -354,17 +420,21 @@ impl Widget {
                 .get("color")
                 .and_then(Value::as_str)
                 .and_then(super::theme::parse_hex),
+            opacity: props.get("opacity").and_then(opacity_value),
+            radius: props.get("radius").and_then(radius_value),
             theme: None,
+            alpha: 1.0,
             children,
         })
     }
 
-    /// Applies a `/gui_set` of the style props (`theme`, `color`) to this
-    /// widget. A `theme` value rides as a JSON object or its string carrier
-    /// (the scalar wire, like `points`); an empty string (or empty object)
-    /// clears the group, an empty `color` clears the accent. Returns whether
-    /// the key was a style key that applied — the caller re-resolves the
-    /// window's themes.
+    /// Applies a `/gui_set` of the style props (`theme`, `color`, `opacity`,
+    /// `radius`) to this widget. A `theme` value rides as a JSON object or its
+    /// string carrier (the scalar wire, like `points`); an empty string (or
+    /// empty object) clears the group, an empty `color` clears the accent, and
+    /// a negative `opacity`/`radius` clears that prop back to the default.
+    /// Returns whether the key was a style key that applied — the caller
+    /// re-resolves the window's style.
     pub fn style_apply(&mut self, key: &str, v: &Value) -> bool {
         match key {
             "color" => match v.as_str() {
@@ -402,6 +472,11 @@ impl Widget {
                     None => false,
                 }
             }
+            // Both are plain numbers, and a **negative** one clears the prop —
+            // the same escape an empty `color` is, since no number in either
+            // range means "say nothing".
+            "opacity" => set_style_number(&mut self.opacity, v, opacity_value),
+            "radius" => set_style_number(&mut self.radius, v, radius_value),
             _ => false,
         }
     }

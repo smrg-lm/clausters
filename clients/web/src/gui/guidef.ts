@@ -88,6 +88,26 @@ export interface WidgetOptions {
      */
     color?: string;
     /**
+     * How opaque this widget draws, `0`–`1`. Like a theme group it is a
+     * **group's** property: it multiplies down the whole subtree, so a control
+     * at `0.5` inside a panel at `0.5` draws at `0.25`. A negative number
+     * clears it.
+     *
+     * It fades the flat drawing — the chrome, the controls and the text. A
+     * heavy view's picture (a waveform's trace, a spectrogram's texture, a
+     * `canvas` shader) is drawn by its own pipeline and keeps its own opacity.
+     */
+    opacity?: number;
+    /**
+     * The corner radius of the boxes this widget draws, in logical pixels.
+     * Unlike `opacity` it applies to this widget alone — a rounded panel says
+     * nothing about the controls in it. Each box clamps it to half its shorter
+     * side, so the widget's own frame rounds while the hairlines inside it (a
+     * divider, a tick, a track edge) keep their shape. A negative number
+     * clears it.
+     */
+    radius?: number;
+    /**
      * A **container's** gesture table: what a drag on it does, by modifier
      * modifier (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value an
      * ordered plan of steps — `element` (hand the press to whatever is under

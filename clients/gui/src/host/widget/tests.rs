@@ -92,7 +92,7 @@ fn themes_resolve_recursively_at_the_mutation_point() {
     );
     let mut w = Widget::from_node(1, &n, &[]).unwrap();
     let base = Arc::new(super::super::theme::Theme::default());
-    resolve_themes(&mut w, &base);
+    resolve_style(&mut w, &base);
     let theme_of = |id: i32| w.find(id).unwrap().theme.clone().unwrap();
     let red = [1.0, 0.0, 0.0, 1.0];
     assert_eq!(theme_of(12).accent, red, "the group reaches the subtree");
@@ -136,6 +136,51 @@ fn style_props_set_live_and_clear() {
     assert!(w.theme_over.is_none());
     assert!(!w.style_apply("color", &Value::from("nonsense")));
     assert!(!w.style_apply("value", &Value::from(1)), "not a style key");
+    // The two paint props are style props too: a number sets them, a negative
+    // one clears them (there is no number in either range that means "say
+    // nothing"), and an out-of-range opacity is clamped rather than refused.
+    assert!(w.style_apply("opacity", &Value::from(0.4)));
+    assert_eq!(w.opacity, Some(0.4));
+    assert!(w.style_apply("opacity", &Value::from(2.0)));
+    assert_eq!(w.opacity, Some(1.0), "clamped into range");
+    assert!(w.style_apply("opacity", &Value::from(-1.0)));
+    assert_eq!(w.opacity, None, "a negative number clears it");
+    assert!(w.style_apply("radius", &Value::from(6.0)));
+    assert_eq!(w.radius, Some(6.0));
+    assert!(w.style_apply("radius", &Value::from(-1.0)));
+    assert_eq!(w.radius, None);
+    assert!(!w.style_apply("opacity", &Value::from("half")));
+}
+
+/// Opacity is a **group's** property, resolved at the mutation point exactly
+/// where a theme group is: it multiplies down the subtree, so a control inside
+/// a faded panel is faded by both, and a widget that says nothing carries
+/// whatever it inherited.
+#[test]
+fn opacity_composes_down_the_tree_at_the_mutation_point() {
+    let n = node(
+        r#"{"type":"window","children":[
+          {"id":11,"type":"layout","opacity":0.5,"children":[
+            {"id":12,"type":"label","text":"faded with the group"},
+            {"id":13,"type":"slider","opacity":0.5}]},
+          {"id":14,"type":"label","text":"outside"}]}"#,
+    );
+    let mut w = Widget::from_node(1, &n, &[]).unwrap();
+    resolve_style(&mut w, &Arc::new(super::super::theme::Theme::default()));
+    let alpha_of = |w: &Widget, id: i32| w.find(id).unwrap().alpha;
+    assert_eq!(alpha_of(&w, 11), 0.5);
+    assert_eq!(alpha_of(&w, 12), 0.5, "the group reaches the subtree");
+    assert_eq!(alpha_of(&w, 13), 0.25, "and its own multiplies the group's");
+    assert_eq!(alpha_of(&w, 14), 1.0, "outside any group, opaque");
+    // A live set moves the whole subtree with it, on the same door.
+    assert!(
+        w.find_mut(11)
+            .unwrap()
+            .style_apply("opacity", &Value::from(1.0))
+    );
+    resolve_style(&mut w, &Arc::new(super::super::theme::Theme::default()));
+    assert_eq!(alpha_of(&w, 12), 1.0);
+    assert_eq!(alpha_of(&w, 13), 0.5);
 }
 
 #[test]

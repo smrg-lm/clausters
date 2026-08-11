@@ -45,7 +45,7 @@ struct State {
 
 impl State {
     fn new(gpu: Gpu, factory: ViewFactory) -> Self {
-        let renderers = Renderers::new(&gpu.device, gpu.config.format);
+        let renderers = Renderers::new(&gpu.device, gpu.target());
         let view_obj = factory(&gpu.device, &gpu.queue, &renderers);
         let view = View::full(view_obj.total_samples());
         Self {
@@ -140,7 +140,7 @@ impl ApplicationHandler for App {
         }
         let attrs = Window::default_attributes().with_title(self.title.clone());
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
-        let gpu = pollster::block_on(Gpu::new(window)).expect("GPU init");
+        let gpu = pollster::block_on(Gpu::new(window, 1)).expect("GPU init");
         let factory = self.factory.take().expect("factory consumed once");
         self.state = Some(State::new(gpu, factory));
     }

@@ -65,6 +65,42 @@ const FLOATS_PER_GLYPH_VERTEX: usize = 8;
 /// An RGBA color.
 pub type Color = [f32; 4];
 
+/// **How a widget's own triangles are emitted** — the two paint capabilities
+/// that are a property of the *widget* rather than of a drawing site: its
+/// resolved opacity and the corner radius of the boxes it lays down.
+///
+/// Both ride the [`Mesh`] beside its clip rectangle, for the same reason the
+/// clip does: they apply to a *run* of triangles (everything one widget
+/// contributes) rather than to one call, so no draw function grows a parameter
+/// and no element has to be told it is being faded. The frame sets one of these
+/// per placement, and every primitive emitted until the next one carries it.
+///
+/// The bound is deliberate and is the milestone's own: this is **per-primitive
+/// alpha**, not layer compositing. Two overlapping shapes inside a faded widget
+/// show through each other, because there is no second target to compose — and
+/// a second target is exactly the batch the crate does not split.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Ink {
+    /// The multiplier applied to every emitted vertex's alpha. `1.0` is opaque,
+    /// which is what everything that says nothing draws at.
+    pub alpha: f32,
+    /// The corner radius of the axis-aligned boxes emitted while it is set, in
+    /// **physical** pixels (the wire's logical number, through the placement's
+    /// scale). `0.0` is a square corner. Clamped per box to half its shorter
+    /// side, so a hairline keeps its shape and only a real box rounds.
+    pub radius: f32,
+}
+
+impl Default for Ink {
+    /// Opaque and square: what every widget draws at unless it asked otherwise.
+    fn default() -> Self {
+        Self {
+            alpha: 1.0,
+            radius: 0.0,
+        }
+    }
+}
+
 /// The rectangle four corners describe when **every edge is axis-parallel**,
 /// or `None` for anything rotated. Winding- and origin-agnostic: it checks the
 /// edges rather than a corner order, so it recognizes the quad whichever corner
@@ -91,6 +127,21 @@ fn axis_aligned(p: &[[f32; 2]; 4]) -> Option<Rect> {
     Some(Rect::new(x0, y0, x1 - x0, y1 - y0))
 }
 
+/// The four corner arcs of a rounded `r`, as `(centre x, centre y, the angle
+/// the quarter starts at)` — top-left, top-right, bottom-right, bottom-left,
+/// in a y-downwards space. One table, so a filled box and the frame around it
+/// turn about the same centres.
+fn corners(r: Rect, radius: f32) -> [(f32, f32, f32); 4] {
+    let (x0, y0) = (r.x + radius, r.y + radius);
+    let (x1, y1) = (r.x + r.w - radius, r.y + r.h - radius);
+    [
+        (x0, y0, std::f32::consts::PI),
+        (x1, y0, 1.5 * std::f32::consts::PI),
+        (x1, y1, 0.0),
+        (x0, y1, 0.5 * std::f32::consts::PI),
+    ]
+}
+
 /// A batch of flat-colored triangles in device-pixel space.
 #[derive(Default)]
 pub struct Mesh {
@@ -109,6 +160,10 @@ pub struct Mesh {
     /// bleeds outside its `scroll` container). Geometry, not a GPU scissor —
     /// the batch stays **one** upload and one draw on every front.
     clip: Option<Rect>,
+    /// The active [`Ink`]: the opacity every emitted vertex is multiplied by
+    /// and the corner radius [`rect`](Self::rect) lays its boxes down with. Set
+    /// per widget by the frame, exactly where the clip is.
+    ink: Ink,
 }
 
 impl Mesh {
@@ -168,9 +223,18 @@ impl Mesh {
                 y1 = cy1;
             }
         }
+        let alpha = self.ink.alpha;
         let mut vertex = |x: f32, y: f32, u: f32, v: f32| {
-            self.glyphs
-                .extend_from_slice(&[x, y, u, v, color[0], color[1], color[2], color[3]]);
+            self.glyphs.extend_from_slice(&[
+                x,
+                y,
+                u,
+                v,
+                color[0],
+                color[1],
+                color[2],
+                color[3] * alpha,
+            ]);
         };
         vertex(x0, y1, u0, v1);
         vertex(x1, y1, u1, v1);
@@ -184,6 +248,13 @@ impl Mesh {
     #[cfg(feature = "font-atlas")]
     pub(crate) fn glyph_vertices(&self) -> &[f32] {
         &self.glyphs
+    }
+
+    /// The alpha of every accumulated flat vertex — what a test asks to see
+    /// the [`Ink`]'s opacity in the batch itself.
+    #[cfg(test)]
+    pub(crate) fn alphas(&self) -> impl Iterator<Item = f32> + '_ {
+        self.verts.chunks_exact(FLOATS_PER_VERTEX).map(|v| v[5])
     }
 
     /// The `(x, y)` of every accumulated vertex, for bounds/layout tests —
@@ -205,12 +276,27 @@ impl Mesh {
 
     fn vertex(&mut self, p: [f32; 2], c: Color) {
         self.verts
-            .extend_from_slice(&[p[0], p[1], c[0], c[1], c[2], c[3]]);
+            .extend_from_slice(&[p[0], p[1], c[0], c[1], c[2], c[3] * self.ink.alpha]);
     }
 
     /// Sets (or clears) the clip rectangle applied to everything emitted next.
     pub fn set_clip(&mut self, clip: Option<Rect>) {
         self.clip = clip;
+    }
+
+    /// Sets the [`Ink`] — the opacity and the corner radius — everything
+    /// emitted next carries. The frame sets one per placed widget, beside its
+    /// clip; [`Ink::default`] restores opaque square drawing.
+    pub fn set_ink(&mut self, ink: Ink) {
+        self.ink = Ink {
+            alpha: ink.alpha.clamp(0.0, 1.0),
+            radius: ink.radius.max(0.0),
+        };
+    }
+
+    /// The [`Ink`] currently in force.
+    pub fn ink(&self) -> Ink {
+        self.ink
     }
 
     /// A triangle, emitted verbatim — the caller has already established that
@@ -319,11 +405,27 @@ impl Mesh {
         self.tri(p[0], p[2], p[3], color);
     }
 
-    /// An axis-aligned rectangle.
+    /// An axis-aligned rectangle — **the box primitive**, and so the one that
+    /// honors the active [`Ink`]'s corner radius: a widget that asked for
+    /// rounded corners gets them on every box it lays down, and on nothing
+    /// else. A line, a disc, a glyph and a raw quad keep their own shape,
+    /// which is what stops a rounded widget from rounding its hairlines and
+    /// its traces too.
     pub fn rect(&mut self, r: Rect, color: Color) {
         if r.w <= 0.0 || r.h <= 0.0 {
             return;
         }
+        if self.ink.radius > 0.0 {
+            let radius = self.ink.radius;
+            return self.round_rect(r, radius, color);
+        }
+        self.square_rect(r, color);
+    }
+
+    /// A rectangle with square corners, whatever the active [`Ink`] says — the
+    /// primitive [`rect`](Self::rect) is when nothing asked for a radius, and
+    /// what [`round_rect`](Self::round_rect) builds its straight parts from.
+    fn square_rect(&mut self, r: Rect, color: Color) {
         self.quad(
             [
                 [r.x, r.y + r.h],
@@ -333,6 +435,63 @@ impl Mesh {
             ],
             color,
         );
+    }
+
+    /// An axis-aligned rectangle with `radius`-rounded corners, tessellated
+    /// into **this same batch**: three straight bands plus a quarter fan per
+    /// corner, no second pipeline and no texture — the way the score's outlines
+    /// already reach the mesh.
+    ///
+    /// `radius` is clamped to half the shorter side (so it degenerates to a
+    /// stadium, never to a self-crossing shape) and a radius under one pixel is
+    /// a square corner: the arc would land inside a single pixel, which is a
+    /// dozen triangles nobody can see. That clamp is also what lets the radius
+    /// ride the [`Ink`] for a whole widget — a divider, a track edge and a tick
+    /// are one or two pixels thick, so they come out unchanged while the
+    /// widget's own box rounds.
+    pub fn round_rect(&mut self, r: Rect, radius: f32, color: Color) {
+        if r.w <= 0.0 || r.h <= 0.0 {
+            return;
+        }
+        let radius = radius.min(r.w * 0.5).min(r.h * 0.5);
+        if radius < 1.0 {
+            return self.square_rect(r, color);
+        }
+        // The straight parts: a full-height middle band and the two caps
+        // between the corners. Every one of them is axis-aligned, so each takes
+        // the clip's cheap clamp.
+        self.square_rect(Rect::new(r.x, r.y + radius, r.w, r.h - 2.0 * radius), color);
+        self.square_rect(
+            Rect::new(r.x + radius, r.y, r.w - 2.0 * radius, radius),
+            color,
+        );
+        self.square_rect(
+            Rect::new(r.x + radius, r.y + r.h - radius, r.w - 2.0 * radius, radius),
+            color,
+        );
+        // ...and a quarter fan per corner: the ring from the centre out, which
+        // is a fan because its inner radius is zero.
+        for (cx, cy, from) in corners(r, radius) {
+            self.corner_ring(cx, cy, from, radius, 0.0, color);
+        }
+    }
+
+    /// One corner's arc as a strip between an outer and an inner radius (a fan
+    /// when `inner` is zero) — the piece both the filled box and the frame are
+    /// built from, so a rounded border follows exactly the edge its fill drew.
+    fn corner_ring(&mut self, cx: f32, cy: f32, from: f32, outer: f32, inner: f32, color: Color) {
+        // The segment count follows the radius (a corner is never more than a
+        // few pixels of arc), the way `disc` fixes its own.
+        let segments = ((outer * 0.75).ceil() as usize).clamp(2, 12);
+        let step = std::f32::consts::FRAC_PI_2 / segments as f32;
+        for i in 0..segments {
+            let (a0, a1) = (from + i as f32 * step, from + (i + 1) as f32 * step);
+            let at = |a: f32, rad: f32| [cx + rad * a.cos(), cy + rad * a.sin()];
+            self.tri(at(a0, inner), at(a0, outer), at(a1, outer), color);
+            if inner > 0.0 {
+                self.tri(at(a0, inner), at(a1, outer), at(a1, inner), color);
+            }
+        }
     }
 
     /// A thick line segment from `a` to `b` of width `w`.
@@ -351,12 +510,54 @@ impl Mesh {
         );
     }
 
-    /// A `w`-pixel-thick outline of `rect` (four edge rectangles).
+    /// A `w`-pixel-thick outline of `rect` — four edge rectangles, or a
+    /// rounded frame when the active [`Ink`] carries a radius, so a widget's
+    /// edge (and the focus ring the frame draws over it) follows the box its
+    /// fill drew rather than cutting its corners off.
     pub fn border(&mut self, rect: Rect, w: f32, color: Color) {
-        self.rect(Rect::new(rect.x, rect.y, rect.w, w), color);
-        self.rect(Rect::new(rect.x, rect.y + rect.h - w, rect.w, w), color);
-        self.rect(Rect::new(rect.x, rect.y, w, rect.h), color);
-        self.rect(Rect::new(rect.x + rect.w - w, rect.y, w, rect.h), color);
+        if self.ink.radius > 0.0 {
+            let radius = self.ink.radius;
+            return self.round_border(rect, w, radius, color);
+        }
+        self.square_border(rect, w, color);
+    }
+
+    /// The four edge strips of a square outline, whatever the [`Ink`] says.
+    fn square_border(&mut self, rect: Rect, w: f32, color: Color) {
+        self.square_rect(Rect::new(rect.x, rect.y, rect.w, w), color);
+        self.square_rect(Rect::new(rect.x, rect.y + rect.h - w, rect.w, w), color);
+        self.square_rect(Rect::new(rect.x, rect.y, w, rect.h), color);
+        self.square_rect(Rect::new(rect.x + rect.w - w, rect.y, w, rect.h), color);
+    }
+
+    /// A `w`-thick frame around `rect` with `radius`-rounded corners: four
+    /// straight edge strips between the corners, and a ring segment per corner
+    /// from `radius` in to `radius - w` (a fan where the frame is thicker than
+    /// the corner is round).
+    pub fn round_border(&mut self, rect: Rect, w: f32, radius: f32, color: Color) {
+        if rect.w <= 0.0 || rect.h <= 0.0 || w <= 0.0 {
+            return;
+        }
+        let radius = radius.min(rect.w * 0.5).min(rect.h * 0.5);
+        if radius < 1.0 {
+            return self.square_border(rect, w, color);
+        }
+        let span_w = (rect.w - 2.0 * radius).max(0.0);
+        let span_h = (rect.h - 2.0 * radius).max(0.0);
+        self.square_rect(Rect::new(rect.x + radius, rect.y, span_w, w), color);
+        self.square_rect(
+            Rect::new(rect.x + radius, rect.y + rect.h - w, span_w, w),
+            color,
+        );
+        self.square_rect(Rect::new(rect.x, rect.y + radius, w, span_h), color);
+        self.square_rect(
+            Rect::new(rect.x + rect.w - w, rect.y + radius, w, span_h),
+            color,
+        );
+        let inner = (radius - w).max(0.0);
+        for (cx, cy, from) in corners(rect, radius) {
+            self.corner_ring(cx, cy, from, radius, inner, color);
+        }
     }
 
     /// A filled circle approximated by a triangle fan.
@@ -410,8 +611,11 @@ pub struct Painter {
     /// with the feature on and no face pays no texture.
     #[cfg(feature = "font-atlas")]
     text: Option<TextLayer>,
+    /// The pass this painter draws into, kept for the glyph layer's pipeline:
+    /// it is built on the first batch that carries a letter, and it has to
+    /// agree with the flat one on the format **and** the sample count.
     #[cfg(feature = "font-atlas")]
-    format: wgpu::TextureFormat,
+    target: crate::view::Target,
 }
 
 /// The textured pipeline and this window's copy of the glyph atlas.
@@ -430,7 +634,7 @@ struct TextLayer {
 
 #[cfg(feature = "font-atlas")]
 impl TextLayer {
-    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+    fn new(device: &wgpu::Device, target: crate::view::Target) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("glyph shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("paint_text.wgsl").into()),
@@ -536,7 +740,7 @@ impl TextLayer {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format,
+                    format: target.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -544,7 +748,7 @@ impl TextLayer {
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: target.multisample(),
             multiview_mask: None,
             cache: None,
         });
@@ -600,7 +804,7 @@ impl TextLayer {
 }
 
 impl Painter {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, target: crate::view::Target) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("paint shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("paint.wgsl").into()),
@@ -639,7 +843,7 @@ impl Painter {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format,
+                    format: target.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -647,7 +851,7 @@ impl Painter {
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: target.multisample(),
             multiview_mask: None,
             cache: None,
         });
@@ -666,7 +870,7 @@ impl Painter {
             #[cfg(feature = "font-atlas")]
             text: None,
             #[cfg(feature = "font-atlas")]
-            format,
+            target,
         }
     }
 
@@ -726,7 +930,7 @@ impl Painter {
         }
         let text = self
             .text
-            .get_or_insert_with(|| TextLayer::new(device, self.format));
+            .get_or_insert_with(|| TextLayer::new(device, self.target));
         let mut clip = Vec::with_capacity(verts.len());
         for v in verts.chunks_exact(FLOATS_PER_GLYPH_VERTEX) {
             clip.push((v[0] / fw) * 2.0 - 1.0);
@@ -947,6 +1151,95 @@ mod tests {
             ];
             assert!(axis_aligned(&corners).is_some(), "{a:?} -> {b:?}");
         }
+    }
+
+    /// The opacity reaches the batch the only way it can without a second
+    /// target: every vertex the widget emits carries it, glyphs included, and
+    /// nothing else in the mesh is touched.
+    #[test]
+    fn the_inks_opacity_multiplies_every_emitted_alpha() {
+        let mut m = Mesh::new();
+        m.set_ink(Ink {
+            alpha: 0.5,
+            ..Ink::default()
+        });
+        m.rect(Rect::new(0.0, 0.0, 10.0, 10.0), [1.0, 1.0, 1.0, 1.0]);
+        // A color that is already translucent composes with it rather than
+        // being replaced — a selection band at 0.18 inside a widget at 0.5 is
+        // fainter, not reset.
+        m.rect(Rect::new(0.0, 0.0, 10.0, 10.0), [1.0, 1.0, 1.0, 0.4]);
+        let alphas: Vec<f32> = m.alphas().collect();
+        assert_eq!(alphas.len(), 12);
+        assert!(alphas[..6].iter().all(|a| (a - 0.5).abs() < 1e-6));
+        assert!(alphas[6..].iter().all(|a| (a - 0.2).abs() < 1e-6));
+        // ...and the default is opaque, which is what every widget that says
+        // nothing draws at.
+        m.set_ink(Ink::default());
+        m.rect(Rect::new(0.0, 0.0, 10.0, 10.0), [1.0; 4]);
+        assert!(m.alphas().skip(12).all(|a| a == 1.0));
+    }
+
+    /// A rounded box is the same box with its corners cut: it never leaves its
+    /// rectangle, it still fills the middle and the edges, and the corner pixel
+    /// it used to cover is gone.
+    #[test]
+    fn a_radius_cuts_the_corners_and_keeps_the_box() {
+        let r = Rect::new(10.0, 10.0, 80.0, 40.0);
+        let mut m = Mesh::new();
+        m.set_ink(Ink {
+            radius: 8.0,
+            ..Ink::default()
+        });
+        m.rect(r, [1.0; 4]);
+        for (x, y) in m.positions() {
+            assert!(
+                (10.0..=90.0).contains(&x) && (10.0..=50.0).contains(&y),
+                "the rounding stays inside the rect: ({x}, {y})"
+            );
+        }
+        assert!(covers(&m, 50.0, 30.0), "the middle is filled");
+        assert!(covers(&m, 11.0, 30.0), "the left edge is filled");
+        assert!(covers(&m, 50.0, 11.0), "the top edge is filled");
+        assert!(!covers(&m, 10.6, 10.6), "the corner is cut");
+        assert!(!covers(&m, 89.4, 49.4), "every corner is cut");
+    }
+
+    /// The clamp is what lets one radius ride a whole widget: a hairline (a
+    /// divider, a tick, a track edge) has no room for an arc, so it comes out
+    /// exactly as it always did, while the widget's own box rounds.
+    #[test]
+    fn a_hairline_is_unchanged_by_a_radius_the_box_uses() {
+        let hairline = Rect::new(0.0, 0.0, 100.0, 1.0);
+        let mut square = Mesh::new();
+        square.rect(hairline, [1.0; 4]);
+        let mut rounded = Mesh::new();
+        rounded.set_ink(Ink {
+            radius: 6.0,
+            ..Ink::default()
+        });
+        rounded.rect(hairline, [1.0; 4]);
+        assert_eq!(rounded.vertex_count(), square.vertex_count());
+        assert_eq!(
+            rounded.positions().collect::<Vec<_>>(),
+            square.positions().collect::<Vec<_>>()
+        );
+    }
+
+    /// A frame follows the box its fill drew: the corner the fill cut is not
+    /// squared off by the border (or by the focus ring, which is one).
+    #[test]
+    fn a_border_follows_the_rounded_box() {
+        let r = Rect::new(10.0, 10.0, 80.0, 40.0);
+        let mut m = Mesh::new();
+        m.set_ink(Ink {
+            radius: 8.0,
+            ..Ink::default()
+        });
+        m.border(r, 2.0, [1.0; 4]);
+        assert!(covers(&m, 50.0, 10.6), "the top edge is drawn");
+        assert!(covers(&m, 10.6, 30.0), "the left edge is drawn");
+        assert!(!covers(&m, 10.6, 10.6), "and the corner is not squared off");
+        assert!(!covers(&m, 50.0, 30.0), "a frame is not a fill");
     }
 
     #[test]

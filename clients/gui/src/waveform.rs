@@ -300,7 +300,7 @@ fn new_vertex_buffer(device: &wgpu::Device, vertices: u64) -> wgpu::Buffer {
 }
 
 impl WaveformRenderer {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, target: crate::view::Target) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("waveform shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("waveform.wgsl").into()),
@@ -343,7 +343,7 @@ impl WaveformRenderer {
                     module: &shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format,
+                        format: target.format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -354,7 +354,7 @@ impl WaveformRenderer {
                     ..Default::default()
                 },
                 depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
+                multisample: target.multisample(),
                 multiview_mask: None,
                 cache: None,
             })

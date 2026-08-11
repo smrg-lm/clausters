@@ -10,6 +10,41 @@ use crate::spectrogram::SpectrogramRenderer;
 use crate::viewport::View;
 use crate::waveform::WaveformRenderer;
 
+/// **What every pipeline drawing into one window's pass must agree on**: the
+/// color format it writes into and how many samples that attachment carries.
+///
+/// The format was already threaded through every constructor; the sample count
+/// joins it rather than becoming a second parameter, because the two are one
+/// fact about the *pass* and a pipeline that disagrees with it on either is
+/// rejected at draw time. Antialiasing is therefore one number per window with
+/// nothing per widget: it is the attachment that is multisampled, and the flat
+/// geometry, the glyphs, the heavy views and a user `canvas` all draw into it
+/// unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Target {
+    pub format: wgpu::TextureFormat,
+    /// The MSAA sample count of the pass: `1` (no multisampling — the default,
+    /// and what an oscilloscope wants) or a count the adapter reports for this
+    /// format, typically 4.
+    pub samples: u32,
+}
+
+impl Target {
+    /// A single-sampled target of `format` — what a front that does not ask for
+    /// antialiasing draws into, and what the demo harnesses use.
+    pub fn new(format: wgpu::TextureFormat) -> Self {
+        Self { format, samples: 1 }
+    }
+
+    /// The multisample state every pipeline drawing into this target declares.
+    pub fn multisample(&self) -> wgpu::MultisampleState {
+        wgpu::MultisampleState {
+            count: self.samples.max(1),
+            ..Default::default()
+        }
+    }
+}
+
 /// The heavy views' shared GPU machinery: **one per window**, holding every
 /// pipeline the timeline views draw through, and nothing that identifies a
 /// particular view.
@@ -30,10 +65,10 @@ pub struct Renderers {
 }
 
 impl Renderers {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, target: Target) -> Self {
         Self {
-            waveform: WaveformRenderer::new(device, format),
-            spectrogram: SpectrogramRenderer::new(device, format),
+            waveform: WaveformRenderer::new(device, target),
+            spectrogram: SpectrogramRenderer::new(device, target),
         }
     }
 }

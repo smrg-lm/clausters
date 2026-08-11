@@ -38,7 +38,7 @@ usage:
   clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
                 [--tcp [port] | --no-tcp] [--ws [port]] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
-                [--theme <path>] [--font <path>]
+                [--theme <path>] [--font <path>] [--msaa <n>]
       --port <n>            port for the GUI host's server front
                             (script -> host, UDP and TCP); default 57210
       --tcp [port]          length-prefixed OSC over TCP — on by default at the
@@ -83,6 +83,11 @@ usage:
                             other build warns and keeps its bitmap face. With
                             the feature and no path, one of the system's own
                             faces is used when there is one.
+      --msaa <n>            antialias every window with n-sample multisampling
+                            (1 = off, the default; 4 is the usual smoothing).
+                            One multisampled attachment per window and nothing
+                            per widget; a count this GPU does not offer for the
+                            surface format falls back to 1 with a warning.
       --headless            run the protocol with no display (tests / no GPU);
                             the default opens windows (winit + wgpu)
   -v, -vv, -vvv             log verbosity: warn (default) -> info -> debug ->
@@ -95,6 +100,24 @@ by a project clausters.toml; a command-line flag wins over both.
 The host speaks the /gui_* widget protocol as JSON-in-OSC, the same encoding the
 audio server uses. A window-rooted /gui_def opens an actual window; /gui_set,
 /gui_free and /gui_query (replying /gui_info) drive and read the tree.";
+
+/// **The host's look**, as the config file and the command line resolved it:
+/// the color roles, the size roles and the antialiasing every window is drawn
+/// with. The three travel together because they are resolved together and
+/// applied together, on both launch paths.
+struct Look {
+    theme: Theme,
+    metrics: Metrics,
+    msaa: u32,
+}
+
+impl Look {
+    fn apply(self, host: &mut Host) {
+        host.theme = self.theme;
+        host.metrics = self.metrics;
+        host.msaa = self.msaa;
+    }
+}
 
 fn main() -> ExitCode {
     let mut verbosity: i8 = 0;
@@ -139,6 +162,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut config_path: Option<String> = None;
     let mut theme_path: Option<String> = None;
     let mut font_path: Option<String> = None;
+    let mut cli_msaa: Option<u32> = None;
     let mut it = args.iter().peekable();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -211,6 +235,12 @@ fn run(args: &[String]) -> Result<(), String> {
                         .clone(),
                 );
             }
+            "--msaa" => {
+                let v = it
+                    .next()
+                    .ok_or_else(|| format!("--msaa needs a sample count\n{USAGE}"))?;
+                cli_msaa = Some(v.parse().map_err(|e| format!("--msaa: {e}"))?);
+            }
             "--config" => {
                 let v = it
                     .next()
@@ -257,6 +287,10 @@ fn run(args: &[String]) -> Result<(), String> {
     let server = cli_server.or_else(|| cfg.gui.server.clone());
     let shm = cli_shm.or_else(|| cfg.gui.shm.clone());
     let headless = cli_headless || cfg.gui.headless == Some(true);
+    // The windows' antialiasing: a sample count the GPU is asked for and clamps
+    // (see `Gpu::new`). 1 is no multisampling, which is what an oscilloscope
+    // trace wants and what every build drew before this was a flag.
+    let msaa = cli_msaa.or(cfg.gui.msaa).unwrap_or(1).max(1);
     // The host's look: the default theme, overlaid by [gui.theme] from the
     // config, then by a --theme file. Unknown roles or bad colors warn and
     // fall through, so a stale style file degrades to the default look.
@@ -282,6 +316,11 @@ fn run(args: &[String]) -> Result<(), String> {
             tracing::warn!("{w} (config [gui.metrics])");
         }
     }
+    let look = Look {
+        theme,
+        metrics,
+        msaa,
+    };
     // The data directory: an explicit flag wins; otherwise the standalone
     // section (when booting one) then the gui section provide it; finally the
     // XDG fallback resolves a default.
@@ -320,11 +359,11 @@ fn run(args: &[String]) -> Result<(), String> {
                     dir.display()
                 )
             })?;
-            return run_standalone(&name, store, &dir, port, run_boot, theme, metrics);
+            return run_standalone(&name, store, &dir, port, run_boot, look);
         }
         #[cfg(not(feature = "standalone"))]
         {
-            let _ = (&name, &resolved_dir, port, run_boot);
+            let _ = (&name, &resolved_dir, port, run_boot, look);
             return Err("this clausters-gui was built without standalone support; \
                         rebuild with `--features standalone` (it links the embedded server)"
                 .to_string());
@@ -338,8 +377,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let local = socket.local_addr().map_err(|e| e.to_string())?;
 
     let mut host = Host::new();
-    host.theme = theme;
-    host.metrics = metrics;
+    look.apply(&mut host);
     load_face(
         &mut host,
         font_path.or_else(|| cfg.gui.font.clone()),
@@ -463,8 +501,7 @@ fn run_standalone(
     data_dir: &Path,
     port: u16,
     run_boot: bool,
-    theme: Theme,
-    metrics: Metrics,
+    look: Look,
 ) -> Result<(), String> {
     let (id, json) = store
         .load(name)
@@ -533,8 +570,7 @@ fn run_standalone(
     let mut host = Host::new()
         .with_server_link(ServerLink::Embed(embed))
         .with_store(store);
-    host.theme = theme;
-    host.metrics = metrics;
+    look.apply(&mut host);
     let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
     host.handle_packet(
         OscPacket::Message(OscMessage {

@@ -171,6 +171,9 @@ enum WebEvent {
     /// A metrics overlay from the page: role -> number pairs (the same table
     /// `[gui.metrics]` carries natively, `scale` included).
     Metrics(Vec<(String, f64)>),
+    /// The MSAA sample count canvases attached from here on are drawn with
+    /// (the browser form of the native `[gui] msaa`).
+    Msaa(u32),
     /// The bytes of a typeface the page fetched — the browser's half of the
     /// [`FontSource`](crate::host::FontSource) seam, which a native host fills
     /// by mapping a file.
@@ -578,9 +581,9 @@ impl WebApp {
                     slot.pending_size.unwrap_or((size.width, size.height))
                 };
                 gpu.resize(w, h);
-                let renderers = Renderers::new(&gpu.device, gpu.config.format);
-                let painter = Painter::new(&gpu.device, gpu.config.format);
-                let overlay = Painter::new(&gpu.device, gpu.config.format);
+                let renderers = Renderers::new(&gpu.device, gpu.target());
+                let painter = Painter::new(&gpu.device, gpu.target());
+                let overlay = Painter::new(&gpu.device, gpu.target());
                 log(&format!(
                     "def {def_id}: GPU device ready; surface {}x{}",
                     gpu.config.width, gpu.config.height
@@ -637,12 +640,18 @@ impl WebApp {
                 let base = std::sync::Arc::new(self.host.theme.clone());
                 for id in self.host.window_def_ids() {
                     if let Some(tree) = self.host.window_def_mut(id) {
-                        super::widget::resolve_themes(tree, &base);
+                        super::widget::resolve_style(tree, &base);
                     }
                 }
                 for def in self.canvases.keys().copied().collect::<Vec<_>>() {
                     self.draw(def);
                 }
+            }
+            WebEvent::Msaa(samples) => {
+                // A canvas already showing keeps the pass its pipelines were
+                // built against, exactly as a native window does: the count is
+                // read when a device comes up, and re-attaching applies it.
+                self.host.msaa = samples.max(1);
             }
             WebEvent::Metrics(entries) => {
                 for w in self

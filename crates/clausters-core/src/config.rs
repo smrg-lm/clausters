@@ -147,6 +147,12 @@ pub struct GuiConfig {
     /// build draws with its embedded bitmap face and ignores this. With the
     /// feature and no path, the host looks for one of the system's own faces.
     pub font: Option<String>,
+    /// Antialiasing of the host's windows (`--msaa`): the MSAA sample count of
+    /// each window's render pass. `1` (the default) draws the flat picture;
+    /// `4` is the usual smoothing. It costs one multisampled attachment per
+    /// window and nothing per widget, and a count the GPU does not offer for
+    /// the surface format falls back to `1` with a warning.
+    pub msaa: Option<u32>,
     /// `[gui.theme]` — color-role overrides for the host's look, each entry
     /// `role = "#rrggbb[aa]"`. A partial table: unlisted roles keep the
     /// default theme. The role names are the GUI host's `Theme` fields
@@ -396,6 +402,7 @@ impl GuiConfig {
             data_dir: pick(self.data_dir, h.data_dir),
             headless: pick(self.headless, h.headless),
             font: pick(self.font, h.font),
+            msaa: pick(self.msaa, h.msaa),
             // The theme and metrics tables merge per key (the overlay
             // semantics): the higher layer's roles win, its unlisted roles fall
             // through.

@@ -19,6 +19,15 @@ pub(crate) struct Gpu {
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
     pub(crate) config: wgpu::SurfaceConfiguration,
+    /// The MSAA sample count this window's pass runs at: `1` unless the front
+    /// asked for antialiasing **and** the adapter reports the count for this
+    /// surface format (it is clamped down at bring-up, so a machine that cannot
+    /// multisample draws the aliased picture rather than failing to open).
+    samples: u32,
+    /// The multisampled color attachment, when `samples > 1`: the pass draws
+    /// into this and resolves into the surface texture. Sized with the surface,
+    /// so it is rebuilt on every [`resize`](Self::resize).
+    msaa: Option<wgpu::TextureView>,
 }
 
 impl Gpu {
@@ -26,12 +35,16 @@ impl Gpu {
     /// window's current size. `async` so the web path can await it (the native
     /// path blocks on it); the adapter/device requests are the only await points.
     ///
+    /// `samples` is the antialiasing the front asked for (`1` = none), clamped
+    /// to what the adapter reports for the surface format — the whole of MSAA's
+    /// cost model: one multisampled attachment per window, nothing per widget.
+    ///
     /// Returns an error rather than panicking when no GPU is available, so the
     /// front can surface a clear message instead of aborting. On the web this is
     /// rare: [`new_instance`] prefers WebGPU where the browser truly supports it
     /// and otherwise falls back to **WebGL2**, which nearly every browser has —
     /// so a Linux/older-Android browser whose WebGPU is disabled still renders.
-    pub(crate) async fn new(window: Arc<Window>) -> Result<Self, String> {
+    pub(crate) async fn new(window: Arc<Window>, samples: u32) -> Result<Self, String> {
         let size = window.inner_size();
         let instance = new_instance().await;
         let surface = instance
@@ -61,13 +74,51 @@ impl Gpu {
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or_else(|| "the surface is unsupported by this GPU adapter".to_string())?;
         surface.configure(&device, &config);
-        Ok(Self {
+        // What the adapter actually offers for this format: an unsupported
+        // count is a warning and a single-sampled pass, never a failure to
+        // open — the picture is the same picture, with harder edges.
+        let asked = samples.max(1);
+        let samples = if adapter
+            .get_texture_format_features(config.format)
+            .flags
+            .sample_count_supported(asked)
+        {
+            asked
+        } else {
+            if asked > 1 {
+                tracing::warn!(
+                    "this GPU does not support {asked}x multisampling for the window surface; \
+                     drawing without antialiasing"
+                );
+            }
+            1
+        };
+        let mut gpu = Self {
             window,
             surface,
             device,
             queue,
             config,
-        })
+            samples,
+            msaa: None,
+        };
+        gpu.rebuild_msaa();
+        Ok(gpu)
+    }
+
+    /// What every pipeline drawing into this window declares: its format and
+    /// its sample count.
+    pub(crate) fn target(&self) -> crate::view::Target {
+        crate::view::Target {
+            format: self.config.format,
+            samples: self.samples,
+        }
+    }
+
+    /// The multisampled attachment the pass draws into, `None` when this window
+    /// draws straight into the surface.
+    pub(crate) fn msaa_view(&self) -> Option<&wgpu::TextureView> {
+        self.msaa.as_ref()
     }
 
     pub(crate) fn resize(&mut self, width: u32, height: u32) {
@@ -75,7 +126,32 @@ impl Gpu {
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
+            self.rebuild_msaa();
         }
+    }
+
+    /// (Re)creates the multisampled color attachment at the surface's current
+    /// size. A single-sampled window has none, and pays nothing.
+    fn rebuild_msaa(&mut self) {
+        if self.samples <= 1 {
+            self.msaa = None;
+            return;
+        }
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("msaa color"),
+            size: wgpu::Extent3d {
+                width: self.config.width.max(1),
+                height: self.config.height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: self.samples,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        self.msaa = Some(texture.create_view(&wgpu::TextureViewDescriptor::default()));
     }
 }
 

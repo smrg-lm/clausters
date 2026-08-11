@@ -164,6 +164,20 @@ impl GuiBridge {
         }
     }
 
+    /// Draws the host's windows with `samples`x multisampling — the browser
+    /// form of the native `[gui] msaa` / `--msaa`, and the same bounded
+    /// capability: `1` (the default) draws the flat picture, a higher count
+    /// smooths every edge in the pass at the cost of one multisampled
+    /// attachment per canvas. A count the GPU does not offer for the surface
+    /// format falls back to `1` with a message.
+    ///
+    /// It applies to canvases attached **after** it, since every pipeline in a
+    /// pass agrees on the count: call it before mounting, and re-attach a
+    /// canvas to change it.
+    pub fn msaa(&self, samples: u32) {
+        self.send(WebEvent::Msaa(samples));
+    }
+
     /// Draws text with the typeface in `bytes` — a TrueType/OpenType face the
     /// page fetched, which is the browser's half of the host's font seam (a
     /// native host maps a file instead).
