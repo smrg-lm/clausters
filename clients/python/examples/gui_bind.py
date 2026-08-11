@@ -89,17 +89,22 @@ print(f"knob bound to synth {synth.id} freq; turn it -- the pitch follows "
 _closed = False
 
 
-def run(seconds: float) -> None:
-    """Pumps events for ``seconds`` (a bound knob sends none back)."""
+def run(seconds: float | None = None) -> None:
+    """Pumps events for ``seconds`` (a bound knob sends none back).
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
     start = time.monotonic()
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         gui.pump(timeout=0.1)
 
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(20.0)
+        run()
     finally:
         synth.free()
         session.close()

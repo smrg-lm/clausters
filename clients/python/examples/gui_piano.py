@@ -166,8 +166,8 @@ win.on_closed(lambda: globals().__setitem__("_closed", True))
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        deadline = time.monotonic() + 45.0
-        while time.monotonic() < deadline and not _closed:
+        # No deadline: play it for as long as you like, then close the window.
+        while not _closed:
             gui.pump(timeout=0.02)
         for pitch in list(_voices):
             note_event(pitch, 0, 0, 0)

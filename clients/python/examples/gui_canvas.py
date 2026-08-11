@@ -86,10 +86,15 @@ print("an animated shader: its ring follows the OSC param, its green "
 _closed = False
 
 
-def run(seconds: float) -> None:
-    """Sweeps the OSC param and the control bus for ``seconds``."""
+def run(seconds: float | None = None) -> None:
+    """Sweeps the OSC param and the control bus for ``seconds``.
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
     start = time.monotonic()
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         t = time.monotonic() - start
         win["shader"].set(param0=0.5 + 0.5 * math.sin(t * 0.7))
         bus.set(0.5 + 0.5 * math.cos(t * 1.3))
@@ -99,7 +104,7 @@ def run(seconds: float) -> None:
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(30.0)
+        run()
     finally:
         session.close()
 else:

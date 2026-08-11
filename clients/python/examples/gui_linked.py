@@ -124,9 +124,10 @@ if __name__ == "__main__":
         # Interactive first: both lanes are linked — wheel/drag on either one
         # drives both. The membership demo runs only near the end, so early
         # gestures are not confused by a temporarily unlinked lane.
-        deadline = time.monotonic() + 90.0
+        # The membership demo still fires on a timer; the run itself ends
+        # when you close the window.
         demo_at = time.monotonic() + 75.0
-        while time.monotonic() < deadline and not _closed:
+        while not _closed:
             gui.pump(timeout=0.05)
             if demo_at is not None and time.monotonic() >= demo_at:
                 demo_at = None

@@ -78,10 +78,15 @@ print("the top trace stays locked while the pitch sweeps; "
 _closed = False
 
 
-def run(seconds: float) -> None:
-    """Sweeps the tone's frequency for ``seconds``."""
+def run(seconds: float | None = None) -> None:
+    """Sweeps the tone's frequency for ``seconds``.
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
     start = time.monotonic()
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         phase = (time.monotonic() - start) / 8.0
         synth.set({"freq": 330.0 + 110.0 * math.sin(2 * math.pi * phase)})
         gui.pump(timeout=0.03)
@@ -90,7 +95,7 @@ def run(seconds: float) -> None:
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(20.0)
+        run()
     finally:
         synth.free()
         session.close()

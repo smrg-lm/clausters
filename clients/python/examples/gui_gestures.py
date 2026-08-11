@@ -186,8 +186,9 @@ def teardown():
 
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        deadline = time.monotonic() + 120.0
-        while time.monotonic() < deadline and not _closed:
+        # No deadline: the gestures are here to be tried, so the run ends
+        # when you close the window.
+        while not _closed:
             gui.pump(timeout=0.05)
         teardown()
     except (OSError, RuntimeError, ConnectionError) as e:

@@ -163,10 +163,19 @@ win["reset"].on_event(reset)
 
 
 # %%
-def run(seconds: float = 45.0):
-    """Pump the host until the window closes or ``seconds`` elapse."""
-    deadline = time.monotonic() + seconds
-    while not closed[0] and time.monotonic() < deadline:
+def run(seconds: float | None = None):
+    """Pump the host until the window closes, or ``seconds`` elapse.
+
+    The bound is for a cell run, where a notebook wants the loop to give the
+    prompt back; script-run there is none, and the window is what ends it.
+    
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
+    deadline = time.monotonic() + (seconds or 0.0)
+    while not closed[0] and (seconds is None or time.monotonic() < deadline):
         gui.pump(timeout=0.1)
 
 

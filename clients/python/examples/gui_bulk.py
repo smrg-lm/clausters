@@ -129,17 +129,22 @@ print("three waveforms mapped from files (zero OSC for the samples); "
 _closed = False
 
 
-def run(seconds: float) -> None:
-    """Pumps events for ``seconds`` (the waveforms are static)."""
+def run(seconds: float | None = None) -> None:
+    """Pumps events for ``seconds`` (the waveforms are static).
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
     start = time.monotonic()
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         gui.pump(timeout=0.1)
 
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(30.0)
+        run()
     finally:
         session.close()
         # Sweep the whole temp dir: besides the files written here, the host

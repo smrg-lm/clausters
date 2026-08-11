@@ -600,11 +600,16 @@ def readout() -> str:
         for unit, text in forms.items())
 
 
-def run(seconds: float) -> None:
-    """Drain the host's events and keep the counter live for ``seconds``."""
+def run(seconds: float | None = None) -> None:
+    """Drain the host's events and keep the counter live for ``seconds``.
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
     start = time.monotonic()
     shown = None
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         gui.pump(timeout=0.05)
         transport.update()          # parks the cursor when the piece ends
         text = readout()
@@ -621,7 +626,7 @@ win["counter"].set(text=readout())
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(120.0)
+        run()
     finally:
         session.close()
     sys.exit(0)

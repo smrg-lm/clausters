@@ -233,9 +233,10 @@ def teardown():
 # %%
 if __name__ == "__main__":
     try:
-        deadline = time.monotonic() + 40.0
+        # No deadline: the window is the manual test surface, so it ends
+        # when you close it.
         next_pass = 0.0
-        while time.monotonic() < deadline and not _closed:
+        while not _closed:
             now = time.monotonic()
             if now >= next_pass:
                 play_pass()

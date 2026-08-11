@@ -221,8 +221,9 @@ def teardown():
 
 if __name__ == "__main__":
     try:
-        deadline = time.monotonic() + 90.0
-        while time.monotonic() < deadline and not _closed:
+        # No deadline: the axes are here to be navigated, so the run ends
+        # when you close the window.
+        while not _closed:
             gui.pump(timeout=0.05)
         teardown()
     except (OSError, RuntimeError, ConnectionError) as e:

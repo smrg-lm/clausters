@@ -181,17 +181,17 @@ win["field"].focus()
 # a while, then tear everything down.
 
 # %%
-def run(seconds: float) -> None:
+def run(seconds: float | None = None) -> None:
     """Dispatches field events for ``seconds``."""
     start = time.monotonic()
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         gui.pump(timeout=0.1)
 
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(120.0)
+        run()
     finally:
         synth.free()
         session.close()

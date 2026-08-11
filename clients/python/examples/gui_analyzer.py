@@ -163,11 +163,16 @@ print(f"waterfall: the last {RETAIN:.0f} s of the same bus, and because the "
 _closed = False
 
 
-def run(seconds: float) -> None:
-    """Sweeps the stereo image for ``seconds``, narrating the three landmarks."""
+def run(seconds: float | None = None) -> None:
+    """Sweeps the stereo image for ``seconds``, narrating the three landmarks.
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
     start = time.monotonic()
     regime = None
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         t = time.monotonic() - start
         theta = math.pi * (0.5 - 0.5 * math.cos(2 * math.pi * t / 6.0))
         freq = 220.0 * (2.0 ** (0.5 * math.sin(2 * math.pi * t / 11.0)))
@@ -215,7 +220,7 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
         focus(0.5, 0.5)
         run(8.0)
         focus(0.0, 1.0)
-        run(15.0)
+        run()
     finally:
         session.close()
 else:

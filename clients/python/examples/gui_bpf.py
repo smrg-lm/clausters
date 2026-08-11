@@ -141,17 +141,17 @@ _points = env_to_points(Env.perc(0.01, 1.2))
 # tear everything down.
 
 # %%
-def run(seconds: float) -> None:
+def run(seconds: float | None = None) -> None:
     """Dispatches editor events for ``seconds``."""
     start = time.monotonic()
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         gui.pump(timeout=0.05)
 
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(45.0)
+        run()
     finally:
         session.close()
 else:

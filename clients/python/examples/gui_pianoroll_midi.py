@@ -133,17 +133,22 @@ off = MidiFunc(note_off, "note_off", recv=recv)
 # receiver's own thread. Everything is freed on the way out.
 
 # %%
-def run(seconds: float) -> None:
-    """Dispatch the roll's events for ``seconds`` (or until the window closes)."""
-    until = time.monotonic() + seconds
-    while time.monotonic() < until and not closed:
+def run(seconds: float | None = None) -> None:
+    """Dispatch the roll's events for ``seconds`` (or until the window closes).
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
+    until = time.monotonic() + (seconds or 0.0)
+    while not closed and (seconds is None or time.monotonic() < until):
         gui.pump(timeout=0.05)
 
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(60.0)
+        run()
     finally:
         on.free()
         off.free()

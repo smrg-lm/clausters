@@ -72,17 +72,22 @@ print("the host opened a window; zoom/pan the waveform, close it to stop")
 _closed = False
 
 
-def run(seconds: float) -> None:
-    """Pumps events for ``seconds`` (the waveform is navigated with the mouse)."""
+def run(seconds: float | None = None) -> None:
+    """Pumps events for ``seconds`` (the waveform is navigated with the mouse).
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
     start = time.monotonic()
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         gui.pump(timeout=0.1)
 
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(30.0)
+        run()
     finally:
         gui.stop()
 else:

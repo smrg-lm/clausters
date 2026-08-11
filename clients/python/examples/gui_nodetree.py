@@ -73,11 +73,16 @@ print("the window mirrors the server's node tree; watch freq sweep and "
 _closed = False
 
 
-def run(seconds: float) -> None:
-    """Sweeps a control and cycles a synth in and out for ``seconds``."""
+def run(seconds: float | None = None) -> None:
+    """Sweeps a control and cycles a synth in and out for ``seconds``.
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
     extra = None
     start = time.monotonic()
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         t = time.monotonic() - start
         sweeper.set({"freq": 330.0 + 220.0 * math.sin(t)})
         if extra is None and int(t) % 4 == 2:
@@ -92,7 +97,7 @@ def run(seconds: float) -> None:
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(30.0)
+        run()
     finally:
         group.free()
         session.close()

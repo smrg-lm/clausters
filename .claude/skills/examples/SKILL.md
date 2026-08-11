@@ -69,6 +69,16 @@ and tells you what to call. For an example that just renders and stops, the
 guard is smaller — the render call and the teardown inside it, the `else`
 naming what to call by hand.
 
+**An example that exists to be looked at ends when the person looking at it
+says so.** The `run(30.0)` above is the shape for something that *finishes* — a
+render, a sequence that plays out. A GUI example is the manual test surface for
+whatever it draws, so a script run holds until the **window** is closed
+(`gui.pump` in a loop over an `on_closed` flag; `gui_patch1.py` and `gui_text.py`
+are the shape), and the seconds bound stays only for the cell run, where a
+notebook wants the loop to give the prompt back. A window that times out ends
+the test before the reader has finished reading it, which is the one failure a
+by-eye check cannot recover from.
+
 A few older examples end with plain top-level teardown and no guard
 (`verbs.py`, `scoping.py`). That is the earlier form, not a second idiom: the
 guard is what keeps the file from tearing itself down under the reader's feet

@@ -194,10 +194,10 @@ win.on_closed(lambda: globals().__setitem__("closed", True))
 # beats the roll is drawn in.
 
 # %%
-def run(seconds: float) -> None:
+def run(seconds: float | None = None) -> None:
     """Dispatch the roll's events for ``seconds``; the toggle is the transport."""
-    until = time.monotonic() + seconds
-    while time.monotonic() < until and not closed:
+    until = time.monotonic() + (seconds or 0.0)
+    while not closed and (seconds is None or time.monotonic() < until):
         gui.pump(timeout=0.05)
     stop()
 
@@ -205,7 +205,7 @@ def run(seconds: float) -> None:
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(45.0)
+        run()
     finally:
         session.close()
 else:

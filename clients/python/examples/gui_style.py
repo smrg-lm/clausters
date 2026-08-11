@@ -126,10 +126,10 @@ CHANGES = [
 ]
 
 
-def run(seconds: float) -> None:
+def run(seconds: float | None = None) -> None:
     start = time.monotonic()
     pending = list(CHANGES)
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         gui.pump(timeout=0.1)
         while pending and time.monotonic() - start > pending[0][0]:
             _, name, props, what = pending.pop(0)
@@ -140,7 +140,7 @@ def run(seconds: float) -> None:
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(30.0)
+        run()
     finally:
         gui.close(win)
     sys.exit(0)

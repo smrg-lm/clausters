@@ -147,18 +147,23 @@ def page(index: int) -> None:
     win["pages"].set(index=index)
 
 
-def run(seconds: float) -> None:
+def run(seconds: float | None = None) -> None:
     """Pumps events for ``seconds`` (only a pointer gesture on a view arrives:
-    the two bound widgets send none back)."""
+    the two bound widgets send none back).
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
     start = time.monotonic()
-    while time.monotonic() - start < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
         gui.pump(timeout=0.1)
 
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(30.0)
+        run()
     finally:
         gui.stop()
 else:

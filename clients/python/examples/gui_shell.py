@@ -175,17 +175,22 @@ win["amp"].on_event(on_amp)
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 
-def run(seconds: float) -> None:
-    """Dispatches shell events for ``seconds``."""
+def run(seconds: float | None = None) -> None:
+    """Dispatches shell events for ``seconds``.
+
+    Script-run there is no bound and the window is what ends it; the
+    ``seconds`` argument is for a cell run, where a notebook wants the loop to
+    give the prompt back.
+    """
     start_t = time.monotonic()
-    while time.monotonic() - start_t < seconds and not _closed:
+    while not _closed and (seconds is None or time.monotonic() - start_t < seconds):
         gui.pump(timeout=0.03)
 
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        run(30.0)
+        run()
     finally:
         if _voice is not None:
             _voice.set({"gate": 0.0})
