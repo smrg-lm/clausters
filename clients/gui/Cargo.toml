@@ -32,7 +32,14 @@ midi = ["dep:clausters-midi"]
 # server. Off by default because it links the `clausters` server crate (engine +
 # audio backend), which is heavy — keeping it opt-in is the size/packaging reason
 # the gui is a separate crate. Build with `cargo build --features standalone`.
-standalone = ["dep:clausters"]
+#
+# It pulls the server's `synth` family, because the server is linked with
+# `default-features = false` (below) and a bundle whose defs no family can load
+# is a window with nothing behind it: `--standalone` skipped every persisted
+# SynthDef with a warning and the boot's `/synth_new` failed. `faust` stays
+# opt-in (`standalone-faust`) because it needs libfaust at build time; `synth`
+# needs nothing.
+standalone = ["dep:clausters", "clausters/synth"]
 # Standalone with Faust support: also pull the server's `faust` feature so a
 # bundle's persisted FaustDefs reload into the embedded server. Needs libfaust
 # at build time (see the root LOG.md F0 recipe); without it standalone still
