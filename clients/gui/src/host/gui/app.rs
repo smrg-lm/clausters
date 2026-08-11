@@ -23,14 +23,13 @@ use crate::host::canvas::CanvasView;
 use crate::host::fetch::BufferFetches;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::Gestures;
-#[cfg(feature = "midi")]
 use crate::host::live::{self, tree_animates, tree_has_live_widget};
 use crate::host::nodetree::NodeTree;
 use crate::host::paint::Painter;
+// Only the MIDI painting reaches a roll by its navigation group.
 #[cfg(feature = "midi")]
 use crate::host::timeline::group_key;
 use crate::host::widget::Widget;
-#[cfg(feature = "midi")]
 use crate::host::widget::element::{Key as HostKey, Live};
 use crate::host::world::World;
 use crate::host::{BusSource, ClientId, GUI_EVENT, Host, HostEffect};
