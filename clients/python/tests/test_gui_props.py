@@ -29,7 +29,10 @@ The three readers are deliberately different, because the three sources are:
   at all: one file per widget under ``host/elements/``, its constructor and its
   ``set`` reading the same shared helpers, named on the wire by the
   ``elements::builtin`` table. A leaf that moves out of the schema must not
-  read here as a leaf that lost its props.
+  read here as a leaf that lost its props — which is exactly the failure this
+  reader has had twice, so where a leaf can hide is named rather than guessed:
+  an element written across a **module directory** (``host/signal/``) rather
+  than as one file beside its siblings.
 """
 
 import inspect
@@ -43,6 +46,10 @@ WIDGET_DIR = ROOT / "clients/gui/src/host/widget"
 #: The leaves that have moved behind the `Element` trait: one file per widget,
 #: and `elements/mod.rs` is the table naming which wire type each answers to.
 ELEMENT_DIR = ROOT / "clients/gui/src/host/elements"
+#: An element whose file is a **module directory** elsewhere in the host, named
+#: here because the table's own path is all that says so: the signal element is
+#: `host/signal/`, six presentations behind one wire name.
+ELEMENT_DIRS = {"signal": ROOT / "clients/gui/src/host/signal"}
 #: Where the axis pair's key is declared.
 AXES_MOD = ROOT / "clients/gui/src/host/widget/axes.rs"
 MANIFEST = ROOT / "docs/gui-props.md"
@@ -184,8 +191,22 @@ def _literal_keys(text: str) -> set:
     """
     keys = set()
     keys |= set(re.findall(r'(?:get|get_mut|contains_key|remove)\(\s*"([a-z_][a-z_0-9]*)"', text))
-    # The helpers take the key as an argument: `number_f64(&props, "hop", 0.0)`.
-    keys |= set(re.findall(r'props,\s*"([a-z_][a-z_0-9]*)"', text))
+    # The helpers take the key as an argument, and not always in second place:
+    # `number_f64(props, "hop", 0.0)` names it there, `spectral_props(props,
+    # el.spectral, "window_size")` after the thing it is read over. So the whole
+    # argument list of a call taking the props map is read, which is also
+    # self-checking: a *value* collected by mistake would show up as a prop the
+    # host has and neither client offers.
+    for call in re.finditer(r"\w+\(\s*&?props\s*,", text):
+        depth, end = 0, call.end() - 1
+        for end in range(call.end() - 1, len(text)):
+            if text[end] == "(":
+                depth += 1
+            elif text[end] == ")":
+                depth -= 1
+                if depth <= 0:
+                    break
+        keys |= set(re.findall(r'"([a-z_][a-z_0-9]*)"', text[call.end():end]))
     # A local reader closure over the same map: `let f = |k| props.get(k)…`,
     # then `f("margin")` — or `f("navigable", default)`, since a reader may
     # take the fallback beside the key.
@@ -350,14 +371,35 @@ def element_props() -> dict:
     (``control::set``, ``curve::body``) — is read through the callee.
     """
     shared = _helper_keys()
-    named = dict(re.findall(r'"([a-z_]+)" => (\w+)::build', (ELEMENT_DIR / "mod.rs").read_text()))
+    # The table names the module by path (`super::signal::build`), so the last
+    # segment is the module.
+    named = {
+        wire: path.split("::")[-1]
+        for wire, path in re.findall(
+            r'"([a-z_]+)" => ([\w:]+)::build', (ELEMENT_DIR / "mod.rs").read_text()
+        )
+    }
     assert named, "the elements::builtin table moved"
+    def module_sources(name):
+        """Every file the element's module is written across."""
+        directory = ELEMENT_DIRS.get(name, ELEMENT_DIR / name)
+        if directory.is_dir():
+            return sorted(directory.glob("*.rs"))
+        path = ELEMENT_DIR / f"{name}.rs"
+        return [path] if path.is_file() else []
 
     per_module = {}
     for path in sorted(ELEMENT_DIR.glob("*.rs")):
         if path.name != "mod.rs":
             src = _strip_tests(path.read_text())
             per_module[path.stem] = (src, _literal_keys(src) | _match_arm_keys(src))
+    for name in named.values():
+        if name in per_module:
+            continue
+        sources = module_sources(name)
+        assert sources, f"the {name} element's module moved"
+        src = "\n".join(_strip_tests(p.read_text()) for p in sources)
+        per_module[name] = (src, _literal_keys(src) | _match_arm_keys(src))
 
     out = {}
     for wire, module in named.items():
@@ -371,7 +413,10 @@ def element_props() -> dict:
             # The shared prop readers are free functions of `widget::parse`, so
             # an element naming the module (`parse::options(props)`) resolves to
             # the same helper an unqualified call does.
-            elif head == "parse" and tail in shared:
+            # A free function of the widget schema reached by its module path
+            # (`parse::options(props)`, `widget::signal_element(props, blobs)`)
+            # is the same helper an unqualified call names.
+            elif tail in shared and head not in per_module:
                 keys |= shared[tail]
             elif head in per_module and head != module:
                 keys |= per_module[head][1]
