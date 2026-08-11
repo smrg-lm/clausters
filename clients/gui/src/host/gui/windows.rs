@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use clausters_core::osc::{OscMessage, OscType};
 use tracing::{info, warn};
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 
@@ -33,22 +33,19 @@ impl App {
     pub(super) fn open_window(&mut self, event_loop: &ActiveEventLoop, id: i32, origin: ClientId) {
         // Read the window metadata, releasing the host borrow before mutating
         // (drop_window) and before re-borrowing the tree for the waveforms.
-        let Some((title, width, height)) = self.host.window_def(id).and_then(|t| match &t.kind {
-            WidgetKind::Window {
-                title,
-                width,
-                height,
-                ..
-            } => Some((
+        let Some(title) = self.host.window_def(id).and_then(|t| match &t.kind {
+            WidgetKind::Window { title, .. } => Some(
                 title
                     .clone()
                     .unwrap_or_else(|| format!("clausters-gui {id}")),
-                *width,
-                *height,
-            )),
+            ),
             _ => None,
         }) else {
             return; // freed between the effect and now, or not a window
+        };
+        // What it asks for: its declared size, or its content's where it hugs.
+        let Some((width, height)) = self.host.window_size(id) else {
+            return;
         };
 
         self.drop_window(id); // rebuild semantics on a re-/gui_def
@@ -66,6 +63,13 @@ impl App {
         // the wire's logical lengths land on this display's pixels.
         let ui_scale = window.scale_factor();
         self.host.set_ui_scale(id, ui_scale as f32);
+        // A hugging window was sized before it had a scale, and the resolved
+        // table snaps its roles to whole pixels — so on a fractional scale the
+        // estimate is a pixel or two under what the layout is about to draw.
+        // Ask again now that the table is the one the layout will use.
+        if let Some((w, h)) = self.host.window_size_px(id) {
+            let _ = window.request_inner_size(PhysicalSize::new(w, h));
+        }
         let gpu = match pollster::block_on(Gpu::new(window)) {
             Ok(gpu) => gpu,
             Err(e) => return warn!("gui_def {id}: cannot start the GPU: {e}"),

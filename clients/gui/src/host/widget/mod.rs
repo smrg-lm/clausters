@@ -86,9 +86,20 @@ pub enum WidgetKind {
         height: u32,
         layout: Layout,
         flow: Flow,
+        /// The `hug` prop: the window's size follows its content
+        /// ([`Widget::hug_size`]) on the axes where the composition is defined,
+        /// falling back to the declared `w`/`h` on the others. Off by default.
+        hug: bool,
     },
     /// A nestable container.
-    Panel { layout: Layout, flow: Flow },
+    Panel {
+        layout: Layout,
+        flow: Flow,
+        /// The `hug` prop: this panel's **natural size** is the composition of
+        /// its children's, instead of the elastic surface a container is by
+        /// default (see [`size`]). Off by default, so no existing def moves.
+        hug: bool,
+    },
     /// A container showing **one child at a time**: the one at `index`, filling
     /// the container's area (its `flow`'s margin inset). The others are hidden
     /// — skipped by the layout, so they are neither drawn nor hit — but they
@@ -106,7 +117,13 @@ pub enum WidgetKind {
     /// It carries a `margin` rather than a whole [`Flow`]: a stack makes no
     /// arrangement, so the `gap` between children and a `grid`'s column count
     /// have nothing to mean here.
-    Stack { index: i32, margin: Option<f32> },
+    Stack {
+        index: i32,
+        margin: Option<f32>,
+        /// The `hug` prop, as a panel's — composed over **every** page rather
+        /// than the shown one, so flipping a pager does not resize it.
+        hug: bool,
+    },
     /// The 2D workspace: a container whose children live in a **virtual
     /// content area** seen through a scrolling, zooming window ([`ScrollView`]).
     /// General first — the default pans both axes and zooms at the cursor; the

@@ -3466,6 +3466,12 @@ Two consequences worth stating, because both look like omissions:
   number inside the strip is no longer a guess: the strip's children size
   themselves, and the strip states its own extent.
 
+  *(Superseded, and by composition rather than by measurement: a container that
+  asks for it with `hug` is now the composition of its children's own natural
+  sizes, and a window that asks for it is the composition of its content. Both
+  bullets above still hold everywhere the prop is absent, which is everywhere it
+  is not written — see "A size may read a prop, never a value" below.)*
+
 Which kinds have one follows the content/surface split: content whose extent the
 widget itself knows (a label's line, a button, a toggle, a number, a menu, a
 single-line field, a slider's thickness across its track, a knob's height, a
@@ -4875,3 +4881,15 @@ uneven scale makes them ragged, and is continuous with it, because an outline is
 rasterized at whatever size is asked for. A user who wants larger type still
 asks for it where density lives — the `scale` key of `[gui.metrics]`, resolved
 once — never by choosing a different face.
+
+## A size may read a prop, never a value — and only where a container asked
+
+`hug` lets a container want what it holds instead of the share the layout would give it, which reopens the question L7 closed by fiat: *may a size read the widget's content?* Its answer was "never" — a scope's height must not follow its sample count, a label's width must not follow its string — and it was right about the failure it was avoiding and too coarse about the reason.
+
+The line that actually holds is **where the value is resolved**, not what it is. A prop settles at a *mutation point* — a `/gui_def`, a `/gui_set` — which is exactly where the theme overlay already resolves and where a relayout costs one message. A **value** streams: a bound knob writes one per pointer move, a meter one per frame, a field one per keystroke. So a menu's `options` may size it and the option it is *on* may not; a label's `text` may and a `number`'s reading may not. The failure L7 was avoiding is entirely on the value side: a window that jumps while a control is being turned, and a per-message relayout cost. Sizing to a caption has neither.
+
+Two mechanisms keep that honest rather than a convention. The question is asked by a **different function** (`Element::hug`, beside `natural`), so the ordinary layout pass cannot read content even by accident, and every element that does not implement it answers its data-free natural size. And it is only ever called **under a container carrying `hug`** — a container that has asked for its size to follow what it holds. A def that does not use the prop lays out byte-for-byte as it did, which is why this could land without the one-time break L7 needed.
+
+The composition itself stays inside the boundary L2 fixed and L7 restated: one bottom-up walk over functions that were already pure, no measurement pass, no constraint solver, no negotiation between a parent and a child. `None` (elastic) propagates, so a container holding a plane or a heavy view still hands the axis back rather than inventing one — a hugging container is not a promise that every subtree can be measured.
+
+The one asymmetry between the two builds is the **window** case, and it is a platform truth rather than a fork: `hug` on a root sizes the OS window to its content, and in a page there is no window to size — the element owns its box and reports its pixels, which is the rule that keeps the host from ever reading the DOM. The composition inside is identical on both; only the outermost rectangle has a different owner.

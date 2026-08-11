@@ -17,7 +17,7 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::Range;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
-use crate::host::widget::size::{Natural, knob_h};
+use crate::host::widget::size::{Natural, body_inset, knob_h, text_box};
 
 use super::control::{self, Dial};
 
@@ -57,6 +57,28 @@ impl Element for Knob {
     /// across, so a row of knobs still spreads.
     fn natural(&self, m: &Metrics, scale: f32) -> Natural {
         (None, Some(knob_h(&self.range, m, scale)))
+    }
+
+    /// Asked to be fitted, it has a width after all, and it is the width of the
+    /// **whole** control: a knob is a label strip over a disc over a read-out,
+    /// all three drawn by one element into one cell, so fitting it to the disc
+    /// alone would ellipsize the name and clip the number — parts of the widget
+    /// being cut to fit the widget. The three terms, and the widest wins.
+    ///
+    /// That the natural size says `None` here is not a contradiction: elastic
+    /// is the right answer to "how much of the row do you want" — a row of
+    /// knobs spreads — and the wrong one to "how big are you".
+    fn hug(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.range.text_size * scale;
+        let label = self
+            .range
+            .label
+            .as_deref()
+            .map_or(0.0, |t| text_box(t, size, m));
+        let w = (m.knob_d + body_inset(m))
+            .max(label)
+            .max(controls::readout_w(&self.range, size, m));
+        (Some(w), Some(knob_h(&self.range, m, scale)))
     }
 
     fn value(&self) -> Option<OscType> {

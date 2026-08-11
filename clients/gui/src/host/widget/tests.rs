@@ -1026,14 +1026,17 @@ fn flow_props_parse_and_apply() {
     let mut kind = WidgetKind::Panel {
         layout: Layout::Col,
         flow: Flow::default(),
+        hug: false,
     };
     assert!(kind.apply("flow", &serde_json::json!("row")));
     assert!(kind.apply("gap", &serde_json::json!(10)));
+    assert!(kind.apply("hug", &serde_json::json!(1)));
     assert!(matches!(
         kind,
         WidgetKind::Panel {
             layout: Layout::Row,
-            flow: Flow { gap: Some(g), .. }
+            flow: Flow { gap: Some(g), .. },
+            hug: true,
         } if g == 10.0
     ));
 }

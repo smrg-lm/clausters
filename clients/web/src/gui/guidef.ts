@@ -308,10 +308,18 @@ export function layout(
         index?: number;
         /** The arrangement; `layout` is accepted as its old name. */
         flow?: string;
+    /**
+     * Size to the content instead of to the share the layout offers: a `row`
+     * adds its children up along its axis and takes the tallest across it, a
+     * `col` the other way round, a `grid` counts its cells. The question
+     * reaches the whole subtree, and an axis a child leaves elastic (a plane,
+     * a lane, a heavy view) is one the container hands back.
+     */
+    hug?: boolean;
     } = {},
     ...children: GuiNode[]
 ): GuiNode {
-    const { flow, index, layout: arrangement, margin, gap, cols, theme, ...rest } = options;
+    const { flow, index, layout: arrangement, margin, gap, cols, hug, theme, ...rest } = options;
     return node("layout", {
         ...rest,
         ...drop([
@@ -320,6 +328,7 @@ export function layout(
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],
+            ["hug", flag(hug)],
             ["theme", theme],
         ]),
         children: [...(options.children ?? []), ...children],
@@ -511,10 +520,21 @@ export function signal(
  * is just `window({ layout: "col" }, bar({ h: 28 }), content(), status({ h: 20 }))`.
  */
 export function window(
-    options: ContainerOptions & { title?: string; flow?: string } = {},
+    options: ContainerOptions & {
+        title?: string;
+        flow?: string;
+    /**
+     * Size to the content instead of to the share the layout offers: a `row`
+     * adds its children up along its axis and takes the tallest across it, a
+     * `col` the other way round, a `grid` counts its cells. The question
+     * reaches the whole subtree, and an axis a child leaves elastic (a plane,
+     * a lane, a heavy view) is one the container hands back.
+     */
+    hug?: boolean;
+    } = {},
     ...children: GuiNode[]
 ): GuiNode {
-    const { title, flow, layout, margin, gap, cols, theme, ...rest } = options;
+    const { title, flow, layout, margin, gap, cols, hug, theme, ...rest } = options;
     return node("window", {
         ...rest,
         ...drop([
@@ -523,6 +543,7 @@ export function window(
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],
+            ["hug", flag(hug)],
             ["theme", theme],
         ]),
         children: [...(options.children ?? []), ...children],
@@ -534,10 +555,20 @@ export function window(
  * any widget; `theme` makes it a theme group over its whole subtree.
  */
 export function panel(
-    options: ContainerOptions & { flow?: string } = {},
+    options: ContainerOptions & {
+        flow?: string;
+    /**
+     * Size to the content instead of to the share the layout offers: a `row`
+     * adds its children up along its axis and takes the tallest across it, a
+     * `col` the other way round, a `grid` counts its cells. The question
+     * reaches the whole subtree, and an axis a child leaves elastic (a plane,
+     * a lane, a heavy view) is one the container hands back.
+     */
+    hug?: boolean;
+    } = {},
     ...children: GuiNode[]
 ): GuiNode {
-    const { flow, layout, margin, gap, cols, theme, ...rest } = options;
+    const { flow, layout, margin, gap, cols, hug, theme, ...rest } = options;
     return node("layout", {
         ...rest,
         ...drop([
@@ -545,6 +576,7 @@ export function panel(
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],
+            ["hug", flag(hug)],
             ["theme", theme],
         ]),
         children: [...(options.children ?? []), ...children],
@@ -574,17 +606,23 @@ export function stack(
         margin?: number;
         /** A theme group over the whole subtree, hidden pages included. */
         theme?: Record<string, string>;
+        /**
+         * Size to the **largest** page rather than to the shown one, so
+         * flipping a pager does not resize it.
+         */
+        hug?: boolean;
         children?: readonly GuiNode[];
     } = {},
     ...children: GuiNode[]
 ): GuiNode {
-    const { index, margin, theme, ...rest } = options;
+    const { index, margin, hug, theme, ...rest } = options;
     return node("layout", {
         ...rest,
         flow: "stack",
         ...drop([
             ["index", index],
             ["margin", margin],
+            ["hug", flag(hug)],
             ["theme", theme],
         ]),
         children: [...(options.children ?? []), ...children],

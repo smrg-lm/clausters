@@ -102,11 +102,12 @@ def scene() -> dict:
       symmetry with that path.
     """
     return window(
-        # `weight` stretches the knob over the pane: at its own natural size
-        # it would be a strip at the top, and this window has only the one.
+        # `hug` sizes the window to what it holds -- this one holds a knob,
+        # so the window is the knob: no size to declare and none to keep in
+        # step with it.
         knob(id=10, label="freq", min=80.0, max=400.0, value=160.0,
-             weight=1.0, bind=["/node_set", DRONE_NODE, "freq"]),
-        title="Standalone drone", w=420, h=260, layout="col",
+             bind=["/node_set", DRONE_NODE, "freq"]),
+        title="Standalone drone", hug=True, layout="col",
         name=GUI_NAME,
         boot=[["/synth_new", SYNTH_NAME, DRONE_NODE, 0, 0]],
     )

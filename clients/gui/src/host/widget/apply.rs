@@ -85,22 +85,27 @@ fn apply_clip_body(widget: &mut Widget, key: &str, v: &Value) -> bool {
 /// this widget accepts (and thus changed it).
 pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
     match kind {
-        WidgetKind::Window { layout, flow, .. } | WidgetKind::Panel { layout, flow } => match key {
+        WidgetKind::Window {
+            layout, flow, hug, ..
+        }
+        | WidgetKind::Panel { layout, flow, hug } => match key {
             "flow" => v
                 .as_str()
                 .and_then(Layout::from_str)
                 .map(|l| *layout = l)
                 .is_some(),
+            "hug" => truthy(v).map(|b| *hug = b).is_some(),
             _ => flow.apply(key, v),
         },
         // The page shown, live: this is the prop a bound toggle or menu drives.
         // A non-number leaves it alone rather than blanking the stack.
-        WidgetKind::Stack { index, margin } => match key {
+        WidgetKind::Stack { index, margin, hug } => match key {
             "index" => v.as_i64().map(|n| *index = n as i32).is_some(),
             "margin" => {
                 *margin = v.as_f64().map(|n| n as f32);
                 true
             }
+            "hug" => truthy(v).map(|b| *hug = b).is_some(),
             _ => false,
         },
         WidgetKind::Scroll { layout, flow, view } => match key {

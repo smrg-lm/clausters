@@ -90,10 +90,34 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   before its children, default 6), `gap` (between children, default 6) and
   `cols` (a fixed `grid` column count; default near-square) — except a
   `layout` whose `flow` is `stack`, which arranges nothing and so takes only
-  the `margin`. One pass, no
-  measurement and no constraint solver — a container never measures its
-  children, so chrome that must hug its content says so with `h`: when a
-  layout needs negotiation, the answer is explicit sizes.
+  the `margin`.
+- **`hug`** (`window`, `layout` — including a `stack` — a number or a
+  boolean, live via `/gui_set`): the container's own natural size becomes
+  **the composition of its children's**, so it wants exactly what it holds
+  instead of the share the layout would give it. A `row` adds its children up
+  along its axis and takes the largest of them across it, a `col` the other
+  way round, a `grid` counts its cells, a `free` container reaches its
+  children's placements, and a `stack` takes the largest of **every** page
+  (not the shown one, so flipping a pager does not resize it). It is asked of
+  the whole subtree, so a plain container nested in a hugging one is measured
+  too; an axis a child leaves elastic — a `plane`, a `field`, a `signal` — is
+  one the hugging container hands back to the layout. On a `window` root it
+  sizes the window itself: the OS window opens as big as its content on the
+  axes that settle and keeps the declared `w`/`h` on the others. (In a page
+  there is no window to size — the element owns its box — so a mounted GuiDef
+  lays out in the box it is given and only the containers inside it hug.) It
+  is **off unless asked for**: every def written before it lays out exactly as
+  it did.
+  **What may size, and what may not.** A hugging container reads the props
+  that settle at a *mutation point* — a `label`'s `text`, a `button`'s or a
+  `toggle`'s `label`, a `menu`'s `options` — the same place a `theme` resolves.
+  A **value** never sizes anything: the option a menu is on, what a `text`
+  field holds, what a `number` reads, a `signal`'s samples. So a stream of
+  values still cannot relayout a window, hug or no hug, and a control does not
+  resize under the gesture writing it. Still one pass, no
+  measurement pass and no constraint solver — the composition is a walk over
+  numbers each widget already knew; when a layout needs negotiation, the
+  answer is still explicit sizes.
 - **`bind`** as an inline prop registers a binding declaratively, so a saved
   GuiDef carries its own (no separate `/gui_bind` at boot). It is the
   `/gui_bind` tail as an array: `["widget", 20, "index"]`, `["server",
@@ -168,8 +192,8 @@ catalog spells one idea several ways.
 
 | Type | Axes | Properties | Replaces |
 |---|---|---|---|
-| `window` | 0 | a root; `title`, `w`, `h`, `flow`, `margin`, `gap`, `cols`, `theme` | `window` |
-| `layout` | 0 | children arranged by **`flow`** — `row`, `col`, `grid`, `free` or **`stack`** (one child at a time, the one at `index`) — plus `margin`, `gap`, `cols`, `theme` | `panel`, `box`, `stack` |
+| `window` | 0 | a root; `title`, `w`, `h`, `flow`, `margin`, `gap`, `cols`, `hug`, `theme` | `window` |
+| `layout` | 0 | children arranged by **`flow`** — `row`, `col`, `grid`, `free` or **`stack`** (one child at a time, the one at `index`) — plus `margin`, `gap`, `cols`, `hug`, `theme` | `panel`, `box`, `stack` |
 | `plane` | 2, **locked to one scale** | a pannable, zoomable plane in content units: `axis`, `zoom`, `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`; with `boxes`/`cords`, the patcher | `scroll`, `patch` |
 | `field` | 2, **independent** | the time/value container: an `axes` pair, plus lane chrome (`label`, `height`, `header_w`, `mute`, `solo`, `level`) or a placement (`offset`, `dur`) | `track`, `clip`, `timeruler` |
 
@@ -265,9 +289,9 @@ script actually names these. The catalog itself:
 
 | Type | What it is | Notable properties |
 |---|---|---|
-| `window` | A top-level window (a GuiDef root) | `title`, `w`, `h`, `layout`, `margin`, `gap`, `cols`, `theme` |
-| `panel` | A nestable container | `layout`, `margin`, `gap`, `cols`, `theme` |
-| `stack` | A container showing **one child at a time**, the one at `index`: it fills the container, and the hidden pages are neither laid out nor drawn while keeping their place in the tree (so a heavy view keeps its GPU slot and its bus reads across a switch). An `index` outside the children shows nothing — a blank page, not a clamped one. Tabs, a pager and a waveform/spectrogram switch are this plus a control bound to `index` | `index`, `margin`, `theme` |
+| `window` | A top-level window (a GuiDef root) | `title`, `w`, `h`, `layout`, `margin`, `gap`, `cols`, `hug`, `theme` |
+| `panel` | A nestable container | `layout`, `margin`, `gap`, `cols`, `hug`, `theme` |
+| `stack` | A container showing **one child at a time**, the one at `index`: it fills the container, and the hidden pages are neither laid out nor drawn while keeping their place in the tree (so a heavy view keeps its GPU slot and its bus reads across a switch). An `index` outside the children shows nothing — a blank page, not a clamped one. Tabs, a pager and a waveform/spectrogram switch are this plus a control bound to `index` | `index`, `margin`, `hug`, `theme` |
 | `scroll` | The **2D workspace**: a container whose children live in a virtual content area seen through a panning, zooming window. General first — the default is the free plane; the constrained scroll views degenerate from it by configuration | `axis` (`both`/`x`/`y`), `zoom` (0 disables the wheel zoom), `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`, plus `layout` (default `free` here), `margin`, `gap`, `cols`, `theme` |
 | `label` | Static text | `text`, `text_size`, `wrap`, `align` (`start`/`center`/`end`) |
 | `knob`, `slider`, `number` | Continuous controls | `min`, `max`, `value`, `label`, `text_size` (`vertical` on a slider) |

@@ -12,7 +12,7 @@ use crate::host::controls;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Ctx, Element, Needs};
-use crate::host::widget::size::{Natural, line_box};
+use crate::host::widget::size::{Natural, line_box, text_box};
 use crate::host::widget::{Align, parse};
 
 /// Static text. `wrap` word-wraps it on the font's advance (off, a single line
@@ -83,6 +83,18 @@ impl Element for Label {
             // A wrapped label's line count follows its string, which is data:
             // it stays elastic and clips what does not fit.
             (!self.wrap).then(|| line_box(self.text_size * scale, m)),
+        )
+    }
+
+    /// A label's `text` is a presentation prop resolved at a mutation point, so
+    /// a container fitted to its content is as wide as the line it draws. A
+    /// **wrapped** label is the exception on both axes: its width is what wraps
+    /// it, so it has none of its own.
+    fn hug(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.text_size * scale;
+        (
+            (!self.wrap).then(|| text_box(&self.text, size, m)),
+            self.natural(m, scale).1,
         )
     }
 

@@ -24,6 +24,13 @@ fn is_bare_ruler(props: &Map<String, Value>, has_children: bool) -> bool {
         .any(|k| props.contains_key(*k))
 }
 
+/// Whether a container carries the `hug` prop: its size follows its content
+/// rather than its container's. Off unless the wire says otherwise, so no
+/// existing def moves.
+fn hug(props: &Map<String, Value>) -> bool {
+    props.get("hug").and_then(truthy).unwrap_or(false)
+}
+
 /// Builds the [`WidgetKind`] a GuiDef `node` names (an unknown type becomes
 /// [`WidgetKind::Unknown`]). `blobs` are the `/gui_def` message's trailing bulk
 /// payloads.
@@ -43,6 +50,7 @@ pub(super) fn build_kind(
             height: dimension(props, "h", DEFAULT_WINDOW.1),
             layout: Layout::parse(props),
             flow: Flow::parse(props),
+            hug: hug(props),
         },
         // A container with no axes. `stack` — one child at a time, the one
         // `index` names — is one of the arrangements rather than a type of its
@@ -54,10 +62,12 @@ pub(super) fn build_kind(
                 .get("margin")
                 .and_then(Value::as_f64)
                 .map(|v| v as f32),
+            hug: hug(props),
         },
         "layout" => WidgetKind::Panel {
             layout: Layout::parse(props),
             flow: Flow::parse(props),
+            hug: hug(props),
         },
         // Two axes locked to one scale. What a patcher adds to a plane is its
         // boxes and the cords between them, so their presence is what tells

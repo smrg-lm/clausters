@@ -71,10 +71,23 @@ kind of widget wants to be, which the host knows — else a share of the
 leftover at weight 1. The cross axis always fills. So a control (a ``button``,
 a ``knob``, a single-line ``text``, a ``label``) stacked in a ``col`` is one
 control-high row rather than half the window, while views (a ``waveform``, a
-``panel``, a ``pianoroll``) have no natural size and split the rest between
-them. A widget's natural size never follows its *data*, only the host's sizing
-table and the widget's own ``text_size``/``label``, so setting a longer string
-never moves the layout.
+``pianoroll``) have no natural size and split the rest between them.
+
+A **container** is one of those views — it takes what it is given — unless it
+carries ``hug``, and then it wants exactly what it holds: a ``row`` adds its
+children up along its axis and takes the tallest of them across it, a ``col``
+the other way round, a ``grid`` counts its cells. That is how a strip of
+controls under a work surface says how tall it is without anybody computing a
+number: ``panel(menu(...), toggle(...), layout="row", hug=True)``. The question
+reaches the whole subtree under it, so a plain panel nested inside a hugging one
+is measured too; an axis a child leaves elastic (a plane, a lane, a heavy view)
+is one the container hands back to the layout.
+
+What a size may read is fixed by **where the value is resolved**: a prop that
+settles when you build or ``set`` it (a label's text, a menu's options) may size
+a container that hugs, and a *value* — a number being turned, a field being
+typed into, a scope's samples — never sizes anything, so no stream of values
+ever moves a layout. Outside a ``hug`` nothing reads the content at all.
 
 Those numbers are **logical**, not the screen's: the host multiplies every
 declared length (and ``text_size``, a glyph scale) by the display's own scale,
@@ -87,7 +100,8 @@ the plane carries a zoom of its own.
 
 Containers (``window``/``panel``/``scroll``) additionally take ``margin`` (the
 inset before their children, default 6), ``gap`` (between children, default 6)
-and ``cols`` (a fixed ``grid`` column count; default near-square). A
+and ``cols`` (a fixed ``grid`` column count; default near-square);
+``window``/``panel``/``stack`` also take ``hug``. A
 fixed-height menu bar over a weighted content area over a fixed status bar —
 the application shell — is just ``window(bar(h=28), content(), status(h=20),
 layout="col")``.
@@ -372,13 +386,20 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
 
 def window(*children, title: str | None = None, w: int | None = None, h: int | None = None,
            flow: str | None = None, layout: str | None = None, margin: float | None = None,
-           gap: float | None = None, cols: int | None = None, theme: dict | None = None,
-           **props) -> dict:
+           gap: float | None = None, cols: int | None = None, hug: bool | None = None,
+           theme: dict | None = None, **props) -> dict:
     """A top-level ``window`` container (a GuiDef root). It takes no id.
 
     ``w``/``h`` size the OS window; ``layout`` (``row``/``col``/``grid``/
     ``free``) places the children, tuned by ``margin``/``gap``/``cols`` (see
     the module docstring for the per-child place props).
+
+    ``hug`` sizes the window to its content instead: the OS window opens as
+    big as what it holds on the axes that settle, keeping the declared ``w``/
+    ``h`` on the others — a window with one control in it is that control,
+    not a pane with a strip at the top. In a page there is no window to size,
+    so a mounted GuiDef takes the box the element gives it and only the
+    containers inside it hug.
 
     ``theme`` is a partial color-role table (``{"role": "#rrggbb[aa]"}``, the
     same shape as the host's TOML style file) overlaying the host theme for
@@ -387,18 +408,24 @@ def window(*children, title: str | None = None, w: int | None = None, h: int | N
     """
     extra = _drop_none(title=title, w=w, h=h, flow=flow or layout, margin=margin, gap=gap,
                        cols=cols, theme=theme)
+    if hug is not None:
+        extra["hug"] = 1 if hug else 0
     return node("window", children=children, **extra, **props)
 
 
 def panel(*children, flow: str | None = None, layout: str | None = None,
           margin: float | None = None, gap: float | None = None, cols: int | None = None,
-          theme: dict | None = None, color: str | None = None, id: int | None = None,
-          **props) -> dict:
+          hug: bool | None = None, theme: dict | None = None, color: str | None = None,
+          id: int | None = None, **props) -> dict:
     """A nestable ``panel`` container; ``layout`` is ``row``/``col``/``grid``/``free``.
 
     ``margin`` insets the children, ``gap`` separates them, ``cols`` fixes the
     ``grid`` column count. As a child, a panel takes the same place props as
     any widget (``w``/``h``/``weight``, or ``x``/``y`` in a ``free`` parent).
+
+    ``hug`` makes it want its content rather than its share of the leftover —
+    a strip of controls that says how tall it is instead of being told (see
+    the module docstring for what a size may read).
 
     ``theme`` (a partial ``{"role": "#rrggbb[aa]"}`` table) makes the panel a
     **theme group**: the overlay styles its whole subtree — a transport bar
@@ -407,12 +434,14 @@ def panel(*children, flow: str | None = None, layout: str | None = None,
     """
     extra = _drop_none(flow=flow or layout, margin=margin, gap=gap, cols=cols,
                        theme=theme, color=color)
+    if hug is not None:
+        extra["hug"] = 1 if hug else 0
     return node("layout", id=id, children=children, **extra, **props)
 
 
 def stack(*children, index: int | None = None, margin: float | None = None,
-          theme: dict | None = None, color: str | None = None, id: int | None = None,
-          **props) -> dict:
+          hug: bool | None = None, theme: dict | None = None, color: str | None = None,
+          id: int | None = None, **props) -> dict:
     """A ``stack`` container showing **one child at a time**: the one at ``index``.
 
     The shown page fills the container (``margin`` insets it); the hidden ones
@@ -434,8 +463,13 @@ def stack(*children, index: int | None = None, margin: float | None = None,
     An ``index`` outside the children shows nothing — a blank page rather than
     a clamped one, so a pager that runs off the end never shows the wrong
     child.
+
+    ``hug`` sizes the stack to its **largest** page rather than to the shown
+    one, so flipping a pager does not resize it.
     """
     extra = _drop_none(index=index, margin=margin, theme=theme, color=color)
+    if hug is not None:
+        extra["hug"] = 1 if hug else 0
     return node("layout", id=id, children=children, flow="stack", **extra, **props)
 
 

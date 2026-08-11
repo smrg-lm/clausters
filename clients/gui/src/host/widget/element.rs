@@ -939,6 +939,25 @@ pub trait Element: fmt::Debug {
         (None, None)
     }
 
+    /// How big this element wants to be **when a container is being fitted to
+    /// its content** — a container carrying `hug`, which is the only caller.
+    ///
+    /// The one place a size may read what the element draws, and the reason the
+    /// method is separate from [`natural`](Element::natural): the ordinary pass
+    /// must stay data-free, or a `/gui_set` would relayout the window on every
+    /// message, while a container that hugs has asked for exactly that. What
+    /// may be read is fixed by *where it is resolved*, not by what it is
+    /// called: a prop that settles at a mutation point (a label's text, a
+    /// menu's options) may size; a **value** — a number being turned, a field
+    /// being typed into, a scope's samples — may not, or the widget would
+    /// resize under the gesture writing it.
+    ///
+    /// Defaults to the natural size, which is the right answer for every
+    /// element whose content is a value or a signal.
+    fn hug(&self, m: &Metrics, scale: f32) -> Natural {
+        self.natural(m, scale)
+    }
+
     /// This element's current value, for `/gui_event` and `/gui_query`.
     fn value(&self) -> Option<OscType> {
         None

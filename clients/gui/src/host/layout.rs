@@ -14,10 +14,13 @@
 //! explicit ([`Place::w`] / [`Place::h`]) size takes exactly that; else an
 //! explicit [`Place::weight`] takes that share of the leftover (the escape
 //! hatch that still stretches a button); else the widget's **natural size**
-//! ([`WidgetKind::natural_size`] — a pure function of the metrics, never of the
-//! widget's data) takes exactly what it wants; else the child shares the
+//! ([`Widget::natural_size`] — a pure function of the metrics, and of the
+//! widget's content only where a container asked to be fitted to it) takes
+//! exactly what it wants; else the child shares the
 //! leftover at weight 1. So a `col` of controls is a stack of control-high rows
 //! with the leftover under them, and a `col` of surfaces still splits evenly.
+//! A container is one of those surfaces unless it carries **`hug`**, in which
+//! case it wants its content ([`Widget::hug_size`]).
 //! The cross axis fills. In `free`,
 //! a child with any of `x`/`y`/`w`/`h` positions absolutely inside the
 //! container (missing size = the rest of the area); a child with none keeps
@@ -365,7 +368,7 @@ fn place<'a>(
         widget,
     });
     let (layout, flow) = match widget.kind {
-        WidgetKind::Window { layout, flow, .. } | WidgetKind::Panel { layout, flow } => {
+        WidgetKind::Window { layout, flow, .. } | WidgetKind::Panel { layout, flow, .. } => {
             (layout, flow)
         }
         WidgetKind::Scroll { .. } => {
@@ -376,7 +379,7 @@ fn place<'a>(
         // them and nothing hits them. They keep their place in the *tree*
         // (their GPU slots and bus watches are collected from there), which is
         // what makes flipping back free.
-        WidgetKind::Stack { index, margin } => {
+        WidgetKind::Stack { index, margin, .. } => {
             let inner = area.inset(
                 margin
                     .map_or(space.metrics.margin, |m| space.px(m))
@@ -670,7 +673,7 @@ fn strip(inner: Rect, children: &[Widget], gap: f32, horizontal: bool, space: Sp
             p.weight.is_none().then(|| {
                 // Measured in this space's own coordinates, at the scale its
                 // text will draw at — one table, one scale.
-                let (nw, nh) = c.kind.natural_size(&space.metrics, space.unit);
+                let (nw, nh) = c.natural_size(&space.metrics, space.unit);
                 if horizontal { nw } else { nh }
             })?
         })
@@ -744,6 +747,47 @@ mod tests {
 
     fn area() -> Rect {
         Rect::new(0.0, 0.0, 600.0, 400.0)
+    }
+
+    /// The application shell, without the number: a strip of controls under a
+    /// work surface used to need an `h` nobody could derive, because a
+    /// container did not measure what it held. With `hug` it takes exactly its
+    /// content and the view keeps the rest — and the resolution order is
+    /// unchanged, this is just another natural size.
+    #[test]
+    fn a_hugging_strip_takes_its_content_and_the_view_keeps_the_rest() {
+        let w = tree(
+            r#"{"type":"window","children":[
+            {"id":5,"type":"signal","view":"trace","data":[]},
+            {"id":6,"type":"layout","flow":"row","hug":1,"children":[
+                {"id":7,"type":"menu","options":["time","samples","beats"],"label":"time axis"},
+                {"id":8,"type":"toggle","label":"rulers"}]}]}"#,
+        );
+        let m = Metrics::default();
+        let placed = layout(area(), &w, &m);
+        let rect = |id: i32| {
+            placed
+                .iter()
+                .find(|p| p.widget.id == Some(id))
+                .unwrap()
+                .rect
+        };
+
+        let strip = rect(6);
+        let menu = w.children[1].children[0].hug_size(&m, 1.0).1.unwrap();
+        assert_eq!(strip.h, menu + 2.0 * m.margin, "the strip is its content");
+        // The view takes everything the strip did not.
+        let view = rect(5);
+        assert_eq!(view.h + m.gap + strip.h, area().h - 2.0 * m.margin);
+        assert!(
+            view.h > strip.h * 3.0,
+            "and it dominates: {view:?} {strip:?}"
+        );
+        // Each control still lands inside the strip it sized.
+        for id in [7, 8] {
+            let c = rect(id);
+            assert!(c.y >= strip.y && c.y + c.h <= strip.y + strip.h + 1e-3);
+        }
     }
 
     #[test]

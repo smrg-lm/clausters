@@ -634,6 +634,18 @@ fn value_text(d: &mut Draw, s: &str, body: Rect, size: f32) {
     font::text_ellipsis(mesh, s, x, y, avail, size, theme.text);
 }
 
+/// The cell width a control's value **read-out** needs: the widest number this
+/// range can ever show, plus the insets [`value_text`] draws it inside (the
+/// body's on both sides and its own on the right).
+///
+/// It measures the **bounds**, never the current value — `min` and `max` are
+/// props and the value is not, so a control fitted to its content keeps one
+/// width while it is turned instead of resizing under the hand turning it.
+pub(crate) fn readout_w(r: &Range, size: f32, m: &Metrics) -> f32 {
+    let widest = font::width(&fmt(r.min), size).max(font::width(&fmt(r.max), size));
+    widest + 3.0 * m.pad
+}
+
 /// Formats a control value compactly (drops trailing zeros within 2 decimals).
 fn fmt(v: f32) -> String {
     if v.fract() == 0.0 && v.abs() < 1e6 {

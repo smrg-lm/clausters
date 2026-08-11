@@ -15,7 +15,7 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, control_box};
+use crate::host::widget::size::{Natural, control_box, text_box};
 
 /// A momentary push button.
 #[derive(Debug, Clone)]
@@ -62,6 +62,16 @@ impl Element for Button {
 
     fn natural(&self, m: &Metrics, scale: f32) -> Natural {
         (None, Some(control_box(self.text_size * scale, m)))
+    }
+
+    /// A button *is* its box, and its caption is a prop: fitted to its content
+    /// it is as wide as the text it centres, padded on both sides.
+    fn hug(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.text_size * scale;
+        (
+            Some(text_box(self.label.as_deref().unwrap_or("BUTTON"), size, m)),
+            Some(control_box(size, m)),
+        )
     }
 
     /// A button is momentary: the press *is* the event, so what it reports

@@ -156,10 +156,36 @@ past its natural size:
 
 ```python
 window(
-    panel(label("transport"), h=28),      # chrome hugs, because it says so
+    panel(label("transport"), h=28),      # chrome, at the height it names
     waveform(name="take", data=take, weight=1.0),   # the work surface takes the rest
     layout="col", margin=8.0, gap=6.0)
 ```
+
+A container has no natural size of its own — it takes what it is given —
+unless it carries **`hug`**, and then it wants exactly what it holds: a row
+adds its children up along its axis and takes the tallest of them across it, a
+column the other way round, a grid counts its cells. That is the strip above
+without the number:
+
+```python
+window(
+    panel(label("transport"), button(label="play"), layout="row", hug=True),
+    waveform(name="take", data=take, weight=1.0),
+    layout="col", margin=8.0, gap=6.0)
+```
+
+`hug` is asked of the whole subtree, so a plain panel nested inside a hugging
+one is measured too, and an axis a child leaves elastic — a plane, a lane, a
+heavy view — is one the container hands back to the layout. On the `window`
+itself it sizes the window: a window holding one knob opens knob-sized instead
+of putting a strip at the top of an empty pane.
+
+What a size may read is fixed by **where the value is resolved**. A prop that
+settles when you build it or `set` it may size a hugging container — a label's
+text, a menu's options. A **value** never sizes anything: the option a menu is
+on, what a field holds, what a number reads, a view's samples. So a stream of
+values cannot move a layout, and a control does not resize under the gesture
+writing it.
 
 A container additionally takes `margin` (the inset before its children), `gap`
 (between them) and `cols`.

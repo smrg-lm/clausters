@@ -13,7 +13,7 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Input};
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, control_box};
+use crate::host::widget::size::{Natural, control_box, text_box};
 
 /// A boolean on/off control.
 #[derive(Debug, Clone)]
@@ -65,6 +65,18 @@ impl Element for Toggle {
             None,
             Some(control_box(self.text_size * scale, m).max(m.box_side)),
         )
+    }
+
+    /// The box, and the label beside it when there is one — the row the drawing
+    /// lays out, measured.
+    fn hug(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.text_size * scale;
+        let h = control_box(size, m).max(m.box_side);
+        let side = m.box_side.min(h);
+        // The label starts one pad past the box and gets one more at the right
+        // edge, so a hugged toggle never draws its own text into an ellipsis.
+        let label = self.label.as_deref().map_or(0.0, |t| text_box(t, size, m));
+        (Some(side + label), Some(h))
     }
 
     fn value(&self) -> Option<OscType> {

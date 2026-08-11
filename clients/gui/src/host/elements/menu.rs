@@ -18,12 +18,13 @@ use serde_json::{Map, Value};
 use clausters_core::osc::OscType;
 
 use crate::host::controls;
+use crate::host::font;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Input};
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, body_inset, control_box, label_strip};
+use crate::host::widget::size::{Natural, body_inset, control_box, field_w, label_strip, text_box};
 
 /// A one-of-several chooser: the options, which one is current, and — while it
 /// is up — the list it opened.
@@ -105,6 +106,22 @@ impl Element for Menu {
             None,
             Some(label_strip(self.label.is_some(), size, m) + body_inset(m) + control_box(size, m)),
         )
+    }
+
+    /// The **options**, not the chosen one: the set is a prop and the choice is
+    /// a value, so a hugged menu is as wide as its widest option and does not
+    /// resize when the reader picks a shorter one. Its marker gutter rides
+    /// beside the text, and a label over it may be wider than either.
+    fn hug(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.text_size * scale;
+        let widest = self
+            .options
+            .iter()
+            .map(|o| field_w(o, size, m))
+            .fold(0.0f32, f32::max);
+        let label = self.label.as_deref().map_or(0.0, |t| text_box(t, size, m));
+        let gutter = font::height(size) + m.pad;
+        (Some((widest + gutter).max(label)), self.natural(m, scale).1)
     }
 
     fn value(&self) -> Option<OscType> {

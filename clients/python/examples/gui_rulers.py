@@ -94,10 +94,10 @@ def scene(path: str) -> dict:
               menu(name="amp", options=AMP_UNITS, label="amplitude axis"),
               menu(name="freq", options=FREQ_SCALES, label="frequency scale"),
               toggle(name="yaxis", label="vertical rulers", value=True),
-              # A fixed strip: the menus know their own height, but their
-              # container does not measure them, so the chrome says how tall it
-              # is and the two views keep the rest.
-              layout="row", h=60.0),
+              # `hug` is the strip saying "I am as tall as what I hold": the
+              # menus know their own height and the panel composes them, so no
+              # number here has to be kept in step with the controls.
+              layout="row", hug=True),
         title="Rulers: units per axis", w=960, h=720, layout="col",
     )
 

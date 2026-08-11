@@ -687,6 +687,71 @@ impl Host {
         self.window_defs.get(&id)
     }
 
+    /// The inner size window `id` asks its shell for, in **logical** pixels:
+    /// what its `w`/`h` declared, or — when it carries `hug` — what its content
+    /// wants ([`Widget::hug_size`]) on the axes where that composition is
+    /// defined, keeping the declared number on the others.
+    ///
+    /// Measured against the host's logical table at scale 1, because that is
+    /// the space a window's size is declared in and resolving at scale 1 is the
+    /// identity; the window's own `ui_scale` is the shell's business and only
+    /// exists once the window does. Which is exactly why a hugging window is
+    /// asked **twice** — see [`window_size_px`](Self::window_size_px), the
+    /// exact answer once there is a scale to resolve against.
+    ///
+    /// A shell with a window of its own reads this when it creates one. In a
+    /// page there is none — the element owns its box and reports its pixels —
+    /// so the browser front lays the same tree out inside whatever box it is
+    /// given, and only the *containers* inside it hug. That is a platform
+    /// truth, not a fork: the composition is identical in both builds.
+    pub fn window_size(&self, id: i32) -> Option<(u32, u32)> {
+        self.sized_window(id, &self.metrics, 1.0)
+    }
+
+    /// The inner size a **hugging** window wants in **physical** pixels, at its
+    /// own resolved size table — `None` for a window that declares its size, so
+    /// a shell only resizes what asked to be fitted.
+    ///
+    /// The second half of one question. A window is created before anything
+    /// knows what display it landed on, so the first answer is measured in the
+    /// logical table; the resolved table then **snaps every role to a whole
+    /// pixel**, and on a fractional scale the two disagree by a pixel or two —
+    /// enough for a label measured one way and drawn the other to ellipsize
+    /// inside the box that was supposed to fit it (found by eye at 1.25). So
+    /// the shell asks again as soon as it has written the scale, and this
+    /// answer is exact by construction: it is measured with the very table the
+    /// layout will use.
+    pub fn window_size_px(&self, id: i32) -> Option<(u32, u32)> {
+        let tree = self.window_def(id)?;
+        if !matches!(tree.kind, WidgetKind::Window { hug: true, .. }) {
+            return None;
+        }
+        let metrics = self.metrics_for(id);
+        self.sized_window(id, metrics, metrics.ui_scale)
+    }
+
+    /// One window's requested size, measured with `metrics` at `scale`: its
+    /// content where it hugs and the composition settles, its declared `w`/`h`
+    /// everywhere else (scaled to the same space, so the two mix cleanly).
+    fn sized_window(&self, id: i32, metrics: &metrics::Metrics, scale: f32) -> Option<(u32, u32)> {
+        let tree = self.window_def(id)?;
+        let WidgetKind::Window {
+            width, height, hug, ..
+        } = &tree.kind
+        else {
+            return None;
+        };
+        let declared = |v: u32| ((v as f32) * scale).ceil().max(1.0) as u32;
+        if !*hug {
+            return Some((declared(*width), declared(*height)));
+        }
+        let round = |want: Option<f32>, fallback: u32| {
+            want.map_or_else(|| declared(fallback), |v| (v.ceil().max(1.0) as u32).max(1))
+        };
+        let (w, h) = tree.hug_size(metrics, scale);
+        Some((round(w, *width), round(h, *height)))
+    }
+
     /// Mutable access to a window document, for the front to write back a value
     /// a user interaction produced (a turned knob, a moved slider).
     pub fn window_def_mut(&mut self, id: i32) -> Option<&mut Widget> {
@@ -1648,6 +1713,57 @@ mod tests {
         assert!(
             host.window_def(1).is_some(),
             "the typed window def is stored"
+        );
+    }
+
+    /// A window asks for what it declared — and, with `hug`, for what it holds
+    /// on the axes its content settles, keeping the declared number on the
+    /// others. This is the workaround it retires: a single control in a window
+    /// used to need `weight` to stop being a strip under an empty pane, and now
+    /// the pane is the control's own size.
+    #[test]
+    fn a_hugging_window_asks_for_the_size_of_its_content() {
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, TREE), from());
+        assert_eq!(host.window_size(1), Some((640, 360)), "the defaults");
+
+        let hugging = r#"{"type":"window","w":420,"hug":1,"children":[
+            {"id":10,"type":"knob","label":"cutoff","min":20.0,"max":20000.0,"value":800.0}
+        ]}"#;
+        host.handle_packet(def_msg(2, hugging), from());
+        let (kw, kh) = host.window_size(2).expect("a window asks for a size");
+        let knob = host.window_def(2).unwrap().hug_size(&host.metrics, 1.0);
+        assert_eq!((kw as f32, kh as f32), (knob.0.unwrap(), knob.1.unwrap()));
+        assert!(kw < 420 && kh < 360, "the window is the knob: {kw}x{kh}");
+
+        // The declared number is what stands where the content is elastic: a
+        // horizontal slider spans whatever track it is given, and says so.
+        let along = r#"{"type":"window","w":420,"hug":1,"children":[
+            {"id":11,"type":"slider","label":"mix"}
+        ]}"#;
+        host.handle_packet(def_msg(3, along), from());
+        let (w, h) = host.window_size(3).expect("a window asks for a size");
+        assert_eq!(w, 420, "nothing under it knows a width");
+        assert!(h < 360, "and it is a strip, not the default pane: {h}");
+
+        // The second half of the question: once the shell has written a scale,
+        // the answer is measured with the table the layout will actually use.
+        // Only a hugging window has one — a window that declared its size is
+        // not to be resized under it.
+        assert_eq!(host.window_size_px(1), None, "nothing to fit");
+        host.set_ui_scale(2, 1.25);
+        let (pw, ph) = host.window_size_px(2).expect("a hugging window is asked");
+        let at_scale = host
+            .window_def(2)
+            .unwrap()
+            .hug_size(host.metrics_for(2), 1.25);
+        assert_eq!(
+            (pw as f32, ph as f32),
+            (at_scale.0.unwrap(), at_scale.1.unwrap())
+        );
+        assert!(
+            pw as f32 >= kw as f32 * 1.25 - 1.0 && ph as f32 >= kh as f32 * 1.25 - 1.0,
+            "the exact answer is not allowed to come out under the estimate:              {pw}x{ph} vs {kw}x{kh} at 1.25"
         );
     }
 
