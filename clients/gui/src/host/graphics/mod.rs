@@ -6,7 +6,7 @@
 //! `impl Element` answering `set`, `needs`, `natural`, `slot`, `body_role` —
 //! one method per question the frame, the gesture machine or a `/gui_query`
 //! puts to it at a given moment. This half is what that element **knows**: the
-//! data shape, the geometry, the drawing over a [`Draw`](crate::host::paint::Draw),
+//! data shape, the geometry, the drawing over a [`Draw`],
 //! and the hit-test primitives that invert that drawing.
 //!
 //! The boundary is stated negatively, and it is what makes the half worth
@@ -36,3 +36,21 @@ pub mod score;
 pub mod signal;
 pub mod textedit;
 pub mod track;
+
+use crate::host::font;
+use crate::host::layout::Rect;
+use crate::host::paint::Draw;
+
+/// A read-out in a body's **top-right corner** — the slot a scope's
+/// `lock`/`free` state, a spectral view's scale tag and the frame's own overlay
+/// all put a short string in.
+///
+/// It sits here rather than in whichever model happened to write it first: four
+/// callers across three modules and the frame's draw pass share one corner, and
+/// a helper with that reach is the models' own vocabulary, not one widget's.
+pub(crate) fn corner_text(d: &mut Draw, s: &str, body: Rect) {
+    let (mesh, m, theme) = d.parts();
+    let w = font::width(s, m.text_scale);
+    let x = (body.x + body.w - w - m.pad).max(body.x);
+    font::text(mesh, s, x, body.y + m.pad, m.text_scale, theme.text);
+}

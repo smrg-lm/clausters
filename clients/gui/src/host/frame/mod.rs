@@ -53,7 +53,6 @@ use super::timeline::{GroupState, group_key};
 use super::widget::element::{Ctx, Loaded, SlotFill, SlotFrame, TimeSpace};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
-use crate::host::graphics::meters;
 use crate::host::graphics::track;
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.

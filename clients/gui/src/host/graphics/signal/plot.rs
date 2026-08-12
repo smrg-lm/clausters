@@ -343,7 +343,7 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
     // The FFT size and active scale, named over the view (the live views'
     // corner slot); the size pads to 4 digits so the text never moves.
     let tag = format!("{:>4} {}", spec.fft_size, ruler::scale_tag(p.freq_scale));
-    crate::host::graphics::meters::value_text(&mut Draw::new(mesh, m, theme), &tag, g.body);
+    crate::host::graphics::corner_text(&mut Draw::new(mesh, m, theme), &tag, g.body);
     let nyquist = spec.nyquist.max(1.0);
     let f_lo = (F_LO_HZ / nyquist).clamp(1e-5, 0.5);
     if let Some(strip) = g.x_strip {

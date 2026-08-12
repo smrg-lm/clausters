@@ -45,11 +45,13 @@
 
 // The protocol and the tree it holds: the generic document, the ids, the typed
 // schema the renderer reads, the leaves behind the trait, and the two places a
-// widget's value can go instead of the script.
+// widget's value can go instead of the script — plus the voices the host plays
+// on an element's behalf, which are its own and not the element's.
 pub mod bind;
 pub mod elements;
 pub mod guidef;
 pub mod registry;
+pub mod voices;
 pub mod widget;
 
 // The models: what a visual thing is shaped like, how it is drawn and where a
@@ -498,7 +500,7 @@ pub struct Host {
     /// `/synth_new`, the release the `gate 0`; the def frees the node itself, so
     /// no `/node_end` tracking is needed.
     voices: HashMap<i32, Vec<(i32, i32)>>,
-    /// The next voice node-id offset over [`VOICE_ID_BASE`] (wrapping).
+    /// The next voice node-id offset over [`voices::ID_BASE`] (wrapping).
     voice_counter: i32,
     /// The host's color roles — one look per host, every paint site reads it
     /// (see [`theme`]).
@@ -532,13 +534,6 @@ pub struct Host {
     /// front's own shortcuts when the element does not answer it.
     focused: Option<(i32, i32)>,
 }
-
-/// The base of the node-id window the host's piano voices allocate from —
-/// far above the Python client's ids (1000..) and the server's own auto
-/// range, so an explicit voice id can never collide (see `docs/decisions.md`).
-const VOICE_ID_BASE: i32 = 0x1000_0000;
-/// The wrapping window of voice ids over the base.
-const VOICE_ID_SPAN: i32 = 1 << 16;
 
 impl Default for Host {
     fn default() -> Self {
@@ -1470,11 +1465,9 @@ impl Host {
         };
         let (name, extra) = (spec.def, spec.args);
         self.voice_off(widget_id, pitch);
-        let node = VOICE_ID_BASE + self.voice_counter;
-        self.voice_counter = (self.voice_counter + 1) % VOICE_ID_SPAN;
-        self.send_to_server(graphics::piano::voice_on_msg(
-            &name, node, pitch, velocity, &extra,
-        ));
+        let node = voices::ID_BASE + self.voice_counter;
+        self.voice_counter = (self.voice_counter + 1) % voices::ID_SPAN;
+        self.send_to_server(voices::on_msg(&name, node, pitch, velocity, &extra));
         self.voices
             .entry(widget_id)
             .or_default()
@@ -1502,7 +1495,7 @@ impl Host {
             self.voices.remove(&widget_id);
         }
         for node in nodes {
-            self.send_to_server(graphics::piano::voice_off_msg(node));
+            self.send_to_server(voices::off_msg(node));
         }
     }
 
@@ -1524,7 +1517,7 @@ impl Host {
         for id in stale {
             if let Some(list) = self.voices.remove(&id) {
                 for (_, node) in list {
-                    self.send_to_server(graphics::piano::voice_off_msg(node));
+                    self.send_to_server(voices::off_msg(node));
                 }
             }
         }

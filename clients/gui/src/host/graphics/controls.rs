@@ -14,6 +14,7 @@ use crate::host::font;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::{Color, Draw, Mesh};
+use crate::host::widget::size;
 use crate::host::widget::{Align, Range};
 
 /// The label strip height when a control carries a label, else 0 — **and 0 when
@@ -653,6 +654,50 @@ fn fmt(v: f32) -> String {
     } else {
         format!("{v:.2}")
     }
+}
+
+// --- Natural sizes ----------------------------------------------------------
+//
+// How tall a control wants to be is the same fact as how it is drawn: the
+// read-out strip a slider reserves under its groove is one number, read here by
+// the drawing and by the size. They lived apart, which is how the size pass came
+// to import this module; they are one section now, and an element's `natural`
+// calls straight into it.
+
+/// A labelled field's height: its label strip, its body inset and one control
+/// line (the read-out row).
+pub fn field_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
+    let size = r.text_size * scale;
+    size::label_strip(r.label.is_some(), size, m) + size::body_inset(m) + size::control_box(size, m)
+}
+
+/// A horizontal slider's thickness: the label strip, the body inset, the
+/// handle's grip across the track and the read-out strip under it — the same
+/// reservation the drawing makes ([`slider_track`]), so the groove
+/// gets the grip it asked for and the number gets its own row.
+pub fn slider_thick(r: &Range, m: &Metrics, scale: f32) -> f32 {
+    let size = r.text_size * scale;
+    size::label_strip(r.label.is_some(), size, m)
+        + size::body_inset(m)
+        + m.handle_grip.max(m.handle_thick)
+        + readout_h(size, m)
+}
+
+/// A vertical slider's width: the grip across the track, inset in the body.
+/// The value read-out shares that width and ellipsizes — a number's own length
+/// is data, and no size here may follow it.
+pub fn slider_across(m: &Metrics) -> f32 {
+    size::body_inset(m) + m.handle_grip.max(m.box_side)
+}
+
+/// A knob's height: the label strip, the body inset, the disc and the read-out
+/// strip the drawing reserves under it.
+pub fn knob_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
+    let size = r.text_size * scale;
+    size::label_strip(r.label.is_some(), size, m)
+        + size::body_inset(m)
+        + m.knob_d
+        + readout_h(size, m)
 }
 
 #[cfg(test)]

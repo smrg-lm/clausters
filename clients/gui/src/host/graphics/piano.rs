@@ -1,9 +1,8 @@
 //! The virtual piano keyboard's graphic primitives: a playable keyboard laid
 //! out with **real piano proportions** (relative units, so it resizes freely),
-//! an overview strip spanning the full MIDI range for zoom/pan navigation, and
-//! the voice-mode `/synth_new`/`/node_set` message builders — all pure over a
-//! [`Draw`] (the flat-geometry [`crate::host::paint`] painter) so everything is
-//! unit-testable without a window.
+//! and an overview strip spanning the full MIDI range for zoom/pan navigation
+//! — all pure over a [`Draw`] (the flat-geometry [`crate::host::paint`]
+//! painter), so everything is unit-testable without a window.
 //!
 //! The key geometry follows the real instrument, expressed only as ratios of
 //! the white-key width (the one derived unit): every white key is 1 unit wide,
@@ -18,7 +17,6 @@
 //! general musical knowledge — note spelling and the MIDI↔hertz map — lives in
 //! `clausters_core::scale` per the placement rule.
 
-use clausters_core::osc::{OscMessage, OscType};
 use clausters_core::scale;
 
 use crate::host::font;
@@ -445,55 +443,6 @@ pub fn draw_widget(
     );
 }
 
-// --- Voice mode (host-managed server voices) --------------------------------
-
-/// The `/synth_new` a host-managed voice press sends: the voice def by name, an
-/// explicit node id (so the release can gate it), head of the default group,
-/// with the conventional controls — `freq` from the equal-tempered MIDI map,
-/// `amp` from the velocity, `gate` open — followed by the widget's extra
-/// `voice_args` pairs.
-pub fn voice_on_msg(
-    name: &str,
-    node: i32,
-    pitch: i32,
-    velocity: i32,
-    extra: &[(String, f32)],
-) -> OscMessage {
-    let mut args = vec![
-        OscType::String(name.to_string()),
-        OscType::Int(node),
-        OscType::Int(0), // add to head…
-        OscType::Int(0), // …of the root group
-        OscType::String("freq".into()),
-        OscType::Float(scale::midi_to_hz(pitch as f64) as f32),
-        OscType::String("amp".into()),
-        OscType::Float((velocity as f32 / 127.0).clamp(0.0, 1.0)),
-        OscType::String("gate".into()),
-        OscType::Float(1.0),
-    ];
-    for (k, v) in extra {
-        args.push(OscType::String(k.clone()));
-        args.push(OscType::Float(*v));
-    }
-    OscMessage {
-        addr: "/synth_new".into(),
-        args,
-    }
-}
-
-/// The `/node_set <node> gate 0` a voice release sends — the envelope closes and
-/// the node frees itself (`FREE_SELF` done action in the voice def).
-pub fn voice_off_msg(node: i32) -> OscMessage {
-    OscMessage {
-        addr: "/node_set".into(),
-        args: vec![
-            OscType::Int(node),
-            OscType::String("gate".into()),
-            OscType::Float(0.0),
-        ],
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,41 +618,6 @@ mod tests {
         let (min, max) = center_range(60, 72, 100);
         assert_eq!(max - min, 12);
         assert!((min..=max).contains(&100) || max == MIDI_MAX);
-    }
-
-    #[test]
-    fn voice_messages_have_the_conventional_shape() {
-        let extra = vec![("pan".to_string(), 0.5f32)];
-        let on = voice_on_msg("piano_voice", 0x1000_0000, 69, 127, &extra);
-        assert_eq!(on.addr, "/synth_new");
-        assert_eq!(
-            &on.args[..4],
-            &[
-                OscType::String("piano_voice".into()),
-                OscType::Int(0x1000_0000),
-                OscType::Int(0),
-                OscType::Int(0),
-            ]
-        );
-        // freq from the equal-tempered map (A4 = 440), amp from the velocity.
-        assert_eq!(on.args[4], OscType::String("freq".into()));
-        assert_eq!(on.args[5], OscType::Float(440.0));
-        assert_eq!(on.args[6], OscType::String("amp".into()));
-        assert_eq!(on.args[7], OscType::Float(1.0));
-        assert_eq!(on.args[8], OscType::String("gate".into()));
-        assert_eq!(on.args[9], OscType::Float(1.0));
-        assert_eq!(on.args[10], OscType::String("pan".into()));
-        assert_eq!(on.args[11], OscType::Float(0.5));
-        let off = voice_off_msg(42);
-        assert_eq!(off.addr, "/node_set");
-        assert_eq!(
-            off.args,
-            vec![
-                OscType::Int(42),
-                OscType::String("gate".into()),
-                OscType::Float(0.0),
-            ]
-        );
     }
 
     #[test]

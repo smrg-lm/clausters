@@ -24,11 +24,11 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
-use crate::host::graphics::patch::{self, PatchDraw, Side};
+use crate::host::graphics::patch::{self, PatchDraw, Port, Side};
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
-use crate::host::widget::parse::{label, parse_patch, set_label};
+use crate::host::widget::parse::{label, set_label};
 
 /// A patcher over its own canvas. `selected` and `drag` are native view state —
 /// the gestures build them and no `/gui_set` writes them.
@@ -339,6 +339,81 @@ fn delta(origin: (f64, f64), at: (f64, f64), scale: f32) -> (f32, f32) {
         ((at.0 - origin.0) / scale as f64) as f32,
         ((at.1 - origin.1) / scale as f64) as f32,
     )
+}
+
+/// Parses a `patch` widget's patch: `members` (each a `name` plus its wired
+/// control `ports`), `buses` (names, `OUT` among them) and `wires` (flat triples
+/// `[member, control, bus]`). A malformed entry is skipped, so a partial patch
+/// still draws.
+fn parse_patch(props: &serde_json::Map<String, Value>) -> PatchDraw {
+    use crate::host::graphics::patch::{BoxRole, Cord, Obj};
+
+    let boxes = props
+        .get("boxes")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|b| {
+                    let role = match b.get("role").and_then(Value::as_str) {
+                        Some("source") => BoxRole::Source,
+                        Some("const") => BoxRole::Const,
+                        _ => BoxRole::Object,
+                    };
+                    Some(Obj {
+                        def: b.get("def")?.as_str()?.to_string(),
+                        inlets: parse_ports(b.get("inlets")),
+                        outlets: parse_ports(b.get("outlets")),
+                        x: b.get("x").and_then(Value::as_f64).map(|n| n as f32),
+                        y: b.get("y").and_then(Value::as_f64).map(|n| n as f32),
+                        role,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    // A cord is a flat `from_box from_outlet to_box to_inlet` quadruple.
+    let cords = props
+        .get("cords")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .chunks_exact(4)
+                .filter_map(|c| {
+                    Some(Cord {
+                        from: c[0].as_u64()? as usize,
+                        from_out: c[1].as_u64()? as usize,
+                        to: c[2].as_u64()? as usize,
+                        to_in: c[3].as_u64()? as usize,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    PatchDraw { boxes, cords }
+}
+
+/// Parses a box's port array: each entry a plain name string (audio, the
+/// default) or an object `{"name": …, "rate": "audio"|"control"|"init"}`.
+fn parse_ports(v: Option<&Value>) -> Vec<Port> {
+    v.and_then(Value::as_array)
+        .map(|ps| {
+            ps.iter()
+                .filter_map(|p| match p {
+                    Value::String(name) => Some(Port::audio(name.clone())),
+                    Value::Object(o) => {
+                        let name = o.get("name")?.as_str()?.to_string();
+                        Some(match o.get("rate").and_then(Value::as_str) {
+                            Some("control") => Port::control(name),
+                            Some("init") => Port::init(name),
+                            _ => Port::audio(name),
+                        })
+                    }
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

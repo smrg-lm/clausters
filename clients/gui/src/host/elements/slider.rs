@@ -11,10 +11,11 @@ use serde_json::{Map, Value};
 use clausters_core::osc::OscType;
 
 use crate::host::graphics::controls;
+use crate::host::graphics::controls::{slider_across, slider_thick};
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
-use crate::host::widget::size::{Natural, slider_across, slider_thick};
+use crate::host::widget::size::Natural;
 use crate::host::widget::{Range, parse};
 
 use super::control::{self, Track};

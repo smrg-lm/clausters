@@ -9,11 +9,12 @@ use serde_json::{Map, Value};
 use clausters_core::osc::OscType;
 
 use crate::host::graphics::controls;
+use crate::host::graphics::controls::field_h;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::Range;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
-use crate::host::widget::size::{Natural, field_h};
+use crate::host::widget::size::Natural;
 
 use super::control::{self, Dial};
 

@@ -366,7 +366,7 @@ pub(super) fn draw_timeline_meshes(
                 // The active scale, named over the view (the live views'
                 // corner slot) — log/mel/bark are not tellable apart from
                 // the tick spacing at a glance.
-                meters::value_text(
+                crate::host::graphics::corner_text(
                     &mut Draw::new(over, m, th),
                     ruler::scale_tag(look.freq_scale),
                     body,

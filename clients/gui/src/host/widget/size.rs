@@ -47,8 +47,7 @@
 
 use super::super::font;
 use super::super::metrics::{Metrics, snap_px};
-use super::{Flow, Layout, Range, Widget, WidgetKind};
-use crate::host::graphics::controls;
+use super::{Flow, Layout, Widget, WidgetKind};
 
 /// A widget's wanted extent per axis, `None` on an axis meaning elastic.
 pub type Natural = (Option<f32>, Option<f32>);
@@ -262,42 +261,6 @@ fn total(mut sizes: impl Iterator<Item = Option<f32>>) -> Option<f32> {
 /// The larger of two extents, elastic if either is.
 fn largest(acc: Option<f32>, s: Option<f32>) -> Option<f32> {
     Some(acc?.max(s?.max(0.0)))
-}
-
-/// A labelled field's height: its label strip, its body inset and one control
-/// line (the read-out row).
-pub(crate) fn field_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
-    let size = r.text_size * scale;
-    label_strip(r.label.is_some(), size, m) + body_inset(m) + control_box(size, m)
-}
-
-/// A horizontal slider's thickness: the label strip, the body inset, the
-/// handle's grip across the track and the read-out strip under it — the same
-/// reservation the drawing makes ([`controls::slider_track`]), so the groove
-/// gets the grip it asked for and the number gets its own row.
-pub(crate) fn slider_thick(r: &Range, m: &Metrics, scale: f32) -> f32 {
-    let size = r.text_size * scale;
-    label_strip(r.label.is_some(), size, m)
-        + body_inset(m)
-        + m.handle_grip.max(m.handle_thick)
-        + controls::readout_h(size, m)
-}
-
-/// A vertical slider's width: the grip across the track, inset in the body.
-/// The value read-out shares that width and ellipsizes — a number's own length
-/// is data, and no size here may follow it.
-pub(crate) fn slider_across(m: &Metrics) -> f32 {
-    body_inset(m) + m.handle_grip.max(m.box_side)
-}
-
-/// A knob's height: the label strip, the body inset, the disc and the read-out
-/// strip the drawing reserves under it.
-pub(crate) fn knob_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
-    let size = r.text_size * scale;
-    label_strip(r.label.is_some(), size, m)
-        + body_inset(m)
-        + m.knob_d
-        + controls::readout_h(size, m)
 }
 
 #[cfg(test)]

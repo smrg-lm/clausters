@@ -47,7 +47,7 @@ pub fn draw_meter(d: &mut Draw, rect: Rect, value: f32, fraction: f32, label: Op
         theme.accent,
     );
     mesh.border(body, m.divider_w, theme.accent);
-    value_text(d, &fmt(value), body);
+    super::corner_text(d, &fmt(value), body);
 }
 
 /// Draws a time-domain scope: a framed field with a polyline through `history`
@@ -180,7 +180,7 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
         );
     }
     if frames > 0 {
-        value_text(d, if p.window.locked { "lock" } else { "free" }, body);
+        super::corner_text(d, if p.window.locked { "lock" } else { "free" }, body);
     }
 }
 
@@ -236,15 +236,6 @@ fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect) {
             theme.text,
         );
     }
-}
-
-/// A value read-out at the top-right of a body — the corner slot the scope's
-/// `lock`/`free` state and the spectral views' scale tag share.
-pub(crate) fn value_text(d: &mut Draw, s: &str, body: Rect) {
-    let (mesh, m, theme) = d.parts();
-    let w = font::width(s, m.text_scale);
-    let x = (body.x + body.w - w - m.pad).max(body.x);
-    font::text(mesh, s, x, body.y + m.pad, m.text_scale, theme.text);
 }
 
 /// Formats a value compactly (drops trailing zeros within 2 decimals).
