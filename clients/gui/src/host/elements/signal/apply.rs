@@ -15,10 +15,10 @@ use serde_json::Value;
 
 use crate::spectrogram::FreqScale;
 
-use super::super::widget::parse::{
+use super::{Presentation, SignalElement, Source};
+use crate::host::widget::parse::{
     freq_scale_from_str, set_f, set_label, set_opt_f, set_rate, truthy,
 };
-use super::{Presentation, SignalElement, Source};
 
 impl SignalElement {
     /// Applies one `/gui_set` key/value to this element.
@@ -70,11 +70,15 @@ impl SignalElement {
             // The presentation, where the element's name reads one.
             "view" => v
                 .as_str()
-                .and_then(super::super::plot::PlotView::parse)
+                .and_then(crate::host::graphics::signal::plot::PlotView::parse)
                 .map(|view| {
                     self.presentation = match view {
-                        super::super::plot::PlotView::Signal => Presentation::Signal,
-                        super::super::plot::PlotView::Spectrum => Presentation::Spectrum,
+                        crate::host::graphics::signal::plot::PlotView::Signal => {
+                            Presentation::Signal
+                        }
+                        crate::host::graphics::signal::plot::PlotView::Spectrum => {
+                            Presentation::Spectrum
+                        }
                     };
                 })
                 .is_some(),

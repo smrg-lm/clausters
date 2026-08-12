@@ -35,7 +35,7 @@ use crate::viewport::{Axis, Unit, View};
 /// than min/max columns.
 ///
 /// **One threshold, for every renderer of a signal.** The mesh path
-/// (`host::signal::trace`) re-exports this rather than restating it, so the
+/// (`host::graphics::signal::trace`) re-exports this rather than restating it, so the
 /// regime boundary cannot drift between the pipeline and the triangles: the
 /// same signal at the same zoom is resolved the same way whichever destination
 /// draws it.
@@ -462,7 +462,7 @@ impl WaveformRenderer {
     /// signal barely moves in stays visible instead of collapsing — the tail of
     /// a decay, the sustain of an envelope — and a **sample dot** is as round
     /// in a short lane as in a tall one. Both are the mesh renderer's rules
-    /// ([`crate::host::signal::trace`]) applied to the pipeline that had
+    /// ([`crate::host::graphics::signal::trace`]) applied to the pipeline that had
     /// neither. `dot_radius` is the size table's `point_radius`; `0` marks no
     /// samples.
     // Everything the element used to hold is now passed in — which is the
@@ -510,8 +510,8 @@ impl WaveformRenderer {
         // will take hold of, which is why it is the radius a break-point is
         // drawn at.
         let spacing = w as f32 / (view.len.max(1e-9) as f32);
-        let mark_samples =
-            geom.mode == Mode::Line && crate::host::signal::trace::dots_fit(spacing, dot_radius);
+        let mark_samples = geom.mode == Mode::Line
+            && crate::host::graphics::signal::trace::dots_fit(spacing, dot_radius);
         // A dot is a square in clip space, so its half-extent is one radius of
         // the axis it lies on — the two differ, since a lane is not as tall as
         // it is wide.

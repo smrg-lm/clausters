@@ -20,7 +20,7 @@
 use clausters_core::osc::OscType;
 use serde_json::Value;
 
-use super::super::signal::SignalElement;
+use super::super::elements::signal::SignalElement;
 use super::element::BodyRole;
 use super::element::Element;
 use super::{EditorProps, GestureMap, Widget, WidgetKind, build};

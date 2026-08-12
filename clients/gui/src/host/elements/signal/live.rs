@@ -15,7 +15,7 @@
 //! history. The draw that follows only ever draws what the tick left.
 //!
 //! The one thing that stays outside is the **retained history of a bus**
-//! ([`super::super::live::BusHistory`]), because it is the bus's and not the drawing's: one per bus
+//! ([`crate::host::live::BusHistory`]), because it is the bus's and not the drawing's: one per bus
 //! however many views watch it, filled once per tick and read here through
 //! [`Live::history`].
 
@@ -24,11 +24,11 @@ use std::fmt;
 
 use clausters_core::oscil;
 
-use super::super::live::TapWindow;
-use super::super::spectrum::SpectrumState;
-use super::super::waterfall::Waterfall;
-use super::super::widget::element::Live;
 use super::{Presentation, SignalElement};
+use crate::host::graphics::signal::spectrum::SpectrumState;
+use crate::host::graphics::signal::waterfall::Waterfall;
+use crate::host::live::TapWindow;
+use crate::host::widget::element::Live;
 
 /// Most recent control-bus samples a rolling trace keeps and plots.
 pub(crate) const SCOPE_HISTORY: usize = 512;
@@ -94,7 +94,7 @@ impl SignalElement {
     /// A retained view answers `0`: it reads its bus's *history*, which the
     /// retention span sizes ([`Needs::retention`]), not a window of its own.
     ///
-    /// [`Needs::retention`]: super::super::widget::Needs::retention
+    /// [`Needs::retention`]: crate::host::widget::Needs::retention
     pub fn tap_frames(&self, sample_rate: f64) -> usize {
         let Some(bus) = self.source.bus() else {
             return 0;

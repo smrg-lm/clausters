@@ -16,10 +16,10 @@
 
 use clausters_core::measure::{correlation, lissajous_point};
 
-use super::controls::body_rect;
-use super::font;
-use super::layout::Rect;
-use super::paint::Draw;
+use crate::host::controls::body_rect;
+use crate::host::font;
+use crate::host::layout::Rect;
+use crate::host::paint::Draw;
 
 /// The furthest a sample reaches from the origin: a full-scale mono signal sits
 /// at mid `(1+1)/√2 = √2`. The field is scaled so that extent just fits, with a

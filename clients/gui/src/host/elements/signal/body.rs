@@ -11,11 +11,11 @@
 
 use crate::viewport::View;
 
-use super::super::layout::Rect;
-use super::super::paint::Draw;
-use super::super::widget::element::TextureLook;
-use super::super::widget::{GestureMap, GestureStep};
 use super::SignalElement;
+use crate::host::layout::Rect;
+use crate::host::paint::Draw;
+use crate::host::widget::element::TextureLook;
+use crate::host::widget::{GestureMap, GestureStep};
 
 impl SignalElement {
     /// The drag table a navigable view wants: a plain drag selects on the
@@ -50,6 +50,6 @@ impl SignalElement {
             return;
         };
         let (min, max) = self.domain();
-        super::super::track::draw_take(d, rect, local, dur, &data.trace(), min, max);
+        crate::host::track::draw_take(d, rect, local, dur, &data.trace(), min, max);
     }
 }

@@ -16,14 +16,11 @@
 //! across tracks. Placement/geometry is display logic — this stays gui-side.
 
 use super::font;
+use super::graphics::signal::trace::{self, Trace, TraceStyle};
 use super::layout::Rect;
 use super::meters::fraction;
 use super::metrics::Metrics;
 use super::paint::Draw;
-use super::signal::{
-    self,
-    trace::{Trace, TraceStyle},
-};
 use super::timeline;
 use super::widget::{Widget, WidgetKind};
 use crate::viewport::View;
@@ -463,7 +460,7 @@ pub(crate) fn draw_take(
         let y = y_at(b);
         mesh.line([cr.x, y], [cr.x + cr.w, y], m.divider_w, theme.baseline);
     }
-    signal::trace::draw_channel(
+    trace::draw_channel(
         mesh,
         cr,
         trace,
@@ -482,6 +479,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::host::elements::signal;
     use crate::host::paint::Mesh;
     use crate::host::theme::Theme;
     use crate::waveform::WaveformData;
@@ -694,7 +692,7 @@ mod tests {
 
     fn take_body(data: signal::Data) -> WidgetKind {
         let mut el = signal::SignalElement::from_preset(&signal::point(
-            crate::host::signal::Presentation::Signal,
+            crate::host::elements::signal::Presentation::Signal,
             false,
             true,
         ));

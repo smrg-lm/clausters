@@ -6,7 +6,7 @@
 //! nothing else in a window does — so there is no axis to share, no navigation
 //! group to join and no history to keep behind it, since every bin is there
 //! every frame. The window is one normalized `(start, len)` on the element
-//! ([`EditorProps::x_view`](super::super::widget::EditorProps::x_view)).
+//! ([`EditorProps::x_view`](crate::host::widget::EditorProps::x_view)).
 //!
 //! What is here is the three things a gesture asks of such an axis, all of
 //! which the machine used to reach into the element for: where it lies inside
@@ -14,11 +14,11 @@
 //! the element's because each is a fact about the *analysis* — its resolution,
 //! its scale, its rate — and the machine only ever wanted the numbers.
 
-use super::super::layout::Rect;
-use super::super::metrics::Metrics;
-use super::super::widget::element::FreqAxis;
-use super::super::widget::{Ruler, RulerY};
 use super::SignalElement;
+use crate::host::layout::Rect;
+use crate::host::metrics::Metrics;
+use crate::host::widget::element::FreqAxis;
+use crate::host::widget::{Ruler, RulerY};
 
 impl SignalElement {
     /// The axis inside `rect`, resolved through the **renderer's own** region
@@ -30,7 +30,7 @@ impl SignalElement {
         if !self.navigates_freq() {
             return None;
         }
-        let r = super::super::spectrum::regions(
+        let r = crate::host::graphics::signal::spectrum::regions(
             rect,
             self.display.label.is_some(),
             self.editor.ruler != Ruler::Off,
@@ -83,8 +83,8 @@ impl SignalElement {
             return None;
         }
         let (nyquist, f_lo_norm) =
-            super::super::spectrum::axis_geometry(self.freq_rate(sample_rate));
-        Some(super::super::spectrum::min_display_span(
+            crate::host::graphics::signal::spectrum::axis_geometry(self.freq_rate(sample_rate));
+        Some(crate::host::graphics::signal::spectrum::min_display_span(
             self.spectral.fft_size,
             nyquist * 2.0,
             self.spectral.freq_scale,

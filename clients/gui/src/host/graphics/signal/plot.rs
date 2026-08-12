@@ -4,7 +4,7 @@
 //!
 //! Where the waveform owns a GPU pipeline and a peak pyramid for editor-grade
 //! zoom/pan, the plot draws a signal once through the flat-geometry painter
-//! ([`super::paint`]) — the case the catalog calls "a simple static plot of an
+//! ([`crate::host::paint`]) — the case the catalog calls "a simple static plot of an
 //! NRT-generated signal/file". It does not navigate or edit; what it adds over
 //! a bare trace is measurement: adjustable x/y rulers, multichannel lanes, an
 //! auto-fitted value range for arbitrary numeric sequences, and a hover
@@ -23,7 +23,7 @@
 //!   and Hann window, so it agrees with the spectrogram bin for bin), frames
 //!   averaged in the power domain (Welch), drawn as a dB curve over the same
 //!   four frequency scales the spectrogram displays (linear/log/mel/bark,
-//!   through the identical [`super::ruler::display_to_hz`] geometry).
+//!   through the identical [`crate::host::ruler::display_to_hz`] geometry).
 //!
 //! Everything here is pure over a [`Draw`], so it is unit-testable without a
 //! window. The analysis ([`analyze`]) is computed **once** at the widget's
@@ -31,20 +31,17 @@
 
 use crate::spectrogram::{FreqScale, Stft};
 
-use super::controls::body_rect;
-use super::font;
-use super::frame::{lane_at, lane_rect};
-use super::layout::Rect;
-use super::meters::fraction;
-use super::metrics::Metrics;
-use super::paint::Draw;
-use super::ruler::{self, TimeUnit};
-use super::signal::{
-    self,
-    trace::{Trace, TraceStyle},
-};
-use super::theme::with_alpha;
-use super::widget::Ruler;
+use super::trace::{self, Trace, TraceStyle};
+use crate::host::controls::body_rect;
+use crate::host::font;
+use crate::host::frame::{lane_at, lane_rect};
+use crate::host::layout::Rect;
+use crate::host::meters::fraction;
+use crate::host::metrics::Metrics;
+use crate::host::paint::Draw;
+use crate::host::ruler::{self, TimeUnit};
+use crate::host::theme::with_alpha;
+use crate::host::widget::Ruler;
 
 /// Sample rate assumed for the spectrum axis when the source brings none,
 /// matching the live views' fallback.
@@ -325,7 +322,7 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
         // source every signal view reads: a polyline while samples are wider
         // than a couple of pixels, the min/max envelope once they are not.
         let span = (n - 1) as f64;
-        signal::trace::draw_channel(
+        trace::draw_channel(
             mesh,
             lane,
             &Trace::samples(p.samples, channels),
@@ -346,7 +343,7 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
     // The FFT size and active scale, named over the view (the live views'
     // corner slot); the size pads to 4 digits so the text never moves.
     let tag = format!("{:>4} {}", spec.fft_size, ruler::scale_tag(p.freq_scale));
-    super::meters::value_text(&mut Draw::new(mesh, m, theme), &tag, g.body);
+    crate::host::meters::value_text(&mut Draw::new(mesh, m, theme), &tag, g.body);
     let nyquist = spec.nyquist.max(1.0);
     let f_lo = (F_LO_HZ / nyquist).clamp(1e-5, 0.5);
     if let Some(strip) = g.x_strip {

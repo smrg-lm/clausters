@@ -22,12 +22,12 @@ use clausters_core::window::Window;
 
 use crate::spectrogram::FreqScale;
 
-use super::controls::body_rect;
-use super::font;
-use super::layout::Rect;
-use super::meters::fraction;
-use super::paint::{Color, Draw, Mesh};
-use super::ruler;
+use crate::host::controls::body_rect;
+use crate::host::font;
+use crate::host::layout::Rect;
+use crate::host::meters::fraction;
+use crate::host::paint::{Color, Draw, Mesh};
+use crate::host::ruler;
 
 /// The dB reference the magnitudes are floored at internally: the core's, so
 /// the analysis agrees with the spectrogram before the display dB window is
@@ -139,7 +139,7 @@ pub(crate) struct SpectrumParams<'a> {
     pub ruler_y: bool,
     /// The visible slice of the frequency display axis, normalized (`0, 1` =
     /// the whole axis): a navigable spectrum's own x window
-    /// ([`EditorProps::x_view`](super::widget::EditorProps::x_view)).
+    /// ([`EditorProps::x_view`](crate::host::widget::EditorProps::x_view)).
     pub x_view: (f64, f64),
     pub label: Option<&'a str>,
 }
@@ -234,7 +234,7 @@ pub(crate) fn regions(
     ruler: bool,
     ruler_y: bool,
     db_window: (f32, f32),
-    m: &super::metrics::Metrics,
+    m: &crate::host::metrics::Metrics,
 ) -> SpectrumRegions {
     let mut body = body_rect(rect, label, m);
     // The x strip takes height and the y strip takes width, so the two are
@@ -309,7 +309,7 @@ pub(crate) fn draw_spectrum(
     // lock/free corner): log/mel/bark are not tellable apart from the tick
     // spacing at a glance. The size pads to 4 digits so the text never moves.
     let tag = format!("{:>4} {}", p.fft_size, ruler::scale_tag(p.freq_scale));
-    super::meters::value_text(&mut Draw::new(mesh, m, theme), &tag, body);
+    crate::host::meters::value_text(&mut Draw::new(mesh, m, theme), &tag, body);
 
     let (nyquist, f_lo_norm) = axis_geometry(p.sample_rate);
     let (nyquist, sr) = (nyquist as f32, nyquist as f32 * 2.0);
@@ -428,7 +428,7 @@ mod tests {
     /// decibel formats decimals and the strip asks for the room to draw them.
     #[test]
     fn the_db_strip_follows_its_window() {
-        let m = super::super::metrics::Metrics::default();
+        let m = crate::host::metrics::Metrics::default();
         let rect = Rect::new(0.0, 0.0, 400.0, 300.0);
         let plain = regions(rect, false, true, true, (-90.0, 0.0), &m);
         let bare = regions(rect, false, true, false, (-90.0, 0.0), &m);
@@ -443,10 +443,10 @@ mod tests {
             zoomed.body.x > plain.body.x,
             "the strip stayed at the role for labels that do not fit"
         );
-        let ticks = super::super::ruler::value_ticks(-0.0625, 0.0625, zoomed.body.h as f64, &m);
+        let ticks = crate::host::ruler::value_ticks(-0.0625, 0.0625, zoomed.body.h as f64, &m);
         assert_eq!(
             zoomed.body.x - bare.body.x,
-            super::super::ruler::ticks_width(&ticks, &m),
+            crate::host::ruler::ticks_width(&ticks, &m),
             "and by exactly what its widest label needs"
         );
         // The x strip below is unaffected in height and follows the new body.

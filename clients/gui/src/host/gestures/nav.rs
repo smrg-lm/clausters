@@ -313,7 +313,7 @@ fn window_moved(a: (f64, f64), b: (f64, f64)) -> bool {
 /// clamped afterwards would have anchored a window narrower than the one it
 /// ends up with, sliding the picture sideways at every step. Everyone else
 /// wants the window it produces, which is
-/// [`SignalElement::freq_window`](crate::host::signal::SignalElement::freq_window).
+/// [`SignalElement::freq_window`](crate::host::elements::signal::SignalElement::freq_window).
 pub(super) fn freq_min_span(
     host: &Host,
     def_id: i32,

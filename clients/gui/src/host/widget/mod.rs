@@ -51,7 +51,7 @@ use super::guidef::GuiNode;
 // Sibling widget modules the wire matches reach via `super::` — re-imported here
 // so the `build`/`apply` child modules resolve the same paths (a descendant sees
 // the parent's private `use` items).
-use super::signal;
+use super::elements::signal;
 
 mod apply;
 mod axes;
@@ -219,7 +219,7 @@ pub enum WidgetKind {
 /// The default window size when a GuiDef omits `w`/`h`.
 const DEFAULT_WINDOW: (u32, u32) = (640, 360);
 /// The default peak-pyramid bucket for an inline signal element.
-use super::signal::DEFAULT_BASE_BUCKET;
+use super::elements::signal::DEFAULT_BASE_BUCKET;
 
 /// A typed widget node: its id (the root's comes from the `/gui_def` argument),
 /// its kind, and its children (only containers have any).

@@ -6,7 +6,7 @@
 
 use serde_json::{Map, Value};
 
-use super::super::signal::Presentation;
+use super::super::elements::signal::Presentation;
 use super::*;
 use element::BodyRole;
 

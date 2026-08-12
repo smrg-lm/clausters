@@ -5,7 +5,7 @@
 //! axis draws its body at the same x — the widest gutter any of them asked for
 //! — so the same sample sits at the same pixel in a lane, a roll and a view
 //! stacked on one axis. What this file answers is this element's own wish;
-//! reconciling the wishes is the group's ([`super::super::timeline`]).
+//! reconciling the wishes is the group's ([`crate::host::timeline`]).
 //!
 //! The wish is asked **twice**, which is the only subtlety here. Once from the
 //! props alone, before anything is placed, because the layout needs it to place
@@ -14,10 +14,10 @@
 //! unzoomed and `-0.0625` zoomed in, and the step it labels at depends on how
 //! tall the element ended up.
 
-use super::super::layout::Rect;
-use super::super::metrics::Metrics;
-use super::super::widget::RulerY;
 use super::SignalElement;
+use crate::host::layout::Rect;
+use crate::host::metrics::Metrics;
+use crate::host::widget::RulerY;
 
 impl SignalElement {
     /// The band this element reserves left of its body: a value ruler's width,
@@ -48,12 +48,12 @@ impl SignalElement {
         // The gutter is what we are solving for, so it is left out of the body:
         // it moves the body's x, never its height, which is all the measure
         // reads.
-        let body = super::super::frame::timeline_body(rect, &self.editor, 0.0, m);
+        let body = crate::host::frame::timeline_body(rect, &self.editor, 0.0, m);
         if body.h <= 0.0 {
             return None;
         }
         let (y_start, y_len) = self.editor.y_view();
-        Some(super::super::ruler::amp_strip_w(
+        Some(crate::host::ruler::amp_strip_w(
             self.editor.ruler_y,
             body.h,
             self.editor.bit_depth,

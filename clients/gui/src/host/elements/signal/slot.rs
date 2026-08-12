@@ -3,7 +3,7 @@
 //!
 //! A slot is claimed by the element and owned by the frame: the element cannot
 //! touch a device, and the frame cannot know what a picture is built from. So
-//! the element says *which* slot it wants ([`Bulk`](super::super::widget::element::Bulk)'s
+//! the element says *which* slot it wants ([`Bulk`](crate::host::widget::element::Bulk)'s
 //! neighbour, `Needs::slot`) and then, whenever its picture moves, hands over
 //! the content — a pyramid at its own bucket, an analysis at its own window and
 //! hop, or the columns its rolling transform just produced.
@@ -21,8 +21,8 @@
 //! `SlotKind` — that is the bulk seam, and it is why an element whose data is
 //! still out there hands back `None` here rather than an empty picture.
 
-use super::super::widget::element::SlotFill;
 use super::{Presentation, SignalElement};
+use crate::host::widget::element::SlotFill;
 
 impl SignalElement {
     /// The content of this element's claimed slot, or `None` when it has
@@ -65,8 +65,8 @@ impl SignalElement {
                 data.base_bucket,
             ))
         } else {
-            SlotFill::Texture(super::super::frame::stft_lanes(
-                super::super::frame::deinterleave(&data.samples, data.channels),
+            SlotFill::Texture(crate::host::frame::stft_lanes(
+                crate::host::frame::deinterleave(&data.samples, data.channels),
                 self.spectral.fft_size,
                 self.spectral.hop,
                 self.editor.sample_rate,

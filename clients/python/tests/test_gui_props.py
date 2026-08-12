@@ -31,7 +31,7 @@ The three readers are deliberately different, because the three sources are:
   ``elements::builtin`` table. A leaf that moves out of the schema must not
   read here as a leaf that lost its props — which is exactly the failure this
   reader has had twice, so the two places a leaf can hide are named rather than
-  guessed: an element written across a **module directory** (``host/signal/``)
+  guessed: an element written across a **module directory** (``host/elements/signal/``)
   and the one leaf the **schema** builds instead of the table, because its wire
   name means two constructions (``plane`` with ``boxes`` is a patcher, without
   them a scroll workspace).
@@ -50,10 +50,10 @@ WIDGET_DIR = ROOT / "clients/gui/src/host/widget"
 ELEMENT_DIR = ROOT / "clients/gui/src/host/elements"
 #: An element whose file is a **module directory** elsewhere in the host, named
 #: here because the table's own path is all that says so: the signal element is
-#: `host/signal/` (six presentations behind one wire name), and a leaf built by
+#: `host/elements/signal/` (six presentations behind one wire name), and a leaf built by
 #: the schema rather than by the table — the patcher, whose wire type `plane`
 #: means two constructions — is found through `build.rs` below.
-ELEMENT_DIRS = {"signal": ROOT / "clients/gui/src/host/signal"}
+ELEMENT_DIRS = {"signal": ROOT / "clients/gui/src/host/elements/signal"}
 #: Where the axis pair's key is declared.
 AXES_MOD = ROOT / "clients/gui/src/host/widget/axes.rs"
 MANIFEST = ROOT / "docs/gui-props.md"

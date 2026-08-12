@@ -20,8 +20,8 @@
 
 use std::sync::Arc;
 
-use super::super::widget::element::{Bulk, Loaded};
 use super::{Presentation, SignalElement, Source};
+use crate::host::widget::element::{Bulk, Loaded};
 
 impl SignalElement {
     /// The bulk resource this element wants, in the form it draws from, or
@@ -96,8 +96,8 @@ impl SignalElement {
     /// The parameters ride with the slot because whoever fills it has to make
     /// the data fit it — a bucket to summarize at, an analysis to run — and the
     /// element is the only one that knows them. Everything else draws itself.
-    pub fn slot_kind(&self) -> Option<super::super::widget::element::SlotKind> {
-        use super::super::widget::element::SlotKind;
+    pub fn slot_kind(&self) -> Option<crate::host::widget::element::SlotKind> {
+        use crate::host::widget::element::SlotKind;
         if !self.needs_gpu_slot() {
             return None;
         }
@@ -112,7 +112,9 @@ impl SignalElement {
                 base_bucket: self
                     .source
                     .data()
-                    .map_or(super::DEFAULT_BASE_BUCKET, |d| d.base_bucket),
+                    .map_or(crate::host::elements::signal::DEFAULT_BASE_BUCKET, |d| {
+                        d.base_bucket
+                    }),
             }
         })
     }
@@ -187,7 +189,7 @@ mod tests {
             Some(Bulk::Peaks {
                 path: "take.f32".into(),
                 channels: 2,
-                base_bucket: super::super::DEFAULT_BASE_BUCKET,
+                base_bucket: crate::host::elements::signal::DEFAULT_BASE_BUCKET,
             })
         );
         let plot =

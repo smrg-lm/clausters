@@ -14,11 +14,11 @@ use crate::spectrogram::FreqScale;
 use super::controls::body_rect;
 use super::font;
 use super::frame::lane_rect;
+use super::graphics::signal::trace;
 use super::layout::Rect;
 use super::live::TapWindow;
 use super::paint::{Color, Draw};
 use super::ruler;
-use super::signal::trace;
 use crate::viewport::{Axis, Unit};
 
 /// The 0..1 position of `value` in `[min, max]`, clamped. A degenerate range

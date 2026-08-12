@@ -23,7 +23,8 @@
 //!
 //! **Presentation picks the renderer, and a renderer belongs to the window, not
 //! to the element.** The columns and the time-frequency texture go on the
-//! window's GPU pipelines; the curves go into its triangle mesh ([`trace`]).
+//! window's GPU pipelines; the curves go into its triangle mesh
+//! ([`trace`]).
 //! Which one draws a signal is therefore invisible to composition — an element
 //! costs a GPU slot only when it is a *navigable* heavy view
 //! ([`SignalElement::is_gpu_view`]), so a multitrack of clip bodies costs none.
@@ -35,15 +36,14 @@
 //! points of it, and they are the two clients' builder names now, nothing the
 //! host knows about.
 
-pub mod trace;
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::host::graphics::signal::trace;
 use crate::spectrogram::FreqScale;
 use crate::waveform::WaveformData;
 
-use super::widget::{EditorProps, Rate, Ruler, RulerY};
+use crate::host::widget::{EditorProps, Rate, Ruler, RulerY};
 
 mod apply;
 mod body;
@@ -332,7 +332,7 @@ pub struct SignalElement {
     /// The cached spectral analysis of a **stored** [`Presentation::Spectrum`]
     /// — recomputed at the element's mutation points (parse, a bulk load
     /// landing samples, a `/gui_set` touching what it reads), never per frame.
-    pub analysis: Option<Arc<super::plot::PlotSpectrum>>,
+    pub analysis: Option<Arc<crate::host::graphics::signal::plot::PlotSpectrum>>,
     /// What a **live** presentation has accumulated from its forward-only
     /// source: the rolling history, the triggered window, the analysis states,
     /// the rolling transform. Advanced once per tick ([`Self::tick`]) and only
@@ -517,8 +517,9 @@ impl SignalElement {
         if self.presentation != Presentation::Spectrum {
             return (start, len);
         }
-        let (nyquist, f_lo_norm) = super::spectrum::axis_geometry(self.freq_rate(server_rate));
-        let floor = super::spectrum::min_display_span(
+        let (nyquist, f_lo_norm) =
+            crate::host::graphics::signal::spectrum::axis_geometry(self.freq_rate(server_rate));
+        let floor = crate::host::graphics::signal::spectrum::min_display_span(
             self.spectral.fft_size,
             nyquist * 2.0,
             self.spectral.freq_scale,
@@ -540,7 +541,7 @@ impl SignalElement {
             return;
         };
         self.analysis = (stored_spectrum && !data.samples.is_empty()).then(|| {
-            Arc::new(super::plot::analyze(
+            Arc::new(crate::host::graphics::signal::plot::analyze(
                 &data.samples,
                 data.channels,
                 self.spectral.fft_size,

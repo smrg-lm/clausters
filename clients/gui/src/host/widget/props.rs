@@ -237,7 +237,7 @@ fn normalized_window(start: f64, len: f64) -> (f64, f64) {
 /// a given widget. Over a frequency axis this pair is the window that was
 /// **asked** for and not necessarily the one on the screen: the analysis has a
 /// resolution, and
-/// [`SignalElement::freq_window`](crate::host::signal::SignalElement::freq_window)
+/// [`SignalElement::freq_window`](crate::host::elements::signal::SignalElement::freq_window)
 /// opens the request wherever it is finer than the bins are where it sits.
 ///
 /// `link` is the widget's **navigation group** (see `host::timeline`): every

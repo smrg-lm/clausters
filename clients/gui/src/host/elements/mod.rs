@@ -41,6 +41,7 @@ mod number;
 pub(crate) mod patch;
 #[cfg(feature = "notation")]
 mod score;
+pub mod signal;
 mod slider;
 mod text;
 mod toggle;
@@ -63,8 +64,8 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         #[cfg(feature = "notation")]
         "score" => score::build,
         // Every view of a signal is one element: the props say which point of
-        // the product it is (`host::signal`), so one name answers for six.
-        "signal" => super::signal::build,
+        // the product it is (`elements::signal`), so one name answers for six.
+        "signal" => signal::build,
         "number" => number::build,
         "slider" => slider::build,
         "text" => text::build,

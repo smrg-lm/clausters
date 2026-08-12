@@ -22,16 +22,17 @@
 
 use serde_json::{Map, Value};
 
-use super::super::layout::Rect;
-use super::super::metrics::Metrics;
-use super::super::paint::Draw;
-use super::super::widget::element::BodyRole;
-use super::super::widget::element::{
+use super::{Presentation, SignalElement, Source};
+use crate::host::graphics::signal::{phasescope, plot, spectrum};
+use crate::host::layout::Rect;
+use crate::host::meters;
+use crate::host::metrics::Metrics;
+use crate::host::paint::Draw;
+use crate::host::widget::element::BodyRole;
+use crate::host::widget::element::{
     Ctx, Element, FreqAxis, Live, Loaded, Needs, SlotFill, SlotFrame, TextureLook,
 };
-use super::super::widget::{EditorProps, GestureMap};
-use super::super::{meters, phasescope, plot, spectrum};
-use super::{Presentation, SignalElement, Source};
+use crate::host::widget::{EditorProps, GestureMap};
 
 /// Builds the element from a `signal` node's props — every view of a signal,
 /// in one constructor, because there is one element: the props say which point
@@ -40,9 +41,7 @@ pub(crate) fn build(
     props: &Map<String, Value>,
     blobs: &[Vec<u8>],
 ) -> Result<Box<dyn Element>, String> {
-    Ok(Box::new(super::super::widget::signal_element(
-        props, blobs,
-    )?))
+    Ok(Box::new(crate::host::widget::signal_element(props, blobs)?))
 }
 
 impl Element for SignalElement {
@@ -72,8 +71,8 @@ impl Element for SignalElement {
                             window_ms: bus.window_ms,
                             trigger: bus.trigger,
                             overlay: self.display.overlay,
-                            ruler: self.editor.ruler != super::super::widget::Ruler::Off,
-                            ruler_y: self.editor.ruler_y != super::super::widget::RulerY::Off,
+                            ruler: self.editor.ruler != crate::host::widget::Ruler::Off,
+                            ruler_y: self.editor.ruler_y != crate::host::widget::RulerY::Off,
                             label: self.display.label.as_deref(),
                         },
                     );
@@ -106,8 +105,8 @@ impl Element for SignalElement {
                     db_ceil: self.spectral.db_ceil,
                     freq_scale: self.spectral.freq_scale,
                     peak_hold: self.spectral.peak_hold,
-                    ruler: self.editor.ruler != super::super::widget::Ruler::Off,
-                    ruler_y: self.editor.ruler_y != super::super::widget::RulerY::Off,
+                    ruler: self.editor.ruler != crate::host::widget::Ruler::Off,
+                    ruler_y: self.editor.ruler_y != crate::host::widget::RulerY::Off,
                     // The window the axis can show, not the one that was asked
                     // for: the floor of the analysis is part of the drawing.
                     x_view: self.freq_window(ctx.world.sample_rate),
@@ -191,7 +190,7 @@ impl Element for SignalElement {
             return None;
         }
         let body =
-            super::super::frame::timeline_body(ctx.rect, &self.editor, ctx.indent, ctx.metrics);
+            crate::host::frame::timeline_body(ctx.rect, &self.editor, ctx.indent, ctx.metrics);
         match self.presentation {
             Presentation::Signal => Some(SlotFrame::Waveform {
                 body,
@@ -315,7 +314,7 @@ impl SignalElement {
             min: self.value.min,
             max: self.value.max,
             ruler: self.editor.ruler,
-            ruler_y: self.editor.ruler_y != super::super::widget::RulerY::Off,
+            ruler_y: self.editor.ruler_y != crate::host::widget::RulerY::Off,
             spectrum: self.analysis.as_deref(),
             db_floor: self.spectral.db_floor,
             db_ceil: self.spectral.db_ceil,

@@ -5,7 +5,7 @@
 
 use clausters_core::osc::OscType;
 
-use super::super::signal::Presentation;
+use super::super::elements::signal::Presentation;
 use super::element::SlotKind;
 use super::*;
 use crate::spectrogram::FreqScale;
