@@ -17,8 +17,8 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::controls;
 use crate::host::font;
+use crate::host::graphics::controls;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;

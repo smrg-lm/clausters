@@ -9,7 +9,7 @@
 
 use serde_json::{Map, Value};
 
-use crate::host::nodetree;
+use crate::host::graphics::nodetree;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Ctx, Element, Needs};
 use crate::host::widget::parse;

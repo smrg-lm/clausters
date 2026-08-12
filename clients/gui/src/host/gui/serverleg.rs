@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 
 use crate::host::fetch::{FetchStep, WaveWant};
 use crate::host::frame;
-use crate::host::nodetree::NodeTree;
+use crate::host::graphics::nodetree::NodeTree;
 use crate::host::widget::Widget;
 use crate::host::widget::element::{Loaded, SlotKind};
 use crate::waveform::WaveformData;

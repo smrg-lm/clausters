@@ -23,9 +23,9 @@
 use serde_json::{Map, Value};
 
 use super::{Presentation, SignalElement, Source};
+use crate::host::graphics::meters;
 use crate::host::graphics::signal::{phasescope, plot, spectrum};
 use crate::host::layout::Rect;
-use crate::host::meters;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::BodyRole;

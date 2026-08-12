@@ -2,16 +2,16 @@
 //! where a click on that drawing lands.
 //!
 //! A leaf of the widget catalog is two files, and the split is by *who asks*.
-//! The [`elements`](super::elements) half is the surface the passes see: an
+//! The [`elements`](crate::host::elements) half is the surface the passes see: an
 //! `impl Element` answering `set`, `needs`, `natural`, `slot`, `body_role` —
 //! one method per question the frame, the gesture machine or a `/gui_query`
 //! puts to it at a given moment. This half is what that element **knows**: the
-//! data shape, the geometry, the drawing over a [`Draw`](super::paint::Draw),
+//! data shape, the geometry, the drawing over a [`Draw`](crate::host::paint::Draw),
 //! and the hit-test primitives that invert that drawing.
 //!
 //! The boundary is stated negatively, and it is what makes the half worth
 //! separating: nothing here mentions [`Host`](super::Host), the
-//! [`Element`](super::widget::element::Element) trait, a props map, OSC or a
+//! [`Element`](crate::host::widget::element::Element) trait, a props map, OSC or a
 //! GPU device. Every module in it is unit-testable without a window, which is
 //! the property the whole crate leans on for its coverage.
 //!
@@ -23,4 +23,15 @@
 //! and may serve no element at all (a `track` is a container, and its lane is
 //! still drawn here).
 
+pub mod bpf;
+pub mod controls;
+pub mod meters;
+pub mod nodetree;
+pub mod patch;
+pub mod piano;
+pub mod pianoroll;
+#[cfg(feature = "notation")]
+pub mod score;
 pub mod signal;
+pub mod textedit;
+pub mod track;

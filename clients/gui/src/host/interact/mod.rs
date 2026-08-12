@@ -32,7 +32,7 @@
 //!
 //! [`Host`]: super::Host
 //! [`layout`]: super::layout
-//! [`controls`]: super::controls
+//! [`controls`]: crate::host::graphics::controls
 
 mod coords;
 mod edit;
@@ -45,7 +45,7 @@ mod tests;
 /// A lane header's part, re-exported so the gesture machine names one without
 /// reaching into the lane's geometry module: the header is the lane's chrome,
 /// and this is the door onto it.
-pub(crate) use super::track::HeaderPart;
+pub(crate) use crate::host::graphics::track::HeaderPart;
 
 pub(crate) use coords::{
     ClipPart, Coords, Frame, Hit, clip_drag_placement, local_time_of, plane_of, sample_at, time_of,

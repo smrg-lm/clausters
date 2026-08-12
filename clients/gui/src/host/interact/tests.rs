@@ -6,10 +6,12 @@ use clausters_core::osc::{OscMessage, OscPacket, OscType};
 
 use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
-use super::super::{ClientId, GUI_DEF, Host, pianoroll, track};
+use super::super::{ClientId, GUI_DEF, Host};
 use super::coords::clip_part;
 use super::coords::snap;
 use super::*;
+use crate::host::graphics::pianoroll;
+use crate::host::graphics::track;
 use crate::viewport::View;
 
 fn from() -> ClientId {

@@ -22,9 +22,9 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use super::BusSource;
-use super::nodetree::NodeTree;
 use super::timeline::TimelineGroups;
 use super::widget::Rate;
+use crate::host::graphics::nodetree::NodeTree;
 
 /// The outside, as one frame sees it. Read-only, identical for every element.
 pub struct World<'a> {

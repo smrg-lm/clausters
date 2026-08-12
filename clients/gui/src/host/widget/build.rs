@@ -108,7 +108,7 @@ pub(super) fn build_kind(
             snap: number_f64(props, "snap", 0.0).max(0.0),
             // Presence-driven: a lane that names no `mute` offers no mute
             // button, so a header stays the name strip it always was.
-            header: crate::host::track::Header {
+            header: crate::host::graphics::track::Header {
                 w: props
                     .get("header_w")
                     .and_then(Value::as_f64)

@@ -9,12 +9,12 @@
 //! interaction *state* (what is pressed, drag anchors) lives in the windowed
 //! front, which calls these.
 
-use super::font;
-use super::layout::Rect;
-use super::metrics::Metrics;
-use super::paint::{Color, Draw, Mesh};
 use super::textedit;
-use super::widget::{Align, Range};
+use crate::host::font;
+use crate::host::layout::Rect;
+use crate::host::metrics::Metrics;
+use crate::host::paint::{Color, Draw, Mesh};
+use crate::host::widget::{Align, Range};
 
 /// The label strip height when a control carries a label, else 0 — **and 0 when
 /// the cell cannot hold both**.

@@ -8,7 +8,7 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
-use crate::host::controls;
+use crate::host::graphics::controls;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Ctx, Element, Needs};

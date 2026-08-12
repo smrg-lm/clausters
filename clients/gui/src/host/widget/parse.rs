@@ -42,9 +42,11 @@ pub(crate) fn as_props(v: &Value) -> Option<serde_json::Map<String, Value>> {
 
 /// Parses a piano-roll clip's `notes`: a flat `[start, dur, pitch, …]` array
 /// (three numbers per note, the flat convention the `bpf` points use), each a
-/// [`crate::host::track::Note`]. A short/absent/malformed array yields no notes (the
+/// [`crate::host::graphics::track::Note`]. A short/absent/malformed array yields no notes (the
 /// clip then draws a waveform body).
-pub(crate) fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<crate::host::track::Note> {
+pub(crate) fn parse_notes(
+    props: &serde_json::Map<String, Value>,
+) -> Vec<crate::host::graphics::track::Note> {
     let Some(Value::Array(items)) = props.get("notes") else {
         return Vec::new();
     };
@@ -57,7 +59,7 @@ pub(crate) fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<crate::
     items
         .chunks_exact(stride)
         .filter_map(|c| {
-            let mut n = crate::host::track::Note::new(
+            let mut n = crate::host::graphics::track::Note::new(
                 c[0].as_f64()?.max(0.0),
                 c[1].as_f64()?.max(0.0),
                 c[2].as_f64()? as f32,
@@ -76,7 +78,7 @@ pub(crate) fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<crate::
 /// meaning none). A trailing partial pair is dropped.
 pub(crate) fn parse_osc(
     props: &serde_json::Map<String, Value>,
-) -> Vec<crate::host::pianoroll::OscMark> {
+) -> Vec<crate::host::graphics::pianoroll::OscMark> {
     let Some(Value::Array(items)) = props.get("osc") else {
         return Vec::new();
     };
@@ -85,7 +87,7 @@ pub(crate) fn parse_osc(
         .filter_map(|c| {
             let time = c[0].as_f64()?.max(0.0);
             let label = c[1].as_str().filter(|s| !s.is_empty()).map(str::to_string);
-            Some(crate::host::pianoroll::OscMark { time, label })
+            Some(crate::host::graphics::pianoroll::OscMark { time, label })
         })
         .collect()
 }
@@ -108,8 +110,10 @@ pub(crate) fn voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String,
 /// `[member, control, bus]`). A malformed entry is skipped, so a partial patch
 /// still draws.
 #[cfg(feature = "patcher")]
-pub(crate) fn parse_patch(props: &serde_json::Map<String, Value>) -> crate::host::patch::PatchDraw {
-    use crate::host::patch::{BoxRole, Cord, Obj, PatchDraw};
+pub(crate) fn parse_patch(
+    props: &serde_json::Map<String, Value>,
+) -> crate::host::graphics::patch::PatchDraw {
+    use crate::host::graphics::patch::{BoxRole, Cord, Obj, PatchDraw};
 
     let boxes = props
         .get("boxes")
@@ -159,8 +163,8 @@ pub(crate) fn parse_patch(props: &serde_json::Map<String, Value>) -> crate::host
 /// Parses a box's port array: each entry a plain name string (audio, the
 /// default) or an object `{"name": …, "rate": "audio"|"control"|"init"}`.
 #[cfg(feature = "patcher")]
-pub(crate) fn parse_ports(v: Option<&Value>) -> Vec<crate::host::patch::Port> {
-    use crate::host::patch::Port;
+pub(crate) fn parse_ports(v: Option<&Value>) -> Vec<crate::host::graphics::patch::Port> {
+    use crate::host::graphics::patch::Port;
     v.and_then(Value::as_array)
         .map(|ps| {
             ps.iter()

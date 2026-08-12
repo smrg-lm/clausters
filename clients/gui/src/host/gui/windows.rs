@@ -12,9 +12,9 @@ use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 
+use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
 use crate::host::bulk::MmapLoader;
-use crate::host::canvas::CanvasView;
 use crate::host::elements::signal;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
 use crate::host::paint::Painter;

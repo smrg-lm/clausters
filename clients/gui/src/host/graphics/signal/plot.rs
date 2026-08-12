@@ -32,11 +32,11 @@
 use crate::spectrogram::{FreqScale, Stft};
 
 use super::trace::{self, Trace, TraceStyle};
-use crate::host::controls::body_rect;
 use crate::host::font;
 use crate::host::frame::{lane_at, lane_rect};
+use crate::host::graphics::controls::body_rect;
+use crate::host::graphics::meters::fraction;
 use crate::host::layout::Rect;
-use crate::host::meters::fraction;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::ruler::{self, TimeUnit};
@@ -343,7 +343,7 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
     // The FFT size and active scale, named over the view (the live views'
     // corner slot); the size pads to 4 digits so the text never moves.
     let tag = format!("{:>4} {}", spec.fft_size, ruler::scale_tag(p.freq_scale));
-    crate::host::meters::value_text(&mut Draw::new(mesh, m, theme), &tag, g.body);
+    crate::host::graphics::meters::value_text(&mut Draw::new(mesh, m, theme), &tag, g.body);
     let nyquist = spec.nyquist.max(1.0);
     let f_lo = (F_LO_HZ / nyquist).clamp(1e-5, 0.5);
     if let Some(strip) = g.x_strip {

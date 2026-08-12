@@ -7,7 +7,7 @@
 //! rectangle per clip with its label and a body — a decimated waveform, or a
 //! **piano-roll** of note events when the clip carries `notes` (the events
 //! track's scalar-vertical view). Pure over a [`Draw`] (the flat-geometry
-//! [`super::paint`] painter), so it is unit-testable without a window — the
+//! [`crate::host::paint`] painter), so it is unit-testable without a window — the
 //! same posture as the static `plot`/`bpf` views.
 //!
 //! The tracks of one window share **one time axis** (aligned lanes): the frame
@@ -15,14 +15,14 @@
 //! lane's clips through the same [`View`], so a clip at offset 8 lines up
 //! across tracks. Placement/geometry is display logic — this stays gui-side.
 
-use super::font;
-use super::graphics::signal::trace::{self, Trace, TraceStyle};
-use super::layout::Rect;
 use super::meters::fraction;
-use super::metrics::Metrics;
-use super::paint::Draw;
-use super::timeline;
-use super::widget::{Widget, WidgetKind};
+use super::signal::trace::{self, Trace, TraceStyle};
+use crate::host::font;
+use crate::host::layout::Rect;
+use crate::host::metrics::Metrics;
+use crate::host::paint::Draw;
+use crate::host::timeline;
+use crate::host::widget::{Widget, WidgetKind};
 use crate::viewport::View;
 
 /// A piano-roll note. Re-exported from [`super::pianoroll`], the module that
@@ -43,7 +43,7 @@ pub use super::pianoroll::Note;
 /// `w` overrides the whole calculation, because an explicit size always wins
 /// over a natural one (the layout's own rule) — and because the *shared* indent
 /// of a navigation group is the widest wish on it
-/// ([`super::timeline::group_indents`]), so one lane declaring a wide header
+/// ([`crate::host::timeline::group_indents`]), so one lane declaring a wide header
 /// moves the axis for the roll and the ruler stacked with it.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Header {
@@ -68,7 +68,7 @@ impl Header {
     /// row when it carries one. A declared `w` replaces it outright.
     pub fn width(&self, m: &Metrics) -> f32 {
         if let Some(w) = self.w {
-            return super::metrics::snap_px(w, m.ui_scale).max(0.0);
+            return crate::host::metrics::snap_px(w, m.ui_scale).max(0.0);
         }
         if !self.has_controls() {
             return m.header_w;
@@ -186,23 +186,24 @@ pub fn level_at(rect: Rect, x: f64) -> f32 {
 fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
     let (mesh, m, theme) = d.parts();
     let parts = header_parts(band, header, m);
-    let mut toggle = |rect: Option<Rect>, on: bool, letter: &str, lit: super::paint::Color| {
-        let Some(r) = rect else { return };
-        mesh.rect(r, theme.track);
-        if on {
-            let inset = r.h.min(r.w) * 0.22;
-            mesh.rect(
-                Rect::new(
-                    r.x + inset,
-                    r.y + inset,
-                    r.w - 2.0 * inset,
-                    r.h - 2.0 * inset,
-                ),
-                lit,
-            );
-        }
-        font::text_centered(mesh, letter, r, m.caption_scale, theme.text);
-    };
+    let mut toggle =
+        |rect: Option<Rect>, on: bool, letter: &str, lit: crate::host::paint::Color| {
+            let Some(r) = rect else { return };
+            mesh.rect(r, theme.track);
+            if on {
+                let inset = r.h.min(r.w) * 0.22;
+                mesh.rect(
+                    Rect::new(
+                        r.x + inset,
+                        r.y + inset,
+                        r.w - 2.0 * inset,
+                        r.h - 2.0 * inset,
+                    ),
+                    lit,
+                );
+            }
+            font::text_centered(mesh, letter, r, m.caption_scale, theme.text);
+        };
     toggle(parts.mute, header.mute == Some(true), "M", theme.warn);
     toggle(parts.solo, header.solo == Some(true), "S", theme.hilite);
     if let (Some(r), Some(level)) = (parts.fader, header.level) {
@@ -243,7 +244,7 @@ pub fn window_nav(tree: &Widget) -> View {
 /// is the un-rulered default).
 ///
 /// `indent` is the **group's**, not the lane's own header width (see
-/// [`super::timeline::group_indents`]): a lane sharing an axis with a roll or a
+/// [`crate::host::timeline::group_indents`]): a lane sharing an axis with a roll or a
 /// ruler starts its body where they all do.
 pub fn lane_body(rect: Rect, ruler: bool, indent: f32, m: &Metrics) -> Rect {
     let hw = indent.min(rect.w);
@@ -791,9 +792,9 @@ mod tests {
         props.insert("max".into(), serde_json::Value::from(max));
         // No notes at all is a clip that has none: the body it grows is the
         // empty one, exactly as `clip_bodies` builds it.
-        WidgetKind::Custom(match super::super::elements::notes::body(&props) {
+        WidgetKind::Custom(match crate::host::elements::notes::body(&props) {
             Some(roll) => Box::new(roll),
-            None => Box::new(super::super::elements::notes::empty_body()),
+            None => Box::new(crate::host::elements::notes::empty_body()),
         })
     }
 

@@ -13,7 +13,7 @@
 //! string; [`Element::press`] drops the caret where the click landed and
 //! [`Element::drag`] extends the selection from it, so the drag's anchor is a
 //! field of this struct rather than a variant of the machine's `Drag`. The
-//! *model* stays [`crate::host::textedit`] — pure caret arithmetic
+//! *model* stays [`crate::host::graphics::textedit`] — pure caret arithmetic
 //! over a `String`, unit-tested without a window — and the drawing stays
 //! [`controls::field`], which is the same rule every ported leaf follows: the
 //! element owns its state, not its geometry.
@@ -27,10 +27,10 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::controls;
+use crate::host::graphics::controls;
+use crate::host::graphics::textedit::{self, Caret};
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::textedit::{self, Caret};
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, body_inset, control_box, label_strip};

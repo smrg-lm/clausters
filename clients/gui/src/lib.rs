@@ -6,6 +6,7 @@
 //! - [`peaks`]: resolution-matched min/max peak pyramid (waveform analysis),
 //!   re-exported from [`clausters_core::peaks`] — the analysis lives once in the
 //!   shared core so every client builds the identical mmap-able cache.
+//! - [`canvas`]: a script-supplied WGSL shader run over a widget area.
 //! - [`spectrogram`]: STFT analysis (its forward FFT is `clausters_core::fft`)
 //!   and its GPU renderer.
 //! - [`waveform`]: waveform data holder and its GPU renderer.
@@ -54,6 +55,7 @@ pub use host::widget::element::{self, Claim, Element, Needs, register, unregiste
 /// `crate::peaks`.
 pub use clausters_core::peaks;
 
+pub mod canvas;
 pub mod spectrogram;
 pub mod view;
 pub mod viewport;

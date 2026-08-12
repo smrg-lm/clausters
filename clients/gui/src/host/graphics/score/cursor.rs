@@ -18,10 +18,10 @@
 
 use std::collections::HashMap;
 
-use super::super::layout::Rect;
 use super::glyphs::path_bounds;
 use super::tess::staff_distance;
 use super::{Affine, Bounds, HitBox, Prim, ScoreData, Staff};
+use crate::host::layout::Rect;
 
 impl ScoreData {
     /// Rebuild the hit-testing index from the placed primitives: one page-unit

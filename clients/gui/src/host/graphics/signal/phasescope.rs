@@ -16,8 +16,8 @@
 
 use clausters_core::measure::{correlation, lissajous_point};
 
-use crate::host::controls::body_rect;
 use crate::host::font;
+use crate::host::graphics::controls::body_rect;
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
 

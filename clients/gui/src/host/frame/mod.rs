@@ -41,10 +41,11 @@ use crate::view::{Framing, Renderers, TimelineView};
 use crate::viewport::View;
 use crate::waveform::{WaveformData, WaveformView};
 
-use super::canvas::{self, CanvasView};
 use super::layout::{self, Rect};
 use super::metrics::Metrics;
+use crate::canvas::{self, CanvasView};
 
+use super::font;
 use super::paint::{Draw, Ink, Mesh, Painter};
 use super::ruler::{self, TimeUnit};
 use super::theme::{Theme, with_alpha};
@@ -52,7 +53,8 @@ use super::timeline::{GroupState, group_key};
 use super::widget::element::{Ctx, Loaded, SlotFill, SlotFrame, TimeSpace};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
-use super::{font, meters, track};
+use crate::host::graphics::meters;
+use crate::host::graphics::track;
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
 pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {

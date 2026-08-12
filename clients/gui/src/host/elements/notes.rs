@@ -28,6 +28,7 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
+use crate::host::graphics::pianoroll;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
@@ -38,7 +39,7 @@ use crate::host::widget::parse::{
     self, label, number, number_f64, parse_notes, parse_osc, set_f, set_label, truthy,
 };
 use crate::host::widget::{EditorProps, GestureMap, Ruler};
-use crate::host::{font, pianoroll, ruler};
+use crate::host::{font, ruler};
 use crate::viewport::View;
 
 /// The default pitch compass of a roll: the range of an 88-key piano.

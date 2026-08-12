@@ -16,10 +16,10 @@ use lyon::tessellation::{
     BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers,
 };
 
-use super::super::layout::Rect;
-use super::super::paint::{Color, Mesh};
 use super::glyphs::build_path;
 use super::{Affine, Prim, ScoreColors, ScoreData, Staff};
+use crate::host::layout::Rect;
+use crate::host::paint::{Color, Mesh};
 
 impl ScoreData {
     /// `fit`, shifted by the drag preview when `id` is the element being
@@ -119,9 +119,9 @@ impl ScoreData {
                 Prim::Text { s, x, y, size, .. } => {
                     // baseline -> top-left for the host font; em height in px.
                     let em = (size * fit.sy).abs();
-                    let scale = (em / super::super::font::GLYPH_H as f32).max(0.5);
+                    let scale = (em / crate::host::font::GLYPH_H as f32).max(0.5);
                     let [sx, sy] = fit.apply(*x, *y);
-                    super::super::font::text(mesh, s, sx, sy - em, scale, color);
+                    crate::host::font::text(mesh, s, sx, sy - em, scale, color);
                 }
             }
         }
@@ -142,7 +142,7 @@ impl ScoreData {
             let b = h.bounds.grown(20.0).transformed(fit);
             mesh.rect(
                 Rect::new(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0),
-                super::super::theme::with_alpha(color, 0.30),
+                crate::host::theme::with_alpha(color, 0.30),
             );
         }
     }

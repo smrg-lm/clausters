@@ -2,8 +2,8 @@
 //!
 //! These are the cheap counterparts of the heavy GPU views: their *data* is a
 //! single control bus read straight from the shared-memory segment each frame
-//! (see [`super::shm`]), so they need no buffer, no analysis and no dedicated
-//! pipeline — just the flat-geometry painter ([`super::paint`]) plus bitmap text,
+//! (see [`crate::host::shm`]), so they need no buffer, no analysis and no dedicated
+//! pipeline — just the flat-geometry painter ([`crate::host::paint`]) plus bitmap text,
 //! exactly like the standard controls. The drawing lives here as pure functions
 //! over a [`Draw`]; the windowed front supplies the live value(s) read from
 //! shared memory and keeps the scope's rolling history. Keeping it GPU- and
@@ -12,13 +12,13 @@
 use crate::spectrogram::FreqScale;
 
 use super::controls::body_rect;
-use super::font;
-use super::frame::lane_rect;
-use super::graphics::signal::trace;
-use super::layout::Rect;
-use super::live::TapWindow;
-use super::paint::{Color, Draw};
-use super::ruler;
+use super::signal::trace;
+use crate::host::font;
+use crate::host::frame::lane_rect;
+use crate::host::layout::Rect;
+use crate::host::live::TapWindow;
+use crate::host::paint::{Color, Draw};
+use crate::host::ruler;
 use crate::viewport::{Axis, Unit};
 
 /// The 0..1 position of `value` in `[min, max]`, clamped. A degenerate range

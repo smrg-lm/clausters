@@ -373,7 +373,9 @@ mod tests {
                 0,
                 |x| (x - rect.x) as f64 / rect.w as f64 * n,
                 |s| rect.x + (s / n) as f32 * rect.w,
-                move |v| rect.y + rect.h * (1.0 - crate::host::meters::fraction(v, min, max)),
+                move |v| {
+                    rect.y + rect.h * (1.0 - crate::host::graphics::meters::fraction(v, min, max))
+                },
                 TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0),
             );
             mesh.extent().expect("the signal drew").h

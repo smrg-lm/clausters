@@ -22,10 +22,10 @@ use clausters_core::window::Window;
 
 use crate::spectrogram::FreqScale;
 
-use crate::host::controls::body_rect;
 use crate::host::font;
+use crate::host::graphics::controls::body_rect;
+use crate::host::graphics::meters::fraction;
 use crate::host::layout::Rect;
-use crate::host::meters::fraction;
 use crate::host::paint::{Color, Draw, Mesh};
 use crate::host::ruler;
 
@@ -309,7 +309,7 @@ pub(crate) fn draw_spectrum(
     // lock/free corner): log/mel/bark are not tellable apart from the tick
     // spacing at a glance. The size pads to 4 digits so the text never moves.
     let tag = format!("{:>4} {}", p.fft_size, ruler::scale_tag(p.freq_scale));
-    crate::host::meters::value_text(&mut Draw::new(mesh, m, theme), &tag, body);
+    crate::host::graphics::meters::value_text(&mut Draw::new(mesh, m, theme), &tag, body);
 
     let (nyquist, f_lo_norm) = axis_geometry(p.sample_rate);
     let (nyquist, sr) = (nyquist as f32, nyquist as f32 * 2.0);

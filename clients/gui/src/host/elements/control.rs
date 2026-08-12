@@ -23,7 +23,7 @@
 use clausters_core::osc::OscType;
 use serde_json::Value;
 
-use crate::host::controls;
+use crate::host::graphics::controls;
 use crate::host::layout::Rect;
 use crate::host::widget::element::{Claim, Events, Input};
 use crate::host::widget::{Range, parse};

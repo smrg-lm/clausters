@@ -18,13 +18,13 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
+use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
-use crate::host::canvas::CanvasView;
 use crate::host::fetch::BufferFetches;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::Gestures;
+use crate::host::graphics::nodetree::NodeTree;
 use crate::host::live::{self, tree_animates, tree_has_live_widget};
-use crate::host::nodetree::NodeTree;
 use crate::host::paint::Painter;
 // Only the MIDI painting reaches a roll by its navigation group.
 #[cfg(feature = "midi")]

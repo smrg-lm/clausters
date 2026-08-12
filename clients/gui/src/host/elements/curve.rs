@@ -18,8 +18,8 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::bpf::{self, Axes, BpfPoint};
-use crate::host::controls;
+use crate::host::graphics::bpf::{self, Axes, BpfPoint};
+use crate::host::graphics::controls;
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{BodyRole, Claim, Ctx, Element, Events, Input};

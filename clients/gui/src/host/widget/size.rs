@@ -45,10 +45,10 @@
 //! sized by what it holds — see [`Widget::hug_size`], which is still one
 //! bottom-up walk over these same pure functions and not a measurement pass.
 
-use super::super::controls;
 use super::super::font;
 use super::super::metrics::{Metrics, snap_px};
 use super::{Flow, Layout, Range, Widget, WidgetKind};
+use crate::host::graphics::controls;
 
 /// A widget's wanted extent per axis, `None` on an axis meaning elastic.
 pub type Natural = (Option<f32>, Option<f32>);
@@ -67,7 +67,7 @@ pub(crate) fn control_box(size: f32, m: &Metrics) -> f32 {
 }
 
 /// The strip a labelled control reserves above its body (zero when unlabelled)
-/// — [`super::super::controls::body_rect_at`]'s own reservation.
+/// — [`crate::host::graphics::controls::body_rect_at`]'s own reservation.
 pub(crate) fn label_strip(has_label: bool, size: f32, m: &Metrics) -> f32 {
     if has_label {
         font::height(size) + m.pad
@@ -84,7 +84,7 @@ pub(crate) fn text_box(text: &str, size: f32, m: &Metrics) -> f32 {
 
 /// The width a control's cell needs to show `text` inside its **body**: the
 /// body is inset from the cell and the text from the body
-/// ([`super::super::controls::field`]), so a field pays the padding twice.
+/// ([`crate::host::graphics::controls::field`]), so a field pays the padding twice.
 pub(crate) fn field_w(text: &str, size: f32, m: &Metrics) -> f32 {
     font::width(text, size) + 4.0 * m.pad
 }
@@ -303,7 +303,7 @@ pub(crate) fn knob_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::controls;
+    use crate::host::graphics::controls;
     use crate::host::guidef::GuiNode;
     use crate::host::layout::Rect;
     use crate::host::widget::Widget;

@@ -438,7 +438,12 @@ fn place_on_time<'a>(
     let body = match &widget.kind {
         WidgetKind::Track { editor, .. } => {
             let ruler_on = editor.ruler != super::widget::Ruler::Off;
-            super::track::lane_body(area, ruler_on, ctx.indent(widget), &space.metrics)
+            crate::host::graphics::track::lane_body(
+                area,
+                ruler_on,
+                ctx.indent(widget),
+                &space.metrics,
+            )
         }
         // A clip's own box is the coordinate system its bodies fill.
         _ => area,
@@ -447,7 +452,7 @@ fn place_on_time<'a>(
         WidgetKind::Track { editor, .. } => widget
             .id
             .and_then(|id| ctx.axis.nav(id, editor.link))
-            .unwrap_or_else(|| super::track::window_nav(widget)),
+            .unwrap_or_else(|| crate::host::graphics::track::window_nav(widget)),
         // The clip's own axis: the slice of its span its rectangle shows,
         // handed down by the lane that placed it (its whole span when nothing
         // did — a clip outside a lane, or a measurement pass with no groups).
@@ -459,14 +464,16 @@ fn place_on_time<'a>(
     for child in &widget.children {
         let (rect, inner) = match (&widget.kind, &child.kind) {
             (WidgetKind::Track { .. }, WidgetKind::Clip { offset, dur, .. }) => {
-                let rect = match super::track::clip_x_range(body, &nav, *offset, *dur) {
-                    Some((x0, x1)) => super::track::clip_rect(body, x0, x1),
-                    None => Rect::new(body.x, body.y, 0.0, 0.0),
-                };
+                let rect =
+                    match crate::host::graphics::track::clip_x_range(body, &nav, *offset, *dur) {
+                        Some((x0, x1)) => crate::host::graphics::track::clip_rect(body, x0, x1),
+                        None => Rect::new(body.x, body.y, 0.0, 0.0),
+                    };
                 // The lane hands the clip its own axis here, and that is the
                 // last time the lane's window is mentioned: from the clip
                 // inwards everything reads `(rect, time)`.
-                let local = super::track::clip_local_view(body, &nav, *offset, *dur, rect);
+                let local =
+                    crate::host::graphics::track::clip_local_view(body, &nav, *offset, *dur, rect);
                 (rect, space.on_time(local))
             }
             // Anything else a time container holds fills its body: a clip's

@@ -6,11 +6,11 @@
 use lyon::tessellation::FillTessellator;
 use serde_json::{Map, Value};
 
-use super::super::layout::Rect;
-use super::super::paint::Mesh;
 use super::glyphs::build_path;
 use super::tess::fill_path;
 use super::*;
+use crate::host::layout::Rect;
+use crate::host::paint::Mesh;
 
 /// One opaque palette for the render tests: they assert that geometry
 /// lands, not which role painted it.

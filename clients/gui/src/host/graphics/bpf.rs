@@ -29,9 +29,9 @@ use clausters_core::envshape::{SHAPE_CURVE, SHAPE_LINEAR, shape_value};
 use clausters_core::osc::OscType;
 use serde_json::Value;
 
-use super::layout::Rect;
-use super::metrics::Metrics;
-use super::paint::Draw;
+use crate::host::layout::Rect;
+use crate::host::metrics::Metrics;
+use crate::host::paint::Draw;
 use crate::viewport::View;
 
 /// The custom-curvature clamp — past this the segment is visually a step.

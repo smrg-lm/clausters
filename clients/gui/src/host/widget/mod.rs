@@ -140,7 +140,7 @@ pub enum WidgetKind {
     /// are its children); `label` names the track in a left header, `height`
     /// its lane weight when several tracks stack under one time axis. The
     /// **graphic unit** — the clip rectangles and the track header — is drawn
-    /// by [`super::track`]; the clips share one time axis (aligned tracks), the
+    /// by [`crate::host::graphics::track`]; the clips share one time axis (aligned tracks), the
     /// span being the longest clip end over the window's tracks. `snap` is the
     /// drag grid in timeline samples (0 = snap to whole samples) a clip's
     /// move/resize rounds to. `editor` is the shared chrome, of which a lane
@@ -155,8 +155,8 @@ pub enum WidgetKind {
         height: f32,
         snap: f64,
         /// The lane's gutter: how wide it is and what it carries there (see
-        /// [`super::track::Header`]).
-        header: super::track::Header,
+        /// [`crate::host::graphics::track::Header`]).
+        header: crate::host::graphics::track::Header,
         editor: EditorProps,
     },
     /// A **free-standing time ruler**: the shared axis of a navigation group,

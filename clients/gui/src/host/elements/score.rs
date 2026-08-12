@@ -5,7 +5,7 @@
 //! semantic display list, and everything here is a *reading* of that drawing —
 //! which element is under the cursor, how far up the staff a drag has moved it,
 //! where the playback cursor sits at a given millisecond. The page itself and
-//! all of that reading stay in [`crate::host::score`], which is the model; this
+//! all of that reading stay in [`crate::host::graphics::score`], which is the model; this
 //! file is only how the passes reach it.
 //!
 //! What the port collapses is the routing that model needed while the leaf was
@@ -26,8 +26,8 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
+use crate::host::graphics::score::{ScoreColors, ScoreData, ScoreDrag};
 use crate::host::paint::Draw;
-use crate::host::score::{ScoreColors, ScoreData, ScoreDrag};
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Needs};
 use crate::host::widget::parse;
 

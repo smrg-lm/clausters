@@ -4,13 +4,13 @@
 use clausters_core::osc::{OscMessage, OscPacket};
 
 use super::super::metrics::Metrics;
-#[cfg(feature = "patcher")]
-use super::super::patch;
 use super::super::widget::ScrollView;
 use super::super::widget::element::Key;
 use super::super::{ClientId, GUI_DEF, GUI_SET, Host, scroll};
 use super::*;
-use crate::host::piano;
+#[cfg(feature = "patcher")]
+use crate::host::graphics::patch;
+use crate::host::graphics::piano;
 
 fn from() -> ClientId {
     ClientId::Udp(std::net::SocketAddr::from((
@@ -229,7 +229,7 @@ fn patcher(host: &Host) -> &crate::host::elements::patch::Patch {
 }
 
 #[cfg(feature = "patcher")]
-fn patch_of(host: &Host) -> super::super::patch::PatchDraw {
+fn patch_of(host: &Host) -> crate::host::graphics::patch::PatchDraw {
     patcher(host).draw_state().clone()
 }
 
@@ -1242,7 +1242,7 @@ fn a_press_on_the_lane_header_works_its_controls_and_edits_back() {
         WidgetKind::Track { header, .. } => header.clone(),
         other => panic!("not a lane: {other:?}"),
     };
-    let parts = crate::host::track::header_parts(band, &header, &m);
+    let parts = crate::host::graphics::track::header_parts(band, &header, &m);
     let mid = |r: Rect| ((r.x + r.w / 2.0) as f64, (r.y + r.h / 2.0) as f64);
 
     // The mute toggles and says so.
@@ -1269,7 +1269,7 @@ fn a_press_on_the_lane_header_works_its_controls_and_edits_back() {
     assert!(!has_emit_tag(&effects, 70, "locate"));
 }
 
-fn lane_header_of(host: &Host) -> crate::host::track::Header {
+fn lane_header_of(host: &Host) -> crate::host::graphics::track::Header {
     match &host.window_def(1).unwrap().find(70).unwrap().kind {
         WidgetKind::Track { header, .. } => header.clone(),
         other => panic!("not a lane: {other:?}"),

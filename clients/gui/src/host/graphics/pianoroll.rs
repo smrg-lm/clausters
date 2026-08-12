@@ -1,6 +1,6 @@
 //! The piano-roll graphic primitives: a note grid, a piano keyboard gutter, a
 //! velocity lane and an OSC-event lane, all pure over a [`Draw`] (the
-//! flat-geometry [`super::paint`] painter) so they are unit-testable without a
+//! flat-geometry [`crate::host::paint`] painter) so they are unit-testable without a
 //! window — the static-view posture of `track`/`bpf`.
 //!
 //! This module is **shared by two consumers**, on the crate's standing rule
@@ -23,10 +23,10 @@
 use clausters_core::scale;
 use serde_json::Value;
 
-use super::font;
-use super::layout::Rect;
-use super::metrics::Metrics;
-use super::paint::Draw;
+use crate::host::font;
+use crate::host::layout::Rect;
+use crate::host::metrics::Metrics;
+use crate::host::paint::Draw;
 use crate::viewport::View;
 
 /// One note: its `start`/`dur` in timeline sample units (relative to the owning
@@ -98,7 +98,7 @@ pub struct OscMark {
 
 /// The keyboard gutter a roll asks for, device pixels — its *own* structural
 /// geometry. What it actually gets is its navigation group's shared indent
-/// (`super::timeline::group_indent`), which is this when the roll is alone on
+/// (`crate::host::timeline::group_indent`), which is this when the roll is alone on
 /// its axis and wider when it shares one with a lane.
 pub const KEYBOARD_W: f32 = 44.0;
 /// The velocity lane height, device pixels.

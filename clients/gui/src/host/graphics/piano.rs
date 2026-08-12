@@ -2,7 +2,7 @@
 //! out with **real piano proportions** (relative units, so it resizes freely),
 //! an overview strip spanning the full MIDI range for zoom/pan navigation, and
 //! the voice-mode `/synth_new`/`/node_set` message builders — all pure over a
-//! [`Draw`] (the flat-geometry [`super::paint`] painter) so everything is
+//! [`Draw`] (the flat-geometry [`crate::host::paint`] painter) so everything is
 //! unit-testable without a window.
 //!
 //! The key geometry follows the real instrument, expressed only as ratios of
@@ -21,11 +21,11 @@
 use clausters_core::osc::{OscMessage, OscType};
 use clausters_core::scale;
 
-use super::font;
-use super::layout::Rect;
-use super::metrics::Metrics;
-use super::paint::Draw;
-use super::theme::with_alpha;
+use crate::host::font;
+use crate::host::layout::Rect;
+use crate::host::metrics::Metrics;
+use crate::host::paint::Draw;
+use crate::host::theme::with_alpha;
 
 // --- Proportions (white-key units) -----------------------------------------
 

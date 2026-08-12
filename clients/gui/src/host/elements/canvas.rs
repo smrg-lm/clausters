@@ -19,9 +19,9 @@
 
 use serde_json::{Map, Value};
 
-use crate::host::canvas::{DEFAULT_SHADER, PARAM_COUNT};
-use crate::host::controls;
+use crate::canvas::{DEFAULT_SHADER, PARAM_COUNT};
 use crate::host::font;
+use crate::host::graphics::controls;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Ctx, Element, Needs, SlotFrame, SlotKind};
 use crate::host::widget::parse;

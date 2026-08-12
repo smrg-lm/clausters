@@ -538,7 +538,9 @@ impl Host {
         /// ([`Element::content_span`](super::widget::Element::content_span)).
         fn extent(widget: &Widget) -> Option<(i32, usize)> {
             let span = match &widget.kind {
-                super::widget::WidgetKind::Track { .. } => super::track::clips_span(widget),
+                super::widget::WidgetKind::Track { .. } => {
+                    crate::host::graphics::track::clips_span(widget)
+                }
                 kind => kind.content_span()?,
             };
             Some((widget.id?, span.ceil().max(0.0) as usize))
@@ -1657,7 +1659,7 @@ mod indent_tests {
         let m = Metrics::default();
         let placed = layout::layout(Rect::new(0.0, 0.0, 800.0, 400.0), &root, &m);
         // The widest wish wins, and the layout stamps it on every member.
-        let widest = m.header_w.max(super::super::pianoroll::KEYBOARD_W);
+        let widest = m.header_w.max(crate::host::graphics::pianoroll::KEYBOARD_W);
         assert_eq!(group_indents(&root, &m)[&GroupKey::Link(7)], widest);
         for p in &placed {
             if p.widget.kind.editor().is_some() {

@@ -35,37 +35,52 @@
 // compiles for `wasm32` unchanged). No sockets, no filesystem, no GPU bring-up —
 // every such coupling lives behind a trait whose impl is in the native shell
 // below.
+//
+// It is four families, and the grouping below is the second thing this file
+// says after the platform seam: what the wire means, what draws, what a pass
+// does, and the vocabulary all three read. A module stays flat here when the
+// *whole host* reads it, and goes in a directory when only its own consumers
+// do — which is why `paint` and `metrics` are files while the models are a
+// tree.
+
+// The protocol and the tree it holds: the generic document, the ids, the typed
+// schema the renderer reads, the leaves behind the trait, and the two places a
+// widget's value can go instead of the script.
 pub mod bind;
-pub mod bpf;
-pub mod canvas;
-pub mod controls;
 pub mod elements;
-pub mod fetch;
-pub mod font;
-pub mod frame;
-pub mod graphics;
 pub mod guidef;
-pub mod interact;
-pub mod layout;
-pub mod live;
-pub mod meters;
-pub mod metrics;
-pub mod nodetree;
-pub mod paint;
-pub mod patch;
-pub mod piano;
-pub mod pianoroll;
 pub mod registry;
-pub mod ruler;
-#[cfg(feature = "notation")]
-pub mod score;
-pub mod scroll;
-pub mod textedit;
-pub mod theme;
-pub mod timeline;
-pub mod track;
 pub mod widget;
+
+// The models: what a visual thing is shaped like, how it is drawn and where a
+// click on that drawing lands. Read by the elements, never the reverse.
+pub mod graphics;
+
+// The drawing vocabulary every widget and every pass names things in: one mesh
+// primitive, one face, and the two role tables (no paint site names an RGBA, no
+// layout site names a number).
+pub mod font;
+pub mod metrics;
+pub mod paint;
+pub mod theme;
+
+// Geometry and navigation: where a widget lands, and the axes several of them
+// share.
+pub mod layout;
+pub mod ruler;
+pub mod scroll;
+pub mod timeline;
+
+// The passes over that tree, and the read-only facts a frame hands them.
+pub mod frame;
+pub mod interact;
 pub mod world;
+
+// Where values and samples come from, on the agnostic side of the seam: the
+// per-frame bus reads and the buffer-fetch conversation. Their I/O ends are in
+// the shells below.
+pub mod fetch;
+pub mod live;
 
 // Booting a persisted bundle over the wire — the ordering/encoding half of the
 // browser standalone path, platform-agnostic and natively unit-tested (the
@@ -1457,7 +1472,9 @@ impl Host {
         self.voice_off(widget_id, pitch);
         let node = VOICE_ID_BASE + self.voice_counter;
         self.voice_counter = (self.voice_counter + 1) % VOICE_ID_SPAN;
-        self.send_to_server(piano::voice_on_msg(&name, node, pitch, velocity, &extra));
+        self.send_to_server(graphics::piano::voice_on_msg(
+            &name, node, pitch, velocity, &extra,
+        ));
         self.voices
             .entry(widget_id)
             .or_default()
@@ -1485,7 +1502,7 @@ impl Host {
             self.voices.remove(&widget_id);
         }
         for node in nodes {
-            self.send_to_server(piano::voice_off_msg(node));
+            self.send_to_server(graphics::piano::voice_off_msg(node));
         }
     }
 
@@ -1507,7 +1524,7 @@ impl Host {
         for id in stale {
             if let Some(list) = self.voices.remove(&id) {
                 for (_, node) in list {
-                    self.send_to_server(piano::voice_off_msg(node));
+                    self.send_to_server(graphics::piano::voice_off_msg(node));
                 }
             }
         }
@@ -1902,7 +1919,7 @@ mod tests {
             Some(Value::String(s)) => s,
             other => panic!("points are not the string carrier: {other:?}"),
         };
-        let parsed = bpf::parse_points(&Value::String(reported), 0.0, 1.0).unwrap();
+        let parsed = graphics::bpf::parse_points(&Value::String(reported), 0.0, 1.0).unwrap();
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[1].value, 1.0);
     }

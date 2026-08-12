@@ -11,9 +11,9 @@
 //!
 //! The module is platform-agnostic and window-free, so it unit-tests without a
 //! GPU and compiles to wasm unchanged. The gesture machine
-//! ([`super::gestures`]) drives these from key input, and the drawing/ hit-test
+//! ([`crate::host::gestures`]) drives these from key input, and the drawing/ hit-test
 //! layout helpers at the bottom are shared by the renderer ([`super::controls`])
-//! and the caret-placement door ([`super::interact`]), so what is drawn and what
+//! and the caret-placement door ([`crate::host::interact`]), so what is drawn and what
 //! is clicked never disagree.
 
 /// The caret and its optional selection anchor, as byte offsets into a `value`

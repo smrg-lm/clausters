@@ -4,7 +4,7 @@
 //! rests, accidentals, flags) plus engraving strokes and fills (staff lines,
 //! stems, ledger lines, beams, slurs, ties). None of it is data-viz, so it does
 //! not get its own GPU pipeline: every primitive is tessellated into the same
-//! flat-colored [`Mesh`](super::paint::Mesh) the rest of the chrome uses, which
+//! flat-colored [`Mesh`](crate::host::paint::Mesh) the rest of the chrome uses, which
 //! keeps it one upload, one draw, and WebGL2-safe by construction.
 //!
 //! The host is the *renderer*; it never depends on verovio. A client (the
@@ -39,7 +39,7 @@ mod tests;
 
 use std::collections::HashMap;
 
-use super::paint::Color;
+use crate::host::paint::Color;
 
 /// An affine map restricted to translate + non-uniform scale — the only
 /// transforms verovio emits (`translate(...)` and `scale(...)`, the glyph's

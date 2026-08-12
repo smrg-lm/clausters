@@ -11,7 +11,7 @@
 
 use serde_json::{Map, Value};
 
-use crate::host::meters;
+use crate::host::graphics::meters;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Ctx, Element, Needs};
 use crate::host::widget::{Rate, parse};

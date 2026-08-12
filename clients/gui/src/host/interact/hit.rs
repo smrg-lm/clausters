@@ -12,11 +12,12 @@
 //! renderer drew through**, never a parallel derivation of it: a note is grabbed
 //! by the pixels it was drawn on.
 
+use super::super::Host;
 use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
-use super::super::{Host, track};
 use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis, clip_part};
 use super::{ClipPart, HeaderPart};
+use crate::host::graphics::track;
 use crate::viewport::View;
 
 /// The [`Hit`] under `(x, y)` in window `def_id`. Containers (`window`/`panel`)

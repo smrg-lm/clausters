@@ -487,7 +487,7 @@ pub enum SlotFrame {
     Shader {
         body: Rect,
         source: String,
-        params: [f32; super::super::canvas::PARAM_COUNT],
+        params: [f32; crate::canvas::PARAM_COUNT],
     },
     /// The geometry slot: a trace decimated per frame out of the peak pyramid
     /// the slot holds, drawn into `body` at the element's vertical window.

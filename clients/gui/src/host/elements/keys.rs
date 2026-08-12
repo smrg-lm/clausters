@@ -24,9 +24,9 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
+use crate::host::graphics::piano;
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
-use crate::host::piano;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Voice, VoiceSpec};
 use crate::host::widget::parse;
 
