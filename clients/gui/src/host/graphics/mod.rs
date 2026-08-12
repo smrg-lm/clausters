@@ -27,6 +27,7 @@ pub mod bpf;
 pub mod controls;
 pub mod meters;
 pub mod nodetree;
+#[cfg(feature = "patcher")]
 pub mod patch;
 pub mod piano;
 pub mod pianoroll;
