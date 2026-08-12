@@ -56,6 +56,12 @@ impl Gestures {
             out.push(GestureEffect::Redraw(ctx.def_id));
             // An overlay stands over the window, on nobody's axis.
             let at = element::At::widget(id, rect, scale, 0.0);
+            // Not through `element::press`: that door filters the point against
+            // the element's declared shape, and an overlay is offered the press
+            // **because it is outside** as often as because it is inside — a
+            // click on the window closes the list. The shape filter answers
+            // "is this widget's drawing under the pointer", which is the tree's
+            // question, not a modal's.
             let claim = element::with(host, ctx, at, |el, input| el.press((cx, cy), input))
                 .unwrap_or(Claim::Decline);
             if let Claim::Take(take) = claim {
@@ -258,8 +264,7 @@ impl Gestures {
         grab: &mut dyn FnMut() -> bool,
         out: &mut Vec<GestureEffect>,
     ) -> bool {
-        let claim = element::with(host, ctx, at, |el, input| el.press((cx, cy), input))
-            .unwrap_or(Claim::Decline);
+        let claim = element::press(host, ctx, at, cx, cy).unwrap_or(Claim::Decline);
         let Claim::Take(take) = claim else {
             return false;
         };

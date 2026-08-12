@@ -65,6 +65,17 @@ impl Rect {
         Self { x, y, w, h }
     }
 
+    /// Grows the rectangle by `m` on every side — a hit region's slop around
+    /// the shape that was drawn.
+    pub fn grown(self, m: f32) -> Rect {
+        Rect {
+            x: self.x - m,
+            y: self.y - m,
+            w: self.w + 2.0 * m,
+            h: self.h + 2.0 * m,
+        }
+    }
+
     /// Shrinks the rectangle by `m` on every side (never below zero size).
     fn inset(self, m: f32) -> Rect {
         Rect {

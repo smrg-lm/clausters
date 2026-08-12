@@ -11,7 +11,7 @@
 use super::super::Host;
 use super::super::layout::Rect;
 use super::super::widget::WidgetKind;
-use super::super::widget::element::{BodyRole, Element, Events, Input, Mods, TimeSpace};
+use super::super::widget::element::{BodyRole, Claim, Element, Events, Input, Mods, TimeSpace};
 use super::effects::{deliver, deliver_args};
 use super::{GestureCtx, GestureEffect};
 
@@ -122,6 +122,29 @@ pub(super) fn with<R>(
         WidgetKind::Custom(el) => Some(f(&mut **el, &input)),
         _ => None,
     }
+}
+
+/// **Offers a press to the element `at` addresses, if the point is on it.**
+///
+/// The one place an element's declared shape ([`Element::hit_area`]) is
+/// applied, with the metrics' hit slop around it. A placement is a rectangle
+/// and the layout hands out whole cells, but plenty of elements are drawn
+/// smaller or rounder than the cell they were given — a knob's dial, a
+/// slider's groove, a checkbox with a word beside it in a stretched row — and
+/// the air around them belongs to the window, not to the control. Filtering
+/// here rather than in each `press` is what makes that general: an element
+/// states its shape once and never writes the guard, and one that states
+/// nothing keeps the whole rectangle it always had.
+///
+/// A point off the shape reads exactly as a [`Claim::Decline`], so the press
+/// goes back to the chain the way any declined press does.
+pub(super) fn press(host: &mut Host, ctx: &GestureCtx, at: At, cx: f64, cy: f64) -> Option<Claim> {
+    with(host, ctx, at, |el, input| {
+        if !el.hit_area(input).hit(cx, cy, input.metrics.hit_slop) {
+            return Claim::Decline;
+        }
+        el.press((cx, cy), input)
+    })
 }
 
 /// Sends what an element reported, and repaints when it reported anything.

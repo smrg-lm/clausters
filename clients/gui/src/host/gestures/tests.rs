@@ -260,9 +260,11 @@ fn a_press_on_a_bound_toggle_flips_the_stack_it_drives() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     let mut grab = || false;
-    // The toggle sits in the window's top strip (its declared height).
-    let mut effects = g.press(&mut host, &ctx, 300.0, 20.0, &mut grab);
-    effects.extend(g.release(&mut host, &ctx, 300.0, 20.0));
+    // The toggle sits in the window's top strip (its declared height), and
+    // the press lands on its box, at the left of the cell — the rest of that
+    // strip is the layout's air, not the control.
+    let mut effects = g.press(&mut host, &ctx, 20.0, 20.0, &mut grab);
+    effects.extend(g.release(&mut host, &ctx, 20.0, 20.0));
 
     assert_eq!(page(&host), 1, "the toggle's value became the page");
     assert!(
@@ -525,8 +527,8 @@ fn a_widget_inside_the_workspace_still_takes_the_press() {
     );
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    // Over the toggle: the widget wins, no pan drag starts.
-    let effects = g.press(&mut host, &ctx, 50.0, 25.0, &mut || false);
+    // Over the toggle's box: the widget wins, no pan drag starts.
+    let effects = g.press(&mut host, &ctx, 8.0, 25.0, &mut || false);
     assert!(
         effects
             .iter()
@@ -608,7 +610,7 @@ fn toggle_press_flips_the_state() {
         host_from(r#"{"type":"window","children":[{"id":30,"type":"toggle","value":0}]}"#);
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 200, 100);
-    let effects = g.press(&mut host, &ctx, 100.0, 16.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 14.0, 16.0, &mut || false);
     assert_eq!(
         host.window_def(1)
             .unwrap()
@@ -647,9 +649,10 @@ fn knob_press_records_the_grab_result_and_locked_ignores_cursor_motion() {
     );
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 200, 200);
-    // A knob is as tall as its disc plus its read-out (its natural height),
-    // so it is a strip at the top of the window: the press aims inside it.
-    g.press(&mut host, &ctx, 22.0, 30.0, &mut || true);
+    // A knob is as tall as its disc plus its read-out (its natural height), so
+    // it is a strip at the top of the window, and the disc is centred across
+    // it: the press aims at the dial, not merely at the cell.
+    g.press(&mut host, &ctx, 100.0, 30.0, &mut || true);
     assert!(g.locked());
     // Locked: cursor motion is ignored (relative deltas drive it instead).
     let effects = g.drag_to(&mut host, &ctx, 22.0, 80.0);
@@ -659,6 +662,69 @@ fn knob_press_records_the_grab_result_and_locked_ignores_cursor_motion() {
     // Release asks the front to drop the pointer grab.
     let effects = g.release(&mut host, &ctx, 22.0, 80.0);
     assert!(effects.contains(&GestureEffect::ReleasePointer(1)));
+}
+
+/// **The air a layout leaves around a control is the window's, not the
+/// control's.** A checkbox stretched across a row is a small box with a word
+/// beside it and a great deal of nothing after that; pressing the nothing used
+/// to flip the value. The filter is the machine's — the element only declares
+/// its shape — so this is the same mechanism the knob and the slider go
+/// through, checked once at the level where it is applied.
+#[test]
+fn a_toggle_does_not_flip_from_the_air_beside_it() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":30,"type":"toggle","label":"on","value":0}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 400, 100);
+    let value = |host: &Host| {
+        host.window_def(1)
+            .unwrap()
+            .find(30)
+            .unwrap()
+            .kind
+            .event_value()
+    };
+    // Far right of the row, well past the box and its one-word label.
+    let effects = g.press(&mut host, &ctx, 380.0, 16.0, &mut || false);
+    assert_eq!(value(&host), Some(OscType::Int(0)), "nothing flipped");
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, GestureEffect::Emit { widget_id: 30, .. })),
+        "and nothing left for the script: {effects:?}"
+    );
+    g.release(&mut host, &ctx, 380.0, 16.0);
+    // The box does flip it.
+    g.press(&mut host, &ctx, 14.0, 16.0, &mut || false);
+    assert_eq!(value(&host), Some(OscType::Int(1)));
+}
+
+/// **A dial is a disc, so its corners are not it.** A knob's cell is a label
+/// strip over the disc over a read-out, and a row spreads it wider still: press
+/// the paper beside the dial and the value used to jump, because the hit-test
+/// was the rectangle the layout gave the element rather than the circle the
+/// renderer drew in it.
+#[test]
+fn a_knob_is_grabbed_by_its_disc_and_not_by_the_corners_of_its_cell() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":40,"type":"knob","min":0.0,"max":1.0,"value":0.5}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 200, 200);
+    // The far left of the cell, on the same row as the dial's centre: inside
+    // the rectangle, nowhere near the drawn disc.
+    g.press(&mut host, &ctx, 4.0, 30.0, &mut || true);
+    assert!(
+        !g.locked(),
+        "the corner of the cell does not turn the value"
+    );
+    g.release(&mut host, &ctx, 4.0, 30.0);
+    // The dial itself still does.
+    g.press(&mut host, &ctx, 100.0, 30.0, &mut || true);
+    assert!(g.locked());
 }
 
 #[test]

@@ -29,6 +29,7 @@ use clausters_core::envshape::{SHAPE_CURVE, SHAPE_LINEAR, shape_value};
 use clausters_core::osc::OscType;
 use serde_json::Value;
 
+use crate::host::graphics::shape;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
@@ -220,11 +221,14 @@ impl Axes {
         // The grab radius: the drawn point plus its slop, so a small target
         // stays clickable.
         let radius = (m.point_radius + m.hit_slop).max(6.0) as f64;
+        // Squared throughout: the distance is only ever compared — against the
+        // radius, and against the best so far — and both comparisons order the
+        // same squared (see `shape`).
+        let r2 = radius * radius;
         let mut best: Option<(usize, f64)> = None;
         for (i, p) in points.iter().enumerate() {
-            let d = ((cx - self.x(p.time) as f64).powi(2) + (cy - self.y(p.value) as f64).powi(2))
-                .sqrt();
-            if d <= radius && best.is_none_or(|(_, bd)| d < bd) {
+            let d = shape::dist2(cx, cy, self.x(p.time) as f64, self.y(p.value) as f64);
+            if d <= r2 && best.is_none_or(|(_, bd)| d < bd) {
                 best = Some((i, d));
             }
         }

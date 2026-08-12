@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 use super::glyphs::path_bounds;
 use super::tess::staff_distance;
-use super::{Affine, Bounds, HitBox, Prim, ScoreData, Staff};
+use super::{Affine, Bounds, HitBox, HitShape, Prim, ScoreData, Staff, is_notehead};
 use crate::host::layout::Rect;
 
 impl ScoreData {
@@ -68,10 +68,17 @@ impl ScoreData {
                     y1: *y,
                 }),
             };
+            // What the box stands for: a notehead is the oval inside it, and
+            // everything else fills what was measured around it.
+            let shape = match prim {
+                Prim::Glyph { cp, .. } if is_notehead(*cp) => HitShape::Ellipse,
+                _ => HitShape::Rect,
+            };
             if let Some(bounds) = bounds {
                 self.hits.push(HitBox {
                     id: id.to_string(),
                     bounds,
+                    shape,
                 });
             }
         }
@@ -138,7 +145,7 @@ impl ScoreData {
         let [px, py] = inv.apply(x, y);
         self.hits
             .iter()
-            .filter(|h| h.bounds.contains(px, py))
+            .filter(|h| h.bounds.holds(h.shape, px, py))
             .min_by(|a, b| {
                 a.bounds
                     .area()

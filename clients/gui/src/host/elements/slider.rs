@@ -14,7 +14,7 @@ use crate::host::graphics::controls;
 use crate::host::graphics::controls::{slider_across, slider_thick};
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
+use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input};
 use crate::host::widget::size::Natural;
 use crate::host::widget::{Range, parse};
 
@@ -94,6 +94,19 @@ impl Element for Slider {
         control::info(&self.range)
     }
 
+    /// **The groove is the control, not the cell.** A slider's track area is
+    /// the whole cell minus its label and read-out, and the slider drawn in it
+    /// is a thin groove with a short grip — so a press anywhere in that area,
+    /// several times thicker than the drawing, was jumping the value from
+    /// blank space beside it.
+    fn hit_area(&self, input: &Input) -> HitArea {
+        HitArea::Rect(controls::slider_groove(
+            self.track(input),
+            self.vertical,
+            input.metrics,
+        ))
+    }
+
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         let track = self.track(input);
         self.drag.press(&mut self.range, track, self.vertical, at)
@@ -116,6 +129,7 @@ impl Element for Slider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::widget::element::HitArea;
     use crate::host::widget::element::Mods;
 
     fn props(json: &str) -> Map<String, Value> {
@@ -162,6 +176,35 @@ mod tests {
         assert_eq!(s.range.value, 0.0, "clamped at the low end");
         s.drag((10_000.0, 20.0), &input(&m, rect));
         assert_eq!(s.range.value, 1.0, "and at the high one");
+    }
+
+    /// **The shape it answers on is the groove, not the cell it was given.** A
+    /// slider's track area is the whole cell minus its label and read-out —
+    /// here 60 pixels tall for a groove a handle's grip thick — so a press near
+    /// the top of it used to jump the value from blank space several times the
+    /// drawing's thickness away. The element states the band and the gesture
+    /// machine filters against it, which is why this asks `hit_area` rather
+    /// than `press`: by the time a press arrives, the point is on the element.
+    #[test]
+    fn the_hit_area_is_the_groove_and_not_the_cell() {
+        let m = Metrics::default();
+        let rect = crate::host::layout::Rect::new(0.0, 0.0, 200.0, 60.0);
+        let s = from_props(&props(r#"{"value":0.25}"#));
+        let area = s.hit_area(&input(&m, rect));
+        let HitArea::Rect(groove) = area else {
+            panic!("a groove is a band: {area:?}");
+        };
+        assert!(
+            groove.h < rect.h * 0.5,
+            "the drawing is much thinner than the cell: {}",
+            groove.h
+        );
+        // A hair under the cell's top edge: inside the element, off the band.
+        assert!(!area.hit(100.0, 1.0, m.hit_slop));
+        // The groove itself, and the slop around it.
+        let y = (groove.y + groove.h * 0.5) as f64;
+        assert!(area.hit(100.0, y, m.hit_slop));
+        assert!(area.hit(100.0, (groove.y - m.hit_slop * 0.5) as f64, m.hit_slop));
     }
 
     /// A motion with no press behind it moves nothing: the groove is held only

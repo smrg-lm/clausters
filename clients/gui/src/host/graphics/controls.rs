@@ -77,6 +77,26 @@ pub fn slider_track(rect: Rect, has_label: bool, text_size: f32, m: &Metrics) ->
     )
 }
 
+/// **The band a slider is actually drawn in**, inside its track area — the
+/// groove down the middle plus the handle's grip across it, which is as thick
+/// as this control ever gets.
+///
+/// The track area is the whole cell minus the label and the read-out, and the
+/// slider fills a fraction of it: a groove `track_thick` across with a grip
+/// `handle_grip` long over it, centred. So the area answers for a control that
+/// is drawn several times thinner than it, which is why the press reads this
+/// instead — the hit is the drawing, the same rule the dial and the notehead
+/// follow (`graphics::shape`).
+pub fn slider_groove(body: Rect, vertical: bool, m: &Metrics) -> Rect {
+    if vertical {
+        let t = m.track_thick.max(m.handle_grip.min(body.w));
+        Rect::new(body.x + (body.w - t) * 0.5, body.y, t, body.h)
+    } else {
+        let t = m.track_thick.max(m.handle_grip.min(body.h));
+        Rect::new(body.x, body.y + (body.h - t) * 0.5, body.w, t)
+    }
+}
+
 /// The 0..1 fraction along a horizontal track at pixel `px` (for a slider).
 pub fn slider_fraction(body: Rect, px: f64) -> f32 {
     if body.w <= 0.0 {
@@ -185,18 +205,27 @@ pub fn slider(d: &mut Draw, r: &Range, rect: Rect, vertical: bool, size: f32) {
     value_text(d, &fmt(r.value), readout, size);
 }
 
+/// **Where a knob's dial is**, as `(cx, cy, radius)` inside its `body` — one
+/// function so the drawing and the hit-test cannot disagree about the disc.
+///
+/// The read-out takes a strip at the bottom of the body and the disc is sized
+/// in the area above it, so the number stays inside the body: it never overlaps
+/// the disc nor spills past the cell into the row below.
+pub fn knob_disc(body: Rect, size: f32, m: &Metrics) -> (f32, f32, f32) {
+    let disc_h = (body.h - readout_h(size, m)).max(0.0);
+    (
+        body.x + body.w * 0.5,
+        body.y + disc_h * 0.5,
+        (body.w.min(disc_h) * 0.5 - 2.0).max(2.0),
+    )
+}
+
 pub fn knob(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
     label_strip(d, r.label.as_deref(), rect, size);
     let body = body_rect_at(rect, r.label.is_some(), size, d.m);
+    let (cx, cy, radius) = knob_disc(body, size, d.m);
     let (mesh, m, theme) = d.parts();
-    // Reserve a strip at the bottom of the body for the value read-out and size
-    // the disc in the area above it, so the number stays inside the body — it
-    // never overlaps the disc nor spills past the cell into the row below.
     let text_h = readout_h(size, m);
-    let disc_h = (body.h - text_h).max(0.0);
-    let radius = (body.w.min(disc_h) * 0.5 - 2.0).max(2.0);
-    let cx = body.x + body.w * 0.5;
-    let cy = body.y + disc_h * 0.5;
     mesh.disc(cx, cy, radius, theme.track);
     mesh.disc(cx, cy, radius - 3.0, theme.field);
     // Pointer: 270-degree sweep, min at lower-left, max at lower-right.
@@ -289,18 +318,38 @@ pub fn button(d: &mut Draw, label: Option<&str>, rect: Rect, active: bool, size:
     font::text_centered(mesh, label.unwrap_or("BUTTON"), rect, size, theme.text);
 }
 
+/// **The box a toggle is drawn as**, inside its cell: a square of at most
+/// `box_side`, centred vertically at the left of the rect.
+pub fn toggle_box(rect: Rect, m: &Metrics) -> Rect {
+    let side = rect.h.min(rect.w).min(m.box_side);
+    Rect::new(rect.x, rect.y + (rect.h - side) * 0.5, side, side)
+}
+
+/// **What a toggle answers the pointer on**: the box, plus the label beside it
+/// when there is one — the two things drawn, and nothing of the cell the
+/// layout stretched around them.
+///
+/// A checkbox in a wide row is a small square with a word next to it and a
+/// great deal of air after that; the air is the layout's, not the control's, so
+/// a click landing on it must go back to the chain. The label counts because it
+/// is drawn as part of the affordance (clicking the word toggles, as everywhere
+/// else), and it counts for **what fits**: a label ellipsized to the cell is
+/// hit over the part that is on screen.
+pub fn toggle_hit(rect: Rect, label: Option<&str>, size: f32, m: &Metrics) -> Rect {
+    let b = toggle_box(rect, m);
+    let Some(text) = label else { return b };
+    let tx = b.x + b.w + m.pad;
+    let w = font::width(text, size).min((rect.x + rect.w - tx).max(0.0));
+    Rect::new(rect.x, rect.y, (tx + w - rect.x).max(b.w), rect.h)
+}
+
 pub fn toggle(d: &mut Draw, on: bool, label: Option<&str>, rect: Rect, size: f32) {
+    let box_rect = toggle_box(rect, d.m);
     let (mesh, m, theme) = d.parts();
-    // Like `button`, the toggle owns its whole cell (its box and label fill it);
-    // the layout gap does the separating.
+    // Like `button`, the toggle draws its box and its label at the left of the
+    // cell; the layout gap does the separating.
     let body = rect;
-    let box_side = body.h.min(body.w).min(m.box_side);
-    let box_rect = Rect::new(
-        body.x,
-        body.y + (body.h - box_side) * 0.5,
-        box_side,
-        box_side,
-    );
+    let box_side = box_rect.w;
     mesh.rect(box_rect, theme.track);
     if on {
         let inset = box_side * 0.22;

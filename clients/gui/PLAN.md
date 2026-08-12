@@ -1346,6 +1346,56 @@ that lands somewhere the reader did not point.
   anywhere over any element. The regression test asserts both from the same
   pixel and fails without the gate.
 
+### The hit-test pass: a control answers on what it draws (E22-E23)
+
+*Added 2026-08-12, from a by-eye pass over the standard controls.* Every
+pointer question in the host was answered by containment in the **placement
+rectangle**, which is right for what fills its cell and wrong for everything
+drawn smaller or rounder than the cell the layout handed it. A knob's dial is a
+disc under a label strip and over a read-out; a slider is a thin groove in a
+track area several times its thickness; a checkbox is a small box with a word
+beside it in however wide a row it landed in. Each of those was acting on
+presses that landed on blank space around the drawing, and the air around a
+control belongs to the window, not to the control.
+
+- ✅ **E22 — the seam, and the two dials on it** *(done 2026-08-12)*: `Element::hit_area`
+  returns the shape the element answers the pointer on (`HitArea::Rect`, the
+  default and the whole placement; `Disc`; `Ellipse`), and
+  `gestures::element::press` is the **one** place it is applied, adding the
+  metrics' `hit_slop` so no leaf decides how much air a small target deserves.
+  A point off the shape reads exactly as a `Claim::Decline`, so the press falls
+  back to the chain like any other; a leaf that declares nothing keeps the
+  rectangle it always had, so nothing else in the catalog moved. The round
+  geometry is `graphics::shape` (`in_disc`, `in_ellipse`, `dist2`), **squared
+  throughout** — a hit-test compares a distance and never reports one, so the
+  square root has no reader. Each shape is read off the same function the
+  drawing places it with (`controls::knob_disc`, `controls::slider_groove`,
+  `controls::toggle_hit`), so the two cannot disagree. The **overlay** route
+  deliberately skips the filter: a modal is offered the press because it is
+  outside as often as because it is inside (a click on the window closes a
+  menu's list). What landed with it: the break-point grab dropped its `sqrt`,
+  and the score's hit index carries a `HitShape` per entry so a **notehead** is
+  the oval inside its box instead of the box.
+  **Verified by eye** on `gui_panel`: the knob and the slider now answer only
+  where they are drawn.
+
+- ⬜ **E23 — the rest of the chrome on the same rule** *(open; the toggle's
+  declaration is in place and did not pass the same by-eye check, so it counts
+  as unfinished here rather than as done above)*. Every remaining light widget
+  states its drawn shape through `hit_area`, and each one is checked by eye on
+  the example that shows it — the mechanism exists, so this is a pass over the
+  catalog, not a design. What is in scope: `toggle` (the box plus its label,
+  and why the current `toggle_hit` still reads wider than it looks), `button`
+  and `menu` (their drawn field, not the cell a row stretched), `number` (its
+  field), `label` (a mark on somebody else's pixels — likely `Rect` of the text
+  run, or nothing at all), the lane header's controls, and the patcher's ports
+  and boxes (rectangles today, which is what they are drawn as — to be
+  confirmed rather than assumed). Two questions the pass has to answer as it
+  goes: whether **hover and the wheel** should read the same shape as the press
+  (they still use the placement rectangle, which is why a wheel over a knob's
+  corner still reaches the axis behind it), and what a **hugged** container
+  should do when its child answers on less than it was given.
+
 ## K track — the widget API: a widget becomes an object
 
 *Section opened 2026-08-09 from an audit of the crate read as a general UI library; **rewritten 2026-08-10** after the seam landed, one leaf ported and the next one stopped against the surface. The rewrite is not a change of goal — it is the same goal with the right diagnosis behind it, and the earlier entries `K1a`/`K1b` (added and superseded the same day) are folded into K3–K5 below.*
@@ -1707,6 +1757,8 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 - **A steady goniometer, and what a phase view should read.** With the signal smoothed the figure sweeps, and what is left is the view's own: it draws the **newest** window of two taps with no alignment, so consecutive ticks read overlapping stretches and the trace's ends need not meet. Three shapes, and the one that is chosen decides what a phase view *is*. **Align it** — reuse the oscilloscope's trigger on the left channel, which costs nothing new and stands a periodic pair still, at the price of no longer showing where in the signal it is. **Persist it** — the classic hardware look: several windows drawn with a decay, which the mesh's per-vertex alpha already allows and which turns instability into the glow it is on a scope. Or **take a positioned window** (`read_bus_at` reports where a window ends, which is what the retained history already appends by), so consecutive ticks read *consecutive* samples and the phase advances continuously instead of overlapping. The third is the only one that changes what the view reads rather than how it draws, and it is the one that would also survive a slower frame rate.
 
   **Where it shows is the evidence**: with the signal smoothed, what remains is visible at the *ends* of a sweep, where the figure degenerates into a straight line (mono is one diagonal, anti-phase the other). A line is exactly where a phase error is most legible — any of it opens the line into a thin ellipse — so the residue is the unaligned window and not the drawing's resolution, which is what points at the positioned read rather than at drawing more of it.
+- ⬜ **A sample as a grabbable point: editing the waveform itself** *(named 2026-08-12 by the user, on the `gui_window` pass that checked the round hit shapes: "the samples, the round points, cannot be selected individually and dragged — that could be implemented")*. Zoomed past the polyline threshold the trace already marks every sample with a disc, and the disc is exactly what the round hit shapes now know how to answer for: the geometry is in place (`shape::in_disc` against the same dot the renderer drew, `hit_slop` around it, `dist2` to pick the nearest of two overlapping ones). What is missing is not the hit-test but the **edit's route**: the break-point editor moves a point the host owns, while a sample belongs to a buffer somewhere else — a mapped file, a server buffer, a client's array — so a dragged sample is an *intent* like a transposed note (`"sample" index value`, or a run of them for a pencil stroke), sent to whoever owns the data to apply and hand back. That is the edit-back pattern, and the questions it raises here are its own: whether a drag edits one sample or draws through a run of them, what a redraw costs when the source is a pyramid that must be rebuilt over the touched span, and whether the host may show the edit before the owner confirms it. A milestone when those converge; nothing about it is blocked by the hit-test any more.
+
 - **Packaging.** An optional Tauri desktop wrapper reusing the web frontend; the GUI chapter in the docs; worked examples.
 - **The in-page shared-memory path — a track to open.** The browser engine shipped (the server's B track) and it talks over a **MessagePort**: OSC bytes both ways, commands crossing into the engine through the same in-memory ring the native embed uses. What did *not* ship is the half that would make a browser host look like the native one — a **`SharedArrayBuffer`** carrying the zero-message `BusSource` (control buses read each frame) and the bulk audio path *inside* the page, the roles `host::shm`/`mapfile` play natively. In a tab those still take the WS/`fetch` fallback built for a *remote* server, even when the engine is in the same document. It was left out **by requirement, not by omission**: SAB needs COOP/COEP isolation headers, and an embeddable component cannot demand those of a page it does not control (`docs/decisions.md`). That is also what makes it a **track rather than a milestone** — it is an optimization behind a build: a page that can isolate itself opts in, every other page keeps the MessagePort path, and both have to stay correct, which is a second backend for one seam and not a redesign (the ring seam was shaped to accept it). Opens when a page profile asks for it, and the number to have first is what a frame of `/bus_stream` costs on a page holding forty canvases — that is the whole argument.
 
@@ -1729,6 +1781,14 @@ reading rather than a queue that empties.
 Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
+
+- ✅ **A round thing was hit-tested as its bounding box** *(found 2026-08-12, named by the user — the bounds of a circular figure, computed with Pythagoras squared, and generalized across the elements; fixed the same day)*. Everything the host draws answered the pointer through `Rect::contains`, which is right for the rectangles and the strokes and wrong for the round ones: a knob's dial is a disc inside a cell that also holds a label strip and a read-out (and whatever width the row spread it to), so pressing the name, the number or the paper in a corner grabbed the value and turned it; a notehead is an oval whose box has a quarter more area than the glyph, and on a dense page that quarter is where the stem, the beam and the note on the next line live.
+
+  The same audit, by eye on `gui_panel`, found two more and they are the same bug without a circle in them: a **slider**'s track area is the cell minus the label and the read-out, and what is drawn in it is a groove a few pixels thick with a short grip riding it, so a press anywhere in a band several times that thick jumped the value; a **toggle** stretched across a row is a small box with a word beside it and a great deal of air after that, and the air flipped the value. So the entry is not about circles: **a hit-test is the shape that was drawn**, whatever that shape is. The knob and the slider are verified by eye; the toggle's declaration is written and did **not** pass the same check, and the rest of the chrome has not been done at all — both are E23, which is why this entry closes on the seam rather than on the catalog.
+
+  Which is why it ends at the trait rather than as a guard per leaf — the user asked the question directly, and it is the right one. `Element::hit_area` returns a `HitArea` (`Rect` by default, `Disc`, `Ellipse`), and `gestures::element::press` is the **one** place it is applied, adding the metrics' `hit_slop`: an element states its shape once, never writes the filter, and a point off it reads exactly as a decline, so the press falls back to the chain the way any declined press does. A leaf that says nothing keeps the whole rectangle it always had, so nothing else in the catalog moved. Each shape is read off the same function the drawing places it with (`knob_disc`, `slider_groove`, `toggle_hit`), so the two cannot disagree. The one deliberate exception is the **overlay** route: a modal is offered the press precisely *because* it is outside as often as because it is inside (a click on the window closes a menu's list), so it goes through the unfiltered door.
+
+  `host::graphics::shape` is the shared answer — `in_disc`, `in_ellipse`, `dist2` — and it is **squared throughout**: a distance in a hit-test is compared (against a radius, against the best so far) and never reported, and squaring preserves the order, so the square root is work with no reader. The ellipse is the same test normalized per axis. Three call sites so far: the knob presses only on the disc the drawing places (`controls::knob_disc` is now one function for both, so they cannot disagree) plus the `hit_slop` every small target gets, declining otherwise so those pixels keep meaning whatever the window means by them; the break-point grab drops its `sqrt`; and the score's hit index carries a `HitShape` per entry, `Ellipse` for a glyph in the SMuFL notehead range and `Rect` for everything else — per entry because only the indexer knows what it measured. What stays rectangular is what *is* rectangular: patcher boxes and ports, roll notes, keys, lanes, clips.
 
 - ✅ **A selection was a band of pixels, so it could select where there are no samples** *(found 2026-08-12, by eye on `gui_bulk` at sample-level zoom, and stated as a rule by the user; fixed the same day)*. Zoomed in until consecutive samples stand apart with a dot on each, a sweep drew its band starting and ending **between** two dots: a region holding no data, which can be neither played nor cut nor read back as anything. The sweep was in pixel coordinates all the way down — `sample_at` gives a fractional position and nothing rounded it — so the number the `"selection"` event reported was a length in fractions of a sample.
 

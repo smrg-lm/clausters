@@ -17,7 +17,7 @@ use crate::host::graphics::controls::knob_h;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::Range;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
+use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input};
 use crate::host::widget::size::{Natural, body_inset, text_box};
 
 use super::control::{self, Dial};
@@ -88,6 +88,19 @@ impl Element for Knob {
 
     fn info(&self) -> Vec<(String, Value)> {
         control::info(&self.range)
+    }
+
+    /// **The dial is a disc, and only the disc turns.** A knob's cell is a
+    /// label strip over the disc over a read-out, so its rectangle is taller
+    /// than what is drawn round in it and wider whenever the row spread it: a
+    /// press on the name, on the number, or on the paper in a corner was
+    /// grabbing the value and turning it. The disc is read off the same
+    /// `knob_disc` the drawing places it with, so the two cannot disagree.
+    fn hit_area(&self, input: &Input) -> HitArea {
+        let body = control::body(&self.range, input);
+        let (cx, cy, r) =
+            controls::knob_disc(body, self.range.text_size * input.scale, input.metrics);
+        HitArea::Disc { cx, cy, r }
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {

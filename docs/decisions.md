@@ -4983,3 +4983,64 @@ to the trace's weight like every other, and now the lane shaves that widening
 instead of letting it hang over the edge. That is the same treatment a value
 just outside the vertical window gets, which is what makes it consistent rather
 than a special case.
+
+## A hit-test is the shape that was drawn, and it compares squared distances
+
+The GUI host answered every pointer question with `Rect::contains`, because
+nearly everything it draws is a rectangle or a stroke. The exceptions read as
+their bounding box, which is not a small error: the corner of a square around a
+circle is a quarter of the box that never belonged to the shape, and at the
+radius a knob's dial or a notehead is actually drawn at, that quarter is most of
+where the pointer tends to be. A knob's cell holds a label strip over the dial
+over a read-out, so a press on the name or the number turned the value; a
+notehead's box, on a dense page, overlaps the stem, the beam and the note a
+line away.
+
+`host::graphics::shape` holds the round shapes — the disc, the ellipse
+inscribed in a box, and the squared distance both are tested with. It is one
+module rather than a helper per model because the round things are spread
+across the catalog and each had either reinvented the arithmetic or skipped it.
+
+**Squared, never rooted.** A distance in a hit-test is compared and never
+reported: against a radius, and against the best candidate so far. Squaring
+preserves the order of non-negative numbers, so both comparisons answer off
+`dx² + dy²` and the square root is work with no reader. The ellipse is the same
+test with each axis divided by its own radius before squaring.
+
+The rule is wider than the circles that exposed it: **a hit-test is the shape
+that was drawn**. A slider's track area is its cell minus the label and the
+read-out, and what is drawn in it is a groove a few pixels thick with a short
+grip riding it; a toggle stretched across a row is a small box with a word
+beside it and a great deal of air after that. Both were acting on presses that
+landed on blank space the layout had left around them.
+
+So the filter belongs to the **trait**, not to each leaf. `Element::hit_area`
+returns the shape the element answers on — the placement rectangle by default,
+a disc or an ellipse otherwise — and `gestures::element::press` is the one place
+it is applied, adding the metrics' hit slop so no element decides for itself how
+much air a small target deserves. A point off the shape reads exactly as a
+decline, so the press falls back to the chain like any other. Declared rather
+than tested is what keeps it general: adding a leaf drawn smaller than its cell
+is one method, not three lines every leaf must remember, and a leaf that says
+nothing keeps the rectangle it always had.
+
+What that leaves is a pass rather than a design: each remaining light widget
+states its drawn shape, and each is checked by eye on the example that shows it.
+Two questions belong to that pass and not to this record — whether hover and the
+wheel should read the same shape as the press (they still read the placement
+rectangle), and what a hugging container should do when its child answers on
+less than it was given.
+
+The one route that skips the filter is the **overlay**: a modal is offered the
+press because it is outside as often as because it is inside — clicking the
+window is how a menu's list closes — so "is this widget's drawing under the
+pointer" is the tree's question, not a modal's.
+
+Two consequences worth stating, because they are what makes the pattern
+generalize. The shape is carried **per hit entry**, not decided at the test: the
+score's index measures extents, so everything arrives as a box, and only the
+indexer knows that this one was measured around a notehead (a codepoint in
+SMuFL's Noteheads range) rather than around a beam. And an element whose press
+lands outside its own shape **declines**, which hands the press back to the
+chain — the pixels beside a dial go on meaning whatever the window means by
+them, rather than becoming dead space around every round control.

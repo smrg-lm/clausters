@@ -284,6 +284,32 @@ fn a_click_names_the_smallest_element_under_it() {
     assert_eq!(data.hit(rect, 100.0, 380.0), None);
 }
 
+/// **A notehead is an oval, and the corners of the box around it are paper.**
+/// The index measures extents, so every entry arrives as a rectangle; a
+/// notehead's is a quarter larger than the glyph and that quarter is where the
+/// stem, the beam and the note on the next line live. The entry carries the
+/// shape it stands for, so the test is the ellipse inscribed in the box.
+#[test]
+fn a_notehead_is_hit_as_the_oval_it_is_drawn_as() {
+    let data = indexed_page();
+    let rect = Rect::new(0.0, 0.0, 1000.0, 400.0);
+    let head = data
+        .hits
+        .iter()
+        .find(|h| h.id == "n1")
+        .expect("the notehead is indexed");
+    assert_eq!(head.shape, HitShape::Ellipse);
+    let b = head.bounds;
+    // Inside the oval, off the staff line that crosses it (the smaller box
+    // wins where two overlap, and that rule is untouched).
+    assert_eq!(data.hit(rect, 550.0, 190.0), Some("n1"), "the head itself");
+    // A hair inside the box's top-left corner: inside the rectangle, outside
+    // the oval — and it used to name the note.
+    assert_ne!(data.hit(rect, b.x0 + 1.0, b.y0 + 1.0), Some("n1"));
+    // The staff line, whose own extent is a stroke, is unaffected.
+    assert_eq!(data.hit(rect, 100.0, 200.0), Some("staff"));
+}
+
 #[test]
 fn hit_testing_follows_the_page_fit() {
     let data = indexed_page();

@@ -119,6 +119,25 @@ impl Bounds {
         x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
     }
 
+    /// Whether `(x, y)` is on the primitive this box was measured around —
+    /// which is the box itself for everything engraved straight, and the
+    /// **ellipse inscribed in it** for a notehead.
+    fn holds(&self, shape: HitShape, x: f32, y: f32) -> bool {
+        match shape {
+            HitShape::Rect => self.contains(x, y),
+            HitShape::Ellipse => crate::host::graphics::shape::in_ellipse(
+                x as f64,
+                y as f64,
+                crate::host::layout::Rect::new(
+                    self.x0,
+                    self.y0,
+                    self.x1 - self.x0,
+                    self.y1 - self.y0,
+                ),
+            ),
+        }
+    }
+
     fn area(&self) -> f32 {
         (self.x1 - self.x0) * (self.y1 - self.y0)
     }
@@ -133,12 +152,39 @@ impl Bounds {
     }
 }
 
+/// **What an entry's extent means**: the box, or the ellipse inside it.
+///
+/// A hit index is measured as boxes because that is what a path's extent is,
+/// but the box is not always the shape: a notehead is an oval lying in a
+/// rectangle whose corners are paper, and on a dense page those corners belong
+/// to the beam, the stem or the note on the next line. The distinction is
+/// carried per entry rather than decided at the test, because only the indexer
+/// knows what it measured.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HitShape {
+    /// The box itself — a line, a stem, a beam, a text run, any glyph whose
+    /// outline fills what was measured around it.
+    Rect,
+    /// The ellipse inscribed in the box: a notehead.
+    Ellipse,
+}
+
+/// The SMuFL **Noteheads** range (U+E0A0–U+E0FF): the glyphs whose shape is an
+/// oval and whose box therefore over-answers for them. Whether a codepoint is a
+/// notehead is a fact about the font's layout, not about this page, so it is
+/// read straight off the range rather than configured.
+fn is_notehead(cp: u32) -> bool {
+    (0xE0A0..=0xE0FF).contains(&cp)
+}
+
 /// One entry of the hit-testing index: the page-unit extent of an identified
-/// primitive, paired with the MEI `xml:id` it was engraved from.
+/// primitive and the shape it stands for, paired with the MEI `xml:id` it was
+/// engraved from.
 #[derive(Clone, Debug)]
 pub struct HitBox {
     pub id: String,
     pub bounds: Bounds,
+    pub shape: HitShape,
 }
 
 /// One placed element of the engraved page, in verovio page units.

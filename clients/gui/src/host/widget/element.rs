@@ -66,6 +66,7 @@ use serde_json::{Map, Value};
 
 use std::path::{Path, PathBuf};
 
+use super::super::graphics::shape;
 use super::super::layout::Rect;
 use super::super::metrics::Metrics;
 use super::super::paint::Draw;
@@ -827,6 +828,46 @@ impl Events {
     }
 }
 
+/// **The shape an element answers the pointer on**, inside the rectangle it was
+/// placed in.
+///
+/// A placement is always a rectangle, and for most elements that *is* the
+/// shape: a field, a plot, a lane fill their cell. The exceptions are the ones
+/// drawn smaller or rounder than what the layout gave them — a knob's dial, a
+/// slider's groove, a checkbox with a word beside it in a stretched row — and
+/// each of those was acting on presses landing on blank space the layout had
+/// left around them, because the routing tested containment in the cell.
+///
+/// So the element **declares** its shape and the gesture machine applies it
+/// (`gestures::element::press`), once, for every element there is. Declaring is
+/// what keeps it general: the guard is not three lines each leaf must remember
+/// to write, and a leaf that says nothing keeps the rectangle it always had.
+/// The slop is added by the machine, so a small target is grabbable without
+/// each element deciding how much air it deserves.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HitArea {
+    /// The rectangle itself — the default, and what anything filling its cell
+    /// answers.
+    Rect(Rect),
+    /// A disc: a knob's dial.
+    Disc { cx: f32, cy: f32, r: f32 },
+    /// The ellipse inscribed in a box.
+    Ellipse(Rect),
+}
+
+impl HitArea {
+    /// Whether `(x, y)` is on the shape, with `slop` of air around it.
+    pub fn hit(&self, x: f64, y: f64, slop: f32) -> bool {
+        match *self {
+            HitArea::Rect(r) => r.grown(slop).contains(x, y),
+            HitArea::Disc { cx, cy, r } => {
+                shape::in_disc(x, y, cx as f64, cy as f64, (r + slop) as f64)
+            }
+            HitArea::Ellipse(r) => shape::in_ellipse(x, y, r.grown(slop)),
+        }
+    }
+}
+
 /// What an element did with a press it was offered.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Claim {
@@ -1309,6 +1350,21 @@ pub trait Element: fmt::Debug {
     /// underneath it.
     fn is_bare_surface(&self) -> bool {
         false
+    }
+
+    /// **The shape this element answers the pointer on**, inside its
+    /// placement — the rectangle by default, which is what anything filling
+    /// its cell wants.
+    ///
+    /// It is declared rather than tested here because the machine applies it
+    /// before the press is offered at all (adding the hit slop), so an element
+    /// drawn smaller or rounder than its cell gets the filter for free and a
+    /// press outside its shape falls back to the chain, exactly as a decline
+    /// does. What this is *not* is the finer question of which part of itself
+    /// was hit — that stays in [`press`](Element::press), where the element has
+    /// its own geometry.
+    fn hit_area(&self, input: &Input) -> HitArea {
+        HitArea::Rect(input.rect)
     }
 
     /// The press landed on this element at `at`, in the window's pixels.

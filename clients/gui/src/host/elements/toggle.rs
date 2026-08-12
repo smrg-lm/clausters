@@ -11,7 +11,7 @@ use clausters_core::osc::OscType;
 use crate::host::graphics::controls;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Claim, Ctx, Element, Input};
+use crate::host::widget::element::{Claim, Ctx, Element, HitArea, Input};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, control_box, text_box};
 
@@ -85,6 +85,19 @@ impl Element for Toggle {
 
     fn info(&self) -> Vec<(String, Value)> {
         vec![("value".into(), Value::from(self.value))]
+    }
+
+    /// **The box and its label, not the row they were placed in.** A toggle is
+    /// a small square with a word beside it, and a layout that stretches the
+    /// cell across a panel leaves the rest as air — air that was flipping the
+    /// value when it was clicked.
+    fn hit_area(&self, input: &Input) -> HitArea {
+        HitArea::Rect(controls::toggle_hit(
+            input.rect,
+            self.label.as_deref(),
+            self.text_size * input.scale,
+            input.metrics,
+        ))
     }
 
     fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
