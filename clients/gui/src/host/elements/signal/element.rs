@@ -54,6 +54,18 @@ impl Element for SignalElement {
     /// stored view of a live source has nothing to draw until it has data.
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
         let rect = ctx.rect;
+        // **Placed on somebody else's axis** (a clip's take): the picture is
+        // the trace against *that* axis and its span, with no chrome of its
+        // own — never the plot's, which spans its own samples and rules its
+        // own axes. The container is what says where in time this sits, so
+        // this fork comes before the presentations.
+        if let Some(time) = ctx.time
+            && matches!(self.source, Source::Data(_))
+            && !self.caps.navigable
+        {
+            SignalElement::draw_body(self, d, rect, &time.view, time.span);
+            return;
+        }
         match (self.presentation, &self.source) {
             // The navigable heavy views: the slot draws them.
             (Presentation::Signal | Presentation::TimeFrequency, _) if self.caps.navigable => {}

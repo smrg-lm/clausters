@@ -933,6 +933,70 @@ mod tests {
         assert!(full > no_bodies, "the bodies draw over the clip's box");
     }
 
+    /// A **bulk** take — the minutes-long one, whose samples never reach the
+    /// tree and whose picture comes out of its peak pyramid — draws in its
+    /// clip, against the clip's axis.
+    ///
+    /// The regression it guards: a body is an element, and an element drawn as
+    /// a body was reaching its **own** drawing (the plot, which reads the
+    /// inline samples and rules its own axes) instead of the body one. A take
+    /// with a pyramid and no inline samples is exactly the case where the two
+    /// differ visibly — the plot has nothing to read, so the clip came out
+    /// empty but for its frame.
+    #[test]
+    fn a_bulk_take_draws_from_its_pyramid_in_the_clip() {
+        use crate::host::guidef::GuiNode;
+        use crate::host::widget::Widget;
+        use crate::host::widget::element::Loaded;
+        use crate::waveform::WaveformData;
+
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":5,"type":"field","label":"lane","children":[
+                {"id":10,"type":"field","offset":0,"dur":100000,"path":"take.f32"}]}]}"#;
+        let mut tree =
+            Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+
+        // The loader's answer, handed over the way the native walk hands it:
+        // a pyramid, and not one sample in the tree.
+        let samples: Vec<f32> = (0..100_000)
+            .map(|i| (i as f32 * 0.01).sin() * 0.5)
+            .collect();
+        let body = &mut tree.children[0].children[0].children[0];
+        assert!(
+            body.kind
+                .take_bulk(Loaded::Peaks(WaveformData::new(samples.into(), 256))),
+            "the take is what the pyramid is for"
+        );
+
+        let m = Metrics::default();
+        let inputs = FrameInputs {
+            metrics: &m,
+            ..FrameInputs::default()
+        };
+        let placed = layout::layout(Rect::new(0.0, 0.0, 800.0, 300.0), &tree, &m);
+        let mut mesh = Mesh::new();
+        let collected = collect_widgets(&placed, &mut mesh, &inputs, &Theme::default());
+        assert_eq!(collected.clip_bodies.len(), 1);
+
+        let paint = |c: &Collected| {
+            let (mut base, mut over) = (Mesh::new(), Mesh::new());
+            draw_static_meshes(&mut base, &mut over, c, &inputs, &Theme::default(), &tree);
+            base.vertex_count()
+        };
+        let full = paint(&collected);
+        let mut bare = collected;
+        let width = bare.clip_bodies[0].rect.w as u32;
+        bare.clip_bodies.clear();
+        let without = paint(&bare);
+        // One min/max column per pixel of the clip: the trace, not the baseline
+        // alone (which is the six vertices the empty plot came to).
+        assert!(
+            full - without > width * 4,
+            "the take draws its columns ({} vertices over {width} pixels)",
+            full - without
+        );
+    }
+
     /// A clip's take drawn as the time-frequency texture: the same clip, the
     /// same placement, another presentation. It leaves the mesh bodies (it is
     /// not geometry) and is collected for the GPU pass under the **clip's** id,
