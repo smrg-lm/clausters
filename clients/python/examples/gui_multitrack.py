@@ -311,7 +311,12 @@ COLORMAPS = ("viridis", "magma", "gray")
 # one and the ruler decides a bar is 24000 beats, finds no step whose labels fit
 # once you zoom out, and draws none.
 axis = dict(link=LINK, sample_rate=SR, tempo=TEMPO, quant=float(BAR))
-lane_chrome = dict(snap=BEAT / 4, mute=False, solo=False, level=0.8, **axis)
+# `snap=0` is **no grid**: a clip moves by whole samples, so a drag follows the
+# pointer instead of jumping a sixteenth at a time. It is the right setting for
+# looking at the drawing (an edit lands where you put it, at any zoom); a piece
+# being *assembled* wants the grid back — `snap=BEAT / 4` here — since the value
+# is the lane's own, not a global mode.
+lane_chrome = dict(snap=0.0, mute=False, solo=False, level=0.8, **axis)
 
 # A row spreads its children over the whole width, because a control is elastic
 # across its axis — the right default for a groove that wants the room and the

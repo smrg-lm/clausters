@@ -342,6 +342,26 @@ pub(crate) fn timeline_body(
     Rect::new(x, rect.y, w, h)
 }
 
+/// What a drag is holding while this frame is drawn — the frame's answer to
+/// *whose* affordances may light up.
+///
+/// A grip is a promise about the next press, so during a drag it belongs to the
+/// clip already held and to nothing else: another clip lighting up would offer
+/// a grab that is not on the table, and the held clip's own grip must not blink
+/// out every time the pointer wanders between two snap steps (the clip moves in
+/// steps; the pointer does not).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum Grab {
+    /// Nothing is held: affordances follow the pointer.
+    #[default]
+    None,
+    /// Something else is held (a control, a curve, the axis): no clip lights up.
+    Other,
+    /// This clip is held, by the named side — `None` for a move, where the side
+    /// is still the pointer's.
+    Clip(i32, Option<crate::host::graphics::track::ClipSide>),
+}
+
 /// The live inputs the frame needs beyond the tree and the GPU resources. The
 /// native front fills them from its state; the browser front passes the
 /// streamed equivalents.
@@ -363,6 +383,8 @@ pub(crate) struct FrameInputs<'a> {
     /// the frame rings it, and the element draws whatever else being focused
     /// means to it (a field's caret and selection).
     pub(crate) focused: Option<i32>,
+    /// What a drag is holding right now (see [`Grab`]).
+    pub(crate) grab: Grab,
 }
 
 impl Default for FrameInputs<'_> {
@@ -374,6 +396,7 @@ impl Default for FrameInputs<'_> {
             metrics: METRICS.get_or_init(Metrics::default),
             world: World::default(),
             focused: None,
+            grab: Grab::None,
         }
     }
 }
@@ -1118,6 +1141,85 @@ mod tests {
             near_a_end, 0,
             "the covered clip drew its end grip over the one covering it"
         );
+    }
+
+    /// **A held clip keeps its grip, and nobody else lights up.** A clip moves
+    /// in snap steps and the pointer does not, so mid-drag the two part
+    /// company: a grip that follows the pointer blinks out between steps and
+    /// lights up whatever the pointer drifted over — including the clip the
+    /// held one is being dragged across.
+    #[test]
+    fn a_held_clip_keeps_its_grip_wherever_the_pointer_got_to() {
+        use crate::host::graphics::track::ClipSide;
+        use crate::host::guidef::GuiNode;
+        use crate::host::widget::Widget;
+
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":5,"type":"field","label":"lane","children":[
+                {"id":10,"type":"field","offset":0,"dur":600,"data":[0.0,0.5]},
+                {"id":11,"type":"field","offset":400,"dur":600,"data":[0.0,0.5]}]}]}"#;
+        let tree = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+        let m = Metrics::default();
+        let area = Rect::new(0.0, 0.0, 800.0, 200.0);
+
+        let overlay = |grab: Grab, cursor: Option<(f64, f64)>| {
+            let inputs = FrameInputs {
+                metrics: &m,
+                world: crate::host::world::World {
+                    cursor,
+                    ..crate::host::world::World::default()
+                },
+                grab,
+                ..FrameInputs::default()
+            };
+            let placed = layout::layout(area, &tree, &m);
+            let mut mesh = Mesh::new();
+            let collected = collect_widgets(&placed, &mut mesh, &inputs, &Theme::default());
+            let rects: Vec<Rect> = collected.clip_items.iter().map(|c| c.rect).collect();
+            let (mut base, mut over) = (Mesh::new(), Mesh::new());
+            draw_static_meshes(
+                &mut base,
+                &mut over,
+                &collected,
+                &inputs,
+                &Theme::default(),
+                &tree,
+            );
+            (rects, over)
+        };
+
+        let (rects, _) = overlay(Grab::None, None);
+        let (a, b) = (rects[0], rects[1]);
+        let ink_in = |over: &Mesh, r: Rect| {
+            over.positions()
+                .filter(|(x, _)| *x >= r.x && *x <= r.x + r.w)
+                .count()
+        };
+
+        // The pointer has wandered off the held clip entirely — past the end of
+        // the lane, where no clip is. The held clip still shows the edge it is
+        // being resized by.
+        let far = Some(((b.x + b.w + 50.0) as f64, (a.y + a.h * 0.5) as f64));
+        let (_, over) = overlay(Grab::Clip(10, Some(ClipSide::End)), far);
+        let start_of_a = Rect::new(a.x, a.y, m.grip_w, a.h);
+        let end_of_a = Rect::new(a.x + a.w - m.grip_w, a.y, m.grip_w, a.h);
+        assert!(ink_in(&over, end_of_a) > 0, "the held edge stays lit");
+        assert_eq!(ink_in(&over, start_of_a), 0, "and only that edge");
+
+        // ...and the pointer standing over *another* clip lights nothing there
+        // while the first one is held.
+        let over_b = Some(((b.x + 5.0) as f64, (b.y + b.h * 0.5) as f64));
+        let (_, over) = overlay(Grab::Clip(10, None), over_b);
+        let start_of_b = Rect::new(b.x, b.y, m.grip_w, b.h);
+        assert_eq!(
+            ink_in(&over, start_of_b),
+            0,
+            "a clip the drag is crossing offered a grab that is not on the table"
+        );
+
+        // A drag that is not a clip's silences every grip.
+        let (_, over) = overlay(Grab::Other, over_b);
+        assert_eq!(ink_in(&over, start_of_b), 0);
     }
 
     /// A clip's take drawn as the time-frequency texture: the same clip, the

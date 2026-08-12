@@ -538,23 +538,43 @@ pub(super) fn draw_static_meshes(
     // time-frequency texture — a GPU pass after every mesh — hides them
     // outright), and a clip nobody can read is a rectangle. Same reason the
     // playhead and the selection live here.
-    // **One** clip carries the grips: the topmost one under the pointer. Clips
-    // may overlap, and the overlay is painted after every clip's box, so a
-    // covered clip lighting up its edge would draw its affordance *over* the
-    // clip covering it — announcing a grab that the press, which takes the
-    // topmost, would not give. Later placements are drawn later, so the last
-    // match is the top one — the rule the hit-test already follows.
-    let hovered = inputs.world.cursor.and_then(|(x, y)| {
+    // **One** clip carries the grip, and which one depends on whether anything
+    // is already held. Free, it is the topmost clip under the pointer: clips
+    // overlap and the overlay is painted after every clip's box, so a covered
+    // clip lighting its edge would draw over the clip covering it, announcing a
+    // grab the press — which takes the topmost — would not give. Held, it is
+    // the clip in hand, wherever the pointer has got to: a clip moves in snap
+    // steps and the pointer does not, so the two part company between steps,
+    // and a grip that follows the pointer there blinks out mid-drag and lights
+    // up whatever the pointer drifted over.
+    let pointer = inputs.world.cursor;
+    let topmost = pointer.and_then(|(x, y)| {
         collected
             .clip_items
             .iter()
             .rposition(|item| item.rect.contains(x, y))
-            .map(|i| (i, x as f32))
     });
     for (i, item) in collected.clip_items.iter().enumerate() {
-        let grip = hovered
-            .filter(|(top, _)| *top == i)
-            .and_then(|(_, x)| track::clip_grip_at(item.rect, item.ends, m, x));
+        let grip = match inputs.grab {
+            // Something else has the pointer: no clip offers anything.
+            Grab::Other => None,
+            Grab::Clip(id, side) if item.id == Some(id) => {
+                let cx = pointer.map_or(item.rect.x + item.rect.w * 0.5, |(x, _)| {
+                    // Clamped into the clip: a held clip keeps its grip lit
+                    // even while the pointer is outside it.
+                    (x as f32).clamp(item.rect.x, item.rect.x + item.rect.w)
+                });
+                match side {
+                    Some(side) => track::clip_grip_on(item.rect, item.ends, m, side),
+                    None => track::clip_grip_at(item.rect, item.ends, m, cx),
+                }
+            }
+            Grab::Clip(..) => None,
+            Grab::None => topmost.filter(|top| *top == i).and_then(|_| {
+                let (x, _) = pointer?;
+                track::clip_grip_at(item.rect, item.ends, m, x as f32)
+            }),
+        };
         if grip.is_none() && item.label.is_none() {
             continue;
         }

@@ -236,6 +236,26 @@ impl Gestures {
         self.drag.is_some()
     }
 
+    /// What this drag is holding, in the terms the frame draws affordances by
+    /// ([`crate::host::frame::Grab`]) — the clip and the edge of it, or that
+    /// something else has the pointer.
+    pub(crate) fn grab(&self) -> crate::host::frame::Grab {
+        use crate::host::frame::Grab;
+        use crate::host::graphics::track::ClipSide;
+        match &self.drag {
+            None => Grab::None,
+            Some(Drag::Clip { id, part, .. }) => Grab::Clip(
+                *id,
+                match part {
+                    interact::ClipPart::Start => Some(ClipSide::Start),
+                    interact::ClipPart::End => Some(ClipSide::End),
+                    interact::ClipPart::Body => None,
+                },
+            ),
+            Some(_) => Grab::Other,
+        }
+    }
+
     /// Whether the active drag is a *locked* one — driven by relative deltas
     /// ([`Self::relative_motion`]), not by cursor positions. What an element
     /// asked for and the front granted.

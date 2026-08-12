@@ -441,6 +441,22 @@ pub fn clip_grip_at(
     }
 }
 
+/// The grip on a **named** side, for a caller that knows which one it wants
+/// rather than asking where the pointer is — a drag already holding an edge.
+pub fn clip_grip_on(
+    cr: Rect,
+    ends: (bool, bool),
+    m: &Metrics,
+    side: ClipSide,
+) -> Option<(Rect, ClipSide)> {
+    let (start, end) = clip_grips(cr, ends, m);
+    match side {
+        ClipSide::Start => start,
+        ClipSide::End => end,
+    }
+    .map(|r| (r, side))
+}
+
 /// Draws one clip grip — the affordance for the resize gesture, shown while the
 /// pointer is on that side of the clip.
 ///

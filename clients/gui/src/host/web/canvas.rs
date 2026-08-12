@@ -261,6 +261,9 @@ impl WebApp {
                 ..Default::default()
             },
             focused,
+            // The page draws what the desktop draws: a held clip keeps its
+            // grip and nothing else lights up, whichever front is driving.
+            grab: slot.gestures.grab(),
             ..Default::default()
         };
         let Some(render) = slot.render.as_mut() else {

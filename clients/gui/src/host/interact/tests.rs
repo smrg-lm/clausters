@@ -198,6 +198,48 @@ fn clip_part_splits_body_from_edges() {
 }
 
 #[test]
+fn tmp_probe_zoomed_clip_ends() {
+    let mut host = track_host();
+    // Zoom the shared axis into [100, 500) of an 800-sample composition: clip A
+    // (0..400) has its end on screen and its start off; clip B (400..800) the
+    // other way round.
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: "/gui_set".into(),
+            args: vec![
+                OscType::Int(5),
+                OscType::String("view_start".into()),
+                OscType::Float(100.0),
+                OscType::String("view_len".into()),
+                OscType::Float(400.0),
+            ],
+        }),
+        from(),
+    );
+    let (fb_w, fb_h) = (1000, 200);
+    let (body, nav) = geometry(&host, fb_w, fb_h);
+    println!("nav = {nav:?}, body = {body:?}");
+    let midy = (body.y + body.h / 2.0) as f64;
+    for (id, offset, dur) in [(10, 0.0, 400.0), (11, 400.0, 400.0)] {
+        let Some((x0, x1)) = track::clip_x_range(body, &nav, offset, dur) else {
+            println!("clip {id}: not visible");
+            continue;
+        };
+        let rect = track::clip_rect(body, x0, x1);
+        let local = track::clip_local_view(body, &nav, offset, dur, rect);
+        let ends = track::clip_ends_on_screen(&local, dur);
+        println!("clip {id}: rect {x0}..{x1}, local {local:?}, ends {ends:?}");
+        for x in [x0 + 2.0, x1 - 2.0] {
+            let h = hit(&host, 1, fb_w, fb_h, x as f64, midy, &mono).unwrap();
+            let lane = time_of(&h.chain).unwrap();
+            let lo = local_time_of(&h.chain).unwrap();
+            let hh = clip_hit(&host, 1, lane, lo, x as f64).unwrap();
+            println!("   press at {x}: id {} part {:?}", hh.id, hh.part);
+        }
+    }
+}
+
+#[test]
 fn the_hit_lands_on_the_placed_clip_and_names_the_part_under_the_cursor() {
     let host = track_host();
     let (fb_w, fb_h) = (1000, 200);

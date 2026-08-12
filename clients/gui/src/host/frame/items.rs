@@ -60,6 +60,7 @@ pub(super) struct TrackItem {
 /// are emitted parent-before-child, so drawing the vectors in order paints
 /// every clip and then every body over its own clip.
 pub(super) struct ClipItem {
+    pub(super) id: Option<i32>,
     pub(super) rect: Rect,
     /// Which of the clip's own ends are on screen, so a grip is only ever
     /// drawn where the clip actually ends
@@ -285,6 +286,7 @@ pub(super) fn collect_widgets(
             }
             WidgetKind::Clip { label, dur, .. } => {
                 clip_items.push(ClipItem {
+                    id: p.widget.id,
                     rect: p.rect,
                     ends: p.time.as_ref().map_or((true, true), |local| {
                         crate::host::graphics::track::clip_ends_on_screen(local, *dur)

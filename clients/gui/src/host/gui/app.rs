@@ -397,6 +397,12 @@ impl App {
                 .focused()
                 .filter(|(d, _)| *d == def_id)
                 .map(|(_, id)| id),
+            // What this window's drag is holding: while one is in flight the
+            // grips are its own and nothing else lights up.
+            grab: self
+                .windows
+                .get(&def_id)
+                .map_or(frame::Grab::None, |w| w.gestures.grab()),
         };
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;
