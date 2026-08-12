@@ -834,15 +834,20 @@ impl Notes {
             _ => ruler::readout_time(s, rate, nav.len / rate / grid.w.max(1.0) as f64),
         };
         let text = format!("{}  {time}", clausters_core::scale::note_name(pitch));
-        let w = font::width(&text, m.caption_scale);
-        font::text(
-            mesh,
-            &text,
+        // Right-aligned **inside the grid**: a roll drawn as a clip's body is
+        // as wide as the clip, so a read-out placed at its own width alone
+        // starts left of the box and is read over whatever is drawn there. It
+        // drops its tail first — the time — and keeps the note name, which is
+        // the half a pointer on a pitch is asking for; a grid with no room for
+        // the ellipsis draws nothing.
+        let room = grid.w - 2.0 * m.pad;
+        let w = font::width(&text, m.caption_scale).min(room);
+        let (x, y) = (
             grid.x + grid.w - w - m.pad,
             grid.y + grid.h - font::height(m.caption_scale) - 2.0,
-            m.caption_scale,
-            theme.ruler_text,
         );
+        let (scale, color) = (m.caption_scale, theme.ruler_text);
+        crate::host::graphics::plate_text(d, &text, x, y, room, scale, color);
     }
 
     /// A press on the note grid: Alt toggles a note in or out of the selection,
@@ -1063,6 +1068,7 @@ fn parse_osc(props: &serde_json::Map<String, Value>) -> Vec<OscMark> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::host::widget::element::Mods;
 
@@ -1072,6 +1078,63 @@ mod tests {
 
     fn roll(json: &str) -> Notes {
         from_props(&props(json))
+    }
+
+    /// The cursor read-out stays inside the grid it reads: a roll drawn as a
+    /// clip's body is as wide as the clip, and a read-out right-aligned at its
+    /// own width alone starts left of the box — over whatever is drawn there.
+    #[test]
+    fn the_cursor_readout_is_kept_inside_a_narrow_roll() {
+        use crate::host::world::World;
+
+        let m = Metrics::default();
+        let theme = crate::host::theme::Theme::default();
+        // A clip's roll body: no keyboard gutter, so the box *is* the grid —
+        // and it is narrower than "C4  0.000 s" asks for.
+        let el = body(&props(r#"{"notes":[0.0,50.0,60.0,100.0,0.0]}"#)).unwrap();
+        let narrow = Rect::new(0.0, 0.0, 40.0, 80.0);
+        let paint = |cursor: Option<(f64, f64)>| {
+            let world = World {
+                cursor,
+                ..World::default()
+            };
+            let mut mesh = crate::host::paint::Mesh::new();
+            el.draw(
+                &mut Draw::new(&mut mesh, &m, &theme),
+                &Ctx {
+                    world: &world,
+                    metrics: &m,
+                    rect: narrow,
+                    indent: 0.0,
+                    scale: 1.0,
+                    time: Some(TimeSpace::of(View::full(100), 100.0)),
+                    clip: None,
+                    focused: false,
+                },
+            );
+            mesh
+        };
+        // The read-out is what the pointer adds to the same drawing, so it is
+        // the vertices past the ones the roll puts down without one.
+        let bare = paint(None);
+        let with = paint(Some((20.0, 40.0)));
+        assert!(
+            with.vertex_count() > bare.vertex_count(),
+            "the pointer draws a read-out at all"
+        );
+        let text: Vec<f32> = with
+            .positions()
+            .skip(bare.vertex_count() as usize)
+            .map(|(x, _)| x)
+            .collect();
+        let left = text.iter().copied().fold(f32::MAX, f32::min);
+        let right = text.iter().copied().fold(f32::MIN, f32::max);
+        assert!(
+            left >= narrow.x && right <= narrow.x + narrow.w,
+            "the read-out leaves the box it reads: {left}..{right} in {}..{}",
+            narrow.x,
+            narrow.x + narrow.w
+        );
     }
 
     /// A roll placed on a navigation group: the indent is its keyboard gutter,

@@ -100,6 +100,7 @@ the same color to within the 8 bits of the notation:
 | `grid` | `#4c576699` | A view's reference grid (the phase scope's cross and square). |
 | `grid_line` | `#292e38` | A fine grid line (the piano roll's row lines). |
 | `baseline` | `#475261` | The zero baseline of a value axis. |
+| `plate` | `#0a0d129e` | The ground a **text plate** lays under a caption drawn over a picture (a clip's name over its take, a roll's cursor read-out): a translucent dark box, so the text reads without hiding what it is written on. Its alpha is the whole role. |
 | `focus` | `#73b2ffe6` | The ring around the widget holding the keyboard focus. Its own role rather than the accent: what is focused and what is *active* are two different questions, and a window answers both at once. |
 | `selection` | `#8cbff2` | The selection color; fills and edges derive by alpha. |
 | `playhead` | `#f28c4ce6` | The playhead line. |
@@ -190,6 +191,7 @@ The 24 roles, with the value each takes at `scale = 1.0`:
 | `focus_ring` | 2 | The weight of the ring around the widget holding the keyboard focus. Heavier than a hairline on purpose: it has to read *over* the edge a control already draws. |
 | `trace_w` | 1.5 | The weight of a drawn signal trace. |
 | `point_radius` | 4 | The radius of a placed point (a break-point, an automation node). |
+| `plate_radius` | 4 | The corner radius of a **text plate** — the ground a caption drawn over a picture sits on. |
 | `hit_slop` | 4 | The slack around a small target's geometry, so it stays clickable. |
 | `label_gap` | 14 | The smallest gap between two ruler labels before the ladder steps up. |
 | `tick_gap` | 7 | The smallest gap between two ruler ticks before the ladder steps up. |

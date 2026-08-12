@@ -123,6 +123,12 @@ theme_roles! {
     grid_line = [0.16, 0.18, 0.22, 1.0];
     /// The zero baseline of a value axis.
     baseline = [0.28, 0.32, 0.38, 1.0];
+    /// The ground a **text plate** lays under a caption drawn over a picture: a
+    /// translucent dark box, so a name over a waveform, a spectrogram or a roll
+    /// reads without hiding what it is written on. Its alpha is the whole role
+    /// — an opaque plate would be a label with a background, which is a
+    /// different thing.
+    plate = [0.04, 0.05, 0.07, 0.62];
 
     /// The ring around the widget holding the keyboard focus. Its own role
     /// rather than the accent: what is focused and what is *active* are two

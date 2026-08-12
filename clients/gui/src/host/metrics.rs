@@ -180,6 +180,9 @@ metrics_roles! {
     trace_w,
     /// The radius of a placed point (a break-point, an automation node).
     point_radius,
+    /// The corner radius of a **text plate** — the ground a caption drawn over
+    /// a picture sits on, so the glyphs read against whatever is under them.
+    plate_radius,
     /// The slack around a small target's geometry, so it stays clickable.
     hit_slop,
     /// The smallest gap between two ruler labels before the ladder steps up.
@@ -248,6 +251,7 @@ impl Metrics {
             focus_ring: hairline(2.0 * k),
             trace_w: (1.5 * k).max(0.5),
             point_radius: pad,
+            plate_radius: pad,
             hit_slop: pad,
             label_gap: grid(cell),
             tick_gap: hairline(cell * 0.5),
@@ -305,6 +309,7 @@ impl Metrics {
             focus_ring: hairline(self.focus_ring * k),
             trace_w: (self.trace_w * k).max(0.5),
             point_radius: grid(self.point_radius * k),
+            plate_radius: grid(self.plate_radius * k),
             hit_slop: grid(self.hit_slop * k),
             label_gap: grid(self.label_gap * k),
             tick_gap: hairline(self.tick_gap * k),
@@ -422,6 +427,7 @@ mod tests {
         assert_eq!(m.focus_ring, 2.0);
         assert_eq!(m.trace_w, 1.5);
         assert_eq!(m.point_radius, 4.0);
+        assert_eq!(m.plate_radius, 4.0);
         assert_eq!(m.hit_slop, 4.0);
         assert_eq!(m.label_gap, 14.0);
         assert_eq!(m.tick_gap, 7.0);

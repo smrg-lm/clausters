@@ -386,15 +386,23 @@ pub fn draw_clip(d: &mut Draw, cr: Rect) {
 /// mesh at all but a GPU pass after every mesh — hides it outright. So the box
 /// is the base mesh's and the name is the overlay's, the same split the
 /// playhead and the selection already take.
+///
+/// The name is **kept inside the box it names**: `cr` is the clip's *visible*
+/// rectangle (the span clamped to the lane), so a name written at its own
+/// length runs out of a clip narrower than the string — over the neighbour that
+/// starts there, which is the one place it must never be. It truncates with the
+/// ellipsis instead, the rule every other single line in the host follows, and
+/// a clip with no room for a glyph draws no name rather than a stray mark.
 pub fn draw_clip_label(d: &mut Draw, cr: Rect, label: &str) {
-    let (mesh, m, theme) = d.parts();
-    font::text(
-        mesh,
+    let (pad, scale, color) = (d.m.pad, d.m.caption_scale, d.theme.text);
+    super::plate_text(
+        d,
         label,
-        cr.x + m.pad,
-        cr.y + m.pad,
-        m.caption_scale,
-        theme.text,
+        cr.x + pad,
+        cr.y + pad,
+        cr.w - 2.0 * pad,
+        scale,
+        color,
     );
 }
 
@@ -745,6 +753,40 @@ mod tests {
             "a",
         );
         assert!(!over.is_empty(), "the name draws over the bodies");
+    }
+
+    /// A clip's name stays inside the clip: `cr` is the *visible* rectangle, so
+    /// a name at its own length runs over whatever starts where this clip ends.
+    #[test]
+    fn a_clip_name_is_truncated_to_the_box_it_names() {
+        let metrics = Metrics::default();
+        let theme = Theme::default();
+        let wide = Rect::new(0.0, 0.0, 400.0, 40.0);
+        let narrow = Rect::new(0.0, 0.0, 40.0, 40.0);
+
+        let mut full = Mesh::new();
+        draw_clip_label(&mut Draw::new(&mut full, &metrics, &theme), wide, "a take");
+        let right = |m: &Mesh| m.positions().map(|(x, _)| x).fold(f32::MIN, f32::max);
+        assert!(right(&full) <= wide.w, "a name that fits stays put");
+
+        let mut cut = Mesh::new();
+        draw_clip_label(&mut Draw::new(&mut cut, &metrics, &theme), narrow, "a take");
+        assert!(!cut.is_empty(), "a narrow clip still says what it can");
+        assert!(
+            right(&cut) <= narrow.w,
+            "the name bleeds past the clip ({} > {})",
+            right(&cut),
+            narrow.w
+        );
+
+        // No room for a glyph: no stray mark where a name would have been.
+        let mut none = Mesh::new();
+        draw_clip_label(
+            &mut Draw::new(&mut none, &metrics, &theme),
+            Rect::new(0.0, 0.0, 2.0, 40.0),
+            "a take",
+        );
+        assert!(none.is_empty(), "a sliver of a clip draws no name");
     }
 
     #[test]

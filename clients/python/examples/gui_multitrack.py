@@ -386,10 +386,16 @@ win = gui.open(window(
         name="editor", axis="y", zoom=False, flow="col", gap=4.0,
         content_h=3 * LANE_H + 8.0, weight=1.0),
 
-    # -- 5. the transport: the buttons on the left, the counter beside them
-    layout(button(label="play/pause", name="b_play"),
-           button(label="stop", name="b_stop"),
-           button(label="rewind", name="b_rew"),
+    # -- 5. the transport: the buttons on the left, the counter beside them.
+    # The buttons are **chrome**, so they take a fixed width and the counter
+    # takes the leftover — the row's rule read the other way round. Left
+    # elastic they split the row four ways and the read-out, which is the one
+    # thing here whose width is its content, came back with an ellipsis: a
+    # caption's budget is its box divided by the character cell (12 px at
+    # ``text_size`` 2.0), and this one is ~59 characters wide.
+    layout(button(label="play/pause", name="b_play", w=110.0),
+           button(label="stop", name="b_stop", w=110.0),
+           button(label="rewind", name="b_rew", w=110.0),
            label("", name="counter", text_size=2.0, weight=1.0),
            flow="row", h=40.0, gap=6.0),
 
