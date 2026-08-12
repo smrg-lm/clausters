@@ -193,7 +193,7 @@ The 24 roles, with the value each takes at `scale = 1.0`:
 | `point_radius` | 4 | The radius of a placed point (a break-point, an automation node). |
 | `plate_radius` | 4 | The corner radius of a **text plate** — the ground a caption drawn over a picture sits on. |
 | `hit_slop` | 4 | The slack around a small target's geometry, so it stays clickable. |
-| `grip_w` | 6 | The width of an **edge grip**: the strip at each end of a placed object that resizes it (a clip's ends), drawn where it can be grabbed. |
+| `grip_w` | 12 | The width of an **edge grip**: the strip at each end of a placed object that resizes it (a clip's ends), drawn where it can be grabbed. |
 | `label_gap` | 14 | The smallest gap between two ruler labels before the ladder steps up. |
 | `tick_gap` | 7 | The smallest gap between two ruler ticks before the ladder steps up. |
 | `text_scale` | 2 | Primary text: control labels, values, readouts. |

@@ -256,7 +256,7 @@ impl Metrics {
             point_radius: pad,
             plate_radius: pad,
             hit_slop: pad,
-            grip_w: grid(1.5 * pad),
+            grip_w: grid(3.0 * pad),
             label_gap: grid(cell),
             tick_gap: hairline(cell * 0.5),
 
@@ -434,7 +434,7 @@ mod tests {
         assert_eq!(m.point_radius, 4.0);
         assert_eq!(m.plate_radius, 4.0);
         assert_eq!(m.hit_slop, 4.0);
-        assert_eq!(m.grip_w, 6.0);
+        assert_eq!(m.grip_w, 12.0);
         assert_eq!(m.label_gap, 14.0);
         assert_eq!(m.tick_gap, 7.0);
         assert_eq!(m.text_scale, 2.0);

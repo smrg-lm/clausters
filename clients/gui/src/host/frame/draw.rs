@@ -538,19 +538,31 @@ pub(super) fn draw_static_meshes(
     // time-frequency texture — a GPU pass after every mesh — hides them
     // outright), and a clip nobody can read is a rectangle. Same reason the
     // playhead and the selection live here.
-    for item in &collected.clip_items {
-        let hovered = inputs
-            .world
-            .cursor
-            .is_some_and(|(x, y)| item.rect.contains(x, y));
-        if !hovered && item.label.is_none() {
+    // **One** clip carries the grips: the topmost one under the pointer. Clips
+    // may overlap, and the overlay is painted after every clip's box, so a
+    // covered clip lighting up its edge would draw its affordance *over* the
+    // clip covering it — announcing a grab that the press, which takes the
+    // topmost, would not give. Later placements are drawn later, so the last
+    // match is the top one — the rule the hit-test already follows.
+    let hovered = inputs.world.cursor.and_then(|(x, y)| {
+        collected
+            .clip_items
+            .iter()
+            .rposition(|item| item.rect.contains(x, y))
+            .map(|i| (i, x as f32))
+    });
+    for (i, item) in collected.clip_items.iter().enumerate() {
+        let grip = hovered
+            .filter(|(top, _)| *top == i)
+            .and_then(|(_, x)| track::clip_grip_at(item.rect, item.ends, m, x));
+        if grip.is_none() && item.label.is_none() {
             continue;
         }
         over.set_clip(item.clip);
         over.set_ink(item.ink);
         let th = item.theme.as_deref().unwrap_or(theme);
-        if hovered {
-            track::draw_clip_grips(&mut Draw::new(over, m, th), item.rect, item.ends);
+        if let Some((rect, side)) = grip {
+            track::draw_clip_grip(&mut Draw::new(over, m, th), rect, side);
         }
         let Some(label) = item.label.as_deref() else {
             continue;

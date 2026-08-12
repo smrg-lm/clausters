@@ -412,19 +412,65 @@ pub fn clip_grips(cr: Rect, ends: (bool, bool), m: &Metrics) -> (Option<Rect>, O
     )
 }
 
-/// Draws a clip's grips — the affordance for the resize gesture, shown while
-/// the pointer is over the clip.
+/// Which end of a clip the pointer is asking about: the half it is in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipSide {
+    Start,
+    End,
+}
+
+/// The **one** grip to draw for a pointer at `cursor_x`: the one on the side
+/// the pointer is on, `None` when that side has no grip (its end is off screen,
+/// or the clip is all body).
 ///
-/// **On hover, not always**: a lane of clips carrying permanent handles reads
-/// as a row of controls rather than as material, and the grip is only ever
-/// wanted where the pointer already is. It goes into the overlay mesh with the
-/// name, for the same reason: a take's trace would bury it.
-pub fn draw_clip_grips(d: &mut Draw, cr: Rect, ends: (bool, bool)) {
-    let (mesh, m, theme) = d.parts();
+/// One at a time on purpose. Both ends lit is a claim about where the pointer
+/// is going that the pointer has not made — and the reader is already on a
+/// side, so the affordance belongs there. It is the same half the press lands
+/// in, so what lights up is what a drag would take.
+pub fn clip_grip_at(
+    cr: Rect,
+    ends: (bool, bool),
+    m: &Metrics,
+    cursor_x: f32,
+) -> Option<(Rect, ClipSide)> {
     let (start, end) = clip_grips(cr, ends, m);
-    for r in [start, end].into_iter().flatten() {
-        mesh.rect(r, crate::host::theme::with_alpha(theme.object_edge, 0.55));
+    if cursor_x < cr.x + cr.w * 0.5 {
+        start.map(|r| (r, ClipSide::Start))
+    } else {
+        end.map(|r| (r, ClipSide::End))
     }
+}
+
+/// Draws one clip grip — the affordance for the resize gesture, shown while the
+/// pointer is on that side of the clip.
+///
+/// It is a **plate**, the same translucent ground a caption over a picture sits
+/// on ([`plate_text`](super::plate_text)), for the same reason: what is under
+/// it is material, and an opaque strip would cut a hole in the take rather than
+/// mark an edge of it. The arrow says which way the edge moves and is centred
+/// on the strip's height, so it reads at any lane thickness.
+///
+/// **The symbol is a parameter of the gesture, not of the clip.** An edge drag
+/// means *trim* on one arrangement and *stretch* on another, and the day a lane
+/// says which, the arrow is where that is announced — an outward chevron for
+/// the edge that moves, another mark for the material that stretches under it.
+pub fn draw_clip_grip(d: &mut Draw, grip: Rect, side: ClipSide) {
+    let (mesh, m, theme) = d.parts();
+    mesh.round_rect(grip, m.plate_radius, theme.plate);
+    // The arrow: a triangle pointing out of the clip, half the strip wide and
+    // centred on it.
+    let cy = grip.y + grip.h * 0.5;
+    let half = (grip.w * 0.30).min(grip.h * 0.30);
+    let (tip, base) = match side {
+        ClipSide::Start => (grip.x + grip.w * 0.30, grip.x + grip.w * 0.70),
+        ClipSide::End => (grip.x + grip.w * 0.70, grip.x + grip.w * 0.30),
+    };
+    mesh.tri(
+        [tip, cy],
+        [base, cy - half],
+        [base, cy + half],
+        theme.object_edge,
+    );
 }
 
 /// Draws a clip's **name**, into whichever mesh is painted over its bodies.
@@ -872,15 +918,24 @@ mod tests {
             (None, None)
         );
 
-        // The drawing follows the same answer: hovering a clip with one end off
-        // screen inks one strip, not two.
-        let ink = |ends| {
-            let mut mesh = Mesh::new();
-            draw_clip_grips(&mut Draw::new(&mut mesh, &m, &Theme::default()), cr, ends);
-            mesh.vertex_count()
-        };
-        assert_eq!(ink((true, true)), 2 * ink((false, true)));
-        assert_eq!(ink((false, false)), 0);
+        // One at a time, and the one the pointer is on: the left half asks for
+        // the start, the right half for the end.
+        let left = clip_grip_at(cr, (true, true), &m, cr.x + 10.0);
+        let right = clip_grip_at(cr, (true, true), &m, cr.x + cr.w - 10.0);
+        assert_eq!(left.map(|(_, s)| s), Some(ClipSide::Start));
+        assert_eq!(right.map(|(_, s)| s), Some(ClipSide::End));
+        // ...and nothing on the side whose end is off screen.
+        assert!(clip_grip_at(cr, (false, true), &m, cr.x + 10.0).is_none());
+
+        // The drawing is a plate with a mark on it, and it draws only what it
+        // was given.
+        let mut mesh = Mesh::new();
+        draw_clip_grip(
+            &mut Draw::new(&mut mesh, &m, &Theme::default()),
+            left.unwrap().0,
+            ClipSide::Start,
+        );
+        assert!(!mesh.is_empty(), "the grip is drawn");
     }
 
     #[test]

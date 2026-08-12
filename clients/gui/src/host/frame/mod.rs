@@ -1055,6 +1055,71 @@ mod tests {
         assert_eq!(out, 0, "{out} vertices are drawn outside the clip");
     }
 
+    /// **The grip belongs to the clip on top.** Clips may overlap, and the
+    /// overlay is painted after every clip's box — so a covered clip lighting
+    /// up its edge would draw its affordance over the clip covering it, and
+    /// announce a grab the press (which takes the topmost) would not give.
+    #[test]
+    fn only_the_topmost_clip_under_the_pointer_carries_a_grip() {
+        use crate::host::guidef::GuiNode;
+        use crate::host::widget::Widget;
+
+        // Two clips on one lane, overlapping in the middle: the second is on
+        // top (later placements are drawn later).
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":5,"type":"field","label":"lane","children":[
+                {"id":10,"type":"field","offset":0,"dur":600,"data":[0.0,0.5]},
+                {"id":11,"type":"field","offset":400,"dur":600,"data":[0.0,0.5]}]}]}"#;
+        let tree = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+        let m = Metrics::default();
+        let area = Rect::new(0.0, 0.0, 800.0, 200.0);
+
+        let grips = |cursor: (f64, f64)| {
+            let world = crate::host::world::World {
+                cursor: Some(cursor),
+                ..crate::host::world::World::default()
+            };
+            let inputs = FrameInputs {
+                metrics: &m,
+                world,
+                ..FrameInputs::default()
+            };
+            let placed = layout::layout(area, &tree, &m);
+            let mut mesh = Mesh::new();
+            let collected = collect_widgets(&placed, &mut mesh, &inputs, &Theme::default());
+            let (mut base, mut over) = (Mesh::new(), Mesh::new());
+            draw_static_meshes(
+                &mut base,
+                &mut over,
+                &collected,
+                &inputs,
+                &Theme::default(),
+                &tree,
+            );
+            (
+                collected.clip_items[0].rect,
+                collected.clip_items[1].rect,
+                over,
+            )
+        };
+
+        // A pointer in the overlap: it is in the *first* clip's right half and
+        // the *second* clip's left half, so the two would light opposite ends —
+        // at pixels far apart. Only the top one's may be drawn.
+        let (a, b, _) = grips((0.0, 0.0));
+        let overlap_x = (b.x + (a.x + a.w)) * 0.5;
+        let (_, _, over) = grips((overlap_x as f64, (a.y + a.h * 0.5) as f64));
+        let ink: Vec<f32> = over.positions().map(|(x, _)| x).collect();
+        assert!(!ink.is_empty(), "something is drawn over the clips");
+        let near_a_end = ink.iter().filter(|x| **x > a.x + a.w - 20.0).count();
+        let near_b_start = ink.iter().filter(|x| **x < b.x + 20.0).count();
+        assert!(near_b_start > 0, "the top clip's start grip is drawn");
+        assert_eq!(
+            near_a_end, 0,
+            "the covered clip drew its end grip over the one covering it"
+        );
+    }
+
     /// A clip's take drawn as the time-frequency texture: the same clip, the
     /// same placement, another presentation. It leaves the mesh bodies (it is
     /// not geometry) and is collected for the GPU pass under the **clip's** id,
