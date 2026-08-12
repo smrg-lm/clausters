@@ -161,7 +161,12 @@ export interface TimelineOptions extends WidgetOptions {
     tempo?: number;
     beatAt?: number;
     quant?: number;
-    /** The time selection, in samples. */
+    /**
+     * The time selection: `selLen` is a **count of samples** and `selStart` the
+     * first of them. The host snaps both, set from here or swept with the
+     * pointer, so a selection never stands between two samples; a sweep takes
+     * the samples it passed over, so one joins when the cursor reaches it.
+     */
     selStart?: number;
     selLen?: number;
     /**

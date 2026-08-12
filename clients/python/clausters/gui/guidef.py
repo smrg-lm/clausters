@@ -690,6 +690,10 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     The rest of the editor chrome: ``sel_start``/``sel_len`` set the selection
     in samples (dragging on the view updates it and emits
     ``/gui_event id "selection" start len``; Shift+drag pans, the wheel zooms).
+    A selection is a **count of samples**: ``sel_len`` is how many it holds and
+    ``sel_start`` is the first, snapped whether set from here or swept with the
+    pointer — never a band of pixels standing between two samples. A sweep takes
+    the samples it passed over, so one joins when the cursor reaches it.
     ``playhead_at`` draws a playhead tracking the engine sample clock: pass the
     ``/clock_query`` sample value that corresponds to buffer position 0 (negative or
     omitted = no playhead). ``playhead`` is the **static** counterpart — a

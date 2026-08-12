@@ -161,7 +161,7 @@ The **edit-back payloads**:
 | `"wire"` | `src_box outlet dst_box inlet` (ports by name; a rate mismatch is refused at the gesture) | a patcher cord drawn `outlet -> inlet` |
 | `"move"` | `index x y` (box index; canvas units) | a patcher box dragged — one payload per moved box, so the driver owns the geometry |
 | `"locate"` | `position` (timeline units) | a lane's time ruler (or its empty space) clicked — the transport is being seeked there |
-| `"selection"` | `start len` (samples) | a selection dragged on a timeline view |
+| `"selection"` | `start len` (samples, always whole) | a selection dragged on a timeline view |
 | `"view"` | `start len` (samples), or `x y zoom` on a `plane` | the navigation window zoomed or panned — the timeline group's shared window, or a 2D workspace's plane |
 | `"view_y"` | `start len` (0..1) | the vertical display window zoomed or panned |
 | `"view_x"` | `start len` (0..1) | an element's **own** horizontal window zoomed or panned — a navigable `spectrum`'s frequency axis, which is in no navigation group (a group's shared window reports `"view"`) |
@@ -249,6 +249,19 @@ Under an axis a property drops the axis marker — `x.start` is the old
 |---|---|
 | `x` | `unit` (`time`/`samples`/`beats`/`off`; `ruler` is accepted as its old name), `start`, `len`, `tempo` (beats per second), `beat_at`, `quant` (**beats per bar** — the grid a `bar:beat` label counts on, not a length in samples), `sample_rate`, `link`, `sel_start`, `sel_len`, `playhead`, `playhead_at`, `playhead_loop_start`, `playhead_loop_len` |
 | `y` | `unit` (`norm`/`db`/`bits`/`percent`/`hz`/`off`), `start`, `len`, `min`, `max`, `bit_depth` |
+
+**A selection is a count of samples.** `sel_len` is how many the selection
+holds and `sel_start` is the first, snapped when they are set and when a sweep
+writes them, so the `"selection"` event always reports whole samples. Zoomed in
+far enough that a pixel is worth a fraction of a sample, an unsnapped selection
+would cover the space *between* two samples — a region holding no data, which
+can be neither played nor cut. The snap takes the samples the sweep **passed
+over**, not the ones it came nearest, so a sample joins when the cursor reaches
+it; and the band is drawn from halfway before the first selected sample to
+halfway after the last, so the edges fall between what is in and what is out.
+The rule belongs to the navigation group rather than to any one view, which is
+why it holds for a spectrogram laid over a waveform too: they share the
+selection.
 
 **`min`/`max` are the value domain, and every view of a signal is drawn over
 it** — the trace of a take, a plot, a live scope, and the navigable waveform,

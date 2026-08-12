@@ -114,9 +114,16 @@ pub(super) fn draw_editor_overlay(
     let nav = &chrome.nav;
     mesh.border(body, m.divider_w, theme.view_frame);
     // Selection: a translucent band with hard edges, clipped to the body.
+    //
+    // **The band runs from halfway to halfway.** `(start, len)` is a count of
+    // samples — indices `start .. start + len` — and each of them owns the half
+    // sample-width on either side of it, so the edges fall midway between the
+    // last selected sample and the first one left out. Drawn edge-to-edge
+    // instead, the band would end *on* the last selected sample and read as
+    // excluding it, which is exactly the ambiguity a sample-level zoom exposes.
     if let Some((start, len)) = chrome.selection() {
-        let x0 = sample_to_x(start, nav, body).clamp(body.x, body.x + body.w);
-        let x1 = sample_to_x(start + len, nav, body).clamp(body.x, body.x + body.w);
+        let x0 = sample_to_x(start - 0.5, nav, body).clamp(body.x, body.x + body.w);
+        let x1 = sample_to_x(start + len - 0.5, nav, body).clamp(body.x, body.x + body.w);
         if x1 > x0 {
             mesh.rect(
                 Rect::new(x0, body.y, x1 - x0, body.h),

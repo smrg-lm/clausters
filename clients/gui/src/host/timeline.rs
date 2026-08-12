@@ -26,6 +26,19 @@
 //! the same shared timeline, set through [`Host::set_timeline_offset`] — so a
 //! lane of clips and a pair of linked lanes are one model, not two.
 //!
+//! A **selection is a count of samples**, always: `sel_len` is how many of them
+//! it holds, and `sel_start` is the first ([`snap_selection`] is the one door).
+//! A sweep is a pixel gesture and a pixel is worth a fraction of a sample once
+//! the view is zoomed in far enough — so an unsnapped selection covers the
+//! space *between* two samples, a region containing no data at all: it cannot
+//! be played, it cannot be cut, and the band drawn for it answers for nothing.
+//! The snap takes the samples the sweep **passed over** (`ceil`/`floor`), not
+//! the ones it came nearest, so a sample joins the selection when the cursor
+//! reaches it and not half a sample-width early. This is not the waveform's
+//! rule but the group's, which is what makes it hold for a spectrogram too: the
+//! two are views of one timeline, laid over each other by an editor, reading
+//! one selection.
+//!
 //! Selection and playhead live in the group and **only** there: every reader
 //! — the frame renderer, the animation demand, the readouts — resolves the
 //! member's key and reads the shared state, so there is nothing to keep in
@@ -61,6 +74,25 @@ pub fn group_key(widget_id: i32, link: Option<i32>) -> GroupKey {
     }
 }
 
+/// The samples a sweep from `a` to `b` (any order) covers, as `(start, len)` —
+/// the one rounding every write goes through.
+///
+/// **The samples the sweep has passed over, not the ones it is nearest.** The
+/// edges are `ceil` and `floor` rather than a rounding, so a sample joins the
+/// selection when the cursor actually reaches it: rounding to the nearest would
+/// take in a sample half a sample-width before the cursor gets there and drop
+/// one it has already passed, which reads as the selection disagreeing with the
+/// hand. `len` is a **count**: `start .. start + len` are the selected indices,
+/// and a sweep that has not reached a sample yet selects nothing at all — it is
+/// still the click it started as.
+pub fn snap_selection(a: f64, b: f64) -> (f64, f64) {
+    let (lo, hi) = (a.min(b).ceil(), a.max(b).floor());
+    if hi < lo {
+        return (lo, 0.0);
+    }
+    (lo, hi - lo + 1.0)
+}
+
 /// The shared state of one navigation group: the visible window, the
 /// selection and the playhead anchor, all in timeline sample units.
 ///
@@ -94,8 +126,10 @@ impl GroupState {
     pub(crate) fn seed(editor: &EditorProps, nav: View) -> GroupState {
         GroupState {
             nav,
-            sel_start: editor.sel_start,
-            sel_len: editor.sel_len,
+            // Whole samples from the def's own numbers too: the seed is a
+            // selection like any other.
+            sel_start: editor.sel_start.round(),
+            sel_len: editor.sel_len.round(),
             playhead_at: editor.playhead_at,
             playhead: editor.playhead,
             playhead_loop_start: editor.playhead_loop_start,
@@ -625,7 +659,10 @@ impl Host {
         let key = self.timeline_key(id)?;
         let total = self.timeline_total(key) as f64;
         let (a, b) = (a.clamp(0.0, total), b.clamp(0.0, total));
-        let (start, len) = (a.min(b), (a - b).abs());
+        // The samples the sweep passed over, never the space between two of
+        // them (see `snap_selection`), and never past the last one there is.
+        let (start, len) = snap_selection(a, b);
+        let len = len.min((total - start).max(0.0));
         let roots = self.set_timeline_selection(id, Some(start), Some(len));
         Some((start, len, roots))
     }
@@ -633,6 +670,10 @@ impl Host {
     /// Sets widget `id`'s group selection from the `/gui_set` `sel_start`/
     /// `sel_len` keys (either alone keeps the other). Returns the roots to
     /// repaint — every member draws the group's selection, so they all do.
+    ///
+    /// The wire's numbers are snapped to whole samples like a sweep's: a
+    /// selection is a count of samples whoever wrote it, and a script setting a
+    /// fractional one would draw a band the host cannot answer for.
     pub fn set_timeline_selection(
         &mut self,
         id: i32,
@@ -646,10 +687,10 @@ impl Host {
             return Vec::new();
         };
         if let Some(start) = start {
-            state.sel_start = start;
+            state.sel_start = start.round();
         }
         if let Some(len) = len {
-            state.sel_len = len;
+            state.sel_len = len.round();
         }
         self.timeline_roots(key)
     }
@@ -1222,8 +1263,40 @@ mod tests {
         let (nav, _) = host.timeline_nav(11).unwrap();
         assert_eq!(nav.len, 2.0, "the linked member zoomed too");
         let (start, len, _) = host.select_timeline(11, 3.5, 0.5).unwrap();
-        assert_eq!((start, len), (0.5, 3.0), "sorted and clamped");
-        assert_eq!(chrome_of(&host, 10).selection(), Some((0.5, 3.0)));
+        assert_eq!(
+            (start, len),
+            (1.0, 3.0),
+            "sorted, clamped and on whole samples"
+        );
+        assert_eq!(chrome_of(&host, 10).selection(), Some((1.0, 3.0)));
+    }
+
+    /// **A selection counts the samples the sweep passed over.** Swept over a
+    /// window a couple of samples wide, a pixel is worth a fraction of one — so
+    /// an unsnapped sweep selects the space *between* two samples, a region
+    /// with no data in it that can be neither played nor cut. And the snap is
+    /// `ceil`/`floor` rather than a rounding: a sample joins when the cursor
+    /// reaches it, not when it comes nearest, so the selection follows the hand.
+    #[test]
+    fn a_selection_counts_the_samples_the_sweep_passed_over() {
+        let mut host = linked_host();
+        // 1.2 -> 2.9: sample 2 is inside, samples 1 and 3 are not.
+        let (start, len, _) = host.select_timeline(10, 1.2, 2.9).unwrap();
+        assert_eq!((start, len), (2.0, 1.0), "one sample, the one swept over");
+        // Dragged a hair further, sample 3 joins — where rounding to the
+        // nearest would have taken it in back at 2.5, before the cursor got
+        // there.
+        let (start, len, _) = host.select_timeline(10, 1.2, 3.0).unwrap();
+        assert_eq!((start, len), (2.0, 2.0));
+        // A sweep between two samples reaches none of them: still the click it
+        // started as.
+        let (_, len, _) = host.select_timeline(10, 2.1, 2.9).unwrap();
+        assert_eq!(len, 0.0);
+        assert_eq!(chrome_of(&host, 10).selection(), None, "nothing selected");
+        // The wire's own numbers obey the same rule: a script cannot set a
+        // selection the host could not have swept.
+        host.set_timeline_selection(10, Some(0.4), Some(1.7));
+        assert_eq!(chrome_of(&host, 11).selection(), Some((0.0, 2.0)));
     }
 
     #[test]
