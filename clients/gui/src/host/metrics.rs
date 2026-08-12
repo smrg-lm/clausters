@@ -185,6 +185,9 @@ metrics_roles! {
     plate_radius,
     /// The slack around a small target's geometry, so it stays clickable.
     hit_slop,
+    /// The width of an **edge grip**: the strip at each end of a placed object
+    /// that resizes it (a clip's ends), drawn where it can be grabbed.
+    grip_w,
     /// The smallest gap between two ruler labels before the ladder steps up.
     label_gap,
     /// The smallest gap between two ruler ticks before the ladder steps up.
@@ -253,6 +256,7 @@ impl Metrics {
             point_radius: pad,
             plate_radius: pad,
             hit_slop: pad,
+            grip_w: grid(1.5 * pad),
             label_gap: grid(cell),
             tick_gap: hairline(cell * 0.5),
 
@@ -311,6 +315,7 @@ impl Metrics {
             point_radius: grid(self.point_radius * k),
             plate_radius: grid(self.plate_radius * k),
             hit_slop: grid(self.hit_slop * k),
+            grip_w: grid(self.grip_w * k),
             label_gap: grid(self.label_gap * k),
             tick_gap: hairline(self.tick_gap * k),
 
@@ -429,6 +434,7 @@ mod tests {
         assert_eq!(m.point_radius, 4.0);
         assert_eq!(m.plate_radius, 4.0);
         assert_eq!(m.hit_slop, 4.0);
+        assert_eq!(m.grip_w, 6.0);
         assert_eq!(m.label_gap, 14.0);
         assert_eq!(m.tick_gap, 7.0);
         assert_eq!(m.text_scale, 2.0);

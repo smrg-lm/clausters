@@ -61,6 +61,10 @@ pub(super) struct TrackItem {
 /// every clip and then every body over its own clip.
 pub(super) struct ClipItem {
     pub(super) rect: Rect,
+    /// Which of the clip's own ends are on screen, so a grip is only ever
+    /// drawn where the clip actually ends
+    /// (`track::clip_ends_on_screen`).
+    pub(super) ends: (bool, bool),
     pub(super) clip: Option<Rect>,
     /// The opacity and corner radius this widget draws with
     /// ([`super::ink_of`]).
@@ -279,9 +283,12 @@ pub(super) fn collect_widgets(
                     editor: editor.clone(),
                 });
             }
-            WidgetKind::Clip { label, .. } => {
+            WidgetKind::Clip { label, dur, .. } => {
                 clip_items.push(ClipItem {
                     rect: p.rect,
+                    ends: p.time.as_ref().map_or((true, true), |local| {
+                        crate::host::graphics::track::clip_ends_on_screen(local, *dur)
+                    }),
                     clip: p.clip,
                     ink,
                     theme: p.widget.theme.clone(),

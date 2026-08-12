@@ -332,6 +332,13 @@ pub(crate) fn clip_hit(
         rect,
         nav,
         local: local.nav,
-        part: clip_part(rect.x, rect.x + rect.w, x as f32),
+        // The grips the renderer drew: the same rectangle, the same ends, the
+        // same size table.
+        part: clip_part(
+            rect,
+            crate::host::graphics::track::clip_ends_on_screen(&local.nav, dur),
+            host.metrics_for(def_id),
+            x as f32,
+        ),
     })
 }

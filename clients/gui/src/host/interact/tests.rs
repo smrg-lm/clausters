@@ -178,12 +178,23 @@ fn clip_drag_placement_moves_and_resizes_from_the_snapshot() {
 
 #[test]
 fn clip_part_splits_body_from_edges() {
-    // A wide clip: edges at each end, body in the middle.
-    assert_eq!(clip_part(100.0, 300.0, 102.0), ClipPart::Start);
-    assert_eq!(clip_part(100.0, 300.0, 297.0), ClipPart::End);
-    assert_eq!(clip_part(100.0, 300.0, 200.0), ClipPart::Body);
-    // Too narrow to grab an edge: all body.
-    assert_eq!(clip_part(100.0, 108.0, 101.0), ClipPart::Body);
+    let m = crate::host::metrics::Metrics::default();
+    let both = (true, true);
+    let wide = Rect::new(100.0, 0.0, 200.0, 40.0);
+    // A wide clip with both ends on screen: a grip at each end, body between.
+    assert_eq!(clip_part(wide, both, &m, 102.0), ClipPart::Start);
+    assert_eq!(clip_part(wide, both, &m, 297.0), ClipPart::End);
+    assert_eq!(clip_part(wide, both, &m, 200.0), ClipPart::Body);
+    // Too narrow to hold two grips: all body.
+    assert_eq!(
+        clip_part(Rect::new(100.0, 0.0, 8.0, 40.0), both, &m, 101.0),
+        ClipPart::Body
+    );
+    // An end off screen has no grip: the rectangle's edge there is the
+    // window's, not the clip's, so a press on it grabs the body and pans or
+    // moves like any other pixel of the material.
+    assert_eq!(clip_part(wide, (false, true), &m, 102.0), ClipPart::Body);
+    assert_eq!(clip_part(wide, (true, false), &m, 297.0), ClipPart::Body);
 }
 
 #[test]

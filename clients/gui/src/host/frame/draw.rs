@@ -533,17 +533,28 @@ pub(super) fn draw_static_meshes(
             ),
         }
     }
-    // A clip's **name**, last and into the overlay: a body drawn over it would
-    // bury it (the take's trace does, and the time-frequency texture — a GPU
-    // pass after every mesh — hides it outright), and a clip nobody can read is
-    // a rectangle. Same reason the playhead and the selection live here.
+    // A clip's **name** and its **grips**, last and into the overlay: a body
+    // drawn over them would bury them (the take's trace does, and the
+    // time-frequency texture — a GPU pass after every mesh — hides them
+    // outright), and a clip nobody can read is a rectangle. Same reason the
+    // playhead and the selection live here.
     for item in &collected.clip_items {
-        let Some(label) = item.label.as_deref() else {
+        let hovered = inputs
+            .world
+            .cursor
+            .is_some_and(|(x, y)| item.rect.contains(x, y));
+        if !hovered && item.label.is_none() {
             continue;
-        };
+        }
         over.set_clip(item.clip);
         over.set_ink(item.ink);
         let th = item.theme.as_deref().unwrap_or(theme);
+        if hovered {
+            track::draw_clip_grips(&mut Draw::new(over, m, th), item.rect, item.ends);
+        }
+        let Some(label) = item.label.as_deref() else {
+            continue;
+        };
         track::draw_clip_label(&mut Draw::new(over, m, th), item.rect, label);
     }
 }

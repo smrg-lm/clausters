@@ -21,6 +21,8 @@
 
 use super::super::layout::Rect;
 use super::super::widget::{GestureMap, ScrollView, WidgetKind};
+use crate::host::graphics::track;
+use crate::host::metrics::Metrics;
 use crate::viewport::View;
 
 /// The coordinate system a container gives its contents.
@@ -177,17 +179,21 @@ pub(crate) enum ClipPart {
     End,
 }
 
-/// The clip edge hit zone, device pixels.
-const CLIP_EDGE_PX: f32 = 6.0;
-
-/// Which part of a clip spanning pixels `[x0, x1]` the pointer x fell on.
-pub(crate) fn clip_part(x0: f32, x1: f32, x: f32) -> ClipPart {
-    if x1 - x0 < 2.0 * CLIP_EDGE_PX {
-        return ClipPart::Body; // too narrow to grab an edge
-    }
-    if x - x0 <= CLIP_EDGE_PX {
+/// Which part of a clip spanning pixels `[x0, x1]` the pointer x fell on —
+/// **the strips the grips are drawn on**, and only the ends that carry one.
+///
+/// It reads the same [`track::clip_grips`] the renderer draws, so the pixels
+/// that light up are the pixels that resize; `ends` is which of the clip's own
+/// ends are on screen, since an end that is not cannot be grabbed (the
+/// rectangle's edge there is the window's, not the clip's). The width is the
+/// `grip_w` role: it was a literal in device pixels, which halved the grab zone
+/// on a HiDPI screen — a clip was hardest to resize exactly where its edge was
+/// thinnest.
+pub(crate) fn clip_part(rect: Rect, ends: (bool, bool), m: &Metrics, x: f32) -> ClipPart {
+    let (start, end) = track::clip_grips(rect, ends, m);
+    if start.is_some_and(|r| x >= r.x && x <= r.x + r.w) {
         ClipPart::Start
-    } else if x1 - x <= CLIP_EDGE_PX {
+    } else if end.is_some_and(|r| x >= r.x && x <= r.x + r.w) {
         ClipPart::End
     } else {
         ClipPart::Body

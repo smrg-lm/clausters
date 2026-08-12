@@ -379,6 +379,54 @@ pub fn draw_clip(d: &mut Draw, cr: Rect) {
     mesh.border(cr, m.divider_w, theme.object_edge);
 }
 
+/// Which **ends** of a clip are on screen, read off the clip's own axis: the
+/// slice of `[0, dur]` its drawn rectangle shows. A clip scrolled half off the
+/// left is drawn starting at some `t > 0`, and its start is not on screen at
+/// all — the left edge of its rectangle is the *window's* edge, not the clip's.
+///
+/// This is what a grip has to ask before it draws: an affordance at the pixel a
+/// clamp landed on says "the clip ends here", which is a lie, and it was read
+/// as one before there was a grip at all (the plain border did it).
+pub fn clip_ends_on_screen(local: &View, dur: f64) -> (bool, bool) {
+    // A pixel of slack: the clamp is float arithmetic, and an end exactly at
+    // the window's edge is on screen.
+    let eps = (dur * 1e-6).max(0.5);
+    (local.start <= eps, local.start + local.len >= dur - eps)
+}
+
+/// The two **grips** of a clip drawn at `cr`: the strips at its ends that
+/// resize it, `None` where the end is off screen ([`clip_ends_on_screen`]) or
+/// where the clip is too narrow to hold two of them and stays all body.
+///
+/// The renderer and the hit-test both call it, so the strip that lights up is
+/// the strip that resizes — the rule every other part of this module follows.
+pub fn clip_grips(cr: Rect, ends: (bool, bool), m: &Metrics) -> (Option<Rect>, Option<Rect>) {
+    let w = m.grip_w;
+    if cr.w < 2.0 * w {
+        return (None, None); // too narrow to grab an edge: all body
+    }
+    let strip = |x: f32| Rect::new(x, cr.y, w, cr.h);
+    (
+        ends.0.then(|| strip(cr.x)),
+        ends.1.then(|| strip(cr.x + cr.w - w)),
+    )
+}
+
+/// Draws a clip's grips — the affordance for the resize gesture, shown while
+/// the pointer is over the clip.
+///
+/// **On hover, not always**: a lane of clips carrying permanent handles reads
+/// as a row of controls rather than as material, and the grip is only ever
+/// wanted where the pointer already is. It goes into the overlay mesh with the
+/// name, for the same reason: a take's trace would bury it.
+pub fn draw_clip_grips(d: &mut Draw, cr: Rect, ends: (bool, bool)) {
+    let (mesh, m, theme) = d.parts();
+    let (start, end) = clip_grips(cr, ends, m);
+    for r in [start, end].into_iter().flatten() {
+        mesh.rect(r, crate::host::theme::with_alpha(theme.object_edge, 0.55));
+    }
+}
+
 /// Draws a clip's **name**, into whichever mesh is painted over its bodies.
 ///
 /// It is a separate call because a name has to read: drawn with the box, the
@@ -787,6 +835,52 @@ mod tests {
             "a take",
         );
         assert!(none.is_empty(), "a sliver of a clip draws no name");
+    }
+
+    /// A grip is drawn where the clip **ends**, never where the window cut it,
+    /// and the strip that lights up is the strip that resizes.
+    #[test]
+    fn a_grip_stands_at_an_end_that_is_on_screen() {
+        let m = Metrics::default();
+        let cr = Rect::new(100.0, 0.0, 200.0, 40.0);
+
+        // A clip whose whole span is drawn: a grip at each end, each `grip_w`
+        // wide and flush with its edge.
+        let (a, b) = clip_grips(cr, (true, true), &m);
+        let a = a.expect("the start is on screen");
+        let b = b.expect("the end is on screen");
+        assert_eq!((a.x, a.w), (cr.x, m.grip_w));
+        assert_eq!((b.x, b.w), (cr.x + cr.w - m.grip_w, m.grip_w));
+
+        // Scrolled half off the left: the rectangle's left edge is the
+        // window's, so there is nothing to grab there.
+        let local = View {
+            start: 500.0,
+            len: 500.0,
+        };
+        let ends = clip_ends_on_screen(&local, 1000.0);
+        assert_eq!(
+            ends,
+            (false, true),
+            "the start is off screen, the end is not"
+        );
+        assert!(clip_grips(cr, ends, &m).0.is_none());
+
+        // ...and a clip narrower than two grips is all body.
+        assert_eq!(
+            clip_grips(Rect::new(0.0, 0.0, m.grip_w, 40.0), (true, true), &m),
+            (None, None)
+        );
+
+        // The drawing follows the same answer: hovering a clip with one end off
+        // screen inks one strip, not two.
+        let ink = |ends| {
+            let mut mesh = Mesh::new();
+            draw_clip_grips(&mut Draw::new(&mut mesh, &m, &Theme::default()), cr, ends);
+            mesh.vertex_count()
+        };
+        assert_eq!(ink((true, true)), 2 * ink((false, true)));
+        assert_eq!(ink((false, false)), 0);
     }
 
     #[test]
