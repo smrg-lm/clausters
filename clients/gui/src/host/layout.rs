@@ -480,6 +480,20 @@ fn place_on_time<'a>(
             // layered bodies, and a lane's own non-clip chrome.
             _ => (body, space.on_time(nav)),
         };
+        // **A clip masks what it holds.** Its bodies are drawn from the source
+        // per visible pixel, and a drawing that reads a *span* has to reach
+        // past the pixels it fills: the polyline through raw samples takes the
+        // sample before the left edge and the one after the right, or the line
+        // would start and end inside the box. Those two are drawn where they
+        // are, which is outside — and once a sample is also *marked* with a
+        // dot the overshoot is a visible pair of discs sitting on the lane
+        // beside the clip. Contained here rather than trimmed in each drawing:
+        // a clip is a coordinate system, and a coordinate system that does not
+        // bound its contents is a rectangle they happen to start in.
+        let clip = match widget.kind {
+            WidgetKind::Clip { .. } => Some(clip.map_or(rect, |c| c.intersect(rect))),
+            _ => clip,
+        };
         // The gutter is the *container's*: it was taken out of the lane's rect
         // to make this body, so a member drawn inside it must not take it
         // again. A clip's bodies carry no id and never asked for one; a heavy

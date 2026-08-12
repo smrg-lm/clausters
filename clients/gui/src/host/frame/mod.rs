@@ -997,6 +997,64 @@ mod tests {
         );
     }
 
+    /// **A clip masks what it holds.** Zoomed in far enough that the take is a
+    /// polyline through raw samples, the drawing reads the sample before the
+    /// left edge and the one after the right — it has to, or the line would
+    /// start and end inside the box — and each of them is also marked with a
+    /// dot. Those two discs are drawn outside the clip, on the lane beside it,
+    /// unless the clip bounds its contents.
+    #[test]
+    fn a_clips_body_does_not_draw_outside_the_clip() {
+        use crate::host::guidef::GuiNode;
+        use crate::host::widget::Widget;
+
+        // Twelve samples over a 400-pixel clip: ~33 pixels apart, so the trace
+        // is the polyline and every sample carries its dot.
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":5,"type":"field","label":"lane","children":[
+                {"id":10,"type":"field","offset":0,"dur":12,
+                 "data":[0.0,0.5,-0.5,0.9,-0.9,0.2,-0.2,0.7,-0.7,0.4,-0.4,0.0]}]}]}"#;
+        let tree = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+        let m = Metrics::default();
+        let inputs = FrameInputs {
+            metrics: &m,
+            ..FrameInputs::default()
+        };
+        let placed = layout::layout(Rect::new(0.0, 0.0, 800.0, 300.0), &tree, &m);
+        let mut mesh = Mesh::new();
+        let collected = collect_widgets(&placed, &mut mesh, &inputs, &Theme::default());
+        let body = collected.clip_bodies.first().expect("the take is a body");
+        let rect = body.rect;
+        assert!(
+            body.clip
+                .is_some_and(|c| c.x >= rect.x && c.x + c.w <= rect.x + rect.w),
+            "the clip hands its body a mask of its own box"
+        );
+
+        // The bodies alone: the lane under them spans the whole window, and it
+        // is the take's overshoot this is about.
+        let mut bodies = collected;
+        bodies.track_items.clear();
+        bodies.clip_items.clear();
+        bodies.ruler_items.clear();
+        bodies.timeline_items.clear();
+        let (mut base, mut over) = (Mesh::new(), Mesh::new());
+        draw_static_meshes(
+            &mut base,
+            &mut over,
+            &bodies,
+            &inputs,
+            &Theme::default(),
+            &tree,
+        );
+        assert!(!base.is_empty(), "the take draws its polyline and its dots");
+        let out = base
+            .positions()
+            .filter(|(x, _)| *x < rect.x - 0.5 || *x > rect.x + rect.w + 0.5)
+            .count();
+        assert_eq!(out, 0, "{out} vertices are drawn outside the clip");
+    }
+
     /// A clip's take drawn as the time-frequency texture: the same clip, the
     /// same placement, another presentation. It leaves the mesh bodies (it is
     /// not geometry) and is collected for the GPU pass under the **clip's** id,
