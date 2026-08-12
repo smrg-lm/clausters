@@ -1376,16 +1376,18 @@ control belongs to the window, not to the control.
   menu's list). What landed with it: the break-point grab dropped its `sqrt`,
   and the score's hit index carries a `HitShape` per entry so a **notehead** is
   the oval inside its box instead of the box.
-  **Verified by eye** on `gui_panel`: the knob and the slider now answer only
-  where they are drawn.
+  **Verified by eye** on `gui_panel`: the knob, the slider and the toggle now
+  answer only where they are drawn. The toggle took a second pass and the miss
+  is worth keeping: the first bound its width and returned the cell's whole
+  **height**, and in a `panel` with `layout="row"` that cell is as tall as the
+  tallest control in the row — so the air over and under the box still flipped
+  it, and a half-bounded shape reads exactly like an unbounded one. A shape is
+  two axes; bounding one of them is not a partial fix, it is none.
 
-- ⬜ **E23 — the rest of the chrome on the same rule** *(open; the toggle's
-  declaration is in place and did not pass the same by-eye check, so it counts
-  as unfinished here rather than as done above)*. Every remaining light widget
-  states its drawn shape through `hit_area`, and each one is checked by eye on
-  the example that shows it — the mechanism exists, so this is a pass over the
-  catalog, not a design. What is in scope: `toggle` (the box plus its label,
-  and why the current `toggle_hit` still reads wider than it looks), `button`
+- ⬜ **E23 — the rest of the chrome on the same rule** *(open)*. Every remaining
+  light widget states its drawn shape through `hit_area`, and each one is
+  checked by eye on the example that shows it — the mechanism exists, so this is
+  a pass over the catalog, not a design. What is in scope: `button`
   and `menu` (their drawn field, not the cell a row stretched), `number` (its
   field), `label` (a mark on somebody else's pixels — likely `Rect` of the text
   run, or nothing at all), the lane header's controls, and the patcher's ports
@@ -1784,7 +1786,7 @@ finished work, where a pending item reads as done.
 
 - ✅ **A round thing was hit-tested as its bounding box** *(found 2026-08-12, named by the user — the bounds of a circular figure, computed with Pythagoras squared, and generalized across the elements; fixed the same day)*. Everything the host draws answered the pointer through `Rect::contains`, which is right for the rectangles and the strokes and wrong for the round ones: a knob's dial is a disc inside a cell that also holds a label strip and a read-out (and whatever width the row spread it to), so pressing the name, the number or the paper in a corner grabbed the value and turned it; a notehead is an oval whose box has a quarter more area than the glyph, and on a dense page that quarter is where the stem, the beam and the note on the next line live.
 
-  The same audit, by eye on `gui_panel`, found two more and they are the same bug without a circle in them: a **slider**'s track area is the cell minus the label and the read-out, and what is drawn in it is a groove a few pixels thick with a short grip riding it, so a press anywhere in a band several times that thick jumped the value; a **toggle** stretched across a row is a small box with a word beside it and a great deal of air after that, and the air flipped the value. So the entry is not about circles: **a hit-test is the shape that was drawn**, whatever that shape is. The knob and the slider are verified by eye; the toggle's declaration is written and did **not** pass the same check, and the rest of the chrome has not been done at all — both are E23, which is why this entry closes on the seam rather than on the catalog.
+  The same audit, by eye on `gui_panel`, found two more and they are the same bug without a circle in them: a **slider**'s track area is the cell minus the label and the read-out, and what is drawn in it is a groove a few pixels thick with a short grip riding it, so a press anywhere in a band several times that thick jumped the value; a **toggle** stretched across a row is a small box with a word beside it and a great deal of air after that, and the air flipped the value. So the entry is not about circles: **a hit-test is the shape that was drawn**, whatever that shape is. The knob, the slider and the toggle are verified by eye — the toggle in two passes, since the first bounded its width and left the cell's full height, and in a row of mixed controls that height is the tallest sibling's: a shape is two axes, and bounding one of them reads exactly like bounding neither. The rest of the chrome has not been done at all, which is E23, and why this entry closes on the seam rather than on the catalog.
 
   Which is why it ends at the trait rather than as a guard per leaf — the user asked the question directly, and it is the right one. `Element::hit_area` returns a `HitArea` (`Rect` by default, `Disc`, `Ellipse`), and `gestures::element::press` is the **one** place it is applied, adding the metrics' `hit_slop`: an element states its shape once, never writes the filter, and a point off it reads exactly as a decline, so the press falls back to the chain the way any declined press does. A leaf that says nothing keeps the whole rectangle it always had, so nothing else in the catalog moved. Each shape is read off the same function the drawing places it with (`knob_disc`, `slider_groove`, `toggle_hit`), so the two cannot disagree. The one deliberate exception is the **overlay** route: a modal is offered the press precisely *because* it is outside as often as because it is inside (a click on the window closes a menu's list), so it goes through the unfiltered door.
 

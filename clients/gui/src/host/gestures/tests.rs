@@ -31,6 +31,19 @@ fn host_from(json: &str) -> Host {
     host
 }
 
+/// Where the layout put widget `id` in window `def_id` — the rectangle a test
+/// aims its presses inside, rather than guessing at pixels the size table owns.
+fn placed_rect(host: &Host, ctx: &GestureCtx, id: i32) -> Rect {
+    let tree = host.window_def(ctx.def_id).unwrap();
+    let m = host.metrics_for(ctx.def_id);
+    let area = Rect::new(0.0, 0.0, ctx.fb_w as f32, ctx.fb_h as f32);
+    crate::host::layout::layout(area, tree, m)
+        .into_iter()
+        .find(|p| p.widget.id == Some(id))
+        .expect("the widget is placed")
+        .rect
+}
+
 /// A live `/gui_set` of one string-valued prop, as a script would send it.
 fn set_prop(host: &mut Host, id: i32, key: &str, value: &str) {
     host.handle_packet(
@@ -672,12 +685,17 @@ fn knob_press_records_the_grab_result_and_locked_ignores_cursor_motion() {
 /// through, checked once at the level where it is applied.
 #[test]
 fn a_toggle_does_not_flip_from_the_air_beside_it() {
+    // The panel that showed it: a row of mixed controls, so the toggle's cell
+    // is as tall as its tallest sibling and as wide as its share of the row —
+    // air on both axes, which is the case a width-only bound reads as no fix.
     let mut host = host_from(
-        r#"{"type":"window","children":[
-            {"id":30,"type":"toggle","label":"on","value":0}]}"#,
+        r#"{"type":"window","margin":0,"children":[
+            {"id":29,"type":"layout","flow":"row","margin":0,"children":[
+                {"id":30,"type":"toggle","label":"on","value":0},
+                {"id":31,"type":"knob","min":0.0,"max":1.0,"value":0.5}]}]}"#,
     );
     let mut g = Gestures::default();
-    let ctx = GestureCtx::new(1, 400, 100);
+    let ctx = GestureCtx::new(1, 400, 200);
     let value = |host: &Host| {
         host.window_def(1)
             .unwrap()
@@ -686,8 +704,17 @@ fn a_toggle_does_not_flip_from_the_air_beside_it() {
             .kind
             .event_value()
     };
-    // Far right of the row, well past the box and its one-word label.
-    let effects = g.press(&mut host, &ctx, 380.0, 16.0, &mut || false);
+    let cell = placed_rect(&host, &ctx, 30);
+    assert!(cell.h > 60.0, "the row made the cell tall: {}", cell.h);
+    let mid = (cell.y + cell.h * 0.5) as f64;
+    // Past the box and its one-word label, on the box's own row.
+    let effects = g.press(
+        &mut host,
+        &ctx,
+        (cell.x + cell.w) as f64 - 4.0,
+        mid,
+        &mut || false,
+    );
     assert_eq!(value(&host), Some(OscType::Int(0)), "nothing flipped");
     assert!(
         !effects
@@ -695,9 +722,14 @@ fn a_toggle_does_not_flip_from_the_air_beside_it() {
             .any(|e| matches!(e, GestureEffect::Emit { widget_id: 30, .. })),
         "and nothing left for the script: {effects:?}"
     );
-    g.release(&mut host, &ctx, 380.0, 16.0);
-    // The box does flip it.
-    g.press(&mut host, &ctx, 14.0, 16.0, &mut || false);
+    g.release(&mut host, &ctx, (cell.x + cell.w) as f64 - 4.0, mid);
+    // The column of air under the box, on the box's own x.
+    let low = (cell.y + cell.h) as f64 - 4.0;
+    g.press(&mut host, &ctx, (cell.x + 6.0) as f64, low, &mut || false);
+    assert_eq!(value(&host), Some(OscType::Int(0)), "nor did the air below");
+    g.release(&mut host, &ctx, (cell.x + 6.0) as f64, low);
+    // The box itself does flip it.
+    g.press(&mut host, &ctx, (cell.x + 6.0) as f64, mid, &mut || false);
     assert_eq!(value(&host), Some(OscType::Int(1)));
 }
 

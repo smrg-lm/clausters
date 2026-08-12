@@ -329,18 +329,30 @@ pub fn toggle_box(rect: Rect, m: &Metrics) -> Rect {
 /// when there is one — the two things drawn, and nothing of the cell the
 /// layout stretched around them.
 ///
-/// A checkbox in a wide row is a small square with a word next to it and a
-/// great deal of air after that; the air is the layout's, not the control's, so
-/// a click landing on it must go back to the chain. The label counts because it
-/// is drawn as part of the affordance (clicking the word toggles, as everywhere
-/// else), and it counts for **what fits**: a label ellipsized to the cell is
-/// hit over the part that is on screen.
+/// A checkbox is a small square with a word next to it, and a cell it does not
+/// fill on **either** axis: a row of controls is as tall as the tallest of
+/// them, so a toggle beside a slider gets a column of air over and under its
+/// box as well as the run of it after the label. Both are the layout's, not the
+/// control's, so a click landing on them goes back to the chain — the first
+/// pass here bounded only the width, which is exactly half a fix and reads as
+/// none at all in the panel that showed it.
+///
+/// The label counts because it is drawn as part of the affordance (clicking the
+/// word toggles, as everywhere else), and it counts for **what fits**: a label
+/// ellipsized to the cell is hit over the part that is on screen. Its line is
+/// centred on the box, so the band is the taller of the two.
 pub fn toggle_hit(rect: Rect, label: Option<&str>, size: f32, m: &Metrics) -> Rect {
     let b = toggle_box(rect, m);
     let Some(text) = label else { return b };
     let tx = b.x + b.w + m.pad;
     let w = font::width(text, size).min((rect.x + rect.w - tx).max(0.0));
-    Rect::new(rect.x, rect.y, (tx + w - rect.x).max(b.w), rect.h)
+    let h = b.h.max(font::height(size)).min(rect.h);
+    Rect::new(
+        rect.x,
+        rect.y + (rect.h - h) * 0.5,
+        (tx + w - rect.x).max(b.w),
+        h,
+    )
 }
 
 pub fn toggle(d: &mut Draw, on: bool, label: Option<&str>, rect: Rect, size: f32) {
