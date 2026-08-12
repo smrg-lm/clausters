@@ -292,6 +292,28 @@ pub(super) fn draw_timeline_meshes(
                         );
                     }
                 }
+                // The picture itself, into the base mesh: one lane per channel
+                // through the one signal renderer, placed on the *local* window
+                // (a member of a group draws its own samples where it sits).
+                let local = placed_nav(&nav, item.editor.offset);
+                let trace = crate::host::graphics::signal::trace::Trace::Data(slot.view.data());
+                for ch in 0..lanes {
+                    let lane = lane_rect(body, draw_lanes, if *overlaid { 0 } else { ch });
+                    crate::waveform::draw_lane(
+                        mesh,
+                        lane,
+                        &trace,
+                        ch,
+                        &local,
+                        *domain,
+                        (amp.0, amp.1),
+                        crate::host::graphics::signal::trace::TraceStyle::new(
+                            th.series(ch),
+                            m.trace_w,
+                        )
+                        .with_dots(m.point_radius),
+                    );
+                }
                 for ch in 1..draw_lanes {
                     let lane = lane_rect(body, draw_lanes, ch);
                     over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), th.lane_divider);

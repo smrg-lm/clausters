@@ -4923,3 +4923,63 @@ Two floors keep it legible, and they are the mesh renderer's rules applied to th
 The same audit found the navigable trace ignoring `min`/`max` outright: its geometry was pinned to ±1 through `AMP_MARGIN` while the take in a clip, the plot and the live scope all mapped through the declared pair. One prop meaning something in four of an element's presentations and nothing in the fifth is the per-arm divergence the E track exists to remove, so the pipeline takes the domain now, `[-1, 1]` by default — which is what every view that names none draws at, byte for byte.
 
 The consequence is on the **ruler**, and it is the one policy call here. `db`, `bits` and `percent` are units of *full scale* — a rung at -6 dB or at 2^15 says nothing over `[20, 20000]` — so the amplitude ladders belong to the default domain, and an axis whose element named a domain of its own is ruled as a plain **value** axis over the slice its window shows. Stated the other way round: **the amplitude axis *is* the full-scale domain**, not a separate mechanism, which is why the switch is a comparison against the default and needs no flag on the wire.
+
+## A signal against time is drawn in one place, and the waveform's pipeline was the second
+
+The navigable waveform used to build its own vertex buffer through a dedicated
+`wgpu` pipeline (a triangle list for min/max columns, a line strip for the raw
+polyline, one WGSL module), while every other drawing of a signal — a clip's
+take, a plot's series, a meter's history — went through the shared triangle mesh
+in `host::graphics::signal::trace`. Two implementations of one picture, and the
+measurement that had once justified keeping them (`tests/gpu_slot_cost.rs`) said
+the opposite of what it was read to say: the per-column *computation* — the
+peak-pyramid reads — dominates so completely that where the vertices land is
+noise. The pipeline was not paying for itself; it was only a second place to
+write the same thing.
+
+So it drifted, in the ways duplicated arithmetic drifts. The pipeline's polyline
+took the sample before the window's left edge but not the one past its right
+edge, so at the deepest zoom a trace arrived at a sample and **stopped dead**
+where the data continued — visible the moment someone zoomed a bulk file in far
+enough. It marked samples with squares where the mesh marks discs. It split the
+two regimes on the opposite side of the threshold (`<=` against `<`), and floored
+a column's ink at one physical pixel where the mesh floors it at the trace's
+weight. Each of those is a one-line fix and none of them stays fixed.
+
+The pipeline is gone. `WaveformData` is data (raw samples plus a peak pyramid per
+channel) and `WaveformView` is the vertical navigation state of a view over it;
+the picture is `trace::draw_channel` into the window's mesh, exactly like every
+widget's. What was lost with it is worth naming: a waveform no longer draws
+through `set_viewport`, so the `Framing` trick that cuts an off-screen lane at a
+fixed size is the spectrogram's alone — the mesh's clip rectangle does that job
+for triangles, and does it per widget rather than per pass.
+
+The spectrogram keeps its pipeline, and the difference is the load-bearing one:
+its picture is a **texture sampled once per pixel**, so the GPU's own filtering
+is what resolves it at any zoom. That is work triangles cannot do. A waveform's
+columns were folded on the CPU either way.
+
+
+## A drawing that overshoots its rect is the one that bounds it
+
+A clip masks what it holds, and that is right: a clip is a coordinate system,
+and one that does not bound its contents is a rectangle they happen to start in.
+But the mask was put there to stop a specific overshoot — the trace reads the
+sample before its left edge and the one after its right, or the line would start
+and end inside the box — and that overshoot belongs to the *trace*, not to the
+clip. So it came back the moment the same drawing stood on its own: a
+free-standing `waveform` is nobody's content, no container mask is in force, and
+the sample discs landed on the vertical ruler beside the view.
+
+Bounding it per container is a rule every future holder of a trace has to
+re-learn. So `trace::draw_channel` narrows the mesh's clip to the lane it was
+handed and restores what it found — narrowing only, so a clip's mask and a
+scroll's still hold — and every destination is bounded at once, on both axes:
+the vertical overflow of a value outside the amplitude window was relying on the
+same absent mask.
+
+The cost is small and worth naming: a column at either end of a rect is widened
+to the trace's weight like every other, and now the lane shaves that widening
+instead of letting it hang over the edge. That is the same treatment a value
+just outside the vertical window gets, which is what makes it consistent rather
+than a special case.

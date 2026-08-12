@@ -284,6 +284,12 @@ impl Mesh {
         self.clip = clip;
     }
 
+    /// The clip rectangle currently in force, so a drawing that bounds itself
+    /// can narrow it and put back what it found.
+    pub fn clip(&self) -> Option<Rect> {
+        self.clip
+    }
+
     /// Sets the [`Ink`] — the opacity and the corner radius — everything
     /// emitted next carries. The frame sets one per placed widget, beside its
     /// clip; [`Ink::default`] restores opaque square drawing.

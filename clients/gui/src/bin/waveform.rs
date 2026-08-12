@@ -1,4 +1,4 @@
-//! Waveform prototype: a navigable, GPU-rendered view of a large buffer.
+//! Waveform prototype: a navigable view of a large buffer.
 //!
 //! Controls: mouse wheel zooms toward the pointer, left-drag pans, `R` resets,
 //! `Esc` quits. Needs a display and a Vulkan/Metal/DX12/GL adapter.
@@ -16,9 +16,8 @@ fn main() {
     let samples: Arc<[f32]> = demo::sweep(SIGNAL_LEN).into();
     native::run(
         "Clausters - waveform (wheel: zoom, drag: pan, R: reset)",
-        Box::new(move |device, _queue, _renderers| {
-            let data = WaveformData::new(samples, BASE_BUCKET);
-            Box::new(WaveformView::new(device, data))
+        Box::new(move |_device, _queue, _renderers| {
+            Box::new(WaveformView::new(WaveformData::new(samples, BASE_BUCKET)))
         }),
     );
 }

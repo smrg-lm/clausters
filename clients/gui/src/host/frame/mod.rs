@@ -65,17 +65,19 @@ pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
     }
 }
 
-/// A waveform widget's GPU view. Its navigation window lives in the widget's
-/// timeline group ([`super::timeline`]), not here — a slot is per window, a
-/// group may span windows.
+/// A waveform widget's data and vertical navigation state. Its horizontal
+/// window lives in the widget's timeline group ([`super::timeline`]), not here
+/// — a slot is per window, a group may span windows. The picture is drawn into
+/// the window's mesh like every other widget's, so nothing here is GPU state.
 pub(crate) struct WaveformSlot {
     pub(crate) view: WaveformView,
 }
 
-/// A `WaveformSlot` (the GPU view) for ready data.
-pub(crate) fn waveform_slot(data: WaveformData, gpu: &Gpu) -> WaveformSlot {
-    let view = WaveformView::new(&gpu.device, data);
-    WaveformSlot { view }
+/// A `WaveformSlot` for ready data.
+pub(crate) fn waveform_slot(data: WaveformData) -> WaveformSlot {
+    WaveformSlot {
+        view: WaveformView::new(data),
+    }
 }
 
 /// A spectrogram widget's GPU views — one [`SpectrogramView`] (own STFT and
@@ -127,7 +129,7 @@ pub(crate) fn place_in_slot(
 ) -> Option<usize> {
     match data {
         Loaded::Peaks(data) => {
-            let slot = waveform_slot(data, gpu);
+            let slot = waveform_slot(data);
             let total = slot.view.total_samples();
             waveforms.insert(id, slot);
             Some(total)
@@ -286,7 +288,7 @@ pub(crate) fn fill_slots(
     if let (Some(id), Some(fill)) = (owner, widget.kind.fill()) {
         let extent = match fill {
             SlotFill::Geometry(data) => {
-                let slot = waveform_slot(data, gpu);
+                let slot = waveform_slot(data);
                 let total = slot.view.total_samples();
                 waveforms.insert(id, slot);
                 Some(Extent::Stored(total))
@@ -533,49 +535,9 @@ pub(crate) fn render(
         // rectangle, so the picture and the chrome around it agree.
         let body = item.body;
         match &item.kind {
-            TimelineKind::Waveform { domain, amp, .. } => {
-                if let Some(slot) = waveforms.get_mut(&item.id) {
-                    let nav = chrome_for(inputs, item.id, &item.editor, || {
-                        View::full(slot.view.total_samples())
-                    })
-                    .nav;
-                    let nav = placed_nav(&nav, item.editor.offset);
-                    slot.view.set_amp_window(amp.0, amp.1);
-                    slot.view.set_domain(domain.0, domain.1);
-                    let th = item.theme.as_deref().unwrap_or(theme);
-                    slot.view
-                        .set_palette([th.series_1, th.series_2, th.series_3, th.series_4]);
-                    let lanes = slot.view.num_channels();
-                    let overlaid =
-                        matches!(item.kind, TimelineKind::Waveform { overlay: true, .. });
-                    let lane_h = if overlaid || lanes == 1 {
-                        body.h
-                    } else {
-                        lane_rect(body, lanes, 0).h
-                    };
-                    // The floor a column's ink is held above, in the physical
-                    // pixels the lane is actually drawn at — and the radius a
-                    // sample dot takes once the samples stand far enough apart
-                    // to carry one.
-                    slot.view.set_lane_height(lane_h);
-                    slot.view.set_dot_radius(inputs.metrics.point_radius);
-                    let framings: Vec<Framing> = if overlaid || lanes == 1 {
-                        vec![framing_of(body, fb_w, fb_h)]
-                    } else {
-                        (0..lanes)
-                            .map(|ch| framing_of(lane_rect(body, lanes, ch), fb_w, fb_h))
-                            .collect()
-                    };
-                    slot.view.set_framings(&framings);
-                    slot.view.upload(
-                        &gpu.device,
-                        &gpu.queue,
-                        renderers,
-                        &nav,
-                        body.w.max(1.0) as u32,
-                    );
-                }
-            }
+            // A waveform's picture is triangles, and they went into the
+            // window's mesh with the rest of the chrome: nothing to prepare.
+            TimelineKind::Waveform { .. } => {}
             TimelineKind::Spectrogram { freq, look } => {
                 if let Some(slot) = spectrograms.get_mut(&item.id) {
                     let nav = chrome_for(inputs, item.id, &item.editor, || {
@@ -699,30 +661,7 @@ pub(crate) fn render(
                 continue;
             }
             match &item.kind {
-                TimelineKind::Waveform {
-                    overlay: overlaid, ..
-                } => {
-                    let Some(slot) = waveforms.get(&item.id) else {
-                        continue;
-                    };
-                    let lanes = slot.view.num_channels();
-                    if *overlaid || lanes == 1 {
-                        let (x, y, w, h) = clamp_viewport(body, fb_w, fb_h);
-                        if w >= 1.0 && h >= 1.0 {
-                            pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                            slot.view.draw(&mut pass, renderers);
-                        }
-                    } else {
-                        for ch in 0..lanes {
-                            let lane = lane_rect(body, lanes, ch);
-                            let (x, y, w, h) = clamp_viewport(lane, fb_w, fb_h);
-                            if w >= 1.0 && h >= 1.0 {
-                                pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                                slot.view.draw_channel(&mut pass, &renderers.waveform, ch);
-                            }
-                        }
-                    }
-                }
+                TimelineKind::Waveform { .. } => {}
                 TimelineKind::Spectrogram { .. } => {
                     let Some(slot) = spectrograms.get(&item.id) else {
                         continue;

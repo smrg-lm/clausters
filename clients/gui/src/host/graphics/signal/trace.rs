@@ -8,13 +8,21 @@
 //! over an interleaved buffer. [`Trace`] is that one answer, with an arm per
 //! source shape: raw interleaved samples, or a [`WaveformData`]'s peak pyramid.
 //!
-//! [`draw_channel`] is the mesh half of the renderer split the measurements
-//! behind this track fixed: a *navigable* signal view owns a GPU slot and
-//! builds its columns into a vertex buffer ([`crate::waveform`]), while a view
-//! that draws into the shared triangle mesh — a plot, a clip's body — takes
-//! this path and allocates no slot at all. Both read their columns from
-//! `Trace`, so the two destinations share the arithmetic and differ only in
-//! where the vertices land.
+//! [`draw_channel`] is **the** renderer of a signal against time — the only
+//! one. A navigable waveform, a clip's take, a plot's series and a meter's
+//! history all reach the screen through this function, differing in the three
+//! coordinate maps they hand it and in nothing else.
+//!
+//! It was not always one. The navigable view used to build its own vertex
+//! buffer through a dedicated `wgpu` pipeline, drawing the same two regimes a
+//! second time — and the two drifted exactly where duplicated arithmetic
+//! drifts: the pipeline took a neighbouring sample on the left of the window
+//! but not on the right (so a deep zoom drew a trace arriving at a sample and
+//! stopping dead), marked samples with squares where this one marks discs, and
+//! split the regimes on the opposite side of the threshold. The pipeline bought
+//! nothing for it: its columns were folded on the CPU per pixel, as here, and
+//! its vertex count was bounded by the render width, as here. So it is gone,
+//! and `crate::waveform` is now the data and the navigation state alone.
 
 use crate::waveform::WaveformData;
 
@@ -23,11 +31,7 @@ use crate::host::paint::{Color, Mesh};
 
 /// At or below this many samples per pixel the trace is drawn as a polyline
 /// through the raw samples rather than as min/max columns.
-///
-/// It **is** the GPU waveform's threshold, not a copy of it: the two were two
-/// literals with a comment asking them not to drift, which is the weakest form
-/// a shared constant can take.
-pub use crate::waveform::LINE_THRESHOLD;
+pub const LINE_THRESHOLD: f64 = 2.0;
 
 /// A signal's samples, read per pixel column. The two arms are the two shapes
 /// a source arrives in: an interleaved buffer held in full (an inline body, a
@@ -56,6 +60,18 @@ impl<'a> Trace<'a> {
         match self {
             Trace::Samples { samples, channels } => samples.len() / channels,
             Trace::Data(data) => data.total_samples(),
+        }
+    }
+
+    /// Whether individual samples can be read at all. A **cache-only** source —
+    /// a pyramid mapped without its buffer, the compact bulk path — has none, so
+    /// every zoom stays in the column regime: asking it for a sample would read
+    /// an empty buffer and collapse the signal to a flat line exactly where the
+    /// viewer zoomed in to see it.
+    pub fn has_raw(&self) -> bool {
+        match self {
+            Trace::Samples { samples, .. } => !samples.is_empty(),
+            Trace::Data(data) => data.has_raw(),
         }
     }
 
@@ -105,9 +121,7 @@ impl<'a> Trace<'a> {
                 let f = (s.round().max(0.0) as usize).min(frames - 1);
                 samples[f * channels + ch]
             }
-            // A pyramid-only source has no addressable sample: the finest
-            // column over one frame is what it can answer.
-            Trace::Data(data) => data.column(ch, 1.0, s, s + 1.0).0,
+            Trace::Data(data) => data.samples_at(ch, s.round().max(0.0) as usize),
         }
     }
 }
@@ -166,8 +180,12 @@ impl TraceStyle {
 /// source frame it falls on (through a clip's placement and the navigation
 /// window, or straight down the whole buffer), `x_of` is its inverse, and
 /// `y_at` maps a sample value to a y pixel inside the lane. Above
-/// [`LINE_THRESHOLD`] samples per pixel it draws one min/max column per pixel;
-/// below it, the polyline through every visible sample.
+/// [`LINE_THRESHOLD`] samples per pixel — or whenever the source cannot answer
+/// for one sample ([`Trace::has_raw`]) — it draws one min/max column per pixel;
+/// at or below it, the polyline through every visible sample **plus the one
+/// beyond each edge**, so the segments that cross the edges are drawn and the
+/// trace enters and leaves the rect instead of stopping at the last sample it
+/// can see.
 // The rect, the source, the channel, three coordinate maps and a style: all
 // distinct inputs to one drawing pass, clearer flat than bundled.
 #[allow(clippy::too_many_arguments)]
@@ -185,18 +203,31 @@ pub fn draw_channel(
     if frames < 2 || rect.w < 1.0 || rect.h <= 0.0 {
         return;
     }
+    // **The trace bounds itself to its lane.** It reads a *span* per pixel and
+    // deliberately reaches past the pixels it fills — the sample before the
+    // left edge and the one after the right, or the line would start and end
+    // inside the box — and it reaches past the top and bottom too whenever a
+    // value falls outside the vertical window. Those overshoots are the picture
+    // where they cross an edge and litter where they land: a pair of discs on
+    // the ruler beside the view, a stroke over the labels under it. A container
+    // that is a coordinate system masks its contents anyway (a clip does), but
+    // a free-standing view is nobody's content, so the drawing that knows it
+    // overshoots is the one that answers for it — every destination at once,
+    // rather than one mask per placement. Narrowed, never widened: whatever
+    // mask was already in force still holds, and it is put back on the way out.
+    let outer = mesh.clip();
+    mesh.set_clip(Some(outer.map_or(rect, |c| c.intersect(rect))));
     let cols = rect.w.max(1.0) as usize;
     let cw = rect.w / cols as f32;
     let per_px = (src(rect.x + cw) - src(rect.x)).max(0.0);
-    if per_px >= LINE_THRESHOLD {
+    if per_px > LINE_THRESHOLD || !trace.has_raw() {
         for c in 0..cols {
             let x = rect.x + c as f32 * cw;
             let (lo, hi) = trace.column(ch, per_px, src(x), src(x + cw));
             if lo > hi {
                 continue;
             }
-            // A column is a quad — the shape the GPU waveform emits for this
-            // same regime — and it is **never inked thinner than the trace's
+            // A column is a quad, **never inked thinner than the trace's
             // weight in either direction**: at least the pixel column it fills,
             // so columns tile into a solid band on a dense signal, and at least
             // `style.width`, so a signal keeps one optical weight across the
@@ -234,6 +265,7 @@ pub fn draw_channel(
             prev = Some(p);
         }
     }
+    mesh.set_clip(outer);
 }
 
 #[cfg(test)]
@@ -342,9 +374,12 @@ mod tests {
             "a flat column inks the trace weight vertically, got {}",
             inked.h
         );
+        // ...spanning the rect and no more: the outer columns are widened to
+        // the weight like every other, and the lane bounds what that widening
+        // would have hung over the edge.
         assert!(
-            inked.w >= rect.w + 0.5 - 1e-3,
-            "columns span the rect, widened to the weight, got {}",
+            (inked.w - rect.w).abs() < 1e-3,
+            "columns span the rect and stop at it, got {}",
             inked.w
         );
     }
@@ -501,21 +536,137 @@ mod tests {
             .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
             .collect();
         let trace = Trace::samples(&samples, 1);
-        // 64 samples over 200 px: well under the threshold.
+        // 64 samples over 200 px: well under the threshold. The maps leave a
+        // margin on both axes, so every stroke lands inside the lane and this
+        // counts segments rather than what the lane's own bound does to the
+        // ones on its edge.
         let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
         let n = samples.len() as f64;
+        let (x0, w) = (rect.x + 2.0, rect.w - 4.0);
         let mut mesh = Mesh::new();
         draw_channel(
             &mut mesh,
             rect,
             &trace,
             0,
-            |x| (x - rect.x) as f64 / rect.w as f64 * n,
-            |s| rect.x + (s / n) as f32 * rect.w,
-            |v| rect.y + rect.h * 0.5 * (1.0 - v),
+            |x| (x - x0) as f64 / w as f64 * n,
+            |s| x0 + (s / n) as f32 * w,
+            |v| rect.y + rect.h * 0.5 * (1.0 - v * 0.8),
             TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0),
         );
         // 64 samples -> 63 segments, six vertices each.
         assert_eq!(mesh.vertex_count(), 63 * 6);
+    }
+
+    /// **At the deepest zoom the trace still crosses the rect — and stops at
+    /// its edges.** A window narrower than one sample sees a single data point:
+    /// a renderer that draws only what is inside draws a line arriving at that
+    /// point from the left and nothing leaving it (which is what the deleted
+    /// pipeline did), and one that draws the neighbours unbounded puts ink on
+    /// the ruler beside the view. Both halves are the same assertion here: ink
+    /// on both edges, none past them.
+    #[test]
+    fn the_deepest_zoom_still_enters_and_leaves_the_rect() {
+        let samples: Vec<f32> = (0..1000).map(|i| (i as f32 * 0.3).sin()).collect();
+        let trace = Trace::samples(&samples, 1);
+        let rect = Rect::new(10.0, 0.0, 200.0, 100.0);
+        // One sample's worth of window, landing between two samples.
+        let (start, len) = (500.5f64, 1.0f64);
+        let mut mesh = Mesh::new();
+        draw_channel(
+            &mut mesh,
+            rect,
+            &trace,
+            0,
+            |x| start + (x - rect.x) as f64 / rect.w as f64 * len,
+            |s| rect.x + ((s - start) / len) as f32 * rect.w,
+            |v| rect.y + rect.h * 0.5 * (1.0 - v),
+            TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0),
+        );
+        let (mut left, mut right) = (f32::INFINITY, f32::NEG_INFINITY);
+        for (x, _) in mesh.positions() {
+            left = left.min(x);
+            right = right.max(x);
+        }
+        assert!(
+            (left - rect.x).abs() < 0.01,
+            "the trace enters at the left edge and no further: {left}"
+        );
+        assert!(
+            (right - (rect.x + rect.w)).abs() < 0.01,
+            "the trace leaves at the right edge and no further: {right}"
+        );
+    }
+
+    /// **The trace bounds itself, on both axes.** A signal that leaves the
+    /// vertical window and a window narrower than the samples around it both
+    /// reach past the lane, and the drawing is what stops them: a free-standing
+    /// view is nobody's content, so no container mask is in force.
+    #[test]
+    fn the_trace_never_draws_outside_its_lane() {
+        // A signal well outside the [-1, 1] the y map below folds into the
+        // lane, so the polyline runs off the top and the bottom too.
+        let samples: Vec<f32> = (0..64)
+            .map(|i| if i % 2 == 0 { 4.0 } else { -4.0 })
+            .collect();
+        let trace = Trace::samples(&samples, 1);
+        let rect = Rect::new(10.0, 20.0, 200.0, 100.0);
+        let (start, len) = (20.0f64, 8.0f64);
+        let mut mesh = Mesh::new();
+        draw_channel(
+            &mut mesh,
+            rect,
+            &trace,
+            0,
+            |x| start + (x - rect.x) as f64 / rect.w as f64 * len,
+            |s| rect.x + ((s - start) / len) as f32 * rect.w,
+            |v| rect.y + rect.h * 0.5 * (1.0 - v),
+            TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0).with_dots(3.0),
+        );
+        assert!(!mesh.is_empty(), "the trace draws");
+        let out = mesh
+            .positions()
+            .filter(|(x, y)| {
+                *x < rect.x - 0.01
+                    || *x > rect.x + rect.w + 0.01
+                    || *y < rect.y - 0.01
+                    || *y > rect.y + rect.h + 0.01
+            })
+            .count();
+        assert_eq!(out, 0, "{out} vertices are drawn outside the lane");
+    }
+
+    /// A **cache-only** source — a mapped pyramid with no samples — stays in the
+    /// column regime however deep the zoom goes. Asking it for one sample would
+    /// read an empty buffer, which is the wave vanishing exactly where the
+    /// viewer zoomed in to look at it.
+    #[test]
+    fn a_source_without_samples_never_enters_the_line_regime() {
+        let signal: Vec<f32> = (0..4096)
+            .map(|i| if i % 2 == 0 { 0.5 } else { -0.5 })
+            .collect();
+        let data = WaveformData::with_pyramid(
+            std::sync::Arc::from([] as [f32; 0]),
+            crate::peaks::Pyramid::build(&signal, 256),
+        );
+        let trace = Trace::Data(&data);
+        assert!(!trace.has_raw());
+        let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
+        // Half a sample per pixel: the line regime, for a source that had one.
+        let (start, len) = (100.0f64, 100.0f64);
+        let mut mesh = Mesh::new();
+        draw_channel(
+            &mut mesh,
+            rect,
+            &trace,
+            0,
+            |x| start + (x - rect.x) as f64 / rect.w as f64 * len,
+            |s| rect.x + ((s - start) / len) as f32 * rect.w,
+            |v| rect.y + rect.h * 0.5 * (1.0 - v),
+            TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0),
+        );
+        // One quad per pixel column, and each one carries the envelope the
+        // pyramid still knows about.
+        assert_eq!(mesh.vertex_count(), 200 * 6);
     }
 }

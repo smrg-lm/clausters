@@ -23,7 +23,6 @@ use crate::host::widget::{Widget, WidgetKind};
 use crate::host::{BulkLoader, ClientId, GUI_CLOSED};
 use crate::spectrogram::Stft;
 use crate::view::Renderers;
-use crate::view::TimelineView;
 
 use super::app::{App, WindowState};
 use super::serverleg::tree_has_node_tree;

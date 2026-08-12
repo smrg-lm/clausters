@@ -8,7 +8,6 @@
 
 use crate::spectrogram::SpectrogramRenderer;
 use crate::viewport::View;
-use crate::waveform::WaveformRenderer;
 
 /// **What every pipeline drawing into one window's pass must agree on**: the
 /// color format it writes into and how many samples that attachment carries.
@@ -60,14 +59,12 @@ impl Target {
 ///
 /// The mirror of `host::paint::Painter`, which has always had this shape.
 pub struct Renderers {
-    pub waveform: WaveformRenderer,
     pub spectrogram: SpectrogramRenderer,
 }
 
 impl Renderers {
     pub fn new(device: &wgpu::Device, target: Target) -> Self {
         Self {
-            waveform: WaveformRenderer::new(device, target),
             spectrogram: SpectrogramRenderer::new(device, target),
         }
     }
@@ -135,7 +132,14 @@ impl Framing {
     }
 }
 
-/// A view over a buffer that can be panned/zoomed in time and drawn on the GPU.
+/// A view over a buffer that can be panned/zoomed in time and drawn.
+///
+/// **Two ways to reach the screen, and a view takes exactly one.** A view whose
+/// picture is a texture sampled per pixel (the spectrogram) owns GPU resources
+/// and implements [`upload`](Self::upload)/[`draw`](Self::draw); a view whose
+/// picture is triangles (the waveform) implements [`mesh`](Self::mesh) and
+/// draws through the window's ordinary painter, exactly like every widget. Both
+/// families default to nothing, so a view states only the half it uses.
 pub trait TimelineView {
     /// Total length of the underlying buffer in samples (for `View::full`).
     fn total_samples(&self) -> usize;
@@ -150,11 +154,28 @@ pub trait TimelineView {
         renderers: &mut Renderers,
         view: &View,
         render_width_px: u32,
-    );
+    ) {
+        let _ = (device, queue, renderers, view, render_width_px);
+    }
 
     /// Record the draw into an existing render pass, through the window's
     /// shared pipelines.
-    fn draw(&self, pass: &mut wgpu::RenderPass<'_>, renderers: &Renderers);
+    fn draw(&self, pass: &mut wgpu::RenderPass<'_>, renderers: &Renderers) {
+        let _ = (pass, renderers);
+    }
+
+    /// Draw `view` into `rect` of the window's triangle `mesh` — the path a
+    /// view takes when its picture is geometry rather than a texture.
+    fn mesh(
+        &self,
+        mesh: &mut crate::host::paint::Mesh,
+        rect: crate::host::layout::Rect,
+        view: &View,
+        m: &crate::host::metrics::Metrics,
+        theme: &crate::host::theme::Theme,
+    ) {
+        let _ = (mesh, rect, view, m, theme);
+    }
 
     // --- Optional interactions (default no-op). Each returns whether the view
     // changed and should be redrawn. Kept windowing-agnostic: the harness

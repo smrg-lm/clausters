@@ -16,6 +16,10 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
+use crate::host::layout::Rect;
+use crate::host::metrics::Metrics;
+use crate::host::paint::{Mesh, Painter};
+use crate::host::theme::Theme;
 use crate::view::{Renderers, TimelineView};
 use crate::viewport::View;
 
@@ -29,6 +33,13 @@ struct State {
     /// The shared pipelines, as in the host's windows: the harness draws one
     /// view, but the view does not own the machinery it draws through.
     renderers: Renderers,
+    /// The triangle painter, for a view whose picture is geometry (the
+    /// waveform): the harness gives it the same mesh a host window would.
+    painter: Painter,
+    /// The sizes and colors that mesh is drawn with — the defaults, since a
+    /// prototype window carries no theme of its own.
+    metrics: Metrics,
+    theme: Theme,
     view_obj: Box<dyn TimelineView>,
     view: View,
     cursor_x: f64,
@@ -46,11 +57,15 @@ struct State {
 impl State {
     fn new(gpu: Gpu, factory: ViewFactory) -> Self {
         let renderers = Renderers::new(&gpu.device, gpu.target());
+        let painter = Painter::new(&gpu.device, gpu.target());
         let view_obj = factory(&gpu.device, &gpu.queue, &renderers);
         let view = View::full(view_obj.total_samples());
         Self {
             gpu,
             renderers,
+            painter,
+            metrics: Metrics::default(),
+            theme: Theme::default(),
             view_obj,
             view,
             cursor_x: 0.0,
@@ -72,13 +87,24 @@ impl State {
     }
 
     fn render(&mut self) {
+        let (w, h) = (self.gpu.config.width.max(1), self.gpu.config.height.max(1));
         self.view_obj.upload(
             &self.gpu.device,
             &self.gpu.queue,
             &mut self.renderers,
             &self.view,
-            self.gpu.config.width,
+            w,
         );
+        let mut mesh = Mesh::new();
+        self.view_obj.mesh(
+            &mut mesh,
+            Rect::new(0.0, 0.0, w as f32, h as f32),
+            &self.view,
+            &self.metrics,
+            &self.theme,
+        );
+        self.painter
+            .upload(&self.gpu.device, &self.gpu.queue, &mesh, w, h);
         let frame = match self.gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f)
             | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
@@ -121,6 +147,7 @@ impl State {
                 multiview_mask: None,
             });
             self.view_obj.draw(&mut pass, &self.renderers);
+            self.painter.draw(&mut pass);
         }
         self.gpu.queue.submit(std::iter::once(encoder.finish()));
         frame.present();

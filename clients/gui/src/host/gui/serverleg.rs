@@ -248,7 +248,7 @@ impl App {
             match slot {
                 Some(SlotKind::Geometry { base_bucket }) => {
                     let data = WaveformData::from_interleaved(&samples, channels, base_bucket);
-                    let slot = frame::waveform_slot(data, &ws.gpu);
+                    let slot = frame::waveform_slot(data);
                     ws.waveforms.insert(want.widget_id, slot);
                 }
                 Some(SlotKind::Texture {

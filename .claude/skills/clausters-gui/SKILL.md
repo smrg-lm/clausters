@@ -76,14 +76,14 @@ The tell is not "is it math" but *would anything outside a window ever call it*.
 
 ## The reusable rendering machinery (crate root)
 
-The heavy views are written **once against `wgpu`/WGSL** and run natively and in the browser unchanged. These modules are windowing-agnostic; `native.rs` is only the standalone demo harness for the `waveform`/`spectrogram` binaries — the real windowed front is `host/gui/`.
+What is written **once against `wgpu`/WGSL** runs natively and in the browser unchanged. These modules are windowing-agnostic; `native.rs` is only the standalone demo harness for the `waveform`/`spectrogram` binaries — the real windowed front is `host/gui/`.
 
 | Module | Role |
 |---|---|
 | `viewport::View` | the visible window in `f64` sample units — `full`/`zoom(factor, anchor, total)`/`pan`/clamp; pure, unit-tested, renderer-agnostic |
 | `peaks` (re-export of `clausters_core::peaks`) | resolution-matched min/max peak LOD + its cache: `Pyramid`, the multichannel `MultiPyramid`, `level_for(spp)`, `column`, the CLPK cache format (one file for all channels) |
 | `spectrogram::Stft` | windowed-FFT time-frequency analysis (FFT from `clausters_core::fft`) with the same cache shape, plus `FreqScale`, the renderer and the view |
-| `waveform` | two GPU pipelines (min/max column quads + a raw polyline); the render regimes and the level crossfade are a per-frame *data* choice, not new pipelines |
+| `waveform` | the audio data (raw samples + a peak pyramid per channel) and a navigable view's vertical state. **No pipeline**: its picture is triangles through `host::graphics::signal::trace`, the one renderer of a signal against time, and the render regimes and the level crossfade are a per-frame *data* choice |
 | `gpu` | device/surface bring-up shared by every front; WebGPU with the WebGL2 fallback on wasm |
 | `view` | the `TimelineView` trait both heavy views implement |
 | `bytes` (crate-private) | the flat little-endian `f32` cache layout, mmap-ready |
@@ -91,7 +91,7 @@ The heavy views are written **once against `wgpu`/WGSL** and run natively and in
 ### The graphics knowledge that governs them
 
 - **The one rule: never resolve the signal finer than the screen.** All work is driven by `samples_per_px = visible_len / render_width_px`, never by buffer length. The waveform expresses it by picking a resolution-matched LOD per frame; the spectrogram expresses it *structurally* — one texture sample per pixel, so GPU cost is constant regardless of zoom.
-- **Two rendering shapes, both used here.** (a) *Geometry pipelines* — the waveform rebuilds a vertex buffer per frame whose size is bounded by `render_width_px`; the flat widget chrome and the tessellated score are the same idea through `paint::Mesh`. (b) *Full-screen quad + texture sample* — the spectrogram uploads the STFT once as a 2D texture (x=frame, y=bin) and the fragment shader samples it, so the GPU's linear filtering gives free resolution-matched downsampling on zoom-out.
+- **Two rendering shapes, both used here.** (a) *Geometry* — the waveform, the flat widget chrome and the tessellated score all build triangles per frame into `paint::Mesh`, bounded by `render_width_px` rather than by the buffer. A signal against time is drawn in exactly **one** place (`host::graphics::signal::trace::draw_channel`): a second destination for the same picture is a second implementation, and the two did drift before they were merged. (b) *Full-screen quad + texture sample* — the spectrogram uploads the STFT once as a 2D texture (x=frame, y=bin) and the fragment shader samples it, so the GPU's linear filtering gives free resolution-matched downsampling on zoom-out.
 - **Uniforms are free, recompute is expensive — put every display control in the shader.** Colormap, dB window and contrast, the frequency-axis mapping (linear/log/mel/bark) and the frequency zoom/pan (a *second* `viewport::View`) all change live at zero CPU cost. Only window size, hop or sample rate force a `Stft::compute`.
 - **Anchor-preserving zoom is the core navigation math**: `pivot = start + len*anchor`, scale `len`, keep `pivot` fixed, clamp. The frequency axis keeps its window in **display coordinates**, not in bins, so the cursor anchor holds in every scale — the nonlinearity lives entirely in the shader's display→bin mapping.
 - **Two pixel spaces, and a heavy view lives in the physical one.** `render_width_px` is always **physical**: the resolution rule is against the screen's real pixels, so a view driven by logical widths comes out blurry or over-detailed. The *chrome's* space is the separate, logical one: the wire declares logical pixels and a per-window `ui_scale` resolves them (see the sizing model below). A heavy view's samples-per-pixel arithmetic stays physical regardless.

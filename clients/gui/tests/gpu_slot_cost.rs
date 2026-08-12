@@ -1,13 +1,20 @@
-//! What a heavy view's GPU slot costs, and why the waveform kept its pipeline.
+//! What a heavy view's GPU slot costs, and where a waveform's vertices go.
 //!
-//! Two questions this crate answered by measuring rather than by argument, kept
+//! Questions this crate answered by measuring rather than by argument, kept
 //! here so the answers can be re-checked when either changes:
 //!
 //! 1. **Should the waveform draw into the shared `Mesh` instead of its own
-//!    pipeline?** No. Both build the same six vertices per min/max column into
-//!    the same `[x, y, r, g, b, a]` layout, and the column *computation* — the
+//!    pipeline?** Yes — and the measurement below is why it *could*. Both
+//!    destinations build the same six vertices per min/max column into the same
+//!    `[x, y, r, g, b, a]` layout, and the column *computation* — the
 //!    peak-pyramid reads — dominates so heavily that the choice of destination
-//!    is noise. Measured here as the shared work's share of the total.
+//!    is noise. With cost out of the way what remained was that a second
+//!    destination is a second implementation of the same drawing, and the two
+//!    had already drifted (the pipeline's polyline dropped the sample past the
+//!    right edge, and marked samples with squares where the mesh marks discs).
+//!    So the pipeline is gone and `trace::draw_channel` draws every signal.
+//!    This test still measures the share, because it is what would have to
+//!    change for the question to be worth reopening.
 //! 2. **What does an extra slot cost?** After E2, a slot is a vertex buffer and
 //!    a texture; the pipelines belong to the window. Before it, every waveform
 //!    widget compiled a shader module and two pipelines, and a spectrogram did
@@ -135,20 +142,23 @@ fn the_column_computation_dominates_the_per_frame_cost() {
 /// The GPU objects a window allocates, counted rather than timed: pipelines are
 /// created once and then only bound, so what matters is how many exist.
 ///
-/// This is the milestone's before/after. The "before" numbers are the shape the
-/// code had until E2 (a shader module and two pipelines inside every
-/// `WaveformRenderer`, one of each inside every `SpectrogramRenderer`, and a
-/// spectrogram building one renderer per channel); the "after" is what the split
-/// leaves. Kept as an executable statement of the invariant, so a future change
-/// that puts a pipeline back inside an element fails here.
+/// The "before" numbers are the shape the code had until the pipelines moved to
+/// the window (a shader module and two pipelines inside every waveform view, one
+/// of each inside every `SpectrogramRenderer`, and a spectrogram building one
+/// renderer per channel); the "after" is what is left now that the split has
+/// happened *and* the waveform has no pipeline at all — its picture is triangles
+/// in the window's mesh. Kept as an executable statement of the invariant, so a
+/// future change that puts a pipeline back inside an element fails here.
 #[test]
 fn pipelines_belong_to_the_window_not_to_the_element() {
     /// Shader modules + render pipelines a window ends up holding.
     fn pipeline_objects(waveforms: usize, spectrogram_channels: usize, shared: bool) -> usize {
         if shared {
-            // One `Renderers`: the waveform's two pipelines and the
-            // spectrogram's one, plus their two shader modules.
-            2 + 1 + 2
+            // One `Renderers`: the spectrogram's pipeline and its shader
+            // module. The waveforms add nothing — they draw through the
+            // window's painter, which exists for the chrome regardless.
+            let _ = waveforms;
+            1 + 1
         } else {
             // Per waveform: a shader module + a column and a line pipeline.
             // Per spectrogram *channel*: a shader module + a pipeline.
@@ -162,18 +172,17 @@ fn pipelines_belong_to_the_window_not_to_the_element() {
     let before = pipeline_objects(waveforms, channels, false);
     let after = pipeline_objects(waveforms, channels, true);
     println!("\n{waveforms} waveforms + a {channels}-channel spectrogram");
-    println!("  before E2: {before} shader/pipeline objects");
-    println!("  after  E2: {after} (constant in the element count)");
+    println!("  before: {before} shader/pipeline objects");
+    println!("  after:  {after} (constant in the element count)");
     assert_eq!(before, 22);
-    assert_eq!(after, 5);
+    assert_eq!(after, 2);
 
     // The property that actually matters is not that the split is cheaper at
-    // any given size — at a single element the two shapes cost the same five
-    // objects — but that one count **follows the composition and the other does
-    // not**. That is what E6/E7 need, since they turn every clip body into an
-    // element that wants a slot.
+    // any given size but that one count **follows the composition and the other
+    // does not**. That is what the clip bodies need, since they turn every body
+    // into an element that wants a slot.
     let one = pipeline_objects(1, 1, false);
-    assert_eq!(one, after, "at one element the split saves nothing");
+    assert!(one > after, "even one element carried its own pipelines");
     for elements in [10usize, 40, 200] {
         assert_eq!(
             pipeline_objects(elements, elements, true),
