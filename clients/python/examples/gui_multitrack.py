@@ -145,25 +145,39 @@ print(f"wrote {len(TAKES)} takes and a {SWEEP_BEATS:.0f}-beat sweep under {tmp}"
 
 # %% [markdown]
 # ## The instruments
-# The lanes draw the material; these are what sound it. One percussive def for
-# the tones and the lead notes, and one glide for the sweep the spectral clip
-# shows — both freed by their own envelope.
+# The lanes draw the material; these are what sound it. One decaying sine for the
+# tones and the lead notes, and one glide for the sweep the spectral clip shows —
+# both freed by their own envelope, and both shaped like the file drawn beside
+# them: an instrument whose envelope is not the picture's makes the take look
+# like it ends after it is over.
 
 # %%
 def voice(name: str = "multi_tone") -> SynthDef:
-    """A percussive sine, self-freeing when its envelope ends.
+    """A decaying sine, self-freeing when its envelope ends.
 
     Its length is the ``secs`` control, not ``dur``: ``dur`` is one of the
     event's **reserved** keys — the scheduling — so it never reaches the synth,
     and a def that reads it gets its default forever (every take the same
     length, whatever the clip says). A clip's length in seconds travels as a
-    control of its own."""
+    control of its own.
+
+    **Its shape is the file's shape**, and that is the point rather than a
+    detail: the take drawn on the lane is a file written with
+    ``exp(-decay · t/secs)``, so the synth plays that same curve — a ramp over
+    the clip's span, exponentiated — with ``decay`` arriving as a control the
+    way ``secs`` does. Written with a ready-made percussive envelope instead
+    (which is what it was), the two disagree: at the end of a four-beat take
+    the picture is at 0.30 and the sound at 0.001, so the eye sees material
+    where the ear hears none and the take reads as ending early."""
     freq = control("freq", 440.0, "ir")
     amp = control("amp", 0.2, "ir")
     secs = control("secs", 1.0, "ir")
-    shape = env_gen(Env.perc(attack=0.01, release=1.0), time_scale=secs,
-                    done_action=DoneAction.FREE_SELF)
-    sig = sine(freq) * shape * amp
+    decay = control("decay", 3.0, "ir")
+    # The ramp is the clip's own span: it is what frees the synth at the end,
+    # and what the decay is measured on.
+    ramp = env_gen(Env([0.0, 1.0], [1.0]), time_scale=secs,
+                   done_action=DoneAction.FREE_SELF)
+    sig = sine(freq) * (-decay * ramp).exp() * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
@@ -200,12 +214,13 @@ server.sync()
 # two things that drift; this is one thing seen twice.
 
 # %%
-def tone_events(freq: float, amp: float = 0.2):
+def tone_events(freq: float, decay: float, amp: float = 0.2):
     """A take: one tone filling the clip. ``secs`` is the clip's own length, so a
-    resized clip sounds as long as it looks."""
+    resized clip sounds as long as it looks — and ``decay`` is the one the file
+    was written with, so it sounds the shape it draws."""
     def events(beats, gain):
         return [(0.0, Event(instrument="multi_tone", freq=freq, dur=beats,
-                            secs=beats / TEMPO, amp=amp * gain))]
+                            secs=beats / TEMPO, decay=decay, amp=amp * gain))]
     return events
 
 
@@ -232,8 +247,8 @@ def sweep_events(amp: float = 0.18):
 #: clip name -> where it sits (beats) and what it sounds. The `"clip"` edit-back
 #: writes `at`/`beats` here, which is why an edit is heard and not only seen.
 CLIPS = {name: {"lane": "takes", "at": at, "beats": beats,
-                "events": tone_events(freq)}
-         for name, freq, beats, at, _decay in TAKES}
+                "events": tone_events(freq, decay)}
+         for name, freq, beats, at, decay in TAKES}
 CLIPS["theme"] = {"lane": "lead", "at": LEAD_AT, "beats": 6.0,
                   "events": lead_events(LEAD)}
 CLIPS["sweep"] = {"lane": "spectrum", "at": SWEEP_AT, "beats": SWEEP_BEATS,
