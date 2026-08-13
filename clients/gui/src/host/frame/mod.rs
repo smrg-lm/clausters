@@ -1026,12 +1026,15 @@ mod tests {
         use crate::host::guidef::GuiNode;
         use crate::host::widget::Widget;
 
-        // Two clips on one lane, overlapping in the middle: the second is on
-        // top (later placements are drawn later).
+        // Two clips on one lane, the second overlapping the first by a sliver
+        // and on top (later placements are drawn later). The sliver is the
+        // point: a grip is lit only over its own strip, so the one place two
+        // clips can both claim the pointer is where one's end strip and the
+        // other's start strip land on the same pixels.
         let json = r#"{"type":"window","margin":0,"children":[
             {"id":5,"type":"field","label":"lane","children":[
                 {"id":10,"type":"field","offset":0,"dur":600,"data":[0.0,0.5]},
-                {"id":11,"type":"field","offset":400,"dur":600,"data":[0.0,0.5]}]}]}"#;
+                {"id":11,"type":"field","offset":580,"dur":600,"data":[0.0,0.5]}]}]}"#;
         let tree = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
         let m = Metrics::default();
         let area = Rect::new(0.0, 0.0, 800.0, 200.0);
@@ -1065,20 +1068,42 @@ mod tests {
             )
         };
 
-        // A pointer in the overlap: it is in the *first* clip's right half and
-        // the *second* clip's left half, so the two would light opposite ends —
-        // at pixels far apart. Only the top one's may be drawn.
+        // A pointer in the sliver: it stands on the first clip's **end** strip
+        // and on the second clip's **start** strip at once, so both would light
+        // — over the same pixels, one arrow pointing each way. Only the top
+        // one's may be drawn.
         let (a, b, _) = grips((0.0, 0.0));
-        let overlap_x = (b.x + (a.x + a.w)) * 0.5;
-        let (_, _, over) = grips((overlap_x as f64, (a.y + a.h * 0.5) as f64));
+        let sliver_x = b.x + m.grip_w * 0.5;
+        assert!(
+            sliver_x > a.x + a.w - m.grip_w && sliver_x < a.x + a.w,
+            "the cursor stands on both strips: {sliver_x} in {a:?} / {b:?}"
+        );
+        let (_, _, over) = grips((sliver_x as f64, (a.y + a.h * 0.5) as f64));
         let ink: Vec<f32> = over.positions().map(|(x, _)| x).collect();
         assert!(!ink.is_empty(), "something is drawn over the clips");
-        let near_a_end = ink.iter().filter(|x| **x > a.x + a.w - 20.0).count();
-        let near_b_start = ink.iter().filter(|x| **x < b.x + 20.0).count();
-        assert!(near_b_start > 0, "the top clip's start grip is drawn");
+        // The two strips sit on the same pixels, so the arrow is what tells
+        // them apart: the top clip's points *into* its start (rightwards from
+        // the strip's left third), the covered one's would point the other way.
+        let arrow: Vec<f32> = ink
+            .iter()
+            .copied()
+            .filter(|x| *x >= b.x && *x <= b.x + m.grip_w)
+            .collect();
+        assert!(!arrow.is_empty(), "a grip is drawn on the shared strip");
+        let tip = arrow.iter().copied().fold(f32::MAX, f32::min);
+        assert!(
+            tip < b.x + m.grip_w * 0.5,
+            "the arrow is the top clip's start grip, not the covered clip's end"
+        );
+        // And the other half of the rule: a pointer over the clip's material,
+        // clear of both strips, lights **nothing** — there is no resize there,
+        // and the press goes to whatever the clip's bodies make of it.
+        let middle = ((a.x + a.w * 0.5) as f64, (a.y + a.h * 0.5) as f64);
+        let (_, _, over) = grips(middle);
         assert_eq!(
-            near_a_end, 0,
-            "the covered clip drew its end grip over the one covering it"
+            over.positions().count(),
+            0,
+            "a grip lit from the middle of a clip promises a resize the press does not give"
         );
     }
 

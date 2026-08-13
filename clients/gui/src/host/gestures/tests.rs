@@ -1505,6 +1505,61 @@ fn a_note_dragged_in_a_clip_stops_at_the_clips_edge() {
     );
 }
 
+fn clip_dur(host: &Host, id: i32) -> f64 {
+    match &host.window_def(1).unwrap().find(id).unwrap().kind {
+        WidgetKind::Clip { dur, .. } => *dur,
+        other => panic!("not a clip: {other:?}"),
+    }
+}
+
+/// **A press on a lit grip resizes the clip, whatever the body has there.**
+/// The bug this fixes: the clip's bodies were offered every press first, so
+/// the dozen pixels of the grip went to whatever the body found under them — a
+/// note at the end of a roll clip moved instead of the clip's edge, from a
+/// cursor sitting on the arrow that promised the opposite. An affordance that
+/// is drawn has to be the one that acts.
+#[test]
+fn a_press_on_a_clips_grip_resizes_it_rather_than_the_note_under_it() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":80,"type":"field","label":"lead","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":1000.0,
+                 "min":48.0,"max":72.0,"notes":[900.0,100.0,60.0,100,0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    let clip = placed_rect(&host, &ctx, 81);
+    let m = host.metrics_for(1);
+    // The last note fills the clip's last tenth, so it is drawn *under* the end
+    // grip: the press has to choose, and the grip is what is lit there.
+    let midy = (clip.y + clip.h * 0.5) as f64;
+    let on_grip = (clip.x + clip.w - m.grip_w * 0.5) as f64;
+
+    g.press(&mut host, &ctx, on_grip, midy, &mut || false);
+    assert!(g.dragging(), "the press was taken");
+    let effects = g.drag_to(&mut host, &ctx, on_grip + 60.0, midy);
+    assert!(
+        !has_emit_tag(&effects, 81, "notes"),
+        "the note under the grip was not touched"
+    );
+    assert!(has_emit_tag(&effects, 81, "clip"), "the clip resized");
+    assert!(
+        clip_dur(&host, 81) > 1000.0,
+        "the edge moved out: {}",
+        clip_dur(&host, 81)
+    );
+    assert_eq!(clip_offset(&host, 81), 0.0, "and the other end stayed put");
+    g.release(&mut host, &ctx, on_grip + 60.0, midy);
+
+    // Clear of the grip, the same note is the body's again — which is the half
+    // of the rule that keeps the roll editable at all.
+    let on_note = (clip.x + clip.w * 0.93) as f64;
+    g.press(&mut host, &ctx, on_note, midy, &mut || false);
+    let effects = g.drag_to(&mut host, &ctx, on_note - 40.0, midy);
+    assert!(has_emit_tag(&effects, 81, "notes"), "the note moved");
+}
+
 /// A clip dragged against the lane's edge pulls the view along, so it can
 /// travel further than the visible window. The regression this fixes: the
 /// drag mapped the cursor through the *press-time* window and nothing

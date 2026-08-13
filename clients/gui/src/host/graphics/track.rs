@@ -419,14 +419,19 @@ pub enum ClipSide {
     End,
 }
 
-/// The **one** grip to draw for a pointer at `cursor_x`: the one on the side
-/// the pointer is on, `None` when that side has no grip (its end is off screen,
-/// or the clip is all body).
+/// The grip a pointer at `cursor_x` is **on** — the strip under the cursor, and
+/// `None` anywhere else on the clip.
 ///
-/// One at a time on purpose. Both ends lit is a claim about where the pointer
-/// is going that the pointer has not made — and the reader is already on a
-/// side, so the affordance belongs there. It is the same half the press lands
-/// in, so what lights up is what a drag would take.
+/// **An affordance is drawn where it acts, and nowhere else.** This used to
+/// light the grip of whichever *half* the pointer was in, so a strip a dozen
+/// pixels wide announced itself from the middle of the clip — and then the
+/// press there did not resize, because the middle of a clip is its body and the
+/// body is what a body element (a roll's notes, a curve's points) is grabbed
+/// through. A grip lit that far from its own pixels is a promise the press
+/// cannot keep, and the reader learns to distrust the mark rather than the
+/// distance. Lit only over its own strip, the two agree: what is lit is what
+/// the press takes (`interact::clip_part` reads the same [`clip_grips`]), and a
+/// pointer over the material lights nothing because nothing there resizes.
 pub fn clip_grip_at(
     cr: Rect,
     ends: (bool, bool),
@@ -434,11 +439,11 @@ pub fn clip_grip_at(
     cursor_x: f32,
 ) -> Option<(Rect, ClipSide)> {
     let (start, end) = clip_grips(cr, ends, m);
-    if cursor_x < cr.x + cr.w * 0.5 {
-        start.map(|r| (r, ClipSide::Start))
-    } else {
-        end.map(|r| (r, ClipSide::End))
-    }
+    let on = |r: &Rect| cursor_x >= r.x && cursor_x <= r.x + r.w;
+    start
+        .filter(on)
+        .map(|r| (r, ClipSide::Start))
+        .or_else(|| end.filter(on).map(|r| (r, ClipSide::End)))
 }
 
 /// The grip on a **named** side, for a caller that knows which one it wants
@@ -934,14 +939,24 @@ mod tests {
             (None, None)
         );
 
-        // One at a time, and the one the pointer is on: the left half asks for
-        // the start, the right half for the end.
-        let left = clip_grip_at(cr, (true, true), &m, cr.x + 10.0);
-        let right = clip_grip_at(cr, (true, true), &m, cr.x + cr.w - 10.0);
+        // One at a time, and only the strip the pointer is **on** — not the
+        // half it is in. A grip lit from the middle of a clip announces a
+        // resize that the press there does not give (the middle is the body's,
+        // and a body element grabs whatever it finds under those pixels).
+        let left = clip_grip_at(cr, (true, true), &m, cr.x + 1.0);
+        let right = clip_grip_at(cr, (true, true), &m, cr.x + cr.w - 1.0);
         assert_eq!(left.map(|(_, s)| s), Some(ClipSide::Start));
         assert_eq!(right.map(|(_, s)| s), Some(ClipSide::End));
+        assert_eq!(left.unwrap().0.w, m.grip_w, "it is lit over its own width");
+        // Just past the strip, and anywhere else on the clip: nothing.
+        assert!(clip_grip_at(cr, (true, true), &m, cr.x + m.grip_w + 1.0).is_none());
+        assert!(clip_grip_at(cr, (true, true), &m, cr.x + cr.w * 0.5).is_none());
+        assert!(
+            clip_grip_at(cr, (true, true), &m, cr.x + cr.w - m.grip_w - 1.0).is_none(),
+            "the right half alone is not the end grip"
+        );
         // ...and nothing on the side whose end is off screen.
-        assert!(clip_grip_at(cr, (false, true), &m, cr.x + 10.0).is_none());
+        assert!(clip_grip_at(cr, (false, true), &m, cr.x + 1.0).is_none());
 
         // The drawing is a plate with a mark on it, and it draws only what it
         // was given.

@@ -392,10 +392,22 @@ impl Gestures {
                     // The clip's **bodies** get the press first, topmost first:
                     // an element drawn on the clip's axis (an envelope's
                     // break-points) is what the pointer is on, and the clip's
-                    // own move or resize is what is under it. A body that
-                    // declines hands it straight back, exactly as an element
-                    // declining anywhere else does.
-                    if self.clip_body_press(host, ctx, &h, cx, cy, grab, out) {
+                    // own move is what is under it. A body that declines hands
+                    // it straight back, exactly as an element declining
+                    // anywhere else does.
+                    //
+                    // **Except on a grip.** The strip at a clip's end is lit
+                    // under the pointer precisely to say the press there
+                    // resizes the clip, and an affordance that is drawn has to
+                    // be the one that acts: offered to the bodies first, those
+                    // dozen pixels went to whatever the body found under them
+                    // — a note at the end of a roll clip moved instead of the
+                    // clip's edge, from a cursor sitting on the arrow that
+                    // promised otherwise. The body keeps everything that is not
+                    // a grip, which is the whole clip whenever its ends are off
+                    // screen or it is too narrow to carry one.
+                    let on_grip = h.part != interact::ClipPart::Body;
+                    if !on_grip && self.clip_body_press(host, ctx, &h, cx, cy, grab, out) {
                         return true;
                     }
                     let press_sample = interact::sample_at(

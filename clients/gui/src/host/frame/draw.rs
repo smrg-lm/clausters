@@ -587,16 +587,13 @@ pub(super) fn draw_static_meshes(
         let grip = match inputs.grab {
             // Something else has the pointer: no clip offers anything.
             Grab::Other => None,
+            // The held clip keeps the edge it is being resized by, wherever the
+            // pointer has got to — it is named by the drag rather than found
+            // under the cursor. A clip being **moved** holds no edge and lights
+            // none: the drag in flight is not a resize, so an arrow on it would
+            // offer a gesture that is not the one happening.
             Grab::Clip(id, side) if item.id == Some(id) => {
-                let cx = pointer.map_or(item.rect.x + item.rect.w * 0.5, |(x, _)| {
-                    // Clamped into the clip: a held clip keeps its grip lit
-                    // even while the pointer is outside it.
-                    (x as f32).clamp(item.rect.x, item.rect.x + item.rect.w)
-                });
-                match side {
-                    Some(side) => track::clip_grip_on(item.rect, item.ends, m, side),
-                    None => track::clip_grip_at(item.rect, item.ends, m, cx),
-                }
+                side.and_then(|side| track::clip_grip_on(item.rect, item.ends, m, side))
             }
             Grab::Clip(..) => None,
             Grab::None => topmost.filter(|top| *top == i).and_then(|_| {
