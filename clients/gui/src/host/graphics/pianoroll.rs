@@ -542,22 +542,70 @@ pub fn time_at(grid: Rect, nav: &View, offset: f64, x: f32) -> f64 {
 
 // --- Editing (pure, mapping-free) -----------------------------------------
 
-/// Move the note at `index` to a new start (clamped `>= 0`) and pitch (clamped
-/// into `[lo, hi]`, rounded to the nearest semitone). The duration is kept.
-pub fn move_note(notes: &mut [Note], index: usize, start: f64, pitch: f32, lo: f32, hi: f32) {
+/// The far edge an edit stops at: the length of the domain the notes live in,
+/// or `None` for a domain with no far edge.
+///
+/// A roll standing on its own has no far edge — its content *is* what it spans,
+/// so a note dragged rightwards simply lengthens it. A roll drawn as a **clip's
+/// body** has one: the clip's own `dur`, past which a note would still exist and
+/// no longer be drawn, since the body is clipped to the rectangle. What is
+/// edited has to stay visible, so the note stops at the edge and the clip's
+/// length is changed the way a clip's length is changed — by its own edge.
+pub type Limit = Option<f64>;
+
+/// Where a note of `dur` may start inside `limit`: past zero, and near enough
+/// the far edge that its **tail** still lands inside.
+///
+/// A note is clamped whole rather than by its onset, which is the difference
+/// between a note that stops at the edge and one whose head stops there while
+/// the rest of it goes over — the part that would vanish being exactly the part
+/// being dragged. A note longer than the whole domain pins to zero: its tail
+/// cannot fit, so the near edge is the one that can be honoured.
+fn clamp_start(start: f64, dur: f64, limit: Limit) -> f64 {
+    let last = limit.map_or(f64::INFINITY, |l| l - dur.max(0.0));
+    start.min(last).max(0.0)
+}
+
+/// Move the note at `index` to a new start (clamped into `0..limit`, tail
+/// included — see [`Limit`]) and pitch (clamped into `[lo, hi]`, rounded to the
+/// nearest semitone). The duration is kept.
+pub fn move_note(
+    notes: &mut [Note],
+    index: usize,
+    start: f64,
+    pitch: f32,
+    lo: f32,
+    hi: f32,
+    limit: Limit,
+) {
     if let Some(n) = notes.get_mut(index) {
-        n.start = start.max(0.0);
+        n.start = clamp_start(start, n.dur, limit);
         n.pitch = pitch.round().clamp(lo, hi);
     }
 }
 
 /// Resize the note at `index` by dragging one edge to timeline-relative `t`.
 /// `Start` moves the onset (keeping the end fixed), `End` moves the end; a note
-/// never shrinks below `min_dur`.
-pub fn resize_note(notes: &mut [Note], index: usize, part: NotePart, t: f64, min_dur: f64) {
+/// never shrinks below `min_dur`, and never grows past `limit`.
+///
+/// `Start` needs no far edge of its own: it holds the end still, so an edge
+/// already inside stays inside. A note a script placed *over* the edge is left
+/// where it is rather than dragged in — an edit moves what it is given hold of,
+/// and pulling the far end in would be an edit nobody asked for.
+pub fn resize_note(
+    notes: &mut [Note],
+    index: usize,
+    part: NotePart,
+    t: f64,
+    min_dur: f64,
+    limit: Limit,
+) {
     if let Some(n) = notes.get_mut(index) {
         match part {
-            NotePart::End => n.dur = (t - n.start).max(min_dur),
+            NotePart::End => {
+                let end = limit.map_or(t, |l| t.min(l));
+                n.dur = (end - n.start).max(min_dur);
+            }
             NotePart::Start => {
                 let end = n.start + n.dur;
                 let start = t.min(end - min_dur).max(0.0);
@@ -631,9 +679,9 @@ pub fn notes_in_rect(notes: &[Note], t0: f64, t1: f64, p_lo: f32, p_hi: f32) -> 
 
 /// Move a block of notes rigidly from a press-time snapshot: `orig` is
 /// `(index, start, pitch)` per selected note, `dt`/`dp` the drag deltas. The
-/// deltas are clamped **as one** — no start below zero, no pitch outside
-/// `[lo, hi]` — so the block stops at an edge instead of folding against it.
-/// Durations are kept.
+/// deltas are clamped **as one** — no start below zero, no tail past `limit`,
+/// no pitch outside `[lo, hi]` — so the block stops at an edge instead of
+/// folding against it. Durations are kept.
 pub fn move_notes_from(
     notes: &mut [Note],
     orig: &[(usize, f64, f32)],
@@ -641,6 +689,7 @@ pub fn move_notes_from(
     dp: f32,
     lo: f32,
     hi: f32,
+    limit: Limit,
 ) {
     if orig.is_empty() {
         return;
@@ -649,7 +698,20 @@ pub fn move_notes_from(
         .iter()
         .map(|(_, s, _)| *s)
         .fold(f64::INFINITY, f64::min);
-    let dt = dt.max(-min_start);
+    // The block's far end is its last **tail**, so it stops where a single note
+    // would. Read from the snapshot's starts and the notes' current durations:
+    // a block move never touches a duration.
+    let max_end = orig
+        .iter()
+        .filter_map(|(i, s, _)| notes.get(*i).map(|n| s + n.dur.max(0.0)))
+        .fold(f64::NEG_INFINITY, f64::max);
+    // The near edge is applied last, so a block longer than the whole domain
+    // pins to zero rather than to a negative start — the same choice a single
+    // over-long note makes.
+    let dt = match limit {
+        Some(l) if max_end.is_finite() => dt.min(l - max_end).max(-min_start),
+        _ => dt.max(-min_start),
+    };
     let (min_p, max_p) = orig
         .iter()
         .fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), (_, _, p)| {
@@ -898,23 +960,55 @@ mod tests {
     #[test]
     fn move_clamps_pitch_and_start() {
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
-        move_note(&mut notes, 0, -50.0, 200.7, 24.0, 96.0);
+        move_note(&mut notes, 0, -50.0, 200.7, 24.0, 96.0, None);
         assert_eq!(notes[0].start, 0.0);
         assert_eq!(notes[0].pitch, 96.0); // clamped to hi, rounded
         assert_eq!(notes[0].dur, 200.0); // duration kept
     }
 
     #[test]
+    fn a_move_inside_a_limit_keeps_the_whole_note_in() {
+        // Unbounded (a roll's own view): the note goes where it is dropped, and
+        // the roll's span grows with it.
+        let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
+        move_note(&mut notes, 0, 5000.0, 60.0, 24.0, 96.0, None);
+        assert_eq!(notes[0].start, 5000.0);
+        // Bounded (a clip's body): the **tail** stops at the edge, so the last
+        // start is limit - dur and the note stays whole and visible.
+        let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
+        move_note(&mut notes, 0, 5000.0, 60.0, 24.0, 96.0, Some(1000.0));
+        assert_eq!((notes[0].start, notes[0].dur), (800.0, 200.0));
+        // A note longer than the clip pins to the near edge: its tail cannot
+        // fit, so the edge that can be honoured is zero.
+        let mut notes = vec![Note::new(0.0, 400.0, 60.0)];
+        move_note(&mut notes, 0, 300.0, 60.0, 24.0, 96.0, Some(200.0));
+        assert_eq!(notes[0].start, 0.0);
+    }
+
+    #[test]
     fn resize_respects_min_dur_from_either_edge() {
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
         // Drag the end back past the start → clamped to min_dur.
-        resize_note(&mut notes, 0, NotePart::End, 50.0, 10.0);
+        resize_note(&mut notes, 0, NotePart::End, 50.0, 10.0, None);
         assert_eq!(notes[0].dur, 10.0);
         // Drag the start forward past the end → clamped.
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)]; // end = 300
-        resize_note(&mut notes, 0, NotePart::Start, 400.0, 10.0);
+        resize_note(&mut notes, 0, NotePart::Start, 400.0, 10.0, None);
         assert_eq!(notes[0].start, 290.0);
         assert_eq!(notes[0].dur, 10.0);
+    }
+
+    #[test]
+    fn a_resize_stops_the_tail_at_the_limit() {
+        // The end edge dragged past the clip's own length stops there.
+        let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
+        resize_note(&mut notes, 0, NotePart::End, 5000.0, 10.0, Some(1000.0));
+        assert_eq!(notes[0].dur, 900.0);
+        // The start edge holds the end still, so a note already inside stays
+        // inside with no far edge of its own.
+        let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
+        resize_note(&mut notes, 0, NotePart::Start, 50.0, 10.0, Some(1000.0));
+        assert_eq!((notes[0].start, notes[0].dur), (50.0, 250.0));
     }
 
     #[test]
@@ -960,16 +1054,16 @@ mod tests {
         // Free move: both notes shift by the same delta.
         let mut notes = three_notes();
         let orig = vec![(0, 0.0, 60.0f32), (1, 200.0, 64.0f32)];
-        move_notes_from(&mut notes, &orig, 50.0, 2.4, 24.0, 96.0);
+        move_notes_from(&mut notes, &orig, 50.0, 2.4, 24.0, 96.0, None);
         assert_eq!((notes[0].start, notes[0].pitch), (50.0, 62.0));
         assert_eq!((notes[1].start, notes[1].pitch), (250.0, 66.0));
         // Clamped at time zero: the whole block stops, keeping the spread.
         let mut notes = three_notes();
-        move_notes_from(&mut notes, &orig, -80.0, 0.0, 24.0, 96.0);
+        move_notes_from(&mut notes, &orig, -80.0, 0.0, 24.0, 96.0, None);
         assert_eq!((notes[0].start, notes[1].start), (0.0, 200.0));
         // Clamped at the pitch top: the highest note pins the block.
         let mut notes = three_notes();
-        move_notes_from(&mut notes, &orig, 0.0, 40.0, 24.0, 96.0);
+        move_notes_from(&mut notes, &orig, 0.0, 40.0, 24.0, 96.0, None);
         assert_eq!((notes[0].pitch, notes[1].pitch), (92.0, 96.0));
         // Durations are never touched.
         assert_eq!(notes[0].dur, 100.0);
@@ -979,9 +1073,25 @@ mod tests {
     fn a_block_wider_than_the_pitch_window_does_not_fold() {
         let mut notes = vec![Note::new(0.0, 10.0, 20.0), Note::new(0.0, 10.0, 100.0)];
         let orig = vec![(0, 0.0, 20.0f32), (1, 0.0, 100.0f32)];
-        move_notes_from(&mut notes, &orig, 0.0, 5.0, 24.0, 96.0);
+        move_notes_from(&mut notes, &orig, 0.0, 5.0, 24.0, 96.0, None);
         // The rigid pitch move is refused; the pitches only clamp into range.
         assert_eq!((notes[0].pitch, notes[1].pitch), (24.0, 96.0));
+    }
+
+    #[test]
+    fn a_block_move_stops_its_last_tail_at_the_limit() {
+        // The block's far end is its last note's **tail** (400 + 100 = 500), so
+        // inside a 600-long clip it may only move 100 further, spread intact.
+        let mut notes = three_notes();
+        let orig = vec![(0, 0.0, 60.0f32), (2, 400.0, 72.0f32)];
+        move_notes_from(&mut notes, &orig, 5000.0, 0.0, 24.0, 96.0, Some(600.0));
+        assert_eq!((notes[0].start, notes[2].start), (100.0, 500.0));
+        assert_eq!(notes[2].dur, 100.0); // durations are never touched
+        // A block wider than the clip pins to zero: the near edge is applied
+        // last, the same choice a single over-long note makes.
+        let mut notes = three_notes();
+        move_notes_from(&mut notes, &orig, 50.0, 0.0, 24.0, 96.0, Some(200.0));
+        assert_eq!((notes[0].start, notes[2].start), (0.0, 400.0));
     }
 
     #[test]

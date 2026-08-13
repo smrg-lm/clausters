@@ -445,6 +445,23 @@ whole windows, so what is on screen holds still while it fills and the writing
 continues at the left of the next one. `sel_*`, `view_*` and the wheel/Shift+drag
 gestures navigate it as on any other timeline view.
 
+**A note edited inside a `clip` stops at the clip's edge; on the roll's own view
+nothing stops it.** The two placements bound differently because they *show*
+differently. The roll's own view spans its own content: drag a note rightwards
+and the roll simply reaches further, so the note is one scroll away and nothing
+is lost. A roll drawn as a clip's body is clipped to the clip's rectangle, so the
+same drag would leave the note out of every pixel the clip owns — still in the
+list, still sounding, and findable only by resizing the clip by hand. So inside a
+clip a note is clamped **whole** into `[0, dur]`: its tail parks on the far edge
+rather than its onset, since the part that would vanish is exactly the part being
+dragged. The same edge holds a resize and an `osc` marker, and a block move
+clamps as one (the block's last tail stops, the spread intact). What the clamp
+does *not* do is grow the clip: a clip's length is what its own edge says, and
+content that lengthened its container would make one gesture — nudge a note —
+also move the end of the piece. To take a note further, resize the clip first.
+Shortening a clip over notes already inside it removes nothing: they stay in the
+list, out of the clip's span, and come back if it is stretched again.
+
 A timeline view (and a lane) shows the transport two ways, and they are different
 things: `playhead_at` **anchors the line to the engine clock** (it is the clock
 value at timeline position 0, so the line *sweeps* as the audio runs), while

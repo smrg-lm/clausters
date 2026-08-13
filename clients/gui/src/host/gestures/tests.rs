@@ -1445,6 +1445,66 @@ fn a_clips_curve_body_takes_its_points_and_leaves_the_clip_its_drag() {
     );
 }
 
+/// The `(start, dur)` of a roll's first note, read off the `notes` edit-back —
+/// the payload a driver acts on, so asserting on it is asserting on what the
+/// script would be told.
+fn first_note(effects: &[GestureEffect]) -> (f32, f32) {
+    effects
+        .iter()
+        .find_map(|e| match e {
+            GestureEffect::Emit { args, .. }
+                if args.first() == Some(&OscType::String("notes".into())) =>
+            {
+                match args[1..] {
+                    [OscType::Float(start), OscType::Float(dur), ..] => Some((start, dur)),
+                    _ => panic!("malformed notes payload: {args:?}"),
+                }
+            }
+            _ => None,
+        })
+        .expect("a notes edit-back")
+}
+
+/// **A note dragged inside a clip stops at the clip's far edge.** The bug this
+/// fixes: the note kept going, out of the rectangle that draws it — still in
+/// the list, still sounding, and visible only by resizing the clip by hand.
+///
+/// The clip's length is not stretched to take it, because a clip's length is
+/// what its *own* edge says: content that lengthened its container would make
+/// one gesture (nudge a note) do two things (and move the piece's end with it).
+#[test]
+fn a_note_dragged_in_a_clip_stops_at_the_clips_edge() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":80,"type":"field","label":"lead","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":1000.0,
+                 "min":48.0,"max":72.0,"notes":[0.0,200.0,60.0,100,0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    let clip = placed_rect(&host, &ctx, 81);
+    // The note is the first fifth of the clip; grab its middle, clear of the
+    // edges (which resize it) and of the pitch window's rim.
+    let midy = (clip.y + clip.h * 0.5) as f64;
+    let on_note = (clip.x + clip.w * 0.1) as f64;
+
+    g.press(&mut host, &ctx, on_note, midy, &mut || false);
+    assert!(g.dragging(), "the press grabbed the note");
+    // Drag far past the clip's right edge: the note travels, and its **tail**
+    // parks on the edge — the whole note stays inside, not just its onset.
+    let effects = g.drag_to(&mut host, &ctx, (clip.x + clip.w) as f64 + 400.0, midy);
+    let (start, dur) = first_note(&effects);
+    assert_eq!(dur, 200.0, "a move keeps the duration");
+    assert_eq!(start, 800.0, "the tail stopped at the clip's dur (1000)");
+    g.release(&mut host, &ctx, (clip.x + clip.w) as f64 + 400.0, midy);
+    assert_eq!(
+        clip_offset(&host, 81),
+        0.0,
+        "and the clip neither moved nor grew"
+    );
+}
+
 /// A clip dragged against the lane's edge pulls the view along, so it can
 /// travel further than the visible window. The regression this fixes: the
 /// drag mapped the cursor through the *press-time* window and nothing

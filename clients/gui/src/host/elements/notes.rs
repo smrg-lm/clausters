@@ -567,6 +567,7 @@ impl Element for Notes {
         let nav = self.view(input.time);
         let (lo, hi) = self.pitch_window();
         let time = self.time_at(r.grid, &nav, at.0);
+        let limit = self.edit_limit(input);
         match self.drag.clone() {
             Some(Drag::Note {
                 index,
@@ -579,12 +580,14 @@ impl Element for Notes {
                     pianoroll::NotePart::Body => {
                         let start = snap_to(orig_start + (time - press_time), self.snap);
                         let pitch = pianoroll::y_to_pitch(at.1 as f32, lo, hi, r.grid);
-                        pianoroll::move_note(&mut self.notes, index, start, pitch, lo, hi);
-                        // `move_note` keeps the duration; re-assert it in case a
-                        // set changed it under a running drag.
+                        // The duration is asserted **first**: the clamp against
+                        // the far edge measures the note's tail, so a duration
+                        // a `set` changed under a running drag has to be the one
+                        // in hand before the start is placed against it.
                         if let Some(n) = self.notes.get_mut(index) {
                             n.dur = orig_dur;
                         }
+                        pianoroll::move_note(&mut self.notes, index, start, pitch, lo, hi, limit);
                     }
                     other => pianoroll::resize_note(
                         &mut self.notes,
@@ -592,6 +595,7 @@ impl Element for Notes {
                         other,
                         snap_to(time, self.snap),
                         MIN_DUR,
+                        limit,
                     ),
                 }
                 self.notes_event()
@@ -609,7 +613,7 @@ impl Element for Notes {
                     None => 0.0,
                 };
                 let dp = pianoroll::y_to_pitch(at.1 as f32, lo, hi, r.grid) - press_pitch;
-                pianoroll::move_notes_from(&mut self.notes, &orig, dt, dp, lo, hi);
+                pianoroll::move_notes_from(&mut self.notes, &orig, dt, dp, lo, hi, limit);
                 self.notes_event()
             }
             Some(Drag::Velocity { index }) => {
@@ -630,7 +634,10 @@ impl Element for Notes {
             }
             Some(Drag::OscMark { index }) => {
                 if let Some(m) = self.osc.get_mut(index) {
-                    m.time = snap_to(time, self.snap).max(0.0);
+                    // A marker is a point, so its whole extent is its time: the
+                    // same edge stops it, with no tail to leave room for.
+                    let t = snap_to(time, self.snap).max(0.0);
+                    m.time = limit.map_or(t, |l| t.min(l));
                 }
                 self.osc_event()
             }
@@ -769,6 +776,25 @@ impl Notes {
     /// that would make it navigable.
     fn navigable_placement(&self, input: &Input) -> bool {
         input.indent > 0.0
+    }
+
+    /// The far edge this placement's edits stop at (see [`pianoroll::Limit`]).
+    ///
+    /// **A clip's body has one and the roll's own view has none**, and the
+    /// difference is what the two placements can do about a note past the end.
+    /// The roll spans its own content: drag a note rightwards and the span
+    /// grows, the axis has somewhere further to go, and the note is one scroll
+    /// away — nothing is lost, so nothing is stopped. A body is drawn *inside
+    /// the clip's rectangle* and clipped to it: the same drag would leave the
+    /// note out of every pixel the clip owns, still in the list, visible only by
+    /// resizing the clip by hand. So the body stops at the clip's `dur`, and the
+    /// clip's length stays what its own edge says it is — content does not
+    /// silently lengthen the thing containing it.
+    fn edit_limit(&self, input: &Input) -> pianoroll::Limit {
+        match input.time {
+            Some(t) if !self.navigable_placement(input) => Some(t.span),
+            _ => None,
+        }
     }
 
     /// The rate the ruler and the readout are placed on: the widget's own when
@@ -1380,6 +1406,56 @@ mod tests {
         assert_eq!(b.press(off, &i), Claim::Decline, "the clip's own drag");
         assert_eq!(b.body_role(), Some(BodyRole::Notes));
         assert_eq!(empty_body().body_role(), Some(BodyRole::Notes));
+    }
+
+    /// **The far edge is the placement's, and the two placements differ.**
+    ///
+    /// Inside a clip a note stops at the clip's `dur`, tail included: the body
+    /// is clipped to the clip's rectangle, so a note past the end would be in
+    /// the list, sounding, and drawn nowhere — findable only by resizing the
+    /// clip by hand. The clip is not stretched to take it either; its length is
+    /// what its own edge says.
+    ///
+    /// The roll's own view has no such edge, and that is the same rule rather
+    /// than an exception to it: the view spans its own content, so the note
+    /// lands where it was dropped and the axis reaches it. Both placements are
+    /// asserted here together, because the bug was one of them behaving like
+    /// the other.
+    #[test]
+    fn a_note_stops_at_a_clips_edge_and_runs_free_on_the_rolls_own_view() {
+        let m = Metrics::default();
+        let json = r#"{"notes":[0.0,100.0,60.0,100,0],"min":48,"max":72}"#;
+
+        // -- inside a clip 1000 long: the tail parks on the far edge.
+        let mut b = body(&props(json)).expect("notes");
+        let mut i = input(&m, rect(), axis(1000.0));
+        i.indent = 0.0; // a body has no gutter — this is what makes it a body
+        let grid = b.regions(rect(), 0.0, &m).grid;
+        let (lo, hi) = b.pitch_window();
+        let x = |t: f64| grid.x as f64 + t / 1000.0 * grid.w as f64;
+        let y = pianoroll::pitch_to_y(60.0, lo, hi, grid) as f64;
+        assert!(matches!(b.press((x(50.0), y), &i), Claim::Take(_)));
+        // Dragged well past the right edge, and then some.
+        b.drag((x(1400.0), y), &i);
+        assert_eq!(
+            (b.notes[0].start, b.notes[0].dur),
+            (900.0, 100.0),
+            "the whole note is inside the clip, duration untouched"
+        );
+
+        // -- the same roll standing on its own: nothing stops it.
+        let mut r = roll(json);
+        let at = (x_of(&r, &m, 50.0, 1000.0), y_of(&r, &m, 60.0));
+        r.press(at, &input(&m, rect(), axis(1000.0)));
+        let to = (x_of(&r, &m, 900.0, 1000.0), y_of(&r, &m, 60.0));
+        r.drag(to, &input(&m, rect(), axis(1000.0)));
+        assert!(
+            (r.notes[0].start - 850.0).abs() < 1.0,
+            "the note went where it was dropped, tail past the window: {:?}",
+            r.notes[0]
+        );
+        // And the span grew to reach it, which is what the axis then scrolls.
+        assert!(r.span() > 900.0, "span {}", r.span());
     }
 
     /// The block keys: `q` quantizes the selection, Delete removes it, and
