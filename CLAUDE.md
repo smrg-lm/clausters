@@ -109,7 +109,8 @@ on trust, so that is where drift accumulates:
   not `clients/web/examples/`. CI runs none of them, and a Python signature
   change breaks them at a call site no build ever reaches. They are the manual
   test surface, so run the ones the change touches, by hand. **After changing
-  any Python signature, also run `pyright` in `clients/python`** — its
+  any Python signature, also run `npx pyright` in `clients/python`** (nothing
+  vendors it; npm's cache is the install) — its
   `pyrightconfig.json` turns every rule off but the four that catch exactly
   this (it is a call-site check, not a type check), over the package, the tests
   and both example directories. The baseline is zero, so anything it prints is

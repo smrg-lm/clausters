@@ -125,7 +125,13 @@ is reproducible with the same line:
   that knowingly trades speed for something else says `[no-bench]` in its head
   commit message and the gate steps aside.
 - **python types** — *not a CI job*: `pyright` in `clients/python`, configured
-  by `pyrightconfig.json` there. It is deliberately **not a type check**. Every
+  by `pyrightconfig.json` there. Nothing in the repo vendors it, so **run it
+  with `npx pyright`** from `clients/python` — npm's own cache is the install,
+  no global package and nothing to add to a manifest. (The PyPI `pyright`
+  package works too and is what a Python-only setup would reach for, but it is
+  a wrapper that fetches the same npm build, so keeping both means two versions
+  of one tool against a baseline that is supposed to be zero — pick one.)
+  It is deliberately **not a type check**. Every
   rule is off except the four that catch a **signature that moved out from
   under a caller** — `reportCallIssue`, `reportIndexIssue`,
   `reportMissingImports`, `reportUndefinedVariable` — because that is the one
