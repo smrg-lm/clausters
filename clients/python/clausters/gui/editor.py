@@ -33,7 +33,7 @@ import itertools
 
 from .. import _native
 from .handle import WindowHandle
-from ..form.document import FIRST_VERSION
+from ..form.document import FIRST_VERSION, ID_ATTR, to_document
 from ..form.group import CONCRETE, LOGICAL, SIMULTANEOUS, Group
 from ..form.element import Buffer, Element
 from ..defs.ugens import points_to_env
@@ -153,6 +153,18 @@ class Editor:
         #: the next gesture. One rather than zero, because zero is what an event
         #: means by *unstated*.
         self._version = FIRST_VERSION
+        #: The crate's undo log, and the document it inverts — created on the
+        #: first edit, because a composition that is only looked at needs
+        #: neither. **The history is the crate's, not this editor's**: a log
+        #: kept here would see only the gestures this editor made, so a script
+        #: editing the arrangement or a second view would leave it describing a
+        #: composition that has moved on, and undo would then write a state
+        #: nobody was ever in.
+        self._log = None
+        self._document = None
+        #: node id -> the arrangement object an intent naming it writes to. Built
+        #: with the document, since `to_document` is what stamps the ids.
+        self._by_node: dict = {}
         #: patch widget id -> (logical `Group`, its box-order member handles) —
         #: the directed-patch view of a logical group, for its edit-back route.
         self._patches: dict = {}
@@ -510,24 +522,45 @@ class Editor:
             return False
 
         member = placed.member
-        new_offset = member.offset
-        if moved:
-            # Absolute (the axis) -> relative (the placement), snapped to the grid.
-            new_offset = self._snap(self.units_to_beats(offset)) - placed.base
-        new_dur = self._snap(self.units_to_beats(dur)) if resized else None
-        placed.owner.move(member, new_offset, new_dur)
-        # What the grid did to the gesture. The host drew the clip where it was
+        # Absolute (the axis) -> relative (the placement). The **grid is not
+        # applied here**: the intent states where the hand put it and the crate
+        # snaps, which is the rule the whole document exists for -- one place
+        # decides what an edit becomes, and the value that comes back is what
+        # actually happened.
+        asked_offset = (self.units_to_beats(offset) - placed.base if moved
+                        else member.offset)
+        asked_dur = self.units_to_beats(dur) if resized else member.dur
+        node = self._node_id(member.element)
+        if node is None:
+            return False
+        intent = {"intent": "place", "node": node, "offset": float(asked_offset)}
+        if asked_dur is not None:
+            intent["dur"] = float(asked_dur)
+        outcome = self._record(intent, "move the clip" if moved else "resize the clip")
+        if outcome is None or not outcome["applied"]:
+            # Refused -- a node the document does not know, or an edit made
+            # against a version it has left behind. What goes back is the
+            # placement as it stands, which the host adopts like any other push.
+            self._resync(int(args[0]))
+            return False
+        effective = outcome["effective"]
+        self._project(effective)
+        # What the crate did to the gesture. The host drew the clip where it was
         # released; if the snap moved it, saying so is the whole point of an
         # acknowledgement carrying a value.
-        snapped_offset = self.beats_to_units(new_offset + placed.base)
-        snapped_dur = dur if new_dur is None else self.beats_to_units(new_dur)
+        new_dur = effective.get("dur")
+        snapped_offset = self.beats_to_units(float(effective["offset"]) + placed.base)
+        snapped_dur = dur if new_dur is None else self.beats_to_units(float(new_dur))
         if abs(snapped_offset - offset) >= 0.5 or abs(snapped_dur - dur) >= 0.5:
             self._correct(int(args[0]), offset=snapped_offset, dur=snapped_dur)
             offset, dur = snapped_offset, snapped_dur
         # The clip was drawn where it now is: keep the registry truthful, or the
         # next edit would measure its move against a stale placement.
         placed.offset, placed.dur = offset, dur
-        self._changed()
+        self._version = self._document.version
+        self.dirty = True
+        if self.follow:
+            self.rerender()
         return True
 
     def _owns(self, widget_id: int) -> bool:
@@ -599,8 +632,13 @@ class Editor:
         Every acknowledgement carries the composition's version, which is what
         the host names back on its next gesture -- that round trip is the whole
         of the staleness check, and it costs one integer."""
-        if self._host is None or not seq:
+        if self._host is None:
             return
+        if not seq and not self._corrections:
+            return
+        # A stamp of zero retires nothing, which is exactly what an **unasked**
+        # push needs: an undo answers no gesture, so it carries values and a
+        # version and takes no pending edit with it.
         if self._corrections:
             self._host.push(seq, *self._corrections,
                             doc_version=self._version, reason=reason)
@@ -739,6 +777,223 @@ class Editor:
         if self.follow:
             self.rerender()
         return True
+
+    # ---- the history: the crate's log, over the crate's document -----------
+
+    def _history(self):
+        """The log and the document, built on first use and kept in step.
+
+        The document is rebuilt from the arrangement rather than carried,
+        because `to_document` stamps each element with the id it keeps
+        (`ID_ATTR`) — so a second conversion gives the same node the same
+        number, and an entry recorded against one conversion still names the
+        right thing in the next. That is what lets a redraw, or a script editing
+        the tree, happen without the history losing its footing."""
+        if self._log is None:
+            self._log = _native.Log()
+        document = to_document(self.element, version=self._version)
+        if self._document is None:
+            self._document = _native.Document(document)
+        else:
+            # Replace the held tree: the arrangement is this editor's own
+            # authority and may have moved by a route no intent took.
+            self._document.close()
+            self._document = _native.Document(document)
+        self._index(self.element)
+        return self._log, self._document
+
+    def _index(self, element, owner=None, member=None):
+        """Walk the arrangement collecting node id -> what an intent writes to.
+
+        A `place` needs the owning group and the member handle (a placement is
+        the group's, not the element's); everything else needs the element. The
+        walk mirrors `clausters.form.document`'s own, which is what keeps the
+        two agreeing about what has an id."""
+        node = getattr(element, ID_ATTR, None)
+        if node is not None:
+            self._by_node[int(node)] = (owner, member, element)
+        if isinstance(element, Group):
+            for handle in element.handles:
+                self._index(handle.element, element, handle)
+
+    def _node_id(self, element) -> "int | None":
+        """The document id of an arrangement element, building the document if
+        that is what it takes.
+
+        `to_document` is what *stamps* the id, so asking for one before the
+        first conversion has to trigger it — otherwise the first gesture of a
+        session names a node nobody has numbered."""
+        node = getattr(element, ID_ATTR, None)
+        if node is None:
+            self._history()
+            node = getattr(element, ID_ATTR, None)
+        return None if node is None else int(node)
+
+    def _record(self, intent: dict, label: str) -> "dict | None":
+        """Apply one edit **through the crate**, recording its inverse.
+
+        This is what makes the editor's own gestures undoable, and it is also
+        where the deciding happens: the crate snaps a placement to `quant`,
+        refuses an edit to a node it cannot find, and reports an edit made
+        against a version the document has left behind. What comes back is the
+        **effective** value, which `_project` then writes onto the arrangement —
+        so this editor decides nothing an intent could decide, and the log and
+        the tree cannot disagree about what happened.
+
+        Returns the outcome, or ``None`` when there is no document to apply to
+        (an arrangement whose elements carry no ids yet)."""
+        log, document = self._history()
+        outcome = log.apply(document, intent, against={"version": self._version},
+                            quant=self.quant, label=label)
+        return outcome
+
+    def _project(self, intent: dict) -> "int | None":
+        """Write an intent's value onto the arrangement, and say which widget
+        was drawing it.
+
+        The editor is to the document what the host is to the editor: it emits
+        an intent and adopts the value that comes back. Nothing here decides
+        anything — the snap, the clamp and the refusal already happened in the
+        crate — so this is a projection and not a second implementation of what
+        an edit means. It is also the whole of what an undo has to do, since an
+        inverse is an ordinary intent."""
+        found = self._by_node.get(int(intent.get("node", -1)))
+        if found is None:
+            return None
+        owner, member, element = found
+        kind = intent.get("intent")
+        if kind == "place" and owner is not None and member is not None:
+            owner.move(member, float(intent["offset"]), intent.get("dur"))
+        elif kind == "configure":
+            auto = _automation(element)
+            if auto is None:
+                return None
+            flat = intent.get("config", {}).get("points")
+            if flat is None:
+                return None
+            auto.env = points_to_env(list(flat))
+        elif kind == "setmembers":
+            if not self._set_notes(element, intent.get("members", [])):
+                return None
+        else:
+            return None
+        return self._widget_of(element, member)
+
+    def _set_notes(self, element, members: list) -> bool:
+        """A `setmembers` onto an element's editable timeline: the notes as the
+        document states them, whole. Returns whether it landed."""
+        timeline = _editable_timeline(element)
+        if timeline is None:
+            return False
+        new = []
+        for placed in members:
+            node = placed.get("node") or {}
+            config = node.get("config") or {}
+            if "midinote" not in config:
+                continue
+            new.append((float(placed.get("offset", 0.0)), SeqEvent(dict(config))))
+        _rewrite_timeline(timeline, lambda it: _pitch(it) is None, new)
+        return True
+
+    def _widget_of(self, element, member=None) -> "int | None":
+        """Which widget is drawing this element — the id→object route read
+        backwards, which is what an undo needs in order to correct the picture
+        without redefining the window."""
+        for wid, placed in self._clips.items():
+            if placed.member is member and member is not None:
+                return wid
+            if placed.member is not None and placed.member.element is element:
+                return wid
+        for wid, drawn in self._rolls.items():
+            if drawn is element:
+                return wid
+        return None
+
+    def undo(self) -> bool:
+        """Step back one edit, and tell the host what to draw instead.
+
+        The inverse is an ordinary intent, so undoing needs no second path: it
+        is `_project` again, on what the crate hands back. Returns whether
+        anything was undone."""
+        return self._step(lambda log, doc: log.undo(doc), "undone")
+
+    def redo(self) -> bool:
+        """Step forward again after `undo`. Returns whether anything was
+        redone.
+
+        A step the crate **cannot perform** — a deterministic operation kept as
+        its parameters rather than as a span — comes back in ``remaining`` for
+        its owner to re-run. Nothing in the multitrack editor produces one yet,
+        so this reports it rather than acting on it."""
+        return self._step(lambda log, doc: log.redo(doc), "remaining")
+
+    def _step(self, walk, key: str) -> bool:
+        if self._log is None:
+            return False
+        log, document = self._history()
+        step = walk(log, document)
+        if step is None:
+            return False
+        widgets = set()
+        if key == "undone":
+            for intent in step["undone"]:
+                wid = self._project(intent)
+                if wid is not None:
+                    widgets.add(wid)
+        else:
+            # A redo applied its ordinary edits to the document already, so what
+            # the arrangement needs is the document as it now stands rather than
+            # a list of intents to replay.
+            self._adopt(document.snapshot(), widgets)
+        self._version = document.version
+        self.dirty = True
+        if self.follow:
+            self.rerender()
+        self._corrections = []
+        for wid in widgets:
+            self._resync(wid)
+        self._acknowledge(0)
+        self._corrections = []
+        return True
+
+    def _adopt(self, snapshot: dict, widgets: set):
+        """Write a whole document back onto the arrangement — the redo path,
+        where the crate applied the steps itself rather than handing them over.
+
+        It walks placements only, which is what a redo of this editor's own
+        gestures can have changed; anything else is left to the redraw."""
+        def walk(node, owner=None, member=None):
+            found = self._by_node.get(int(node.get("id", -1)))
+            if found is not None and member is not None:
+                _, handle, element = found
+                if handle is not None and owner is not None:
+                    owner.move(handle, float(member.get("offset", 0.0)),
+                               member.get("dur"))
+                    wid = self._widget_of(element, handle)
+                    if wid is not None:
+                        widgets.add(wid)
+            for placed in node.get("members", []) or []:
+                child = placed.get("node")
+                if child is None:
+                    continue
+                parent = self._by_node.get(int(node.get("id", -1)))
+                walk(child, parent[2] if parent else None, placed)
+        walk(snapshot["root"])
+
+    @property
+    def can_undo(self) -> bool:
+        """Whether there is an edit to step back over."""
+        return self._log is not None and self._log.can_undo
+
+    @property
+    def can_redo(self) -> bool:
+        """Whether there is an undone edit to step forward into."""
+        return self._log is not None and self._log.can_redo
+
+    @property
+    def undo_label(self) -> "str | None":
+        """What an undo would be called, for a menu item."""
+        return None if self._log is None else self._log.undo_label
 
     def poll(self, timeout: float = 0.0) -> bool:
         """Drain the host's pending messages into the arrangement (`apply` each).

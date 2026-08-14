@@ -275,6 +275,40 @@ whether anything moved and `stale` says whether the refusal was someone else
 having changed the document underneath you, which is a different thing to tell a
 person than "not here".
 
+### Undo: the history belongs with the document
+
+The editor's undo is not the editor's. The history lives in the same crate as
+the document, beside the data it inverts, and `Editor.undo` / `Editor.redo` step
+through it:
+
+```python
+editor.apply(*gui.poll())        # a dragged clip
+editor.can_undo                  # True
+editor.undo_label                # "move the clip"
+editor.undo()                    # the clip springs back, and the window is told
+editor.redo()                    # and forward again
+```
+
+Wire them to two buttons the way the transport is wired, by name:
+
+```python
+win["undo"].on_event(lambda v: editor.undo() if v == 1 else None)
+```
+
+**Why the history is not kept here** is the whole reason it is worth explaining.
+A log an editor keeps sees only the gestures *that editor* made — so a script
+that edits the arrangement, a second view on the same piece, or a re-render
+leaves it describing a composition that has moved on, and undoing then writes a
+state nobody was ever in. One history per document, wherever the edits come
+from, is the only version of this that stays true.
+
+Two consequences follow, and both are the point rather than a limitation. The
+**grid is applied by the crate**, not by the editor: a drag states where the
+hand put it, and what comes back is where it landed — so a redo replays the
+*snapped* value and cannot snap a second time. And an **inverse is an ordinary
+edit**, so undoing needs no second path: it is the same intent machinery running
+backwards, and the window adopts the result exactly as it adopts a snap.
+
 ### Saving: the document plus where its material is
 
 A document says what plays when and deliberately not where a source lives — in a

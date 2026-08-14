@@ -285,7 +285,14 @@ def _body(element, ids: _Ids) -> dict:
             # this is the whole of what it can show.
             body["rendered"] = _node(element.rendered, ids)
         return _with_config(body, config)
-    raise TypeError(f"no document body for {type(element).__name__}")
+    # A base `Element` wrapping something this module has no body for. It
+    # becomes an opaque leaf rather than an error, which is the format's own
+    # rule read from this side: **what a writer does not understand, it
+    # preserves**. The alternative was found by routing the editor's own edits
+    # through the document -- an arrangement is free to hold an element kind the
+    # conversion predates, and refusing to convert would make the whole
+    # composition unde-editable because one leaf in it is unfamiliar.
+    return _with_config({"kind": "generator"}, {"element": _reference(element.wraps)})
 
 
 def _preserved(element):

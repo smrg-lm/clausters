@@ -981,3 +981,83 @@ def test_opening_tells_the_host_which_version_it_is_drawing():
     host = _FakeHost()
     ed.open(host)
     assert host.answers == [(0, FIRST_VERSION, None)]
+
+
+# ---- the history: undo and redo, through the crate's log ----
+
+def test_a_run_of_gestures_undoes_back_to_where_it_started():
+    """H2's acceptance. The log is the crate's, not this editor's: a history
+    kept here would see only the gestures *it* made, so a script editing the
+    arrangement or a second view would leave it describing a composition that
+    has moved on — and undo would then write a state nobody was ever in."""
+    ed = editor(quant=0.25)
+    tree = ed.draw()
+    roll = clips(lanes(tree)[1])[0]
+    member = ed._clips[roll["id"]].member
+    start = member.offset
+
+    assert not ed.can_undo, "an unedited composition has nothing to undo"
+    for beats in (4.0, 6.5, 1.0):
+        assert ed.apply(*clip_event(roll["id"], beats * BEAT, 2 * BEAT))
+    assert member.offset == pytest.approx(1.0)
+    assert ed.can_undo
+    assert ed.undo_label == "move the clip"
+
+    while ed.can_undo:
+        assert ed.undo()
+    assert member.offset == pytest.approx(start), "exactly, not approximately"
+    assert ed.can_redo
+
+
+def test_a_redo_puts_the_clip_back_where_the_undo_took_it_from():
+    ed = editor(quant=0.25)
+    tree = ed.draw()
+    roll = clips(lanes(tree)[1])[0]
+    member = ed._clips[roll["id"]].member
+
+    ed.apply(*clip_event(roll["id"], 5 * BEAT, 2 * BEAT))
+    edited = member.offset
+    assert ed.undo()
+    assert member.offset != pytest.approx(edited)
+    assert ed.redo()
+    assert member.offset == pytest.approx(edited)
+
+
+def test_undo_on_an_untouched_editor_is_false_rather_than_a_crash():
+    ed = editor()
+    assert ed.undo() is False
+    assert ed.redo() is False
+    assert ed.can_undo is False
+    assert ed.undo_label is None
+
+
+def test_what_the_grid_did_is_what_gets_replayed():
+    """The crate records the *effective* edit, so a redo does not snap a second
+    time — harmless with a grid, wrong the moment a rule is not idempotent. It
+    is also the reason this editor no longer snaps: one place decides."""
+    ed = editor(quant=1.0)
+    tree = ed.draw()
+    roll = clips(lanes(tree)[1])[0]
+    member = ed._clips[roll["id"]].member
+
+    ed.apply(*clip_event(roll["id"], 4.3 * BEAT, 2 * BEAT))
+    assert member.offset == pytest.approx(4.0), "the crate snapped it"
+    ed.undo()
+    ed.redo()
+    assert member.offset == pytest.approx(4.0), "and the redo lands on the same beat"
+
+
+def test_an_undo_tells_the_host_what_to_draw_instead():
+    """An inverse is an ordinary edit, so the picture has to follow it the way
+    it follows any other — and without a redefine, which would re-mint every id
+    and drop whatever gesture was in flight."""
+    ed = editor(quant=0.25)
+    host = _FakeHost()
+    ed.open(host)
+    roll = clips(lanes(ed.draw())[1])[0]
+
+    ed.apply(*clip_event(roll["id"], 5 * BEAT, 2 * BEAT))
+    host.acks.clear()
+    assert ed.undo()
+    corrected = {wid for _seq, sets in host.acks for wid, _props in sets}
+    assert roll["id"] in corrected, "the undo answered with a value, not only a stamp"

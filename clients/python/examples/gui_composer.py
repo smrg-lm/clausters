@@ -24,6 +24,9 @@ with it (they share one axis).
 
 Drag a clip (move) or its edge (resize) and, with ``follow=True``, the
 composition is re-scheduled from the playhead — you hear it where you dropped it.
+**undo** and **redo** walk that back and forward: the history is the shared
+crate's, beside the document it inverts, so it is one history however many
+surfaces edit the piece.
 The lanes' playhead sweeps the clips with the engine clock, and the drag snaps to
 the musical ``quant`` grid, which is the same grid the arrangement re-schedules on.
 
@@ -212,6 +215,8 @@ transport = panel(button(name="play", label="play"),
                   button(name="pause", label="pause"),
                   button(name="stop", label="stop"),
                   button(name="rewind", label="rewind"),
+                  button(name="undo", label="undo"),
+                  button(name="redo", label="redo"),
                   layout="row", h=34.0)
 
 gui = session.gui()
@@ -242,6 +247,13 @@ win["play"].on_event(press(lambda: editor.play(server, session.clock)))
 win["pause"].on_event(press(editor.pause))
 win["stop"].on_event(press(editor.stop))
 win["rewind"].on_event(press(lambda: editor.locate(0.0)))
+# Undo and redo are the same shape as the transport buttons and are **not** the
+# editor's own history: the log lives in the shared crate, beside the document
+# it inverts, so a script editing the arrangement or a second view on the same
+# composition steps back through the same one. The clip springs back to where
+# it was and the window is told so without being redefined.
+win["undo"].on_event(press(editor.undo))
+win["redo"].on_event(press(editor.redo))
 editor.locate(0.0)                              # the cursor waits at the top
 print("press play — click a lane's ruler (or its empty space) to move the cursor")
 
