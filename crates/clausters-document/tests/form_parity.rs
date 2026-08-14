@@ -14,9 +14,14 @@
 use clausters_document::*;
 
 const VECTOR: &str = include_str!("form_vector.json");
+const SESSION: &str = include_str!("session_vector.json");
 
 fn vector() -> Document {
     serde_json::from_str(VECTOR).expect("the Python client's document must parse here")
+}
+
+fn session() -> Session {
+    serde_json::from_str(SESSION).expect("the Python client's session must parse here")
 }
 
 #[test]
@@ -80,7 +85,7 @@ fn a_track_arrives_as_a_set_whose_notes_are_placed_nodes() {
 fn a_generators_code_arrives_as_a_reference_and_is_never_read() {
     let doc = vector();
     let chain = &doc.root.members()[4].node;
-    let Body::Generator { config } = &chain.members()[0].node.body else {
+    let Body::Generator { config, .. } = &chain.members()[0].node.body else {
         panic!("not a generator")
     };
     // The crate has no idea what `rlpf` is, and that is the point.
@@ -122,4 +127,91 @@ fn the_ids_are_unique_across_the_whole_tree() {
     sorted.dedup();
     assert_eq!(sorted.len(), ids.len(), "duplicate node id in {ids:?}");
     assert_eq!(doc.max_id(), *sorted.last().unwrap());
+}
+
+#[test]
+fn a_generators_last_rendered_result_crosses_as_ordinary_tree() {
+    // O8: what a host with no language attached shows. The generator's own
+    // configuration stays opaque; what it produced is tree, so the same reader
+    // walks both without a second shape.
+    let document = vector();
+    let generator = document
+        .root
+        .members()
+        .iter()
+        .map(|m| &m.node)
+        .find(|n| n.rendered().is_some())
+        .expect("a generator carrying its last result");
+
+    let Body::Generator { config, .. } = &generator.body else {
+        panic!("a generator");
+    };
+    assert_eq!(config.0["generator"], "melody");
+
+    let rendered = generator.rendered().unwrap();
+    assert_eq!(rendered.duration, Some(2.0));
+    assert_eq!(rendered.members().len(), 2);
+    assert!(matches!(rendered.body, Body::Set { .. }));
+
+    // And a reader walks into it: an id inside a rendering is reachable and
+    // counted, so a client continuing to allocate cannot collide with one.
+    let inner = rendered.members()[0].node.id;
+    assert_eq!(document.find(inner).map(|n| n.id), Some(inner));
+    assert!(document.max_id() >= inner);
+}
+
+// ---- the session: the format with two writers ----
+
+#[test]
+fn a_session_written_by_the_python_client_opens_here() {
+    // O8's acceptance, in the direction a test can actually run: the other
+    // writer of this format is a `standalone` host, and a format with two
+    // writers in two languages is a format that drifts unless something
+    // crosses.
+    let session = session();
+    assert!(session.is_readable());
+    assert_eq!(
+        session.provenance.as_ref().unwrap().0["script"],
+        "song.py",
+        "what produced it, carried and never read"
+    );
+    assert!(
+        session.dangling().is_empty(),
+        "every source it names is in the table"
+    );
+}
+
+#[test]
+fn a_source_table_written_there_reads_as_sources_here() {
+    let session = session();
+    let take = session.source(SourceId(7)).expect("the take");
+    assert_eq!(
+        take.location,
+        Location::File {
+            path: "/home/someone/takes/vocal.wav".into()
+        }
+    );
+    assert_eq!(take.lifetime, Lifetime::External);
+    assert_eq!(take.sample_rate, Some(48_000.0));
+    assert!(take.is_resolvable());
+}
+
+#[test]
+fn a_session_saved_mid_edit_opens_with_the_edit_still_open() {
+    // The scratch was promoted by the save and the decision was left to the
+    // person -- so this is what reopening has to say about it.
+    let session = session();
+    assert_eq!(session.open_edits(), vec![SourceId(8)]);
+    let scratch = session.source(SourceId(8)).unwrap();
+    assert_eq!(scratch.lifetime, Lifetime::Session, "promoted");
+    assert_eq!(scratch.generation, 3, "and edited three times");
+    let edit = scratch.editing.as_ref().unwrap();
+    assert_eq!(edit.from, SourceId(7));
+    assert!(!edit.confirmed);
+}
+
+#[test]
+fn material_that_was_never_written_down_crosses_as_volatile() {
+    let session = session();
+    assert_eq!(session.volatile(), vec![SourceId(9)]);
 }

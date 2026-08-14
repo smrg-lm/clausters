@@ -7,6 +7,8 @@ no format can keep, which is a generator's code.
 
 import json
 
+import pytest
+
 from clausters.form import Buffer, Event, Generator, Group, Sequence, Track
 from clausters.form.document import FIRST_VERSION, ID_ATTR, from_document, to_document
 from clausters.seq import Event as SeqEvent
@@ -169,3 +171,98 @@ def _ids(node) -> list:
     for member in node.get("members", []):
         out.extend(_ids(member["node"]))
     return out
+
+
+# ---- the session: the document plus where its material is ----
+
+def test_a_session_carries_the_document_and_its_source_table():
+    from clausters.form.document import SESSION_FORMAT, from_session, to_session
+
+    session = to_session(
+        a_group(),
+        sources={
+            7: {
+                "location": {"at": "file", "path": "takes/vocal.wav"},
+                "lifetime": "external",
+                "generation": 0,
+            }
+        },
+        provenance={"script": "song.py"},
+    )
+    assert session["format"] == SESSION_FORMAT
+    assert session["document"]["version"] == FIRST_VERSION
+    assert json.loads(json.dumps(session)) == session
+
+    element, sources = from_session(session)
+    assert sources[7]["location"]["path"] == "takes/vocal.wav"
+    assert element is not None
+
+
+def test_a_session_saved_mid_edit_reopens_with_the_edit_still_open():
+    """A save never blocks on a confirmation, so the format has to be able to
+    say *this is a working copy of that, and nobody has decided yet*."""
+    from clausters.form.document import from_session, to_session
+
+    session = to_session(
+        a_group(),
+        sources={
+            8: {
+                "location": {"at": "file", "path": "scratch/edit.wav"},
+                "lifetime": "session",
+                "generation": 3,
+                "editing": {"from": 7, "confirmed": False},
+            }
+        },
+    )
+    _, sources = from_session(json.loads(json.dumps(session)))
+    assert sources[8]["editing"] == {"from": 7, "confirmed": False}
+    assert sources[8]["lifetime"] == "session", "promoted by the save"
+
+
+def test_a_newer_session_format_is_refused_rather_than_half_read():
+    from clausters.form.document import SESSION_FORMAT, from_session, to_session
+
+    session = to_session(a_group())
+    session["format"] = SESSION_FORMAT + 1
+    with pytest.raises(ValueError, match="newer than this build"):
+        from_session(session)
+
+
+def test_a_generators_last_rendered_result_round_trips_as_ordinary_tree():
+    """What a host with no language attached shows: a generator is code, so the
+    frozen result is the whole of what such a host can draw."""
+    from clausters.form import Generator, Track
+    from clausters.seq import Timeline
+
+    rendered = Track(Timeline([(0.0, SeqEvent(midinote=62))]), duration=2.0)
+    generator = Generator("melody", rendered=rendered)
+    group = Group()
+    group.add(generator, offset=0.0, dur=2.0)
+
+    doc = to_document(group)
+    node = doc["root"]["members"][0]["node"]
+    assert node["kind"] == "generator"
+    assert node["rendered"]["kind"] == "set"
+    assert node["rendered"]["duration"] == 2.0
+
+    back = from_document(doc)
+    reopened = back.members[0][2]
+    assert reopened.rendered is not None
+    assert reopened.rendered.duration == 2.0
+
+
+def test_a_rendered_result_keeps_its_ids_across_two_conversions():
+    """Or an edit made against one conversion would name a different node in
+    the next -- the same rule the rest of the tree already follows."""
+    from clausters.form import Generator, Track
+    from clausters.form.document import ID_ATTR
+    from clausters.seq import Timeline
+
+    rendered = Track(Timeline([(0.0, SeqEvent(midinote=62))]), duration=2.0)
+    group = Group()
+    group.add(Generator("melody", rendered=rendered), offset=0.0, dur=2.0)
+
+    first = to_document(group)
+    second = to_document(group)
+    assert first == second
+    assert getattr(rendered, ID_ATTR) is not None

@@ -19,7 +19,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "clients/python"))
 
 from clausters.form import Buffer, Event, Generator, Group, Sequence, Track  # noqa: E402
-from clausters.form.document import to_document  # noqa: E402
+from clausters.form.document import to_document, to_session  # noqa: E402
 from clausters.seq import Event as SeqEvent  # noqa: E402
 from clausters.seq import Timeline  # noqa: E402
 
@@ -56,10 +56,61 @@ def composition() -> Group:
     resident = Generator("granular")
     resident.resident = True
     piece.add(resident, offset=12.0, dur=4.0)
+
+    # A generator carrying what it last produced: ordinary tree hanging off an
+    # opaque leaf, which is the whole of what a host with no language attached
+    # can show, and what a saved session has to reopen with.
+    frozen = Generator(
+        "melody",
+        rendered=Track(
+            Timeline([(0.0, SeqEvent(midinote=62)), (1.0, SeqEvent(midinote=65))]),
+            duration=2.0,
+        ),
+    )
+    piece.add(frozen, offset=16.0, dur=2.0)
     return piece
+
+
+def session() -> dict:
+    """The same composition, saved: the source table, an open destructive edit,
+    and the provenance that makes re-generating possible without the format
+    knowing how."""
+    return to_session(
+        composition(),
+        version=1,
+        sources={
+            7: {
+                "location": {"at": "file", "path": "/home/someone/takes/vocal.wav"},
+                "lifetime": "external",
+                "generation": 0,
+                "channels": 1,
+                "frames": 48000,
+                "sample_rate": 48000.0,
+            },
+            8: {
+                # A working copy with the edit still open: a save promotes the
+                # scratch and leaves the decision to the person.
+                "location": {"at": "file", "path": "scratch/vocal-edit.wav"},
+                "lifetime": "session",
+                "generation": 3,
+                "editing": {"from": 7, "confirmed": False},
+            },
+            9: {
+                # Material never written down. Saving is not blocked by it, but
+                # the file cannot claim to be complete either.
+                "location": {"at": "volatile"},
+                "lifetime": "session",
+                "generation": 0,
+            },
+        },
+        provenance={"script": "song.py", "client": "clausters-python"},
+    )
 
 
 if __name__ == "__main__":
     out = pathlib.Path(__file__).with_name("form_vector.json")
     out.write_text(json.dumps(to_document(composition(), version=1), indent=2) + "\n")
+    print(f"wrote {out}")
+    out = pathlib.Path(__file__).with_name("session_vector.json")
+    out.write_text(json.dumps(session(), indent=2) + "\n")
     print(f"wrote {out}")

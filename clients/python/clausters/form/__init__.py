@@ -35,7 +35,8 @@ from .group import (
     SUCCESSIVE,
     Group,
 )
-from .document import FIRST_VERSION, from_document, to_document
+from .document import (FIRST_VERSION, SESSION_FORMAT, from_document,
+                       from_session, to_document, to_session)
 from .render import flatten, render, render_logical, to_timeline
 
 __all__ = [
@@ -43,6 +44,9 @@ __all__ = [
     "FIRST_VERSION",
     "to_document",
     "from_document",
+    "SESSION_FORMAT",
+    "to_session",
+    "from_session",
     "Event",
     "Sequence",
     "Buffer",

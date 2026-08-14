@@ -571,7 +571,7 @@ fn config(body: &Body) -> Option<&Opaque> {
         Body::Event { config, .. }
         | Body::Sequence { config, .. }
         | Body::Buffer { config, .. }
-        | Body::Generator { config } => Some(config),
+        | Body::Generator { config, .. } => Some(config),
         Body::Set { .. } | Body::Unknown(_) => None,
     }
 }
@@ -607,7 +607,7 @@ fn config_mut(body: &mut Body) -> Option<&mut Opaque> {
         Body::Event { config, .. }
         | Body::Sequence { config, .. }
         | Body::Buffer { config, .. }
-        | Body::Generator { config } => Some(config),
+        | Body::Generator { config, .. } => Some(config),
         Body::Set { .. } | Body::Unknown(_) => None,
     }
 }

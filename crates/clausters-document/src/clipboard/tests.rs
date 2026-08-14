@@ -132,6 +132,7 @@ fn a_generators_configuration_crosses_the_clipboard_unread() {
             NodeId(3),
             Body::Generator {
                 config: Opaque(config.clone()),
+                rendered: None,
             },
         ),
     };
@@ -139,7 +140,10 @@ fn a_generators_configuration_crosses_the_clipboard_unread() {
     let Content::Elements { members } = pasted.content else {
         panic!("elements");
     };
-    let Body::Generator { config: carried } = &members[0].node.body else {
+    let Body::Generator {
+        config: carried, ..
+    } = &members[0].node.body
+    else {
         panic!("a generator");
     };
     assert_eq!(carried.0, config);

@@ -232,6 +232,85 @@
           }
         },
         "dur": 4.0
+      },
+      {
+        "offset": 16.0,
+        "node": {
+          "id": 13,
+          "kind": "generator",
+          "rendered": {
+            "id": 14,
+            "duration": 2.0,
+            "kind": "set",
+            "grouping": "concrete",
+            "members": [
+              {
+                "offset": 0.0,
+                "node": {
+                  "id": 15,
+                  "kind": "event",
+                  "config": {
+                    "type": "note",
+                    "instrument": "default",
+                    "dur": 1.0,
+                    "legato": 0.8,
+                    "stretch": 1.0,
+                    "amp": 0.1,
+                    "add_action": 1,
+                    "target": 0,
+                    "has_gate": false,
+                    "octave": 5.0,
+                    "root": 0.0,
+                    "scale": [
+                      0,
+                      2,
+                      4,
+                      5,
+                      7,
+                      9,
+                      11
+                    ],
+                    "midinote": 62
+                  }
+                }
+              },
+              {
+                "offset": 1.0,
+                "node": {
+                  "id": 16,
+                  "kind": "event",
+                  "config": {
+                    "type": "note",
+                    "instrument": "default",
+                    "dur": 1.0,
+                    "legato": 0.8,
+                    "stretch": 1.0,
+                    "amp": 0.1,
+                    "add_action": 1,
+                    "target": 0,
+                    "has_gate": false,
+                    "octave": 5.0,
+                    "root": 0.0,
+                    "scale": [
+                      0,
+                      2,
+                      4,
+                      5,
+                      7,
+                      9,
+                      11
+                    ],
+                    "midinote": 65
+                  }
+                }
+              }
+            ]
+          },
+          "config": {
+            "generator": "melody"
+          }
+        },
+        "dur": 2.0
       }
     ]
   }

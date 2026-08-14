@@ -69,6 +69,73 @@ def to_document(element, *, version: int = FIRST_VERSION) -> dict:
     return {"version": int(version), "root": _node(element, _Ids(element))}
 
 
+#: The session format this client writes (the crate's `session::FORMAT`).
+SESSION_FORMAT = 1
+
+
+def to_session(element, *, sources=None, version: int = FIRST_VERSION,
+               provenance=None) -> dict:
+    """The arrangement as a **session**: the document, plus the table that says
+    where its material is.
+
+    A document says *what plays when* and deliberately not where a source lives,
+    because inside a running system a source is a server buffer, a mapped file
+    or a rendered result and the tree has no business knowing which. A session
+    is the document plus exactly that missing half, so the thing can be closed
+    and opened again — by this client, or by a ``standalone`` host with no
+    language attached, which is why the format lives in the crate and not here.
+
+    Args:
+        element: the root `clausters.form.Element`.
+        sources: ``{source_id: dict}`` — each entry as the crate's
+            ``session::Source`` (``location``, ``lifetime``, ``generation``, and
+            optionally ``channels``/``frames``/``sample_rate``/``provenance``/
+            ``editing``). Material with an **open destructive edit** carries
+            ``editing`` and reopens that way: a save never blocks on a
+            confirmation.
+        version: the document version to stamp.
+        provenance: an opaque reference to whatever produced the session — the
+            scripts behind it. Carried and never interpreted, which is what
+            makes re-generating possible without the format knowing how.
+
+    Returns:
+        The session as plain JSON-able Python.
+    """
+    session = {
+        "format": SESSION_FORMAT,
+        "document": to_document(element, version=version),
+        "sources": {str(k): v for k, v in (sources or {}).items()},
+    }
+    if provenance is not None:
+        session["provenance"] = provenance
+    return session
+
+
+def from_session(session: dict, *, resolve=None):
+    """Open a session: the root element, and its source table.
+
+    Returns:
+        ``(element, sources)`` — the arrangement, and ``{source_id: dict}`` as
+        written. The table is handed back as data rather than resolved, because
+        what a source *is* (a server buffer to allocate, a file to map) is the
+        caller's to decide and depends on what is running.
+
+    Raises:
+        ValueError: if the file was written in a format this build cannot read.
+            A newer *field* is not a version change — it is ignored on the way
+            through, the way an unknown body is carried rather than dropped —
+            so this only fires when reading it wrongly is the alternative.
+    """
+    format_ = int(session.get("format", SESSION_FORMAT))
+    if format_ > SESSION_FORMAT:
+        raise ValueError(
+            f"session format {format_} is newer than this build reads "
+            f"({SESSION_FORMAT})"
+        )
+    sources = {int(k): v for k, v in (session.get("sources") or {}).items()}
+    return from_document(session["document"], resolve=resolve), sources
+
+
 def from_document(document: dict, *, resolve=None):
     """Rebuild an arrangement from a document.
 
@@ -131,6 +198,11 @@ def _children(element) -> list:
         return [item for _, item in _timeline_items(element.wraps)]
     if isinstance(element, Sequence) and isinstance(element.wraps, (list, tuple)):
         return [item for item in element.wraps if isinstance(item, Element)]
+    if isinstance(element, Generator) and element.rendered is not None:
+        # The last rendered result is ordinary tree, so its nodes take ids like
+        # any others -- and the scan has to see them, or a second conversion
+        # would renumber a subtree the first had already stamped.
+        return [element.rendered]
     return []
 
 
@@ -206,7 +278,13 @@ def _body(element, ids: _Ids) -> dict:
             config["controls"] = _plain(element.controls)
         if element.maps:
             config["maps"] = _plain(element.maps)
-        return _with_config({"kind": "generator"}, config)
+        body = {"kind": "generator"}
+        if getattr(element, "rendered", None) is not None:
+            # What the generator last produced, as ordinary tree. A host with
+            # no language attached has nothing to run the generator with, so
+            # this is the whole of what it can show.
+            body["rendered"] = _node(element.rendered, ids)
+        return _with_config(body, config)
     raise TypeError(f"no document body for {type(element).__name__}")
 
 
@@ -343,12 +421,14 @@ def _element(node: dict, resolve):
             controls=config.get("controls"),
         )
     elif kind == "generator":
+        rendered = node.get("rendered")
         built = Generator(
             _resolved(resolve, "generator", config) or config.get("generator"),
             onset=onset,
             duration=duration,
             controls=config.get("controls"),
             maps=config.get("maps"),
+            rendered=None if rendered is None else _element(rendered, resolve),
         )
     else:
         # A body this build does not know. The document preserves it whole and

@@ -255,12 +255,23 @@ class Generator(Element):
             (hardware). Used by `Group.to_graphdef`.
         maps: control-bus bindings for a logical-graph member
             (``/node_map``), as a ``{control: bus_name}`` dict.
+        rendered: what this generator **last produced**, as an ordinary
+            `Element` — the change of state above, kept rather than recomputed.
+            It is what a host with no language attached shows, since a
+            generator is code and such a host has nothing to run it with; and
+            it is what a saved session carries for the same reason a cache
+            cannot, which is that a missing cache leaves nothing to draw.
     """
 
-    def __init__(self, generator, onset=None, duration=None, *, controls=None, maps=None):
+    def __init__(self, generator, onset=None, duration=None, *, controls=None,
+                 maps=None, rendered=None):
         super().__init__(wraps=generator, onset=onset, duration=duration)
         self.controls = controls
         self.maps = maps
+        #: The last rendered result, or ``None`` before there is one. Read-only
+        #: as far as editing goes: it is a rendering, not the composition, so an
+        #: edit to it would be written over by the next render.
+        self.rendered = rendered
 
     @property
     def def_name(self) -> str:

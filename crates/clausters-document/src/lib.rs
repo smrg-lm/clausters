@@ -49,11 +49,13 @@ pub mod clipboard;
 pub mod intent;
 pub mod log;
 pub mod selection;
+pub mod session;
 
 pub use clipboard::{Clipboard, Content};
 pub use intent::{Against, Intent, Outcome, Rules, apply};
 pub use log::{Entry, Log, MemorySpill, Spill, Step, apply_logged};
 pub use selection::{BinRange, Mask, Selection, ValueRange};
+pub use session::{Location, OpenEdit, Session, Source};
 
 use serde::{Deserialize, Serialize};
 
@@ -257,6 +259,20 @@ pub enum Body {
         /// Opaque by construction.
         #[serde(default, skip_serializing_if = "Opaque::is_empty")]
         config: Opaque,
+        /// What this generator **last produced**, as ordinary tree.
+        ///
+        /// The change of state the arrangement already has a verb for: a
+        /// generator element becoming a generated one, by being *rendered*.
+        /// It is here rather than derived because a host with no language
+        /// attached has nothing to derive it with — a generator is code, and
+        /// the frozen result is the whole of what such a host can show.
+        ///
+        /// It is reachable by [`Node::walk`] and [`Node::find`], because a
+        /// reader must see it, and **not** by an intent: a rendering is not
+        /// the composition, and editing one would write over what the next
+        /// render replaces.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rendered: Option<Box<Node>>,
     },
     /// A body this build does not know, preserved whole.
     ///
@@ -351,11 +367,23 @@ impl Node {
         self.body.members()
     }
 
-    /// Visits this node and every node below it, parents before children.
+    /// What a generator last produced, for the one body that has it.
+    pub fn rendered(&self) -> Option<&Node> {
+        match &self.body {
+            Body::Generator { rendered, .. } => rendered.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Visits this node and every node below it, parents before children —
+    /// including a generator's rendered result, which a reader must see.
     pub fn walk(&self, visit: &mut impl FnMut(&Node)) {
         visit(self);
         for member in self.members() {
             member.node.walk(visit);
+        }
+        if let Some(rendered) = self.rendered() {
+            rendered.walk(visit);
         }
     }
 
@@ -364,7 +392,10 @@ impl Node {
         if self.id == id {
             return Some(self);
         }
-        self.members().iter().find_map(|m| m.node.find(id))
+        self.members()
+            .iter()
+            .find_map(|m| m.node.find(id))
+            .or_else(|| self.rendered().and_then(|r| r.find(id)))
     }
 }
 

@@ -102,7 +102,7 @@ fn a_leaf_config_is_carried_and_never_read() {
     let json =
         r#"{"id":9,"kind":"generator","config":{"pattern":"Pseq","of":[1,2,3],"repeats":null}}"#;
     let node: Node = serde_json::from_str(json).unwrap();
-    let Body::Generator { config } = &node.body else {
+    let Body::Generator { config, .. } = &node.body else {
         panic!("not a generator")
     };
     assert_eq!(config.0["pattern"], "Pseq");
@@ -158,6 +158,7 @@ fn a_resident_generator_is_not_locatable() {
         1,
         Body::Generator {
             config: Opaque::none(),
+            rendered: None,
         },
     );
     assert!(generator.locatable());

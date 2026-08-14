@@ -145,6 +145,7 @@ fn a_refusal_hands_back_the_previous_value_rather_than_an_error() {
         NodeId(1),
         Body::Generator {
             config: Opaque::none(),
+            rendered: None,
         },
     ));
     let outcome = apply(
