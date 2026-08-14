@@ -266,3 +266,97 @@ def test_a_rendered_result_keeps_its_ids_across_two_conversions():
     second = to_document(group)
     assert first == second
     assert getattr(rendered, ID_ATTR) is not None
+
+
+# ---- the binding: one implementation of what an edit means ----
+
+def test_an_edit_applied_through_the_crate_is_the_crates_edit():
+    """The binding's whole point: the client does not apply and then report, it
+    hands the document and the intent across and takes back the new document
+    plus what happened. Three clients cannot mean three different things by the
+    same edit if only one of them implements it."""
+    from clausters import _native
+
+    group = a_group()
+    doc = to_document(group)
+    node = doc["root"]["members"][0]["node"]["id"]
+
+    result = _native.document_apply(
+        doc, {"intent": "place", "node": node, "offset": 4.3},
+        against={"version": doc["version"]}, quant=1.0,
+    )
+    assert result["outcome"]["applied"] is True
+    assert result["outcome"]["effective"]["offset"] == 4.0, "the grid snapped it"
+    assert result["outcome"]["reason"] == "snapped to the grid"
+    assert result["document"]["version"] == doc["version"] + 1
+    assert result["document"]["root"]["members"][0]["offset"] == 4.0
+
+
+def test_an_edit_against_a_superseded_version_comes_back_stale():
+    from clausters import _native
+
+    doc = to_document(a_group())
+    node = doc["root"]["members"][0]["node"]["id"]
+    result = _native.document_apply(
+        doc, {"intent": "place", "node": node, "offset": 4.0},
+        against={"version": doc["version"] + 5},
+    )
+    assert result["outcome"]["stale"] is True
+    assert result["outcome"]["applied"] is False
+    assert result["document"]["version"] == doc["version"], "and it did not move"
+
+
+def test_the_edited_document_reads_back_into_the_arrangement():
+    """The round trip that makes the binding a *model* rather than a service:
+    what comes back out of the crate is a document this client reads with the
+    same converter it wrote one with."""
+    from clausters import _native
+
+    doc = to_document(a_group())
+    node = doc["root"]["members"][0]["node"]["id"]
+    edited = _native.document_apply(
+        doc, {"intent": "place", "node": node, "offset": 7.0}
+    )["document"]
+
+    back = from_document(edited)
+    assert back.members[0][0] == 7.0
+
+
+def test_a_selection_resolves_to_the_span_underneath_it_through_the_crate():
+    """Placement and trim both, across the ABI -- so a client asking what is
+    under a selection gets the same answer the host would."""
+    from clausters import _native
+
+    doc = {
+        "version": 1,
+        "root": {
+            "id": 1, "kind": "set", "grouping": "concrete",
+            "members": [{
+                "offset": 2.0, "dur": 4.0,
+                "node": {
+                    "id": 2, "kind": "buffer",
+                    "source": {
+                        "source": 100, "lifetime": "external", "generation": 2,
+                        "range": {"start": 480000, "end": 672000},
+                    },
+                },
+            }],
+        },
+    }
+    spans = _native.document_resolve(
+        doc, {"start": 3.0 * 48000, "len": 48000}, frames_per_beat=48000.0
+    )
+    assert len(spans) == 1
+    assert spans[0]["source"] == 100
+    assert spans[0]["generation"] == 2
+    assert spans[0]["range"] == {"start": 528000, "end": 576000}
+
+
+def test_nothing_underneath_is_an_empty_list_and_not_a_failure():
+    from clausters import _native
+
+    spans = _native.document_resolve(
+        to_document(a_group()), {"start": 0.0, "len": 1.0},
+        frames_per_beat=48000.0, in_beats=True,
+    )
+    assert spans == []

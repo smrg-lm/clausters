@@ -215,3 +215,94 @@ bounced offline and loaded from disk, a melody, a pattern, all three composed,
 edited on screen and heard. And to *work through* everything this chapter
 argues — interactively, one block at a time, building that same piece — see
 [Composing a piece, step by step](composing.md).
+
+## The document: what the composition *is*, and who edits it
+
+Everything above is this client's own surface. Underneath it there is one
+authoritative model — the **document** — and it lives in a Rust crate that every
+client binds: this one, the web client, and a GUI host running standalone with
+no language attached at all. That is not an implementation detail you can ignore
+once you edit from more than one place, so this section says what crosses.
+
+`to_document` writes the arrangement as the document, and `from_document` reads
+one back:
+
+```python
+from clausters.form import to_document, from_document
+
+doc = to_document(song)          # {"version": 1, "root": {...}}
+song_again = from_document(doc)
+```
+
+The conversion is lossless for concrete material — events, placements, sets,
+buffers by reference — and carries a **generator by reference**, the way a
+project file references a plugin rather than serializing it. A generator *is
+code*, in the language that wrote it, so no format owns one; what the document
+guarantees is that it does not lose it. Node ids are stamped onto the elements,
+so converting the same tree twice gives the same ids and an edit made against
+one conversion still names the right node in the next.
+
+### An edit is applied in one place
+
+The crate is the only thing that applies an edit. A client does not apply and
+then report — it hands over the document and the **intent** and receives the new
+document plus what happened:
+
+```python
+from clausters import _native
+
+result = _native.document_apply(
+    doc,
+    {"intent": "place", "node": 3, "offset": 4.3},
+    against={"version": doc["version"]},   # the state you were looking at
+    quant=1.0,                             # the musical grid, in beats
+)
+result["outcome"]["effective"]   # {"intent": "place", "node": 3, "offset": 4.0}
+result["outcome"]["reason"]      # "snapped to the grid"
+```
+
+Two properties are worth knowing because they change how you write against it.
+
+An intent is **absolute**: it states the value the edit *results in*, never an
+increment. So applying one twice leaves the same document, and a view that drew
+an edit optimistically can leave its picture standing over whatever comes back
+instead of recomputing anything.
+
+There is **no success flag to branch on**. `effective` is the edit describing the
+document as it now stands, so *applied*, *applied transformed* and *refused* are
+one shape — a refusal is simply the previous value handed back. `applied` says
+whether anything moved and `stale` says whether the refusal was someone else
+having changed the document underneath you, which is a different thing to tell a
+person than "not here".
+
+### Saving: the document plus where its material is
+
+A document says what plays when and deliberately not where a source lives — in a
+running system a source is a server buffer, a mapped file or a rendered result,
+and the tree has no business knowing which. A **session** is the document plus
+that missing half:
+
+```python
+from clausters.form import to_session, from_session
+
+session = to_session(
+    song,
+    sources={
+        7: {"location": {"at": "file", "path": "takes/vocal.wav"},
+            "lifetime": "external", "generation": 0},
+    },
+    provenance={"script": "song.py"},
+)
+song_again, sources = from_session(session)
+```
+
+A source's **lifetime** is what makes saving honest: `external` is the user's own
+file, which is never written; `session` is persisted beside the document;
+`temporary` is a destructive edit's working copy. Saving in the middle of such an
+edit promotes the working copy and **leaves the edit open** — a save is not an
+edit, and refusing to save until you decide would block the safest habit in the
+program.
+
+`provenance` is a reference to whatever produced something, carried and never
+interpreted. It is what makes re-generating possible without the format knowing
+how, which is the same rule the opaque generator follows one level down.

@@ -292,6 +292,23 @@ export function correlation(left: Float32Array, right: Float32Array): number | u
 export function degree_to_midinote(degree: number, octave: number, root: number, scale: Float32Array): number;
 
 /**
+ * JS face: apply an edit. `documentApply(requestJson) -> resultJson`, the
+ * request carrying `{ document, intent, against?, quant? }` and the result
+ * `{ document, outcome }`.
+ *
+ * One object rather than four arguments because the boundary is JSON either
+ * way, and a request that grows a field then costs no signature.
+ */
+export function document_apply(request: string): string;
+
+/**
+ * JS face: resolve a selection to the spans of material underneath it.
+ * `documentResolve(requestJson) -> resolvedJson`, the request carrying
+ * `{ document, selection, framesPerBeat, inBeats? }`.
+ */
+export function document_resolve(request: string): string;
+
+/**
  * JS face: the `[audio, control]` bus widths GraphDef instances reserve at
  * the top of each bus space (before clamping to a smaller configured count).
  */
@@ -441,6 +458,8 @@ export interface InitOutput {
     readonly channel_stats: (a: number, b: number, c: number, d: number) => [number, number];
     readonly correlation: (a: number, b: number, c: number, d: number) => number;
     readonly degree_to_midinote: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly document_apply: (a: number, b: number) => [number, number, number, number];
+    readonly document_resolve: (a: number, b: number) => [number, number, number, number];
     readonly graph_bus_reserved: () => [number, number];
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];

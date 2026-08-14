@@ -12,6 +12,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 clausters-core = { path = "../clausters-core" }
+# The document: one implementation of what an edit means, bound here as it is
+# bound over the C ABI, so the web client re-derives none of it.
+clausters-document = { path = "../clausters-document" }
 
 # The JS binding surface only exists on the wasm target.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -20,3 +23,5 @@ js-sys = "0.3"
 # The bundle door's boundary is JSON in, JSON out (a manifest, a GuiDef
 # template, an allocation), so the shell parses and prints at the edge.
 serde_json = "1"
+# The document's request objects are deserialized at the JS boundary.
+serde = { version = "1", features = ["derive"] }

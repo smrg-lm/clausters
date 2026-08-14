@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 14
+CORE_ABI_VERSION = 15
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -279,6 +279,20 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     # GraphDef wiring JSON out (size-query then fill, the peaks pattern).
     lib.clausters_core_patch_compile.restype = ctypes.c_size_t
     lib.clausters_core_patch_compile.argtypes = [u8p, ctypes.c_size_t, u8p, ctypes.c_size_t]
+    # The document (ABI v15): hand over the document and the edit, take back the
+    # document and what happened. One implementation of what an edit *means*,
+    # bound rather than re-derived -- and by value rather than by handle, so a
+    # tree's dozens of accessors are not dozens of ABI calls.
+    lib.clausters_document_apply.restype = ctypes.c_size_t
+    lib.clausters_document_apply.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+        ctypes.c_double, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_document_resolve.restype = ctypes.c_size_t
+    lib.clausters_document_resolve.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, ctypes.c_double,
+        ctypes.c_int32, u8p, ctypes.c_size_t,
+    ]
     # The component bundle (ABI v13): what an instance needs allocated, one
     # instance resolved, and the writers' pre-flight — the same three the
     # browser gets over wasm, on the same JSON-in/JSON-out shape.
@@ -530,6 +544,91 @@ def compile_patch(patch: dict) -> dict:
     if "error" in result:
         raise ValueError(result["error"])
     return result
+
+
+# ---- the document ----
+
+
+def _bytes(payload) -> tuple:
+    """A JSON payload as the ``(pointer, length)`` pair the C ABI takes."""
+    data = json.dumps(payload).encode("utf-8") if payload is not None else b""
+    u8p = ctypes.POINTER(ctypes.c_ubyte)
+    buf = (ctypes.c_ubyte * len(data)).from_buffer_copy(data) if data else (ctypes.c_ubyte * 0)()
+    return ctypes.cast(buf, u8p), len(data)
+
+
+def document_apply(document: dict, intent: dict, *, against=None, quant: float = 0.0) -> dict:
+    """Apply one edit to a document through the shared crate — the **only**
+    implementation of what an edit means.
+
+    A client does not apply and then report: it hands the document and the
+    intent across and takes back the new document plus the outcome. That is what
+    keeps three clients from meaning three different things by the same edit,
+    and it is why this is one call rather than a handle with an accessor per
+    field of the tree.
+
+    Args:
+        document: the document, as `clausters.form.to_document` writes it.
+        intent: the edit — ``{"intent": "place"|"configure"|"setmembers"|
+            "writesamples", "node": id, …}``. Absolute: it states the *resulting*
+            value, never an increment.
+        against: the state the edit was made against — ``{"version": N}``, or
+            ``None`` for unstated, which applies unchecked. An edit made against
+            a superseded version comes back refused and marked ``stale``, with
+            the value that now holds.
+        quant: the musical grid a placement snaps to, in beats. ``0`` snaps
+            nothing.
+
+    Returns:
+        ``{"document": …, "outcome": {"effective", "applied", "reason",
+        "stale"}}``. There is no success flag to branch on: ``effective`` is the
+        edit describing the document as it now stands, so applied, transformed
+        and refused are one shape and a refusal is the previous value.
+
+    Raises:
+        ValueError: if the document or the intent will not parse.
+    """
+    doc_ptr, doc_len = _bytes(document)
+    int_ptr, int_len = _bytes(intent)
+    ag_ptr, ag_len = _bytes(against) if against is not None else (None, 0)
+    fn = lib().clausters_document_apply
+    need = fn(doc_ptr, doc_len, int_ptr, int_len, ag_ptr, ag_len, float(quant), None, 0)
+    if need == 0:
+        raise ValueError("the document or the intent is not valid JSON for the crate")
+    out = (ctypes.c_ubyte * need)()
+    n = fn(doc_ptr, doc_len, int_ptr, int_len, ag_ptr, ag_len, float(quant), out, need)
+    return json.loads(bytes(out[:n]).decode("utf-8"))
+
+
+def document_resolve(document: dict, selection: dict, *, frames_per_beat: float,
+                     in_beats: bool = False) -> list:
+    """Resolve a selection to the spans of material underneath it.
+
+    Args:
+        document: the document.
+        selection: ``{"start", "len", …}`` — see the crate's ``Selection``.
+        frames_per_beat: the bridge between the arrangement's beats and the
+            material's frames. Supplied rather than derived: tempo is the
+            caller's, the arithmetic is the crate's.
+        in_beats: whether the selection's numbers are beats rather than frames
+            on the shared axis.
+
+    Returns:
+        ``[{"node", "source", "generation", "range", "at"}, …]`` in tree order,
+        with the placement's base, the element's trim and the clamp at both ends
+        already applied. Empty when nothing material was underneath — a group
+        and a generator are in the way of a selection, not under it.
+    """
+    doc_ptr, doc_len = _bytes(document)
+    sel_ptr, sel_len = _bytes(selection)
+    fn = lib().clausters_document_resolve
+    args = (doc_ptr, doc_len, sel_ptr, sel_len, float(frames_per_beat), int(bool(in_beats)))
+    need = fn(*args, None, 0)
+    if need == 0:
+        raise ValueError("the document or the selection is not valid JSON for the crate")
+    out = (ctypes.c_ubyte * need)()
+    n = fn(*args, out, need)
+    return json.loads(bytes(out[:n]).decode("utf-8"))
 
 
 # ---- flat-data helpers ----

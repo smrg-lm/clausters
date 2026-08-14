@@ -5044,3 +5044,99 @@ SMuFL's Noteheads range) rather than around a beam. And an element whose press
 lands outside its own shape **declines**, which hands the press back to the
 chain — the pixels beside a dial go on meaning whatever the window means by
 them, rather than becoming dead space around every round control.
+
+## One document, and sources nothing overwrites
+
+Three parties touch a composition's data and each is good at a different thing.
+The **GUI host** has the hand: it draws, it hit-tests, it knows where the
+pointer is. The **client** has the algorithms: it generates, it iterates, it
+scripts. The **server** has the material: buffers, and the audio thread that
+reads them. Giving any two of them a copy of the model is how the three drift,
+and the drift is silent — a note springs back, a clip lands half a grid step
+from where it was dropped, an undo writes a state nobody was ever in.
+
+MVC does not settle this, and saying so is the useful part: the pattern assumes
+the view *displays*, and every one of these views **edits**. Once a view edits,
+"the model" stops being one thing and starts being whichever copy the last
+gesture happened to touch.
+
+What settles it is splitting four layers that were being called one:
+
+- **Sources** — the material. Never overwritten, ever: not the user's file, not
+  the session's own. A destructive edit is not an exception but the clearest
+  case, because it writes a *temporary* source of its own and the composition
+  takes the result only when the edit is confirmed.
+- **The document** — the description of what plays when. This is the only thing
+  that is "the model", and calling anything else that is what disfigures the
+  pattern. Undo lives here, beside the data it inverts.
+- **Presentation** — waveforms, peak pyramids, engraved pages, spectrograms. All
+  derived, all **invalidated rather than synchronized**: a derived thing that is
+  kept in step is a second model with extra steps.
+- **Screen state** — zoom, scroll, a selection in flight, a pending overlay.
+  Never persisted, never logged.
+
+This is what every audio editor already does and none of them writes down as
+such: a DAW's regions reference source files nobody rewrites, and a destructive
+sample editor makes the source cheap to replace rather than making the edit
+destructive in place. Our own wire had already stated half of it —
+`/buffer_setRange` keeps a buffer's shape and fails rather than clamping past
+the end — without anyone noticing it was a rule about ownership.
+
+The document is a **Rust crate** (`crates/clausters-document`) rather than a
+module of the Python client, and the forcing argument is not parity but the
+`standalone` host: it edits with no language attached, so either the model
+exists somewhere it can reach or there are two implementations of it in two
+languages. The clients then **round-trip the format** rather than holding
+handles into a Rust object graph — one function across the ABI instead of an
+accessor per field of a tree — and what makes that safe is the crate's central
+discipline: it is the only thing that applies an edit. A client does not apply
+and then report; it hands over the document and the intent and receives the new
+document plus the outcome.
+
+## The acknowledgement is a stamped state push, not a reply code
+
+A GUI host holds no data, so every edit it produces is a **proposal**. Between
+the gesture and the answer there is a gap the host has to draw across, and the
+shape of the answer is what decides how much machinery that costs.
+
+The answer is: the owner pushes the state that now holds, stamped with the
+sequence number of the last edit it processed. That collapses three outcomes
+into one message — *applied verbatim* (the value equals what the host drew),
+*applied transformed* (the value is the effective one, post-snap or post-clamp)
+and *refused* (the value is the previous one, unchanged). The host needs no
+branch for them: its whole rule is **drop every pending edit at or below the
+stamp, and adopt what arrived**. A refusal needs no error path either, because
+"the state after your gesture is the state you already had" is a state push like
+any other. It is Ardour's `rdiff()` seen over a wire: what reports the change is
+the model, never the hand.
+
+Three things follow, and each was a decision.
+
+**The acknowledgement is sent always**, including when nothing changed. Silence
+is not a refusal; it is a hang.
+
+**It is a verb (`/gui_ack`) rather than a widget property.** The project's rule
+against new `/gui_*` addresses exists to stop a widget or a prop from becoming
+an address, and its escape hatch is a new payload on `/gui_event` — which is the
+*host-to-client* direction. This is the other one, and it is the reply
+`/gui_event` never had. It cannot be a property because it is scoped to the
+conversation rather than to the tree: the sequence is per client, so two clients
+driving one window would collide on a single prop, and it does not round-trip,
+which a property has to.
+
+**Intents are absolute, which is what makes replay unnecessary.** An edit states
+the resulting value (`"note" id pitch`), never the increment. A pending edit
+simply stays drawn over whatever authoritative state arrives, with nothing to
+recompute, and a resend over a lossy leg is harmless. The rejected alternative
+is worse than it looks: relative intents must be rebased against a corrected
+state, and rebasing is exactly the netcode replay that would require the host to
+hold an executable copy of the document.
+
+What this replaces is worth recording, because it is the honest reason the
+acknowledgement never seemed necessary. Consistency was being maintained by
+**duplicating the owner's rule in the view**: the lane's snap grid travels in
+the GuiDef and the same snap is implemented on both sides, so the round trip
+closed because both sides did the same arithmetic. That works for a grid and
+generalizes to nothing — a bus allocation, a normalize, a user-written function
+cannot be shipped down — which is why the places it already failed were so
+quiet.

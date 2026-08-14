@@ -165,6 +165,23 @@ thought about the other side", write `gap` — that is what it is for.
 | `clausters_core_bundle_validate` | `bundle_validate` | |
 | `clausters_core_patch_compile` | — | **gap** — the patcher's graph compilation |
 
+## The document
+
+One implementation of what an edit *means*, bound by every client rather than
+re-derived per language. The shape is deliberate and is the crate's own
+decision, not a convenience: the document and the intent cross **by value** and
+the new document comes back, instead of a client holding a handle into a Rust
+object graph. A handle would make every accessor a document has — and a tree has
+dozens — a call to design, bind and keep in step; the round trip costs a
+serialization per edit and buys a binding that is one function, plus the
+property that a client's document *is* the crate's document rather than a
+parallel structure synchronizing with it.
+
+| C ABI | wasm | Note |
+|---|---|---|
+| `clausters_document_apply` | `document_apply` | |
+| `clausters_document_resolve` | `document_resolve` | |
+
 ## OSC
 
 | C ABI | wasm | Note |

@@ -23,6 +23,10 @@ verovio = ["notation", "dep:clausters-notation", "clausters-notation/verovio"]
 
 [dependencies]
 clausters-core = { path = "../clausters-core" }
+# The document: the tree, the intent vocabulary and the one implementation that
+# applies one. Non-optional -- every client binds the same edit semantics, and a
+# build without it would be a client that has to re-derive them.
+clausters-document = { path = "../clausters-document" }
 # The native half of the notation layer (libverovio); `verovio` only.
 clausters-notation = { path = "../clausters-notation", optional = true }
 # The patcher cord->bus pass crosses as JSON (the flat-data boundary): a Patch

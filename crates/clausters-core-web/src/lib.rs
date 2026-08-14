@@ -1029,3 +1029,96 @@ mod tests {
         assert_eq!(bare[0].1, None, "a bare message carries no time");
     }
 }
+
+// ---- the document ----
+//
+// The same door the C ABI opens (`clausters_document_apply`), in the shape a
+// page wants: JSON in, JSON out. The crate is the only thing that applies an
+// intent, so the web client hands the document and the edit across and takes
+// back the new document plus what happened -- rather than holding handles into
+// a Rust object graph, which would make every accessor a document has (and a
+// tree has dozens) a binding to design and keep in step.
+
+/// JS face: apply an edit. `documentApply(requestJson) -> resultJson`, the
+/// request carrying `{ document, intent, against?, quant? }` and the result
+/// `{ document, outcome }`.
+///
+/// One object rather than four arguments because the boundary is JSON either
+/// way, and a request that grows a field then costs no signature.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn document_apply(request: &str) -> Result<String, JsError> {
+    #[derive(serde::Deserialize)]
+    struct Request {
+        document: clausters_document::Document,
+        intent: clausters_document::Intent,
+        #[serde(default)]
+        against: Option<clausters_document::Against>,
+        #[serde(default)]
+        quant: f64,
+    }
+    let mut request: Request =
+        serde_json::from_str(request).map_err(|e| JsError::new(&format!("apply: {e}")))?;
+    let against = request
+        .against
+        .unwrap_or_else(clausters_document::Against::unstated);
+    let outcome = clausters_document::apply(
+        &mut request.document,
+        &request.intent,
+        &against,
+        &clausters_document::Rules {
+            quant: request.quant,
+        },
+    );
+    serde_json::to_string(&serde_json::json!({
+        "document": request.document,
+        "outcome": {
+            "effective": outcome.effective,
+            "applied": outcome.applied,
+            "reason": outcome.reason,
+            "stale": outcome.stale,
+        }
+    }))
+    .map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// JS face: resolve a selection to the spans of material underneath it.
+/// `documentResolve(requestJson) -> resolvedJson`, the request carrying
+/// `{ document, selection, framesPerBeat, inBeats? }`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn document_resolve(request: &str) -> Result<String, JsError> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Request {
+        document: clausters_document::Document,
+        selection: clausters_document::Selection,
+        frames_per_beat: f64,
+        #[serde(default)]
+        in_beats: bool,
+    }
+    let request: Request =
+        serde_json::from_str(request).map_err(|e| JsError::new(&format!("resolve: {e}")))?;
+    let mapping = clausters_document::Mapping {
+        frames_per_beat: request.frames_per_beat,
+        unit: if request.in_beats {
+            clausters_document::Unit::Beats
+        } else {
+            clausters_document::Unit::Frames
+        },
+    };
+    let resolved: Vec<_> =
+        clausters_document::resolve(&request.document, &request.selection, &mapping)
+            .into_iter()
+            .map(|r| {
+                serde_json::json!({
+                    "node": r.node,
+                    "source": r.source,
+                    "generation": r.generation,
+                    "range": r.range,
+                    "at": r.at,
+                })
+            })
+            .collect();
+    serde_json::to_string(&resolved).map_err(|e| JsError::new(&e.to_string()))
+}

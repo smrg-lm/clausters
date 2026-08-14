@@ -254,7 +254,9 @@ name = "clausters-core-web"
 version = "0.9.0"
 dependencies = [
  "clausters-core",
+ "clausters-document",
  "js-sys",
+ "serde",
  "serde_json",
  "wasm-bindgen",
 ]
@@ -272,6 +274,7 @@ name = "clausters-ffi"
 version = "0.9.0"
 dependencies = [
  "clausters-core",
+ "clausters-document",
  "clausters-notation",
  "serde_json",
  "tungstenite",

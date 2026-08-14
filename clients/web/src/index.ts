@@ -143,3 +143,20 @@ export { FaustDef } from "./defs/faustdef.ts";
 export { GraphDef } from "./defs/graphdef.ts";
 export * as errors from "./errors.ts";
 export { ClaustersError } from "./errors.ts";
+
+/**
+ * The document: the composition's authoritative model, applied by the shared
+ * crate rather than by any client. See `./document.ts`.
+ */
+export * as document from "./document.ts";
+export { applyIntent, resolveSelection } from "./document.ts";
+export type {
+    Against,
+    Applied,
+    ClaustersDocument,
+    Intent,
+    NodeId,
+    Outcome,
+    Resolved,
+    Selection,
+} from "./document.ts";

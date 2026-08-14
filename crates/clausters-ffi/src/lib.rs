@@ -7,7 +7,9 @@
 //! wasm later) sits on top. Check [`clausters_core_abi_version`] first.
 //!
 //! Scope: the numeric builtins, the seeded RNG and the timing/sample-conversion
-//! scalars, plus a **WebSocket client transport** (`clausters_ws_*`, in
+//! scalars, the **document** surface ([`clausters_document_apply`] — one
+//! implementation of what an edit means, bound by every client rather than
+//! re-derived per language), plus a **WebSocket client transport** (`clausters_ws_*`, in
 //! [`ws`]) — the carrier a browser-less binding uses to reach a `--ws` server,
 //! sharing the server's WebSocket implementation (`tungstenite`) instead of
 //! re-implementing the framing per language. OSC bundle assembly stays in
@@ -30,6 +32,7 @@ use clausters_core::window::Window;
 mod builtins;
 mod bundle;
 mod clocksync;
+mod document;
 mod measure;
 #[cfg(feature = "notation")]
 pub mod notation;
@@ -48,6 +51,7 @@ pub mod ws;
 pub use builtins::*;
 pub use bundle::*;
 pub use clocksync::*;
+pub use document::*;
 pub use measure::*;
 pub use patch::*;
 pub use registry::*;
@@ -88,8 +92,13 @@ pub use time::*;
 /// writers' pre-flight — shared so a bundle authored in any language mounts
 /// identically in a tab, on the desktop and over loopback); v14
 /// `clausters_core_stats`, the peak/RMS of one channel of an interleaved
-/// buffer (what a render reports back, so no client writes the loop).
-pub const CORE_ABI_VERSION: u32 = 14;
+/// buffer (what a render reports back, so no client writes the loop); v15 the
+/// document surface — `clausters_document_apply` and
+/// `clausters_document_resolve` — which is how every client binds one
+/// implementation of what an edit *means* instead of three: the document and
+/// the intent cross by value and the new document comes back, rather than each
+/// client holding handles into a Rust object graph.
+pub const CORE_ABI_VERSION: u32 = 15;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
