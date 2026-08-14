@@ -191,12 +191,20 @@ pub unsafe extern "C" fn clausters_log_apply(
         // rolls the edit back if the caller's buffer did not fit, so the tree
         // is never cloned to protect a sizing pass. `document::edit_in_place`
         // carries the same reasoning at more length.
-        let Some(inverse) = clausters_document::inverse_of(&held.document, &intent) else {
-            // No inverse in the document -- a `WriteSamples`, whose overwritten
-            // samples are not in the tree. It cannot be rolled back, so it runs
-            // on a copy, and it records nothing either: its entry comes from
+        // A `WriteSamples` is excluded by kind: it moves the **source's
+        // generation** as well as the version, and an inverse write moves it
+        // again, so rolling one back would leave the generation two ahead of
+        // where it started. `document::edit_in_place` carries the full note.
+        let inverse = match intent {
+            Intent::WriteSamples { .. } => None,
+            _ => clausters_document::inverse_of(&held.document, &intent),
+        };
+        let Some(inverse) = inverse else {
+            // Nothing safe to roll back with, so it runs on a copy -- and it
+            // records nothing either: a destructive write's entry comes from
             // the caller through `clausters_log_record`, which is the door for
-            // exactly this case.
+            // exactly this case, because its overwritten samples are not in the
+            // tree for the crate to read.
             let mut edited = held.document.clone();
             let outcome = apply_intent(&mut edited, &intent, &against, &Rules { quant });
             // SAFETY: forwarded from this function's own contract.

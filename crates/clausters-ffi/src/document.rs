@@ -283,9 +283,21 @@ unsafe fn edit_in_place(
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
-    let inverse = clausters_document::inverse_of(&held.document, intent);
+    // `WriteSamples` is excluded by kind rather than by whether an inverse
+    // exists, and finding out why is the reason this is spelled out. It bumps
+    // the **source's generation** as well as the document's version, and an
+    // inverse write bumps it again -- so rolling one back left the generation
+    // two ahead instead of where it started, which the cross-binding vectors
+    // caught and nothing else would have. The version is one field to restore;
+    // a generation is one per source, and chasing them is exactly the kind of
+    // bookkeeping a copy exists to avoid.
+    let inverse = match intent {
+        Intent::WriteSamples { .. } => None,
+        _ => clausters_document::inverse_of(&held.document, intent),
+    };
     let Some(inverse) = inverse else {
-        // No inverse to roll back with: run on a copy and swap it in on commit.
+        // Nothing safe to roll back with: run on a copy and swap it in on
+        // commit.
         let mut edited = held.document.clone();
         let outcome = apply_intent(&mut edited, intent, against, &Rules { quant });
         // SAFETY: forwarded from this function's own contract.
@@ -604,9 +616,20 @@ mod tests {
             };
         }
         assert_eq!(doc.tree()["version"], 1, "nothing applied");
+        assert_eq!(
+            doc.tree()["root"]["source"]["generation"],
+            4,
+            "and the source's generation is where it started"
+        );
         let outcome = apply(&doc, intent, None, 0.0);
         assert_eq!(outcome["applied"], true);
         assert_eq!(doc.tree()["version"], 2, "and one real call applies once");
+        assert_eq!(
+            doc.tree()["root"]["source"]["generation"],
+            5,
+            "once, not twice -- the generation is the field a rollback cannot \
+             restore, which is why this edit is never rolled back"
+        );
     }
 
     /// The rollback has to restore the **version** as well as the tree: applying
