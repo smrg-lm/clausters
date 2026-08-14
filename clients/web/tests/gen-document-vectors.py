@@ -23,6 +23,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 from clausters import _native  # noqa: E402
+from clausters._native import Log  # noqa: E402
 from clausters.form import Buffer, Event, Group, to_document  # noqa: E402
 from clausters.seq import Event as SeqEvent  # noqa: E402
 
@@ -63,6 +64,17 @@ CASES = [
      {"intent": "writesamples", "node": 3, "start": 100, "values": [0.5, -0.5]}, 0, 0.0),
     ("the same write again is idempotent on the document",
      {"intent": "writesamples", "node": 3, "start": 100, "values": []}, 0, 0.0),
+]
+
+#: Edits driven through the log, as `(label, intent, quant)`. A snap is in
+#: there because the *effective* edit is what a redo must replay, and a run on
+#: one node because that is what coalescing would have to get right if the
+#: caller asked for it (it does not here: each is its own undo).
+LOGGED = [
+    ("move the event", {"intent": "place", "node": 2, "offset": 1.0}, 0.0),
+    ("move the take", {"intent": "place", "node": 3, "offset": 6.0}, 0.0),
+    ("drop it on the grid", {"intent": "place", "node": 2, "offset": 4.3}, 1.0),
+    ("retune it", {"intent": "configure", "node": 2, "config": {"midinote": 65}}, 0.0),
 ]
 
 #: Selections resolved against the **starting** composition, as
@@ -106,11 +118,38 @@ if __name__ == "__main__":
             ),
         })
 
+    # The log, applied and inverted through the crate rather than through a
+    # history this client keeps -- the acceptance O11 is written around, frozen
+    # so the wasm side has to reach the same states and not merely a consistent
+    # one of its own.
+    logged = {"applies": [], "undos": [], "redos": []}
+    with Log() as log:
+        doc = composition()
+        for label, intent, quant in LOGGED:
+            result = log.apply(doc, intent, quant=quant, label=label)
+            logged["applies"].append({
+                "label": label, "intent": intent, "quant": quant,
+                "document": result["document"], "outcome": result["outcome"],
+                "entries": len(log), "undoLabel": log.undo_label,
+            })
+            doc = result["document"]
+        while log.can_undo:
+            step = log.undo(doc)
+            logged["undos"].append(step)
+            doc = step["document"]
+        logged["inverted"] = doc
+        while log.can_redo:
+            step = log.redo(doc)
+            logged["redos"].append(step)
+            doc = step["document"]
+        logged["redone"] = doc
+
     out = pathlib.Path(__file__).with_name("document-vectors.json")
     out.write_text(json.dumps({
         "start": composition(),
         "edits": edits,
         "final": document,
         "resolutions": resolutions,
+        "logged": logged,
     }, indent=2) + "\n")
     print(f"wrote {out}")

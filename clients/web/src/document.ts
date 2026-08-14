@@ -17,7 +17,7 @@
  * @module
  */
 
-import { document_apply, document_resolve } from "./core/clausters_core_web.js";
+import { Log as CoreLog, document_apply, document_resolve } from "./core/clausters_core_web.js";
 import { loadCore } from "./base/core.ts";
 
 /** A node's identity within a document. Stable across edits. */
@@ -164,4 +164,164 @@ export async function resolveSelection(
             JSON.stringify({ document, selection, framesPerBeat, inBeats }),
         ),
     ) as Resolved[];
+}
+
+/** One move forward: an ordinary edit, or a deterministic operation the owner
+ * re-runs rather than replays — which is what makes a redo of an edit over a
+ * million samples cost a few bytes. */
+export type Step = { edit: Intent } | { recompute: unknown };
+
+/** What an undo did. */
+export interface Undone {
+    document: ClaustersDocument;
+    /** The inverses, in the order they were applied. */
+    undone: Intent[];
+}
+
+/** What a redo did, and what it could not. */
+export interface Redone {
+    document: ClaustersDocument;
+    /**
+     * The steps from the first one the crate **cannot perform** onward — a
+     * deterministic operation kept as its parameters, which you re-run because
+     * the crate holds no algorithms. It stops at the first rather than skipping
+     * it, so a later edit is never applied over a state the operation before it
+     * was meant to produce. Usually empty.
+     */
+    remaining: Step[];
+}
+
+/**
+ * The undo history of one document.
+ *
+ * Undo belongs with the document and not with a view: a view's log sees only
+ * the gestures *it* made, so a script editing the arrangement, a second editor
+ * or a re-render leaves it describing a document that has moved on — and undo
+ * then writes a state nobody was ever in.
+ *
+ * It is an **object** where a document is a value, and the reason is the spill
+ * store: a bulk inverse leaves the log on purpose, so passing one by value
+ * would carry every spilled span on every call, which is the cost spilling
+ * exists to avoid.
+ *
+ * ```ts
+ * const log = await Log.open();
+ * let { document } = await log.apply(doc, { intent: "place", node: 3, offset: 4 },
+ *                                    { label: "move the clip" });
+ * ({ document } = (await log.undo(document))!);   // exactly where it was
+ * ```
+ */
+export class Log {
+    #inner: CoreLog;
+
+    private constructor(inner: CoreLog) {
+        this.#inner = inner;
+    }
+
+    /**
+     * Opens a log. `budget` is how many entries it keeps before the oldest
+     * falls off and `spillAbove` how many `f32` values a sample payload must
+     * reach before it leaves the log; either as 0 takes the crate's default.
+     */
+    static async open(budget = 0, spillAbove = 0): Promise<Log> {
+        await loadCore();
+        return new Log(new CoreLog(budget, spillAbove));
+    }
+
+    /**
+     * Apply an edit **and record it**, in one call — the inverse has to be read
+     * out of the document before the edit lands, so applying first and
+     * recording second would record the wrong thing. Nothing is recorded unless
+     * the document changed, so a refusal leaves no entry and neither does a
+     * resend.
+     */
+    apply(
+        document: ClaustersDocument,
+        intent: Intent,
+        options: { against?: Against; quant?: number; label?: string } = {},
+    ): Applied {
+        return JSON.parse(
+            this.#inner.apply(
+                JSON.stringify({
+                    document,
+                    intent,
+                    against: options.against ?? null,
+                    quant: options.quant ?? 0,
+                    label: options.label ?? "edit",
+                }),
+            ),
+        ) as Applied;
+    }
+
+    /**
+     * Record an entry the document cannot supply the inverse for — the
+     * destructive case, whose overwritten samples are not in the tree. This
+     * applies nothing: the write has happened, and what is recorded is how to
+     * put it back.
+     *
+     * `coalesce` merges into the entry before it when both touch the same node
+     * the same way, so a run of small adjustments is one undo. You decide,
+     * because only you know where the hand stopped.
+     */
+    record(
+        forward: Step,
+        backward: Intent,
+        options: { label?: string; coalesce?: boolean } = {},
+    ): void {
+        this.#inner.record(
+            JSON.stringify({
+                forward,
+                backward,
+                label: options.label ?? "edit",
+                coalesce: options.coalesce ?? false,
+            }),
+        );
+    }
+
+    /** Undo the last transaction, or `undefined` when there is nothing to undo. */
+    undo(document: ClaustersDocument): Undone | undefined {
+        const result = this.#inner.undo(JSON.stringify(document));
+        return result === undefined ? undefined : (JSON.parse(result) as Undone);
+    }
+
+    /** Redo what was last undone, or `undefined` when there is nothing. */
+    redo(document: ClaustersDocument): Redone | undefined {
+        const result = this.#inner.redo(JSON.stringify(document));
+        return result === undefined ? undefined : (JSON.parse(result) as Redone);
+    }
+
+    /** Whether there is anything to undo. */
+    get canUndo(): boolean {
+        return this.#inner.canUndo;
+    }
+
+    /** Whether there is anything to redo. */
+    get canRedo(): boolean {
+        return this.#inner.canRedo;
+    }
+
+    /** What an undo would be called, for a menu item. */
+    get undoLabel(): string | undefined {
+        return this.#inner.undoLabel;
+    }
+
+    /** What a redo would be called. */
+    get redoLabel(): string | undefined {
+        return this.#inner.redoLabel;
+    }
+
+    /** How many entries the log holds. */
+    get length(): number {
+        return this.#inner.len;
+    }
+
+    /** Forget everything, releasing what was spilled. */
+    clear(): void {
+        this.#inner.clear();
+    }
+
+    /** Release the log. Idempotent. */
+    free(): void {
+        this.#inner.free();
+    }
 }

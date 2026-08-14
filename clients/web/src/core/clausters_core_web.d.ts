@@ -2,6 +2,74 @@
 /* eslint-disable */
 
 /**
+ * The undo history of one document, the JS face of
+ * [`clausters_document::Log`].
+ */
+export class Log {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Apply an edit **and record it**, in one call: the inverse has to be read
+     * out of the document before the edit lands, so applying first and
+     * recording second would record the wrong thing.
+     * `apply(requestJson) -> resultJson`, the request carrying
+     * `{ document, intent, against?, quant?, label? }`.
+     */
+    apply(request: string): string;
+    /**
+     * Forget everything, releasing what was spilled.
+     */
+    clear(): void;
+    /**
+     * A new log. `budget` is how many entries it keeps before the oldest falls
+     * off and `spillAbove` how many `f32` values a sample payload must reach
+     * before it leaves the log; either as 0 takes the crate's default.
+     */
+    constructor(budget: number, spill_above: number);
+    /**
+     * Record an entry the document cannot supply the inverse for — the
+     * destructive case, whose overwritten samples are not in the tree. Applies
+     * nothing. `record(requestJson)` with
+     * `{ forward, backward, label?, coalesce? }`.
+     */
+    record(request: string): void;
+    /**
+     * Redo what was last undone, applying what it can. Returns
+     * `{ document, remaining }` — the ordinary edits at the front are already
+     * applied, and `remaining` holds the steps from the first one the crate
+     * cannot perform onward, for the owner to re-run. `undefined` when there
+     * was nothing to redo.
+     */
+    redo(document: string): string | undefined;
+    /**
+     * Undo the last transaction, applying its inverses to `documentJson`.
+     * Returns `{ document, undone }`, or `undefined` when there was nothing to
+     * undo.
+     */
+    undo(document: string): string | undefined;
+    /**
+     * Whether there is anything to redo.
+     */
+    readonly canRedo: boolean;
+    /**
+     * Whether there is anything to undo.
+     */
+    readonly canUndo: boolean;
+    /**
+     * How many entries the log holds.
+     */
+    readonly len: number;
+    /**
+     * What a redo would be called.
+     */
+    readonly redoLabel: string | undefined;
+    /**
+     * What an undo would be called, for a menu item.
+     */
+    readonly undoLabel: string | undefined;
+}
+
+/**
  * A built min/max peak pyramid, the JS face of
  * [`clausters_core::peaks::MultiPyramid`] — what a navigable waveform reads
  * so a view costs the width of the window rather than the length of the
@@ -443,6 +511,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_log_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
     readonly __wbg_rng_free: (a: number, b: number) => void;
@@ -462,6 +531,17 @@ export interface InitOutput {
     readonly document_resolve: (a: number, b: number) => [number, number, number, number];
     readonly graph_bus_reserved: () => [number, number];
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly log_apply: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly log_canRedo: (a: number) => number;
+    readonly log_canUndo: (a: number) => number;
+    readonly log_clear: (a: number) => void;
+    readonly log_len: (a: number) => number;
+    readonly log_new: (a: number, b: number) => number;
+    readonly log_record: (a: number, b: number, c: number) => [number, number];
+    readonly log_redo: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly log_redoLabel: (a: number) => [number, number];
+    readonly log_undo: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly log_undoLabel: (a: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];

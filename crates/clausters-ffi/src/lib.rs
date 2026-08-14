@@ -33,6 +33,7 @@ mod builtins;
 mod bundle;
 mod clocksync;
 mod document;
+mod log;
 mod measure;
 #[cfg(feature = "notation")]
 pub mod notation;
@@ -52,6 +53,7 @@ pub use builtins::*;
 pub use bundle::*;
 pub use clocksync::*;
 pub use document::*;
+pub use log::*;
 pub use measure::*;
 pub use patch::*;
 pub use registry::*;
@@ -97,8 +99,12 @@ pub use time::*;
 /// `clausters_document_resolve` — which is how every client binds one
 /// implementation of what an edit *means* instead of three: the document and
 /// the intent cross by value and the new document comes back, rather than each
-/// client holding handles into a Rust object graph.
-pub const CORE_ABI_VERSION: u32 = 15;
+/// client holding handles into a Rust object graph; v16 the undo log
+/// (`clausters_log_*`), which crosses as a **handle** where the document
+/// crosses by value — a bulk inverse leaves the log on purpose, so sending one
+/// by value would carry every spilled span on every call, which is the cost
+/// spilling exists to avoid.
+pub const CORE_ABI_VERSION: u32 = 16;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

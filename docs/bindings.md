@@ -182,6 +182,27 @@ parallel structure synchronizing with it.
 | `clausters_document_apply` | `document_apply` | |
 | `clausters_document_resolve` | `document_resolve` | |
 
+The **log** is the exception to the shape above, and deliberately: undo state is
+not a value the caller edits, and — the deciding term — a bulk inverse *leaves*
+the log for its spill store on purpose, so passing one by value would carry
+every spilled span on every call, which is the cost spilling exists to avoid. So
+it crosses as a handle where the document crosses by value.
+
+| C ABI | wasm | Note |
+|---|---|---|
+| `clausters_log_new` | `JsLog.new` | `idiom` — a constructor where C mints a handle |
+| `clausters_log_free` | — | `n/a` — wasm frees by `Drop` |
+| `clausters_log_apply` | `JsLog.apply` | |
+| `clausters_log_record` | `JsLog.record` | |
+| `clausters_log_undo` | `JsLog.undo` | |
+| `clausters_log_redo` | `JsLog.redo` | |
+| `clausters_log_can_undo` | `JsLog.can_undo` | `idiom` — a getter |
+| `clausters_log_can_redo` | `JsLog.can_redo` | `idiom` — a getter |
+| `clausters_log_undo_label` | `JsLog.undo_label` | `idiom` — a getter returning a string, where C sizes and fills |
+| `clausters_log_redo_label` | `JsLog.redo_label` | `idiom` — as above |
+| `clausters_log_len` | `JsLog.len` | `idiom` — a getter |
+| `clausters_log_clear` | `JsLog.clear` | |
+
 ## OSC
 
 | C ABI | wasm | Note |

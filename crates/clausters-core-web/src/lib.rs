@@ -1122,3 +1122,203 @@ pub fn document_resolve(request: &str) -> Result<String, JsError> {
             .collect();
     serde_json::to_string(&resolved).map_err(|e| JsError::new(&e.to_string()))
 }
+
+// ---- the undo log ----
+//
+// A class rather than a pair of free functions, because a log is *state* where
+// the document is a value — and in JS that state is a `Drop`-backed object
+// instead of the C ABI's handle plus explicit free. The reason it is state at
+// all is the spill store: a bulk inverse leaves the log on purpose, so passing
+// one by value would carry every spilled span on every call, which is the cost
+// spilling exists to avoid. The document keeps crossing by value; the log does
+// not.
+
+/// The undo history of one document, the JS face of
+/// [`clausters_document::Log`].
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = Log)]
+pub struct JsLog(clausters_document::Log);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = Log)]
+impl JsLog {
+    /// A new log. `budget` is how many entries it keeps before the oldest falls
+    /// off and `spillAbove` how many `f32` values a sample payload must reach
+    /// before it leaves the log; either as 0 takes the crate's default.
+    #[wasm_bindgen(constructor)]
+    pub fn new(budget: usize, spill_above: usize) -> JsLog {
+        let mut log = clausters_document::Log::new();
+        if budget > 0 {
+            log = log.budget(budget);
+        }
+        if spill_above > 0 {
+            log = log.spill_above(spill_above);
+        }
+        JsLog(log)
+    }
+
+    /// Apply an edit **and record it**, in one call: the inverse has to be read
+    /// out of the document before the edit lands, so applying first and
+    /// recording second would record the wrong thing.
+    /// `apply(requestJson) -> resultJson`, the request carrying
+    /// `{ document, intent, against?, quant?, label? }`.
+    pub fn apply(&mut self, request: &str) -> Result<String, JsError> {
+        #[derive(serde::Deserialize)]
+        struct Request {
+            document: clausters_document::Document,
+            intent: clausters_document::Intent,
+            #[serde(default)]
+            against: Option<clausters_document::Against>,
+            #[serde(default)]
+            quant: f64,
+            #[serde(default)]
+            label: Option<String>,
+        }
+        let mut request: Request =
+            serde_json::from_str(request).map_err(|e| JsError::new(&format!("log.apply: {e}")))?;
+        let against = request
+            .against
+            .unwrap_or_else(clausters_document::Against::unstated);
+        let outcome = clausters_document::apply_logged(
+            &mut request.document,
+            &request.intent,
+            &against,
+            &clausters_document::Rules {
+                quant: request.quant,
+            },
+            &mut self.0,
+            request.label.unwrap_or_else(|| "edit".into()),
+        );
+        serde_json::to_string(&serde_json::json!({
+            "document": request.document,
+            "outcome": {
+                "effective": outcome.effective,
+                "applied": outcome.applied,
+                "reason": outcome.reason,
+                "stale": outcome.stale,
+            }
+        }))
+        .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Record an entry the document cannot supply the inverse for — the
+    /// destructive case, whose overwritten samples are not in the tree. Applies
+    /// nothing. `record(requestJson)` with
+    /// `{ forward, backward, label?, coalesce? }`.
+    pub fn record(&mut self, request: &str) -> Result<(), JsError> {
+        #[derive(serde::Deserialize)]
+        struct Request {
+            forward: clausters_document::Step,
+            backward: clausters_document::Intent,
+            #[serde(default)]
+            label: Option<String>,
+            #[serde(default)]
+            coalesce: bool,
+        }
+        let request: Request =
+            serde_json::from_str(request).map_err(|e| JsError::new(&format!("log.record: {e}")))?;
+        let mut entry = clausters_document::Entry::new(
+            request.label.unwrap_or_else(|| "edit".into()),
+            request.forward,
+            request.backward,
+        );
+        if request.coalesce {
+            entry = entry.continuing();
+        }
+        self.0.record(entry);
+        Ok(())
+    }
+
+    /// Undo the last transaction, applying its inverses to `documentJson`.
+    /// Returns `{ document, undone }`, or `undefined` when there was nothing to
+    /// undo.
+    pub fn undo(&mut self, document: &str) -> Result<Option<String>, JsError> {
+        let mut document: clausters_document::Document =
+            serde_json::from_str(document).map_err(|e| JsError::new(&format!("log.undo: {e}")))?;
+        let Some(undone) = self.0.undo() else {
+            return Ok(None);
+        };
+        for intent in &undone {
+            // An undo is authoritative: it states what the document was, so it
+            // is not checked against a version it predates.
+            clausters_document::apply(
+                &mut document,
+                intent,
+                &clausters_document::Against::unstated(),
+                &clausters_document::Rules::default(),
+            );
+        }
+        serde_json::to_string(&serde_json::json!({ "document": document, "undone": undone }))
+            .map(Some)
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Redo what was last undone, applying what it can. Returns
+    /// `{ document, remaining }` — the ordinary edits at the front are already
+    /// applied, and `remaining` holds the steps from the first one the crate
+    /// cannot perform onward, for the owner to re-run. `undefined` when there
+    /// was nothing to redo.
+    pub fn redo(&mut self, document: &str) -> Result<Option<String>, JsError> {
+        let mut document: clausters_document::Document =
+            serde_json::from_str(document).map_err(|e| JsError::new(&format!("log.redo: {e}")))?;
+        let Some(steps) = self.0.redo() else {
+            return Ok(None);
+        };
+        let mut remaining = Vec::new();
+        let mut stopped = false;
+        for step in steps {
+            match (&step, stopped) {
+                (clausters_document::Step::Edit(intent), false) => {
+                    clausters_document::apply(
+                        &mut document,
+                        intent,
+                        &clausters_document::Against::unstated(),
+                        &clausters_document::Rules::default(),
+                    );
+                }
+                _ => {
+                    stopped = true;
+                    remaining.push(step);
+                }
+            }
+        }
+        serde_json::to_string(&serde_json::json!({ "document": document, "remaining": remaining }))
+            .map(Some)
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Whether there is anything to undo.
+    #[wasm_bindgen(getter, js_name = canUndo)]
+    pub fn can_undo(&self) -> bool {
+        self.0.can_undo()
+    }
+
+    /// Whether there is anything to redo.
+    #[wasm_bindgen(getter, js_name = canRedo)]
+    pub fn can_redo(&self) -> bool {
+        self.0.can_redo()
+    }
+
+    /// What an undo would be called, for a menu item.
+    #[wasm_bindgen(getter, js_name = undoLabel)]
+    pub fn undo_label(&self) -> Option<String> {
+        self.0.undo_label().map(str::to_string)
+    }
+
+    /// What a redo would be called.
+    #[wasm_bindgen(getter, js_name = redoLabel)]
+    pub fn redo_label(&self) -> Option<String> {
+        self.0.redo_label().map(str::to_string)
+    }
+
+    /// How many entries the log holds.
+    #[wasm_bindgen(getter)]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Forget everything, releasing what was spilled.
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+}

@@ -360,3 +360,150 @@ def test_nothing_underneath_is_an_empty_list_and_not_a_failure():
         frames_per_beat=48000.0, in_beats=True,
     )
     assert spans == []
+
+
+# ---- the log: undo through the crate, not through a history we keep ----
+
+def test_a_run_of_gestures_inverts_back_to_where_it_started():
+    """O11's acceptance. The log lives in the crate with its spill store; what
+    crosses is the document and a handle. A history this client kept would see
+    only the edits it made, which is what O5 exists to prevent."""
+    from clausters._native import Log
+
+    group = a_group()
+    start = to_document(group)
+    document = start
+    with Log() as log:
+        for node, offset in [(2, 1.0), (2, 5.0), (2, 2.5)]:
+            document = log.apply(
+                document, {"intent": "place", "node": node, "offset": offset},
+                label="move",
+            )["document"]
+        assert len(log) == 3
+        assert log.undo_label == "move"
+        assert document["root"] != start["root"]
+
+        while log.can_undo:
+            document = log.undo(document)["document"]
+        assert document["root"] == start["root"], "exactly, not approximately"
+        assert log.can_redo
+
+
+def test_a_redo_puts_back_exactly_what_the_undo_took():
+    from clausters._native import Log
+
+    document = to_document(a_group())
+    with Log() as log:
+        edited = log.apply(
+            document, {"intent": "place", "node": 2, "offset": 3.0}, label="move"
+        )["document"]
+        undone = log.undo(edited)
+        assert undone["document"]["root"] == document["root"]
+        redone = log.redo(undone["document"])
+        assert redone["document"]["root"] == edited["root"]
+        assert redone["remaining"] == [], "nothing for the owner to re-run"
+
+
+def test_what_the_grid_did_is_what_gets_replayed():
+    """The forward half records the *effective* edit, so a redo does not snap a
+    second time — harmless with a grid, wrong the moment a rule is not
+    idempotent."""
+    from clausters._native import Log
+
+    document = to_document(a_group())
+    with Log() as log:
+        applied = log.apply(
+            document, {"intent": "place", "node": 2, "offset": 4.3},
+            quant=1.0, label="move",
+        )
+        assert applied["outcome"]["effective"]["offset"] == 4.0
+        undone = log.undo(applied["document"])
+        redone = log.redo(undone["document"])
+        assert redone["document"]["root"]["members"][0]["offset"] == 4.0
+
+
+def test_a_refused_edit_leaves_nothing_to_undo():
+    from clausters._native import Log
+
+    document = to_document(a_group())
+    with Log() as log:
+        log.apply(document, {"intent": "place", "node": 999, "offset": 1.0})
+        assert len(log) == 0
+        assert not log.can_undo
+        assert log.undo(document) is None, "and says so rather than failing"
+
+
+def test_a_destructive_inverse_is_recorded_by_the_caller():
+    """The one edit the document cannot supply the inverse for: its samples are
+    not in the tree, so the caller reads the span it is about to overwrite."""
+    from clausters._native import Log
+
+    document = {
+        "version": 1,
+        "root": {
+            "id": 1, "kind": "buffer",
+            "source": {"source": 7, "lifetime": "temporary", "generation": 4},
+        },
+    }
+    with Log() as log:
+        log.record(
+            {"edit": {"intent": "writesamples", "node": 1, "start": 10,
+                      "values": [0.5, 0.5]}},
+            {"intent": "writesamples", "node": 1, "start": 10,
+             "values": [0.125, 0.25]},
+            label="draw",
+        )
+        assert len(log) == 1
+        undone = log.undo(document)
+        assert undone["undone"][0]["values"] == [0.125, 0.25]
+
+
+def test_a_deterministic_operation_comes_back_for_the_owner_to_re_run():
+    """Going back is data; going forward may be a recipe. The crate holds no
+    algorithms, so it hands the recipe out rather than replaying a span."""
+    from clausters._native import Log
+
+    document = {
+        "version": 1,
+        "root": {
+            "id": 1, "kind": "buffer",
+            "source": {"source": 7, "lifetime": "temporary", "generation": 4},
+        },
+    }
+    with Log() as log:
+        log.record(
+            {"recompute": {"op": "normalize", "peak": 1.0}},
+            {"intent": "writesamples", "node": 1, "start": 0, "values": [0.25]},
+            label="normalize",
+        )
+        undone = log.undo(document)
+        redone = log.redo(undone["document"])
+        assert len(redone["remaining"]) == 1
+        assert redone["remaining"][0]["recompute"]["op"] == "normalize"
+
+
+def test_a_continuing_run_of_adjustments_is_one_undo():
+    """A hundred small moves of the same clip are one thing the person did. The
+    caller decides where the hand stopped, because only the caller knows."""
+    from clausters._native import Log
+
+    document = to_document(a_group())
+    with Log() as log:
+        for i, offset in enumerate([1.0, 1.5, 2.0]):
+            previous = 0.0 if i == 0 else offset - 0.5
+            log.record(
+                {"edit": {"intent": "place", "node": 2, "offset": offset}},
+                {"intent": "place", "node": 2, "offset": previous},
+                label="move", coalesce=i > 0,
+            )
+        assert len(log) == 1
+        undone = log.undo(document)
+        assert undone["document"]["root"]["members"][0]["offset"] == 0.0
+
+
+def test_a_closed_log_is_closed_twice_without_complaint():
+    from clausters._native import Log
+
+    log = Log()
+    log.close()
+    log.close()

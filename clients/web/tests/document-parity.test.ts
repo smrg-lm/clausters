@@ -18,8 +18,16 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { applyIntent, resolveSelection } from "../src/document.ts";
-import type { Against, ClaustersDocument, Intent, Resolved } from "../src/document.ts";
+import { Log, applyIntent, resolveSelection } from "../src/document.ts";
+import type {
+    Against,
+    ClaustersDocument,
+    Intent,
+    Outcome,
+    Redone,
+    Resolved,
+    Undone,
+} from "../src/document.ts";
 
 interface Vectors {
     start: ClaustersDocument;
@@ -43,6 +51,21 @@ interface Vectors {
         framesPerBeat: number;
         spans: Resolved[];
     }[];
+    logged: {
+        applies: {
+            label: string;
+            intent: Intent;
+            quant: number;
+            document: ClaustersDocument;
+            outcome: Outcome;
+            entries: number;
+            undoLabel: string;
+        }[];
+        undos: Undone[];
+        redos: Redone[];
+        inverted: ClaustersDocument;
+        redone: ClaustersDocument;
+    };
 }
 
 const here = import.meta.url;
@@ -125,4 +148,86 @@ test("an edit is idempotent, so a resend over a lossy leg is harmless", async ()
     const twice = await applyIntent(once.document, intent);
     assert.deepEqual(twice.document, once.document);
     assert.equal(twice.outcome.applied, false, "nothing changed the second time");
+});
+
+// ---- the log ----
+
+test("the same edits logged here reach the same states", async () => {
+    // O11's acceptance across the third side. The log is an object rather than
+    // a value -- a bulk inverse leaves it for the spill store on purpose -- so
+    // what is compared is the documents it produces, not the log itself.
+    const log = await Log.open();
+    try {
+        let document = vectors.start;
+        for (const expected of vectors.logged.applies) {
+            const result = log.apply(document, expected.intent, {
+                quant: expected.quant,
+                label: expected.label,
+            });
+            assert.deepEqual(result.document, expected.document, expected.label);
+            assert.deepEqual(result.outcome, expected.outcome, expected.label);
+            assert.equal(log.length, expected.entries);
+            assert.equal(log.undoLabel, expected.undoLabel);
+            document = result.document;
+        }
+
+        for (const expected of vectors.logged.undos) {
+            assert.ok(log.canUndo);
+            const step = log.undo(document);
+            assert.ok(step, "an undo that the vector says happened");
+            assert.deepEqual(step, expected);
+            document = step.document;
+        }
+        assert.equal(log.canUndo, false);
+        assert.deepEqual(
+            document,
+            vectors.logged.inverted,
+            "a run of gestures inverts back to where it started, exactly",
+        );
+
+        for (const expected of vectors.logged.redos) {
+            const step = log.redo(document);
+            assert.ok(step, "a redo that the vector says happened");
+            assert.deepEqual(step, expected);
+            assert.deepEqual(step.remaining, [], "nothing for the owner to re-run");
+            document = step.document;
+        }
+        assert.deepEqual(document, vectors.logged.redone);
+    } finally {
+        log.free();
+    }
+});
+
+test("a refused edit leaves nothing to undo, on this side too", async () => {
+    const log = await Log.open();
+    try {
+        log.apply(vectors.start, { intent: "place", node: 999, offset: 1 });
+        assert.equal(log.length, 0);
+        assert.equal(log.canUndo, false);
+        assert.equal(log.undo(vectors.start), undefined, "and says so");
+    } finally {
+        log.free();
+    }
+});
+
+test("a deterministic operation comes back for the owner to re-run", async () => {
+    // The asymmetry the log exists to express: going back is data, going
+    // forward may be a recipe, and no binding can execute one.
+    const log = await Log.open();
+    try {
+        const node = 3;
+        log.record(
+            { recompute: { op: "normalize", peak: 1 } },
+            { intent: "writesamples", node, start: 0, values: [0.25] },
+            { label: "normalize" },
+        );
+        const undone = log.undo(vectors.start);
+        assert.ok(undone);
+        const redone = log.redo(undone.document);
+        assert.ok(redone);
+        assert.equal(redone.remaining.length, 1);
+        assert.ok("recompute" in redone.remaining[0]);
+    } finally {
+        log.free();
+    }
 });

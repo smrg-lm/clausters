@@ -143,7 +143,13 @@ impl Spill for MemorySpill {
 ///
 /// Only the forward direction has two shapes: see the module docs on why going
 /// back is always data.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// On the wire it is externally tagged — `{"edit": <intent>}`,
+/// `{"recompute": <params>}` — rather than internally, because [`Intent`] is
+/// already internally tagged on `"intent"` and two tags in one object is how a
+/// format grows a bug nobody can read.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Step {
     /// An ordinary edit. Hand it to [`crate::intent::apply`].
     Edit(Intent),
@@ -358,19 +364,15 @@ impl Log {
         self.enforce_budget();
     }
 
-    /// Undoes the last thing done: the inverses of the entry before the cursor,
-    /// **in reverse order** (a transaction's edits unwind the way they were
-    /// laid down), or `None` when there is nothing to undo.
+    /// What an undo *would* hand back, without moving the cursor.
     ///
-    /// The caller applies them. The log does not touch the document, because
-    /// applying is [`crate::intent::apply`]'s job and having two things that
-    /// edit is exactly what this crate exists to prevent.
-    pub fn undo(&mut self) -> Option<Vec<Intent>> {
-        if self.cursor == 0 {
-            return None;
-        }
-        self.cursor -= 1;
-        let entry = &self.entries[self.cursor];
+    /// The pair [`Log::peek_undo`]/[`Log::step_back`] exists for callers that
+    /// have to know the answer before committing to it — a binding whose
+    /// protocol sizes a buffer and then fills it, where doing the work on the
+    /// sizing call would undo twice and hand back the second answer. Inside
+    /// Rust, [`Log::undo`] is the two together and is what you want.
+    pub fn peek_undo(&self) -> Option<Vec<Intent>> {
+        let entry = self.entries.get(self.cursor.checked_sub(1)?)?;
         let mut out = Vec::with_capacity(entry.changes.len());
         for change in entry.changes.iter().rev() {
             // A backward half is always an edit -- `Entry`'s constructors take
@@ -382,19 +384,60 @@ impl Log {
         Some(out)
     }
 
+    /// What a redo *would* hand back, without moving the cursor. See
+    /// [`Log::peek_undo`].
+    pub fn peek_redo(&self) -> Option<Vec<Step>> {
+        let entry = self.entries.get(self.cursor)?;
+        Some(
+            entry
+                .changes
+                .iter()
+                .map(|change| materialize(&change.forward, self.spill.as_ref()))
+                .collect(),
+        )
+    }
+
+    /// Moves the cursor back one entry, if it can. The commit half of
+    /// [`Log::peek_undo`].
+    pub fn step_back(&mut self) -> bool {
+        let can = self.can_undo();
+        if can {
+            self.cursor -= 1;
+        }
+        can
+    }
+
+    /// Moves the cursor forward one entry, if it can. The commit half of
+    /// [`Log::peek_redo`].
+    pub fn step_forward(&mut self) -> bool {
+        let can = self.can_redo();
+        if can {
+            self.cursor += 1;
+        }
+        can
+    }
+
+    /// Undoes the last thing done: the inverses of the entry before the cursor,
+    /// **in reverse order** (a transaction's edits unwind the way they were
+    /// laid down), or `None` when there is nothing to undo.
+    ///
+    /// The caller applies them. The log does not touch the document, because
+    /// applying is [`crate::intent::apply`]'s job and having two things that
+    /// edit is exactly what this crate exists to prevent.
+    pub fn undo(&mut self) -> Option<Vec<Intent>> {
+        let out = self.peek_undo()?;
+        self.step_back();
+        Some(out)
+    }
+
     /// Redoes what was last undone, in order, or `None` when there is nothing.
     ///
     /// Returns [`Step`]s rather than intents: a deterministic operation stores
     /// its parameters instead of its result, and re-running it is the owner's
     /// to do.
     pub fn redo(&mut self) -> Option<Vec<Step>> {
-        let entry = self.entries.get(self.cursor)?;
-        let out = entry
-            .changes
-            .iter()
-            .map(|change| materialize(&change.forward, self.spill.as_ref()))
-            .collect();
-        self.cursor += 1;
+        let out = self.peek_redo()?;
+        self.step_forward();
         Some(out)
     }
 
@@ -542,6 +585,24 @@ fn materialize(half: &Half, spill: &dyn Spill) -> Step {
             .collect();
     }
     step
+}
+
+/// The edit that would put this node back the way it is — the inverse of
+/// `intent`, read out of the document before anything is applied.
+///
+/// The whole of what makes undo cheap here: an absolute intent states a value,
+/// so the edit stating the *previous* value is its inverse, and the document
+/// already knows it. `None` when the document cannot describe it — the node is
+/// gone, or its body holds nothing of that shape — and for
+/// [`Intent::WriteSamples`], where the samples are not in the document, it is
+/// the empty write rather than the span, which is why a destructive caller
+/// reads its own span before writing.
+///
+/// Public because a caller that records its own entries needs exactly this, and
+/// because a GUI host's "every intent carries its previous value" is this
+/// function on the owner's side.
+pub fn inverse_of(document: &Document, intent: &Intent) -> Option<Intent> {
+    current(document, intent)
 }
 
 /// Apply an edit and record it, in one call.

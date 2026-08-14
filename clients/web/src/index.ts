@@ -149,7 +149,7 @@ export { ClaustersError } from "./errors.ts";
  * crate rather than by any client. See `./document.ts`.
  */
 export * as document from "./document.ts";
-export { applyIntent, resolveSelection } from "./document.ts";
+export { Log, applyIntent, resolveSelection } from "./document.ts";
 export type {
     Against,
     Applied,
@@ -157,6 +157,9 @@ export type {
     Intent,
     NodeId,
     Outcome,
+    Redone,
     Resolved,
     Selection,
+    Step,
+    Undone,
 } from "./document.ts";

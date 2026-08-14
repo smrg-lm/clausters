@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 15
+CORE_ABI_VERSION = 16
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -293,6 +293,40 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, ctypes.c_double,
         ctypes.c_int32, u8p, ctypes.c_size_t,
     ]
+    # The undo log (ABI v16): a **handle**, unlike the document, which crosses
+    # by value. A bulk inverse leaves the log on purpose, so a by-value log
+    # would carry every spilled span on every call -- the cost spilling exists
+    # to avoid.
+    lib.clausters_log_new.restype = ctypes.c_void_p
+    lib.clausters_log_new.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
+    lib.clausters_log_free.restype = None
+    lib.clausters_log_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_log_apply.restype = ctypes.c_size_t
+    lib.clausters_log_apply.argtypes = [
+        ctypes.c_void_p, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+        u8p, ctypes.c_size_t, ctypes.c_double, u8p, ctypes.c_size_t,
+        u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_log_record.restype = ctypes.c_int32
+    lib.clausters_log_record.argtypes = [
+        ctypes.c_void_p, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+        u8p, ctypes.c_size_t, ctypes.c_int32,
+    ]
+    for _log_fn in ("clausters_log_undo", "clausters_log_redo"):
+        getattr(lib, _log_fn).restype = ctypes.c_size_t
+        getattr(lib, _log_fn).argtypes = [
+            ctypes.c_void_p, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+        ]
+    for _log_fn in ("clausters_log_can_undo", "clausters_log_can_redo"):
+        getattr(lib, _log_fn).restype = ctypes.c_int32
+        getattr(lib, _log_fn).argtypes = [ctypes.c_void_p]
+    for _log_fn in ("clausters_log_undo_label", "clausters_log_redo_label"):
+        getattr(lib, _log_fn).restype = ctypes.c_size_t
+        getattr(lib, _log_fn).argtypes = [ctypes.c_void_p, u8p, ctypes.c_size_t]
+    lib.clausters_log_len.restype = ctypes.c_size_t
+    lib.clausters_log_len.argtypes = [ctypes.c_void_p]
+    lib.clausters_log_clear.restype = None
+    lib.clausters_log_clear.argtypes = [ctypes.c_void_p]
     # The component bundle (ABI v13): what an instance needs allocated, one
     # instance resolved, and the writers' pre-flight — the same three the
     # browser gets over wasm, on the same JSON-in/JSON-out shape.
@@ -629,6 +663,207 @@ def document_resolve(document: dict, selection: dict, *, frames_per_beat: float,
     out = (ctypes.c_ubyte * need)()
     n = fn(*args, out, need)
     return json.loads(bytes(out[:n]).decode("utf-8"))
+
+
+class Log:
+    """The undo history of one document, living in the shared crate.
+
+    Undo belongs with the document and not with a view: a view's log sees only
+    the gestures *it* made, so a script editing the arrangement, a second editor
+    or a re-render leaves it describing a document that has moved on — and undo
+    then writes a state nobody was ever in. This is a handle onto the crate's
+    log, so there is one history however many surfaces edit.
+
+    It is a handle where `document_apply` crosses by value, and the reason is
+    the spill store: a bulk inverse *leaves* the log on purpose, so passing one
+    by value would carry every spilled span on every call — which is the cost
+    spilling exists to avoid.
+
+    Args:
+        budget: how many entries to keep before the oldest falls off. ``None``
+            takes the crate's default.
+        spill_above: how many ``f32`` values a sample payload must reach before
+            it leaves the log for the spill store. ``None`` takes the default.
+
+    Usage::
+
+        log = Log()
+        result = log.apply(doc, {"intent": "place", "node": 3, "offset": 4.0},
+                           label="move the clip")
+        doc = result["document"]
+        doc = log.undo(doc)["document"]      # exactly where it was
+
+    Free with `close` (``__del__`` is the backstop), or use it as a context
+    manager.
+    """
+
+    def __init__(self, *, budget: "int | None" = None,
+                 spill_above: "int | None" = None):
+        self._lib = lib()
+        self._handle = self._lib.clausters_log_new(
+            0 if budget is None else int(budget),
+            0 if spill_above is None else int(spill_above),
+        )
+
+    def apply(self, document: dict, intent: dict, *, against=None,
+              quant: float = 0.0, label: str = "edit") -> dict:
+        """Apply an edit **and record it**, in one call.
+
+        One call rather than two because the inverse has to be read out of the
+        document *before* the edit lands: a surface that let you apply first and
+        record second would let you record the wrong thing. Nothing is recorded
+        unless the document actually changed, so a refusal — stale or otherwise
+        — leaves no entry, and neither does a resend.
+
+        Arguments are `document_apply`'s, plus ``label``: what an undo menu
+        calls this. Returns the same ``{"document", "outcome"}``.
+        """
+        doc_ptr, doc_len = _bytes(document)
+        int_ptr, int_len = _bytes(intent)
+        ag_ptr, ag_len = _bytes(against) if against is not None else (None, 0)
+        lb_ptr, lb_len = _text(label)
+        return self._sized(
+            self._lib.clausters_log_apply,
+            (doc_ptr, doc_len, int_ptr, int_len, ag_ptr, ag_len,
+             float(quant), lb_ptr, lb_len),
+            "the document or the intent is not valid JSON for the crate",
+        )
+
+    def record(self, forward: dict, backward: dict, *, label: str = "edit",
+               coalesce: bool = False):
+        """Record an entry the document cannot supply the inverse for.
+
+        The destructive case: a write's overwritten samples are not in the tree,
+        so the caller reads the span it is about to write and hands the pair
+        over. This **applies nothing** — the write has already happened; what is
+        recorded is how to put it back.
+
+        Args:
+            forward: a step — ``{"edit": <intent>}``, or
+                ``{"recompute": <params>}`` for a deterministic operation the
+                owner re-runs rather than replays. The second is what makes a
+                redo of a million-sample operation cost a few bytes.
+            backward: the inverse, an ordinary intent.
+            label: what an undo menu calls this.
+            coalesce: merge into the entry before it when both touch the same
+                node the same way — a run of small adjustments becoming one
+                undo. You decide, because only you know where the hand stopped.
+        """
+        f_ptr, f_len = _bytes(forward)
+        b_ptr, b_len = _bytes(backward)
+        lb_ptr, lb_len = _text(label)
+        code = self._lib.clausters_log_record(
+            self._handle, f_ptr, f_len, b_ptr, b_len, lb_ptr, lb_len,
+            int(bool(coalesce)))
+        if code != 0:
+            raise ValueError("the step or its inverse is not valid JSON for the crate")
+
+    def undo(self, document: dict) -> "dict | None":
+        """Undo the last transaction, applying its inverses to ``document``.
+
+        Returns ``{"document": …, "undone": [<intent>, …]}``, or ``None`` when
+        there was nothing to undo. It applies rather than handing the inverses
+        back, because the cursor moves with it: two steps could half-happen, and
+        a log that disagrees with its document is worse than no log.
+        """
+        return self._step(self._lib.clausters_log_undo, document)
+
+    def redo(self, document: dict) -> "dict | None":
+        """Redo what was last undone, applying what it can.
+
+        Returns ``{"document": …, "remaining": [<step>, …]}``, or ``None`` when
+        there was nothing to redo. The ordinary edits at the front are already
+        applied; ``remaining`` holds the steps from the first one the crate
+        **cannot perform** onward — a deterministic operation kept as its
+        parameters, which you re-run, because the crate holds no algorithms. It
+        stops at the first rather than skipping it, so a later edit is never
+        applied over a state the operation before it was meant to produce.
+        """
+        return self._step(self._lib.clausters_log_redo, document)
+
+    @property
+    def can_undo(self) -> bool:
+        """Whether there is anything to undo."""
+        return bool(self._lib.clausters_log_can_undo(self._handle))
+
+    @property
+    def can_redo(self) -> bool:
+        """Whether there is anything to redo."""
+        return bool(self._lib.clausters_log_can_redo(self._handle))
+
+    @property
+    def undo_label(self) -> "str | None":
+        """What an undo would be called, for a menu item."""
+        return self._label(self._lib.clausters_log_undo_label)
+
+    @property
+    def redo_label(self) -> "str | None":
+        """What a redo would be called."""
+        return self._label(self._lib.clausters_log_redo_label)
+
+    def clear(self):
+        """Forget everything, releasing what was spilled — what closing a
+        document or loading another one leaves behind."""
+        self._lib.clausters_log_clear(self._handle)
+
+    def close(self):
+        """Free the handle (idempotent)."""
+        if getattr(self, "_handle", None):
+            self._lib.clausters_log_free(self._handle)
+            self._handle = None
+
+    def __len__(self) -> int:
+        return self._lib.clausters_log_len(self._handle)
+
+    def __enter__(self) -> "Log":
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:  # interpreter teardown: the library may be gone
+            pass
+
+    # ---- the size-then-fill dance ----
+    #
+    # Every call here mutates, so the crate's rule is that the mutation happens
+    # only when the bytes are written: a sizing pass (a null buffer) is free of
+    # consequence. That is what makes calling twice correct rather than an edit
+    # applied twice.
+
+    def _sized(self, fn, args, error: str) -> dict:
+        need = fn(self._handle, *args, None, 0)
+        if need == 0:
+            raise ValueError(error)
+        out = (ctypes.c_ubyte * need)()
+        n = fn(self._handle, *args, out, need)
+        return json.loads(bytes(out[:n]).decode("utf-8"))
+
+    def _step(self, fn, document: dict) -> "dict | None":
+        result = self._sized(
+            fn, _bytes(document), "the document is not valid JSON for the crate")
+        # `{}` is "there was nothing to do", which the crate keeps distinct from
+        # a parse failure (0 bytes) and from a step that changed nothing.
+        return result or None
+
+    def _label(self, fn) -> "str | None":
+        need = fn(self._handle, None, 0)
+        if need == 0:
+            return None
+        out = (ctypes.c_ubyte * need)()
+        n = fn(self._handle, out, need)
+        return bytes(out[:n]).decode("utf-8")
+
+
+def _text(value: str) -> tuple:
+    """A string as the ``(pointer, length)`` pair the C ABI takes."""
+    data = str(value).encode("utf-8")
+    u8p = ctypes.POINTER(ctypes.c_ubyte)
+    buf = (ctypes.c_ubyte * len(data)).from_buffer_copy(data) if data else (ctypes.c_ubyte * 0)()
+    return ctypes.cast(buf, u8p), len(data)
 
 
 # ---- flat-data helpers ----
