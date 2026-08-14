@@ -14,11 +14,27 @@ use super::super::{Host, HostEffect};
 use super::GestureEffect;
 use super::nav::group_view;
 
-/// Emits `/gui_event widget_id <args…>` (as an effect for the front to send).
-pub(super) fn emit(out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32, args: Vec<OscType>) {
+/// Emits `/gui_event widget_id seq <args…>` (as an effect for the front to
+/// send), **stamping it** so the owner's acknowledgement can name it.
+///
+/// The stamp is issued here rather than at either front because a gesture is
+/// implemented once: two fronts numbering their own edits would be two
+/// sequences, and an acknowledgement would not know which it answered. The
+/// counter is behind a `RefCell` for the same reason it is here at all — this
+/// is where an edit is produced, and the tree is borrowed immutably at that
+/// point.
+pub(super) fn emit(
+    host: &Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    widget_id: i32,
+    args: Vec<OscType>,
+) {
+    let seq = host.outbox.borrow_mut().stamp(def_id, widget_id);
     out.push(GestureEffect::Emit {
         def_id,
         widget_id,
+        seq,
         args,
     });
 }
@@ -40,7 +56,7 @@ pub(super) fn deliver(
         // apply behind a widget binding touched has to repaint.
         return redraws(out, effects);
     }
-    emit(out, def_id, widget_id, vec![value]);
+    emit(host, out, def_id, widget_id, vec![value]);
 }
 
 /// Turns the host effects an apply produced into gesture effects. A binding's
@@ -75,7 +91,7 @@ pub(super) fn deliver_args(
         host.forward_args(widget_id, args[1..].to_vec(), &mut effects);
         return redraws(out, effects);
     }
-    emit(out, def_id, widget_id, args);
+    emit(host, out, def_id, widget_id, args);
 }
 
 /// Delivers the tagged payload `read` finds for `widget_id` in the window's
@@ -129,6 +145,7 @@ pub(super) fn redraw_all(out: &mut Vec<GestureEffect>, roots: &[i32]) {
 pub(super) fn emit_view(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, id: i32) {
     if let Some((start, len, _)) = group_view(host, id) {
         emit(
+            host,
             out,
             def_id,
             id,

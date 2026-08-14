@@ -47,6 +47,7 @@
 // schema the renderer reads, the leaves behind the trait, and the two places a
 // widget's value can go instead of the script — plus the voices the host plays
 // on an element's behalf, which are its own and not the element's.
+pub mod ack;
 pub mod bind;
 pub mod elements;
 pub mod guidef;
@@ -435,6 +436,22 @@ pub const GUI_DEF: &str = "/gui_def";
 pub const GUI_SET: &str = "/gui_set";
 pub const GUI_FREE: &str = "/gui_free";
 pub const GUI_QUERY: &str = "/gui_query";
+/// `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` — the
+/// owner's answer to the edits this host emitted.
+///
+/// The reply `/gui_event` never had. Everything else the host asks has one
+/// (`/gui_query` → `/gui_info`), and without this an edit the owner refused or
+/// transformed was indistinguishable from one it took: the host went on drawing
+/// what the hand did, forever.
+///
+/// It is a verb rather than a property because it is scoped to the
+/// **conversation** and not to the tree — `seq` is per client, so two clients
+/// driving one window would collide on a single prop — and because it does not
+/// round-trip, which is what a property has to do here. It rides in the same
+/// bundle as the value pushes it accompanies, after them, and it is sent
+/// **always**, including when nothing changed: that is exactly what a refusal
+/// is.
+pub const GUI_ACK: &str = "/gui_ack";
 pub const GUI_BIND: &str = "/gui_bind";
 pub const GUI_LOAD: &str = "/gui_load";
 pub const GUI_INFO: &str = "/gui_info";
@@ -502,6 +519,12 @@ pub struct Host {
     voices: HashMap<i32, Vec<(i32, i32)>>,
     /// The next voice node-id offset over [`voices::ID_BASE`] (wrapping).
     voice_counter: i32,
+    /// **What the host has emitted and not heard back about**, plus the stamps
+    /// it issues (see [`ack`]). Behind a `RefCell` because stamping happens
+    /// where an edit is *produced* — deep inside the gesture machine, which
+    /// holds the tree immutably at that point — and a second implementation at
+    /// the two fronts is exactly what the one-gesture-machine rule forbids.
+    pub outbox: std::cell::RefCell<ack::Outbox>,
     /// The host's color roles — one look per host, every paint site reads it
     /// (see [`theme`]).
     pub theme: theme::Theme,
@@ -554,6 +577,7 @@ impl Host {
             timelines: timeline::TimelineGroups::default(),
             voices: HashMap::new(),
             voice_counter: 0,
+            outbox: Default::default(),
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
             msaa: 1,
@@ -845,6 +869,7 @@ impl Host {
             GUI_SET => self.on_set(&msg.args, from, effects),
             GUI_FREE => self.on_free(&msg.args, from, effects),
             GUI_QUERY => self.on_query(&msg.args, from, effects),
+            GUI_ACK => self.on_ack(&msg.args),
             GUI_BIND => self.on_bind(&msg.args, from),
             GUI_LOAD => self.on_load(&msg.args, from, effects),
             other => debug!("{from}: ignoring unhandled address {other}"),
@@ -1235,6 +1260,10 @@ impl Host {
         if self.window_defs.remove(&id).is_some() {
             // The window goes, and with it the scale a shell reported for it.
             self.resolved_metrics.remove(&id);
+            // ...and whatever it had in flight: an acknowledgement for a widget
+            // that no longer exists is never coming, and a pending edit that
+            // waits for one holds the outbox open forever.
+            self.outbox.borrow_mut().forget(id);
             effects.push(HostEffect::CloseWindow(id));
         }
         self.sync_bus_watches();
@@ -1252,6 +1281,54 @@ impl Host {
     }
 
     /// `/gui_query <id>` — reply `/gui_info <id> <type> <k> <v> ...`.
+    /// `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` — the
+    /// owner reports how far it has processed and what state that left.
+    ///
+    /// One rule and no branch: retire every pending edit at or below `seq`. The
+    /// values the owner pushed arrive as ordinary `/gui_set`s in the same
+    /// bundle, so *applied*, *applied transformed* and *refused* need no
+    /// distinction here — the state is whatever was pushed, and a refusal is
+    /// the previous value.
+    ///
+    /// Trailing pairs are source generations, which is the only thing that can
+    /// say a destructive edit changed material whose identity did not move. A
+    /// trailing string is a reason, informational and read by nothing in the
+    /// mechanism.
+    fn on_ack(&mut self, args: &[OscType]) {
+        let Some(OscType::Int(seq)) = args.first() else {
+            warn!("/gui_ack without a sequence number");
+            return;
+        };
+        let mut acked = ack::Acked {
+            seq: *seq,
+            doc_version: match args.get(1) {
+                Some(OscType::Int(v)) => i64::from(*v),
+                Some(OscType::Long(v)) => *v,
+                _ => 0,
+            },
+            ..ack::Acked::default()
+        };
+        let mut rest = &args[args.len().min(2)..];
+        if let Some(OscType::String(reason)) = rest.last() {
+            acked.reason = Some(reason.clone());
+            rest = &rest[..rest.len() - 1];
+        }
+        for pair in rest.chunks(2) {
+            if let [OscType::Int(source), generation] = pair {
+                let generation = match generation {
+                    OscType::Int(g) => i64::from(*g),
+                    OscType::Long(g) => *g,
+                    _ => continue,
+                };
+                acked.generations.insert(*source, generation);
+            }
+        }
+        let settled = self.outbox.borrow_mut().ack(acked);
+        if !settled.is_empty() {
+            debug!("/gui_ack retired {} pending edit(s)", settled.len());
+        }
+    }
+
     fn on_query(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(id) = int_arg(args, 0) else {
             return warn!("{from}: {GUI_QUERY} needs an integer id");
@@ -2091,6 +2168,85 @@ mod tests {
         let out = replies(host.handle_packet(bundle, from()));
         assert_eq!(out.len(), 1, "the query inside the bundle is answered");
         assert_eq!(out[0].args[1], OscType::String("window".into()));
+    }
+
+    fn ack_msg(args: Vec<OscType>) -> OscPacket {
+        OscPacket::Message(OscMessage {
+            addr: GUI_ACK.into(),
+            args,
+        })
+    }
+
+    #[test]
+    fn an_acknowledgement_retires_what_it_covers_and_records_the_state() {
+        let mut host = Host::new();
+        let a = host.outbox.borrow_mut().stamp(1, 10);
+        let b = host.outbox.borrow_mut().stamp(1, 11);
+
+        host.handle_packet(
+            ack_msg(vec![
+                OscType::Int(a),
+                OscType::Int(7),
+                OscType::Int(4),
+                OscType::Int(2),
+                OscType::String("snapped to the grid".into()),
+            ]),
+            ClientId::Web,
+        );
+
+        // One rule and no branch: everything at or below the stamp is settled,
+        // and what is still out stays out.
+        assert!(!host.outbox.borrow().is_pending(1, 10));
+        assert!(host.outbox.borrow().is_pending(1, 11));
+        assert_eq!(host.outbox.borrow().pending()[0].seq, b);
+
+        let outbox = host.outbox.borrow();
+        let last = outbox.last().expect("the owner said something");
+        assert_eq!(last.doc_version, 7);
+        assert_eq!(outbox.generation(4), Some(2));
+        assert_eq!(last.reason.as_deref(), Some("snapped to the grid"));
+    }
+
+    #[test]
+    fn an_acknowledgement_with_nothing_to_say_is_still_an_acknowledgement() {
+        // A refusal *is* this message: the owner pushed the previous value and
+        // stamped it, so there is no reason and no generation to report -- and
+        // the pending edit must still retire, or the host waits forever on an
+        // answer it already has.
+        let mut host = Host::new();
+        let seq = host.outbox.borrow_mut().stamp(1, 10);
+        host.handle_packet(
+            ack_msg(vec![OscType::Int(seq), OscType::Int(0)]),
+            ClientId::Web,
+        );
+        assert!(host.outbox.borrow().pending().is_empty());
+        assert_eq!(host.outbox.borrow().last().unwrap().reason, None);
+    }
+
+    #[test]
+    fn a_malformed_acknowledgement_changes_nothing() {
+        let mut host = Host::new();
+        host.outbox.borrow_mut().stamp(1, 10);
+        host.handle_packet(ack_msg(vec![]), ClientId::Web);
+        assert_eq!(host.outbox.borrow().pending().len(), 1);
+    }
+
+    #[test]
+    fn freeing_a_window_drops_the_edits_it_had_in_flight() {
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(1, r#"{"type":"window","children":[]}"#),
+            ClientId::Web,
+        );
+        host.outbox.borrow_mut().stamp(1, 10);
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_FREE.into(),
+                args: vec![OscType::Int(1)],
+            }),
+            ClientId::Web,
+        );
+        assert!(host.outbox.borrow().pending().is_empty());
     }
 
     fn bind_msg(id: i32, target: Vec<OscType>) -> OscPacket {

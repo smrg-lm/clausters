@@ -29,8 +29,9 @@ use super::{GestureCtx, GestureEffect};
 /// It is a **notification**, not a value, so it goes out as an event even from a
 /// bound widget: a binding says where this widget's *value* goes, and where the
 /// keyboard is pointing is not it.
-fn report(out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32, gained: bool) {
+fn report(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32, gained: bool) {
     emit(
+        host,
         out,
         def_id,
         widget_id,
@@ -72,12 +73,12 @@ pub(super) fn set(
     }
     if let Some((def, id)) = from {
         host.clear_focus();
-        report(out, def, id, false);
+        report(host, out, def, id, false);
         out.push(GestureEffect::Redraw(def));
     }
     if let Some(id) = to {
         host.focus(ctx.def_id, id);
-        report(out, ctx.def_id, id, true);
+        report(host, out, ctx.def_id, id, true);
         out.push(GestureEffect::Redraw(ctx.def_id));
     }
 }

@@ -308,12 +308,17 @@ impl App {
         }
     }
 
-    /// Emits `/gui_event widget_id <args…>` to the window's script.
-    pub(super) fn emit(&self, def_id: i32, widget_id: i32, mut args: Vec<OscType>) {
+    /// Emits `/gui_event widget_id seq <args…>` to the window's script.
+    ///
+    /// The stamp is the **second** argument, before any tag, so one rule reads
+    /// every event whatever its payload: a control's bare value and a roll's
+    /// variable-length note list are both `<id> <seq> …`. A `seq` of zero means
+    /// the event is not an edit anyone will acknowledge.
+    pub(super) fn emit(&self, def_id: i32, widget_id: i32, seq: i32, mut args: Vec<OscType>) {
         let Some(ws) = self.windows.get(&def_id) else {
             return;
         };
-        let mut msg_args = vec![OscType::Int(widget_id)];
+        let mut msg_args = vec![OscType::Int(widget_id), OscType::Int(seq)];
         msg_args.append(&mut args);
         self.send(
             ws.origin,
@@ -349,7 +354,10 @@ impl App {
             }
             return;
         }
-        self.emit(def_id, widget_id, args);
+        // Stamped like any other edit: live MIDI painting reports the same
+        // payloads a hand does, and the owner has no way to tell them apart.
+        let seq = self.host.outbox.borrow_mut().stamp(def_id, widget_id);
+        self.emit(def_id, widget_id, seq, args);
     }
 
     /// The framebuffer size of a window.

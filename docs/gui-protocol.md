@@ -28,6 +28,7 @@ adding a widget are in [Architecture](architecture.md).
 | `/gui_free id` | Free a widget and its subtree. Freeing a `window`-rooted def closes its window. |
 | `/gui_query id` | Ask for a widget's state. Replies `/gui_info id type key value …` — **what the widget is now**, which is the def's props with **every edit the user has made since** laid over them: a dragged control's value, a moved clip's `offset`/`dur`, a lane's mute/solo/level, a plane's `view_x`/`view_y`, an edited curve's `points`, a roll's `notes`, a score's `selected`. (A `/gui_set` needs no such correction — it is already the document.) The reply is flat OSC arguments, so it carries **scalars only**: a structural prop nothing edits (`theme`, `boxes`, `data`) is not reported, and asking for one means keeping the tree that was sent — but an **edited** structure is reported as the JSON **string** its own `/gui_set` already accepts (`points`, `notes`, `osc`), so what a query gives back is what a set would take. The `axes` pair is recorded **flat** (`ruler`, `view_start`, `min`, …) precisely so a query can answer it, while the node's `type` is kept as the tree wrote it. An **empty type** (`""`) means no such widget — the host answers either way, as the audio server replies even on a miss. |
 | `/gui_bind id "server" address prefix…` | Forward this widget's value **straight to the audio server**, bypassing the script: on every change the host sends `address` with the fixed `prefix` arguments followed by the value (e.g. `"/node_set" 1001 "freq"` makes the widget send `/node_set 1001 freq <value>`). A bound widget stops emitting `/gui_event`. |
+| `/gui_ack seq docVersion [source generation…] [reason]` | **Answer the edits this host emitted, up to `seq`.** The reply `/gui_event` never had, and the thing that lets a host draw an edit before it is confirmed without lying about it. There is no success flag: the values the owner decided ride as ordinary `/gui_set`s **in the same bundle**, and *applied*, *applied transformed* and *refused* are one message — a refusal is simply the previous value pushed back. Send it **always**, including when nothing changed. `seq` is monotonic, so one number retires every edit at or below it and a lost acknowledgement is harmless; `docVersion` is the document's version after applying; each `source generation` pair reports material whose *content* changed while its identity stayed put (a destructive edit), which is the only thing that can tell a reader its copy is stale; `reason` is informational and read by nothing in the mechanism. |
 | `/gui_bind id "widget" target prop` | Apply this widget's value to **another widget's property**, as a `/gui_set target prop <value>` would — a `menu` flipping a `stack`'s `index`, a slider driving a plot's `max`. A multi-value edit-back payload rides as the JSON string the prop already takes. A binding fires an **apply, never another binding**: the target's own binding does not fire from it, so two widgets bound to each other settle instead of cascading (stated, not detected — the chain is one hop by construction). |
 | `/gui_bind id` | (no target) Remove the binding; the widget emits events again. |
 | `/gui_load name` | Instantiate a **persisted** GuiDef by name (the host replays it as its saved `/gui_def`). Needs a data directory. |
@@ -138,8 +139,10 @@ The host pushes back to the script that built the window:
 
 | Message | Meaning |
 |---|---|
-| `/gui_event id <value>` | A control changed: a float (`slider`/`knob`/`number`), an int (`toggle` 0/1, `menu` index, `button` press), or a string (`text`). |
-| `/gui_event id <tag> <flat values…>` | A view wrote data back. The tag names *what* was edited; the values are flat OSC primitives (never a new address — see below). |
+| `/gui_event id seq <value>` | A control changed: a float (`slider`/`knob`/`number`), an int (`toggle` 0/1, `menu` index, `button` press), or a string (`text`). |
+| `/gui_event id seq <tag> <flat values…>` | A view wrote data back. The tag names *what* was edited; the values are flat OSC primitives (never a new address — see below). |
+
+**`seq` is the second argument of every event**, before any tag, so one rule reads them all whatever the payload. It is the host's stamp on the edit, and what an acknowledgement names — see *Answering an event* below.
 | `/gui_closed id` | The window was closed by the user. |
 
 The **edit-back payloads**:
@@ -170,6 +173,20 @@ The **edit-back payloads**:
 
 Edited data flows as a **payload, never a new address**: the `/gui_*` family does
 not grow per widget.
+
+### Answering an event
+
+An event is a **proposal**, not a fact. The host owns no data — a placement belongs to the arrangement, a sample to a source, a note to whoever holds the timeline — so what it emits is an edit for the owner to apply, and between the gesture and the answer there is a gap the host draws across. `/gui_ack` is what closes it.
+
+The rule is one line on each side. The host stamps every event with a monotonic `seq` and keeps it *pending*. The owner applies what it can, pushes whatever state that left as ordinary `/gui_set`s, and ends the **same bundle** with `/gui_ack seq …`. The host then retires every pending edit at or below that stamp and adopts what arrived.
+
+Three things follow, and they are the whole design:
+
+- **There is no branch for a refusal.** *Applied verbatim*, *applied transformed* and *refused* are one message, because the value pushed is simply what the document now says — and a refusal is the previous value. An owner that snaps a placement to a musical grid, or declines an edit to material a generator produced, says so by pushing what it actually has.
+- **An unanswered edit is one the host waits on forever**, so the acknowledgement is sent even when nothing changed. Silence is not a refusal; it is a hang.
+- **The stamp is what tells two gestures apart.** Without it an answer to one edit is indistinguishable from an answer to another on the same widget, which is exactly the case a host with an edit still in flight is in.
+
+The acknowledgement is a **verb rather than a property** because it is scoped to the conversation and not to the tree: `seq` is per client, so two clients driving one window would collide on a single prop, and it does not round-trip, which a property here has to. It rides *after* the value pushes in the bundle, so the host never retires an edit before the state that edit produced has arrived.
 
 ## The model: containers, axes and elements
 

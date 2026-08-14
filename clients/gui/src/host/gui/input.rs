@@ -74,8 +74,9 @@ impl App {
                 GestureEffect::Emit {
                     def_id,
                     widget_id,
+                    seq,
                     args,
-                } => self.emit(def_id, widget_id, args),
+                } => self.emit(def_id, widget_id, seq, args),
                 GestureEffect::Redraw(def_id) => self.redraw(def_id),
                 GestureEffect::ReleasePointer(def_id) => self.release_pointer(def_id),
                 // A desktop window is not inside a document: there is nothing

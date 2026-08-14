@@ -40,7 +40,7 @@ from ..form.render import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from ..seq.timeline import MidiEvent, OscEvent, Timeline
-from .guidef import clip, patch, pianoroll, scroll, timeruler, track, window
+from .guidef import _flat_notes, clip, patch, pianoroll, scroll, timeruler, track, window
 from .transport import Transport
 
 __all__ = ["Editor"]
@@ -143,6 +143,9 @@ class Editor:
         #: edit-back route: the dedicated roll, and every clip with a roll body
         #: (a body carries no id, so its notes arrive tagged with the clip's).
         self._rolls: dict = {}
+        #: What the host should be drawing instead of what it drew, collected
+        #: while one event is routed and sent with its acknowledgement.
+        self._corrections: list = []
         #: patch widget id -> (logical `Group`, its box-order member handles) —
         #: the directed-patch view of a logical group, for its edit-back route.
         self._patches: dict = {}
@@ -378,8 +381,8 @@ class Editor:
     # ---- the edit-back: a dragged clip becomes a placement ----
 
     def apply(self, addr: str, args) -> bool:
-        """Apply one message from the host to the **arrangement**. Returns whether
-        the composition changed.
+        """Apply one message from the host to the **arrangement**, and **answer
+        it**. Returns whether the composition changed.
 
         The clip edit-back (``/gui_event <id> "clip" <offset> <dur>``, the payload
         a drag or a resize sends) is resolved through the widget registry to the
@@ -403,8 +406,32 @@ class Editor:
             if not args or self._window is None or int(args[0]) == self._window:
                 self._window = None
             return False
-        if addr != "/gui_event" or len(args) < 2:
+        if addr != "/gui_event" or len(args) < 3:
             return False
+        # ``<id> <seq> <tag> <payload…>``: the stamp is the second argument of
+        # every event. It is what an acknowledgement names, so it is read here
+        # and answered below -- an owner that applies an edit and says nothing
+        # leaves the host drawing what the hand did.
+        seq, args = int(args[1]), (args[0], *args[2:])
+        self._corrections = []
+        # Only what this editor draws is this editor's to answer. A poll loop
+        # may be shared with a second editor, and answering for its window would
+        # retire a pending edit nobody applied -- the host would adopt a picture
+        # the real owner never saw.
+        if not self._owns(int(args[0])):
+            return False
+        changed = self._route(args)
+        # Answered whatever happened, and answered with a *value*. There is no
+        # success flag: the state this editor decided rides as the corrections
+        # `_route` collected, and a refusal is simply the previous value among
+        # them. Applied, transformed and refused are one message.
+        self._acknowledge(seq)
+        return changed
+
+    def _route(self, args) -> bool:
+        """One `/gui_event` payload onto the arrangement, with the stamp already
+        taken off. Returns whether the composition changed; `apply` is what
+        answers the host."""
         if args[1] == "locate":
             # A click on a lane's ruler (or its empty space): seek. A transport
             # action, not an edit — the composition did not change (and another
@@ -417,7 +444,16 @@ class Editor:
             # piano-roll: rebuild the element's timeline (a generator is
             # read-only, so it is ignored).
             element = self._rolls.get(int(args[0]))
-            return element is not None and self._apply_notes(element, args[2:])
+            if element is None:
+                return False
+            if self._apply_notes(element, args[2:]):
+                return True
+            # Read-only material: a generator's notes are a *rendering* of an
+            # algorithm, so the edit is refused -- and the refusal is the notes
+            # as they still are, sent back so the host stops drawing the one the
+            # hand moved. This is the case that used to be silent.
+            self._correct(int(args[0]), notes=_flat_notes(self._notes(element)))
+            return False
         if int(args[0]) in self._patches:
             # A logical group's directed patch: a cord drawn (rewire) or a box
             # moved (presentation).
@@ -445,12 +481,50 @@ class Editor:
             new_offset = self._snap(self.units_to_beats(offset)) - placed.base
         new_dur = self._snap(self.units_to_beats(dur)) if resized else None
         placed.owner.move(member, new_offset, new_dur)
+        # What the grid did to the gesture. The host drew the clip where it was
+        # released; if the snap moved it, saying so is the whole point of an
+        # acknowledgement carrying a value.
+        snapped_offset = self.beats_to_units(new_offset + placed.base)
+        snapped_dur = dur if new_dur is None else self.beats_to_units(new_dur)
+        if abs(snapped_offset - offset) >= 0.5 or abs(snapped_dur - dur) >= 0.5:
+            self._correct(int(args[0]), offset=snapped_offset, dur=snapped_dur)
+            offset, dur = snapped_offset, snapped_dur
         # The clip was drawn where it now is: keep the registry truthful, or the
         # next edit would measure its move against a stale placement.
         placed.offset, placed.dur = offset, dur
         self._changed()
         return True
 
+    def _owns(self, widget_id: int) -> bool:
+        """Whether this editor drew the widget an event names -- the same
+        registries every route resolves through."""
+        return (widget_id in self._clips or widget_id in self._rolls
+                or widget_id in self._patches or widget_id in self._lanes)
+
+    def _correct(self, widget_id: int, **props):
+        """What the host should be drawing instead of what it drew.
+
+        Called by `_route` when this editor did not do what the gesture asked --
+        snapped it to the grid, or refused it outright. The value travels with
+        the acknowledgement in one bundle, which is what lets the host adopt it
+        without a redefine."""
+        self._corrections.append((int(widget_id), props))
+
+    def _acknowledge(self, seq: int):
+        """Answer the host for everything up to ``seq``.
+
+        The half that was missing until now: this editor snaps a placement to
+        the musical grid and refuses an edit to a generator, and the host could
+        learn neither -- so a note dragged onto read-only material stayed drawn
+        where the hand put it, and a clip landed half a grid step from where it
+        was released. The stamp closes both, because it lets the host retire
+        what it drew and adopt what actually happened."""
+        if self._host is None or not seq:
+            return
+        if self._corrections:
+            self._host.push(seq, *self._corrections)
+        else:
+            self._host.ack(seq)
     def _apply_points(self, placed, values) -> bool:
         """A curve edited in place on an automation clip (the flat ``"points"``
         payload the `bpf` view also sends): the break-points go back onto the

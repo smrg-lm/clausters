@@ -24,6 +24,7 @@
 
 import { decodePacket, encodeMessage, oscArg } from "../base/osc.ts";
 import type { MsgArg, OscMessage } from "../base/osc.ts";
+import { encodeImmediateBundle } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
 import { WsConnection } from "../base/connection.ts";
 import { ReplyTimeout } from "../errors.ts";
@@ -107,6 +108,12 @@ export class GuiHost {
      * `free` walks to return the whole branch's ids to the pool.
      */
     private readonly children = new Map<number, number[]>();
+    /**
+     * The stamp of the last `/gui_event` seen — what `ack` answers. The host
+     * numbers every edit it emits so an owner's reply can name which one it is
+     * about; zero means nothing has arrived yet.
+     */
+    lastSeq = 0;
     private readonly onEventHandlers = new Map<number, (...args: EventArgs) => void>();
     private readonly onClosedHandlers = new Map<number, () => void>();
     private readonly handlers = new Set<(msg: OscMessage) => void>();
@@ -265,6 +272,60 @@ export class GuiHost {
     }
 
     /**
+     * `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` — answer
+     * the edits the host emitted, up to `seq`.
+     *
+     * The reply `/gui_event` never had. Without it the host cannot tell an edit
+     * the owner **refused** from one it took, so it goes on drawing what the
+     * hand did — and cannot tell which of two gestures in flight an answer
+     * belongs to.
+     *
+     * There is no success flag, because there is nothing to branch on: the
+     * values the owner decided ride as ordinary `set` calls **in the same
+     * bundle** (see `push`), and *applied*, *applied transformed* and *refused*
+     * are the same message — a refusal is simply the previous value pushed
+     * back. Send it **always**, including when nothing changed.
+     */
+    ack(
+        seq: number,
+        docVersion = 0,
+        generations: readonly (readonly [number, number])[] = [],
+        reason?: string,
+    ): void {
+        this.send("/gui_ack", ...ackArgs(seq, docVersion, generations, reason));
+    }
+
+    /**
+     * The state the owner decided, plus the acknowledgement, as **one bundle**.
+     *
+     * The acknowledgement goes last, after the values, and the whole thing is
+     * one packet: the host processes a bundle's messages in order as a unit, so
+     * it never sees a stamp retire an edit before the state that edit produced
+     * has arrived.
+     */
+    push(
+        seq: number,
+        sets: readonly (readonly [number, Record<string, PropValue>])[],
+        docVersion = 0,
+        generations: readonly (readonly [number, number])[] = [],
+        reason?: string,
+    ): void {
+        const messages: [string, MsgArg[]][] = sets.map(([id, props]) => [
+            "/gui_set",
+            [["i", id] as MsgArg, ...setArgs(props as Record<string, PropValue>)],
+        ]);
+        messages.push([
+            "/gui_ack",
+            ackArgs(seq, docVersion, generations, reason),
+        ]);
+        this.connection.send(
+            encodeImmediateBundle(
+                messages.map(([addr, args]) => ({ addr, args: args.map(oscArg) })),
+            ),
+        );
+    }
+
+    /**
      * `/gui_set <id> <k> <v> …` — update one live widget. A value that is
      * logically an array or a table (a curve's break-points, a theme) rides
      * as its **JSON string**, since an OSC key/value is a scalar.
@@ -276,13 +337,7 @@ export class GuiHost {
      * `set({ ruler: "off" })` is what it always was.
      */
     set(id: number, props: Record<string, PropValue>): void {
-        const args: MsgArg[] = [];
-        for (const [key, value] of Object.entries(props)) {
-            args.push(wireProp(key), typeof value === "object" && value !== null
-                ? JSON.stringify(value)
-                : value);
-        }
-        this.send("/gui_set", ["i", id], ...args);
+        this.send("/gui_set", ["i", id], ...setArgs(props));
     }
 
     /**
@@ -472,8 +527,13 @@ export class GuiHost {
      */
     private route(msg: OscMessage): void {
         if (msg.addr === "/gui_event" && msg.args.length > 0) {
+            // `<id> <seq> <payload…>`: the stamp is the second argument of every
+            // event, before any tag, so one rule reads them all. A handler is
+            // given the payload — the stamp is this client's bookkeeping, and
+            // `ack` is what answers it.
+            this.lastSeq = msg.args.length > 1 ? Number(msg.args[1]) : 0;
             const handler = this.onEventHandlers.get(Number(msg.args[0]));
-            if (handler) handler(...(msg.args.slice(1) as EventArgs));
+            if (handler) handler(...(msg.args.slice(2) as EventArgs));
         } else if (msg.addr === "/gui_closed" && msg.args.length > 0) {
             const id = Number(msg.args[0]);
             this.opened.delete(id);
@@ -503,4 +563,35 @@ export class GuiHost {
         this.pending.clear();
         this.handlers.clear();
     }
+}
+
+/**
+ * A `/gui_set`'s arguments for one props object — the same shaping `set` does,
+ * factored out because `push` bundles several of them with an acknowledgement.
+ */
+function setArgs(props: Record<string, PropValue>): MsgArg[] {
+    const args: MsgArg[] = [];
+    for (const [key, value] of Object.entries(props)) {
+        args.push(
+            wireProp(key),
+            typeof value === "object" && value !== null ? JSON.stringify(value) : value,
+        );
+    }
+    return args;
+}
+
+/** A `/gui_ack`'s arguments: the stamp, the document version, the source
+ * generations that moved, and an optional reason. */
+function ackArgs(
+    seq: number,
+    docVersion: number,
+    generations: readonly (readonly [number, number])[],
+    reason?: string,
+): MsgArg[] {
+    const args: MsgArg[] = [["i", Math.trunc(seq)], ["i", Math.trunc(docVersion)]];
+    for (const [source, generation] of generations) {
+        args.push(["i", Math.trunc(source)], ["i", Math.trunc(generation)]);
+    }
+    if (reason !== undefined) args.push(reason);
+    return args;
 }

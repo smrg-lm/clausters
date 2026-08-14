@@ -71,9 +71,15 @@ impl WebApp {
         for effect in effects {
             match effect {
                 GestureEffect::Emit {
-                    widget_id, args, ..
+                    widget_id,
+                    seq,
+                    args,
+                    ..
                 } => {
-                    let mut msg_args = vec![OscType::Int(widget_id)];
+                    // The stamp is the second argument on both fronts, before
+                    // any tag, so one rule reads every event whatever its
+                    // payload.
+                    let mut msg_args = vec![OscType::Int(widget_id), OscType::Int(seq)];
                     msg_args.extend(args);
                     self.queue(OscMessage {
                         addr: GUI_EVENT.into(),

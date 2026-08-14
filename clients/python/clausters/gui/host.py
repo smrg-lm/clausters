@@ -78,6 +78,10 @@ class GuiHost:
         self._children: dict[int, list[int]] = {}
         #: id -> event handler (a `WidgetHandle.on_event`) and window id ->
         #: closed handler (a `WindowHandle.on_closed`), dispatched by `pump`.
+        #: The stamp of the last ``/gui_event`` seen -- what `ack` answers. The
+        #: host numbers every edit it emits so an owner's reply can name which
+        #: one it is about; zero means nothing has arrived yet.
+        self.last_seq = 0
         self._on_event: dict = {}
         self._on_closed: dict = {}
         #: the ``clausters-gui`` process this host started and owns (`boot`), if
@@ -266,6 +270,69 @@ class GuiHost:
             args += [k, v]
         self._osc.send_msg(self.target, "/gui_set", id, *args)
 
+    def ack(self, seq: int, doc_version: int = 0, generations=(), reason=None):
+        """``/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]`` —
+        answer the edits this host emitted, up to ``seq``.
+
+        The reply ``/gui_event`` never had. Without it the host cannot tell an
+        edit the owner **refused** from one it took, so it goes on drawing what
+        the hand did -- and cannot tell which of two gestures in flight an answer
+        belongs to.
+
+        There is no success flag, because there is nothing to branch on: the
+        values the owner decided ride as ordinary `set` calls **in the same
+        bundle** (see `push`), and *applied*, *applied transformed* and
+        *refused* are the same message -- a refusal is simply the previous value
+        pushed back. Send it **always**, including when nothing changed.
+
+        Args:
+            seq: the last stamp processed. Monotonic, so one number retires
+                every edit at or below it and a lost acknowledgement is
+                harmless.
+            doc_version: the document's version after applying.
+            generations: ``(source, generation)`` pairs for material whose
+                *content* changed -- the only thing that can tell a reader its
+                copy is stale, since a destructive edit leaves the identity put.
+            reason: why an edit was refused or transformed. Informational.
+        """
+        args = [int(seq), int(doc_version)]
+        for source, generation in generations:
+            args += [int(source), int(generation)]
+        if reason is not None:
+            args.append(str(reason))
+        self._osc.send_msg(self.target, "/gui_ack", *args)
+
+    def push(self, seq: int, *sets, doc_version: int = 0, generations=(),
+             reason=None):
+        """The state the owner decided, plus the acknowledgement, as **one
+        bundle**.
+
+        Args:
+            seq: the stamp being answered (see `ack`).
+            sets: ``(id, props)`` pairs, each becoming a ``/gui_set``.
+            doc_version, generations, reason: as in `ack`.
+
+        The acknowledgement goes **last**, after the values, and the whole thing
+        is one packet: the host processes a bundle's messages in order as a
+        unit, so it never sees a stamp retire an edit before the state that
+        edit produced has arrived.
+        """
+        messages = []
+        for id, props in sets:
+            args = []
+            for k, v in props.items():
+                if isinstance(v, (dict, list, tuple)):
+                    v = json.dumps(list(v) if isinstance(v, tuple) else v)
+                args += [k, v]
+            messages.append(("/gui_set", int(id), *args))
+        ack = [int(seq), int(doc_version)]
+        for source, generation in generations:
+            ack += [int(source), int(generation)]
+        if reason is not None:
+            ack.append(str(reason))
+        messages.append(("/gui_ack", *ack))
+        self._osc.send_bundle(self.target, 0.0, *messages)
+
     def focus(self, id: int, on: bool = True):
         """``/gui_set <id> focus 1`` — point the keyboard at this widget
         (``on=False`` gives the focus up).
@@ -377,9 +444,14 @@ class GuiHost:
         `WindowHandle.on_closed` for ``/gui_closed``). A ``/gui_closed`` also
         drops the window from the open set. Returns whether a callback ran."""
         if addr == "/gui_event" and args:
+            # ``<id> <seq> <payload…>``: the stamp is the second argument of
+            # every event, before any tag, so one rule reads them all. A
+            # callback is handed the payload -- the stamp is the host's
+            # bookkeeping, and `ack` is what answers it.
+            self.last_seq = int(args[1]) if len(args) > 1 else 0
             func = self._on_event.get(int(args[0]))
             if func is not None:
-                func(*args[1:])
+                func(*args[2:])
                 return True
         elif addr == "/gui_closed" and args:
             wid = int(args[0])

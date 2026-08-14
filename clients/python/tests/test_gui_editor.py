@@ -12,6 +12,11 @@ import pytest
 from clausters.defs import SynthDef, control, in_, out, sine
 from clausters.defs.buffer import Buffer as ServerBuffer
 from clausters.gui.editor import Editor, _logical_patch
+
+#: The stamp every `/gui_event` carries as its second argument. Any non-zero
+#: number does here: what the editor answers with it is the host's business, and
+#: these tests have no host attached (`_acknowledge` is a no-op without one).
+SEQ = 1
 from clausters.form import Buffer, Event, Generator, Group, Sequence, Track
 from clausters.form.group import LOGICAL
 from clausters.seq.event import Event as SeqEvent
@@ -190,7 +195,7 @@ def test_a_note_edit_rewrites_the_editable_timeline():
     wid = next(iter(ed._rolls))
     # Move pitch 60 -> 62 and add a note; times/durs in timeline units.
     edited = [0.0, BEAT, 62, 100, 0, 1.0 * BEAT, 0.5 * BEAT, 67, 90, 0]
-    assert ed.apply("/gui_event", [wid, "notes", *edited]) is True
+    assert ed.apply("/gui_event", [wid, SEQ, "notes", *edited]) is True
     items = tl.range(0.0, float("inf"))
     pitches = [it.get("midinote") for _b, it in items if hasattr(it, "get")]
     assert pitches == [62, 67]                       # the notes were rewritten
@@ -208,7 +213,7 @@ def test_a_generator_material_is_read_only_in_the_piano_roll():
     ed.draw()
     wid = next(iter(ed._rolls))
     # A generator is forward-only: the edit is ignored (no editable timeline).
-    assert ed.apply("/gui_event", [wid, "notes", 0.0, BEAT, 65, 100, 0]) is False
+    assert ed.apply("/gui_event", [wid, SEQ, "notes", 0.0, BEAT, 65, 100, 0]) is False
     assert ed.dirty is False
 
 
@@ -224,7 +229,7 @@ def test_a_note_edited_in_a_clip_body_reaches_the_arrangement():
 
     # Pitch 60 -> 62, moved half a beat in; times are relative to the clip.
     edited = [0.5 * BEAT, BEAT, 62, 100, 0, 1.0 * BEAT, 0.5 * BEAT, 64, 90, 0]
-    assert ed.apply("/gui_event", [roll["id"], "notes", *edited]) is True
+    assert ed.apply("/gui_event", [roll["id"], SEQ, "notes", *edited]) is True
     assert ed.dirty is True
     items = tl.range(0.0, float("inf"))
     assert [(b, it.get("midinote")) for b, it in items
@@ -243,7 +248,7 @@ def test_a_generator_clip_body_is_read_only():
     (roll,) = clips(lane)
     # It draws the notes it will play, but there is no timeline to write onto.
     assert roll["notes"]
-    assert ed.apply("/gui_event", [roll["id"], "notes", 0.0, BEAT, 65, 100, 0]) is False
+    assert ed.apply("/gui_event", [roll["id"], SEQ, "notes", 0.0, BEAT, 65, 100, 0]) is False
     assert ed.dirty is False
 
 
@@ -263,7 +268,7 @@ def test_a_layered_clip_routes_a_note_edit_to_the_member_that_carries_it():
     (c,) = clips(lane)
     assert c["notes"] and c["points"]
 
-    assert ed.apply("/gui_event", [c["id"], "notes", 0.0, 4 * BEAT, 67, 100, 0]) is True
+    assert ed.apply("/gui_event", [c["id"], SEQ, "notes", 0.0, 4 * BEAT, 67, 100, 0]) is True
     assert [it.get("midinote") for _b, it in tl.range(0.0, float("inf"))] == [67]
 
 
@@ -310,7 +315,7 @@ def test_a_render_is_stable_across_calls():
 
 def clip_event(wid: int, offset: float, dur: float) -> tuple:
     """The payload the host sends when a clip is dragged or resized."""
-    return ("/gui_event", [wid, "clip", offset, dur])
+    return ("/gui_event", [wid, SEQ, "clip", offset, dur])
 
 
 def test_a_dragged_clip_moves_the_material_in_beats():
@@ -411,11 +416,15 @@ def test_the_composition_grows_when_a_clip_is_dragged_past_the_end():
 # ---- the transport: a cursor, and seeking to it ----
 
 class _FakeHost:
-    """Records the `/gui_set`s the editor sends (the lanes' playhead chrome), and
-    hands out widget ids like the real host's recycling pool."""
+    """Records the `/gui_set`s the editor sends (the lanes' playhead chrome) and
+    the acknowledgements it answers events with, and hands out widget ids like
+    the real host's recycling pool."""
 
     def __init__(self):
         self.sets = []
+        #: ``(seq, corrections)`` per answered event -- corrections empty when
+        #: the editor did exactly what the gesture asked.
+        self.acks = []
         self._ids = itertools.count(10_000)
 
     def alloc_id(self):
@@ -427,6 +436,12 @@ class _FakeHost:
     def set(self, id, **props):
         self.sets.append((id, props))
 
+    def ack(self, seq, doc_version=0, generations=(), reason=None):
+        self.acks.append((seq, []))
+
+    def push(self, seq, *sets, doc_version=0, generations=(), reason=None):
+        self.acks.append((seq, list(sets)))
+
 
 def test_a_locate_moves_the_transport_and_the_lanes_cursor():
     ed = editor()
@@ -434,7 +449,7 @@ def test_a_locate_moves_the_transport_and_the_lanes_cursor():
     ed.open(host)
 
     # A click on a lane's ruler: the host sends "locate" in timeline units.
-    ed.apply("/gui_event", [next(iter(ed._lanes)), "locate", 3 * BEAT])
+    ed.apply("/gui_event", [next(iter(ed._lanes)), SEQ, "locate", 3 * BEAT])
     assert ed.position == pytest.approx(3.0)
     assert not ed.dirty, "seeking is a transport action, not an edit"
 
@@ -473,7 +488,7 @@ def test_a_second_editors_events_fall_through_untouched():
     ed.open(_FakeHost())
     assert ed.apply("/gui_closed", [ed.window + 1]) is False
     assert ed.window is not None, "another window's close is not ours"
-    ed.apply("/gui_event", [99_999, "locate", 3 * BEAT])
+    ed.apply("/gui_event", [99_999, SEQ, "locate", 3 * BEAT])
     assert ed.position == 0.0, "another editor's lane is not ours to seek from"
     ed.apply("/gui_closed", [ed.window])
     assert ed.window is None
@@ -482,8 +497,8 @@ def test_a_second_editors_events_fall_through_untouched():
 def test_unknown_messages_are_ignored():
     ed = editor()
     ed.draw()
-    assert not ed.apply("/gui_event", [1, "points", 0.0, 1.0])   # a bpf edit
-    assert not ed.apply("/gui_event", [999_999, "clip", 0.0, 1.0])  # unknown id
+    assert not ed.apply("/gui_event", [1, SEQ, "points", 0.0, 1.0])   # a bpf edit
+    assert not ed.apply("/gui_event", [999_999, SEQ, "clip", 0.0, 1.0])  # unknown id
     assert not ed.apply("/clock_query.reply", [1234.0])
 
 
@@ -532,7 +547,7 @@ def test_editing_the_curve_in_place_writes_it_back_onto_the_automation():
     edited = [0.0, 200.0, 1, 0.0,
               3 * BEAT, 3000.0, 2, 0.0,
               4 * BEAT, 800.0, 1, 0.0]
-    assert ed.apply("/gui_event", [curve["id"], "points", *edited])
+    assert ed.apply("/gui_event", [curve["id"], SEQ, "points", *edited])
 
     # The automation's Env — its source of truth, what the next rendering plays.
     assert auto.to_points()[4:6] == pytest.approx([3.0, 3000.0])  # in beats again
@@ -699,7 +714,7 @@ def test_a_wire_edit_rewrites_the_members_controls_onto_a_shared_bus():
     tree = ed.draw()
     wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
 
-    assert ed.apply("/gui_event", [wid, "wire", 0, "out", 1, "in"]) is True
+    assert ed.apply("/gui_event", [wid, SEQ, "wire", 0, "out", 1, "in"]) is True
     # Both members now name one internal bus; the group declares it (audio).
     bus = hs.element.controls["out"]
     assert bus and hk.element.controls["in"] == bus
@@ -720,7 +735,7 @@ def test_a_wire_reuses_an_existing_bus_for_fan_out():
     ed = Editor(g, sample_rate=SR, tempo=TEMPO)
     tree = ed.draw()
     wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
-    ed.apply("/gui_event", [wid, "wire", 0, "out", 1, "in"])
+    ed.apply("/gui_event", [wid, SEQ, "wire", 0, "out", 1, "in"])
     # The sink joins the source's existing bus, not a fresh one.
     assert hk.element.controls["in"] == "mix"
     assert g.bus_names == ["mix"]
@@ -731,8 +746,89 @@ def test_a_graph_box_move_persists_its_position_across_a_redraw():
     tree = ed.draw()
     wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
     # A move is presentation only: the composition did not change.
-    assert ed.apply("/gui_event", [wid, "move", 1, 300.0, 120.0]) is False
+    assert ed.apply("/gui_event", [wid, SEQ, "move", 1, 300.0, 120.0]) is False
     # It survives a redraw (keyed by the group, not the widget id).
     view = [c for c in ed.draw()["children"] if is_plane(c)][0]["children"][0]
     assert view["boxes"][1]["x"] == pytest.approx(300.0)
     assert view["boxes"][1]["y"] == pytest.approx(120.0)
+
+
+# ---- the acknowledgement: an owner answers with a value ----
+
+
+def test_a_refused_note_edit_sends_the_notes_back_rather_than_saying_nothing():
+    """The case that made this whole mechanism necessary: a generator's notes are
+    a *rendering* of an algorithm, so the edit is refused -- and until now the
+    refusal was silence, which left the host drawing the note where the hand put
+    it until the next whole-tree redefine, which for a placement edit never
+    comes."""
+    from clausters.seq.pattern import Pbind, Pseq
+
+    gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
+    ed = editor(Group([(0.0, Group([(0.0, gen)], name="bass"))], name="song"))
+    host = _FakeHost()
+    ed.open(host)
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+
+    assert ed.apply("/gui_event", [clip["id"], SEQ, "notes", 0.0, BEAT, 65, 100, 0]) is False
+
+    (seq, corrections) = host.acks[-1]
+    assert seq == SEQ
+    assert len(corrections) == 1, "a refusal answers with a value, not with nothing"
+    widget_id, props = corrections[0]
+    assert widget_id == clip["id"]
+    assert props["notes"] == clip["notes"], "the notes as they still are"
+
+
+def test_a_snapped_clip_answers_with_where_it_actually_landed():
+    """The other half, and the quieter one: the editor snaps a placement to the
+    musical grid, the host drew it where it was released, and nothing used to
+    say so -- the two disagreed by up to half a grid step, silently."""
+    ed = editor(
+        Group([(0.0, Group([(0.0, Event(SeqEvent(dur=1.0), duration=1.0))],
+                           name="lead"))], name="song"),
+        quant=1.0,
+    )
+    host = _FakeHost()
+    ed.open(host)
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+
+    # Dropped at 4.3 beats on a one-beat grid: the arrangement puts it at 4.
+    ed.apply("/gui_event", [clip["id"], SEQ, "clip", 4.3 * BEAT, float(BEAT)])
+
+    (_, corrections) = host.acks[-1]
+    assert corrections, "a transformed edit answers with the value it became"
+    _, props = corrections[0]
+    assert props["offset"] == pytest.approx(4.0 * BEAT)
+
+
+def test_an_edit_taken_as_given_is_still_answered():
+    """Sent always, including when nothing was corrected: the stamp is what
+    retires the host's pending drawing, and an edit that is never answered is one
+    the host waits on forever."""
+    ed = editor(
+        Group([(0.0, Group([(0.0, Event(SeqEvent(dur=1.0), duration=1.0))],
+                           name="lead"))], name="song")
+    )
+    host = _FakeHost()
+    ed.open(host)
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+
+    ed.apply("/gui_event", [clip["id"], SEQ, "clip", 2.0 * BEAT, float(BEAT)])
+    assert host.acks[-1] == (SEQ, [])
+
+
+def test_an_event_from_another_editors_window_is_not_answered():
+    """A poll loop may be shared between two editors, and an editor that answered
+    for a window it does not own would retire a pending edit the real owner has
+    not applied."""
+    ed = editor(Group([(0.0, Group([(0.0, Event(SeqEvent(dur=1.0)))], name="lead"))],
+                      name="song"))
+    host = _FakeHost()
+    ed.open(host)
+    ed.draw()
+    assert ed.apply("/gui_event", [999_999, SEQ, "clip", 0.0, float(BEAT)]) is False
+    assert host.acks == []

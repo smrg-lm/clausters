@@ -87,6 +87,7 @@ impl Gestures {
                 interact::lane_resize(host, def_id, tid, drawn, 1.1f32.powf(steps as f32))
             {
                 emit(
+                    host,
                     &mut out,
                     def_id,
                     tid,
@@ -174,6 +175,7 @@ impl Gestures {
                     let drawn = sole.axis.body.h / ui;
                     if let Some(h) = interact::lane_resize(host, def_id, lane, drawn, factor) {
                         emit(
+                            host,
                             &mut out,
                             def_id,
                             lane,

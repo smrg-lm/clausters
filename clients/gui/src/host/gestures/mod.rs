@@ -53,6 +53,11 @@ pub enum GestureEffect {
     Emit {
         def_id: i32,
         widget_id: i32,
+        /// The stamp this edit went out with, so the owner's acknowledgement
+        /// can name it (see [`crate::host::ack`]). Rides as the **second**
+        /// argument of `/gui_event`, before the tag, so one rule reads every
+        /// event whatever its payload.
+        seq: i32,
         args: Vec<OscType>,
     },
     /// Repaint the window rooted at this def id (a gesture on one window may

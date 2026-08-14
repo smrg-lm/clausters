@@ -56,6 +56,7 @@ pub(super) fn set_scroll_view(
 ) -> bool {
     if let Some((x, y, zoom)) = interact::scroll_set_view(host, def_id, id, area, next) {
         emit(
+            host,
             out,
             def_id,
             id,
@@ -112,6 +113,7 @@ pub(super) fn set_selection(
     };
     redraw_all(out, &roots);
     emit(
+        host,
         out,
         def_id,
         id,
@@ -141,6 +143,7 @@ pub(super) fn locate_timeline(
     let pos = interact::sample_at(start, len, body.x as f64, body.w as f64, cx).max(0.0);
     let roots = host.set_timeline_cursor(id, pos);
     emit(
+        host,
         out,
         def_id,
         id,
@@ -263,6 +266,7 @@ pub(super) fn set_y_view(
         return;
     }
     emit(
+        host,
         out,
         def_id,
         id,
@@ -407,6 +411,7 @@ pub(super) fn set_x_view(
         (editor.x_start, editor.x_len) = (start, len);
     }
     emit(
+        host,
         out,
         def_id,
         id,
