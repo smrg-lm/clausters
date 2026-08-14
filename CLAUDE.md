@@ -9,6 +9,12 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   edit vocabulary and the edit log, shared by every client and by the
   `standalone` host), all in English — a roadmap plus a checkbox status per
   milestone, not an expanded completion narrative.
+  - **`ROADMAP.md` (root) orders them and defines nothing.** It says which of
+    the milestones already written in the `PLAN.md` set is taken next and why
+    that one first, naming each by its own label. A milestone's content, its
+    decisions and its acceptance are only ever in its plan; when the two
+    disagree, the plan wins. Never move content into `ROADMAP.md` — a milestone
+    that grows a decision grows it in its plan.
   - **Anything unresolved goes at the end of its plan, and carries a checkbox.**
     A gap found by use — an eye pass over an example, a path read while doing
     something else, a behavior that is correct and unclear — is written down the
