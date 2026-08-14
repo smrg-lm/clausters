@@ -92,9 +92,11 @@ paste. The crate already has all of it (O6, O7, O9) and nothing calls any of it.
   nodes on the crate's side — so it lands after O12 by construction rather than
   by preference.
 
-- ⬜ **A7's client half, narrowed: the `Editor` opens an element with a stack.**
-  Only if Phase 3 has landed A1/A2; otherwise it moves with them. Named here so
-  the dependency is visible rather than discovered.
+**Phase 2 is closed.** It carried a third entry — *A7's client half, narrowed:
+the `Editor` opens an element with a stack* — under the condition "only if Phase
+3 has landed A1/A2". It was a bet that the A track would arrive first, and the
+answer is to take the bet rather than to cancel it: A1/A2 open Phase 3, and the
+entry becomes **D8** there, after them, with a stack it can actually show.
 
 ## Phase 3 — the sample editor
 
@@ -102,22 +104,30 @@ paste. The crate already has all of it (O6, O7, O9) and nothing calls any of it.
 last of the three editing phases because it is the only one with a **server**
 prerequisite, and because it is the one whose cost is not the client's.*
 
+- ⬜ **A1 — Mean square in the pyramid.** **First of the phase**, and it is the
+  one entry here that waits on nothing at all — not the document, not the
+  server, not the editor. Before D1 the reason is mechanical: A1 takes the peak
+  cache from CLPK v2 to v3 and bumps `CORE_ABI_VERSION`, while D1 lands
+  `peaks::update_range` over that same cache. In this order `update_range` is
+  written once, over all three statistics. In the other order it is written
+  twice.
+
+- ⬜ **A2 — The RMS layer, and the `measure` prop.** Rides with A1 (they are
+  G20e's two halves) and is what proves the pyramid change by eye.
+
+- ⬜ **D8 — The editor opens an element as a signal view.** Phase 2's condition,
+  met: `Editor.open_signal` is `open_pianoroll`'s sibling, and after A2 it opens
+  an element *with a stack* rather than a bare trace. It sits before the two
+  editing milestones because without it a sample editor is a free-standing
+  example beside the arrangement rather than a view of it.
+
 - ⬜ **A sample write costs the whole buffer, not the samples written**
   *(root `PLAN.md`, "Found by use")*. `/buffer_setRange` replaces the buffer
   whole, so a draw stroke on a five-minute take copies ~115 MB per stroke. D1
   does not strictly block on it — the working copy leads while an edit session
   is open (O8) — but *hearing* each stroke does, and hearing it is the point of
-  a sample editor. It is a server milestone and it sits first in this phase
-  because the two after it are unusable live without it.
-
-- ⬜ **A1 — Mean square in the pyramid.** Before D1, and the reason is
-  mechanical: A1 takes the peak cache from CLPK v2 to v3 and bumps
-  `CORE_ABI_VERSION`, while D1 lands `peaks::update_range` over that same
-  cache. In this order `update_range` is written once, over all three
-  statistics. In the other order it is written twice.
-
-- ⬜ **A2 — The RMS layer, and the `measure` prop.** Rides with A1 (they are
-  G20e's two halves) and is what proves the pyramid change by eye.
+  a sample editor. It is a server milestone and it sits here because the two
+  after it are unusable live without it.
 
 - ⬜ **D1 — A sample is a grabbable point.** The pending overlay's first real
   drawing, and `peaks::update_range`.
@@ -148,7 +158,9 @@ partly experimental, and none of it is on the path to the complete example.*
 - ⬜ **A4 — K-weighting and the loudness family.**
 - ⬜ **A5 — The loudness layer and its read-out.**
 - ⬜ **A6 — The layer stack becomes explicit.**
-- ⬜ **A7 — The stack from the clients, and the books.**
+- ⬜ **A7 — The layer stack's rules from the clients, and the books.** What is
+  left of it once D8 has taken the client half: it rides with A6, whose rules it
+  publishes.
 - ⬜ **D5 — Spectral selection.**
 - ⬜ **D6 — The lasso.**
 - ⬜ **D7 — Spectral drawing and resynthesis** *(experimental: promoted or
