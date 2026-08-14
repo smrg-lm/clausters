@@ -350,6 +350,57 @@ imports **nothing** from the GUI (it is pure and transport-agnostic — the piec
 future client factors into the shared core), and the driver is the **only**
 converter between the arrangement's beats and the view's timeline samples.
 
+### The document: the model under the arrangement
+
+`crates/clausters-document` is the language-agnostic half of the layer above —
+the tree, what an edit *means*, and what an edit's inverse is. It exists because
+the arrangement had one implementation, in Python, and three deployments need
+it: client + host + server, a `standalone` host with no language attached, and a
+headless client. The alternative was a second implementation in another
+language, which is the parity problem the shared core exists to avoid.
+
+Four ideas fix everything in it, and the crate's own `PLAN.md` carries the
+reasoning:
+
+- **The four layers.** *Sources* (material, never overwritten) / *the document*
+  (the description of what plays when — the only thing that is "the model", and
+  where undo lives) / *presentation* (derived; invalidated, never synchronized)
+  / *screen state* (zoom, scroll, a selection in flight; never persisted, never
+  logged). A destructive edit is not an exception to "an edit never writes a
+  source": it writes a **temporary** source of its own.
+- **A leaf is opaque.** The document holds a leaf as an id, a kind and a
+  configuration blob it never interprets — never the material and never the
+  algorithm. A generator *is code*, in the language of whoever wrote it, so no
+  crate in any language can own one.
+- **An intent is absolute, and applying one happens in exactly one place.** An
+  edit states the resulting value, never an increment, which makes it idempotent
+  and makes replay unnecessary. `intent::apply` is the only implementation of
+  what an edit does; a client hands over the document and the intent and gets
+  back the new document plus an outcome, rather than applying and then
+  reporting.
+- **Two counters, and staleness is detected rather than rebased.** The document
+  carries a monotonic version and each source its own generation; an edit names
+  the state it was made against (`Against`), and one made against a superseded
+  state is refused with the value that holds. Merging is deliberately not done:
+  an edit-back payload is absolute *and* whole, so applying a stale one drops
+  whatever arrived in between.
+
+`log` is undo, and it sits here rather than in the host for the reason the host
+kept fighting: a view's log sees only the gestures that view made, so a script,
+a second editor or a re-render leaves it describing a document that moved on.
+Its one asymmetry is worth knowing before you read it — **going back is always
+data** (undoing a normalize is the old samples, and no algorithm reconstructs
+them) while **going forward need not be**, since a deterministic operation can
+store its parameters and be re-run. That is only possible with the log beside
+the document, because the owner has the algorithm and the host never did. Bulk
+inverses leave through a `Spill` store behind a trait (memory in a page, a
+temporary directory natively), content-addressed so an undo/redo pair naming the
+same span holds one copy.
+
+The wire the crate never touches is `docs/gui-protocol.md`: the host produces
+intents from gestures and draws what comes back, and the crate knows no widget.
+What joins them is the intent vocabulary, which both depend on and neither owns.
+
 ## The GUI host: structure, and how to add a widget
 
 The GUI (`clients/gui`) is a **separate process**, not code linked into the audio

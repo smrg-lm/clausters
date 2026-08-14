@@ -46,8 +46,10 @@
 //! client, so no edit can leave them stale.
 
 pub mod intent;
+pub mod log;
 
-pub use intent::{Intent, Outcome, Rules, apply};
+pub use intent::{Against, Intent, Outcome, Rules, apply};
+pub use log::{Entry, Log, MemorySpill, Spill, Step, apply_logged};
 
 use serde::{Deserialize, Serialize};
 

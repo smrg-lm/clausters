@@ -353,7 +353,7 @@ fn superseded(document: &Document, intent: &Intent, against: &Against) -> Option
 /// `None` when the document cannot describe it: the node is gone, or the body
 /// holds nothing of that shape. Both already have their own refusals, with
 /// better reasons than staleness.
-fn current(document: &Document, intent: &Intent) -> Option<Intent> {
+pub(crate) fn current(document: &Document, intent: &Intent) -> Option<Intent> {
     let id = intent.node();
     match intent {
         Intent::Place { .. } => {
