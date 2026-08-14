@@ -17,7 +17,10 @@
 //! notation while it happens.
 //!
 //! **An edit is an intent, and the preview outlives the gesture.** The release
-//! reports `"transpose" <xml:id> <steps>` — the owner's units, not pixels — and
+//! reports `"transpose" <xml:id> <position>` — the diatonic staff position the
+//! note reaches, in the owner's units rather than pixels, and **absolute** so
+//! that a resend cannot move the note twice and a page re-engraved under the
+//! gesture needs no rebasing — and
 //! the displacement **stays drawn** until the client answers with a re-engraved
 //! page, because dropping it first would show the old pitch for a frame. That
 //! is why `display_list` replaces the drawing and keeps the chrome.
@@ -215,10 +218,18 @@ impl Element for Score {
             self.data.drag = None;
             return Events::none();
         }
+        // Absolute, not the displacement: the position the note *reaches*, so
+        // the edit is idempotent and needs no rebasing against a page that
+        // moved under it. A page with no measurable staff for this element has
+        // no position to name, and a displacement would be worse than silence.
+        let Some(from) = self.data.staff_position(&drag.id) else {
+            self.data.drag = None;
+            return Events::none();
+        };
         Events::message(vec![
             OscType::String("transpose".into()),
             OscType::String(drag.id.clone()),
-            OscType::Int(drag.steps),
+            OscType::Int(from + drag.steps),
         ])
     }
 
@@ -237,10 +248,20 @@ mod tests {
     /// A one-staff page with two identified noteheads, engraved the way the
     /// client sends one: a viewBox, one glyph outline, and placed primitives.
     fn page(editable: bool) -> Score {
+        // Five staff lines one space (two diatonic steps) apart, because a
+        // pitch edit is reported as a position *on a staff* and a page without
+        // one has no position to name. The noteheads are placed two steps below
+        // the top line, so the position they report cannot be confused with the
+        // displacement of the drag that reaches it.
         let props: Map<String, Value> = serde_json::from_str(&format!(
-            r#"{{"vb":[1000,400],"step":90,"editable":{editable},
+            r#"{{"vb":[1000,1000],"step":90,"editable":{editable},
                 "glyphs":{{"E0A4":"M0 0 L100 0 L100 -100 L0 -100 Z"}},
                 "prims":[
+                  {{"k":"line","pts":[[0,20],[1000,20]],"w":4}},
+                  {{"k":"line","pts":[[0,200],[1000,200]],"w":4}},
+                  {{"k":"line","pts":[[0,380],[1000,380]],"w":4}},
+                  {{"k":"line","pts":[[0,560],[1000,560]],"w":4}},
+                  {{"k":"line","pts":[[0,740],[1000,740]],"w":4}},
                   {{"k":"glyph","cp":"E0A4","xf":[100,200,1,-1],"id":"n1"}},
                   {{"k":"glyph","cp":"E0A4","xf":[400,200,1,-1],"id":"n2"}}]}}"#
         ))
@@ -330,7 +351,7 @@ mod tests {
 
     /// An editable page displaces the element as the drag crosses whole
     /// diatonic steps, and the release reports the intent in the owner's units
-    /// — steps up the staff, never pixels.
+    /// — the staff position it lands on, never pixels and never a displacement.
     #[test]
     fn an_editable_page_transposes_in_whole_steps() {
         let metrics = Metrics::default();
@@ -345,13 +366,19 @@ mod tests {
         score.drag((press.0, press.1 - 2.0 * step_px), &input);
         assert_eq!(score.data.drag.as_ref().map(|d| d.steps), Some(2));
 
+        // The note is engraved two steps below the staff's top line, so a drag
+        // of two steps up lands it *on* that line: the payload is the position
+        // reached (0), not the displacement (2). The two differ here on
+        // purpose — with the note engraved on the line they would coincide and
+        // a relative payload would pass this test.
+        assert_eq!(score.data.staff_position("n1"), Some(-2));
         let events = score.release((press.0, press.1 - 2.0 * step_px), &input);
         assert_eq!(
             events,
             Events::message(vec![
                 OscType::String("transpose".into()),
                 OscType::String("n1".into()),
-                OscType::Int(2),
+                OscType::Int(0),
             ])
         );
         assert!(

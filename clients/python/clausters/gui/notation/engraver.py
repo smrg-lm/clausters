@@ -105,16 +105,44 @@ class Score:
         """Move a note by ``steps`` **diatonic** steps along the staff — up when
         positive — as one undo step.
 
-        This is the pitch edit, and it is deliberately expressed in steps rather
-        than in a position: the engraver's coordinate-taking ``drag`` reads an
+        This is the pitch edit as the *engraver* expresses it, in steps rather
+        than in a position, because its coordinate-taking ``drag`` reads an
         absolute page y in a frame that does not line up with the display list's
         (passing a note its own drawn y moves it six steps), so a caller would
-        have to carry an unexplained offset. Steps are exact, and the host
-        already knows the staff geometry needed to turn a gesture into them.
+        have to carry an unexplained offset. Steps are exact.
+
+        It is **not** the shape an edit travels in — a displacement made against
+        a page since re-engraved would have to be rebased. `transpose_to` is
+        what applies what a host sends; reach for this one only when the delta
+        is what you actually have.
         """
         raw = element_id.encode("utf-8")
         return bool(_native.lib().clausters_score_transpose(
             self._h, _native.as_u8(raw), len(raw), steps))
+
+    def transpose_to(self, element_id: str, position: int, page: int = 1) -> bool:
+        """Move a note **to** the diatonic staff position ``position`` on
+        ``page`` — whole steps from its staff's top line, positive upward — as
+        one undo step.
+
+        The absolute form, and what a ``"transpose"`` edit-back from the GUI
+        host carries: applying it twice leaves the note where it is, and a page
+        re-engraved under the gesture needs no rebasing. The relative call
+        underneath is the engraver's requirement, and the delta is computed
+        against the engraving rather than carried from wherever the gesture
+        happened — which is the point, since the two can differ.
+
+        Host and engraver read the position off the same drawing, so a position
+        named by one and resolved by the other cannot mean two things.
+
+        Returns whether the note is now at ``position`` — **True when it was
+        already there**, since the requested state holds and a resend must be
+        harmless. False when the element is not on that page, the page has no
+        staff to measure against, or the engraver refused the move.
+        """
+        raw = element_id.encode("utf-8")
+        return bool(_native.lib().clausters_score_transpose_to(
+            self._h, _native.as_u8(raw), len(raw), position, page))
 
     def edit(self, action: str, **param) -> bool:
         """Apply one raw editor action (``set``, ``insert``, ``delete``, ...) as

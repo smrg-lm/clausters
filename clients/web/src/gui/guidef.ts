@@ -1503,8 +1503,11 @@ export function clip(
  * `cursors` (the engraved timemap) and `step` (page units per diatonic step)
  * — which a client produces from its own score. A click emits `"element"`
  * with the primitive's `xml:id`; `editable` turns on the drag that emits
- * `"transpose" id steps`, a *request* the driver applies and answers with a
- * re-engraved page. The playback cursor works exactly as a timeline view's:
+ * `"transpose" id position` — the diatonic staff position the note *reaches*,
+ * from its staff's top line, positive upward — a *request* the driver applies
+ * and answers with a re-engraved page. The position is absolute rather than a
+ * displacement, so a resend cannot move the note twice and a page re-engraved
+ * under the gesture needs no rebasing. The playback cursor works exactly as a timeline view's:
  * `playheadAt` anchors it to the engine clock, `playhead` is a static time in
  * milliseconds.
  */

@@ -155,12 +155,17 @@ impl Score {
     /// Move the note `element_id` by `steps` **diatonic** steps along the staff —
     /// up when positive — as one undo step.
     ///
-    /// This is the pitch edit, and it is deliberately expressed in steps rather
-    /// than in a position: verovio's coordinate-taking `drag` reads an absolute
-    /// page y in a frame that does not line up with the display list's (passing a
-    /// note its own drawn y moves it six steps), so a caller would have to carry
-    /// an unexplained offset. Steps are exact, and a host already knows the staff
-    /// geometry needed to turn a gesture into them.
+    /// This is the pitch edit as **verovio** expresses it, and it is in steps
+    /// rather than in a position because verovio's coordinate-taking `drag`
+    /// reads an absolute page y in a frame that does not line up with the
+    /// display list's (passing a note its own drawn y moves it six steps), so a
+    /// caller would have to carry an unexplained offset. Steps are exact.
+    ///
+    /// It is **not** the shape an edit travels in: a displacement made against
+    /// a page that has since been re-engraved has to be rebased, which is why
+    /// the wire carries a position and [`Score::transpose_to`] is what applies
+    /// one. Reach for this directly only when the delta is what you actually
+    /// have.
     pub fn transpose(&mut self, element_id: &str, steps: i32) -> bool {
         if steps == 0 {
             return false;
@@ -174,6 +179,33 @@ impl Score {
         let actions = vec![action; steps.unsigned_abs() as usize];
         let _guard = ffi_lock();
         self.apply_locked(&actions)
+    }
+
+    /// Move the note `element_id` **to** the diatonic staff position
+    /// `position` on `page` — whole steps from its staff's top line, positive
+    /// upward — as one undo step.
+    ///
+    /// This is the pitch edit as it **travels**: absolute, so applying it twice
+    /// leaves the note where it is and a page re-engraved under the gesture
+    /// needs no rebasing. The relative call underneath is verovio's
+    /// requirement, not the wire's, and the delta is computed here against the
+    /// engraving rather than carried from wherever the gesture happened —
+    /// which is the whole point, since the two can differ.
+    ///
+    /// Both sides read the position off the same drawing
+    /// (`clausters_core::notation::DisplayList::staff_position`), so a host
+    /// naming a position and this resolving one cannot disagree about what it
+    /// means.
+    ///
+    /// Returns whether the note is now at `position`: **true when it was
+    /// already there**, since the requested state holds and a resend must be
+    /// harmless. False when the element is not on that page, the page has no
+    /// staff to measure against, or verovio refused the move.
+    pub fn transpose_to(&mut self, element_id: &str, position: i32, page: i32) -> bool {
+        let Some(from) = self.display_list(page).draw.staff_position(element_id) else {
+            return false;
+        };
+        from == position || self.transpose(element_id, position - from)
     }
 
     /// Apply one raw verovio editor action (`set`, `insert`, `delete`, ...) as a
@@ -357,6 +389,45 @@ mod tests {
             vec![62, 62, 64, 65, 67, 69, 71, 72],
             "the first note is a step up, the rest untouched"
         );
+    }
+
+    /// The absolute form lands on the position it names, whatever the note's
+    /// own is — the property that lets an edit cross a wire.
+    #[test]
+    fn transposing_to_a_position_lands_on_it() {
+        let mut sc = score();
+        let ids = note_ids(&sc.display_list(1));
+        let target = sc.display_list(1).draw.staff_position(&ids[0]).unwrap() + 2;
+        assert!(sc.transpose_to(&ids[0], target, 1), "verovio accepts it");
+        assert_eq!(
+            sc.display_list(1).draw.staff_position(&ids[0]),
+            Some(target),
+            "the note is at the position that was named"
+        );
+    }
+
+    /// The acceptance the absolute form exists for: a resend must be harmless.
+    /// A relative payload applied twice would move the note twice.
+    #[test]
+    fn transposing_to_the_same_position_twice_moves_the_note_once() {
+        let mut sc = score();
+        let ids = note_ids(&sc.display_list(1));
+        let target = sc.display_list(1).draw.staff_position(&ids[0]).unwrap() + 3;
+        assert!(sc.transpose_to(&ids[0], target, 1));
+        let once: Vec<i32> = sc.display_list(1).notes.iter().map(|n| n.pitch).collect();
+
+        assert!(
+            sc.transpose_to(&ids[0], target, 1),
+            "already there is success, not a refusal -- the requested state holds"
+        );
+        let twice: Vec<i32> = sc.display_list(1).notes.iter().map(|n| n.pitch).collect();
+        assert_eq!(once, twice, "the second application changed nothing");
+    }
+
+    #[test]
+    fn an_unplaceable_transpose_target_is_refused_rather_than_guessed() {
+        let mut sc = score();
+        assert!(!sc.transpose_to("no-such-id", 0, 1));
     }
 
     #[test]

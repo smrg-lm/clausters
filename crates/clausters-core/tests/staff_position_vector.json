@@ -1,0 +1,52 @@
+{
+  "note": [
+    "One engraved page and the staff position of each of its elements.",
+    "Read by two test suites that cannot link to each other: clausters-core's",
+    "notation::svg (DisplayList::staff_position) and the GUI host's own",
+    "ScoreData::staff_position, in the separate clients/gui workspace. The host",
+    "measures a pitch out of a display list it was sent and the client resolves",
+    "the position it names against the same drawing, so the two readings have",
+    "to agree exactly or a pitch edit lands somewhere nobody asked for.",
+    "",
+    "The geometry is deliberately awkward: a short system on a wide sheet (the",
+    "case that broke the first rule, which measured a staff line against the",
+    "viewBox instead of against the page's other horizontal strokes), a second",
+    "system far below, a ledger line and a beam to be told apart from staff",
+    "lines, and a notehead engraved off the staff."
+  ],
+  "page": {
+    "vb": [21000.0, 2800.0],
+    "glyphs": {},
+    "step": 90.0,
+    "prims": [
+      {"k": "line", "pts": [[500, 1040], [3338, 1040]], "w": 18},
+      {"k": "line", "pts": [[500, 1220], [3338, 1220]], "w": 18},
+      {"k": "line", "pts": [[500, 1400], [3338, 1400]], "w": 18},
+      {"k": "line", "pts": [[500, 1580], [3338, 1580]], "w": 18},
+      {"k": "line", "pts": [[500, 1760], [3338, 1760]], "w": 18},
+
+      {"k": "line", "pts": [[500, 2300], [3338, 2300]], "w": 18},
+      {"k": "line", "pts": [[500, 2480], [3338, 2480]], "w": 18},
+      {"k": "line", "pts": [[500, 2660], [3338, 2660]], "w": 18},
+
+      {"k": "line", "pts": [[1735, 1940], [2057, 1940]], "w": 18, "id": "ledger"},
+      {"k": "line", "pts": [[2200, 900], [2900, 900]], "w": 60, "id": "beam"},
+
+      {"k": "glyph", "cp": "E0A4", "xf": [1783, 1040, 0.72, -0.72], "id": "top_line"},
+      {"k": "glyph", "cp": "E0A4", "xf": [1900, 1130, 0.72, -0.72], "id": "first_space"},
+      {"k": "glyph", "cp": "E0A4", "xf": [2000, 1760, 0.72, -0.72], "id": "bottom_line"},
+      {"k": "glyph", "cp": "E0A4", "xf": [2100, 1940, 0.72, -0.72], "id": "below_staff"},
+      {"k": "glyph", "cp": "E0A4", "xf": [2200, 860, 0.72, -0.72], "id": "above_staff"},
+      {"k": "glyph", "cp": "E0A4", "xf": [1783, 2300, 0.72, -0.72], "id": "second_system"}
+    ]
+  },
+  "positions": {
+    "top_line": 0,
+    "first_space": -1,
+    "bottom_line": -8,
+    "below_staff": -10,
+    "above_staff": 2,
+    "second_system": 0,
+    "no_such_id": null
+  }
+}

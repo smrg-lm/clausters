@@ -37,12 +37,12 @@ Where the milestones live:
 the arrangement and the composition re-renders; after this phase the gesture is
 invertible, the model is the crate's, and an edit costs the edit.*
 
-- ⬜ **H1 — An intent is invertible from the host's side.** First because it
-  depends on nothing open (O2 is closed) and because everything after it does:
-  a log with no previous value has nothing to invert. It is also the pass that
-  converts the one relative payload left (`"transpose"` on an engraved page),
-  and a relative payload is the one thing the absolute-intent rule cannot
-  absorb later.
+- ✅ **H1 — The last relative payload becomes absolute.** Done 2026-08-14.
+  Opened as "every payload gains its previous value" and rewritten on starting
+  it: O5 already reads the inverse out of the document, so the host's previous
+  value was redundant. What was left is what nothing else can do — converting
+  `"transpose"` on an engraved page from a displacement to the staff position
+  it reaches.
 
 - ⬜ **O12 — An edit costs the edit, not the document.** Before H2 rather than
   after it, and this is the ordering call worth arguing. H2 is the first heavy

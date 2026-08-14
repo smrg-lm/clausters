@@ -253,8 +253,12 @@ pub struct Cursor {
 /// The pitch drag in flight: the element being dragged and how many diatonic
 /// steps **up** the gesture has moved it so far (negative = down). The page is
 /// drawn with that element displaced, so the drag reads as notation while it
-/// happens; the release sends the steps to the client, which owns the score and
-/// answers with a re-engraved page.
+/// happens.
+///
+/// The displacement is the *drawing's* quantity and stays one; what the release
+/// sends is the **absolute** position it lands on ([`ScoreData::staff_position`]
+/// plus these steps), because an edit that travels has to be idempotent. The
+/// client owns the score and answers with a re-engraved page.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScoreDrag {
     pub id: String,

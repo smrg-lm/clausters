@@ -86,23 +86,37 @@ impl ScoreData {
     }
 
     /// Cluster the staff lines into staves. A staff line is the one primitive
-    /// every system draws the same way — a horizontal stroke running most of
-    /// the page — and within a staff they sit exactly one space (two diatonic
-    /// steps) apart, so a wider gap starts the next system.
+    /// every system draws the same way — one of the page's **longest**
+    /// horizontal strokes — and within a staff they sit exactly one space (two
+    /// diatonic steps) apart, so a wider gap starts the next system.
+    ///
+    /// Long relative to the other horizontal strokes rather than to the page:
+    /// a short phrase engraved onto a wide sheet draws its system across a
+    /// fraction of the viewBox (a two-note page comes out 21000 units wide with
+    /// a 2838-unit system), and measuring against the viewBox finds no staff at
+    /// all. What this must tell a staff line apart from is a ledger line (a
+    /// notehead wide) and a beam (a few noteheads), both far shorter. The rule
+    /// is `clausters_core::notation::DisplayList::staves`' and is kept
+    /// identical to it: a pitch position measured here and resolved there has
+    /// to mean the same thing.
     fn index_staves(&mut self) {
-        let mut lines: Vec<(f32, f32)> = self
+        let horizontals: Vec<(f32, f32, f32)> = self
             .prims
             .iter()
             .filter_map(|p| match p {
                 Prim::Line { pts, width, .. }
-                    if pts.len() == 2
-                        && (pts[0][1] - pts[1][1]).abs() < 1.0
-                        && (pts[0][0] - pts[1][0]).abs() > 0.3 * self.vb_w =>
+                    if pts.len() == 2 && (pts[0][1] - pts[1][1]).abs() < 1.0 =>
                 {
-                    Some((pts[0][1], *width))
+                    Some(((pts[0][0] - pts[1][0]).abs(), pts[0][1], *width))
                 }
                 _ => None,
             })
+            .collect();
+        let longest = horizontals.iter().fold(0.0f32, |m, (len, ..)| m.max(*len));
+        let mut lines: Vec<(f32, f32)> = horizontals
+            .into_iter()
+            .filter(|(len, ..)| *len >= 0.5 * longest && longest > 0.0)
+            .map(|(_, y, width)| (y, width))
             .collect();
         lines.sort_by(|a, b| a.0.total_cmp(&b.0));
         lines.dedup_by(|a, b| (a.0 - b.0).abs() < 0.5);
@@ -134,6 +148,49 @@ impl ScoreData {
             .iter()
             .copied()
             .min_by(|a, b| staff_distance(a, y).total_cmp(&staff_distance(b, y)))
+    }
+
+    /// Where an engraved element sits on its staff, in **whole diatonic steps
+    /// from the staff's top line**, positive upward — the absolute coordinate a
+    /// pitch edit names instead of a displacement.
+    ///
+    /// It is the reading `ledger_ys` already performs, given a name: both
+    /// measure the same page-y against the same staff in the same `step` units,
+    /// which is what makes the position something the host may report without
+    /// owning any notation. The client can derive the identical number from the
+    /// display list it engraved and sent, so the two sides cannot disagree
+    /// about it.
+    ///
+    /// The element's **first** primitive is its notehead (verovio draws it
+    /// before the stem), and the anchor is that glyph's **placement origin**
+    /// rather than the middle of its bounds: a SMuFL notehead is drawn about
+    /// its origin, so the origin *is* the pitch, while the bounds' middle is
+    /// only the same number for a vertically symmetric outline. Ledger lines
+    /// can use the bounds — they are centred on the ink — but a pitch cannot,
+    /// and `clausters_core::notation::DisplayList::staff_position` reads the
+    /// origin, which this must agree with byte for byte.
+    pub fn staff_position(&self, id: &str) -> Option<i32> {
+        let y = self
+            .prims
+            .iter()
+            .find(|p| p.id() == Some(id))
+            .and_then(|p| {
+                Some(match p {
+                    Prim::Glyph { xf, .. } | Prim::Fill { xf, .. } => xf.ty,
+                    Prim::Line { pts, .. } => {
+                        let (lo, hi) = pts.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| {
+                            (lo.min(p[1]), hi.max(p[1]))
+                        });
+                        if lo > hi {
+                            return None;
+                        }
+                        0.5 * (lo + hi)
+                    }
+                    Prim::Text { y, .. } => *y,
+                })
+            })?;
+        let staff = self.staff_at(y)?;
+        Some((((staff.y0 - y) / self.step).round()) as i32)
     }
 
     /// The MEI `xml:id` of the element under the screen point `(x, y)`, with the

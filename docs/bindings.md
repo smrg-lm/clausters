@@ -229,6 +229,7 @@ engraving asks a server for it.
 | `clausters_score_display_list` | — | `n/a` — as above |
 | `clausters_score_mei` | — | `n/a` — as above |
 | `clausters_score_transpose` | — | `n/a` — as above |
+| `clausters_score_transpose_to` | — | `n/a` — as above. The absolute form, and the one an edit travels in: `transpose` is verovio's relative call and stays for a caller that has the delta |
 | `clausters_score_edit` | — | `n/a` — as above |
 | `clausters_score_undo` | — | `n/a` — as above |
 | `clausters_score_redo` | — | `n/a` — as above |

@@ -20,7 +20,7 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 use roxmltree::{Document, Node};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const XLINK: &str = "http://www.w3.org/1999/xlink";
 
@@ -28,7 +28,7 @@ const XLINK: &str = "http://www.w3.org/1999/xlink";
 /// viewBox, `glyphs` maps a SMuFL codepoint (uppercase hex) to its outline path
 /// `d`, `prims` are the placed primitives, and `step` is page units per
 /// diatonic step (the quantum a pitch drag on the page counts in).
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DisplayList {
     pub vb: [f64; 2],
     pub glyphs: BTreeMap<String, String>,
@@ -39,7 +39,7 @@ pub struct DisplayList {
 /// One placed primitive. The `k` discriminator names the kind; every primitive
 /// carries the `id` of the element it belongs to (omitted when it belongs to no
 /// element — layer/staff furniture above the note level).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "k")]
 pub enum Prim {
     /// A SMuFL glyph placed by an affine `xf` = `[tx, ty, sx, sy]`; its outline
@@ -562,6 +562,110 @@ fn parse_line(d: &str) -> Option<(f64, f64, f64, f64)> {
     ))
 }
 
+/// One engraved staff: the page-y of its top and bottom lines.
+///
+/// Derived from the drawing rather than from the document, because a page is
+/// all a reader of a display list has — which is the same position the GUI host
+/// is in, and the reason this lives here instead of in either consumer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Staff {
+    pub y0: f64,
+    pub y1: f64,
+}
+
+impl DisplayList {
+    /// The staves on this page: its longest horizontal strokes, clustered into
+    /// systems.
+    ///
+    /// Within a staff the lines sit one space — two diatonic steps — apart, so
+    /// a wider gap starts the next system. Sorted top to bottom.
+    ///
+    /// A staff line is picked out by being **long relative to the other
+    /// horizontal strokes on the page**, not relative to the page: a short
+    /// phrase engraved onto a wide sheet draws a system across a fraction of
+    /// it, and measuring against the viewBox would find no staff at all — which
+    /// is exactly what it did before this rule replaced it. What it has to be
+    /// told apart from is ledger lines (a notehead wide) and beams (a few
+    /// noteheads), both an order of magnitude shorter, so the threshold has
+    /// room either way.
+    pub fn staves(&self) -> Vec<Staff> {
+        let horizontals: Vec<(f64, f64)> = self
+            .prims
+            .iter()
+            .filter_map(|p| match p {
+                Prim::Line { pts, .. } if pts.len() == 2 && (pts[0][1] - pts[1][1]).abs() < 1.0 => {
+                    Some(((pts[0][0] - pts[1][0]).abs(), pts[0][1]))
+                }
+                _ => None,
+            })
+            .collect();
+        let longest = horizontals.iter().fold(0.0f64, |m, (len, _)| m.max(*len));
+        let mut ys: Vec<f64> = horizontals
+            .into_iter()
+            .filter(|(len, _)| *len >= 0.5 * longest && longest > 0.0)
+            .map(|(_, y)| y)
+            .collect();
+        ys.sort_by(f64::total_cmp);
+        ys.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+        let gap = 2.5 * self.step;
+        let mut out: Vec<Staff> = Vec::new();
+        for y in ys {
+            match out.last_mut() {
+                Some(s) if y - s.y1 <= gap => s.y1 = y,
+                _ => out.push(Staff { y0: y, y1: y }),
+            }
+        }
+        out
+    }
+
+    /// Where an engraved element sits on its staff, in **whole diatonic steps
+    /// from the staff's top line**, positive upward.
+    ///
+    /// This is the absolute coordinate a pitch edit names, in place of a
+    /// displacement: an edit stated as a position is idempotent and needs no
+    /// rebasing against a page that was re-engraved under it, which is what a
+    /// gesture crossing a wire requires.
+    ///
+    /// The element's **first** primitive is its notehead — verovio draws it
+    /// before the stem — and that is what the position is measured from; the
+    /// stem and flag would pull the box off the pitch. The staff is the
+    /// **nearest** one, since a note off the staff still belongs to it (that is
+    /// what ledger lines are for). `None` when the id is not on the page or the
+    /// page has no staff to measure against.
+    pub fn staff_position(&self, id: &str) -> Option<i32> {
+        let y = self.head_y(id)?;
+        let staff = self
+            .staves()
+            .into_iter()
+            .min_by(|a, b| staff_distance(a, y).total_cmp(&staff_distance(b, y)))?;
+        Some(((staff.y0 - y) / self.step).round() as i32)
+    }
+
+    /// The page-y an element's notehead is centred on: the vertical middle of
+    /// its first primitive's bounds.
+    fn head_y(&self, id: &str) -> Option<f64> {
+        let prim = self.prims.iter().find(|p| p.id() == Some(id))?;
+        match prim {
+            // A glyph's outline is placed by `xf` = [tx, ty, sx, sy]; the
+            // baseline `ty` is where the notehead is centred, since a SMuFL
+            // notehead is drawn about its own origin.
+            Prim::Glyph { xf, .. } | Prim::Fill { xf, .. } => Some(xf[1]),
+            Prim::Line { pts, .. } => {
+                let (lo, hi) = pts.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+                    (lo.min(p[1]), hi.max(p[1]))
+                });
+                (lo <= hi).then_some(0.5 * (lo + hi))
+            }
+            Prim::Text { y, .. } => Some(*y),
+        }
+    }
+}
+
+/// How far a page-y sits from a staff — zero anywhere between its outer lines.
+fn staff_distance(s: &Staff, y: f64) -> f64 {
+    (s.y0 - y).max(y - s.y1).max(0.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -680,5 +784,81 @@ mod tests {
         let dl = svg_to_display_list("<not xml");
         assert_eq!(dl.vb, [0.0, 0.0]);
         assert!(dl.prims.is_empty());
+    }
+
+    /// A page of two systems, five lines each one space apart, with a notehead
+    /// placed at `y`. The geometry a pitch edit is measured against.
+    fn page(y: f64) -> DisplayList {
+        let line = |ly: f64| Prim::Line {
+            pts: vec![[0.0, ly], [1000.0, ly]],
+            w: 4.0,
+            id: None,
+        };
+        let mut prims: Vec<Prim> = (0..5).map(|i| line(160.0 + 180.0 * i as f64)).collect();
+        // A second system, far enough down that the gap rule starts it anew.
+        prims.extend((0..5).map(|i| line(1300.0 + 180.0 * i as f64)));
+        prims.push(Prim::Glyph {
+            cp: "E0A4".into(),
+            xf: [100.0, y, 1.0, -1.0],
+            id: Some("n1".into()),
+        });
+        DisplayList {
+            vb: [1000.0, 2200.0],
+            glyphs: BTreeMap::new(),
+            prims,
+            step: 90.0,
+        }
+    }
+
+    #[test]
+    fn the_staff_lines_cluster_into_systems() {
+        let staves = page(250.0).staves();
+        assert_eq!(
+            staves,
+            vec![
+                Staff {
+                    y0: 160.0,
+                    y1: 880.0
+                },
+                Staff {
+                    y0: 1300.0,
+                    y1: 2020.0
+                }
+            ]
+        );
+    }
+
+    /// The position is measured from the staff's top line, positive upward, in
+    /// whole diatonic steps — the absolute coordinate a pitch edit names.
+    #[test]
+    fn a_position_is_steps_above_the_top_line() {
+        assert_eq!(page(160.0).staff_position("n1"), Some(0)); // on the top line
+        assert_eq!(page(250.0).staff_position("n1"), Some(-1)); // the space below it
+        assert_eq!(page(70.0).staff_position("n1"), Some(1)); // a ledger above
+        assert_eq!(page(1300.0).staff_position("n1"), Some(0)); // the second system
+    }
+
+    /// A note off the staff still belongs to it, which is what ledger lines are
+    /// for — so the position keeps counting rather than jumping to the nearer
+    /// system once the note leaves the lines.
+    #[test]
+    fn a_note_off_the_staff_keeps_counting_from_its_own() {
+        assert_eq!(page(-110.0).staff_position("n1"), Some(3));
+    }
+
+    #[test]
+    fn an_unknown_id_and_a_staffless_page_have_no_position() {
+        assert_eq!(page(250.0).staff_position("nope"), None);
+        let bare = DisplayList {
+            vb: [1000.0, 400.0],
+            glyphs: BTreeMap::new(),
+            prims: vec![Prim::Glyph {
+                cp: "E0A4".into(),
+                xf: [100.0, 200.0, 1.0, -1.0],
+                id: Some("n1".into()),
+            }],
+            step: 90.0,
+        };
+        assert_eq!(bare.staff_position("n1"), None);
     }
 }

@@ -24,8 +24,9 @@ in the unit its static cursor is placed in, and that is all
 The page is also **clickable and editable**: every primitive carries the MEI
 ``xml:id`` it was engraved from, so a press reports the element under the cursor
 as an ``"element"`` event and the host highlights it, and dragging one up or
-down the staff reports a ``"transpose"`` of that element by whole diatonic
-steps. Because the id is the client's own, this script resolves both against its
+down the staff reports a ``"transpose"`` naming the diatonic staff position that
+element **reaches** -- absolute rather than a displacement, so a resend cannot
+move it twice. Because the id is the client's own, this script resolves both against its
 own score: a click sounds the note, a drag transposes it, re-engraves the page
 and sends it back -- the whole edit round trip, with nothing shared but the id.
 
@@ -217,8 +218,8 @@ def redo():
 def on_score(tag, *rest):
     """The page's two edit-backs, wired to the ``score`` handle. A click
     reports the MEI id under the cursor (``"element"``) — this side
-    selects it and sounds it; a drag reports a ``"transpose"`` by whole
-    diatonic steps — this side makes it true, re-engraves and sends the
+    selects it and sounds it; a drag reports a ``"transpose"`` naming the
+    staff position reached — this side makes it true, re-engraves and sends the
     page back. The handlers read `dl`/`by_id` when they run, so an edit
     made meanwhile is simply played. An event handler runs on the client's
     reply thread, and the ambient session is per-thread, so every `play`
@@ -235,19 +236,24 @@ def on_score(tag, *rest):
         play(Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
                    amp=0.15), server=server)
     elif tag == "transpose" and len(rest) >= 2:
-        # The host drew the drag; this side makes it true -- transpose by
-        # those diatonic steps, re-engrave, and send the page back, which
-        # is what retires the preview. The ids survive the edit, so
-        # `by_id` keeps indexing the same notes (at their new pitches) and
-        # the note stays selected.
-        element, steps = rest[0], int(rest[1])
-        if not score.transpose(element, steps):
+        # The host drew the drag; this side makes it true -- move the note
+        # **to** the staff position the payload names, re-engrave, and send
+        # the page back, which is what retires the preview. The ids survive
+        # the edit, so `by_id` keeps indexing the same notes (at their new
+        # pitches) and the note stays selected.
+        #
+        # The payload is a position and not a displacement, which is what
+        # makes it safe to arrive late or twice: `transpose_to` computes the
+        # step count against the engraving it has right now, so a page this
+        # side re-engraved meanwhile cannot make the edit land somewhere else.
+        element, position = rest[0], int(rest[1])
+        if not score.transpose_to(element, position):
             print(f"  refused to transpose {element}: this verovio has "
                   "no working editor")
             return
         refresh_page()
         note = by_id.get(element)
-        print(f"  transposed {element} by {steps:+d} steps"
+        print(f"  moved {element} to staff position {position:+d}"
               + (f" -> MIDI {note['pitch']}" if note else ""))
         if note is not None:
             play(Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,

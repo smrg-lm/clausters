@@ -252,6 +252,35 @@ pub unsafe extern "C" fn clausters_score_transpose(
     unsafe { &mut *h }.transpose(&id, steps) as i32
 }
 
+/// Move a note **to** the diatonic staff position `position` on `page` — whole
+/// steps from its staff's top line, positive upward — as one undo step.
+///
+/// The absolute form, and the one an edit travels in: applying it twice leaves
+/// the note where it is, and a page re-engraved under the gesture needs no
+/// rebasing. Returns `1` when the note is now at `position` (including when it
+/// already was), `0` when the element is not on that page, the page has no
+/// staff, verovio refused, or a pointer is null.
+///
+/// # Safety
+/// `h` must be a live score handle and `element_id` readable for `id_len`
+/// bytes.
+#[cfg(feature = "verovio")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_score_transpose_to(
+    h: *mut Score,
+    element_id: *const u8,
+    id_len: usize,
+    position: i32,
+    page: i32,
+) -> i32 {
+    // SAFETY: caller guarantees the handle and the range.
+    let (false, Some(id)) = (h.is_null(), unsafe { text(element_id, id_len) }) else {
+        return 0;
+    };
+    // SAFETY: caller guarantees a live handle.
+    unsafe { &mut *h }.transpose_to(&id, position, page) as i32
+}
+
 /// Apply one raw editor action (`set`, `insert`, `delete`, ...) as a single
 /// undo step — the escape hatch for what [`clausters_score_transpose`] does
 /// not cover. `param` is the action's parameter object as JSON. Returns `1`

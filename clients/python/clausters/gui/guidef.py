@@ -1138,9 +1138,14 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
 
     **Editing is opt-in** with ``editable=True``. On an editable score a drag on
     an element moves it up or down the staff in whole diatonic steps, drawn as it
-    goes, and the release emits ``"transpose" <xml:id> <steps>``. The host owns
+    goes, and the release emits ``"transpose" <xml:id> <position>`` — the staff
+    position the note **reaches**, in whole steps from its staff's top line,
+    positive upward. It is absolute rather than a displacement, so a resend
+    cannot move the note twice and one arriving after the page was re-engraved
+    still lands where it says. The host owns
     no score, so that event is a request, not a result — the driver applies it
-    (`clausters.gui.notation.Score.transpose` takes exactly those two arguments)
+    (`clausters.gui.notation.Score.transpose_to` takes exactly those two
+    arguments)
     and sends the re-engraved page back with
     ``GuiHost.set(score_id, display_list=notation.page_json(dl))``, which
     replaces the drawing in place. The displacement stays drawn until that page
