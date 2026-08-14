@@ -82,6 +82,11 @@ class GuiHost:
         #: host numbers every edit it emits so an owner's reply can name which
         #: one it is about; zero means nothing has arrived yet.
         self.last_seq = 0
+        #: The document version the last ``/gui_event`` was made against -- what
+        #: the host had been told when the hand let go. Zero means the host
+        #: cannot say, which is what an owner that never reports a version
+        #: leaves it with, and which an owner reads as *apply unchecked*.
+        self.last_version = 0
         self._on_event: dict = {}
         self._on_closed: dict = {}
         #: the ``clausters-gui`` process this host started and owns (`boot`), if
@@ -444,14 +449,16 @@ class GuiHost:
         `WindowHandle.on_closed` for ``/gui_closed``). A ``/gui_closed`` also
         drops the window from the open set. Returns whether a callback ran."""
         if addr == "/gui_event" and args:
-            # ``<id> <seq> <payload…>``: the stamp is the second argument of
-            # every event, before any tag, so one rule reads them all. A
-            # callback is handed the payload -- the stamp is the host's
-            # bookkeeping, and `ack` is what answers it.
+            # ``<id> <seq> <version> <payload…>``: the stamp and the version the
+            # edit was made against are the second and third arguments of every
+            # event, before any tag, so one rule reads them all. A callback is
+            # handed the payload -- these two are the host's bookkeeping, and
+            # `ack` is what answers them.
             self.last_seq = int(args[1]) if len(args) > 1 else 0
+            self.last_version = int(args[2]) if len(args) > 2 else 0
             func = self._on_event.get(int(args[0]))
             if func is not None:
-                func(*args[2:])
+                func(*args[3:])
                 return True
         elif addr == "/gui_closed" and args:
             wid = int(args[0])

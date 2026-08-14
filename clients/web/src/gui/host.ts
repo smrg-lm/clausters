@@ -114,6 +114,13 @@ export class GuiHost {
      * about; zero means nothing has arrived yet.
      */
     lastSeq = 0;
+    /**
+     * The document version the last `/gui_event` was made against — what the
+     * host had been told when the hand let go. Zero means the host cannot say,
+     * which is what an owner that never reports a version leaves it with, and
+     * which an owner reads as *apply unchecked*.
+     */
+    lastVersion = 0;
     private readonly onEventHandlers = new Map<number, (...args: EventArgs) => void>();
     private readonly onClosedHandlers = new Map<number, () => void>();
     private readonly handlers = new Set<(msg: OscMessage) => void>();
@@ -527,13 +534,15 @@ export class GuiHost {
      */
     private route(msg: OscMessage): void {
         if (msg.addr === "/gui_event" && msg.args.length > 0) {
-            // `<id> <seq> <payload…>`: the stamp is the second argument of every
+            // `<id> <seq> <version> <payload…>`: the stamp and the version the
+            // edit was made against are the second and third arguments of every
             // event, before any tag, so one rule reads them all. A handler is
-            // given the payload — the stamp is this client's bookkeeping, and
-            // `ack` is what answers it.
+            // given the payload — those two are this client's bookkeeping, and
+            // `ack` is what answers them.
             this.lastSeq = msg.args.length > 1 ? Number(msg.args[1]) : 0;
+            this.lastVersion = msg.args.length > 2 ? Number(msg.args[2]) : 0;
             const handler = this.onEventHandlers.get(Number(msg.args[0]));
-            if (handler) handler(...(msg.args.slice(2) as EventArgs));
+            if (handler) handler(...(msg.args.slice(3) as EventArgs));
         } else if (msg.addr === "/gui_closed" && msg.args.length > 0) {
             const id = Number(msg.args[0]);
             this.opened.delete(id);

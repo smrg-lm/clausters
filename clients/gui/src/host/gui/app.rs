@@ -308,17 +308,29 @@ impl App {
         }
     }
 
-    /// Emits `/gui_event widget_id seq <args…>` to the window's script.
+    /// Emits `/gui_event widget_id seq version <args…>` to the window's script.
     ///
-    /// The stamp is the **second** argument, before any tag, so one rule reads
-    /// every event whatever its payload: a control's bare value and a roll's
-    /// variable-length note list are both `<id> <seq> …`. A `seq` of zero means
-    /// the event is not an edit anyone will acknowledge.
+    /// The stamp and the version are the **second and third** arguments, before
+    /// any tag, so one rule reads every event whatever its payload: a control's
+    /// bare value and a roll's variable-length note list are both
+    /// `<id> <seq> <version> …`. A `seq` of zero means the event is not an edit
+    /// anyone will acknowledge; a `version` of zero means the host cannot say
+    /// what state it drew, which is what an owner that never speaks of versions
+    /// leaves it with.
+    ///
+    /// The version is read here rather than carried in the gesture's effect
+    /// because it is the **conversation's** state and not the gesture's: what
+    /// the edit was made against is what the host had been told when it went
+    /// out, which is this moment.
     pub(super) fn emit(&self, def_id: i32, widget_id: i32, seq: i32, mut args: Vec<OscType>) {
         let Some(ws) = self.windows.get(&def_id) else {
             return;
         };
-        let mut msg_args = vec![OscType::Int(widget_id), OscType::Int(seq)];
+        let mut msg_args = vec![
+            OscType::Int(widget_id),
+            OscType::Int(seq),
+            OscType::Long(self.host.outbox.borrow().version()),
+        ];
         msg_args.append(&mut args);
         self.send(
             ws.origin,

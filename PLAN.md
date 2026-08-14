@@ -1244,4 +1244,34 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-*(Nothing open here yet.)*
+- ⬜ **A sample write costs the whole buffer, not the samples written**
+  *(noticed 2026-08-14, costing the message-passing design against a monolithic
+  audio editor before opening the document crate's O4)*. `/buffer_setRange`
+  lays its runs into a **copy that replaces the buffer whole**
+  (`src/osc/server/commands/buffer.rs`), which is what lets the engine read
+  without a lock and needs no allocation on the audio thread — a good trade for
+  what the command was written for: a client filling a buffer it just
+  allocated, a wavetable, a one-shot load. It is the wrong trade for an
+  *editor*, where the same command is the write half of every destructive
+  gesture: nudging one sample of a five-minute stereo take copies ~115 MB to
+  change four bytes, and a draw stroke (the GUI track's D2) emits one of those
+  per stroke. The cost is O(buffer) where the edit is O(span), so it grows with
+  the material rather than with the work — a monolithic editor's
+  copy-on-write-per-block copies the block. Worth stating plainly: **this is the
+  only place where splitting the host from the data costs real time.** The
+  gesture itself never crosses (the host draws the drag and emits one intent on
+  release), and the commit round trip is sub-millisecond against a monolith's
+  function call — invisible. Bulk in the other direction is already solved by
+  mapped files and the shm segment. It is only this one write path that is
+  asymptotically wrong. What it needs is a way to write **in place** rather than
+  by whole-buffer replacement, which is a real RT-safety question and not a
+  patch: an in-place write races the reader unless the range is handed over
+  under something the audio thread can honour without locking (a per-buffer
+  epoch the engine checks, a swap of just the affected blocks, or a
+  copy-on-write block table that makes the copy proportional to the span). The
+  choice needs measuring, not guessing. Until it is taken, an editing client's
+  honest workaround is to keep the working copy client-side and push the buffer
+  only on confirmation — which is exactly what the document crate already
+  specifies (`crates/clausters-document/PLAN.md`, O8: the working buffer leads
+  while the session is open), so nothing is blocked; it is the *live* audition
+  of a destructive edit that pays.

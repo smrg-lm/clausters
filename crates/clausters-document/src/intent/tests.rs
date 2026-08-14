@@ -48,9 +48,9 @@ fn applying_the_same_intent_twice_leaves_the_same_document() {
         offset: 2.5,
         dur: Some(1.0),
     };
-    apply(&mut a, &intent, &Rules::none());
+    apply(&mut a, &intent, &Against::unstated(), &Rules::none());
     let once = a.clone();
-    let second = apply(&mut a, &intent, &Rules::none());
+    let second = apply(&mut a, &intent, &Against::unstated(), &Rules::none());
 
     assert_eq!(a.root, once.root);
     assert!(!second.applied, "nothing changed, so nothing was applied");
@@ -60,7 +60,11 @@ fn applying_the_same_intent_twice_leaves_the_same_document() {
 #[test]
 fn a_version_moves_only_when_the_document_did() {
     let mut d = doc();
-    assert_eq!(d.version, 0);
+    assert_eq!(
+        d.version,
+        crate::FIRST_VERSION,
+        "one, since zero means unstated"
+    );
     apply(
         &mut d,
         &Intent::Place {
@@ -68,9 +72,10 @@ fn a_version_moves_only_when_the_document_did() {
             offset: 1.0,
             dur: None,
         },
+        &Against::unstated(),
         &Rules::none(),
     );
-    assert_eq!(d.version, 1);
+    assert_eq!(d.version, crate::FIRST_VERSION + 1);
     // The same edit again changes nothing, and a version that moved anyway
     // would make every other reader re-sync for nothing.
     apply(
@@ -80,9 +85,10 @@ fn a_version_moves_only_when_the_document_did() {
             offset: 1.0,
             dur: None,
         },
+        &Against::unstated(),
         &Rules::none(),
     );
-    assert_eq!(d.version, 1);
+    assert_eq!(d.version, crate::FIRST_VERSION + 1);
 }
 
 #[test]
@@ -98,6 +104,7 @@ fn a_transformed_edit_reports_the_value_it_became() {
             offset: 4.3,
             dur: None,
         },
+        &Against::unstated(),
         &Rules::quantized(1.0),
     );
     assert!(outcome.applied);
@@ -122,6 +129,7 @@ fn an_edit_that_needed_no_transforming_says_nothing() {
             offset: 3.0,
             dur: None,
         },
+        &Against::unstated(),
         &Rules::quantized(1.0),
     );
     assert!(outcome.applied);
@@ -145,6 +153,7 @@ fn a_refusal_hands_back_the_previous_value_rather_than_an_error() {
             node: NodeId(1),
             members: vec![placed(2.0, event(9))],
         },
+        &Against::unstated(),
         &Rules::none(),
     );
     assert!(!outcome.applied);
@@ -159,7 +168,7 @@ fn a_refusal_hands_back_the_previous_value_rather_than_an_error() {
         outcome.reason.as_deref(),
         Some("this body holds no members")
     );
-    assert_eq!(d.version, 0);
+    assert_eq!(d.version, crate::FIRST_VERSION, "a refusal is not an edit");
 }
 
 #[test]
@@ -170,7 +179,7 @@ fn an_edit_naming_a_node_that_is_gone_is_refused_and_says_so() {
         offset: 1.0,
         dur: None,
     };
-    let outcome = apply(&mut d, &intent, &Rules::none());
+    let outcome = apply(&mut d, &intent, &Against::unstated(), &Rules::none());
     assert!(!outcome.applied);
     // There is no previous value to hand back for a node the document does not
     // hold, so the caller's own is what comes back -- and the reason is what
@@ -206,7 +215,7 @@ fn every_intent_is_absolute_and_reports_an_effective_value() {
         },
     ];
     for intent in &intents {
-        let outcome = apply(&mut d, intent, &Rules::none());
+        let outcome = apply(&mut d, intent, &Against::unstated(), &Rules::none());
         assert_eq!(
             std::mem::discriminant(&outcome.effective),
             std::mem::discriminant(intent),
@@ -235,6 +244,7 @@ fn a_configuration_is_replaced_whole_rather_than_patched() {
             node: NodeId(2),
             config: config(serde_json::json!({"amp": 0.5, "pan": -1})),
         },
+        &Against::unstated(),
         &Rules::none(),
     );
     let outcome = apply(
@@ -243,6 +253,7 @@ fn a_configuration_is_replaced_whole_rather_than_patched() {
             node: NodeId(2),
             config: config(serde_json::json!({"amp": 0.9})),
         },
+        &Against::unstated(),
         &Rules::none(),
     );
     assert!(outcome.applied);
@@ -268,6 +279,7 @@ fn a_transposition_travels_as_the_pitch_it_became() {
             node: NodeId(2),
             config: config(serde_json::json!({"midinote": 64})),
         },
+        &Against::unstated(),
         &Rules::none(),
     );
     assert!(outcome.applied);
@@ -289,6 +301,7 @@ fn a_set_keeps_the_ids_of_the_members_that_survived_an_edit() {
             node: NodeId(1),
             members: vec![placed(1.0, event(3)), placed(2.0, event(7))],
         },
+        &Against::unstated(),
         &Rules::none(),
     );
     let ids: Vec<NodeId> = d.root.members().iter().map(|m| m.node.id).collect();
@@ -320,6 +333,7 @@ fn writing_material_bumps_the_sources_generation_and_not_the_samples() {
             start: 100,
             values: vec![0.0, 0.5],
         },
+        &Against::unstated(),
         &Rules::none(),
     );
     assert!(outcome.applied);
@@ -339,6 +353,7 @@ fn only_material_can_be_written() {
             start: 0,
             values: vec![0.1],
         },
+        &Against::unstated(),
         &Rules::none(),
     );
     assert!(!outcome.applied);
@@ -387,8 +402,256 @@ fn a_nested_node_is_reached_wherever_it_sits() {
             offset: 7.0,
             dur: None,
         },
+        &Against::unstated(),
         &Rules::none(),
     );
     assert!(outcome.applied);
     assert_eq!(d.root.members()[0].node.members()[0].offset, 7.0);
+}
+
+// ---- O4: the version, and staleness ----
+
+/// A buffer node at a known generation, for the destructive-edit cases.
+fn material(generation: u64) -> Document {
+    Document::new(Node::new(
+        NodeId(1),
+        Body::Buffer {
+            source: SourceRef {
+                source: SourceId(4),
+                lifetime: Lifetime::Temporary,
+                generation,
+                range: None,
+            },
+            config: Opaque::none(),
+        },
+    ))
+}
+
+#[test]
+fn an_edit_made_against_the_current_version_applies() {
+    let mut d = doc();
+    let now = Against::at(d.version);
+    let outcome = apply(
+        &mut d,
+        &Intent::Place {
+            node: NodeId(2),
+            offset: 3.0,
+            dur: None,
+        },
+        &now,
+        &Rules::none(),
+    );
+    assert!(outcome.applied && !outcome.stale);
+}
+
+#[test]
+fn an_edit_made_against_a_superseded_version_is_refused_and_hands_back_the_present_value() {
+    // O4's acceptance. The editor saw version 0; something else moved the
+    // document; the edit is reported as stale rather than applied blind, and
+    // what comes back is what the document says now -- which is all the caller
+    // needs to re-sync, since adopting the effective value is what it does with
+    // every other outcome too.
+    let mut d = doc();
+    let seen = d.version;
+    apply(
+        &mut d,
+        &Intent::Place {
+            node: NodeId(3),
+            offset: 8.0,
+            dur: None,
+        },
+        &Against::unstated(),
+        &Rules::none(),
+    );
+    assert_ne!(d.version, seen, "something else edited in between");
+
+    let moved = d.version;
+    let outcome = apply(
+        &mut d,
+        &Intent::Place {
+            node: NodeId(2),
+            offset: 3.0,
+            dur: None,
+        },
+        &Against::at(seen),
+        &Rules::none(),
+    );
+    assert!(outcome.stale && !outcome.applied);
+    assert_eq!(
+        outcome.effective,
+        Intent::Place {
+            node: NodeId(2),
+            offset: 0.0,
+            dur: None,
+        },
+        "the value the document holds now, not the one that was proposed"
+    );
+    assert_eq!(d.version, moved, "a refusal is not an edit");
+}
+
+#[test]
+fn a_stale_rewrite_does_not_delete_what_arrived_in_between() {
+    // The reason the check exists at all. `SetMembers` is absolute *and*
+    // whole, so an edit made against an old picture states a list that never
+    // had the new note in it -- applying it would be a silent deletion, which
+    // is the one failure the whole mechanism is built to make impossible.
+    let mut d = doc();
+    let seen = d.version;
+    let mut grown: Vec<Member> = d.root.members().to_vec();
+    grown.push(placed(9.0, event(7)));
+    apply(
+        &mut d,
+        &Intent::SetMembers {
+            node: NodeId(1),
+            members: grown,
+        },
+        &Against::unstated(),
+        &Rules::none(),
+    );
+
+    // The editor's own list, made before the seventh note existed.
+    let outcome = apply(
+        &mut d,
+        &Intent::SetMembers {
+            node: NodeId(1),
+            members: vec![placed(1.0, event(2)), placed(4.0, event(3))],
+        },
+        &Against::at(seen),
+        &Rules::none(),
+    );
+    assert!(outcome.stale);
+    let ids: Vec<NodeId> = d.root.members().iter().map(|m| m.node.id).collect();
+    assert_eq!(ids, vec![NodeId(2), NodeId(3), NodeId(7)]);
+}
+
+#[test]
+fn an_edit_from_ahead_of_the_document_is_stale_too() {
+    // And it is the worse case rather than a harmless one: a version the
+    // document has never reached means the two are not talking about the same
+    // piece, so applying would write an edit meant for another one.
+    let mut d = doc();
+    let ahead = Against::at(d.version + 5);
+    let outcome = apply(
+        &mut d,
+        &Intent::Place {
+            node: NodeId(2),
+            offset: 3.0,
+            dur: None,
+        },
+        &ahead,
+        &Rules::none(),
+    );
+    assert!(outcome.stale && !outcome.applied);
+}
+
+#[test]
+fn an_unstated_claim_skips_the_check() {
+    // What a script looks like: it read the document a line ago, so there is no
+    // stale picture to protect, and an older client cannot say either way.
+    let mut d = doc();
+    apply(
+        &mut d,
+        &Intent::Place {
+            node: NodeId(3),
+            offset: 8.0,
+            dur: None,
+        },
+        &Against::unstated(),
+        &Rules::none(),
+    );
+    let outcome = apply(
+        &mut d,
+        &Intent::Place {
+            node: NodeId(2),
+            offset: 3.0,
+            dur: None,
+        },
+        &Against::unstated(),
+        &Rules::none(),
+    );
+    assert!(outcome.applied && !outcome.stale);
+}
+
+#[test]
+fn material_rewritten_underneath_makes_a_write_stale() {
+    let mut d = material(2);
+    let write = Intent::WriteSamples {
+        node: NodeId(1),
+        start: 100,
+        values: vec![0.25],
+    };
+    apply(&mut d, &write, &Against::unstated(), &Rules::none());
+
+    // The editor drew over generation 2; the material is at 3 now.
+    let drew_over = Against::at(d.version).with_generation(2);
+    let outcome = apply(&mut d, &write, &drew_over, &Rules::none());
+    assert!(outcome.stale && !outcome.applied);
+    assert_eq!(
+        outcome.effective,
+        Intent::WriteSamples {
+            node: NodeId(1),
+            start: 100,
+            values: Vec::new(),
+        },
+        "the samples are not in the document, so there is nothing to hand back"
+    );
+}
+
+#[test]
+fn a_generation_can_be_claimed_without_a_document_version() {
+    // A waveform view over one source holds no document at all. It can still
+    // say which generation of the material it drew, which is the only claim
+    // that means anything to it -- and it is enough to catch the conflict.
+    let mut d = material(2);
+    let write = Intent::WriteSamples {
+        node: NodeId(1),
+        start: 0,
+        values: vec![0.5],
+    };
+    let fresh = apply(
+        &mut d,
+        &write,
+        &Against::unstated().with_generation(2),
+        &Rules::none(),
+    );
+    assert!(fresh.applied && !fresh.stale);
+
+    let again = apply(
+        &mut d,
+        &write,
+        &Against::unstated().with_generation(2),
+        &Rules::none(),
+    );
+    assert!(again.stale, "the first write moved the generation past it");
+}
+
+#[test]
+fn staleness_never_shadows_a_better_reason() {
+    // A node the document does not hold has an answer of its own, and it is
+    // more useful than "stale" -- so the gate declines rather than reporting
+    // the version it could have.
+    let mut d = doc();
+    apply(
+        &mut d,
+        &Intent::Place {
+            node: NodeId(3),
+            offset: 8.0,
+            dur: None,
+        },
+        &Against::unstated(),
+        &Rules::none(),
+    );
+    let outcome = apply(
+        &mut d,
+        &Intent::Place {
+            node: NodeId(99),
+            offset: 1.0,
+            dur: None,
+        },
+        &Against::at(0),
+        &Rules::none(),
+    );
+    assert!(!outcome.applied);
+    assert!(!outcome.stale);
+    assert_eq!(outcome.reason.as_deref(), Some("no such node"));
 }

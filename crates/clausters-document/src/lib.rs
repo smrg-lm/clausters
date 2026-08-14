@@ -422,18 +422,30 @@ impl Body {
 /// stale picture be reported as stale rather than applied blind — the case a
 /// log alone cannot see, because the document can move by routes that are not
 /// gestures: a script editing the arrangement, a second editor, a re-render.
+///
+/// **A version starts at one**, because zero is what an
+/// [`intent::Against`] means by *unstated* — the same reservation the GUI
+/// host's sequence numbers make, and for the same reason: an unedited document
+/// is a real state that an editor must be able to name, so it cannot share a
+/// number with "I cannot say".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Document {
-    /// Monotonic, bumped by every applied edit.
+    /// Monotonic, bumped by every applied edit. Never zero.
     pub version: u64,
     /// The composition.
     pub root: Node,
 }
 
+/// The version an unedited document carries. Zero is reserved for *unstated*.
+pub const FIRST_VERSION: u64 = 1;
+
 impl Document {
-    /// A document at version zero.
+    /// A document that has not been edited.
     pub fn new(root: Node) -> Self {
-        Self { version: 0, root }
+        Self {
+            version: FIRST_VERSION,
+            root,
+        }
     }
 
     /// The node with this id, anywhere in the tree.

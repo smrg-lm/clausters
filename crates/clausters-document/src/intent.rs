@@ -35,6 +35,32 @@
 //! verbatim*, *applied transformed* (a snap, a clamp) and *refused* are one
 //! shape. A refusal is the previous value handed back, not an error: the caller
 //! adopts what it is given either way, and only the log cares which happened.
+//!
+//! # Staleness is detected, never rebased
+//!
+//! An absolute intent needs no rebase — that is what makes it absolute — but it
+//! still needs to know whether the document moved underneath the picture it was
+//! made against, because "absolute" and "safe" are not the same thing: a
+//! [`Intent::SetMembers`] states a set's contents *whole*, so one made against a
+//! stale picture silently deletes whatever arrived in between. The document can
+//! move by routes that are not gestures at all — a script editing the
+//! arrangement, a second editor, a re-render — and none of them is visible to a
+//! log.
+//!
+//! So [`apply`] takes an [`Against`]: the state the editor believed it was
+//! editing. When that state has been superseded the edit is **refused as stale**
+//! and the current value handed back, which needs no new path on either side —
+//! the caller adopts the returned value exactly as it adopts a snap or a
+//! refusal, and [`Outcome::stale`] is there for the one thing that does differ,
+//! which is what to tell the person: *someone else changed this*, not *not
+//! here*.
+//!
+//! Refusing rather than merging is deliberate and conservative. Merging two
+//! absolute edits means deciding which one wins per field, which is a document
+//! format's decision and not an edit vocabulary's, and getting it wrong loses
+//! work silently — the failure this whole mechanism exists to make impossible.
+//! An [`Against::unstated`] skips the check entirely, which is what a script
+//! that just read the document wants, and what an older client looks like.
 
 use crate::{Beats, Body, Document, Member, Node, NodeId, Opaque};
 use serde::{Deserialize, Serialize};
@@ -68,6 +94,55 @@ impl Rules {
             return beats;
         }
         (beats / self.quant).round() * self.quant
+    }
+}
+
+/// The state an edit was made against.
+///
+/// The two counters, named by whoever is proposing the edit. They are separate
+/// because they answer different questions and one number cannot do both: the
+/// **document version** moves when the description changes (a clip is placed, a
+/// set is rewritten), the **source generation** moves when material's *content*
+/// changes while its identity stays put (a pencil stroke). A reader that holds
+/// no document at all — a waveform view over one source — can name a generation
+/// and nothing else, which is why the generation is optional rather than a
+/// second required field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Against {
+    /// The document version the editor was looking at. Zero means **unstated**,
+    /// and unstated skips the check — a script that just read the document is
+    /// not editing a stale picture, and an older client cannot say.
+    #[serde(default)]
+    pub version: u64,
+    /// The generation of the material the editor was looking at, when it was
+    /// looking at material.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<u64>,
+}
+
+impl Against {
+    /// No claim at all: apply without checking.
+    pub fn unstated() -> Self {
+        Self::default()
+    }
+
+    /// Made against this document version.
+    pub fn at(version: u64) -> Self {
+        Self {
+            version,
+            generation: None,
+        }
+    }
+
+    /// Also made against this generation of the material.
+    pub fn with_generation(mut self, generation: u64) -> Self {
+        self.generation = Some(generation);
+        self
+    }
+
+    /// Whether this names a document version at all.
+    pub fn is_stated(&self) -> bool {
+        self.version != 0
     }
 }
 
@@ -157,6 +232,15 @@ pub struct Outcome {
     /// outcomes have nothing to say, and present because an edit that springs
     /// back with no explanation teaches "sometimes it does not work".
     pub reason: Option<String>,
+    /// Whether the refusal was **staleness** rather than a rule.
+    ///
+    /// The mechanism does not read this — a stale edit is refused like any
+    /// other, and the caller adopts [`Outcome::effective`] either way. It exists
+    /// because the two say different things to a person: a rule means *not
+    /// here*, and staleness means *someone else changed this*, which is also the
+    /// one case where re-proposing the same edit against the fresh state is a
+    /// reasonable thing to offer.
+    pub stale: bool,
 }
 
 impl Outcome {
@@ -165,6 +249,16 @@ impl Outcome {
             effective,
             applied: true,
             reason: None,
+            stale: false,
+        }
+    }
+
+    fn unchanged(effective: Intent) -> Self {
+        Self {
+            effective,
+            applied: false,
+            reason: None,
+            stale: false,
         }
     }
 
@@ -173,6 +267,7 @@ impl Outcome {
             effective,
             applied: true,
             reason: Some(reason.into()),
+            stale: false,
         }
     }
 
@@ -181,6 +276,14 @@ impl Outcome {
             effective,
             applied: false,
             reason: Some(reason.into()),
+            stale: false,
+        }
+    }
+
+    fn superseded(effective: Intent, reason: impl Into<String>) -> Self {
+        Self {
+            stale: true,
+            ..Self::refused(effective, reason)
         }
     }
 }
@@ -190,7 +293,19 @@ impl Outcome {
 /// The only door. Bumps [`Document::version`] when the document changed, and
 /// leaves it alone when it did not — a refusal is not an edit, and a version
 /// that moved for one would make every other reader re-sync for nothing.
-pub fn apply(document: &mut Document, intent: &Intent, rules: &Rules) -> Outcome {
+///
+/// `against` is the state the editor believed it was editing; an edit made
+/// against a superseded one is refused as stale rather than applied blind. Pass
+/// [`Against::unstated`] to skip that check.
+pub fn apply(
+    document: &mut Document,
+    intent: &Intent,
+    against: &Against,
+    rules: &Rules,
+) -> Outcome {
+    if let Some(stale) = superseded(document, intent, against) {
+        return stale;
+    }
     match intent {
         Intent::Place { node, offset, dur } => place(document, *node, *offset, *dur, rules),
         Intent::Configure { node, config } => configure(document, *node, config),
@@ -200,6 +315,93 @@ pub fn apply(document: &mut Document, intent: &Intent, rules: &Rules) -> Outcome
             start,
             values,
         } => write_samples(document, *node, *start, values),
+    }
+}
+
+/// The staleness gate: `Some(outcome)` when the edit was made against a state
+/// the document has left behind.
+///
+/// Two claims are checked and they are independent. The **document version**
+/// catches the description moving — including by routes no log sees. The
+/// **source generation** catches material being rewritten while the description
+/// stands still, which the document's version cannot express and which is the
+/// case a sample editor lives in.
+///
+/// A claim ahead of the document is stale too, and it is the worse case rather
+/// than a harmless one: it means the two are not talking about the same
+/// document at all, and applying would write an edit meant for another piece.
+fn superseded(document: &Document, intent: &Intent, against: &Against) -> Option<Outcome> {
+    // A node the document does not hold has an answer already, and it is a
+    // better one than "stale": let the ordinary refusal say "no such node".
+    let current = current(document, intent)?;
+    if against.is_stated() && against.version != document.version {
+        let reason = if against.version < document.version {
+            "the document changed since this edit was made"
+        } else {
+            "this edit was made against a different document"
+        };
+        return Some(Outcome::superseded(current, reason));
+    }
+    let seen = against.generation?;
+    let held = generation(document, intent.node())?;
+    (seen != held).then(|| Outcome::superseded(current, "the material changed since this edit"))
+}
+
+/// The intent describing what the document says *now* about what `intent`
+/// addresses — which is what a refusal of any kind hands back.
+///
+/// `None` when the document cannot describe it: the node is gone, or the body
+/// holds nothing of that shape. Both already have their own refusals, with
+/// better reasons than staleness.
+fn current(document: &Document, intent: &Intent) -> Option<Intent> {
+    let id = intent.node();
+    match intent {
+        Intent::Place { .. } => {
+            let member = find_member(&document.root, id)?;
+            Some(Intent::Place {
+                node: id,
+                offset: member.offset,
+                dur: member.dur,
+            })
+        }
+        Intent::Configure { .. } => {
+            let node = document.find(id)?;
+            Some(Intent::Configure {
+                node: id,
+                config: config(&node.body)?.clone(),
+            })
+        }
+        Intent::SetMembers { .. } => {
+            let node = document.find(id)?;
+            match &node.body {
+                Body::Set { members, .. } | Body::Sequence { members, .. } => {
+                    Some(Intent::SetMembers {
+                        node: id,
+                        members: members.clone(),
+                    })
+                }
+                _ => None,
+            }
+        }
+        // The samples are not in the document, so the only honest description
+        // of the present state is the empty write: nothing to adopt, and the
+        // generation in the acknowledgement is what tells the caller to re-read.
+        Intent::WriteSamples { start, .. } => {
+            let node = document.find(id)?;
+            matches!(node.body, Body::Buffer { .. }).then_some(Intent::WriteSamples {
+                node: id,
+                start: *start,
+                values: Vec::new(),
+            })
+        }
+    }
+}
+
+/// The generation of the material a node names, for the nodes that name any.
+fn generation(document: &Document, id: NodeId) -> Option<u64> {
+    match &document.find(id)?.body {
+        Body::Buffer { source, .. } => Some(source.generation),
+        _ => None,
     }
 }
 
@@ -230,11 +432,7 @@ fn place(
         dur: member.dur,
     };
     if close(member.offset, snapped) && same_dur(member.dur, snapped_dur) {
-        return Outcome {
-            effective: previous,
-            applied: false,
-            reason: None,
-        };
+        return Outcome::unchanged(previous);
     }
     member.offset = snapped;
     member.dur = snapped_dur;
@@ -271,14 +469,10 @@ fn configure(document: &mut Document, id: NodeId, config: &Opaque) -> Outcome {
         );
     };
     if slot == config {
-        return Outcome {
-            effective: Intent::Configure {
-                node: id,
-                config: config.clone(),
-            },
-            applied: false,
-            reason: None,
-        };
+        return Outcome::unchanged(Intent::Configure {
+            node: id,
+            config: config.clone(),
+        });
     }
     *slot = config.clone();
     document.version += 1;
@@ -311,14 +505,10 @@ fn set_members(document: &mut Document, id: NodeId, members: &[Member]) -> Outco
         );
     };
     if slot == members {
-        return Outcome {
-            effective: Intent::SetMembers {
-                node: id,
-                members: members.to_vec(),
-            },
-            applied: false,
-            reason: None,
-        };
+        return Outcome::unchanged(Intent::SetMembers {
+            node: id,
+            members: members.to_vec(),
+        });
     }
     *slot = members.to_vec();
     document.version += 1;
@@ -346,15 +536,11 @@ fn write_samples(document: &mut Document, id: NodeId, start: u64, values: &[f32]
         return refuse("only material can be written");
     };
     if values.is_empty() {
-        return Outcome {
-            effective: Intent::WriteSamples {
-                node: id,
-                start,
-                values: Vec::new(),
-            },
-            applied: false,
-            reason: None,
-        };
+        return Outcome::unchanged(Intent::WriteSamples {
+            node: id,
+            start,
+            values: Vec::new(),
+        });
     }
     // The samples are not in the document -- the document describes where
     // material is, never what it holds -- so what applying does here is bump the
@@ -371,6 +557,24 @@ fn write_samples(document: &mut Document, id: NodeId, start: u64, values: &[f32]
 }
 
 // ---- lookup ----
+
+fn find_member(node: &Node, id: NodeId) -> Option<&Member> {
+    let members = node.members();
+    if let Some(member) = members.iter().find(|m| m.node.id == id) {
+        return Some(member);
+    }
+    members.iter().find_map(|m| find_member(&m.node, id))
+}
+
+fn config(body: &Body) -> Option<&Opaque> {
+    match body {
+        Body::Event { config, .. }
+        | Body::Sequence { config, .. }
+        | Body::Buffer { config, .. }
+        | Body::Generator { config } => Some(config),
+        Body::Set { .. } | Body::Unknown(_) => None,
+    }
+}
 
 fn find_mut(node: &mut Node, id: NodeId) -> Option<&mut Node> {
     if node.id == id {

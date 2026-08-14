@@ -35,11 +35,12 @@ from .group import (
     SUCCESSIVE,
     Group,
 )
-from .document import from_document, to_document
+from .document import FIRST_VERSION, from_document, to_document
 from .render import flatten, render, render_logical, to_timeline
 
 __all__ = [
     "Element",
+    "FIRST_VERSION",
     "to_document",
     "from_document",
     "Event",

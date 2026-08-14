@@ -76,10 +76,17 @@ impl WebApp {
                     args,
                     ..
                 } => {
-                    // The stamp is the second argument on both fronts, before
-                    // any tag, so one rule reads every event whatever its
-                    // payload.
-                    let mut msg_args = vec![OscType::Int(widget_id), OscType::Int(seq)];
+                    // The stamp and the version are the second and third
+                    // arguments on both fronts, before any tag, so one rule
+                    // reads every event whatever its payload. The version says
+                    // what state the edit was made against, and it is read here
+                    // rather than carried in the effect because it belongs to
+                    // the conversation and not to the gesture.
+                    let mut msg_args = vec![
+                        OscType::Int(widget_id),
+                        OscType::Int(seq),
+                        OscType::Long(self.host.outbox.borrow().version()),
+                    ];
                     msg_args.extend(args);
                     self.queue(OscMessage {
                         addr: GUI_EVENT.into(),

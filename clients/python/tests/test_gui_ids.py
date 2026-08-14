@@ -146,14 +146,16 @@ def test_dispatch_routes_event_and_close_to_the_callbacks():
     closed = []
     win.on_closed(lambda: closed.append(True))
 
-    # ``<id> <seq> <payload…>``: the stamp is the second argument of every
-    # event, and a callback is handed the payload -- the stamp is the host's
-    # bookkeeping, answered by `ack` rather than by a widget's handler.
-    assert host.dispatch("/gui_event", [win["go"].id, 3, 1]) is True
+    # ``<id> <seq> <version> <payload…>``: the stamp and the version the gesture
+    # was made against are the second and third arguments of every event, and a
+    # callback is handed the payload -- those two are the host's bookkeeping,
+    # answered by `ack` rather than by a widget's handler.
+    assert host.dispatch("/gui_event", [win["go"].id, 3, 7, 1]) is True
     assert seen == [(1,)]
     assert host.last_seq == 3
+    assert host.last_version == 7
     # A view's tagged edit-back forwards the tag and the flat values.
-    host.dispatch("/gui_event", [win["go"].id, 4, "points", 0.0, 1.0])
+    host.dispatch("/gui_event", [win["go"].id, 4, 7, "points", 0.0, 1.0])
     assert seen[-1] == ("points", 0.0, 1.0)
     assert host.last_seq == 4
 

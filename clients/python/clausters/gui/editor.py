@@ -33,6 +33,7 @@ import itertools
 
 from .. import _native
 from .handle import WindowHandle
+from ..form.document import FIRST_VERSION
 from ..form.group import CONCRETE, LOGICAL, SIMULTANEOUS, Group
 from ..form.element import Buffer, Element
 from ..defs.ugens import points_to_env
@@ -146,6 +147,12 @@ class Editor:
         #: What the host should be drawing instead of what it drew, collected
         #: while one event is routed and sent with its acknowledgement.
         self._corrections: list = []
+        #: The composition's version — the document half of the two counters.
+        #: It moves on every edit this editor applies **and on every redefine**,
+        #: and it rides on each acknowledgement so the host can name it back on
+        #: the next gesture. One rather than zero, because zero is what an event
+        #: means by *unstated*.
+        self._version = FIRST_VERSION
         #: patch widget id -> (logical `Group`, its box-order member handles) —
         #: the directed-patch view of a logical group, for its edit-back route.
         self._patches: dict = {}
@@ -297,6 +304,7 @@ class Editor:
         self._host = self.transport.host = host
         self._mode = "multitrack"
         self._window = host.open(self.draw(), id=id)
+        self._announce()
         return self._window
 
     def _draw_pianoroll(self) -> dict:
@@ -348,6 +356,7 @@ class Editor:
         self._mode = "pianoroll"
         self._roll_element = self.element if element is None else element
         self._window = host.open(self.draw(), id=id)
+        self._announce()
         return self._window
 
     def extent(self, element=None) -> float:
@@ -373,10 +382,22 @@ class Editor:
         """Push the current arrangement back to the open window — a whole-tree
         redefine (`GuiHost.define`), the honest way to show a structural edit (an
         element added, a group expanded). A mere placement change needs no redefine: the
-        host already moved the clip that was dragged."""
+        host already moved the clip that was dragged.
+
+        A redefine **moves the version**, and that is the point rather than a
+        side effect: this is the route a change the editor did not apply arrives
+        by — a script adding an element, a group expanded, a re-render — and it
+        is the case an edit log cannot see. It also rebuilds the widgets, so a
+        gesture still in flight was made against a picture that no longer
+        exists; the bump is what makes that edit come back as stale instead of
+        landing on whatever now holds its id."""
         if self._host is None or self._window is None:
             raise RuntimeError("open(host) the editor first")
+        self._version += 1
         self._host.define(self._window, self.draw())
+        # The host drops what it had in flight on a redefine, so what it needs
+        # from here is the version the new picture is at.
+        self._announce()
 
     # ---- the edit-back: a dragged clip becomes a placement ----
 
@@ -408,17 +429,31 @@ class Editor:
             return False
         if addr != "/gui_event" or len(args) < 3:
             return False
-        # ``<id> <seq> <tag> <payload…>``: the stamp is the second argument of
-        # every event. It is what an acknowledgement names, so it is read here
-        # and answered below -- an owner that applies an edit and says nothing
-        # leaves the host drawing what the hand did.
-        seq, args = int(args[1]), (args[0], *args[2:])
+        # ``<id> <seq> <version> <tag> <payload…>``: the stamp and the version
+        # the gesture was made against are the second and third arguments of
+        # every event. The stamp is what an acknowledgement names, so it is read
+        # here and answered below -- an owner that applies an edit and says
+        # nothing leaves the host drawing what the hand did.
+        seq, against = int(args[1]), int(args[2]) if len(args) > 2 else 0
+        args = (args[0], *args[3:])
         self._corrections = []
         # Only what this editor draws is this editor's to answer. A poll loop
         # may be shared with a second editor, and answering for its window would
         # retire a pending edit nobody applied -- the host would adopt a picture
         # the real owner never saw.
         if not self._owns(int(args[0])):
+            return False
+        if self._stale(against):
+            # The composition moved under the gesture, by a route no gesture
+            # produced. The edit is not applied and not merged: an edit-back
+            # payload is absolute *and* whole (a roll's notes are the list, not
+            # a diff), so applying one made against an older picture would
+            # silently drop whatever arrived in between. What goes back is the
+            # state as it stands, which the host adopts exactly as it adopts a
+            # snap -- no new path, and the reason is what distinguishes "someone
+            # else changed this" from "not here".
+            self._resync(int(args[0]))
+            self._acknowledge(seq, reason="the composition changed since this edit")
             return False
         changed = self._route(args)
         # Answered whatever happened, and answered with a *value*. There is no
@@ -501,6 +536,47 @@ class Editor:
         return (widget_id in self._clips or widget_id in self._rolls
                 or widget_id in self._patches or widget_id in self._lanes)
 
+    def _announce(self):
+        """Tell the host which version it is drawing, before any edit.
+
+        A stamp of zero retires nothing -- the host's own numbering starts at
+        one -- so this is purely the version, and it is what keeps the *first*
+        gesture checked like every later one. Without it the host would name
+        zero until the first acknowledgement came back, and the opening edit
+        would be the one edit nobody could tell was stale."""
+        if self._host is not None:
+            self._host.ack(0, doc_version=self._version)
+
+    def _stale(self, against: int) -> bool:
+        """Whether an edit made against document version ``against`` has been
+        overtaken.
+
+        Zero is *unstated* rather than a version -- an older host, or one no
+        owner has reported a version to -- and unstated applies unchecked, which
+        is the behavior there was before there were versions at all."""
+        return bool(against) and against != self._version
+
+    def _resync(self, widget_id: int):
+        """Hand back what the widget should be drawing, without applying
+        anything: the answer to an edit that arrived too late.
+
+        It reads the same registries every route resolves through, so a stale
+        gesture is answered in the widget's own terms — a clip gets its
+        placement, a roll gets its notes — and the host adopts it with the
+        ordinary drop-and-adopt rule. **Everything the widget has**, not only
+        what the gesture touched: one widget is often both (a clip with a roll
+        body is a placement *and* a note list), and the stale edit is the one
+        case where the host's whole picture of it is in doubt."""
+        props: dict = {}
+        placed = self._clips.get(widget_id)
+        if placed is not None:
+            props.update(offset=placed.offset, dur=placed.dur)
+        element = self._rolls.get(widget_id)
+        if element is not None:
+            props["notes"] = _flat_notes(self._notes(element))
+        if props:
+            self._correct(widget_id, **props)
+
     def _correct(self, widget_id: int, **props):
         """What the host should be drawing instead of what it drew.
 
@@ -510,7 +586,7 @@ class Editor:
         without a redefine."""
         self._corrections.append((int(widget_id), props))
 
-    def _acknowledge(self, seq: int):
+    def _acknowledge(self, seq: int, reason: "str | None" = None):
         """Answer the host for everything up to ``seq``.
 
         The half that was missing until now: this editor snaps a placement to
@@ -518,13 +594,18 @@ class Editor:
         learn neither -- so a note dragged onto read-only material stayed drawn
         where the hand put it, and a clip landed half a grid step from where it
         was released. The stamp closes both, because it lets the host retire
-        what it drew and adopt what actually happened."""
+        what it drew and adopt what actually happened.
+
+        Every acknowledgement carries the composition's version, which is what
+        the host names back on its next gesture -- that round trip is the whole
+        of the staleness check, and it costs one integer."""
         if self._host is None or not seq:
             return
         if self._corrections:
-            self._host.push(seq, *self._corrections)
+            self._host.push(seq, *self._corrections,
+                            doc_version=self._version, reason=reason)
         else:
-            self._host.ack(seq)
+            self._host.ack(seq, doc_version=self._version, reason=reason)
     def _apply_points(self, placed, values) -> bool:
         """A curve edited in place on an automation clip (the flat ``"points"``
         payload the `bpf` view also sends): the break-points go back onto the
@@ -654,6 +735,7 @@ class Editor:
         interrupted, and the next one (a play, a resume, a seek) plays the piece as
         it now stands, because rendering always re-flattens the tree."""
         self.dirty = True
+        self._version += 1
         if self.follow:
             self.rerender()
         return True

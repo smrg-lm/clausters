@@ -139,10 +139,10 @@ The host pushes back to the script that built the window:
 
 | Message | Meaning |
 |---|---|
-| `/gui_event id seq <value>` | A control changed: a float (`slider`/`knob`/`number`), an int (`toggle` 0/1, `menu` index, `button` press), or a string (`text`). |
-| `/gui_event id seq <tag> <flat values…>` | A view wrote data back. The tag names *what* was edited; the values are flat OSC primitives (never a new address — see below). |
+| `/gui_event id seq version <value>` | A control changed: a float (`slider`/`knob`/`number`), an int (`toggle` 0/1, `menu` index, `button` press), or a string (`text`). |
+| `/gui_event id seq version <tag> <flat values…>` | A view wrote data back. The tag names *what* was edited; the values are flat OSC primitives (never a new address — see below). |
 
-**`seq` is the second argument of every event**, before any tag, so one rule reads them all whatever the payload. It is the host's stamp on the edit, and what an acknowledgement names — see *Answering an event* below.
+**`seq` and `version` are the second and third arguments of every event**, before any tag, so one rule reads them all whatever the payload. `seq` is the host's stamp on the edit, and what an acknowledgement names. `version` is the document version the edit was made **against** — the last one an acknowledgement reported to this host — so an owner can tell an edit made against the picture it is looking at from one made against a picture that has since been replaced. Both are zero when the host has nothing to say: an unstamped event is one nobody will acknowledge, and an unstated version is one an owner applies unchecked. See *Answering an event* below.
 | `/gui_closed id` | The window was closed by the user. |
 
 The **edit-back payloads**:
@@ -185,6 +185,10 @@ Three things follow, and they are the whole design:
 - **There is no branch for a refusal.** *Applied verbatim*, *applied transformed* and *refused* are one message, because the value pushed is simply what the document now says — and a refusal is the previous value. An owner that snaps a placement to a musical grid, or declines an edit to material a generator produced, says so by pushing what it actually has.
 - **An unanswered edit is one the host waits on forever**, so the acknowledgement is sent even when nothing changed. Silence is not a refusal; it is a hang.
 - **The stamp is what tells two gestures apart.** Without it an answer to one edit is indistinguishable from an answer to another on the same widget, which is exactly the case a host with an edit still in flight is in.
+
+**The version answers a different question, and needs both directions.** `seq` says *which of my gestures is this an answer to*; `docVersion` says *are we talking about the same state*. That second one is what catches the document moving by a route that was never a gesture — a script editing the arrangement, a second editor, a re-render — which no record of the host's own edits can see. So the acknowledgement reports the version, the host remembers it, and the host names it back on its next event. An owner that finds an edit made against a superseded version **refuses it as stale and pushes the state that holds**, which needs no new path on either side: the host adopts it exactly as it adopts a snap, and the `reason` is what distinguishes *someone else changed this* from *not here*. Merging the two edits instead is deliberately not done — an edit-back payload is absolute *and* whole (a roll's `"notes"` is the list, not a diff), so applying a stale one would silently drop whatever arrived in between.
+
+**A redefine drops what that window had in flight.** `/gui_def` on an open window replaces its whole tree, so an edit still pending against the old one has nothing left to resolve to — its widget may be gone, or its id may now belong to something else. The host forgets those pendings itself, exactly as `/gui_free` does, and an owner is not expected to acknowledge them.
 
 The acknowledgement is a **verb rather than a property** because it is scoped to the conversation and not to the tree: `seq` is per client, so two clients driving one window would collide on a single prop, and it does not round-trip, which a property here has to. It rides *after* the value pushes in the bundle, so the host never retires an edit before the state that edit produced has arrived.
 

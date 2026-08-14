@@ -8,7 +8,7 @@ no format can keep, which is a generator's code.
 import json
 
 from clausters.form import Buffer, Event, Generator, Group, Sequence, Track
-from clausters.form.document import ID_ATTR, from_document, to_document
+from clausters.form.document import FIRST_VERSION, ID_ATTR, from_document, to_document
 from clausters.seq import Event as SeqEvent
 from clausters.seq import Timeline
 
@@ -55,7 +55,7 @@ def test_a_composition_round_trips_through_the_document():
 def test_the_document_is_json_and_says_so():
     doc = to_document(a_group())
     assert json.loads(json.dumps(doc)) == doc
-    assert doc["version"] == 0
+    assert doc["version"] == FIRST_VERSION, "an unedited document is version one, not zero"
     assert doc["root"]["kind"] == "set"
     assert doc["root"]["grouping"] == "concrete"
 

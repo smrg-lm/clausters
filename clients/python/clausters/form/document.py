@@ -44,13 +44,24 @@ from .group import CONCRETE, LOGICAL, Group
 ID_ATTR = "_doc_id"
 
 
-def to_document(element, *, version: int = 0) -> dict:
+FIRST_VERSION = 1
+"""The version an unedited document carries.
+
+One rather than zero, because zero is what an edit means by *unstated* when it
+names the state it was made against — the same reservation the GUI host's
+sequence numbers make. An unedited document is a real state an editor must be
+able to name, so it cannot share a number with "I cannot say".
+"""
+
+
+def to_document(element, *, version: int = FIRST_VERSION) -> dict:
     """The whole arrangement as a document, ready for ``serde``.
 
     Args:
         element: the root `clausters.form.Element` (usually a `Group`).
         version: the document version to stamp (see the crate: the document's
-            half of the two counters).
+            half of the two counters). Defaults to `FIRST_VERSION`; zero means
+            *unstated* and is never a document's own version.
 
     Returns:
         The document as plain JSON-able Python — ``{"version": …, "root": …}``.

@@ -123,6 +123,16 @@ impl Outbox {
         self.last.as_ref()
     }
 
+    /// The document version this host is drawing — what an outgoing edit names
+    /// as the state it was made against.
+    ///
+    /// Zero until an owner has said otherwise, and zero is *unstated* rather
+    /// than a version: an owner that never speaks of versions gets its edits
+    /// applied unchecked, which is the behavior it had before there were any.
+    pub fn version(&self) -> i64 {
+        self.last.as_ref().map_or(0, |a| a.doc_version)
+    }
+
     /// The generation this owner last reported for a source, if any.
     pub fn generation(&self, source: i32) -> Option<i64> {
         self.last.as_ref()?.generations.get(&source).copied()
@@ -204,6 +214,22 @@ mod tests {
         assert_eq!(outbox.last().unwrap().doc_version, 7);
         assert_eq!(outbox.generation(4), Some(2));
         assert_eq!(outbox.generation(9), None);
+    }
+
+    #[test]
+    fn the_version_an_edit_names_is_the_last_one_the_owner_reported() {
+        // What rides as the third argument of every `/gui_event`: the state the
+        // host was drawing when the hand let go, which is what makes an edit
+        // against a superseded picture detectable rather than silent.
+        let mut outbox = Outbox::default();
+        assert_eq!(outbox.version(), 0, "unstated until an owner speaks");
+        let seq = outbox.stamp(1, 10);
+        outbox.ack(Acked {
+            seq,
+            doc_version: 12,
+            ..Acked::default()
+        });
+        assert_eq!(outbox.version(), 12);
     }
 
     #[test]

@@ -958,6 +958,13 @@ impl Host {
         widget::flatten_tree_axes(&mut node);
         // Keep the verbatim JSON: the source of truth for persistence and reload.
         self.def_json.insert(id, bytes.clone());
+        // A redefine replaces the window's whole tree, so an edit still in
+        // flight against the old one has nothing left to resolve to: its widget
+        // may be gone, or worse, its id may now belong to something else. Drop
+        // the pending set here for the same reason `/gui_free` does — an
+        // acknowledgement that is never coming holds the outbox open forever,
+        // and the new tree is authoritative by definition.
+        self.outbox.borrow_mut().forget(id);
         let outcome = self.registry.define(id, &node);
         // The acceptance criterion: log the parsed tree.
         info!(
@@ -2247,6 +2254,29 @@ mod tests {
             ClientId::Web,
         );
         assert!(host.outbox.borrow().pending().is_empty());
+    }
+
+    #[test]
+    fn redefining_a_window_drops_the_edits_it_had_in_flight() {
+        // Found while writing the owner's side of O4: a redefine replaces the
+        // whole tree, so an edit in flight against the old one has nothing to
+        // resolve to -- its widget may be gone, or its id may now belong to
+        // something else. The owner answers nothing for it, so without this the
+        // pending set stays open against an acknowledgement never coming.
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(1, r#"{"type":"window","children":[]}"#),
+            ClientId::Web,
+        );
+        host.outbox.borrow_mut().stamp(1, 10);
+        let other = host.outbox.borrow_mut().stamp(2, 20);
+        host.handle_packet(
+            def_msg(1, r#"{"type":"window","children":[]}"#),
+            ClientId::Web,
+        );
+        let outbox = host.outbox.borrow();
+        assert_eq!(outbox.pending().len(), 1, "only that window's");
+        assert_eq!(outbox.pending()[0].seq, other);
     }
 
     fn bind_msg(id: i32, target: Vec<OscType>) -> OscPacket {
