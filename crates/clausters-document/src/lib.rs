@@ -45,6 +45,10 @@
 //! ([`Node::character`], [`Body::relation`]), exactly as they are in the
 //! client, so no edit can leave them stale.
 
+pub mod intent;
+
+pub use intent::{Intent, Outcome, Rules, apply};
+
 use serde::{Deserialize, Serialize};
 
 /// Beats. The document's time unit throughout: the bridge to samples belongs to
