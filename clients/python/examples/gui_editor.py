@@ -14,7 +14,13 @@ the samples never ride OSC):
 Both views navigate identically: **wheel** zooms toward the cursor (the peak
 pyramid cross-fades, so zooming never pops), **Shift+drag** pans, **plain drag
 selects** — the host emits ``/gui_event <id> "selection" <start> <len>`` (in
-samples) as you drag; ``r`` resets. The **playhead** tracks what you hear: the
+samples) as you drag; ``r`` resets. On the waveform a drag with **height** also
+restricts the selection to a band of amplitudes, drawn as the rectangle it is
+and reported as two further arguments; the spectrogram's own second axis is a
+range of frequency *bins*, which is a different field of a selection and a
+gesture that does not exist yet — so a sweep there stays a plain time span.
+The two views are deliberately **not linked** here, so each one's selection is
+its own (see ``gui_linked.py`` for the shared-axis case). The **playhead** tracks what you hear: the
 same render is looped by a ``PlayBuf`` synth and anchored each pass with the
 server's sample clock, and the host reads the engine clock from shared memory
 with zero per-frame messages.
@@ -181,12 +187,22 @@ def play_pass():
 
 
 def on_selection(name):
-    """Print this view's ``"selection"`` edit-back, wired by name."""
+    """Print this view's ``"selection"`` edit-back, wired by name.
+
+    A sweep with **height** over the waveform restricts the selection to a band
+    of amplitudes as well as a span of time, and the two extra arguments are
+    that band, in the view's own domain (here ``[-1, 1]``, full scale). The
+    spectrogram sends no band: its vertical measures frequency, and a selection
+    of frequencies is a range of *bins* rather than of values -- a different
+    field of a selection, and a gesture this host does not have yet.
+    """
     def handler(tag, *vals):
         if tag == "selection" and len(vals) >= 2:
             sel_start, sel_len = vals[0], vals[1]
+            band = (f"  in [{vals[2]:.3f}, {vals[3]:.3f}]" if len(vals) >= 4
+                    else "  (whole amplitude range)")
             print(f"{name}: selection {sel_start:.0f} +{sel_len:.0f} samples "
-                  f"({sel_start / SR:.3f}s +{sel_len / SR:.3f}s)")
+                  f"({sel_start / SR:.3f}s +{sel_len / SR:.3f}s){band}")
     return handler
 
 
