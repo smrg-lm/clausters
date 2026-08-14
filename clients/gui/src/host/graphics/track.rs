@@ -273,15 +273,35 @@ fn to_x(s: f64, nav: &View, body: Rect) -> f64 {
 /// The x pixel range a clip's `[offset, offset + dur]` span occupies inside the
 /// lane `body` through the shared `nav`, clamped to the body. Returns `None`
 /// when the clip has no duration or falls entirely outside the visible window.
-pub fn clip_x_range(body: Rect, nav: &View, offset: f64, dur: f64) -> Option<(f32, f32)> {
+///
+/// **A clip that is on screen is drawn, however short it is.** A span thinner
+/// than `min_w` is widened to it (kept inside the body, so a clip at the far
+/// edge grows leftwards instead of hanging out): the picture rounds up, and the
+/// alternative is a clip that exists, plays and is addressable but occupies no
+/// pixel — nothing to see, nothing to grab, and no way back except guessing
+/// where to zoom. Every DAW rounds a short item up the same way and for the
+/// same reason. What is *not* rounded up is a clip off the window entirely: a
+/// sliver at the edge would claim a clip is there.
+pub fn clip_x_range(
+    body: Rect,
+    nav: &View,
+    offset: f64,
+    dur: f64,
+    min_w: f32,
+) -> Option<(f32, f32)> {
     if dur <= 0.0 {
         return None;
     }
     let lo = body.x as f64;
     let hi = (body.x + body.w) as f64;
-    let x0 = to_x(offset, nav, body).clamp(lo, hi);
-    let x1 = to_x(offset + dur, nav, body).clamp(lo, hi);
-    (x1 > x0).then_some((x0 as f32, x1 as f32))
+    let (ux0, ux1) = (to_x(offset, nav, body), to_x(offset + dur, nav, body));
+    if ux1 <= lo || ux0 >= hi {
+        return None; // off the window: not drawn at all
+    }
+    let (x0, x1) = (ux0.clamp(lo, hi), ux1.clamp(lo, hi));
+    let w = (x1 - x0).max(min_w as f64).min(hi - lo);
+    let x0 = x0.min(hi - w);
+    (w > 0.0).then_some((x0 as f32, (x0 + w) as f32))
 }
 
 /// One clip's rectangle inside the lane `body`, given the x range its span
@@ -400,15 +420,28 @@ pub fn clip_ends_on_screen(local: &View, dur: f64) -> (bool, bool) {
 ///
 /// The renderer and the hit-test both call it, so the strip that lights up is
 /// the strip that resizes — the rule every other part of this module follows.
+/// **A clip too narrow for two grips keeps one**, and it is the one that gets
+/// the reader out of the corner: its **end**, the edge that lengthens it (the
+/// start when the end is the one off screen). Two strips on a rectangle that
+/// cannot hold them would overlap, so the press could not tell them apart —
+/// but returning neither is what left a clip shrunk to a sliver with no
+/// affordance at all, movable and never growable again without hunting for a
+/// zoom that made it wide enough. One grip is the smallest thing that keeps
+/// every state reversible.
 pub fn clip_grips(cr: Rect, ends: (bool, bool), m: &Metrics) -> (Option<Rect>, Option<Rect>) {
     let w = m.grip_w;
+    let strip = |x: f32, w: f32| Rect::new(x, cr.y, w, cr.h);
     if cr.w < 2.0 * w {
-        return (None, None); // too narrow to grab an edge: all body
+        let w = w.min(cr.w);
+        return match ends {
+            (_, true) => (None, Some(strip(cr.x + cr.w - w, w))),
+            (true, false) => (Some(strip(cr.x, w)), None),
+            (false, false) => (None, None),
+        };
     }
-    let strip = |x: f32| Rect::new(x, cr.y, w, cr.h);
     (
-        ends.0.then(|| strip(cr.x)),
-        ends.1.then(|| strip(cr.x + cr.w - w)),
+        ends.0.then(|| strip(cr.x, w)),
+        ends.1.then(|| strip(cr.x + cr.w - w, w)),
     )
 }
 
@@ -762,7 +795,7 @@ mod tests {
         );
         let nav = View::full(400); // 1 sample per pixel over the 404-wide body-ish
         // A clip at [100, 200): starts a quarter in, one-quarter wide.
-        let (x0, x1) = clip_x_range(body, &nav, 100.0, 100.0).unwrap();
+        let (x0, x1) = clip_x_range(body, &nav, 100.0, 100.0, 0.0).unwrap();
         let px_per = body.w as f64 / 400.0;
         assert!((x0 as f64 - (body.x as f64 + 100.0 * px_per)).abs() < 0.5);
         assert!((x1 as f64 - (body.x as f64 + 200.0 * px_per)).abs() < 0.5);
@@ -780,13 +813,35 @@ mod tests {
             start: 150.0,
             len: 100.0,
         };
-        // A clip [0, 100) ends before the window: fully invisible.
-        assert!(clip_x_range(body, &nav, 0.0, 100.0).is_none());
+        // A clip [0, 100) ends before the window: fully invisible. It stays
+        // invisible whatever floor the drawing carries -- a sliver at the edge
+        // would claim a clip is there.
+        assert!(clip_x_range(body, &nav, 0.0, 100.0, 0.0).is_none());
+        assert!(clip_x_range(body, &nav, 0.0, 100.0, 12.0).is_none());
         // A clip [100, 400) overlaps the left edge: clamped to the body start.
-        let (x0, _) = clip_x_range(body, &nav, 100.0, 300.0).unwrap();
+        let (x0, _) = clip_x_range(body, &nav, 100.0, 300.0, 0.0).unwrap();
         assert_eq!(x0, body.x);
         // A zero-duration clip draws nothing.
-        assert!(clip_x_range(body, &nav, 160.0, 0.0).is_none());
+        assert!(clip_x_range(body, &nav, 160.0, 0.0, 12.0).is_none());
+
+        // **A clip on screen is drawn however short it is.** A hundredth of a
+        // sample is a fortieth of a pixel here: with no floor the rectangle is
+        // geometry the rasterizer has nothing to put down, which is a clip that
+        // plays, answers a query and occupies no pixel. With one it comes back
+        // as a `min_w` tab, and the tab is what there is to grab.
+        let (x0, x1) = clip_x_range(body, &nav, 160.0, 0.01, 0.0).expect("still a clip");
+        assert!(x1 - x0 < 1.0, "under a pixel: {}", x1 - x0);
+        let (x0, x1) = clip_x_range(body, &nav, 160.0, 0.01, 12.0).expect("drawn");
+        assert!((x1 - x0 - 12.0).abs() < 0.01, "{x0}..{x1}");
+        // ...and it is kept inside the lane: at the far edge it grows leftwards
+        // rather than hanging out of the body it belongs to.
+        let (x0, x1) = clip_x_range(body, &nav, 249.99, 0.01, 12.0).expect("drawn");
+        assert!(
+            x1 <= body.x + body.w + 0.01,
+            "{x1} past {}",
+            body.x + body.w
+        );
+        assert!((x1 - x0 - 12.0).abs() < 0.01);
     }
 
     /// The geometry a clip is drawn with, for a lane spanning `nav`: the
@@ -796,7 +851,7 @@ mod tests {
     fn placed(offset: f64, dur: f64, nav: &View) -> (Rect, View) {
         let m = Metrics::default();
         let body = lane_body(lane(), false, m.header_w, &m);
-        let (x0, x1) = clip_x_range(body, nav, offset, dur).expect("the clip is visible");
+        let (x0, x1) = clip_x_range(body, nav, offset, dur, m.grip_w).expect("the clip is visible");
         let cr = clip_rect(body, x0, x1);
         (cr, clip_local_view(body, nav, offset, dur, cr))
     }
@@ -933,11 +988,30 @@ mod tests {
         );
         assert!(clip_grips(cr, ends, &m).0.is_none());
 
-        // ...and a clip narrower than two grips is all body.
+        // ...and a clip narrower than two grips keeps **one**, the end — the
+        // edge that lengthens it, which is the way out of a clip shrunk to a
+        // sliver. Two strips would overlap on a rectangle this size and the
+        // press could not tell them apart; none at all is what left a sliver
+        // movable and never growable.
+        let narrow = Rect::new(0.0, 0.0, m.grip_w, 40.0);
         assert_eq!(
-            clip_grips(Rect::new(0.0, 0.0, m.grip_w, 40.0), (true, true), &m),
-            (None, None)
+            clip_grips(narrow, (true, true), &m),
+            (None, Some(Rect::new(0.0, 0.0, m.grip_w, 40.0)))
         );
+        // Narrower than the grip itself: the grip is the whole clip.
+        let sliver = Rect::new(0.0, 0.0, 4.0, 40.0);
+        assert_eq!(
+            clip_grips(sliver, (true, true), &m).1.map(|r| (r.x, r.w)),
+            Some((0.0, 4.0))
+        );
+        // With the end off screen it is the start that is grabbable instead —
+        // one grip, and the one that is there.
+        assert_eq!(
+            clip_grips(narrow, (true, false), &m).0.map(|r| r.x),
+            Some(0.0)
+        );
+        // Neither end on screen: nothing to grab, as before.
+        assert_eq!(clip_grips(narrow, (false, false), &m), (None, None));
 
         // One at a time, and only the strip the pointer is **on** — not the
         // half it is in. A grip lit from the middle of a clip announces a

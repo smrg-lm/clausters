@@ -1560,6 +1560,73 @@ fn a_press_on_a_clips_grip_resizes_it_rather_than_the_note_under_it() {
     assert!(has_emit_tag(&effects, 81, "notes"), "the note moved");
 }
 
+/// **A clip cannot be dragged out of existence.** The bug this fixes: an edge
+/// dragged past the other one left `dur` at zero, and a clip of no duration
+/// draws no rectangle — nothing to press, nothing to grab, no way back at any
+/// zoom. It stops at one grid step now (one sample with no grid), stays drawn,
+/// and keeps a grip, so the shrink is reversible with the same gesture.
+#[test]
+fn a_clip_shrinks_to_its_floor_and_can_be_grown_back() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":80,"type":"field","label":"lane","snap":100.0,"children":[
+                {"id":81,"type":"field","offset":0.0,"dur":1000.0}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    let clip = placed_rect(&host, &ctx, 81);
+    let m = *host.metrics_for(1);
+    let midy = (clip.y + clip.h * 0.5) as f64;
+
+    // Grab the end and drag it far past the start — past the lane, even.
+    let on_grip = (clip.x + clip.w - m.grip_w * 0.5) as f64;
+    g.press(&mut host, &ctx, on_grip, midy, &mut || false);
+    g.drag_to(&mut host, &ctx, clip.x as f64 - 300.0, midy);
+    g.release(&mut host, &ctx, clip.x as f64 - 300.0, midy);
+    assert_eq!(
+        (clip_offset(&host, 81), clip_dur(&host, 81)),
+        (0.0, 100.0),
+        "one grid step left, and the end it was not holding stayed put"
+    );
+
+    // It is still drawn, and still wide enough to aim at: the floor is the
+    // grip's own width, which is the whole point of having one. The rectangle
+    // is read through the lane's **group** axis, which is the one the press
+    // maps through (the axis still spans the piece as it was, so the sliver is
+    // a sliver of it rather than filling the lane again).
+    let (body, nav) = {
+        let h = interact::hit(&host, 1, 800, 200, 400.0, midy, &|_, _| 1).unwrap();
+        let t = interact::time_of(&h.chain).unwrap().1;
+        (t.body, t.nav)
+    };
+    let (x0, x1) = crate::host::graphics::track::clip_x_range(
+        body,
+        &nav,
+        clip_offset(&host, 81),
+        clip_dur(&host, 81),
+        m.grip_w,
+    )
+    .expect("the shrunk clip is still drawn");
+    assert!(
+        x1 - x0 >= m.grip_w,
+        "the sliver is still grabbable: {x0}..{x1}"
+    );
+
+    // And the same gesture grows it back — the state is reversible, which is
+    // what "it disappeared" meant.
+    let back = (x1 - 1.0) as f64;
+    g.press(&mut host, &ctx, back, midy, &mut || false);
+    assert!(g.dragging(), "the sliver still offers its edge");
+    g.drag_to(&mut host, &ctx, back + 200.0, midy);
+    g.release(&mut host, &ctx, back + 200.0, midy);
+    assert!(
+        clip_dur(&host, 81) > 100.0,
+        "grown back: {}",
+        clip_dur(&host, 81)
+    );
+}
+
 /// A clip dragged against the lane's edge pulls the view along, so it can
 /// travel further than the visible window. The regression this fixes: the
 /// drag mapped the cursor through the *press-time* window and nothing

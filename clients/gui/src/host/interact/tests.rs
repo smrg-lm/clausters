@@ -165,15 +165,33 @@ fn clip_drag_placement_moves_and_resizes_from_the_snapshot() {
     // Body: the offset follows the delta, snapped; the duration is kept.
     let (off, dur) = clip_drag_placement(ClipPart::Body, 730.0, 500.0, 400.0, 300.0, 100.0);
     assert_eq!((off, dur), (600.0, 300.0));
-    // End: resizing never crosses the start (duration floors at 0).
+    // **End: a resize never shrinks the clip away.** Dragged far past the
+    // start it stops one grid step long -- a clip dragged to nothing draws no
+    // rectangle, so there is nothing left to press and it is gone for good.
     let (off, dur) = clip_drag_placement(ClipPart::End, 0.0, 690.0, 400.0, 300.0, 100.0);
-    assert_eq!(off, 400.0);
-    assert!(dur >= 0.0);
-    // Start: the onset stays within [0, end], the end fixed.
+    assert_eq!(
+        (off, dur),
+        (400.0, 100.0),
+        "one grid step, and the start held"
+    );
+    // With no grid the floor is one sample: the smallest length the axis
+    // addresses, and still something rather than nothing.
+    let (off, dur) = clip_drag_placement(ClipPart::End, 0.0, 690.0, 400.0, 300.0, 0.0);
+    assert_eq!((off, dur), (400.0, 1.0));
+    // Start: the onset stays within [0, end - floor], the end fixed.
     let (off, dur) = clip_drag_placement(ClipPart::Start, 0.0, 900.0, 400.0, 300.0, 100.0);
     assert_eq!((off, dur), (0.0, 700.0));
     let (off, dur) = clip_drag_placement(ClipPart::Start, 950.0, 400.0, 400.0, 300.0, 100.0);
-    assert_eq!((off, dur), (700.0, 0.0));
+    assert_eq!(
+        (off, dur),
+        (600.0, 100.0),
+        "it stops a step short of the end"
+    );
+    // A clip already **shorter** than the floor is not grown to it: a drag
+    // moves the edge it was given hold of, and stretching the far end out to a
+    // minimum nobody asked for is an edit of its own. It just cannot shrink.
+    let (off, dur) = clip_drag_placement(ClipPart::End, 0.0, 690.0, 400.0, 30.0, 100.0);
+    assert_eq!((off, dur), (400.0, 30.0));
 }
 
 #[test]
@@ -185,10 +203,11 @@ fn clip_part_splits_body_from_edges() {
     assert_eq!(clip_part(wide, both, &m, 102.0), ClipPart::Start);
     assert_eq!(clip_part(wide, both, &m, 297.0), ClipPart::End);
     assert_eq!(clip_part(wide, both, &m, 200.0), ClipPart::Body);
-    // Too narrow to hold two grips: all body.
+    // Too narrow to hold two grips: the one it keeps is the end, so a clip
+    // shrunk to a sliver can always be grown back.
     assert_eq!(
         clip_part(Rect::new(100.0, 0.0, 8.0, 40.0), both, &m, 101.0),
-        ClipPart::Body
+        ClipPart::End
     );
     // An end off screen has no grip: the rectangle's edge there is the
     // window's, not the clip's, so a press on it grabs the body and pans or
@@ -221,7 +240,8 @@ fn tmp_probe_zoomed_clip_ends() {
     println!("nav = {nav:?}, body = {body:?}");
     let midy = (body.y + body.h / 2.0) as f64;
     for (id, offset, dur) in [(10, 0.0, 400.0), (11, 400.0, 400.0)] {
-        let Some((x0, x1)) = track::clip_x_range(body, &nav, offset, dur) else {
+        let grip_w = host.metrics_for(1).grip_w;
+        let Some((x0, x1)) = track::clip_x_range(body, &nav, offset, dur, grip_w) else {
             println!("clip {id}: not visible");
             continue;
         };
@@ -253,7 +273,10 @@ fn the_hit_lands_on_the_placed_clip_and_names_the_part_under_the_cursor() {
         assert_eq!((lane.0, lane.1.body, lane.1.nav), (5, body, nav));
         (h, lane)
     };
-    let (ax0, ax1) = track::clip_x_range(body, &nav, 0.0, 400.0).unwrap();
+    // The same floor the layout placed these with, so the re-derivation is
+    // the placement rather than a second opinion about it.
+    let grip_w = host.metrics_for(1).grip_w;
+    let (ax0, ax1) = track::clip_x_range(body, &nav, 0.0, 400.0, grip_w).unwrap();
     let midy = (body.y + body.h / 2.0) as f64;
     let part_at = |x: f64| {
         let (h, lane) = at(x, midy);
@@ -269,7 +292,7 @@ fn the_hit_lands_on_the_placed_clip_and_names_the_part_under_the_cursor() {
     assert_eq!(part_at((ax0 + 2.0) as f64), (10, ClipPart::Start));
     assert_eq!(part_at((ax1 - 2.0) as f64), (10, ClipPart::End));
     // Deeper into the lane -> clip B, and the hit itself says so.
-    let (bx0, bx1) = track::clip_x_range(body, &nav, 400.0, 400.0).unwrap();
+    let (bx0, bx1) = track::clip_x_range(body, &nav, 400.0, 400.0, grip_w).unwrap();
     let (h, _) = at(((bx0 + bx1) / 2.0) as f64, midy);
     assert_eq!(h.id, 11);
     // The clip's rectangle is the layout's, not a re-derivation.

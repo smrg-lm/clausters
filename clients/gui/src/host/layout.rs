@@ -475,11 +475,19 @@ fn place_on_time<'a>(
     for child in &widget.children {
         let (rect, inner) = match (&widget.kind, &child.kind) {
             (WidgetKind::Track { .. }, WidgetKind::Clip { offset, dur, .. }) => {
-                let rect =
-                    match crate::host::graphics::track::clip_x_range(body, &nav, *offset, *dur) {
-                        Some((x0, x1)) => crate::host::graphics::track::clip_rect(body, x0, x1),
-                        None => Rect::new(body.x, body.y, 0.0, 0.0),
-                    };
+                // The floor a clip is drawn no thinner than is the grip's own
+                // width: the smallest rectangle the host can promise a grab on,
+                // which is the whole reason a short clip is rounded up at all.
+                let rect = match crate::host::graphics::track::clip_x_range(
+                    body,
+                    &nav,
+                    *offset,
+                    *dur,
+                    space.metrics.grip_w,
+                ) {
+                    Some((x0, x1)) => crate::host::graphics::track::clip_rect(body, x0, x1),
+                    None => Rect::new(body.x, body.y, 0.0, 0.0),
+                };
                 // The lane hands the clip its own axis here, and that is the
                 // last time the lane's window is mentioned: from the clip
                 // inwards everything reads `(rect, time)`.
