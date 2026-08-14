@@ -1,0 +1,14 @@
+[package]
+name = "clausters-document"
+version = "0.9.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "The Clausters document: the single authoritative model of a composition -- the tree of elements and their placements, shared by every client and by the standalone GUI host."
+
+[dependencies]
+# The document is a serde tree: it is the normative format, and every client
+# round-trips against it rather than holding handles into it. `serde_json` is
+# what carries a leaf's configuration, which the document transports and never
+# interprets -- see the crate docs on why a leaf is opaque.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
