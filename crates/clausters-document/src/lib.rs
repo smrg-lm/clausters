@@ -227,6 +227,11 @@ pub enum Body {
     Buffer {
         /// The material.
         source: SourceRef,
+        /// How this material is meant to sound — a buffer is *data*, so what
+        /// plays it (an instrument, its controls) is configuration, and
+        /// configuration is the client's to interpret.
+        #[serde(default, skip_serializing_if = "Opaque::is_empty")]
+        config: Opaque,
     },
     /// The recursive container: elements of mixed kinds, placed.
     Set {

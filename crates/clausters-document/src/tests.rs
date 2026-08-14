@@ -59,6 +59,7 @@ fn a_tree_round_trips_unchanged() {
                             generation: 3,
                             range: Some(Range { start: 0, end: 480 }),
                         },
+                        config: Opaque::none(),
                     },
                 ),
             ),

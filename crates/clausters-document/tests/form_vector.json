@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "root": {
+    "id": 1,
+    "kind": "set",
+    "grouping": "concrete",
+    "members": [
+      {
+        "offset": 0.0,
+        "node": {
+          "id": 2,
+          "duration": 1.0,
+          "kind": "event",
+          "config": {
+            "type": "note",
+            "instrument": "default",
+            "dur": 1.0,
+            "legato": 0.8,
+            "stretch": 1.0,
+            "amp": 0.1,
+            "add_action": 1,
+            "target": 0,
+            "has_gate": false,
+            "octave": 5.0,
+            "root": 0.0,
+            "scale": [
+              0,
+              2,
+              4,
+              5,
+              7,
+              9,
+              11
+            ],
+            "midinote": 60
+          }
+        },
+        "dur": 1.0
+      },
+      {
+        "offset": 1.0,
+        "node": {
+          "id": 3,
+          "kind": "set",
+          "grouping": "concrete",
+          "members": [
+            {
+              "offset": 0.0,
+              "node": {
+                "id": 4,
+                "kind": "event",
+                "config": {
+                  "type": "note",
+                  "instrument": "default",
+                  "dur": 1.0,
+                  "legato": 0.8,
+                  "stretch": 1.0,
+                  "amp": 0.1,
+                  "add_action": 1,
+                  "target": 0,
+                  "has_gate": false,
+                  "octave": 5.0,
+                  "root": 0.0,
+                  "scale": [
+                    0,
+                    2,
+                    4,
+                    5,
+                    7,
+                    9,
+                    11
+                  ],
+                  "midinote": 64
+                }
+              }
+            },
+            {
+              "offset": 1.5,
+              "node": {
+                "id": 5,
+                "kind": "event",
+                "config": {
+                  "type": "note",
+                  "instrument": "default",
+                  "dur": 1.0,
+                  "legato": 0.8,
+                  "stretch": 1.0,
+                  "amp": 0.1,
+                  "add_action": 1,
+                  "target": 0,
+                  "has_gate": false,
+                  "octave": 5.0,
+                  "root": 0.0,
+                  "scale": [
+                    0,
+                    2,
+                    4,
+                    5,
+                    7,
+                    9,
+                    11
+                  ],
+                  "midinote": 67
+                }
+              }
+            }
+          ]
+        },
+        "dur": 4.0
+      },
+      {
+        "offset": 4.0,
+        "node": {
+          "id": 6,
+          "kind": "buffer",
+          "source": {
+            "source": 7,
+            "lifetime": "session",
+            "generation": 0
+          },
+          "config": {
+            "instrument": "take",
+            "controls": {
+              "amp": 0.4
+            }
+          }
+        },
+        "dur": 2.0
+      },
+      {
+        "offset": 6.0,
+        "node": {
+          "id": 7,
+          "kind": "sequence",
+          "members": [
+            {
+              "offset": 0.0,
+              "node": {
+                "id": 8,
+                "duration": 1.0,
+                "kind": "event",
+                "config": {
+                  "type": "note",
+                  "instrument": "default",
+                  "dur": 1.0,
+                  "legato": 0.8,
+                  "stretch": 1.0,
+                  "amp": 0.1,
+                  "add_action": 1,
+                  "target": 0,
+                  "has_gate": false,
+                  "octave": 5.0,
+                  "root": 0.0,
+                  "scale": [
+                    0,
+                    2,
+                    4,
+                    5,
+                    7,
+                    9,
+                    11
+                  ],
+                  "midinote": 72
+                }
+              }
+            },
+            {
+              "offset": 0.0,
+              "node": {
+                "id": 9,
+                "duration": 1.0,
+                "kind": "event",
+                "config": {
+                  "type": "note",
+                  "instrument": "default",
+                  "dur": 1.0,
+                  "legato": 0.8,
+                  "stretch": 1.0,
+                  "amp": 0.1,
+                  "add_action": 1,
+                  "target": 0,
+                  "has_gate": false,
+                  "octave": 5.0,
+                  "root": 0.0,
+                  "scale": [
+                    0,
+                    2,
+                    4,
+                    5,
+                    7,
+                    9,
+                    11
+                  ],
+                  "midinote": 74
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "offset": 8.0,
+        "node": {
+          "id": 10,
+          "kind": "set",
+          "grouping": "logical",
+          "members": [
+            {
+              "offset": 0.0,
+              "node": {
+                "id": 11,
+                "kind": "generator",
+                "config": {
+                  "generator": "rlpf",
+                  "controls": {
+                    "cutoff": 900.0
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "offset": 12.0,
+        "node": {
+          "id": 12,
+          "resident": true,
+          "kind": "generator",
+          "config": {
+            "generator": "granular"
+          }
+        },
+        "dur": 4.0
+      }
+    ]
+  }
+}
