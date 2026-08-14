@@ -2,6 +2,44 @@
 /* eslint-disable */
 
 /**
+ * One composition, held in Rust — the JS face of
+ * [`clausters_document::Document`].
+ */
+export class Document {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Apply an edit. `apply(requestJson) -> outcomeJson`, the request carrying
+     * `{ intent, against?, quant? }` and the result the outcome alone —
+     * the document stays here and `snapshot` is how it leaves.
+     *
+     * One object rather than three arguments because the boundary is JSON
+     * either way, and a request that grows a field then costs no signature.
+     */
+    apply(request: string): string;
+    /**
+     * Open a document from its JSON, or an empty composition from `undefined`.
+     */
+    constructor(json?: string | null);
+    /**
+     * Resolve a selection to the spans of material underneath it.
+     * `resolve(requestJson) -> resolvedJson`, the request carrying
+     * `{ selection, framesPerBeat, inBeats? }`.
+     */
+    resolve(request: string): string;
+    /**
+     * The whole tree as JSON — for saving it, or for a caller that wants it.
+     * The one call that still costs the size of the composition, and it is
+     * asked for rather than paid on every edit.
+     */
+    snapshot(): string;
+    /**
+     * The monotonic version, bumped by every applied edit. Never zero.
+     */
+    readonly version: bigint;
+}
+
+/**
  * The undo history of one document, the JS face of
  * [`clausters_document::Log`].
  */
@@ -9,13 +47,13 @@ export class Log {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Apply an edit **and record it**, in one call: the inverse has to be read
-     * out of the document before the edit lands, so applying first and
-     * recording second would record the wrong thing.
-     * `apply(requestJson) -> resultJson`, the request carrying
-     * `{ document, intent, against?, quant?, label? }`.
+     * Apply an edit to `document` **and record it**, in one call: the inverse
+     * has to be read out of the document before the edit lands, so applying
+     * first and recording second would record the wrong thing.
+     * `apply(document, requestJson) -> outcomeJson`, the request carrying
+     * `{ intent, against?, quant?, label? }`.
      */
-    apply(request: string): string;
+    apply(document: Document, request: string): string;
     /**
      * Forget everything, releasing what was spilled.
      */
@@ -34,19 +72,18 @@ export class Log {
      */
     record(request: string): void;
     /**
-     * Redo what was last undone, applying what it can. Returns
-     * `{ document, remaining }` — the ordinary edits at the front are already
-     * applied, and `remaining` holds the steps from the first one the crate
-     * cannot perform onward, for the owner to re-run. `undefined` when there
-     * was nothing to redo.
+     * Redo what was last undone, applying what it can to `document`. Returns
+     * `{ remaining }` — the ordinary edits at the front are already applied,
+     * and `remaining` holds the steps from the first one the crate cannot
+     * perform onward, for the owner to re-run. `undefined` when there was
+     * nothing to redo.
      */
-    redo(document: string): string | undefined;
+    redo(document: Document): string | undefined;
     /**
-     * Undo the last transaction, applying its inverses to `documentJson`.
-     * Returns `{ document, undone }`, or `undefined` when there was nothing to
-     * undo.
+     * Undo the last transaction, applying its inverses to `document`.
+     * Returns `{ undone }`, or `undefined` when there was nothing to undo.
      */
-    undo(document: string): string | undefined;
+    undo(document: Document): string | undefined;
     /**
      * Whether there is anything to redo.
      */
@@ -360,23 +397,6 @@ export function correlation(left: Float32Array, right: Float32Array): number | u
 export function degree_to_midinote(degree: number, octave: number, root: number, scale: Float32Array): number;
 
 /**
- * JS face: apply an edit. `documentApply(requestJson) -> resultJson`, the
- * request carrying `{ document, intent, against?, quant? }` and the result
- * `{ document, outcome }`.
- *
- * One object rather than four arguments because the boundary is JSON either
- * way, and a request that grows a field then costs no signature.
- */
-export function document_apply(request: string): string;
-
-/**
- * JS face: resolve a selection to the spans of material underneath it.
- * `documentResolve(requestJson) -> resolvedJson`, the request carrying
- * `{ document, selection, framesPerBeat, inBeats? }`.
- */
-export function document_resolve(request: string): string;
-
-/**
  * JS face: the `[audio, control]` bus widths GraphDef instances reserve at
  * the top of each bus space (before clamping to a smaller configured count).
  */
@@ -511,6 +531,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_document_free: (a: number, b: number) => void;
     readonly __wbg_log_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
@@ -527,20 +548,23 @@ export interface InitOutput {
     readonly channel_stats: (a: number, b: number, c: number, d: number) => [number, number];
     readonly correlation: (a: number, b: number, c: number, d: number) => number;
     readonly degree_to_midinote: (a: number, b: number, c: number, d: number, e: number) => number;
-    readonly document_apply: (a: number, b: number) => [number, number, number, number];
-    readonly document_resolve: (a: number, b: number) => [number, number, number, number];
+    readonly document_apply: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly document_new: (a: number, b: number) => [number, number, number];
+    readonly document_resolve: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly document_snapshot: (a: number) => [number, number, number, number];
+    readonly document_version: (a: number) => bigint;
     readonly graph_bus_reserved: () => [number, number];
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly log_apply: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly log_apply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly log_canRedo: (a: number) => number;
     readonly log_canUndo: (a: number) => number;
     readonly log_clear: (a: number) => void;
     readonly log_len: (a: number) => number;
     readonly log_new: (a: number, b: number) => number;
     readonly log_record: (a: number, b: number, c: number) => [number, number];
-    readonly log_redo: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly log_redo: (a: number, b: number) => [number, number, number, number];
     readonly log_redoLabel: (a: number) => [number, number];
-    readonly log_undo: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly log_undo: (a: number, b: number) => [number, number, number, number];
     readonly log_undoLabel: (a: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];

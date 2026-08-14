@@ -113,13 +113,18 @@
       },
       "quant": 0.0,
       "document": {
+        "version": 2,
         "root": {
-          "grouping": "concrete",
           "id": 1,
           "kind": "set",
+          "grouping": "concrete",
           "members": [
             {
+              "offset": 5.0,
               "node": {
+                "id": 2,
+                "duration": 1.0,
+                "kind": "event",
                 "config": {
                   "add_action": 1,
                   "amp": 0.1,
@@ -142,39 +147,40 @@
                   "stretch": 1.0,
                   "target": 0,
                   "type": "note"
-                },
-                "duration": 1.0,
-                "id": 2,
-                "kind": "event"
-              },
-              "offset": 5.0
+                }
+              }
             },
             {
+              "offset": 2.0,
               "dur": 4.0,
               "node": {
-                "config": {
-                  "instrument": "take"
-                },
                 "id": 3,
                 "kind": "buffer",
                 "source": {
-                  "generation": 0,
+                  "source": 100,
                   "lifetime": "session",
-                  "source": 100
+                  "generation": 0
+                },
+                "config": {
+                  "instrument": "take"
                 }
-              },
-              "offset": 2.0
+              }
             },
             {
+              "offset": 8.0,
               "dur": 2.0,
               "node": {
-                "grouping": "concrete",
                 "id": 4,
                 "kind": "set",
+                "grouping": "concrete",
                 "members": [
                   {
+                    "offset": 0.0,
                     "dur": 0.5,
                     "node": {
+                      "id": 5,
+                      "duration": 0.5,
+                      "kind": "event",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -197,20 +203,14 @@
                         "stretch": 1.0,
                         "target": 0,
                         "type": "note"
-                      },
-                      "duration": 0.5,
-                      "id": 5,
-                      "kind": "event"
-                    },
-                    "offset": 0.0
+                      }
+                    }
                   }
                 ]
-              },
-              "offset": 8.0
+              }
             }
           ]
-        },
-        "version": 2
+        }
       },
       "outcome": {
         "applied": true,
@@ -235,13 +235,18 @@
       },
       "quant": 1.0,
       "document": {
+        "version": 3,
         "root": {
-          "grouping": "concrete",
           "id": 1,
           "kind": "set",
+          "grouping": "concrete",
           "members": [
             {
+              "offset": 4.0,
               "node": {
+                "id": 2,
+                "duration": 1.0,
+                "kind": "event",
                 "config": {
                   "add_action": 1,
                   "amp": 0.1,
@@ -264,39 +269,40 @@
                   "stretch": 1.0,
                   "target": 0,
                   "type": "note"
-                },
-                "duration": 1.0,
-                "id": 2,
-                "kind": "event"
-              },
-              "offset": 4.0
+                }
+              }
             },
             {
+              "offset": 2.0,
               "dur": 4.0,
               "node": {
-                "config": {
-                  "instrument": "take"
-                },
                 "id": 3,
                 "kind": "buffer",
                 "source": {
-                  "generation": 0,
+                  "source": 100,
                   "lifetime": "session",
-                  "source": 100
+                  "generation": 0
+                },
+                "config": {
+                  "instrument": "take"
                 }
-              },
-              "offset": 2.0
+              }
             },
             {
+              "offset": 8.0,
               "dur": 2.0,
               "node": {
-                "grouping": "concrete",
                 "id": 4,
                 "kind": "set",
+                "grouping": "concrete",
                 "members": [
                   {
+                    "offset": 0.0,
                     "dur": 0.5,
                     "node": {
+                      "id": 5,
+                      "duration": 0.5,
+                      "kind": "event",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -319,20 +325,14 @@
                         "stretch": 1.0,
                         "target": 0,
                         "type": "note"
-                      },
-                      "duration": 0.5,
-                      "id": 5,
-                      "kind": "event"
-                    },
-                    "offset": 0.0
+                      }
+                    }
                   }
                 ]
-              },
-              "offset": 8.0
+              }
             }
           ]
-        },
-        "version": 3
+        }
       },
       "outcome": {
         "applied": true,
@@ -358,13 +358,18 @@
       },
       "quant": 0.5,
       "document": {
+        "version": 4,
         "root": {
-          "grouping": "concrete",
           "id": 1,
           "kind": "set",
+          "grouping": "concrete",
           "members": [
             {
+              "offset": 4.0,
               "node": {
+                "id": 2,
+                "duration": 1.0,
+                "kind": "event",
                 "config": {
                   "add_action": 1,
                   "amp": 0.1,
@@ -387,39 +392,40 @@
                   "stretch": 1.0,
                   "target": 0,
                   "type": "note"
-                },
-                "duration": 1.0,
-                "id": 2,
-                "kind": "event"
-              },
-              "offset": 4.0
+                }
+              }
             },
             {
+              "offset": 2.0,
               "dur": 4.0,
               "node": {
-                "config": {
-                  "instrument": "take"
-                },
                 "id": 3,
                 "kind": "buffer",
                 "source": {
-                  "generation": 0,
+                  "source": 100,
                   "lifetime": "session",
-                  "source": 100
+                  "generation": 0
+                },
+                "config": {
+                  "instrument": "take"
                 }
-              },
-              "offset": 2.0
+              }
             },
             {
+              "offset": 1.0,
               "dur": 3.0,
               "node": {
-                "grouping": "concrete",
                 "id": 4,
                 "kind": "set",
+                "grouping": "concrete",
                 "members": [
                   {
+                    "offset": 0.0,
                     "dur": 0.5,
                     "node": {
+                      "id": 5,
+                      "duration": 0.5,
+                      "kind": "event",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -442,20 +448,14 @@
                         "stretch": 1.0,
                         "target": 0,
                         "type": "note"
-                      },
-                      "duration": 0.5,
-                      "id": 5,
-                      "kind": "event"
-                    },
-                    "offset": 0.0
+                      }
+                    }
                   }
                 ]
-              },
-              "offset": 1.0
+              }
             }
           ]
-        },
-        "version": 4
+        }
       },
       "outcome": {
         "applied": true,
@@ -484,49 +484,55 @@
       },
       "quant": 0.0,
       "document": {
+        "version": 5,
         "root": {
-          "grouping": "concrete",
           "id": 1,
           "kind": "set",
+          "grouping": "concrete",
           "members": [
             {
+              "offset": 4.0,
               "node": {
+                "id": 2,
+                "duration": 1.0,
+                "kind": "event",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
-                },
-                "duration": 1.0,
-                "id": 2,
-                "kind": "event"
-              },
-              "offset": 4.0
+                }
+              }
             },
             {
+              "offset": 2.0,
               "dur": 4.0,
               "node": {
-                "config": {
-                  "instrument": "take"
-                },
                 "id": 3,
                 "kind": "buffer",
                 "source": {
-                  "generation": 0,
+                  "source": 100,
                   "lifetime": "session",
-                  "source": 100
+                  "generation": 0
+                },
+                "config": {
+                  "instrument": "take"
                 }
-              },
-              "offset": 2.0
+              }
             },
             {
+              "offset": 1.0,
               "dur": 3.0,
               "node": {
-                "grouping": "concrete",
                 "id": 4,
                 "kind": "set",
+                "grouping": "concrete",
                 "members": [
                   {
+                    "offset": 0.0,
                     "dur": 0.5,
                     "node": {
+                      "id": 5,
+                      "duration": 0.5,
+                      "kind": "event",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -549,20 +555,14 @@
                         "stretch": 1.0,
                         "target": 0,
                         "type": "note"
-                      },
-                      "duration": 0.5,
-                      "id": 5,
-                      "kind": "event"
-                    },
-                    "offset": 0.0
+                      }
+                    }
                   }
                 ]
-              },
-              "offset": 1.0
+              }
             }
           ]
-        },
-        "version": 5
+        }
       },
       "outcome": {
         "applied": true,
@@ -590,49 +590,55 @@
       },
       "quant": 0.0,
       "document": {
+        "version": 5,
         "root": {
-          "grouping": "concrete",
           "id": 1,
           "kind": "set",
+          "grouping": "concrete",
           "members": [
             {
+              "offset": 4.0,
               "node": {
+                "id": 2,
+                "duration": 1.0,
+                "kind": "event",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
-                },
-                "duration": 1.0,
-                "id": 2,
-                "kind": "event"
-              },
-              "offset": 4.0
+                }
+              }
             },
             {
+              "offset": 2.0,
               "dur": 4.0,
               "node": {
-                "config": {
-                  "instrument": "take"
-                },
                 "id": 3,
                 "kind": "buffer",
                 "source": {
-                  "generation": 0,
+                  "source": 100,
                   "lifetime": "session",
-                  "source": 100
+                  "generation": 0
+                },
+                "config": {
+                  "instrument": "take"
                 }
-              },
-              "offset": 2.0
+              }
             },
             {
+              "offset": 1.0,
               "dur": 3.0,
               "node": {
-                "grouping": "concrete",
                 "id": 4,
                 "kind": "set",
+                "grouping": "concrete",
                 "members": [
                   {
+                    "offset": 0.0,
                     "dur": 0.5,
                     "node": {
+                      "id": 5,
+                      "duration": 0.5,
+                      "kind": "event",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -655,20 +661,14 @@
                         "stretch": 1.0,
                         "target": 0,
                         "type": "note"
-                      },
-                      "duration": 0.5,
-                      "id": 5,
-                      "kind": "event"
-                    },
-                    "offset": 0.0
+                      }
+                    }
                   }
                 ]
-              },
-              "offset": 1.0
+              }
             }
           ]
-        },
-        "version": 5
+        }
       },
       "outcome": {
         "applied": false,
@@ -693,49 +693,55 @@
       },
       "quant": 0.0,
       "document": {
+        "version": 5,
         "root": {
-          "grouping": "concrete",
           "id": 1,
           "kind": "set",
+          "grouping": "concrete",
           "members": [
             {
+              "offset": 4.0,
               "node": {
+                "id": 2,
+                "duration": 1.0,
+                "kind": "event",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
-                },
-                "duration": 1.0,
-                "id": 2,
-                "kind": "event"
-              },
-              "offset": 4.0
+                }
+              }
             },
             {
+              "offset": 2.0,
               "dur": 4.0,
               "node": {
-                "config": {
-                  "instrument": "take"
-                },
                 "id": 3,
                 "kind": "buffer",
                 "source": {
-                  "generation": 0,
+                  "source": 100,
                   "lifetime": "session",
-                  "source": 100
+                  "generation": 0
+                },
+                "config": {
+                  "instrument": "take"
                 }
-              },
-              "offset": 2.0
+              }
             },
             {
+              "offset": 1.0,
               "dur": 3.0,
               "node": {
-                "grouping": "concrete",
                 "id": 4,
                 "kind": "set",
+                "grouping": "concrete",
                 "members": [
                   {
+                    "offset": 0.0,
                     "dur": 0.5,
                     "node": {
+                      "id": 5,
+                      "duration": 0.5,
+                      "kind": "event",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -758,20 +764,14 @@
                         "stretch": 1.0,
                         "target": 0,
                         "type": "note"
-                      },
-                      "duration": 0.5,
-                      "id": 5,
-                      "kind": "event"
-                    },
-                    "offset": 0.0
+                      }
+                    }
                   }
                 ]
-              },
-              "offset": 1.0
+              }
             }
           ]
-        },
-        "version": 5
+        }
       },
       "outcome": {
         "applied": false,
@@ -795,48 +795,54 @@
       "against": null,
       "quant": 0.0,
       "document": {
+        "version": 6,
         "root": {
-          "grouping": "concrete",
           "id": 1,
           "kind": "set",
+          "grouping": "concrete",
           "members": [
             {
+              "offset": 4.0,
               "node": {
+                "id": 2,
+                "duration": 1.0,
+                "kind": "event",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
-                },
-                "duration": 1.0,
-                "id": 2,
-                "kind": "event"
-              },
-              "offset": 4.0
+                }
+              }
             },
             {
+              "offset": 2.0,
               "dur": 4.0,
               "node": {
-                "config": {
-                  "instrument": "take"
-                },
                 "id": 3,
                 "kind": "buffer",
                 "source": {
-                  "generation": 0,
+                  "source": 100,
                   "lifetime": "session",
-                  "source": 100
+                  "generation": 0
+                },
+                "config": {
+                  "instrument": "take"
                 }
-              },
-              "offset": 2.0
+              }
             },
             {
+              "offset": 9.0,
               "node": {
-                "grouping": "concrete",
                 "id": 4,
                 "kind": "set",
+                "grouping": "concrete",
                 "members": [
                   {
+                    "offset": 0.0,
                     "dur": 0.5,
                     "node": {
+                      "id": 5,
+                      "duration": 0.5,
+                      "kind": "event",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -859,20 +865,14 @@
                         "stretch": 1.0,
                         "target": 0,
                         "type": "note"
-                      },
-                      "duration": 0.5,
-                      "id": 5,
-                      "kind": "event"
-                    },
-                    "offset": 0.0
+                      }
+                    }
                   }
                 ]
-              },
-              "offset": 9.0
+              }
             }
           ]
-        },
-        "version": 6
+        }
       },
       "outcome": {
         "applied": true,
@@ -901,48 +901,54 @@
       },
       "quant": 0.0,
       "document": {
+        "version": 7,
         "root": {
-          "grouping": "concrete",
           "id": 1,
           "kind": "set",
+          "grouping": "concrete",
           "members": [
             {
+              "offset": 4.0,
               "node": {
+                "id": 2,
+                "duration": 1.0,
+                "kind": "event",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
-                },
-                "duration": 1.0,
-                "id": 2,
-                "kind": "event"
-              },
-              "offset": 4.0
+                }
+              }
             },
             {
+              "offset": 2.0,
               "dur": 4.0,
               "node": {
-                "config": {
-                  "instrument": "take"
-                },
                 "id": 3,
                 "kind": "buffer",
                 "source": {
-                  "generation": 1,
+                  "source": 100,
                   "lifetime": "session",
-                  "source": 100
+                  "generation": 1
+                },
+                "config": {
+                  "instrument": "take"
                 }
-              },
-              "offset": 2.0
+              }
             },
             {
+              "offset": 9.0,
               "node": {
-                "grouping": "concrete",
                 "id": 4,
                 "kind": "set",
+                "grouping": "concrete",
                 "members": [
                   {
+                    "offset": 0.0,
                     "dur": 0.5,
                     "node": {
+                      "id": 5,
+                      "duration": 0.5,
+                      "kind": "event",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -965,20 +971,14 @@
                         "stretch": 1.0,
                         "target": 0,
                         "type": "note"
-                      },
-                      "duration": 0.5,
-                      "id": 5,
-                      "kind": "event"
-                    },
-                    "offset": 0.0
+                      }
+                    }
                   }
                 ]
-              },
-              "offset": 9.0
+              }
             }
           ]
-        },
-        "version": 7
+        }
       },
       "outcome": {
         "applied": true,
@@ -1008,48 +1008,54 @@
       },
       "quant": 0.0,
       "document": {
+        "version": 7,
         "root": {
-          "grouping": "concrete",
           "id": 1,
           "kind": "set",
+          "grouping": "concrete",
           "members": [
             {
+              "offset": 4.0,
               "node": {
+                "id": 2,
+                "duration": 1.0,
+                "kind": "event",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
-                },
-                "duration": 1.0,
-                "id": 2,
-                "kind": "event"
-              },
-              "offset": 4.0
+                }
+              }
             },
             {
+              "offset": 2.0,
               "dur": 4.0,
               "node": {
-                "config": {
-                  "instrument": "take"
-                },
                 "id": 3,
                 "kind": "buffer",
                 "source": {
-                  "generation": 1,
+                  "source": 100,
                   "lifetime": "session",
-                  "source": 100
+                  "generation": 1
+                },
+                "config": {
+                  "instrument": "take"
                 }
-              },
-              "offset": 2.0
+              }
             },
             {
+              "offset": 9.0,
               "node": {
-                "grouping": "concrete",
                 "id": 4,
                 "kind": "set",
+                "grouping": "concrete",
                 "members": [
                   {
+                    "offset": 0.0,
                     "dur": 0.5,
                     "node": {
+                      "id": 5,
+                      "duration": 0.5,
+                      "kind": "event",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -1072,20 +1078,14 @@
                         "stretch": 1.0,
                         "target": 0,
                         "type": "note"
-                      },
-                      "duration": 0.5,
-                      "id": 5,
-                      "kind": "event"
-                    },
-                    "offset": 0.0
+                      }
+                    }
                   }
                 ]
-              },
-              "offset": 9.0
+              }
             }
           ]
-        },
-        "version": 7
+        }
       },
       "outcome": {
         "applied": false,
@@ -1101,48 +1101,54 @@
     }
   ],
   "final": {
+    "version": 7,
     "root": {
-      "grouping": "concrete",
       "id": 1,
       "kind": "set",
+      "grouping": "concrete",
       "members": [
         {
+          "offset": 4.0,
           "node": {
+            "id": 2,
+            "duration": 1.0,
+            "kind": "event",
             "config": {
               "amp": 0.4,
               "midinote": 72
-            },
-            "duration": 1.0,
-            "id": 2,
-            "kind": "event"
-          },
-          "offset": 4.0
+            }
+          }
         },
         {
+          "offset": 2.0,
           "dur": 4.0,
           "node": {
-            "config": {
-              "instrument": "take"
-            },
             "id": 3,
             "kind": "buffer",
             "source": {
-              "generation": 1,
+              "source": 100,
               "lifetime": "session",
-              "source": 100
+              "generation": 1
+            },
+            "config": {
+              "instrument": "take"
             }
-          },
-          "offset": 2.0
+          }
         },
         {
+          "offset": 9.0,
           "node": {
-            "grouping": "concrete",
             "id": 4,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
+                "offset": 0.0,
                 "dur": 0.5,
                 "node": {
+                  "id": 5,
+                  "duration": 0.5,
+                  "kind": "event",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1165,20 +1171,14 @@
                     "stretch": 1.0,
                     "target": 0,
                     "type": "note"
-                  },
-                  "duration": 0.5,
-                  "id": 5,
-                  "kind": "event"
-                },
-                "offset": 0.0
+                  }
+                }
               }
             ]
-          },
-          "offset": 9.0
+          }
         }
       ]
-    },
-    "version": 7
+    }
   },
   "resolutions": [
     {
@@ -1262,13 +1262,18 @@
         },
         "quant": 0.0,
         "document": {
+          "version": 2,
           "root": {
-            "grouping": "concrete",
             "id": 1,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
+                "offset": 1.0,
                 "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1291,39 +1296,40 @@
                     "stretch": 1.0,
                     "target": 0,
                     "type": "note"
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 1.0
+                  }
+                }
               },
               {
+                "offset": 2.0,
                 "dur": 4.0,
                 "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
                   "id": 3,
                   "kind": "buffer",
                   "source": {
-                    "generation": 0,
+                    "source": 100,
                     "lifetime": "session",
-                    "source": 100
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
                   }
-                },
-                "offset": 2.0
+                }
               },
               {
+                "offset": 8.0,
                 "dur": 2.0,
                 "node": {
-                  "grouping": "concrete",
                   "id": 4,
                   "kind": "set",
+                  "grouping": "concrete",
                   "members": [
                     {
+                      "offset": 0.0,
                       "dur": 0.5,
                       "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -1346,20 +1352,14 @@
                           "stretch": 1.0,
                           "target": 0,
                           "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
+                        }
+                      }
                     }
                   ]
-                },
-                "offset": 8.0
+                }
               }
             ]
-          },
-          "version": 2
+          }
         },
         "outcome": {
           "applied": true,
@@ -1383,13 +1383,18 @@
         },
         "quant": 0.0,
         "document": {
+          "version": 3,
           "root": {
-            "grouping": "concrete",
             "id": 1,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
+                "offset": 1.0,
                 "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1412,38 +1417,39 @@
                     "stretch": 1.0,
                     "target": 0,
                     "type": "note"
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 1.0
+                  }
+                }
               },
               {
+                "offset": 6.0,
                 "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
                   "id": 3,
                   "kind": "buffer",
                   "source": {
-                    "generation": 0,
+                    "source": 100,
                     "lifetime": "session",
-                    "source": 100
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
                   }
-                },
-                "offset": 6.0
+                }
               },
               {
+                "offset": 8.0,
                 "dur": 2.0,
                 "node": {
-                  "grouping": "concrete",
                   "id": 4,
                   "kind": "set",
+                  "grouping": "concrete",
                   "members": [
                     {
+                      "offset": 0.0,
                       "dur": 0.5,
                       "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -1466,20 +1472,14 @@
                           "stretch": 1.0,
                           "target": 0,
                           "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
+                        }
+                      }
                     }
                   ]
-                },
-                "offset": 8.0
+                }
               }
             ]
-          },
-          "version": 3
+          }
         },
         "outcome": {
           "applied": true,
@@ -1503,13 +1503,18 @@
         },
         "quant": 1.0,
         "document": {
+          "version": 4,
           "root": {
-            "grouping": "concrete",
             "id": 1,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
+                "offset": 4.0,
                 "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1532,38 +1537,39 @@
                     "stretch": 1.0,
                     "target": 0,
                     "type": "note"
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 4.0
+                  }
+                }
               },
               {
+                "offset": 6.0,
                 "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
                   "id": 3,
                   "kind": "buffer",
                   "source": {
-                    "generation": 0,
+                    "source": 100,
                     "lifetime": "session",
-                    "source": 100
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
                   }
-                },
-                "offset": 6.0
+                }
               },
               {
+                "offset": 8.0,
                 "dur": 2.0,
                 "node": {
-                  "grouping": "concrete",
                   "id": 4,
                   "kind": "set",
+                  "grouping": "concrete",
                   "members": [
                     {
+                      "offset": 0.0,
                       "dur": 0.5,
                       "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -1586,20 +1592,14 @@
                           "stretch": 1.0,
                           "target": 0,
                           "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
+                        }
+                      }
                     }
                   ]
-                },
-                "offset": 8.0
+                }
               }
             ]
-          },
-          "version": 4
+          }
         },
         "outcome": {
           "applied": true,
@@ -1625,47 +1625,53 @@
         },
         "quant": 0.0,
         "document": {
+          "version": 5,
           "root": {
-            "grouping": "concrete",
             "id": 1,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
+                "offset": 4.0,
                 "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
                   "config": {
                     "midinote": 65
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 4.0
+                  }
+                }
               },
               {
+                "offset": 6.0,
                 "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
                   "id": 3,
                   "kind": "buffer",
                   "source": {
-                    "generation": 0,
+                    "source": 100,
                     "lifetime": "session",
-                    "source": 100
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
                   }
-                },
-                "offset": 6.0
+                }
               },
               {
+                "offset": 8.0,
                 "dur": 2.0,
                 "node": {
-                  "grouping": "concrete",
                   "id": 4,
                   "kind": "set",
+                  "grouping": "concrete",
                   "members": [
                     {
+                      "offset": 0.0,
                       "dur": 0.5,
                       "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -1688,20 +1694,14 @@
                           "stretch": 1.0,
                           "target": 0,
                           "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
+                        }
+                      }
                     }
                   ]
-                },
-                "offset": 8.0
+                }
               }
             ]
-          },
-          "version": 5
+          }
         },
         "outcome": {
           "applied": true,
@@ -1721,105 +1721,6 @@
     ],
     "undos": [
       {
-        "document": {
-          "root": {
-            "grouping": "concrete",
-            "id": 1,
-            "kind": "set",
-            "members": [
-              {
-                "node": {
-                  "config": {
-                    "add_action": 1,
-                    "amp": 0.1,
-                    "dur": 1.0,
-                    "has_gate": false,
-                    "instrument": "default",
-                    "legato": 0.8,
-                    "midinote": 60,
-                    "octave": 5.0,
-                    "root": 0.0,
-                    "scale": [
-                      0,
-                      2,
-                      4,
-                      5,
-                      7,
-                      9,
-                      11
-                    ],
-                    "stretch": 1.0,
-                    "target": 0,
-                    "type": "note"
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 4.0
-              },
-              {
-                "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
-                  "id": 3,
-                  "kind": "buffer",
-                  "source": {
-                    "generation": 0,
-                    "lifetime": "session",
-                    "source": 100
-                  }
-                },
-                "offset": 6.0
-              },
-              {
-                "dur": 2.0,
-                "node": {
-                  "grouping": "concrete",
-                  "id": 4,
-                  "kind": "set",
-                  "members": [
-                    {
-                      "dur": 0.5,
-                      "node": {
-                        "config": {
-                          "add_action": 1,
-                          "amp": 0.1,
-                          "dur": 0.5,
-                          "has_gate": false,
-                          "instrument": "default",
-                          "legato": 0.8,
-                          "midinote": 67,
-                          "octave": 5.0,
-                          "root": 0.0,
-                          "scale": [
-                            0,
-                            2,
-                            4,
-                            5,
-                            7,
-                            9,
-                            11
-                          ],
-                          "stretch": 1.0,
-                          "target": 0,
-                          "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
-                    }
-                  ]
-                },
-                "offset": 8.0
-              }
-            ]
-          },
-          "version": 6
-        },
         "undone": [
           {
             "config": {
@@ -1848,17 +1749,20 @@
             "intent": "configure",
             "node": 2
           }
-        ]
-      },
-      {
+        ],
         "document": {
+          "version": 6,
           "root": {
-            "grouping": "concrete",
             "id": 1,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
+                "offset": 4.0,
                 "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1881,38 +1785,39 @@
                     "stretch": 1.0,
                     "target": 0,
                     "type": "note"
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 1.0
+                  }
+                }
               },
               {
+                "offset": 6.0,
                 "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
                   "id": 3,
                   "kind": "buffer",
                   "source": {
-                    "generation": 0,
+                    "source": 100,
                     "lifetime": "session",
-                    "source": 100
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
                   }
-                },
-                "offset": 6.0
+                }
               },
               {
+                "offset": 8.0,
                 "dur": 2.0,
                 "node": {
-                  "grouping": "concrete",
                   "id": 4,
                   "kind": "set",
+                  "grouping": "concrete",
                   "members": [
                     {
+                      "offset": 0.0,
                       "dur": 0.5,
                       "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -1935,38 +1840,37 @@
                           "stretch": 1.0,
                           "target": 0,
                           "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
+                        }
+                      }
                     }
                   ]
-                },
-                "offset": 8.0
+                }
               }
             ]
-          },
-          "version": 7
-        },
+          }
+        }
+      },
+      {
         "undone": [
           {
             "intent": "place",
             "node": 2,
             "offset": 1.0
           }
-        ]
-      },
-      {
+        ],
         "document": {
+          "version": 7,
           "root": {
-            "grouping": "concrete",
             "id": 1,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
+                "offset": 1.0,
                 "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1989,39 +1893,39 @@
                     "stretch": 1.0,
                     "target": 0,
                     "type": "note"
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 1.0
+                  }
+                }
               },
               {
-                "dur": 4.0,
+                "offset": 6.0,
                 "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
                   "id": 3,
                   "kind": "buffer",
                   "source": {
-                    "generation": 0,
+                    "source": 100,
                     "lifetime": "session",
-                    "source": 100
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
                   }
-                },
-                "offset": 2.0
+                }
               },
               {
+                "offset": 8.0,
                 "dur": 2.0,
                 "node": {
-                  "grouping": "concrete",
                   "id": 4,
                   "kind": "set",
+                  "grouping": "concrete",
                   "members": [
                     {
+                      "offset": 0.0,
                       "dur": 0.5,
                       "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2044,21 +1948,17 @@
                           "stretch": 1.0,
                           "target": 0,
                           "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
+                        }
+                      }
                     }
                   ]
-                },
-                "offset": 8.0
+                }
               }
             ]
-          },
-          "version": 8
-        },
+          }
+        }
+      },
+      {
         "undone": [
           {
             "dur": 4.0,
@@ -2066,18 +1966,20 @@
             "node": 3,
             "offset": 2.0
           }
-        ]
-      },
-      {
+        ],
         "document": {
+          "version": 8,
           "root": {
-            "grouping": "concrete",
             "id": 1,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
-                "dur": 1.0,
+                "offset": 1.0,
                 "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -2100,39 +2002,40 @@
                     "stretch": 1.0,
                     "target": 0,
                     "type": "note"
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 0.0
+                  }
+                }
               },
               {
+                "offset": 2.0,
                 "dur": 4.0,
                 "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
                   "id": 3,
                   "kind": "buffer",
                   "source": {
-                    "generation": 0,
+                    "source": 100,
                     "lifetime": "session",
-                    "source": 100
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
                   }
-                },
-                "offset": 2.0
+                }
               },
               {
+                "offset": 8.0,
                 "dur": 2.0,
                 "node": {
-                  "grouping": "concrete",
                   "id": 4,
                   "kind": "set",
+                  "grouping": "concrete",
                   "members": [
                     {
+                      "offset": 0.0,
                       "dur": 0.5,
                       "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2155,21 +2058,17 @@
                           "stretch": 1.0,
                           "target": 0,
                           "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
+                        }
+                      }
                     }
                   ]
-                },
-                "offset": 8.0
+                }
               }
             ]
-          },
-          "version": 9
-        },
+          }
+        }
+      },
+      {
         "undone": [
           {
             "dur": 1.0,
@@ -2177,19 +2076,126 @@
             "node": 2,
             "offset": 0.0
           }
-        ]
+        ],
+        "document": {
+          "version": 9,
+          "root": {
+            "id": 1,
+            "kind": "set",
+            "grouping": "concrete",
+            "members": [
+              {
+                "offset": 0.0,
+                "dur": 1.0,
+                "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
+                  "config": {
+                    "add_action": 1,
+                    "amp": 0.1,
+                    "dur": 1.0,
+                    "has_gate": false,
+                    "instrument": "default",
+                    "legato": 0.8,
+                    "midinote": 60,
+                    "octave": 5.0,
+                    "root": 0.0,
+                    "scale": [
+                      0,
+                      2,
+                      4,
+                      5,
+                      7,
+                      9,
+                      11
+                    ],
+                    "stretch": 1.0,
+                    "target": 0,
+                    "type": "note"
+                  }
+                }
+              },
+              {
+                "offset": 2.0,
+                "dur": 4.0,
+                "node": {
+                  "id": 3,
+                  "kind": "buffer",
+                  "source": {
+                    "source": 100,
+                    "lifetime": "session",
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
+                  }
+                }
+              },
+              {
+                "offset": 8.0,
+                "dur": 2.0,
+                "node": {
+                  "id": 4,
+                  "kind": "set",
+                  "grouping": "concrete",
+                  "members": [
+                    {
+                      "offset": 0.0,
+                      "dur": 0.5,
+                      "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
+                        "config": {
+                          "add_action": 1,
+                          "amp": 0.1,
+                          "dur": 0.5,
+                          "has_gate": false,
+                          "instrument": "default",
+                          "legato": 0.8,
+                          "midinote": 67,
+                          "octave": 5.0,
+                          "root": 0.0,
+                          "scale": [
+                            0,
+                            2,
+                            4,
+                            5,
+                            7,
+                            9,
+                            11
+                          ],
+                          "stretch": 1.0,
+                          "target": 0,
+                          "type": "note"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
       }
     ],
     "redos": [
       {
+        "remaining": [],
         "document": {
+          "version": 10,
           "root": {
-            "grouping": "concrete",
             "id": 1,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
+                "offset": 1.0,
                 "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -2212,39 +2218,40 @@
                     "stretch": 1.0,
                     "target": 0,
                     "type": "note"
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 1.0
+                  }
+                }
               },
               {
+                "offset": 2.0,
                 "dur": 4.0,
                 "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
                   "id": 3,
                   "kind": "buffer",
                   "source": {
-                    "generation": 0,
+                    "source": 100,
                     "lifetime": "session",
-                    "source": 100
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
                   }
-                },
-                "offset": 2.0
+                }
               },
               {
+                "offset": 8.0,
                 "dur": 2.0,
                 "node": {
-                  "grouping": "concrete",
                   "id": 4,
                   "kind": "set",
+                  "grouping": "concrete",
                   "members": [
                     {
+                      "offset": 0.0,
                       "dur": 0.5,
                       "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2267,32 +2274,31 @@
                           "stretch": 1.0,
                           "target": 0,
                           "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
+                        }
+                      }
                     }
                   ]
-                },
-                "offset": 8.0
+                }
               }
             ]
-          },
-          "version": 10
-        },
-        "remaining": []
+          }
+        }
       },
       {
+        "remaining": [],
         "document": {
+          "version": 11,
           "root": {
-            "grouping": "concrete",
             "id": 1,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
+                "offset": 1.0,
                 "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -2315,38 +2321,39 @@
                     "stretch": 1.0,
                     "target": 0,
                     "type": "note"
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 1.0
+                  }
+                }
               },
               {
+                "offset": 6.0,
                 "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
                   "id": 3,
                   "kind": "buffer",
                   "source": {
-                    "generation": 0,
+                    "source": 100,
                     "lifetime": "session",
-                    "source": 100
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
                   }
-                },
-                "offset": 6.0
+                }
               },
               {
+                "offset": 8.0,
                 "dur": 2.0,
                 "node": {
-                  "grouping": "concrete",
                   "id": 4,
                   "kind": "set",
+                  "grouping": "concrete",
                   "members": [
                     {
+                      "offset": 0.0,
                       "dur": 0.5,
                       "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2369,32 +2376,31 @@
                           "stretch": 1.0,
                           "target": 0,
                           "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
+                        }
+                      }
                     }
                   ]
-                },
-                "offset": 8.0
+                }
               }
             ]
-          },
-          "version": 11
-        },
-        "remaining": []
+          }
+        }
       },
       {
+        "remaining": [],
         "document": {
+          "version": 12,
           "root": {
-            "grouping": "concrete",
             "id": 1,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
+                "offset": 4.0,
                 "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -2417,38 +2423,39 @@
                     "stretch": 1.0,
                     "target": 0,
                     "type": "note"
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 4.0
+                  }
+                }
               },
               {
+                "offset": 6.0,
                 "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
                   "id": 3,
                   "kind": "buffer",
                   "source": {
-                    "generation": 0,
+                    "source": 100,
                     "lifetime": "session",
-                    "source": 100
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
                   }
-                },
-                "offset": 6.0
+                }
               },
               {
+                "offset": 8.0,
                 "dur": 2.0,
                 "node": {
-                  "grouping": "concrete",
                   "id": 4,
                   "kind": "set",
+                  "grouping": "concrete",
                   "members": [
                     {
+                      "offset": 0.0,
                       "dur": 0.5,
                       "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2471,66 +2478,66 @@
                           "stretch": 1.0,
                           "target": 0,
                           "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
+                        }
+                      }
                     }
                   ]
-                },
-                "offset": 8.0
+                }
               }
             ]
-          },
-          "version": 12
-        },
-        "remaining": []
+          }
+        }
       },
       {
+        "remaining": [],
         "document": {
+          "version": 13,
           "root": {
-            "grouping": "concrete",
             "id": 1,
             "kind": "set",
+            "grouping": "concrete",
             "members": [
               {
+                "offset": 4.0,
                 "node": {
+                  "id": 2,
+                  "duration": 1.0,
+                  "kind": "event",
                   "config": {
                     "midinote": 65
-                  },
-                  "duration": 1.0,
-                  "id": 2,
-                  "kind": "event"
-                },
-                "offset": 4.0
+                  }
+                }
               },
               {
+                "offset": 6.0,
                 "node": {
-                  "config": {
-                    "instrument": "take"
-                  },
                   "id": 3,
                   "kind": "buffer",
                   "source": {
-                    "generation": 0,
+                    "source": 100,
                     "lifetime": "session",
-                    "source": 100
+                    "generation": 0
+                  },
+                  "config": {
+                    "instrument": "take"
                   }
-                },
-                "offset": 6.0
+                }
               },
               {
+                "offset": 8.0,
                 "dur": 2.0,
                 "node": {
-                  "grouping": "concrete",
                   "id": 4,
                   "kind": "set",
+                  "grouping": "concrete",
                   "members": [
                     {
+                      "offset": 0.0,
                       "dur": 0.5,
                       "node": {
+                        "id": 5,
+                        "duration": 0.5,
+                        "kind": "event",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2553,33 +2560,31 @@
                           "stretch": 1.0,
                           "target": 0,
                           "type": "note"
-                        },
-                        "duration": 0.5,
-                        "id": 5,
-                        "kind": "event"
-                      },
-                      "offset": 0.0
+                        }
+                      }
                     }
                   ]
-                },
-                "offset": 8.0
+                }
               }
             ]
-          },
-          "version": 13
-        },
-        "remaining": []
+          }
+        }
       }
     ],
     "inverted": {
+      "version": 9,
       "root": {
-        "grouping": "concrete",
         "id": 1,
         "kind": "set",
+        "grouping": "concrete",
         "members": [
           {
+            "offset": 0.0,
             "dur": 1.0,
             "node": {
+              "id": 2,
+              "duration": 1.0,
+              "kind": "event",
               "config": {
                 "add_action": 1,
                 "amp": 0.1,
@@ -2602,39 +2607,40 @@
                 "stretch": 1.0,
                 "target": 0,
                 "type": "note"
-              },
-              "duration": 1.0,
-              "id": 2,
-              "kind": "event"
-            },
-            "offset": 0.0
+              }
+            }
           },
           {
+            "offset": 2.0,
             "dur": 4.0,
             "node": {
-              "config": {
-                "instrument": "take"
-              },
               "id": 3,
               "kind": "buffer",
               "source": {
-                "generation": 0,
+                "source": 100,
                 "lifetime": "session",
-                "source": 100
+                "generation": 0
+              },
+              "config": {
+                "instrument": "take"
               }
-            },
-            "offset": 2.0
+            }
           },
           {
+            "offset": 8.0,
             "dur": 2.0,
             "node": {
-              "grouping": "concrete",
               "id": 4,
               "kind": "set",
+              "grouping": "concrete",
               "members": [
                 {
+                  "offset": 0.0,
                   "dur": 0.5,
                   "node": {
+                    "id": 5,
+                    "duration": 0.5,
+                    "kind": "event",
                     "config": {
                       "add_action": 1,
                       "amp": 0.1,
@@ -2657,63 +2663,63 @@
                       "stretch": 1.0,
                       "target": 0,
                       "type": "note"
-                    },
-                    "duration": 0.5,
-                    "id": 5,
-                    "kind": "event"
-                  },
-                  "offset": 0.0
+                    }
+                  }
                 }
               ]
-            },
-            "offset": 8.0
+            }
           }
         ]
-      },
-      "version": 9
+      }
     },
     "redone": {
+      "version": 13,
       "root": {
-        "grouping": "concrete",
         "id": 1,
         "kind": "set",
+        "grouping": "concrete",
         "members": [
           {
+            "offset": 4.0,
             "node": {
+              "id": 2,
+              "duration": 1.0,
+              "kind": "event",
               "config": {
                 "midinote": 65
-              },
-              "duration": 1.0,
-              "id": 2,
-              "kind": "event"
-            },
-            "offset": 4.0
+              }
+            }
           },
           {
+            "offset": 6.0,
             "node": {
-              "config": {
-                "instrument": "take"
-              },
               "id": 3,
               "kind": "buffer",
               "source": {
-                "generation": 0,
+                "source": 100,
                 "lifetime": "session",
-                "source": 100
+                "generation": 0
+              },
+              "config": {
+                "instrument": "take"
               }
-            },
-            "offset": 6.0
+            }
           },
           {
+            "offset": 8.0,
             "dur": 2.0,
             "node": {
-              "grouping": "concrete",
               "id": 4,
               "kind": "set",
+              "grouping": "concrete",
               "members": [
                 {
+                  "offset": 0.0,
                   "dur": 0.5,
                   "node": {
+                    "id": 5,
+                    "duration": 0.5,
+                    "kind": "event",
                     "config": {
                       "add_action": 1,
                       "amp": 0.1,
@@ -2736,20 +2742,14 @@
                       "stretch": 1.0,
                       "target": 0,
                       "type": "note"
-                    },
-                    "duration": 0.5,
-                    "id": 5,
-                    "kind": "event"
-                  },
-                  "offset": 0.0
+                    }
+                  }
                 }
               ]
-            },
-            "offset": 8.0
+            }
           }
         ]
-      },
-      "version": 13
+      }
     }
   }
 }

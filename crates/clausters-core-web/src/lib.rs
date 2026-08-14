@@ -1032,83 +1032,118 @@ mod tests {
 
 // ---- the document ----
 //
-// The same door the C ABI opens (`clausters_document_apply`), in the shape a
-// page wants: JSON in, JSON out. The crate is the only thing that applies an
-// intent, so the web client hands the document and the edit across and takes
-// back the new document plus what happened -- rather than holding handles into
-// a Rust object graph, which would make every accessor a document has (and a
-// tree has dozens) a binding to design and keep in step.
+// A class rather than free functions taking the tree, and the reason is a
+// measurement rather than a preference. The first binding passed the whole
+// document in and took the whole new one back: 205 ms for one placement on a
+// 10240-event composition, linear in the document and independent of the edit.
+// The tree now stays in Rust and only the intent and the outcome cross, which
+// is the same shape `Log` already had and for the same reason.
+//
+// What has *not* changed is the discipline: the crate is the only thing that
+// applies an intent. This is not an accessor handle -- there is no call per
+// field of the tree -- it is the same three verbs the by-value binding had,
+// with `snapshot` for whoever wants the JSON.
 
-/// JS face: apply an edit. `documentApply(requestJson) -> resultJson`, the
-/// request carrying `{ document, intent, against?, quant? }` and the result
-/// `{ document, outcome }`.
-///
-/// One object rather than four arguments because the boundary is JSON either
-/// way, and a request that grows a field then costs no signature.
+/// One composition, held in Rust — the JS face of
+/// [`clausters_document::Document`].
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub fn document_apply(request: &str) -> Result<String, JsError> {
-    #[derive(serde::Deserialize)]
-    struct Request {
-        document: clausters_document::Document,
-        intent: clausters_document::Intent,
-        #[serde(default)]
-        against: Option<clausters_document::Against>,
-        #[serde(default)]
-        quant: f64,
+#[wasm_bindgen(js_name = Document)]
+pub struct JsDocument(clausters_document::Document);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = Document)]
+impl JsDocument {
+    /// Open a document from its JSON, or an empty composition from `undefined`.
+    #[wasm_bindgen(constructor)]
+    pub fn new(json: Option<String>) -> Result<JsDocument, JsError> {
+        let document = match json {
+            Some(json) => {
+                serde_json::from_str(&json).map_err(|e| JsError::new(&format!("document: {e}")))?
+            }
+            None => clausters_document::Document::new(clausters_document::Node::new(
+                clausters_document::NodeId(1),
+                clausters_document::Body::Set {
+                    grouping: clausters_document::Grouping::Concrete,
+                    members: Vec::new(),
+                },
+            )),
+        };
+        Ok(JsDocument(document))
     }
-    let mut request: Request =
-        serde_json::from_str(request).map_err(|e| JsError::new(&format!("apply: {e}")))?;
-    let against = request
-        .against
-        .unwrap_or_else(clausters_document::Against::unstated);
-    let outcome = clausters_document::apply(
-        &mut request.document,
-        &request.intent,
-        &against,
-        &clausters_document::Rules {
-            quant: request.quant,
-        },
-    );
-    serde_json::to_string(&serde_json::json!({
-        "document": request.document,
-        "outcome": {
+
+    /// The whole tree as JSON — for saving it, or for a caller that wants it.
+    /// The one call that still costs the size of the composition, and it is
+    /// asked for rather than paid on every edit.
+    pub fn snapshot(&self) -> Result<String, JsError> {
+        serde_json::to_string(&self.0).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// The monotonic version, bumped by every applied edit. Never zero.
+    #[wasm_bindgen(getter)]
+    pub fn version(&self) -> u64 {
+        self.0.version
+    }
+
+    /// Apply an edit. `apply(requestJson) -> outcomeJson`, the request carrying
+    /// `{ intent, against?, quant? }` and the result the outcome alone —
+    /// the document stays here and `snapshot` is how it leaves.
+    ///
+    /// One object rather than three arguments because the boundary is JSON
+    /// either way, and a request that grows a field then costs no signature.
+    pub fn apply(&mut self, request: &str) -> Result<String, JsError> {
+        #[derive(serde::Deserialize)]
+        struct Request {
+            intent: clausters_document::Intent,
+            #[serde(default)]
+            against: Option<clausters_document::Against>,
+            #[serde(default)]
+            quant: f64,
+        }
+        let request: Request =
+            serde_json::from_str(request).map_err(|e| JsError::new(&format!("apply: {e}")))?;
+        let against = request
+            .against
+            .unwrap_or_else(clausters_document::Against::unstated);
+        let outcome = clausters_document::apply(
+            &mut self.0,
+            &request.intent,
+            &against,
+            &clausters_document::Rules {
+                quant: request.quant,
+            },
+        );
+        serde_json::to_string(&serde_json::json!({
             "effective": outcome.effective,
             "applied": outcome.applied,
             "reason": outcome.reason,
             "stale": outcome.stale,
-        }
-    }))
-    .map_err(|e| JsError::new(&e.to_string()))
-}
-
-/// JS face: resolve a selection to the spans of material underneath it.
-/// `documentResolve(requestJson) -> resolvedJson`, the request carrying
-/// `{ document, selection, framesPerBeat, inBeats? }`.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub fn document_resolve(request: &str) -> Result<String, JsError> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Request {
-        document: clausters_document::Document,
-        selection: clausters_document::Selection,
-        frames_per_beat: f64,
-        #[serde(default)]
-        in_beats: bool,
+        }))
+        .map_err(|e| JsError::new(&e.to_string()))
     }
-    let request: Request =
-        serde_json::from_str(request).map_err(|e| JsError::new(&format!("resolve: {e}")))?;
-    let mapping = clausters_document::Mapping {
-        frames_per_beat: request.frames_per_beat,
-        unit: if request.in_beats {
-            clausters_document::Unit::Beats
-        } else {
-            clausters_document::Unit::Frames
-        },
-    };
-    let resolved: Vec<_> =
-        clausters_document::resolve(&request.document, &request.selection, &mapping)
+
+    /// Resolve a selection to the spans of material underneath it.
+    /// `resolve(requestJson) -> resolvedJson`, the request carrying
+    /// `{ selection, framesPerBeat, inBeats? }`.
+    pub fn resolve(&self, request: &str) -> Result<String, JsError> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Request {
+            selection: clausters_document::Selection,
+            frames_per_beat: f64,
+            #[serde(default)]
+            in_beats: bool,
+        }
+        let request: Request =
+            serde_json::from_str(request).map_err(|e| JsError::new(&format!("resolve: {e}")))?;
+        let mapping = clausters_document::Mapping {
+            frames_per_beat: request.frames_per_beat,
+            unit: if request.in_beats {
+                clausters_document::Unit::Beats
+            } else {
+                clausters_document::Unit::Frames
+            },
+        };
+        let resolved: Vec<_> = clausters_document::resolve(&self.0, &request.selection, &mapping)
             .into_iter()
             .map(|r| {
                 serde_json::json!({
@@ -1120,18 +1155,17 @@ pub fn document_resolve(request: &str) -> Result<String, JsError> {
                 })
             })
             .collect();
-    serde_json::to_string(&resolved).map_err(|e| JsError::new(&e.to_string()))
+        serde_json::to_string(&resolved).map_err(|e| JsError::new(&e.to_string()))
+    }
 }
 
 // ---- the undo log ----
 //
-// A class rather than a pair of free functions, because a log is *state* where
-// the document is a value — and in JS that state is a `Drop`-backed object
-// instead of the C ABI's handle plus explicit free. The reason it is state at
-// all is the spill store: a bulk inverse leaves the log on purpose, so passing
-// one by value would carry every spilled span on every call, which is the cost
-// spilling exists to avoid. The document keeps crossing by value; the log does
-// not.
+// A `Drop`-backed object, like `Document` beside it and for a related reason:
+// a log is state, and the state is the point. The spill store is why — a bulk
+// inverse leaves the log deliberately, so passing one by value would carry
+// every spilled span on every call, which is the cost spilling exists to
+// avoid.
 
 /// The undo history of one document, the JS face of
 /// [`clausters_document::Log`].
@@ -1157,15 +1191,14 @@ impl JsLog {
         JsLog(log)
     }
 
-    /// Apply an edit **and record it**, in one call: the inverse has to be read
-    /// out of the document before the edit lands, so applying first and
-    /// recording second would record the wrong thing.
-    /// `apply(requestJson) -> resultJson`, the request carrying
-    /// `{ document, intent, against?, quant?, label? }`.
-    pub fn apply(&mut self, request: &str) -> Result<String, JsError> {
+    /// Apply an edit to `document` **and record it**, in one call: the inverse
+    /// has to be read out of the document before the edit lands, so applying
+    /// first and recording second would record the wrong thing.
+    /// `apply(document, requestJson) -> outcomeJson`, the request carrying
+    /// `{ intent, against?, quant?, label? }`.
+    pub fn apply(&mut self, document: &mut JsDocument, request: &str) -> Result<String, JsError> {
         #[derive(serde::Deserialize)]
         struct Request {
-            document: clausters_document::Document,
             intent: clausters_document::Intent,
             #[serde(default)]
             against: Option<clausters_document::Against>,
@@ -1174,13 +1207,13 @@ impl JsLog {
             #[serde(default)]
             label: Option<String>,
         }
-        let mut request: Request =
+        let request: Request =
             serde_json::from_str(request).map_err(|e| JsError::new(&format!("log.apply: {e}")))?;
         let against = request
             .against
             .unwrap_or_else(clausters_document::Against::unstated);
         let outcome = clausters_document::apply_logged(
-            &mut request.document,
+            &mut document.0,
             &request.intent,
             &against,
             &clausters_document::Rules {
@@ -1190,13 +1223,10 @@ impl JsLog {
             request.label.unwrap_or_else(|| "edit".into()),
         );
         serde_json::to_string(&serde_json::json!({
-            "document": request.document,
-            "outcome": {
-                "effective": outcome.effective,
-                "applied": outcome.applied,
-                "reason": outcome.reason,
-                "stale": outcome.stale,
-            }
+            "effective": outcome.effective,
+            "applied": outcome.applied,
+            "reason": outcome.reason,
+            "stale": outcome.stale,
         }))
         .map_err(|e| JsError::new(&e.to_string()))
     }
@@ -1229,12 +1259,9 @@ impl JsLog {
         Ok(())
     }
 
-    /// Undo the last transaction, applying its inverses to `documentJson`.
-    /// Returns `{ document, undone }`, or `undefined` when there was nothing to
-    /// undo.
-    pub fn undo(&mut self, document: &str) -> Result<Option<String>, JsError> {
-        let mut document: clausters_document::Document =
-            serde_json::from_str(document).map_err(|e| JsError::new(&format!("log.undo: {e}")))?;
+    /// Undo the last transaction, applying its inverses to `document`.
+    /// Returns `{ undone }`, or `undefined` when there was nothing to undo.
+    pub fn undo(&mut self, document: &mut JsDocument) -> Result<Option<String>, JsError> {
         let Some(undone) = self.0.undo() else {
             return Ok(None);
         };
@@ -1242,25 +1269,23 @@ impl JsLog {
             // An undo is authoritative: it states what the document was, so it
             // is not checked against a version it predates.
             clausters_document::apply(
-                &mut document,
+                &mut document.0,
                 intent,
                 &clausters_document::Against::unstated(),
                 &clausters_document::Rules::default(),
             );
         }
-        serde_json::to_string(&serde_json::json!({ "document": document, "undone": undone }))
+        serde_json::to_string(&serde_json::json!({ "undone": undone }))
             .map(Some)
             .map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Redo what was last undone, applying what it can. Returns
-    /// `{ document, remaining }` — the ordinary edits at the front are already
-    /// applied, and `remaining` holds the steps from the first one the crate
-    /// cannot perform onward, for the owner to re-run. `undefined` when there
-    /// was nothing to redo.
-    pub fn redo(&mut self, document: &str) -> Result<Option<String>, JsError> {
-        let mut document: clausters_document::Document =
-            serde_json::from_str(document).map_err(|e| JsError::new(&format!("log.redo: {e}")))?;
+    /// Redo what was last undone, applying what it can to `document`. Returns
+    /// `{ remaining }` — the ordinary edits at the front are already applied,
+    /// and `remaining` holds the steps from the first one the crate cannot
+    /// perform onward, for the owner to re-run. `undefined` when there was
+    /// nothing to redo.
+    pub fn redo(&mut self, document: &mut JsDocument) -> Result<Option<String>, JsError> {
         let Some(steps) = self.0.redo() else {
             return Ok(None);
         };
@@ -1270,7 +1295,7 @@ impl JsLog {
             match (&step, stopped) {
                 (clausters_document::Step::Edit(intent), false) => {
                     clausters_document::apply(
-                        &mut document,
+                        &mut document.0,
                         intent,
                         &clausters_document::Against::unstated(),
                         &clausters_document::Rules::default(),
@@ -1282,7 +1307,7 @@ impl JsLog {
                 }
             }
         }
-        serde_json::to_string(&serde_json::json!({ "document": document, "remaining": remaining }))
+        serde_json::to_string(&serde_json::json!({ "remaining": remaining }))
             .map(Some)
             .map_err(|e| JsError::new(&e.to_string()))
     }

@@ -4,21 +4,33 @@
  *
  * The model lives in a Rust crate (`crates/clausters-document`) and every
  * client binds that one — this client, the Python client, and a `standalone`
- * GUI host with no language attached. What crosses is the format rather than a
- * handle: the document and the edit go across by value and the new document
- * comes back, so a client's document *is* the crate's document rather than a
- * parallel structure that synchronizes with it.
+ * GUI host with no language attached. **The tree stays there**: a client opens
+ * a {@link Document}, applies intents to it, and asks for the JSON when it
+ * actually wants the JSON.
  *
- * That shape is the point rather than a limitation. The crate is the **only**
- * thing that applies an intent, so no client can apply an edit and then report
- * what it did — which is what would let three clients mean three different
- * things by the same gesture.
+ * That is not how this started. The first binding passed the whole document in
+ * and took the whole new one back, which cost a serialization of the entire
+ * composition per edit — 205 ms for one placement on a 10240-event piece,
+ * whatever the edit touched. It is not an accessor handle either: the same
+ * three verbs, plus `snapshot`.
+ *
+ * The discipline is unchanged and is the point: the crate is the **only** thing
+ * that applies an intent, so no client can apply an edit and then report what
+ * it did — which is what would let three clients mean three different things by
+ * the same gesture.
  *
  * @module
  */
 
-import { Log as CoreLog, document_apply, document_resolve } from "./core/clausters_core_web.js";
+import { Document as CoreDocument, Log as CoreLog } from "./core/clausters_core_web.js";
 import { loadCore } from "./base/core.ts";
+
+/**
+ * How {@link Log} reaches the wasm object inside a {@link Document} without
+ * that object becoming part of the public surface. Module-private on purpose:
+ * the two classes are peers here and nowhere else.
+ */
+const coreOf = Symbol("core");
 
 /** A node's identity within a document. Stable across edits. */
 export type NodeId = number;
@@ -109,48 +121,127 @@ export interface Selection {
 }
 
 /**
- * Apply one edit to a document.
+ * One composition, held by the crate.
  *
- * @param document - the document to edit. It is not mutated; the edited one
- *   comes back.
- * @param intent - the edit, stating the resulting value.
- * @param options - `against`, the state the edit was made against (omit to
- *   apply unchecked), and `quant`, the musical grid a placement snaps to in
- *   beats (`0` snaps nothing).
- * @returns the new document and the outcome.
- * @throws if the document or the intent will not parse.
+ * ```ts
+ * const doc = await Document.open(json);
+ * doc.apply({ intent: "place", node: 3, offset: 4 });
+ * const saved = doc.snapshot();
+ * doc.free();
+ * ```
+ */
+export class Document {
+    #inner: CoreDocument;
+
+    private constructor(inner: CoreDocument) {
+        this.#inner = inner;
+    }
+
+    /** @internal — how {@link Log} reaches the same wasm object. */
+    get [coreOf](): CoreDocument {
+        return this.#inner;
+    }
+
+    /**
+     * Opens a document from its JSON, or an empty composition from nothing.
+     *
+     * @throws if the JSON is not a document.
+     */
+    static async open(document?: ClaustersDocument): Promise<Document> {
+        await loadCore();
+        return new Document(
+            new CoreDocument(document === undefined ? undefined : JSON.stringify(document)),
+        );
+    }
+
+    /**
+     * The whole tree as JSON — to save it, or to rebuild the client's own
+     * objects from it. The one call still the size of the composition, and it
+     * is asked for rather than paid on every edit.
+     */
+    snapshot(): ClaustersDocument {
+        return JSON.parse(this.#inner.snapshot()) as ClaustersDocument;
+    }
+
+    /** The monotonic version, bumped by every applied edit. Never zero. */
+    get version(): number {
+        return Number(this.#inner.version);
+    }
+
+    /**
+     * Apply one edit.
+     *
+     * @param intent - the edit, stating the resulting value.
+     * @param options - `against`, the state the edit was made against (omit to
+     *   apply unchecked), and `quant`, the musical grid a placement snaps to in
+     *   beats (`0` snaps nothing).
+     * @returns what applying did. The document changed in place.
+     * @throws if the intent will not parse.
+     */
+    apply(intent: Intent, options: { against?: Against; quant?: number } = {}): Outcome {
+        return JSON.parse(
+            this.#inner.apply(
+                JSON.stringify({
+                    intent,
+                    against: options.against ?? null,
+                    quant: options.quant ?? 0,
+                }),
+            ),
+        ) as Outcome;
+    }
+
+    /**
+     * Resolve a selection to the spans of material underneath it — placement,
+     * trim and the clamp at both ends already applied.
+     *
+     * @param selection - what is selected.
+     * @param framesPerBeat - the bridge between the arrangement's beats and the
+     *   material's frames. Supplied rather than derived: tempo is the caller's,
+     *   the arithmetic is the crate's.
+     * @param inBeats - whether the selection's numbers are beats rather than
+     *   frames on the shared axis.
+     * @returns the spans, in tree order. Empty when nothing material was
+     *   underneath — a group and a generator are in the way of a selection, not
+     *   under it.
+     */
+    resolve(selection: Selection, framesPerBeat: number, inBeats = false): Resolved[] {
+        return JSON.parse(
+            this.#inner.resolve(JSON.stringify({ selection, framesPerBeat, inBeats })),
+        ) as Resolved[];
+    }
+
+    /** Release the document. Idempotent. */
+    free(): void {
+        this.#inner.free();
+    }
+}
+
+/**
+ * Apply one edit to a document given and returned **by value**.
+ *
+ * The convenience form, built out of {@link Document} — open, apply, snapshot,
+ * free — for a caller that has a document in hand and wants the edited one
+ * back. It costs a serialization of the whole composition either way, which is
+ * why it is a wrapper rather than the binding: an editor applying a gesture per
+ * drag holds a `Document` instead and pays nothing per edit.
  */
 export async function applyIntent(
     document: ClaustersDocument,
     intent: Intent,
     options: { against?: Against; quant?: number } = {},
 ): Promise<Applied> {
-    await loadCore();
-    return JSON.parse(
-        document_apply(
-            JSON.stringify({
-                document,
-                intent,
-                against: options.against ?? null,
-                quant: options.quant ?? 0,
-            }),
-        ),
-    ) as Applied;
+    const doc = await Document.open(document);
+    try {
+        const outcome = doc.apply(intent, options);
+        return { document: doc.snapshot(), outcome };
+    } finally {
+        doc.free();
+    }
 }
 
 /**
- * Resolve a selection to the spans of material underneath it — placement, trim
- * and the clamp at both ends already applied.
- *
- * @param document - the document.
- * @param selection - what is selected.
- * @param framesPerBeat - the bridge between the arrangement's beats and the
- *   material's frames. Supplied rather than derived: tempo is the caller's, the
- *   arithmetic is the crate's.
- * @param inBeats - whether the selection's numbers are beats rather than frames
- *   on the shared axis.
- * @returns the spans, in tree order. Empty when nothing material was underneath
- *   — a group and a generator are in the way of a selection, not under it.
+ * Resolve a selection against a document given by value — the convenience form
+ * of {@link Document.resolve}.
  */
 export async function resolveSelection(
     document: ClaustersDocument,
@@ -158,12 +249,12 @@ export async function resolveSelection(
     framesPerBeat: number,
     inBeats = false,
 ): Promise<Resolved[]> {
-    await loadCore();
-    return JSON.parse(
-        document_resolve(
-            JSON.stringify({ document, selection, framesPerBeat, inBeats }),
-        ),
-    ) as Resolved[];
+    const doc = await Document.open(document);
+    try {
+        return doc.resolve(selection, framesPerBeat, inBeats);
+    } finally {
+        doc.free();
+    }
 }
 
 /** One move forward: an ordinary edit, or a deterministic operation the owner
@@ -171,16 +262,14 @@ export async function resolveSelection(
  * million samples cost a few bytes. */
 export type Step = { edit: Intent } | { recompute: unknown };
 
-/** What an undo did. */
+/** What an undo did. The document changed in place. */
 export interface Undone {
-    document: ClaustersDocument;
     /** The inverses, in the order they were applied. */
     undone: Intent[];
 }
 
-/** What a redo did, and what it could not. */
+/** What a redo did, and what it could not. The document changed in place. */
 export interface Redone {
-    document: ClaustersDocument;
     /**
      * The steps from the first one the crate **cannot perform** onward — a
      * deterministic operation kept as its parameters, which you re-run because
@@ -199,16 +288,16 @@ export interface Redone {
  * or a re-render leaves it describing a document that has moved on — and undo
  * then writes a state nobody was ever in.
  *
- * It is an **object** where a document is a value, and the reason is the spill
- * store: a bulk inverse leaves the log on purpose, so passing one by value
- * would carry every spilled span on every call, which is the cost spilling
- * exists to avoid.
+ * It is an object for its own reason, beyond the one {@link Document} has: the
+ * spill store. A bulk inverse leaves the log on purpose, so passing one by
+ * value would carry every spilled span on every call, which is the cost
+ * spilling exists to avoid.
  *
  * ```ts
+ * const doc = await Document.open(json);
  * const log = await Log.open();
- * let { document } = await log.apply(doc, { intent: "place", node: 3, offset: 4 },
- *                                    { label: "move the clip" });
- * ({ document } = (await log.undo(document))!);   // exactly where it was
+ * log.apply(doc, { intent: "place", node: 3, offset: 4 }, { label: "move the clip" });
+ * log.undo(doc);   // exactly where it was
  * ```
  */
 export class Log {
@@ -236,21 +325,21 @@ export class Log {
      * resend.
      */
     apply(
-        document: ClaustersDocument,
+        document: Document,
         intent: Intent,
         options: { against?: Against; quant?: number; label?: string } = {},
-    ): Applied {
+    ): Outcome {
         return JSON.parse(
             this.#inner.apply(
+                document[coreOf],
                 JSON.stringify({
-                    document,
                     intent,
                     against: options.against ?? null,
                     quant: options.quant ?? 0,
                     label: options.label ?? "edit",
                 }),
             ),
-        ) as Applied;
+        ) as Outcome;
     }
 
     /**
@@ -279,14 +368,14 @@ export class Log {
     }
 
     /** Undo the last transaction, or `undefined` when there is nothing to undo. */
-    undo(document: ClaustersDocument): Undone | undefined {
-        const result = this.#inner.undo(JSON.stringify(document));
+    undo(document: Document): Undone | undefined {
+        const result = this.#inner.undo(document[coreOf]);
         return result === undefined ? undefined : (JSON.parse(result) as Undone);
     }
 
     /** Redo what was last undone, or `undefined` when there is nothing. */
-    redo(document: ClaustersDocument): Redone | undefined {
-        const result = this.#inner.redo(JSON.stringify(document));
+    redo(document: Document): Redone | undefined {
+        const result = this.#inner.redo(document[coreOf]);
         return result === undefined ? undefined : (JSON.parse(result) as Redone);
     }
 

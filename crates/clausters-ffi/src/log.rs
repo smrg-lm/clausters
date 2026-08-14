@@ -57,9 +57,9 @@
 
 use std::sync::Mutex;
 
-use clausters_document::{
-    Against, Document, Entry, Intent, Log, Rules, Step, apply as apply_intent,
-};
+use clausters_document::{Against, Entry, Intent, Log, Rules, Step, apply as apply_intent};
+
+use crate::document::{FfiDocument, with_document};
 
 /// A log handle safe to share across the binding's threads.
 pub struct FfiLog(Mutex<Log>);
@@ -136,26 +136,31 @@ pub unsafe extern "C" fn clausters_log_free(h: *mut FfiLog) {
     }
 }
 
-/// Apply an edit and record it, in one call — the only door for an ordinary
-/// entry.
+/// Apply an edit to `doc` and record it in `h`, in one call — the only door for
+/// an ordinary entry.
 ///
-/// Arguments are [`crate::clausters_document_apply`]'s, plus the handle and a
-/// `label` (what an undo menu calls this). Writes the same
-/// `{"document": …, "outcome": …}` and returns the byte count it needs, or `0`
-/// when the document or the intent will not parse.
+/// Arguments are [`crate::clausters_document_apply`]'s, plus the log handle and
+/// a `label` (what an undo menu calls this). Writes the same outcome object and
+/// returns the byte count it needs, or `0` when a handle is null or the intent
+/// will not parse. The document is **not** in the reply — it stays in its
+/// handle, and a caller that wants it asks
+/// [`crate::clausters_document_snapshot`].
 ///
-/// Nothing is recorded unless the document actually changed, so a refusal —
-/// stale or otherwise — leaves no entry, and neither does a resend.
+/// Applying and recording are one call because the inverse has to be read out
+/// of the document *before* the edit lands; a surface that let a caller apply
+/// first and record second would let it record the wrong thing. Nothing is
+/// recorded unless the document actually changed, so a refusal — stale or
+/// otherwise — leaves no entry, and neither does a resend.
 ///
 /// # Safety
-/// `h` must be a live log handle; the payloads must be null or readable for
-/// their lengths, and `out` null or writable for `out_cap` bytes.
+/// `h` must be a live log handle and `doc` a live document handle; the payloads
+/// must be null or readable for their lengths, and `out` null or writable for
+/// `out_cap` bytes.
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn clausters_log_apply(
     h: *mut FfiLog,
-    document: *const u8,
-    document_len: usize,
+    doc: *mut FfiDocument,
     intent: *const u8,
     intent_len: usize,
     against: *const u8,
@@ -167,15 +172,10 @@ pub unsafe extern "C" fn clausters_log_apply(
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let (Some(document), Some(intent)) = (unsafe { text(document, document_len) }, unsafe {
-        text(intent, intent_len)
-    }) else {
+    let Some(intent) = (unsafe { text(intent, intent_len) }) else {
         return 0;
     };
-    let (Ok(mut document), Ok(intent)) = (
-        serde_json::from_str::<Document>(&document),
-        serde_json::from_str::<Intent>(&intent),
-    ) else {
+    let Ok(intent) = serde_json::from_str::<Intent>(&intent) else {
         return 0;
     };
     // SAFETY: as above.
@@ -185,38 +185,66 @@ pub unsafe extern "C" fn clausters_log_apply(
     // SAFETY: as above.
     let label = unsafe { text(label, label_len) }.unwrap_or(std::borrow::Cow::Borrowed("edit"));
 
-    // The inverse is read *before* the edit lands -- that is the whole reason
-    // applying and recording are one call -- and the entry is held back until
-    // the bytes are written, so a sizing pass records nothing.
-    let inverse = clausters_document::inverse_of(&document, &intent);
-    let outcome = apply_intent(&mut document, &intent, &against, &Rules { quant });
-    let entry = (outcome.applied)
-        .then(|| {
-            inverse.map(|i| Entry::new(label.as_ref(), Step::Edit(outcome.effective.clone()), i))
-        })
-        .flatten();
-    let payload = serde_json::json!({
-        "document": document,
-        "outcome": {
-            "effective": outcome.effective,
-            "applied": outcome.applied,
-            "reason": outcome.reason,
-            "stale": outcome.stale,
+    with_document(doc, 0, |held| {
+        // The inverse is read *before* the edit lands -- which is the whole
+        // reason applying and recording are one call -- and it is also what
+        // rolls the edit back if the caller's buffer did not fit, so the tree
+        // is never cloned to protect a sizing pass. `document::edit_in_place`
+        // carries the same reasoning at more length.
+        let Some(inverse) = clausters_document::inverse_of(&held.document, &intent) else {
+            // No inverse in the document -- a `WriteSamples`, whose overwritten
+            // samples are not in the tree. It cannot be rolled back, so it runs
+            // on a copy, and it records nothing either: its entry comes from
+            // the caller through `clausters_log_record`, which is the door for
+            // exactly this case.
+            let mut edited = held.document.clone();
+            let outcome = apply_intent(&mut edited, &intent, &against, &Rules { quant });
+            // SAFETY: forwarded from this function's own contract.
+            return unsafe {
+                fill(&outcome_bytes(&outcome), out, out_cap, || {
+                    held.commit(edited)
+                })
+            };
+        };
+
+        let version = held.document.version;
+        let outcome = apply_intent(&mut held.document, &intent, &against, &Rules { quant });
+        let bytes = outcome_bytes(&outcome);
+        if !out.is_null() && out_cap >= bytes.len() {
+            // SAFETY: out is writable for out_cap >= bytes.len() bytes.
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
+            held.pending = Vec::new();
+            if outcome.applied {
+                let entry = Entry::new(
+                    label.as_ref(),
+                    Step::Edit(outcome.effective.clone()),
+                    inverse,
+                );
+                with_log(h, (), |log| log.record(entry));
+            }
+        } else if outcome.applied {
+            apply_intent(
+                &mut held.document,
+                &inverse,
+                &Against::unstated(),
+                &Rules::default(),
+            );
+            held.document.version = version;
         }
-    });
-    // SAFETY: as above.
-    unsafe {
-        fill(
-            &serde_json::to_vec(&payload).unwrap_or_default(),
-            out,
-            out_cap,
-            || {
-                if let Some(entry) = entry {
-                    with_log(h, (), |log| log.record(entry));
-                }
-            },
-        )
-    }
+        bytes.len()
+    })
+}
+
+/// The outcome object every applying call answers with — small, and the reason
+/// a second size-then-fill pass over one costs nothing.
+fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "effective": outcome.effective,
+        "applied": outcome.applied,
+        "reason": outcome.reason,
+        "stale": outcome.stale,
+    }))
+    .unwrap_or_default()
 }
 
 /// Record an entry the document cannot supply the inverse for — a destructive
@@ -270,74 +298,68 @@ pub unsafe extern "C" fn clausters_log_record(
     })
 }
 
-/// Undo the last transaction, applying its inverses to `document`.
+/// Undo the last transaction, applying its inverses to the document `doc`
+/// holds.
 ///
-/// Writes `{"document": …, "undone": [<intent>, …]}` — the document after the
-/// inverses, and what they were, in the order they were applied. Returns the
-/// byte count it needs, `0` when the document will not parse, and `2` (`{}`)
-/// when there was nothing to undo, which a caller distinguishes from a failure.
+/// Writes `{"undone": [<intent>, …]}` — what the inverses were, in the order
+/// they were applied. Returns the byte count it needs, `0` when a handle is
+/// null, and `2` (`{}`) when there was nothing to undo, which a caller
+/// distinguishes from a failure.
 ///
 /// It applies rather than handing the inverses back for the caller to apply,
 /// because the cursor has already moved: two calls could half-happen, and a log
 /// that disagrees with its document is worse than no log.
 ///
 /// # Safety
-/// `h` must be a live log handle; `document` null or readable for its length,
-/// `out` null or writable for `out_cap` bytes.
+/// `h` must be a live log handle and `doc` a live document handle; `out` null
+/// or writable for `out_cap` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_log_undo(
     h: *mut FfiLog,
-    document: *const u8,
-    document_len: usize,
+    doc: *mut FfiDocument,
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
-    // SAFETY: forwarded from this function's own contract.
-    let Some(document) = (unsafe { text(document, document_len) }) else {
-        return 0;
-    };
-    let Ok(mut document) = serde_json::from_str::<Document>(&document) else {
-        return 0;
-    };
     let undone = with_log(h, None, |log| log.peek_undo());
-    let payload = match undone {
-        // Nothing to undo. `{}` rather than an empty document, so a caller can
-        // tell "the history is at its start" from "the call failed" (0) and
-        // from "an undo that legitimately changed nothing".
-        None => serde_json::json!({}),
-        Some(ref intents) => {
-            for intent in intents {
-                // An undo is authoritative: it states what the document was,
-                // so it is not checked against a version it predates.
-                apply_intent(
-                    &mut document,
-                    intent,
-                    &Against::unstated(),
-                    &Rules::default(),
-                );
-            }
-            serde_json::json!({ "document": document, "undone": intents })
-        }
-    };
-    // SAFETY: as above.
-    unsafe {
-        fill(
-            &serde_json::to_vec(&payload).unwrap_or_default(),
-            out,
-            out_cap,
-            || {
-                if undone.is_some() {
-                    with_log(h, false, |log| log.step_back());
+    with_document(doc, 0, |held| {
+        let mut edited = held.document.clone();
+        let payload = match undone {
+            // Nothing to undo. `{}` rather than an empty object with a
+            // document, so a caller can tell "the history is at its start" from
+            // "the call failed" (0) and from "an undo that legitimately
+            // changed nothing".
+            None => serde_json::json!({}),
+            Some(ref intents) => {
+                for intent in intents {
+                    // An undo is authoritative: it states what the document
+                    // was, so it is not checked against a version it predates.
+                    apply_intent(&mut edited, intent, &Against::unstated(), &Rules::default());
                 }
-            },
-        )
-    }
+                serde_json::json!({ "undone": intents })
+            }
+        };
+        // SAFETY: forwarded from this function's own contract.
+        unsafe {
+            fill(
+                &serde_json::to_vec(&payload).unwrap_or_default(),
+                out,
+                out_cap,
+                || {
+                    if undone.is_some() {
+                        held.commit(edited);
+                        with_log(h, false, |log| log.step_back());
+                    }
+                },
+            )
+        }
+    })
 }
 
 /// Redo what was last undone, applying what it can.
 ///
-/// Writes `{"document": …, "remaining": [<step>, …]}`. The ordinary edits at
-/// the front have already been applied to the returned document; `remaining`
+/// Writes `{"remaining": [<step>, …]}`, applying what it can to the document
+/// `doc` holds. The ordinary edits at the front have already been applied there;
+/// `remaining`
 /// holds the steps from the first one the crate cannot perform onward — a
 /// deterministic operation stored as its parameters, which the **owner**
 /// re-runs, because the crate holds no algorithms. It stops at the first rather
@@ -352,57 +374,53 @@ pub unsafe extern "C" fn clausters_log_undo(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_log_redo(
     h: *mut FfiLog,
-    document: *const u8,
-    document_len: usize,
+    doc: *mut FfiDocument,
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
-    // SAFETY: forwarded from this function's own contract.
-    let Some(document) = (unsafe { text(document, document_len) }) else {
-        return 0;
-    };
-    let Ok(mut document) = serde_json::from_str::<Document>(&document) else {
-        return 0;
-    };
     let steps = with_log(h, None, |log| log.peek_redo());
     let had_steps = steps.is_some();
-    let payload = match steps {
-        None => serde_json::json!({}),
-        Some(steps) => {
-            let mut remaining = Vec::new();
-            let mut stopped = false;
-            for step in steps {
-                match (&step, stopped) {
-                    (Step::Edit(intent), false) => {
-                        apply_intent(
-                            &mut document,
-                            intent,
-                            &Against::unstated(),
-                            &Rules::default(),
-                        );
-                    }
-                    _ => {
-                        stopped = true;
-                        remaining.push(step);
+    with_document(doc, 0, |held| {
+        let mut edited = held.document.clone();
+        let payload = match steps {
+            None => serde_json::json!({}),
+            Some(steps) => {
+                let mut remaining = Vec::new();
+                let mut stopped = false;
+                for step in steps {
+                    match (&step, stopped) {
+                        (Step::Edit(intent), false) => {
+                            apply_intent(
+                                &mut edited,
+                                intent,
+                                &Against::unstated(),
+                                &Rules::default(),
+                            );
+                        }
+                        _ => {
+                            stopped = true;
+                            remaining.push(step);
+                        }
                     }
                 }
+                serde_json::json!({ "remaining": remaining })
             }
-            serde_json::json!({ "document": document, "remaining": remaining })
+        };
+        // SAFETY: forwarded from this function's own contract.
+        unsafe {
+            fill(
+                &serde_json::to_vec(&payload).unwrap_or_default(),
+                out,
+                out_cap,
+                || {
+                    if had_steps {
+                        held.commit(edited);
+                        with_log(h, false, |log| log.step_forward());
+                    }
+                },
+            )
         }
-    };
-    // SAFETY: as above.
-    unsafe {
-        fill(
-            &serde_json::to_vec(&payload).unwrap_or_default(),
-            out,
-            out_cap,
-            || {
-                if had_steps {
-                    with_log(h, false, |log| log.step_forward());
-                }
-            },
-        )
-    }
+    })
 }
 
 /// Whether there is anything to undo (1) or not (0).

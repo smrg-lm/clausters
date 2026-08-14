@@ -44,14 +44,12 @@ invertible, the model is the crate's, and an edit costs the edit.*
   `"transpose"` on an engraved page from a displacement to the staff position
   it reaches.
 
-- ⬜ **O12 — An edit costs the edit, not the document.** Before H2 rather than
-  after it, and this is the ordering call worth arguing. H2 is the first heavy
-  consumer of the crate across the ABI — `clausters_log_apply` takes the whole
-  document on **every** call, so undo and redo pay the same measured 205 ms per
-  step on a 10240-event composition that a drag does. Landing H2 on the
-  by-value door means writing the `Editor`'s edit path against a surface O12
-  then changes, and writing it twice. Landing O12 first means H2 is written
-  once, against the door it will keep.
+- ✅ **O12 — An edit costs the edit, not the document.** Done 2026-08-14, and
+  the ordering argument held: H2 now has a door it will keep. One `Place` over
+  a 10240-event composition went from **205 ms to 0.008 ms**, and the cost no
+  longer depends on the composition at all — the tree stays behind a handle,
+  and an edit runs in place, rolled back by its own inverse rather than
+  protected by a copy of the tree.
 
 - ⬜ **H2 — Undo and redo from the hand.** The `Editor` drives the crate's log
   (`clausters._native.Log`), and the requirement it adds to every later

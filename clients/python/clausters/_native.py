@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 17
+CORE_ABI_VERSION = 18
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -279,31 +279,39 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     # GraphDef wiring JSON out (size-query then fill, the peaks pattern).
     lib.clausters_core_patch_compile.restype = ctypes.c_size_t
     lib.clausters_core_patch_compile.argtypes = [u8p, ctypes.c_size_t, u8p, ctypes.c_size_t]
-    # The document (ABI v15): hand over the document and the edit, take back the
-    # document and what happened. One implementation of what an edit *means*,
-    # bound rather than re-derived -- and by value rather than by handle, so a
-    # tree's dozens of accessors are not dozens of ABI calls.
+    # The document (ABI v18): a **handle**. The tree stays in Rust and only the
+    # intent and the outcome cross, so an edit costs the edit -- the by-value
+    # binding this replaces was linear in the whole composition (205 ms for one
+    # placement on 10240 events). One implementation of what an edit *means*,
+    # bound rather than re-derived.
+    lib.clausters_document_open.restype = ctypes.c_void_p
+    lib.clausters_document_open.argtypes = [u8p, ctypes.c_size_t]
+    lib.clausters_document_free.restype = None
+    lib.clausters_document_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_document_version.restype = ctypes.c_uint64
+    lib.clausters_document_version.argtypes = [ctypes.c_void_p]
+    lib.clausters_document_snapshot.restype = ctypes.c_size_t
+    lib.clausters_document_snapshot.argtypes = [ctypes.c_void_p, u8p, ctypes.c_size_t]
     lib.clausters_document_apply.restype = ctypes.c_size_t
     lib.clausters_document_apply.argtypes = [
-        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+        ctypes.c_void_p, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
         ctypes.c_double, u8p, ctypes.c_size_t,
     ]
     lib.clausters_document_resolve.restype = ctypes.c_size_t
     lib.clausters_document_resolve.argtypes = [
-        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, ctypes.c_double,
+        ctypes.c_void_p, u8p, ctypes.c_size_t, ctypes.c_double,
         ctypes.c_int32, u8p, ctypes.c_size_t,
     ]
-    # The undo log (ABI v16): a **handle**, unlike the document, which crosses
-    # by value. A bulk inverse leaves the log on purpose, so a by-value log
-    # would carry every spilled span on every call -- the cost spilling exists
-    # to avoid.
+    # The undo log (ABI v16): a handle too, for its own reason -- a bulk inverse
+    # leaves the log on purpose, so a by-value log would carry every spilled
+    # span on every call, the cost spilling exists to avoid.
     lib.clausters_log_new.restype = ctypes.c_void_p
     lib.clausters_log_new.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
     lib.clausters_log_free.restype = None
     lib.clausters_log_free.argtypes = [ctypes.c_void_p]
     lib.clausters_log_apply.restype = ctypes.c_size_t
     lib.clausters_log_apply.argtypes = [
-        ctypes.c_void_p, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+        ctypes.c_void_p, ctypes.c_void_p, u8p, ctypes.c_size_t,
         u8p, ctypes.c_size_t, ctypes.c_double, u8p, ctypes.c_size_t,
         u8p, ctypes.c_size_t,
     ]
@@ -315,7 +323,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     for _log_fn in ("clausters_log_undo", "clausters_log_redo"):
         getattr(lib, _log_fn).restype = ctypes.c_size_t
         getattr(lib, _log_fn).argtypes = [
-            ctypes.c_void_p, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+            ctypes.c_void_p, ctypes.c_void_p, u8p, ctypes.c_size_t,
         ]
     for _log_fn in ("clausters_log_can_undo", "clausters_log_can_redo"):
         getattr(lib, _log_fn).restype = ctypes.c_int32
@@ -595,78 +603,172 @@ def _bytes(payload) -> tuple:
     return ctypes.cast(buf, u8p), len(data)
 
 
-def document_apply(document: dict, intent: dict, *, against=None, quant: float = 0.0) -> dict:
-    """Apply one edit to a document through the shared crate — the **only**
-    implementation of what an edit means.
+class Document:
+    """One composition, held by the shared crate — the **only** implementation
+    of what an edit means.
 
-    A client does not apply and then report: it hands the document and the
-    intent across and takes back the new document plus the outcome. That is what
-    keeps three clients from meaning three different things by the same edit,
-    and it is why this is one call rather than a handle with an accessor per
-    field of the tree.
+    A client does not apply an edit and then report it: it hands an intent over
+    and takes back what happened. That is what keeps three clients from meaning
+    three different things by the same edit.
+
+    **The tree stays in Rust.** It used to cross on every call, and the cost was
+    linear in the whole composition rather than in the edit: 205 ms for one
+    placement on a 10240-event piece, the same for a stroke touching fifty
+    samples. This is not an accessor handle — there is no call per field of the
+    tree, just the same three verbs — and `snapshot` is how the JSON leaves,
+    asked for rather than paid per edit.
 
     Args:
-        document: the document, as `clausters.form.to_document` writes it.
-        intent: the edit — ``{"intent": "place"|"configure"|"setmembers"|
-            "writesamples", "node": id, …}``. Absolute: it states the *resulting*
-            value, never an increment.
-        against: the state the edit was made against — ``{"version": N}``, or
-            ``None`` for unstated, which applies unchecked. An edit made against
-            a superseded version comes back refused and marked ``stale``, with
-            the value that now holds.
-        quant: the musical grid a placement snaps to, in beats. ``0`` snaps
-            nothing.
+        document: a document as `clausters.form.to_document` writes it, or
+            ``None`` for an empty composition.
 
-    Returns:
-        ``{"document": …, "outcome": {"effective", "applied", "reason",
-        "stale"}}``. There is no success flag to branch on: ``effective`` is the
-        edit describing the document as it now stands, so applied, transformed
-        and refused are one shape and a refusal is the previous value.
+    Usage::
+
+        with Document(to_document(song)) as doc:
+            outcome = doc.apply({"intent": "place", "node": 4, "offset": 2.0})
+            song = from_document(doc.snapshot())
 
     Raises:
-        ValueError: if the document or the intent will not parse.
+        ValueError: if the document will not parse.
     """
-    doc_ptr, doc_len = _bytes(document)
-    int_ptr, int_len = _bytes(intent)
-    ag_ptr, ag_len = _bytes(against) if against is not None else (None, 0)
-    fn = lib().clausters_document_apply
-    need = fn(doc_ptr, doc_len, int_ptr, int_len, ag_ptr, ag_len, float(quant), None, 0)
-    if need == 0:
-        raise ValueError("the document or the intent is not valid JSON for the crate")
-    out = (ctypes.c_ubyte * need)()
-    n = fn(doc_ptr, doc_len, int_ptr, int_len, ag_ptr, ag_len, float(quant), out, need)
-    return json.loads(ctypes.string_at(out, n))
+
+    def __init__(self, document: "dict | None" = None):
+        ptr, length = _bytes(document) if document is not None else (None, 0)
+        self._handle = lib().clausters_document_open(ptr, length)
+        if not self._handle:
+            raise ValueError("not a valid document for the crate")
+
+    def __enter__(self) -> "Document":
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        self.close()
+        return False
+
+    def close(self) -> None:
+        """Release the document. Idempotent; also runs on garbage collection."""
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_document_free(handle)
+
+    def __del__(self):
+        self.close()
+
+    @property
+    def version(self) -> int:
+        """The monotonic version, bumped by every applied edit. Never zero.
+
+        Read without serializing anything, which is what lets a caller name the
+        state an edit was made against on every gesture.
+        """
+        return int(lib().clausters_document_version(self._handle))
+
+    def snapshot(self) -> dict:
+        """The whole tree as JSON — to save it, or to rebuild the client's own
+        objects from it.
+
+        The one call still the size of the composition. It is a pure read, so
+        the crate serializes once per call rather than twice.
+        """
+        fn = lib().clausters_document_snapshot
+        need = fn(self._handle, None, 0)
+        if need == 0:
+            raise ValueError("the document could not be serialized")
+        out = (ctypes.c_ubyte * need)()
+        n = fn(self._handle, out, need)
+        return json.loads(ctypes.string_at(out, n))
+
+    def apply(self, intent: dict, *, against=None, quant: float = 0.0) -> dict:
+        """Apply one edit.
+
+        Args:
+            intent: the edit — ``{"intent": "place"|"configure"|"setmembers"|
+                "writesamples", "node": id, …}``. Absolute: it states the
+                *resulting* value, never an increment.
+            against: the state the edit was made against — ``{"version": N}``,
+                or ``None`` for unstated, which applies unchecked. An edit made
+                against a superseded version comes back refused and marked
+                ``stale``, with the value that now holds.
+            quant: the musical grid a placement snaps to, in beats. ``0`` snaps
+                nothing.
+
+        Returns:
+            ``{"effective", "applied", "reason", "stale"}``. There is no success
+            flag to branch on: ``effective`` is the edit describing the document
+            as it now stands, so applied, transformed and refused are one shape
+            and a refusal is the previous value.
+
+        Raises:
+            ValueError: if the intent will not parse.
+        """
+        int_ptr, int_len = _bytes(intent)
+        ag_ptr, ag_len = _bytes(against) if against is not None else (None, 0)
+        fn = lib().clausters_document_apply
+        args = (self._handle, int_ptr, int_len, ag_ptr, ag_len, float(quant))
+        need = fn(*args, None, 0)
+        if need == 0:
+            raise ValueError("the intent is not valid JSON for the crate")
+        out = (ctypes.c_ubyte * need)()
+        n = fn(*args, out, need)
+        return json.loads(ctypes.string_at(out, n))
+
+    def resolve(self, selection: dict, *, frames_per_beat: float,
+                in_beats: bool = False) -> list:
+        """Resolve a selection to the spans of material underneath it.
+
+        Args:
+            selection: ``{"start", "len", …}`` — see the crate's ``Selection``.
+            frames_per_beat: the bridge between the arrangement's beats and the
+                material's frames. Supplied rather than derived: tempo is the
+                caller's, the arithmetic is the crate's.
+            in_beats: whether the selection's numbers are beats rather than
+                frames on the shared axis.
+
+        Returns:
+            ``[{"node", "source", "generation", "range", "at"}, …]`` in tree
+            order, with the placement's base, the element's trim and the clamp
+            at both ends already applied. Empty when nothing material was
+            underneath — a group and a generator are in the way of a selection,
+            not under it.
+        """
+        sel_ptr, sel_len = _bytes(selection)
+        fn = lib().clausters_document_resolve
+        args = (self._handle, sel_ptr, sel_len, float(frames_per_beat),
+                int(bool(in_beats)))
+        need = fn(*args, None, 0)
+        if need == 0:
+            raise ValueError("the selection is not valid JSON for the crate")
+        out = (ctypes.c_ubyte * need)()
+        n = fn(*args, out, need)
+        return json.loads(ctypes.string_at(out, n))
+
+
+def document_apply(document: dict, intent: dict, *, against=None, quant: float = 0.0) -> dict:
+    """Apply one edit to a document given and returned **by value**.
+
+    The convenience form, built out of `Document` — open, apply, snapshot, free
+    — for a script that has a document in hand and wants the edited one back.
+    It costs a serialization of the whole composition either way, which is why
+    it is a wrapper here rather than the binding: an editor applying a gesture
+    per drag holds a `Document` instead and pays nothing per edit.
+
+    Returns:
+        ``{"document": …, "outcome": {…}}`` — the shape this call has always
+        had, so a caller written against it does not change.
+    """
+    with Document(document) as doc:
+        outcome = doc.apply(intent, against=against, quant=quant)
+        return {"document": doc.snapshot(), "outcome": outcome}
 
 
 def document_resolve(document: dict, selection: dict, *, frames_per_beat: float,
                      in_beats: bool = False) -> list:
-    """Resolve a selection to the spans of material underneath it.
-
-    Args:
-        document: the document.
-        selection: ``{"start", "len", …}`` — see the crate's ``Selection``.
-        frames_per_beat: the bridge between the arrangement's beats and the
-            material's frames. Supplied rather than derived: tempo is the
-            caller's, the arithmetic is the crate's.
-        in_beats: whether the selection's numbers are beats rather than frames
-            on the shared axis.
-
-    Returns:
-        ``[{"node", "source", "generation", "range", "at"}, …]`` in tree order,
-        with the placement's base, the element's trim and the clamp at both ends
-        already applied. Empty when nothing material was underneath — a group
-        and a generator are in the way of a selection, not under it.
+    """Resolve a selection against a document given **by value** — the
+    convenience form of `Document.resolve`, for a caller that has one in hand.
     """
-    doc_ptr, doc_len = _bytes(document)
-    sel_ptr, sel_len = _bytes(selection)
-    fn = lib().clausters_document_resolve
-    args = (doc_ptr, doc_len, sel_ptr, sel_len, float(frames_per_beat), int(bool(in_beats)))
-    need = fn(*args, None, 0)
-    if need == 0:
-        raise ValueError("the document or the selection is not valid JSON for the crate")
-    out = (ctypes.c_ubyte * need)()
-    n = fn(*args, out, need)
-    return json.loads(ctypes.string_at(out, n))
+    with Document(document) as doc:
+        return doc.resolve(selection, frames_per_beat=frames_per_beat,
+                           in_beats=in_beats)
 
 
 class Log:
@@ -678,10 +780,10 @@ class Log:
     then writes a state nobody was ever in. This is a handle onto the crate's
     log, so there is one history however many surfaces edit.
 
-    It is a handle where `document_apply` crosses by value, and the reason is
-    the spill store: a bulk inverse *leaves* the log on purpose, so passing one
-    by value would carry every spilled span on every call — which is the cost
-    spilling exists to avoid.
+    It is a handle for its own reason, beyond the one `Document` has: the spill
+    store. A bulk inverse *leaves* the log on purpose, so passing one by value
+    would carry every spilled span on every call — which is the cost spilling
+    exists to avoid.
 
     Args:
         budget: how many entries to keep before the oldest falls off. ``None``
@@ -692,10 +794,10 @@ class Log:
     Usage::
 
         log = Log()
-        result = log.apply(doc, {"intent": "place", "node": 3, "offset": 4.0},
-                           label="move the clip")
-        doc = result["document"]
-        doc = log.undo(doc)["document"]      # exactly where it was
+        with Document(to_document(song)) as doc:
+            log.apply(doc, {"intent": "place", "node": 3, "offset": 4.0},
+                      label="move the clip")
+            log.undo(doc)                    # exactly where it was
 
     Free with `close` (``__del__`` is the backstop), or use it as a context
     manager.
@@ -709,9 +811,9 @@ class Log:
             0 if spill_above is None else int(spill_above),
         )
 
-    def apply(self, document: dict, intent: dict, *, against=None,
+    def apply(self, document: "Document", intent: dict, *, against=None,
               quant: float = 0.0, label: str = "edit") -> dict:
-        """Apply an edit **and record it**, in one call.
+        """Apply an edit to ``document`` **and record it**, in one call.
 
         One call rather than two because the inverse has to be read out of the
         document *before* the edit lands: a surface that let you apply first and
@@ -719,18 +821,18 @@ class Log:
         unless the document actually changed, so a refusal — stale or otherwise
         — leaves no entry, and neither does a resend.
 
-        Arguments are `document_apply`'s, plus ``label``: what an undo menu
-        calls this. Returns the same ``{"document", "outcome"}``.
+        Arguments are `Document.apply`'s, plus the document and ``label``: what
+        an undo menu calls this. Returns the same outcome object; the document
+        changed behind its handle.
         """
-        doc_ptr, doc_len = _bytes(document)
         int_ptr, int_len = _bytes(intent)
         ag_ptr, ag_len = _bytes(against) if against is not None else (None, 0)
         lb_ptr, lb_len = _text(label)
         return self._sized(
             self._lib.clausters_log_apply,
-            (doc_ptr, doc_len, int_ptr, int_len, ag_ptr, ag_len,
+            (document._handle, int_ptr, int_len, ag_ptr, ag_len,
              float(quant), lb_ptr, lb_len),
-            "the document or the intent is not valid JSON for the crate",
+            "the intent is not valid JSON for the crate",
         )
 
     def record(self, forward: dict, backward: dict, *, label: str = "edit",
@@ -762,22 +864,23 @@ class Log:
         if code != 0:
             raise ValueError("the step or its inverse is not valid JSON for the crate")
 
-    def undo(self, document: dict) -> "dict | None":
+    def undo(self, document: "Document") -> "dict | None":
         """Undo the last transaction, applying its inverses to ``document``.
 
-        Returns ``{"document": …, "undone": [<intent>, …]}``, or ``None`` when
-        there was nothing to undo. It applies rather than handing the inverses
-        back, because the cursor moves with it: two steps could half-happen, and
-        a log that disagrees with its document is worse than no log.
+        Returns ``{"undone": [<intent>, …]}``, or ``None`` when there was
+        nothing to undo; the document changed behind its handle. It applies
+        rather than handing the inverses back, because the cursor moves with it:
+        two steps could half-happen, and a log that disagrees with its document
+        is worse than no log.
         """
         return self._step(self._lib.clausters_log_undo, document)
 
-    def redo(self, document: dict) -> "dict | None":
+    def redo(self, document: "Document") -> "dict | None":
         """Redo what was last undone, applying what it can.
 
-        Returns ``{"document": …, "remaining": [<step>, …]}``, or ``None`` when
-        there was nothing to redo. The ordinary edits at the front are already
-        applied; ``remaining`` holds the steps from the first one the crate
+        Returns ``{"remaining": [<step>, …]}``, or ``None`` when there was
+        nothing to redo. The ordinary edits at the front are already applied to
+        the document; ``remaining`` holds the steps from the first one the crate
         **cannot perform** onward — a deterministic operation kept as its
         parameters, which you re-run, because the crate holds no algorithms. It
         stops at the first rather than skipping it, so a later edit is never
@@ -846,9 +949,9 @@ class Log:
         n = fn(self._handle, *args, out, need)
         return json.loads(ctypes.string_at(out, n))
 
-    def _step(self, fn, document: dict) -> "dict | None":
+    def _step(self, fn, document: "Document") -> "dict | None":
         result = self._sized(
-            fn, _bytes(document), "the document is not valid JSON for the crate")
+            fn, (document._handle,), "the document handle is not usable")
         # `{}` is "there was nothing to do", which the crate keeps distinct from
         # a parse failure (0 bytes) and from a step that changed nothing.
         return result or None

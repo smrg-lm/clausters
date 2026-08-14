@@ -122,27 +122,27 @@ if __name__ == "__main__":
     # history this client keeps -- the acceptance O11 is written around, frozen
     # so the wasm side has to reach the same states and not merely a consistent
     # one of its own.
+    # Since O12 the tree stays behind a handle, so each step's document is read
+    # back with `snapshot` rather than carried in the reply -- and the vector
+    # keeps freezing it, because the document is what the two sides are being
+    # compared on.
     logged = {"applies": [], "undos": [], "redos": []}
-    with Log() as log:
-        doc = composition()
+    with Log() as log, _native.Document(composition()) as doc:
         for label, intent, quant in LOGGED:
-            result = log.apply(doc, intent, quant=quant, label=label)
+            outcome = log.apply(doc, intent, quant=quant, label=label)
             logged["applies"].append({
                 "label": label, "intent": intent, "quant": quant,
-                "document": result["document"], "outcome": result["outcome"],
+                "document": doc.snapshot(), "outcome": outcome,
                 "entries": len(log), "undoLabel": log.undo_label,
             })
-            doc = result["document"]
         while log.can_undo:
             step = log.undo(doc)
-            logged["undos"].append(step)
-            doc = step["document"]
-        logged["inverted"] = doc
+            logged["undos"].append({**step, "document": doc.snapshot()})
+        logged["inverted"] = doc.snapshot()
         while log.can_redo:
             step = log.redo(doc)
-            logged["redos"].append(step)
-            doc = step["document"]
-        logged["redone"] = doc
+            logged["redos"].append({**step, "document": doc.snapshot()})
+        logged["redone"] = doc.snapshot()
 
     out = pathlib.Path(__file__).with_name("document-vectors.json")
     out.write_text(json.dumps({

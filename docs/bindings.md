@@ -168,25 +168,51 @@ thought about the other side", write `gap` — that is what it is for.
 ## The document
 
 One implementation of what an edit *means*, bound by every client rather than
-re-derived per language. The shape is deliberate and is the crate's own
-decision, not a convenience: the document and the intent cross **by value** and
-the new document comes back, instead of a client holding a handle into a Rust
-object graph. A handle would make every accessor a document has — and a tree has
-dozens — a call to design, bind and keep in step; the round trip costs a
-serialization per edit and buys a binding that is one function, plus the
-property that a client's document *is* the crate's document rather than a
-parallel structure synchronizing with it.
+re-derived per language. **The tree stays in Rust and only the intent and the
+outcome cross**: a caller opens a document, applies intents to it, and asks for
+the JSON when it actually wants the JSON.
+
+That is not the shape this started with, and the change was forced by a
+measurement rather than by taste. The first binding passed the whole document in
+and took the whole new one back, on the reasoning that a handle would make every
+accessor a tree has — and a tree has dozens — a call to design, bind and keep in
+step. What that reasoning did not do was price "a serialization per edit": **205
+ms** for one placement on a 10240-event composition (3.3 MB of JSON), against 6
+ms on the 320-event one an example builds — linear in the whole document and
+independent of the edit, so a destructive stroke touching fifty samples paid the
+same as a clip drag.
+
+The objection was to *accessor* handles, not to pointers, and this is not one:
+it is the same three verbs the by-value binding had. What is preserved is the
+property the decision was protecting — a client's document **is** the crate's
+document rather than a parallel structure synchronizing with it — and it is
+preserved more strictly than before, since there is now only one copy. A client
+that wants the by-value convenience builds it in its own language out of open →
+apply → snapshot → free, and pays the serialization where it asked for it.
 
 | C ABI | wasm | Note |
 |---|---|---|
-| `clausters_document_apply` | `document_apply` | |
-| `clausters_document_resolve` | `document_resolve` | |
+| `clausters_document_open` | `JsDocument.new` | `idiom` — a constructor where C mints a handle |
+| `clausters_document_free` | — | `n/a` — wasm frees by `Drop` |
+| `clausters_document_apply` | `JsDocument.apply` | |
+| `clausters_document_resolve` | `JsDocument.resolve` | |
+| `clausters_document_snapshot` | `JsDocument.snapshot` | the one call still the size of the composition, and asked for rather than paid per edit |
+| `clausters_document_version` | `JsDocument.version` | `idiom` — a getter |
 
-The **log** is the exception to the shape above, and deliberately: undo state is
-not a value the caller edits, and — the deciding term — a bulk inverse *leaves*
+**Size-then-fill needs two rules here**, because the surface mutates. A mutating
+call commits **only when the bytes are written**, so a sizing pass changes
+nothing and repeating one is harmless — which matters more now than it did, since
+the tree is no longer the caller's to compare against. A **pure read caches**
+between the pair instead: `snapshot` keeps what the sizing pass serialized and
+the fill copies it out, so a composition is serialized once per pair rather than
+twice. Caching a mutating call that way would be wrong — the mutation would land
+on the sizing pass, and a caller that sized and then gave up would have edited
+without knowing.
+
+The **log** crosses as a handle too, for its own reason: a bulk inverse *leaves*
 the log for its spill store on purpose, so passing one by value would carry
-every spilled span on every call, which is the cost spilling exists to avoid. So
-it crosses as a handle where the document crosses by value.
+every spilled span on every call, which is the cost spilling exists to avoid.
+Its document-carrying calls take the document handle.
 
 | C ABI | wasm | Note |
 |---|---|---|

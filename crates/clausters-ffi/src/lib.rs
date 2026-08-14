@@ -104,7 +104,7 @@ pub use time::*;
 /// crosses by value — a bulk inverse leaves the log on purpose, so sending one
 /// by value would carry every spilled span on every call, which is the cost
 /// spilling exists to avoid.
-pub const CORE_ABI_VERSION: u32 = 17;
+pub const CORE_ABI_VERSION: u32 = 18;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

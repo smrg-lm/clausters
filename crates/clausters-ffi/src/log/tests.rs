@@ -25,6 +25,33 @@ impl Drop for Held {
     }
 }
 
+/// The same, for the document the log edits. Since O12 the tree stays in Rust
+/// and only the intent and the outcome cross, so a test holds a pointer and
+/// reads the tree back with `snapshot` when it wants to assert on it.
+struct Doc(*mut FfiDocument);
+
+impl Doc {
+    fn new(json: &str) -> Self {
+        let h = unsafe { crate::clausters_document_open(json.as_ptr(), json.len()) };
+        assert!(!h.is_null(), "the fixture parses");
+        Self(h)
+    }
+
+    /// The tree as it now stands.
+    fn tree(&self) -> serde_json::Value {
+        serde_json::from_str(&sized(|out, cap| unsafe {
+            crate::clausters_document_snapshot(self.0, out, cap)
+        }))
+        .unwrap()
+    }
+}
+
+impl Drop for Doc {
+    fn drop(&mut self) {
+        unsafe { crate::clausters_document_free(self.0) };
+    }
+}
+
 /// The size-then-fill dance a binding does, as one call.
 fn sized(mut call: impl FnMut(*mut u8, usize) -> usize) -> String {
     let n = call(std::ptr::null_mut(), 0);
@@ -34,13 +61,12 @@ fn sized(mut call: impl FnMut(*mut u8, usize) -> usize) -> String {
     String::from_utf8(buf).unwrap()
 }
 
-fn apply(log: &Held, document: &str, intent: &str, quant: f64) -> String {
+fn apply(log: &Held, doc: &Doc, intent: &str, quant: f64) -> serde_json::Value {
     let label = "move";
-    sized(|out, cap| unsafe {
+    serde_json::from_str(&sized(|out, cap| unsafe {
         clausters_log_apply(
             log.0,
-            document.as_ptr(),
-            document.len(),
+            doc.0,
             intent.as_ptr(),
             intent.len(),
             std::ptr::null(),
@@ -51,19 +77,20 @@ fn apply(log: &Held, document: &str, intent: &str, quant: f64) -> String {
             out,
             cap,
         )
-    })
-}
-
-fn undo(log: &Held, document: &str) -> serde_json::Value {
-    serde_json::from_str(&sized(|out, cap| unsafe {
-        clausters_log_undo(log.0, document.as_ptr(), document.len(), out, cap)
     }))
     .unwrap()
 }
 
-fn redo(log: &Held, document: &str) -> serde_json::Value {
+fn undo(log: &Held, doc: &Doc) -> serde_json::Value {
     serde_json::from_str(&sized(|out, cap| unsafe {
-        clausters_log_redo(log.0, document.as_ptr(), document.len(), out, cap)
+        clausters_log_undo(log.0, doc.0, out, cap)
+    }))
+    .unwrap()
+}
+
+fn redo(log: &Held, doc: &Doc) -> serde_json::Value {
+    serde_json::from_str(&sized(|out, cap| unsafe {
+        clausters_log_redo(log.0, doc.0, out, cap)
     }))
     .unwrap()
 }
@@ -77,42 +104,39 @@ fn a_run_of_gestures_inverts_back_to_where_it_started() {
     // O11's acceptance. The log lives in Rust with its spill store; what
     // crosses is the document and the pointer.
     let log = Held::new();
+    let doc = Doc::new(DOC);
     let start: serde_json::Value = serde_json::from_str(DOC).unwrap();
-    let mut document = DOC.to_string();
 
     for (node, offset) in [(2u64, 1.0), (3, 7.0), (2, 2.5), (3, 0.5)] {
-        let result: serde_json::Value =
-            serde_json::from_str(&apply(&log, &document, &place(node, offset), 0.0)).unwrap();
-        assert_eq!(result["outcome"]["applied"], true);
-        document = result["document"].to_string();
+        let outcome = apply(&log, &doc, &place(node, offset), 0.0);
+        assert_eq!(outcome["applied"], true);
     }
     assert_eq!(unsafe { clausters_log_len(log.0) }, 4);
-    assert_ne!(
-        serde_json::from_str::<serde_json::Value>(&document).unwrap()["root"],
-        start["root"]
-    );
+    assert_ne!(doc.tree()["root"], start["root"]);
 
     while unsafe { clausters_log_can_undo(log.0) } == 1 {
-        let result = undo(&log, &document);
-        document = result["document"].to_string();
+        undo(&log, &doc);
     }
-    let ended: serde_json::Value = serde_json::from_str(&document).unwrap();
-    assert_eq!(ended["root"], start["root"], "exactly, not approximately");
+    assert_eq!(
+        doc.tree()["root"],
+        start["root"],
+        "exactly, not approximately"
+    );
     assert_eq!(unsafe { clausters_log_can_redo(log.0) }, 1);
 }
 
 #[test]
 fn a_redo_puts_back_what_the_undo_took() {
     let log = Held::new();
-    let applied: serde_json::Value =
-        serde_json::from_str(&apply(&log, DOC, &place(2, 3.0), 0.0)).unwrap();
-    let after_edit = applied["document"].clone();
+    let doc = Doc::new(DOC);
+    apply(&log, &doc, &place(2, 3.0), 0.0);
+    let after_edit = doc.tree();
 
-    let undone = undo(&log, &after_edit.to_string());
+    let undone = undo(&log, &doc);
     assert_eq!(undone["undone"].as_array().unwrap().len(), 1);
 
-    let redone = redo(&log, &undone["document"].to_string());
-    assert_eq!(redone["document"]["root"], after_edit["root"]);
+    let redone = redo(&log, &doc);
+    assert_eq!(doc.tree()["root"], after_edit["root"]);
     assert!(
         redone["remaining"].as_array().unwrap().is_empty(),
         "nothing for the owner to re-run"
@@ -124,19 +148,20 @@ fn what_the_rules_did_is_what_gets_replayed() {
     // The forward half records the *effective* edit, so a redo does not snap a
     // second time. Across the ABI as inside the crate.
     let log = Held::new();
-    let applied: serde_json::Value =
-        serde_json::from_str(&apply(&log, DOC, &place(2, 4.3), 1.0)).unwrap();
-    assert_eq!(applied["outcome"]["effective"]["offset"], 4.0);
+    let doc = Doc::new(DOC);
+    let outcome = apply(&log, &doc, &place(2, 4.3), 1.0);
+    assert_eq!(outcome["effective"]["offset"], 4.0);
 
-    let undone = undo(&log, &applied["document"].to_string());
-    let redone = redo(&log, &undone["document"].to_string());
-    assert_eq!(redone["document"]["root"]["members"][0]["offset"], 4.0);
+    undo(&log, &doc);
+    redo(&log, &doc);
+    assert_eq!(doc.tree()["root"]["members"][0]["offset"], 4.0);
 }
 
 #[test]
 fn a_refused_edit_leaves_no_entry_to_undo() {
     let log = Held::new();
-    apply(&log, DOC, &place(99, 1.0), 0.0);
+    let doc = Doc::new(DOC);
+    apply(&log, &doc, &place(99, 1.0), 0.0);
     assert_eq!(unsafe { clausters_log_len(log.0) }, 0);
     assert_eq!(unsafe { clausters_log_can_undo(log.0) }, 0);
 }
@@ -146,9 +171,9 @@ fn nothing_to_undo_is_answered_rather_than_failing() {
     // `{}` -- distinguishable from a parse failure (0) and from an undo that
     // legitimately changed nothing.
     let log = Held::new();
-    let result = undo(&log, DOC);
-    assert_eq!(result, serde_json::json!({}));
-    assert_eq!(redo(&log, DOC), serde_json::json!({}));
+    let doc = Doc::new(DOC);
+    assert_eq!(undo(&log, &doc), serde_json::json!({}));
+    assert_eq!(redo(&log, &doc), serde_json::json!({}));
 }
 
 #[test]
@@ -177,7 +202,7 @@ fn a_destructive_inverse_is_recorded_by_the_caller_and_undone_here() {
     assert_eq!(code, 0);
     assert_eq!(unsafe { clausters_log_len(log.0) }, 1);
 
-    let undone = undo(&log, document);
+    let undone = undo(&log, &Doc::new(document));
     assert_eq!(
         undone["undone"][0]["values"],
         // Exactly representable in `f32`, so the assertion is about the span
@@ -209,8 +234,9 @@ fn a_deterministic_operation_comes_back_for_the_owner_to_re_run() {
             0,
         )
     };
-    let undone = undo(&log, document);
-    let redone = redo(&log, &undone["document"].to_string());
+    let doc = Doc::new(document);
+    undo(&log, &doc);
+    let redone = redo(&log, &doc);
     let remaining = redone["remaining"].as_array().unwrap();
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0]["recompute"]["op"], "normalize");
@@ -241,9 +267,11 @@ fn a_continuing_run_of_adjustments_is_one_undo() {
         };
     }
     assert_eq!(unsafe { clausters_log_len(log.0) }, 1, "one thing was done");
-    let undone = undo(&log, document);
+    let doc = Doc::new(document);
+    undo(&log, &doc);
     assert_eq!(
-        undone["document"]["root"]["members"][0]["offset"], 0.0,
+        doc.tree()["root"]["members"][0]["offset"],
+        0.0,
         "and it lands where the run started"
     );
 }
@@ -251,7 +279,7 @@ fn a_continuing_run_of_adjustments_is_one_undo() {
 #[test]
 fn the_labels_cross_for_a_menu_to_read() {
     let log = Held::new();
-    apply(&log, DOC, &place(2, 1.0), 0.0);
+    apply(&log, &Doc::new(DOC), &place(2, 1.0), 0.0);
     let label = sized(|out, cap| unsafe { clausters_log_undo_label(log.0, out, cap) });
     assert_eq!(label, "move");
     assert_eq!(
@@ -264,7 +292,7 @@ fn the_labels_cross_for_a_menu_to_read() {
 #[test]
 fn clearing_forgets_everything() {
     let log = Held::new();
-    apply(&log, DOC, &place(2, 1.0), 0.0);
+    apply(&log, &Doc::new(DOC), &place(2, 1.0), 0.0);
     unsafe { clausters_log_clear(log.0) };
     assert_eq!(unsafe { clausters_log_len(log.0) }, 0);
     assert_eq!(unsafe { clausters_log_can_undo(log.0) }, 0);
@@ -279,8 +307,16 @@ fn a_null_handle_is_answered_rather_than_a_crash() {
     assert_eq!(unsafe { clausters_log_len(null) }, 0);
     unsafe { clausters_log_clear(null) };
     unsafe { clausters_log_free(null) };
-    let n = unsafe { clausters_log_undo(null, DOC.as_ptr(), DOC.len(), std::ptr::null_mut(), 0) };
+    let doc = Doc::new(DOC);
+    let n = unsafe { clausters_log_undo(null, doc.0, std::ptr::null_mut(), 0) };
     assert_eq!(n, 2, "`{{}}`: there is nothing to undo on no log");
+    // And the mirror: no document either, which since O12 is the other handle
+    // a caller can get wrong.
+    let no_doc: *mut FfiDocument = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { clausters_log_undo(null, no_doc, std::ptr::null_mut(), 0) },
+        0
+    );
 }
 
 #[test]
@@ -291,13 +327,14 @@ fn a_sizing_pass_changes_nothing_however_many_times_it_runs() {
     // edit and a naive `undo` undid on the sizing call and reported "nothing to
     // undo" on the fill. The mutation happens only when the bytes are written.
     let log = Held::new();
+    let doc = Doc::new(DOC);
+    let before = doc.tree();
     let intent = place(2, 3.0);
     let label = "move";
     let size = |_n: usize| unsafe {
         clausters_log_apply(
             log.0,
-            DOC.as_ptr(),
-            DOC.len(),
+            doc.0,
             intent.as_ptr(),
             intent.len(),
             std::ptr::null(),
@@ -318,15 +355,18 @@ fn a_sizing_pass_changes_nothing_however_many_times_it_runs() {
         0,
         "and records nothing"
     );
+    // With the tree behind a handle the sizing pass could edit it silently --
+    // the reason a mutating call still commits only on the write, even though
+    // its payload is now small enough that the second pass costs nothing.
+    assert_eq!(doc.tree(), before, "and edits nothing");
 
     // One real call, one entry.
-    apply(&log, DOC, &intent, 0.0);
+    apply(&log, &doc, &intent, 0.0);
     assert_eq!(unsafe { clausters_log_len(log.0) }, 1);
 
     // Sizing an undo does not undo it.
-    let doc = DOC.to_string();
     for _ in 0..3 {
-        unsafe { clausters_log_undo(log.0, doc.as_ptr(), doc.len(), std::ptr::null_mut(), 0) };
+        unsafe { clausters_log_undo(log.0, doc.0, std::ptr::null_mut(), 0) };
     }
     assert_eq!(unsafe { clausters_log_can_undo(log.0) }, 1, "still there");
     undo(&log, &doc);
@@ -339,18 +379,10 @@ fn a_buffer_too_small_is_a_size_query_and_not_a_half_done_edit() {
     // caller that guessed too small gets the count and an untouched log rather
     // than a truncated payload and a moved cursor.
     let log = Held::new();
-    apply(&log, DOC, &place(2, 1.0), 0.0);
-    let doc = DOC.to_string();
+    let doc = Doc::new(DOC);
+    apply(&log, &doc, &place(2, 1.0), 0.0);
     let mut tiny = [0u8; 4];
-    let need = unsafe {
-        clausters_log_undo(
-            log.0,
-            doc.as_ptr(),
-            doc.len(),
-            tiny.as_mut_ptr(),
-            tiny.len(),
-        )
-    };
+    let need = unsafe { clausters_log_undo(log.0, doc.0, tiny.as_mut_ptr(), tiny.len()) };
     assert!(need > tiny.len());
     assert_eq!(unsafe { clausters_log_can_undo(log.0) }, 1, "not consumed");
     assert_eq!(tiny, [0u8; 4], "and nothing was written");

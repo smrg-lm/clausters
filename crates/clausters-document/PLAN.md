@@ -165,7 +165,7 @@ This is the pattern every audio editor already uses and none of them writes down
 
   **What is still deferred, and it is O5's decision unchanged:** the spill store reachable from a binding is **memory**. A file-backed one is a `Spill` implementation a Rust caller supplies, and it lands with the first caller that needs it - which is the destructive-editing work in the GUI track's D1/D2, not a milestone here.
 
-- ⬜ **O12 - An edit costs the edit, not the document.** O10 bound the document **by value** and said why: a handle would mean each client holding pointers into a Rust object graph, with an accessor per field of a tree to design and keep in step, and the round trip buys the property the decisions required - a client's document *is* the crate's document. That reasoning stands. What O10 did not do is put a number on "a serialization per edit", and the number is the reason this milestone exists rather than staying a note under O10.
+- ✅ **O12 - An edit costs the edit, not the document.** O10 bound the document **by value** and said why: a handle would mean each client holding pointers into a Rust object graph, with an accessor per field of a tree to design and keep in step, and the round trip buys the property the decisions required - a client's document *is* the crate's document. That reasoning stands. What O10 did not do is put a number on "a serialization per edit", and the number is the reason this milestone exists rather than staying a note under O10.
 
   **The measurement, on the composition the milestone is for** *(taken 2026-08-14, release build, one `Place` intent - the ordinary clip drag)*. A document of 10240 events (8 lanes x 40 clips x 32 notes) serializes to 3.3 MB, and one `document_apply` over it costs **205 ms**. The same call over the 320-event composition an example builds costs **6.0 ms**. The cost is linear in the whole document and independent of the edit, which is the shape of the problem rather than a constant to shave: a `WriteSamples` touching fifty samples costs the same 205 ms as a drag, and D1's stroke would pay it per stroke.
 
@@ -189,6 +189,25 @@ This is the pattern every audio editor already uses and none of them writes down
   **What must not change, and it is the crate's whole discipline:** the crate stays the only thing that applies an intent, and one tree rather than two remains the goal rather than a cost to pay for. This milestone is about *where the tree is kept and what a call carries*, not about what an edit means.
 
   **Acceptance:** a `Place` and a `WriteSamples` over the 10240-event composition each cost within a small constant of the same edit over the 320-event one - the figures above are the baseline they are measured against, and the number goes in the commit rather than in a claim; `clausters.form`'s public surface is unchanged for a script that never touches the document; the parity vectors of O10 and O11 pass unmodified, since nothing about what an edit *means* moved.
+
+  **Done 2026-08-14. The handle won, and the measurement is the whole report:**
+
+  | | before | after |
+  |---|---|---|
+  | one `Place` over 10240 events (3.3 MB) | 205 ms | **0.008 ms** |
+  | the same over 320 events (0.11 MB) | 6.0 ms | **0.009 ms** |
+
+  The cost is now **independent of the composition** rather than linear in it, which is the acceptance as written and is a stronger result than the "small constant" it asked for. Two separate things got it there, and the second is the one that mattered.
+
+  **The handle removed the JSON.** `clausters_document_open`/`_free`/`_apply`/`_resolve`/`_snapshot`/`_version`, their wasm peers as a `Document` class, their ctypes and TypeScript faces, and `clausters_log_apply`/`_undo`/`_redo` taking the document handle instead of its bytes. That alone took 205 ms to 13.9 ms. **The objection O10 raised does not apply and the plan said so in advance**: it was against an *accessor* handle, a call per field of a tree, and this is the same three verbs the by-value binding had. The property it was protecting - a client's document **is** the crate's document - is now stricter, since there is only one copy. The by-value form survives in each client's own language (`document_apply` in Python, `applyIntent` in TS) built out of open → apply → snapshot → free, so a script that has a document in hand still has its one-liner and pays the serialization only where it asked for it.
+
+  **The `clone` was the rest of it, and finding that is why the number is in the plan.** With the JSON gone, `apply` still copied the *tree* so that a size-then-fill sizing pass could leave the document alone - 13.9 ms on 10240 events, still O(document) and still independent of what the edit touched. The fix is that **an edit runs in place and is rolled back by its own inverse** (`inverse_of`, the one the log already records) with the version restored by hand, since applying an inverse bumps the counter rather than rewinding it. A `WriteSamples` has no inverse in the document, so that one path still copies - the rare case, and paying there keeps the rule exact everywhere.
+
+  **The two size-then-fill rules, now stated rather than assumed.** A **mutating** call commits only when the bytes are written (O11's rule, unchanged, and now enforced by rollback rather than by copying); a **pure read** caches between the pair, so `snapshot` serializes the composition once instead of twice. Caching a mutating call the same way was rejected: the mutation would land on the sizing pass, and a caller that sized and gave up would have edited without knowing. Four tests pin it, including that a rolled-back sizing pass leaves the **version** alone - without that the document sits a version ahead of itself and every later edit reads as stale.
+
+  **What did not move:** the parity vectors are semantically identical to O11's, key order aside (which O1 already recorded as carrying no information), and `document-parity.test.ts` passes over the regenerated file. Nothing about what an edit *means* changed, which is the point - this milestone is about where the tree is kept and what a call carries.
+
+  **Still open, and it is the other half of the note under O10:** `clausters.form` is a Python object model with a conversion, not accessors over the crate's tree. O12 was the cost argument for closing that, and the cost is gone - so what remains is the *identity* argument (a paste creating nodes the client has no object for, D4) and the *two writers* one (a script editing beside an open editor, which bumps no version). Those are D4's and H2's to force, and they are cheap now that an edit is free.
 
 ## What stays out of the crate
 
