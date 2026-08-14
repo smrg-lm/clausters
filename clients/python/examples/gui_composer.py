@@ -122,7 +122,12 @@ buf = ServerBuffer.read(wav, server=server)    # on the server, shape known
 # to play. Same tree, both times.
 
 # %%
+# Two **elements** over one server buffer, since this lane places the take
+# twice: the material is shared, the placements are not. One object in two
+# places would be one name for two positions, and an edit-back could not say
+# which of them it meant.
 take = Buffer(buf, duration=2.0, instrument="take")       # the element over it
+take_again = Buffer(buf, duration=2.0, instrument="take")
 melody = Track(Timeline([                                 # a Set of events
     (0.0, SeqEvent(midinote=72, dur=1.0)),
     (1.0, SeqEvent(midinote=76, dur=1.0)),
@@ -191,7 +196,7 @@ sweep_clip = Group([(0.0, voice), (0.0, Element(sweep, duration=SWEEP))],
 
 # The composition: four lanes, each a group placing one material in time.
 song = Group([
-    (0.0, Group([(0.0, take), (4.0, take)], name="drums")),
+    (0.0, Group([(0.0, take), (4.0, take_again)], name="drums")),
     (0.0, Group([(0.0, bass)], name="bass")),
     (2.0, Group([(0.0, melody)], name="lead")),
     (0.0, Group([(0.0, sweep_clip)], name="sweep")),

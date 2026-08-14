@@ -58,21 +58,26 @@ invertible, the model is the crate's, and an edit costs the edit.*
   which the host addresses to the **window**: a gesture-plan step consumes a
   press somewhere, and undo is aimed at no place at all.
 
-- ⬜ **The whole-loop example** *(closes H2 under the project's definition of
-  done; likely `clients/python/examples/gui_daw.py` rather than growing
-  `gui_composer.py`, which is 309 lines and already carries its own subject)*.
-  Build, draw, edit, hear, **undo, redo**, save the session, reopen it, render
-  again. It is the first thing that exercises O8's session format, O5's log and
-  the acknowledgement in one run, and it is the manual test for all three —
-  nothing in CI runs an example.
+- ✅ **The whole-loop example.** Done 2026-08-14 as
+  `clients/python/examples/gui_daw.py` — build, draw, edit, hear, undo, redo,
+  save the session, reopen it. It is the first thing that exercises O8's format,
+  O5's log and the acknowledgement in one run, and being the manual test is what
+  it was for: it found three defects nothing else would have (`follow=True`
+  raising before the first play, a reopened session having no drawable material
+  until its sources are resolved, and two placements of one object sharing a
+  node id).
 
-- ⬜ **What a clip's edge means for an element that has not been rendered**
-  *(`clients/python/PLAN.md`, "Found by use")*. A **decision, not code**, and it
-  is in Phase 1 because the example above will hit it: the arrangement tree is
-  partially evaluated by design, so an edit-back onto a *bounced* generator has
-  no settled meaning — the next render puts the note back. Three questions are
-  written there; leaving them open makes the finished example demonstrate a
-  behavior nobody chose.
+- ✅ **What a clip's edge means for an element that has not been rendered.**
+  Settled 2026-08-14, and the answer was already decided — by O8, C31 and the
+  four-layer table, which nobody had read together. **A placement is a window
+  onto an element, never a rewrite of it**: an edit to a bounced note is
+  refused, a resize trims what is heard, and shortening a clip over its own
+  notes keeps them (checked, and reversible).
+
+**Phase 1 is closed.** What it opened rather than answered is in the plans'
+"Found by use" lists — chiefly whether the model should let one element be
+placed twice at all, which the example turned from a puzzle into a decision
+with three named answers.
 
 ## Phase 2 — the DAW's editing vocabulary
 

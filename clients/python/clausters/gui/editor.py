@@ -319,6 +319,39 @@ class Editor:
         self._announce()
         return self._window
 
+    def load(self, element) -> None:
+        """Point this editor at another composition, redrawing the window it
+        already has.
+
+        What a reopened session needs: `clausters.form.document.from_session`
+        hands back an arrangement, and without this the only way to show it was
+        to build a second editor and a second window. The node ids survive the
+        file (`from_document` restores them), so the reopened tree is the same
+        composition by identity and not merely by shape.
+
+        **The history is dropped**, deliberately. Its inverses describe states
+        of the session that just ended; keeping them would let an undo walk back
+        into a composition the file does not contain, which is the one thing a
+        history must never do. The transport keeps its position — where you were
+        looking is not part of what was loaded.
+        """
+        self.element = element
+        self._expanded.clear()
+        self._patch_geometry.clear()
+        if self._log is not None:
+            self._log.close()
+            self._log = None
+        if self._document is not None:
+            self._document.close()
+            self._document = None
+        self._by_node = {}
+        self._version = FIRST_VERSION
+        self.dirty = True
+        if self._host is not None and self._window is not None:
+            self._reset_ids()
+            self._host.define(self._window, self.draw())
+            self._announce()
+
     def _draw_pianoroll(self) -> dict:
         """The dedicated piano-roll view: one `pianoroll` widget drawing a single
         events element's MIDI notes (grid) and OSC events (lane), instead of a
@@ -568,8 +601,7 @@ class Editor:
         placed.offset, placed.dur = offset, dur
         self._version = self._document.version
         self.dirty = True
-        if self.follow:
-            self.rerender()
+        self._follow_render()
         return True
 
     def _owns(self, widget_id: int) -> bool:
@@ -783,8 +815,7 @@ class Editor:
         it now stands, because rendering always re-flattens the tree."""
         self.dirty = True
         self._version += 1
-        if self.follow:
-            self.rerender()
+        self._follow_render()
         return True
 
     # ---- the history: the crate's log, over the crate's document -----------
@@ -956,8 +987,7 @@ class Editor:
             self._adopt(document.snapshot(), widgets)
         self._version = document.version
         self.dirty = True
-        if self.follow:
-            self.rerender()
+        self._follow_render()
         self._corrections = []
         for wid in widgets:
             self._resync(wid)
@@ -1003,6 +1033,19 @@ class Editor:
     def undo_label(self) -> "str | None":
         """What an undo would be called, for a menu item."""
         return None if self._log is None else self._log.undo_label
+
+    def _follow_render(self):
+        """Re-schedule after an edit when `follow` is on **and there is
+        something to re-schedule**.
+
+        The guard is the whole of it: `rerender` needs a destination and a
+        clock, which only a `render` or a `play` supplies, so a live editor
+        edited before anything was ever played used to raise on the first drag.
+        An edit made before the first play is not lost by doing nothing here --
+        it marked the composition (`dirty`), and the next play re-reads it,
+        because rendering always re-flattens the tree."""
+        if self.follow and self._destination is not None:
+            self.rerender()
 
     def poll(self, timeout: float = 0.0) -> bool:
         """Drain the host's pending messages into the arrangement (`apply` each).
@@ -1250,7 +1293,18 @@ class Editor:
             buf = element.wraps
             # The take rides the bulk path: the host fetches the server buffer and
             # decimates it through its peak pyramid.
-            return dict(buffer=buf.bufnum, channels=max(1, buf.channels))
+            #
+            # Material this process does not hold draws as a **clip with no
+            # waveform** rather than not at all: a session reopened without its
+            # sources resolved wraps each one in a `FrozenSource`, which knows
+            # the buffer number the document recorded and nothing about its
+            # shape. Laid out, not dropped -- the same rule an unknown widget
+            # gets, and the reason a piece whose take has gone missing still
+            # shows where the take was.
+            channels = getattr(buf, "channels", None)
+            if channels is None:
+                return {}
+            return dict(buffer=buf.bufnum, channels=max(1, channels))
 
         notes = self._notes(element)
         if notes:
