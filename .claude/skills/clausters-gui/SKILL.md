@@ -81,7 +81,7 @@ What is written **once against `wgpu`/WGSL** runs natively and in the browser un
 | Module | Role |
 |---|---|
 | `viewport::View` | the visible window in `f64` sample units — `full`/`zoom(factor, anchor, total)`/`pan`/clamp; pure, unit-tested, renderer-agnostic |
-| `peaks` (re-export of `clausters_core::peaks`) | resolution-matched min/max peak LOD + its cache: `Pyramid`, the multichannel `MultiPyramid`, `level_for(spp)`, `column`, the CLPK cache format (one file for all channels) |
+| `peaks` (re-export of `clausters_core::peaks`) | resolution-matched peak LOD + its cache: `Pyramid`, the multichannel `MultiPyramid`, `level_for(spp)`, `column` (min/max) and `column_ms` (the per-bucket mean square, stored as energy so levels combine exactly — `has_mean_square` is false for a cache written before CLPK v3), the CLPK cache format (one file for all channels, a mono cache being one channel) |
 | `spectrogram::Stft` | windowed-FFT time-frequency analysis (FFT from `clausters_core::fft`) with the same cache shape, plus `FreqScale`, the renderer and the view |
 | `waveform` | the audio data (raw samples + a peak pyramid per channel) and a navigable view's vertical state. **No pipeline**: its picture is triangles through `host::graphics::signal::trace`, the one renderer of a signal against time, and the render regimes and the level crossfade are a per-frame *data* choice |
 | `gpu` | device/surface bring-up shared by every front; WebGPU with the WebGL2 fallback on wasm |

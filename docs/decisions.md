@@ -5242,3 +5242,46 @@ key that silently does nothing teaches that it sometimes does not work.
 clipboard and it holds at both ends of the wire: resampling is an edit, an edit
 is something an owner performs and logs, and a paste that quietly converted
 would change data nobody asked it to change in a step nothing records.
+
+## The pyramid stores energy, and a cache that never measured it says so
+
+The peak cache grew a third statistic beside each bucket's min and max, and two
+of the three decisions it forced are about honesty rather than about DSP.
+
+**It is stored as mean square, never as RMS.** The reason is that a level of the
+pyramid is *built from the level below it*, and mean squares combine while roots
+do not: the energy of two buckets is the mean of their energies weighted by the
+samples each holds, so a bucket at any level equals the direct mean square of
+its samples exactly, and a renderer cross-fading between two adjacent levels
+blends two numbers that mean the same thing. Storing the root instead would make
+every level above the first an approximation of the one below it, and the error
+would be largest exactly where a view is zoomed out and reading the top. The
+square root costs one operation at the moment of display, which is where it
+belongs — and it is also what lets the same array answer a question that is not
+an amplitude at all.
+
+**The weights are derived, not stored.** A bucket holds `bucket` samples except
+at the ragged tail, where it holds the remainder — and that count is a function
+of the buffer's length, the bucket size and the index, so combining exactly
+needs no count array and the cache does not grow a fourth plane. The one place
+it bites is the odd sibling: min and max may read the last entry twice (both are
+idempotent), while an energy averaged with itself would weigh the tail as if it
+held twice its samples, so the sibling is an option there rather than a clamped
+index.
+
+**A cache that predates the measure reports its absence instead of zeros.** The
+format went to CLPK v3 and the two older layouts still parse, which leaves a
+pyramid that has min/max and no energy. Filling that gap with zeros would be a
+measurement — silence — and a measured layer drawn from it would be a flat line
+across material that is not flat. So the measure is an option that rides with
+the data, `Pyramid::has_mean_square` reports it, and a view's honest answer to an
+old cache is to draw no measured layer at all rather than a wrong one.
+
+**And a mono cache is now one channel rather than a second format.** v1 was
+mono, v2 added the channel count, and v3 could have been "v2 plus energy" with
+the mono layout carried alongside — two writers, two sizers and two readers for
+one picture. Instead both writers emit v3 and a mono cache is the one-channel
+case of it, so `cache_size` is `multi_cache_size` at one channel and the layouts
+cannot drift apart. Reading is where the leniency stays: v1 and v2 still load,
+and the mono reader takes a one-channel v3 cache while **refusing** a wider one
+rather than silently narrowing it to its first channel.

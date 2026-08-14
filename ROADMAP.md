@@ -104,7 +104,7 @@ entry becomes **D8** there, after them, with a stack it can actually show.
 last of the three editing phases because it is the only one with a **server**
 prerequisite, and because it is the one whose cost is not the client's.*
 
-- ⬜ **A1 — Mean square in the pyramid.** **First of the phase**, and it is the
+- ✅ **A1 — Mean square in the pyramid.** Done 2026-08-14. **First of the phase**, and it was the
   one entry here that waits on nothing at all — not the document, not the
   server, not the editor. Before D1 the reason is mechanical: A1 takes the peak
   cache from CLPK v2 to v3 and bumps `CORE_ABI_VERSION`, while D1 lands

@@ -4,36 +4,36 @@
       "signal": "sine440",
       "channels": 1,
       "baseBucket": 256,
-      "bytes": 360,
-      "sha256": "175850073cee4a176e7b9717ac891ceb00b3a0b67f54ba65c6d7e3ff8b3627ac"
+      "bytes": 492,
+      "sha256": "9e8248feafd3ede2b940b91596ab1d2bfabca804c6ded510c8cfb05c1f1de05c"
     },
     {
       "signal": "sine440",
       "channels": 1,
       "baseBucket": 64,
-      "bytes": 1160,
-      "sha256": "83657cfc96c61b31b36fe0cfb19b6c84e2a4696968598be812d822358b153918"
+      "bytes": 1676,
+      "sha256": "b435c7bfa2ebd51fdf02354a4bd546db687bdbb7b4fa078e4888002fc1ddedf5"
     },
     {
       "signal": "ramp",
       "channels": 1,
       "baseBucket": 256,
-      "bytes": 360,
-      "sha256": "c64495c42bf43d7b6c546b73f591a8c556bd88fbd3a7984d3709a0329cb53500"
+      "bytes": 492,
+      "sha256": "96ccda6d626302dbadfb316512bfde77574d5602cad60296079f3a70d2140297"
     },
     {
       "signal": "stereo",
       "channels": 2,
       "baseBucket": 256,
-      "bytes": 696,
-      "sha256": "88645b0d1990145ba3a48b272bdba3e58e0c08dd9f662c653a67a001b66f4933"
+      "bytes": 944,
+      "sha256": "2e11bbb2440157beb3901131361b6ce6909f7a7cda820b5234dda9c2d7954271"
     },
     {
       "signal": "short",
       "channels": 1,
       "baseBucket": 256,
-      "bytes": 56,
-      "sha256": "9d951d07d1cecd8eead621f74777721ad8354d7e1c1c99885c97b20a8f26b13b"
+      "bytes": 68,
+      "sha256": "f2eb128cb74f1838de31b9da98946553a8a5e00b53a9785dc406166ad55b59a4"
     }
   ],
   "stereoField": [

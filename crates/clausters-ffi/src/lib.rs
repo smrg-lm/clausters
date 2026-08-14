@@ -103,8 +103,12 @@ pub use time::*;
 /// (`clausters_log_*`), which crosses as a **handle** where the document
 /// crosses by value — a bulk inverse leaves the log on purpose, so sending one
 /// by value would carry every spilled span on every call, which is the cost
-/// spilling exists to avoid.
-pub const CORE_ABI_VERSION: u32 = 18;
+/// spilling exists to avoid. **v19 is a format rather than a symbol**: the peak
+/// cache the `clausters_core_peaks_*` builders emit is CLPK v3, which carries a
+/// mean square beside each bucket's min/max, so a cache built by this surface is
+/// longer than a v18 one and a reader that predates it cannot parse it (the
+/// converse holds: v1 and v2 caches still load).
+pub const CORE_ABI_VERSION: u32 = 19;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
