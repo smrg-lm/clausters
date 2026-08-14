@@ -4,9 +4,11 @@ A real-time audio synthesis server in the style of SuperCollider's scsynth,
 written in Rust and controlled over OSC (UDP, default port 57110).
 
 - Forward roadmaps and milestones: `PLAN.md` (server), `clients/python/PLAN.md`,
-  `clients/gui/PLAN.md` and `clients/web/PLAN.md` (client/GUI/web tracks), all
-  in English — a roadmap plus a checkbox status per milestone, not an expanded
-  completion narrative.
+  `clients/gui/PLAN.md`, `clients/web/PLAN.md` (client/GUI/web tracks) and
+  `crates/clausters-document/PLAN.md` (the document: the arrangement's model, the
+  edit vocabulary and the edit log, shared by every client and by the
+  `standalone` host), all in English — a roadmap plus a checkbox status per
+  milestone, not an expanded completion narrative.
   - **Anything unresolved goes at the end of its plan, and carries a checkbox.**
     A gap found by use — an eye pass over an example, a path read while doing
     something else, a behavior that is correct and unclear — is written down the
