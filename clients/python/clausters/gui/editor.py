@@ -134,6 +134,17 @@ class Editor:
         #: widget id -> element, for every lane (a `/gui_set` of the lane chrome
         #: — the playhead — addresses these).
         self._lanes: dict = {}
+        #: The last selection swept in this editor's windows, as the crate's
+        #: ``Selection`` — ``{"start", "len"}`` in **beats**, plus ``"value"``
+        #: where the sweep restricted the value axis and ``"nodes"`` where it
+        #: named an element rather than the shared time axis. Empty until one is
+        #: swept; `resolve_selection` says what is under it.
+        #:
+        #: It is a plain value and not part of the composition, which is the
+        #: crate's own line: a selection is screen state, never persisted and
+        #: never logged, and what this holds is the *reading* of it that can be
+        #: handed to an operation.
+        self.selection: dict = {}
         #: The view: the multitrack (`open`) or a dedicated piano-roll of one
         #: events element (`open_pianoroll`). `render` dispatches on it.
         self._mode = "multitrack"
@@ -528,6 +539,14 @@ class Editor:
             if int(args[0]) in self._lanes:
                 self.locate(self.units_to_beats(float(args[2])))
             return False
+        if args[1] == "selection":
+            # A marquee swept on a lane or a view. Nothing in the composition
+            # changed -- a selection is screen state, and the crate is explicit
+            # that it is never part of the document -- but it is the *value* an
+            # operation is handed, so it is kept typed and in the arrangement's
+            # own unit, ready for `resolve_selection`.
+            self._set_selection(int(args[0]), args[2:])
+            return False
         if args[1] == "notes":
             # A note edited in a roll — a clip's body on a lane, or the dedicated
             # piano-roll: rebuild the element's timeline (a generator is
@@ -685,6 +704,60 @@ class Editor:
                             doc_version=self._version, reason=reason)
         else:
             self._host.ack(seq, doc_version=self._version, reason=reason)
+    def _set_selection(self, wid: int, values) -> None:
+        """Keep the swept selection as the crate's `Selection`, in beats.
+
+        The host reports ``start len`` in timeline samples, plus ``min max``
+        where the sweep restricted the value axis too. Three things happen here
+        and each is a translation the crate deliberately does not do. The time
+        numbers become **beats**, the unit the arrangement is written in (the
+        crate holds whatever unit it is handed and converts nothing, because the
+        beats↔samples bridge belongs to whoever renders). The value range is
+        carried **as it came**: it is in the element's own domain and no unit of
+        this editor's applies to it. And the selection is made *of* something
+        where the widget names one element — a clip's body, a roll — and of the
+        shared time axis where it does not, which is a lane: the empty ``nodes``
+        the crate describes as a selection dragged across a multitrack.
+        """
+        if len(values) < 2:
+            return
+        start, length = float(values[0]), float(values[1])
+        selection: dict = {"start": self.units_to_beats(start),
+                           "len": self.units_to_beats(length)}
+        if len(values) >= 4:
+            selection["value"] = {"min": float(values[2]), "max": float(values[3])}
+        element = self._rolls.get(wid)
+        if element is None:
+            placed = self._clips.get(wid)
+            element = None if placed is None else (
+                placed.member.element if placed.member is not None else self.element)
+        node = None if element is None else self._node_id(element)
+        if node is not None:
+            selection["nodes"] = [node]
+        self.selection = selection
+
+    def resolve_selection(self) -> list:
+        """The **material under the current selection**, through the crate.
+
+        The other half of what a selection is for: `Editor.selection` says what
+        was swept, and this says what is underneath it — one entry per leaf,
+        with the placement's base, the element's trim and the clamp at both ends
+        already applied (`clausters._native.Document.resolve`). Empty when
+        nothing material was under the sweep, and when there is no selection at
+        all.
+
+        The value range travels with the selection but does not narrow this:
+        what is under a band of amplitudes is the same material as what is under
+        the whole span, and *reading only those samples* is an operation over
+        the range rather than a resolution of it.
+        """
+        if not self.selection:
+            return []
+        _, document = self._history()
+        return document.resolve(self.selection,
+                                frames_per_beat=self.units_per_beat,
+                                in_beats=True)
+
     def _apply_points(self, placed, values) -> bool:
         """A curve edited in place on an automation clip (the flat ``"points"``
         payload the `bpf` view also sends): the break-points go back onto the

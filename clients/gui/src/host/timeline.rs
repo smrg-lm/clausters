@@ -39,6 +39,16 @@
 //! two are views of one timeline, laid over each other by an editor, reading
 //! one selection.
 //!
+//! A selection may also be **restricted on a second axis** — the value range a
+//! marquee swept over a view that measures one ([`value_span`]). That half is
+//! *not* here, and the split is the point: the time span is the group's because
+//! every linked view shows the same time, while the views sharing it measure
+//! different things vertically — amplitude, hertz, pitch — so a range held in
+//! the group would restrict a spectrogram in hertz by a waveform's amplitudes.
+//! It lives on the widget that swept it (`EditorProps::sel_min`/`sel_max`),
+//! beside the y window, which is the same line already drawn there: only the y
+//! axis stays per-widget.
+//!
 //! Selection and playhead live in the group and **only** there: every reader
 //! — the frame renderer, the animation demand, the readouts — resolves the
 //! member's key and reads the shared state, so there is nothing to keep in
@@ -85,6 +95,23 @@ pub fn group_key(widget_id: i32, link: Option<i32>) -> GroupKey {
 /// hand. `len` is a **count**: `start .. start + len` are the selected indices,
 /// and a sweep that has not reached a sample yet selects nothing at all — it is
 /// still the click it started as.
+/// The value range a sweep from `a` to `b` (any order) covers on an axis whose
+/// domain is `(min, max)` — the second axis' door, beside [`snap_selection`].
+///
+/// **The same treatment on its own domain, which on a continuous axis means
+/// ordering and clamping and nothing else.** The time axis snaps because its
+/// data is discrete: a sweep takes the samples it *passed over*, and one it has
+/// not reached yet is not in. An amplitude has nothing to pass over — every
+/// value between two samples' worth of height is a value the signal can take —
+/// so the range is the two values under the sweep's edges, and the only thing
+/// that can be wrong about it is naming a value the axis does not have. Where a
+/// value axis *is* discrete (a roll's pitch), the passed-over rule holds in its
+/// own unit, which is what the roll's own marquee already does with it.
+pub fn value_span(a: f64, b: f64, domain: (f64, f64)) -> (f64, f64) {
+    let (lo, hi) = (domain.0.min(domain.1), domain.0.max(domain.1));
+    (a.min(b).clamp(lo, hi), a.max(b).clamp(lo, hi))
+}
+
 pub fn snap_selection(a: f64, b: f64) -> (f64, f64) {
     let (lo, hi) = (a.min(b).ceil(), a.max(b).floor());
     if hi < lo {
@@ -1005,6 +1032,26 @@ mod tests {
 
     use super::super::{ClientId, GUI_DEF, GUI_FREE, GUI_SET, HostEffect};
     use super::*;
+
+    /// **The two axes round their sweeps by what their data is.** Time is
+    /// discrete, so a sweep takes the samples it passed over and one that has
+    /// reached none selects nothing. A value axis is continuous, so there is
+    /// nothing to pass over and the range is what the hand drew — ordered, and
+    /// clamped to the domain, which is the only way it could be wrong.
+    #[test]
+    fn a_sweep_is_rounded_by_what_its_axis_measures() {
+        // Time: the samples inside, either direction, and the click that
+        // reached no whole sample at all.
+        assert_eq!(snap_selection(2.2, 5.7), (3.0, 3.0));
+        assert_eq!(snap_selection(5.7, 2.2), (3.0, 3.0));
+        assert_eq!(snap_selection(2.2, 2.8), (3.0, 0.0));
+        // Value: ordered, and never a value the axis does not have.
+        assert_eq!(value_span(0.2, 0.8, (-1.0, 1.0)), (0.2, 0.8));
+        assert_eq!(value_span(0.8, 0.2, (-1.0, 1.0)), (0.2, 0.8));
+        assert_eq!(value_span(-4.0, 4.0, (-1.0, 1.0)), (-1.0, 1.0));
+        // A domain declared the other way round is the same domain.
+        assert_eq!(value_span(-4.0, 0.5, (1.0, -1.0)), (-1.0, 0.5));
+    }
 
     fn from() -> ClientId {
         ClientId::Udp(std::net::SocketAddr::from((

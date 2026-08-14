@@ -30,7 +30,7 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::BodyRole;
 use crate::host::widget::element::{
-    Ctx, Element, FreqAxis, Live, Loaded, Needs, SlotFill, SlotFrame, TextureLook,
+    Ctx, Element, FreqAxis, Live, Loaded, Needs, SlotFill, SlotFrame, TextureLook, ValueAxis,
 };
 use crate::host::widget::{EditorProps, GestureMap};
 
@@ -269,6 +269,10 @@ impl Element for SignalElement {
 
     fn freq_axis(&self, rect: Rect, m: &Metrics, sample_rate: f64) -> Option<FreqAxis> {
         SignalElement::freq_axis(self, rect, m, sample_rate)
+    }
+
+    fn value_axis(&self, rect: Rect, indent: f32, m: &Metrics, lanes: usize) -> Option<ValueAxis> {
+        SignalElement::value_axis(self, rect, indent, m, lanes)
     }
 
     fn freq_window_of(&self, sample_rate: f64, want: Option<(f64, f64)>) -> Option<(f64, f64)> {

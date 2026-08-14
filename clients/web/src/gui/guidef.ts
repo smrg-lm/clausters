@@ -170,6 +170,15 @@ export interface TimelineOptions extends WidgetOptions {
     selStart?: number;
     selLen?: number;
     /**
+     * The selection's **second axis**: the band of values it is restricted to,
+     * in the view's own domain (`min`/`max`), or an empty/inverted pair — the
+     * default — for no restriction. A sweep with height sets them and reports
+     * them as two further arguments of the `"selection"` event; a sweep along
+     * one height leaves them alone and reports the two numbers it always did.
+     */
+    selMin?: number;
+    selMax?: number;
+    /**
      * The engine sample-clock value at timeline position 0 — the playhead
      * sweeps on its own from there (negative = none).
      */
@@ -1615,6 +1624,7 @@ export function canvas(
 function timelineProps(options: TimelineOptions, y: Props = {}): Props {
     const {
         ruler, sampleRate, tempo, beatAt, quant, selStart, selLen,
+        selMin, selMax,
         playheadAt, playhead, playheadLoopStart, playheadLoopLen,
         yStart, yLen, link, ...rest
     } = options;
@@ -1635,7 +1645,15 @@ function timelineProps(options: TimelineOptions, y: Props = {}): Props {
                 ["playhead_loop_len", playheadLoopLen],
                 ["link", link],
             ]),
-            { ...drop([["start", yStart], ["len", yLen]]), ...y },
+            {
+                ...drop([
+                    ["start", yStart],
+                    ["len", yLen],
+                    ["sel_min", selMin],
+                    ["sel_max", selMax],
+                ]),
+                ...y,
+            },
         ),
     };
 }

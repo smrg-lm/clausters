@@ -10,6 +10,12 @@ file, and composes the two heavy views over that single mapped resource with
 - **zoom, pan and drag-selection on either lane move both**: the group owns
   the horizontal view, the selection and the playhead; each member keeps only
   its own vertical (amplitude / frequency) window;
+- a sweep **with height** on the waveform also restricts the selection to a
+  band of **amplitudes** — reported as two further arguments and drawn as the
+  rectangle it is — while the same sweep on the spectrogram restricts nothing:
+  its vertical measures frequency, whose selection is a band of bins and not a
+  value. The time span the two share is unaffected either way, which is what
+  makes the restriction the sweeping lane's own;
 - the script sees **one** event stream — a gesture emits a single
   ``"view"``/``"selection"`` event carrying the interacted lane's id, not one
   per member;
@@ -94,7 +100,12 @@ def on_group(name):
     wired by name."""
     def handler(tag, *vals):
         if tag in ("view", "selection") and len(vals) >= 2:
-            print(f"{name}: {tag} {vals[0]:.0f} +{vals[1]:.0f} samples")
+            span = f"{vals[0]:.0f} +{vals[1]:.0f} samples"
+            # A selection swept with height carries its value range too, in the
+            # lane's own domain. Only the waveform ever sends it: the
+            # spectrogram's vertical is frequency, not a value.
+            band = f"  in [{vals[2]:.3f}, {vals[3]:.3f}]" if len(vals) >= 4 else ""
+            print(f"{name}: {tag} {span}{band}")
     return handler
 
 

@@ -281,6 +281,16 @@ pub struct EditorProps {
     pub playhead_loop_len: f64,
     pub y_start: f64,
     pub y_len: f64,
+    /// The selection's **second axis**: the value range it is restricted to, in
+    /// the element's own units (`sel_max <= sel_min` = the whole domain, which
+    /// is no restriction at all).
+    ///
+    /// Per-widget and not the group's, unlike `sel_start`/`sel_len`, for the
+    /// reason the y window is: a group is one *time* axis shared by views that
+    /// measure different things vertically, so a range in it would restrict a
+    /// spectrogram in hertz by a waveform's amplitudes.
+    pub sel_min: f64,
+    pub sel_max: f64,
     pub x_start: f64,
     pub x_len: f64,
     pub link: Option<i32>,
@@ -311,6 +321,8 @@ impl EditorProps {
             playhead_loop_len: number_f64(props, "playhead_loop_len", 0.0),
             y_start: number_f64(props, "y_start", 0.0),
             y_len: number_f64(props, "y_len", 1.0),
+            sel_min: number_f64(props, "sel_min", 0.0),
+            sel_max: number_f64(props, "sel_max", 0.0),
             x_start: number_f64(props, "view_start", 0.0),
             x_len: number_f64(props, "view_len", 1.0),
             link: props
@@ -357,6 +369,19 @@ impl EditorProps {
         normalized_window(self.y_start, self.y_len)
     }
 
+    /// The selection's value range, or `None` where it is not restricted on
+    /// that axis — the pair read the way [`Self::y_view`] reads the window,
+    /// with the ordering done here rather than in `apply`, so one `/gui_set`
+    /// carrying both keys does not depend on their order.
+    ///
+    /// An empty or inverted pair is *no restriction*, deliberately the same
+    /// convention `sel_len <= 0` uses on the time axis: a selection that names
+    /// no range holds the whole domain, and travels as the plain two-number
+    /// span the wire has always carried.
+    pub fn value_range(&self) -> Option<(f64, f64)> {
+        (self.sel_max > self.sel_min).then_some((self.sel_min, self.sel_max))
+    }
+
     /// The horizontal view window of an element that owns its x axis, read the
     /// same way [`Self::y_view`] reads the vertical one — validated here rather
     /// than in `apply`, for the same reason: one `/gui_set` carrying both keys
@@ -385,6 +410,8 @@ impl EditorProps {
             "playhead_loop_len" => set_f64(&mut self.playhead_loop_len, v),
             "y_start" => set_f64(&mut self.y_start, v),
             "y_len" => set_f64(&mut self.y_len, v),
+            "sel_min" => set_f64(&mut self.sel_min, v),
+            "sel_max" => set_f64(&mut self.sel_max, v),
             "view_start" => set_f64(&mut self.x_start, v),
             "view_len" => set_f64(&mut self.x_len, v),
             _ => false,

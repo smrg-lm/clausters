@@ -165,7 +165,7 @@ The **edit-back payloads**:
 | `"move"` | `index x y` (box index; canvas units) | a patcher box dragged — one payload per moved box, so the driver owns the geometry |
 | `"locate"` | `position` (timeline units) | a lane's time ruler (or its empty space) clicked — the transport is being seeked there |
 | `"undo"` / `"redo"` | — | a window shortcut (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). **Addressed to the window, not to a widget**: the id is the window's, the way `/gui_closed` names one. The host holds no history — the log lives with the document — so this is a *request*, and the owner answers with the state that now holds, exactly as it answers a drag |
-| `"selection"` | `start len` (samples, always whole) | a selection dragged on a timeline view |
+| `"selection"` | `start len` (samples, always whole), plus `min max` where the sweep restricted the y axis too | a selection dragged on a timeline view |
 | `"view"` | `start len` (samples), or `x y zoom` on a `plane` | the navigation window zoomed or panned — the timeline group's shared window, or a 2D workspace's plane |
 | `"view_y"` | `start len` (0..1) | the vertical display window zoomed or panned |
 | `"view_x"` | `start len` (0..1) | an element's **own** horizontal window zoomed or panned — a navigable `spectrum`'s frequency axis, which is in no navigation group (a group's shared window reports `"view"`) |
@@ -270,7 +270,7 @@ Under an axis a property drops the axis marker — `x.start` is the old
 | Axis | Properties |
 |---|---|
 | `x` | `unit` (`time`/`samples`/`beats`/`off`; `ruler` is accepted as its old name), `start`, `len`, `tempo` (beats per second), `beat_at`, `quant` (**beats per bar** — the grid a `bar:beat` label counts on, not a length in samples), `sample_rate`, `link`, `sel_start`, `sel_len`, `playhead`, `playhead_at`, `playhead_loop_start`, `playhead_loop_len` |
-| `y` | `unit` (`norm`/`db`/`bits`/`percent`/`hz`/`off`), `start`, `len`, `min`, `max`, `bit_depth` |
+| `y` | `unit` (`norm`/`db`/`bits`/`percent`/`hz`/`off`), `start`, `len`, `min`, `max`, `bit_depth`, `sel_min`, `sel_max` |
 
 **A selection is a count of samples.** `sel_len` is how many the selection
 holds and `sel_start` is the first, snapped when they are set and when a sweep
@@ -284,6 +284,26 @@ halfway after the last, so the edges fall between what is in and what is out.
 The rule belongs to the navigation group rather than to any one view, which is
 why it holds for a spectrogram laid over a waveform too: they share the
 selection.
+
+**A selection may also be restricted on the y axis.** A sweep with height over a
+view that measures a value carries `sel_min`/`sel_max` as well — the band of
+values it covered, in the axis' own units, never in pixels — and the event
+grows by exactly those two numbers: `"selection" start len min max`. A sweep
+that stayed at one height, or one over an axis that measures no value, reports
+the two numbers it always did, so a reader of the old form keeps working. An
+empty or inverted pair (`sel_max <= sel_min`, the default) is *no restriction*,
+the same convention `sel_len <= 0` uses on the other axis.
+
+Two things follow from what each axis measures, and they are the whole of the
+rule. The **rounding** differs because the data does: time is discrete, so a
+sweep takes the samples it passed over, while a value axis is continuous and
+the range is simply what the hand drew, ordered and clamped to `min`/`max` — an
+axis whose values *are* discrete (a `notes` element's pitch) takes the
+passed-over rule in its own unit, whole semitones included at both ends. And the
+range is **per widget** where the span is per group: linked views share one time
+axis but measure different things vertically, so a range held in common would
+restrict a spectrogram in hertz by a waveform's amplitudes. A spectral view's
+second axis is a band of bins rather than a value, and does not travel here.
 
 **`min`/`max` are the value domain, and every view of a signal is drawn over
 it** — the trace of a take, a plot, a live scope, and the navigable waveform,
@@ -409,7 +429,7 @@ modifier (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value a
 | --- | --- |
 | `element` | Hands the press to whatever is under the cursor — the widget the pointer found, or the clip, note or box the container drew there. It may decline (empty space), and the plan goes on |
 | `pan` | Pans the container's axis: time on a `field`, the plane on a `plane` |
-| `select` | Sweeps the container's **shared time selection** on a timeline (a rectangle in time x pitch on a `notes` element, which also picks its notes). A selection that belongs to *one widget* — a patcher's box marquee — is not this step: that widget claims the press under `element` and sweeps it itself |
+| `select` | Sweeps the container's **shared time selection** on a timeline, restricted in value where the view under it measures one (a rectangle in time x pitch on a `notes` element, which also picks its notes; in time x amplitude on a trace). A selection that belongs to *one widget* — a patcher's box marquee — is not this step: that widget claims the press under `element` and sweeps it itself |
 | `locate` | Puts the transport's cursor under the pointer and emits `"locate"` |
 | `none` | Nothing |
 

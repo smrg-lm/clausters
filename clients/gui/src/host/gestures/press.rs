@@ -120,7 +120,9 @@ impl Gestures {
                         self.element_press(host, ctx, &hit, cx, cy, grab, &mut out)
                     }
                     GestureStep::Element => false,
-                    action => self.container_press(host, ctx, frame, action, cx, cy, &mut out),
+                    action => {
+                        self.container_press(host, ctx, frame, &hit, action, cx, cy, &mut out)
+                    }
                 };
                 if consumed {
                     return out;
@@ -170,6 +172,7 @@ impl Gestures {
         host: &mut Host,
         ctx: &GestureCtx,
         frame: &interact::Frame,
+        hit: &interact::Hit,
         step: GestureStep,
         cx: f64,
         cy: f64,
@@ -224,13 +227,19 @@ impl Gestures {
                     axis.body.w as f64,
                     cx,
                 );
-                set_selection(host, out, def_id, id, anchor, anchor);
+                // ...and the second axis, where the view under it measures one:
+                // the press names a value as well as a sample, so a marquee
+                // that never leaves one height still reports the range it drew.
+                let value = value_axis(host, ctx, frame, hit).filter(|v| v.body.contains(cx, cy));
+                let anchor_v = value.map(|v| v.value_at(cy));
+                set_selection(host, out, def_id, id, anchor, anchor, None);
                 self.drag = Some(Drag::Select {
                     id,
                     body: axis.body,
                     nav_start: axis.nav.start,
                     nav_len: axis.nav.len,
                     anchor,
+                    value: value.zip(anchor_v),
                 });
                 out.push(GestureEffect::Redraw(def_id));
                 true

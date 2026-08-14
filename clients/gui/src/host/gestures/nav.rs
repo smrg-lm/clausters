@@ -11,7 +11,7 @@ use clausters_core::osc::OscType;
 use super::super::Host;
 use super::super::interact::{self, Hit};
 use super::super::layout::Rect;
-use super::super::widget::element::FreqAxis;
+use super::super::widget::element::{FreqAxis, ValueAxis};
 use super::super::widget::{ScrollView, Widget, WidgetKind};
 use super::effects::{emit, emit_clip, emit_view, redraw_all};
 use super::{GestureCtx, GestureEffect};
@@ -100,6 +100,17 @@ pub(super) fn freq_nav_ids(tree: &Widget) -> Vec<i32> {
 /// timeline) into view `id`'s navigation group — every member follows — and
 /// emits **one** `"selection" start len` event, carrying the interacted
 /// member's id.
+///
+/// `value` is the sweep's second axis, already ordered and clamped to the
+/// element's domain ([`timeline::value_span`](crate::host::timeline::value_span)),
+/// or `None` for a sweep on one axis. It is written to the **widget** rather
+/// than to the group (the group is one time axis over views that measure
+/// different things vertically) and it rides on the same event, appended: a
+/// selection that is only a span is exactly the two numbers this has always
+/// sent, so a reader of the old form keeps working and one that understands the
+/// second axis is told when there is one. Passing `None` clears any range the
+/// widget carried — a new sweep replaces the old selection whole, rather than
+/// leaving a restriction from a gesture the hand has finished with.
 pub(super) fn set_selection(
     host: &mut Host,
     out: &mut Vec<GestureEffect>,
@@ -107,22 +118,31 @@ pub(super) fn set_selection(
     id: i32,
     a: f64,
     b: f64,
+    value: Option<(f64, f64)>,
 ) {
     let Some((start, len, roots)) = host.select_timeline(id, a, b) else {
         return;
     };
+    if let Some(editor) = host
+        .window_def_mut(def_id)
+        .and_then(|t| t.find_mut(id))
+        .and_then(|w| w.kind.editor_mut())
+    {
+        // The cleared case is the empty pair the reader already means by "no
+        // restriction", so there is one convention rather than a second flag.
+        (editor.sel_min, editor.sel_max) = value.unwrap_or((0.0, 0.0));
+    }
     redraw_all(out, &roots);
-    emit(
-        host,
-        out,
-        def_id,
-        id,
-        vec![
-            OscType::String("selection".into()),
-            OscType::Float(start as f32),
-            OscType::Float(len as f32),
-        ],
-    );
+    let mut args = vec![
+        OscType::String("selection".into()),
+        OscType::Float(start as f32),
+        OscType::Float(len as f32),
+    ];
+    if let Some((min, max)) = value {
+        args.push(OscType::Float(min as f32));
+        args.push(OscType::Float(max as f32));
+    }
+    emit(host, out, def_id, id, args);
 }
 
 /// Locates the transport: the timeline position under the cursor becomes the
@@ -285,6 +305,33 @@ pub(super) fn set_y_view(
 pub(super) fn freq_axis(host: &Host, ctx: &GestureCtx, hit: &interact::Hit) -> Option<FreqAxis> {
     hit.kind
         .freq_axis(hit.rect, host.metrics_for(ctx.def_id), ctx.sample_rate)
+}
+
+/// The [`ValueAxis`] a sweep on `frame` may restrict itself on: the hit
+/// widget's own answer, and only where that widget *is* the container being
+/// swept.
+///
+/// The guard is what keeps the second axis honest rather than approximately
+/// right. A view addressed directly measures what it draws, so the value under
+/// the pointer is its own; a lane of clips is a container whose contents each
+/// have an axis, and which of them a marquee across three clips would be
+/// restricting is a question with no answer yet. So a lane's sweep stays the
+/// one-axis sweep it was, and says so by declining rather than by guessing.
+pub(super) fn value_axis(
+    host: &Host,
+    ctx: &GestureCtx,
+    frame: &interact::Frame,
+    hit: &interact::Hit,
+) -> Option<ValueAxis> {
+    if frame.id != Some(hit.id) {
+        return None;
+    }
+    hit.kind.value_axis(
+        hit.rect,
+        hit.indent,
+        host.metrics_for(ctx.def_id),
+        ctx.lanes(hit.id, &hit.kind),
+    )
 }
 
 /// How far a view window has to move to count as having moved.

@@ -188,7 +188,9 @@
             "y": {
               "unit": "db",
               "start": 0.25,
-              "len": 0.5
+              "len": 0.5,
+              "sel_min": -0.5,
+              "sel_max": 0.75
             }
           },
           "overlay": 1

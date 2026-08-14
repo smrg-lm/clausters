@@ -89,7 +89,9 @@ field(
 | Axis | Properties |
 |---|---|
 | `x` | `unit` (`"time"` / `"samples"` / `"beats"` / `"off"`), `start`, `len`, `tempo`, `beat_at`, `quant`, `sample_rate`, `link`, `sel_start`, `sel_len`, `playhead`, `playhead_at`, `playhead_loop_start`, `playhead_loop_len` |
-| `y` | `unit` (`"norm"` / `"db"` / `"bits"` / `"percent"` / `"hz"` / `"off"`), `start`, `len`, `min`, `max`, `bit_depth` |
+| `y` | `unit` (`"norm"` / `"db"` / `"bits"` / `"percent"` / `"hz"` / `"off"`), `start`, `len`, `min`, `max`, `bit_depth`, `sel_min`, `sel_max` |
+
+The selection sits on both axes, and each one holds the half it can mean. `sel_start`/`sel_len` are the span, in whole samples; `sel_min`/`sel_max` restrict it to a band of the y axis' own values, which a marquee swept with height sets and reports as two further arguments of the `"selection"` event. An empty or inverted pair — the default — is no restriction, and a view whose vertical measures frequency rather than a value reports none at all.
 
 Inside an axis a property drops the axis marker: `x.start` is the navigation
 window's start, `y.unit` is the vertical ruler. It is nested rather than two

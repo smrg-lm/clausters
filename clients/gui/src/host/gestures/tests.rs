@@ -68,6 +68,17 @@ fn has_emit_tag(effects: &[GestureEffect], id: i32, tag: &str) -> bool {
     })
 }
 
+/// The arguments of the last event emitted for `id` — what a reader on the
+/// other end of the wire would actually receive.
+fn emitted_args(effects: &[GestureEffect], id: i32) -> Option<Vec<OscType>> {
+    effects.iter().rev().find_map(|e| match e {
+        GestureEffect::Emit {
+            widget_id, args, ..
+        } if *widget_id == id => Some(args.clone()),
+        _ => None,
+    })
+}
+
 // ---- the menu: a list that opens, and the press that picks from it ----
 
 fn menu_host() -> Host {
@@ -777,6 +788,69 @@ fn waveform_press_and_drag_select_a_range() {
     // reader of it looks — with a positive length.
     let key = host.timeline_key(50).unwrap();
     assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
+}
+
+/// **A sweep with height restricts the selection in value**, and the range is
+/// in the element's own units — the number the cursor readout names at that
+/// height, never a pixel. The two halves land in different places on purpose:
+/// the span in the navigation group, which every linked view follows, and the
+/// range on the widget, because the views sharing a time axis measure different
+/// things vertically.
+#[test]
+fn a_marquee_with_height_restricts_the_selection_in_value() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+    );
+    host.set_timeline_total(50, 1000);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    g.press(&mut host, &ctx, 400.0, 80.0, &mut || false);
+    let effects = g.drag_to(&mut host, &ctx, 600.0, 200.0);
+    assert!(has_emit_tag(&effects, 50, "selection"));
+    // The payload grew by the two numbers, and only when there are two.
+    let args = emitted_args(&effects, 50).expect("the sweep reports");
+    assert_eq!(args.len(), 5, "start, len and the range: {args:?}");
+    let editor = host.widget_kind(1, 50).unwrap().editor().unwrap();
+    let (min, max) = editor.value_range().expect("a rectangle restricts");
+    // The default domain is full-scale amplitude, and the sweep ran from above
+    // the centre line to below it: a band inside [-1, 1], the higher edge
+    // coming from the *upper* pixel.
+    assert!(min > -1.0 && max < 1.0 && max > min, "{min}..{max}");
+    // The plain horizontal sweep that follows clears it: a new selection
+    // replaces the old one whole.
+    g.release(&mut host, &ctx, 600.0, 200.0);
+    g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    let effects = g.drag_to(&mut host, &ctx, 600.0, 150.0);
+    let args = emitted_args(&effects, 50).expect("the second sweep reports");
+    assert_eq!(args.len(), 3, "one axis is the two numbers it always was");
+    let editor = host.widget_kind(1, 50).unwrap().editor().unwrap();
+    assert_eq!(editor.value_range(), None, "the old range does not linger");
+}
+
+/// A view whose vertical measures **frequency** has a second axis and it is not
+/// a value: its selection is a band of bins, which is its own field in the
+/// document's selection and a later milestone's gesture. So a marquee over a
+/// spectrogram stays the one-axis sweep it was, rather than reporting hertz in
+/// a range whose reader would take them for amplitudes.
+#[test]
+fn a_spectral_view_reports_no_value_range() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":51,"type":"signal","view":"spectrogram","data":[0.0,0.5,-0.5,1.0],
+             "fft_size":4}]}"#,
+    );
+    host.set_timeline_total(51, 1000);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    g.press(&mut host, &ctx, 400.0, 80.0, &mut || false);
+    let effects = g.drag_to(&mut host, &ctx, 600.0, 200.0);
+    let args = emitted_args(&effects, 51).expect("the sweep reports");
+    assert_eq!(
+        args.len(),
+        3,
+        "no value range on a frequency axis: {args:?}"
+    );
 }
 
 #[test]

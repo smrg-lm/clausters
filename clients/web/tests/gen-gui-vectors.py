@@ -87,6 +87,7 @@ def cases():
             g.waveform(id=1, path="take.f32", channels=2, base_bucket=512,
                        ruler="beats", ruler_y="db", tempo=2.0, beat_at=0.0,
                        quant=4.0, sel_start=1000.0, sel_len=4000.0,
+                       sel_min=-0.5, sel_max=0.75,
                        playhead_at=48000.0, playhead=32000.0,
                        playhead_loop_start=1000.0, playhead_loop_len=8000.0,
                        y_start=0.25, y_len=0.5, link=7,

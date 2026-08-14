@@ -84,7 +84,7 @@ with three named answers.
 *What it buys: a selection is a thing you can hold, hand to an algorithm and
 paste. The crate already has all of it (O6, O7, O9) and nothing calls any of it.*
 
-- ⬜ **D3 — The selection gesture grows a second axis.** Feeds the typed
+- ✅ **D3 — The selection gesture grows a second axis.** Feeds the typed
   `Selection` (O6). First of the phase because D4 has nothing to copy without it.
 
 - ⬜ **D4 — Copy, cut and paste as gestures.** Against the typed clipboard (O7).

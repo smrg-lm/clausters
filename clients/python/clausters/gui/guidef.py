@@ -634,6 +634,7 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
              sample_rate: float | None = None, tempo: float | None = None,
              beat_at: float | None = None, quant: float | None = None,
              sel_start: float | None = None, sel_len: float | None = None,
+             sel_min: float | None = None, sel_max: float | None = None,
              playhead_at: float | None = None, playhead: float | None = None,
              playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
              y_start: float | None = None,
@@ -694,6 +695,11 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     ``sel_start`` is the first, snapped whether set from here or swept with the
     pointer — never a band of pixels standing between two samples. A sweep takes
     the samples it passed over, so one joins when the cursor reaches it.
+    ``sel_min``/``sel_max`` restrict it on the **value axis**, in the domain's
+    own units: a sweep with height reports them as two further arguments
+    (``"selection" start len min max``) and draws the band as the rectangle it
+    is, while a sweep along one height reports the two numbers it always did.
+    An empty or inverted pair is no restriction, which is the default.
     ``playhead_at`` draws a playhead tracking the engine sample clock: pass the
     ``/clock_query`` sample value that corresponds to buffer position 0 (negative or
     omitted = no playhead). ``playhead`` is the **static** counterpart — a
@@ -732,6 +738,7 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
                        min=min, max=max,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
+                       sel_min=sel_min, sel_max=sel_max,
                        playhead_at=playhead_at, playhead=playhead,
                        playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len,
@@ -1389,6 +1396,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               ruler: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, beat_at: float | None = None, quant: float | None = None,
               sel_start: float | None = None, sel_len: float | None = None,
+              sel_min: float | None = None, sel_max: float | None = None,
               playhead_at: float | None = None, playhead: float | None = None,
               playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
               y_start: float | None = None, y_len: float | None = None, label: str | None = None,
@@ -1424,7 +1432,9 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     grid, pan with Shift+drag, all group-wide); ``ruler`` places a time ruler
     (``"time"``/``"samples"``/``"beats"``, default ``"time"``) with
     ``sample_rate``/``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on — not a length in samples) labelling it; ``sel_start``/
-    ``sel_len`` mark a time selection; ``playhead_at`` sweeps a playhead from the
+    ``sel_len`` mark a time selection and ``sel_min``/``sel_max`` restrict it to
+    a band of **pitches** — the roll's own y axis, so a marquee reports the
+    whole semitones it swept over at both ends; ``playhead_at`` sweeps a playhead from the
     engine clock (``playhead`` sets a static cursor, and
     ``playhead_loop_start``/``playhead_loop_len`` wrap the sweep inside a
     region); ``y_start``/``y_len`` are the
@@ -1444,7 +1454,8 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     extra.update(_axes(
         axes, min=min, max=max, link=link, ruler=ruler,
         sample_rate=sample_rate, tempo=tempo, beat_at=beat_at, quant=quant,
-        sel_start=sel_start, sel_len=sel_len, playhead_at=playhead_at,
+        sel_start=sel_start, sel_len=sel_len,
+        sel_min=sel_min, sel_max=sel_max, playhead_at=playhead_at,
         playhead=playhead, playhead_loop_start=playhead_loop_start,
         playhead_loop_len=playhead_loop_len,
         y_start=y_start, y_len=y_len))
@@ -1728,6 +1739,7 @@ _X_AXIS = {
 _Y_AXIS = {
     "ruler_y": "unit", "y_start": "start", "y_len": "len",
     "min": "min", "max": "max", "bit_depth": "bit_depth",
+    "sel_min": "sel_min", "sel_max": "sel_max",
 }
 
 

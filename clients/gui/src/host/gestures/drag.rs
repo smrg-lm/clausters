@@ -13,6 +13,7 @@
 
 use super::super::Host;
 use super::super::interact::{self};
+use super::super::timeline;
 use super::super::widget::{Axis, WidgetKind};
 use super::effects::*;
 use super::nav::*;
@@ -217,6 +218,7 @@ impl Gestures {
                 nav_start,
                 nav_len,
                 anchor,
+                value,
             } => {
                 // Against the group's **current** window (the press-time one is
                 // the fallback for a view that is in no group): the axis may
@@ -225,7 +227,19 @@ impl Gestures {
                 let (start, len) =
                     group_view(host, id).map_or((nav_start, nav_len), |(s, l, _)| (s, l));
                 let cur = interact::sample_at(start, len, body.x as f64, body.w as f64, cx);
-                set_selection(host, &mut out, def_id, id, anchor, cur);
+                // The second axis, where the view has one. A sweep that never
+                // left its height names one value twice, which `value_span`
+                // reads as the empty range it is: a horizontal drag restricts
+                // nothing, and only a rectangle reports a band.
+                let range = value.and_then(|(axis, from)| {
+                    let (min, max) = timeline::value_span(
+                        from,
+                        axis.value_at(cy),
+                        (axis.domain.0 as f64, axis.domain.1 as f64),
+                    );
+                    (max > min && !axis.is_whole(min, max)).then_some((min, max))
+                });
+                set_selection(host, &mut out, def_id, id, anchor, cur, range);
             }
             Drag::Clip {
                 id,

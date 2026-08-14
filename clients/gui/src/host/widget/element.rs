@@ -165,6 +165,74 @@ pub struct FreqAxis {
     pub sample_rate: f64,
 }
 
+/// **An element's own measured y axis**: the body its lanes are cut from, the
+/// domain they are drawn over and the vertical window they are seen through.
+///
+/// The counterpart of [`FreqAxis`] on the other axis, and asked for the same
+/// reason: a marquee that restricts a selection in *value* needs the number
+/// under the pointer to be the one the cursor readout names, and only the
+/// element knows the domain it drew through, how many lanes it stacked and
+/// where inside its rectangle the picture ended up.
+///
+/// It is the axis of a **trace** — amplitude, or whatever domain an element
+/// declared. A time-frequency picture has a second axis too and it is not this
+/// one: bins are the spectral selection's own field in the document's
+/// `Selection`, deliberately separate, because an operation that understands a
+/// value range need not understand a band of bins.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ValueAxis {
+    /// Where the picture maps: the rectangle the lanes are cut from, exactly
+    /// what the renderer drew through.
+    pub body: Rect,
+    /// The value domain the geometry was mapped through — the element's
+    /// `min`/`max`, [`crate::waveform::DEFAULT_DOMAIN`] when it names neither.
+    pub domain: (f32, f32),
+    /// The visible vertical window, normalized `(start, len)` of the display
+    /// axis — `EditorProps::y_view`, the same pair the renderer used.
+    pub y: (f64, f64),
+    /// How many lanes the body is split into (1 when overlaid).
+    pub lanes: usize,
+}
+
+impl ValueAxis {
+    /// The value under a y pixel, in the element's own units, clamped to the
+    /// domain.
+    ///
+    /// **Lane-relative**, like every other vertical read: a stacked view shows
+    /// the same value axis in each lane, so the height is resolved within the
+    /// lane the pointer is in and the answer is what the cursor readout says at
+    /// that height. One inversion, shared with the readout
+    /// ([`crate::waveform::display_to_value`]), so the marquee and the number
+    /// beside it can never disagree.
+    pub fn value_at(&self, cy: f64) -> f64 {
+        let lanes = self.lanes.max(1);
+        let lane = crate::host::frame::lane_rect(
+            self.body,
+            lanes,
+            crate::host::frame::lane_at(self.body, lanes, cy),
+        );
+        let rel = ((cy - lane.y as f64) / lane.h.max(1.0) as f64).clamp(0.0, 1.0);
+        let display = self.y.0 + (1.0 - rel) * self.y.1;
+        let v = crate::waveform::display_to_value(display, self.domain.0, self.domain.1) as f64;
+        let (lo, hi) = (
+            self.domain.0.min(self.domain.1) as f64,
+            self.domain.0.max(self.domain.1) as f64,
+        );
+        v.clamp(lo, hi)
+    }
+
+    /// Whether this axis covers the whole domain — a selection restricted to
+    /// all of it is not restricted at all, and travels as the plain span the
+    /// wire has always carried.
+    pub fn is_whole(&self, min: f64, max: f64) -> bool {
+        let (lo, hi) = (
+            self.domain.0.min(self.domain.1) as f64,
+            self.domain.0.max(self.domain.1) as f64,
+        );
+        min <= lo && max >= hi
+    }
+}
+
 /// **What an element is fed, once per tick** — the third moment of the trait,
 /// beside drawing ([`Ctx`]) and being dragged ([`Input`]).
 ///
@@ -706,8 +774,13 @@ pub struct KeyInput<'a> {
 pub struct Events {
     msgs: Vec<Vec<OscType>>,
     voices: Vec<Voice>,
-    select: Option<(f64, f64)>,
+    select: Option<SelectRequest>,
 }
+
+/// **What an element asks the container's selection to become**: the span in
+/// the axis' own units, and the value range restricting it where the element
+/// swept a rectangle rather than a stripe.
+pub(crate) type SelectRequest = ((f64, f64), Option<(f64, f64)>);
 
 /// **A voice an element asks the host to sound**, beside the event it reports.
 ///
@@ -794,8 +867,19 @@ impl Events {
     /// view follows*, which is the navigation group's state and not the roll's
     /// — so the element names the span and the machine writes it, repaints the
     /// linked windows and reports the `"selection"` the group already emits.
-    pub fn and_select(mut self, start: f64, end: f64) -> Self {
-        self.select = Some((start, end));
+    pub fn and_select(self, start: f64, end: f64) -> Self {
+        self.and_select_in(start, end, None)
+    }
+
+    /// The same, **restricted on the axis' second axis**: the value range the
+    /// sweep covered, in that axis' own units, or `None` for a sweep that
+    /// restricts nothing.
+    ///
+    /// One door with an argument rather than a second builder to remember,
+    /// because the two halves of a marquee are written by one gesture and a
+    /// range that could be set without a span would be a range of nothing.
+    pub fn and_select_in(mut self, start: f64, end: f64, values: Option<(f64, f64)>) -> Self {
+        self.select = Some(((start, end), values));
         self
     }
 
@@ -823,7 +907,7 @@ impl Events {
     }
 
     /// The container-selection request, for the machine that performs it.
-    pub(crate) fn selection(&self) -> Option<(f64, f64)> {
+    pub(crate) fn selection(&self) -> Option<SelectRequest> {
         self.select
     }
 }
@@ -1102,6 +1186,26 @@ pub trait Element: fmt::Debug {
     /// the renderer drew through, or a zoom anchors at a hertz the reader is
     /// not pointing at.
     fn freq_axis(&self, _rect: Rect, _m: &Metrics, _sample_rate: f64) -> Option<FreqAxis> {
+        None
+    }
+
+    /// This element's [`ValueAxis`] inside the rect it was placed in, or `None`
+    /// for one whose vertical measures nothing a selection could name.
+    ///
+    /// Asked for the same reason [`Element::freq_axis`] is: the region split is
+    /// the element's own, and a marquee that restricts a selection in value has
+    /// to read the axis the picture was drawn through. `lanes` is what the
+    /// front found in the element's slot, resolved by
+    /// [`Element::lanes`] as everywhere else — the element states the domain and
+    /// the window, never how many channels reached the card. `indent` is where
+    /// the shared axis starts inside the rect, as everywhere else.
+    fn value_axis(
+        &self,
+        _rect: Rect,
+        _indent: f32,
+        _m: &Metrics,
+        _lanes: usize,
+    ) -> Option<ValueAxis> {
         None
     }
 

@@ -314,6 +314,40 @@ hand put it, and what comes back is where it landed — so a redo replays the
 edit**, so undoing needs no second path: it is the same intent machinery running
 backwards, and the window adopts the result exactly as it adopts a snap.
 
+### The selection: what was swept, and what is under it
+
+A sweep on a lane is not an edit — nothing in the composition changes — but it
+is the **value** an operation is handed, so the editor keeps it typed:
+
+```python
+editor.apply(*gui.poll())        # a marquee swept on a lane
+editor.selection                 # {"start": 1.0, "len": 2.0}   (beats)
+editor.resolve_selection()       # [{"node": 3, "source": {...}, "range": [...], ...}]
+```
+
+Two things are worth knowing about what is in there. The span is in **beats**,
+the unit the arrangement is written in, converted from the timeline samples the
+window reported — the crate holds whatever unit it is given and converts
+nothing, because the tempo is yours. And a sweep with **height** over a view
+that measures a value carries that band too, in the element's own domain:
+
+```python
+editor.selection    # {"start": 0.0, "len": 2.0, "value": {"min": -0.5, "max": 0.25},
+                    #  "nodes": [4]}
+```
+
+`nodes` says what the selection is *of*: the element when the sweep was inside
+one, and nothing at all when it was across a lane, which is a selection of the
+shared time axis. `resolve_selection` turns that into the material underneath —
+one entry per leaf, with the placement's base, the element's trim and the clamp
+at both ends already applied — and returns nothing where a group or a generator
+is in the way rather than under it.
+
+The value band travels with the selection and does not narrow that answer: what
+lies under a range of amplitudes is the same material as what lies under the
+whole span. Reading *only* those samples is an operation over the range, not a
+resolution of it.
+
 ### Saving: the document plus where its material is
 
 A document says what plays when and deliberately not where a source lives — in a

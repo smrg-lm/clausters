@@ -456,6 +456,38 @@ class _FakeHost:
         pass
 
 
+def test_a_sweep_becomes_the_crates_typed_selection():
+    """The marquee's payload arrives as a `Selection` a script can hand to an
+    operation: the time numbers in the arrangement's own unit, the value range
+    in the element's, and what it is a selection *of* where the widget names
+    one thing."""
+    ed = editor()
+    host = _FakeHost()
+    ed.open(host)
+
+    # Swept on a lane: the shared time axis, so it is of nothing in particular.
+    lane = next(iter(ed._lanes))
+    changed = ed.apply("/gui_event", [lane, SEQ, UNSTATED, "selection", BEAT, 2 * BEAT])
+    assert not changed, "a selection is screen state, not an edit"
+    assert ed.selection["start"] == pytest.approx(1.0)
+    assert ed.selection["len"] == pytest.approx(2.0)
+    assert "value" not in ed.selection
+    assert "nodes" not in ed.selection
+
+    # Swept on a clip, with height: it names that element, and the range comes
+    # through in the domain's own units rather than converted to anything.
+    clip = next(iter(ed._clips))
+    ed.apply("/gui_event",
+             [clip, SEQ, UNSTATED, "selection", 0.0, 2 * BEAT, -0.5, 0.25])
+    assert ed.selection["value"] == {"min": -0.5, "max": 0.25}
+    assert len(ed.selection["nodes"]) == 1
+
+    # And it resolves to the material underneath, through the crate.
+    under = ed.resolve_selection()
+    assert under, "the take is under the sweep"
+    assert all("range" in u and "source" in u for u in under)
+
+
 def test_a_locate_moves_the_transport_and_the_lanes_cursor():
     ed = editor()
     host = _FakeHost()

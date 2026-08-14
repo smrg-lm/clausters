@@ -159,6 +159,19 @@ impl WidgetKind {
         self.as_element()?.freq_axis(rect, m, sample_rate)
     }
 
+    /// The widget's **value axis** inside the rect it was placed in
+    /// ([`Element::value_axis`]) — the second measuring axis a marquee may
+    /// restrict a selection on.
+    pub fn value_axis(
+        &self,
+        rect: super::super::layout::Rect,
+        indent: f32,
+        m: &super::super::metrics::Metrics,
+        lanes: usize,
+    ) -> Option<super::element::ValueAxis> {
+        self.as_element()?.value_axis(rect, indent, m, lanes)
+    }
+
     /// What that axis would show for `want`, or shows now for `None` — the
     /// request opened up to what the analysis behind it resolves
     /// ([`Element::freq_window_of`]).

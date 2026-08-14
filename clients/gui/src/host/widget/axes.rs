@@ -88,6 +88,8 @@ const Y_AXIS: &[(&str, &str)] = &[
     ("min", "min"),
     ("max", "max"),
     ("bit_depth", "bit_depth"),
+    ("sel_min", "sel_min"),
+    ("sel_max", "sel_max"),
 ];
 
 #[cfg(test)]

@@ -362,7 +362,7 @@ On the **x** axis: `unit` (`"time"`/`"samples"`/`"beats"`/`"off"`),
 `start`/`len` (the navigation window), `tempo`/`beat_at`/`quant`,
 `sample_rate`, `link`, `sel_start`/`sel_len` and the `playhead` family. On
 **y**: `unit` (`"norm"`/`"db"`/`"bits"`/`"percent"`/`"hz"`/`"off"`),
-`start`/`len`, `min`/`max`, `bit_depth`.
+`start`/`len`, `min`/`max`, `bit_depth`, `sel_min`/`sel_max`.
 
 **`link` is the interesting one.** Views naming the same `link` id form a
 **navigation group**: one horizontal window, one selection, one playhead,
@@ -370,7 +370,10 @@ shared. Zoom, pan or drag a selection on any member and all of them move —
 including the ones nobody is looking at, since membership is read from the tree
 and not from what is on screen. Only the vertical window stays per view, on
 purpose: a waveform's y is amplitude and a spectrogram's is frequency, and no
-single number could mean both.
+single number could mean both. The selection's **value band** stays per view for
+the same reason — a sweep with height on a waveform restricts that view to a
+range of amplitudes and leaves the spectrogram beside it showing the whole
+band, while the time span they share moves for both.
 
 ```python
 window(
@@ -441,7 +444,8 @@ win["a"].on_event(lambda tag, *rest: print(tag, rest))
 # "clip" (offset, dur)  when a clip is moved or resized
 # "locate" (position)   when the ruler or empty lane space is clicked
 # "view" (start, len)   when the axis is zoomed or panned
-# "selection" (start, len)
+# "selection" (start, len[, min, max])   the span, and the value band a
+#                                        sweep with height restricted it to
 # "notes" / "points"    when a roll or a curve is edited
 # "mute" / "solo" / "level"  from a lane header's controls
 ```

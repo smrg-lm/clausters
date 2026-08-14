@@ -839,6 +839,8 @@ mod tests {
             playhead_loop_len: 0.0,
             y_start: 0.0,
             y_len: 1.0,
+            sel_min: 0.0,
+            sel_max: 0.0,
             link: None,
             offset: 0.0,
         }

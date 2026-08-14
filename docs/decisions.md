@@ -5140,3 +5140,47 @@ closed because both sides did the same arithmetic. That works for a grid and
 generalizes to nothing — a bus allocation, a normalize, a user-written function
 cannot be shipped down — which is why the places it already failed were so
 quiet.
+
+## A selection's second axis belongs to the view that measures it
+
+A marquee swept with height over a waveform selects a **band of amplitudes** as
+well as a span of time. The span goes to the navigation group, where selections
+have always lived; the band does not, and where it goes is the decision.
+
+**The group is one axis, and it is the time one.** What makes a linked view
+linked is that a waveform lane and a spectrogram lane show the same stretch of
+the same sound — one window, one selection, one playhead. Vertically they show
+nothing in common: one measures amplitude over a domain the element declared,
+the other frequency over the Nyquist, a piano roll semitones. A range held in
+the group would therefore have to mean four things at once, and the first
+concrete consequence is absurd — a sweep between −0.5 and 0.25 on a waveform
+would restrict the spectrogram beside it to a quarter of a hertz.
+
+So the range lives on the **widget**, beside its vertical window, and the event
+that reports it already names which widget it came from. That is the same split
+the piano roll made when its marquee was built: the time span left as the
+group's, the notes it enclosed stayed the roll's own state.
+
+**Rounding follows what the axis measures, not what the gesture did.** The time
+axis snaps to whole samples because a selection between two samples holds no
+data — it can be neither played nor cut — and the snap takes the samples the
+sweep *passed over* rather than the nearest, so a sample joins when the cursor
+reaches it. A value axis has no such grid: every height inside a lane is a value
+the signal can take, so the range is what the hand drew, ordered and clamped to
+the element's domain. The rule that covers both is *snap to the axis' quantum
+where it has one, clamp to its domain always* — and the quantum is not
+hypothetical, because a roll's pitch axis has one: its band is the whole
+semitones the sweep covered, both ends included.
+
+**A spectral view's second axis is not this one.** Frequency bins are a separate
+field of the selection, deliberately, because an operation that understands a
+band of values need not understand a region of frames × bins — and a band drawn
+in hertz that some reader took for amplitudes is exactly the confusion the
+separate fields prevent. A time-frequency view therefore reports no value range
+at all rather than reporting its frequencies as values.
+
+The wire consequence is small and worth stating: the two numbers are **appended**
+to the `"selection"` event and sent only when there are two, so a script reading
+the two-number form it has always had keeps working, and an empty or inverted
+pair means *no restriction* — the same convention a non-positive length already
+uses on the time axis.

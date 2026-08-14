@@ -44,6 +44,7 @@ use clausters_core::osc::OscType;
 use super::interact::{self};
 use super::layout::Rect;
 use super::widget::WidgetKind;
+use super::widget::element::ValueAxis;
 
 /// What a gesture asks of the front: everything the machine cannot do itself
 /// because it owns no transport, no window and no GPU.
@@ -155,18 +156,23 @@ enum Drag {
     },
     /// Sweeping a selection on a timeline container: `anchor` is the sample
     /// under the press, and the selection spans from it to the cursor's sample.
-    /// On an axis that measures a **value** as well (a piano-roll's pitch,
-    /// `value` carrying its window and the value under the press) the sweep is
-    /// the shared selection every linked view follows. An element that sweeps
-    /// a *rectangle* over that span — a roll picking the notes inside it —
-    /// takes the press itself and asks for the selection, so this stays the
-    /// container's plain time sweep.
+    /// An element that sweeps a *rectangle* over that span — a roll picking the
+    /// notes inside it — takes the press itself and asks for the selection, so
+    /// this stays the container's own sweep.
+    ///
+    /// `value` is that sweep's **second axis**, present where the view under
+    /// the press measures one: the axis as it stood at the press, and the value
+    /// the press was at. Snapshotted rather than re-read — unlike the time
+    /// window, which a linked view can scroll under a held drag — because the
+    /// vertical window only moves by a gesture of its own, and a sweep measured
+    /// against two different windows would report a range the hand never drew.
     Select {
         id: i32,
         body: Rect,
         nav_start: f64,
         nav_len: f64,
         anchor: f64,
+        value: Option<(ValueAxis, f64)>,
     },
     /// Panning a timeline view's **vertical** display window from a drag on
     /// its y-ruler strip: `y_start` is the window snapshot at the press,

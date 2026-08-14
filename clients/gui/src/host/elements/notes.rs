@@ -645,11 +645,20 @@ impl Element for Notes {
                 // The time span drives the **group's** selection, which the
                 // element asks for; the rectangle over it picks this roll's own
                 // notes, which is state the element keeps.
+                let mut band = None;
                 if let Some(p0) = pitch {
                     let p = pianoroll::y_to_pitch(at.1 as f32, lo, hi, r.grid);
                     self.selected = pianoroll::notes_in_rect(&self.notes, anchor, time, p0, p);
+                    // The selection's second axis, in this axis' own unit. A
+                    // pitch axis is **discrete**, so the sweep takes the
+                    // semitones it passed over exactly as the time axis takes
+                    // the samples it did — and a sweep that has not crossed a
+                    // whole one restricts nothing, which is the click it still
+                    // is vertically.
+                    let (a, b) = (p0.min(p).ceil(), p0.max(p).floor());
+                    band = (b >= a).then_some((a as f64, b as f64));
                 }
-                Events::none().and_select(anchor, time)
+                Events::none().and_select_in(anchor, time, band)
             }
             None => Events::none(),
         }
@@ -1317,12 +1326,19 @@ mod tests {
         let Claim::Take(take) = r.press(at, &input(&m, rect(), axis(1000.0))) else {
             panic!("empty grid sweeps")
         };
-        assert_eq!(take.events.selection(), Some((0.0, 0.0)));
+        assert_eq!(take.events.selection(), Some(((0.0, 0.0), None)));
 
         let to = (x_of(&r, &m, 400.0, 1000.0), y_of(&r, &m, 66.0));
         let events = r.drag(to, &input(&m, rect(), axis(1000.0)));
-        let (a, b) = events.selection().expect("the sweep asks every step");
+        let ((a, b), band) = events.selection().expect("the sweep asks every step");
         assert!((a - 0.0).abs() < 1.0 && (b - 400.0).abs() < 2.0, "{a} {b}");
+        // The pitch axis is discrete, so the band is the semitones the sweep
+        // passed over -- 58 to 66 read as whole steps, both ends included.
+        let (lo_p, hi_p) = band.expect("a rectangle restricts the pitch axis");
+        assert!(
+            (58.0..=59.0).contains(&lo_p) && (65.0..=66.0).contains(&hi_p),
+            "{lo_p} {hi_p}"
+        );
         assert_eq!(r.selected, vec![0, 1], "the third note is out of the band");
         assert!(
             events.into_messages().is_empty(),

@@ -43,6 +43,9 @@ use crate::host::graphics::signal::trace;
 use crate::spectrogram::FreqScale;
 use crate::waveform::WaveformData;
 
+use crate::host::layout::Rect;
+use crate::host::metrics::Metrics;
+use crate::host::widget::element::ValueAxis;
 use crate::host::widget::{EditorProps, Rate, Ruler, RulerY};
 
 mod apply;
@@ -407,6 +410,39 @@ impl SignalElement {
     pub fn domain(&self) -> (f32, f32) {
         let (lo, hi) = crate::waveform::DEFAULT_DOMAIN;
         self.value.resolved(lo, hi)
+    }
+
+    /// The element's **value axis** inside the rect it was placed in — the
+    /// second measuring axis a marquee restricts a selection on — or `None`
+    /// where its vertical is not a value.
+    ///
+    /// Only a **navigable trace** answers. A time-frequency picture's vertical
+    /// measures frequency, whose selection is a band of bins and a field of its
+    /// own in the document's `Selection`; a live view has no selection to
+    /// restrict, since there is nothing behind it to hand a range of. The body
+    /// is `timeline_body`, the same rectangle `slot` states and the renderer
+    /// draws through, so the value a sweep reads is the value the cursor
+    /// readout named at that height.
+    pub fn value_axis(
+        &self,
+        rect: Rect,
+        indent: f32,
+        m: &Metrics,
+        lanes: usize,
+    ) -> Option<ValueAxis> {
+        if !self.caps.navigable || self.presentation != Presentation::Signal || self.is_live() {
+            return None;
+        }
+        let body = crate::host::frame::timeline_body(rect, &self.editor, indent, m);
+        if body.w <= 0.0 || body.h <= 0.0 {
+            return None;
+        }
+        Some(ValueAxis {
+            body,
+            domain: self.domain(),
+            y: self.editor.y_view(),
+            lanes: self.lanes(lanes),
+        })
     }
 
     /// Whether the element owns a GPU slot: a navigable heavy presentation.

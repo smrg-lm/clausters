@@ -144,6 +144,7 @@ const trees: Record<string, () => GuiNode> = {
                 id: 1, path: "take.f32", channels: 2, baseBucket: 512,
                 ruler: "beats", rulerY: "db", tempo: 2.0, beatAt: 0.0,
                 quant: 4.0, selStart: 1000.0, selLen: 4000.0,
+                selMin: -0.5, selMax: 0.75,
                 playheadAt: 48000.0, playhead: 32000.0,
                 playheadLoopStart: 1000.0, playheadLoopLen: 8000.0,
                 yStart: 0.25, yLen: 0.5, link: 7,

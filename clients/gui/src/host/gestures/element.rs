@@ -174,8 +174,8 @@ pub(super) fn report(
     // ...then the container's selection, if the element asked for it: a
     // marquee sweeping a roll moves the axis' shared selection, which every
     // linked view follows and no element can reach.
-    let selected = events.selection().inspect(|&(a, b)| {
-        super::nav::set_selection(host, out, ctx.def_id, id, a, b);
+    let selected = events.selection().inspect(|&((a, b), values)| {
+        super::nav::set_selection(host, out, ctx.def_id, id, a, b, values);
     });
     let voiced = !events.voices().is_empty() || selected.is_some();
     let messages = events.into_messages();
