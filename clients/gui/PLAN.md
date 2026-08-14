@@ -1814,7 +1814,7 @@ What deliberately stays out: DR14 and the other publisher-specific scores (they 
 
 **The rule, restated: the host emits an edit that can be inverted, and draws what came back.** It does not keep the history. That is not a demotion — it is what makes the property the track was built on actually hold: *the host can invert exactly what it can draw* was true of the picture and not of the document, because the owner transforms an edit as it applies it (a snap, a clamp, a refusal) and the host cannot see that. With the acknowledgement carrying the **effective** value (O2/O3), the log records what the document became rather than what the hand did, and the ambiguity disappears.
 
-**The order, as in the D track, is one-way**: H1 needs O2 and feeds O5; H2 needs O5; H3 needs O5 and O8. Under `standalone` there is no language client, and the answer is no longer an exception to the rule: the host **links the crate** and hosts a document like anyone else. It is a client of the embedded server for its sources, exactly as the Python client is of a live one.
+**The order, as in the D track, is one-way**: H1 needs O2 and feeds O5; H2 needs O5 **and O11** (the log has to cross the ABI before a language client can drive one - O10 bound the document and not the log, and a log the client keeps is the thing O5 exists to prevent); H3 needs O5 and O8, both of which are now closed. Under `standalone` there is no language client, and the answer is no longer an exception to the rule: the host **links the crate** and hosts a document like anyone else. It is a client of the embedded server for its sources, exactly as the Python client is of a live one.
 
 ### Decisions taken before opening the track
 
