@@ -115,10 +115,12 @@ the tree. The mapping is one rule, not a heuristic per case:
 - an element of *events* draws a **piano-roll** — each note placed in pitch and
   time, shaded by its velocity (an explicit `velocity`, else the event's `amp`) —
   and since a contained pattern is bounced to draw it, a generator lane shows the
-  notes it is about to play. (The same notes drive the standalone, editor-grade
-  `clausters.gui.pianoroll` widget — a keyboard, an editable note grid, a velocity
-  lane and an OSC-event lane — when you want to author them directly rather than
-  through the multitrack.)
+  notes it is about to play. Its notes are editable where they are drawn: a note
+  dragged in a clip body writes back onto the element's timeline, exactly as one
+  dragged in the dedicated roll does. (The same notes drive the standalone,
+  editor-grade `clausters.gui.pianoroll` widget — a keyboard, an editable note
+  grid, a velocity lane and an OSC-event lane — when you want to author them
+  directly rather than through the multitrack.)
 - a nested group draws as the labeled rectangle that **summarizes** it, until you
   `expand` it into lanes of its own. That collapse/expand is the arrangement's
   *base level*: the same structure, seen coarser or finer.
@@ -142,8 +144,9 @@ keeps sounding.
 
 ### The dedicated piano-roll
 
-The multitrack draws an element of events as a clip body — the notes, but at a
-clip's size. To *author* the notes, open the element in the editor-grade view
+The multitrack draws an element of events as a clip body — the notes, editable
+in place, but at a clip's size. To *author* them — a keyboard to hear the pitch,
+a velocity lane, room to work — open the element in the editor-grade view
 instead:
 
 ```python

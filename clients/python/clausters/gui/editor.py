@@ -137,8 +137,11 @@ class Editor:
         #: events element (`open_pianoroll`). `render` dispatches on it.
         self._mode = "multitrack"
         #: The element the dedicated piano-roll draws (its notes editable when it
-        #: is a `Track`), and widget id -> that element for the edit-back route.
+        #: is a `Track`).
         self._roll_element = None
+        #: widget id -> the element whose notes that widget draws, for the note
+        #: edit-back route: the dedicated roll, and every clip with a roll body
+        #: (a body carries no id, so its notes arrive tagged with the clip's).
         self._rolls: dict = {}
         #: patch widget id -> (logical `Group`, its box-order member handles) —
         #: the directed-patch view of a logical group, for its edit-back route.
@@ -410,8 +413,9 @@ class Editor:
                 self.locate(self.units_to_beats(float(args[2])))
             return False
         if args[1] == "notes":
-            # A note edited in the dedicated piano-roll: rebuild the element's
-            # timeline (a generator is read-only, so it is ignored).
+            # A note edited in a roll — a clip's body on a lane, or the dedicated
+            # piano-roll: rebuild the element's timeline (a generator is
+            # read-only, so it is ignored).
             element = self._rolls.get(int(args[0]))
             return element is not None and self._apply_notes(element, args[2:])
         if int(args[0]) in self._patches:
@@ -465,7 +469,8 @@ class Editor:
         return True
 
     def _apply_notes(self, element, values) -> bool:
-        """Notes edited in the dedicated piano-roll (the flat ``"notes"`` payload,
+        """Notes edited in a roll — a clip's body or the dedicated piano-roll
+        alike, since both send it (the flat ``"notes"`` payload,
         `start dur pitch velocity channel` quintuples): rebuilt onto the element's
         editable `clausters.seq.Timeline` as `Event`s, times converted to beats,
         preserving any OSC/MIDI items already on it. Returns ``False`` for a
@@ -785,6 +790,13 @@ class Editor:
         # a member's offset is relative to its group.
         parent_base = base - (member.offset if member is not None else 0.0)
         self._clips[wid] = _Placed(owner, member, parent_base, offset, dur)
+        # A roll body is the `notes` element itself, and it edits: a body carries
+        # no id of its own, so a note dragged inside one arrives tagged with *this
+        # clip's* id. Registering what the body draws is what lets that edit reach
+        # the arrangement — without it the note moves on screen and nowhere else.
+        roll = _roll_owner(element)
+        if "notes" in body and roll is not None:
+            self._rolls[wid] = roll
         return clip(id=wid, offset=offset, dur=dur, label=_name(element), **body)
 
     def _body_for(self, element) -> dict:
@@ -961,6 +973,25 @@ def _quintuples(flat) -> list:
     piano-roll's `notes` wire form."""
     flat = list(flat)
     return [tuple(flat[i:i + 5]) for i in range(0, len(flat) - 4, 5)]
+
+
+def _roll_owner(element):
+    """The element whose notes a clip's roll body draws — what a ``"notes"``
+    edit-back is written onto.
+
+    Usually the element itself (a generator among them: it registers and the
+    edit is refused later, which is where read-only is decided). A
+    **simultaneous** group is the one that needs asking: it draws as one clip
+    with its members' bodies layered, so the notes under the cursor belong to
+    the member that carries them, not to the group. ``None`` when no member
+    has an editable timeline — a layered roll nobody can write to."""
+    if (isinstance(element, Group) and len(element) > 1
+            and element.temporal_relation() == SIMULTANEOUS):
+        for m in element.handles:
+            if _editable_timeline(m.element) is not None:
+                return m.element
+        return None
+    return element
 
 
 def _editable_timeline(element):

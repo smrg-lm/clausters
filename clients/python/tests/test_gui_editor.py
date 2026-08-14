@@ -212,6 +212,61 @@ def test_a_generator_material_is_read_only_in_the_piano_roll():
     assert ed.dirty is False
 
 
+def test_a_note_edited_in_a_clip_body_reaches_the_arrangement():
+    """A roll body carries no id of its own, so its notes arrive tagged with the
+    **clip's** — and the multitrack must resolve that to the element the body
+    draws, or the note moves on screen and nowhere else."""
+    track, tl = _track_material()
+    ed = editor(Group([(0.0, Group([(2.0, track)], name="lead"))], name="song"))
+    (lane,) = lanes(ed.draw())
+    (roll,) = clips(lane)
+    assert roll["notes"]                                  # it is a roll body
+
+    # Pitch 60 -> 62, moved half a beat in; times are relative to the clip.
+    edited = [0.5 * BEAT, BEAT, 62, 100, 0, 1.0 * BEAT, 0.5 * BEAT, 64, 90, 0]
+    assert ed.apply("/gui_event", [roll["id"], "notes", *edited]) is True
+    assert ed.dirty is True
+    items = tl.range(0.0, float("inf"))
+    assert [(b, it.get("midinote")) for b, it in items
+            if hasattr(it, "get") and it.get("midinote")] == [(0.5, 62), (1.0, 64)]
+    # The OSC event sharing the timeline is preserved.
+    from clausters.seq.timeline import OscEvent
+    assert any(isinstance(it, OscEvent) for _b, it in items)
+
+
+def test_a_generator_clip_body_is_read_only():
+    from clausters.seq.pattern import Pbind, Pseq
+
+    gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
+    ed = editor(Group([(0.0, Group([(0.0, gen)], name="bass"))], name="song"))
+    (lane,) = lanes(ed.draw())
+    (roll,) = clips(lane)
+    # It draws the notes it will play, but there is no timeline to write onto.
+    assert roll["notes"]
+    assert ed.apply("/gui_event", [roll["id"], "notes", 0.0, BEAT, 65, 100, 0]) is False
+    assert ed.dirty is False
+
+
+def test_a_layered_clip_routes_a_note_edit_to_the_member_that_carries_it():
+    """A simultaneous group draws as one clip with layered bodies, so the notes
+    under the cursor belong to a *member* — the editable one, not the group."""
+    from clausters.form import Element
+    from clausters.seq import Automation
+
+    env = Automation.from_points([(0, 200.0, 1, 0.0), (4, 900.0, 2, 0.0)],
+                                 target=None, name="sweep")
+    tl = Timeline([(0.0, SeqEvent(midinote=60, dur=4.0))])
+    attached = Group([(0.0, Track(tl, duration=4.0)),
+                      (0.0, Element(env, duration=4.0))], name="sweep")
+    ed = editor(Group([(0.0, Group([(0.0, attached)], name="sweep"))], name="song"))
+    (lane,) = lanes(ed.draw())
+    (c,) = clips(lane)
+    assert c["notes"] and c["points"]
+
+    assert ed.apply("/gui_event", [c["id"], "notes", 0.0, 4 * BEAT, 67, 100, 0]) is True
+    assert [it.get("midinote") for _b, it in tl.range(0.0, float("inf"))] == [67]
+
+
 # ---- the base level: a nested group collapses to a summary, or expands ----
 
 def test_a_nested_group_is_a_labeled_rectangle_until_it_is_expanded():
