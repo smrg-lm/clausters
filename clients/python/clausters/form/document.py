@@ -34,6 +34,11 @@ assigns one per element and **stamps it on the element**, reusing whatever is
 already there. Converting the same tree twice therefore yields the same ids,
 which is what lets an edit made against one conversion still name the right node
 in the next.
+
+The id is on the *element*, so placing one element at two offsets writes two
+nodes with one id, and an edit naming that id cannot say which of the two it
+means. Give each appearance its own element over the same material — two
+`Buffer` leaves over one server buffer — until the addressing settles.
 """
 
 from .element import Buffer, Element, Event, Generator, Sequence, Track
