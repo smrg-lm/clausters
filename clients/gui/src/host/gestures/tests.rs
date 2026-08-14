@@ -1560,21 +1560,27 @@ fn a_press_on_a_clips_grip_resizes_it_rather_than_the_note_under_it() {
     assert!(has_emit_tag(&effects, 81, "notes"), "the note moved");
 }
 
-/// **A clip cannot be dragged out of existence.** The bug this fixes: an edge
-/// dragged past the other one left `dur` at zero, and a clip of no duration
-/// draws no rectangle — nothing to press, nothing to grab, no way back at any
-/// zoom. It stops at one grid step now (one sample with no grid), stays drawn,
-/// and keeps a grip, so the shrink is reversible with the same gesture.
+/// **A clip cannot be dragged out of existence, and the way back is the zoom.**
+/// The bug this fixes: an edge dragged past the other one left `dur` at zero,
+/// and a clip of no duration draws no rectangle — nothing to press, no way back
+/// at any zoom. It stops at **one sample** now (the grid says where an edge
+/// lands, not how short a clip may be) and is drawn as a **line** rather than a
+/// block: the line tracks the zoom the whole way down, so it never lies about
+/// the length, and zooming in is what brings it back to a width the hand takes.
 #[test]
-fn a_clip_shrinks_to_its_floor_and_can_be_grown_back() {
+fn a_clip_shrinks_to_one_sample_and_the_zoom_brings_it_back() {
     let mut host = host_from(
         r#"{"type":"window","margin":0,"children":[
-            {"id":80,"type":"field","label":"lane","snap":100.0,"children":[
-                {"id":81,"type":"field","offset":0.0,"dur":1000.0}]}]}"#,
+            {"id":80,"type":"field","label":"lane","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":1000.0},
+                {"id":82,"type":"field","offset":9000.0,"dur":1000.0}]}]}"#,
     );
     host.sync_track_totals();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 200);
+    // A second clip far down the lane holds the axis open, so shrinking the
+    // first one does not refit the window around what is left of it -- which
+    // is the case the line exists for.
     let clip = placed_rect(&host, &ctx, 81);
     let m = *host.metrics_for(1);
     let midy = (clip.y + clip.h * 0.5) as f64;
@@ -1586,42 +1592,52 @@ fn a_clip_shrinks_to_its_floor_and_can_be_grown_back() {
     g.release(&mut host, &ctx, clip.x as f64 - 300.0, midy);
     assert_eq!(
         (clip_offset(&host, 81), clip_dur(&host, 81)),
-        (0.0, 100.0),
-        "one grid step left, and the end it was not holding stayed put"
+        (0.0, 1.0),
+        "one sample left, and the end it was not holding stayed put"
     );
 
-    // It is still drawn, and still wide enough to aim at: the floor is the
-    // grip's own width, which is the whole point of having one. The rectangle
-    // is read through the lane's **group** axis, which is the one the press
-    // maps through (the axis still spans the piece as it was, so the sliver is
-    // a sliver of it rather than filling the lane again).
-    let (body, nav) = {
-        let h = interact::hit(&host, 1, 800, 200, 400.0, midy, &|_, _| 1).unwrap();
+    // The rectangle is read through the lane's **group** axis, which is the one
+    // the press maps through. One sample of a thousand is far under a pixel
+    // here: it comes back as a line, and a line is all it claims to be.
+    let placed = |host: &Host| {
+        let h = interact::hit(host, 1, 800, 200, 400.0, midy, &|_, _| 1).unwrap();
         let t = interact::time_of(&h.chain).unwrap().1;
-        (t.body, t.nav)
+        crate::host::graphics::track::clip_x_range(
+            t.body,
+            &t.nav,
+            clip_offset(host, 81),
+            clip_dur(host, 81),
+            m.divider_w,
+        )
+        .expect("the shrunk clip is still drawn")
     };
-    let (x0, x1) = crate::host::graphics::track::clip_x_range(
-        body,
-        &nav,
-        clip_offset(&host, 81),
-        clip_dur(&host, 81),
-        m.grip_w,
-    )
-    .expect("the shrunk clip is still drawn");
+    let (x0, x1) = placed(&host);
     assert!(
-        x1 - x0 >= m.grip_w,
-        "the sliver is still grabbable: {x0}..{x1}"
+        (x1 - x0 - m.divider_w).abs() < 0.01,
+        "a hairline, not a block that freezes the apparent length: {x0}..{x1}"
+    );
+
+    // **Zoom in and it comes back**, which is the whole point of the line: it
+    // marks where to zoom, and the sample widens with the window until it is
+    // wide enough to take.
+    for _ in 0..8 {
+        host.zoom_timeline(80, 0.5, 0.0);
+    }
+    let (x0, x1) = placed(&host);
+    assert!(
+        x1 - x0 > m.grip_w,
+        "the sample is a rectangle again at this zoom: {x0}..{x1}"
     );
 
     // And the same gesture grows it back — the state is reversible, which is
     // what "it disappeared" meant.
     let back = (x1 - 1.0) as f64;
     g.press(&mut host, &ctx, back, midy, &mut || false);
-    assert!(g.dragging(), "the sliver still offers its edge");
+    assert!(g.dragging(), "the clip offers its edge again");
     g.drag_to(&mut host, &ctx, back + 200.0, midy);
     g.release(&mut host, &ctx, back + 200.0, midy);
     assert!(
-        clip_dur(&host, 81) > 100.0,
+        clip_dur(&host, 81) > 1.0,
         "grown back: {}",
         clip_dur(&host, 81)
     );

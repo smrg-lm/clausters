@@ -217,27 +217,29 @@ pub(crate) fn sample_at(nav_start: f64, nav_len: f64, body_x: f64, body_w: f64, 
     nav_start + nav_len * ((x - body_x) / body_w.max(1.0))
 }
 
-/// The shortest a **drag** may leave a clip: one step of its own grid, or one
-/// sample where there is no grid.
+/// The shortest a **drag** may leave a clip: **one sample**, the smallest length
+/// the axis addresses.
 ///
 /// A clip that can be dragged to nothing is gone for good — zero duration draws
 /// no rectangle, so there is nothing left to press, and the piece keeps a clip
-/// nobody can see or reach. The floor is the grid because that is the unit the
-/// edge already moves in: with a grid, the shortest clip that can exist on it
-/// is one step, and this is the same answer a DAW gives (a minimum of one grid
-/// step, or of the smallest unit its axis addresses). It is a **length in the
-/// axis' own units, never a count of pixels** — the same rule the time
-/// selection follows — so the same drag stops at the same place at every zoom;
-/// keeping a short clip *visible* is the drawing's job
-/// ([`track::clip_x_range`]).
-fn min_clip_dur(grid: f64) -> f64 {
-    if grid > 0.0 { grid } else { 1.0 }
-}
+/// nobody can see or reach. One sample is the whole of the floor: it is a
+/// **length in the axis' own units, never a count of pixels** — the same rule
+/// the time selection follows — so the same drag stops at the same place at
+/// every zoom, and a reader zoomed in to the sample can keep trimming right down
+/// to the grain.
+///
+/// It is deliberately **not the `snap` grid**, which was the first answer here
+/// and was wrong in both directions: zoomed in it refused to trim below a grid
+/// step the axis can plainly resolve, and zoomed out it made the shortest
+/// possible clip a different length on every lane. The grid is where an edge
+/// *lands*, not how short a clip may be. Keeping a clip that short *visible* is
+/// the drawing's job ([`track::clip_x_range`]).
+const MIN_CLIP_DUR: f64 = 1.0;
 
 /// The clip placement one drag step produces, against the press-time snapshot
 /// (`press_sample`, `orig_offset`, `orig_dur`) so a clamped edge never drifts:
 /// a body drag moves the offset, an edge drag resizes — never below
-/// [`min_clip_dur`], and the start stays within `[0, end]` — snapped to `grid`.
+/// [`MIN_CLIP_DUR`], and the start stays within `[0, end]` — snapped to `grid`.
 pub(crate) fn clip_drag_placement(
     part: ClipPart,
     sample: f64,
@@ -251,7 +253,7 @@ pub(crate) fn clip_drag_placement(
     // A clip already shorter than the floor is not *grown* to it — a drag moves
     // the edge it was given hold of, and snapping the far end out to a minimum
     // nobody asked for is an edit of its own. It simply cannot shrink further.
-    let floor = min_clip_dur(grid).min(orig_dur.max(0.0));
+    let floor = MIN_CLIP_DUR.min(orig_dur.max(0.0));
     match part {
         ClipPart::Body => (snap(orig_offset + delta, grid), orig_dur),
         ClipPart::End => {

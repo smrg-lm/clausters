@@ -475,15 +475,18 @@ fn place_on_time<'a>(
     for child in &widget.children {
         let (rect, inner) = match (&widget.kind, &child.kind) {
             (WidgetKind::Track { .. }, WidgetKind::Clip { offset, dur, .. }) => {
-                // The floor a clip is drawn no thinner than is the grip's own
-                // width: the smallest rectangle the host can promise a grab on,
-                // which is the whole reason a short clip is rounded up at all.
+                // The floor a clip is drawn no thinner than is the **hairline**
+                // — the line every divider in the host is drawn with. It says
+                // "a clip is here" and nothing about how long it is, which is
+                // what lets the drawing keep tracking the zoom all the way
+                // down; a floor wide enough to grab would freeze the clip's
+                // apparent length instead.
                 let rect = match crate::host::graphics::track::clip_x_range(
                     body,
                     &nav,
                     *offset,
                     *dur,
-                    space.metrics.grip_w,
+                    space.metrics.divider_w,
                 ) {
                     Some((x0, x1)) => crate::host::graphics::track::clip_rect(body, x0, x1),
                     None => Rect::new(body.x, body.y, 0.0, 0.0),

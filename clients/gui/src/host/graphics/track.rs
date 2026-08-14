@@ -274,14 +274,24 @@ fn to_x(s: f64, nav: &View, body: Rect) -> f64 {
 /// lane `body` through the shared `nav`, clamped to the body. Returns `None`
 /// when the clip has no duration or falls entirely outside the visible window.
 ///
-/// **A clip that is on screen is drawn, however short it is.** A span thinner
-/// than `min_w` is widened to it (kept inside the body, so a clip at the far
-/// edge grows leftwards instead of hanging out): the picture rounds up, and the
-/// alternative is a clip that exists, plays and is addressable but occupies no
-/// pixel — nothing to see, nothing to grab, and no way back except guessing
-/// where to zoom. Every DAW rounds a short item up the same way and for the
-/// same reason. What is *not* rounded up is a clip off the window entirely: a
-/// sliver at the edge would claim a clip is there.
+/// **A clip that is on screen is drawn, however short it is** — as a *line*
+/// when it gets that short. A span thinner than `min_w` is widened to it (kept
+/// inside the body, so a clip at the far edge grows leftwards instead of hanging
+/// out), and `min_w` is the **hairline** every drawn line in the host uses,
+/// nothing more: the alternative is a clip that exists, plays and is addressable
+/// but occupies no pixel — nothing to see, nothing to grab, and no way back
+/// except guessing where to zoom.
+///
+/// **The floor is a hairline and not a grabbable width**, which is the whole
+/// difference. A floor wide enough to aim at (a grip's worth) is a floor that
+/// *lies about the length*: the clip stops narrowing as the reader zooms out and
+/// stops widening as they zoom in, so the picture says "this clip is about that
+/// long" at every scale and the one thing a timeline exists to show is the one
+/// thing it stops showing. A hairline says only "a clip is here" — the line
+/// tracks the zoom the whole way down, and zooming *in* is what brings it back
+/// to a width the hand can take (where the grip is over the line, since a clip
+/// this narrow is all grip). What is not floored at all is a clip off the window
+/// entirely: a line at the edge would claim a clip is there.
 pub fn clip_x_range(
     body: Rect,
     nav: &View,
@@ -424,10 +434,15 @@ pub fn clip_ends_on_screen(local: &View, dur: f64) -> (bool, bool) {
 /// the reader out of the corner: its **end**, the edge that lengthens it (the
 /// start when the end is the one off screen). Two strips on a rectangle that
 /// cannot hold them would overlap, so the press could not tell them apart —
-/// but returning neither is what left a clip shrunk to a sliver with no
-/// affordance at all, movable and never growable again without hunting for a
-/// zoom that made it wide enough. One grip is the smallest thing that keeps
-/// every state reversible.
+/// but returning neither left a clip shrunk to a sliver with no affordance at
+/// all, movable and never growable. One grip keeps every state reversible.
+///
+/// The one grip is **as wide as the clip and no wider**, down to the hairline a
+/// collapsed clip is drawn as ([`clip_x_range`]): a grip is a promise the press
+/// keeps, so it can only be offered on pixels the press can be given. A clip
+/// drawn as a line therefore carries its expand grip *on the line* — enough to
+/// take once the zoom has widened it, and never a plate hanging over material
+/// that is not the clip's.
 pub fn clip_grips(cr: Rect, ends: (bool, bool), m: &Metrics) -> (Option<Rect>, Option<Rect>) {
     let w = m.grip_w;
     let strip = |x: f32, w: f32| Rect::new(x, cr.y, w, cr.h);
@@ -824,15 +839,23 @@ mod tests {
         // A zero-duration clip draws nothing.
         assert!(clip_x_range(body, &nav, 160.0, 0.0, 12.0).is_none());
 
-        // **A clip on screen is drawn however short it is.** A hundredth of a
-        // sample is a fortieth of a pixel here: with no floor the rectangle is
-        // geometry the rasterizer has nothing to put down, which is a clip that
-        // plays, answers a query and occupies no pixel. With one it comes back
-        // as a `min_w` tab, and the tab is what there is to grab.
+        // **A clip on screen is drawn however short it is** — as the line the
+        // floor is. A hundredth of a sample is a fortieth of a pixel here: with
+        // no floor the rectangle is geometry the rasterizer has nothing to put
+        // down, which is a clip that plays, answers a query and occupies no
+        // pixel. The floor the layout passes is the hairline, so what comes
+        // back marks where the clip is and claims nothing about its length —
+        // widen it to a grabbable strip instead and the clip would stop
+        // narrowing as the reader zooms out.
         let (x0, x1) = clip_x_range(body, &nav, 160.0, 0.01, 0.0).expect("still a clip");
         assert!(x1 - x0 < 1.0, "under a pixel: {}", x1 - x0);
-        let (x0, x1) = clip_x_range(body, &nav, 160.0, 0.01, 12.0).expect("drawn");
-        assert!((x1 - x0 - 12.0).abs() < 0.01, "{x0}..{x1}");
+        let (x0, x1) = clip_x_range(body, &nav, 160.0, 0.01, 1.0).expect("drawn");
+        assert!((x1 - x0 - 1.0).abs() < 0.01, "{x0}..{x1}");
+        // A span the floor does not reach is untouched: the drawing follows the
+        // zoom everywhere above the line, which is the whole picture.
+        let (x0, x1) = clip_x_range(body, &nav, 160.0, 10.0, 1.0).expect("drawn");
+        let px_per = body.w as f64 / 100.0;
+        assert!(((x1 - x0) as f64 - 10.0 * px_per).abs() < 0.5, "{x0}..{x1}");
         // ...and it is kept inside the lane: at the far edge it grows leftwards
         // rather than hanging out of the body it belongs to.
         let (x0, x1) = clip_x_range(body, &nav, 249.99, 0.01, 12.0).expect("drawn");

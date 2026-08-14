@@ -166,32 +166,29 @@ fn clip_drag_placement_moves_and_resizes_from_the_snapshot() {
     let (off, dur) = clip_drag_placement(ClipPart::Body, 730.0, 500.0, 400.0, 300.0, 100.0);
     assert_eq!((off, dur), (600.0, 300.0));
     // **End: a resize never shrinks the clip away.** Dragged far past the
-    // start it stops one grid step long -- a clip dragged to nothing draws no
+    // start it stops **one sample** long -- a clip dragged to nothing draws no
     // rectangle, so there is nothing left to press and it is gone for good.
+    // The floor is the sample and not the grid, at every grid: the grid says
+    // where an edge lands, not how short a clip may be, and a floor of one
+    // step refuses to trim below what a zoomed-in axis plainly resolves.
     let (off, dur) = clip_drag_placement(ClipPart::End, 0.0, 690.0, 400.0, 300.0, 100.0);
-    assert_eq!(
-        (off, dur),
-        (400.0, 100.0),
-        "one grid step, and the start held"
-    );
-    // With no grid the floor is one sample: the smallest length the axis
-    // addresses, and still something rather than nothing.
+    assert_eq!((off, dur), (400.0, 1.0), "one sample, and the start held");
     let (off, dur) = clip_drag_placement(ClipPart::End, 0.0, 690.0, 400.0, 300.0, 0.0);
-    assert_eq!((off, dur), (400.0, 1.0));
+    assert_eq!((off, dur), (400.0, 1.0), "the same floor with no grid");
     // Start: the onset stays within [0, end - floor], the end fixed.
     let (off, dur) = clip_drag_placement(ClipPart::Start, 0.0, 900.0, 400.0, 300.0, 100.0);
     assert_eq!((off, dur), (0.0, 700.0));
     let (off, dur) = clip_drag_placement(ClipPart::Start, 950.0, 400.0, 400.0, 300.0, 100.0);
     assert_eq!(
         (off, dur),
-        (600.0, 100.0),
-        "it stops a step short of the end"
+        (699.0, 1.0),
+        "it stops one sample short of the end"
     );
-    // A clip already **shorter** than the floor is not grown to it: a drag
+    // A clip a *script* made shorter than a sample is not grown to one: a drag
     // moves the edge it was given hold of, and stretching the far end out to a
     // minimum nobody asked for is an edit of its own. It just cannot shrink.
-    let (off, dur) = clip_drag_placement(ClipPart::End, 0.0, 690.0, 400.0, 30.0, 100.0);
-    assert_eq!((off, dur), (400.0, 30.0));
+    let (off, dur) = clip_drag_placement(ClipPart::End, 0.0, 690.0, 400.0, 0.5, 100.0);
+    assert_eq!((off, dur), (400.0, 0.5));
 }
 
 #[test]
