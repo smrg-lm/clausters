@@ -49,6 +49,10 @@
 // on an element's behalf, which are its own and not the element's.
 pub mod ack;
 pub mod bind;
+// The host-wide clipboard: one typed document plus the bulk it names. Here
+// rather than with the elements because it is nobody's — one clipboard serves
+// every field, roll and view of every window.
+pub mod clipboard;
 pub mod elements;
 pub mod guidef;
 pub mod registry;

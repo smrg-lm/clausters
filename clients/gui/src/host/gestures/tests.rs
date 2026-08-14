@@ -894,6 +894,83 @@ fn a_spectral_view_reports_no_value_range() {
     );
 }
 
+/// **The three verbs split where the host's authority does.** A copy is a read
+/// and the host may do it: the selected span leaves the element's own material
+/// and lands on the clipboard, typed and with the rate it was taken at. A cut
+/// and a paste change data the host does not own, so they leave as intents.
+#[test]
+fn copy_reads_the_material_and_cut_and_paste_leave_as_intents() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace",
+             "data":[0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7],"base_bucket":2}]}"#,
+    );
+    host.set_timeline_total(50, 8);
+    let g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let mut clip = crate::host::clipboard::Clip::default();
+    // Nothing selected: there is nothing to copy, and nothing is claimed.
+    assert!(
+        g.clipboard_key(&mut host, &ctx, ClipVerb::Copy, 400.0, 150.0, &mut clip)
+            .is_none()
+    );
+    // Select samples 2..=5, then copy: the block is the material itself.
+    host.select_timeline(50, 2.0, 5.0);
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Copy, 400.0, 150.0, &mut clip)
+        .expect("a view under the cursor answers");
+    assert!(
+        emitted_args(&effects, 50).is_none(),
+        "a copy changed nothing, so it reports nothing: {effects:?}"
+    );
+    assert!(clip.is_whole());
+    assert_eq!(clip.doc().unwrap().kind(), "samples");
+    assert_eq!(&clip.blobs()[0][..], &[0.2, 0.3, 0.4, 0.5]);
+
+    // Cut: the host owns none of it, so what leaves is the request.
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Cut, 400.0, 150.0, &mut clip)
+        .expect("answered");
+    let args = emitted_args(&effects, 50).expect("a cut reports");
+    assert_eq!(args[0], OscType::String("cut".into()));
+    assert_eq!(args.len(), 3, "the span it names: {args:?}");
+
+    // Paste: the position, the kind, the document, and the payload beside it —
+    // the clipboard travels *with* the intent, because it is the host's and the
+    // owner may never have seen what is on it.
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Paste, 400.0, 150.0, &mut clip)
+        .expect("answered");
+    let args = emitted_args(&effects, 50).expect("a paste reports");
+    assert_eq!(args[0], OscType::String("paste".into()));
+    assert_eq!(args[2], OscType::String("samples".into()));
+    assert!(matches!(args[4], OscType::Blob(ref b) if b.len() == 16));
+}
+
+/// **A source the host cannot read declines, out loud.** A mapped pyramid is an
+/// overview and a live view has no addressable past; putting silence on the
+/// clipboard would be the one answer worse than saying no, and saying nothing
+/// at all teaches "sometimes copy does not work".
+#[test]
+fn a_copy_the_host_cannot_honestly_make_is_refused() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":52,"type":"signal","view":"trace","bus":0,"rate":"audio"}]}"#,
+    );
+    host.set_timeline_total(52, 1000);
+    let g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let mut clip = crate::host::clipboard::Clip::default();
+    host.select_timeline(52, 10.0, 40.0);
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Copy, 400.0, 150.0, &mut clip)
+        .expect("answered");
+    let args = emitted_args(&effects, 52).expect("the refusal is reported");
+    assert_eq!(args[0], OscType::String("refused".into()));
+    assert_eq!(args[1], OscType::String("copy".into()));
+    assert!(clip.is_empty(), "and nothing was put on the clipboard");
+}
+
 #[test]
 fn wheel_zooms_the_time_axis_and_emits_the_view() {
     let mut host = host_from(
@@ -2388,7 +2465,7 @@ fn focus_events(effects: &[GestureEffect]) -> Vec<(i32, bool)> {
 }
 
 fn key(g: &Gestures, host: &mut Host, ctx: &GestureCtx, k: Key) -> Option<Vec<GestureEffect>> {
-    g.key(host, ctx, k, &mut String::new())
+    g.key(host, ctx, k, &mut crate::host::clipboard::Clip::default())
 }
 
 #[test]
@@ -2423,7 +2500,7 @@ fn dragging_a_selection_repaints_even_though_it_reports_nothing() {
     let mut host = text_host();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    let mut clip = String::new();
+    let mut clip = crate::host::clipboard::Clip::default();
     g.press(&mut host, &ctx, 10.0, 15.0, &mut || false);
     for ch in "hello".chars() {
         g.key(&mut host, &ctx, Key::Char(ch), &mut clip);
@@ -2601,7 +2678,7 @@ fn cut_and_paste_move_text_through_the_clipboard() {
     let mut host = text_host();
     let mut g = Gestures::default();
     let mut ctx = GestureCtx::new(1, 600, 400);
-    let mut clip = String::new();
+    let mut clip = crate::host::clipboard::Clip::default();
     g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
     for ch in "abc".chars() {
         g.key(&mut host, &ctx, Key::Char(ch), &mut clip);
@@ -2610,7 +2687,7 @@ fn cut_and_paste_move_text_through_the_clipboard() {
     ctx.ctrl = true;
     g.key(&mut host, &ctx, Key::Char('a'), &mut clip);
     g.key(&mut host, &ctx, Key::Char('x'), &mut clip);
-    assert_eq!(clip, "abc");
+    assert_eq!(clip.text(), "abc");
     assert_eq!(text_value(&host, 5), "");
     // Paste it back twice.
     g.key(&mut host, &ctx, Key::Char('v'), &mut clip);

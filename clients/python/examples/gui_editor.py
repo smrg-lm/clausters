@@ -27,7 +27,17 @@ gesture this host does not have yet. A plain drag stays a time span on both, on
 purpose.
 
 The two views are deliberately **not linked** here, so each one's selection is
-its own (see ``gui_linked.py`` for the shared-axis case). The **playhead** tracks what you hear: the
+its own (see ``gui_linked.py`` for the shared-axis case).
+
+**Ctrl+C then Ctrl+V** is the clipboard, and it shows where the host's authority
+stops. The copy is a *read*, so the host makes it alone: the selected span
+leaves the material it has mapped and lands on its clipboard, typed and carrying
+its sample rate — nothing reaches this script. The paste *changes data*, which
+the host does not own, so it arrives here as a request with the clipboard beside
+it, and what this script does is the smallest honest thing: the block goes into
+a buffer of its own and plays once. Copy a range, paste it, hear that range —
+with nothing written over the take, because a destructive edit belongs to
+whoever owns that material. The **playhead** tracks what you hear: the
 same render is looped by a ``PlayBuf`` synth and anchored each pass with the
 server's sample clock, and the host reads the engine clock from shared memory
 with zero per-frame messages.
@@ -55,7 +65,10 @@ Then run it either way:
   handles: ``win["wave"].set(...)``, ``play_pass()``, ``gui.pump()``. The kernel
   stays alive with the window open.
 - **As a script** — ``python clients/python/examples/gui_editor.py`` runs the
-  whole file: it follows the playhead for a while, then tears everything down.
+  whole file: one playback pass with the playhead following it, then the window
+  stays open until you close it (``play_pass()`` from a cell replays it). The
+  sound does not repeat on its own, so what you hear after that pass is what you
+  asked for.
 
 (The install builds the ``clausters-gui`` binary too; ``CLAUSTERS_SKIP_GUI_BUILD=1``
 gives a server-only install, using a ``clients/gui/target`` binary if present.)
@@ -63,6 +76,8 @@ Needs a display and a GPU adapter.
 """
 
 # %%
+import array
+import json
 import os
 import sys
 import tempfile
@@ -145,6 +160,16 @@ SynthDef(
     out(0.0, play_buf(float(bufnum), 0.0)),
     out(1.0, play_buf(float(bufnum), 1.0)),
 ).send(server)
+
+# The clipboard's own voice: a one-shot over whatever buffer the paste filled.
+# A second buffer rather than a write into the take -- the host copied a range,
+# and hearing that range needs no edit to the material it came from.
+_clip_voice = None
+_clip_bufnum = server.buffers.alloc()
+SynthDef(
+    "clipboard-player",
+    out(0.0, play_buf(float(_clip_bufnum), 0.0)),
+).send(server)
 server.sync()
 
 # %% [markdown]
@@ -205,6 +230,53 @@ def play_pass():
     win["spect"].set(playhead_at=clock_samples)
 
 
+def on_clipboard(tag, *vals):
+    """Ctrl+C on the waveform, then Ctrl+V: hear exactly what was copied.
+
+    The split this shows is the host's whole posture. **Copy is a read**, so the
+    host does it alone and nothing arrives here — the block is on its clipboard,
+    typed, carrying the rate it was taken at. **Paste changes data**, which the
+    host does not own, so it arrives as a request with the clipboard travelling
+    beside it: the kind, the document, and the samples as one little-endian
+    ``f32`` blob.
+
+    What this script does with it is the smallest honest thing: it puts the
+    block in a server buffer of its own and plays it once. Nothing is written
+    back over the take — a destructive edit belongs to whoever owns that
+    material — so the round trip is *copy a range and hear that range*, which is
+    the whole of what the clipboard promises.
+    """
+    if tag == "refused":
+        print(f"host refused the {vals[0]}: {vals[1]}")
+        return
+    if tag != "paste" or len(vals) < 4:
+        return
+    kind, doc, blob = vals[1], json.loads(vals[2]), vals[3]
+    if kind != "samples":
+        print(f"nothing to audition: the clipboard holds {kind}")
+        return
+    block = doc["content"]
+    values = array.array("f")
+    values.frombytes(bytes(blob))
+    channels = int(block["channels"])
+    frames = int(block["frames"])
+    print(f"pasted {frames} frames x {channels} ch at {block['sample_rate']:.0f} Hz "
+          f"({frames / block['sample_rate']:.3f} s) — auditioning it")
+    # A buffer of its own, filled with what came over. The rate travels with the
+    # block and nothing here resamples it: that would be an edit, and an edit is
+    # the owner's.
+    server.send_msg("/buffer_alloc", _clip_bufnum, frames, channels)
+    server.send_msg("/buffer_set", _clip_bufnum, 0, *values)
+    server.sync()
+    # One voice at a time: the previous audition stops, this one plays. It does
+    # not free itself (a one-shot done-action is the def's business, not the
+    # clipboard's), so the next paste and the teardown are what end it.
+    global _clip_voice
+    if _clip_voice is not None:
+        _clip_voice.free()
+    _clip_voice = Synth("clipboard-player", server=server)
+
+
 def on_selection(name):
     """Print this view's ``"selection"`` edit-back, wired by name.
 
@@ -225,7 +297,14 @@ def on_selection(name):
     return handler
 
 
-win["wave"].on_event(on_selection("wave"))
+def on_wave(tag, *vals):
+    """The waveform's whole event stream: its selection, and the clipboard
+    verbs the same view answers (one handler per widget, so they share one)."""
+    on_selection("wave")(tag, *vals)
+    on_clipboard(tag, *vals)
+
+
+win["wave"].on_event(on_wave)
 win["spect"].on_event(on_selection("spect"))
 win.on_closed(lambda: (globals().__setitem__("_closed", True), print("window closed")))
 
@@ -250,6 +329,9 @@ win["wave"].set(sel_start=0.0, sel_len=float(frames))  # select the whole phrase
 # %%
 def teardown():
     gui.close(win)
+    if _clip_voice is not None:
+        _clip_voice.free()
+    Buffer(_clip_bufnum, server=server).free()
     Buffer(bufnum, server=server).free()
     session.close()
     for name in os.listdir(_tmp):
@@ -270,12 +352,13 @@ if __name__ == "__main__":
     try:
         # No deadline: the window is the manual test surface, so it ends
         # when you close it.
-        next_pass = 0.0
+        # **One pass, not a loop.** The window is the manual test surface and
+        # it stays open until it is closed; what must not stay running is the
+        # sound. A take restarting every few seconds plays over anything else
+        # the window is being used to check -- an auditioned clipboard block,
+        # most of all -- and a reader who wants it again has `play_pass()`.
+        play_pass()
         while not _closed:
-            now = time.monotonic()
-            if now >= next_pass:
-                play_pass()
-                next_pass = now + seconds + 0.5
             gui.pump(timeout=0.05)
         teardown()
     except (OSError, RuntimeError, ConnectionError) as e:

@@ -177,6 +177,31 @@ impl WaveformData {
             .copied()
             .unwrap_or(0.0)
     }
+
+    /// `frames` frames from `start`, **interleaved** — the shape a block of
+    /// audio travels in everywhere else in this project, and what a copy puts
+    /// on the clipboard.
+    ///
+    /// `None` for a **cache-only** view: a mapped pyramid has an overview and
+    /// no samples, so there is nothing here that could honestly be copied, and
+    /// a block of silence is the one answer worse than declining. Clamped at the
+    /// end rather than refused, because a selection reaching past the last
+    /// sample is an ordinary thing a sweep does.
+    pub fn block(&self, start: usize, frames: usize) -> Option<Vec<f32>> {
+        if !self.has_raw() {
+            return None;
+        }
+        let channels = self.num_channels().max(1);
+        let end = start.saturating_add(frames).min(self.total_samples());
+        let start = start.min(end);
+        let mut out = Vec::with_capacity((end - start) * channels);
+        for f in start..end {
+            for ch in 0..channels {
+                out.push(self.samples_at(ch, f));
+            }
+        }
+        Some(out)
+    }
 }
 
 /// A pyramid column blended between the level matching `samples_per_px` and

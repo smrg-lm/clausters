@@ -348,6 +348,25 @@ lies under a range of amplitudes is the same material as what lies under the
 whole span. Reading *only* those samples is an operation over the range, not a
 resolution of it.
 
+### Cut and paste, and what an editor of placements may do
+
+The host's clipboard verbs reach the editor as two more events, and it answers
+them the way it answers everything else — by deciding nothing an intent could
+decide:
+
+```python
+editor.apply(*gui.poll())    # Ctrl+X over a selection covering a clip
+editor.can_undo              # True: a cut is an edit, so it inverts
+```
+
+A cut whose selection **covers a clip** removes that placement, through the
+document, undoably. A cut running **across** one implies a new length for the
+material under it, and a paste of a block of samples is material with neither a
+source nor a source's owner — both are refused, with the reason travelling back
+so the window can say why rather than appearing to ignore the key. Writing
+material is the job of whoever owns that material, against a working copy, which
+is a different thing from placing elements in time.
+
 ### Saving: the document plus where its material is
 
 A document says what plays when and deliberately not where a source lives — in a

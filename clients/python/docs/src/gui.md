@@ -446,6 +446,9 @@ win["a"].on_event(lambda tag, *rest: print(tag, rest))
 # "view" (start, len)   when the axis is zoomed or panned
 # "selection" (start, len[, min, max])   the span, and the value band a
 #                                        sweep with height restricted it to
+# "cut" (start, len)                     Ctrl+X: cut this span, says the host
+# "paste" (position, kind, json, blob…)  Ctrl+V, with the clipboard beside it
+# "refused" (verb, reason)               the host could not do its own half
 # "notes" / "points"    when a roll or a curve is edited
 # "mute" / "solo" / "level"  from a lane header's controls
 ```
@@ -566,6 +569,36 @@ field of a selection and a gesture that does not exist yet. A plain drag stays
 a time span everywhere on purpose: that is what a drag over a waveform means in
 every editor, and what a band of values is *for* is your business, so you name
 the step.
+
+### The clipboard: copy is the host's, cut and paste are yours
+
+Ctrl+C over a selection is a **read**, so the host makes it alone: the span
+leaves the material it has mapped and lands on its own clipboard, typed, with
+the rate it was taken at — nothing reaches your script. Where it cannot read the
+source (a peak overview has no samples behind it; a live view has no addressable
+past) it says so with a `"refused"` event rather than copying silence.
+
+Ctrl+X and Ctrl+V **change data**, which the host does not own, so they arrive
+as requests. A paste brings the clipboard with it — the kind, the whole typed
+document, and one blob per bulk payload — because the clipboard is the host's:
+a block copied in one window is pasted against an owner that never saw the copy.
+
+```python
+def on_clip(tag, *vals):
+    if tag == "paste" and vals[1] == "samples":
+        doc, blob = json.loads(vals[2]), vals[3]
+        block = doc["content"]          # channels, frames, sample_rate
+        values = array.array("f"); values.frombytes(bytes(blob))
+```
+
+The rate travels with the block and nothing converts it: resampling is an edit,
+and an edit is something you perform and log, never a side effect of a paste.
+
+`Editor` answers both verbs for the arrangement it holds: a cut whose selection
+covers a clip removes that placement (undoably, through the document), and a cut
+across a clip — or a paste of material — is refused with its reason, because
+that is a new length for the material under it and material belongs to whoever
+owns it.
 
 ## The instrument without the script: a bundle
 

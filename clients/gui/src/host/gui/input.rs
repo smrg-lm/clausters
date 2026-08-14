@@ -8,7 +8,7 @@
 use tracing::debug;
 use winit::window::{CursorGrabMode, Window};
 
-use crate::host::gestures::{GestureCtx, GestureEffect};
+use crate::host::gestures::{ClipVerb, GestureCtx, GestureEffect};
 use crate::host::widget::element::Key as HostKey;
 
 use super::app::App;
@@ -198,6 +198,32 @@ impl App {
             &mut self.host,
             &ctx,
             key,
+            cx,
+            cy,
+            &mut self.text_clipboard,
+        ) {
+            Some(effects) => effects,
+            None => return false,
+        };
+        self.apply_gesture_effects(effects);
+        true
+    }
+
+    /// Copy, cut or paste over the view under the cursor — the window's own
+    /// shortcut, reached only by a key the focus and the element under the
+    /// cursor both declined. Returns whether it was consumed.
+    pub(super) fn clipboard_key(&mut self, def_id: i32, verb: ClipVerb) -> bool {
+        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+            return false;
+        };
+        let ctx = self.gesture_ctx(def_id);
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return false;
+        };
+        let effects = match ws.gestures.clipboard_key(
+            &mut self.host,
+            &ctx,
+            verb,
             cx,
             cy,
             &mut self.text_clipboard,

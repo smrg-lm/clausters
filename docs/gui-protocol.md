@@ -166,6 +166,9 @@ The **edit-back payloads**:
 | `"locate"` | `position` (timeline units) | a lane's time ruler (or its empty space) clicked — the transport is being seeked there |
 | `"undo"` / `"redo"` | — | a window shortcut (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). **Addressed to the window, not to a widget**: the id is the window's, the way `/gui_closed` names one. The host holds no history — the log lives with the document — so this is a *request*, and the owner answers with the state that now holds, exactly as it answers a drag |
 | `"selection"` | `start len` (samples, always whole), plus `min max` where the sweep restricted the y axis too | a selection dragged on a timeline view |
+| `"cut"` | `start len` (samples) | Ctrl+X over a selection. The host owns no data, so this is a **request**: the owner cuts and answers with what the composition now is, and the length change a cut implies is the owner's to decide |
+| `"paste"` | `position kind json` plus one **blob** per bulk payload | Ctrl+V. The clipboard travels *with* the request — it is the host's, so a block copied in one window pastes against an owner that never saw it. `kind` is the clipboard's (`text`/`elements`/`samples`/`spectral`), `json` the whole typed document, and the blobs are the payloads it names, interleaved little-endian `f32` |
+| `"refused"` | `verb reason` | the host could not do its own half — a copy whose source it cannot read (a mapped overview, a live view), a paste whose payload did not travel. Said out loud, because a key that silently does nothing teaches that it sometimes does not work |
 | `"view"` | `start len` (samples), or `x y zoom` on a `plane` | the navigation window zoomed or panned — the timeline group's shared window, or a 2D workspace's plane |
 | `"view_y"` | `start len` (0..1) | the vertical display window zoomed or panned |
 | `"view_x"` | `start len` (0..1) | an element's **own** horizontal window zoomed or panned — a navigable `spectrum`'s frequency axis, which is in no navigation group (a group's shared window reports `"view"`) |
@@ -174,6 +177,32 @@ The **edit-back payloads**:
 
 Edited data flows as a **payload, never a new address**: the `/gui_*` family does
 not grow per widget.
+
+### The clipboard, and who may read what
+
+Ctrl+C, Ctrl+X and Ctrl+V over a selection split exactly where the host's
+authority does, and the split is worth stating because it is the same one
+everything else in this chapter follows.
+
+A **copy is a read**, so the host does it: it takes the selected span out of the
+material it has *mapped* and puts it on its own clipboard, typed, carrying the
+rate it was taken at. A source the host cannot read — a mapped peak overview has
+no samples behind it, a live view has no addressable past — **declines and says
+so** (`"refused" "copy" <reason>`), because a block of silence on the clipboard
+is the one answer worse than no.
+
+A **cut and a paste change data the host does not own**, so they leave as the
+`"cut"` and `"paste"` events above and the owner answers with what the
+composition now is. A paste carries the clipboard **with** it rather than the
+owner keeping one of its own: the clipboard is the host's precisely so that a
+block copied in one window can be pasted in another, against an owner that never
+saw the copy.
+
+The clipboard is one **typed document** — `text`, `elements`, `samples` or
+`spectral` — and its bulk rides *beside* it as blobs rather than inside it as
+base64, which is the same rule every other large payload here follows. A
+`samples` block is never resampled in transit: resampling is an edit, and an
+edit is something an owner performs and logs.
 
 ### Answering an event
 

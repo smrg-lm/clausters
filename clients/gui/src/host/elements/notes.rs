@@ -700,7 +700,9 @@ impl Element for Notes {
                 if block.is_empty() {
                     return None;
                 }
-                *input.clipboard = pianoroll::notes_json(&block).to_string();
+                input
+                    .clipboard
+                    .set_text(&pianoroll::notes_json(&block).to_string());
                 let cut = matches!(key, Key::Char('x') | Key::Char('X'));
                 if !cut {
                     // A copy changed nothing, so it reports nothing — but it
@@ -712,7 +714,7 @@ impl Element for Notes {
                 Some(self.notes_event())
             }
             Key::Char('v') | Key::Char('V') if input.mods.ctrl => {
-                let block = clipboard_notes(input.clipboard)?;
+                let block = clipboard_notes(&input.clipboard.text())?;
                 // At the step cursor: a paste has no pointer, and the cursor is
                 // where the roll is being written.
                 let at = snap_to(self.step, self.snap).max(0.0);
@@ -1479,10 +1481,10 @@ mod tests {
     /// `/gui_set notes` takes.
     #[test]
     fn the_block_keys_quantize_delete_and_travel_through_the_clipboard() {
-        let mut clipboard = String::new();
+        let mut clipboard = crate::host::clipboard::Clip::default();
         let mut r = roll(r#"{"notes":[90.0,50.0,60.0,100,0,260.0,50.0,64.0,100,0],"snap":100.0}"#);
         r.selected = vec![0];
-        fn ki(clip: &mut String, ctrl: bool) -> KeyInput<'_> {
+        fn ki(clip: &mut crate::host::clipboard::Clip, ctrl: bool) -> KeyInput<'_> {
             KeyInput {
                 mods: Mods {
                     ctrl,
@@ -1505,7 +1507,8 @@ mod tests {
                 .is_some()
         );
         assert_eq!(r.notes.len(), 1);
-        assert!(clipboard.starts_with('['), "{clipboard}");
+        let block = clipboard.text();
+        assert!(block.starts_with('['), "{block}");
 
         // ...and pastes back at the step cursor, keeping its pitch.
         assert!(
@@ -1528,7 +1531,8 @@ mod tests {
                 .is_none()
         );
         // Text on the clipboard is not a note block, so a paste declines it.
-        let mut text = "hola".to_string();
+        let mut text = crate::host::clipboard::Clip::default();
+        text.set_text("hola");
         assert!(r.key(&Key::Char('v'), &mut ki(&mut text, true)).is_none());
     }
 

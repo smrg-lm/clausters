@@ -71,6 +71,13 @@ font-atlas = ["dep:fontdue"]
 # timetag math) the host's transports ride. A path dependency on the core: it
 # pulls only `rosc`, so the default gui build stays light.
 clausters-core = { path = "../../crates/clausters-core" }
+# The document's **clipboard**, and nothing else about the document: the host
+# holds no composition, but a cut/copy/paste crosses windows, defs and processes
+# carrying whatever kind of payload it was given, and that type is the crate's.
+# It costs nothing to link -- serde and serde_json, both already here -- and
+# building the same JSON by hand in the host would be the second definition of a
+# format whose whole point is that one definition crosses everything.
+clausters-document = { path = "../../crates/clausters-document" }
 # The full server crate, linked ONLY under the `standalone` feature for the
 # in-process embedded server (`host::embed`). `embed` exposes the in-process
 # `Clausters` API; `realtime` brings the audio backend. Default features off so

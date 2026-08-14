@@ -18,7 +18,8 @@ use super::super::Host;
 use super::super::interact::Hit;
 use clausters_core::osc::OscType;
 
-use super::super::widget::element::{Key, KeyInput, Mods};
+use super::super::clipboard::Clip;
+use super::super::widget::element::{Key, KeyInput, Mods, SampleBlock};
 use super::effects::{emit, emit_view, redraw_all};
 use super::nav::{freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
 use super::{GestureCtx, GestureEffect, Gestures, element, focus};
@@ -30,9 +31,9 @@ impl Gestures {
     /// whatever it reports exactly as a drag would, bound → straight to the
     /// audio server, else a `/gui_event`.
     ///
-    /// `clipboard` is the host-wide text clipboard a cut/copy/paste reads and
-    /// writes (the native front's internal one; the browser front swaps in the
-    /// page's around this call).
+    /// `clipboard` is the host-wide clipboard a cut/copy/paste reads and writes
+    /// (the native front's internal one; the browser front swaps the page's
+    /// string in and out around this call).
     ///
     /// Returns `Some(effects)` when the key was consumed — the front then skips
     /// its own shortcuts — and `None` when nothing here answered it.
@@ -41,7 +42,7 @@ impl Gestures {
         host: &mut Host,
         ctx: &GestureCtx,
         key: Key,
-        clipboard: &mut String,
+        clipboard: &mut super::super::clipboard::Clip,
     ) -> Option<Vec<GestureEffect>> {
         if key == Key::Tab {
             return Some(focus::step(host, ctx, ctx.shift));
@@ -90,7 +91,7 @@ impl Gestures {
         key: Key,
         cx: f64,
         cy: f64,
-        clipboard: &mut String,
+        clipboard: &mut super::super::clipboard::Clip,
     ) -> Option<Vec<GestureEffect>> {
         let Hit {
             id,
@@ -144,6 +145,123 @@ impl Gestures {
         out
     }
 
+    /// **Copy, cut and paste over the selection**, addressed to the view under
+    /// the cursor — the window's own shortcuts, reached only by a key nothing
+    /// focused and nothing under the cursor answered first (a field's Ctrl+C is
+    /// still the field's).
+    ///
+    /// The three verbs split exactly where the host's authority does. A **copy**
+    /// is a read, and the host may honestly do it: it takes the selected span
+    /// out of the material it has *mapped* and puts it on the clipboard. A
+    /// source it cannot read — a mapped pyramid is an overview, a live view has
+    /// no addressable past — **declines, visibly**, because putting silence on
+    /// the clipboard is the one answer worse than saying no. A **cut** and a
+    /// **paste** change data, which the host does not own, so they leave as
+    /// intents and the owner answers with what the composition now is.
+    ///
+    /// A paste carries the clipboard **with** it (`"paste" position kind json
+    /// [blob…]`), rather than the owner keeping a clipboard of its own: the
+    /// clipboard is the host's precisely so that a block copied in one window
+    /// pastes in another, against a different owner or none.
+    pub fn clipboard_key(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        verb: ClipVerb,
+        cx: f64,
+        cy: f64,
+        clip: &mut Clip,
+    ) -> Option<Vec<GestureEffect>> {
+        let Hit { id, .. } = hit(host, ctx, cx, cy)?;
+        let key = host.timeline_key(id)?;
+        let (start, len) = host.timelines().state(key)?.selection().unzip();
+        let mut out = Vec::new();
+        match verb {
+            ClipVerb::Copy => {
+                let (start, len) = (start?, len?);
+                let offset = host.widget_kind(ctx.def_id, id)?.editor()?.offset;
+                // The selection is in **timeline** samples and an element reads
+                // its own frames: a clip placed late holds sample 0 at its
+                // offset, which is the one conversion between the axis and the
+                // material on it.
+                let from = (start - offset).max(0.0) as u64;
+                let block = element_block(host, ctx, id, from, len as u64);
+                match block {
+                    Some(block) => {
+                        clip.put_samples(block.samples.into(), block.channels, block.sample_rate);
+                        // A copy changed nothing, so it reports nothing.
+                    }
+                    // Said out loud, in the one direction the host has: the
+                    // owner learns the reader could not read, which is what a
+                    // refusal is for.
+                    None => emit(
+                        host,
+                        &mut out,
+                        ctx.def_id,
+                        id,
+                        vec![
+                            OscType::String("refused".into()),
+                            OscType::String("copy".into()),
+                            OscType::String("this source has no samples the host can read".into()),
+                        ],
+                    ),
+                }
+            }
+            ClipVerb::Cut => {
+                let (start, len) = (start?, len?);
+                emit(
+                    host,
+                    &mut out,
+                    ctx.def_id,
+                    id,
+                    vec![
+                        OscType::String("cut".into()),
+                        OscType::Float(start as f32),
+                        OscType::Float(len as f32),
+                    ],
+                );
+            }
+            ClipVerb::Paste => {
+                let doc = clip.doc()?;
+                if !clip.is_whole() {
+                    // A header whose payload did not travel: declining is the
+                    // whole reason `blobs()` is on the clipboard at all.
+                    emit(
+                        host,
+                        &mut out,
+                        ctx.def_id,
+                        id,
+                        vec![
+                            OscType::String("refused".into()),
+                            OscType::String("paste".into()),
+                            OscType::String(
+                                "the clipboard's payload did not travel with it".into(),
+                            ),
+                        ],
+                    );
+                    return Some(out);
+                }
+                let mut args = vec![
+                    OscType::String("paste".into()),
+                    // Where: the selection's start, which is where a locate or a
+                    // sweep last put the axis -- a paste has no pointer of its
+                    // own, and the cursor is what the reader was looking at.
+                    OscType::Float(start.unwrap_or(0.0) as f32),
+                    OscType::String(doc.kind().into()),
+                    OscType::String(doc.to_json()),
+                ];
+                for i in 0..doc.blobs() {
+                    if let Some(bytes) = clip.blob_bytes(i) {
+                        args.push(OscType::Blob(bytes));
+                    }
+                }
+                emit(host, &mut out, ctx.def_id, id, args);
+            }
+        }
+        out.push(GestureEffect::Redraw(ctx.def_id));
+        Some(out)
+    }
+
     /// `R` over a window: reset every navigable view's axes — a timeline's
     /// navigation (the whole group, linked members in other windows too) and
     /// its vertical window, and a navigable spectrum's frequency window. The
@@ -176,4 +294,27 @@ impl Gestures {
         out.push(GestureEffect::Redraw(def_id));
         out
     }
+}
+
+/// Which of the three clipboard verbs a key asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipVerb {
+    Copy,
+    Cut,
+    Paste,
+}
+
+/// The material behind widget `id` over `frames` of its own frames from
+/// `start` — the element's own answer ([`crate::host::widget::element::Element::sample_block`]), since only
+/// it knows what it holds and whether it may be read.
+fn element_block(
+    host: &mut Host,
+    ctx: &GestureCtx,
+    id: i32,
+    start: u64,
+    frames: u64,
+) -> Option<SampleBlock> {
+    host.widget_kind(ctx.def_id, id)?
+        .as_element()?
+        .sample_block(start, frames, ctx.sample_rate)
 }

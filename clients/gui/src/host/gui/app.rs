@@ -22,7 +22,7 @@ use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
 use crate::host::fetch::BufferFetches;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
-use crate::host::gestures::Gestures;
+use crate::host::gestures::{ClipVerb, Gestures};
 use crate::host::graphics::nodetree::NodeTree;
 use crate::host::live::{self, tree_animates, tree_has_live_widget};
 use crate::host::paint::Painter;
@@ -120,7 +120,7 @@ pub(super) struct App {
     /// no OS-clipboard dependency — so what is cut in one window pastes into
     /// another. A block of notes rides it in the same JSON a `/gui_set notes`
     /// takes, which is the carrier every non-scalar already uses.
-    pub(super) text_clipboard: String,
+    pub(super) text_clipboard: crate::host::clipboard::Clip,
 }
 
 impl App {
@@ -145,7 +145,7 @@ impl App {
             midi_in: None,
             #[cfg(feature = "midi")]
             midi_warned: false,
-            text_clipboard: String::new(),
+            text_clipboard: crate::host::clipboard::Clip::default(),
         }
     }
 
@@ -727,6 +727,18 @@ impl ApplicationHandler<UserEvent> for App {
                     }
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         self.reset_timelines(def_id)
+                    }
+                    // The clipboard verbs over the view under the cursor. They
+                    // are last, so a focused field and a roll's own block keys
+                    // both answer first: this is what nothing else wanted.
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("c") && self.ctrl(def_id) => {
+                        self.clipboard_key(def_id, ClipVerb::Copy);
+                    }
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("x") && self.ctrl(def_id) => {
+                        self.clipboard_key(def_id, ClipVerb::Cut);
+                    }
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("v") && self.ctrl(def_id) => {
+                        self.clipboard_key(def_id, ClipVerb::Paste);
                     }
                     _ => {}
                 }

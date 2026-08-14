@@ -158,6 +158,8 @@ class Editor:
         #: What the host should be drawing instead of what it drew, collected
         #: while one event is routed and sent with its acknowledgement.
         self._corrections: list = []
+        #: Why the last routed event did not do what it asked, if it did not.
+        self._reason: "str | None" = None
         #: The composition's version — the document half of the two counters.
         #: It moves on every edit this editor applies **and on every redefine**,
         #: and it rides on each acknowledgement so the host can name it back on
@@ -493,6 +495,10 @@ class Editor:
         seq, against = int(args[1]), int(args[2]) if len(args) > 2 else 0
         args = (args[0], *args[3:])
         self._corrections = []
+        # Why an edit did not do what it asked, when there is something to say.
+        # It rides with the acknowledgement, because a refusal with no reason
+        # teaches "sometimes it does not work" -- the one answer worse than no.
+        self._reason = None
         # The window's own shortcuts (Ctrl+Z / Ctrl+Shift+Z), which the host
         # addresses to the **window** rather than to a widget: undo is not
         # aimed at anything under the cursor. They are answered here rather
@@ -525,7 +531,7 @@ class Editor:
         # success flag: the state this editor decided rides as the corrections
         # `_route` collected, and a refusal is simply the previous value among
         # them. Applied, transformed and refused are one message.
-        self._acknowledge(seq)
+        self._acknowledge(seq, reason=self._reason)
         return changed
 
     def _route(self, args) -> bool:
@@ -547,6 +553,10 @@ class Editor:
             # own unit, ready for `resolve_selection`.
             self._set_selection(int(args[0]), args[2:])
             return False
+        if args[1] == "cut":
+            return self._apply_cut(int(args[0]), args[2:])
+        if args[1] == "paste":
+            return self._apply_paste(int(args[0]), args[2:])
         if args[1] == "notes":
             # A note edited in a roll — a clip's body on a lane, or the dedicated
             # piano-roll: rebuild the element's timeline (a generator is
@@ -735,6 +745,81 @@ class Editor:
         if node is not None:
             selection["nodes"] = [node]
         self.selection = selection
+
+    def _apply_cut(self, wid: int, values) -> bool:
+        """A cut asked for over the selection: the host owns none of the data,
+        so this is where it becomes an edit.
+
+        **What this editor cuts is a placement**, because that is what it owns:
+        an arrangement is elements placed in time, and a clip the selection
+        covers entirely leaves the group it was in — undoably, through the
+        crate, like every other edit here. What it does *not* do is trim: a
+        selection cutting across a clip implies a new length for the material
+        under it, and writing material is the owner of that material's business
+        (the working copy the document's plan describes), not a placement edit
+        wearing the same name. That case is refused **out loud**, because a cut
+        that silently did nothing would read as a broken key.
+        """
+        placed = self._clips.get(wid)
+        if placed is None or placed.member is None or len(values) < 2:
+            return False
+        start = self.units_to_beats(float(values[0]))
+        end = start + self.units_to_beats(float(values[1]))
+        member = placed.member
+        # The clip's span on the **shared** axis: a placement is relative to its
+        # group, and the selection is absolute, which is the same bridge a drag
+        # crosses in the other direction.
+        at = placed.base + member.offset
+        span = at, at + (member.length or 0.0)
+        if not (start <= span[0] and end >= span[1]):
+            self._resync(wid)
+            self._reason = (
+                "a cut across a clip is a new length for its material, "
+                "which is the material owner's edit"
+            )
+            return False
+        owner = placed.owner
+        if owner is None:
+            return False
+        node = self._node_id(owner)
+        if node is None:
+            return False
+        # The members as they would stand: the document's own serialization,
+        # minus the one being cut. Built from the public conversion rather than
+        # by hand, so the shape is whatever the format currently says it is.
+        whole = to_document(owner, version=self._version)["root"]
+        keep = [m for h, m in zip(owner.handles, whole.get("members", []))
+                if h is not member]
+        outcome = self._record({"intent": "setmembers", "node": node,
+                                "members": keep}, "cut the clip")
+        if outcome is None or not outcome["applied"]:
+            self._resync(wid)
+            return False
+        self._project(outcome["effective"])
+        return True
+
+    def _apply_paste(self, wid: int, values) -> bool:
+        """A paste asked for over a view, carrying the clipboard with it.
+
+        The clipboard travels *with* the request — the host's, so that a block
+        copied in one window pastes into another — and what arrives is the
+        crate's typed document: its kind, its JSON, and its bulk beside it.
+
+        **What this editor can place is elements.** A block of *samples* is
+        material, and material is written by whoever owns it against a working
+        copy; an arrangement editor placing a nameless block of audio would be
+        inventing both a source and a source's owner. So a sample paste is
+        refused with the reason, which is the honest answer until the material
+        half of the track lands.
+        """
+        if wid not in self._clips and wid not in self._lanes:
+            return False
+        kind = str(values[1]) if len(values) > 1 else ""
+        self._reason = (
+            f"this editor places elements; a {kind or 'clipboard'} block is "
+            "material, and material is written by its owner"
+        )
+        return False
 
     def resolve_selection(self) -> list:
         """The **material under the current selection**, through the crate.
@@ -986,11 +1071,59 @@ class Editor:
                 return None
             auto.env = points_to_env(list(flat))
         elif kind == "setmembers":
-            if not self._set_notes(element, intent.get("members", [])):
+            members = intent.get("members", [])
+            # Two things carry members and they are not the same thing: a
+            # `Group`'s placements, and the notes of an editable timeline. The
+            # element decides which, because the intent names a node and the
+            # node is whichever of the two it is.
+            if isinstance(element, Group):
+                if not self._set_placements(element, members):
+                    return None
+            elif not self._set_notes(element, members):
                 return None
         else:
             return None
         return self._widget_of(element, member)
+
+    def _set_placements(self, group, members: list) -> bool:
+        """A `setmembers` onto a `Group`: the placements as the document states
+        them, whole.
+
+        **Only what the document still names survives**, which is what makes a
+        cut a removal and an undo of it a restoration: the members arrive by
+        node id, so a handle whose id is no longer among them leaves, and the
+        ones that stay keep their identity rather than being rebuilt (a rebuilt
+        handle would be a different object to the widget registry, and every
+        pending edit against it would address a placement nobody is drawing).
+        """
+        keep = {int(m["node"]["id"]) for m in members if "id" in (m.get("node") or {})}
+        by_id = {}
+        for handle in list(group.handles):
+            node = getattr(handle.element, ID_ATTR, None)
+            if node is None:
+                continue
+            by_id[int(node)] = handle
+            if int(node) not in keep:
+                group.remove(handle)
+        # ...and the offsets the document states, for the ones that stayed —
+        # plus the ones that are **back**, which is what an undo of a cut is.
+        # The element itself outlives its placement (the node index still names
+        # it), so restoring is placing that same object again rather than
+        # rebuilding one: the identity a pending edit or a widget registry holds
+        # is the element's, and a copy of it would answer for nothing.
+        for m in members:
+            node = (m.get("node") or {}).get("id")
+            if node is None:
+                continue
+            handle = by_id.get(int(node))
+            offset = float(m.get("offset", 0.0))
+            if handle is not None:
+                group.move(handle, offset)
+                continue
+            found = self._by_node.get(int(node))
+            if found is not None:
+                group.add(found[2], offset, m.get("dur"))
+        return True
 
     def _set_notes(self, element, members: list) -> bool:
         """A `setmembers` onto an element's editable timeline: the notes as the

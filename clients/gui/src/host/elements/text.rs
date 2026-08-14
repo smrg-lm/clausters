@@ -189,22 +189,23 @@ impl Element for Text {
             Key::Char(c) if mods.ctrl => match c.to_ascii_lowercase() {
                 'c' => {
                     if let Some(s) = textedit::selected(&self.value, &self.caret) {
-                        *input.clipboard = s.to_string();
+                        input.clipboard.set_text(s);
                     }
                 }
                 'x' => {
                     if let Some(s) = textedit::selected(&self.value, &self.caret) {
-                        *input.clipboard = s.to_string();
+                        input.clipboard.set_text(s);
                         changed = textedit::delete_selection(&mut self.value, &mut self.caret);
                     }
                 }
                 'v' => {
                     if !input.clipboard.is_empty() {
                         // A single-line field takes a pasted block as one line.
+                        let pasted = input.clipboard.text();
                         let text = if self.multiline {
-                            input.clipboard.clone()
+                            pasted
                         } else {
-                            input.clipboard.replace('\n', " ")
+                            pasted.replace('\n', " ")
                         };
                         changed = textedit::insert(&mut self.value, &mut self.caret, &text);
                     }
@@ -288,7 +289,7 @@ mod tests {
     /// Types `keys` into `field` with `mods` held, returning what the last one
     /// reported — the whole of what a front does per keystroke.
     fn type_keys(field: &mut Text, mods: Mods, keys: &[Key]) -> Option<Events> {
-        let mut clipboard = String::new();
+        let mut clipboard = crate::host::clipboard::Clip::default();
         let mut last = None;
         for key in keys {
             let mut input = KeyInput {
@@ -357,7 +358,7 @@ mod tests {
             ..Mods::default()
         };
         let mut field = from_props(&props(r#"{"value":"hola"}"#));
-        let mut clipboard = String::new();
+        let mut clipboard = crate::host::clipboard::Clip::default();
 
         // Select all, then cut.
         for key in [Key::Char('a'), Key::Char('x')] {
@@ -368,7 +369,7 @@ mod tests {
             field.key(&key, &mut input);
         }
         assert_eq!(field.value, "");
-        assert_eq!(clipboard, "hola");
+        assert_eq!(clipboard.text(), "hola");
 
         // ...and it pastes back, into this field or any other.
         let mut other = from_props(&props("{}"));

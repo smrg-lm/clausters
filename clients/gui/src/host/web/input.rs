@@ -225,6 +225,47 @@ impl WebApp {
             Key::Character(c) if c.eq_ignore_ascii_case("r") => {
                 slot.gestures.reset_timelines(&mut self.host, &ctx)
             }
+            // The clipboard verbs over the view under the cursor, last, so a
+            // focused field and a roll's own block keys answer first.
+            Key::Character(c) if c.eq_ignore_ascii_case("c") && ctx.ctrl => {
+                match slot.gestures.clipboard_key(
+                    &mut self.host,
+                    &ctx,
+                    ClipVerb::Copy,
+                    cx,
+                    cy,
+                    &mut self.text_clipboard,
+                ) {
+                    Some(effects) => effects,
+                    None => return,
+                }
+            }
+            Key::Character(c) if c.eq_ignore_ascii_case("x") && ctx.ctrl => {
+                match slot.gestures.clipboard_key(
+                    &mut self.host,
+                    &ctx,
+                    ClipVerb::Cut,
+                    cx,
+                    cy,
+                    &mut self.text_clipboard,
+                ) {
+                    Some(effects) => effects,
+                    None => return,
+                }
+            }
+            Key::Character(c) if c.eq_ignore_ascii_case("v") && ctx.ctrl => {
+                match slot.gestures.clipboard_key(
+                    &mut self.host,
+                    &ctx,
+                    ClipVerb::Paste,
+                    cx,
+                    cy,
+                    &mut self.text_clipboard,
+                ) {
+                    Some(effects) => effects,
+                    None => return,
+                }
+            }
             _ => return,
         };
         self.apply_gesture_effects(effects);

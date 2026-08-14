@@ -45,7 +45,7 @@ use crate::waveform::WaveformData;
 
 use super::fetch::{BufferFetches, FetchStep};
 use super::frame::{self, SpectrogramSlot, WaveformSlot};
-use super::gestures::{GestureCtx, GestureEffect, Gestures};
+use super::gestures::{ClipVerb, GestureCtx, GestureEffect, Gestures};
 use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
 use super::widget::Widget;
@@ -213,8 +213,10 @@ struct WebApp {
     pending_attach: Vec<(i32, Option<web_sys::HtmlCanvasElement>)>,
     /// The host-wide clipboard (Ctrl+C/X/V), page-wide. An in-page clipboard
     /// like the native front's; binding it to the browser's OS clipboard (a
-    /// `writeText` out plus a `paste`-event listener in) is a later refinement.
-    text_clipboard: String,
+    /// `writeText` out plus a `paste`-event listener in) is a later refinement,
+    /// and the typed clipboard is what makes that binding a matter of a string
+    /// crossing rather than of a format: text is one of its kinds.
+    text_clipboard: crate::host::clipboard::Clip,
     /// Live control-bus values streamed from the audio server (`/bus_stream` →
     /// `/bus_stream.reply`), the browser's [`BusSource`] for meters/scopes/canvases.
     buses: Arc<StreamedBuses>,
@@ -256,7 +258,7 @@ impl WebApp {
             by_winit: HashMap::new(),
             resumed: false,
             pending_attach: Vec::new(),
-            text_clipboard: String::new(),
+            text_clipboard: crate::host::clipboard::Clip::default(),
             buses: Arc::new(StreamedBuses::default()),
             streamed: Vec::new(),
             taps: Arc::new(StreamedTaps::default()),

@@ -5206,3 +5206,39 @@ right shape rather than a workaround for the missing half.
 The general rule it leaves behind is worth more than the fix: **a capability
 whose sibling does not exist yet must not be the default gesture.** Until the
 pair is complete, the half that shipped reads as belonging to the other view.
+
+## A paste carries the clipboard, because the clipboard is the host's
+
+The host owns no data, so a cut and a paste leave it as requests for whoever
+does. That much follows from the premise. What does not follow, and had to be
+decided, is **where the thing being pasted comes from**.
+
+The alternative is that the owner keeps the clipboard: the host reports that a
+copy happened and the owner remembers what was copied. It is tempting because it
+keeps the wire small, and it is wrong for the reason the clipboard exists. A
+clipboard is host-wide so that a block copied in one window pastes into another
+— against a different owner, a different def, or a process that never saw the
+copy. An owner-side clipboard makes that case impossible while looking like it
+works in the single-window one, which is the worst shape a design can have.
+
+So the paste event carries the whole typed document plus one blob per bulk
+payload it names. The framing is the one `/gui_def` already uses — JSON as the
+payload, OSC as the framing, bulk beside it rather than base64 inside it — and
+it is also the **only** path a browser has, which settles the choice between
+this and writing the block to a mapped file: one path both fronts share beats
+two that drift. A mapped file remains available the day a clipboard is large
+enough to want one; nothing about the event's shape would change.
+
+**Copy stays on the host's side of the line**, and that is not an exception to
+the premise but the premise read carefully: a copy is a *read*, and the host
+already holds what it draws. What it may honestly copy is exactly what it has
+mapped, which is why a source it cannot read — a peak overview with no samples
+behind it, a live view with no addressable past — refuses out loud instead of
+handing over a block of silence. The refusal is a payload of its own
+(`"refused" verb reason`) for the reason every other refusal here carries one: a
+key that silently does nothing teaches that it sometimes does not work.
+
+**The rate travels and nothing resamples it.** That is the crate's rule for the
+clipboard and it holds at both ends of the wire: resampling is an edit, an edit
+is something an owner performs and logs, and a paste that quietly converted
+would change data nobody asked it to change in a step nothing records.

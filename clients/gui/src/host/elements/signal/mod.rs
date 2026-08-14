@@ -45,7 +45,7 @@ use crate::waveform::WaveformData;
 
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::widget::element::ValueAxis;
+use crate::host::widget::element::{SampleBlock, ValueAxis};
 use crate::host::widget::{EditorProps, Rate, Ruler, RulerY};
 
 mod apply;
@@ -442,6 +442,38 @@ impl SignalElement {
             domain: self.domain(),
             y: self.editor.y_view(),
             lanes: self.lanes(lanes),
+        })
+    }
+
+    /// The element's material over a span of its own frames, interleaved with
+    /// the rate it was taken at — the copy a clipboard gets.
+    ///
+    /// Only a **random-access** source answers: a live bus has no addressable
+    /// past to hand over, and a bulk source that resolved to a pyramid with no
+    /// samples has an overview and nothing else. Both decline rather than
+    /// inventing a block, which is what lets a copy say *this source cannot be
+    /// read* instead of putting silence on the clipboard.
+    pub fn sample_block(&self, start: u64, frames: u64, server_rate: f64) -> Option<SampleBlock> {
+        let data = self.source.data()?;
+        let (start, frames) = (start as usize, frames as usize);
+        let samples = match &data.body {
+            Some(body) => body.block(start, frames)?,
+            None => {
+                let channels = data.channels.max(1);
+                let total = data.samples.len() / channels;
+                let end = start.saturating_add(frames).min(total);
+                data.samples
+                    .get(start.min(end) * channels..end * channels)?
+                    .to_vec()
+            }
+        };
+        if samples.is_empty() {
+            return None;
+        }
+        Some(SampleBlock {
+            samples,
+            channels: self.channels().max(1) as u32,
+            sample_rate: self.freq_rate(server_rate),
         })
     }
 

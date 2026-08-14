@@ -165,6 +165,24 @@ pub struct FreqAxis {
     pub sample_rate: f64,
 }
 
+/// A block of material an element handed over: interleaved samples, how many
+/// channels they interleave, and the rate they were taken at.
+///
+/// The rate travels with the block and **nothing here converts it**: resampling
+/// is an edit, an edit is something an owner performs and logs, and a paste
+/// that quietly resampled would change data nobody asked it to change in a step
+/// nothing records. That is the crate's rule for the clipboard, and this is the
+/// door the rule arrives through.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SampleBlock {
+    /// The samples, interleaved by channel.
+    pub samples: Vec<f32>,
+    /// How many channels they interleave.
+    pub channels: u32,
+    /// The rate they were taken at.
+    pub sample_rate: f64,
+}
+
 /// **An element's own measured y axis**: the body its lanes are cut from, the
 /// domain they are drawn over and the vertical window they are seen through.
 ///
@@ -756,12 +774,17 @@ pub struct MidiNote {
 /// cut/copy/paste reads and writes.
 ///
 /// The clipboard is here rather than in the element because it is not the
-/// element's: one string serves every field of every window (the front's
-/// internal one natively, the page's around this call in a browser), so a
-/// selection cut in one field pastes into another.
+/// element's: one of them serves every field, roll and view of every window
+/// (the front's internal one natively, the page's swapped in around this call
+/// in a browser), so a selection cut in one place pastes into another.
+///
+/// It is a [`Clip`](crate::host::clipboard::Clip) rather than a `String`
+/// because an editor's clipboard has to carry a range of audio, and the only
+/// way to keep that a string is to re-encode it. An element that deals in text
+/// still reads and writes text through it — that is one of the kinds.
 pub struct KeyInput<'a> {
     pub mods: Mods,
-    pub clipboard: &'a mut String,
+    pub clipboard: &'a mut crate::host::clipboard::Clip,
 }
 
 /// The `/gui_event` messages an element asks to be sent for it: each entry is
@@ -1186,6 +1209,22 @@ pub trait Element: fmt::Debug {
     /// the renderer drew through, or a zoom anchors at a hertz the reader is
     /// not pointing at.
     fn freq_axis(&self, _rect: Rect, _m: &Metrics, _sample_rate: f64) -> Option<FreqAxis> {
+        None
+    }
+
+    /// **The material this element holds over a span of its own frames**, as
+    /// interleaved samples with the rate they were taken at — what a copy puts
+    /// on the clipboard.
+    ///
+    /// `None` where the element has nothing it could honestly hand over: a
+    /// picture with no samples behind it (a mapped pyramid is an overview, and
+    /// a block of silence is worse than declining), a live view whose data is
+    /// gone the moment it is drawn, an element that is not material at all.
+    /// **Read-only, and it is the host's whole part in a copy**: writing the
+    /// span back is an edit, and an edit belongs to whoever owns the data.
+    /// `server_rate` is what the block is stamped with when the element names
+    /// no rate of its own, the same fallback [`Element::freq_axis`] takes.
+    fn sample_block(&self, _start: u64, _frames: u64, _server_rate: f64) -> Option<SampleBlock> {
         None
     }
 
@@ -1809,7 +1848,7 @@ mod tests {
         let WidgetKind::Custom(el) = &mut w.kind else {
             unreachable!()
         };
-        let mut clipboard = String::new();
+        let mut clipboard = crate::host::clipboard::Clip::default();
         let mut input = KeyInput {
             mods: Mods::default(),
             clipboard: &mut clipboard,

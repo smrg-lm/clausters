@@ -488,6 +488,67 @@ def test_a_sweep_becomes_the_crates_typed_selection():
     assert all("range" in u and "source" in u for u in under)
 
 
+def test_a_cut_removes_the_placement_and_undo_puts_it_back():
+    """A cut is an edit like any other: it goes through the crate, so it is
+    undoable, and what comes back is what the document decided."""
+    ed = editor()
+    host = _FakeHost()
+    ed.open(host)
+
+    clip = next(iter(ed._clips))
+    placed = ed._clips[clip]
+    at = placed.base + placed.member.offset
+    span = placed.member.length or 0.0
+    before = len(placed.owner.handles)
+    # A selection covering the whole clip: the placement leaves.
+    changed = ed.apply("/gui_event", [clip, SEQ, UNSTATED, "cut",
+                                      at * BEAT, span * BEAT])
+    assert changed
+    assert len(placed.owner.handles) == before - 1
+
+    # ...and the history has it, because it was an edit and not a gesture.
+    assert ed.can_undo
+    ed.undo()
+    assert len(placed.owner.handles) == before, "undo puts the placement back"
+
+
+def test_a_cut_across_a_clip_is_refused_with_its_reason():
+    """A selection cutting *through* a clip implies a new length for the
+    material under it, which is not a placement edit. The refusal says so
+    instead of doing nothing."""
+    ed = editor()
+    host = _FakeHost()
+    ed.open(host)
+
+    clip = next(iter(ed._clips))
+    placed = ed._clips[clip]
+    at = placed.base + placed.member.offset
+    span = placed.member.length or 0.0
+    before = len(placed.owner.handles)
+    changed = ed.apply("/gui_event", [clip, SEQ, UNSTATED, "cut",
+                                      at * BEAT, span * BEAT / 2.0])
+    assert not changed
+    assert len(placed.owner.handles) == before
+    _, _, reason = host.answers[-1]
+    assert reason and "material" in reason
+
+
+def test_a_sample_paste_is_refused_because_material_has_an_owner():
+    """The clipboard travels with the request, and this editor says what it is
+    not: an arrangement places elements, and a nameless block of audio has
+    neither a source nor a source's owner until the material half lands."""
+    ed = editor()
+    host = _FakeHost()
+    ed.open(host)
+
+    clip = next(iter(ed._clips))
+    changed = ed.apply("/gui_event", [clip, SEQ, UNSTATED, "paste", 0.0,
+                                      "samples", '{"content":{"kind":"samples"}}'])
+    assert not changed
+    _, _, reason = host.answers[-1]
+    assert reason and "samples" in reason
+
+
 def test_a_locate_moves_the_transport_and_the_lanes_cursor():
     ed = editor()
     host = _FakeHost()

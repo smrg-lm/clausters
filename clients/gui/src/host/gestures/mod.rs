@@ -318,6 +318,8 @@ mod element;
 mod focus;
 mod keys;
 mod nav;
+
+pub use keys::ClipVerb;
 mod press;
 mod wheel;
 
