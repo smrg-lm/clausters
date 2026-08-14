@@ -210,16 +210,30 @@ impl Gestures {
                 });
                 true
             }
-            (GestureStep::Select, interact::Coords::Time(axis)) => {
+            (
+                step @ (GestureStep::Select | GestureStep::SelectBox),
+                interact::Coords::Time(axis),
+            ) => {
                 if !axis.spans(cx) {
+                    return false;
+                }
+                // The second axis, where the plan asked for it *and* the view
+                // under it measures one. A `select_box` over a picture with one
+                // measured axis declines rather than degrading, so a plan can
+                // name both steps and get a rectangle where there is one to
+                // draw and the plain span where there is not.
+                let value = (step == GestureStep::SelectBox)
+                    .then(|| value_axis(host, ctx, frame, hit).filter(|v| v.body.contains(cx, cy)))
+                    .flatten();
+                if step == GestureStep::SelectBox && value.is_none() {
                     return false;
                 }
                 // The press collapses the shared selection to the sample under
                 // it; the drag sweeps from there. An element that sweeps a
                 // *rectangle* over that span -- a roll picking the notes inside
                 // it -- claims the press itself and asks for the selection
-                // (`Events::and_select`), so the container's plan is the plain
-                // time sweep it always was.
+                // (`Events::and_select`), so the container's plan is the sweep
+                // and never what is drawn in it.
                 let anchor = interact::sample_at(
                     axis.nav.start,
                     axis.nav.len,
@@ -227,10 +241,6 @@ impl Gestures {
                     axis.body.w as f64,
                     cx,
                 );
-                // ...and the second axis, where the view under it measures one:
-                // the press names a value as well as a sample, so a marquee
-                // that never leaves one height still reports the range it drew.
-                let value = value_axis(host, ctx, frame, hit).filter(|v| v.body.contains(cx, cy));
                 let anchor_v = value.map(|v| v.value_at(cy));
                 set_selection(host, out, def_id, id, anchor, anchor, None);
                 self.drag = Some(Drag::Select {

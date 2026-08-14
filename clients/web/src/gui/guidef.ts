@@ -120,7 +120,10 @@ export interface WidgetOptions {
      * `pianoroll` and a `timeruler`. A plan that consumes nothing falls
      * outward to the container around it; a table names only the modifiers it
      * changes (`{ drag: "pan", shift: "select" }`), and the vertical strip of
-     * a view always pans that axis whatever the table says.
+     * a view always pans that axis whatever the table says. The steps are
+     * `element`, `pan`, `select` (the time span), `select_box` (the same sweep
+     * restricted to the band of values it covered, declining where the picture
+     * measures only time), `locate` and `none`.
      */
     gestures?: Record<string, string>;
     [prop: string]: unknown;

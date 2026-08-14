@@ -528,6 +528,21 @@ pub enum GestureStep {
     /// the press and sweeps it itself, since nothing outside it can say what
     /// the rectangle caught.
     Select,
+    /// Sweep a selection **restricted on the container's second axis** — a
+    /// rectangle rather than a stripe, over a view that measures a value.
+    ///
+    /// A step of its own rather than a widening of [`GestureStep::Select`],
+    /// because a plain drag over a waveform means *this stretch of time* in
+    /// every editor there has ever been, and a marquee that also cut a band of
+    /// amplitudes out of it would be answering a question nobody asked. What is
+    /// a band of values good for is a script's business — gate this range,
+    /// copy only these peaks — so the script asks for it, which is the track's
+    /// own rule: a mode is a plan, not a state the host decides.
+    ///
+    /// It **declines** where the view under it measures no value, so
+    /// `"select_box select"` is the honest plan for a mixed stack: a rectangle
+    /// where the picture has two axes, the plain span where it has one.
+    SelectBox,
     /// Put the transport's cursor under the pointer (a timeline locate).
     Locate,
 }
@@ -538,6 +553,7 @@ impl GestureStep {
             "element" => GestureStep::Element,
             "pan" => GestureStep::Pan,
             "select" => GestureStep::Select,
+            "select_box" => GestureStep::SelectBox,
             "locate" => GestureStep::Locate,
             _ => return None,
         })

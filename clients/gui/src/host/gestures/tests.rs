@@ -790,21 +790,37 @@ fn waveform_press_and_drag_select_a_range() {
     assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
 }
 
-/// **A sweep with height restricts the selection in value**, and the range is
-/// in the element's own units — the number the cursor readout names at that
-/// height, never a pixel. The two halves land in different places on purpose:
-/// the span in the navigation group, which every linked view follows, and the
-/// range on the widget, because the views sharing a time axis measure different
-/// things vertically.
+/// **A plain drag over a waveform is the time span it has always been**, and
+/// the value band is a step a plan asks for.
+///
+/// The default is not a matter of taste: a drag on a waveform means *this
+/// stretch of time* in every editor there has ever been, and a marquee that
+/// also cut a band of amplitudes out of it would answer a question nobody
+/// asked. What a band is good for is the script's business, so the script names
+/// the step -- which is the D track's own rule about modes.
 #[test]
-fn a_marquee_with_height_restricts_the_selection_in_value() {
-    let mut host = host_from(
-        r#"{"type":"window","children":[
-            {"id":50,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
-    );
+fn a_marquee_restricts_in_value_only_where_the_plan_asks_for_it() {
+    let plain = r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#;
+    let mut host = host_from(plain);
     host.set_timeline_total(50, 1000);
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
+    // The default plan, swept with height: the span, and nothing else.
+    g.press(&mut host, &ctx, 400.0, 80.0, &mut || false);
+    let effects = g.drag_to(&mut host, &ctx, 600.0, 200.0);
+    let args = emitted_args(&effects, 50).expect("the sweep reports");
+    assert_eq!(args.len(), 3, "a plain drag is a time span: {args:?}");
+    let editor = host.widget_kind(1, 50).unwrap().editor().unwrap();
+    assert_eq!(editor.value_range(), None);
+
+    // The same sweep where the plan asked for the rectangle.
+    let boxed = r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2,
+             "gestures":{"drag":"select_box"}}]}"#;
+    let mut host = host_from(boxed);
+    host.set_timeline_total(50, 1000);
+    let mut g = Gestures::default();
     g.press(&mut host, &ctx, 400.0, 80.0, &mut || false);
     let effects = g.drag_to(&mut host, &ctx, 600.0, 200.0);
     assert!(has_emit_tag(&effects, 50, "selection"));
@@ -817,8 +833,8 @@ fn a_marquee_with_height_restricts_the_selection_in_value() {
     // the centre line to below it: a band inside [-1, 1], the higher edge
     // coming from the *upper* pixel.
     assert!(min > -1.0 && max < 1.0 && max > min, "{min}..{max}");
-    // The plain horizontal sweep that follows clears it: a new selection
-    // replaces the old one whole.
+    // A sweep along one height, under the same plan, clears it: a new selection
+    // replaces the old one whole rather than keeping a finished gesture's band.
     g.release(&mut host, &ctx, 600.0, 200.0);
     g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
     let effects = g.drag_to(&mut host, &ctx, 600.0, 150.0);
@@ -826,6 +842,31 @@ fn a_marquee_with_height_restricts_the_selection_in_value() {
     assert_eq!(args.len(), 3, "one axis is the two numbers it always was");
     let editor = host.widget_kind(1, 50).unwrap().editor().unwrap();
     assert_eq!(editor.value_range(), None, "the old range does not linger");
+}
+
+/// **`select_box` declines where the picture has one measured axis**, so a plan
+/// may name both steps and get a rectangle where there is one to draw and the
+/// plain span where there is not -- the mixed stack an editor actually has.
+#[test]
+fn the_box_step_falls_through_to_the_plain_sweep() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":51,"type":"signal","view":"spectrogram","data":[0.0,0.5,-0.5,1.0],
+             "fft_size":4,"gestures":{"drag":"select_box select"}}]}"#,
+    );
+    host.set_timeline_total(51, 1000);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    g.press(&mut host, &ctx, 400.0, 80.0, &mut || false);
+    let effects = g.drag_to(&mut host, &ctx, 600.0, 200.0);
+    let args = emitted_args(&effects, 51).expect("the sweep reports");
+    assert_eq!(
+        args.len(),
+        3,
+        "the box step declined, the span ran: {args:?}"
+    );
+    let key = host.timeline_key(51).unwrap();
+    assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
 }
 
 /// A view whose vertical measures **frequency** has a second axis and it is not

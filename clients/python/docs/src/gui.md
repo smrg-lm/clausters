@@ -551,10 +551,21 @@ waveform(data=take, gestures={"drag": "pan", "shift": "select"})
 ```
 
 The steps are `element` (hand the press to whatever is under the cursor, which
-may decline), `pan`, `select`, `locate` and `none`. The order is the point:
-`"element locate"` is a lane — grab the clip under the cursor, and if there is
-none, locate. A plan that consumes nothing falls outward to the container
-around it.
+may decline), `pan`, `select`, `select_box`, `locate` and `none`. The order is
+the point: `"element locate"` is a lane — grab the clip under the cursor, and
+if there is none, locate. A plan that consumes nothing falls outward to the
+container around it.
+
+`select` sweeps the **time span**; `select_box` sweeps the same span
+**restricted to the band of values** it covered, which is a rectangle rather
+than a stripe. The second one declines where the picture has only one measured
+axis, so `"select_box select"` is the plan for a stack of heavy views: a
+rectangle on a waveform, whose y is amplitude, and the plain span on a
+spectrogram, whose y is frequency — a range of *bins*, which is a different
+field of a selection and a gesture that does not exist yet. A plain drag stays
+a time span everywhere on purpose: that is what a drag over a waveform means in
+every editor, and what a band of values is *for* is your business, so you name
+the step.
 
 ## The instrument without the script: a bundle
 

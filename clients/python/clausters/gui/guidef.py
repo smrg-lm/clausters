@@ -142,9 +142,13 @@ way over a ``waveform``, a ``track`` lane, a ``pianoroll`` and a ``timeruler``.
 A ``gestures`` prop replaces that mapping, keyed by modifier (``drag``
 for the plain drag, ``shift``, ``ctrl``, ``alt``), each value an ordered plan
 of steps: ``element`` (hand the press to whatever is under the cursor — a clip,
-a note, a box — which may decline), ``pan``, ``select``, ``locate``, ``none``::
+a note, a box — which may decline), ``pan``, ``select`` (sweep the time span),
+``select_box`` (the same sweep restricted to the band of values it covered — a
+rectangle, which declines where the picture measures only time), ``locate``,
+``none``::
 
     waveform(data=take, gestures={"drag": "pan", "shift": "select"})
+    waveform(data=take, gestures={"drag": "select", "ctrl": "select_box select"})
 
 A plan that consumes nothing falls outward to the container around it. The
 defaults are per kind (``{"drag": "element locate", "shift": "pan"}`` on a

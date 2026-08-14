@@ -5184,3 +5184,25 @@ to the `"selection"` event and sent only when there are two, so a script reading
 the two-number form it has always had keeps working, and an empty or inverted
 pair means *no restriction* — the same convention a non-positive length already
 uses on the time axis.
+
+**And it is a gesture step, not what a plain drag does.** This was shipped the
+other way round for exactly one afternoon, and an eye pass killed it: with the
+band on the plain drag, sweeping a waveform came back as a rectangle while the
+spectrogram below it — the picture that actually has two measured axes — came
+back as a stripe, which reads as the two views having been swapped. Nothing was
+swapped. A drag over a waveform means *this stretch of time* in every editor
+there has ever been, and what a band of amplitudes is *for* — gate this range,
+copy only these peaks — is the script's business rather than the host's guess.
+
+So `select` sweeps the span and `select_box` sweeps the rectangle, and the
+second **declines** where the picture measures only time: one binding
+(`"select_box select"`) draws a rectangle where there is one to draw and the
+plain span where there is not, and it keeps working unchanged the day a
+spectrogram answers it with a range of bins. That a spectrogram wants *both*
+selections — the temporal sweep and the spectral rectangle — is the case a
+two-step plan per modifier already expresses, which is what makes this the
+right shape rather than a workaround for the missing half.
+
+The general rule it leaves behind is worth more than the fix: **a capability
+whose sibling does not exist yet must not be the default gesture.** Until the
+pair is complete, the half that shipped reads as belonging to the other view.

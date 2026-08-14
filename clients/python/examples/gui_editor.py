@@ -14,11 +14,18 @@ the samples never ride OSC):
 Both views navigate identically: **wheel** zooms toward the cursor (the peak
 pyramid cross-fades, so zooming never pops), **Shift+drag** pans, **plain drag
 selects** — the host emits ``/gui_event <id> "selection" <start> <len>`` (in
-samples) as you drag; ``r`` resets. On the waveform a drag with **height** also
-restricts the selection to a band of amplitudes, drawn as the rectangle it is
-and reported as two further arguments; the spectrogram's own second axis is a
-range of frequency *bins*, which is a different field of a selection and a
-gesture that does not exist yet — so a sweep there stays a plain time span.
+samples) as you drag; ``r`` resets.
+
+**Ctrl+drag** asks for the other selection: the span restricted to the band of
+values the sweep covered, drawn as the rectangle it is and reported as two
+further arguments. Both views carry the same plan (``"select_box select"``), and
+the step declines where the picture has one measured axis — so today the
+rectangle appears on the waveform, whose y is amplitude, while the spectrogram
+falls through to the plain span, because its y is frequency and a selection of
+frequencies is a range of *bins*: a different field of a selection, and a
+gesture this host does not have yet. A plain drag stays a time span on both, on
+purpose.
+
 The two views are deliberately **not linked** here, so each one's selection is
 its own (see ``gui_linked.py`` for the shared-axis case). The **playhead** tracks what you hear: the
 same render is looped by a ``PlayBuf`` synth and anchored each pass with the
@@ -148,11 +155,23 @@ server.sync()
 # reports back as ``selection`` events (drained below).
 
 # %%
+#: The gesture plan both views carry: a plain drag sweeps the **time span**, and
+#: Ctrl+drag asks for the rectangle -- the span restricted to the band of values
+#: the sweep covered. `select_box` **declines** where the picture has one
+#: measured axis and the plan falls through to `select`, so the same chord draws
+#: a rectangle on the waveform (whose y is amplitude) and a plain span on the
+#: spectrogram (whose y is frequency, a range of *bins* rather than of values --
+#: its own gesture, and not one this host has yet). One binding, and the day the
+#: spectral sweep exists it answers here with nothing to rewire.
+SELECT_PLAN = {"drag": "select", "ctrl": "select_box select"}
+
+
 def scene(path: str) -> dict:
     return window(
-        waveform(name="wave", path=path, channels=2, sample_rate=SR),
+        waveform(name="wave", path=path, channels=2, sample_rate=SR,
+                 gestures=SELECT_PLAN),
         spectrogram(name="spect", path=path, channels=2, sample_rate=SR,
-                    window_size=1024, db_floor=-90.0),
+                    window_size=1024, db_floor=-90.0, gestures=SELECT_PLAN),
         title="Editor: waveform + spectrogram", w=960, h=640, layout="col",
     )
 

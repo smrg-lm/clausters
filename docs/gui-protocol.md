@@ -285,12 +285,19 @@ The rule belongs to the navigation group rather than to any one view, which is
 why it holds for a spectrogram laid over a waveform too: they share the
 selection.
 
-**A selection may also be restricted on the y axis.** A sweep with height over a
-view that measures a value carries `sel_min`/`sel_max` as well — the band of
-values it covered, in the axis' own units, never in pixels — and the event
-grows by exactly those two numbers: `"selection" start len min max`. A sweep
-that stayed at one height, or one over an axis that measures no value, reports
-the two numbers it always did, so a reader of the old form keeps working. An
+**A selection may also be restricted on the y axis** — under the `select_box`
+gesture step, never under a plain drag. A sweep with height over a view that
+measures a value carries `sel_min`/`sel_max` as well — the band of values it
+covered, in the axis' own units, never in pixels — and the event grows by
+exactly those two numbers: `"selection" start len min max`. A sweep that stayed
+at one height, or one whose plan asked for a span, reports the two numbers it
+always did, so a reader of the old form keeps working.
+
+**A plain drag stays a time span**, and that is a decision rather than a
+default waiting to be changed: a drag over a waveform means *this stretch of
+time* in every editor there has ever been, and what a band of amplitudes is
+good for — gate this range, copy only these peaks — is the script's business.
+So the script names the step, per modifier, exactly as it names any other. An
 empty or inverted pair (`sel_max <= sel_min`, the default) is *no restriction*,
 the same convention `sel_len <= 0` uses on the other axis.
 
@@ -429,7 +436,8 @@ modifier (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value a
 | --- | --- |
 | `element` | Hands the press to whatever is under the cursor — the widget the pointer found, or the clip, note or box the container drew there. It may decline (empty space), and the plan goes on |
 | `pan` | Pans the container's axis: time on a `field`, the plane on a `plane` |
-| `select` | Sweeps the container's **shared time selection** on a timeline, restricted in value where the view under it measures one (a rectangle in time x pitch on a `notes` element, which also picks its notes; in time x amplitude on a trace). A selection that belongs to *one widget* — a patcher's box marquee — is not this step: that widget claims the press under `element` and sweeps it itself |
+| `select` | Sweeps the container's **shared time selection** on a timeline — a span, whatever the view under it measures. A selection that belongs to *one widget* — a patcher's box marquee, a `notes` element picking the notes inside its rectangle — is not this step: that widget claims the press under `element` and sweeps it itself |
+| `select_box` | The same sweep **restricted on the second axis**: a rectangle over a view that measures a value, reported as the two further arguments of `"selection"`. It **declines** where the picture has one measured axis, so `"select_box select"` is the plan for a mixed stack — a rectangle where there is one to draw, the plain span where there is not |
 | `locate` | Puts the transport's cursor under the pointer and emits `"locate"` |
 | `none` | Nothing |
 
@@ -437,7 +445,9 @@ A container may also name **no** step for a modifier, which is not the same as `
 
 The order is the point. `"element locate"` is a lane — grab the clip under the
 cursor, and if there is none, locate; `"select"` is a waveform, which has
-nothing on its axis to grab. A plan that consumes nothing falls **outward** to
+nothing on its axis to grab; `"select_box select"` is a stack of heavy views,
+where the same chord draws a rectangle on the pictures that have two measured
+axes and a plain span on the ones that do not. A plan that consumes nothing falls **outward** to
 the container around it, which is how Shift+drag on a patcher's empty canvas
 pans the workspace the patcher sits in. The defaults are the behavior described
 throughout this chapter (`{"drag": "element locate", "shift": "pan"}` on a
