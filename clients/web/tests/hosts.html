@@ -241,14 +241,19 @@
         }
 
         // Each leg reaches its own engine: A's bound knob drives A's node and
-        // B's node never hears it. The knob's band is y 44..154.
+        // B's node never hears it. The knob's band is y 44..154, and the dial
+        // is the disc drawn in the middle of it -- only the disc turns, so the
+        // press goes on the canvas's own centre line rather than on the 480 the
+        // def asks for: these canvases are the document's, and the flex row
+        // gives them whatever half a column is.
         const beforeA = (await a.synth.info()).controls.freq;
         const beforeB = (await b.synth.info()).controls.freq;
-        pointer(a.canvas, "pointerdown", 240 * scale, 100 * scale, 1);
+        const dialA = a.canvas.width / 2;
+        pointer(a.canvas, "pointerdown", dialA, 100 * scale, 1);
         await sleep(60);
-        pointer(a.canvas, "pointermove", 240 * scale, 60 * scale, 1);
+        pointer(a.canvas, "pointermove", dialA, 60 * scale, 1);
         await sleep(60);
-        pointer(a.canvas, "pointerup", 240 * scale, 60 * scale, 0);
+        pointer(a.canvas, "pointerup", dialA, 60 * scale, 0);
 
         let afterA = beforeA;
         for (let i = 0; i < 40 && afterA === beforeA; i++) {
@@ -272,11 +277,12 @@
           throw new Error("closing host A disturbed host B");
         }
         const beforeClose = (await b.synth.info()).controls.freq;
-        pointer(b.canvas, "pointerdown", 240 * scale, 100 * scale, 1);
+        const dialB = b.canvas.width / 2;
+        pointer(b.canvas, "pointerdown", dialB, 100 * scale, 1);
         await sleep(60);
-        pointer(b.canvas, "pointermove", 240 * scale, 60 * scale, 1);
+        pointer(b.canvas, "pointermove", dialB, 60 * scale, 1);
         await sleep(60);
-        pointer(b.canvas, "pointerup", 240 * scale, 60 * scale, 0);
+        pointer(b.canvas, "pointerup", dialB, 60 * scale, 0);
         let afterClose = beforeClose;
         for (let i = 0; i < 40 && afterClose === beforeClose; i++) {
           await sleep(50);
