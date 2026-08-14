@@ -24,7 +24,8 @@ with it (they share one axis).
 
 Drag a clip (move) or its edge (resize) and, with ``follow=True``, the
 composition is re-scheduled from the playhead — you hear it where you dropped it.
-**undo** and **redo** walk that back and forward: the history is the shared
+**undo** and **redo** walk that back and forward — the two buttons, or
+**Ctrl+Z** / **Ctrl+Shift+Z** over the window. The history is the shared
 crate's, beside the document it inverts, so it is one history however many
 surfaces edit the piece.
 The lanes' playhead sweeps the clips with the engine clock, and the drag snaps to
@@ -254,6 +255,9 @@ win["rewind"].on_event(press(lambda: editor.locate(0.0)))
 # it was and the window is told so without being redefined.
 win["undo"].on_event(press(editor.undo))
 win["redo"].on_event(press(editor.redo))
+# The keyboard reaches the same history without either button: the host sends
+# Ctrl+Z as an ``"undo"`` addressed to the *window* -- undo is aimed at no
+# place under the cursor -- and `Editor.apply` answers it in the loop below.
 editor.locate(0.0)                              # the cursor waits at the top
 print("press play — click a lane's ruler (or its empty space) to move the cursor")
 

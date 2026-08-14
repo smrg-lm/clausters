@@ -164,6 +164,7 @@ The **edit-back payloads**:
 | `"wire"` | `src_box outlet dst_box inlet` (ports by name; a rate mismatch is refused at the gesture) | a patcher cord drawn `outlet -> inlet` |
 | `"move"` | `index x y` (box index; canvas units) | a patcher box dragged — one payload per moved box, so the driver owns the geometry |
 | `"locate"` | `position` (timeline units) | a lane's time ruler (or its empty space) clicked — the transport is being seeked there |
+| `"undo"` / `"redo"` | — | a window shortcut (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). **Addressed to the window, not to a widget**: the id is the window's, the way `/gui_closed` names one. The host holds no history — the log lives with the document — so this is a *request*, and the owner answers with the state that now holds, exactly as it answers a drag |
 | `"selection"` | `start len` (samples, always whole) | a selection dragged on a timeline view |
 | `"view"` | `start len` (samples), or `x y zoom` on a `plane` | the navigation window zoomed or panned — the timeline group's shared window, or a 2D workspace's plane |
 | `"view_y"` | `start len` (0..1) | the vertical display window zoomed or panned |

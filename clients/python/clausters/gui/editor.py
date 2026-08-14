@@ -449,6 +449,15 @@ class Editor:
         seq, against = int(args[1]), int(args[2]) if len(args) > 2 else 0
         args = (args[0], *args[3:])
         self._corrections = []
+        # The window's own shortcuts (Ctrl+Z / Ctrl+Shift+Z), which the host
+        # addresses to the **window** rather than to a widget: undo is not
+        # aimed at anything under the cursor. They are answered here rather
+        # than routed, because a history step is not an edit to the tree -- it
+        # is a walk through the one the crate keeps.
+        if args[1] in ("undo", "redo") and int(args[0]) == self._window:
+            (self.redo if args[1] == "redo" else self.undo)()
+            self._acknowledge(seq)
+            return True
         # Only what this editor draws is this editor's to answer. A poll loop
         # may be shared with a second editor, and answering for its window would
         # retire a pending edit nobody applied -- the host would adopt a picture

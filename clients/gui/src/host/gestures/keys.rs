@@ -16,8 +16,10 @@
 
 use super::super::Host;
 use super::super::interact::Hit;
+use clausters_core::osc::OscType;
+
 use super::super::widget::element::{Key, KeyInput, Mods};
-use super::effects::{emit_view, redraw_all};
+use super::effects::{emit, emit_view, redraw_all};
 use super::nav::{freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
 use super::{GestureCtx, GestureEffect, Gestures, element, focus};
 
@@ -114,6 +116,32 @@ impl Gestures {
         host.sync_track_totals_keeping_view();
         out.push(GestureEffect::Redraw(ctx.def_id));
         Some(out)
+    }
+
+    /// Undo or redo over a window: report it to whoever owns the document.
+    ///
+    /// **The host holds no history** — the log lives with the document, in
+    /// `clausters-document`, because a log a view keeps sees only the gestures
+    /// *it* made. So this is a route and not an action: it emits
+    /// `/gui_event <window_id> <seq> <version> "undo"|"redo"` and the owner
+    /// answers with the state that now holds, exactly as it answers a drag.
+    ///
+    /// It is addressed to the **window** rather than to a widget because that
+    /// is what it is scoped to: undo is not addressed to a place under the
+    /// cursor, which is why it is not a step in the gesture plan — a
+    /// `GesturePlan`'s steps each consume a press *somewhere*. `/gui_closed`
+    /// already names a window the same way.
+    pub fn history(&self, host: &mut Host, ctx: &GestureCtx, redo: bool) -> Vec<GestureEffect> {
+        let mut out = Vec::new();
+        let tag = if redo { "redo" } else { "undo" };
+        emit(
+            host,
+            &mut out,
+            ctx.def_id,
+            ctx.def_id,
+            vec![OscType::String(tag.into())],
+        );
+        out
     }
 
     /// `R` over a window: reset every navigable view's axes — a timeline's

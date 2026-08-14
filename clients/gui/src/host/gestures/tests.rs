@@ -2978,3 +2978,37 @@ fn a_declined_press_falls_through_to_the_plane() {
     assert!(panned != 0.0, "the plane never got the press back");
     crate::unregister("test_pad");
 }
+
+/// Undo and redo leave the window as a report, not as an action: the host holds
+/// no history, so the whole of its part is naming the window and the verb.
+///
+/// Addressed to the **window** rather than to a widget, which is the correction
+/// the milestone needed — a gesture-plan step consumes a press somewhere, and
+/// undo is addressed to no place at all.
+#[test]
+fn undo_and_redo_leave_the_window_as_a_report() {
+    let mut host = lane_host();
+    let g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+
+    let effects = g.history(&mut host, &ctx, false);
+    assert!(has_emit_tag(&effects, 1, "undo"), "named by the window id");
+    assert!(g.history(&mut host, &ctx, true).iter().any(|e| matches!(
+        e,
+        GestureEffect::Emit { widget_id: 1, args, .. }
+            if args.first() == Some(&OscType::String("redo".into()))
+    )));
+
+    // Stamped like any other edit-back, so the owner's acknowledgement can name
+    // it and the two do not need a second rule between them.
+    let stamps: Vec<i32> = g
+        .history(&mut host, &ctx, false)
+        .iter()
+        .filter_map(|e| match e {
+            GestureEffect::Emit { seq, .. } => Some(*seq),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(stamps.len(), 1);
+    assert!(stamps[0] > 0, "a real stamp, not the reserved zero");
+}

@@ -714,6 +714,17 @@ impl ApplicationHandler<UserEvent> for App {
                 }
                 match event.logical_key {
                     Key::Named(NamedKey::Escape) => self.user_close(def_id, event_loop),
+                    // Undo and redo are the window's, not a widget's: they are
+                    // addressed to the document behind it rather than to
+                    // whatever is under the cursor. Ctrl+Shift+Z redoes, which
+                    // is the spelling that works on a keyboard with no Y where
+                    // an English one has one.
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("z") && self.ctrl(def_id) => {
+                        self.history(def_id, self.shift(def_id))
+                    }
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("y") && self.ctrl(def_id) => {
+                        self.history(def_id, true)
+                    }
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         self.reset_timelines(def_id)
                     }

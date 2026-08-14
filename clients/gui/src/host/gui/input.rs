@@ -209,6 +209,29 @@ impl App {
         true
     }
 
+    /// Undo or redo over a window: the route to whoever owns the document.
+    /// The host keeps no history, so this only reports (see
+    /// [`Gestures::history`](crate::host::gestures::Gestures::history)).
+    pub(super) fn history(&mut self, def_id: i32, redo: bool) {
+        let ctx = self.gesture_ctx(def_id);
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return;
+        };
+        let effects = ws.gestures.history(&mut self.host, &ctx, redo);
+        self.apply_gesture_effects(effects);
+    }
+
+    /// Whether a modifier is held on window `def_id`, for a shortcut the
+    /// element machinery never sees (it takes its modifiers from the context).
+    pub(super) fn ctrl(&self, def_id: i32) -> bool {
+        self.windows.get(&def_id).is_some_and(|ws| ws.ctrl)
+    }
+
+    /// As [`Self::ctrl`], for Shift.
+    pub(super) fn shift(&self, def_id: i32) -> bool {
+        self.windows.get(&def_id).is_some_and(|ws| ws.shift)
+    }
+
     pub(super) fn reset_timelines(&mut self, def_id: i32) {
         let ctx = self.gesture_ctx(def_id);
         let Some(ws) = self.windows.get_mut(&def_id) else {

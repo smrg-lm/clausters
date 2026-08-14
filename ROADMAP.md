@@ -51,10 +51,12 @@ invertible, the model is the crate's, and an edit costs the edit.*
   and an edit runs in place, rolled back by its own inverse rather than
   protected by a copy of the tree.
 
-- ⬜ **H2 — Undo and redo from the hand.** The `Editor` drives the crate's log
-  (`clausters._native.Log`), and the requirement it adds to every later
-  milestone: an editable widget is not closed until its id→object route is
-  covered.
+- ✅ **H2 — Undo and redo from the hand.** Done 2026-08-14. The `Editor` drives
+  the crate's log over a `Document` held in step with the arrangement, and the
+  grid moved into the crate with it — the editor states where the hand put a
+  clip and `Rules { quant }` decides. Reached from a button or from Ctrl+Z,
+  which the host addresses to the **window**: a gesture-plan step consumes a
+  press somewhere, and undo is aimed at no place at all.
 
 - ⬜ **The whole-loop example** *(closes H2 under the project's definition of
   done; likely `clients/python/examples/gui_daw.py` rather than growing

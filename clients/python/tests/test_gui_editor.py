@@ -1061,3 +1061,40 @@ def test_an_undo_tells_the_host_what_to_draw_instead():
     assert ed.undo()
     corrected = {wid for _seq, sets in host.acks for wid, _props in sets}
     assert roll["id"] in corrected, "the undo answered with a value, not only a stamp"
+
+
+def test_the_windows_undo_shortcut_reaches_the_history():
+    """The host addresses undo to the **window**, not to a widget — undo is
+    aimed at no place under the cursor, which is why it is not a gesture-plan
+    step. The editor answers it here rather than routing it, because a history
+    step is a walk through the log and not an edit to the tree."""
+    ed = editor(quant=0.25)
+    host = _FakeHost()
+    ed.open(host)
+    roll = clips(lanes(ed.draw())[1])[0]
+    member = ed._clips[roll["id"]].member
+    start = member.offset
+
+    ed.apply(*clip_event(roll["id"], 5 * BEAT, 2 * BEAT))
+    moved = member.offset
+    assert moved != pytest.approx(start)
+
+    win = ed._window
+    assert ed.apply("/gui_event", [win, SEQ, UNSTATED, "undo"])
+    assert member.offset == pytest.approx(start)
+    assert ed.apply("/gui_event", [win, SEQ, UNSTATED, "redo"])
+    assert member.offset == pytest.approx(moved)
+
+
+def test_another_windows_shortcut_is_not_this_editors_to_answer():
+    """A poll loop may be shared. Answering a window this editor did not open
+    would step a history nobody asked it to."""
+    ed = editor(quant=0.25)
+    host = _FakeHost()
+    ed.open(host)
+    roll = clips(lanes(ed.draw())[1])[0]
+    ed.apply(*clip_event(roll["id"], 5 * BEAT, 2 * BEAT))
+    moved = ed._clips[roll["id"]].member.offset
+
+    assert not ed.apply("/gui_event", [ed._window + 999, SEQ, UNSTATED, "undo"])
+    assert ed._clips[roll["id"]].member.offset == pytest.approx(moved)

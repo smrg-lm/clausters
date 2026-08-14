@@ -214,6 +214,14 @@ impl WebApp {
             return;
         };
         let effects = match key {
+            // The window's own shortcuts, addressed to the document behind it
+            // rather than to whatever is under the cursor.
+            Key::Character(c) if c.eq_ignore_ascii_case("z") && ctx.ctrl => {
+                slot.gestures.history(&mut self.host, &ctx, ctx.shift)
+            }
+            Key::Character(c) if c.eq_ignore_ascii_case("y") && ctx.ctrl => {
+                slot.gestures.history(&mut self.host, &ctx, true)
+            }
             Key::Character(c) if c.eq_ignore_ascii_case("r") => {
                 slot.gestures.reset_timelines(&mut self.host, &ctx)
             }

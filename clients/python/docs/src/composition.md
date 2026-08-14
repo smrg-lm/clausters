@@ -295,6 +295,11 @@ Wire them to two buttons the way the transport is wired, by name:
 win["undo"].on_event(lambda v: editor.undo() if v == 1 else None)
 ```
 
+The keyboard needs no wiring at all: **Ctrl+Z** and **Ctrl+Shift+Z** over the
+window reach the same history, because the host sends them as an `"undo"`
+addressed to the *window* rather than to a widget — undo is aimed at no place
+under the cursor — and `Editor.apply` answers it like any other event.
+
 **Why the history is not kept here** is the whole reason it is worth explaining.
 A log an editor keeps sees only the gestures *that editor* made — so a script
 that edits the arrangement, a second view on the same piece, or a re-render
