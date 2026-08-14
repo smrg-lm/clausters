@@ -465,7 +465,7 @@ def size_then_fill(fn, *args) -> bytes:
         return b""
     out = (ctypes.c_ubyte * need)()
     n = fn(*args, out, need)
-    return bytes(out[:n])
+    return ctypes.string_at(out, n)
 
 
 def as_u8(data: bytes):
@@ -489,7 +489,7 @@ def _json_call(fn, payload: dict, what: str) -> dict:
         raise ValueError(f"{what}: the core could not read the request")
     out = (ctypes.c_ubyte * need)()
     n = fn(ctypes.cast(inp, u8p), len(data), out, need)
-    result = json.loads(bytes(out[:n]).decode("utf-8"))
+    result = json.loads(ctypes.string_at(out, n))
     if "error" in result:
         raise ValueError(result["error"])
     return result
@@ -574,7 +574,7 @@ def compile_patch(patch: dict) -> dict:
         raise ValueError("patch is not valid JSON for the compiler")
     out = (ctypes.c_ubyte * need)()
     n = fn(ctypes.cast(inp, u8p), len(data), out, need)
-    result = json.loads(bytes(out[:n]).decode("utf-8"))
+    result = json.loads(ctypes.string_at(out, n))
     if "error" in result:
         raise ValueError(result["error"])
     return result
@@ -631,7 +631,7 @@ def document_apply(document: dict, intent: dict, *, against=None, quant: float =
         raise ValueError("the document or the intent is not valid JSON for the crate")
     out = (ctypes.c_ubyte * need)()
     n = fn(doc_ptr, doc_len, int_ptr, int_len, ag_ptr, ag_len, float(quant), out, need)
-    return json.loads(bytes(out[:n]).decode("utf-8"))
+    return json.loads(ctypes.string_at(out, n))
 
 
 def document_resolve(document: dict, selection: dict, *, frames_per_beat: float,
@@ -662,7 +662,7 @@ def document_resolve(document: dict, selection: dict, *, frames_per_beat: float,
         raise ValueError("the document or the selection is not valid JSON for the crate")
     out = (ctypes.c_ubyte * need)()
     n = fn(*args, out, need)
-    return json.loads(bytes(out[:n]).decode("utf-8"))
+    return json.loads(ctypes.string_at(out, n))
 
 
 class Log:
@@ -840,7 +840,7 @@ class Log:
             raise ValueError(error)
         out = (ctypes.c_ubyte * need)()
         n = fn(self._handle, *args, out, need)
-        return json.loads(bytes(out[:n]).decode("utf-8"))
+        return json.loads(ctypes.string_at(out, n))
 
     def _step(self, fn, document: dict) -> "dict | None":
         result = self._sized(
@@ -855,7 +855,7 @@ class Log:
             return None
         out = (ctypes.c_ubyte * need)()
         n = fn(self._handle, out, need)
-        return bytes(out[:n]).decode("utf-8")
+        return ctypes.string_at(out, n).decode("utf-8")
 
 
 def _text(value: str) -> tuple:
@@ -1381,7 +1381,7 @@ class WsClient:
         ms = max(1, int(timeout * 1000))
         n = self._lib.clausters_ws_recv(self._handle, self._buf, len(self._buf), ms)
         if n > 0:
-            return bytes(self._buf.raw[:n])
+            return ctypes.string_at(self._buf, n)
         if n == -2:
             raise ConnectionError(_ws_error(self._lib) or "WebSocket closed")
         return None  # 0 = timeout (or -3 oversize, impossible at 64 KiB for OSC)
