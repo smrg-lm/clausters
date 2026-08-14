@@ -47,9 +47,11 @@
 
 pub mod intent;
 pub mod log;
+pub mod selection;
 
 pub use intent::{Against, Intent, Outcome, Rules, apply};
 pub use log::{Entry, Log, MemorySpill, Spill, Step, apply_logged};
+pub use selection::{BinRange, Mask, Selection, ValueRange};
 
 use serde::{Deserialize, Serialize};
 
