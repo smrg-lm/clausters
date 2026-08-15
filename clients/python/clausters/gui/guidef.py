@@ -345,7 +345,8 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
            retention: float | None = None,
            base_bucket: int | None = None, navigable: bool | None = None,
            selectable: bool | None = None, editable: bool | None = None,
-           overlay: bool | None = None, axes: dict | None = None, label: str | None = None,
+           overlay: bool | None = None, measure: str | None = None,
+           axes: dict | None = None, label: str | None = None,
            color: str | None = None, id: int | None = None, **props) -> dict:
     """**Every view of a signal**, as the one element they are: a presentation
     of a source, with the capabilities offered over it.
@@ -354,6 +355,15 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       time), ``"spectrum"`` (magnitude against frequency), ``"spectrogram"``
       (the STFT, magnitude against time *and* frequency) or ``"phase"`` (the
       goniometer of a stereo pair).
+    - ``measure`` — **what the picture measures**: ``"peak"`` (the default, the
+      min/max envelope the signal reached) or ``"rms"`` (the symmetric body of
+      the level it held, drawn in the body color role). It is a factor of the
+      view rather than a widget of its own, which is what makes the classic
+      editor picture a *stack*: an ``"rms"`` element over a plain one on the
+      same axes, each drawn by the same renderer and neither knowing the other
+      is there. A source whose peak cache was built before the measure existed
+      draws no body rather than a flat line of zeros.
+
     - the **source** — ``bus`` (with ``rate``) is forward-only, read live;
       ``data``/``blob``/``buffer``/``path``/``cache`` are addressable samples,
       which is what lets a view navigate, slice and select. ``channels``
@@ -391,7 +401,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        retention=retention,
                        bus=bus, rate=rate, channels=channels, base_bucket=base_bucket,
-                       label=label, color=color)
+                       measure=measure, label=label, color=color)
     for key, flag in (("navigable", navigable), ("selectable", selectable),
                       ("editable", editable), ("overlay", overlay)):
         if flag is not None:
@@ -632,7 +642,8 @@ def menu(options=(), *, index: int | None = None, label: str | None = None,
 
 def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
              path: str | None = None, cache: str | None = None, channels: int | None = None,
-             base_bucket: int | None = None, overlay: bool | None = None, ruler: str | None = None,
+             base_bucket: int | None = None, overlay: bool | None = None,
+             measure: str | None = None, ruler: str | None = None,
              ruler_y: str | None = None, bit_depth: int | None = None,
              min: float | None = None, max: float | None = None,
              sample_rate: float | None = None, tempo: float | None = None,
@@ -664,6 +675,11 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     ``channels`` is the interleaved channel count of ``path``/``data``/``blob``
     (default 1): **every** channel is kept and drawn — stacked lanes sharing the
     time axis by default, or per-color overlaid traces with ``overlay=True``.
+
+    ``measure`` chooses what the columns measure — ``"peak"`` (the default
+    envelope) or ``"rms"`` (the level body). Two `waveform` views of one source
+    on the same axes, one of each, are the classic editor picture as a **stack**
+    (see `signal`).
     ``base_bucket`` sets the peak-pyramid bucket size (default 256); for ``path``
     it also keys the sibling cache the host writes beside the file.
 
@@ -737,7 +753,8 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     stays per-view."""
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
-                       channels=channels, base_bucket=base_bucket, color=color)
+                       channels=channels, base_bucket=base_bucket, measure=measure,
+                       color=color)
     extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
                        min=min, max=max,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
@@ -837,7 +854,8 @@ def meter(bus: int = 0, *, rate: str = "audio", min: float | None = None,
 
 
 def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
-          overlay: bool | None = None, window_ms: float | None = None,
+          overlay: bool | None = None, measure: str | None = None,
+          window_ms: float | None = None,
           trigger: float | None = None, hold: bool | None = None, min: float | None = None,
           max: float | None = None, ruler: "bool | str | None" = None,
           ruler_y: "bool | str | None" = None, label: str | None = None, color: str | None = None,
@@ -867,7 +885,7 @@ def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     bipolar ``-1``/``1``).
     """
     extra = _drop_none(channels=channels, window_ms=window_ms,
-                       trigger=trigger, label=label, color=color)
+                       trigger=trigger, measure=measure, label=label, color=color)
     for key, flag in (("hold", hold), ("overlay", overlay)):
         if flag is not None:
             extra[key] = 1 if flag else 0
@@ -1056,7 +1074,8 @@ def _flat_osc(osc) -> list:
 def plot(*, data=None, blob: int | None = None,
                  path: str | None = None, cache: str | None = None,
                  buffer: int | None = None, channels: int | None = None, view: str | None = None,
-                 overlay: bool | None = None, sample_rate: float | None = None,
+                 overlay: bool | None = None, measure: str | None = None,
+                 sample_rate: float | None = None,
                  min: float | None = None, max: float | None = None, ruler: str | None = None,
                  ruler_y: str | None = None, fft_size: int | None = None,
                  db_floor: float | None = None, db_ceil: float | None = None,
@@ -1108,7 +1127,7 @@ def plot(*, data=None, blob: int | None = None,
                        blob=blob, path=path, cache=cache, buffer=buffer,
                        channels=channels, fft_size=fft_size,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
-                       label=label, color=color)
+                       measure=measure, label=label, color=color)
     extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
                        min=min, max=max))
     if overlay is not None:

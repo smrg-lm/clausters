@@ -93,6 +93,12 @@ theme_roles! {
     trace = [0.40, 0.85, 0.62, 1.0];
     /// The brighter trace of the phase scope's beam.
     trace_bright = [0.45, 0.90, 0.66, 1.0];
+    /// The **measured body** drawn inside a signal's envelope (an RMS layer).
+    /// Translucent by role rather than by the layer's own `opacity`: a body is
+    /// read *against* the envelope it sits in, so it has to let the peaks
+    /// through wherever the two overlap. A stack's own `opacity` still applies
+    /// on top of it.
+    trace_body = [0.85, 0.94, 0.70, 0.62];
     /// A curve's grabbable break-point.
     point = [0.90, 0.93, 0.95, 1.0];
 

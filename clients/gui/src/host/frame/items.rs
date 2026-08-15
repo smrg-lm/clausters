@@ -118,6 +118,8 @@ pub(super) enum TimelineKind {
         /// The amplitude window, as the element stated it.
         amp: (f64, f64),
         overlay: bool,
+        /// What each column measures, as the element stated it.
+        measure: crate::host::graphics::signal::trace::Measure,
     },
     Spectrogram {
         /// The frequency window, as the element stated it.
@@ -361,12 +363,14 @@ pub(super) fn collect_widgets(
                             domain,
                             amp,
                             overlay,
+                            measure,
                         } => timeline(
                             body,
                             TimelineKind::Waveform {
                                 domain,
                                 amp,
                                 overlay,
+                                measure,
                             },
                         ),
                         SlotFrame::Spectrogram { body, freq, look } => {

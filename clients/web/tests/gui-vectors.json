@@ -171,6 +171,7 @@
           "path": "take.f32",
           "channels": 2,
           "base_bucket": 512,
+          "measure": "rms",
           "axes": {
             "x": {
               "unit": "beats",

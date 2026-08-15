@@ -60,6 +60,7 @@ pub fn draw_scope(
     min: f32,
     max: f32,
     label: Option<&str>,
+    measure: trace::Measure,
 ) {
     label_strip(d, label, rect);
     let (mesh, m, theme) = d.parts();
@@ -69,11 +70,11 @@ pub fn draw_scope(
     }
     mesh.rect(body, theme.field);
     mesh.border(body, m.divider_w, theme.accent);
-    let color = theme.trace;
+    let color = trace::measure_color(theme, measure, theme.trace);
     // A control bus's history is one channel of a live source: the same
     // renderer, so a history longer than the body's pixels summarizes instead
     // of aliasing — which a polyline of its own never did.
-    trace_lane(d, body, history, 1, 0, (min, max), color);
+    trace_lane(d, body, history, 1, 0, (min, max), color, measure);
 }
 
 /// The display parameters of one audio-rate oscilloscope draw, alongside its
@@ -89,6 +90,10 @@ pub(crate) struct WaveParams<'a> {
     pub ruler: bool,
     pub ruler_y: bool,
     pub label: Option<&'a str>,
+    /// What each column measures — the envelope, or the level inside it. A
+    /// live view reads it like a stored one: the picture is the same renderer
+    /// over a window that happens to be arriving.
+    pub measure: trace::Measure,
 }
 
 /// Draws an audio-rate oscilloscope: the [`TapWindow`]'s channels as stacked
@@ -176,7 +181,8 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
             channels,
             ch,
             (p.min, p.max),
-            color,
+            trace::measure_color(d.theme, p.measure, color),
+            p.measure,
         );
     }
     if frames > 0 {
@@ -194,6 +200,7 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
 /// 2`), a column inked one hairline wide however wide the pixel column was,
 /// and no baseline. A live view is the same drawing of the same signal as a
 /// stored one; only where the samples come from differs.
+#[allow(clippy::too_many_arguments)]
 fn trace_lane(
     d: &mut Draw,
     lane: Rect,
@@ -202,6 +209,7 @@ fn trace_lane(
     ch: usize,
     domain: (f32, f32),
     color: Color,
+    measure: trace::Measure,
 ) {
     let (min, max) = domain;
     let (mesh, m, _theme) = d.parts();
@@ -219,7 +227,9 @@ fn trace_lane(
         |x| (x - lane.x) as f64 / lane.w.max(1.0) as f64 * span,
         |s| lane.x + (s / span) as f32 * lane.w,
         |v| lane.y + lane.h * (1.0 - fraction(v, min, max)),
-        trace::TraceStyle::new(color, m.trace_w).with_dots(m.point_radius),
+        trace::TraceStyle::new(color, m.trace_w)
+            .with_dots(m.point_radius)
+            .with_measure(measure),
     );
 }
 
@@ -286,6 +296,7 @@ mod tests {
             -1.0,
             1.0,
             None,
+            trace::Measure::Peak,
         );
         let with_one = empty.vertex_count();
 
@@ -297,6 +308,7 @@ mod tests {
             -1.0,
             1.0,
             None,
+            trace::Measure::Peak,
         );
         assert!(
             many.vertex_count() > with_one,
@@ -322,6 +334,7 @@ mod tests {
             -1.0,
             1.0,
             None,
+            trace::Measure::Peak,
         );
         // The field, its border and at most one six-vertex column per pixel.
         let columns = (mesh.vertex_count() as f32 - 60.0) / 6.0;
@@ -350,6 +363,7 @@ mod tests {
                 0,
                 (min, max),
                 [1.0, 1.0, 1.0, 1.0],
+                trace::Measure::Peak,
             );
             mesh.extent().expect("the lane drew").h
         };

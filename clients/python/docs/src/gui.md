@@ -237,7 +237,7 @@ Six names in the old catalog — a waveform, a plot, an oscilloscope, a
 spectroscope, a spectrogram, a goniometer — were six points of one element:
 
 ```python
-signal(view=…, <source>, navigable=…, selectable=…, editable=…)
+signal(view=…, <source>, navigable=…, selectable=…, editable=…, measure=…)
 ```
 
 - **`view`** is the presentation: `"trace"` (value against time, the default),
@@ -248,6 +248,38 @@ signal(view=…, <source>, navigable=…, selectable=…, editable=…)
   addressable samples — `data`, `blob`, `buffer`, `path`, `cache` — which is
   what lets a view navigate, slice and select.
 - **the capabilities** are `navigable`, `selectable`, `editable`.
+- **`measure`** is what the picture measures: `"peak"` (the default — the
+  min/max envelope the signal reached) or `"rms"` (the symmetric body of the
+  level it held).
+
+### The measured layer
+
+A measure is a *factor* of the view, not a widget of its own, and that is what
+makes the classic editor picture — the RMS body inside the peak envelope — a
+**stack** you compose rather than a mode you switch on:
+
+```python
+from clausters.gui import field, signal
+
+field(signal(cache="take.clpk", navigable=False),                  # what it reached
+      signal(cache="take.clpk", navigable=False, measure="rms"),   # what it held
+      label="peak + rms")
+```
+
+A `field` with no placement is a lane: it carries its children, and every child
+that is not itself a clip fills the lane's body — so the two are handed one
+rectangle and one axis, and neither knows the other is there. (A field *with*
+`offset`/`dur` is a clip, and a clip's bodies come from its own props.)
+
+Two things follow from what the measure is:
+
+- The body costs no second pass over the samples. The mean square rides in the
+  peak cache beside the min and max, at every resolution level, so a stacked
+  layer reads the same mapped file the envelope does.
+- **A cache built before the measure existed draws no body.** Its energy was
+  never measured, and zeros would say silence over material that is not
+  silent — so the layer is simply absent, and rebuilding the cache
+  (`peaks_cache_file`) is what fills it in.
 
 The shortcuts name the six common points, and the props of each are documented
 with them in the [API reference](api.md):

@@ -87,6 +87,7 @@ impl Element for SignalElement {
                             ruler: self.editor.ruler != crate::host::widget::Ruler::Off,
                             ruler_y: self.editor.ruler_y != crate::host::widget::RulerY::Off,
                             label: self.display.label.as_deref(),
+                            measure: self.measure,
                         },
                     );
                 } else {
@@ -98,6 +99,7 @@ impl Element for SignalElement {
                         self.domain().0,
                         self.domain().1,
                         self.display.label.as_deref(),
+                        self.measure,
                     );
                 }
             }
@@ -210,6 +212,7 @@ impl Element for SignalElement {
                 domain: self.domain(),
                 amp: self.editor.y_view(),
                 overlay: self.display.overlay,
+                measure: self.measure,
             }),
             Presentation::TimeFrequency => Some(SlotFrame::Spectrogram {
                 body,
@@ -343,6 +346,7 @@ impl SignalElement {
             // What the axis can show, not what was asked of it.
             x_view: self.freq_window(sample_rate),
             label: self.display.label.as_deref(),
+            measure: self.measure,
         }
     }
 }

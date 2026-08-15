@@ -28,6 +28,7 @@ use crate::waveform::WaveformData;
 
 use crate::host::layout::Rect;
 use crate::host::paint::{Color, Mesh};
+use crate::host::theme::Theme;
 
 /// At or below this many samples per pixel the trace is drawn as a polyline
 /// through the raw samples rather than as min/max columns.
@@ -110,6 +111,33 @@ impl<'a> Trace<'a> {
         }
     }
 
+    /// The **mean square** of channel `ch` over the source span `[s0, s1)` —
+    /// what a column measures when it measures level rather than extent.
+    ///
+    /// `None` is a source that cannot answer, never a zero: a pyramid cached
+    /// before the statistic existed has an envelope and no energy, and a body
+    /// drawn from zeros would claim silence over material that is not silent.
+    /// Raw samples always answer, since the measure is a loop over them.
+    pub fn column_ms(&self, ch: usize, samples_per_px: f64, s0: f64, s1: f64) -> Option<f32> {
+        match self {
+            Trace::Samples { samples, channels } => {
+                let frames = samples.len() / channels;
+                if frames == 0 || ch >= *channels {
+                    return None;
+                }
+                let a = (s0.floor().max(0.0) as usize).min(frames - 1);
+                let b = (s1.ceil() as usize).clamp(a + 1, frames);
+                let mut sum = 0.0f64;
+                for f in a..b {
+                    let v = samples[f * channels + ch] as f64;
+                    sum += v * v;
+                }
+                Some((sum / (b - a) as f64) as f32)
+            }
+            Trace::Data(data) => data.column_ms(ch, samples_per_px, s0, s1),
+        }
+    }
+
     /// One sample of channel `ch` at frame position `s`, clamped to the source.
     pub fn at(&self, ch: usize, s: f64) -> f32 {
         match self {
@@ -123,6 +151,57 @@ impl<'a> Trace<'a> {
             }
             Trace::Data(data) => data.samples_at(ch, s.round().max(0.0) as usize),
         }
+    }
+}
+
+/// **What a column measures.** The two are pictures of one span, not two
+/// sources: `Peak` is the extent the signal reached (the min/max envelope every
+/// editor draws), `Rms` the level it held there — the body an editor draws
+/// *inside* that envelope, and the reason the two are drawn by one function
+/// placed twice rather than by one function drawing both. A stack of an `Rms`
+/// element over a `Peak` one is the classic picture, and it is composition
+/// rather than a mode: neither layer knows the other exists.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Measure {
+    /// The min/max envelope: what the signal reached.
+    #[default]
+    Peak,
+    /// The symmetric body about zero at `sqrt(mean square)`: what it held.
+    Rms,
+}
+
+impl Measure {
+    /// The wire name, or `None` for one this build does not know — which reads
+    /// as "the prop was not set" rather than as an error, the protocol's own
+    /// posture for an unknown value.
+    pub fn parse(name: &str) -> Option<Measure> {
+        match name {
+            "peak" => Some(Measure::Peak),
+            "rms" => Some(Measure::Rms),
+            _ => None,
+        }
+    }
+
+    /// The name this measure answers `/gui_query` with.
+    pub fn name(self) -> &'static str {
+        match self {
+            Measure::Peak => "peak",
+            Measure::Rms => "rms",
+        }
+    }
+}
+
+/// The color a measure is drawn in: the channel's own series color for an
+/// envelope, the **body** role for a level.
+///
+/// It is one function because the choice is the same wherever a signal is
+/// drawn — a navigable view, a clip's take, a plot — and a body that took the
+/// series color would be invisible against the envelope it sits inside, which
+/// is the one thing a layer must not be.
+pub fn measure_color(theme: &Theme, measure: Measure, series: Color) -> Color {
+    match measure {
+        Measure::Peak => series,
+        Measure::Rms => theme.trace_body,
     }
 }
 
@@ -145,6 +224,8 @@ pub struct TraceStyle {
     /// affordances read as the same kind of target the day the second one
     /// becomes draggable.
     pub dot_radius: f32,
+    /// What each column measures — the envelope, or the level inside it.
+    pub measure: Measure,
 }
 
 /// Whether sample dots are drawn at `spacing` pixels apart: they need to read
@@ -162,12 +243,19 @@ impl TraceStyle {
             color,
             width,
             dot_radius: 0.0,
+            measure: Measure::Peak,
         }
     }
 
     /// The same trace, marking each sample once they are far enough apart.
     pub fn with_dots(mut self, radius: f32) -> Self {
         self.dot_radius = radius;
+        self
+    }
+
+    /// The same trace, measuring `measure` instead of the envelope.
+    pub fn with_measure(mut self, measure: Measure) -> Self {
+        self.measure = measure;
         self
     }
 }
@@ -220,6 +308,11 @@ pub fn draw_channel(
     let cols = rect.w.max(1.0) as usize;
     let cw = rect.w / cols as f32;
     let per_px = (src(rect.x + cw) - src(rect.x)).max(0.0);
+    if style.measure == Measure::Rms {
+        draw_body(mesh, rect, trace, ch, &src, &y_at, style, cols, cw, per_px);
+        mesh.set_clip(outer);
+        return;
+    }
     if per_px > LINE_THRESHOLD || !trace.has_raw() {
         for c in 0..cols {
             let x = rect.x + c as f32 * cw;
@@ -266,6 +359,56 @@ pub fn draw_channel(
         }
     }
     mesh.set_clip(outer);
+}
+
+/// The measured body: one column per pixel at `±sqrt(mean square)` about zero,
+/// which is what makes it a *body* rather than a second envelope — level has no
+/// sign, so the picture is symmetric by construction and sits inside the
+/// envelope of the same span wherever both are drawn.
+///
+/// **It stays in the column regime at every zoom, and fades out of the line
+/// one.** A mean square over a single sample is that sample squared, so past
+/// the polyline threshold the body degenerates into a mirror of the trace —
+/// two lines saying one thing. Switching it off at the threshold would pop; so
+/// it follows the zoom out instead, its alpha carrying the same weight the
+/// level crossfade uses, and the picture that remains at sample zoom is the
+/// samples themselves, which is the honest one.
+#[allow(clippy::too_many_arguments)]
+fn draw_body(
+    mesh: &mut Mesh,
+    rect: Rect,
+    trace: &Trace,
+    ch: usize,
+    src: impl Fn(f32) -> f64,
+    y_at: impl Fn(f32) -> f32,
+    style: TraceStyle,
+    cols: usize,
+    cw: f32,
+    per_px: f64,
+) {
+    let fade = (per_px / LINE_THRESHOLD).clamp(0.0, 1.0) as f32;
+    if fade <= 0.0 {
+        return;
+    }
+    let mut color = style.color;
+    color[3] *= fade;
+    for c in 0..cols {
+        let x = rect.x + c as f32 * cw;
+        // A source with no measure draws nothing at all — the column is
+        // skipped rather than inked at zero, so an old cache shows the
+        // envelope it does have and no body it never measured.
+        let Some(ms) = trace.column_ms(ch, per_px, src(x), src(x + cw)) else {
+            continue;
+        };
+        let r = ms.max(0.0).sqrt();
+        let (top, bottom) = (y_at(r), y_at(-r));
+        // The same two floors the envelope's columns take: the pixel column it
+        // fills, so the bodies tile, and the trace's weight, so a stretch the
+        // level barely moves in is still drawn.
+        let (w, h) = (cw.max(style.width), (bottom - top).abs().max(style.width));
+        let (cx, cy) = (x + cw * 0.5, (top + bottom) * 0.5);
+        mesh.rect(Rect::new(cx - w * 0.5, cy - h * 0.5, w, h), color);
+    }
 }
 
 #[cfg(test)]
@@ -516,6 +659,128 @@ mod tests {
             draw(100, 0.0),
             "dots that would touch are not drawn"
         );
+    }
+
+    /// A helper drawing one signal twice, once per measure, over the same maps.
+    fn draw_measures(samples: &[f32], rect: Rect, window: (f64, f64)) -> (Mesh, Mesh) {
+        let (start, len) = window;
+        let one = |measure: Measure| {
+            let trace = Trace::samples(samples, 1);
+            let mut mesh = Mesh::new();
+            draw_channel(
+                &mut mesh,
+                rect,
+                &trace,
+                0,
+                |x| start + (x - rect.x) as f64 / rect.w as f64 * len,
+                |s| rect.x + ((s - start) / len) as f32 * rect.w,
+                |v| rect.y + rect.h * 0.5 * (1.0 - v),
+                TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0).with_measure(measure),
+            );
+            mesh
+        };
+        (one(Measure::Peak), one(Measure::Rms))
+    }
+
+    /// **The body is symmetric about zero, and inside the envelope column by
+    /// column.** Both are the measure's own definition rather than a drawing
+    /// choice: a level has no sign, so `±sqrt(mean square)` is symmetric by
+    /// construction, and the root-mean-square of a span can never exceed the
+    /// largest magnitude in it.
+    ///
+    /// **Column by column is the whole of the claim, and the DC case is why it
+    /// is stated that way.** A signal offset from zero has an envelope offset
+    /// with it, while the body stays centred on zero — so the body reaches
+    /// *below* the lowest sample of an all-positive signal, and the picture is
+    /// right: RMS is measured about zero and a level includes the offset. What
+    /// is never true is a column whose body leaves its own column's envelope.
+    #[test]
+    fn the_body_is_symmetric_about_zero_and_inside_each_column() {
+        // Asymmetric on purpose: a signal riding a DC offset.
+        let samples: Vec<f32> = (0..20_000)
+            .map(|i| 0.3 + 0.6 * (i as f32 * 0.05).sin())
+            .collect();
+        let trace = Trace::samples(&samples, 1);
+        let spp = 50.0;
+        for c in 0..100 {
+            let (s0, s1) = (c as f64 * spp, (c + 1) as f64 * spp);
+            let (lo, hi) = trace.column(0, spp, s0, s1);
+            let r = trace
+                .column_ms(0, spp, s0, s1)
+                .expect("samples measure")
+                .sqrt();
+            assert!(
+                r <= lo.abs().max(hi.abs()) + 1e-5,
+                "column {c}: rms {r} outside [{lo}, {hi}]"
+            );
+        }
+        // And the drawn body straddles zero, which is what makes it a body.
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let (_, rms) = draw_measures(&samples, rect, (0.0, samples.len() as f64));
+        let e = rms.extent().expect("the body drew");
+        let centre = e.y + e.h * 0.5;
+        assert!(
+            (centre - (rect.y + rect.h * 0.5)).abs() < 0.5,
+            "the body is centred on zero, at {centre}"
+        );
+    }
+
+    /// **The body fades out at sample zoom instead of switching off.** Past the
+    /// polyline threshold a mean square over one sample is that sample squared,
+    /// so the body would be a mirror of the trace saying nothing new — and
+    /// dropping it at the threshold would pop. It follows the zoom out: full
+    /// weight at the threshold, gone where a pixel is a fraction of a sample.
+    #[test]
+    fn the_body_fades_out_where_a_pixel_is_less_than_a_sample() {
+        let samples: Vec<f32> = (0..4_000).map(|i| (i as f32 * 0.3).sin()).collect();
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let alpha = |len: f64| {
+            let (_, rms) = draw_measures(&samples, rect, (0.0, len));
+            rms.alphas().fold(0.0f32, f32::max)
+        };
+        // 400 samples over 100 px: four per pixel, past the threshold — full.
+        assert!((alpha(400.0) - 1.0).abs() < 1e-6, "{}", alpha(400.0));
+        // 100 samples over 100 px: one per pixel, half of the threshold.
+        assert!((alpha(100.0) - 0.5).abs() < 1e-3, "{}", alpha(100.0));
+        // 10 samples over 100 px: a tenth of a sample per pixel — a trace of it.
+        assert!(alpha(10.0) < 0.06, "{}", alpha(10.0));
+    }
+
+    /// **A source that cannot measure draws no body at all.** The column is
+    /// skipped rather than inked at zero, because zero is silence and a flat
+    /// line across material that is not silent is the one picture worse than no
+    /// picture. (The cache that has an envelope and no energy is the real case;
+    /// it is asserted where the format lives, in `clausters_core::peaks`. Here
+    /// the same `None` arrives from a channel the source does not have.)
+    #[test]
+    fn a_source_that_cannot_measure_draws_no_body() {
+        let samples: Vec<f32> = (0..4_000).map(|i| (i as f32 * 0.1).sin()).collect();
+        let trace = Trace::samples(&samples, 1);
+        assert_eq!(trace.column_ms(1, 40.0, 0.0, 40.0), None);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mut mesh = Mesh::new();
+        draw_channel(
+            &mut mesh,
+            rect,
+            &trace,
+            1,
+            |x| (x - rect.x) as f64 / rect.w as f64 * 4_000.0,
+            |s| rect.x + (s / 4_000.0) as f32 * rect.w,
+            |v| rect.y + rect.h * 0.5 * (1.0 - v),
+            TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0).with_measure(Measure::Rms),
+        );
+        assert!(mesh.is_empty(), "no measure, no body");
+    }
+
+    /// The measure a wire name resolves to, and the one it does not: an unknown
+    /// value is `None`, which the parse reads as a prop that was not set.
+    #[test]
+    fn the_measure_names_round_trip() {
+        assert_eq!(Measure::parse("peak"), Some(Measure::Peak));
+        assert_eq!(Measure::parse("rms"), Some(Measure::Rms));
+        assert_eq!(Measure::parse("loudness"), None);
+        assert_eq!(Measure::default().name(), "peak");
+        assert_eq!(Measure::Rms.name(), "rms");
     }
 
     /// The rule itself, stated where both renderers read it: three radii of

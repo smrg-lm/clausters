@@ -16,7 +16,7 @@
 //! across tracks. Placement/geometry is display logic — this stays gui-side.
 
 use super::meters::fraction;
-use super::signal::trace::{self, Trace, TraceStyle};
+use super::signal::trace::{self, Measure, Trace, TraceStyle};
 use crate::host::font;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
@@ -611,6 +611,9 @@ pub fn clip_source_at(cr: Rect, local: &View, dur: f64, total: f64, x: f32) -> f
 /// the view instead of squashing into whatever slice is on screen. Never
 /// resolves finer than the screen — the one graphics rule.
 // mesh + rect + axis + span + source + range + look: one body's draw.
+// The rect, the axis it is placed on, the source, its domain and what it
+// measures: distinct inputs to one drawing pass, as in `draw_channel` below it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_take(
     d: &mut Draw,
     cr: Rect,
@@ -619,6 +622,7 @@ pub(crate) fn draw_take(
     trace: &Trace,
     min: f32,
     max: f32,
+    measure: Measure,
 ) {
     let (mesh, m, theme) = d.parts();
     let total = trace.frames() as f64;
@@ -642,7 +646,12 @@ pub(crate) fn draw_take(
         // clip's span, seen through the clip's visible window.
         |s| local_x(cr, local, s / total * dur),
         y_at,
-        TraceStyle::new(theme.selection, m.divider_w).with_dots(m.point_radius),
+        TraceStyle::new(
+            trace::measure_color(theme, measure, theme.selection),
+            m.divider_w,
+        )
+        .with_dots(m.point_radius)
+        .with_measure(measure),
     );
 }
 
@@ -914,6 +923,46 @@ mod tests {
             bulk: true,
             body: None,
         }
+    }
+
+    /// **The stack needs no container work**, which is the measure's whole
+    /// claim to being a factor of the element rather than a widget: a clip
+    /// already layers its bodies over one rectangle, so a body measuring `rms`
+    /// placed over one measuring `peak` *is* the classic editor picture, drawn
+    /// by the one renderer twice, with neither layer knowing the other exists.
+    #[test]
+    fn a_measured_body_layers_over_an_envelope_with_no_container_work() {
+        // Audio: zero-mean, which is the case the picture is a convention for.
+        // (A signal carrying DC is the interesting other one, and it is the
+        // trace's own test that states what happens there.)
+        let samples: Vec<f32> = (0..20_000).map(|i| 0.9 * (i as f32 * 0.05).sin()).collect();
+        let dur = samples.len() as f64;
+        let measured = |measure: Measure| {
+            let mut el = signal::SignalElement::from_preset(&signal::point(
+                crate::host::elements::signal::Presentation::Signal,
+                false,
+                true,
+            ));
+            el.caps = signal::Caps::default();
+            el.source = signal::Source::Data(inline_take(samples.clone()));
+            el.measure = measure;
+            body_mesh(&WidgetKind::Custom(Box::new(el)), dur)
+        };
+        let envelope = measured(Measure::Peak).extent().expect("the envelope drew");
+        let body = measured(Measure::Rms).extent().expect("the body drew");
+        assert!(
+            body.h < envelope.h,
+            "the body sits inside the envelope: {} vs {}",
+            body.h,
+            envelope.h
+        );
+        assert!(
+            body.y > envelope.y - 0.01 && body.y + body.h < envelope.y + envelope.h + 0.01,
+            "and inside it on the axis, not merely shorter"
+        );
+        // Both are placed in the same rectangle by the clip, which is the half
+        // that would otherwise need a container to arrange them.
+        assert!((body.x - envelope.x).abs() < 0.01);
     }
 
     #[test]

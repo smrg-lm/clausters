@@ -112,8 +112,8 @@ prerequisite, and because it is the one whose cost is not the client's.*
   written once, over all three statistics. In the other order it is written
   twice.
 
-- ⬜ **A2 — The RMS layer, and the `measure` prop.** Rides with A1 (they are
-  G20e's two halves) and is what proves the pyramid change by eye.
+- ✅ **A2 — The RMS layer, and the `measure` prop.** Done 2026-08-14. Rode with
+  A1 (they are G20e's two halves) and is what proves the pyramid change by eye.
 
 - ⬜ **D8 — The editor opens an element as a signal view.** Phase 2's condition,
   met: `Editor.open_signal` is `open_pianoroll`'s sibling, and after A2 it opens

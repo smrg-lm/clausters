@@ -306,6 +306,7 @@ pub(super) fn draw_timeline_meshes(
                 overlay: overlaid,
                 domain,
                 amp,
+                measure,
             } => {
                 let Some(slot) = waveforms.get(&item.id) else {
                     over.border(body, 1.0, th.view_frame);
@@ -370,10 +371,15 @@ pub(super) fn draw_timeline_meshes(
                         *domain,
                         (amp.0, amp.1),
                         crate::host::graphics::signal::trace::TraceStyle::new(
-                            th.series(ch),
+                            crate::host::graphics::signal::trace::measure_color(
+                                th,
+                                *measure,
+                                th.series(ch),
+                            ),
                             m.trace_w,
                         )
-                        .with_dots(m.point_radius),
+                        .with_dots(m.point_radius)
+                        .with_measure(*measure),
                     );
                 }
                 for ch in 1..draw_lanes {

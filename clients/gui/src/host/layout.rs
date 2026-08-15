@@ -792,6 +792,42 @@ mod tests {
         Rect::new(0.0, 0.0, 600.0, 400.0)
     }
 
+    /// **The layer stack is a placement, and that is the whole of it.** Two
+    /// signal elements inside one `field` — one measuring the envelope, one the
+    /// level — are handed the *same* rectangle and the same axis, which is what
+    /// lets a measure be a factor of the element instead of a container anyone
+    /// had to write. The rules a stack still lacks (its order, which layer owns
+    /// the y ruler, the alpha) are the milestone after this one; what is
+    /// already true is that nothing has to arrange them.
+    ///
+    /// **Which `field` layers is worth stating, because the two look alike on
+    /// the wire.** A field with a *placement* (`offset`/`dur`) is a clip, and a
+    /// clip's bodies are built from its own props — nodes nested under one are
+    /// ignored, as under a leaf. A field **without** one is a lane, it carries
+    /// its children into the tree, and every child that is not itself a clip
+    /// fills the lane's body. So the stack is a lane of layers, not a clip of
+    /// them.
+    #[test]
+    fn two_measures_of_one_signal_are_placed_on_one_rectangle() {
+        let w = tree(
+            r#"{"type":"window","children":[
+            {"id":5,"type":"field","children":[
+                {"id":6,"type":"signal","view":"trace","data":[0.0,1.0,0.0,-1.0]},
+                {"id":7,"type":"signal","view":"trace","measure":"rms",
+                 "data":[0.0,1.0,0.0,-1.0]}]}]}"#,
+        );
+        let placed = layout(area(), &w, &Metrics::default());
+        let rect = |id: i32| {
+            placed
+                .iter()
+                .find(|p| p.widget.id == Some(id))
+                .unwrap()
+                .rect
+        };
+        assert_eq!(rect(6), rect(7), "the two layers share one box");
+        assert!(rect(6).w > 0.0 && rect(6).h > 0.0, "and it is a real one");
+    }
+
     /// The application shell, without the number: a strip of controls under a
     /// work surface used to need an `h` nobody could derive, because a
     /// container did not measure what it held. With `hug` it takes exactly its

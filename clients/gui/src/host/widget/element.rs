@@ -595,6 +595,11 @@ pub enum SlotFrame {
         domain: (f32, f32),
         /// The amplitude window, as a normalized `(start, len)`.
         amp: (f64, f64),
+        /// What the picture measures — the envelope, or the level inside it.
+        /// It rides here rather than being read off the element at draw time
+        /// for the reason the domain does: the frame draws what the element
+        /// *stated*, so the picture and the chrome around it agree.
+        measure: crate::host::graphics::signal::trace::Measure,
         overlay: bool,
     },
     /// The texture slot: one uploaded analysis per lane, sampled a texel per

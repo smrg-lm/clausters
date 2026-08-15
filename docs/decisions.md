@@ -5285,3 +5285,42 @@ case of it, so `cache_size` is `multi_cache_size` at one channel and the layouts
 cannot drift apart. Reading is where the leniency stays: v1 and v2 still load,
 and the mono reader takes a one-channel v3 cache while **refusing** a wider one
 rather than silently narrowing it to its first channel.
+
+## A measure is a factor of the signal element, and a stack is a placement
+
+The RMS body an editor draws inside a waveform's peaks could have been a prop
+that thickens the picture (`rms: 1`, one element drawing two things) or a widget
+of its own. It is neither: `measure` says what the element's columns measure —
+`peak`, the min/max envelope, or `rms`, the symmetric body at the level the
+signal held — and the classic picture is **two elements**, one of each, on one
+pair of axes.
+
+**What that buys is the generality the signal element was factored for.** The
+element is already a presentation × a source × its capabilities; a measure is
+one more factor of that product, so it costs no name in the catalog and it
+means the same thing everywhere the element goes — over a file it is an offline
+reading, inside a clip a second body, over a bus a live one. An element drawing
+*both* pictures would have had to grow the layers' colour, order and opacity as
+props of itself, which is the composition's business and not a picture's.
+
+**And the stack needed no container.** A `field` with no placement is a lane, it
+carries its children, and every child that is not a clip fills the lane's body —
+so two signal elements in one field are handed the same rectangle and the same
+axis, and neither knows the other is there. Worth stating because the two fields
+look alike on the wire: a field **with** `offset`/`dur` is a clip, and a clip's
+bodies are built from its own props, so nodes nested under one are ignored. The
+stack is a lane of layers, not a clip of them. What a stack still lacks — a
+stated order, which layer owns the y ruler, the alpha rule — is a milestone of
+its own; what is already true is that nothing has to arrange them.
+
+**The body fades out at sample zoom rather than switching off.** Past the
+polyline threshold the mean square over a single sample is that sample squared,
+so the body would restate the trace it sits under — two lines saying one thing.
+Dropping it at the threshold would pop, so it follows the zoom out on the same
+weight the level crossfade uses, and what remains at sample zoom is the samples
+themselves.
+
+**A source that cannot measure draws nothing.** A peak cache written before the
+format carried the mean square has an envelope and no energy, and the layer is
+absent rather than flat: zeros are a measurement — silence — and drawing them
+over material that is not silent is the one picture worse than no picture.

@@ -15,6 +15,11 @@ accepts, none of which re-send the samples per frame:
 - a **server buffer exported** to a file with ``/buffer_export`` -- the audio server
   dumps its RT buffer to a local file the host maps.
 
+A fourth lane stacks two views of the *same* mapped cache -- the peak envelope
+and the RMS body over it -- which is what a peak cache carrying a mean square
+per bucket buys: the classic editor picture with no second pass over the samples
+and no second file.
+
 Files are passed by absolute path, so the host (a separate process) resolves
 them; the buffer export needs the host's client leg pointed at the server, which
 `Session.gui` wires up.
@@ -43,7 +48,8 @@ import time
 import wave
 
 from clausters import Session
-from clausters.gui import peaks_cache_file, samples_to_file, waveform, window
+from clausters.gui import (field, peaks_cache_file, samples_to_file, signal, waveform,
+                           window)
 
 SR = 48_000
 
@@ -110,16 +116,30 @@ print(f"server exported buffer {bufnum} -> {os.path.getsize(exported_path)} B")
 # ## The window
 # Three waveforms, one per shared-resource form -- all mapped from files, zero
 # OSC for the samples. Named, so `open` resolves them.
+#
+# The fourth lane is the same mapped cache drawn **twice**: what the sweep
+# reached (the peak envelope) and what it held (the RMS body), stacked. That is
+# the classic editor picture, and it is composition rather than a mode -- two
+# `signal` elements measuring differently, laid over one `field` (a lane, so it
+# carries its children; a *placed* field is a clip, whose bodies come from its
+# own props). Neither layer knows the other is there, and the body is the same
+# mapped pyramid the envelope reads: the mean square rides in the cache beside
+# the min and max, so the second picture costs no second pass over the samples.
 
 # %%
 win = gui.open(window(
     waveform(name="cache", cache=cache_path),                 # prebuilt peak cache
     waveform(name="raw", path=raw_path),                      # raw f32, host maps it
     waveform(name="exported", path=exported_path, channels=1),  # a server buffer export
-    title="Bulk: mapped files, no OSC", w=900, h=600, layout="col"))
+    field(                                                    # the layer stack
+        signal(cache=cache_path, navigable=False),            # what it reached
+        signal(cache=cache_path, navigable=False, measure="rms"),  # what it held
+        label="peak + rms"),
+    title="Bulk: mapped files, no OSC", w=900, h=700, layout="col"))
 win.on_closed(lambda: globals().__setitem__("_closed", True))
-print("three waveforms mapped from files (zero OSC for the samples); "
-      "zoom/pan with wheel/drag, close the window to stop")
+print("three waveforms mapped from files (zero OSC for the samples), and a "
+      "fourth lane stacking the RMS body over the peak envelope of the same "
+      "cache; zoom/pan with wheel/drag, close the window to stop")
 
 # %% [markdown]
 # ## Wait, then clean up

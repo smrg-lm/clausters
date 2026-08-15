@@ -50,6 +50,15 @@ impl SignalElement {
             return;
         };
         let (min, max) = self.domain();
-        crate::host::graphics::track::draw_take(d, rect, local, dur, &data.trace(), min, max);
+        crate::host::graphics::track::draw_take(
+            d,
+            rect,
+            local,
+            dur,
+            &data.trace(),
+            min,
+            max,
+            self.measure,
+        );
     }
 }

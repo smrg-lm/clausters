@@ -87,6 +87,7 @@ the same color to within the 8 bits of the notation:
 | `hilite` | `#66d99e` | The accent's lit form (a pressed control, a window's edge marker). |
 | `trace` | `#66d99e` | A drawn signal or curve (scope trace, bpf curve, automation curve). |
 | `trace_bright` | `#73e6a8` | The brighter trace of the phase scope's beam. |
+| `trace_body` | `#d9f0b39e` | The measured body drawn inside a signal's envelope (an RMS layer). Translucent by role: a body is read *against* the peaks it sits in. |
 | `point` | `#e6edf2` | A curve's grabbable break-point. |
 | `frame` | `#4c576b` | The neutral frame of the editor views (piano roll, tracks, patch). |
 | `view_frame` | `#407361` | The frame of the timeline views (waveform, spectrogram). |

@@ -31,7 +31,7 @@
 
 use crate::spectrogram::{FreqScale, Stft};
 
-use super::trace::{self, Trace, TraceStyle};
+use super::trace::{self, Measure, Trace, TraceStyle};
 use crate::host::font;
 use crate::host::frame::{lane_at, lane_rect};
 use crate::host::graphics::controls::body_rect;
@@ -164,6 +164,8 @@ pub struct PlotParams<'a> {
     /// same way the live one reads it.
     pub x_view: (f64, f64),
     pub label: Option<&'a str>,
+    /// What each column measures — the envelope, or the level inside it.
+    pub measure: Measure,
 }
 
 /// The plot's inner geometry: the traced `body` after the label strip and the
@@ -330,7 +332,12 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
             |x| (x - lane.x) as f64 / lane.w.max(1.0) as f64 * span,
             |s| lane.x + (s / span) as f32 * lane.w,
             |v| lane.y + lane.h * (1.0 - fraction(v, lo, hi)),
-            TraceStyle::new(theme.series(ch), m.trace_w).with_dots(m.point_radius),
+            TraceStyle::new(
+                trace::measure_color(theme, p.measure, theme.series(ch)),
+                m.trace_w,
+            )
+            .with_dots(m.point_radius)
+            .with_measure(p.measure),
         );
     }
 }
@@ -584,6 +591,7 @@ mod tests {
             freq_scale: FreqScale::Log,
             x_view: (0.0, 1.0),
             label: None,
+            measure: Measure::Peak,
         }
     }
 

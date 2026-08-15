@@ -58,6 +58,7 @@ mod live;
 mod slot;
 pub(crate) use element::build;
 pub use live::LiveState;
+pub use trace::Measure;
 
 /// The default peak-pyramid bucket of an element whose props name none: one
 /// level-0 summary per 256 source samples.
@@ -327,6 +328,12 @@ pub struct Display {
 pub struct SignalElement {
     pub presentation: Presentation,
     pub source: Source,
+    /// **What the picture measures** — the envelope the signal reached, or the
+    /// level it held inside it. A factor of the element rather than a widget of
+    /// its own: the same prop over a file is an offline reading, over a clip a
+    /// second body, and two elements measuring differently on one axis are the
+    /// layer stack, with no container work at all.
+    pub measure: Measure,
     pub caps: Caps,
     pub value: ValueRange,
     pub spectral: Spectral,
@@ -357,6 +364,7 @@ impl SignalElement {
         editor.ruler = p.ruler;
         SignalElement {
             presentation: p.presentation,
+            measure: Measure::default(),
             source: if p.live {
                 Source::Bus(Bus {
                     bus: 0,

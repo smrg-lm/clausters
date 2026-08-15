@@ -518,13 +518,23 @@ export function signal(
         selectable?: boolean;
         editable?: boolean;
         overlay?: boolean;
+        /**
+         * **What the picture measures**: `"peak"` (the default, the min/max
+         * envelope the signal reached) or `"rms"` (the symmetric body of the
+         * level it held). A factor of the view rather than a widget of its
+         * own, which is what makes the classic editor picture a *stack*: an
+         * `"rms"` element over a plain one on the same axes, drawn by the one
+         * renderer, neither knowing the other is there. A peak cache built
+         * before the measure existed draws no body rather than zeros.
+         */
+        measure?: "peak" | "rms";
         axes?: { x?: Props; y?: Props };
         label?: string;
     } = {},
 ): GuiNode {
     const {
         view, cache, path, buffer, data, blob, channels, bus, rate, retention,
-        baseBucket, navigable, selectable, editable, overlay, axes: pair,
+        baseBucket, navigable, selectable, editable, overlay, measure, axes: pair,
         label: text, ...rest
     } = options;
     return node("signal", {
@@ -541,6 +551,7 @@ export function signal(
             ["selectable", flag(selectable)],
             ["editable", flag(editable)],
             ["overlay", flag(overlay)],
+            ["measure", measure],
             ["label", text],
         ]),
     });
@@ -904,11 +915,18 @@ export function waveform(
         min?: number;
         /** The top of the value domain (see `min`). */
         max?: number;
+        /**
+         * What the columns measure: `"peak"` (the default envelope) or
+         * `"rms"` (the level body). Two views of one source on the same axes,
+         * one of each, are the classic editor picture as a stack — see
+         * `signal`.
+         */
+        measure?: "peak" | "rms";
     } = {},
 ): GuiNode {
     const {
         cache, path, buffer, data, blob, channels, baseBucket, overlay,
-        rulerY, bitDepth, min, max, ...timeline
+        rulerY, bitDepth, min, max, measure, ...timeline
     } = options;
     return node("signal", {
         view: "trace",
@@ -917,7 +935,11 @@ export function waveform(
             drop([["unit", rulerY], ["bit_depth", bitDepth], ["min", min], ["max", max]]),
         ),
         ...sourceProps({ cache, path, buffer, data, blob, channels }),
-        ...drop([["base_bucket", baseBucket], ["overlay", flag(overlay)]]),
+        ...drop([
+            ["base_bucket", baseBucket],
+            ["overlay", flag(overlay)],
+            ["measure", measure],
+        ]),
     });
 }
 
@@ -987,12 +1009,14 @@ export function plot(
         dbFloor?: number;
         dbCeil?: number;
         freqScale?: string;
+        /** What the columns measure — see `signal`. */
+        measure?: "peak" | "rms";
         label?: string;
     } = {},
 ): GuiNode {
     const {
         cache, path, buffer, data, blob, channels, view, overlay, sampleRate,
-        min, max, ruler, rulerY, fftSize, dbFloor, dbCeil, freqScale,
+        min, max, ruler, rulerY, fftSize, dbFloor, dbCeil, freqScale, measure,
         label: text, ...rest
     } = options;
     // A plot is the trace (or the spectrum) of a signal that does **not**
@@ -1012,6 +1036,7 @@ export function plot(
             ["db_floor", dbFloor],
             ["db_ceil", dbCeil],
             ["freq_scale", freqScale],
+            ["measure", measure],
             ["label", text],
         ]),
     });
@@ -1078,12 +1103,14 @@ export function scope(
          */
         ruler?: boolean | string;
         rulerY?: boolean | string;
+        /** What the columns measure — see `signal`. */
+        measure?: "peak" | "rms";
         label?: string;
     } = {},
 ): GuiNode {
     const {
         rate = "audio", channels, overlay, windowMs, trigger, hold, min, max,
-        ruler, rulerY, label: text, ...rest
+        ruler, rulerY, measure, label: text, ...rest
     } = options;
     return node("signal", {
         ...rest,
@@ -1100,6 +1127,7 @@ export function scope(
             ["window_ms", windowMs],
             ["trigger", trigger],
             ["hold", flag(hold)],
+            ["measure", measure],
             ["label", text],
         ]),
     });

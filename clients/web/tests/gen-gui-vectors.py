@@ -91,7 +91,7 @@ def cases():
                        playhead_at=48000.0, playhead=32000.0,
                        playhead_loop_start=1000.0, playhead_loop_len=8000.0,
                        y_start=0.25, y_len=0.5, link=7,
-                       overlay=True),
+                       overlay=True, measure="rms"),
             g.spectrogram(id=2, cache="take.stft", window_size=2048, hop=512,
                           sample_rate=48000.0, db_floor=-90.0, db_ceil=0.0,
                           freq_scale="mel", colormap=1, ruler="time",

@@ -167,6 +167,27 @@ impl WaveformData {
         }
     }
 
+    /// The **mean square** of channel `ch` over a pixel column spanning
+    /// `[s0, s1)`, from the cheapest accurate source exactly as [`Self::column`]
+    /// takes its min/max: the raw samples when the zoom is finer than the base
+    /// bucket, the cross-faded pyramid otherwise.
+    ///
+    /// `None` when the source cannot answer — a cache written before the
+    /// pyramid carried the statistic. That absence is the whole reason this
+    /// returns an option: zeros would be a measurement (silence), and a body
+    /// drawn from them would be a flat line across material that is not flat.
+    pub fn column_ms(&self, ch: usize, samples_per_px: f64, s0: f64, s1: f64) -> Option<f32> {
+        let channel = self.channels.get(ch)?;
+        let pyramid = &channel.pyramid;
+        if samples_per_px < pyramid.base_bucket() as f64 && self.has_raw() {
+            let a = (s0.floor().max(0.0) as usize).min(channel.samples.len());
+            let b = (s1.ceil() as usize).clamp(a, channel.samples.len());
+            peaks::mean_square(&channel.samples[a..b]).or(Some(0.0))
+        } else {
+            level_crossfade_ms(pyramid, samples_per_px, s0, s1)
+        }
+    }
+
     /// Single-sample access for the line regime, clamped to bounds. A
     /// cache-only view has no sample to give and answers silence, which is why
     /// the renderer asks [`Self::has_raw`] before entering that regime.
@@ -222,6 +243,24 @@ fn level_crossfade(pyramid: &Pyramid, samples_per_px: f64, s0: f64, s1: f64) -> 
     let t = (samples_per_px / bucket as f64).log2().clamp(0.0, 1.0) as f32;
     let (clo, chi) = pyramid.column(level + 1, s0, s1).unwrap_or((lo, hi));
     (lo + (clo - lo) * t, hi + (chi - hi) * t)
+}
+
+/// The energy sibling of [`level_crossfade`], blended by the same weight so a
+/// measured body and the envelope around it switch levels together — two
+/// pictures of one span cannot pop at different zooms without reading as a
+/// glitch in the data.
+fn level_crossfade_ms(pyramid: &Pyramid, samples_per_px: f64, s0: f64, s1: f64) -> Option<f32> {
+    let level = pyramid.level_for(samples_per_px);
+    let fine = pyramid.column_ms(level, s0, s1)?;
+    let Some(bucket) = pyramid.level_bucket(level) else {
+        return Some(fine);
+    };
+    if samples_per_px <= bucket as f64 || level + 1 >= pyramid.num_levels() {
+        return Some(fine);
+    }
+    let t = (samples_per_px / bucket as f64).log2().clamp(0.0, 1.0) as f32;
+    let coarse = pyramid.column_ms(level + 1, s0, s1).unwrap_or(fine);
+    Some(fine + (coarse - fine) * t)
 }
 
 /// The vertical margin the trace leaves inside its lane: the value domain's
