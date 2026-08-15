@@ -306,7 +306,7 @@ pub(super) fn draw_timeline_meshes(
                 overlay: overlaid,
                 domain,
                 amp,
-                measure,
+                measures,
             } => {
                 let Some(slot) = waveforms.get(&item.id) else {
                     over.border(body, 1.0, th.view_frame);
@@ -360,27 +360,31 @@ pub(super) fn draw_timeline_meshes(
                 // (a member of a group draws its own samples where it sits).
                 let local = placed_nav(&nav, item.editor.offset);
                 let trace = crate::host::graphics::signal::trace::Trace::Data(slot.view.data());
+                // One picture per measure, into the one body: the envelope the
+                // signal reached, then the level it held drawn inside it.
                 for ch in 0..lanes {
                     let lane = lane_rect(body, draw_lanes, if *overlaid { 0 } else { ch });
-                    crate::waveform::draw_lane(
-                        mesh,
-                        lane,
-                        &trace,
-                        ch,
-                        &local,
-                        *domain,
-                        (amp.0, amp.1),
-                        crate::host::graphics::signal::trace::TraceStyle::new(
-                            crate::host::graphics::signal::trace::measure_color(
-                                th,
-                                *measure,
-                                th.series(ch),
-                            ),
-                            m.trace_w,
-                        )
-                        .with_dots(m.point_radius)
-                        .with_measure(*measure),
-                    );
+                    for measure in measures.iter() {
+                        crate::waveform::draw_lane(
+                            mesh,
+                            lane,
+                            &trace,
+                            ch,
+                            &local,
+                            *domain,
+                            (amp.0, amp.1),
+                            crate::host::graphics::signal::trace::TraceStyle::new(
+                                crate::host::graphics::signal::trace::measure_color(
+                                    th,
+                                    measure,
+                                    th.series(ch),
+                                ),
+                                m.trace_w,
+                            )
+                            .with_dots(m.point_radius)
+                            .with_measure(measure),
+                        );
+                    }
                 }
                 for ch in 1..draw_lanes {
                     let lane = lane_rect(body, draw_lanes, ch);

@@ -118,12 +118,13 @@ impl SignalElement {
                 .is_some(),
             // The chrome.
             "overlay" => truthy(v).map(|b| self.display.overlay = b).is_some(),
-            // Live, because a stack is read by turning its layers on and off:
-            // the same element measures peaks or level between two frames.
+            // Live, because a picture is read by turning its measures on and
+            // off: the same element shows peaks, level, or both between two
+            // frames, with nothing rebuilt.
             "measure" => v
                 .as_str()
-                .and_then(super::Measure::parse)
-                .map(|m| self.measure = m)
+                .and_then(super::Measures::parse)
+                .map(|m| self.measures = m)
                 .is_some(),
             "label" => set_label(&mut self.display.label, v),
             _ => self.editor.apply(key, v),

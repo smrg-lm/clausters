@@ -58,7 +58,7 @@ impl SignalElement {
             &data.trace(),
             min,
             max,
-            self.measure,
+            self.measures,
         );
     }
 }

@@ -5286,39 +5286,67 @@ cannot drift apart. Reading is where the leniency stays: v1 and v2 still load,
 and the mono reader takes a one-channel v3 cache while **refusing** a wider one
 rather than silently narrowing it to its first channel.
 
-## A measure is a factor of the signal element, and a stack is a placement
+## A measure is a factor of the signal element, and a picture may carry several
 
-The RMS body an editor draws inside a waveform's peaks could have been a prop
-that thickens the picture (`rms: 1`, one element drawing two things) or a widget
-of its own. It is neither: `measure` says what the element's columns measure —
+The RMS body an editor draws inside a waveform's peaks could have been a widget
+of its own. It is not: `measure` says what the element's columns measure —
 `peak`, the min/max envelope, or `rms`, the symmetric body at the level the
-signal held — and the classic picture is **two elements**, one of each, on one
-pair of axes.
+signal held — and the classic editor picture is one view naming **both**
+(`measure: "peak rms"`), drawn by the one renderer placed once per measure.
 
 **What that buys is the generality the signal element was factored for.** The
 element is already a presentation × a source × its capabilities; a measure is
 one more factor of that product, so it costs no name in the catalog and it
 means the same thing everywhere the element goes — over a file it is an offline
-reading, inside a clip a second body, over a bus a live one. An element drawing
-*both* pictures would have had to grow the layers' colour, order and opacity as
-props of itself, which is the composition's business and not a picture's.
+reading, inside a clip a second body, over a bus a live one.
 
-**And the stack needed no container.** A `field` with no placement is a lane, it
-carries its children, and every child that is not a clip fills the lane's body —
-so two signal elements in one field are handed the same rectangle and the same
-axis, and neither knows the other is there. Worth stating because the two fields
-look alike on the wire: a field **with** `offset`/`dur` is a clip, and a clip's
-bodies are built from its own props, so nodes nested under one are ignored. The
-stack is a lane of layers, not a clip of them. What a stack still lacks — a
-stated order, which layer owns the y ruler, the alpha rule — is a milestone of
-its own; what is already true is that nothing has to arrange them.
+**The stack is inside the element because a picture owns its field.** This
+first shipped as a *placement*: two signal elements handed one rectangle by a
+lane, neither knowing the other was there, which is composition at its
+cheapest and reads beautifully. It does not work. Every view of a signal paints
+its field before it draws anything — a heavy view's `view_field`, a plot's
+`track`, both opaque — so of two pictures on one rectangle the second is not a
+layer over the first, it is a lid on it. The tests that let it through were
+looking at the wrong things: one asserted the two placements had equal rects
+(true, and irrelevant), another that the mesh grew (true of a covered drawing).
+Making the fields translucent would have traded one picture's contrast for
+another's, and each layer would still have brought its own ruler, gutter,
+selection and upload of the same samples. So the layering is a **set on the
+element** — one body, one axis, one ruler, one selection, one playhead, one
+upload — and the order is the type's rather than the composition's: the
+envelope is the outer shape, so it goes under, whatever order the names arrive
+in.
 
-**The body fades out at sample zoom rather than switching off.** Past the
-polyline threshold the mean square over a single sample is that sample squared,
-so the body would restate the trace it sits under — two lines saying one thing.
-Dropping it at the threshold would pop, so it follows the zoom out on the same
-weight the level crossfade uses, and what remains at sample zoom is the samples
-themselves.
+**The level is measured over the pixel column's own samples, the way an audio
+editor measures it.** Not over a window of its own: the envelope and the body
+answer two questions about *the same group of samples*, which is what makes the
+body a reading of the envelope rather than a second signal — Audacity's manual
+puts it exactly that way ("the average RMS value for the same group of
+samples"). A fixed averaging time was tried and is wrong twice over: it smears
+the level across a transient, and it pushes the body **outside** the envelope
+that is supposed to contain it.
+
+**The body fades out where a column stops holding a meaningful average.** The
+measure stays exact at any span; what a short span stops being is *informative*.
+Below a cycle, root-mean-square and peak converge — measured on the example's
+own bounce at 88 samples a column, the ratio runs 0.6 to 0.9, so the body simply
+retraces the envelope — and on the way there it reads the wave's **phase**,
+beating against the period in a lattice nobody can interpret. Editors answer
+this the same way: Audacity's RMS "will disappear" as you zoom in, "because
+there are not enough samples to provide a meaningful average in the region being
+displayed".
+
+**Two halves of that are ours, and one of them wants revisiting.** The manual
+names no threshold, so the floor is `RMS_FLOOR = 256` samples a column — the
+bucket the pyramid summarizes energy at, and the order of a cycle of the lowest
+musical pitches. And the manual says *disappear*, a cut: **the gradual fade is
+our choice**, so the picture does not pop at a zoom step. ⬜ **The alpha
+mechanism needs review**: ramping opacity linearly in samples-per-pixel is a
+guess at what reads well, it is not measured against anything, and it makes the
+body's weight a function of the zoom rather than of the signal — a body at a
+third of its weight can be mistaken for a quiet passage. The alternatives are a
+cut at the floor (the editors' own answer), a ramp in a perceptual rather than a
+linear parameter, or leaving the colour alone and narrowing the body instead.
 
 **A source that cannot measure draws nothing.** A peak cache written before the
 format carried the mean square has an envelope and no energy, and the layer is

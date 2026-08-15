@@ -115,11 +115,12 @@ prerequisite, and because it is the one whose cost is not the client's.*
 - ✅ **A2 — The RMS layer, and the `measure` prop.** Done 2026-08-14. Rode with
   A1 (they are G20e's two halves) and is what proves the pyramid change by eye.
 
-- ⬜ **D8 — The editor opens an element as a signal view.** Phase 2's condition,
-  met: `Editor.open_signal` is `open_pianoroll`'s sibling, and after A2 it opens
-  an element *with a stack* rather than a bare trace. It sits before the two
-  editing milestones because without it a sample editor is a free-standing
-  example beside the arrangement rather than a view of it.
+- ✅ **D8 — The editor opens an element as a signal view.** Done 2026-08-15.
+  Phase 2's condition, met: `Editor.open_signal` is `open_pianoroll`'s sibling,
+  and after A2 it opens an element showing both measures rather than a bare
+  trace. It sat before the two editing milestones because without it a sample
+  editor is a free-standing example beside the arrangement rather than a view of
+  it — and it earned its keep early by correcting A2's layer stack.
 
 - ⬜ **A sample write costs the whole buffer, not the samples written**
   *(root `PLAN.md`, "Found by use")*. `/buffer_setRange` replaces the buffer

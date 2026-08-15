@@ -60,7 +60,7 @@ pub fn draw_scope(
     min: f32,
     max: f32,
     label: Option<&str>,
-    measure: trace::Measure,
+    measures: trace::Measures,
 ) {
     label_strip(d, label, rect);
     let (mesh, m, theme) = d.parts();
@@ -70,11 +70,14 @@ pub fn draw_scope(
     }
     mesh.rect(body, theme.field);
     mesh.border(body, m.divider_w, theme.accent);
-    let color = trace::measure_color(theme, measure, theme.trace);
     // A control bus's history is one channel of a live source: the same
     // renderer, so a history longer than the body's pixels summarizes instead
-    // of aliasing — which a polyline of its own never did.
-    trace_lane(d, body, history, 1, 0, (min, max), color, measure);
+    // of aliasing — which a polyline of its own never did. One pass per
+    // measure, the envelope under the level body.
+    for measure in measures.iter() {
+        let color = trace::measure_color(d.theme, measure, d.theme.trace);
+        trace_lane(d, body, history, 1, 0, (min, max), color, measure);
+    }
 }
 
 /// The display parameters of one audio-rate oscilloscope draw, alongside its
@@ -93,7 +96,7 @@ pub(crate) struct WaveParams<'a> {
     /// What each column measures — the envelope, or the level inside it. A
     /// live view reads it like a stored one: the picture is the same renderer
     /// over a window that happens to be arriving.
-    pub measure: trace::Measure,
+    pub measures: trace::Measures,
 }
 
 /// Draws an audio-rate oscilloscope: the [`TapWindow`]'s channels as stacked
@@ -174,16 +177,18 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
         } else {
             d.theme.trace
         };
-        trace_lane(
-            d,
-            lane,
-            &p.window.samples,
-            channels,
-            ch,
-            (p.min, p.max),
-            trace::measure_color(d.theme, p.measure, color),
-            p.measure,
-        );
+        for measure in p.measures.iter() {
+            trace_lane(
+                d,
+                lane,
+                &p.window.samples,
+                channels,
+                ch,
+                (p.min, p.max),
+                trace::measure_color(d.theme, measure, color),
+                measure,
+            );
+        }
     }
     if frames > 0 {
         super::corner_text(d, if p.window.locked { "lock" } else { "free" }, body);
@@ -296,7 +301,7 @@ mod tests {
             -1.0,
             1.0,
             None,
-            trace::Measure::Peak,
+            trace::Measures::default(),
         );
         let with_one = empty.vertex_count();
 
@@ -308,7 +313,7 @@ mod tests {
             -1.0,
             1.0,
             None,
-            trace::Measure::Peak,
+            trace::Measures::default(),
         );
         assert!(
             many.vertex_count() > with_one,
@@ -334,7 +339,7 @@ mod tests {
             -1.0,
             1.0,
             None,
-            trace::Measure::Peak,
+            trace::Measures::default(),
         );
         // The field, its border and at most one six-vertex column per pixel.
         let columns = (mesh.vertex_count() as f32 - 60.0) / 6.0;

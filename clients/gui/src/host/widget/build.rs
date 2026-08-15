@@ -392,15 +392,16 @@ pub(crate) fn signal_element(
 
     el.spectral = spectral_props(props, p.spectral, p.size_prop);
 
-    // What the picture measures. An unknown name keeps the preset's measure,
-    // which is the protocol's posture everywhere else: a value a build does not
-    // know reads as a prop that was not set.
+    // What the picture measures -- one name, or several separated by spaces.
+    // An unknown name keeps the preset's, which is the protocol's posture
+    // everywhere else: a value a build does not know reads as a prop that was
+    // not set.
     if let Some(m) = props
         .get("measure")
         .and_then(Value::as_str)
-        .and_then(signal::Measure::parse)
+        .and_then(signal::Measures::parse)
     {
-        el.measure = m;
+        el.measures = m;
     }
 
     el.display = signal::Display {

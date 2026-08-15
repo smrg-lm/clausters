@@ -58,7 +58,7 @@ mod live;
 mod slot;
 pub(crate) use element::build;
 pub use live::LiveState;
-pub use trace::Measure;
+pub use trace::{Measure, Measures};
 
 /// The default peak-pyramid bucket of an element whose props name none: one
 /// level-0 summary per 256 source samples.
@@ -328,12 +328,16 @@ pub struct Display {
 pub struct SignalElement {
     pub presentation: Presentation,
     pub source: Source,
-    /// **What the picture measures** — the envelope the signal reached, or the
-    /// level it held inside it. A factor of the element rather than a widget of
-    /// its own: the same prop over a file is an offline reading, over a clip a
-    /// second body, and two elements measuring differently on one axis are the
-    /// layer stack, with no container work at all.
-    pub measure: Measure,
+    /// **What the picture measures** — the envelope the signal reached, the
+    /// level it held inside it, or both, which is the classic editor picture.
+    ///
+    /// A factor of the element rather than a widget of its own, and a *set*
+    /// rather than a scalar: two elements measuring differently on one
+    /// rectangle are not layers, because each paints its own field before it
+    /// draws and the second one hides the first. So the layering is here — one
+    /// body, one axis, one ruler, one upload, a picture per measure
+    /// ([`Measures`]).
+    pub measures: Measures,
     pub caps: Caps,
     pub value: ValueRange,
     pub spectral: Spectral,
@@ -364,7 +368,7 @@ impl SignalElement {
         editor.ruler = p.ruler;
         SignalElement {
             presentation: p.presentation,
-            measure: Measure::default(),
+            measures: Measures::default(),
             source: if p.live {
                 Source::Bus(Bus {
                     bus: 0,

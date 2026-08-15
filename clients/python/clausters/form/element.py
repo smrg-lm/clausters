@@ -208,7 +208,12 @@ class Buffer(Element):
         number in its ``buf`` control, sounding for the element's ``duration``.
 
         ``legato`` is 1 so the take sounds its whole length (the note default of
-        0.8 would cut it short — a sampled take is not a note with a gap).
+        0.8 would cut it short — a sampled take is not a note with a gap), and
+        ``amp`` is 1 for the same reason at the other end: the note default
+        mixes an event **20 dB down**, which is a headroom convention for
+        stacking notes and simply attenuates recorded material. A take arrives
+        at the level it was recorded at; anything else is a mix decision, so it
+        goes in ``controls`` (which overrides both).
         """
         from ..seq.event import Event as SeqEvent
 
@@ -217,7 +222,8 @@ class Buffer(Element):
                 "a Buffer needs an instrument to be rendered as an audio clip "
                 "(Buffer(buf, instrument='take'): a def whose `buf` control plays it)"
             )
-        params = dict(instrument=self.instrument, buf=self.wraps.bufnum, legato=1.0)
+        params = dict(instrument=self.instrument, buf=self.wraps.bufnum,
+                      legato=1.0, amp=1.0)
         if self.duration is not None:
             params["dur"] = float(self.duration)
         params.update(self.controls)

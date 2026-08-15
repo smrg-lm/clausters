@@ -520,14 +520,16 @@ export function signal(
         overlay?: boolean;
         /**
          * **What the picture measures**: `"peak"` (the default, the min/max
-         * envelope the signal reached) or `"rms"` (the symmetric body of the
-         * level it held). A factor of the view rather than a widget of its
-         * own, which is what makes the classic editor picture a *stack*: an
-         * `"rms"` element over a plain one on the same axes, drawn by the one
-         * renderer, neither knowing the other is there. A peak cache built
-         * before the measure existed draws no body rather than zeros.
+         * envelope the signal reached), `"rms"` (the symmetric body of the
+         * level it held), or both as one space-separated string —
+         * `"peak rms"`, the classic editor picture, the level drawn inside the
+         * envelope. A factor of the view rather than a widget of its own: one
+         * body, drawn once per measure by the one renderer, which is what keeps
+         * the axis, the ruler, the selection and the upload single. A peak
+         * cache built before the measure existed draws no body rather than
+         * zeros.
          */
-        measure?: "peak" | "rms";
+        measure?: "peak" | "rms" | "peak rms" | "rms peak";
         axes?: { x?: Props; y?: Props };
         label?: string;
     } = {},

@@ -364,15 +364,19 @@ the dots are the data.
 
 **`measure` is what the picture measures**, and it is a factor of the signal
 element rather than a widget of its own: `peak` (the default — the min/max
-envelope above) or `rms` (the symmetric body about zero at the level the signal
-held, drawn in the `trace_body` colour role). It is live on `/gui_set`, because
-a stack is read by turning its layers on and off.
+envelope above), `rms` (the symmetric body about zero at the level the signal
+held, drawn in the `trace_body` colour role), or **several at once**, named in
+one space-separated string. It is live on `/gui_set`, because a picture is read
+by turning its measures on and off.
 
-- **The classic editor picture is a stack, not a mode.** Two signal elements on
-  one pair of axes — a plain one and an `rms` one over it — are the body inside
-  the envelope, each drawn by the same renderer and neither knowing the other
-  is there. One element does not draw both, which is what keeps the layers'
-  order, colour and opacity the composition's business.
+- **The classic editor picture is `"peak rms"`: one body, a drawing per
+  measure.** The level is drawn inside the envelope by the same renderer placed
+  twice, and the order is the host's — the envelope is the outer shape, so it
+  goes under whatever order the names were given in. It is one element and not
+  two because **every view of a signal paints its own field before it draws**:
+  two of them on one rectangle are not layers, the second hides the first. One
+  element is also one axis, one ruler, one selection, one playhead and one
+  upload of the samples.
 - **A body fades out at sample zoom instead of switching off.** Past the
   polyline threshold the level over one sample *is* that sample, so the body
   would restate the trace; it follows the zoom out with the same weight the

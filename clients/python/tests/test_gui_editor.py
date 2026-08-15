@@ -192,6 +192,80 @@ def test_an_element_renders_as_a_dedicated_piano_roll():
     assert roll["axes"]["x"]["unit"] == "beats"
 
 
+def test_a_rendered_element_opens_as_one_measured_waveform():
+    """The dedicated signal view: the editor-grade `waveform`, measuring twice.
+
+    The stack is a prop of the one view rather than a pile of widgets, because
+    every view of a signal paints its own field before it draws -- two of them
+    on one rectangle are not layers, the second hides the first. One view is
+    also one axis, one ruler, one selection, one playhead and one upload.
+    """
+    take = Buffer(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=2,
+                               sample_rate=SR), duration=4.0)
+    ed = Editor(take, sample_rate=SR, tempo=TEMPO)
+    ed._mode, ed._signal_element = "signal", take
+    view = ed.draw()["children"][0]
+    assert view["type"] == "signal"
+    assert view["measure"] == "peak rms"
+    # The heavy view the shipped waveform is: navigable, over the one source,
+    # ruling real time.
+    assert "navigable" not in view or view["navigable"] == 1
+    assert (view["buffer"], view["channels"]) == (7, 2)
+    assert view["axes"]["x"]["unit"] == "time"
+    # It is the editor's target as a lane is (the playhead and `locate` address
+    # it) and a signal view (a selection swept in it is *of this element*).
+    wid = view["id"]
+    assert ed._lanes[wid] is take and ed._signals[wid] is take
+
+
+def test_the_bare_envelope_is_a_shorter_stack():
+    take = Buffer(ServerBuffer(bufnum=7, frames=1000, channels=1, sample_rate=SR))
+    ed = Editor(take, sample_rate=SR, tempo=TEMPO)
+    ed._mode, ed._signal_element = "signal", take
+    ed.layers = ("peak",)
+    assert ed.draw()["children"][0]["measure"] == "peak"
+
+
+def test_a_selection_swept_on_a_signal_view_is_of_that_element():
+    take = Buffer(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
+                               sample_rate=SR), duration=4.0)
+    ed = Editor(take, sample_rate=SR, tempo=TEMPO)
+    ed._mode, ed._signal_element = "signal", take
+    wid = ed.draw()["children"][0]["id"]
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "selection",
+                                   1.0 * BEAT, 2.0 * BEAT]) is False
+    assert ed.selection["start"] == pytest.approx(1.0)
+    assert ed.selection["len"] == pytest.approx(2.0)
+    # ...and it names the element, which is what an operation over the range
+    # is handed. A sweep on a lane with no element behind it names none.
+    assert ed.selection.get("nodes")
+
+
+def test_a_generator_has_no_samples_and_the_refusal_says_so():
+    """The generated/generator distinction, asked at the door: notes can be
+    bounced for a picture, samples cannot be invented. It is the *call* that
+    refuses -- before a window exists, so nothing is left open."""
+    from clausters.seq.pattern import Pbind, Pseq
+
+    gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
+    ed = Editor(gen, sample_rate=SR, tempo=TEMPO)
+    with pytest.raises(ValueError, match="no samples"):
+        ed.open_signal(None, gen)
+    assert ed.window is None
+    # ...and the draw refuses too, since a mode set by hand must not build a
+    # tree with no material in it either.
+    ed._mode, ed._signal_element = "signal", gen
+    with pytest.raises(ValueError, match="no samples"):
+        ed.draw()
+
+
+def test_an_unknown_measure_is_refused_by_name():
+    take = Buffer(ServerBuffer(bufnum=7, frames=1000, channels=1, sample_rate=SR))
+    ed = Editor(take, sample_rate=SR, tempo=TEMPO)
+    with pytest.raises(ValueError, match="loudness"):
+        ed.open_signal(None, take, layers=("peak", "loudness"))
+
+
 def test_a_note_edit_rewrites_the_editable_timeline():
     track, tl = _track_material()
     ed = Editor(track, sample_rate=SR, tempo=TEMPO)
@@ -434,6 +508,9 @@ class _FakeHost:
         #: learns about the state its next gesture will name back.
         self.answers = []
         self._ids = itertools.count(10_000)
+        #: Messages `poll` hands out, and what `dispatch` was asked to route.
+        self.inbox = []
+        self.dispatched = []
 
     def alloc_id(self):
         return next(self._ids)
@@ -454,6 +531,13 @@ class _FakeHost:
 
     def define(self, id, tree):
         pass
+
+    def poll(self, timeout=0.0):
+        return self.inbox.pop(0) if self.inbox else None
+
+    def dispatch(self, addr, args):
+        self.dispatched.append((addr, list(args)))
+        return True
 
 
 def test_a_sweep_becomes_the_crates_typed_selection():
@@ -1191,3 +1275,23 @@ def test_another_windows_shortcut_is_not_this_editors_to_answer():
 
     assert not ed.apply("/gui_event", [ed._window + 999, SEQ, UNSTATED, "undo"])
     assert ed._clips[roll["id"]].member.offset == pytest.approx(moved)
+
+
+def test_a_poll_feeds_the_arrangement_and_the_windows_own_handlers():
+    """A window carries both: the editor's widgets and the script's own strip.
+
+    `Editor.poll` is the loop that takes the message off the socket, so a
+    transport button beside the editor -- a widget this editor never drew --
+    gets its handler run here. A drain that only fed the arrangement swallowed
+    those: the button was pressed, the host reported it, nothing happened.
+    """
+    ed = editor()
+    host = _FakeHost()
+    ed.open(host)
+    lane = next(iter(ed._lanes))
+    host.inbox = [("/gui_event", [9_999, SEQ, UNSTATED, 1]),
+                  ("/gui_event", [lane, SEQ, UNSTATED, "selection", BEAT, BEAT])]
+    ed.poll()
+    assert [addr for addr, _ in host.dispatched] == ["/gui_event", "/gui_event"]
+    assert host.dispatched[0][1][0] == 9_999, "the strip's button reached its handler"
+    assert ed.selection["start"] == pytest.approx(1.0), "and the sweep still landed"

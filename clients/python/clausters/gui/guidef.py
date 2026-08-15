@@ -356,13 +356,14 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       (the STFT, magnitude against time *and* frequency) or ``"phase"`` (the
       goniometer of a stereo pair).
     - ``measure`` — **what the picture measures**: ``"peak"`` (the default, the
-      min/max envelope the signal reached) or ``"rms"`` (the symmetric body of
-      the level it held, drawn in the body color role). It is a factor of the
-      view rather than a widget of its own, which is what makes the classic
-      editor picture a *stack*: an ``"rms"`` element over a plain one on the
-      same axes, each drawn by the same renderer and neither knowing the other
-      is there. A source whose peak cache was built before the measure existed
-      draws no body rather than a flat line of zeros.
+      min/max envelope the signal reached), ``"rms"`` (the symmetric body of the
+      level it held, drawn in the body color role), or **both** as one
+      space-separated string — ``"peak rms"``, the classic editor picture, the
+      level drawn inside the envelope. It is a factor of the view rather than a
+      widget of its own: one body, drawn once per measure by the same renderer,
+      which is also what keeps the axis, the ruler, the selection and the
+      upload single. A source whose peak cache was built before the measure
+      existed draws no body rather than a flat line of zeros.
 
     - the **source** — ``bus`` (with ``rate``) is forward-only, read live;
       ``data``/``blob``/``buffer``/``path``/``cache`` are addressable samples,

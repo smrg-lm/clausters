@@ -16,7 +16,7 @@
 //! across tracks. Placement/geometry is display logic — this stays gui-side.
 
 use super::meters::fraction;
-use super::signal::trace::{self, Measure, Trace, TraceStyle};
+use super::signal::trace::{self, Measures, Trace, TraceStyle};
 use crate::host::font;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
@@ -622,7 +622,7 @@ pub(crate) fn draw_take(
     trace: &Trace,
     min: f32,
     max: f32,
-    measure: Measure,
+    measures: Measures,
 ) {
     let (mesh, m, theme) = d.parts();
     let total = trace.frames() as f64;
@@ -636,23 +636,26 @@ pub(crate) fn draw_take(
         let y = y_at(b);
         mesh.line([cr.x, y], [cr.x + cr.w, y], m.divider_w, theme.baseline);
     }
-    trace::draw_channel(
-        mesh,
-        cr,
-        trace,
-        0,
-        |x| clip_source_at(cr, local, dur, total, x),
-        // The inverse placement: a source frame sits at its own fraction of the
-        // clip's span, seen through the clip's visible window.
-        |s| local_x(cr, local, s / total * dur),
-        y_at,
-        TraceStyle::new(
-            trace::measure_color(theme, measure, theme.selection),
-            m.divider_w,
-        )
-        .with_dots(m.point_radius)
-        .with_measure(measure),
-    );
+    // One picture per measure, the envelope first and the level body inside it.
+    for measure in measures.iter() {
+        trace::draw_channel(
+            mesh,
+            cr,
+            trace,
+            0,
+            |x| clip_source_at(cr, local, dur, total, x),
+            // The inverse placement: a source frame sits at its own fraction of
+            // the clip's span, seen through the clip's visible window.
+            |s| local_x(cr, local, s / total * dur),
+            y_at,
+            TraceStyle::new(
+                trace::measure_color(theme, measure, theme.selection),
+                m.divider_w,
+            )
+            .with_dots(m.point_radius)
+            .with_measure(measure),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -925,19 +928,21 @@ mod tests {
         }
     }
 
-    /// **The stack needs no container work**, which is the measure's whole
-    /// claim to being a factor of the element rather than a widget: a clip
-    /// already layers its bodies over one rectangle, so a body measuring `rms`
-    /// placed over one measuring `peak` *is* the classic editor picture, drawn
-    /// by the one renderer twice, with neither layer knowing the other exists.
+    /// **One body, a picture per measure** — the classic editor picture, and
+    /// the correction the first attempt earned. Two elements measuring
+    /// differently on one rectangle are *not* layers: each paints its own field
+    /// before it draws, so the second hides the first. The layering is a set on
+    /// the element instead, and this is what that has to buy — the level body
+    /// drawn inside the envelope, by the one renderer placed twice, in one
+    /// drawing that the axis, the ruler and the upload are shared by.
     #[test]
-    fn a_measured_body_layers_over_an_envelope_with_no_container_work() {
+    fn one_body_draws_the_level_inside_the_envelope() {
         // Audio: zero-mean, which is the case the picture is a convention for.
         // (A signal carrying DC is the interesting other one, and it is the
         // trace's own test that states what happens there.)
         let samples: Vec<f32> = (0..20_000).map(|i| 0.9 * (i as f32 * 0.05).sin()).collect();
         let dur = samples.len() as f64;
-        let measured = |measure: Measure| {
+        let measured = |measures: Measures| {
             let mut el = signal::SignalElement::from_preset(&signal::point(
                 crate::host::elements::signal::Presentation::Signal,
                 false,
@@ -945,11 +950,13 @@ mod tests {
             ));
             el.caps = signal::Caps::default();
             el.source = signal::Source::Data(inline_take(samples.clone()));
-            el.measure = measure;
+            el.measures = measures;
             body_mesh(&WidgetKind::Custom(Box::new(el)), dur)
         };
-        let envelope = measured(Measure::Peak).extent().expect("the envelope drew");
-        let body = measured(Measure::Rms).extent().expect("the body drew");
+        let peak = measured(Measures::of(trace::Measure::Peak));
+        let rms = measured(Measures::of(trace::Measure::Rms));
+        let envelope = peak.extent().expect("the envelope drew");
+        let body = rms.extent().expect("the body drew");
         assert!(
             body.h < envelope.h,
             "the body sits inside the envelope: {} vs {}",
@@ -960,9 +967,27 @@ mod tests {
             body.y > envelope.y - 0.01 && body.y + body.h < envelope.y + envelope.h + 0.01,
             "and inside it on the axis, not merely shorter"
         );
-        // Both are placed in the same rectangle by the clip, which is the half
-        // that would otherwise need a container to arrange them.
         assert!((body.x - envelope.x).abs() < 0.01);
+
+        // And asking for both draws both, into the one body: the envelope still
+        // bounds the picture, and the geometry is the two drawings together.
+        let both = measured(Measures::parse("peak rms").expect("two known names"));
+        let together = both.extent().expect("the picture drew");
+        assert!(
+            (together.y - envelope.y).abs() < 0.01 && (together.h - envelope.h).abs() < 0.01,
+            "the envelope is what the picture reaches"
+        );
+        // Both drawings, over the one zero line the body draws once rather than
+        // once per measure -- which is the whole difference between a picture
+        // that layers and two pictures that would each bring their own chrome.
+        let (sum, drawn) = (
+            peak.vertex_count() + rms.vertex_count(),
+            both.vertex_count(),
+        );
+        assert!(
+            drawn > peak.vertex_count().max(rms.vertex_count()) && drawn >= sum - 12,
+            "it is both drawings and not one of them: {drawn} against {sum}"
+        );
     }
 
     #[test]

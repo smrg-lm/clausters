@@ -41,7 +41,8 @@ from ..form.render import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from ..seq.timeline import MidiEvent, OscEvent, Timeline
-from .guidef import _flat_notes, clip, patch, pianoroll, scroll, timeruler, track, window
+from .guidef import (_flat_notes, clip, patch, pianoroll, scroll, timeruler,
+                     track, waveform, window)
 from .transport import Transport
 
 __all__ = ["Editor"]
@@ -145,12 +146,24 @@ class Editor:
         #: never logged, and what this holds is the *reading* of it that can be
         #: handed to an operation.
         self.selection: dict = {}
-        #: The view: the multitrack (`open`) or a dedicated piano-roll of one
-        #: events element (`open_pianoroll`). `render` dispatches on it.
+        #: The view: the multitrack (`open`), a dedicated piano-roll of one
+        #: events element (`open_pianoroll`) or a dedicated signal view of one
+        #: rendered element (`open_signal`). `render` dispatches on it.
         self._mode = "multitrack"
         #: The element the dedicated piano-roll draws (its notes editable when it
         #: is a `Track`).
         self._roll_element = None
+        #: The element the dedicated signal view draws.
+        self._signal_element = None
+        #: What the dedicated signal view measures (`open_signal`), as a tuple
+        #: of measure names. Assigning it on an open view is **live**: the
+        #: measure is a `/gui_set` prop, so showing or hiding the level body
+        #: costs one message and no rebuild (see the `layers` property).
+        self._layers: tuple = ("peak", "rms")
+        #: widget id -> the element whose samples that widget draws. The signal
+        #: view's own registry, the sibling of `_rolls`: a selection swept there
+        #: is a selection *of that element*, not of the shared axis.
+        self._signals: dict = {}
         #: widget id -> the element whose notes that widget draws, for the note
         #: edit-back route: the dedicated roll, and every clip with a roll body
         #: (a body carries no id, so its notes arrive tagged with the clip's).
@@ -271,11 +284,14 @@ class Editor:
         port-less (its directions need the def object)."""
         if self._mode == "pianoroll":
             return self._draw_pianoroll()
+        if self._mode == "signal":
+            return self._draw_signal()
         self._reset_ids()
         self._clips = {}
         self._lanes = {}
         self._rolls = {}
         self._patches = {}
+        self._signals = {}
 
         lanes: list = []
         root = self.element
@@ -375,6 +391,7 @@ class Editor:
         self._clips = {}
         self._lanes = {}
         self._rolls = {}
+        self._signals = {}
         element = self._roll_element
         wid = self._new_id()
         notes = self._notes(element)
@@ -394,6 +411,123 @@ class Editor:
                          label=_name(element), **body)
         return window(roll, *self.extra, title=self.title,
                       w=self.size[0], h=self.size[1], layout="col")
+
+    @property
+    def layers(self) -> tuple:
+        """What the dedicated signal view measures — `("peak", "rms")` for the
+        editor's picture, `("peak",)` for the bare envelope.
+
+        **Assigning it on an open view sends one message.** The measure is a
+        live `/gui_set` prop, so the body appears and disappears over the peaks
+        with the picture, the axis, the zoom, the selection and the playhead all
+        exactly where they were. Redrawing for this would be the wrong tool
+        twice over: a redefine rebuilds every widget (so a handler bound to one
+        by name is left holding an id nobody answers to) and the window it
+        redefines is reopened.
+        """
+        return self._layers
+
+    @layers.setter
+    def layers(self, measures) -> None:
+        stack = tuple(_measure(m) for m in measures)
+        if not stack:
+            raise ValueError(f"a signal view measures something (one of "
+                             f"{', '.join(MEASURES)})")
+        self._layers = stack
+        if self._mode == "signal" and self._host is not None and self._window is not None:
+            for wid in self._signals:
+                self._host.set(wid, measure=" ".join(stack))
+
+    def _draw_signal(self) -> dict:
+        """The dedicated signal view: the **editor-grade waveform** of a single
+        rendered element's samples, instead of a multitrack of clips.
+
+        It is one `clausters.gui.guidef.waveform` — the same heavy view a
+        standalone take is shown in — and the stack of measures is a prop of it
+        (``layers`` → ``measure``), not a pile of widgets. That is the shape the
+        picture forces: every view of a signal paints its own field before it
+        draws, so two of them on one rectangle are not layers — the second hides
+        the first. Measuring twice into *one* body is also what makes the rest
+        of it one thing: one axis, one ruler, one selection, one playhead, one
+        upload of the samples.
+
+        Pure — it builds the tree and the edit-back registry, and sends nothing.
+        """
+        self._reset_ids()
+        self._clips = {}
+        self._lanes = {}
+        self._rolls = {}
+        self._signals = {}
+        element = self._signal_element
+        body = self._material_of(element)
+        wid = self._new_id()
+        # The view is the editor's one target here: the playhead, the cursor
+        # readout and `locate` address it as they address a lane, and the signal
+        # registry is what makes a selection swept in it a selection *of this
+        # element*.
+        self._lanes[wid] = element
+        self._signals[wid] = element
+        view = waveform(**body, id=wid, label=_name(element),
+                        measure=" ".join(self._layers),
+                        ruler="time", sample_rate=self.sample_rate,
+                        tempo=self.tempo)
+        return window(view, *self.extra, title=self.title,
+                      w=self.size[0], h=self.size[1], layout="col")
+
+    def _material_of(self, element) -> dict:
+        """The source props a signal view draws ``element``'s samples from, or a
+        `ValueError` naming what is missing.
+
+        **This is the generated/generator distinction, asked at the door.** A
+        rendered element has material a view can address — a buffer the host
+        fetches, decimates and navigates; a generator has none until it is
+        rendered, and a window drawn over nothing is worse than a refusal that
+        says what to do. It is the same question `open_pianoroll` answers by
+        showing a bounced generator read-only, and it has a sharper answer here:
+        notes can be bounced for a picture, samples cannot be invented.
+        """
+        body = self._body_for(element) if element is not None else {}
+        if "buffer" not in body:
+            raise ValueError(
+                f"{_name(element)} has no samples to draw: a signal view needs a "
+                "rendered element (render the composition, or bounce this one to "
+                "a buffer, and open that)")
+        return {k: v for k, v in body.items() if k in ("buffer", "channels")}
+
+    def open_signal(self, host, element=None, *, layers=("peak", "rms"),
+                    id: int | None = None) -> "WindowHandle":
+        """`draw` a single **rendered** element as a dedicated signal view and
+        open it on ``host`` — the editor-grade view of one element's samples, as
+        opposed to `open`, where the same samples are only a clip's body.
+
+        ``layers`` is what the picture measures, and the `layers` property
+        changes it **live** on the open view: ``("peak", "rms")`` is the
+        editor's picture — what the signal reached with the level it held drawn
+        inside it — and ``("peak",)`` is the bare envelope. They are measures of
+        **one** `clausters.gui.guidef.waveform`, not a pile of widgets: a view
+        of a signal paints its own field before it draws, so two of them on one
+        rectangle would not layer, and one view is also one axis, one ruler, one
+        selection, one playhead and one upload of the samples.
+
+        The element must have **material**: a rendered take, not a generator
+        (see the error a generator raises). Returns the **window handle**, like
+        `open`.
+        """
+        element = self.element if element is None else element
+        # Refused **before** a window exists: an unknown measure and an element
+        # with no samples are both answers to the call that was made, and
+        # finding out at the first repaint would leave an empty window behind.
+        stack = tuple(_measure(m) for m in layers)
+        self._material_of(element)
+        self._host = self.transport.host = host
+        self._mode = "signal"
+        self._signal_element = element
+        # Straight to the field: there is no window yet, so this is what the
+        # first draw measures rather than something to push at one.
+        self._layers = stack
+        self._window = host.open(self.draw(), id=id)
+        self._announce()
+        return self._window
 
     def open_pianoroll(self, host, element=None, id: int | None = None) -> "WindowHandle":
         """`draw` a single events element as a **dedicated piano-roll** window
@@ -637,7 +771,8 @@ class Editor:
         """Whether this editor drew the widget an event names -- the same
         registries every route resolves through."""
         return (widget_id in self._clips or widget_id in self._rolls
-                or widget_id in self._patches or widget_id in self._lanes)
+                or widget_id in self._patches or widget_id in self._lanes
+                or widget_id in self._signals)
 
     def _announce(self):
         """Tell the host which version it is drawing, before any edit.
@@ -736,7 +871,7 @@ class Editor:
                            "len": self.units_to_beats(length)}
         if len(values) >= 4:
             selection["value"] = {"min": float(values[2]), "max": float(values[3])}
-        element = self._rolls.get(wid)
+        element = self._rolls.get(wid) or self._signals.get(wid)
         if element is None:
             placed = self._clips.get(wid)
             element = None if placed is None else (
@@ -1254,14 +1389,24 @@ class Editor:
             self.rerender()
 
     def poll(self, timeout: float = 0.0) -> bool:
-        """Drain the host's pending messages into the arrangement (`apply` each).
-        Returns whether the composition changed. Call it from the script's loop —
-        **never** from the clock thread, which a routine must never block."""
+        """Drain the host's pending messages into the arrangement (`apply` each)
+        **and on to the window's own handlers**. Returns whether the composition
+        changed. Call it from the script's loop — **never** from the clock
+        thread, which a routine must never block.
+
+        The second half is why a window may carry both: a transport bar beside
+        the editor is the script's, addressed to widgets this editor never drew,
+        and its `clausters.gui.handle.WidgetHandle.on_event` callbacks run here
+        because this is the loop that took its message off the socket. A drain
+        that only fed the arrangement swallowed them — the button was pressed,
+        the host reported it, and nothing happened.
+        """
         if self._host is None:
             raise RuntimeError("open(host) the editor first")
         changed = False
         while (msg := self._host.poll(timeout)) is not None:
             changed |= self.apply(*msg)
+            self._host.dispatch(*msg)
             timeout = 0.0  # only the first wait blocks
         return changed
 
@@ -1606,6 +1751,19 @@ def _named_bus(value):
     """A control value that is an internal-bus **name** — a non-empty string that
     is not the hardware sentinel ``"OUT"`` — or ``None`` (a number, or ``"OUT"``)."""
     return value if (isinstance(value, str) and value and value != "OUT") else None
+
+
+#: The measures a signal view can stack, in the order a reader thinks of them:
+#: what the signal reached, and what it held inside that.
+MEASURES = ("peak", "rms")
+
+
+def _measure(name: str) -> str:
+    """One layer's measure, or a `ValueError` naming it — a stack is written by
+    hand, and a silent typo is a layer that quietly does not appear."""
+    if name not in MEASURES:
+        raise ValueError(f"unknown measure {name!r} (one of {', '.join(MEASURES)})")
+    return name
 
 
 def _name(element) -> str:

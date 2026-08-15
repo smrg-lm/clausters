@@ -31,7 +31,7 @@
 
 use crate::spectrogram::{FreqScale, Stft};
 
-use super::trace::{self, Measure, Trace, TraceStyle};
+use super::trace::{self, Measures, Trace, TraceStyle};
 use crate::host::font;
 use crate::host::frame::{lane_at, lane_rect};
 use crate::host::graphics::controls::body_rect;
@@ -165,7 +165,7 @@ pub struct PlotParams<'a> {
     pub x_view: (f64, f64),
     pub label: Option<&'a str>,
     /// What each column measures — the envelope, or the level inside it.
-    pub measure: Measure,
+    pub measures: Measures,
 }
 
 /// The plot's inner geometry: the traced `body` after the label strip and the
@@ -324,21 +324,25 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
         // source every signal view reads: a polyline while samples are wider
         // than a couple of pixels, the min/max envelope once they are not.
         let span = (n - 1) as f64;
-        trace::draw_channel(
-            mesh,
-            lane,
-            &Trace::samples(p.samples, channels),
-            ch,
-            |x| (x - lane.x) as f64 / lane.w.max(1.0) as f64 * span,
-            |s| lane.x + (s / span) as f32 * lane.w,
-            |v| lane.y + lane.h * (1.0 - fraction(v, lo, hi)),
-            TraceStyle::new(
-                trace::measure_color(theme, p.measure, theme.series(ch)),
-                m.trace_w,
-            )
-            .with_dots(m.point_radius)
-            .with_measure(p.measure),
-        );
+        // One picture per measure, into one field: the envelope first and the
+        // level body inside it.
+        for measure in p.measures.iter() {
+            trace::draw_channel(
+                mesh,
+                lane,
+                &Trace::samples(p.samples, channels),
+                ch,
+                |x| (x - lane.x) as f64 / lane.w.max(1.0) as f64 * span,
+                |s| lane.x + (s / span) as f32 * lane.w,
+                |v| lane.y + lane.h * (1.0 - fraction(v, lo, hi)),
+                TraceStyle::new(
+                    trace::measure_color(theme, measure, theme.series(ch)),
+                    m.trace_w,
+                )
+                .with_dots(m.point_radius)
+                .with_measure(measure),
+            );
+        }
     }
 }
 
@@ -591,7 +595,7 @@ mod tests {
             freq_scale: FreqScale::Log,
             x_view: (0.0, 1.0),
             label: None,
-            measure: Measure::Peak,
+            measures: Measures::default(),
         }
     }
 

@@ -252,30 +252,30 @@ signal(view=…, <source>, navigable=…, selectable=…, editable=…, measure=
   min/max envelope the signal reached) or `"rms"` (the symmetric body of the
   level it held).
 
-### The measured layer
+### What a picture measures
 
-A measure is a *factor* of the view, not a widget of its own, and that is what
-makes the classic editor picture — the RMS body inside the peak envelope — a
-**stack** you compose rather than a mode you switch on:
+A measure is a *factor* of the view, not a widget of its own — and a view may
+name more than one, which is the classic editor picture: the RMS body drawn
+inside the peak envelope.
 
 ```python
-from clausters.gui import field, signal
+from clausters.gui import waveform
 
-field(signal(cache="take.clpk", navigable=False),                  # what it reached
-      signal(cache="take.clpk", navigable=False, measure="rms"),   # what it held
-      label="peak + rms")
+waveform(cache="take.clpk", measure="peak rms", label="the take")
 ```
 
-A `field` with no placement is a lane: it carries its children, and every child
-that is not itself a clip fills the lane's body — so the two are handed one
-rectangle and one axis, and neither knows the other is there. (A field *with*
-`offset`/`dur` is a clip, and a clip's bodies come from its own props.)
+One view and not two, because **every view of a signal paints its own field
+before it draws**: two of them on one rectangle do not layer, the second hides
+the first. Measuring twice into one body is also what keeps the rest single —
+one axis, one ruler, one selection, one playhead, one upload of the samples —
+and the order is the host's: the envelope is the outer shape, so it goes under
+whatever order you name them in.
 
 Two things follow from what the measure is:
 
 - The body costs no second pass over the samples. The mean square rides in the
-  peak cache beside the min and max, at every resolution level, so a stacked
-  layer reads the same mapped file the envelope does.
+  peak cache beside the min and max, at every resolution level, so the body
+  reads the same mapped file the envelope does.
 - **A cache built before the measure existed draws no body.** Its energy was
   never measured, and zeros would say silence over material that is not
   silent — so the layer is simply absent, and rebuilding the cache

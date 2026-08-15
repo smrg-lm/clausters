@@ -167,6 +167,34 @@ Quantization exists on both surfaces, because the GUI also runs standalone:
 widget's snap grid, flowing back like any other edit; on the data side,
 `Timeline.quantize(grid)` snaps every placement to the beat grid directly.
 
+### The dedicated signal view
+
+The same move, for a take instead of a phrase. In the multitrack an audio
+element is a clip's body, drawn at a clip's size; to look at the samples — to
+zoom to them, sweep a range, hear where the playhead is — open the element on
+its own:
+
+```python
+view = Editor(take, sample_rate=SR, tempo=2.0)
+view.open_signal(gui)               # the peak envelope with the RMS body in it
+view.open_signal(gui, layers=("peak",))       # or the bare envelope
+```
+
+`layers` is what the picture measures: `"peak"` is what the signal reached (the
+min/max envelope) and `"rms"` the level it held, drawn inside it. It is one
+editor-grade waveform measuring twice — one axis, one ruler, one selection, one
+playhead, one upload of the samples — because every view of a signal paints its
+own field before it draws, so two of them on one rectangle would not layer. A
+selection swept there is a selection *of that element*, which is what
+`resolve_selection` hands to an operation.
+
+It needs a **rendered** element. A take has samples a view can address; a
+generator has none until it is rendered, and rather than open a window over
+nothing the call says so and names what to do. That is the same
+generated/generator line the piano roll draws by showing a bounced generator
+read-only — sharper here, because notes can be bounced for a picture and samples
+cannot be invented.
+
 ### Beats and samples
 
 The arrangement places elements in **beats**; the view places clips in **timeline

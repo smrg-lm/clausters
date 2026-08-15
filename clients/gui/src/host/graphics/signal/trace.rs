@@ -34,6 +34,27 @@ use crate::host::theme::Theme;
 /// through the raw samples rather than as min/max columns.
 pub const LINE_THRESHOLD: f64 = 2.0;
 
+/// **How many samples a pixel column must hold for its level to mean
+/// anything** — below this the body fades out rather than being drawn.
+///
+/// The measure itself is exact at any span; what a short span stops being is
+/// *informative*. Root-mean-square and peak converge as the window shrinks
+/// below one cycle — over a quarter cycle of a bass note the two differ by a
+/// factor of `0.9`, so the body simply retraces the envelope it sits in — and
+/// on the way there it reads the wave's **phase**, beating against the period
+/// in a lattice nobody can interpret. Editors draw the same per-column measure
+/// and answer this the same way: Audacity's light-blue RMS "will disappear" as
+/// you zoom in, "because there are not enough samples to provide a meaningful
+/// average in the region being displayed".
+///
+/// A cycle of the lowest musical pitches is a few hundred samples at any
+/// ordinary rate, which is also the pyramid's own summarizing bucket
+/// ([`crate::host::elements::signal::DEFAULT_BASE_BUCKET`]) — the resolution at
+/// which the energy was measured in the first place. So that is the floor, and
+/// the body fades over the octave below it rather than switching off, since a
+/// picture that pops at a zoom step reads as a bug.
+pub const RMS_FLOOR: f64 = 256.0;
+
 /// A signal's samples, read per pixel column. The two arms are the two shapes
 /// a source arrives in: an interleaved buffer held in full (an inline body, a
 /// plot's array), or a [`WaveformData`] whose peak pyramid answers a zoomed-out
@@ -157,10 +178,8 @@ impl<'a> Trace<'a> {
 /// **What a column measures.** The two are pictures of one span, not two
 /// sources: `Peak` is the extent the signal reached (the min/max envelope every
 /// editor draws), `Rms` the level it held there — the body an editor draws
-/// *inside* that envelope, and the reason the two are drawn by one function
-/// placed twice rather than by one function drawing both. A stack of an `Rms`
-/// element over a `Peak` one is the classic picture, and it is composition
-/// rather than a mode: neither layer knows the other exists.
+/// *inside* that envelope. One function draws either, placed once per measure,
+/// which is what lets a view show both without a second renderer.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Measure {
     /// The min/max envelope: what the signal reached.
@@ -188,6 +207,67 @@ impl Measure {
             Measure::Peak => "peak",
             Measure::Rms => "rms",
         }
+    }
+}
+
+/// **What a view measures**, which may be more than one thing: the classic
+/// editor picture is the envelope with the level body drawn *inside* it.
+///
+/// It is a set on the element rather than a stack of elements, and that is the
+/// correction the first attempt earned: every signal picture paints its own
+/// field before it draws (a heavy view's `view_field`, a plot's `track`), so two
+/// pictures on one rectangle are not layers — the second one's field hides the
+/// first. Layering happens *inside* one body or not at all, which is also what
+/// the picture wants: one field, one axis, one ruler, one selection, one
+/// playhead, one upload.
+///
+/// The order is the type's own, and there is nothing to choose: the envelope is
+/// the outer shape and the level lives inside it, so `Peak` draws first
+/// whatever order the wire named them in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Measures(u8);
+
+impl Default for Measures {
+    fn default() -> Self {
+        Measures::of(Measure::Peak)
+    }
+}
+
+impl Measures {
+    /// Every measure there is, in drawing order — back to front.
+    pub const ALL: [Measure; 2] = [Measure::Peak, Measure::Rms];
+
+    /// The set holding exactly one measure.
+    pub fn of(m: Measure) -> Self {
+        Measures(1 << m as u8)
+    }
+
+    /// The wire form: measure names separated by spaces (`"peak"`,
+    /// `"peak rms"`). `None` when a name is one this build does not know or the
+    /// list is empty — which reads as "the prop was not set" rather than as an
+    /// error, the protocol's own posture, and keeps a view that names nothing
+    /// drawing something.
+    pub fn parse(names: &str) -> Option<Self> {
+        let mut set = Measures(0);
+        for name in names.split_whitespace() {
+            set.0 |= Measures::of(Measure::parse(name)?).0;
+        }
+        (set.0 != 0).then_some(set)
+    }
+
+    /// Whether `m` is drawn.
+    pub fn has(self, m: Measure) -> bool {
+        self.0 & Measures::of(m).0 != 0
+    }
+
+    /// The measures drawn, in drawing order.
+    pub fn iter(self) -> impl Iterator<Item = Measure> {
+        Measures::ALL.into_iter().filter(move |m| self.has(*m))
+    }
+
+    /// What `/gui_query` answers — the wire form this parsed from.
+    pub fn name(self) -> String {
+        self.iter().map(Measure::name).collect::<Vec<_>>().join(" ")
     }
 }
 
@@ -366,13 +446,15 @@ pub fn draw_channel(
 /// sign, so the picture is symmetric by construction and sits inside the
 /// envelope of the same span wherever both are drawn.
 ///
-/// **It stays in the column regime at every zoom, and fades out of the line
-/// one.** A mean square over a single sample is that sample squared, so past
-/// the polyline threshold the body degenerates into a mirror of the trace —
-/// two lines saying one thing. Switching it off at the threshold would pop; so
-/// it follows the zoom out instead, its alpha carrying the same weight the
-/// level crossfade uses, and the picture that remains at sample zoom is the
-/// samples themselves, which is the honest one.
+/// **Measured over the column's own samples**, exactly as the envelope above it
+/// is — the same group of samples answering two questions, which is what makes
+/// the body a reading *of* the envelope rather than a second signal. Every
+/// editor draws it this way, and none of them slides a window of its own: a
+/// fixed averaging time would smear the level across a transient and, worse,
+/// push the body outside the envelope that is supposed to contain it.
+///
+/// **It fades out where a column stops holding a meaningful average**
+/// ([`RMS_FLOOR`]), which is the other half of the same convention.
 #[allow(clippy::too_many_arguments)]
 fn draw_body(
     mesh: &mut Mesh,
@@ -386,7 +468,7 @@ fn draw_body(
     cw: f32,
     per_px: f64,
 ) {
-    let fade = (per_px / LINE_THRESHOLD).clamp(0.0, 1.0) as f32;
+    let fade = (per_px / RMS_FLOOR).clamp(0.0, 1.0) as f32;
     if fade <= 0.0 {
         return;
     }
@@ -725,25 +807,33 @@ mod tests {
         );
     }
 
-    /// **The body fades out at sample zoom instead of switching off.** Past the
-    /// polyline threshold a mean square over one sample is that sample squared,
-    /// so the body would be a mirror of the trace saying nothing new — and
-    /// dropping it at the threshold would pop. It follows the zoom out: full
-    /// weight at the threshold, gone where a pixel is a fraction of a sample.
+    /// **The body fades out where a column stops holding a meaningful
+    /// average.** The measure stays exact at any span — what a short span stops
+    /// being is informative: below a cycle, root-mean-square and peak converge,
+    /// so the body retraces the envelope it sits in, and on the way there it
+    /// reads the wave's phase rather than its level. Editors answer this the
+    /// same way (Audacity's RMS "will disappear" as you zoom in, "because there
+    /// are not enough samples to provide a meaningful average"); fading rather
+    /// than switching off is so the picture does not pop at a zoom step.
     #[test]
-    fn the_body_fades_out_where_a_pixel_is_less_than_a_sample() {
-        let samples: Vec<f32> = (0..4_000).map(|i| (i as f32 * 0.3).sin()).collect();
+    fn the_body_fades_out_where_a_column_stops_averaging() {
+        let samples: Vec<f32> = (0..400_000).map(|i| (i as f32 * 0.01).sin()).collect();
         let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
         let alpha = |len: f64| {
             let (_, rms) = draw_measures(&samples, rect, (0.0, len));
             rms.alphas().fold(0.0f32, f32::max)
         };
-        // 400 samples over 100 px: four per pixel, past the threshold — full.
-        assert!((alpha(400.0) - 1.0).abs() < 1e-6, "{}", alpha(400.0));
-        // 100 samples over 100 px: one per pixel, half of the threshold.
-        assert!((alpha(100.0) - 0.5).abs() < 1e-3, "{}", alpha(100.0));
-        // 10 samples over 100 px: a tenth of a sample per pixel — a trace of it.
-        assert!(alpha(10.0) < 0.06, "{}", alpha(10.0));
+        // A column holding a full summarizing bucket: the body at full weight.
+        assert!(
+            (alpha(100.0 * RMS_FLOOR) - 1.0).abs() < 1e-6,
+            "{}",
+            alpha(100.0 * RMS_FLOOR)
+        );
+        // A quarter of one: a quarter of the weight, on its way out.
+        let quarter = alpha(25.0 * RMS_FLOOR);
+        assert!((quarter - 0.25).abs() < 1e-3, "{quarter}");
+        // And at sample zoom it is gone, leaving the samples themselves.
+        assert!(alpha(50.0) < 0.03, "{}", alpha(50.0));
     }
 
     /// **A source that cannot measure draws no body at all.** The column is
