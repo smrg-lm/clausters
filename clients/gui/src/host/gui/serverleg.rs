@@ -247,9 +247,22 @@ impl App {
             };
             match slot {
                 Some(SlotKind::Geometry { base_bucket }) => {
-                    let data = WaveformData::from_interleaved(&samples, channels, base_bucket);
-                    let slot = frame::waveform_slot(data);
-                    ws.waveforms.insert(want.widget_id, slot);
+                    let data: Arc<WaveformData> = Arc::new(WaveformData::from_interleaved(
+                        &samples,
+                        channels,
+                        base_bucket,
+                    ));
+                    ws.waveforms
+                        .insert(want.widget_id, frame::waveform_slot(data.clone()));
+                    // ...and the element keeps the same pyramid, so a copy over
+                    // a fetched buffer reads the material it is drawing.
+                    if let Some(w) = self
+                        .host
+                        .window_def_mut(want.def_id)
+                        .and_then(|t| t.find_mut(want.widget_id))
+                    {
+                        frame::keep_material(w, &Loaded::Peaks(data));
+                    }
                 }
                 Some(SlotKind::Texture {
                     window_size,

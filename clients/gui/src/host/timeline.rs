@@ -301,6 +301,11 @@ pub struct TimelineGroups {
     /// Per-widget data extent in samples, registered by the fronts when a
     /// view's data loads; a group's timeline length is the max over members.
     totals: HashMap<i32, usize>,
+    /// **The view whose selection was written last**, whatever wrote it — the
+    /// addressee a block operation falls back to when the pointer is over
+    /// nothing (see [`Host::selection_addressee`]). Last selection wins,
+    /// because it is the only ordering a window has over its views.
+    last_selected: Option<i32>,
 }
 
 impl TimelineGroups {
@@ -317,6 +322,11 @@ impl TimelineGroups {
     /// The registered data extent of widget `id` (0 when none loaded yet).
     pub fn total_of(&self, id: i32) -> usize {
         self.totals.get(&id).copied().unwrap_or(0)
+    }
+
+    /// The view whose selection was written last, if one still is.
+    pub fn last_selected(&self) -> Option<i32> {
+        self.last_selected
     }
 
     /// **The axis widget `id` was placed on**, as the coordinate system an
@@ -719,7 +729,36 @@ impl Host {
         if let Some(len) = len {
             state.sel_len = len.round();
         }
+        // The one door every selection goes through — a sweep, a `/gui_set`,
+        // an edit-back — so it is where "the last one made" is recorded. A
+        // cleared selection gives the title up rather than keeping it.
+        let selected = state.sel_len > 0.0;
+        if selected {
+            self.timelines.last_selected = Some(id);
+        } else if self.timelines.last_selected == Some(id) {
+            self.timelines.last_selected = None;
+        }
         self.timeline_roots(key)
+    }
+
+    /// **Who a block operation is addressed to when the pointer is over
+    /// nothing** — the view in window `def_id` that carries the window's most
+    /// recent selection.
+    ///
+    /// The pointer is the addressee whenever it is over a view, and that is
+    /// unchanged: a selection is where the pointer has been. But a sweep that
+    /// ends at the very start or end of the material leaves the pointer in the
+    /// window's margin — or off the window, where there is no pointer at all —
+    /// and there a copy answered nothing at all, silently, over a selection
+    /// plainly drawn on screen. So the selection itself names the addressee,
+    /// and **the last selection made wins**, which is the only ordering a
+    /// window has over its views.
+    pub fn selection_addressee(&self, def_id: i32) -> Option<i32> {
+        let id = self.timelines.last_selected()?;
+        let tree = self.window_def(def_id)?;
+        tree.find(id)?;
+        let key = self.timeline_key(id)?;
+        self.timelines.state(key)?.selection().map(|_| id)
     }
 
     /// Sets widget `id`'s group playhead anchor. Returns the roots to repaint

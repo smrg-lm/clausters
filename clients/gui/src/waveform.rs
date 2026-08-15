@@ -342,7 +342,10 @@ fn domain_centre_half(min: f32, max: f32) -> (f32, f32) {
 /// The horizontal window is deliberately absent: it lives in the widget's
 /// timeline group, because a group may span windows while a slot is per window.
 pub struct WaveformView {
-    data: WaveformData,
+    /// The data, **shared** with the element that named the resource: the
+    /// pyramid a loader resolved is that element's material as much as it is
+    /// this view's picture, and a read of it (a copy) is answered from there.
+    data: Arc<WaveformData>,
     /// The vertical display axis: the visible slice of the value domain,
     /// normalized (`0, 1` = no zoom).
     amp: Axis,
@@ -354,9 +357,9 @@ pub struct WaveformView {
 }
 
 impl WaveformView {
-    pub fn new(data: WaveformData) -> Self {
+    pub fn new(data: impl Into<Arc<WaveformData>>) -> Self {
         Self {
-            data,
+            data: data.into(),
             amp: Axis::normalized(Unit::Norm),
             domain: DEFAULT_DOMAIN,
             drag_amp_start: 0.0,

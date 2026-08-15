@@ -172,7 +172,14 @@ impl Gestures {
         cy: f64,
         clip: &mut Clip,
     ) -> Option<Vec<GestureEffect>> {
-        let Hit { id, .. } = hit(host, ctx, cx, cy)?;
+        // The pointer names the addressee whenever it is over a view; when it
+        // is over the window's margin — or off the window, which is where a
+        // sweep to the first or last sample leaves it — the window's most
+        // recent selection does (`Host::selection_addressee`).
+        let id = match hit(host, ctx, cx, cy).filter(|h| host.timeline_key(h.id).is_some()) {
+            Some(Hit { id, .. }) => id,
+            None => host.selection_addressee(ctx.def_id)?,
+        };
         let key = host.timeline_key(id)?;
         let (start, len) = host.timelines().state(key)?.selection().unzip();
         let mut out = Vec::new();

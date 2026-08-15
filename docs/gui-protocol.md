@@ -198,6 +198,13 @@ owner keeping one of its own: the clipboard is the host's precisely so that a
 block copied in one window can be pasted in another, against an owner that never
 saw the copy.
 
+**Which view answers** is the one under the pointer, since a selection is
+already where the pointer has been — and, when the pointer is over none of them,
+the view carrying the window's most recent selection. That fallback is what a
+sweep to the first or last sample needs: it leaves the pointer in the window's
+margin, or off the window altogether, with the selection plainly drawn on
+screen.
+
 The clipboard is one **typed document** — `text`, `elements`, `samples` or
 `spectral` — and its bulk rides *beside* it as blobs rather than inside it as
 base64, which is the same rule every other large payload here follows. A

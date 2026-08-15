@@ -446,8 +446,11 @@ pub enum Loaded {
     /// hand over without knowing the drawing, which is what the server's own
     /// buffers arrive as.
     Raw { samples: Vec<f32>, channels: usize },
-    /// A peak pyramid, from a cache or summarized from raw samples.
-    Peaks(crate::waveform::WaveformData),
+    /// A peak pyramid, from a cache or summarized from raw samples. It is
+    /// **shared**: the element keeps it as the material it may be asked to read
+    /// back, and the slot it claimed draws the same one — a pyramid is a picture
+    /// *and* a body, and copying it would have made those two things.
+    Peaks(std::sync::Arc<crate::waveform::WaveformData>),
     /// Per-channel STFT lanes.
     Stfts(Vec<crate::spectrogram::Stft>),
     /// Interleaved samples, kept whole.
@@ -631,7 +634,7 @@ pub enum SlotFill {
     /// A [`SlotKind::Geometry`] slot's whole content: the peak data the
     /// per-frame columns are decimated from, summarized at the element's own
     /// bucket.
-    Geometry(crate::waveform::WaveformData),
+    Geometry(std::sync::Arc<crate::waveform::WaveformData>),
     /// A [`SlotKind::Texture`] slot's whole content: one analysis per channel
     /// lane, uploaded once and sampled one texel per pixel.
     Texture(Vec<crate::spectrogram::Stft>),

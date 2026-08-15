@@ -971,6 +971,103 @@ fn a_copy_the_host_cannot_honestly_make_is_refused() {
     assert!(clip.is_empty(), "and nothing was put on the clipboard");
 }
 
+/// **A sweep to the first sample leaves the pointer off the view, and the copy
+/// is still the selection's.** Dragging to the very start or end of the material
+/// parks the pointer in the window's margin — or outside the window, where there
+/// is no pointer at all — and a copy addressed only to what is under it answered
+/// nothing, silently, over a selection plainly on screen. The window's most
+/// recent selection is the fallback addressee, and the last one made wins.
+#[test]
+fn a_block_operation_falls_back_to_the_window_s_last_selection() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":54,"type":"signal","view":"trace",
+             "data":[0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7],"base_bucket":2},
+            {"id":55,"type":"signal","view":"trace",
+             "data":[1.0,0.9,0.8,0.7,0.6,0.5,0.4,0.3],"base_bucket":2}]}"#,
+    );
+    host.set_timeline_total(54, 8);
+    host.set_timeline_total(55, 8);
+    let g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let mut clip = crate::host::clipboard::Clip::default();
+
+    // Both views hold one, the second made last: that is the one addressed.
+    host.select_timeline(54, 0.0, 4.0);
+    host.select_timeline(55, 2.0, 5.0);
+    // Off the window entirely — what `CursorLeft` leaves behind.
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Copy, -1.0, -1.0, &mut clip)
+        .expect("the selection answers where the pointer does not");
+    assert!(emitted_args(&effects, 55).is_none(), "{effects:?}");
+    assert_eq!(&clip.blobs()[0][..], &[0.8, 0.7, 0.6, 0.5]);
+
+    // The pointer still wins wherever it is over a view: it lands on the first.
+    let mut clip = crate::host::clipboard::Clip::default();
+    let rect = placed_rect(&host, &ctx, 54);
+    let (cx, cy) = (
+        (rect.x + rect.w / 2.0) as f64,
+        (rect.y + rect.h / 2.0) as f64,
+    );
+    g.clipboard_key(&mut host, &ctx, ClipVerb::Copy, cx, cy, &mut clip)
+        .expect("the view under the pointer answers");
+    assert_eq!(&clip.blobs()[0][..], &[0.0, 0.1, 0.2, 0.3, 0.4]);
+
+    // A selection cleared gives the title up: nothing is addressed by accident.
+    host.set_timeline_selection(55, None, Some(0.0));
+    host.set_timeline_selection(54, None, Some(0.0));
+    let mut clip = crate::host::clipboard::Clip::default();
+    assert!(
+        g.clipboard_key(&mut host, &ctx, ClipVerb::Copy, -1.0, -1.0, &mut clip)
+            .is_none()
+    );
+}
+
+/// **A mapped take is readable, and a slot does not take that away.** The
+/// navigable views are the ones the clipboard was written for, and they are also
+/// the ones whose data a loader routes into a GPU slot — so for a while a copy
+/// over the very source it was meant for refused, the element holding nothing
+/// while the picture on screen was drawn from the samples. The element keeps the
+/// pyramid the slot draws (`frame::keep_material`), and the copy reads it.
+#[test]
+fn a_take_routed_into_a_slot_is_still_the_elements_material() {
+    use crate::host::widget::element::Loaded;
+    use crate::waveform::WaveformData;
+    use std::sync::Arc;
+
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":53,"type":"signal","view":"trace","navigable":1,
+             "path":"take.f32","bulk":true,"base_bucket":2}]}"#,
+    );
+    // What a loader resolved: the mapped file's samples, summarized. It fills
+    // the slot, and the element keeps the same pyramid.
+    let peaks = Arc::new(WaveformData::from_interleaved(
+        &[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
+        1,
+        2,
+    ));
+    let widget = host
+        .window_def_mut(1)
+        .and_then(|t| t.find_mut(53))
+        .expect("the view is in the tree");
+    crate::host::frame::keep_material(widget, &Loaded::Peaks(peaks));
+    host.set_timeline_total(53, 8);
+
+    let g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let mut clip = crate::host::clipboard::Clip::default();
+    host.select_timeline(53, 2.0, 5.0);
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Copy, 400.0, 150.0, &mut clip)
+        .expect("a view under the cursor answers");
+    assert!(
+        emitted_args(&effects, 53).is_none(),
+        "the copy was made, so nothing was refused: {effects:?}"
+    );
+    assert_eq!(&clip.blobs()[0][..], &[0.2, 0.3, 0.4, 0.5]);
+}
+
 #[test]
 fn wheel_zooms_the_time_axis_and_emits_the_view() {
     let mut host = host_from(

@@ -17,6 +17,12 @@
 //! that claimed a GPU slot is fed through that slot; every other one takes the
 //! data home through [`SignalElement::take`]. So a loader resolves a resource
 //! and hands it over, and nothing about a presentation is written down in it.
+//!
+//! A slot is where a picture goes, though, and not where the *material* lives:
+//! a pyramid is both, so a slot-backed element takes it home as well (one
+//! shared `Arc`, `frame::keep_material`). That is what lets a copy read the
+//! take back out of the element that named it, and lets a window opened later
+//! refill its slot from what the element already holds.
 
 use std::sync::Arc;
 
@@ -151,8 +157,11 @@ impl SignalElement {
                 }
                 true
             }
+            // A pyramid is the material this element holds, whether or not a
+            // slot also draws it: the `Arc` is the one a slot was filled with,
+            // and a read of the source (a copy) is answered out of it.
             Loaded::Peaks(peaks) => {
-                source.body = Some(Arc::new(peaks));
+                source.body = Some(peaks);
                 true
             }
             Loaded::Samples(samples) => {
@@ -228,9 +237,9 @@ mod tests {
         let mut take =
             element(r#"{"id":1,"type":"signal","view":"trace","path":"t.f32","bulk":true}"#);
         assert!(take.want().is_some());
-        assert!(take.take(Loaded::Peaks(
+        assert!(take.take(Loaded::Peaks(Arc::new(
             crate::waveform::WaveformData::from_interleaved(&[0.0, 1.0, 0.5, -1.0], 1, 2,)
-        )));
+        ))));
         assert_eq!(take.want(), None, "the pyramid is here now");
     }
 

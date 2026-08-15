@@ -27,7 +27,11 @@ gesture this host does not have yet. A plain drag stays a time span on both, on
 purpose.
 
 The two views are deliberately **not linked** here, so each one's selection is
-its own (see ``gui_linked.py`` for the shared-axis case).
+its own (see ``gui_linked.py`` for the shared-axis case) — which is what makes
+the clipboard's addressee visible: a block operation goes to the view under the
+pointer, and to whichever view holds the window's most recent selection when the
+pointer is over neither (a sweep out to the first or last sample leaves it in
+the window's margin).
 
 **Ctrl+C then Ctrl+V** is the clipboard, and it shows where the host's authority
 stops. The copy is a *read*, so the host makes it alone: the selected span
@@ -35,12 +39,15 @@ leaves the material it has mapped and lands on its clipboard, typed and carrying
 its sample rate — nothing reaches this script. The paste *changes data*, which
 the host does not own, so it arrives here as a request with the clipboard beside
 it, and what this script does is the smallest honest thing: the block goes into
-a buffer of its own and plays once. Copy a range, paste it, hear that range —
-with nothing written over the take, because a destructive edit belongs to
-whoever owns that material. The **playhead** tracks what you hear: the
-same render is looped by a ``PlayBuf`` synth and anchored each pass with the
-server's sample clock, and the host reads the engine clock from shared memory
-with zero per-frame messages.
+a buffer of its own (`Buffer.set_samples`, which chunks it as blobs — a
+half-second of stereo is 200 kB and would not fit one datagram as arguments) and
+plays once. Copy a range, paste it, hear that range — with nothing written over
+the take, because a destructive edit belongs to whoever owns that material. The
+**playhead** tracks what you hear: `play_pass` starts one pass of the render
+through a ``PlayBuf`` voice (``loop`` is off — the take plays once and the sound
+never repeats under whatever else you are checking) and anchors the line with
+the server's sample clock, which the host reads from shared memory with zero
+per-frame messages.
 
 Both views are *named* (``wave``/``spect``), so the script sets and reads each
 by name and never matches a widget id.
@@ -81,14 +88,12 @@ import json
 import os
 import sys
 import tempfile
-import time
 
 from clausters import Session
 from clausters.render import read_soundfile
-from clausters.defs import Buffer, SynthDef, out, play_buf
+from clausters.defs import Buffer, Synth, SynthDef, control, out, play_buf
 from clausters.gui import peaks_cache_file, samples_to_file, spectrogram, waveform, window
 from clausters.seq import Pbind, Pseq, Pwhite
-from clausters.defs import Buffer, Synth
 
 SR = 48_000.0
 
@@ -151,24 +156,27 @@ print(f"audio server on segment {server.shm}")
 
 
 # The playhead's sound source: the very file the render wrote, in a server
-# buffer, looped by a synth. Nothing converts it -- /buffer_allocRead reads float
-# WAV through the same decoder read_soundfile used above.
-bufnum = server.buffers.alloc()
-server.send_msg("/buffer_allocRead", bufnum, wav_path)
+# buffer, played by a synth. Nothing converts it -- `Buffer.read` is
+# /buffer_allocRead, which decodes float WAV through the same decoder
+# read_soundfile used above, and hands back the shape it found.
+take = Buffer.read(wav_path, server=server)
 SynthDef(
     "sampler",
-    out(0.0, play_buf(float(bufnum), 0.0)),
-    out(1.0, play_buf(float(bufnum), 1.0)),
+    out(0.0, play_buf(float(take.bufnum), 0.0)),
+    out(1.0, play_buf(float(take.bufnum), 1.0)),
 ).send(server)
 
 # The clipboard's own voice: a one-shot over whatever buffer the paste filled.
-# A second buffer rather than a write into the take -- the host copied a range,
-# and hearing that range needs no edit to the material it came from.
+# A buffer of its own rather than a write into the take -- the host copied a
+# range, and hearing that range needs no edit to the material it came from. The
+# buffer is a *control* because a paste allocates one sized to what came over,
+# so the def outlives every block it plays.
 _clip_voice = None
-_clip_bufnum = server.buffers.alloc()
+_clip_buf = None
 SynthDef(
     "clipboard-player",
-    out(0.0, play_buf(float(_clip_bufnum), 0.0)),
+    out(0.0, play_buf(control("buf", 0.0, "ir"), 0.0)),
+    out(1.0, play_buf(control("buf", 0.0, "ir"), 1.0)),
 ).send(server)
 server.sync()
 
@@ -207,7 +215,7 @@ print(f"opened window {win} — drag to select, Shift+drag to pan, wheel to zoom
 
 # %% [markdown]
 # ## Follow the playhead and read events
-# Re-run `play_pass()` to (re)start a loop pass and re-anchor the orange playhead.
+# Re-run `play_pass()` to play the take again and re-anchor the orange playhead.
 # The ``wave``/``spect`` handles print any selection changes and `win.on_closed`
 # notices a window close; `gui.pump()` dispatches them. When evaluating cells,
 # call these whenever you like.
@@ -218,8 +226,9 @@ _closed = False
 
 
 def play_pass():
-    """(Re)start a buffer pass and anchor the playhead at the /clock_query sample where
-    buffer position 0 starts sounding."""
+    """Play the take once and anchor the playhead at the /clock_query sample where
+    buffer position 0 starts sounding. Any previous pass is freed first, so
+    calling it again restarts the take rather than layering a second voice."""
     global _synth
     if _synth is not None:
         _synth.free()
@@ -259,22 +268,30 @@ def on_clipboard(tag, *vals):
     values = array.array("f")
     values.frombytes(bytes(blob))
     channels = int(block["channels"])
-    frames = int(block["frames"])
-    print(f"pasted {frames} frames x {channels} ch at {block['sample_rate']:.0f} Hz "
-          f"({frames / block['sample_rate']:.3f} s) — auditioning it")
-    # A buffer of its own, filled with what came over. The rate travels with the
-    # block and nothing here resamples it: that would be an edit, and an edit is
-    # the owner's.
-    server.send_msg("/buffer_alloc", _clip_bufnum, frames, channels)
-    server.send_msg("/buffer_set", _clip_bufnum, 0, *values)
-    server.sync()
-    # One voice at a time: the previous audition stops, this one plays. It does
-    # not free itself (a one-shot done-action is the def's business, not the
-    # clipboard's), so the next paste and the teardown are what end it.
-    global _clip_voice
+    block_frames = int(block["frames"])
+    print(f"pasted {block_frames} frames x {channels} ch at {block['sample_rate']:.0f} Hz "
+          f"({block_frames / block['sample_rate']:.3f} s) — auditioning it")
+    # A buffer of its own, sized to what came over and filled with it. The rate
+    # travels with the block and nothing here resamples it: that would be an
+    # edit, and an edit is the owner's. `set_samples` is why this is one line:
+    # it sends the block as little-endian ``f32`` blobs, chunked to the
+    # transport's bound — half a second of stereo is 200 kB, which as OSC
+    # arguments would not fit a datagram at all.
+    global _clip_voice, _clip_buf
+    # The previous audition stops first -- one voice at a time -- but its buffer
+    # is freed *last*: a write is parsed against the server's buffer state as of
+    # the last completed command, so the barrier below is what the new buffer
+    # needs, and a free thrown in ahead of it only adds a reply to wait past.
     if _clip_voice is not None:
         _clip_voice.free()
-    _clip_voice = Synth("clipboard-player", server=server)
+    previous, _clip_buf = _clip_buf, Buffer.alloc(block_frames, channels, server=server)
+    server.sync()          # the allocation has to be *done*, not merely sent,
+    _clip_buf.set_samples(values)   # before a write can name the buffer
+    # It does not free itself (a one-shot done-action is the def's business, not
+    # the clipboard's), so the next paste and the teardown are what end it.
+    _clip_voice = Synth("clipboard-player", {"buf": _clip_buf.bufnum}, server=server)
+    if previous is not None:
+        previous.free()
 
 
 def on_selection(name):
@@ -331,8 +348,9 @@ def teardown():
     gui.close(win)
     if _clip_voice is not None:
         _clip_voice.free()
-    Buffer(_clip_bufnum, server=server).free()
-    Buffer(bufnum, server=server).free()
+    if _clip_buf is not None:
+        _clip_buf.free()
+    take.free()
     session.close()
     for name in os.listdir(_tmp):
         os.remove(os.path.join(_tmp, name))

@@ -51,18 +51,30 @@ impl SignalElement {
         if !self.slot_dirty || self.slot_kind().is_none() {
             return None;
         }
-        // The element's *own* samples, which is the only data it holds: a
-        // resource it named is the loader's, and filling from nothing here
-        // would show an empty picture until that load lands and replaces it.
         let data = self.source.data()?;
+        // A **resolved pyramid is the element's data too**: a loader routed it
+        // into the slot when it landed, and the element kept the same `Arc`, so
+        // the slot of a window opened later (or of a new device) is refilled
+        // from here rather than from a resource nobody asks for twice.
+        if let Some(body) = &data.body
+            && self.presentation == Presentation::Signal
+        {
+            self.slot_dirty = false;
+            return Some(SlotFill::Geometry(body.clone()));
+        }
+        // Otherwise the element's *own* samples, which is the only other data it
+        // holds: a resource it named is the loader's, and filling from nothing
+        // here would show an empty picture until that load lands and replaces it.
         if data.samples.is_empty() {
             return None;
         }
         let fill = if self.presentation == Presentation::Signal {
-            SlotFill::Geometry(crate::waveform::WaveformData::from_interleaved(
-                &data.samples,
-                data.channels,
-                data.base_bucket,
+            SlotFill::Geometry(std::sync::Arc::new(
+                crate::waveform::WaveformData::from_interleaved(
+                    &data.samples,
+                    data.channels,
+                    data.base_bucket,
+                ),
             ))
         } else {
             SlotFill::Texture(crate::host::frame::stft_lanes(

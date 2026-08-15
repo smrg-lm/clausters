@@ -243,6 +243,9 @@ fn load_bulk(
             want => {
                 if let Some(loaded) = resolve_bulk(&want) {
                     if needs.slot.is_some() {
+                        // The picture goes to the slot, and whatever of it is
+                        // *material* stays with the element that named it.
+                        frame::keep_material(widget, &loaded);
                         frame::place_in_slot(loaded, id, gpu, renderers, waveforms, spectrograms);
                     } else {
                         widget.kind.take_bulk(loaded);
@@ -282,14 +285,14 @@ fn resolve_bulk(want: &Bulk) -> Option<Loaded> {
     match want {
         Bulk::PeakCache(cache) => MmapLoader
             .waveform(Some(cache), None, 1, signal::DEFAULT_BASE_BUCKET)
-            .map(Loaded::Peaks),
+            .map(|d| Loaded::Peaks(Arc::new(d))),
         Bulk::Peaks {
             path,
             channels,
             base_bucket,
         } => MmapLoader
             .waveform(None, Some(path), *channels, *base_bucket)
-            .map(Loaded::Peaks),
+            .map(|d| Loaded::Peaks(Arc::new(d))),
         Bulk::Samples { path, channels } => MmapLoader
             .plot_samples(path, *channels)
             .map(Loaded::Samples),

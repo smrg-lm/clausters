@@ -66,7 +66,7 @@ pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, reques
                 multi.frames(),
                 multi.num_channels()
             ));
-            Loaded::Peaks(WaveformData::with_multi_pyramid(multi))
+            Loaded::Peaks(Arc::new(WaveformData::with_multi_pyramid(multi)))
         }
         Bulk::Peaks {
             channels,
@@ -78,7 +78,11 @@ pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, reques
                 "waveform: fetched {} samples x {channels} channel(s) from {url} (pyramids built in wasm)",
                 flat.len() / channels.max(1)
             ));
-            Loaded::Peaks(WaveformData::from_interleaved(&flat, channels, base_bucket))
+            Loaded::Peaks(Arc::new(WaveformData::from_interleaved(
+                &flat,
+                channels,
+                base_bucket,
+            )))
         }
         Bulk::StftCache(_) => {
             let Some(stft) = Stft::from_bytes(&bytes) else {
@@ -224,6 +228,15 @@ impl WebApp {
             .and_then(|t| t.find(widget_id))
             .is_some_and(|w| slot_target(w).is_some());
         if wants_slot {
+            // The picture goes to the slot, and whatever of it is *material*
+            // stays with the element that named it (`frame::keep_material`).
+            if let Some(widget) = self
+                .host
+                .window_def_mut(def)
+                .and_then(|t| t.find_mut(widget_id))
+            {
+                frame::keep_material(widget, &data);
+            }
             self.place_bulk(def, widget_id, data);
         } else if let Some(widget) = self
             .host

@@ -312,8 +312,20 @@ impl WebApp {
                     };
                     match slot {
                         Some(SlotKind::Geometry { base_bucket }) => {
-                            let data =
-                                WaveformData::from_interleaved(&samples, channels, base_bucket);
+                            let data = std::sync::Arc::new(WaveformData::from_interleaved(
+                                &samples,
+                                channels,
+                                base_bucket,
+                            ));
+                            // The same pyramid to the slot and to the element,
+                            // as everywhere else (`frame::keep_material`).
+                            if let Some(w) = self
+                                .host
+                                .window_def_mut(want.def_id)
+                                .and_then(|t| t.find_mut(want.widget_id))
+                            {
+                                frame::keep_material(w, &Loaded::Peaks(data.clone()));
+                            }
                             self.place_bulk(want.def_id, want.widget_id, Loaded::Peaks(data));
                         }
                         Some(SlotKind::Texture {

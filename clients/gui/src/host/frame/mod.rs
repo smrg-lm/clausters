@@ -74,7 +74,7 @@ pub(crate) struct WaveformSlot {
 }
 
 /// A `WaveformSlot` for ready data.
-pub(crate) fn waveform_slot(data: WaveformData) -> WaveformSlot {
+pub(crate) fn waveform_slot(data: impl Into<Arc<WaveformData>>) -> WaveformSlot {
     WaveformSlot {
         view: WaveformView::new(data),
     }
@@ -107,6 +107,24 @@ pub(crate) fn spectrogram_slot(
         .map(|stft| SpectrogramView::new(&gpu.device, &gpu.queue, &renderers.spectrogram, stft))
         .collect();
     Some(SpectrogramSlot { views })
+}
+
+/// **What a slot-backed element keeps of the resource that filled its slot.**
+///
+/// A pyramid is not only a picture: it is the material the element named, and
+/// [`Element::sample_block`](crate::host::widget::element::Element::sample_block)
+/// reads a copy back out of it. Routing it to the slot alone left the element
+/// holding nothing, so a copy over a mapped take — the very source the clipboard
+/// was written for — refused as if the host could not read it. The two share one
+/// `Arc`, so keeping it costs a pointer and never a second pyramid.
+///
+/// Every other form is the picture alone and the element keeps nothing: an
+/// analysis is a reading of a signal, not the signal, and what a copy would owe
+/// the clipboard is samples.
+pub(crate) fn keep_material(widget: &mut Widget, data: &Loaded) {
+    if let Loaded::Peaks(peaks) = data {
+        widget.take_bulk(|| Loaded::Peaks(peaks.clone()));
+    }
 }
 
 /// **Puts a resolved bulk resource into the slot its element claimed**, keyed
@@ -928,7 +946,10 @@ mod tests {
         let body = &mut tree.children[0].children[0].children[0];
         assert!(
             body.kind
-                .take_bulk(Loaded::Peaks(WaveformData::new(samples.into(), 256))),
+                .take_bulk(Loaded::Peaks(Arc::new(WaveformData::new(
+                    samples.into(),
+                    256
+                )))),
             "the take is what the pyramid is for"
         );
 
