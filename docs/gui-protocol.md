@@ -205,6 +205,12 @@ sweep to the first or last sample needs: it leaves the pointer in the window's
 margin, or off the window altogether, with the selection plainly drawn on
 screen.
 
+**Playing a selection is not a clipboard operation**, and the distinction is
+worth keeping: looping it moves no data at all. The loop region is group state —
+`playhead_loop_start`/`playhead_loop_len`, on every widget with a time axis — and
+what sounds is the server reading the material it already holds. A copy is for
+carrying a block somewhere the material is *not*.
+
 The clipboard is one **typed document** — `text`, `elements`, `samples` or
 `spectral` — and its bulk rides *beside* it as blobs rather than inside it as
 base64, which is the same rule every other large payload here follows. A
