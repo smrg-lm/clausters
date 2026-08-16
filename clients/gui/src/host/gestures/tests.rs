@@ -3301,3 +3301,124 @@ fn undo_and_redo_leave_the_window_as_a_report() {
     assert_eq!(stamps.len(), 1);
     assert!(stamps[0] > 0, "a real stamp, not the reserved zero");
 }
+
+/// D1: a sample is a grabbable point. The whole route in one test — press the
+/// disc, drag it, and one intent leaves on release carrying both the value it
+/// reached and the one it came from, so the owner can apply it and invert it
+/// without remembering anything.
+#[test]
+fn a_dragged_sample_leaves_as_one_absolute_intent() {
+    let def = r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","navigable":1,
+             "data":[0.0,0.5,-0.5,1.0,0.25,-0.25,0.75,0.0],"base_bucket":2,
+             "gestures":{"drag":"sample"}}]}"#;
+    let mut host = host_from(def);
+    // Eight samples across the body: far enough apart that the trace marks
+    // each one, which is the same question the grab asks.
+    host.set_timeline_total(50, 8);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+
+    g.press(&mut host, &ctx, 400.0, 100.0, &mut || false);
+    // The grab shows at once: the hand sees the value it is holding before
+    // anyone has applied anything.
+    let held = host
+        .widget_kind(1, 50)
+        .and_then(|k| k.pending_sample())
+        .expect("the press takes hold of a sample");
+    let effects = g.drag_to(&mut host, &ctx, 400.0, 220.0);
+    let moved = host
+        .widget_kind(1, 50)
+        .and_then(|k| k.pending_sample())
+        .expect("and keeps hold of it");
+    assert_eq!(
+        moved.frame, held.frame,
+        "the drag moves the value, not which"
+    );
+    assert!(moved.value < held.value, "dragging down lowers it");
+    assert!(
+        !has_emit_tag(&effects, 50, "sample"),
+        "one gesture is one intent: nothing leaves along the way"
+    );
+
+    let effects = g.release(&mut host, &ctx, 400.0, 220.0);
+    let args = emitted_args(&effects, 50).expect("the release reports");
+    assert_eq!(
+        args.len(),
+        5,
+        "tag, channel, frame, value, previous: {args:?}"
+    );
+    assert!(has_emit_tag(&effects, 50, "sample"));
+    // The pending stays until the owner answers: dropping it here would snap
+    // the picture back for the length of the round trip, which reads as a
+    // refusal.
+    assert!(
+        host.widget_kind(1, 50)
+            .and_then(|k| k.pending_sample())
+            .is_some(),
+        "the edit is still in flight"
+    );
+
+    // And the acknowledgement is what lets go of it — O3's *drop every pending
+    // at or below the stamp*, with the drawing finally following the outbox.
+    let seq = match &effects[..] {
+        [.., crate::host::gestures::GestureEffect::Emit { seq, .. }] => *seq,
+        _ => effects
+            .iter()
+            .find_map(|e| match e {
+                crate::host::gestures::GestureEffect::Emit { seq, .. } => Some(*seq),
+                _ => None,
+            })
+            .expect("the intent went out stamped"),
+    };
+    host.handle_packet(
+        clausters_core::osc::OscPacket::Message(clausters_core::osc::OscMessage {
+            addr: crate::host::GUI_ACK.into(),
+            args: vec![
+                clausters_core::osc::OscType::Int(seq),
+                clausters_core::osc::OscType::Int(1),
+            ],
+        }),
+        crate::host::ClientId::Udp(std::net::SocketAddr::from((
+            std::net::Ipv4Addr::LOCALHOST,
+            9000,
+        ))),
+    );
+    assert!(
+        host.widget_kind(1, 50)
+            .and_then(|k| k.pending_sample())
+            .is_none(),
+        "the owner answered, so the hand lets go"
+    );
+}
+
+/// The step **declines where a sample is not a thing on screen** — the trace
+/// draws no discs there, so there is nothing to grab, and a plan that names it
+/// falls through instead of offering a grab the picture does not show.
+#[test]
+fn grabbing_a_sample_declines_when_they_are_not_drawn() {
+    let def = r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","navigable":1,
+             "data":[0.0,0.5,-0.5,1.0,0.25,-0.25,0.75,0.0],"base_bucket":2,
+             "gestures":{"drag":"sample select"}}]}"#;
+    let mut host = host_from(def);
+    // A hundred thousand samples over the same body: a pixel is many samples,
+    // so no disc is drawn and none can be taken.
+    host.set_timeline_total(50, 100_000);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    g.press(&mut host, &ctx, 400.0, 100.0, &mut || false);
+    assert!(
+        host.widget_kind(1, 50)
+            .and_then(|k| k.pending_sample())
+            .is_none(),
+        "nothing was taken hold of"
+    );
+    // And the plan's next step got the press instead, which is what declining
+    // rather than consuming is for.
+    let effects = g.drag_to(&mut host, &ctx, 600.0, 100.0);
+    assert!(
+        has_emit_tag(&effects, 50, "selection"),
+        "the sweep behind it still works"
+    );
+}

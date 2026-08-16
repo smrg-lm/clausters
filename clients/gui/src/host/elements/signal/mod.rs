@@ -358,6 +358,20 @@ pub struct SignalElement {
     /// when the fill is taken, which is what keeps a still picture at zero
     /// uploads.
     pub slot_dirty: bool,
+    /// The edit the hand is making **right now**, before anyone has applied it.
+    ///
+    /// The host owns no data, so a dragged sample is not a change to the
+    /// material: it is a value drawn over the picture until the owner answers.
+    /// It is kept here rather than in the gesture machine because state lives
+    /// in the element (and because the drawing has to find it), and it is
+    /// dropped when the acknowledgement arrives.
+    ///
+    /// **A pending value never enters the summary.** The peaks the picture is
+    /// drawn from are the material's, and re-summarizing on every motion event
+    /// would both cost the span per frame and make the overview disagree with
+    /// the samples until the edit lands. So this draws *over* the trace and
+    /// changes nothing under it.
+    pub pending: Option<crate::host::widget::element::PendingSample>,
 }
 
 impl SignalElement {
@@ -369,6 +383,7 @@ impl SignalElement {
         SignalElement {
             presentation: p.presentation,
             measures: Measures::default(),
+            pending: None,
             source: if p.live {
                 Source::Bus(Bus {
                     bus: 0,

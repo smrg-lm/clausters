@@ -1338,6 +1338,18 @@ impl Host {
         if !settled.is_empty() {
             debug!("/gui_ack retired {} pending edit(s)", settled.len());
         }
+        // The other half of *drop every pending at or below the stamp*: the
+        // outbox forgets the edit, and the element stops drawing it. What the
+        // owner pushed is already in the material, so letting go is what makes
+        // the picture the document's again rather than the hand's.
+        for p in &settled {
+            if let Some(w) = self
+                .window_def_mut(p.def_id)
+                .and_then(|t| t.find_mut(p.widget_id))
+            {
+                w.kind.set_pending_sample(None);
+            }
+        }
     }
 
     fn on_query(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {

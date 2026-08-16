@@ -15,7 +15,7 @@
 
 use super::super::Host;
 use super::super::interact::{self, Hit};
-use super::super::widget::element::TimeSpace;
+use super::super::widget::element::{PendingSample, TimeSpace};
 use super::super::widget::{Claim, GestureStep, WidgetKind};
 use super::effects::*;
 use super::nav::*;
@@ -250,6 +250,66 @@ impl Gestures {
                     nav_len: axis.nav.len,
                     anchor,
                     value: value.zip(anchor_v),
+                });
+                out.push(GestureEffect::Redraw(def_id));
+                true
+            }
+            (GestureStep::Sample, interact::Coords::Time(axis)) => {
+                if !axis.spans(cx) {
+                    return false;
+                }
+                // A sample is grabbable exactly where it is **drawn**: the
+                // trace marks each one with a disc only when they are far
+                // enough apart to be told apart, and the same question decides
+                // whether there is anything here to take hold of. Read from the
+                // drawing's own rule rather than restated, so the two can never
+                // drift into offering a grab on a picture that shows no points.
+                let spacing = (axis.body.w as f64 / axis.nav.len.max(1e-9)) as f32;
+                let radius = host.metrics_for(ctx.def_id).point_radius;
+                if !crate::host::graphics::signal::trace::dots_fit(spacing, radius) {
+                    return false;
+                }
+                let Some(value) =
+                    value_axis(host, ctx, frame, hit).filter(|v| v.body.contains(cx, cy))
+                else {
+                    return false;
+                };
+                let frames = interact::sample_at(
+                    axis.nav.start,
+                    axis.nav.len,
+                    axis.body.x as f64,
+                    axis.body.w as f64,
+                    cx,
+                );
+                if frames < 0.0 {
+                    return false;
+                }
+                let index = frames.round().max(0.0) as usize;
+                let channel = crate::host::frame::lane_at(value.body, value.lanes.max(1), cy);
+                // What it is now, so the intent that leaves on release is
+                // absolute *and* carries its own inverse.
+                let Some(previous) = host
+                    .window_def(ctx.def_id)
+                    .and_then(|t| t.find(id))
+                    .and_then(|w| w.kind.sample_value(channel, index))
+                else {
+                    return false; // an overview with no samples has none to grab
+                };
+                let held = PendingSample {
+                    channel,
+                    frame: index,
+                    value: value.value_at(cy) as f32,
+                    previous,
+                };
+                if !set_pending(host, def_id, id, Some(held)) {
+                    return false;
+                }
+                self.drag = Some(Drag::Sample {
+                    id,
+                    axis: value,
+                    channel,
+                    frame: index,
+                    previous,
                 });
                 out.push(GestureEffect::Redraw(def_id));
                 true

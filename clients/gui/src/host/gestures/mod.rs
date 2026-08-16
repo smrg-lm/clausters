@@ -174,6 +174,20 @@ enum Drag {
         anchor: f64,
         value: Option<(ValueAxis, f64)>,
     },
+    /// Dragging one **sample** of a navigable trace vertically — the smallest
+    /// destructive edit, and the one that proves the whole route.
+    ///
+    /// The axis is snapshotted at the press, unlike a selection's: a sample is
+    /// a fixed position in the material, so a view scrolling under the drag
+    /// must not move which sample the hand is holding. Only the *value*
+    /// follows the pointer.
+    Sample {
+        id: i32,
+        axis: ValueAxis,
+        channel: usize,
+        frame: usize,
+        previous: f32,
+    },
     /// Panning a timeline view's **vertical** display window from a drag on
     /// its y-ruler strip: `y_start` is the window snapshot at the press,
     /// `lane_h` the lane height in device pixels (absolute panning, so a

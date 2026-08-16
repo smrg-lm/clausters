@@ -194,6 +194,42 @@ pub(super) fn draw_editor_overlay(
             }
         }
     }
+    // **The edit the hand is making, drawn over the picture and marked as
+    // pending.** The material under it has not changed — the host owns no data
+    // — so this is the one thing on screen that is not what the document says.
+    // It is drawn as a ring rather than a filled disc, and tethered to the
+    // sample it replaces by a line, so what is read is *this value, moved from
+    // there*, and not a sample that is simply somewhere else.
+    // Only a view whose vertical is a *value* can hold one: a spectrogram's is
+    // frequency, and a sample has no place on it.
+    if let (Some(held), Vertical::Value(domain)) = (item.pending, vertical)
+        && held.frame as f64 >= nav.start
+        && (held.frame as f64) < nav.start + nav.len
+    {
+        let lanes_n = lanes.max(1);
+        let lane = crate::host::frame::lane_rect(body, lanes_n, held.channel.min(lanes_n - 1));
+        let (y0, y_len) = item.editor.y_view();
+        let y_of = |v: f32| {
+            let d = crate::waveform::value_to_display(v, domain.0, domain.1);
+            let rel = 1.0 - ((d - y0) / y_len.max(f64::MIN_POSITIVE));
+            lane.y + (rel as f32) * lane.h
+        };
+        let x = sample_to_x(held.frame as f64, nav, body);
+        let (y_new, y_old) = (y_of(held.value), y_of(held.previous));
+        if x >= body.x && x <= body.x + body.w {
+            let r = m.point_radius;
+            // The tether first, so the ring sits on top of it.
+            mesh.line(
+                [x, y_old.clamp(lane.y, lane.y + lane.h)],
+                [x, y_new.clamp(lane.y, lane.y + lane.h)],
+                m.divider_w,
+                with_alpha(theme.selection, 0.55),
+            );
+            let y = y_new.clamp(lane.y, lane.y + lane.h);
+            mesh.disc(x, y, r * 1.15, theme.selection);
+            mesh.disc(x, y, r * 0.5, theme.background);
+        }
+    }
     // Playhead: the engine clock relative to the widget's origin while playing,
     // else the static cursor of a located, stopped transport.
     if let Some(pos) = chrome.head_at(inputs.world.sample_clock)

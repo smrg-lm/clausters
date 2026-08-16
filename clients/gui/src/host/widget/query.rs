@@ -159,6 +159,23 @@ impl WidgetKind {
         self.as_element()?.freq_axis(rect, m, sample_rate)
     }
 
+    /// The sample this widget is holding for the hand ([`Element::pending_sample`]).
+    pub fn pending_sample(&self) -> Option<super::element::PendingSample> {
+        self.as_element()?.pending_sample()
+    }
+
+    /// Hands it one, or takes it back ([`Element::set_pending_sample`]);
+    /// `false` where the widget is not the kind that can hold one.
+    pub fn set_pending_sample(&mut self, held: Option<super::element::PendingSample>) -> bool {
+        self.as_element_mut()
+            .is_some_and(|e| e.set_pending_sample(held))
+    }
+
+    /// One sample of its material ([`Element::sample_value`]).
+    pub fn sample_value(&self, channel: usize, frame: usize) -> Option<f32> {
+        self.as_element()?.sample_value(channel, frame)
+    }
+
     /// The widget's **value axis** inside the rect it was placed in
     /// ([`Element::value_axis`]) — the second measuring axis a marquee may
     /// restrict a selection on.

@@ -543,6 +543,16 @@ pub enum GestureStep {
     /// `"select_box select"` is the honest plan for a mixed stack: a rectangle
     /// where the picture has two axes, the plain span where it has one.
     SelectBox,
+    /// Grab the **sample** under the pointer and drag it vertically — the
+    /// smallest destructive edit there is, and the one that proves the whole
+    /// route (gesture to intent to owner to redraw).
+    ///
+    /// It **declines where a sample is not a thing on screen**: below the zoom
+    /// at which the trace marks each sample with a disc there is nothing to
+    /// grab, and a plan naming it falls through to whatever it names next.
+    /// That is the same rule as the drawing's, read from the same place, so
+    /// what can be grabbed is exactly what is drawn.
+    Sample,
     /// Put the transport's cursor under the pointer (a timeline locate).
     Locate,
 }
@@ -554,6 +564,7 @@ impl GestureStep {
             "pan" => GestureStep::Pan,
             "select" => GestureStep::Select,
             "select_box" => GestureStep::SelectBox,
+            "sample" => GestureStep::Sample,
             "locate" => GestureStep::Locate,
             _ => return None,
         })

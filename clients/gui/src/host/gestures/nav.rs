@@ -111,6 +111,22 @@ pub(super) fn freq_nav_ids(tree: &Widget) -> Vec<i32> {
 /// second axis is told when there is one. Passing `None` clears any range the
 /// widget carried — a new sweep replaces the old selection whole, rather than
 /// leaving a restriction from a gesture the hand has finished with.
+/// Hands the element the sample the hand is holding, or takes it back.
+///
+/// Returns whether the element is one that can hold one — a press that cannot
+/// place its pending has nothing to draw and declines, rather than starting a
+/// drag whose feedback would be invisible.
+pub(super) fn set_pending(
+    host: &mut Host,
+    def_id: i32,
+    id: i32,
+    held: Option<crate::host::widget::element::PendingSample>,
+) -> bool {
+    host.window_def_mut(def_id)
+        .and_then(|t| t.find_mut(id))
+        .is_some_and(|w| w.kind.set_pending_sample(held))
+}
+
 pub(super) fn set_selection(
     host: &mut Host,
     out: &mut Vec<GestureEffect>,

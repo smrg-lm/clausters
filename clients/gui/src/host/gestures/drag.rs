@@ -18,6 +18,7 @@ use super::super::widget::{Axis, WidgetKind};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element};
+use clausters_core::osc::OscType;
 
 impl Gestures {
     /// Advances an edge-held drag by `dt` seconds: pans the group's window in
@@ -241,6 +242,25 @@ impl Gestures {
                 });
                 set_selection(host, &mut out, def_id, id, anchor, cur, range);
             }
+            Drag::Sample {
+                id,
+                axis,
+                channel,
+                frame,
+                previous,
+            } => {
+                // Only the value follows the pointer: which sample is held was
+                // decided at the press, and a view scrolling under the drag must
+                // not hand the hand a different one.
+                let held = crate::host::widget::element::PendingSample {
+                    channel,
+                    frame,
+                    value: axis.value_at(cy) as f32,
+                    previous,
+                };
+                set_pending(host, def_id, id, Some(held));
+                out.push(GestureEffect::Redraw(def_id));
+            }
             Drag::Clip {
                 id,
                 lane,
@@ -299,6 +319,52 @@ impl Gestures {
         // **One arm**, which is what the port left behind: every other drag the
         // machine holds is a container's navigation, and a plan acts along the
         // way rather than at the end.
+        // A dragged sample leaves as **one intent at the end**, not a stream of
+        // them: one gesture is one edit, and what the hand did on the way is
+        // the pending drawing's business rather than the owner's.
+        if let Some(Drag::Sample {
+            id,
+            axis,
+            channel,
+            frame,
+            previous,
+        }) = self.drag.clone()
+        {
+            self.drag = None;
+            let value = axis.value_at(cy) as f32;
+            // The pending stays until the owner answers: dropping it here would
+            // snap the picture back to the material for as long as the round
+            // trip takes, which reads as the edit having been refused.
+            set_pending(
+                host,
+                def_id,
+                id,
+                Some(crate::host::widget::element::PendingSample {
+                    channel,
+                    frame,
+                    value,
+                    previous,
+                }),
+            );
+            emit(
+                host,
+                &mut out,
+                def_id,
+                id,
+                vec![
+                    OscType::String("sample".into()),
+                    OscType::Int(channel as i32),
+                    // A sample index is exact or it is the wrong sample: a
+                    // float runs out of integers at 16.7 million, which is six
+                    // minutes of audio.
+                    OscType::Long(frame as i64),
+                    OscType::Float(value),
+                    OscType::Float(previous),
+                ],
+            );
+            out.push(GestureEffect::Redraw(def_id));
+            return out;
+        }
         if let Some(Drag::Element { at, grab, .. }) = self.drag.take() {
             // What the drag *delivers*, as against what it showed along the
             // way. The grab is the front's to undo, whatever came back.

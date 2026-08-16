@@ -279,6 +279,30 @@ impl Element for SignalElement {
         SignalElement::sample_block(self, start, frames, server_rate)
     }
 
+    fn pending_sample(&self) -> Option<crate::host::widget::element::PendingSample> {
+        self.pending
+    }
+
+    fn set_pending_sample(
+        &mut self,
+        pending: Option<crate::host::widget::element::PendingSample>,
+    ) -> bool {
+        // Only a navigable trace can hold one: it is the presentation where a
+        // sample is a thing on screen, and the only one whose material the
+        // owner can be asked to change.
+        if !self.caps.navigable || self.presentation != Presentation::Signal {
+            return false;
+        }
+        self.pending = pending;
+        true
+    }
+
+    fn sample_value(&self, channel: usize, frame: usize) -> Option<f32> {
+        let data = self.source.data()?;
+        let trace = data.trace();
+        trace.has_raw().then(|| trace.at(channel, frame as f64))
+    }
+
     fn value_axis(&self, rect: Rect, indent: f32, m: &Metrics, lanes: usize) -> Option<ValueAxis> {
         SignalElement::value_axis(self, rect, indent, m, lanes)
     }

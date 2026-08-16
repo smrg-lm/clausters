@@ -197,6 +197,25 @@ pub struct SampleBlock {
 /// one: bins are the spectral selection's own field in the document's
 /// `Selection`, deliberately separate, because an operation that understands a
 /// value range need not understand a band of bins.
+/// One sample the hand is holding, between the grab and the acknowledgement.
+///
+/// It lives here beside [`ValueAxis`] rather than in the element that draws it,
+/// because the gesture machine sets it and the frame draws it, and neither
+/// should have to know which element kind it came from.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PendingSample {
+    /// Which channel — the lane the press landed in.
+    pub channel: usize,
+    /// Which sample of the source.
+    pub frame: usize,
+    /// Where the hand has it now, in the element's own value domain.
+    pub value: f32,
+    /// What it was when the grab started, so the intent that leaves is
+    /// **absolute and invertible** without the owner having to remember what it
+    /// used to be.
+    pub previous: f32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ValueAxis {
     /// Where the picture maps: the rectangle the lanes are cut from, exactly
@@ -1234,6 +1253,31 @@ pub trait Element: fmt::Debug {
     /// `server_rate` is what the block is stamped with when the element names
     /// no rate of its own, the same fallback [`Element::freq_axis`] takes.
     fn sample_block(&self, _start: u64, _frames: u64, _server_rate: f64) -> Option<SampleBlock> {
+        None
+    }
+
+    /// The sample this element is holding for the hand, if any — what the
+    /// frame draws **over** the picture while an edit is in flight.
+    fn pending_sample(&self) -> Option<PendingSample> {
+        None
+    }
+
+    /// Holds a sample (or lets go of one), returning whether this element is
+    /// the kind that can. `None` clears it, which is what an acknowledgement
+    /// does once the owner has answered.
+    ///
+    /// The value it holds is deliberately **not** written into the material:
+    /// the host owns no data, and a pending value that entered the summary
+    /// would make the overview disagree with the samples until the edit landed
+    /// — besides costing a re-summarize per motion event.
+    fn set_pending_sample(&mut self, _pending: Option<PendingSample>) -> bool {
+        false
+    }
+
+    /// The value of one sample of this element's material, in its own domain —
+    /// what a grab reads so the intent it later emits can carry the value it
+    /// started from.
+    fn sample_value(&self, _channel: usize, _frame: usize) -> Option<f32> {
         None
     }
 
