@@ -53,6 +53,7 @@ pub mod bind;
 // rather than with the elements because it is nobody's — one clipboard serves
 // every field, roll and view of every window.
 pub mod clipboard;
+pub mod document;
 pub mod elements;
 pub mod guidef;
 pub mod registry;
