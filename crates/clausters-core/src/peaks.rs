@@ -170,6 +170,114 @@ impl Pyramid {
         }
     }
 
+    /// Rebuilds only the part of the pyramid a sample span touches — the
+    /// summary's answer to an edit, so a redraw costs the span rather than the
+    /// take.
+    ///
+    /// `samples` is the **whole** buffer as it now stands, not the span: a
+    /// bucket at either edge of the span holds untouched samples too, and
+    /// summarizing it needs them. `start` and `len` are sample positions, and
+    /// what is rebuilt is every level-0 bucket the span overlaps and every
+    /// bucket above them — `span/base_bucket + levels` work instead of the
+    /// buffer's.
+    ///
+    /// The result is **identical to a full rebuild**, which the tests assert
+    /// rather than trust: the combination upward is the same sample-weighted
+    /// mean the builder uses, so an updated pyramid and a fresh one cannot
+    /// drift apart over a session of edits.
+    ///
+    /// Returns `false`, changing nothing, when `samples` is not the buffer this
+    /// pyramid describes — an edit that changed the *length* is a rebuild and
+    /// not an update, and quietly summarizing the wrong material would be worse
+    /// than refusing. A cache written before the mean square joined (v1/v2)
+    /// keeps its min/max updated and stays without a measure rather than
+    /// gaining an invented one.
+    pub fn update_range(&mut self, samples: &[f32], start: usize, len: usize) -> bool {
+        if samples.len() != self.total_samples {
+            return false;
+        }
+        self.update_strided(samples, 1, 0, start, len)
+    }
+
+    /// [`Self::update_range`] over one channel of an interleaved buffer, read
+    /// with a stride instead of being de-interleaved first.
+    ///
+    /// That is the whole reason it exists: a take is interleaved, and copying
+    /// every channel out of it to update one span would cost the buffer —
+    /// exactly what updating a range is for avoiding. `start` and `len` are in
+    /// **frames**, since that is what the caller's span is.
+    pub(crate) fn update_strided(
+        &mut self,
+        data: &[f32],
+        stride: usize,
+        offset: usize,
+        start: usize,
+        len: usize,
+    ) -> bool {
+        if stride == 0 || data.len() < offset + self.total_samples.saturating_sub(1) * stride + 1 {
+            return false;
+        }
+        let end = start.saturating_add(len).min(self.total_samples);
+        if start >= end || self.levels.is_empty() {
+            // An empty span is nothing to do rather than a failure: a gesture
+            // that wrote no samples has nothing to re-summarize.
+            return true;
+        }
+
+        // Level 0, from the samples themselves.
+        let base = self.base_bucket;
+        let (mut lo, mut hi) = (start / base, (end - 1) / base);
+        {
+            let total = self.total_samples;
+            let level = &mut self.levels[0];
+            let last = level.min.len().saturating_sub(1);
+            let mut window: Vec<f32> = Vec::with_capacity(base);
+            for b in lo..=hi.min(last) {
+                let from = b * base;
+                let to = (from + base).min(total);
+                window.clear();
+                window.extend((from..to).map(|i| data[offset + i * stride]));
+                let (mn, mx) = min_max(&window).unwrap_or((0.0, 0.0));
+                level.min[b] = mn;
+                level.max[b] = mx;
+                if let Some(ms) = level.ms.as_mut() {
+                    ms[b] = mean_square(&window).unwrap_or(0.0);
+                }
+            }
+        }
+
+        // Every level above, each from the one below — the builder's own
+        // combination applied to the buckets whose children moved.
+        for l in 1..self.levels.len() {
+            lo /= 2;
+            hi /= 2;
+            let (below, here) = self.levels.split_at_mut(l);
+            let prev = &below[l - 1];
+            let level = &mut here[0];
+            let prev_len = prev.min.len();
+            let last = level.min.len().saturating_sub(1);
+            for i in lo..=hi.min(last) {
+                let a = 2 * i;
+                let b = (2 * i + 1 < prev_len).then_some(2 * i + 1);
+                level.min[i] = prev.min[a].min(prev.min[b.unwrap_or(a)]);
+                level.max[i] = prev.max[a].max(prev.max[b.unwrap_or(a)]);
+                if let (Some(ms), Some(prev_ms)) = (level.ms.as_mut(), prev.ms.as_ref()) {
+                    let na = bucket_count(self.total_samples, prev.bucket, a);
+                    let nb = b.map_or(0, |b| bucket_count(self.total_samples, prev.bucket, b));
+                    let total = na + nb;
+                    ms[i] = if total == 0 {
+                        0.0
+                    } else {
+                        let sum = prev_ms[a] as f64 * na as f64
+                            + b.map_or(0.0, |b| prev_ms[b] as f64 * nb as f64);
+                        (sum / total as f64) as f32
+                    };
+                }
+            }
+        }
+        true
+    }
+
     pub fn base_bucket(&self) -> usize {
         self.base_bucket
     }
@@ -360,6 +468,28 @@ impl MultiPyramid {
 
     /// Wraps already-built per-channel pyramids (they must share `base_bucket`
     /// and length; `build_interleaved` guarantees it).
+    /// [`Pyramid::update_range`] across every channel, over the interleaved
+    /// buffer as it now stands. `start` and `len` are **frames**.
+    ///
+    /// Each channel is read with a stride rather than de-interleaved, so the
+    /// cost is the span and not the take — which is the point of the whole
+    /// function, and would be lost by copying the channels out first.
+    ///
+    /// Returns `false`, changing nothing, when the buffer is not the one this
+    /// cache describes.
+    pub fn update_range(&mut self, interleaved: &[f32], start: usize, len: usize) -> bool {
+        let channels = self.channels.len();
+        if channels == 0 || interleaved.len() != self.frames() * channels {
+            return false;
+        }
+        for (ch, pyr) in self.channels.iter_mut().enumerate() {
+            if !pyr.update_strided(interleaved, channels, ch, start, len) {
+                return false;
+            }
+        }
+        true
+    }
+
     pub fn from_channels(channels: Vec<Pyramid>) -> Self {
         assert!(!channels.is_empty());
         Self { channels }
@@ -780,5 +910,218 @@ mod tests {
             let built = Pyramid::build(&ramp(n), base).to_bytes().len();
             assert_eq!(cache_size(n, base), built, "n={n} base={base}");
         }
+    }
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::*;
+
+    fn material(n: usize) -> Vec<f32> {
+        (0..n)
+            .map(|i| ((i as f32 * 0.017).sin() * 0.9) + (i % 7) as f32 * 0.01)
+            .collect()
+    }
+
+    fn same(a: &Pyramid, b: &Pyramid) -> Result<(), String> {
+        if a.levels.len() != b.levels.len() {
+            return Err(format!(
+                "{} levels against {}",
+                a.levels.len(),
+                b.levels.len()
+            ));
+        }
+        for (l, (x, y)) in a.levels.iter().zip(&b.levels).enumerate() {
+            if x.min != y.min || x.max != y.max {
+                return Err(format!("level {l}: min/max differ"));
+            }
+            match (&x.ms, &y.ms) {
+                (Some(p), Some(q)) if p == q => {}
+                (None, None) => {}
+                _ => return Err(format!("level {l}: the measure differs")),
+            }
+        }
+        Ok(())
+    }
+
+    /// The claim the whole function rests on: updating a span leaves exactly the
+    /// pyramid a rebuild would, at **every** level, so a session of edits cannot
+    /// drift away from the material.
+    #[test]
+    fn an_updated_pyramid_equals_a_rebuilt_one() {
+        // Deliberately not a multiple of the bucket, so the ragged tail is in.
+        let n = 4000;
+        let base = 64;
+        for (start, len) in [
+            (0, 1),     // the first sample
+            (1999, 1),  // one in the middle
+            (n - 1, 1), // the last, in the ragged bucket
+            (100, 500), // a span inside one bucket's reach and beyond
+            (0, n),     // everything
+            (3990, 10), // the tail exactly
+            (63, 2),    // straddling a bucket boundary
+        ] {
+            let mut samples = material(n);
+            let mut pyr = Pyramid::build(&samples, base);
+            for s in &mut samples[start..start + len] {
+                *s = -*s * 0.5 + 0.3;
+            }
+            assert!(pyr.update_range(&samples, start, len), "({start}, {len})");
+            let fresh = Pyramid::build(&samples, base);
+            same(&pyr, &fresh).unwrap_or_else(|e| panic!("({start}, {len}): {e}"));
+        }
+    }
+
+    /// Several edits in a row, each updated, still equal one rebuild — the
+    /// actual editing session, where drift would accumulate if it existed.
+    #[test]
+    fn edits_compose_without_drifting() {
+        let n = 3000;
+        let base = 32;
+        let mut samples = material(n);
+        let mut pyr = Pyramid::build(&samples, base);
+        for (i, (start, len)) in [(10, 3), (1000, 200), (2999, 1), (500, 700)]
+            .into_iter()
+            .enumerate()
+        {
+            for s in &mut samples[start..start + len] {
+                *s = (*s + i as f32 * 0.1).clamp(-1.0, 1.0);
+            }
+            assert!(pyr.update_range(&samples, start, len));
+        }
+        same(&pyr, &Pyramid::build(&samples, base)).unwrap();
+    }
+
+    #[test]
+    fn a_buffer_of_another_length_is_refused_and_nothing_moves() {
+        let samples = material(1000);
+        let mut pyr = Pyramid::build(&samples, 64);
+        let before = Pyramid::build(&samples, 64);
+        assert!(
+            !pyr.update_range(&samples[..999], 0, 10),
+            "a shorter buffer"
+        );
+        assert!(!pyr.update_range(&material(1001), 0, 10), "a longer one");
+        same(&pyr, &before).unwrap();
+    }
+
+    #[test]
+    fn an_empty_span_is_a_no_op() {
+        let samples = material(500);
+        let mut pyr = Pyramid::build(&samples, 64);
+        let before = Pyramid::build(&samples, 64);
+        assert!(pyr.update_range(&samples, 100, 0));
+        assert!(
+            pyr.update_range(&samples, 500, 10),
+            "a span at the very end"
+        );
+        same(&pyr, &before).unwrap();
+    }
+
+    /// A cache written before the mean square joined keeps min/max current and
+    /// stays without a measure: an invented one would read as silence measured,
+    /// which is the distinction A1 drew and this must not undo.
+    #[test]
+    fn a_pyramid_without_a_measure_does_not_gain_one() {
+        let mut samples = material(1000);
+        let mut pyr = Pyramid::build(&samples, 64);
+        for level in &mut pyr.levels {
+            level.ms = None;
+        }
+        assert!(!pyr.has_mean_square());
+        samples[500] = 0.99;
+        assert!(pyr.update_range(&samples, 500, 1));
+        assert!(!pyr.has_mean_square(), "still no measure");
+        let fresh = Pyramid::build(&samples, 64);
+        for (l, (x, y)) in pyr.levels.iter().zip(&fresh.levels).enumerate() {
+            assert_eq!(x.min, y.min, "level {l} min");
+            assert_eq!(x.max, y.max, "level {l} max");
+        }
+    }
+}
+
+#[cfg(test)]
+mod multi_update_tests {
+    use super::*;
+
+    fn interleaved(frames: usize, channels: usize) -> Vec<f32> {
+        (0..frames * channels)
+            .map(|i| {
+                let f = (i / channels) as f32;
+                let c = (i % channels) as f32;
+                ((f * 0.013 + c).sin() * 0.8) + c * 0.05
+            })
+            .collect()
+    }
+
+    /// The multichannel claim, and the one a take actually leans on: updating a
+    /// frame span leaves exactly the cache a rebuild would, per channel.
+    #[test]
+    fn an_updated_cache_equals_a_rebuilt_one() {
+        let frames = 2500; // not a multiple of the bucket
+        let base = 64;
+        for channels in [1usize, 2, 3] {
+            for (start, len) in [(0, 1), (777, 40), (frames - 1, 1), (0, frames)] {
+                let mut data = interleaved(frames, channels);
+                let mut pyr = MultiPyramid::build_interleaved(&data, channels, base);
+                for f in start..start + len {
+                    for c in 0..channels {
+                        data[f * channels + c] *= -0.25;
+                    }
+                }
+                assert!(
+                    pyr.update_range(&data, start, len),
+                    "{channels} ch, ({start}, {len})"
+                );
+                let fresh = MultiPyramid::build_interleaved(&data, channels, base);
+                for ch in 0..channels {
+                    let a = pyr.channel(ch).unwrap();
+                    let b = fresh.channel(ch).unwrap();
+                    for (l, (x, y)) in a.levels.iter().zip(&b.levels).enumerate() {
+                        assert_eq!(x.min, y.min, "{channels} ch, channel {ch}, level {l} min");
+                        assert_eq!(x.max, y.max, "{channels} ch, channel {ch}, level {l} max");
+                        assert_eq!(x.ms, y.ms, "{channels} ch, channel {ch}, level {l} measure");
+                    }
+                }
+            }
+        }
+    }
+
+    /// An edit to one channel leaves the others untouched — which is what
+    /// reading with a stride has to get right and de-interleaving would hide.
+    #[test]
+    fn editing_one_channel_moves_only_that_one() {
+        let (frames, channels, base) = (1000, 2, 32);
+        let mut data = interleaved(frames, channels);
+        let mut pyr = MultiPyramid::build_interleaved(&data, channels, base);
+        let untouched: Vec<f32> = pyr.channel(1).unwrap().levels[0].max.clone();
+        for f in 100..140 {
+            data[f * channels] = 0.99; // the left channel only
+        }
+        assert!(pyr.update_range(&data, 100, 40));
+        assert_eq!(
+            pyr.channel(1).unwrap().levels[0].max,
+            untouched,
+            "the right channel is not the one that changed"
+        );
+        assert!(
+            pyr.channel(0).unwrap().levels[0]
+                .max
+                .iter()
+                .any(|&m| m > 0.98),
+            "and the left one is"
+        );
+    }
+
+    #[test]
+    fn a_buffer_of_another_shape_is_refused() {
+        let (frames, channels, base) = (500, 2, 32);
+        let data = interleaved(frames, channels);
+        let mut pyr = MultiPyramid::build_interleaved(&data, channels, base);
+        assert!(!pyr.update_range(&data[..data.len() - 2], 0, 10), "short");
+        assert!(
+            !pyr.update_range(&interleaved(frames, 3), 0, 10),
+            "wrong width"
+        );
     }
 }
