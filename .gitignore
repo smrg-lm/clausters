@@ -23,3 +23,7 @@ uv.lock
 /specs/
 # Subagent-driven-development scratch (ledgers, briefs, review packages).
 /.superpowers/
+
+# Artifacts the session example hands to the standalone host and reads back.
+clients/python/examples/gui_session.json
+clients/python/examples/gui_session-edited.json

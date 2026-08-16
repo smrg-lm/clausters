@@ -15,16 +15,19 @@ What it shows, in the order the cells run:
   `Timeline`) becomes a session with `to_session` — the same call `gui_daw.py`
   makes when it saves.
 - **Handing it over.** The command to open it in the standalone host is printed
-  for you to run. Drag a clip, then **z** to take it back, **a** to put it back
-  and **s** to save (bare keys while the Ctrl chords are being fixed — the host
-  gets the control character rather than the letter). The host is the owner
-  while that window is open:
+  for you to run. Drag a clip, `Ctrl+Z` to take it back, `Ctrl+Shift+Z` to put
+  it back, `Ctrl+S` to save. The host is the owner while that window is open:
   the intent your drag emits is applied *there*, by the crate's `apply`, and the
   inverse comes out of the document rather than being remembered.
 - **Reading it back.** `from_session` on what the host wrote gives an
   arrangement again, and the cell prints where each element ended up — which is
   the whole claim: a file passed between two writers means the same thing to
   both.
+
+The two files it writes sit **beside this one** (``gui_session.json``, and
+``gui_session-edited.json`` once the host has saved) — handed to another program
+and read back from it, so they are worth keeping and looking at rather than
+leaving in a temp directory.
 
 **What it needs:** nothing running. This example is about the format and the
 owner, not about sound — no server is booted and no material is played, which is
@@ -46,7 +49,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 
 from clausters.form import Group, Track
 from clausters.form.document import from_session, to_session
@@ -80,11 +82,17 @@ piece = Group([
 # and this client and the standalone host are two readers of the same
 # definition rather than two implementations of one idea.
 
-# %%
-tmp = tempfile.mkdtemp(prefix="clausters-session-")
-path = os.path.join(tmp, "piece.json")
-saved = os.path.join(tmp, "piece-edited.json")
+#: The two artifacts, **beside this file** — the shape the server's examples
+#: already use for a companion (`config.toml`, `ws_ping.html` live next to the
+#: scripts that name them). Not a temp directory, because these are not scratch:
+#: one is handed to another program and the other comes back from it, and both
+#: are worth opening, diffing and re-running the host on. Named after the
+#: example so they group with it; git ignores them.
+HERE = os.path.dirname(os.path.abspath(__file__))
+path = os.path.join(HERE, "gui_session.json")
+saved = os.path.join(HERE, "gui_session-edited.json")
 
+# %%
 with open(path, "w") as f:
     f.write(json.dumps(to_session(piece), indent=1))
 print(f"wrote {path} ({os.path.getsize(path)} B)")
@@ -113,7 +121,7 @@ def host_binary() -> "str | None":
 def open_in_host(wait: bool = True) -> None:
     """Runs the host on the session, saving to a second file.
 
-    Drag a clip, then `z` (undo), `a` (redo), `s` (save), then close it.
+    Drag a clip, then `Ctrl+Z`, `Ctrl+Shift+Z`, `Ctrl+S`, then close it.
     Saving writes to ``--save-to`` and never over what was opened: overwriting
     the file you were given is a decision, not a default.
     """
@@ -124,7 +132,7 @@ def open_in_host(wait: bool = True) -> None:
         return
     cmd = [binary, "--session", path, "--save-to", saved]
     print("running: " + " ".join(cmd))
-    print("  drag a clip, then z (undo), a (redo), s (save), then close the window")
+    print("  drag a clip, then Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, then close the window")
     if wait:
         subprocess.run(cmd, check=False)
 
@@ -140,7 +148,7 @@ def open_in_host(wait: bool = True) -> None:
 def read_back() -> None:
     """Prints where every element sits in the session the host wrote."""
     if not os.path.exists(saved):
-        print(f"nothing saved yet: press s in the host to write {saved}")
+        print(f"nothing saved yet: press Ctrl+S in the host to write {saved}")
         return
     with open(saved) as f:
         session = json.load(f)
