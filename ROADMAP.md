@@ -122,21 +122,32 @@ prerequisite, and because it is the one whose cost is not the client's.*
   editor is a free-standing example beside the arrangement rather than a view of
   it — and it earned its keep early by correcting A2's layer stack.
 
-- ⬜ **S12 — An edit is an NRT job over a file, and a buffer stays replaceable**
-  *(root `PLAN.md`)*. Opened 2026-08-15 out of the "Found by use" entry it
-  converged from, and **rewritten the same day**: it was opened to make a span
-  write cheap, and what it settled instead is that the editor never writes a take
-  through the pool at all. A buffer stays immutable and replaceable, the RT read
-  path is untouched, and the editing verbs become NRT jobs over the working copy
-  — which is also the reading of *one place performs audio processing and it is
-  the server* (`crates/clausters-document/PLAN.md`) that applies here.
-  **Two things this settles for the entries below.** It is not a prerequisite of
-  D1 or D2 in the sense first written — a stroke is heard against a scratch span,
-  which needs no server change and which D4 already does for a copied block — so
-  the order is not forced by an ability. It stays first because D1 and D2 *emit
-  intents that someone applies*, and this is where what applies them is decided;
-  taking it after them would mean designing the answer around gestures that had
-  already shipped.
+- ⬜ **S12 — Editing does not go through the pool, and its verbs are three**
+  *(root `PLAN.md`)*. Opened 2026-08-15 to make a span write cheap and rewritten
+  the same day around what it settled instead: the editor never writes a take
+  through the RT pool at all, the buffer stays immutable and replaceable, and the
+  verbs are `gain`/`replace`/`reverse` in `clausters-core`, none of them a new
+  algorithm. It is **not** a prerequisite of D1 or D2 in the sense first written
+  — a stroke is heard against a scratch span, which needs no server change and
+  which D4 already does — but it comes first because those two *emit intents that
+  someone applies*, and this is where what applies them is decided.
+
+- ⬜ **S13 — The NRT server takes operations on demand** *(root `PLAN.md`)*.
+  The mode the verbs run in: the batch renderer driven by commands instead of by
+  a score, on the `Renderer`'s own path, with the RT server untouched. It is
+  where "apply this def to this selection" becomes possible at all, which no
+  other part of the system can do — and where a pool buffer is mutable, there
+  being no audio thread. Rides with S12 rather than after it: a verb with no mode
+  to run in is a function nobody calls.
+
+- ⬜ **S14 — A pool buffer can be allocated writable** *(root `PLAN.md`)*.
+  Independent of the two above and of this whole phase, listed here because the
+  pass that produced them is what found it: in SuperCollider you allocate an
+  empty buffer, zero it and use it for anything, and here you cannot — so
+  `RecordBuf`, `BufWr` and the `BufDelay*` family have nowhere to live. A missing
+  capability rather than a decision, and the completeness the S track exists to
+  reach. Takeable at any point; it blocks nothing in this phase and this phase
+  blocks nothing in it.
 
 - ⬜ **D1 — A sample is a grabbable point.** The pending overlay's first real
   drawing, and `peaks::update_range`.
