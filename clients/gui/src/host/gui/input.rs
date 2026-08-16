@@ -255,6 +255,21 @@ impl App {
         self.apply_gesture_effects(effects);
     }
 
+    /// A verb addressed to the **window** rather than to anything under the
+    /// cursor — the shape undo and redo already take, and for the same reason:
+    /// what a save saves is the document behind the window. A host that **owns**
+    /// that document answers it here; every other one emits it, and a script
+    /// may answer.
+    pub(super) fn window_verb(&mut self, def_id: i32, verb: &str) {
+        let seq = self.host.outbox.borrow_mut().stamp(def_id, def_id);
+        let args = vec![clausters_core::osc::OscType::String(verb.into())];
+        if self.host.answer_own(def_id, seq, &args) {
+            self.redraw(def_id);
+        } else {
+            self.emit(def_id, def_id, seq, args);
+        }
+    }
+
     /// Whether a modifier is held on window `def_id`, for a shortcut the
     /// element machinery never sees (it takes its modifiers from the context).
     pub(super) fn ctrl(&self, def_id: i32) -> bool {

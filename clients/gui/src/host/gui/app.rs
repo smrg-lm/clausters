@@ -725,6 +725,13 @@ impl ApplicationHandler<UserEvent> for App {
                     Key::Character(ref c) if c.eq_ignore_ascii_case("y") && self.ctrl(def_id) => {
                         self.history(def_id, true)
                     }
+                    // Saving is the window's too, and for the same reason:
+                    // what is saved is the document behind it, not whatever is
+                    // under the cursor. A host that owns nothing emits it and a
+                    // script may answer; one that owns a session writes it.
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("s") && self.ctrl(def_id) => {
+                        self.window_verb(def_id, "save")
+                    }
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         self.reset_timelines(def_id)
                     }

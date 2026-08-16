@@ -72,6 +72,12 @@ pub struct Owner {
     /// How an edit is transformed on the way in (the grid a placement snaps
     /// to). The host states where the hand put something; this decides.
     pub rules: Rules,
+    /// Where a save writes, when the caller named a file.
+    ///
+    /// `None` is a session opened read-only, or one built in memory: **saving
+    /// over what you opened is a decision, not a default**, so a caller that
+    /// wants it says where.
+    pub save_path: Option<std::path::PathBuf>,
     /// Which document node each widget's gestures address.
     ///
     /// The one thing this module adds to the crate, and the one thing only a
@@ -105,6 +111,7 @@ impl Owner {
             log: Log::new(),
             session: None,
             rules: Rules::none(),
+            save_path: None,
             nodes: HashMap::new(),
         }
     }
@@ -115,6 +122,22 @@ impl Owner {
         let mut owner = Self::new(session.document.clone());
         owner.session = Some(session);
         owner
+    }
+
+    /// Where [`Self::save_now`] writes.
+    pub fn saving_to(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.save_path = Some(path.into());
+        self
+    }
+
+    /// Writes to [`Self::save_path`], or reports that there is nowhere to write.
+    pub fn save_now(&self) -> Result<&std::path::Path, String> {
+        let path = self
+            .save_path
+            .as_deref()
+            .ok_or_else(|| "this session has nowhere to save to".to_string())?;
+        self.save(path)?;
+        Ok(path)
     }
 
     /// Snapping placements to a grid of `quant` beats (0 snaps nothing).
@@ -616,5 +639,93 @@ mod wiring_tests {
                 crate::host::OscType::Float(0.0)
             ]
         ));
+    }
+}
+
+#[cfg(test)]
+mod window_verb_tests {
+    use super::*;
+    use crate::host::{Host, OscType};
+    use clausters_document::{Body, Grouping, Member, Node, Opaque};
+
+    fn owner_with_a_clip() -> Owner {
+        let mut owner = Owner::new(Document::new(Node::new(
+            NodeId(1),
+            Body::Set {
+                grouping: Grouping::Concrete,
+                members: vec![Member {
+                    offset: 0.0,
+                    dur: None,
+                    node: Node::new(
+                        NodeId(2),
+                        Body::Event {
+                            config: Opaque::default(),
+                            fires: None,
+                        },
+                    ),
+                }],
+            },
+        )));
+        owner.bind(50, NodeId(2));
+        owner
+    }
+
+    fn offset(owner: &Owner) -> f64 {
+        let Body::Set { members, .. } = &owner.document.root.body else {
+            panic!("a set")
+        };
+        members[0].offset
+    }
+
+    /// Undo and redo reach the **owner** where there is one, which is what
+    /// makes a standalone editor's history its own rather than a message it
+    /// sends to nobody. They address the window, so they are read before
+    /// anything looks for a node.
+    #[test]
+    fn the_windows_own_verbs_reach_the_owner() {
+        let mut host = Host::new();
+        host.owner = Some(owner_with_a_clip());
+        let seq = host.outbox.borrow_mut().stamp(1, 50);
+        assert!(host.answer_own(
+            50,
+            seq,
+            &[
+                OscType::String("clip".into()),
+                OscType::Float(4.0),
+                OscType::Float(0.0)
+            ]
+        ));
+        assert_eq!(offset(host.owner.as_ref().unwrap()), 4.0);
+
+        // Addressed to the window (id 1 here), not to the clip.
+        let seq = host.outbox.borrow_mut().stamp(1, 1);
+        assert!(host.answer_own(1, seq, &[OscType::String("undo".into())]));
+        assert_eq!(offset(host.owner.as_ref().unwrap()), 0.0, "taken back");
+
+        let seq = host.outbox.borrow_mut().stamp(1, 1);
+        assert!(host.answer_own(1, seq, &[OscType::String("redo".into())]));
+        assert_eq!(offset(host.owner.as_ref().unwrap()), 4.0, "and put back");
+    }
+
+    /// A save writes where the caller said and nowhere else: overwriting what
+    /// you opened is a decision, so a session with no path says so instead.
+    #[test]
+    fn a_save_writes_only_where_a_path_was_named() {
+        let mut host = Host::new();
+        host.owner = Some(owner_with_a_clip());
+        // Answered either way -- the verb *is* the window's -- but nothing is
+        // written without a path.
+        assert!(host.answer_own(1, 1, &[OscType::String("save".into())]));
+
+        let path =
+            std::env::temp_dir().join(format!("clausters_h3_verb_{}.json", std::process::id()));
+        host.owner = Some(owner_with_a_clip().saving_to(&path));
+        assert!(host.answer_own(1, 2, &[OscType::String("save".into())]));
+        let written = std::fs::read_to_string(&path).expect("it wrote");
+        assert!(
+            written.contains("\"document\""),
+            "a session, not a fragment"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 }

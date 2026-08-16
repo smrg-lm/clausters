@@ -20,24 +20,29 @@ use clausters_gui::host::theme::Theme;
 use clausters_gui::host::transport::{self, DEFAULT_PORT};
 use clausters_gui::host::{Host, ServerLeg, gui};
 
+// Feeding a window a GuiDef this binary built: both the standalone boot and
+// `--session` do it, and only the first needs the server crate.
+use clausters_core::osc::{OscMessage, OscPacket, OscType};
+use clausters_gui::host::ClientId;
+use std::net::Ipv4Addr;
+
 // The standalone boot links the server crate directly (the `standalone`
 // feature); these are only needed on that path.
 #[cfg(feature = "standalone")]
-use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
+use clausters_core::osc::encode;
+#[cfg(feature = "standalone")]
+use clausters_gui::host::ServerLink;
 #[cfg(feature = "standalone")]
 use clausters_gui::host::bundle;
 #[cfg(feature = "standalone")]
 use clausters_gui::host::embed::EmbedServer;
-#[cfg(feature = "standalone")]
-use clausters_gui::host::{ClientId, ServerLink};
-#[cfg(feature = "standalone")]
-use std::net::Ipv4Addr;
 
 const USAGE: &str = "\
 usage:
   clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
                 [--tcp [port] | --no-tcp] [--ws [port]] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
+                [--session <file> [--save-to <file>]]
                 [--theme <path>] [--font <path>] [--msaa <n>]
       --port <n>            port for the GUI host's server front
                             (script -> host, UDP and TCP); default 57210
@@ -64,6 +69,14 @@ usage:
                             persist there; /gui_load reads from it). Defaults to
                             the same place the server uses ($CLAUSTERS_DATA_DIR,
                             $XDG_DATA_HOME/clausters, ~/.local/share/clausters).
+      --session <file>      open a session file (the format the Python client
+                            writes) and draw its document as a multitrack, with
+                            **this host as its owner**: gestures are applied
+                            here, undone here and saved here, with no language
+                            client anywhere. The third writer.
+      --save-to <file>      write the session back here when the window closes.
+                            Without it nothing is written: overwriting the file
+                            you opened is a decision, not a default
       --standalone [name]   boot the saved GuiDef <name> against an embedded
                             audio server (no separate server or language client):
                             the embedded server loads the data directory's
@@ -159,6 +172,8 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut cli_data_dir: Option<String> = None;
     let mut standalone_flag = false;
     let mut cli_standalone_name: Option<String> = None;
+    let mut session_path: Option<String> = None;
+    let mut save_to: Option<String> = None;
     let mut config_path: Option<String> = None;
     let mut theme_path: Option<String> = None;
     let mut font_path: Option<String> = None;
@@ -257,6 +272,20 @@ fn run(args: &[String]) -> Result<(), String> {
                     it.next();
                 }
             }
+            "--session" => {
+                session_path = Some(
+                    it.next()
+                        .ok_or_else(|| format!("--session needs a path\n{USAGE}"))?
+                        .clone(),
+                );
+            }
+            "--save-to" => {
+                save_to = Some(
+                    it.next()
+                        .ok_or_else(|| format!("--save-to needs a path\n{USAGE}"))?
+                        .clone(),
+                );
+            }
             "--headless" => cli_headless = true,
             "--help" | "-h" => {
                 println!("{USAGE}");
@@ -332,6 +361,14 @@ fn run(args: &[String]) -> Result<(), String> {
         })
         .or_else(|| cfg.gui.data_dir.clone());
     let resolved_dir = store::resolve_data_dir(data_dir.as_deref());
+
+    // A session: the host opens a document and owns it. No store, no embedded
+    // server and no script -- the material is not played yet, which is what
+    // separates this from `--standalone` and is named in the plan rather than
+    // implied here.
+    if let Some(path) = session_path {
+        return run_session(&path, save_to.as_deref(), port, look);
+    }
 
     // Standalone: boot a saved GuiDef against an embedded server, no separate
     // server process and no language client. Built only with the `standalone`
@@ -489,6 +526,55 @@ fn open_store(dir: &Path) -> Option<GuiStore> {
             None
         }
     }
+}
+
+/// Opens a session and draws it, with this host as its **owner**.
+///
+/// The third writer, and the shortest statement of what that means: a document
+/// is read with the crate every writer reads it with, drawn as an ordinary
+/// GuiDef, and edited by gestures this host applies to itself. Nothing here
+/// parses the format, decides what an edit means or remembers an inverse —
+/// those are the crate's, which is the whole reason a session survives being
+/// passed between writers.
+fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Result<(), String> {
+    use clausters_gui::host::document::{Owner, tree};
+
+    let mut owner = Owner::open(path)?;
+    let title = Path::new(path)
+        .file_name()
+        .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned());
+    let drawn = tree::draw(&owner.document, &tree::Look::default(), &title);
+    for bound in &drawn.bindings {
+        owner.bind(bound.widget, bound.node);
+    }
+    let def_id = 1;
+
+    // Saving is **Ctrl+S**, a user's action rather than an exit's side effect —
+    // and it writes only where `--save-to` named a file, since overwriting what
+    // you opened is a decision.
+    if let Some(out) = save_to {
+        owner = owner.saving_to(out);
+    }
+    let mut host = Host::new();
+    look.apply(&mut host);
+    host.owner = Some(owner);
+    let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: "/gui_def".into(),
+            args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
+        }),
+        origin,
+    );
+    tracing::info!(
+        "session: opened {path} — {} clip(s), {} lane(s) + a ruler",
+        drawn.bindings.len(),
+        drawn.def["children"].as_array().map_or(0, |c| c.len()) - 1
+    );
+
+    let socket = UdpSocket::bind(("127.0.0.1", port))
+        .map_err(|e| format!("failed to bind UDP port {port}: {e}"))?;
+    gui::run(host, Arc::new(socket), None, None, None)
 }
 
 /// Boots a saved GuiDef as a self-contained app: an embedded audio server, the

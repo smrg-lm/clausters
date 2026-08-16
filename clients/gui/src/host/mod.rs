@@ -1356,6 +1356,42 @@ impl Host {
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
+        // The window's own verbs, which are not intents and address no node:
+        // history is a walk through the log, and a save is a file. They arrive
+        // addressed to the window (`keys::history`), so they are read before
+        // anything looks for a node binding.
+        match args.first() {
+            Some(OscType::String(tag)) if tag == "undo" => {
+                let moved = !owner.undo().is_empty();
+                if moved {
+                    self.settle(ack::Acked {
+                        seq,
+                        doc_version: self.owner.as_ref().map_or(0, |o| o.document.version as i64),
+                        ..Default::default()
+                    });
+                }
+                return true;
+            }
+            Some(OscType::String(tag)) if tag == "redo" => {
+                let moved = !owner.redo().is_empty();
+                if moved {
+                    self.settle(ack::Acked {
+                        seq,
+                        doc_version: self.owner.as_ref().map_or(0, |o| o.document.version as i64),
+                        ..Default::default()
+                    });
+                }
+                return true;
+            }
+            Some(OscType::String(tag)) if tag == "save" => {
+                match owner.save_now() {
+                    Ok(path) => info!("session saved to {}", path.display()),
+                    Err(e) => warn!("save: {e}"),
+                }
+                return true;
+            }
+            _ => {}
+        }
         let Some((intent, label)) = owner.read_event(widget_id, args) else {
             return false;
         };
