@@ -220,11 +220,34 @@ SuperCollider has and this server does not.
   one missing command now recorded as **S16** (a buffer write that addresses one
   channel, without which a stereo take is drawable and not editable).
 
-**What is next in this phase** is not H5 — there is none. The two things H4
-named on its way out are a server milestone (**S16**) and a design that needs a
-transport before it needs code (a playhead in session mode,
-`clients/gui/PLAN.md`, "Future directions"), so the order after this is decided
-by whichever track argues for itself, not by the phase.
+- ⬜ **T5 — The transport has a position, and the engine owns it.** First, and
+  it is the server's before it is the window's. H4 left the third writer able
+  to play a take and unable to say where it is, and the reason turned out not
+  to be the host: the transport's position never reaches the engine, so
+  `/transport_locate` moves a number nothing plays from, and the clock the
+  segment publishes is elapsed time rather than the piece's. Every editor verb
+  worth having — play from here, loop that, show me where it is — rests on
+  this, and without it each one gets reinvented as client arithmetic.
+
+- ⬜ **H5 — The session's monitor follows the transport, and the head is drawn
+  from it.** Immediately after T5 and small once it exists: the monitor becomes
+  a follower of the piece's position, the embedded server's segment gets a
+  door, and the sweep the host already draws is pointed at that position. It
+  closes this phase rather than adding to it — the third writer can then hear
+  *and see* what it edits.
+
+*(This phase read, until 2026-08-16, that there was no H5. There is, and
+writing it turned up the server milestone above, which is why the order here is
+T5 first. The other thing H4 named on its way out, **S16**, shipped the same
+day.)*
+
+**Not in this phase, and not blocking it:** **S14** and **S17** — writable pool
+buffers with the write-side UGens, and `PlayBuf`'s missing
+`trigger`/`startPos`/`doneAction` — are taken **together**, in one pass over
+the buffer-UGen surface they share. Neither is a dependency of T5 or H5: T5's
+readers follow the transport, which is the DAW shape, while S17 is the other
+one, where a reader carries its own position. Both shapes are wanted
+eventually; only the first is on the path here.
 
 ## Phase 5 — the spectral editor
 
@@ -257,7 +280,11 @@ example, and none blocks anything that is.
 - **`E23`** — the rest of the chrome answering on what it draws.
 - **`G31g`** — engraving refinements (tuplets, full polyphony, spelling).
 - **The K track's group-aware port** — `keys`, `notes`, `patch` (item 3 of K7).
-- **Server transport items** `T2`–`T4`, and `R12` (a release verifies something).
+- **Server transport items** `T2`–`T4`, and `R12` (a release verifies
+  something). `T2` may stop being optional: `T5` puts a position in samples on
+  the engine, which crosses exactly the beats↔samples conversion `T2` says is
+  still anchored on the wrong axis — whether it is settled inside `T5` or
+  closed before it is decided when `T5` starts.
 - **The web client's carried parity gaps** — the record formatters, and whatever
   each phase above leaves it, since the packages move together and a port that
   is not in the same commit is a port that drifts.
