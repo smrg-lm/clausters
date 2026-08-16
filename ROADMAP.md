@@ -122,16 +122,17 @@ prerequisite, and because it is the one whose cost is not the client's.*
   editor is a free-standing example beside the arrangement rather than a view of
   it — and it earned its keep early by correcting A2's layer stack.
 
-- ⬜ **S13 — The NRT server takes operations on demand** *(root `PLAN.md`)*.
-  **First of the four, and the reordering is deliberate**: it was written as
-  riding with S12, and it goes before it, because S13 alone is a complete
-  demonstrable thing — load, run an operation, write, using only commands that
-  already exist — while S12's verbs without a mode to run in are three tested
-  functions nobody calls. The batch renderer driven by commands instead of by a
-  score, on the `Renderer`'s own path, with the RT server untouched. It is where
-  "apply this def to this selection" becomes possible at all, which no other part
-  of the system can do, and where a pool buffer is mutable, there being no audio
-  thread.
+- ✅ **S13 — The NRT server takes operations on demand.** Done 2026-08-15, and
+  the reordering held: taken before S12 because it alone is a complete
+  demonstrable thing, and it was — `/buffer_render` runs the graph into a buffer
+  and the samples match the batch render of the same material, sample for
+  sample. Two things it settled that the entry had wrong: the front is the
+  **embedded server's**, not the `Renderer`'s (which has the synchronous
+  execution and none of the transport), and *no scheduling surface* was never a
+  property to want — a timetag is meaningful inside an operation, because an
+  operation is a score; what the mode lacks is a clock that moves on its own.
+  What it did **not** buy: a client still cannot reach a session, so the
+  builders and the example wait for whatever gives one a door.
 
 - ⬜ **S12 — Editing does not go through the pool, and its verbs are three**
   *(root `PLAN.md`)*. Opened 2026-08-15 to make a span write cheap and rewritten

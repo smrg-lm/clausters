@@ -256,6 +256,85 @@ fn buffer_render_is_refused_where_nothing_owns_the_clock() {
     );
 }
 
+/// A `/server_quit` ends a session the way it ends any other server: the
+/// driver is told, and stops driving. There is no loop here to break out of,
+/// so being told is the whole of it.
+#[test]
+fn a_quit_is_reported_to_the_driver() {
+    let mut s = NrtSession::open(&session_cfg()).expect("open");
+    assert!(!s.settle(), "nothing has asked it to quit yet");
+    assert!(s.send_msg("/server_quit", vec![]).expect("encode"));
+    assert!(s.settle_for(4), "the quit reaches the driver");
+}
+
+/// What "no clock" does **not** mean, pinned because the milestone's own
+/// acceptance said it carelessly ("no scheduling surface") and that is wrong.
+/// A timetag is meaningful here — an operation *is* a score, and a bundle
+/// inside its span lands at its exact sample, exactly as the batch renderer
+/// places one. What the mode lacks is a clock that moves on its own: a bundle
+/// past the operation's end does not fire, and waits for the next operation,
+/// however long the caller takes to ask for it.
+#[test]
+fn a_timetag_lands_at_its_sample_and_waits_for_the_next_operation() {
+    use clausters::rosc::{OscBundle, OscPacket, OscTime, encoder};
+    const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
+
+    // The session's clock is the sample clock with epoch 0, so a timetag of
+    // `t` seconds is sample `t * SR`.
+    let bundle_at = |unix: f64, messages: Vec<OscMessage>| {
+        let ntp = unix + NTP_UNIX_OFFSET;
+        let seconds = ntp.trunc();
+        encoder::encode(&OscPacket::Bundle(OscBundle {
+            timetag: OscTime {
+                seconds: seconds as u32,
+                fractional: ((ntp - seconds) * 2f64.powi(32)) as u32,
+            },
+            content: messages.into_iter().map(OscPacket::Message).collect(),
+        }))
+        .expect("encode")
+    };
+
+    let half = 1024u64;
+    let mut s = NrtSession::open(&session_cfg()).expect("open");
+    let d = sine_def("t");
+    assert!(s.send_msg(&d.addr, d.args).expect("encode"));
+    s.settle_for(4);
+
+    // One synth at the midpoint of the first operation, one past its end.
+    let inside = s_new("t", 1000);
+    let beyond = s_new("t", 1001);
+    assert!(s.send(&bundle_at(half as f64 / SR, vec![inside])));
+    assert!(s.send(&bundle_at((half * 4) as f64 / SR, vec![beyond])));
+    s.settle_for(4);
+
+    let first = s.run_to_vec(half * 2).expect("first operation");
+    let (before, after) = first.split_at(half as usize * CHANNELS);
+    assert!(
+        before.iter().all(|&x| x == 0.0),
+        "nothing sounds before the timetag"
+    );
+    assert!(
+        after.iter().any(|&x| x != 0.0),
+        "the bundle inside the span landed at its sample"
+    );
+
+    // The one past the end has not fired: time did not run past the operation.
+    // Settling any number of times cannot make it, which is the property.
+    s.settle_for(32);
+    let quiet = s.run_to_vec(1).expect("one frame");
+    let level_now = quiet.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+
+    // It fires once an operation reaches its sample, and not before.
+    let second = s.run_to_vec(half * 3).expect("second operation");
+    let tail = &second[second.len() - CHANNELS * 64..];
+    let level_later = tail.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    assert!(
+        level_later > level_now,
+        "the bundle past the first operation waited for the second, then landed \
+         ({level_now} -> {level_later})"
+    );
+}
+
 /// The mode's defining property, checked directly rather than inferred: time
 /// moves only inside `run`. Serving between two runs must leave the signal
 /// exactly where it was — if a `settle` advanced the engine, the two halves
