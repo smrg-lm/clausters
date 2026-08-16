@@ -204,12 +204,18 @@ SuperCollider has and this server does not.
 
 ## Phase 4 — the third writer
 
-- ⬜ **H3 — The standalone editor is its own owner.** The host links the crate,
-  holds a document, applies its own inverses. It is what makes O8's acceptance
-  true as written ("a session written by the Python client opens in a standalone
-  host and vice versa") — today only two of the three writers exist, which O8's
-  own entry says plainly. Also the forcing case O10 named for the host taking
-  the intent vocabulary, which it still does not.
+- ✅ **H3 — The standalone editor is its own owner.** Done 2026-08-16. The host
+  links the crate, holds a document, applies its own inverses. It is what makes
+  O8's acceptance true as written ("a session written by the Python client opens
+  in a standalone host and vice versa") — the third writer now exists, and the
+  round trip was run by hand through `gui_session.py`. It was also the forcing
+  case O10 named for the host taking the intent vocabulary, which it now does.
+
+- ⬜ **H4 — The standalone editor sounds what it edits.** Split out of H3 when
+  H3's acceptance ran without it: the audible half needs a server leg the
+  session mode never had, so a take draws nothing and nothing plays. Next in
+  this phase, and the first thing that puts S12's editing verbs and S13's
+  interactive session under a hand instead of under a test.
 
 ## Phase 5 — the spectral editor
 
