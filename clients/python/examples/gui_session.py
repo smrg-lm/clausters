@@ -19,6 +19,13 @@ What it shows, in the order the cells run:
   it back, `Ctrl+S` to save. The host is the owner while that window is open:
   the intent your drag emits is applied *there*, by the crate's `apply`, and the
   inverse comes out of the document rather than being remembered.
+- **Editing the material, not only the description.** The take opens twice: as
+  a clip in its lane, and as an editor under the ruler on an axis of its own.
+  Zoom that one in (wheel) until each sample is a disc, then **Alt+drag** to
+  draw over them — the picture changes over the span you drew and nowhere else,
+  and `Ctrl+Z` puts the samples back. **Space** plays whatever the cursor is
+  over, and stops it. Both go through the embedded server: the clip and the
+  editor draw the one buffer a stroke writes.
 - **Reading it back.** `from_session` on what the host wrote gives an
   arrangement again, and the cell prints where each element ended up — which is
   the whole claim: a file passed between two writers means the same thing to
@@ -29,10 +36,10 @@ The two files it writes sit **beside this one** (``gui_session.json``, and
 and read back from it, so they are worth keeping and looking at rather than
 leaving in a temp directory.
 
-**What it needs:** nothing running. This example is about the format and the
-owner, not about sound — no server is booted and no material is played, which is
-also why the clips in that window are empty rectangles rather than waveforms.
-The host binary is `clients/gui/target/*/clausters-gui`; build it with
+**What it needs:** nothing running — the host boots its own embedded server
+(a `--features standalone` build; without one the take still draws as a named
+rectangle and the space bar does nothing). It writes its own WAV, so no material
+has to be found. The host binary is `clients/gui/target/*/clausters-gui`; build it with
 ``cargo build --bin clausters-gui`` from ``clients/gui`` if it is not there.
 
 Run it as a script (it writes the file and prints the command), or step through
@@ -189,7 +196,9 @@ def host_binary() -> "str | None":
 def open_in_host(wait: bool = True) -> None:
     """Runs the host on the session, saving to a second file.
 
-    Drag a clip, then `Ctrl+Z`, `Ctrl+Shift+Z`, `Ctrl+S`, then close it.
+    Drag a clip, then `Ctrl+Z`, `Ctrl+Shift+Z`, `Ctrl+S`, then close it. The
+    take's editor pane under the ruler is the other half: zoom in to the
+    samples, Alt+drag to draw over them, Space to hear it.
     Saving writes to ``--save-to`` and never over what was opened: overwriting
     the file you were given is a decision, not a default.
     """
@@ -200,7 +209,9 @@ def open_in_host(wait: bool = True) -> None:
         return
     cmd = [binary, "--session", path, "--save-to", saved]
     print("running: " + " ".join(cmd))
-    print("  drag a clip, then Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, then close the window")
+    print("  drag a clip, then Ctrl+Z, Ctrl+Shift+Z, Ctrl+S")
+    print("  and in the take's editor pane: wheel to zoom to the samples, "
+          "Alt+drag to draw, Space to play, then close the window")
     if wait:
         subprocess.run(cmd, check=False)
 

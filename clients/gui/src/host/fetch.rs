@@ -91,6 +91,12 @@ impl BufferFetches {
     /// this to know it must keep looking: an event-driven loop that sleeps
     /// until the next input would leave a reply sitting in the ring, and the
     /// window would fill in only when the pointer happened to move.
+    ///
+    /// Native-only because that is who asks: a page is woken by its own events
+    /// (a socket message, a frame callback) and never chooses when to sleep, so
+    /// the browser front has no wake-up to schedule and this would read as dead
+    /// code there — which is exactly what the wasm build reported.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn pending(&self) -> bool {
         !self.wants.is_empty() || !self.fetches.is_empty()
     }

@@ -30,6 +30,7 @@ use crate::viewport::{Axis, Unit, View};
 
 /// One channel's data: its raw samples (possibly empty, for a cache-only view)
 /// plus its peak pyramid.
+#[derive(Clone)]
 struct Channel {
     samples: Arc<[f32]>,
     pyramid: Pyramid,
@@ -38,6 +39,7 @@ struct Channel {
 /// A waveform's data: per channel, the raw samples (shared, for the zoomed-in
 /// regimes) plus a peak pyramid (for the zoomed-out regime). The pyramids are
 /// the cache that can be persisted via `peaks::MultiPyramid::write_cache`.
+#[derive(Clone)]
 pub struct WaveformData {
     channels: Vec<Channel>,
 }
@@ -134,6 +136,33 @@ impl WaveformData {
     /// Channel 0's pyramid (the persistable cache of a mono view).
     pub fn pyramid(&self) -> &Pyramid {
         &self.channels[0].pyramid
+    }
+
+    /// **Writes a run of samples into one channel and refreshes only the peaks
+    /// that cover it**, returning whether it landed.
+    ///
+    /// This is the drawn copy of a destructive edit: the material itself is the
+    /// server's buffer, and what happens here is the picture agreeing with it
+    /// without being fetched again. Refreshing the whole pyramid would be a
+    /// pause proportional to the *file* on every stroke over a few hundred
+    /// samples, which is what [`peaks::Pyramid::update_range`] exists to avoid.
+    ///
+    /// A write past the end is refused rather than clamped, like every other
+    /// write in this system: a stroke that ran off the material is a mistake
+    /// about where the material ends, and silently shortening it would draw
+    /// something nobody asked for.
+    pub fn write_range(&mut self, ch: usize, start: usize, values: &[f32]) -> bool {
+        let Some(channel) = self.channels.get_mut(ch) else {
+            return false;
+        };
+        if values.is_empty() || start + values.len() > channel.samples.len() {
+            return false;
+        }
+        let mut samples = channel.samples.to_vec();
+        samples[start..start + values.len()].copy_from_slice(values);
+        let ok = channel.pyramid.update_range(&samples, start, values.len());
+        channel.samples = samples.into();
+        ok
     }
 
     /// Whether raw samples are present. A cache-only view (`with_pyramid` with an
@@ -369,6 +398,19 @@ impl WaveformView {
     /// The samples and pyramids behind this view — what the renderer reads.
     pub fn data(&self) -> &WaveformData {
         &self.data
+    }
+
+    /// Puts a **rewritten** copy of the same material behind the view, keeping
+    /// every navigation state it holds.
+    ///
+    /// An edit replaces the pyramid rather than mutating it (the element and
+    /// the view share one `Arc`, so nothing may be patched under the other's
+    /// feet), and the view is not the picture's owner — it is where the eye
+    /// currently is. Rebuilding it whole would snap the amplitude window back
+    /// to full scale mid-stroke, which reads as the view jumping every time a
+    /// sample is drawn.
+    pub fn set_data(&mut self, data: impl Into<Arc<WaveformData>>) {
+        self.data = data.into();
     }
 
     /// Sets the **value domain** the trace maps through — the element's

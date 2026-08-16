@@ -74,6 +74,11 @@ pub fn mean_square(samples: &[f32]) -> Option<f32> {
 /// One resolution level: `min[i]`/`max[i]`/`ms[i]` summarize `bucket` source
 /// samples. `ms` is `None` for a pyramid parsed from a v1/v2 cache, which
 /// predates the statistic — an absent measure, not a zero one.
+///
+/// `Clone` because an edit copies the pyramid it is about to patch: the picture
+/// on screen and the copy being written have to be two objects for the frame in
+/// between, and copying a pyramid is a fraction of copying the samples under it.
+#[derive(Clone)]
 struct Level {
     bucket: usize,
     min: Vec<f32>,
@@ -94,6 +99,7 @@ fn bucket_count(total_samples: usize, bucket: usize, index: usize) -> usize {
 /// A min/max pyramid over a mono buffer. Total storage is ~2x the level-0 size,
 /// i.e. a small constant fraction of the source (e.g. ~0.8% at `base_bucket`
 /// 256), so it is cheap to keep resident or cache to disk.
+#[derive(Clone)]
 pub struct Pyramid {
     base_bucket: usize,
     total_samples: usize,

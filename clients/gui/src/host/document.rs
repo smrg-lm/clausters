@@ -277,6 +277,50 @@ impl Owner {
         }
     }
 
+    /// The **inverse the payload carries**, for the one edit whose inverse the
+    /// document does not hold.
+    ///
+    /// A destructive write's previous samples are the host's to report because
+    /// the host was drawing them: `"sample"` carries the value it replaced and
+    /// `"draw"` carries the run, as the second of its two blobs. A payload
+    /// without that half gives `None`, and the caller logs what the document
+    /// can — which is an edit that redoes but does not undo, and is why the
+    /// gesture sends both.
+    pub fn read_inverse(&self, widget_id: i32, args: &[OscType]) -> Option<Intent> {
+        let node = self.node_of(widget_id)?;
+        let tag = match args.first() {
+            Some(OscType::String(tag)) => tag.as_str(),
+            _ => return None,
+        };
+        let start = long_at(args, 2)?;
+        let values = match tag {
+            "sample" => vec![float_at(args, 4)?],
+            "draw" => match args.get(4) {
+                Some(OscType::Blob(bytes)) => decode_samples(bytes),
+                _ => return None,
+            },
+            _ => return None,
+        };
+        (!values.is_empty()).then_some(Intent::WriteSamples {
+            node,
+            start,
+            values,
+        })
+    }
+
+    /// Which channel of the material a destructive payload addressed.
+    ///
+    /// It is **not** in the intent, and that is the document's decision rather
+    /// than an omission: a node names material and the material's shape is the
+    /// source's business. The host needs it anyway, because a picture is drawn
+    /// per channel and a server buffer is addressed per sample.
+    pub fn read_channel(args: &[OscType]) -> Option<usize> {
+        match args.get(1) {
+            Some(OscType::Int(ch)) if *ch >= 0 => Some(*ch as usize),
+            _ => None,
+        }
+    }
+
     /// Applies one intent through the log, so it can be undone.
     ///
     /// `label` is what the undo stack shows for it — the vocabulary a user
@@ -290,6 +334,39 @@ impl Owner {
             &mut self.log,
             label,
         );
+        self.report(outcome)
+    }
+
+    /// Applies an edit whose inverse **the caller holds**, logging that one.
+    ///
+    /// There is exactly one such edit and the crate says so: a destructive
+    /// write's previous samples are not in the document (the document describes
+    /// where material is, never what it holds), so `apply_logged` records an
+    /// empty write as the inverse and an undo would restore nothing. What was
+    /// there is known to whoever was **drawing** it — the gesture carried the
+    /// span it painted over, which is why the payload has a `previous` half —
+    /// and this is where that returns to the log.
+    ///
+    /// Everything else about it is the ordinary path: the same `apply`, the
+    /// same outcome, the same entry shape. Only the backward step comes from
+    /// the hand instead of from the document.
+    pub fn apply_with_inverse(
+        &mut self,
+        intent: &Intent,
+        inverse: &Intent,
+        against: &Against,
+        label: &str,
+    ) -> Applied {
+        use clausters_document::log::{Entry, Step};
+
+        let outcome = clausters_document::apply(&mut self.document, intent, against, &self.rules);
+        if outcome.applied {
+            self.log.record(Entry::new(
+                label,
+                Step::Edit(outcome.effective.clone()),
+                inverse.clone(),
+            ));
+        }
         self.report(outcome)
     }
 

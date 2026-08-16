@@ -764,6 +764,13 @@ impl ApplicationHandler<UserEvent> for App {
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         self.reset_timelines(def_id)
                     }
+                    // The monitor: the space bar plays what the cursor is over
+                    // and stops what is playing. Last among the window's own
+                    // keys for the usual reason — a focused field types a
+                    // space, and a widget that wanted it answered already.
+                    Key::Named(NamedKey::Space) => {
+                        self.play_key(def_id);
+                    }
                     // The clipboard verbs over the view under the cursor. They
                     // are last, so a focused field and a roll's own block keys
                     // both answer first: this is what nothing else wanted.

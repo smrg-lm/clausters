@@ -145,6 +145,33 @@ impl Gestures {
         out
     }
 
+    /// **Plays the material under the cursor, or stops what is playing** — the
+    /// editor's monitor, on the space bar.
+    ///
+    /// Addressed by the pointer for the same reason a copy is: a window may
+    /// hold several takes, and what the hand is over is the one it means. It is
+    /// the host's own action and not an intent — sounding a take changes
+    /// nothing, so there is nobody to report it to (a host driven by a script
+    /// plays through that script's own transport).
+    ///
+    /// Returns `None` when there is nothing under the cursor to play, so the
+    /// key falls through to whatever else the window does with it.
+    pub fn play_key(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        cy: f64,
+    ) -> Option<Vec<GestureEffect>> {
+        // Space is a toggle over one monitor: pressing it again while a take
+        // sounds stops it, wherever the pointer has since moved.
+        if host.stop_material() {
+            return Some(Vec::new());
+        }
+        let Hit { id, .. } = hit(host, ctx, cx, cy)?;
+        host.play_material(ctx.def_id, id).then(Vec::new)
+    }
+
     /// **Copy, cut and paste over the selection**, addressed to the view under
     /// the cursor — the window's own shortcuts, reached only by a key nothing
     /// focused and nothing under the cursor answered first (a field's Ctrl+C is

@@ -189,6 +189,18 @@ impl Element for SignalElement {
         self.take(data)
     }
 
+    fn material_shape(&self) -> Option<(usize, u64)> {
+        SignalElement::material_shape(self)
+    }
+
+    fn material_buffer(&self) -> Option<i32> {
+        SignalElement::material_buffer(self)
+    }
+
+    fn write_samples(&mut self, ch: usize, start: u64, values: &[f32]) -> bool {
+        SignalElement::write_samples(self, ch, start, values)
+    }
+
     fn fill(&mut self) -> Option<SlotFill> {
         SignalElement::fill(self)
     }

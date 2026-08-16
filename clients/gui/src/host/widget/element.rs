@@ -1519,6 +1519,40 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **The shape of the material this element holds** — `(channels, frames)`
+    /// per channel — or `None` when it draws no material.
+    ///
+    /// The measuring half of [`Element::bulk`], and it exists for one caller: a
+    /// destructive edit has to know what it may address before it addresses it.
+    /// It answers the *shape* and not the data, because measuring by handing
+    /// the samples over would copy a take per stroke.
+    fn material_shape(&self) -> Option<(usize, u64)> {
+        None
+    }
+
+    /// **The server buffer that material *is***, when the element named one.
+    ///
+    /// Not [`Needs::bulk`]: that is a *request*, and it goes quiet the moment
+    /// the samples land — which is exactly when a destructive edit becomes
+    /// possible. What the write needs is the buffer number the source keeps,
+    /// which outlives the load.
+    fn material_buffer(&self) -> Option<i32> {
+        None
+    }
+
+    /// **Writes a run of samples into the material**, at frame `start` of
+    /// channel `ch`; returns whether it landed.
+    ///
+    /// The element writes rather than the host because only it knows which form
+    /// its material is in — a pyramid, inline samples, or both — and a host
+    /// that patched one form left every view holding the other showing the
+    /// material as it was before the stroke. What is written stays the
+    /// element's own picture; the *material* is the server's buffer, and the
+    /// host sends that write itself.
+    fn write_samples(&mut self, _ch: usize, _start: u64, _values: &[f32]) -> bool {
+        false
+    }
+
     /// The [`BodyRole`] this element fills when a container holds it as one of
     /// its bodies, or `None` (the default) for an element that is only ever
     /// itself.

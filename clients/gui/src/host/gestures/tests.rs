@@ -3473,6 +3473,37 @@ fn a_stroke_writes_every_sample_it_passes_and_leaves_as_one_intent() {
     assert!(has_emit_tag(&effects, 50, "draw"));
 }
 
+/// **A stroke stops at the edge of the picture.** The pointer keeps reporting
+/// past the window — that is what a drag grab is for — and a pencil that
+/// followed it would go on rewriting samples nobody can see, discovered only by
+/// scrolling there afterwards.
+#[test]
+fn a_stroke_dragged_off_the_view_writes_nothing_past_the_last_visible_sample() {
+    let def = r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","navigable":1,
+             "data":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],"base_bucket":2,
+             "gestures":{"drag":"draw"}}]}"#;
+    let mut host = host_from(def);
+    host.set_timeline_total(50, 8);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+
+    g.press(&mut host, &ctx, 100.0, 100.0, &mut || false);
+    // Far outside the window, the way a hand that keeps going leaves it.
+    g.drag_to(&mut host, &ctx, 4000.0, 150.0);
+    let held = host
+        .widget_kind(1, 50)
+        .and_then(|k| k.pending_edit())
+        .expect("the stroke is held")
+        .clone();
+    assert!(
+        held.start + held.values.len() <= 8,
+        "the run ends inside the material: {} + {}",
+        held.start,
+        held.values.len()
+    );
+}
+
 /// **Refused where a pixel is more than one sample, and said out loud.** A
 /// stroke there would write values the reader cannot see, and a silent decline
 /// would teach that the pencil sometimes does not work.

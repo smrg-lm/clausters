@@ -273,9 +273,28 @@ impl Gestures {
             } => {
                 let (start, len) =
                     group_view(host, id).map_or((nav_start, nav_len), |(s, l, _)| (s, l));
+                // **The stroke stops at the edge of the view**, because that is
+                // the same rule the pencil is refused under: it writes what the
+                // reader can see. A hand that slides off the picture — or out
+                // of the window, where the pointer keeps reporting — would
+                // otherwise go on rewriting samples nobody is looking at, and
+                // the damage is only discovered by scrolling there. Clamped
+                // rather than stopped, so the last visible column still follows
+                // the hand and the stroke ends where the eye does.
+                let cx = cx.clamp(body.x as f64, (body.x + body.w) as f64);
                 let frames =
                     interact::sample_at(start, len, body.x as f64, body.w as f64, cx).max(0.0);
-                let now = (frames.round() as usize, axis.value_at(cy) as f32);
+                // ...and inside what exists: the right edge of a view showing
+                // the whole material maps to one *past* its last sample, and a
+                // stroke carrying that frame is refused whole by the owner.
+                let last = host
+                    .material_frames(def_id, id)
+                    .unwrap_or(0)
+                    .saturating_sub(1);
+                let now = (
+                    (frames.round() as u64).min(last) as usize,
+                    axis.value_at(cy) as f32,
+                );
                 extend_stroke(host, def_id, id, channel, (last_frame, last_value), now);
                 self.drag = Some(Drag::Draw {
                     id,

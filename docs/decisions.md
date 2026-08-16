@@ -5352,3 +5352,66 @@ linear parameter, or leaving the colour alone and narrowing the body instead.
 format carried the mean square has an envelope and no energy, and the layer is
 absent rather than flat: zeros are a measurement — silence — and drawing them
 over material that is not silent is the one picture worse than no picture.
+
+## The buffer is the material, and every picture of it takes the same write
+
+A destructive edit in a standalone editor has to land in two places at once: the
+server's buffer — the copy that sounds, and the one a save writes — and whatever
+the window is drawing, because refetching a take to show a stroke that is
+already on screen would be a round trip per gesture.
+
+**The picture and the material are one thing on purpose.** A session's take is
+read into a **server buffer** rather than mapped as a file (see the session
+sources note): the editing verbs address a buffer, so a host that drew a file
+and edited a buffer would show one copy and write another. The same argument
+carries one level down, inside the host.
+
+**A take is drawn more than once, and the views hold it in different forms.** A
+session window shows the clip in its lane *and* the take's editor under the
+tracks — two widgets, one material. Worse, they do not hold it alike: a
+navigable view keeps a **peak pyramid** (a take is minutes of audio and reaches
+the host summarized), while a clip's take body keeps the **samples** it was
+handed. A host that patched the pyramid of the widget under the pointer
+therefore left the clip drawing samples that no longer existed anywhere, and the
+undo — which addresses the node, not the widget the hand happened to be over —
+reported that it could not restore material it was looking straight at.
+
+So the write is split the way the knowledge is:
+
+- **The element writes its own material** (`Element::write_samples`), because
+  only it knows which form it is in — it patches the pyramid, the samples, or
+  both, recomputing only the columns over the span
+  (`peaks::update_range`).
+- **The host decides which elements**, and the answer is the **buffer number**:
+  two widgets are two pictures of one material exactly when they name the same
+  buffer. Nothing else in the tree relates them — a clip and an editor of the
+  same take are not parent and child, and they are not even in the same lane.
+
+Both are replaced rather than mutated: the pyramid is shared with whatever slot
+is drawing it (one `Arc`, so keeping it costs a pointer), and patching it in
+place would rewrite a picture under a renderer that never asked. The element
+marks its slot dirty instead, and the next frame refills it — keeping the view's
+navigation, since where the eye is is not part of what was edited.
+
+**What the host will not do is write one channel of a multichannel take.**
+`/buffer_setRange` writes a contiguous run of *flat, interleaved* samples, so
+one channel of a stereo buffer is a **strided** write and there is no command
+for one. Sending it as N single-sample messages is not the answer; the command
+is. It is refused with that sentence rather than half-done, and the missing
+command is a server milestone.
+
+## A stroke writes what the reader can see
+
+The pencil is already refused where a pixel is more than one sample — a stroke
+there would write values nobody can check, and the refusal is visible
+(`"refused" "draw" …`) because a pencil that sometimes silently does nothing
+teaches that it sometimes does not work.
+
+The same rule decides what happens when the hand keeps going: a drag holds the
+pointer, so it goes on reporting past the edge of the view and past the window
+itself. Following it would rewrite samples nobody is looking at, and the damage
+is discovered only by scrolling there afterwards. So the stroke is **clamped to
+the body it started on** — the last visible column still follows the hand, and
+the stroke ends where the eye does — and clamped again to the material's last
+frame, since the right edge of a fully zoomed-out view maps to *one past* the
+last sample and a stroke carrying that frame is refused whole by the owner.

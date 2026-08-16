@@ -147,6 +147,83 @@ impl SignalElement {
         })
     }
 
+    /// **The shape of the material this element holds** — `(channels, frames)`
+    /// per channel — whichever form it arrived in: a resolved pyramid (a take)
+    /// or the inline samples (a plotted sequence). `None` when it holds
+    /// neither, which is a source nobody has resolved yet.
+    ///
+    /// It is the shape and not the samples because the one caller is a
+    /// **write**, which has to know what it may address before it addresses it:
+    /// handing out the data to measure it would be a copy of a take per stroke.
+    pub fn material_shape(&self) -> Option<(usize, u64)> {
+        let data = self.source.data()?;
+        if let Some(body) = &data.body {
+            return Some((body.num_channels(), body.total_samples() as u64));
+        }
+        if data.samples.is_empty() {
+            return None;
+        }
+        let channels = data.channels.max(1);
+        Some((channels, (data.samples.len() / channels) as u64))
+    }
+
+    /// The **server buffer** this element's material came from, if it named one.
+    pub fn material_buffer(&self) -> Option<i32> {
+        self.source.data()?.buffer
+    }
+
+    /// **Writes a run of samples into the material**, returning whether it
+    /// landed. `start` is a frame index in channel `ch`.
+    ///
+    /// The element does it rather than the host, because the host does not know
+    /// which of the two forms this source is in — and both are real: a clip's
+    /// take draws from inline samples, while the same buffer opened as a
+    /// navigable view draws from a pyramid. A host that patched only the
+    /// pyramid left the clip showing the material as it was before the stroke.
+    ///
+    /// Both are **replaced rather than mutated**: the pyramid is shared with
+    /// whatever slot is drawing it, so patching it in place would rewrite a
+    /// picture under a renderer that never asked. Only the columns over the
+    /// span are recomputed ([`crate::waveform::WaveformData::write_range`]).
+    pub fn write_samples(&mut self, ch: usize, start: u64, values: &[f32]) -> bool {
+        let Some(data) = self.source.data_mut() else {
+            return false;
+        };
+        let start = start as usize;
+        if values.is_empty() {
+            return false;
+        }
+        let mut wrote = false;
+        if let Some(body) = &data.body {
+            let mut copy = (**body).clone();
+            if !copy.write_range(ch, start, values) {
+                return false;
+            }
+            data.body = Some(std::sync::Arc::new(copy));
+            wrote = true;
+        }
+        if !data.samples.is_empty() {
+            let channels = data.channels.max(1);
+            let end = start + values.len();
+            if ch >= channels || end * channels > data.samples.len() {
+                return false;
+            }
+            // Interleaved, so a channel is a stride — the one place the picture
+            // and the server's flat addressing spell the same span differently.
+            let mut samples = data.samples.to_vec();
+            for (i, v) in values.iter().enumerate() {
+                samples[(start + i) * channels + ch] = *v;
+            }
+            data.samples = samples.into();
+            wrote = true;
+        }
+        if wrote {
+            self.slot_dirty = true;
+            self.refresh_analysis();
+        }
+        wrote
+    }
+
     /// Takes a resolved resource into the element, returning whether it fit
     /// what this element draws from. Landing samples also refreshes the cached
     /// spectral analysis, which is the element's one derived value and belongs
@@ -184,6 +261,13 @@ impl SignalElement {
             // and a read of the source (a copy) is answered out of it.
             Loaded::Peaks(peaks) => {
                 source.body = Some(peaks);
+                // A pyramid also *replaces* one, and a destructive edit is how:
+                // the samples are rewritten and a new pyramid arrives here, so
+                // the slot has to be filled from it or the window keeps drawing
+                // the picture from before the stroke. The refill after a plain
+                // load is the same `Arc` going back where it already is, and
+                // the fill keeps the view's navigation.
+                self.slot_dirty = true;
                 true
             }
             Loaded::Samples(samples) => {

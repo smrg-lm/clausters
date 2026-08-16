@@ -211,11 +211,20 @@ SuperCollider has and this server does not.
   round trip was run by hand through `gui_session.py`. It was also the forcing
   case O10 named for the host taking the intent vocabulary, which it now does.
 
-- ⬜ **H4 — The standalone editor sounds what it edits.** Split out of H3 when
-  H3's acceptance ran without it: the audible half needs a server leg the
-  session mode never had, so a take draws nothing and nothing plays. Next in
-  this phase, and the first thing that puts S12's editing verbs and S13's
-  interactive session under a hand instead of under a test.
+- ✅ **H4 — The standalone editor sounds what it edits.** Done 2026-08-16. The
+  session mode boots the embedded server, reads its takes into buffers, draws
+  each one twice (a clip in its lane, an editor under the tracks), writes a
+  stroke through to the buffer and every picture of it, undoes it, and plays it.
+  It is what finally put S12's editing verbs and S13's interactive session under
+  a hand instead of under a test — which is how it found the two bugs and the
+  one missing command now recorded as **S16** (a buffer write that addresses one
+  channel, without which a stereo take is drawable and not editable).
+
+**What is next in this phase** is not H5 — there is none. The two things H4
+named on its way out are a server milestone (**S16**) and a design that needs a
+transport before it needs code (a playhead in session mode,
+`clients/gui/PLAN.md`, "Future directions"), so the order after this is decided
+by whichever track argues for itself, not by the phase.
 
 ## Phase 5 — the spectral editor
 

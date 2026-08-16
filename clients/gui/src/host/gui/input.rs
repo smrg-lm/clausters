@@ -243,6 +243,23 @@ impl App {
         true
     }
 
+    /// The space bar over the view under the cursor: play its material, or stop
+    /// what is playing. Returns whether it was consumed.
+    pub(super) fn play_key(&mut self, def_id: i32) -> bool {
+        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+            return false;
+        };
+        let ctx = self.gesture_ctx(def_id);
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return false;
+        };
+        let Some(effects) = ws.gestures.play_key(&mut self.host, &ctx, cx, cy) else {
+            return false;
+        };
+        self.apply_gesture_effects(effects);
+        true
+    }
+
     /// Undo or redo over a window: the route to whoever owns the document.
     /// The host keeps no history, so this only reports (see
     /// [`Gestures::history`](crate::host::gestures::Gestures::history)).

@@ -305,10 +305,23 @@ pub(crate) fn fill_slots(
     let owner = widget.id.or(owner);
     if let (Some(id), Some(fill)) = (owner, widget.kind.fill()) {
         let extent = match fill {
+            // A fill over a slot that is already there **keeps the view**: the
+            // picture is the element's and the navigation is the eye's, so a
+            // refill — which is what a destructive edit produces — must not
+            // snap the amplitude window back to full scale mid-stroke.
             SlotFill::Geometry(data) => {
-                let slot = waveform_slot(data);
-                let total = slot.view.total_samples();
-                waveforms.insert(id, slot);
+                let total;
+                match waveforms.get_mut(&id) {
+                    Some(slot) => {
+                        slot.view.set_data(data);
+                        total = slot.view.total_samples();
+                    }
+                    None => {
+                        let slot = waveform_slot(data);
+                        total = slot.view.total_samples();
+                        waveforms.insert(id, slot);
+                    }
+                }
                 Some(Extent::Stored(total))
             }
             SlotFill::Texture(stfts) => spectrogram_slot(stfts, gpu, renderers).map(|slot| {

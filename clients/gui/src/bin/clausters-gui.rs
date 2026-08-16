@@ -617,10 +617,17 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
         }),
         origin,
     );
+    // Counted by what each child *is* rather than by arithmetic on the list:
+    // the window holds lanes, one ruler and an editor per take, and a count
+    // that subtracts a constant goes quietly wrong the day another pane joins.
+    let editors = load.takes.len();
+    let lanes = drawn.def["children"]
+        .as_array()
+        .map_or(0, |c| c.len())
+        .saturating_sub(1 + editors);
     tracing::info!(
-        "session: opened {path} — {} clip(s), {} lane(s) + a ruler",
+        "session: opened {path} — {} clip(s), {lanes} lane(s) + a ruler, {editors} take editor(s)",
         drawn.bindings.len(),
-        drawn.def["children"].as_array().map_or(0, |c| c.len()) - 1
     );
     match save_to {
         Some(out) => tracing::info!("session: Ctrl+S writes {out}"),
@@ -654,6 +661,10 @@ fn attach_server(
             return Ok(());
         }
     };
+    // The monitor's def goes with the material: a take is data, and what sounds
+    // it is an instrument. Sent before the reads so it is loaded well before a
+    // hand can press the space bar.
+    send_osc(&embed, clausters_gui::host::play::take_def_message())?;
     for msg in &load.messages {
         send_osc(&embed, msg.clone())?;
     }

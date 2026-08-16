@@ -142,6 +142,8 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
         "tempo": look.tempo,
     }));
 
+    lanes.extend(take_editors(document, look, &mut ids, &mut bindings));
+
     let def = json!({
         "type": "window",
         "title": title,
@@ -156,6 +158,10 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
         next_id: ids.next,
     }
 }
+
+/// The height of a take's editor pane, in logical pixels: enough for a trace
+/// with its ruler under it, and small enough that the tracks stay the picture.
+const EDITOR_H: f64 = 180.0;
 
 struct Ids {
     next: i32,
@@ -276,6 +282,76 @@ fn clip_of(
         }
     }
     Value::Object(props)
+}
+
+/// **One editor per take**, under the tracks: the material as a navigable
+/// picture of itself, where it can be zoomed to the sample and drawn over.
+///
+/// The arrangement says *where* material is and the editor is where material is
+/// *edited*, and the two views are of one thing — the same server buffer, the
+/// same node — so a stroke here moves the clip's picture above it without
+/// anything being told. That is the whole reason a take opens as a second view
+/// rather than as a mode over the clip: a lane measures beats and a pencil
+/// measures samples, and one axis cannot be both.
+///
+/// It stays **out of the tracks' navigation group** for that same reason: the
+/// arrangement's zoom is where the piece is, the editor's is how close the hand
+/// is, and joining them would make drawing a sample scroll the whole session.
+///
+/// A source drawn by several clips opens once (the first node that names it):
+/// the material is one, and editing it twice would be two pictures of the same
+/// samples disagreeing while the hand is down.
+fn take_editors(
+    document: &Document,
+    look: &Look<'_>,
+    ids: &mut Ids,
+    bindings: &mut Vec<Bound>,
+) -> Vec<Value> {
+    let Some(takes) = look.takes else {
+        return Vec::new();
+    };
+    let mut seen: Vec<clausters_document::SourceId> = Vec::new();
+    let mut out = Vec::new();
+    document.root.walk(&mut |node| {
+        let Body::Buffer { source, .. } = &node.body else {
+            return;
+        };
+        if seen.contains(&source.source) {
+            return;
+        }
+        let Some(take) = takes.get(source.source) else {
+            return;
+        };
+        seen.push(source.source);
+        let widget = ids.take();
+        bindings.push(Bound {
+            widget,
+            node: node.id,
+        });
+        let mut props = Map::new();
+        props.insert("id".into(), json!(widget));
+        props.insert("type".into(), json!("signal"));
+        props.insert("view".into(), json!("trace"));
+        props.insert("buffer".into(), json!(take.bufnum));
+        if let Some(channels) = take.channels {
+            props.insert("channels".into(), json!(channels));
+        }
+        props.insert("label".into(), json!(label_of(node)));
+        props.insert("h".into(), json!(EDITOR_H));
+        props.insert("sample_rate".into(), json!(look.sample_rate));
+        props.insert("ruler".into(), json!("samples"));
+        // The plan, and it is three gestures rather than a mode: a plain drag
+        // sweeps a selection (what an editor does by default), Alt draws over
+        // the samples and Ctrl grabs one. `draw` refuses out loud below the
+        // zoom where a pixel is one sample, so it never silently paints what
+        // the eye cannot check.
+        props.insert(
+            "gestures".into(),
+            json!({"drag": "select", "alt": "draw", "ctrl": "sample"}),
+        );
+        out.push(Value::Object(props));
+    });
+    out
 }
 
 /// The material a node draws, when it names some and somebody resolved it.
@@ -586,6 +662,45 @@ mod take_tests {
         assert_eq!(
             clip["dur"], 96_000.0,
             "as long as the material, in timeline units"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A resolved take also **opens as an editor**, on its own axis and bound
+    /// to the same node the clip is: the arrangement is where the material is
+    /// placed and this is where it is drawn over, and both write the one buffer.
+    #[test]
+    fn a_resolved_take_opens_an_editor_bound_to_the_same_node() {
+        let dir = std::env::temp_dir().join(format!("clausters_gui_edit_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        std::fs::write(dir.join("t.wav"), b"there").expect("write");
+        let session = Session::new(one_take(3)).with_source(
+            SourceId(3),
+            Source::file("t.wav", Lifetime::Session).shaped(1, 96_000, 48_000.0),
+        );
+        let load = sources::plan(&session, &dir, 7);
+        let look = Look {
+            takes: Some(&load.takes),
+            ..Look::default()
+        };
+        let drawn = draw(&session.document, &look, "take");
+        let children = drawn.def["children"].as_array().expect("lanes");
+        let editor = children.last().expect("the editor pane");
+        assert_eq!(editor["type"], "signal", "a picture of the samples");
+        assert_eq!(editor["buffer"], 7, "the very buffer the clip draws");
+        assert_eq!(
+            editor["gestures"]["alt"], "draw",
+            "and a pencil on it, since this is where a sample is a thing"
+        );
+        assert!(
+            editor.get("link").is_none(),
+            "on its own axis: zooming to a sample must not scroll the session"
+        );
+        let bound: Vec<NodeId> = drawn.bindings.iter().map(|b| b.node).collect();
+        assert_eq!(
+            bound,
+            vec![NodeId(2), NodeId(2)],
+            "the clip and the editor are two views of one node"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

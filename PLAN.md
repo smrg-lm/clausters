@@ -406,6 +406,14 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
 
   **No new example, stated rather than omitted:** the three are variants inside families the examples already exercise, and what is genuinely new — a channel-selective read — is covered end to end by a test that goes through a real file on disk rather than a mock.
 
+- ⬜ **S16 — A buffer write can address one channel** *(opened 2026-08-16, found by the GUI's standalone editor: the destructive-edit path refuses a multichannel take by name, and this is the command it names)*. Every writing command in the family addresses **flat, interleaved** samples: `/buffer_set` takes indices, `/buffer_setRange` takes a start and a contiguous run. That is the right addressing for filling a buffer and the wrong one for editing a *channel* of one — one channel of a stereo take is a **strided** span, and there is no command for it. The editing verbs S12 shipped are frame-addressed and already take a channel count, so the gap is on the wire and not in the core.
+
+  **What it blocks, concretely.** The GUI host draws a take and writes a stroke back into the very buffer it is drawing; with more than one channel it refuses, with that sentence, rather than writing the wrong samples or sending one message per sample — which is the shape this rule exists to avoid (a stroke over a few thousand samples as N messages is the encode the blob convention was introduced to kill). So a stereo take is drawable and not editable today.
+
+  **The shape, to decide when it opens.** Either a channel argument on the existing writers (`/buffer_setRange bufnum channel start blob`, where the run is that channel's own frames) or a separate `/buffer_setRangeChannel` beside `/buffer_readChannel` — the family already spells a channel-selective variant that way once, which is an argument for the second and against growing an argument on a command whose current shape is in every client. Whichever it is, `/buffer_set` gets the same treatment, and the reply, the past-the-end failure and the NRT chaining are the family's as they stand.
+
+  **Acceptance:** one channel of a stereo buffer is written and the other is asserted unchanged, sample for sample; a span past the end fails like the rest of the family; both clients' builders and `docs/schemas.md` carry it; and the GUI host stops refusing a multichannel take (`clients/gui/PLAN.md`, H4).
+
 ## B track — the engine in the browser (wasm)
 
 Section added 2026-07-18. Compile the engine to `wasm32` and run it **in the

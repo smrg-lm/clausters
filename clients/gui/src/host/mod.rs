@@ -56,6 +56,7 @@ pub mod clipboard;
 pub mod document;
 pub mod elements;
 pub mod guidef;
+pub mod play;
 pub mod registry;
 pub mod voices;
 pub mod widget;
@@ -524,6 +525,9 @@ pub struct Host {
     voices: HashMap<i32, Vec<(i32, i32)>>,
     /// The next voice node-id offset over [`voices::ID_BASE`] (wrapping).
     voice_counter: i32,
+    /// The widget whose material the **take monitor** is playing, if any (see
+    /// [`play`]). One at a time, so this is a widget and not a list.
+    playing: Option<i32>,
     /// **What the host has emitted and not heard back about**, plus the stamps
     /// it issues (see [`ack`]). Behind a `RefCell` because stamping happens
     /// where an edit is *produced* — deep inside the gesture machine, which
@@ -588,6 +592,7 @@ impl Host {
             store: None,
             timelines: timeline::TimelineGroups::default(),
             voices: HashMap::new(),
+            playing: None,
             voice_counter: 0,
             outbox: Default::default(),
             owner: None,
@@ -1370,6 +1375,7 @@ impl Host {
                 let applied = owner.undo();
                 let moved = !applied.is_empty();
                 self.adopt(def_id, &applied);
+                self.replay_writes(def_id, &applied);
                 if moved {
                     self.settle(ack::Acked {
                         seq,
@@ -1383,6 +1389,7 @@ impl Host {
                 let applied = owner.redo();
                 let moved = !applied.is_empty();
                 self.adopt(def_id, &applied);
+                self.replay_writes(def_id, &applied);
                 if moved {
                     self.settle(ack::Acked {
                         seq,
@@ -1404,8 +1411,47 @@ impl Host {
         let Some((intent, label)) = owner.read_event(widget_id, args) else {
             return false;
         };
-        let applied = owner.apply(&intent, &clausters_document::Against::default(), label);
+        // A **destructive** edit is the one that reaches past the document: the
+        // samples are not in it, so they are written to the material itself and
+        // the inverse comes from the hand that drew over them.
+        let write = match &intent {
+            clausters_document::Intent::WriteSamples { start, values, .. } => {
+                Some((*start, values.clone()))
+            }
+            _ => None,
+        };
+        let inverse = owner.read_inverse(widget_id, args);
+        if let Some((start, values)) = &write
+            && let Err(why) = self.can_write(def_id, widget_id, *start, values.len())
+        {
+            // Refused, and said so: the pending drawing is dropped by the same
+            // acknowledgement an applied edit sends, so the picture snaps back
+            // to the material rather than keeping a stroke nobody stored.
+            warn!("refusing to write {} sample(s): {why}", values.len());
+            let version = self.owner.as_ref().map_or(0, |o| o.document.version as i64);
+            self.settle(ack::Acked {
+                seq,
+                doc_version: version,
+                ..Default::default()
+            });
+            return true;
+        }
+        let against = clausters_document::Against::default();
+        let Some(owner) = self.owner.as_mut() else {
+            return false;
+        };
+        let applied = match inverse {
+            // The one edit whose inverse the document cannot read back.
+            Some(inverse) => owner.apply_with_inverse(&intent, &inverse, &against, label),
+            None => owner.apply(&intent, &against, label),
+        };
         let version = applied.version;
+        if applied.applied
+            && let Some((start, values)) = write
+        {
+            let channel = document::Owner::read_channel(args).unwrap_or(0);
+            self.write_material(def_id, widget_id, channel, start, &values);
+        }
         self.adopt(def_id, &[applied]);
         self.settle(ack::Acked {
             seq,
@@ -1413,6 +1459,156 @@ impl Host {
             ..Default::default()
         });
         true
+    }
+
+    /// Whether a destructive write can land on this widget's material, or why
+    /// it cannot.
+    ///
+    /// Checked **before** the document is touched, because a write that the
+    /// material refuses must not bump the source's generation: that number is
+    /// what tells every reader its copy is stale, and moving it for an edit
+    /// nothing performed would send them all back to the server for nothing.
+    fn can_write(&self, def_id: i32, widget_id: i32, start: u64, len: usize) -> Result<(), String> {
+        let Some((channels, frames)) = self
+            .window_def(def_id)
+            .and_then(|t| t.find(widget_id))
+            .and_then(material_element)
+            .and_then(widget::element::Element::material_shape)
+        else {
+            return Err("this widget is not drawing any material".into());
+        };
+        // **Mono only, and it is the server's addressing rather than a
+        // shortcut.** `/buffer_setRange` writes a contiguous run of *flat,
+        // interleaved* samples, so one channel of a stereo buffer is a strided
+        // write and there is no command for one. Writing it as N single-sample
+        // messages is not the answer; the command is. Recorded as a milestone
+        // rather than half-done here.
+        if channels > 1 {
+            return Err(format!(
+                "the take has {channels} channels, and one channel of an interleaved buffer \
+                 needs a strided write the server has no command for"
+            ));
+        }
+        if start + len as u64 > frames {
+            return Err(format!(
+                "the span ends at {} and the material is {frames} sample(s) long",
+                start + len as u64,
+            ));
+        }
+        if self.server.is_none() {
+            return Err("no audio server holds this material".into());
+        }
+        if self.buffer_of(def_id, widget_id).is_none() {
+            return Err("this widget draws no server buffer".into());
+        }
+        Ok(())
+    }
+
+    /// **How many frames of material a widget draws**, if it draws any.
+    ///
+    /// What a gesture clamps against: the right edge of a fully zoomed-out view
+    /// maps to *one past* the last sample (a window of 8 samples is 8 wide),
+    /// and a stroke that reaches it would carry a frame the material does not
+    /// have — which the owner refuses, taking the whole stroke with it.
+    pub(crate) fn material_frames(&self, def_id: i32, widget_id: i32) -> Option<u64> {
+        material_element(self.window_def(def_id)?.find(widget_id)?)?
+            .material_shape()
+            .map(|(_, frames)| frames)
+    }
+
+    /// The server buffer a widget's material is, when it is one.
+    fn buffer_of(&self, def_id: i32, widget_id: i32) -> Option<i32> {
+        material_element(self.window_def(def_id)?.find(widget_id)?)
+            .and_then(widget::element::Element::material_buffer)
+    }
+
+    /// **Carries a destructive edit through to the samples**: the server's
+    /// buffer, and every picture of it this host is holding.
+    ///
+    /// The server's copy first, because it is the one that sounds and the one a
+    /// save writes. Then the host's — and *every* view of that buffer in the
+    /// window, not the one the hand was over: a session draws a take twice (the
+    /// clip in its lane, the editor under the tracks), they are one material,
+    /// and a stroke that reached only the view under the pointer leaves the
+    /// other showing samples that no longer exist anywhere. Refetching to find
+    /// that out would be a round trip per gesture; the buffer number is what
+    /// says which pictures are of this material.
+    ///
+    /// The write itself belongs to each element ([`widget::element::Element::write_samples`]),
+    /// because a take drawn as a clip holds samples and the same take drawn as
+    /// a navigable view holds a pyramid.
+    fn write_material(
+        &mut self,
+        def_id: i32,
+        widget_id: i32,
+        channel: usize,
+        start: u64,
+        values: &[f32],
+    ) {
+        let Some(bufnum) = self.buffer_of(def_id, widget_id) else {
+            return;
+        };
+        // The material is mono here (`can_write` said so), so a frame index and
+        // a flat sample index are the same number. They stop being the same the
+        // day a channel-addressed write exists, and this is where that shows.
+        let mut blob = Vec::with_capacity(values.len() * 4);
+        for v in values {
+            blob.extend_from_slice(&v.to_le_bytes());
+        }
+        if let Some(server) = self.server.as_ref()
+            && let Err(e) = server.send(OscMessage {
+                addr: "/buffer_setRange".into(),
+                args: vec![
+                    OscType::Int(bufnum),
+                    OscType::Int(start as i32),
+                    OscType::Blob(blob),
+                ],
+            })
+        {
+            warn!("failed to write buffer {bufnum}: {e}");
+            return;
+        }
+        let Some(tree) = self.window_def_mut(def_id) else {
+            return;
+        };
+        if write_buffer_views(tree, bufnum, channel, start, values) == 0 {
+            warn!("the picture refused a write the material accepted — they will disagree");
+        }
+    }
+
+    /// Carries the sample half of an **undone or redone** write through to the
+    /// material, exactly as [`Self::write_material`] does for a fresh one.
+    ///
+    /// A replayed write is complete on its own — the log holds the samples,
+    /// because the hand that drew over them supplied the inverse — except for
+    /// the channel, which no intent carries. It is 0 while [`Self::can_write`]
+    /// accepts mono material alone; the day a strided write exists, the channel
+    /// has to travel with the intent, and this is the second place that shows.
+    fn replay_writes(&mut self, def_id: i32, applied: &[document::Applied]) {
+        let Some(owner) = self.owner.as_ref() else {
+            return;
+        };
+        let writes: Vec<(i32, u64, Vec<f32>)> = applied
+            .iter()
+            .filter(|a| a.applied)
+            .filter_map(|a| match &a.effective {
+                clausters_document::Intent::WriteSamples {
+                    node,
+                    start,
+                    values,
+                } if !values.is_empty() => {
+                    owner.widget_of(*node).map(|w| (w, *start, values.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        for (widget_id, start, values) in writes {
+            if let Err(why) = self.can_write(def_id, widget_id, start, values.len()) {
+                warn!("cannot restore {} sample(s): {why}", values.len());
+                continue;
+            }
+            self.write_material(def_id, widget_id, 0, start, &values);
+        }
     }
 
     /// Writes what an edit left back onto the picture — the *adopt* half of
@@ -1910,6 +2106,42 @@ fn scalar_arg(v: &Value) -> Option<OscType> {
         Value::String(s) => Some(OscType::String(s.clone())),
         _ => None,
     }
+}
+
+/// The element under `widget` that holds material — itself, or one of the
+/// bodies a container built from its own props (a clip's take carries no id of
+/// its own, so it is only ever reached through the widget that does).
+fn material_element(widget: &widget::Widget) -> Option<&dyn widget::element::Element> {
+    std::iter::once(widget)
+        .chain(widget.children.iter())
+        .filter_map(|w| w.kind.as_element())
+        .find(|el| el.material_shape().is_some())
+}
+
+/// Writes a run of samples into **every element in this tree drawing server
+/// buffer `bufnum`**, returning how many took it.
+///
+/// The buffer is the identity: two widgets are two pictures of one material
+/// exactly when they name the same buffer, and nothing else in the tree relates
+/// them — a clip and an editor of the same take are not parent and child.
+fn write_buffer_views(
+    widget: &mut widget::Widget,
+    bufnum: i32,
+    channel: usize,
+    start: u64,
+    values: &[f32],
+) -> usize {
+    let mut wrote = 0;
+    if let Some(el) = widget.kind.as_element_mut()
+        && el.material_buffer() == Some(bufnum)
+        && el.write_samples(channel, start, values)
+    {
+        wrote += 1;
+    }
+    for child in &mut widget.children {
+        wrote += write_buffer_views(child, bufnum, channel, start, values);
+    }
+    wrote
 }
 
 #[cfg(test)]
@@ -2830,5 +3062,254 @@ mod tests {
             Some(OscType::Int(7)),
         );
         crate::unregister("test_door_pad");
+    }
+}
+
+/// **The destructive edit, end to end inside the host**: a stroke over a take's
+/// samples reaches the server's buffer and the picture of it at once, and the
+/// log takes it back.
+///
+/// What is exercised here is the seam the milestone added — [`Host::can_write`]
+/// refusing what the wire cannot carry, [`Host::write_material`] sending and
+/// patching, and the inverse the hand supplies coming back through an undo. The
+/// hand itself (the drag that builds the payload) is tested in `gestures`, and
+/// the server's own `/buffer_setRange` in the server crate; this is where the
+/// three meet.
+#[cfg(test)]
+mod write_tests {
+    use super::*;
+    use crate::host::document::Owner;
+    use crate::host::widget::element::Loaded;
+    use crate::waveform::WaveformData;
+    use clausters_document::{Body, Document, Lifetime, Node, NodeId, Opaque, SourceRef};
+    use std::net::{SocketAddr, UdpSocket};
+    use std::time::Duration;
+
+    /// The session's own picture, in miniature: a take drawn **twice** — as a
+    /// clip in a lane, and as the navigable editor under it — both naming the
+    /// one buffer.
+    const TREE: &str = r#"{"type":"window","children":[
+        {"id":52,"type":"field","children":[
+            {"id":51,"type":"field","offset":0.0,"dur":16.0,"buffer":0,"channels":1}
+        ]},
+        {"id":50,"type":"signal","view":"trace","buffer":0,"navigable":1}
+    ]}"#;
+
+    fn from() -> ClientId {
+        ClientId::Udp("127.0.0.1:9000".parse::<SocketAddr>().unwrap())
+    }
+
+    fn blob(values: &[f32]) -> OscType {
+        OscType::Blob(values.iter().flat_map(|v| v.to_le_bytes()).collect())
+    }
+
+    /// A host drawing `channels` interleaved channels of `frames` frames of
+    /// silence out of server buffer 0, with a document behind it whose one node
+    /// is that take, and a throwaway socket standing in for the audio server.
+    fn take_host(channels: usize, frames: usize) -> (Host, UdpSocket) {
+        let server = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        let leg = ServerLeg::connect(server.local_addr().unwrap()).unwrap();
+
+        let mut host = Host::new().with_server(leg);
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_DEF.into(),
+                args: vec![OscType::Int(1), OscType::String(TREE.into())],
+            }),
+            from(),
+        );
+        // The two forms one material arrives in, which is the whole reason a
+        // write goes through the element: the navigable view keeps a pyramid,
+        // the clip's take body keeps the samples.
+        let samples = vec![0.0f32; frames * channels];
+        let data = std::sync::Arc::new(WaveformData::from_interleaved(&samples, channels, 64));
+        host.window_def_mut(1)
+            .and_then(|t| t.find_mut(50))
+            .expect("the waveform")
+            .take_bulk(|| Loaded::Peaks(data.clone()))
+            .then_some(())
+            .expect("the element took the pyramid");
+        host.window_def_mut(1)
+            .and_then(|t| t.find_mut(51))
+            .expect("the clip")
+            .take_bulk(|| Loaded::Raw {
+                samples: samples.clone(),
+                channels,
+            })
+            .then_some(())
+            .expect("the clip's take body took the samples");
+
+        let mut owner = Owner::new(Document::new(Node::new(
+            NodeId(2),
+            Body::Buffer {
+                source: SourceRef {
+                    source: clausters_document::SourceId(1),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                },
+                config: Opaque::default(),
+            },
+        )));
+        owner.bind(50, NodeId(2));
+        host.owner = Some(owner);
+        (host, server)
+    }
+
+    /// The message the fake server received, or `None` if it sent nothing.
+    fn received(server: &UdpSocket) -> Option<OscMessage> {
+        let mut buf = [0u8; 4096];
+        let (len, _) = server.recv_from(&mut buf).ok()?;
+        match clausters_core::osc::decode_packet(&buf[..len]).ok()? {
+            OscPacket::Message(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    /// What the widget's own picture holds at frame `i` — read back through the
+    /// same door the drawing gesture reads it through, so the test sees what the
+    /// hand would.
+    fn sample(host: &Host, i: usize) -> f32 {
+        sample_of(host, 50, i)
+    }
+
+    /// The same, for whichever of the two views is being asked.
+    fn sample_of(host: &Host, widget: i32, i: usize) -> f32 {
+        host.window_def(1)
+            .and_then(|t| t.find(widget))
+            .and_then(|w| {
+                std::iter::once(w)
+                    .chain(w.children.iter())
+                    .find_map(|w| w.kind.sample_value(0, i))
+            })
+            .expect("material")
+    }
+
+    #[test]
+    fn a_stroke_reaches_the_buffer_and_the_picture_and_undo_puts_both_back() {
+        let (mut host, server) = take_host(1, 16);
+        let seq = host.outbox.borrow_mut().stamp(1, 50);
+        assert!(host.answer_own(
+            1,
+            50,
+            seq,
+            &[
+                OscType::String("draw".into()),
+                OscType::Int(0),
+                OscType::Long(4),
+                blob(&[0.5, -0.5, 0.25]),
+                blob(&[0.0, 0.0, 0.0]),
+            ]
+        ));
+
+        let msg = received(&server).expect("the take's buffer was written");
+        assert_eq!(msg.addr, "/buffer_setRange");
+        assert_eq!(msg.args[0], OscType::Int(0), "buffer 0");
+        assert_eq!(msg.args[1], OscType::Int(4), "at the frame the hand named");
+        assert_eq!(msg.args[2], blob(&[0.5, -0.5, 0.25]), "the run it drew");
+
+        assert_eq!(sample(&host, 4), 0.5, "and the picture holds the same run");
+        assert_eq!(
+            sample_of(&host, 51, 4),
+            0.5,
+            "and so does the clip, which is the same material seen elsewhere"
+        );
+        assert_eq!(sample(&host, 6), 0.25);
+        assert_eq!(sample(&host, 7), 0.0, "past the span, nothing moved");
+
+        // The document does not hold samples, so the undo restores them only
+        // because the payload carried the run it painted over.
+        let seq = host.outbox.borrow_mut().stamp(1, 1);
+        assert!(host.answer_own(1, 1, seq, &[OscType::String("undo".into())]));
+        let msg = received(&server).expect("the restore went to the server too");
+        assert_eq!(msg.addr, "/buffer_setRange");
+        assert_eq!(msg.args[2], blob(&[0.0, 0.0, 0.0]));
+        assert_eq!(sample(&host, 4), 0.0, "the picture went back with it");
+        assert_eq!(sample_of(&host, 51, 4), 0.0, "and the clip with them both");
+    }
+
+    /// **The monitor plays the material the window is drawing** — the same
+    /// buffer, reached by the same widget lookup an edit takes, so what sounds
+    /// is what would be written.
+    #[test]
+    fn the_monitor_plays_a_takes_buffer_and_stops_it() {
+        let (mut host, server) = take_host(1, 16);
+        assert!(host.play_material(1, 50), "a take with a buffer plays");
+        let msg = received(&server).expect("a synth was started");
+        assert_eq!(msg.addr, "/synth_new");
+        assert_eq!(msg.args[0], OscType::String(play::TAKE_DEF.into()));
+        assert_eq!(
+            msg.args[4..],
+            [OscType::String("bufnum".into()), OscType::Float(0.0)],
+            "playing the buffer the widget draws"
+        );
+        assert_eq!(host.playing_material(), Some(50));
+
+        assert!(host.stop_material(), "and it stops");
+        let msg = received(&server).expect("the node was freed");
+        assert_eq!(msg.addr, "/node_free");
+        assert!(!host.stop_material(), "stopping twice sends nothing");
+        assert!(host.playing_material().is_none());
+    }
+
+    /// The gap this milestone did not close, held in place by a test: one
+    /// channel of an interleaved buffer is a strided write, and the server has
+    /// no command for one. The refusal is a refusal — nothing sent, nothing
+    /// written — and the sequence is settled so the pending drawing is dropped.
+    #[test]
+    fn a_multichannel_take_refuses_the_write() {
+        let (mut host, server) = take_host(2, 16);
+        let seq = host.outbox.borrow_mut().stamp(1, 50);
+        assert!(
+            host.answer_own(
+                1,
+                50,
+                seq,
+                &[
+                    OscType::String("draw".into()),
+                    OscType::Int(0),
+                    OscType::Long(4),
+                    blob(&[0.5]),
+                    blob(&[0.0]),
+                ]
+            ),
+            "answered, because the host owns the document"
+        );
+        assert!(received(&server).is_none(), "but nothing was written");
+        assert_eq!(sample(&host, 4), 0.0, "and the picture did not move");
+        assert!(
+            !host.outbox.borrow().is_pending(1, 50),
+            "the stroke was settled, so the picture snaps back to the material"
+        );
+        assert!(
+            !host.owner.as_ref().unwrap().can_undo(),
+            "and no edit entered the log"
+        );
+    }
+
+    /// A span that runs past the end of the material is refused for the same
+    /// reason and by the same door: what the server holds and what the window
+    /// draws must stay one thing.
+    #[test]
+    fn a_span_past_the_end_refuses_the_write() {
+        let (mut host, server) = take_host(1, 8);
+        let seq = host.outbox.borrow_mut().stamp(1, 50);
+        assert!(host.answer_own(
+            1,
+            50,
+            seq,
+            &[
+                OscType::String("draw".into()),
+                OscType::Int(0),
+                OscType::Long(6),
+                blob(&[0.5, 0.5, 0.5, 0.5]),
+                blob(&[0.0, 0.0, 0.0, 0.0]),
+            ]
+        ));
+        assert!(received(&server).is_none());
+        assert!(!host.owner.as_ref().unwrap().can_undo());
     }
 }
