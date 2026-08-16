@@ -600,6 +600,21 @@ const I_FILT_RQ: &[UGenInput] = &[inp("signal", 0.0), inp("freq", 440.0), inp("r
 /// The delay family. `max_delay` is static config, not an input: it sizes
 /// the allocation, so it belongs where `fft_size` and `partitions` are.
 const I_DELAY: &[UGenInput] = &[inp("signal", 0.0), inp("delaytime", 0.2)];
+/// The `Buf*` delays prepend the buffer and the channel, as every other buffer
+/// UGen names them — so a line can be moved between buffers with a `/node_set`.
+const I_BUF_DELAY: &[UGenInput] = &[
+    inp("bufnum", 0.0),
+    inp("chan", 0.0),
+    inp("signal", 0.0),
+    inp("delaytime", 0.2),
+];
+const I_BUF_DELAY_DECAY: &[UGenInput] = &[
+    inp("bufnum", 0.0),
+    inp("chan", 0.0),
+    inp("signal", 0.0),
+    inp("delaytime", 0.2),
+    inp("decaytime", 1.0),
+];
 const I_DELAY_DECAY: &[UGenInput] = &[
     inp("signal", 0.0),
     inp("delaytime", 0.2),

@@ -109,6 +109,15 @@ export {
     svf,
     svfMorph,
     varLag,
+    bufDelayN,
+    bufDelayL,
+    bufDelayC,
+    bufCombN,
+    bufCombL,
+    bufCombC,
+    bufAllpassN,
+    bufAllpassL,
+    bufAllpassC,
 } from "./filter.ts";
 export type { Resonance } from "./filter.ts";
 

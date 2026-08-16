@@ -1619,3 +1619,121 @@ fn bufwr_writes_at_its_phase_and_passes_the_signal_on() {
         "the signal came out too"
     );
 }
+
+/// **A delay over a pool buffer**, the other half of S14's acceptance: the same
+/// circular-line arithmetic the private family uses, over samples somebody else
+/// can also read.
+#[test]
+fn a_buffer_delay_places_an_impulse_on_an_exact_frame() {
+    let frames = 16usize;
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let buffer = Arc::new(Buffer::zeroed(1024, 1, SR as f64));
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::clone(&buffer)),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(
+            50,
+            spec_synth(json!({
+                "name": "bufdelay",
+                "ugens": [
+                    // Frequency 0: one impulse, then silence.
+                    {"kind": "Impulse", "inputs": [{"const": 0.0}]},
+                    {"kind": "BufDelayN", "inputs": [
+                        {"const": 0.0},                      // bufnum
+                        {"const": 0.0},                      // chan
+                        {"ugen": 0},                         // signal
+                        {"const": frames as f32 / SR}        // delaytime
+                    ]},
+                    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+                ]
+            })),
+        ))
+        .ok()
+        .unwrap();
+
+    let y = render_channel(&mut engine, 1, 0);
+    let hit = y.iter().position(|v| *v != 0.0);
+    assert_eq!(hit, Some(frames), "the impulse landed at {hit:?}");
+    assert!((y[frames] - 1.0).abs() < 1e-6, "amplitude {}", y[frames]);
+    // And the line is **in the buffer**, which is the whole difference from the
+    // private family: what the delay is holding can be read, saved or played by
+    // anything else.
+    let held = buffer.to_vec();
+    assert!(
+        held.iter().any(|s| (*s - 1.0).abs() < 1e-6),
+        "the impulse is in the buffer the line lives in"
+    );
+}
+
+/// A `Buf*` delay with nowhere to write plays silence rather than guessing —
+/// the same answer every other buffer UGen gives a missing buffer.
+#[test]
+fn a_buffer_delay_without_a_buffer_is_silent() {
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle
+        .send(add_synth(
+            60,
+            spec_synth(json!({
+                "name": "nowhere",
+                "ugens": [
+                    {"kind": "Impulse", "inputs": [{"const": 0.0}]},
+                    {"kind": "BufDelayN", "inputs": [
+                        {"const": 41.0}, {"const": 0.0}, {"ugen": 0}, {"const": 0.001}
+                    ]},
+                    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+                ]
+            })),
+        ))
+        .ok()
+        .unwrap();
+    let y = render_channel(&mut engine, 2, 0);
+    assert!(y.iter().all(|s| *s == 0.0), "silence, not garbage");
+}
+
+/// `BufCombN` over a pool line decays the way the private one does: the
+/// feedback path is the same code, and only the storage differs.
+#[test]
+fn a_buffer_comb_repeats_and_decays() {
+    let frames = 32usize;
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let buffer = Arc::new(Buffer::zeroed(1024, 1, SR as f64));
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::clone(&buffer)),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(
+            70,
+            spec_synth(json!({
+                "name": "bufcomb",
+                "ugens": [
+                    {"kind": "Impulse", "inputs": [{"const": 0.0}]},
+                    {"kind": "BufCombN", "inputs": [
+                        {"const": 0.0}, {"const": 0.0}, {"ugen": 0},
+                        {"const": frames as f32 / SR},
+                        {"const": 1.0}
+                    ]},
+                    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+                ]
+            })),
+        ))
+        .ok()
+        .unwrap();
+
+    // Two blocks: the second repeat lands past the first block's 64 frames.
+    let y = render_channel(&mut engine, 2, 0);
+    let (first, second) = (y[frames], y[frames * 2]);
+    assert!(first > 0.9, "the first repeat is the impulse: {first}");
+    assert!(
+        second > 0.0 && second < first,
+        "and the second is quieter: {second} vs {first}"
+    );
+}

@@ -283,3 +283,93 @@ export const varLag = (
     up: Channel = 0.1,
     down: Channel = 0.1,
 ): Ugen => new Ugen("VarLag", [signal, up, down]);
+
+
+// ---- the same nine over a pool buffer ---------------------------------------
+//
+// Same interpolation, same feedback, same arithmetic; what differs is where the
+// line lives. A pool buffer's contents are addressable, so the delay can be
+// inspected, resampled, saved or played by another node while it runs -- the
+// shared case, and the whole reason these exist beside the private family. No
+// `maxDelay`: the buffer's own frame count is the bound. The buffer is **not**
+// zeroed by the UGen (allocating and clearing it are yours), a missing buffer
+// or a channel it does not have plays silence, and `bufnum`/`chan` being inputs
+// means a line can be moved between buffers with a `node.set`.
+
+/** `delayN` over a channel of a pool buffer. */
+export const bufDelayN = (
+    bufnum: Channel,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    chan: Channel = 0.0,
+): Ugen => new Ugen("BufDelayN", [bufnum, chan, signal, delaytime]);
+
+/** `delayL` over a channel of a pool buffer. */
+export const bufDelayL = (
+    bufnum: Channel,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    chan: Channel = 0.0,
+): Ugen => new Ugen("BufDelayL", [bufnum, chan, signal, delaytime]);
+
+/** `delayC` over a channel of a pool buffer. */
+export const bufDelayC = (
+    bufnum: Channel,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    chan: Channel = 0.0,
+): Ugen => new Ugen("BufDelayC", [bufnum, chan, signal, delaytime]);
+
+/** `combN` over a channel of a pool buffer. */
+export const bufCombN = (
+    bufnum: Channel,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
+    chan: Channel = 0.0,
+): Ugen => new Ugen("BufCombN", [bufnum, chan, signal, delaytime, decaytime]);
+
+/** `combL` over a channel of a pool buffer. */
+export const bufCombL = (
+    bufnum: Channel,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
+    chan: Channel = 0.0,
+): Ugen => new Ugen("BufCombL", [bufnum, chan, signal, delaytime, decaytime]);
+
+/** `combC` over a channel of a pool buffer. */
+export const bufCombC = (
+    bufnum: Channel,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
+    chan: Channel = 0.0,
+): Ugen => new Ugen("BufCombC", [bufnum, chan, signal, delaytime, decaytime]);
+
+/** `allpassN` over a channel of a pool buffer. */
+export const bufAllpassN = (
+    bufnum: Channel,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
+    chan: Channel = 0.0,
+): Ugen => new Ugen("BufAllpassN", [bufnum, chan, signal, delaytime, decaytime]);
+
+/** `allpassL` over a channel of a pool buffer. */
+export const bufAllpassL = (
+    bufnum: Channel,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
+    chan: Channel = 0.0,
+): Ugen => new Ugen("BufAllpassL", [bufnum, chan, signal, delaytime, decaytime]);
+
+/** `allpassC` over a channel of a pool buffer. */
+export const bufAllpassC = (
+    bufnum: Channel,
+    signal: Channel,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
+    chan: Channel = 0.0,
+): Ugen => new Ugen("BufAllpassC", [bufnum, chan, signal, delaytime, decaytime]);

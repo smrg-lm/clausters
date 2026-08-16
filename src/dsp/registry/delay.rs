@@ -6,11 +6,12 @@
 use super::*;
 
 pub(super) static UGENS: &[UGenDescriptor] = &[
-    // --- the delay core: one circular line, parameterized by
-    //     interpolation and by what it feeds back. The line is synth-private
-    //     memory sized at build from `max_delay` and the sample rate - a pool
-    //     buffer is immutable, and this one is written every sample. See
-    //     `dsp::delay`. ---
+    // --- the delay core: one circular line, parameterized by interpolation,
+    //     by what it feeds back, and by where its samples live. The nine names
+    //     below hold private memory sized at build from `max_delay` and the
+    //     sample rate; the nine `Buf*` ones after them use a channel of a pool
+    //     buffer instead, so the line's contents are addressable. Same
+    //     arithmetic either way. See `dsp::delay`. ---
     desc(
         "DelayN",
         Fixed(2),
@@ -172,5 +173,104 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
                 b.sample_rate,
             ))
         },
+    ),
+    desc(
+        "BufDelayN",
+        Fixed(4),
+        I_BUF_DELAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Delay::over_buffer(Interp::None, Feedback::None)),
+    ),
+    desc(
+        "BufCombN",
+        Fixed(5),
+        I_BUF_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Delay::over_buffer(Interp::None, Feedback::Comb)),
+    ),
+    desc(
+        "BufAllpassN",
+        Fixed(5),
+        I_BUF_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Delay::over_buffer(Interp::None, Feedback::Allpass)),
+    ),
+    desc(
+        "BufDelayL",
+        Fixed(4),
+        I_BUF_DELAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Delay::over_buffer(Interp::Linear, Feedback::None)),
+    ),
+    desc(
+        "BufCombL",
+        Fixed(5),
+        I_BUF_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Delay::over_buffer(Interp::Linear, Feedback::Comb)),
+    ),
+    desc(
+        "BufAllpassL",
+        Fixed(5),
+        I_BUF_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Delay::over_buffer(Interp::Linear, Feedback::Allpass)),
+    ),
+    desc(
+        "BufDelayC",
+        Fixed(4),
+        I_BUF_DELAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Delay::over_buffer(Interp::Cubic, Feedback::None)),
+    ),
+    desc(
+        "BufCombC",
+        Fixed(5),
+        I_BUF_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Delay::over_buffer(Interp::Cubic, Feedback::Comb)),
+    ),
+    desc(
+        "BufAllpassC",
+        Fixed(5),
+        I_BUF_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Delay::over_buffer(Interp::Cubic, Feedback::Allpass)),
     ),
 ];
