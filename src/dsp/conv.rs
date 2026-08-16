@@ -69,8 +69,11 @@ pub mod layout {
 
 #[cfg(feature = "synth")]
 mod ugen {
+    use std::sync::atomic::AtomicU32;
+
     use super::layout;
     use super::{DEFAULT_PARTITIONS, MAX_PARTITIONS};
+    use crate::dsp::buffer::Buffer;
     use crate::dsp::registry::UGenConfig;
     use crate::dsp::spectral::resolve_fft_size;
     use crate::dsp::{ProcessCtx, UGen, at};
@@ -176,12 +179,16 @@ mod ugen {
         /// `acc += spectrum · kernel` over one packed frame (DC and Nyquist are
         /// real-only slots) — the FDL inner loop.
         #[inline]
-        fn mac(acc: &mut [f32], s: &[f32], k: &[f32], n: usize) {
-            acc[0] += s[0] * k[0];
-            acc[1] += s[1] * k[1];
+        /// The kernel comes straight out of the buffer's cells: measured, the
+        /// relaxed loads cost this shape nothing (a complex MAC over a strided
+        /// pair is not what the optimizer was vectorizing), so there is no copy
+        /// into scratch to justify.
+        fn mac(acc: &mut [f32], s: &[f32], k: &[AtomicU32], n: usize) {
+            acc[0] += s[0] * Buffer::load(&k[0]);
+            acc[1] += s[1] * Buffer::load(&k[1]);
             for i in 1..n / 2 {
                 let (sr, si) = (s[2 * i], s[2 * i + 1]);
-                let (kr, ki) = (k[2 * i], k[2 * i + 1]);
+                let (kr, ki) = (Buffer::load(&k[2 * i]), Buffer::load(&k[2 * i + 1]));
                 acc[2 * i] += sr * kr - si * ki;
                 acc[2 * i + 1] += sr * ki + si * kr;
             }
@@ -189,7 +196,7 @@ mod ugen {
 
         /// Full sum for the newest FDL state against `kernel` (all `parts`
         /// terms), used on a swap hop for the incoming kernel. `dst` is zeroed.
-        fn full_sum(&mut self, kernel: &[f32], parts: usize) {
+        fn full_sum(&mut self, kernel: &[AtomicU32], parts: usize) {
             self.tmp.fill(0.0);
             for p in 0..parts {
                 let slot = (self.fdl_head + p) % self.max_parts;
@@ -202,11 +209,11 @@ mod ugen {
         /// Validates a pool buffer as a prepared kernel for this instance:
         /// matching partition length, a sane partition count, and enough data.
         /// Returns the partition count in use (clamped to the FDL capacity).
-        fn kernel_parts(&self, data: &[f32]) -> Option<usize> {
-            if data.len() < layout::HEADER || data[0] != self.part as f32 {
+        fn kernel_parts(&self, data: &[AtomicU32]) -> Option<usize> {
+            if data.len() < layout::HEADER || Buffer::load(&data[0]) != self.part as f32 {
                 return None;
             }
-            let parts = data[1] as usize;
+            let parts = Buffer::load(&data[1]) as usize;
             if parts == 0 || data.len() < layout::frames(self.n, parts) {
                 return None;
             }
@@ -215,14 +222,14 @@ mod ugen {
     }
 
     /// Resolves pool buffer `index` as a slice of samples, if allocated.
-    fn pool_data<'a>(ctx: &ProcessCtx<'a>, index: i32) -> Option<&'a [f32]> {
+    fn pool_data<'a>(ctx: &ProcessCtx<'a>, index: i32) -> Option<&'a [AtomicU32]> {
         if index < 0 {
             return None;
         }
         ctx.buffers
             .get(index as usize)
             .and_then(|b| b.as_deref())
-            .map(|b| b.data())
+            .map(|b| b.cells())
     }
 
     impl UGen for Conv {
@@ -298,7 +305,7 @@ mod ugen {
         /// the fresh spectrum's `p = 0` term) against `data`, leaving the result
         /// in `acc`. Called with the post-shift `fdl_head` (the fresh spectrum),
         /// so a pending term `p` pairs with FDL slot `head + p`.
-        fn close_sum(&mut self, data: &[f32], parts: usize) {
+        fn close_sum(&mut self, data: &[AtomicU32], parts: usize) {
             while self.pending_p < parts {
                 let p = self.pending_p;
                 let slot = (self.fdl_head + p) % self.max_parts;
@@ -323,8 +330,8 @@ mod ugen {
         /// sample-exact regardless of block splits.
         fn hop(
             &mut self,
-            kernel: Option<(&[f32], usize)>,
-            old_kernel: Option<(&[f32], usize)>,
+            kernel: Option<(&[AtomicU32], usize)>,
+            old_kernel: Option<(&[AtomicU32], usize)>,
             kernel_buf: i32,
         ) {
             // De-circularize: `write` points at the oldest of the last n samples.

@@ -31,7 +31,11 @@ fn wt(normalize: bool, wavetable: bool, clear: bool) -> GenFlags {
 fn read(table: &[f32], point: f64) -> f32 {
     let points = table.len() / 2;
     let k = (point as usize).min(points - 1);
-    wt_interp(table, k, (point - k as f64) as f32)
+    // Through a buffer's own cells, which is what `wt_interp` reads now that a
+    // buffer's contents are written while they are read.
+    let len = table.len();
+    let held = Buffer::new(table.to_vec(), 1, len, 48_000.0);
+    wt_interp(held.cells(), k, (point - k as f64) as f32)
 }
 
 #[test]
@@ -63,12 +67,12 @@ fn b_gen_sine1_builds_a_wavetable_sine() {
         amps: vec![1.0], // fundamental only
     };
     let out = cmd.apply(&buf);
-    assert_eq!(out.data().len(), 1024);
-    let table = out.data();
+    assert_eq!(out.len(), 1024);
+    let table = out.to_vec();
     let n = table.len() / 2;
     for i in 0..n {
         let expect = (TAU * i as f32 / n as f32).sin();
-        assert!((read(table, i as f64) - expect).abs() < 1e-3, "point {i}");
+        assert!((read(&table, i as f64) - expect).abs() < 1e-3, "point {i}");
     }
 }
 
@@ -82,7 +86,7 @@ fn b_gen_cheby_builds_the_transfer_curve() {
         coeffs: vec![0.0, 1.0], // weight on T_2
     };
     let out = cmd.apply(&buf);
-    let data = out.data();
+    let data = out.to_vec();
     assert_eq!(data.len(), n);
     for (j, &s) in data.iter().enumerate() {
         let x = 2.0 * j as f32 / (n as f32 - 1.0) - 1.0;
@@ -102,7 +106,7 @@ fn b_gen_copy_overlays_a_source_range() {
         num: 2,
     };
     let out = cmd.apply(&dst);
-    assert_eq!(out.data(), &[0.0, 0.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0]);
+    assert_eq!(out.to_vec(), vec![0.0, 0.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -119,7 +123,7 @@ fn b_gen_without_clear_accumulates() {
         amps: vec![1.0],
     }
     .apply(&first);
-    for (a, b) in first.data().iter().zip(second.data()) {
+    for (a, b) in first.to_vec().iter().zip(second.to_vec()) {
         assert!((b - 2.0 * a).abs() < 1e-5);
     }
 }

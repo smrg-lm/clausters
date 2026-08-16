@@ -175,15 +175,14 @@ impl OscServer {
     ) -> Answer {
         let bufnum = args.int()?;
         let buffer = self.mirror_buffer(bufnum);
-        let data = buffer.as_deref().map(|b| b.data()).unwrap_or(&[]);
+        let data = buffer.as_deref();
         let mut out = vec![OscType::Int(bufnum)];
         while !args.is_empty() {
             let index = args.int()?;
             let value = usize::try_from(index)
                 .ok()
-                .and_then(|i| data.get(i))
-                .copied()
-                .unwrap_or(0.0);
+                .zip(data)
+                .map_or(0.0, |(i, b)| b.at(i));
             out.push(OscType::Int(index));
             out.push(OscType::Float(value));
         }
@@ -211,15 +210,16 @@ impl OscServer {
         let bufnum = args.int()?;
         args.expect_groups_of(2, "(start, count) pairs")?;
         let buffer = self.mirror_buffer(bufnum);
-        let data = buffer.as_deref().map(|b| b.data()).unwrap_or(&[]);
+        let data = buffer.as_deref();
+        let held = data.map_or(0, |b| b.len());
         let mut out = vec![OscType::Int(bufnum)];
         while !args.is_empty() {
             let start = args.int()?.max(0) as usize;
             let count = args.int()?.max(0) as usize;
-            let end = start.saturating_add(count).min(data.len());
-            let slice = data.get(start..end).unwrap_or(&[]);
-            let mut blob = Vec::with_capacity(slice.len() * 4);
-            for s in slice {
+            let end = start.saturating_add(count).min(held);
+            let mut blob = Vec::with_capacity(end.saturating_sub(start) * 4);
+            for i in start..end {
+                let s = data.map_or(0.0, |b| b.at(i));
                 blob.extend_from_slice(&s.to_le_bytes());
             }
             out.push(OscType::Int(start as i32));
@@ -247,8 +247,12 @@ impl OscServer {
         let Some(buffer) = self.mirror_buffer(bufnum) else {
             return Err(format!("buffer {bufnum} not allocated"));
         };
-        let mut bytes = Vec::with_capacity(buffer.data().len() * 4);
-        for &s in buffer.data() {
+        // One snapshot, then the encode: an export is a reading of the buffer
+        // at a moment, and taking it in one pass keeps it from straddling a
+        // recording UGen's write head more than it has to.
+        let samples = buffer.to_vec();
+        let mut bytes = Vec::with_capacity(samples.len() * 4);
+        for s in samples {
             bytes.extend_from_slice(&s.to_le_bytes());
         }
         std::fs::write(path, &bytes).map_err(|e| format!("write {path}: {e}"))?;

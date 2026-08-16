@@ -474,7 +474,7 @@ fn set_writes_runs_into_a_replacement_keeping_the_shape() {
     let mut expected = [0.0f32; 16];
     expected[4..7].copy_from_slice(&[1.0, 2.0, 3.0]);
     expected[12] = 9.0;
-    assert_eq!(written.data(), &expected[..]);
+    assert_eq!(written.to_vec(), expected);
 }
 
 #[test]
@@ -498,7 +498,7 @@ fn set_writes_single_samples_by_flat_index() {
     expected[1] = 0.25;
     expected[6] = -0.5;
     assert_eq!(
-        written.data(),
+        written.to_vec(),
         &expected[..],
         "indices are flat across channels, as the reads are"
     );
@@ -534,7 +534,7 @@ fn set_range_channel_writes_one_channel_and_leaves_the_other_alone() {
         "a channel write keeps the buffer's shape like every other write"
     );
     assert_eq!(
-        written.data(),
+        written.to_vec(),
         &[-1.0, -1.0, -1.0, 1.0, -1.0, 2.0, -1.0, 3.0][..],
         "frames 1..4 of channel 1, strided; channel 0 as it was"
     );
@@ -562,7 +562,7 @@ fn set_channel_writes_single_frames_of_one_channel() {
     let mut expected = [0.0f32; 8];
     expected[0] = 0.25; // frame 0, channel 0
     expected[6] = -0.5; // frame 3, channel 0
-    assert_eq!(written.data(), &expected[..]);
+    assert_eq!(written.to_vec(), expected);
 }
 
 /// A channel the buffer does not have is a mistake worth hearing about — the
@@ -686,7 +686,7 @@ fn nrt_allocates_zeroed_buffers() {
     }));
     assert_eq!((buffer.frames(), buffer.channels()), (64, 2));
     assert_eq!(buffer.sample_rate(), 44_100.0);
-    assert!(buffer.data().iter().all(|s| *s == 0.0));
+    assert!(buffer.to_vec().iter().all(|s| *s == 0.0));
 }
 
 #[test]
@@ -714,7 +714,11 @@ fn wav_write_then_alloc_read_round_trips_float_exactly() {
     assert_eq!(read.frames(), frames);
     assert_eq!(read.channels(), 2);
     assert_eq!(read.sample_rate(), 22_050.0);
-    assert_eq!(read.data(), original.data(), "float WAV must be lossless");
+    assert_eq!(
+        read.to_vec(),
+        original.to_vec(),
+        "float WAV must be lossless"
+    );
     std::fs::remove_file(&path).ok();
 }
 
@@ -739,7 +743,7 @@ fn alloc_read_slices_the_file() {
     }));
     assert_eq!(read.frames(), 5);
     let expected: Vec<f32> = (10..15).map(|i| i as f32 / 1000.0).collect();
-    assert_eq!(read.data(), &expected[..]);
+    assert_eq!(read.to_vec(), expected);
     std::fs::remove_file(&path).ok();
 }
 
@@ -765,7 +769,7 @@ fn read_overlays_a_file_keeping_the_buffer_shape() {
         channels: Vec::new(),
     }));
     assert_eq!(read.frames(), 20, "/buffer_read keeps the buffer's shape");
-    for (i, s) in read.data().iter().enumerate() {
+    for (i, s) in read.to_vec().iter().enumerate() {
         let expected = if (5..15).contains(&i) { 0.5 } else { 0.0 };
         assert_eq!(*s, expected, "frame {i}");
     }
@@ -830,7 +834,7 @@ fn int16_write_quantizes_to_the_expected_grid() {
         32767.0 / 32768.0,
         0.0,
     ];
-    assert_eq!(read.data(), &expected[..]);
+    assert_eq!(read.to_vec(), expected);
     std::fs::remove_file(&path).ok();
 }
 
@@ -886,7 +890,7 @@ fn diskout_records_then_diskin_streams_it_back() {
         channels: Vec::new(),
     }));
     assert_eq!(read.frames(), frames);
-    assert_eq!(read.data(), &signal[..], "DiskOut must write the signal");
+    assert_eq!(read.to_vec(), signal, "DiskOut must write the signal");
 
     // Now stream the same file back through DiskIn -> Out(bus 0) and look for
     // the signal in the left channel. The disk thread fills the ring
@@ -963,8 +967,8 @@ fn non_wav_extensions_decode_through_symphonia() {
     assert_eq!((read.frames(), read.channels()), (frames, 2));
     assert_eq!(read.sample_rate(), 44_100.0);
     assert_eq!(
-        read.data(),
-        original.data(),
+        read.to_vec(),
+        original.to_vec(),
         "float PCM via symphonia must be lossless"
     );
 
@@ -976,7 +980,7 @@ fn non_wav_extensions_decode_through_symphonia() {
         channels: Vec::new(),
     }));
     assert_eq!(sliced.frames(), 5);
-    assert_eq!(sliced.data(), &original.data()[10 * 2..15 * 2]);
+    assert_eq!(sliced.to_vec(), original.to_vec()[10 * 2..15 * 2].to_vec());
     std::fs::remove_file(&path).ok();
 }
 

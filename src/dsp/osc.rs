@@ -30,7 +30,7 @@ fn advance(phase: &mut f64, freq: f32, sr: f64) {
 /// Reads a wavetable at normalized position `pos` (cycles, any real) with
 /// linear interpolation. `table.len()` is `2 * points`.
 #[inline(always)]
-fn read_wavetable(table: &[f32], pos: f64) -> f32 {
+fn read_wavetable(table: &[std::sync::atomic::AtomicU32], pos: f64) -> f32 {
     let points = table.len() / 2;
     if points == 0 {
         return 0.0;
@@ -66,7 +66,7 @@ impl UGen for Osc {
             output.fill(0.0);
             return;
         };
-        let table = buf.data();
+        let table = buf.cells();
         let sr = ctx.sample_rate as f64;
         for (i, s) in output.iter_mut().enumerate() {
             let phase_off = at(inputs[2], i) as f64 / std::f64::consts::TAU;
@@ -142,7 +142,7 @@ impl VOsc {
     #[inline]
     fn read(buffers: &[Option<std::sync::Arc<Buffer>>], index: usize, pos: f64) -> f32 {
         match buffers.get(index).and_then(|b| b.as_deref()) {
-            Some(buf) => read_wavetable(buf.data(), pos),
+            Some(buf) => read_wavetable(buf.cells(), pos),
             None => 0.0,
         }
     }
@@ -178,7 +178,7 @@ impl UGen for Shaper {
             output.fill(0.0);
             return;
         };
-        let table = buf.data();
+        let table = buf.cells();
         let points = table.len() / 2;
         if points == 0 {
             output.fill(0.0);

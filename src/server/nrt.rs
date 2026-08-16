@@ -407,12 +407,12 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
                 ));
             }
             let channels = current.channels();
-            let mut data = current.data().to_vec();
+            let mut data = current.to_vec();
             let take = file
                 .frames()
                 .min(current.frames().saturating_sub(buf_start));
             let to = buf_start * channels;
-            data[to..to + take * channels].copy_from_slice(&file.data()[..take * channels]);
+            data[to..to + take * channels].copy_from_slice(&file.to_vec()[..take * channels]);
             Ok(NrtAction::Install(Arc::new(Buffer::new(
                 data,
                 channels,
@@ -441,7 +441,7 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             // therefore never sees a half-written buffer, and no write of any
             // size needs a lock. The parse already bounded every run against
             // the buffer's length.
-            let mut data = current.data().to_vec();
+            let mut data = current.to_vec();
             for write in writes {
                 if write.stride == 1 {
                     data[write.at..write.at + write.values.len()].copy_from_slice(&write.values);
@@ -463,7 +463,7 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
         NrtJob::Edit { base, op } => {
             // Copy-and-swap like every write here; the edit itself is the
             // core's, so a fade sounds the same wherever it is applied.
-            let mut data = base.data().to_vec();
+            let mut data = base.to_vec();
             let channels = base.channels();
             let out = match op {
                 EditOp::Gain {
@@ -493,7 +493,7 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             ))))
         }
         NrtJob::Fill { base, fills } => {
-            let mut data = base.data().to_vec();
+            let mut data = base.to_vec();
             for (at, count, value) in fills {
                 data[at..at + count].fill(value);
             }
@@ -524,7 +524,7 @@ fn select_channels(buffer: &Buffer, channels: &[usize]) -> Result<Buffer, String
         // Nothing to do, but the caller owns the value: rebuild rather than
         // clone the Arc, since this arm is the one that already read a file.
         return Ok(Buffer::new(
-            buffer.data().to_vec(),
+            buffer.to_vec(),
             buffer.channels(),
             buffer.frames(),
             buffer.sample_rate(),
@@ -537,7 +537,7 @@ fn select_channels(buffer: &Buffer, channels: &[usize]) -> Result<Buffer, String
         ));
     }
     let frames = buffer.frames();
-    let src = buffer.data();
+    let src = buffer.to_vec();
     let mut out = Vec::with_capacity(frames * channels.len());
     for f in 0..frames {
         for c in channels {
@@ -742,7 +742,8 @@ fn write_wav(
     } else {
         (num_frames as usize).min(buffer.frames() - start)
     };
-    let samples = &buffer.data()[start * buffer.channels()..(start + frames) * buffer.channels()];
+    let held = buffer.to_vec();
+    let samples = &held[start * buffer.channels()..(start + frames) * buffer.channels()];
 
     let mut writer = hound::WavWriter::create(path, spec).map_err(err)?;
     match format {

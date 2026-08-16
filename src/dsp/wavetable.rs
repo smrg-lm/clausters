@@ -20,6 +20,7 @@
 //!    the audio thread only ever sees a finished buffer.
 
 use std::f64::consts::TAU;
+use std::sync::atomic::AtomicU32;
 
 use clausters_core::envshape::shape_value;
 
@@ -124,7 +125,7 @@ impl GenCommand {
         let sr = current.sample_rate();
         // Wavetable generation treats the buffer as one flat signal (buffers
         // used for wavetables are mono); `len` is the total sample count.
-        let len = current.data().len();
+        let len = current.len();
 
         let data = match self {
             GenCommand::Copy {
@@ -185,7 +186,7 @@ impl GenCommand {
             vec![0.0; n]
         } else {
             let mut base = vec![0.0; n];
-            let src = current.data();
+            let src = current.to_vec();
             let take = n.min(src.len());
             base[..take].copy_from_slice(&src[..take]);
             base
@@ -280,8 +281,8 @@ fn copy_samples(
     src_start: usize,
     num: i64,
 ) -> Vec<f32> {
-    let mut data = current.data().to_vec();
-    let src = src.data();
+    let mut data = current.to_vec();
+    let src = src.to_vec();
     let dst_avail = data.len().saturating_sub(dst_start);
     let src_avail = src.len().saturating_sub(src_start);
     let mut take = dst_avail.min(src_avail);
@@ -367,10 +368,15 @@ pub fn signal_to_wavetable(signal: &[f32], wrap: bool) -> Vec<f32> {
 /// Reads the wavetable pair at integer point `k` with fractional phase `frac`
 /// in `[0, 1)`: `x0 + (1 + frac) * x1`, one fused multiply-add. `k` must be a
 /// valid point (`2*k + 1 < table.len()`); the callers keep it in range.
+///
+/// Over the buffer's own cells rather than a slice of them: a table is a
+/// buffer's contents, and those are written while they are read (see
+/// [`crate::dsp::buffer`]). The reads are relaxed loads, which measured free in
+/// this shape — a table hot in cache is not what the optimizer was vectorizing.
 #[inline(always)]
-pub fn wt_interp(table: &[f32], k: usize, frac: f32) -> f32 {
-    let x0 = table[2 * k];
-    let x1 = table[2 * k + 1];
+pub fn wt_interp(table: &[AtomicU32], k: usize, frac: f32) -> f32 {
+    let x0 = Buffer::load(&table[2 * k]);
+    let x1 = Buffer::load(&table[2 * k + 1]);
     x0 + (1.0 + frac) * x1
 }
 
@@ -386,7 +392,7 @@ fn prepare_partconv(src: &Buffer, fft_size: usize, len: usize) -> Vec<f32> {
     let mut data = vec![0.0f32; len];
     let part = fft_size / 2;
     let channels = src.channels().max(1);
-    let ir_len = src.data().len() / channels;
+    let ir_len = src.len() / channels;
     let parts_src = ir_len.div_ceil(part.max(1));
     let parts_cap = len.saturating_sub(layout::HEADER) / fft_size;
     let parts = parts_src.min(parts_cap);
@@ -404,7 +410,7 @@ fn prepare_partconv(src: &Buffer, fft_size: usize, len: usize) -> Vec<f32> {
                 break;
             }
             // Channel 0 of an interleaved buffer.
-            *slot = src.data()[frame * channels];
+            *slot = src.at(frame * channels);
         }
         let out = &mut data[layout::HEADER + p * fft_size..layout::HEADER + (p + 1) * fft_size];
         clausters_core::fft::rfft_into(&scratch, out);

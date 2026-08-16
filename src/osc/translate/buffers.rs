@@ -159,7 +159,7 @@ pub fn parse_buffer_msg(
             if rest.is_empty() || !rest.len().is_multiple_of(3) {
                 return Err("expected (start, count, value) triples".into());
             }
-            let len = current.data().len();
+            let len = current.len();
             let mut fills = Vec::with_capacity(rest.len() / 3);
             for triple in rest.chunks_exact(3) {
                 let start = match triple[0] {
@@ -304,7 +304,7 @@ pub fn parse_buffer_msg(
             // rather than clamping the way the reads do: a short read hands
             // back less than was asked for, a short write loses data the
             // caller believes it stored.
-            let len = current.data().len();
+            let len = current.len();
             for write in &writes {
                 if write.end() > len {
                     return Err(match write.stride {

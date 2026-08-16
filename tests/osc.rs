@@ -872,10 +872,14 @@ fn b_gen_fills_a_wavetable_then_reads_it_back() {
     let table = range_samples(&reply.args[2]);
     assert_eq!(table.len(), 256);
     let points = table.len() / 2;
+    // Read through the same door the oscillators do: `wt_interp` takes a
+    // buffer's own cells, so the wire's samples go back into a buffer first.
+    let len = table.len();
+    let table = clausters::dsp::buffer::Buffer::new(table, 1, len, 48_000.0);
     for k in 0..points {
         let expect = (std::f32::consts::TAU * k as f32 / points as f32).sin();
         assert!(
-            (wt_interp(&table, k, 0.0) - expect).abs() < 1e-3,
+            (wt_interp(table.cells(), k, 0.0) - expect).abs() < 1e-3,
             "point {k}"
         );
     }

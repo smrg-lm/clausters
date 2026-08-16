@@ -655,7 +655,7 @@ pub unsafe extern "C" fn clausters_read_soundfile(
                 *out_channels = buffer.channels() as u32;
                 *out_sample_rate = buffer.sample_rate();
             }
-            let mut samples = buffer.data().to_vec().into_boxed_slice();
+            let mut samples = buffer.to_vec().into_boxed_slice();
             let ptr = samples.as_mut_ptr();
             std::mem::forget(samples);
             ptr

@@ -231,7 +231,7 @@ fn kernel_swap_crossfades() {
 #[test]
 fn prepare_partconv_layout() {
     let prepared = prepare(&[1.0, 0.0, 0.0], 256);
-    let data = prepared.data();
+    let data = prepared.to_vec();
     assert_eq!(data[0], 128.0, "partition length");
     assert_eq!(data[1], 1.0, "partition count");
     let spectrum = &data[layout::HEADER..layout::HEADER + 256];

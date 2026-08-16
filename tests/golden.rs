@@ -39,7 +39,7 @@ fn load_golden(name: &str) -> Vec<f32> {
         channels: Vec::new(),
     });
     match outcome {
-        Ok(NrtAction::Install(buf)) => buf.data().to_vec(),
+        Ok(NrtAction::Install(buf)) => buf.to_vec(),
         other => panic!(
             "cannot load golden {name} ({other:?}); regenerate with `cargo run --example render_golden`"
         ),

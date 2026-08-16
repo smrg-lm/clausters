@@ -433,9 +433,11 @@ impl SoundfileData {
             .map(|c| {
                 let mut v = vec![0.0f32; frames + 1];
                 if let Some(b) = buffer {
-                    let data = b.data();
-                    for f in 0..frames {
-                        v[f] = data[f * channels + c];
+                    // Read cell by cell: a soundfile bind is a **snapshot**
+                    // taken at instantiation, so what it must not do is borrow
+                    // a slice of a buffer the engine may be recording into.
+                    for (f, slot) in v[..frames].iter_mut().enumerate() {
+                        *slot = b.at(f * channels + c);
                     }
                     v[frames] = v[frames - 1];
                 }
