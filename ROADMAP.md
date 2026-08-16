@@ -220,14 +220,14 @@ SuperCollider has and this server does not.
   one missing command now recorded as **S16** (a buffer write that addresses one
   channel, without which a stereo take is drawable and not editable).
 
-- ⬜ **T5 — The transport has a position, and the engine owns it.** First, and
-  it is the server's before it is the window's. H4 left the third writer able
-  to play a take and unable to say where it is, and the reason turned out not
-  to be the host: the transport's position never reaches the engine, so
-  `/transport_locate` moves a number nothing plays from, and the clock the
-  segment publishes is elapsed time rather than the piece's. Every editor verb
-  worth having — play from here, loop that, show me where it is — rests on
-  this, and without it each one gets reinvented as client arithmetic.
+- ✅ **T5 — The transport has a position, and the engine owns it.** Done
+  2026-08-16. It was the server's before it was the window's: H4 left the
+  third writer able to play a take and unable to say where it is, and the
+  reason was not the host — the transport's position never reached the engine,
+  so `/transport_locate` moved a number nothing played from. A graph can now
+  read where the piece is (`TransportPos`), which is what lets a reader
+  **follow** the transport instead of each reader carrying a position someone
+  has to keep in step.
 
 - ⬜ **H5 — The session's monitor follows the transport, and the head is drawn
   from it.** Immediately after T5 and small once it exists: the monitor becomes
