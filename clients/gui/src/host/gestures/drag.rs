@@ -252,13 +252,41 @@ impl Gestures {
                 // Only the value follows the pointer: which sample is held was
                 // decided at the press, and a view scrolling under the drag must
                 // not hand the hand a different one.
-                let held = crate::host::widget::element::PendingSample {
+                let held = crate::host::widget::element::PendingEdit::one(
                     channel,
                     frame,
-                    value: axis.value_at(cy) as f32,
+                    axis.value_at(cy) as f32,
                     previous,
-                };
+                );
                 set_pending(host, def_id, id, Some(held));
+                out.push(GestureEffect::Redraw(def_id));
+            }
+            Drag::Draw {
+                id,
+                axis,
+                body,
+                nav_start,
+                nav_len,
+                channel,
+                last_frame,
+                last_value,
+            } => {
+                let (start, len) =
+                    group_view(host, id).map_or((nav_start, nav_len), |(s, l, _)| (s, l));
+                let frames =
+                    interact::sample_at(start, len, body.x as f64, body.w as f64, cx).max(0.0);
+                let now = (frames.round() as usize, axis.value_at(cy) as f32);
+                extend_stroke(host, def_id, id, channel, (last_frame, last_value), now);
+                self.drag = Some(Drag::Draw {
+                    id,
+                    axis,
+                    body,
+                    nav_start,
+                    nav_len,
+                    channel,
+                    last_frame: now.0,
+                    last_value: now.1,
+                });
                 out.push(GestureEffect::Redraw(def_id));
             }
             Drag::Clip {
@@ -319,6 +347,39 @@ impl Gestures {
         // **One arm**, which is what the port left behind: every other drag the
         // machine holds is a container's navigation, and a plan acts along the
         // way rather than at the end.
+        // A stroke leaves as **one intent**, whatever it passed over: one
+        // gesture is one edit, and what the hand did on the way is the pending
+        // drawing's business rather than the owner's.
+        if let Some(Drag::Draw { id, channel, .. }) = self.drag.clone() {
+            self.drag = None;
+            let held = host
+                .window_def(def_id)
+                .and_then(|t| t.find(id))
+                .and_then(|w| w.kind.pending_edit())
+                .cloned();
+            if let Some(held) = held {
+                // The samples ride as **blobs**, the convention every bulk
+                // payload in this system already follows: a stroke over a few
+                // thousand samples as typed arguments is the encode this rule
+                // exists to avoid. Both runs go, so the intent carries its own
+                // inverse exactly as a single dragged sample does.
+                emit(
+                    host,
+                    &mut out,
+                    def_id,
+                    id,
+                    vec![
+                        OscType::String("draw".into()),
+                        OscType::Int(channel as i32),
+                        OscType::Long(held.start as i64),
+                        OscType::Blob(samples_blob(&held.values)),
+                        OscType::Blob(samples_blob(&held.previous)),
+                    ],
+                );
+            }
+            out.push(GestureEffect::Redraw(def_id));
+            return out;
+        }
         // A dragged sample leaves as **one intent at the end**, not a stream of
         // them: one gesture is one edit, and what the hand did on the way is
         // the pending drawing's business rather than the owner's.
@@ -339,12 +400,9 @@ impl Gestures {
                 host,
                 def_id,
                 id,
-                Some(crate::host::widget::element::PendingSample {
-                    channel,
-                    frame,
-                    value,
-                    previous,
-                }),
+                Some(crate::host::widget::element::PendingEdit::one(
+                    channel, frame, value, previous,
+                )),
             );
             emit(
                 host,
@@ -405,4 +463,14 @@ impl Gestures {
         }
         out
     }
+}
+
+/// Little-endian `f32` bytes — the one bulk payload convention this system has,
+/// shared with `/buffer_setRange`, `/buffer_getRange.reply` and the clipboard.
+fn samples_blob(values: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(values.len() * 4);
+    for v in values {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out
 }

@@ -197,23 +197,55 @@ pub struct SampleBlock {
 /// one: bins are the spectral selection's own field in the document's
 /// `Selection`, deliberately separate, because an operation that understands a
 /// value range need not understand a band of bins.
-/// One sample the hand is holding, between the grab and the acknowledgement.
+/// The run of samples the hand is holding, between the gesture and the
+/// acknowledgement.
+///
+/// **A run rather than a sample**, because a grab and a stroke are the same
+/// thing at two lengths: one dragged sample is a run of one, and a pencil
+/// stroke is the same drawing over as many as it passed. Keeping one shape is
+/// what lets the marked overlay, the emit and the drop-on-acknowledgement be
+/// written once.
 ///
 /// It lives here beside [`ValueAxis`] rather than in the element that draws it,
 /// because the gesture machine sets it and the frame draws it, and neither
 /// should have to know which element kind it came from.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PendingSample {
+#[derive(Debug, Clone, PartialEq)]
+pub struct PendingEdit {
     /// Which channel — the lane the press landed in.
     pub channel: usize,
-    /// Which sample of the source.
-    pub frame: usize,
-    /// Where the hand has it now, in the element's own value domain.
-    pub value: f32,
-    /// What it was when the grab started, so the intent that leaves is
-    /// **absolute and invertible** without the owner having to remember what it
-    /// used to be.
-    pub previous: f32,
+    /// The first sample of the run.
+    pub start: usize,
+    /// Where the hand has them now, in the element's own value domain.
+    pub values: Vec<f32>,
+    /// What they were when the gesture started, so the intent that leaves is
+    /// **absolute and invertible** without the owner having to remember what
+    /// they used to be.
+    pub previous: Vec<f32>,
+}
+
+impl PendingEdit {
+    /// A run of one — the dragged sample.
+    pub fn one(channel: usize, frame: usize, value: f32, previous: f32) -> Self {
+        Self {
+            channel,
+            start: frame,
+            values: vec![value],
+            previous: vec![previous],
+        }
+    }
+
+    /// One past the last sample of the run.
+    pub fn end(&self) -> usize {
+        self.start + self.values.len()
+    }
+
+    /// The value this run holds for `frame`, if it covers it.
+    pub fn value_at(&self, frame: usize) -> Option<f32> {
+        frame
+            .checked_sub(self.start)
+            .and_then(|i| self.values.get(i))
+            .copied()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1256,21 +1288,21 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// The sample this element is holding for the hand, if any — what the
-    /// frame draws **over** the picture while an edit is in flight.
-    fn pending_sample(&self) -> Option<PendingSample> {
+    /// The run this element is holding for the hand, if any — what the frame
+    /// draws **over** the picture while an edit is in flight.
+    fn pending_edit(&self) -> Option<&PendingEdit> {
         None
     }
 
-    /// Holds a sample (or lets go of one), returning whether this element is
-    /// the kind that can. `None` clears it, which is what an acknowledgement
-    /// does once the owner has answered.
+    /// Holds a run (or lets go of one), returning whether this element is the
+    /// kind that can. `None` clears it, which is what an acknowledgement does
+    /// once the owner has answered.
     ///
     /// The value it holds is deliberately **not** written into the material:
     /// the host owns no data, and a pending value that entered the summary
     /// would make the overview disagree with the samples until the edit landed
     /// — besides costing a re-summarize per motion event.
-    fn set_pending_sample(&mut self, _pending: Option<PendingSample>) -> bool {
+    fn set_pending_edit(&mut self, _pending: Option<PendingEdit>) -> bool {
         false
     }
 

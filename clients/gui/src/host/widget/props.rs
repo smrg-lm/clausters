@@ -553,6 +553,15 @@ pub enum GestureStep {
     /// That is the same rule as the drawing's, read from the same place, so
     /// what can be grabbed is exactly what is drawn.
     Sample,
+    /// **Draw** over the material: a press-drag writes the value under the
+    /// pointer for every sample it passes, and one intent leaves on release.
+    ///
+    /// Stricter than [`GestureStep::Sample`]: it is refused where a pixel is
+    /// more than one sample, because a stroke there would write values the
+    /// reader cannot see. The refusal is **visible** (`"refused" "draw" …`)
+    /// rather than a silent decline — a pencil that sometimes does nothing
+    /// teaches that it sometimes does not work.
+    Draw,
     /// Put the transport's cursor under the pointer (a timeline locate).
     Locate,
 }
@@ -565,6 +574,7 @@ impl GestureStep {
             "select" => GestureStep::Select,
             "select_box" => GestureStep::SelectBox,
             "sample" => GestureStep::Sample,
+            "draw" => GestureStep::Draw,
             "locate" => GestureStep::Locate,
             _ => return None,
         })

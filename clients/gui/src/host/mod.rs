@@ -1347,7 +1347,7 @@ impl Host {
                 .window_def_mut(p.def_id)
                 .and_then(|t| t.find_mut(p.widget_id))
             {
-                w.kind.set_pending_sample(None);
+                w.kind.set_pending_edit(None);
             }
         }
     }

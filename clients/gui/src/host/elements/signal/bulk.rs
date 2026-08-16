@@ -38,6 +38,28 @@ impl SignalElement {
     /// path, then buffer** — a prebuilt summary being cheaper than the raw
     /// samples, and a server buffer being the one thing the host has to ask
     /// another process for.
+    /// Forgets what this element resolved, so the next pass asks for it again
+    /// — the mapped half of "the material is now this".
+    ///
+    /// A source with nothing behind it (inline samples and no path, cache or
+    /// buffer) is left alone: it has nothing to re-read, and clearing it would
+    /// erase the material instead of refreshing it.
+    pub fn reread(&mut self) {
+        let Source::Data(data) = &mut self.source else {
+            return;
+        };
+        if data.path.is_none() && data.cache.is_none() && data.buffer.is_none() {
+            return;
+        }
+        data.body = None;
+        // A sequence keeps its samples inline, so *those* are what it must
+        // forget; a take keeps a pyramid, and dropping the body is enough.
+        if !data.bulk {
+            data.samples = Vec::new().into();
+        }
+        self.slot_dirty = true;
+    }
+
     pub fn want(&self) -> Option<Bulk> {
         let Source::Data(data) = &self.source else {
             return None; // a bus is fed forward-only; there is nothing to load

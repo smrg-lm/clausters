@@ -111,7 +111,7 @@ pub(super) fn freq_nav_ids(tree: &Widget) -> Vec<i32> {
 /// second axis is told when there is one. Passing `None` clears any range the
 /// widget carried — a new sweep replaces the old selection whole, rather than
 /// leaving a restriction from a gesture the hand has finished with.
-/// Hands the element the sample the hand is holding, or takes it back.
+/// Hands the element the run the hand is holding, or takes it back.
 ///
 /// Returns whether the element is one that can hold one — a press that cannot
 /// place its pending has nothing to draw and declines, rather than starting a
@@ -120,11 +120,75 @@ pub(super) fn set_pending(
     host: &mut Host,
     def_id: i32,
     id: i32,
-    held: Option<crate::host::widget::element::PendingSample>,
+    held: Option<crate::host::widget::element::PendingEdit>,
 ) -> bool {
     host.window_def_mut(def_id)
         .and_then(|t| t.find_mut(id))
-        .is_some_and(|w| w.kind.set_pending_sample(held))
+        .is_some_and(|w| w.kind.set_pending_edit(held))
+}
+
+/// Extends the stroke the element is holding to cover `[from, to]`, writing a
+/// straight ramp between the two values.
+///
+/// **The samples between two motion events are what this is for.** A pointer
+/// reports where it is, not where it went, so a fast stroke arrives as a few
+/// widely spaced positions; writing only those would leave the material combed
+/// with holes. Filling them by interpolation is what makes the stroke a stroke.
+///
+/// The run stays contiguous and may grow either way — a stroke that doubles
+/// back keeps one run rather than two, which is what makes it one intent.
+pub(super) fn extend_stroke(
+    host: &mut Host,
+    def_id: i32,
+    id: i32,
+    channel: usize,
+    from: (usize, f32),
+    to: (usize, f32),
+) {
+    let Some(mut held) = host
+        .window_def(def_id)
+        .and_then(|t| t.find(id))
+        .and_then(|w| w.kind.pending_edit())
+        .cloned()
+    else {
+        return;
+    };
+    let (lo, hi) = (from.0.min(to.0), from.0.max(to.0));
+    // Grow the run to cover the new reach, asking the element what each newly
+    // covered sample *was* — that is what keeps the intent invertible.
+    let read = |frame: usize| -> f32 {
+        host.window_def(def_id)
+            .and_then(|t| t.find(id))
+            .and_then(|w| w.kind.sample_value(channel, frame))
+            .unwrap_or(0.0)
+    };
+    while held.start > lo {
+        held.start -= 1;
+        held.values.insert(0, read(held.start));
+        held.previous.insert(0, read(held.start));
+    }
+    while held.end() <= hi {
+        let frame = held.end();
+        held.values.push(read(frame));
+        held.previous.push(read(frame));
+    }
+    // The ramp itself, over the span this motion covered.
+    let span = to.0 as f32 - from.0 as f32;
+    for frame in lo..=hi {
+        let t = if span == 0.0 {
+            1.0
+        } else {
+            (frame as f32 - from.0 as f32) / span
+        };
+        let v = from.1 + (to.1 - from.1) * t;
+        if let Some(slot) = frame
+            .checked_sub(held.start)
+            .and_then(|i| held.values.get_mut(i))
+        {
+            *slot = v;
+        }
+    }
+    set_pending(host, def_id, id, Some(held));
 }
 
 pub(super) fn set_selection(

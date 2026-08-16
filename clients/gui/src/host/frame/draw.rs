@@ -202,9 +202,9 @@ pub(super) fn draw_editor_overlay(
     // there*, and not a sample that is simply somewhere else.
     // Only a view whose vertical is a *value* can hold one: a spectrogram's is
     // frequency, and a sample has no place on it.
-    if let (Some(held), Vertical::Value(domain)) = (item.pending, vertical)
-        && held.frame as f64 >= nav.start
-        && (held.frame as f64) < nav.start + nav.len
+    if let (Some(held), Vertical::Value(domain)) = (item.pending.as_ref(), vertical)
+        && (held.end() as f64) > nav.start
+        && (held.start as f64) < nav.start + nav.len
     {
         let lanes_n = lanes.max(1);
         let lane = crate::host::frame::lane_rect(body, lanes_n, held.channel.min(lanes_n - 1));
@@ -214,20 +214,37 @@ pub(super) fn draw_editor_overlay(
             let rel = 1.0 - ((d - y0) / y_len.max(f64::MIN_POSITIVE));
             lane.y + (rel as f32) * lane.h
         };
-        let x = sample_to_x(held.frame as f64, nav, body);
-        let (y_new, y_old) = (y_of(held.value), y_of(held.previous));
-        if x >= body.x && x <= body.x + body.w {
-            let r = m.point_radius;
-            // The tether first, so the ring sits on top of it.
+        let r = m.point_radius;
+        // One sample or a whole stroke: the same drawing at two lengths. The
+        // tethers go down first so the trace and its marks sit on top of them.
+        let clamp = |y: f32| y.clamp(lane.y, lane.y + lane.h);
+        let mut prev: Option<[f32; 2]> = None;
+        let dots = held.values.len() <= 512;
+        for (i, (&v, &was)) in held.values.iter().zip(&held.previous).enumerate() {
+            let frame = held.start + i;
+            let x = sample_to_x(frame as f64, nav, body);
+            if x < body.x || x > body.x + body.w {
+                prev = None;
+                continue;
+            }
+            let (y_new, y_old) = (clamp(y_of(v)), clamp(y_of(was)));
             mesh.line(
-                [x, y_old.clamp(lane.y, lane.y + lane.h)],
-                [x, y_new.clamp(lane.y, lane.y + lane.h)],
+                [x, y_old],
+                [x, y_new],
                 m.divider_w,
                 with_alpha(theme.selection, 0.55),
             );
-            let y = y_new.clamp(lane.y, lane.y + lane.h);
-            mesh.disc(x, y, r * 1.15, theme.selection);
-            mesh.disc(x, y, r * 0.5, theme.background);
+            if let Some(q) = prev {
+                mesh.line(q, [x, y_new], m.divider_w, theme.selection);
+            }
+            // A ring, not a filled disc: what is drawn is a value the hand is
+            // holding and nobody has applied. Past a few hundred samples the
+            // rings would be a solid band, so the stroke's own line carries it.
+            if dots {
+                mesh.disc(x, y_new, r * 1.15, theme.selection);
+                mesh.disc(x, y_new, r * 0.5, theme.background);
+            }
+            prev = Some([x, y_new]);
         }
     }
     // Playhead: the engine clock relative to the widget's origin while playing,

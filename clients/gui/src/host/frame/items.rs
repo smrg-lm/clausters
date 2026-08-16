@@ -153,7 +153,7 @@ pub(super) struct TimelineItem {
     /// the overlay pass draws it *over* the picture, since the material under
     /// it has not changed and must not be re-summarized to show an edit that
     /// nobody has applied yet.
-    pub(super) pending: Option<crate::host::widget::element::PendingSample>,
+    pub(super) pending: Option<crate::host::widget::element::PendingEdit>,
 }
 
 /// A placed `canvas` widget, copied out of the host tree: its viewport body, the
@@ -349,7 +349,7 @@ pub(super) fn collect_widgets(
                                 theme: p.widget.theme.clone(),
                                 kind,
                                 editor: editor.clone(),
-                                pending: el.pending_sample(),
+                                pending: el.pending_edit().cloned(),
                             });
                         }
                     };

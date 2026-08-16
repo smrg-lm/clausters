@@ -3324,18 +3324,19 @@ fn a_dragged_sample_leaves_as_one_absolute_intent() {
     // anyone has applied anything.
     let held = host
         .widget_kind(1, 50)
-        .and_then(|k| k.pending_sample())
-        .expect("the press takes hold of a sample");
+        .and_then(|k| k.pending_edit())
+        .expect("the press takes hold of a sample")
+        .clone();
     let effects = g.drag_to(&mut host, &ctx, 400.0, 220.0);
     let moved = host
         .widget_kind(1, 50)
-        .and_then(|k| k.pending_sample())
+        .and_then(|k| k.pending_edit())
         .expect("and keeps hold of it");
     assert_eq!(
-        moved.frame, held.frame,
+        moved.start, held.start,
         "the drag moves the value, not which"
     );
-    assert!(moved.value < held.value, "dragging down lowers it");
+    assert!(moved.values[0] < held.values[0], "dragging down lowers it");
     assert!(
         !has_emit_tag(&effects, 50, "sample"),
         "one gesture is one intent: nothing leaves along the way"
@@ -3354,7 +3355,7 @@ fn a_dragged_sample_leaves_as_one_absolute_intent() {
     // refusal.
     assert!(
         host.widget_kind(1, 50)
-            .and_then(|k| k.pending_sample())
+            .and_then(|k| k.pending_edit())
             .is_some(),
         "the edit is still in flight"
     );
@@ -3386,7 +3387,7 @@ fn a_dragged_sample_leaves_as_one_absolute_intent() {
     );
     assert!(
         host.widget_kind(1, 50)
-            .and_then(|k| k.pending_sample())
+            .and_then(|k| k.pending_edit())
             .is_none(),
         "the owner answered, so the hand lets go"
     );
@@ -3410,7 +3411,7 @@ fn grabbing_a_sample_declines_when_they_are_not_drawn() {
     g.press(&mut host, &ctx, 400.0, 100.0, &mut || false);
     assert!(
         host.widget_kind(1, 50)
-            .and_then(|k| k.pending_sample())
+            .and_then(|k| k.pending_edit())
             .is_none(),
         "nothing was taken hold of"
     );
@@ -3420,5 +3421,87 @@ fn grabbing_a_sample_declines_when_they_are_not_drawn() {
     assert!(
         has_emit_tag(&effects, 50, "selection"),
         "the sweep behind it still works"
+    );
+}
+
+/// D2: the draw mode. A stroke writes every sample it passes — including the
+/// ones *between* two motion events, which is what makes it a stroke and not a
+/// comb — and leaves as one intent carrying both runs.
+#[test]
+fn a_stroke_writes_every_sample_it_passes_and_leaves_as_one_intent() {
+    let def = r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","navigable":1,
+             "data":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],"base_bucket":2,
+             "gestures":{"drag":"draw"}}]}"#;
+    let mut host = host_from(def);
+    host.set_timeline_total(50, 8);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+
+    // Two events far apart: the samples between them are the test.
+    g.press(&mut host, &ctx, 100.0, 100.0, &mut || false);
+    g.drag_to(&mut host, &ctx, 700.0, 200.0);
+    let held = host
+        .widget_kind(1, 50)
+        .and_then(|k| k.pending_edit())
+        .expect("the stroke is held")
+        .clone();
+    assert!(
+        held.values.len() >= 5,
+        "the run covers what the pointer passed, not the two ends: {:?}",
+        held.values.len()
+    );
+    assert_eq!(
+        held.values.len(),
+        held.previous.len(),
+        "each written sample knows what it was"
+    );
+    // A ramp, because the pointer went down as it went right.
+    assert!(
+        held.values.first() > held.values.last(),
+        "the values between the two events were filled in: {:?}",
+        held.values
+    );
+
+    let effects = g.release(&mut host, &ctx, 700.0, 200.0);
+    let args = emitted_args(&effects, 50).expect("the stroke reports");
+    assert_eq!(
+        args.len(),
+        5,
+        "tag, channel, start, values, previous: {args:?}"
+    );
+    assert!(has_emit_tag(&effects, 50, "draw"));
+}
+
+/// **Refused where a pixel is more than one sample, and said out loud.** A
+/// stroke there would write values the reader cannot see, and a silent decline
+/// would teach that the pencil sometimes does not work.
+#[test]
+fn drawing_is_refused_out_loud_when_a_pixel_is_more_than_a_sample() {
+    let def = r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","navigable":1,
+             "data":[0.0,0.5,-0.5,1.0,0.25,-0.25,0.75,0.0],"base_bucket":2,
+             "gestures":{"drag":"draw select"}}]}"#;
+    let mut host = host_from(def);
+    host.set_timeline_total(50, 100_000);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let effects = g.press(&mut host, &ctx, 400.0, 100.0, &mut || false);
+    assert!(
+        has_emit_tag(&effects, 50, "refused"),
+        "the refusal is visible"
+    );
+    assert!(
+        host.widget_kind(1, 50)
+            .and_then(|k| k.pending_edit())
+            .is_none(),
+        "and nothing was taken hold of"
+    );
+    // It **consumes** the press rather than falling through: a plan naming a
+    // sweep behind it must not turn a refused stroke into a selection.
+    let effects = g.drag_to(&mut host, &ctx, 600.0, 100.0);
+    assert!(
+        !has_emit_tag(&effects, 50, "selection"),
+        "a refused stroke is not a sweep"
     );
 }

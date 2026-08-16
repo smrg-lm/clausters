@@ -48,8 +48,9 @@ import time
 import wave
 
 from clausters import Session
-from clausters.gui import (field, peaks_cache_file, samples_to_file, signal, waveform,
-                           window)
+from clausters.base.bulk import blob_to_samples
+from clausters.gui import (button, field, label, panel, peaks_cache_file,
+                           samples_to_file, signal, waveform, window)
 
 SR = 48_000
 
@@ -139,8 +140,11 @@ win = gui.open(window(
         signal(cache=cache_path, navigable=False),            # what it reached
         signal(cache=cache_path, navigable=False, measure="rms"),  # what it held
         label="peak + rms"),
-    # The editable lane: drag a sample and the round trip closes.
+    # The editable lane: drag a sample, or draw a run of them.
     waveform(name="edit", data=EDITABLE, gestures={"drag": "sample"}),
+    panel(button(name="mode", label="mode: grab a sample"),
+          label(name="log", text="drag a sample in the lane above"),
+          layout="row", h=40),
     title="Bulk: mapped files, no OSC", w=900, h=800, layout="col"))
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("three waveforms mapped from files (zero OSC for the samples), and a "
@@ -166,6 +170,20 @@ print("three waveforms mapped from files (zero OSC for the samples), and a "
 edits: list[str] = []
 
 
+#: Which gesture the editable lane is bound to. Both are steps of the same
+#: plan table, so switching is a `/gui_set` and not a mode inside the host.
+_mode = "sample"
+
+
+def toggle_mode(*_) -> None:
+    """Swap the lane's drag between grabbing one sample and drawing a run."""
+    global _mode
+    _mode = "draw" if _mode == "sample" else "sample"
+    win["edit"].set(gestures={"drag": _mode})
+    win["mode"].set(label=f"mode: {'draw a run' if _mode == 'draw' else 'grab a sample'}")
+    print(f"drag is now {_mode!r}")
+
+
 def on_edit(tag: str, *values) -> None:
     """Apply one dragged sample, then say so.
 
@@ -173,18 +191,35 @@ def on_edit(tag: str, *values) -> None:
     what says which gesture this was — this lane emits only one, and the check
     is what keeps that true when it grows a second.
     """
-    if tag != "sample":
+    if tag == "refused":
+        # A stroke where a pixel is more than one sample: the host says so
+        # rather than doing nothing, and the lane says it back.
+        win["log"].set(text=f"refused: {values[1] if len(values) > 1 else values}")
+        print(f"refused: {values}")
         return
-    channel, frame, value, previous = values
-    EDITABLE[int(frame)] = round(float(value), 4)
+    if tag == "sample":
+        channel, frame, value, previous = values
+        EDITABLE[int(frame)] = round(float(value), 4)
+        edits.append(
+            f"sample {int(frame)} of channel {int(channel)}: {previous:+.3f} -> {value:+.3f}")
+    elif tag == "draw":
+        # One intent for the whole stroke, the run as a blob -- the same
+        # convention every bulk payload here uses.
+        channel, start, new_run, _previous = values
+        run = blob_to_samples(new_run)
+        for i, v in enumerate(run):
+            EDITABLE[int(start) + i] = round(float(v), 4)
+        edits.append(f"stroke over {len(run)} samples from {int(start)}")
+    else:
+        return
     win["edit"].set(data=EDITABLE)      # the material the picture is now drawn from
     gui.ack(gui.last_seq)               # ...and only now does the hand let go
-    edits.append(
-        f"sample {int(frame)} of channel {int(channel)}: {previous:+.3f} -> {value:+.3f}")
+    win["log"].set(text=edits[-1])
     print(edits[-1])
 
 
 win["edit"].on_event(on_edit)
+win["mode"].on_event(toggle_mode)
 
 # %% [markdown]
 # ## Wait, then clean up

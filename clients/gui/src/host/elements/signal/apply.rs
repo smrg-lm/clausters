@@ -155,6 +155,23 @@ impl SignalElement {
                 }
                 _ => false,
             },
+            // **The material changed where it lives; read it again.** Bulk
+            // resolution is idempotent by design — a resolved source stops
+            // asking — so re-reading is the element *forgetting* what it
+            // resolved, and the loader picking it up on the next pass. One door
+            // for every form: a mapped file, a peaks cache, a server buffer.
+            //
+            // It is the mapped sibling of a `/gui_set data`: an owner that
+            // applied an edit says either *the material is now this* (inline)
+            // or *it is where it always was, and it moved* (mapped). A source
+            // with nothing behind it ignores this rather than erasing itself.
+            "reload" => truthy(v)
+                .map(|yes| {
+                    if yes {
+                        self.reread();
+                    }
+                })
+                .is_some(),
             "label" => set_label(&mut self.display.label, v),
             _ => self.editor.apply(key, v),
         };
@@ -169,7 +186,13 @@ impl SignalElement {
         if handled
             && matches!(
                 key,
-                "view" | "fft_size" | "window_size" | "sample_rate" | "channels" | "data"
+                "view"
+                    | "fft_size"
+                    | "window_size"
+                    | "sample_rate"
+                    | "channels"
+                    | "data"
+                    | "reload"
             )
         {
             self.slot_dirty = true;
@@ -207,6 +230,43 @@ mod data_tests {
         };
         assert_eq!(&d.samples[..], &[0.0, 0.25, -0.25, 0.5]);
         assert!(e.slot_dirty, "the picture is rebuilt from it");
+    }
+
+    /// The mapped half: an owner says *it moved where it lives*, and the
+    /// element forgets what it resolved so the loader asks again. This is the
+    /// door D1 turned out to need and did not have.
+    #[test]
+    fn a_mapped_source_can_be_told_to_read_itself_again() {
+        use crate::host::widget::element::Element;
+        let mut e = el(r#"{"id":1,"type":"signal","view":"trace","path":"take.f32","bulk":true}"#);
+        assert!(e.needs().bulk.is_some(), "it asks on the way up");
+        // Pretend a loader answered.
+        let crate::host::elements::signal::Source::Data(d) = &mut e.source else {
+            panic!("a data source")
+        };
+        d.body = Some(std::sync::Arc::new(
+            crate::waveform::WaveformData::from_interleaved(&[0.0, 1.0, -1.0, 0.5], 1, 2),
+        ));
+        assert!(e.needs().bulk.is_none(), "and stops once it has it");
+        assert!(e.set("reload", &serde_json::json!(1)));
+        assert!(e.needs().bulk.is_some(), "told to, it asks again");
+        assert!(
+            e.slot_dirty,
+            "and the picture is rebuilt from what comes back"
+        );
+    }
+
+    /// A source with nothing behind it is left alone: reloading it would erase
+    /// the material rather than refresh it.
+    #[test]
+    fn an_inline_source_ignores_a_reload() {
+        use crate::host::widget::element::Element;
+        let mut e = el(r#"{"id":1,"type":"signal","view":"trace","data":[0.0,1.0,-1.0,0.5]}"#);
+        assert!(e.set("reload", &serde_json::json!(1)));
+        let crate::host::elements::signal::Source::Data(d) = &e.source else {
+            panic!("a data source")
+        };
+        assert_eq!(&d.samples[..], &[0.0, 1.0, -1.0, 0.5], "still there");
     }
 
     /// A mapped resource is re-read by remapping it, which is a different door:

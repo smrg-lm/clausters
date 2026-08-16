@@ -159,16 +159,16 @@ impl WidgetKind {
         self.as_element()?.freq_axis(rect, m, sample_rate)
     }
 
-    /// The sample this widget is holding for the hand ([`Element::pending_sample`]).
-    pub fn pending_sample(&self) -> Option<super::element::PendingSample> {
-        self.as_element()?.pending_sample()
+    /// The run this widget is holding for the hand ([`Element::pending_edit`]).
+    pub fn pending_edit(&self) -> Option<&super::element::PendingEdit> {
+        self.as_element()?.pending_edit()
     }
 
-    /// Hands it one, or takes it back ([`Element::set_pending_sample`]);
+    /// Hands it one, or takes it back ([`Element::set_pending_edit`]);
     /// `false` where the widget is not the kind that can hold one.
-    pub fn set_pending_sample(&mut self, held: Option<super::element::PendingSample>) -> bool {
+    pub fn set_pending_edit(&mut self, held: Option<super::element::PendingEdit>) -> bool {
         self.as_element_mut()
-            .is_some_and(|e| e.set_pending_sample(held))
+            .is_some_and(|e| e.set_pending_edit(held))
     }
 
     /// One sample of its material ([`Element::sample_value`]).

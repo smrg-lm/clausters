@@ -371,7 +371,7 @@ pub struct SignalElement {
     /// would both cost the span per frame and make the overview disagree with
     /// the samples until the edit lands. So this draws *over* the trace and
     /// changes nothing under it.
-    pub pending: Option<crate::host::widget::element::PendingSample>,
+    pub pending: Option<crate::host::widget::element::PendingEdit>,
 }
 
 impl SignalElement {

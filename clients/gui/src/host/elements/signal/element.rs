@@ -279,13 +279,13 @@ impl Element for SignalElement {
         SignalElement::sample_block(self, start, frames, server_rate)
     }
 
-    fn pending_sample(&self) -> Option<crate::host::widget::element::PendingSample> {
-        self.pending
+    fn pending_edit(&self) -> Option<&crate::host::widget::element::PendingEdit> {
+        self.pending.as_ref()
     }
 
-    fn set_pending_sample(
+    fn set_pending_edit(
         &mut self,
-        pending: Option<crate::host::widget::element::PendingSample>,
+        pending: Option<crate::host::widget::element::PendingEdit>,
     ) -> bool {
         // Only a navigable trace can hold one: it is the presentation where a
         // sample is a thing on screen, and the only one whose material the

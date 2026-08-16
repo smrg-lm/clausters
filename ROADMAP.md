@@ -166,8 +166,11 @@ prerequisite, and because it is the one whose cost is not the client's.*
   `data` became settable on an inline source; the same door for a **mapped**
   one is still missing and D2 needs it.
 
-- ⬜ **D2 — The draw mode.** A step in the gesture plan table, one intent per
-  stroke.
+- ✅ **D2 — The draw mode.** Done 2026-08-16: a step in the plan table, one
+  intent per stroke with the runs as blobs, the samples between two motion
+  events filled in, and a refusal that is visible *and* consumes the press. It
+  also landed the door D1 named — a mapped source can be told to read itself
+  again — which is what lets a pending edit be let go of at all.
 
 - ⬜ **An edit invalidates the measures drawn over it, and nothing says so**
   *(`clients/gui/PLAN.md`, "Found by use")*. Opens the moment A2 and D1 are both

@@ -15,11 +15,12 @@
 
 use super::super::Host;
 use super::super::interact::{self, Hit};
-use super::super::widget::element::{PendingSample, TimeSpace};
+use super::super::widget::element::{PendingEdit, TimeSpace};
 use super::super::widget::{Claim, GestureStep, WidgetKind};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element, focus};
+use clausters_core::osc::OscType;
 
 impl Gestures {
     /// Press: run the **containers' gesture plans** over the hit, innermost
@@ -295,12 +296,7 @@ impl Gestures {
                 else {
                     return false; // an overview with no samples has none to grab
                 };
-                let held = PendingSample {
-                    channel,
-                    frame: index,
-                    value: value.value_at(cy) as f32,
-                    previous,
-                };
+                let held = PendingEdit::one(channel, index, value.value_at(cy) as f32, previous);
                 if !set_pending(host, def_id, id, Some(held)) {
                     return false;
                 }
@@ -310,6 +306,77 @@ impl Gestures {
                     channel,
                     frame: index,
                     previous,
+                });
+                out.push(GestureEffect::Redraw(def_id));
+                true
+            }
+            (GestureStep::Draw, interact::Coords::Time(axis)) => {
+                if !axis.spans(cx) {
+                    return false;
+                }
+                let Some(value) =
+                    value_axis(host, ctx, frame, hit).filter(|v| v.body.contains(cx, cy))
+                else {
+                    return false;
+                };
+                // **Refused where a pixel is more than one sample**, and said
+                // out loud: a stroke there would write values the reader cannot
+                // see, and a pencil that silently does nothing teaches that it
+                // sometimes does not work.
+                let per_px = axis.nav.len / axis.body.w.max(1.0) as f64;
+                if per_px > 1.0 {
+                    emit(
+                        host,
+                        out,
+                        def_id,
+                        id,
+                        vec![
+                            OscType::String("refused".into()),
+                            OscType::String("draw".into()),
+                            OscType::String(format!(
+                                "zoom in to draw: one pixel is {per_px:.0} samples"
+                            )),
+                        ],
+                    );
+                    return true; // consumed: the plan must not fall through to a sweep
+                }
+                let frames = interact::sample_at(
+                    axis.nav.start,
+                    axis.nav.len,
+                    axis.body.x as f64,
+                    axis.body.w as f64,
+                    cx,
+                );
+                if frames < 0.0 {
+                    return false;
+                }
+                let index = frames.round().max(0.0) as usize;
+                let channel = crate::host::frame::lane_at(value.body, value.lanes.max(1), cy);
+                let Some(previous) = host
+                    .window_def(ctx.def_id)
+                    .and_then(|t| t.find(id))
+                    .and_then(|w| w.kind.sample_value(channel, index))
+                else {
+                    return false;
+                };
+                let v = value.value_at(cy) as f32;
+                if !set_pending(
+                    host,
+                    def_id,
+                    id,
+                    Some(PendingEdit::one(channel, index, v, previous)),
+                ) {
+                    return false;
+                }
+                self.drag = Some(Drag::Draw {
+                    id,
+                    axis: value,
+                    body: axis.body,
+                    nav_start: axis.nav.start,
+                    nav_len: axis.nav.len,
+                    channel,
+                    last_frame: index,
+                    last_value: v,
                 });
                 out.push(GestureEffect::Redraw(def_id));
                 true

@@ -188,6 +188,22 @@ enum Drag {
         frame: usize,
         previous: f32,
     },
+    /// Drawing over the material: a stroke that writes every sample it passes.
+    ///
+    /// The run itself lives in the element's pending, where the drawing can
+    /// find it; what is held here is where the last motion event left the
+    /// pointer, so the samples *between* two events are filled rather than
+    /// skipped — a fast stroke leaves no holes.
+    Draw {
+        id: i32,
+        axis: ValueAxis,
+        body: Rect,
+        nav_start: f64,
+        nav_len: f64,
+        channel: usize,
+        last_frame: usize,
+        last_value: f32,
+    },
     /// Panning a timeline view's **vertical** display window from a drag on
     /// its y-ruler strip: `y_start` is the window snapshot at the press,
     /// `lane_h` the lane height in device pixels (absolute panning, so a

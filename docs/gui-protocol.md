@@ -167,9 +167,10 @@ The **edit-back payloads**:
 | `"undo"` / `"redo"` | — | a window shortcut (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). **Addressed to the window, not to a widget**: the id is the window's, the way `/gui_closed` names one. The host holds no history — the log lives with the document — so this is a *request*, and the owner answers with the state that now holds, exactly as it answers a drag |
 | `"selection"` | `start len` (samples, always whole), plus `min max` where the sweep restricted the y axis too | a selection dragged on a timeline view |
 | `"sample"` | `channel frame value previous` — the frame as an OSC **long** (a float runs out of integers at 16.7 million, six minutes of audio, and a sample index is exact or it is the wrong sample) | one sample dragged on a navigable trace, under the `sample` gesture step. **Absolute and carrying its own inverse**, so the owner can apply it and undo it without having remembered anything. The host draws the held value over the picture, marked, and lets go when the edit is acknowledged — so an owner acknowledges *after* pushing the material that now holds, or the old value blinks back |
+| `"draw"` | `channel start <values blob> <previous blob>` — the two runs as little-endian `f32` blobs, the bulk convention `/buffer_setRange` and the clipboard already follow | one **stroke** over a navigable trace, under the `draw` gesture step. **One intent per stroke**, not per sample: what the hand did on the way is the pending drawing's business, and the owner gets the run it ended with — plus what it replaced, so the edit is invertible |
 | `"cut"` | `start len` (samples) | Ctrl+X over a selection. The host owns no data, so this is a **request**: the owner cuts and answers with what the composition now is, and the length change a cut implies is the owner's to decide |
 | `"paste"` | `position kind json` plus one **blob** per bulk payload | Ctrl+V. The clipboard travels *with* the request — it is the host's, so a block copied in one window pastes against an owner that never saw it. `kind` is the clipboard's (`text`/`elements`/`samples`/`spectral`), `json` the whole typed document, and the blobs are the payloads it names, interleaved little-endian `f32` |
-| `"refused"` | `verb reason` | the host could not do its own half — a copy whose source it cannot read (a mapped overview, a live view), a paste whose payload did not travel. Said out loud, because a key that silently does nothing teaches that it sometimes does not work |
+| `"refused"` | `verb reason` | the host could not do its own half — a copy whose source it cannot read (a mapped overview, a live view), a paste whose payload did not travel, a **stroke where a pixel is more than one sample**. Said out loud, because a key or a pencil that silently does nothing teaches that it sometimes does not work |
 | `"view"` | `start len` (samples), or `x y zoom` on a `plane` | the navigation window zoomed or panned — the timeline group's shared window, or a 2D workspace's plane |
 | `"view_y"` | `start len` (0..1) | the vertical display window zoomed or panned |
 | `"view_x"` | `start len` (0..1) | an element's **own** horizontal window zoomed or panned — a navigable `spectrum`'s frequency axis, which is in no navigation group (a group's shared window reports `"view"`) |
@@ -414,6 +415,14 @@ without the edit disappearing with it. It is refused on a source that names a
 file, a cache or a server buffer: those are re-read by resolving the resource
 again, and pushing samples at one would leave the picture half from each.
 
+**`reload` is the other half of that sentence, for a source that is mapped.**
+`/gui_set reload 1` makes the element forget what it resolved, so the loader
+reads its file, cache or server buffer again — the way an owner says *the
+material is where it always was, and it moved*. A source with nothing behind it
+ignores it rather than erasing itself. Between the two, an owner that has
+applied an edit can always correct the picture, which is what lets the host drop
+a pending edit without the edit disappearing with it.
+
 ### The builders keep their names; the wire does not
 
 The old type names **no longer parse**: a node saying `type: "waveform"` is an
@@ -513,6 +522,7 @@ modifier (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value a
 | `select` | Sweeps the container's **shared time selection** on a timeline — a span, whatever the view under it measures. A selection that belongs to *one widget* — a patcher's box marquee, a `notes` element picking the notes inside its rectangle — is not this step: that widget claims the press under `element` and sweeps it itself |
 | `select_box` | The same sweep **restricted on the second axis**: a rectangle over a view that measures a value, reported as the two further arguments of `"selection"`. It **declines** where the picture has one measured axis, so `"select_box select"` is the plan for a mixed stack — a rectangle where there is one to draw, the plain span where there is not |
 | `sample` | Grabs the **sample** under the pointer on a navigable trace and drags it vertically — the smallest destructive edit. It **declines where a sample is not a thing on screen**: below the zoom at which the trace marks each sample with a disc there is nothing to grab, and the plan falls through to its next step, so `"sample select"` edits where the samples are visible and sweeps where they are not. One intent leaves, on release, as `"sample"` |
+| `draw` | **Draws** over the material: a press-drag writes the value under the pointer for every sample it passes — the ones *between* two motion events included, by interpolation, or a fast stroke would leave the material combed with holes — and emits one `"draw"` on release. **Refused where a pixel is more than one sample**, visibly (`"refused" "draw" <reason>`) and consuming the press, so a plan naming a sweep behind it cannot turn a refused stroke into a selection |
 | `locate` | Puts the transport's cursor under the pointer and emits `"locate"` |
 | `none` | Nothing |
 
