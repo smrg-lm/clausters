@@ -77,6 +77,7 @@ from .guidef import (
     patch,
     plane,
     peaks_cache_file,
+    peaks_cache_update_file,
     phasescope,
     piano,
     pianoroll,
@@ -185,6 +186,7 @@ __all__ = [
     "samples_to_blob",
     "samples_to_file",
     "peaks_cache_file",
+    "peaks_cache_update_file",
     "correlation",
     "lissajous",
 ]

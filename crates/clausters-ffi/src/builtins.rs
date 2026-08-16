@@ -187,6 +187,64 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_build(
     cache.len()
 }
 
+/// Rewrites an existing multichannel cache over the **frame span an edit
+/// touched**, in place: `cache` is parsed, the buckets `[start, start+frames)`
+/// overlaps are rebuilt from `samples`, and the bytes are written back over the
+/// same buffer (the shape is unchanged, so the length is too).
+///
+/// This is what keeps an editor's overview true without re-summarizing the
+/// take: the owner applies an edit to its working copy and updates the span it
+/// touched, and the picture that reads the cache follows. The result is
+/// identical to rebuilding the cache from the edited material, which is
+/// asserted core-side rather than assumed.
+///
+/// `samples` is the **whole** buffer as it now stands, interleaved — a bucket
+/// at either edge of the span holds untouched samples too. Returns the bytes
+/// written, or 0 on a null pointer, an unparseable cache, a buffer that is not
+/// the one the cache describes, or a cache whose re-serialization does not fit
+/// (which cannot happen for an unchanged shape and is checked rather than
+/// trusted).
+///
+/// There is no mono sibling: a one-channel cache *is* a multichannel one with
+/// one channel (the format has said so since v3), so a second entry point would
+/// be a second spelling of the same call.
+///
+/// # Safety
+/// `cache` must be readable and writable for `cache_len` bytes, and `samples`
+/// readable for `n` `f32`s.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_peaks_multi_update(
+    cache: *mut u8,
+    cache_len: usize,
+    samples: *const f32,
+    n: usize,
+    start: usize,
+    frames: usize,
+) -> usize {
+    if cache.is_null() || samples.is_null() || cache_len == 0 {
+        return 0;
+    }
+    // SAFETY: caller guarantees the two ranges.
+    let (bytes, s) = unsafe {
+        (
+            std::slice::from_raw_parts_mut(cache, cache_len),
+            std::slice::from_raw_parts(samples, n),
+        )
+    };
+    let Some(mut pyr) = MultiPyramid::from_bytes(bytes) else {
+        return 0;
+    };
+    if !pyr.update_range(s, start, frames) {
+        return 0;
+    }
+    let out = pyr.to_bytes();
+    if out.len() != cache_len {
+        return 0;
+    }
+    bytes.copy_from_slice(&out);
+    cache_len
+}
+
 /// The stereo **correlation** (Pearson's r) of channels `left` and `right`
 /// (each `n` `f32`s): `+1` mono/in-phase, `0` decorrelated, `-1` anti-phase —
 /// the same measurement the GUI phasescope shows. Writes the coefficient into

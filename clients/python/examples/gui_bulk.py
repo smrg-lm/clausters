@@ -127,6 +127,10 @@ print(f"server exported buffer {bufnum} -> {os.path.getsize(exported_path)} B")
 # the min and max, so the second picture costs no second pass over the samples.
 
 # %%
+#: A short take, small enough that every sample is a disc on screen -- which is
+#: the zoom at which a sample is a thing you can grab.
+EDITABLE = [round(math.sin(i * math.tau / 32) * 0.8, 4) for i in range(64)]
+
 win = gui.open(window(
     waveform(name="cache", cache=cache_path),                 # prebuilt peak cache
     waveform(name="raw", path=raw_path),                      # raw f32, host maps it
@@ -135,11 +139,52 @@ win = gui.open(window(
         signal(cache=cache_path, navigable=False),            # what it reached
         signal(cache=cache_path, navigable=False, measure="rms"),  # what it held
         label="peak + rms"),
-    title="Bulk: mapped files, no OSC", w=900, h=700, layout="col"))
+    # The editable lane: drag a sample and the round trip closes.
+    waveform(name="edit", data=EDITABLE, gestures={"drag": "sample"}),
+    title="Bulk: mapped files, no OSC", w=900, h=800, layout="col"))
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("three waveforms mapped from files (zero OSC for the samples), and a "
       "fourth lane stacking the RMS body over the peak envelope of the same "
       "cache; zoom/pan with wheel/drag, close the window to stop")
+
+# %% [markdown]
+# ## The edit round trip
+# The bottom lane is the other direction: the **host owns no data**, so dragging
+# a sample changes nothing by itself. What leaves is an *intent* --
+# `"sample" channel frame value previous` -- absolute and carrying its own
+# inverse, so whoever owns the material can apply it and undo it without having
+# remembered anything.
+#
+# While it is in flight the host draws the value the hand is holding, marked (a
+# ring tethered to the value it replaces), over a picture that has not changed.
+# This handler is the owner: it applies the edit to its own copy, pushes the
+# samples that now hold, and **acknowledges** -- and the acknowledgement is what
+# lets the host drop the pending drawing, the edit having become the material.
+# Doing it in the other order would blink the old value back.
+
+# %%
+edits: list[str] = []
+
+
+def on_edit(tag: str, *values) -> None:
+    """Apply one dragged sample, then say so.
+
+    The payload is the event's tag followed by its flat values, so the tag is
+    what says which gesture this was — this lane emits only one, and the check
+    is what keeps that true when it grows a second.
+    """
+    if tag != "sample":
+        return
+    channel, frame, value, previous = values
+    EDITABLE[int(frame)] = round(float(value), 4)
+    win["edit"].set(data=EDITABLE)      # the material the picture is now drawn from
+    gui.ack(gui.last_seq)               # ...and only now does the hand let go
+    edits.append(
+        f"sample {int(frame)} of channel {int(channel)}: {previous:+.3f} -> {value:+.3f}")
+    print(edits[-1])
+
+
+win["edit"].on_event(on_edit)
 
 # %% [markdown]
 # ## Wait, then clean up
@@ -150,7 +195,7 @@ _closed = False
 
 
 def run(seconds: float | None = None) -> None:
-    """Pumps events for ``seconds`` (the waveforms are static).
+    """Pumps events for ``seconds`` (three lanes are static; the last one edits).
 
     Script-run there is no bound and the window is what ends it; the
     ``seconds`` argument is for a cell run, where a notebook wants the loop to

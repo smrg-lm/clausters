@@ -166,6 +166,7 @@ The **edit-back payloads**:
 | `"locate"` | `position` (timeline units) | a lane's time ruler (or its empty space) clicked — the transport is being seeked there |
 | `"undo"` / `"redo"` | — | a window shortcut (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). **Addressed to the window, not to a widget**: the id is the window's, the way `/gui_closed` names one. The host holds no history — the log lives with the document — so this is a *request*, and the owner answers with the state that now holds, exactly as it answers a drag |
 | `"selection"` | `start len` (samples, always whole), plus `min max` where the sweep restricted the y axis too | a selection dragged on a timeline view |
+| `"sample"` | `channel frame value previous` — the frame as an OSC **long** (a float runs out of integers at 16.7 million, six minutes of audio, and a sample index is exact or it is the wrong sample) | one sample dragged on a navigable trace, under the `sample` gesture step. **Absolute and carrying its own inverse**, so the owner can apply it and undo it without having remembered anything. The host draws the held value over the picture, marked, and lets go when the edit is acknowledged — so an owner acknowledges *after* pushing the material that now holds, or the old value blinks back |
 | `"cut"` | `start len` (samples) | Ctrl+X over a selection. The host owns no data, so this is a **request**: the owner cuts and answers with what the composition now is, and the length change a cut implies is the owner's to decide |
 | `"paste"` | `position kind json` plus one **blob** per bulk payload | Ctrl+V. The clipboard travels *with* the request — it is the host's, so a block copied in one window pastes against an owner that never saw it. `kind` is the clipboard's (`text`/`elements`/`samples`/`spectral`), `json` the whole typed document, and the blobs are the payloads it names, interleaved little-endian `f32` |
 | `"refused"` | `verb reason` | the host could not do its own half — a copy whose source it cannot read (a mapped overview, a live view), a paste whose payload did not travel. Said out loud, because a key that silently does nothing teaches that it sometimes does not work |
@@ -401,10 +402,17 @@ by turning its measures on and off.
 
 An `axes` pair works on `/gui_def` and on `/gui_set` alike (there it rides as
 its JSON string, the `theme` convention). Everything the container does **not**
-own stays where it is: an element's source (`data`, `buffer`, `path`, `cache`,
+own stays where it is: an element's source (`buffer`, `path`, `cache`,
 `bus`, `rate`, `channels`, `base_bucket`), its presentation's own parameters
 (`fft_size`/`window_size`, `hop`, `db_floor`/`db_ceil`, `freq_scale`,
 `colormap`), and every place prop (`w`, `h`, `weight`, `x`, `y`).
+
+**`data` is the one source that is also live.** A `/gui_set data` replaces
+**inline** samples, which is how an owner that has applied an edit pushes the
+material that now holds — and therefore how a pending edit can be let go of
+without the edit disappearing with it. It is refused on a source that names a
+file, a cache or a server buffer: those are re-read by resolving the resource
+again, and pushing samples at one would leave the picture half from each.
 
 ### The builders keep their names; the wire does not
 
@@ -504,6 +512,7 @@ modifier (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value a
 | `pan` | Pans the container's axis: time on a `field`, the plane on a `plane` |
 | `select` | Sweeps the container's **shared time selection** on a timeline — a span, whatever the view under it measures. A selection that belongs to *one widget* — a patcher's box marquee, a `notes` element picking the notes inside its rectangle — is not this step: that widget claims the press under `element` and sweeps it itself |
 | `select_box` | The same sweep **restricted on the second axis**: a rectangle over a view that measures a value, reported as the two further arguments of `"selection"`. It **declines** where the picture has one measured axis, so `"select_box select"` is the plan for a mixed stack — a rectangle where there is one to draw, the plain span where there is not |
+| `sample` | Grabs the **sample** under the pointer on a navigable trace and drags it vertically — the smallest destructive edit. It **declines where a sample is not a thing on screen**: below the zoom at which the trace marks each sample with a disc there is nothing to grab, and the plan falls through to its next step, so `"sample select"` edits where the samples are visible and sweeps where they are not. One intent leaves, on release, as `"sample"` |
 | `locate` | Puts the transport's cursor under the pointer and emits `"locate"` |
 | `none` | Nothing |
 

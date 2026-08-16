@@ -145,6 +145,7 @@ thought about the other side", write `gap` — that is what it is for.
 | `clausters_core_peaks_multi_build` | `JsPyramid.build` | `idiom` — as above |
 | `clausters_core_peaks_cache_size` | — | `idiom` — C sizes the buffer, then fills it; wasm returns the bytes |
 | `clausters_core_peaks_multi_cache_size` | — | `idiom` — as above |
+| `clausters_core_peaks_multi_update` | `JsPyramid.update_range` | both — the span an edit touched, re-summarized; C rewrites the caller's cache bytes in place, wasm mutates the handle it already holds |
 | — | `JsPyramid.from_bytes` | `idiom` — the two sides consume a cache differently: through the C ABI the pyramid is a byte blob whoever mapped it reads, while wasm keeps it as an object and answers about it. The readers below are that object's face |
 | — | `JsPyramid.to_bytes` | `idiom` — as above |
 | — | `JsPyramid.frames` | `idiom` — as above |

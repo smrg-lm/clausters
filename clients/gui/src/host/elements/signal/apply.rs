@@ -126,6 +126,35 @@ impl SignalElement {
                 .and_then(super::Measures::parse)
                 .map(|m| self.measures = m)
                 .is_some(),
+            // **The material, live.** An owner that applied an edit pushes the
+            // samples that now hold, and the picture becomes the document's
+            // again — which is what "the acknowledgement corrects the picture"
+            // means for an inline source, and what lets a pending drawing be
+            // dropped without the edit disappearing with it. Only inline
+            // samples: a mapped file or cache is re-read by remapping it, which
+            // is a different door and is not this one.
+            "data" => match (v.as_array(), &mut self.source) {
+                // Inline only: a source that names a file, a cache or a server
+                // buffer is re-read by resolving that resource again, and
+                // pushing samples at one would leave the picture half from each.
+                (Some(items), Source::Data(data))
+                    if data.path.is_none() && data.cache.is_none() && data.buffer.is_none() =>
+                {
+                    match items
+                        .iter()
+                        .map(|x| x.as_f64().map(|f| f as f32))
+                        .collect::<Option<Vec<f32>>>()
+                    {
+                        Some(samples) => {
+                            data.samples = samples.into();
+                            data.body = None; // the inline samples *are* the body
+                            true
+                        }
+                        None => false,
+                    }
+                }
+                _ => false,
+            },
             "label" => set_label(&mut self.display.label, v),
             _ => self.editor.apply(key, v),
         };
@@ -140,11 +169,52 @@ impl SignalElement {
         if handled
             && matches!(
                 key,
-                "view" | "fft_size" | "window_size" | "sample_rate" | "channels"
+                "view" | "fft_size" | "window_size" | "sample_rate" | "channels" | "data"
             )
         {
             self.slot_dirty = true;
         }
         handled
+    }
+}
+
+#[cfg(test)]
+mod data_tests {
+    use crate::host::widget::signal_element;
+
+    fn el(json: &str) -> crate::host::elements::signal::SignalElement {
+        signal_element(
+            &serde_json::from_str::<serde_json::Value>(json)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone(),
+            &[],
+        )
+        .unwrap()
+    }
+
+    /// The owner's half of an edit: the samples that now hold are pushed, and
+    /// the picture is the document's again. Without this the pending drawing
+    /// could never be dropped — letting go of it would take the edit with it.
+    #[test]
+    fn inline_material_can_be_replaced_live() {
+        use crate::host::widget::element::Element;
+        let mut e = el(r#"{"id":1,"type":"signal","view":"trace","data":[0.0,1.0,-1.0,0.5]}"#);
+        assert!(e.set("data", &serde_json::json!([0.0, 0.25, -0.25, 0.5])));
+        let crate::host::elements::signal::Source::Data(d) = &e.source else {
+            panic!("still an inline source")
+        };
+        assert_eq!(&d.samples[..], &[0.0, 0.25, -0.25, 0.5]);
+        assert!(e.slot_dirty, "the picture is rebuilt from it");
+    }
+
+    /// A mapped resource is re-read by remapping it, which is a different door:
+    /// pushing samples at one would half-replace what it draws.
+    #[test]
+    fn a_mapped_source_does_not_take_samples() {
+        use crate::host::widget::element::Element;
+        let mut e = el(r#"{"id":1,"type":"signal","view":"trace","path":"take.f32"}"#);
+        assert!(!e.set("data", &serde_json::json!([0.0, 1.0])));
     }
 }

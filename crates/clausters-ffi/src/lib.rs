@@ -108,7 +108,7 @@ pub use time::*;
 /// mean square beside each bucket's min/max, so a cache built by this surface is
 /// longer than a v18 one and a reader that predates it cannot parse it (the
 /// converse holds: v1 and v2 caches still load).
-pub const CORE_ABI_VERSION: u32 = 19;
+pub const CORE_ABI_VERSION: u32 = 20;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

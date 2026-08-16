@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 19
+CORE_ABI_VERSION = 20
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -264,6 +264,15 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_peaks_multi_cache_size.restype = ctypes.c_size_t
     lib.clausters_core_peaks_multi_cache_size.argtypes = [
         ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t,
+    ]
+    lib.clausters_core_peaks_multi_update.restype = ctypes.c_size_t
+    lib.clausters_core_peaks_multi_update.argtypes = [
+        ctypes.POINTER(ctypes.c_ubyte),
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_size_t,
     ]
     lib.clausters_core_peaks_multi_build.restype = ctypes.c_size_t
     lib.clausters_core_peaks_multi_build.argtypes = [
@@ -1416,6 +1425,30 @@ def peaks_cache(samples, base_bucket: int = 256, channels: int = 1) -> bytes:
         raise ValueError(f"clausters_core_peaks_build wrote {written} of {size} bytes")
     return bytes(out)
 
+
+
+def peaks_cache_update(cache: bytes, samples, start: int, frames: int) -> bytes:
+    """Rewrites the part of a peak cache a **frame span** touches, returning the
+    new bytes — what keeps an editor's overview true after an edit without
+    re-summarizing the whole take.
+
+    ``samples`` is the **whole** buffer as it now stands (interleaved), not the
+    span: a bucket at either edge of it holds untouched samples too. The result
+    is identical to rebuilding the cache from the edited material, so an
+    updated overview and a fresh one cannot drift apart over a session.
+
+    Raises `ValueError` when the buffer is not the one the cache describes — an
+    edit that changed the *length* is a rebuild (`peaks_cache`), not an update.
+    """
+    a, _ = _as_array(samples)
+    buf = (ctypes.c_ubyte * len(cache)).from_buffer_copy(cache)
+    written = lib().clausters_core_peaks_multi_update(
+        buf, len(cache), _ptr(a), len(a), start, frames)
+    if written != len(cache):
+        raise ValueError(
+            "clausters_core_peaks_multi_update refused: the samples are not the "
+            "buffer this cache describes (a length change is a rebuild)")
+    return bytes(buf)
 
 def correlation(left, right) -> float | None:
     """The stereo **correlation** (Pearson's r) of two equal-length channels,

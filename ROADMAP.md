@@ -159,8 +159,12 @@ prerequisite, and because it is the one whose cost is not the client's.*
   completeness the S track exists to reach. Takeable at any point; it blocks
   nothing in this phase and this phase blocks nothing in it.
 
-- ⬜ **D1 — A sample is a grabbable point.** The pending overlay's first real
-  drawing, and `peaks::update_range`.
+- ✅ **D1 — A sample is a grabbable point.** Done 2026-08-16: the gesture, the
+  pending overlay's first real drawing, and `peaks::update_range` in both
+  pyramids, asserted identical to a rebuild. It turned up a hole the milestone
+  had not named — an owner had no way to say *the material is now this* — so
+  `data` became settable on an inline source; the same door for a **mapped**
+  one is still missing and D2 needs it.
 
 - ⬜ **D2 — The draw mode.** A step in the gesture plan table, one intent per
   stroke.

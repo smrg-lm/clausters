@@ -854,6 +854,19 @@ impl JsPyramid {
         MultiPyramid::from_bytes(data).map(JsPyramid)
     }
 
+    /// Rewrites the part of the cache a **frame span** touches, from the
+    /// interleaved buffer as it now stands — what keeps an editor's overview
+    /// true after an edit without re-summarizing the take.
+    ///
+    /// `samples` is the whole buffer, not the span: a bucket at either edge of
+    /// it holds untouched samples too. Returns whether it applied — `false`,
+    /// changing nothing, when the buffer is not the one this cache describes,
+    /// which is an edit that changed the *length* and therefore a rebuild.
+    #[wasm_bindgen(js_name = updateRange)]
+    pub fn update_range(&mut self, samples: &[f32], start: usize, frames: usize) -> bool {
+        self.0.update_range(samples, start, frames)
+    }
+
     /// The cache's bytes, in the format every client reads: the mono layout
     /// for a single channel and the multichannel one above it — the choice
     /// the Python client's door makes, so the same samples serialize to the

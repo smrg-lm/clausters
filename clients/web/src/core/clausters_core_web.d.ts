@@ -158,6 +158,17 @@ export class Pyramid {
      * `fromBytes` and by the GUI host.
      */
     toBytes(): Uint8Array;
+    /**
+     * Rewrites the part of the cache a **frame span** touches, from the
+     * interleaved buffer as it now stands — what keeps an editor's overview
+     * true after an edit without re-summarizing the take.
+     *
+     * `samples` is the whole buffer, not the span: a bucket at either edge of
+     * it holds untouched samples too. Returns whether it applied — `false`,
+     * changing nothing, when the buffer is not the one this cache describes,
+     * which is an edit that changed the *length* and therefore a rebuild.
+     */
+    updateRange(samples: Float32Array, start: number, frames: number): boolean;
     readonly baseBucket: number;
     readonly channels: number;
     /**
@@ -586,6 +597,7 @@ export interface InitOutput {
     readonly pyramid_levelFor: (a: number, b: number) => number;
     readonly pyramid_numLevels: (a: number) => number;
     readonly pyramid_toBytes: (a: number) => [number, number];
+    readonly pyramid_updateRange: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly quant_delay: (a: number, b: number) => number;
     readonly registry_alloc: (a: number, b: number) => [number, number];
     readonly registry_base: (a: number) => number;

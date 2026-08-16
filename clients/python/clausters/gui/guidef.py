@@ -1691,6 +1691,25 @@ def peaks_cache_file(samples, path: str, base_bucket: int = 256, channels: int =
     return path
 
 
+def peaks_cache_update_file(path: str, samples, start: int, frames: int) -> str:
+    """Rewrites the part of the cache at `path` that a **frame span** touched,
+    from `samples` (the whole interleaved buffer as it now stands) — the owner's
+    half of an edit, so the picture that maps this file follows without the
+    take being re-summarized.
+
+    Returns `path`. Raises `ValueError` when the samples are not the buffer the
+    cache describes, which is a length change and therefore a rebuild
+    (`peaks_cache_file`)."""
+    from .._native import peaks_cache_update  # lazy: only needs the cdylib if used
+
+    with open(path, "rb") as f:
+        cache = f.read()
+    updated = peaks_cache_update(cache, samples, start, frames)
+    with open(path, "wb") as f:
+        f.write(updated)
+    return path
+
+
 def correlation(left, right) -> float | None:
     """The stereo **correlation** (Pearson's r) of two equal-length channels,
     in ``[-1, 1]`` — ``+1`` mono/in-phase, ``0`` decorrelated, ``-1`` anti-phase
