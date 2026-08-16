@@ -5393,12 +5393,25 @@ place would rewrite a picture under a renderer that never asked. The element
 marks its slot dirty instead, and the next frame refills it — keeping the view's
 navigation, since where the eye is is not part of what was edited.
 
-**What the host will not do is write one channel of a multichannel take.**
+**One channel of a multichannel take needed a command that did not exist.**
 `/buffer_setRange` writes a contiguous run of *flat, interleaved* samples, so
-one channel of a stereo buffer is a **strided** write and there is no command
-for one. Sending it as N single-sample messages is not the answer; the command
-is. It is refused with that sentence rather than half-done, and the missing
-command is a server milestone.
+one channel of a stereo buffer is a **strided** write. Sending it as N
+single-sample messages is not the answer; the command is — so the host refused
+with that sentence rather than half-doing it, and the command arrived:
+`/buffer_setRangeChannel` (and `/buffer_setChannel`), whose positions are frames
+of one channel. Inside the server it is not a second write path but a **stride**
+on the one that was already there. The edit vocabulary took the same coordinate:
+`Intent::WriteSamples` carries a `channel`, which is what makes an undo put back
+the channel it took rather than assuming the first.
+
+**The lesson generalizes past the write.** Once a stereo take could be edited,
+three other places turned out to have assumed one channel — the clip's body drew
+only the first, the monitor played only the first, and a drag that crossed into
+another lane read *that* lane's value. None of them was the write path, and all
+three were invisible while the material was mono. A channel count is not a
+detail of the data: it is a fact every view, every gesture and every voice has
+to carry, and the way to find out who forgot it is to open something wider than
+two.
 
 ## A stroke writes what the reader can see
 

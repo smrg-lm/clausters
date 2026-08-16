@@ -504,6 +504,103 @@ fn set_writes_single_samples_by_flat_index() {
     );
 }
 
+/// **One channel of an interleaved buffer**, which no flat run can name: the
+/// positions are frames of that channel, the samples land `channels` apart, and
+/// the other channel is untouched.
+#[test]
+fn set_range_channel_writes_one_channel_and_leaves_the_other_alone() {
+    let mirror = mirror_of(Arc::new(Buffer::new(
+        vec![-1.0; 8], // both channels held, so an overwrite is visible
+        2,
+        4,
+        SR as f64,
+    )));
+    let job = parse_set(
+        "/buffer_setRangeChannel",
+        vec![
+            OscType::Int(0),
+            OscType::Int(1), // the right channel
+            OscType::Int(1), // from its second frame
+            blob(&[1.0, 2.0, 3.0]),
+        ],
+        &mirror,
+    )
+    .expect("a well-formed setRangeChannel parses");
+
+    let written = installed(run_nrt(job));
+    assert_eq!(
+        (written.frames(), written.channels()),
+        (4, 2),
+        "a channel write keeps the buffer's shape like every other write"
+    );
+    assert_eq!(
+        written.data(),
+        &[-1.0, -1.0, -1.0, 1.0, -1.0, 2.0, -1.0, 3.0][..],
+        "frames 1..4 of channel 1, strided; channel 0 as it was"
+    );
+}
+
+/// The single-sample form of the same addressing.
+#[test]
+fn set_channel_writes_single_frames_of_one_channel() {
+    let mirror = mirror_of(Arc::new(Buffer::zeroed(4, 2, SR as f64)));
+    let job = parse_set(
+        "/buffer_setChannel",
+        vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Float(0.25),
+            OscType::Int(3),
+            OscType::Float(-0.5),
+        ],
+        &mirror,
+    )
+    .expect("a well-formed setChannel parses");
+
+    let written = installed(run_nrt(job));
+    let mut expected = [0.0f32; 8];
+    expected[0] = 0.25; // frame 0, channel 0
+    expected[6] = -0.5; // frame 3, channel 0
+    assert_eq!(written.data(), &expected[..]);
+}
+
+/// A channel the buffer does not have is a mistake worth hearing about — the
+/// same posture as a channel a *file* does not have on the reading side.
+#[test]
+fn a_channel_write_names_a_channel_the_buffer_has() {
+    let mirror = mirror_of(Arc::new(Buffer::zeroed(4, 2, SR as f64)));
+    let err = set_error(
+        "/buffer_setRangeChannel",
+        vec![
+            OscType::Int(0),
+            OscType::Int(2),
+            OscType::Int(0),
+            blob(&[1.0]),
+        ],
+        &mirror,
+    );
+    assert!(err.contains("no channel 2"), "unexpected message: {err}");
+
+    // And the bound is the channel's own frames, reported in frames: a run of
+    // three from frame 2 of a four-frame buffer is past its end even though
+    // the flat index it starts at is well inside the samples.
+    let err = set_error(
+        "/buffer_setRangeChannel",
+        vec![
+            OscType::Int(0),
+            OscType::Int(1),
+            OscType::Int(2),
+            blob(&[1.0, 2.0, 3.0]),
+        ],
+        &mirror,
+    );
+    assert!(
+        err.contains("frame range 2..5") && err.contains("4 frames"),
+        "the refusal speaks the unit the caller wrote in: {err}"
+    );
+}
+
 #[test]
 fn a_write_past_the_end_fails_rather_than_being_clamped() {
     let mirror = mirror_of(Arc::new(Buffer::zeroed(4, 1, SR as f64)));

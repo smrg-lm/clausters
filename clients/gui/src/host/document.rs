@@ -52,6 +52,18 @@ fn float_at(args: &[OscType], n: usize) -> Option<f32> {
 }
 
 /// A sample position: a long, or an int from a client that had no long to hand.
+/// **Which channel a destructive payload addressed** — argument 1 of both
+/// `"sample"` and `"draw"`, 0 for a payload that names none.
+///
+/// A missing or negative channel is the first one rather than a refusal: a mono
+/// view has one channel and the hand cannot be over another.
+fn channel_at(args: &[OscType]) -> u32 {
+    match args.get(1) {
+        Some(OscType::Int(ch)) if *ch >= 0 => *ch as u32,
+        _ => 0,
+    }
+}
+
 fn long_at(args: &[OscType], n: usize) -> Option<u64> {
     match args.get(n) {
         Some(OscType::Long(v)) if *v >= 0 => Some(*v as u64),
@@ -251,6 +263,7 @@ impl Owner {
                 Some((
                     Intent::WriteSamples {
                         node,
+                        channel: channel_at(args),
                         start,
                         values: vec![value],
                     },
@@ -267,6 +280,7 @@ impl Owner {
                 Some((
                     Intent::WriteSamples {
                         node,
+                        channel: channel_at(args),
                         start,
                         values,
                     },
@@ -303,22 +317,10 @@ impl Owner {
         };
         (!values.is_empty()).then_some(Intent::WriteSamples {
             node,
+            channel: channel_at(args),
             start,
             values,
         })
-    }
-
-    /// Which channel of the material a destructive payload addressed.
-    ///
-    /// It is **not** in the intent, and that is the document's decision rather
-    /// than an omission: a node names material and the material's shape is the
-    /// source's business. The host needs it anyway, because a picture is drawn
-    /// per channel and a server buffer is addressed per sample.
-    pub fn read_channel(args: &[OscType]) -> Option<usize> {
-        match args.get(1) {
-            Some(OscType::Int(ch)) if *ch >= 0 => Some(*ch as usize),
-            _ => None,
-        }
     }
 
     /// Applies one intent through the log, so it can be undone.

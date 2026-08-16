@@ -211,6 +211,7 @@ fn every_intent_is_absolute_and_reports_an_effective_value() {
         },
         Intent::WriteSamples {
             node: NodeId(2),
+            channel: 0,
             start: 0,
             values: vec![0.1],
         },
@@ -331,6 +332,7 @@ fn writing_material_bumps_the_sources_generation_and_not_the_samples() {
         &mut d,
         &Intent::WriteSamples {
             node: NodeId(1),
+            channel: 0,
             start: 100,
             values: vec![0.0, 0.5],
         },
@@ -351,6 +353,7 @@ fn only_material_can_be_written() {
         &mut d,
         &Intent::WriteSamples {
             node: NodeId(2),
+            channel: 0,
             start: 0,
             values: vec![0.1],
         },
@@ -573,11 +576,50 @@ fn an_unstated_claim_skips_the_check() {
     assert!(outcome.applied && !outcome.stale);
 }
 
+/// A write says **which channel** it covers, and the field is optional on the
+/// wire: a document written before it — and every mono edit — means channel 0.
+#[test]
+fn a_write_names_its_channel_and_an_absent_one_is_the_first() {
+    let mut d = material(2);
+    let write = Intent::WriteSamples {
+        node: NodeId(1),
+        channel: 1,
+        start: 4,
+        values: vec![0.5, 0.25],
+    };
+    let outcome = apply(&mut d, &write, &Against::unstated(), &Rules::none());
+    assert!(outcome.applied);
+    assert_eq!(
+        outcome.effective, write,
+        "the channel is part of what the edit was"
+    );
+
+    let json = serde_json::to_value(&write).expect("an intent serializes");
+    assert_eq!(json["channel"], 1);
+    let older = serde_json::json!({
+        "intent": "writesamples",
+        "node": 1,
+        "start": 4,
+        "values": [0.5, 0.25],
+    });
+    let read: Intent = serde_json::from_value(older).expect("an intent without a channel reads");
+    assert_eq!(
+        read,
+        Intent::WriteSamples {
+            node: NodeId(1),
+            channel: 0,
+            start: 4,
+            values: vec![0.5, 0.25],
+        }
+    );
+}
+
 #[test]
 fn material_rewritten_underneath_makes_a_write_stale() {
     let mut d = material(2);
     let write = Intent::WriteSamples {
         node: NodeId(1),
+        channel: 0,
         start: 100,
         values: vec![0.25],
     };
@@ -591,6 +633,7 @@ fn material_rewritten_underneath_makes_a_write_stale() {
         outcome.effective,
         Intent::WriteSamples {
             node: NodeId(1),
+            channel: 0,
             start: 100,
             values: Vec::new(),
         },
@@ -606,6 +649,7 @@ fn a_generation_can_be_claimed_without_a_document_version() {
     let mut d = material(2);
     let write = Intent::WriteSamples {
         node: NodeId(1),
+        channel: 0,
         start: 0,
         values: vec![0.5],
     };

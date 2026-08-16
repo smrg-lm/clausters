@@ -439,6 +439,19 @@ class Buffer:
         ``wait=True`` blocks on that barrier, and a chunk that fails raises
         from it.
         """
+        self._set_runs("/buffer_setRange", samples, start, chunk, wait, timeout, ())
+
+    def _set_runs(self, addr: str, samples, start: int, chunk, wait, timeout,
+                  head: tuple):
+        """The chunked blob write both `set_samples` and `set_channel_samples`
+        send, differing only in the address and in what stands before the run
+        (nothing, or the channel).
+
+        The positions are in the address' own unit -- flat samples for
+        ``/buffer_setRange``, frames of one channel for
+        ``/buffer_setRangeChannel`` -- and the chunking is the same arithmetic
+        either way, since a chunk advances the start by the values it carried.
+        """
         srv = self._server()
         values = samples if isinstance(samples, array) else array("f", samples)
         if not len(values):
@@ -449,22 +462,57 @@ class Buffer:
         for at in range(0, len(values), chunk):
             # One C-speed pack per chunk: the samples cross as bytes, so nothing
             # here or in the OSC encoder touches them one at a time.
-            args = (self.bufnum, start + at, samples_to_blob(values[at:at + chunk]))
+            args = (self.bufnum, *head, start + at,
+                    samples_to_blob(values[at:at + chunk]))
             try:
-                srv.send_msg("/buffer_setRange", *args)
+                srv.send_msg(addr, *args)
             except CommandRingFull:
                 # The shared-memory carrier's ring is a fixed size, and a batch
                 # this long can outrun the server draining it. Backpressure is
                 # not an error there -- nothing was sent, and the barrier both
                 # waits for the queue and empties the ring, so the retry fits.
                 srv._barrier(timeout)
-                srv.send_msg("/buffer_setRange", *args)
+                srv.send_msg(addr, *args)
         # One barrier for the whole batch rather than a /done per chunk: the
         # queue completes them in order anyway, so waiting per chunk would cost
         # a round trip per chunk -- time proportional to the edit's *length*
         # instead of its size.
         if wait and not scored:
             srv._barrier(timeout)
+
+    def set_channel_samples(self, channel: int, samples, start: int = 0, *,
+                            chunk: "int | None" = None, wait: bool = True,
+                            timeout: "float | None" = None):
+        """Write consecutive frames of **one channel** (``/buffer_setRangeChannel``).
+
+        The channel form of `set_samples`, and the one an editor needs: storage
+        is interleaved, so a channel's frames are ``channels`` apart and no flat
+        start and length name one. Here ``start`` and the run are frames *of
+        that channel*, so drawing over the left channel of a stereo take is one
+        message and leaves the right one untouched.
+
+        Everything else is `set_samples`: the samples cross as little-endian
+        ``f32`` blobs, chunked and closed with one barrier, and a run past the
+        end raises rather than being clamped — reported in frames, the unit you
+        wrote in. A channel the buffer does not have raises too.
+        """
+        self._set_runs("/buffer_setRangeChannel", samples, start, chunk, wait,
+                       timeout, (int(channel),))
+
+    def set_channel_sample(self, channel: int, frame: int, value: float, *,
+                           wait: bool = True, timeout: "float | None" = None):
+        """Write one frame of one channel (``/buffer_setChannel``) — the
+        single-sample counterpart of `set_channel_samples`, addressed by frame
+        rather than by flat index."""
+        srv = self._server()
+        args = [self.bufnum, int(channel), int(frame), float(value)]
+        if self._scored() or not wait:
+            srv.send_msg("/buffer_setChannel", *args)
+            return
+        addr, rargs = srv.request("/buffer_setChannel", *args, timeout=timeout,
+                                  expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/buffer_setChannel {self.bufnum} failed: {rargs}")
 
     def set_sample(self, index: int, value: float, *, wait: bool = True,
                    timeout: "float | None" = None):

@@ -59,6 +59,7 @@ impl SignalElement {
             min,
             max,
             self.measures,
+            self.display.overlay,
         );
     }
 }

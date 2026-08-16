@@ -23,7 +23,10 @@ What it shows, in the order the cells run:
   a clip in its lane, and as an editor under the ruler on an axis of its own.
   Zoom that one in (wheel) until each sample is a disc, then **Alt+drag** to
   draw over them — the picture changes over the span you drew and nowhere else,
-  and `Ctrl+Z` puts the samples back. **Space** plays whatever the cursor is
+  and `Ctrl+Z` puts the samples back. The take is **stereo** and the channels
+  are drawn as stacked lanes: a stroke lands in the lane it was made in and the
+  other keeps its shape, because one channel of interleaved material is written
+  as the strided span it is. **Space** plays whatever the cursor is
   over, and stops it. Both go through the embedded server: the clip and the
   editor draw the one buffer a stroke writes.
 - **Reading it back.** `from_session` on what the host wrote gives an
@@ -100,23 +103,29 @@ take_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 
 def write_take(path: str, seconds: float = 2.0, freq: float = 440.0) -> int:
-    """Writes a short tone to `path` and returns its frame count.
+    """Writes a short **stereo** tone to `path` and returns its frame count.
 
     Two partials and a slow decay, so the drawn waveform has a shape to
-    recognize rather than a rectangle of noise.
+    recognize rather than a rectangle of noise -- and the two channels are
+    deliberately unlike (the right one is the third partial alone, quieter), so
+    an edit on one is visibly an edit on *one*: a channel of interleaved
+    material is a strided write, and that it lands where it was aimed is the
+    thing worth seeing.
     """
     frames = int(seconds * SAMPLE_RATE)
     with wave.open(path, "w") as f:
-        f.setnchannels(1)
+        f.setnchannels(2)
         f.setsampwidth(2)
         f.setframerate(SAMPLE_RATE)
         samples = bytearray()
         for i in range(frames):
             t = i / SAMPLE_RATE
             env = math.exp(-3.0 * t / seconds) * (1.0 - math.exp(-t * 400.0))
-            v = env * 0.7 * (math.sin(2 * math.pi * freq * t)
-                             + 0.3 * math.sin(2 * math.pi * freq * 3 * t))
-            samples += struct.pack("<h", int(max(-1.0, min(1.0, v)) * 32767))
+            left = env * 0.7 * (math.sin(2 * math.pi * freq * t)
+                                + 0.3 * math.sin(2 * math.pi * freq * 3 * t))
+            right = env * 0.35 * math.sin(2 * math.pi * freq * 3 * t)
+            for v in (left, right):
+                samples += struct.pack("<h", int(max(-1.0, min(1.0, v)) * 32767))
         f.writeframes(bytes(samples))
     return frames
 
@@ -137,7 +146,7 @@ sources = {
         "location": {"at": "file", "path": os.path.basename(take_path)},
         "lifetime": "session",
         "generation": 0,
-        "channels": 1,
+        "channels": 2,
         "frames": take_frames,
         "sample_rate": float(SAMPLE_RATE),
     },

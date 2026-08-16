@@ -623,38 +623,58 @@ pub(crate) fn draw_take(
     min: f32,
     max: f32,
     measures: Measures,
+    overlay: bool,
 ) {
     let (mesh, m, theme) = d.parts();
     let total = trace.frames() as f64;
     if total < 2.0 || cr.w < 1.0 || cr.h <= 0.0 {
         return;
     }
-    let y_at = |v: f32| cr.y + cr.h * (1.0 - fraction(v, min, max));
-    // The line and the fill read one rule, so a take cannot be filled to a
-    // baseline that was never drawn (or drawn one it does not reach).
-    if let Some(b) = crate::waveform::baseline_of(min, max) {
-        let y = y_at(b);
-        mesh.line([cr.x, y], [cr.x + cr.w, y], m.divider_w, theme.baseline);
-    }
-    // One picture per measure, the envelope first and the level body inside it.
-    for measure in measures.iter() {
-        trace::draw_channel(
-            mesh,
-            cr,
-            trace,
-            0,
-            |x| clip_source_at(cr, local, dur, total, x),
-            // The inverse placement: a source frame sits at its own fraction of
-            // the clip's span, seen through the clip's visible window.
-            |s| local_x(cr, local, s / total * dur),
-            y_at,
-            TraceStyle::new(
-                trace::measure_color(theme, measure, theme.selection),
+    // **Every channel is drawn**, stacked, exactly as the standalone view
+    // stacks its lanes: a clip is a picture of the material and a stereo take
+    // whose right channel is nowhere on it is a picture of half of one — which
+    // is also what an edit on that channel would land in, invisibly. `overlay`
+    // is the same choice the standalone view offers, and it arrives the same
+    // way (the element's own prop), so the two never disagree about what a
+    // channel is.
+    let lanes = if overlay { 1 } else { trace.channels().max(1) };
+    for ch in 0..trace.channels().max(1) {
+        let lane = crate::host::frame::lane_rect(cr, lanes, if overlay { 0 } else { ch });
+        if lane.h <= 0.0 {
+            continue;
+        }
+        let y_at = move |v: f32| lane.y + lane.h * (1.0 - fraction(v, min, max));
+        // The line and the fill read one rule, so a take cannot be filled to a
+        // baseline that was never drawn (or drawn one it does not reach).
+        if let Some(b) = crate::waveform::baseline_of(min, max) {
+            let y = y_at(b);
+            mesh.line(
+                [lane.x, y],
+                [lane.x + lane.w, y],
                 m.divider_w,
-            )
-            .with_dots(m.point_radius)
-            .with_measure(measure),
-        );
+                theme.baseline,
+            );
+        }
+        // One picture per measure, the envelope first and the level body inside it.
+        for measure in measures.iter() {
+            trace::draw_channel(
+                mesh,
+                lane,
+                trace,
+                ch,
+                |x| clip_source_at(cr, local, dur, total, x),
+                // The inverse placement: a source frame sits at its own fraction of
+                // the clip's span, seen through the clip's visible window.
+                |s| local_x(cr, local, s / total * dur),
+                y_at,
+                TraceStyle::new(
+                    trace::measure_color(theme, measure, theme.selection),
+                    m.divider_w,
+                )
+                .with_dots(m.point_radius)
+                .with_measure(measure),
+            );
+        }
     }
 }
 
@@ -926,6 +946,39 @@ mod tests {
             bulk: true,
             body: None,
         }
+    }
+
+    /// **A stereo take draws both channels**, stacked inside the clip: a clip
+    /// is a picture of the material, and a right channel drawn nowhere is a
+    /// picture of half of it — which is also where an edit on that channel
+    /// would land, invisibly.
+    #[test]
+    fn a_stereo_take_draws_a_lane_per_channel_inside_the_clip() {
+        // Interleaved, and deliberately unlike: the left channel swings, the
+        // right one is flat. Each lane must show its own.
+        let frames = 4_000;
+        let samples: Vec<f32> = (0..frames)
+            .flat_map(|i| [0.9 * (i as f32 * 0.05).sin(), 0.0])
+            .collect();
+        let mut data = inline_take(samples);
+        data.channels = 2;
+        let mesh = body_mesh(&take_body(data), frames as f64);
+        let drawn = mesh.extent().expect("the take drew");
+
+        let (cr, _) = placed(0.0, frames as f64, &View::full(frames));
+        let mid = cr.y + cr.h / 2.0;
+        assert!(
+            drawn.y < mid && drawn.y + drawn.h > mid,
+            "the picture spans both halves of the clip: {drawn:?} against {mid}"
+        );
+        // The swinging channel is the top lane, so the ink above the divide is
+        // taller than the flat one's below it.
+        let above = mid - drawn.y;
+        let below = drawn.y + drawn.h - mid;
+        assert!(
+            above > below,
+            "the lanes hold their own channel: {above} above, {below} below"
+        );
     }
 
     /// **One body, a picture per measure** — the classic editor picture, and

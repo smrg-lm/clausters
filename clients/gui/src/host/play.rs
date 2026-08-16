@@ -4,14 +4,21 @@
 //! A buffer is data, and data does not sound: what sounds is an instrument
 //! reading it (`docs/decisions.md`). A host that draws a take therefore needs a
 //! def of its own to hear one, and it is deliberately the smallest one that
-//! could be — read the buffer at its own rate, scale it, out to the first
-//! hardware bus. Nothing here is a synthesis surface: a composition's
-//! instruments are the client's, and this is the editor's monitor.
+//! could be — read one channel of the buffer at its own rate, scale it, out to
+//! one bus. Nothing here is a synthesis surface: a composition's instruments
+//! are the client's, and this is the editor's monitor.
 //!
-//! **One voice, and the host holds its node.** Playing again stops what is
-//! playing, because two copies of one take over each other is noise and not a
-//! preview. The node is freed rather than gated: the def has no envelope, since
-//! a monitor that fades is a monitor lying about the material.
+//! **One node per channel**, which is the server's own convention rather than a
+//! shape chosen here: the buffer readers are mono (`PlayBuf`'s `chan` input
+//! picks the channel, and two readers with the same inputs stay sample-locked),
+//! so a stereo take is two nodes exactly as a stereo file is two readers. A
+//! fixed two-channel def would be wrong in both directions — silent on the
+//! right for a mono take, and deaf to the third channel of anything wider.
+//!
+//! **One take at a time, and the host holds its nodes.** Playing again stops
+//! what is playing, because two copies of one take over each other is noise and
+//! not a preview. The nodes are freed rather than gated: the def has no
+//! envelope, since a monitor that fades is a monitor lying about the material.
 
 use clausters_core::osc::{OscMessage, OscType};
 use serde_json::json;
@@ -22,11 +29,16 @@ use super::Host;
 /// into the same server a composition's own defs live in.
 pub const TAKE_DEF: &str = "clausters-gui-take";
 
-/// The node id the take monitor plays on — a **fixed** one, over the voice
-/// window's base and outside its wrapping span, because there is only ever one
-/// and a fixed id is what makes a stop that arrives after a lost reply still
-/// stop the right node.
+/// The first node id the take monitor plays on — a **fixed** one, over the
+/// voice window's base and outside its wrapping span, because there is only
+/// ever one monitor and a fixed id is what makes a stop that arrives after a
+/// lost reply still stop the right node. Channel `n` plays on `TAKE_NODE + n`.
 const TAKE_NODE: i32 = super::voices::ID_BASE + super::voices::ID_SPAN;
+
+/// The most channels the monitor will play at once — a bound rather than a
+/// judgement about material: it is what keeps a malformed channel count from
+/// filling the node tree, and it is well past any take a person mixes by hand.
+const MAX_CHANNELS: usize = 32;
 
 /// The `/def_send synth` that loads the take monitor.
 ///
@@ -40,15 +52,16 @@ pub fn take_def_message() -> OscMessage {
         "name": TAKE_DEF,
         "controls": [
             {"name": "bufnum", "default": 0.0},
+            {"name": "chan", "default": 0.0},
             {"name": "amp", "default": 1.0},
             {"name": "out", "default": 0.0},
         ],
         "ugens": [
             {"kind": "BufRateScale", "inputs": [{"control": 0}]},
             {"kind": "PlayBuf", "inputs": [
-                {"control": 0}, {"const": 0.0}, {"ugen": 0}, {"const": 0.0}]},
-            {"kind": "Mul", "inputs": [{"ugen": 1}, {"control": 1}]},
-            {"kind": "Out", "inputs": [{"control": 2}, {"ugen": 2}]},
+                {"control": 0}, {"control": 1}, {"ugen": 0}, {"const": 0.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 1}, {"control": 2}]},
+            {"kind": "Out", "inputs": [{"control": 3}, {"ugen": 2}]},
         ],
     });
     OscMessage {
@@ -75,37 +88,56 @@ impl Host {
             tracing::warn!("nothing to play this take through: no audio server");
             return false;
         }
+        // As many readers as the material has channels, each to the bus of the
+        // same number: channel 0 is the left output, and a mono take is one
+        // reader on it. What the device does with a bus past its own outputs is
+        // the device's business, and it is the same answer any wide graph gets.
+        let channels = self
+            .material_channels(def_id, widget_id)
+            .unwrap_or(1)
+            .clamp(1, MAX_CHANNELS);
         self.stop_material();
-        self.send_to_server(OscMessage {
-            addr: "/synth_new".into(),
-            args: vec![
-                OscType::String(TAKE_DEF.into()),
-                OscType::Int(TAKE_NODE),
-                OscType::Int(0), // add to head…
-                OscType::Int(0), // …of the root group
-                OscType::String("bufnum".into()),
-                OscType::Float(bufnum as f32),
-            ],
-        });
-        self.playing = Some(widget_id);
+        for ch in 0..channels {
+            self.send_to_server(OscMessage {
+                addr: "/synth_new".into(),
+                args: vec![
+                    OscType::String(TAKE_DEF.into()),
+                    OscType::Int(TAKE_NODE + ch as i32),
+                    OscType::Int(0), // add to head…
+                    OscType::Int(0), // …of the root group
+                    OscType::String("bufnum".into()),
+                    OscType::Float(bufnum as f32),
+                    OscType::String("chan".into()),
+                    OscType::Float(ch as f32),
+                    OscType::String("out".into()),
+                    OscType::Float(ch as f32),
+                ],
+            });
+        }
+        self.playing = Some((widget_id, channels));
         true
     }
 
     /// Stops the take monitor, if it is playing. Returns whether it was.
     pub fn stop_material(&mut self) -> bool {
-        if self.playing.take().is_none() {
+        let Some((_, channels)) = self.playing.take() else {
             return false;
-        }
+        };
+        // One `/node_free` naming every reader: the ids are contiguous from
+        // `TAKE_NODE`, and freeing them together is what keeps a stereo take
+        // from half-stopping.
         self.send_to_server(OscMessage {
             addr: "/node_free".into(),
-            args: vec![OscType::Int(TAKE_NODE)],
+            args: (0..channels)
+                .map(|ch| OscType::Int(TAKE_NODE + ch as i32))
+                .collect(),
         });
         true
     }
 
     /// The widget whose material the monitor is playing, if any.
     pub fn playing_material(&self) -> Option<i32> {
-        self.playing
+        self.playing.map(|(widget, _)| widget)
     }
 }
 

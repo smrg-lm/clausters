@@ -159,9 +159,35 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
     }
 }
 
-/// The height of a take's editor pane, in logical pixels: enough for a trace
-/// with its ruler under it, and small enough that the tracks stay the picture.
-const EDITOR_H: f64 = 180.0;
+/// The height one channel's lane gets in a take's editor, in logical pixels:
+/// enough for a trace to have a shape, and small enough that the tracks above
+/// stay the picture.
+const EDITOR_LANE_H: f64 = 120.0;
+
+/// The tallest a take's editor is built, however many channels it holds. Past
+/// this the lanes get thinner instead — a pane taller than the window would
+/// push the arrangement off the screen, which is worse than a cramped lane.
+const EDITOR_MAX_H: f64 = 360.0;
+
+/// **The pane a take opens in is as tall as the take is wide**: material with
+/// four channels is four lanes, and a view that shows two of them is a picture
+/// of half the file — the same argument that makes a clip draw every channel.
+///
+/// It is declared **here, by what built the tree**, and not asked of the widget:
+/// a natural size that followed its data would relayout the window whenever a
+/// `/gui_set` landed, so the rule is that the driver knows the shape and says
+/// so. This driver reads it from the session's own source table, which is where
+/// a file's channel count is written down before anything is drawn.
+///
+/// It stops growing at [`EDITOR_MAX_H`], and what that costs is stated rather
+/// than hidden: an ambisonic take's sixteen lanes are drawn, at sixteenths of
+/// that height. Making many channels *readable* — scrolling the pane, folding
+/// lanes, choosing which to show — is a design this does not have yet
+/// (`clients/gui/PLAN.md`, "Future directions").
+fn editor_height(channels: Option<u32>) -> f64 {
+    let lanes = channels.unwrap_or(1).max(1) as f64;
+    (EDITOR_LANE_H * lanes).min(EDITOR_MAX_H)
+}
 
 struct Ids {
     next: i32,
@@ -337,7 +363,7 @@ fn take_editors(
             props.insert("channels".into(), json!(channels));
         }
         props.insert("label".into(), json!(label_of(node)));
-        props.insert("h".into(), json!(EDITOR_H));
+        props.insert("h".into(), json!(editor_height(take.channels)));
         props.insert("sample_rate".into(), json!(look.sample_rate));
         props.insert("ruler".into(), json!("samples"));
         // The plan, and it is three gestures rather than a mode: a plain drag
@@ -696,6 +722,10 @@ mod take_tests {
             editor.get("link").is_none(),
             "on its own axis: zooming to a sample must not scroll the session"
         );
+        assert_eq!(
+            editor["h"], EDITOR_LANE_H,
+            "one channel, one lane's worth of height"
+        );
         let bound: Vec<NodeId> = drawn.bindings.iter().map(|b| b.node).collect();
         assert_eq!(
             bound,
@@ -703,6 +733,26 @@ mod take_tests {
             "the clip and the editor are two views of one node"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A pane as tall as the take is wide.** Four channels are four lanes,
+    /// and the height is declared by what builds the tree rather than asked of
+    /// the widget — a natural size that followed its data would relayout the
+    /// window on every `/gui_set`.
+    #[test]
+    fn a_wide_takes_editor_opens_taller_and_stops_at_the_cap() {
+        assert_eq!(
+            editor_height(None),
+            EDITOR_LANE_H,
+            "an unknown shape is one"
+        );
+        assert_eq!(editor_height(Some(2)), 2.0 * EDITOR_LANE_H);
+        assert_eq!(
+            editor_height(Some(16)),
+            EDITOR_MAX_H,
+            "an ambisonic take is drawn whole, in thinner lanes: a pane taller \
+             than the window would push the arrangement off the screen"
+        );
     }
 
     /// Unresolved — no session, no server, a missing file — is a clip with a

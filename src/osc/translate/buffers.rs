@@ -6,7 +6,7 @@
 //! contents it reads from the network-side pool mirror.
 
 use super::*;
-use crate::server::nrt::EditOp;
+use crate::server::nrt::{EditOp, SampleWrite};
 
 /// Parses one `/buffer_*` command (except the synchronous `/buffer_query`) into the
 /// buffer index and the NRT job that performs it. `mirror` is the
@@ -253,30 +253,73 @@ pub fn parse_buffer_msg(
         // and `/buffer_export` already follow. Both address samples flat and
         // interleaved, exactly as `/buffer_get` and `/buffer_getRange` read them
         // back.
-        "/buffer_set" | "/buffer_setRange" => {
+        "/buffer_set" | "/buffer_setRange" | "/buffer_setChannel" | "/buffer_setRangeChannel" => {
             let Some(OscType::Int(index)) = args.first() else {
                 return Err("expected a buffer index".into());
             };
             let Some(current) = mirror_buffer(mirror, *index) else {
                 return Err(format!("no buffer allocated at {index}"));
             };
-            let writes = if addr == "/buffer_set" {
-                parse_set_pairs(&args[1..])?
+            // The `*Channel` forms name **one** channel, before the runs,
+            // because the runs are the variadic tail: with a tail there is no
+            // telling a channel index from a start. Their positions are then
+            // frames of that channel, which is the whole point — a channel of
+            // interleaved storage is a strided span and no flat start names it.
+            let channel = if addr.ends_with("Channel") {
+                let channels = current.channels().max(1);
+                let ch = match args.get(1) {
+                    Some(OscType::Int(c)) if *c >= 0 => *c as usize,
+                    _ => return Err("expected: bufnum, channel, then the runs".into()),
+                };
+                if ch >= channels {
+                    return Err(format!(
+                        "buffer {index} has {channels} channel(s); there is no channel {ch}"
+                    ));
+                }
+                Some((ch, channels))
             } else {
-                parse_set_runs(&args[1..])?
+                None
             };
+            let rest = &args[if channel.is_some() { 2 } else { 1 }..];
+            let mut writes = if addr.starts_with("/buffer_setRange") {
+                parse_set_runs(rest)?
+            } else {
+                parse_set_pairs(rest)?
+            };
+            // One conversion, here: a frame of channel `ch` is the flat index
+            // `frame * channels + ch`, and consecutive frames are `channels`
+            // apart. Everything downstream — the bounds check, the job, the
+            // copy-and-swap — is the flat one it always was.
+            if let Some((ch, channels)) = channel {
+                for write in &mut writes {
+                    write.at = write
+                        .at
+                        .checked_mul(channels)
+                        .and_then(|at| at.checked_add(ch))
+                        .ok_or_else(|| format!("frame index too large in buffer {index}"))?;
+                    write.stride = channels;
+                }
+            }
             // Writing past the end would silently drop samples, so it fails
             // rather than clamping the way the reads do: a short read hands
             // back less than was asked for, a short write loses data the
             // caller believes it stored.
             let len = current.data().len();
-            for (at, values) in &writes {
-                if at.saturating_add(values.len()) > len {
-                    return Err(format!(
-                        "sample range {}..{} is past the end of buffer {index} ({len} samples)",
-                        at,
-                        at + values.len()
-                    ));
+            for write in &writes {
+                if write.end() > len {
+                    return Err(match write.stride {
+                        1 => format!(
+                            "sample range {}..{} is past the end of buffer {index} ({len} samples)",
+                            write.at,
+                            write.end()
+                        ),
+                        stride => format!(
+                            "frame range {}..{} is past the end of buffer {index} ({} frames)",
+                            write.at / stride,
+                            write.at / stride + write.values.len(),
+                            len / stride
+                        ),
+                    });
                 }
             }
             (
@@ -429,7 +472,7 @@ pub fn parse_buffer_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, N
 
 /// `/buffer_set`'s `(index, value)...` tail: each pair becomes a run of one,
 /// so both write commands hand the NRT job the same shape.
-fn parse_set_pairs(args: &[OscType]) -> Result<Vec<(usize, Vec<f32>)>, String> {
+fn parse_set_pairs(args: &[OscType]) -> Result<Vec<SampleWrite>, String> {
     if args.is_empty() || !args.len().is_multiple_of(2) {
         return Err("expected: bufnum, then (index, value) pairs".into());
     }
@@ -440,7 +483,7 @@ fn parse_set_pairs(args: &[OscType]) -> Result<Vec<(usize, Vec<f32>)>, String> {
             };
             let at =
                 usize::try_from(*index).map_err(|_| format!("negative sample index {index}"))?;
-            Ok((at, vec![value]))
+            Ok(SampleWrite::flat(at, vec![value]))
         })
         .collect()
 }
@@ -485,7 +528,7 @@ fn float_arg(args: &[OscType], n: usize) -> Option<f32> {
 /// per-sample argument list unusable for the multi-megabyte edit the command
 /// exists for; as bytes it is one copy. Same shape `/bus_tapStream.reply` sends
 /// its windows in and `/buffer_export` writes its files in.
-fn parse_set_runs(args: &[OscType]) -> Result<Vec<(usize, Vec<f32>)>, String> {
+fn parse_set_runs(args: &[OscType]) -> Result<Vec<SampleWrite>, String> {
     if args.is_empty() || !args.len().is_multiple_of(2) {
         return Err("expected: bufnum, then (start, blob) runs".into());
     }
@@ -506,7 +549,7 @@ fn parse_set_runs(args: &[OscType]) -> Result<Vec<(usize, Vec<f32>)>, String> {
                 .chunks_exact(4)
                 .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                 .collect();
-            Ok((at, values))
+            Ok(SampleWrite::flat(at, values))
         })
         .collect()
 }

@@ -275,11 +275,22 @@ impl ValueAxis {
     /// beside it can never disagree.
     pub fn value_at(&self, cy: f64) -> f64 {
         let lanes = self.lanes.max(1);
-        let lane = crate::host::frame::lane_rect(
-            self.body,
-            lanes,
-            crate::host::frame::lane_at(self.body, lanes, cy),
-        );
+        self.value_in(crate::host::frame::lane_at(self.body, lanes, cy), cy)
+    }
+
+    /// The value `cy` names **in a named lane**, whatever lane it is actually
+    /// over — clamped to that lane's own ends.
+    ///
+    /// This is what an edit reads, and the difference is not a detail: a drag
+    /// belongs to the channel it started on, so a hand that slides up into the
+    /// lane above must write that channel's *maximum*, not the value the
+    /// neighbouring lane would show at the same height. Reading the lane under
+    /// the pointer (which is what a hover readout wants, and what
+    /// [`Self::value_at`] does) made a stroke jump back to mid-scale the moment
+    /// it left its own lane.
+    pub fn value_in(&self, lane: usize, cy: f64) -> f64 {
+        let lanes = self.lanes.max(1);
+        let lane = crate::host::frame::lane_rect(self.body, lanes, lane.min(lanes - 1));
         let rel = ((cy - lane.y as f64) / lane.h.max(1.0) as f64).clamp(0.0, 1.0);
         let display = self.y.0 + (1.0 - rel) * self.y.1;
         let v = crate::waveform::display_to_value(display, self.domain.0, self.domain.1) as f64;

@@ -3473,6 +3473,51 @@ fn a_stroke_writes_every_sample_it_passes_and_leaves_as_one_intent() {
     assert!(has_emit_tag(&effects, 50, "draw"));
 }
 
+/// **A stroke belongs to the channel it started on.** Dragging up out of a
+/// lane must clamp to *that* channel's maximum, not read the value the lane
+/// above would show at the same height — which is what a stereo stroke did
+/// until the read was made lane-explicit: the pencil jumped back to mid-scale
+/// the moment it left its own lane.
+#[test]
+fn a_stroke_leaving_its_lane_clamps_to_its_own_channels_end() {
+    let def = r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","navigable":1,"channels":2,
+             "data":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],"base_bucket":2,
+             "gestures":{"drag":"draw"}}]}"#;
+    let mut host = host_from(def);
+    host.set_timeline_total(50, 4);
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 300);
+    ctx.slot_channels.insert(50, 2);
+
+    // Press low in the **lower** lane (channel 1), then drag straight up past
+    // the top of the window.
+    g.press(&mut host, &ctx, 100.0, 230.0, &mut || false);
+    let held = host
+        .widget_kind(1, 50)
+        .and_then(|k| k.pending_edit())
+        .expect("the stroke is held")
+        .clone();
+    assert_eq!(held.channel, 1, "it started on the lower lane");
+
+    // Into the **middle** of the lane above, which is where the defect showed:
+    // at that height the upper lane reads mid-scale, and a stroke that took it
+    // wrote a value the hand never aimed at.
+    g.drag_to(&mut host, &ctx, 300.0, 70.0);
+    let held = host
+        .widget_kind(1, 50)
+        .and_then(|k| k.pending_edit())
+        .expect("still held")
+        .clone();
+    assert_eq!(held.channel, 1, "and it stays on it");
+    assert!(
+        *held.values.last().expect("a run") > 0.9,
+        "clamped to the channel's own top, not read as mid-scale in the lane \
+         above: {:?}",
+        held.values
+    );
+}
+
 /// **A stroke stops at the edge of the picture.** The pointer keeps reporting
 /// past the window — that is what a drag grab is for — and a pencil that
 /// followed it would go on rewriting samples nobody can see, discovered only by

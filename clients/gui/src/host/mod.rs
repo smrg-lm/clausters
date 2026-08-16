@@ -525,9 +525,11 @@ pub struct Host {
     voices: HashMap<i32, Vec<(i32, i32)>>,
     /// The next voice node-id offset over [`voices::ID_BASE`] (wrapping).
     voice_counter: i32,
-    /// The widget whose material the **take monitor** is playing, if any (see
-    /// [`play`]). One at a time, so this is a widget and not a list.
-    playing: Option<i32>,
+    /// The widget whose material the **take monitor** is playing, and over how
+    /// many channels (see [`play`]). One take at a time, so this is one entry
+    /// and not a list — the channel count is here because stopping has to free
+    /// every reader it started.
+    playing: Option<(i32, usize)>,
     /// **What the host has emitted and not heard back about**, plus the stamps
     /// it issues (see [`ack`]). Behind a `RefCell` because stamping happens
     /// where an edit is *produced* — deep inside the gesture machine, which
@@ -1415,14 +1417,17 @@ impl Host {
         // samples are not in it, so they are written to the material itself and
         // the inverse comes from the hand that drew over them.
         let write = match &intent {
-            clausters_document::Intent::WriteSamples { start, values, .. } => {
-                Some((*start, values.clone()))
-            }
+            clausters_document::Intent::WriteSamples {
+                channel,
+                start,
+                values,
+                ..
+            } => Some((*channel as usize, *start, values.clone())),
             _ => None,
         };
         let inverse = owner.read_inverse(widget_id, args);
-        if let Some((start, values)) = &write
-            && let Err(why) = self.can_write(def_id, widget_id, *start, values.len())
+        if let Some((channel, start, values)) = &write
+            && let Err(why) = self.can_write(def_id, widget_id, *channel, *start, values.len())
         {
             // Refused, and said so: the pending drawing is dropped by the same
             // acknowledgement an applied edit sends, so the picture snaps back
@@ -1447,9 +1452,8 @@ impl Host {
         };
         let version = applied.version;
         if applied.applied
-            && let Some((start, values)) = write
+            && let Some((channel, start, values)) = write
         {
-            let channel = document::Owner::read_channel(args).unwrap_or(0);
             self.write_material(def_id, widget_id, channel, start, &values);
         }
         self.adopt(def_id, &[applied]);
@@ -1468,7 +1472,14 @@ impl Host {
     /// material refuses must not bump the source's generation: that number is
     /// what tells every reader its copy is stale, and moving it for an edit
     /// nothing performed would send them all back to the server for nothing.
-    fn can_write(&self, def_id: i32, widget_id: i32, start: u64, len: usize) -> Result<(), String> {
+    fn can_write(
+        &self,
+        def_id: i32,
+        widget_id: i32,
+        channel: usize,
+        start: u64,
+        len: usize,
+    ) -> Result<(), String> {
         let Some((channels, frames)) = self
             .window_def(def_id)
             .and_then(|t| t.find(widget_id))
@@ -1477,21 +1488,18 @@ impl Host {
         else {
             return Err("this widget is not drawing any material".into());
         };
-        // **Mono only, and it is the server's addressing rather than a
-        // shortcut.** `/buffer_setRange` writes a contiguous run of *flat,
-        // interleaved* samples, so one channel of a stereo buffer is a strided
-        // write and there is no command for one. Writing it as N single-sample
-        // messages is not the answer; the command is. Recorded as a milestone
-        // rather than half-done here.
-        if channels > 1 {
+        // The span is **frames of one channel** on both sides of the seam — the
+        // picture is drawn per channel and the server is written per channel
+        // (`/buffer_setRangeChannel`) — so this is the same check whatever the
+        // material's shape, which is what it took to stop refusing stereo.
+        if channel >= channels {
             return Err(format!(
-                "the take has {channels} channels, and one channel of an interleaved buffer \
-                 needs a strided write the server has no command for"
+                "the take has {channels} channel(s); there is no channel {channel}"
             ));
         }
         if start + len as u64 > frames {
             return Err(format!(
-                "the span ends at {} and the material is {frames} sample(s) long",
+                "the span ends at frame {} and the material is {frames} frame(s) long",
                 start + len as u64,
             ));
         }
@@ -1514,6 +1522,14 @@ impl Host {
         material_element(self.window_def(def_id)?.find(widget_id)?)?
             .material_shape()
             .map(|(_, frames)| frames)
+    }
+
+    /// How many channels of material a widget draws, if it draws any — what the
+    /// monitor starts one reader per.
+    pub(crate) fn material_channels(&self, def_id: i32, widget_id: i32) -> Option<usize> {
+        material_element(self.window_def(def_id)?.find(widget_id)?)?
+            .material_shape()
+            .map(|(channels, _)| channels)
     }
 
     /// The server buffer a widget's material is, when it is one.
@@ -1548,18 +1564,20 @@ impl Host {
         let Some(bufnum) = self.buffer_of(def_id, widget_id) else {
             return;
         };
-        // The material is mono here (`can_write` said so), so a frame index and
-        // a flat sample index are the same number. They stop being the same the
-        // day a channel-addressed write exists, and this is where that shows.
+        // **Channel-addressed, in frames** — the unit the picture, the gesture
+        // and the document all speak. The flat `/buffer_setRange` cannot say
+        // this: a channel of interleaved storage is a strided span, which is
+        // why a stereo take used to be refused here.
         let mut blob = Vec::with_capacity(values.len() * 4);
         for v in values {
             blob.extend_from_slice(&v.to_le_bytes());
         }
         if let Some(server) = self.server.as_ref()
             && let Err(e) = server.send(OscMessage {
-                addr: "/buffer_setRange".into(),
+                addr: "/buffer_setRangeChannel".into(),
                 args: vec![
                     OscType::Int(bufnum),
+                    OscType::Int(channel as i32),
                     OscType::Int(start as i32),
                     OscType::Blob(blob),
                 ],
@@ -1579,35 +1597,35 @@ impl Host {
     /// Carries the sample half of an **undone or redone** write through to the
     /// material, exactly as [`Self::write_material`] does for a fresh one.
     ///
-    /// A replayed write is complete on its own — the log holds the samples,
-    /// because the hand that drew over them supplied the inverse — except for
-    /// the channel, which no intent carries. It is 0 while [`Self::can_write`]
-    /// accepts mono material alone; the day a strided write exists, the channel
-    /// has to travel with the intent, and this is the second place that shows.
+    /// A replayed write is complete on its own: the log holds the samples,
+    /// because the hand that drew over them supplied the inverse, and the
+    /// channel travels in the intent — which is what makes an undo over one
+    /// channel of a stereo take put back that channel and no other.
     fn replay_writes(&mut self, def_id: i32, applied: &[document::Applied]) {
         let Some(owner) = self.owner.as_ref() else {
             return;
         };
-        let writes: Vec<(i32, u64, Vec<f32>)> = applied
+        let writes: Vec<(i32, usize, u64, Vec<f32>)> = applied
             .iter()
             .filter(|a| a.applied)
             .filter_map(|a| match &a.effective {
                 clausters_document::Intent::WriteSamples {
                     node,
+                    channel,
                     start,
                     values,
-                } if !values.is_empty() => {
-                    owner.widget_of(*node).map(|w| (w, *start, values.clone()))
-                }
+                } if !values.is_empty() => owner
+                    .widget_of(*node)
+                    .map(|w| (w, *channel as usize, *start, values.clone())),
                 _ => None,
             })
             .collect();
-        for (widget_id, start, values) in writes {
-            if let Err(why) = self.can_write(def_id, widget_id, start, values.len()) {
+        for (widget_id, channel, start, values) in writes {
+            if let Err(why) = self.can_write(def_id, widget_id, channel, start, values.len()) {
                 warn!("cannot restore {} sample(s): {why}", values.len());
                 continue;
             }
-            self.write_material(def_id, widget_id, 0, start, &values);
+            self.write_material(def_id, widget_id, channel, start, &values);
         }
     }
 
@@ -3178,12 +3196,17 @@ mod write_tests {
 
     /// The same, for whichever of the two views is being asked.
     fn sample_of(host: &Host, widget: i32, i: usize) -> f32 {
+        sample_of_channel(host, widget, 0, i)
+    }
+
+    /// ...and of whichever channel.
+    fn sample_of_channel(host: &Host, widget: i32, ch: usize, i: usize) -> f32 {
         host.window_def(1)
             .and_then(|t| t.find(widget))
             .and_then(|w| {
                 std::iter::once(w)
                     .chain(w.children.iter())
-                    .find_map(|w| w.kind.sample_value(0, i))
+                    .find_map(|w| w.kind.sample_value(ch, i))
             })
             .expect("material")
     }
@@ -3206,10 +3229,11 @@ mod write_tests {
         ));
 
         let msg = received(&server).expect("the take's buffer was written");
-        assert_eq!(msg.addr, "/buffer_setRange");
+        assert_eq!(msg.addr, "/buffer_setRangeChannel");
         assert_eq!(msg.args[0], OscType::Int(0), "buffer 0");
-        assert_eq!(msg.args[1], OscType::Int(4), "at the frame the hand named");
-        assert_eq!(msg.args[2], blob(&[0.5, -0.5, 0.25]), "the run it drew");
+        assert_eq!(msg.args[1], OscType::Int(0), "channel 0");
+        assert_eq!(msg.args[2], OscType::Int(4), "at the frame the hand named");
+        assert_eq!(msg.args[3], blob(&[0.5, -0.5, 0.25]), "the run it drew");
 
         assert_eq!(sample(&host, 4), 0.5, "and the picture holds the same run");
         assert_eq!(
@@ -3225,8 +3249,8 @@ mod write_tests {
         let seq = host.outbox.borrow_mut().stamp(1, 1);
         assert!(host.answer_own(1, 1, seq, &[OscType::String("undo".into())]));
         let msg = received(&server).expect("the restore went to the server too");
-        assert_eq!(msg.addr, "/buffer_setRange");
-        assert_eq!(msg.args[2], blob(&[0.0, 0.0, 0.0]));
+        assert_eq!(msg.addr, "/buffer_setRangeChannel");
+        assert_eq!(msg.args[3], blob(&[0.0, 0.0, 0.0]));
         assert_eq!(sample(&host, 4), 0.0, "the picture went back with it");
         assert_eq!(sample_of(&host, 51, 4), 0.0, "and the clip with them both");
     }
@@ -3243,7 +3267,14 @@ mod write_tests {
         assert_eq!(msg.args[0], OscType::String(play::TAKE_DEF.into()));
         assert_eq!(
             msg.args[4..],
-            [OscType::String("bufnum".into()), OscType::Float(0.0)],
+            [
+                OscType::String("bufnum".into()),
+                OscType::Float(0.0),
+                OscType::String("chan".into()),
+                OscType::Float(0.0),
+                OscType::String("out".into()),
+                OscType::Float(0.0),
+            ],
             "playing the buffer the widget draws"
         );
         assert_eq!(host.playing_material(), Some(50));
@@ -3251,39 +3282,103 @@ mod write_tests {
         assert!(host.stop_material(), "and it stops");
         let msg = received(&server).expect("the node was freed");
         assert_eq!(msg.addr, "/node_free");
+        assert_eq!(msg.args.len(), 1, "one reader, one node");
         assert!(!host.stop_material(), "stopping twice sends nothing");
         assert!(host.playing_material().is_none());
     }
 
-    /// The gap this milestone did not close, held in place by a test: one
-    /// channel of an interleaved buffer is a strided write, and the server has
-    /// no command for one. The refusal is a refusal — nothing sent, nothing
-    /// written — and the sequence is settled so the pending drawing is dropped.
+    /// **A reader per channel**, which is the server's own convention: the
+    /// buffer readers are mono, so a stereo take is two nodes — one per
+    /// channel, each to the bus of the same number. A fixed stereo def would
+    /// leave a mono take silent on the right and a wider one half unheard.
     #[test]
-    fn a_multichannel_take_refuses_the_write() {
+    fn a_stereo_take_plays_a_reader_per_channel_and_stops_them_together() {
+        let (mut host, server) = take_host(2, 16);
+        assert!(host.play_material(1, 50));
+        for ch in 0..2 {
+            let msg = received(&server).expect("a reader per channel");
+            assert_eq!(msg.addr, "/synth_new");
+            assert_eq!(
+                msg.args[6..],
+                [
+                    OscType::String("chan".into()),
+                    OscType::Float(ch as f32),
+                    OscType::String("out".into()),
+                    OscType::Float(ch as f32),
+                ],
+                "channel {ch} reads itself and goes out on its own bus"
+            );
+        }
+        assert!(host.stop_material());
+        let msg = received(&server).expect("both were freed");
+        assert_eq!(msg.addr, "/node_free");
+        assert_eq!(
+            msg.args.len(),
+            2,
+            "in one message, so a stereo take cannot half-stop"
+        );
+    }
+
+    /// **One channel of a stereo take**, which is what the server's
+    /// channel-addressed write bought: the span is frames of that channel on
+    /// both sides of the seam, and the other channel is not mentioned.
+    #[test]
+    fn a_stereo_take_is_written_one_channel_at_a_time() {
         let (mut host, server) = take_host(2, 16);
         let seq = host.outbox.borrow_mut().stamp(1, 50);
-        assert!(
-            host.answer_own(
-                1,
-                50,
-                seq,
-                &[
-                    OscType::String("draw".into()),
-                    OscType::Int(0),
-                    OscType::Long(4),
-                    blob(&[0.5]),
-                    blob(&[0.0]),
-                ]
-            ),
-            "answered, because the host owns the document"
+        assert!(host.answer_own(
+            1,
+            50,
+            seq,
+            &[
+                OscType::String("draw".into()),
+                OscType::Int(1), // the right channel
+                OscType::Long(4),
+                blob(&[0.5, -0.5]),
+                blob(&[0.0, 0.0]),
+            ]
+        ));
+        let msg = received(&server).expect("the take's buffer was written");
+        assert_eq!(msg.addr, "/buffer_setRangeChannel");
+        assert_eq!(msg.args[1], OscType::Int(1), "the channel the hand was on");
+        assert_eq!(msg.args[2], OscType::Int(4), "in frames of that channel");
+        assert_eq!(msg.args[3], blob(&[0.5, -0.5]));
+
+        assert_eq!(sample_of_channel(&host, 50, 1, 4), 0.5, "the picture too");
+        assert_eq!(
+            sample_of_channel(&host, 50, 0, 4),
+            0.0,
+            "and the other channel was not touched"
         );
-        assert!(received(&server).is_none(), "but nothing was written");
-        assert_eq!(sample(&host, 4), 0.0, "and the picture did not move");
-        assert!(
-            !host.outbox.borrow().is_pending(1, 50),
-            "the stroke was settled, so the picture snaps back to the material"
-        );
+
+        // The undo knows which channel it is putting back, because the channel
+        // travels in the intent rather than being assumed to be the first.
+        let seq = host.outbox.borrow_mut().stamp(1, 1);
+        assert!(host.answer_own(1, 1, seq, &[OscType::String("undo".into())]));
+        let msg = received(&server).expect("the restore went out");
+        assert_eq!(msg.args[1], OscType::Int(1), "to the same channel");
+        assert_eq!(sample_of_channel(&host, 50, 1, 4), 0.0);
+    }
+
+    /// A channel the material does not have is refused, the way the server
+    /// refuses one the buffer does not have.
+    #[test]
+    fn a_channel_the_take_does_not_have_refuses_the_write() {
+        let (mut host, server) = take_host(1, 16);
+        let seq = host.outbox.borrow_mut().stamp(1, 50);
+        assert!(host.answer_own(
+            1,
+            50,
+            seq,
+            &[
+                OscType::String("draw".into()),
+                OscType::Int(1),
+                OscType::Long(4),
+                blob(&[0.5]),
+                blob(&[0.0]),
+            ]
+        ));
+        assert!(received(&server).is_none(), "nothing was written");
         assert!(
             !host.owner.as_ref().unwrap().can_undo(),
             "and no edit entered the log"

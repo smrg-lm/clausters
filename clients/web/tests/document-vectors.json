@@ -983,6 +983,7 @@
       "outcome": {
         "applied": true,
         "effective": {
+          "channel": 0,
           "intent": "writesamples",
           "node": 3,
           "start": 100,
@@ -1090,6 +1091,7 @@
       "outcome": {
         "applied": false,
         "effective": {
+          "channel": 0,
           "intent": "writesamples",
           "node": 3,
           "start": 100,

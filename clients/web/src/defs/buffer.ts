@@ -685,6 +685,56 @@ export class Buffer {
             timeout,
         }: { start?: number; chunk?: number; wait?: boolean; timeout?: number } = {},
     ): Promise<void> {
+        await this.setRuns("/buffer_setRange", samples, start, chunk, wait, timeout, []);
+    }
+
+    /**
+     * Writes consecutive frames of **one channel** (`/buffer_setRangeChannel`).
+     *
+     * The channel form of {@link setSamples}, and the one an editor needs:
+     * storage is interleaved, so a channel's frames are `channels` apart and no
+     * flat start and length name one. Here `start` and the run are frames *of
+     * that channel*, so drawing over the left channel of a stereo take is one
+     * message and leaves the right one untouched. A run past the end rejects,
+     * reported in frames — the unit it was written in — and a channel the
+     * buffer does not have rejects too.
+     */
+    async setChannelSamples(
+        channel: number,
+        samples: ArrayLike<number>,
+        {
+            start = 0,
+            chunk,
+            wait = true,
+            timeout,
+        }: { start?: number; chunk?: number; wait?: boolean; timeout?: number } = {},
+    ): Promise<void> {
+        await this.setRuns(
+            "/buffer_setRangeChannel",
+            samples,
+            start,
+            chunk,
+            wait,
+            timeout,
+            [["i", channel]],
+        );
+    }
+
+    /**
+     * The chunked blob write both write-a-run methods send, differing only in
+     * the address and in what stands before the run (nothing, or the channel).
+     * The positions are in the address' own unit — flat samples, or frames of
+     * one channel — and the chunking is the same arithmetic either way.
+     */
+    private async setRuns(
+        addr: string,
+        samples: ArrayLike<number>,
+        start: number,
+        chunk: number | undefined,
+        wait: boolean,
+        timeout: number | undefined,
+        head: MsgArg[],
+    ): Promise<void> {
         if (samples.length === 0) return;
         const server = this.srv();
         const step = chunk ?? (await server.bulkChunk(timeout));
@@ -695,8 +745,9 @@ export class Buffer {
             // One native pack per chunk: the samples cross as bytes, so nothing
             // here or in the OSC encoder touches them one at a time.
             server.sendMsg(
-                "/buffer_setRange",
+                addr,
                 ["i", this.bufnum],
+                ...head,
                 ["i", start + at],
                 samplesToBlob(floats.subarray(at, at + step)),
             );
@@ -723,6 +774,30 @@ export class Buffer {
             return;
         }
         await this.srv().command("/buffer_set", args, timeout);
+    }
+
+    /**
+     * Writes one frame of one channel (`/buffer_setChannel`) — the
+     * single-sample counterpart of {@link setChannelSamples}, addressed by
+     * frame rather than by flat index.
+     */
+    async setChannelSample(
+        channel: number,
+        frame: number,
+        value: number,
+        { wait = true, timeout }: { wait?: boolean; timeout?: number } = {},
+    ): Promise<void> {
+        const args: MsgArg[] = [
+            ["i", this.bufnum],
+            ["i", channel],
+            ["i", frame],
+            ["f", value],
+        ];
+        if (!wait) {
+            this.srv().sendMsg("/buffer_setChannel", ...args);
+            return;
+        }
+        await this.srv().command("/buffer_setChannel", args, timeout);
     }
 
     /** Frees this buffer on the server and returns its index to the pool. */

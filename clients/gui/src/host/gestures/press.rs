@@ -296,7 +296,8 @@ impl Gestures {
                 else {
                     return false; // an overview with no samples has none to grab
                 };
-                let held = PendingEdit::one(channel, index, value.value_at(cy) as f32, previous);
+                let held =
+                    PendingEdit::one(channel, index, value.value_in(channel, cy) as f32, previous);
                 if !set_pending(host, def_id, id, Some(held)) {
                     return false;
                 }
@@ -359,7 +360,7 @@ impl Gestures {
                 else {
                     return false;
                 };
-                let v = value.value_at(cy) as f32;
+                let v = value.value_in(channel, cy) as f32;
                 if !set_pending(
                     host,
                     def_id,

@@ -45,7 +45,14 @@ export type Intent =
     | { intent: "place"; node: NodeId; offset: number; dur?: number }
     | { intent: "configure"; node: NodeId; config: unknown }
     | { intent: "setmembers"; node: NodeId; members: unknown[] }
-    | { intent: "writesamples"; node: NodeId; start: number; values: number[] };
+    | {
+        intent: "writesamples";
+        node: NodeId;
+        /** Which channel of the node's material the span belongs to (0 when omitted). */
+        channel?: number;
+        start: number;
+        values: number[];
+    };
 
 /**
  * The state an edit was made against.

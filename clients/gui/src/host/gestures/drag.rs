@@ -252,10 +252,13 @@ impl Gestures {
                 // Only the value follows the pointer: which sample is held was
                 // decided at the press, and a view scrolling under the drag must
                 // not hand the hand a different one.
+                // Read **in the channel's own lane**: a drag belongs to the
+                // channel it started on, so leaving that lane clamps to its end
+                // instead of reading whatever the lane above would show there.
                 let held = crate::host::widget::element::PendingEdit::one(
                     channel,
                     frame,
-                    axis.value_at(cy) as f32,
+                    axis.value_in(channel, cy) as f32,
                     previous,
                 );
                 set_pending(host, def_id, id, Some(held));
@@ -293,7 +296,7 @@ impl Gestures {
                     .saturating_sub(1);
                 let now = (
                     (frames.round() as u64).min(last) as usize,
-                    axis.value_at(cy) as f32,
+                    axis.value_in(channel, cy) as f32,
                 );
                 extend_stroke(host, def_id, id, channel, (last_frame, last_value), now);
                 self.drag = Some(Drag::Draw {
@@ -411,7 +414,7 @@ impl Gestures {
         }) = self.drag.clone()
         {
             self.drag = None;
-            let value = axis.value_at(cy) as f32;
+            let value = axis.value_in(channel, cy) as f32;
             // The pending stays until the owner answers: dropping it here would
             // snap the picture back to the material for as long as the round
             // trip takes, which reads as the edit having been refused.

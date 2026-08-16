@@ -195,7 +195,20 @@ pub enum Intent {
     WriteSamples {
         /// The node whose material is written.
         node: NodeId,
-        /// First frame of the span.
+        /// **Which channel of that material** the span belongs to.
+        ///
+        /// A frame span already addresses the material's shape, and a channel
+        /// is the same kind of coordinate — not a fact about the source, which
+        /// stays the source's business. It is a channel rather than a run of
+        /// interleaved frames because an edit is usually *one* channel of one:
+        /// carrying every channel would double a stereo stroke's inverse to
+        /// say that the other channel did not change.
+        ///
+        /// Defaults to 0 when absent, which is what every mono edit means and
+        /// what a document written before this field says.
+        #[serde(default)]
+        channel: u32,
+        /// First frame of the span, in that channel.
         start: u64,
         /// The values the span now holds.
         values: Vec<f32>,
@@ -312,9 +325,10 @@ pub fn apply(
         Intent::SetMembers { node, members } => set_members(document, *node, members),
         Intent::WriteSamples {
             node,
+            channel,
             start,
             values,
-        } => write_samples(document, *node, *start, values),
+        } => write_samples(document, *node, *channel, *start, values),
     }
 }
 
@@ -386,10 +400,11 @@ pub(crate) fn current(document: &Document, intent: &Intent) -> Option<Intent> {
         // The samples are not in the document, so the only honest description
         // of the present state is the empty write: nothing to adopt, and the
         // generation in the acknowledgement is what tells the caller to re-read.
-        Intent::WriteSamples { start, .. } => {
+        Intent::WriteSamples { channel, start, .. } => {
             let node = document.find(id)?;
             matches!(node.body, Body::Buffer { .. }).then_some(Intent::WriteSamples {
                 node: id,
+                channel: *channel,
                 start: *start,
                 values: Vec::new(),
             })
@@ -518,11 +533,18 @@ fn set_members(document: &mut Document, id: NodeId, members: &[Member]) -> Outco
     })
 }
 
-fn write_samples(document: &mut Document, id: NodeId, start: u64, values: &[f32]) -> Outcome {
+fn write_samples(
+    document: &mut Document,
+    id: NodeId,
+    channel: u32,
+    start: u64,
+    values: &[f32],
+) -> Outcome {
     let refuse = |reason: &str| {
         Outcome::refused(
             Intent::WriteSamples {
                 node: id,
+                channel,
                 start,
                 values: Vec::new(),
             },
@@ -538,6 +560,7 @@ fn write_samples(document: &mut Document, id: NodeId, start: u64, values: &[f32]
     if values.is_empty() {
         return Outcome::unchanged(Intent::WriteSamples {
             node: id,
+            channel,
             start,
             values: Vec::new(),
         });
@@ -551,6 +574,7 @@ fn write_samples(document: &mut Document, id: NodeId, start: u64, values: &[f32]
     document.version += 1;
     Outcome::changed(Intent::WriteSamples {
         node: id,
+        channel,
         start,
         values: values.to_vec(),
     })

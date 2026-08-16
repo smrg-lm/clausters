@@ -70,10 +70,11 @@ pub enum NrtJob {
         current: Arc<Buffer>,
         cmd: crate::dsp::wavetable::GenCommand,
     },
-    /// `/buffer_set` and `/buffer_setRange`: write client-supplied samples into
-    /// a copy of the current contents, keeping the buffer's shape. Each write
-    /// is a flat (interleaved) start index and the run of values to lay down
-    /// there, so the single-sample form is just a run of one.
+    /// `/buffer_set`, `/buffer_setRange` and their `*Channel` forms: write
+    /// client-supplied samples into a copy of the current contents, keeping the
+    /// buffer's shape. Each write is a [`SampleWrite`], so the single-sample
+    /// form is just a run of one and a channel-addressed write is the same run
+    /// with the channel count as its stride.
     ///
     /// `base` is what the *parse* saw, and it is only a fallback: a batch of
     /// writes to one buffer is submitted before any of them completes, so every
@@ -82,7 +83,7 @@ pub enum NrtJob {
     /// them — see [`NrtChain`].
     Set {
         base: Arc<Buffer>,
-        writes: Vec<(usize, Vec<f32>)>,
+        writes: Vec<SampleWrite>,
     },
     /// `/buffer_gain` and `/buffer_reverse`: a destructive edit over a span of
     /// the current contents, laid into a copy that replaces the buffer, like
@@ -106,6 +107,48 @@ pub enum NrtJob {
     },
     /// `/buffer_free`: ordered behind the other jobs (see module docs).
     Free,
+}
+
+/// One run of client-supplied samples, in the storage's own terms: where it
+/// starts (a **flat, interleaved** index) and how far apart consecutive values
+/// land.
+///
+/// The stride is what makes one job serve both addressings. `/buffer_set` and
+/// `/buffer_setRange` write *adjacent* samples — stride 1 — which is the right
+/// shape for filling a buffer and the wrong one for editing a **channel** of
+/// one: in interleaved storage a channel's frames are `channels` apart, so a
+/// stereo left channel is a strided run and no contiguous command can express
+/// it. Rather than a second job, a second copy-and-swap and a second set of
+/// bounds checks, the write carries its own step and the flat forms pass 1.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SampleWrite {
+    /// The first sample's flat index.
+    pub at: usize,
+    /// The distance between consecutive values: 1 for a flat run, the buffer's
+    /// channel count for one channel of it.
+    pub stride: usize,
+    pub values: Vec<f32>,
+}
+
+impl SampleWrite {
+    /// A flat (interleaved) run, which is what the non-`Channel` commands send.
+    pub fn flat(at: usize, values: Vec<f32>) -> Self {
+        SampleWrite {
+            at,
+            stride: 1,
+            values,
+        }
+    }
+
+    /// One past the last sample this write touches — what a bounds check
+    /// compares against, and the one place the stride is arithmetic rather than
+    /// a step.
+    pub fn end(&self) -> usize {
+        match self.values.len() {
+            0 => self.at,
+            n => self.at + (n - 1) * self.stride + 1,
+        }
+    }
 }
 
 /// One destructive edit, parsed. The span is in **frames** — a selection is a
@@ -399,8 +442,16 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             // size needs a lock. The parse already bounded every run against
             // the buffer's length.
             let mut data = current.data().to_vec();
-            for (at, values) in writes {
-                data[at..at + values.len()].copy_from_slice(&values);
+            for write in writes {
+                if write.stride == 1 {
+                    data[write.at..write.at + write.values.len()].copy_from_slice(&write.values);
+                    continue;
+                }
+                // A channel of interleaved storage: the parse bounded the run,
+                // so this walks it without checking each step.
+                for (i, v) in write.values.iter().enumerate() {
+                    data[write.at + i * write.stride] = *v;
+                }
             }
             Ok(NrtAction::Install(Arc::new(Buffer::new(
                 data,

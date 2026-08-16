@@ -293,6 +293,7 @@ fn the_labels_say_what_undo_and_redo_would_do() {
 fn write(start: u64, values: Vec<f32>) -> Intent {
     Intent::WriteSamples {
         node: NodeId(1),
+        channel: 0,
         start,
         values,
     }
