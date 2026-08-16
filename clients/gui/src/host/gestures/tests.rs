@@ -3505,3 +3505,38 @@ fn drawing_is_refused_out_loud_when_a_pixel_is_more_than_a_sample() {
         "a refused stroke is not a sweep"
     );
 }
+
+/// **A window of lanes and clips can be reset**, which is the case a multitrack
+/// actually is: its clips carry notes, curves or nothing at all, and there is no
+/// signal element anywhere in it.
+///
+/// Found by hand on the session mode: the wheel zoomed the axis and `r` did
+/// nothing, because the reset asked for views that *navigate a signal* and a
+/// lane is not one. The wheel and the key have to agree about what the axis is.
+#[test]
+fn a_multitrack_with_no_signal_view_still_resets() {
+    let def = r#"{"type":"window","children":[
+            {"id":50,"type":"field","label":"lane","children":[
+                {"id":51,"type":"field","offset":0.0,"dur":1000.0,"label":"a"},
+                {"id":52,"type":"field","offset":4000.0,"dur":1000.0,"label":"b"}]},
+            {"id":53,"type":"field","h":20.0,"ruler":"beats"}]}"#;
+    let mut host = host_from(def);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+
+    // Zoom out over the lane, then reset: the key has to answer for what the
+    // wheel just did.
+    g.wheel(&mut host, &ctx, 400.0, 60.0, -3.0);
+    let zoomed = host.timeline_nav(50).expect("the lane is on the axis").0;
+    let effects = g.reset_timelines(&mut host, &ctx);
+    let reset = host.timeline_nav(50).expect("still on it").0;
+    assert!(
+        !effects.is_empty(),
+        "the reset reported something rather than running in silence"
+    );
+    assert_ne!(
+        (zoomed.start, zoomed.len),
+        (reset.start, reset.len),
+        "and the window moved: {zoomed:?} -> {reset:?}"
+    );
+}

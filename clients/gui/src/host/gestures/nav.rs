@@ -83,7 +83,13 @@ pub(super) fn group_view(host: &Host, id: i32) -> Option<(f64, f64, usize)> {
 /// Every timeline (waveform/spectrogram) widget id in the tree.
 pub(super) fn timeline_ids(tree: &Widget) -> Vec<i32> {
     tree.descendants()
-        .filter(|w| w.is_nav_signal())
+        // **Everything on the shared axis**, not only the signal views: a lane
+        // and a time ruler are on it too, and a multitrack whose clips carry
+        // notes, curves or nothing at all has no signal element anywhere. Asked
+        // the narrower question this found no view to reset in such a window
+        // and did nothing at all — the wheel zoomed the axis and the key that
+        // undoes that was inert, which is a worse answer than not offering it.
+        .filter(|w| w.is_timeline())
         .filter_map(|w| w.id)
         .collect()
 }
