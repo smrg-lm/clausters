@@ -701,12 +701,12 @@ impl ApplicationHandler<UserEvent> for App {
                 self.on_wheel(def_id, steps);
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                // A key's own trace, at debug: what the window received, which
-                // is the first question when a shortcut does nothing.
+                // The letter, not the control character a chord would arrive
+                // as — see `key_pressed`.
+                let pressed = key_pressed(&event);
                 tracing::debug!(
-                    "key: logical={:?} text={:?} ctrl={} shift={}",
+                    "key: pressed={pressed:?} logical={:?} ctrl={} shift={}",
                     event.logical_key,
-                    event.text,
                     self.ctrl(def_id),
                     self.shift(def_id)
                 );
@@ -714,7 +714,7 @@ impl ApplicationHandler<UserEvent> for App {
                 // focused element edits (typing, caret motion, cut/copy/paste).
                 // Only what nothing there answered reaches the global shortcuts
                 // below, which are addressed to what is under the cursor.
-                if let Some(k) = to_key(&event.logical_key)
+                if let Some(k) = to_key(&pressed)
                     && self.key_input(def_id, k)
                 {
                     tracing::debug!("key: consumed by the focus");
@@ -724,14 +724,14 @@ impl ApplicationHandler<UserEvent> for App {
                 // block operation is addressed: a selection is already where
                 // the pointer has been. Only what nothing there answered
                 // reaches the window's own shortcuts.
-                if let Some(k) = to_key(&event.logical_key)
+                if let Some(k) = to_key(&pressed)
                     && self.key_at_cursor(def_id, k)
                 {
                     tracing::debug!("key: consumed by the element under the cursor");
                     return;
                 }
                 tracing::debug!("key: reached the window's own shortcuts");
-                match event.logical_key {
+                match pressed {
                     Key::Named(NamedKey::Escape) => self.user_close(def_id, event_loop),
                     // Undo and redo are the window's, not a widget's: they are
                     // addressed to the document behind it rather than to
@@ -749,21 +749,6 @@ impl ApplicationHandler<UserEvent> for App {
                     // under the cursor. A host that owns nothing emits it and a
                     // script may answer; one that owns a session writes it.
                     Key::Character(ref c) if c.eq_ignore_ascii_case("s") && self.ctrl(def_id) => {
-                        self.window_verb(def_id, "save")
-                    }
-                    // TEMPORARY, for checking the session mode by hand: the
-                    // same three verbs on bare keys, because Ctrl+letter is
-                    // not arriving as the letter (winit's `logical_key` is the
-                    // key *with* modifiers applied, and Ctrl+Z is a control
-                    // character). The real fix is `key_without_modifiers`;
-                    // these three come out when it lands.
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("z") => {
-                        self.history(def_id, false)
-                    }
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("a") => {
-                        self.history(def_id, true)
-                    }
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("s") => {
                         self.window_verb(def_id, "save")
                     }
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
@@ -827,6 +812,39 @@ impl App {
 /// or `None` for one nothing focusable answers (the global shortcuts then run).
 /// A printable character (including Space) inserts; the named editing keys and
 /// Tab map one-to-one.
+/// **The key that was pressed, whatever was held over it.**
+///
+/// winit's `logical_key` is the key *with modifiers applied*, which is right
+/// for typing and wrong for a shortcut: `Ctrl`+`Z` arrives as the control
+/// character `\u{1a}` and never equals `"z"`, so every chord in this host
+/// matched nothing and vanished — undo, redo and the clipboard verbs alike,
+/// none of which had ever run outside a test. `key_without_modifiers` is
+/// winit's own answer to exactly this, and it ignores `Shift` too, so a
+/// `Ctrl`+`Shift`+`Z` is read as `z` with the shift taken from the tracked
+/// modifier state (which is where the rest of the host already reads it).
+///
+/// Only the **letter** is restored: a named key (Escape, Tab, the arrows) is
+/// the same either way, and taking `logical_key` for those keeps the dead-key
+/// and IME behaviour the text path depends on.
+fn key_pressed(event: &winit::event::KeyEvent) -> Key {
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "netbsd",
+        target_os = "openbsd",
+    ))]
+    {
+        use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+        if let Key::Character(c) = event.key_without_modifiers() {
+            return Key::Character(c);
+        }
+    }
+    event.logical_key.clone()
+}
+
 pub(super) fn to_key(key: &Key) -> Option<HostKey> {
     match key {
         Key::Named(NamedKey::Backspace) => Some(HostKey::Backspace),
