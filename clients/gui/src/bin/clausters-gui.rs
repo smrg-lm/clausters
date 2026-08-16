@@ -543,11 +543,22 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
     let title = Path::new(path)
         .file_name()
         .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned());
-    let drawn = tree::draw(&owner.document, &tree::Look::default(), &title);
+    let def_id = 1;
+    let drawn = tree::draw(
+        &owner.document,
+        &tree::Look {
+            // Past the window's own id: a GuiDef's id *is* its root widget's,
+            // so a tree numbering from 1 beside a def 1 collides and the
+            // registry drops the whole subtree -- which is an empty window and
+            // one line in the log.
+            first_id: def_id + 1,
+            ..tree::Look::default()
+        },
+        &title,
+    );
     for bound in &drawn.bindings {
         owner.bind(bound.widget, bound.node);
     }
-    let def_id = 1;
 
     // Saving is **Ctrl+S**, a user's action rather than an exit's side effect —
     // and it writes only where `--save-to` named a file, since overwriting what

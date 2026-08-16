@@ -287,6 +287,13 @@ impl App {
         };
         match to {
             ClientId::Udp(to) => {
+                // Port 0 is **nobody**: what a def opened by this binary itself
+                // carries (a session, a standalone bundle), where there is no
+                // script to answer. Sending there fails on every event, which
+                // is a warning a second rather than a fact worth reporting.
+                if to.port() == 0 {
+                    return;
+                }
                 if let Err(e) = self.socket.send_to(&bytes, to) {
                     warn!("failed to send {addr} to {to}: {e}");
                 }

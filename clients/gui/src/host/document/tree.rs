@@ -6,6 +6,15 @@
 //! over one shared time axis, a beat ruler under them, ids allocated as it goes
 //! and every clip bound to the node it draws.
 //!
+//! # One container name, three widgets
+//!
+//! A lane, a clip and a time ruler are all **`field`** on the wire, told apart
+//! by the props they carry (`dur` makes a clip, a bare ruler makes a ruler,
+//! anything else is a lane) — the protocol's "generic on the wire, typed in the
+//! renderer" invariant, which the Python builders' names hide and this had to
+//! learn the hard way: a tree that says `"type": "track"` builds nothing, and
+//! an empty window is all it says about it.
+//!
 //! # It builds a GuiDef, and nothing else
 //!
 //! What comes out is the ordinary `{id, type, props, children}` tree the host
@@ -50,6 +59,11 @@ pub struct Look {
     pub quant: Beats,
     /// The first widget id to allocate. Ids are the host's own namespace, and a
     /// caller that already used some says where to carry on from.
+    ///
+    /// **It must clear the GuiDef's own id**, because a def's id is its root
+    /// widget's: a tree numbered from 1 handed to `/gui_def 1` collides with
+    /// itself, and the registry drops the whole subtree — which looks like an
+    /// empty window and one line in the log.
     pub first_id: i32,
 }
 
@@ -110,7 +124,8 @@ pub fn draw(document: &Document, look: &Look, title: &str) -> Drawn {
     // inside one of them, exactly as the Python editor places it.
     lanes.push(json!({
         "id": ids.take(),
-        "type": "timeruler",
+        "type": "field",
+        "h": 20.0,
         "ruler": "beats",
         "sample_rate": look.sample_rate,
         "tempo": look.tempo,
@@ -162,7 +177,7 @@ fn lane_of(
     };
     let mut props = Map::new();
     props.insert("id".into(), json!(ids.take()));
-    props.insert("type".into(), json!("track"));
+    props.insert("type".into(), json!("field"));
     props.insert("label".into(), json!(label));
     props.insert("sample_rate".into(), json!(look.sample_rate));
     props.insert("tempo".into(), json!(look.tempo));
@@ -194,7 +209,7 @@ fn clip_of(
         .unwrap_or(1.0);
     json!({
         "id": widget,
-        "type": "clip",
+        "type": "field",
         "offset": (base + member.offset) * look.units_per_beat,
         "dur": dur * look.units_per_beat,
         "label": label_of(&member.node),
@@ -264,9 +279,13 @@ mod tests {
         let drawn = draw(&doc, &Look::default(), "session");
         let kids = children(&drawn.def);
         assert_eq!(kids.len(), 3, "two lanes and the ruler");
-        assert_eq!(kids[0]["type"], "track");
-        assert_eq!(kids[1]["type"], "track");
-        assert_eq!(kids[2]["type"], "timeruler");
+        // All three are `field` on the wire and told apart by their props: the
+        // lanes carry children, the ruler carries a height and no children.
+        for kid in kids {
+            assert_eq!(kid["type"], "field");
+        }
+        assert!(kids[0]["children"].is_array() && kids[1]["children"].is_array());
+        assert!(kids[2].get("children").is_none() && kids[2]["ruler"] == "beats");
     }
 
     /// A clip's offset is **absolute on the shared axis** while a member's is
@@ -351,5 +370,136 @@ mod tests {
             "t",
         );
         assert_eq!(children(&snapped.def)[0]["snap"], 50.0);
+    }
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+    use crate::host::{ClientId, Host, OscMessage, OscPacket, OscType};
+    use clausters_document::{Grouping, Member, Opaque};
+
+    fn from() -> ClientId {
+        ClientId::Udp(std::net::SocketAddr::from((
+            std::net::Ipv4Addr::LOCALHOST,
+            9000,
+        )))
+    }
+
+    fn doc() -> Document {
+        let event = |id: u64| {
+            Node::new(
+                NodeId(id),
+                Body::Event {
+                    config: Opaque::default(),
+                    fires: None,
+                },
+            )
+        };
+        Document::new(Node::new(
+            NodeId(1),
+            Body::Set {
+                grouping: Grouping::Concrete,
+                members: vec![Member {
+                    offset: 0.0,
+                    dur: None,
+                    node: Node::new(
+                        NodeId(2),
+                        Body::Set {
+                            grouping: Grouping::Concrete,
+                            members: vec![
+                                Member {
+                                    offset: 0.0,
+                                    dur: Some(2.0),
+                                    node: event(3),
+                                },
+                                Member {
+                                    offset: 4.0,
+                                    dur: Some(1.0),
+                                    node: event(4),
+                                },
+                            ],
+                        },
+                    ),
+                }],
+            },
+        ))
+    }
+
+    fn open(host: &mut Host, def_id: i32, drawn: &Drawn) {
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: "/gui_def".into(),
+                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
+            }),
+            from(),
+        );
+    }
+
+    /// **The tree a document draws actually reaches the registry**, which is
+    /// not the same claim as the JSON being right — and is the one a unit test
+    /// over the JSON cannot make.
+    ///
+    /// Written for a bug that shipped: a def's id *is* its root widget's, so a
+    /// tree numbered from 1 handed to `/gui_def 1` collided with itself, the
+    /// registry dropped the whole subtree, and the window came up **empty**
+    /// with one warning in the log. Every clip being findable afterwards is
+    /// what says the picture exists.
+    #[test]
+    fn every_drawn_widget_reaches_the_registry() {
+        let def_id = 1;
+        let drawn = draw(
+            &doc(),
+            &Look {
+                first_id: def_id + 1,
+                ..Look::default()
+            },
+            "session",
+        );
+        let mut host = Host::new();
+        open(&mut host, def_id, &drawn);
+        for bound in &drawn.bindings {
+            let kind = host.widget_kind(def_id, bound.widget);
+            assert!(
+                kind.is_some(),
+                "clip widget {} is missing from the registry",
+                bound.widget
+            );
+            // And it built as a **clip**: the three lane-ish widgets share one
+            // wire name and are told apart by their props, so a clip that came
+            // out a lane would pass a presence check and draw nothing of what
+            // it is.
+            assert!(
+                matches!(kind, Some(crate::host::widget::WidgetKind::Clip { .. })),
+                "widget {} built as {:?} rather than a clip",
+                bound.widget,
+                kind.map(std::mem::discriminant)
+            );
+        }
+    }
+
+    /// And the failure itself, pinned: numbering from the def's own id loses
+    /// the tree. A caller that gets this wrong should fail a test rather than
+    /// an eye.
+    #[test]
+    fn numbering_from_the_defs_own_id_loses_the_tree() {
+        let def_id = 1;
+        let drawn = draw(&doc(), &Look::default(), "session"); // first_id: 1
+        assert!(
+            drawn.bindings.iter().any(|b| b.widget == def_id),
+            "the tree numbered over the def's id, which is the collision"
+        );
+        let mut host = Host::new();
+        open(&mut host, def_id, &drawn);
+        // The collided id still *resolves* — to the window itself — which is
+        // exactly why presence is the wrong question and the kind is the right
+        // one: what was dropped is the clip, not the number.
+        assert!(
+            drawn.bindings.iter().any(|b| !matches!(
+                host.widget_kind(def_id, b.widget),
+                Some(crate::host::widget::WidgetKind::Clip { .. })
+            )),
+            "and the registry dropped the clip that collided"
+        );
     }
 }
