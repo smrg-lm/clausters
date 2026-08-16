@@ -138,6 +138,124 @@ fn the_seed_travels_so_a_stochastic_operation_repeats_too() {
     assert!(a.iter().any(|&x| x != 0.0), "the noise has to sound");
 }
 
+/// Drains replies, returning the first one whose address matches — and, for a
+/// `/done`, whose first argument names `for_cmd`, since every async command
+/// answers at that same address and an earlier one may still be queued.
+fn wait_reply(s: &mut NrtSession, addr: &str, for_cmd: Option<&str>) -> Option<OscMessage> {
+    let mut buf = vec![0u8; 1 << 16];
+    for _ in 0..64 {
+        while let Some(len) = s.poll_into(&mut buf) {
+            if let Ok(clausters::rosc::OscPacket::Message(m)) =
+                clausters::osc::decode_packet(&buf[..len])
+                && m.addr == addr
+                && for_cmd.is_none_or(|c| m.args.first() == Some(&OscType::String(c.into())))
+            {
+                return Some(m);
+            }
+        }
+        s.settle();
+    }
+    None
+}
+
+/// The whole operation over the wire, the way a client drives it: allocate a
+/// destination, build the graph, ask for the render, read the samples back.
+#[test]
+fn buffer_render_runs_the_graph_into_a_buffer() {
+    let frames = 2048u64;
+    let expected = batch(sine_def("t"), frames);
+
+    let mut s = NrtSession::open(&session_cfg()).expect("open");
+    let setup = [
+        msg(
+            "/buffer_alloc",
+            vec![
+                OscType::Int(0),
+                OscType::Int(frames as i32),
+                OscType::Int(CHANNELS as i32),
+            ],
+        ),
+        sine_def("t"),
+        s_new("t", 1000),
+    ];
+    for m in setup {
+        assert!(s.send_msg(&m.addr, m.args).expect("encode"), "ring full");
+        s.settle_for(4);
+    }
+    assert!(
+        s.send_msg(
+            "/buffer_render",
+            vec![OscType::Int(0), OscType::Int(frames as i32)],
+        )
+        .expect("encode"),
+        "ring full"
+    );
+    let done = wait_reply(&mut s, "/done", Some("/buffer_render")).expect("the render answers");
+    assert_eq!(
+        done.args.first(),
+        Some(&OscType::String("/buffer_render".into())),
+        "answered as the command that was asked, got {:?}",
+        done.args
+    );
+    assert_eq!(s.frames(), frames, "the operation ran exactly its span");
+
+    // Read it back the way a client would, and compare with the batch render.
+    s.send_msg(
+        "/buffer_getRange",
+        vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int((frames as usize * CHANNELS) as i32),
+        ],
+    )
+    .expect("encode");
+    let reply = wait_reply(&mut s, "/buffer_getRange.reply", None).expect("the buffer reads back");
+    let OscType::Blob(bytes) = reply.args.last().expect("a blob") else {
+        panic!("expected a blob, got {:?}", reply.args)
+    };
+    let got: Vec<f32> = bytes
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+    assert_eq!(
+        got, expected,
+        "what /buffer_render left in the buffer is what the batch render produces"
+    );
+}
+
+/// The safety property: the command is legal only where something owns the
+/// clock. A server driven by an audio device cannot run a graph on request, and
+/// says so instead of queueing work nobody will perform.
+#[test]
+fn buffer_render_is_refused_where_nothing_owns_the_clock() {
+    use clausters::osc::server::{OscServer, ServerInfo};
+    use clausters::server::engine::{DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES, engine_pair_full};
+
+    let (_engine, handle) = engine_pair_full(
+        SR as f32,
+        CHANNELS,
+        0,
+        None,
+        DEFAULT_AUDIO_BUSES,
+        DEFAULT_CONTROL_BUSES,
+        Default::default(),
+    );
+    // A plain server: no `enable_offline_renders`, which is every server but a
+    // session's.
+    let mut server = OscServer::headless(
+        ServerInfo {
+            nominal_sample_rate: SR,
+            actual_sample_rate: SR,
+        },
+        handle,
+        0.0,
+    );
+    assert!(
+        server.take_offline_render().is_none(),
+        "a server with no offline driver queues nothing, however many renders are asked of it"
+    );
+}
+
 /// The mode's defining property, checked directly rather than inferred: time
 /// moves only inside `run`. Serving between two runs must leave the signal
 /// exactly where it was — if a `settle` advanced the engine, the two halves

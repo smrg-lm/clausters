@@ -336,6 +336,9 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_buffer_cmd(addr, m, f);
         Ok(())
     }),
+    ("/buffer_render", |s, _, m, f| {
+        s.handle_buffer_render(Args::new(m), f)
+    }),
     ("/buffer_set", |s, addr, m, f| {
         s.handle_buffer_cmd(addr, m, f);
         Ok(())

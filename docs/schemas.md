@@ -595,9 +595,18 @@ Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output 
 /buffer_get       bufnum index...           →  /buffer_get.reply   bufnum index value ...
 /buffer_getRange      bufnum [start count]...   →  /buffer_getRange.reply  bufnum start blob ...  (f32 LE blob)
 /buffer_export    bufnum path               →  /done /buffer_export bufnum
+/buffer_render    bufnum frames             →  /done /buffer_render bufnum   # offline sessions only, see below
 ```
 
 `/buffer_alloc`, `/buffer_allocRead`, `/buffer_read`, `/buffer_write`, `/buffer_zero`, `/buffer_gen`, `/buffer_set`, `/buffer_setRange` and `/buffer_free` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/buffer_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/buffer_write` still emits WAV only, and `leaveOpen` (streaming) is not supported. `/buffer_close bufnum` closes the soundfile a streaming buffer left open — scsynth pairs it with `DiskIn`/`DiskOut`; since Clausters has no streaming buffers yet (every `/buffer_read`/`/buffer_write` reads or writes the whole file and closes it), it validates the buffer is live and replies `/done /buffer_close bufnum`, forward-compatible with the streaming UGens.
+
+### Rendering into a buffer (`/buffer_render`)
+
+`/buffer_render bufnum frames` runs the **graph** for `frames` frames and installs what came out of the output buses into `bufnum` — `/buffer_gen`'s sibling, generating into a buffer by playing rather than by formula, and what an editor means by *apply this def to this selection*. What lands **replaces** the buffer: `frames` frames of as many channels as the server has outputs, at its sample rate. The index must already be allocated, which is how the caller says that slot is the one they mean.
+
+**Only an offline server answers it, and every other one fails it.** Running the graph means advancing the engine, and in a real-time server the audio device advances it against a clock nobody else may touch; there is no correct moment for this command there, so it is refused rather than approximated. An offline session (no audio device, no clock of its own — the mode an editor works in) owns its clock and performs the render between commands, which is also why the reply comes when the operation has finished rather than when it was accepted.
+
+Determinism is the point of it: the samples a `/buffer_render` leaves are the samples the same material yields as a score rendered offline, which is asserted sample for sample. Pin the server's seed if the graph is stochastic and you want the take back.
 
 ### Table generation and the wavetable format (`/buffer_gen`)
 

@@ -60,6 +60,7 @@ impl OscServer {
             max_frame: crate::osc::DEFAULT_MAX_FRAME,
             max_clients: crate::osc::DEFAULT_MAX_CLIENTS,
             client_slots: None,
+            offline: None,
         })
     }
 
@@ -118,6 +119,7 @@ impl OscServer {
             max_frame: crate::osc::DEFAULT_MAX_FRAME,
             max_clients: crate::osc::DEFAULT_MAX_CLIENTS,
             client_slots: None,
+            offline: None,
         }
     }
 

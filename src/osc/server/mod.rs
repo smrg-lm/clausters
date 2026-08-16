@@ -109,6 +109,26 @@ enum Flow {
     Quit,
 }
 
+/// One queued `/buffer_render`: run the graph for `frames` frames and install
+/// the result in buffer `index`.
+///
+/// It exists because the two halves of that command live in different places
+/// and must stay there. The **server** owns the wire — it parses the message,
+/// validates the buffer and answers `/done` or `/fail` — and the **driver**
+/// owns the engine, because only whoever calls `process_block` can run one.
+/// That is the same split the NRT queue already has, with the driver in the
+/// worker's seat, and it is why the command is a request rather than a call.
+#[derive(Debug, Clone, Copy)]
+pub struct OfflineRender {
+    /// The buffer the result is installed into. Already validated as
+    /// allocated when the request was queued.
+    pub index: usize,
+    /// How many frames to run. Never zero.
+    pub frames: u64,
+    /// Who asked, so the answer goes back to them.
+    client: ClientId,
+}
+
 pub struct OscServer {
     /// The UDP front. `None` for a headless pulled server ([`Self::headless`]):
     /// commands come only through the attached ring, replies only through it,
@@ -199,6 +219,11 @@ pub struct OscServer {
     /// The live-client slots both stream fronts share, created when the first
     /// of them binds (so `set_max_clients` can still change the ceiling).
     client_slots: Option<std::sync::Arc<crate::osc::ClientSlots>>,
+    /// Queued `/buffer_render` operations, when an offline driver has said it
+    /// will perform them ([`Self::enable_offline_renders`]). `None` is every
+    /// other server, and the command fails there rather than queueing work
+    /// nobody will do — see [`OfflineRender`].
+    offline: Option<Vec<OfflineRender>>,
 }
 
 /// The shared transport: a beat grid clients read to phase-align on the master
@@ -316,6 +341,44 @@ impl OscServer {
     /// slot pool is created when the first front binds.
     pub fn set_max_clients(&mut self, n: usize) {
         self.max_clients = n.max(1);
+    }
+
+    /// Declares that an offline driver owns the engine and will perform
+    /// `/buffer_render` operations, which is what makes that command legal on
+    /// this server. Without it the command fails, because the server can parse
+    /// and answer a render but cannot *run* one: only whoever drives
+    /// `Engine::process_block` can, and in real time that is the audio device.
+    /// See `server::nrtsession`, the one caller.
+    pub fn enable_offline_renders(&mut self) {
+        self.offline.get_or_insert_with(Vec::new);
+    }
+
+    /// The oldest queued render, for the driver to perform. The driver must
+    /// answer it with [`Self::finish_offline_render`], the way the NRT queue's
+    /// results are collected and replied to.
+    pub fn take_offline_render(&mut self) -> Option<OfflineRender> {
+        let queue = self.offline.as_mut()?;
+        if queue.is_empty() {
+            None
+        } else {
+            Some(queue.remove(0))
+        }
+    }
+
+    /// Answers a render the driver has performed: `/done /buffer_render index`
+    /// or `/fail`, to the client that asked.
+    pub fn finish_offline_render(&mut self, req: OfflineRender, outcome: Result<(), String>) {
+        match outcome {
+            Ok(()) => self.reply(
+                req.client,
+                "/done",
+                vec![
+                    OscType::String("/buffer_render".into()),
+                    OscType::Int(req.index as i32),
+                ],
+            ),
+            Err(e) => self.fail(req.client, "/buffer_render", &e),
+        }
     }
 
     /// Restarts the stochastic-UGen seed sequence, so a caller that resolved a

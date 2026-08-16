@@ -38,6 +38,59 @@ impl OscServer {
         Ok(())
     }
 
+    /// `/buffer_render bufnum frames`: run the graph for `frames` frames and
+    /// install what came out of the output buses into `bufnum` — `/buffer_gen`'s
+    /// sibling, generating into a buffer by *playing* rather than by formula,
+    /// and the operation an editor means by "apply this def to this selection".
+    ///
+    /// **Only an offline server answers it.** Running the graph means driving
+    /// `Engine::process_block`, and in a real-time server the audio device
+    /// drives it against a wall clock nobody else may advance; there the
+    /// command fails rather than pretending. Offline, the driver owns the clock
+    /// and performs the request between commands (`server::nrtsession`), which
+    /// is why this only queues one — see [`OfflineRender`](crate::osc::server::OfflineRender).
+    ///
+    /// The buffer must already exist and its shape is what it was allocated
+    /// with: the caller says how long the operation is and how many channels it
+    /// keeps by allocating for it, exactly as `/buffer_gen` keeps the shape it
+    /// is given.
+    pub(in crate::osc::server) fn handle_buffer_render(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let index = args.index()?;
+        let frames = args.int()?;
+        if self.offline.is_none() {
+            return Err(
+                "this server has no offline driver: /buffer_render needs a server whose \
+                 clock it owns (an NRT session), not one driven by an audio device"
+                    .into(),
+            );
+        }
+        if frames <= 0 {
+            return Err(format!("frames must be positive, got {frames}"));
+        }
+        if !self
+            .translator
+            .buffers
+            .get(index)
+            .is_some_and(Option::is_some)
+        {
+            return Err(format!("buffer {index} not allocated"));
+        }
+        // Queued, not performed: the answer goes out when the driver has run it.
+        self.offline
+            .as_mut()
+            .expect("checked above")
+            .push(crate::osc::server::OfflineRender {
+                index,
+                frames: frames as u64,
+                client: from,
+            });
+        Ok(())
+    }
+
     /// Any of the async `/buffer_*` commands: parsing is shared with the NRT
     /// renderer; the job runs on the NRT thread. `/buffer_free` also travels
     /// through the queue so it cannot overtake a pending alloc/read on the
