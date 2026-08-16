@@ -1349,10 +1349,15 @@ impl Host {
     /// owned the document but could not read the payload emits it, so a script
     /// attached alongside still sees what it always saw.
     ///
-    /// It takes no window id on purpose: a widget id is unique across this
-    /// host's registry (the node-tree shape the protocol borrowed), so a
-    /// binding needs no second key, and taking one would suggest it did.
-    pub fn answer_own(&mut self, widget_id: i32, seq: i32, args: &[OscType]) -> bool {
+    /// The window id is not for the binding — a widget id is unique across the
+    /// registry — but for **adopting the answer**: what an edit leaves has to
+    /// be written back onto the picture, and a widget is reached through the
+    /// tree it is in.
+    pub fn answer_own(&mut self, def_id: i32, widget_id: i32, seq: i32, args: &[OscType]) -> bool {
+        debug!(
+            "answer_own: widget={widget_id} seq={seq} owner={} args={args:?}",
+            self.owner.is_some()
+        );
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
@@ -1362,7 +1367,9 @@ impl Host {
         // anything looks for a node binding.
         match args.first() {
             Some(OscType::String(tag)) if tag == "undo" => {
-                let moved = !owner.undo().is_empty();
+                let applied = owner.undo();
+                let moved = !applied.is_empty();
+                self.adopt(def_id, &applied);
                 if moved {
                     self.settle(ack::Acked {
                         seq,
@@ -1373,7 +1380,9 @@ impl Host {
                 return true;
             }
             Some(OscType::String(tag)) if tag == "redo" => {
-                let moved = !owner.redo().is_empty();
+                let applied = owner.redo();
+                let moved = !applied.is_empty();
+                self.adopt(def_id, &applied);
                 if moved {
                     self.settle(ack::Acked {
                         seq,
@@ -1396,12 +1405,52 @@ impl Host {
             return false;
         };
         let applied = owner.apply(&intent, &clausters_document::Against::default(), label);
+        let version = applied.version;
+        self.adopt(def_id, &[applied]);
         self.settle(ack::Acked {
             seq,
-            doc_version: applied.version as i64,
+            doc_version: version as i64,
             ..Default::default()
         });
         true
+    }
+
+    /// Writes what an edit left back onto the picture — the *adopt* half of
+    /// "drop every pending at or below the stamp, **and adopt what arrived**".
+    ///
+    /// A drag needs nothing from this: the gesture already moved the clip on
+    /// screen, and what came back agrees with it. An **undo** is what makes it
+    /// load-bearing — the document goes back and the widget does not, so
+    /// without this the picture keeps the position the hand left and the edit
+    /// looks like it did nothing at all. That is exactly the shape of "the keys
+    /// do nothing".
+    fn adopt(&mut self, def_id: i32, applied: &[document::Applied]) {
+        let Some(owner) = self.owner.as_ref() else {
+            return;
+        };
+        let units = owner.units_per_beat;
+        let moves: Vec<(i32, f64, Option<f64>)> = applied
+            .iter()
+            .filter(|a| a.applied)
+            .filter_map(|a| match &a.effective {
+                clausters_document::Intent::Place { node, offset, dur } => {
+                    owner.widget_of(*node).map(|w| (w, *offset, *dur))
+                }
+                _ => None,
+            })
+            .collect();
+        for (widget, offset, dur) in moves {
+            if let Some(w) = self.window_def_mut(def_id).and_then(|t| t.find_mut(widget))
+                && let WidgetKind::Clip {
+                    offset: o, dur: d, ..
+                } = &mut w.kind
+            {
+                *o = offset * units;
+                if let Some(dur) = dur {
+                    *d = dur * units;
+                }
+            }
+        }
     }
 
     /// trailing string is a reason, informational and read by nothing in the

@@ -79,7 +79,7 @@ impl App {
                 } => {
                     // A host that owns what it draws answers itself; every
                     // other one emits and waits, as it always has.
-                    if !self.host.answer_own(widget_id, seq, &args) {
+                    if !self.host.answer_own(def_id, widget_id, seq, &args) {
                         self.emit(def_id, widget_id, seq, args);
                     } else {
                         self.redraw(def_id);
@@ -263,7 +263,7 @@ impl App {
     pub(super) fn window_verb(&mut self, def_id: i32, verb: &str) {
         let seq = self.host.outbox.borrow_mut().stamp(def_id, def_id);
         let args = vec![clausters_core::osc::OscType::String(verb.into())];
-        if self.host.answer_own(def_id, seq, &args) {
+        if self.host.answer_own(def_id, def_id, seq, &args) {
             self.redraw(def_id);
         } else {
             self.emit(def_id, def_id, seq, args);

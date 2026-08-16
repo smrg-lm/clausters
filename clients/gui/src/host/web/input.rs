@@ -80,7 +80,7 @@ impl WebApp {
                     // other one emits and waits, as it always has. A page
                     // rarely owns one — but the seam is the same on both
                     // fronts, and a gesture is implemented once.
-                    if self.host.answer_own(widget_id, seq, &args) {
+                    if self.host.answer_own(def_id, widget_id, seq, &args) {
                         self.request_redraw(def_id);
                         continue;
                     }

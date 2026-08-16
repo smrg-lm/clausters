@@ -72,6 +72,12 @@ pub struct Owner {
     /// How an edit is transformed on the way in (the grid a placement snaps
     /// to). The host states where the hand put something; this decides.
     pub rules: Rules,
+    /// Samples per beat, as the tree was drawn with: the document measures
+    /// beats and a clip's `offset`/`dur` are timeline units, so adopting an
+    /// applied edit back onto the picture needs the same factor the drawing
+    /// used. Getting it from anywhere else would put the clip somewhere the
+    /// ruler does not agree with.
+    pub units_per_beat: f64,
     /// Where a save writes, when the caller named a file.
     ///
     /// `None` is a session opened read-only, or one built in memory: **saving
@@ -111,6 +117,7 @@ impl Owner {
             log: Log::new(),
             session: None,
             rules: Rules::none(),
+            units_per_beat: 48_000.0,
             save_path: None,
             nodes: HashMap::new(),
         }
@@ -122,6 +129,20 @@ impl Owner {
         let mut owner = Self::new(session.document.clone());
         owner.session = Some(session);
         owner
+    }
+
+    /// The unit the picture was drawn in (samples per beat).
+    pub fn with_units_per_beat(mut self, units: f64) -> Self {
+        self.units_per_beat = units;
+        self
+    }
+
+    /// Which widget draws `node`, if one does — the binding read the other way,
+    /// which is what adopting an applied edit needs.
+    pub fn widget_of(&self, node: NodeId) -> Option<i32> {
+        self.nodes
+            .iter()
+            .find_map(|(widget, bound)| (*bound == node).then_some(*widget))
     }
 
     /// Where [`Self::save_now`] writes.
@@ -207,9 +228,18 @@ impl Owner {
         match tag {
             // A clip moved or resized: where it now sits inside the set that
             // holds it. Absolute, so applying it twice is applying it once.
+            // **The payload is in timeline units and the document is in
+            // beats**, so this is where the two meet. A clip reports where the
+            // hand put it on the shared axis, which measures samples; a
+            // placement is musical time. Forgetting the conversion does not
+            // fail — it writes the sample number into the beat field, so a clip
+            // dropped two beats along is saved at beat ninety-six thousand.
             "clip" => {
-                let offset = float_at(args, 1)? as f64;
-                let dur = float_at(args, 2).map(|d| d as f64).filter(|d| *d > 0.0);
+                let units = self.units_per_beat.max(f64::MIN_POSITIVE);
+                let offset = float_at(args, 1)? as f64 / units;
+                let dur = float_at(args, 2)
+                    .map(|d| d as f64 / units)
+                    .filter(|d| *d > 0.0);
                 Some((Intent::Place { node, offset, dur }, "move a clip"))
             }
             // One sample dragged (D1) — a run of one, so it and a stroke are
@@ -418,7 +448,9 @@ mod tests {
     /// know, and a widget bound to no node. Either would be editing on a guess.
     #[test]
     fn a_payload_becomes_an_intent_only_where_it_can_be_read() {
-        let mut owner = Owner::new(Document::new(event(1)));
+        // One unit to the beat, so the payload's numbers *are* beats and the
+        // test is about the translation rather than about the scale.
+        let mut owner = Owner::new(Document::new(event(1))).with_units_per_beat(1.0);
         let clip = vec![
             OscType::String("clip".into()),
             OscType::Float(4.0),
@@ -513,7 +545,9 @@ mod tests {
         let written = Session::new(Document::new(root));
         std::fs::write(&path, serde_json::to_string(&written).unwrap()).unwrap();
 
-        let mut owner = Owner::open(&path).expect("the session opens");
+        let mut owner = Owner::open(&path)
+            .expect("the session opens")
+            .with_units_per_beat(1.0);
         owner.bind(50, NodeId(2));
 
         // Edited the way a gesture would edit it: the payload, translated.
@@ -600,15 +634,15 @@ mod wiring_tests {
             crate::host::OscType::Float(0.0),
         ];
         assert!(
-            !host.answer_own(50, 1, &args),
+            !host.answer_own(1, 50, 1, &args),
             "with no document there is nobody here to answer"
         );
 
-        let mut owner = Owner::new(doc());
+        let mut owner = Owner::new(doc()).with_units_per_beat(1.0);
         owner.bind(50, NodeId(2));
         host.owner = Some(owner);
         let seq = host.outbox.borrow_mut().stamp(1, 50);
-        assert!(host.answer_own(50, seq, &args), "and with one, it does");
+        assert!(host.answer_own(1, 50, seq, &args), "and with one, it does");
 
         let owner = host.owner.as_ref().expect("still there");
         let Body::Set { members, .. } = &owner.document.root.body else {
@@ -632,6 +666,7 @@ mod wiring_tests {
         owner.bind(50, NodeId(2));
         host.owner = Some(owner);
         assert!(!host.answer_own(
+            1,
             50,
             1,
             &[
@@ -649,6 +684,7 @@ mod window_verb_tests {
     use clausters_document::{Body, Grouping, Member, Node, Opaque};
 
     fn owner_with_a_clip() -> Owner {
+        // One unit to the beat: these tests are about the verbs, not the scale.
         let mut owner = Owner::new(Document::new(Node::new(
             NodeId(1),
             Body::Set {
@@ -665,7 +701,8 @@ mod window_verb_tests {
                     ),
                 }],
             },
-        )));
+        )))
+        .with_units_per_beat(1.0);
         owner.bind(50, NodeId(2));
         owner
     }
@@ -687,6 +724,7 @@ mod window_verb_tests {
         host.owner = Some(owner_with_a_clip());
         let seq = host.outbox.borrow_mut().stamp(1, 50);
         assert!(host.answer_own(
+            1,
             50,
             seq,
             &[
@@ -699,12 +737,98 @@ mod window_verb_tests {
 
         // Addressed to the window (id 1 here), not to the clip.
         let seq = host.outbox.borrow_mut().stamp(1, 1);
-        assert!(host.answer_own(1, seq, &[OscType::String("undo".into())]));
+        assert!(host.answer_own(1, 1, seq, &[OscType::String("undo".into())]));
         assert_eq!(offset(host.owner.as_ref().unwrap()), 0.0, "taken back");
 
         let seq = host.outbox.borrow_mut().stamp(1, 1);
-        assert!(host.answer_own(1, seq, &[OscType::String("redo".into())]));
+        assert!(host.answer_own(1, 1, seq, &[OscType::String("redo".into())]));
         assert_eq!(offset(host.owner.as_ref().unwrap()), 4.0, "and put back");
+    }
+
+    /// **An undo has to move the picture, not only the document.** A drag needs
+    /// no help — the gesture already moved the clip on screen — so the failure
+    /// this pins is the one that looks like the key doing nothing: the document
+    /// goes back, the widget stays where the hand left it, and nothing on
+    /// screen changes.
+    #[test]
+    fn an_undo_moves_the_widget_back_and_not_only_the_document() {
+        use crate::host::widget::WidgetKind;
+
+        let def_id = 1;
+        let doc = Document::new(Node::new(
+            NodeId(1),
+            Body::Set {
+                grouping: Grouping::Concrete,
+                members: vec![Member {
+                    offset: 0.0,
+                    dur: Some(1.0),
+                    node: Node::new(
+                        NodeId(2),
+                        Body::Event {
+                            config: Opaque::default(),
+                            fires: None,
+                        },
+                    ),
+                }],
+            },
+        ));
+        // Drawn as the session mode draws it, so the widget ids are real.
+        let drawn = super::tree::draw(
+            &doc,
+            &super::tree::Look {
+                first_id: def_id + 1,
+                units_per_beat: 100.0,
+                ..super::tree::Look::default()
+            },
+            "t",
+        );
+        let mut owner = Owner::new(doc).with_units_per_beat(100.0);
+        for b in &drawn.bindings {
+            owner.bind(b.widget, b.node);
+        }
+        let clip = drawn.bindings[0].widget;
+
+        let mut host = Host::new();
+        host.handle_packet(
+            crate::host::OscPacket::Message(crate::host::OscMessage {
+                addr: "/gui_def".into(),
+                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        host.owner = Some(owner);
+
+        let offset_of = |host: &Host| match host.widget_kind(def_id, clip) {
+            Some(WidgetKind::Clip { offset, .. }) => *offset,
+            other => panic!("clip {clip} is {other:?}"),
+        };
+        assert_eq!(offset_of(&host), 0.0);
+
+        // The edit a drag reports, in the widget's own unit.
+        let seq = host.outbox.borrow_mut().stamp(def_id, clip);
+        assert!(host.answer_own(
+            def_id,
+            clip,
+            seq,
+            &[
+                OscType::String("clip".into()),
+                OscType::Float(400.0),
+                OscType::Float(100.0),
+            ]
+        ));
+        assert_eq!(offset_of(&host), 400.0, "4 beats at 100 units a beat");
+
+        // ...and taken back: the widget follows the document.
+        let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
+        assert!(host.answer_own(def_id, def_id, seq, &[OscType::String("undo".into())]));
+        assert_eq!(
+            offset_of(&host),
+            0.0,
+            "the undo moved the picture, not only the document"
+        );
     }
 
     /// A save writes where the caller said and nowhere else: overwriting what
@@ -715,12 +839,12 @@ mod window_verb_tests {
         host.owner = Some(owner_with_a_clip());
         // Answered either way -- the verb *is* the window's -- but nothing is
         // written without a path.
-        assert!(host.answer_own(1, 1, &[OscType::String("save".into())]));
+        assert!(host.answer_own(1, 1, 1, &[OscType::String("save".into())]));
 
         let path =
             std::env::temp_dir().join(format!("clausters_h3_verb_{}.json", std::process::id()));
         host.owner = Some(owner_with_a_clip().saving_to(&path));
-        assert!(host.answer_own(1, 2, &[OscType::String("save".into())]));
+        assert!(host.answer_own(1, 1, 2, &[OscType::String("save".into())]));
         let written = std::fs::read_to_string(&path).expect("it wrote");
         assert!(
             written.contains("\"document\""),

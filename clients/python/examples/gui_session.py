@@ -15,8 +15,10 @@ What it shows, in the order the cells run:
   `Timeline`) becomes a session with `to_session` — the same call `gui_daw.py`
   makes when it saves.
 - **Handing it over.** The command to open it in the standalone host is printed
-  for you to run. Drag a clip, `Ctrl+Z` to take it back, `Ctrl+Shift+Z` to put
-  it back, `Ctrl+S` to save. The host is the owner while that window is open:
+  for you to run. Drag a clip, then **z** to take it back, **a** to put it back
+  and **s** to save (bare keys while the Ctrl chords are being fixed — the host
+  gets the control character rather than the letter). The host is the owner
+  while that window is open:
   the intent your drag emits is applied *there*, by the crate's `apply`, and the
   inverse comes out of the document rather than being remembered.
 - **Reading it back.** `from_session` on what the host wrote gives an
@@ -111,7 +113,7 @@ def host_binary() -> "str | None":
 def open_in_host(wait: bool = True) -> None:
     """Runs the host on the session, saving to a second file.
 
-    Drag a clip, `Ctrl+Z`, `Ctrl+Shift+Z`, `Ctrl+S`, then close the window.
+    Drag a clip, then `z` (undo), `a` (redo), `s` (save), then close it.
     Saving writes to ``--save-to`` and never over what was opened: overwriting
     the file you were given is a decision, not a default.
     """
@@ -122,7 +124,7 @@ def open_in_host(wait: bool = True) -> None:
         return
     cmd = [binary, "--session", path, "--save-to", saved]
     print("running: " + " ".join(cmd))
-    print("  drag a clip, Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, then close the window")
+    print("  drag a clip, then z (undo), a (redo), s (save), then close the window")
     if wait:
         subprocess.run(cmd, check=False)
 
@@ -138,7 +140,7 @@ def open_in_host(wait: bool = True) -> None:
 def read_back() -> None:
     """Prints where every element sits in the session the host wrote."""
     if not os.path.exists(saved):
-        print(f"nothing saved yet: press Ctrl+S in the host to write {saved}")
+        print(f"nothing saved yet: press s in the host to write {saved}")
         return
     with open(saved) as f:
         session = json.load(f)

@@ -568,7 +568,7 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
     }
     let mut host = Host::new();
     look.apply(&mut host);
-    host.owner = Some(owner);
+    host.owner = Some(owner.with_units_per_beat(tree::Look::default().units_per_beat));
     let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
     host.handle_packet(
         OscPacket::Message(OscMessage {

@@ -106,7 +106,7 @@ pub fn draw(document: &Document, look: &Look, title: &str) -> Drawn {
     match &document.root.body {
         Body::Set { members, .. } => {
             for member in members {
-                lane_of(member, look, &mut ids, &mut bindings, &mut lanes);
+                lane_of(member, 0.0, look, &mut ids, &mut bindings, &mut lanes);
             }
         }
         // A document that is one thing is one lane holding it.
@@ -116,7 +116,7 @@ pub fn draw(document: &Document, look: &Look, title: &str) -> Drawn {
                 dur: None,
                 node: document.root.clone(),
             };
-            lane_of(&member, look, &mut ids, &mut bindings, &mut lanes);
+            lane_of(&member, 0.0, look, &mut ids, &mut bindings, &mut lanes);
         }
     }
 
@@ -158,22 +158,44 @@ impl Ids {
     }
 }
 
+/// Turns one member into lanes, **recursing while it is sets all the way down**.
+///
+/// The rule is the shape of the material rather than a depth: a set whose
+/// members are leaves is a lane of clips (that is what a lane *is*), and a set
+/// of sets is not one lane but each of theirs. A composition is nested as deeply
+/// as the author nested it — a piece of groups of tracks of events is three
+/// deep before a single note is reached — so anything that stops at a fixed
+/// depth draws the containers and calls it a picture, which is an empty clip
+/// where the music was.
+///
+/// `base` accumulates the offsets on the way down, because a clip's offset is
+/// absolute on the shared axis while a member's is relative to its set.
 fn lane_of(
     member: &Member,
+    base: Beats,
     look: &Look,
     ids: &mut Ids,
     bindings: &mut Vec<Bound>,
     lanes: &mut Vec<Value>,
 ) {
+    let here = base + member.offset;
+    if let Body::Set { members, .. } = &member.node.body
+        && members
+            .iter()
+            .any(|inner| matches!(inner.node.body, Body::Set { .. }))
+    {
+        for inner in members {
+            lane_of(inner, here, look, ids, bindings, lanes);
+        }
+        return;
+    }
     let label = label_of(&member.node);
     let clips = match &member.node.body {
         Body::Set { members, .. } => members
             .iter()
-            // A set's members are placed relative to it, and a clip's offset is
-            // absolute on the shared axis: the two are added here, once.
-            .map(|inner| clip_of(inner, member.offset, look, ids, bindings))
+            .map(|inner| clip_of(inner, here, look, ids, bindings))
             .collect(),
-        _ => vec![clip_of(member, 0.0, look, ids, bindings)],
+        _ => vec![clip_of(member, base, look, ids, bindings)],
     };
     let mut props = Map::new();
     props.insert("id".into(), json!(ids.take()));
@@ -501,5 +523,96 @@ mod registry_tests {
             )),
             "and the registry dropped the clip that collided"
         );
+    }
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use super::*;
+    use clausters_document::{Grouping, Member, Opaque};
+
+    fn event(id: u64) -> Node {
+        Node::new(
+            NodeId(id),
+            Body::Event {
+                config: Opaque::default(),
+                fires: None,
+            },
+        )
+    }
+
+    fn set(id: u64, members: Vec<Member>) -> Node {
+        Node::new(
+            NodeId(id),
+            Body::Set {
+                grouping: Grouping::Concrete,
+                members,
+            },
+        )
+    }
+
+    fn at(offset: Beats, node: Node) -> Member {
+        Member {
+            offset,
+            dur: None,
+            node,
+        }
+    }
+
+    /// **A composition is nested as deeply as its author nested it**, and this
+    /// draws the leaves wherever they are. The shape that found the bug is the
+    /// ordinary one: a piece of groups of tracks of events, three sets deep
+    /// before a single note — and a walk that stopped at two drew the
+    /// containers and called it a picture, which is an empty clip where the
+    /// music was.
+    #[test]
+    fn a_piece_of_groups_of_tracks_draws_the_notes_and_not_the_containers() {
+        let doc = Document::new(set(
+            1,
+            vec![
+                at(
+                    0.0,
+                    set(
+                        2,
+                        vec![at(0.0, set(3, vec![at(0.0, event(4)), at(2.0, event(5))]))],
+                    ),
+                ),
+                at(0.0, set(6, vec![at(0.0, set(7, vec![at(0.0, event(8))]))])),
+            ],
+        ));
+        let drawn = draw(&doc, &Look::default(), "piece");
+        let nodes: Vec<u64> = drawn.bindings.iter().map(|b| b.node.0).collect();
+        assert_eq!(
+            nodes,
+            vec![4, 5, 8],
+            "the clips are the events, not the tracks that hold them"
+        );
+        let kids = drawn.def["children"].as_array().unwrap();
+        assert_eq!(kids.len(), 3, "one lane per track, and the ruler");
+        assert_eq!(
+            kids[0]["children"].as_array().unwrap().len(),
+            2,
+            "the first track's two notes"
+        );
+    }
+
+    /// The offsets accumulate all the way down: a note two beats into a track
+    /// that starts four beats into the piece sits at six on the shared axis.
+    #[test]
+    fn offsets_accumulate_through_every_level() {
+        let doc = Document::new(set(
+            1,
+            vec![at(
+                4.0,
+                set(2, vec![at(0.0, set(3, vec![at(2.0, event(4))]))]),
+            )],
+        ));
+        let look = Look {
+            units_per_beat: 10.0,
+            ..Look::default()
+        };
+        let drawn = draw(&doc, &look, "piece");
+        let clip = &drawn.def["children"][0]["children"][0];
+        assert_eq!(clip["offset"], 60.0, "4 + 0 + 2 beats, in units");
     }
 }

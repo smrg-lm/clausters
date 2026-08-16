@@ -701,6 +701,15 @@ impl ApplicationHandler<UserEvent> for App {
                 self.on_wheel(def_id, steps);
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                // A key's own trace, at debug: what the window received, which
+                // is the first question when a shortcut does nothing.
+                tracing::debug!(
+                    "key: logical={:?} text={:?} ctrl={} shift={}",
+                    event.logical_key,
+                    event.text,
+                    self.ctrl(def_id),
+                    self.shift(def_id)
+                );
                 // The focus consumes the key first — Tab walks the ring, and a
                 // focused element edits (typing, caret motion, cut/copy/paste).
                 // Only what nothing there answered reaches the global shortcuts
@@ -708,6 +717,7 @@ impl ApplicationHandler<UserEvent> for App {
                 if let Some(k) = to_key(&event.logical_key)
                     && self.key_input(def_id, k)
                 {
+                    tracing::debug!("key: consumed by the focus");
                     return;
                 }
                 // ...then the element **under the cursor**, which is where a
@@ -717,8 +727,10 @@ impl ApplicationHandler<UserEvent> for App {
                 if let Some(k) = to_key(&event.logical_key)
                     && self.key_at_cursor(def_id, k)
                 {
+                    tracing::debug!("key: consumed by the element under the cursor");
                     return;
                 }
+                tracing::debug!("key: reached the window's own shortcuts");
                 match event.logical_key {
                     Key::Named(NamedKey::Escape) => self.user_close(def_id, event_loop),
                     // Undo and redo are the window's, not a widget's: they are
@@ -737,6 +749,21 @@ impl ApplicationHandler<UserEvent> for App {
                     // under the cursor. A host that owns nothing emits it and a
                     // script may answer; one that owns a session writes it.
                     Key::Character(ref c) if c.eq_ignore_ascii_case("s") && self.ctrl(def_id) => {
+                        self.window_verb(def_id, "save")
+                    }
+                    // TEMPORARY, for checking the session mode by hand: the
+                    // same three verbs on bare keys, because Ctrl+letter is
+                    // not arriving as the letter (winit's `logical_key` is the
+                    // key *with* modifiers applied, and Ctrl+Z is a control
+                    // character). The real fix is `key_without_modifiers`;
+                    // these three come out when it lands.
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("z") => {
+                        self.history(def_id, false)
+                    }
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("a") => {
+                        self.history(def_id, true)
+                    }
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("s") => {
                         self.window_verb(def_id, "save")
                     }
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
