@@ -27,3 +27,4 @@ uv.lock
 # Artifacts the session example hands to the standalone host and reads back.
 clients/python/examples/gui_session.json
 clients/python/examples/gui_session-edited.json
+clients/python/examples/gui_session-take.wav

@@ -596,6 +596,16 @@ impl ApplicationHandler<UserEvent> for App {
             }
         }
 
+        // **A download in flight keeps the loop awake.** The embed ring is
+        // polled right here on the main thread, so a window that has asked for
+        // a buffer and then sleeps until the next input never reads the reply:
+        // the take appears when the pointer happens to move, which reads as a
+        // picture that does not load.
+        if self.fetches.pending() {
+            let t = now + FRAME;
+            next_wake = Some(next_wake.map_or(t, |w| w.min(t)));
+        }
+
         // Node-tree polling, driven from the client leg (the `/node_set` poll).
         if self.host.server().is_some() && !self.node_tree_groups().is_empty() {
             if now >= self.next_query {

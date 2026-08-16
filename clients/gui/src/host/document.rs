@@ -31,6 +31,7 @@
 //! edit is the previous value handed back, which is the crate's decision and
 //! the reason the caller can adopt the outcome unconditionally.
 
+pub mod sources;
 pub mod tree;
 
 use std::collections::HashMap;

@@ -45,15 +45,20 @@ the cells. Install once, from the repo root::
 
 # %%
 import json
+import math
 import os
 import shutil
+import struct
 import subprocess
 import sys
+import wave
 
-from clausters.form import Group, Track
-from clausters.form.document import from_session, to_session
+from clausters.form import Buffer, Group, Track
+from clausters.form.document import FrozenSource, from_session, to_session
 from clausters.seq import Timeline
 from clausters.seq.event import Event as SeqEvent
+
+SAMPLE_RATE = 48_000
 
 # %% [markdown]
 # ## An arrangement, built the ordinary way
@@ -70,9 +75,71 @@ bass = Track(Timeline([
     (0.0, SeqEvent(midinote=48, dur=2.0)),
     (4.0, SeqEvent(midinote=52, dur=2.0)),
 ]))
+
+# %% [markdown]
+# ## And a take, which is material rather than description
+#
+# A document says *what plays when* and never where the samples are — so a take
+# is a source **id**, and the session's table is what says where that source
+# lives. The two halves are written together below; the host resolves the table
+# and reads each file into a server buffer of its own, which is what lets a clip
+# draw its waveform instead of an empty rectangle.
+
+#: A file beside this one, written here so the example needs nothing but itself
+#: — an ordinary WAV, the kind a person drags in, decoded by the server the way
+#: any other would be.
+take_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "gui_session-take.wav")
+
+
+def write_take(path: str, seconds: float = 2.0, freq: float = 440.0) -> int:
+    """Writes a short tone to `path` and returns its frame count.
+
+    Two partials and a slow decay, so the drawn waveform has a shape to
+    recognize rather than a rectangle of noise.
+    """
+    frames = int(seconds * SAMPLE_RATE)
+    with wave.open(path, "w") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(SAMPLE_RATE)
+        samples = bytearray()
+        for i in range(frames):
+            t = i / SAMPLE_RATE
+            env = math.exp(-3.0 * t / seconds) * (1.0 - math.exp(-t * 400.0))
+            v = env * 0.7 * (math.sin(2 * math.pi * freq * t)
+                             + 0.3 * math.sin(2 * math.pi * freq * 3 * t))
+            samples += struct.pack("<h", int(max(-1.0, min(1.0, v)) * 32767))
+        f.writeframes(bytes(samples))
+    return frames
+
+
+take_frames = write_take(take_path)
+
+#: The element names **source 1** and nothing else: `FrozenSource` is what a
+#: document reader hands back for a source it has not resolved to a live server
+#: buffer, and it is exactly what writing one from a file needs — the id, and
+#: the table beside it.
+take = Buffer(FrozenSource({"source": 1, "lifetime": "session"}),
+              duration=take_frames / SAMPLE_RATE)
+
+#: Where source 1 is. A **relative** path, resolved against the session file's
+#: own folder, which is what makes the pair of files movable together.
+sources = {
+    1: {
+        "location": {"at": "file", "path": os.path.basename(take_path)},
+        "lifetime": "session",
+        "generation": 0,
+        "channels": 1,
+        "frames": take_frames,
+        "sample_rate": float(SAMPLE_RATE),
+    },
+}
+
 piece = Group([
     (0.0, Group([(0.0, melody)], name="melody")),
     (0.0, Group([(0.0, bass)], name="bass")),
+    (1.0, Group([(0.0, take)], name="take")),
 ], name="piece")
 
 # %% [markdown]
@@ -94,8 +161,9 @@ saved = os.path.join(HERE, "gui_session-edited.json")
 
 # %%
 with open(path, "w") as f:
-    f.write(json.dumps(to_session(piece), indent=1))
+    f.write(json.dumps(to_session(piece, sources=sources), indent=1))
 print(f"wrote {path} ({os.path.getsize(path)} B)")
+print(f"  and {take_path} ({take_frames} frames), which its source table names")
 
 
 # %% [markdown]

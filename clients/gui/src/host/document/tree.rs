@@ -23,16 +23,19 @@
 //! driven by itself, so anything it can draw a script can draw too, and
 //! anything it cannot is missing for both.
 //!
-//! # What it does not draw yet
+//! # A clip's body, and the one thing this cannot know
 //!
-//! A clip's **body** — the take, the notes, the automation curve under the
-//! label — needs the session's sources resolved to files and buffers, which is
-//! the half that belongs with the session and not with the tree. Until then a
-//! clip is its placement and its name, which is enough to move it, undo it and
-//! save it, and honest about the rest.
+//! A set of pitched events draws as a **roll** from the tree alone, because the
+//! pitches are in the tree. A **take** cannot: the document names a source and
+//! never says where the material is, so drawing one needs the session's table
+//! resolved to something a host can read — which is [`super::sources`], and is
+//! why `Look` takes the resolved [`Takes`] rather than the session. Given none,
+//! a take is still drawn: its placement and its name, honest about the rest.
 
 use clausters_document::{Beats, Body, Document, Member, Node, NodeId};
 use serde_json::{Map, Value, json};
+
+use super::sources::Takes;
 
 /// One clip or lane the tree drew, and the node it draws.
 ///
@@ -47,7 +50,7 @@ pub struct Bound {
 
 /// How the picture is scaled and labelled.
 #[derive(Debug, Clone, Copy)]
-pub struct Look {
+pub struct Look<'a> {
     /// Samples per beat — the unit a clip's `offset`/`dur` are in, since the
     /// shared time axis measures samples and the document measures beats.
     pub units_per_beat: f64,
@@ -65,9 +68,16 @@ pub struct Look {
     /// itself, and the registry drops the whole subtree — which looks like an
     /// empty window and one line in the log.
     pub first_id: i32,
+    /// The session's material, once somebody has resolved it to buffers.
+    ///
+    /// `None` — or a source missing from it — draws a take as its placement and
+    /// its name, which is what a host with no server can honestly show: the
+    /// document holds no samples, so an empty clip here means *the material is
+    /// elsewhere*, not that there is none.
+    pub takes: Option<&'a Takes>,
 }
 
-impl Default for Look {
+impl Default for Look<'_> {
     fn default() -> Self {
         Self {
             units_per_beat: 48_000.0,
@@ -75,6 +85,7 @@ impl Default for Look {
             tempo: 1.0,
             quant: 0.0,
             first_id: 1,
+            takes: None,
         }
     }
 }
@@ -96,7 +107,7 @@ pub struct Drawn {
 /// one clip. Nesting deeper than that is drawn flat for now — a set inside a
 /// set is one lane of its own, in document order — because an expanded/collapsed
 /// state is a thing the *editor* holds and this has nowhere yet to keep one.
-pub fn draw(document: &Document, look: &Look, title: &str) -> Drawn {
+pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
     let mut ids = Ids {
         next: look.first_id,
     };
@@ -173,7 +184,7 @@ impl Ids {
 fn lane_of(
     member: &Member,
     base: Beats,
-    look: &Look,
+    look: &Look<'_>,
     ids: &mut Ids,
     bindings: &mut Vec<Bound>,
     lanes: &mut Vec<Value>,
@@ -222,7 +233,7 @@ fn lane_of(
 fn clip_of(
     member: &Member,
     base: Beats,
-    look: &Look,
+    look: &Look<'_>,
     ids: &mut Ids,
     bindings: &mut Vec<Bound>,
 ) -> Value {
@@ -231,20 +242,48 @@ fn clip_of(
         widget,
         node: member.node.id,
     });
+    let take = take_of(&member.node, look);
     // The length shown: the placement's where it overrides, else the element's
-    // own, else a beat — a clip with no length at all would be a line.
+    // own, else **the material's** — a take placed 1:1 is as long as it is,
+    // which is the one length nobody has to state — else a beat, because a clip
+    // with no length at all would be a line.
     let dur = member
         .dur
         .or(member.node.duration)
+        .or_else(|| {
+            take.and_then(|t| t.frames)
+                .map(|f| f as f64 / look.units_per_beat)
+        })
         .filter(|d| *d > 0.0)
         .unwrap_or(1.0);
-    json!({
-        "id": widget,
-        "type": "field",
-        "offset": (base + member.offset) * look.units_per_beat,
-        "dur": dur * look.units_per_beat,
-        "label": label_of(&member.node),
-    })
+    let mut props = Map::new();
+    props.insert("id".into(), json!(widget));
+    props.insert("type".into(), json!("field"));
+    props.insert(
+        "offset".into(),
+        json!((base + member.offset) * look.units_per_beat),
+    );
+    props.insert("dur".into(), json!(dur * look.units_per_beat));
+    props.insert("label".into(), json!(label_of(&member.node)));
+    // The material, as a **server buffer**: the clip's take body fetches it
+    // over the host's client leg, which is the same route a script's clip
+    // takes. What is drawn is then what an edit writes — one copy, not a
+    // picture of one and a write to another.
+    if let Some(take) = take {
+        props.insert("buffer".into(), json!(take.bufnum));
+        if let Some(channels) = take.channels {
+            props.insert("channels".into(), json!(channels));
+        }
+    }
+    Value::Object(props)
+}
+
+/// The material a node draws, when it names some and somebody resolved it.
+fn take_of(node: &Node, look: &Look<'_>) -> Option<super::sources::Take> {
+    let Body::Buffer { source, .. } = &node.body else {
+        return None;
+    };
+    look.takes?.get(source.source)
 }
 
 /// The `notes` body of a set of events — the flat `start dur pitch velocity
@@ -287,7 +326,7 @@ fn roll_clip(
     member: &Member,
     base: Beats,
     notes: Vec<(Beats, Beats, f32)>,
-    look: &Look,
+    look: &Look<'_>,
     ids: &mut Ids,
     bindings: &mut Vec<Bound>,
 ) -> Value {
@@ -483,6 +522,85 @@ mod tests {
             "t",
         );
         assert_eq!(children(&snapped.def)[0]["snap"], 50.0);
+    }
+}
+
+#[cfg(test)]
+mod take_tests {
+    use super::*;
+    use crate::host::document::sources;
+    use clausters_document::session::{Session, Source};
+    use clausters_document::{Grouping, Lifetime, SourceId, SourceRef};
+
+    fn take(id: u64, source: u64) -> Node {
+        Node::new(
+            NodeId(id),
+            Body::Buffer {
+                source: SourceRef {
+                    source: SourceId(source),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                },
+                config: Default::default(),
+            },
+        )
+    }
+
+    fn one_take(source: u64) -> Document {
+        Document::new(Node::new(
+            NodeId(1),
+            Body::Set {
+                grouping: Grouping::Concrete,
+                members: vec![Member {
+                    offset: 0.0,
+                    dur: None,
+                    node: take(2, source),
+                }],
+            },
+        ))
+    }
+
+    /// A resolved take draws the **buffer**, which is the same material an edit
+    /// writes: the picture and the samples are one thing, or the host is
+    /// showing one copy and editing another.
+    #[test]
+    fn a_resolved_take_draws_its_buffer_and_is_as_long_as_its_material() {
+        let dir = std::env::temp_dir().join(format!("clausters_gui_take_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        std::fs::write(dir.join("t.wav"), b"there").expect("write");
+        let session = Session::new(one_take(3)).with_source(
+            SourceId(3),
+            // Two seconds at the drawing's own rate: 96000 frames.
+            Source::file("t.wav", Lifetime::Session).shaped(2, 96_000, 48_000.0),
+        );
+        let load = sources::plan(&session, &dir, 7);
+        let look = Look {
+            takes: Some(&load.takes),
+            ..Look::default()
+        };
+        let drawn = draw(&session.document, &look, "take");
+        let clip = &drawn.def["children"][0]["children"][0];
+        assert_eq!(clip["buffer"], 7, "the buffer it was read into");
+        assert_eq!(clip["channels"], 2);
+        assert_eq!(
+            clip["dur"], 96_000.0,
+            "as long as the material, in timeline units"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Unresolved — no session, no server, a missing file — is a clip with a
+    /// name and no body, and **not** a refusal: what the document says still
+    /// moves, undoes and saves.
+    #[test]
+    fn an_unresolved_take_still_draws_as_a_clip() {
+        let doc = one_take(3);
+        let drawn = draw(&doc, &Look::default(), "take");
+        let clip = &drawn.def["children"][0]["children"][0];
+        assert!(clip.get("buffer").is_none(), "nothing to draw it with");
+        assert_eq!(clip["dur"], 48_000.0, "one beat, for want of a length");
+        assert_eq!(drawn.bindings.len(), 1, "and it is still bound");
     }
 }
 

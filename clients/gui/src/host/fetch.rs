@@ -85,6 +85,16 @@ impl BufferFetches {
         })
     }
 
+    /// Whether anything is still waiting on the server.
+    ///
+    /// A front that polls its link (rather than being woken by a thread) reads
+    /// this to know it must keep looking: an event-driven loop that sleeps
+    /// until the next input would leave a reply sitting in the ring, and the
+    /// window would fill in only when the pointer happened to move.
+    pub(crate) fn pending(&self) -> bool {
+        !self.wants.is_empty() || !self.fetches.is_empty()
+    }
+
     /// `/buffer_query.reply` for a buffer we are waiting on: start its download (or finish
     /// immediately when it is empty/unallocated).
     pub(crate) fn on_info(

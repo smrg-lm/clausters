@@ -537,9 +537,39 @@ fn open_store(dir: &Path) -> Option<GuiStore> {
 /// those are the crate's, which is the whole reason a session survives being
 /// passed between writers.
 fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Result<(), String> {
-    use clausters_gui::host::document::{Owner, tree};
+    use clausters_gui::host::document::{Owner, sources, tree};
 
     let mut owner = Owner::open(path)?;
+
+    // **The material, before the picture.** A document says what plays when and
+    // never where its samples are; the session's table says that, and a host
+    // that can read it draws takes instead of empty rectangles. The buffers are
+    // read first and waited for, because a clip's fetch starts the moment the
+    // tree is handed over and would ask the server for a buffer it has not
+    // filled yet.
+    let beside = Path::new(path).parent().unwrap_or(Path::new("."));
+    let load = owner
+        .session
+        .as_ref()
+        .map(|session| sources::plan(session, beside, 0))
+        .unwrap_or_default();
+    for (id, why) in &load.unresolved {
+        tracing::warn!("session: source {} is not loadable: {why}", id.0);
+    }
+
+    let mut host = Host::new();
+    #[cfg(feature = "standalone")]
+    attach_server(&mut host, &load)?;
+    #[cfg(not(feature = "standalone"))]
+    if !load.messages.is_empty() {
+        tracing::warn!(
+            "session: {} take(s) will draw empty — this clausters-gui was built without \
+             standalone support, so there is no server to read them into (rebuild with \
+             `--features standalone`)",
+            load.messages.len()
+        );
+    }
+
     let name = |p: &str| {
         Path::new(p)
             .file_name()
@@ -562,6 +592,7 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
             // registry drops the whole subtree -- which is an empty window and
             // one line in the log.
             first_id: def_id + 1,
+            takes: Some(&load.takes),
             ..tree::Look::default()
         },
         &title,
@@ -576,7 +607,6 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
     if let Some(out) = save_to {
         owner = owner.saving_to(out);
     }
-    let mut host = Host::new();
     look.apply(&mut host);
     host.owner = Some(owner.with_units_per_beat(tree::Look::default().units_per_beat));
     let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
@@ -600,6 +630,83 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
     let socket = UdpSocket::bind(("127.0.0.1", port))
         .map_err(|e| format!("failed to bind UDP port {port}: {e}"))?;
     gui::run(host, Arc::new(socket), None, None, None)
+}
+
+/// Gives a session host a server, and its material to it.
+///
+/// **A failed boot is not a failed session.** The document, its edits, its undo
+/// and its save need no server at all; what needs one is the sound and the
+/// picture of a take. So a machine with no audio device still opens the file,
+/// with the takes drawn as what they are — a warning and an empty clip, which
+/// is the same honesty the unresolved sources get.
+#[cfg(feature = "standalone")]
+fn attach_server(
+    host: &mut Host,
+    load: &clausters_gui::host::document::sources::Load,
+) -> Result<(), String> {
+    let embed = match EmbedServer::open() {
+        Ok(embed) => embed,
+        Err(e) => {
+            tracing::warn!(
+                "session: no audio server ({e}) — the document opens and edits, but takes will \
+                 not draw or sound"
+            );
+            return Ok(());
+        }
+    };
+    for msg in &load.messages {
+        send_osc(&embed, msg.clone())?;
+    }
+    if !load.messages.is_empty() {
+        // **Waited for, not fired and forgotten.** A buffer read is
+        // asynchronous, and a clip's fetch starts the moment the tree reaches
+        // the host: without this the window would ask for the shape of a buffer
+        // that is still empty, once, and draw nothing forever.
+        await_reads(&embed, load.messages.len());
+    }
+    host.set_server_link(ServerLink::Embed(embed));
+    Ok(())
+}
+
+/// Waits for `n` buffer reads to answer, reporting each failure by its own
+/// words. Bounded: a read that never answers costs a few seconds and a line,
+/// not a window that never opens.
+#[cfg(feature = "standalone")]
+fn await_reads(embed: &EmbedServer, n: usize) {
+    use std::time::{Duration, Instant};
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut answered = 0;
+    let mut buf = vec![0u8; 65536];
+    while answered < n && Instant::now() < deadline {
+        let Some(len) = embed.poll_into(&mut buf) else {
+            std::thread::sleep(Duration::from_millis(5));
+            continue;
+        };
+        let Ok(OscPacket::Message(msg)) = clausters_core::osc::decode_packet(&buf[..len]) else {
+            continue;
+        };
+        let of = |args: &[OscType]| match args.first() {
+            Some(OscType::String(s)) => s.clone(),
+            _ => String::new(),
+        };
+        match msg.addr.as_str() {
+            "/done" if of(&msg.args) == "/buffer_allocRead" => answered += 1,
+            "/fail" if of(&msg.args) == "/buffer_allocRead" => {
+                answered += 1;
+                tracing::warn!("session: a take did not load: {:?}", msg.args);
+            }
+            _ => {}
+        }
+    }
+    if answered < n {
+        tracing::warn!(
+            "session: {} of {n} take(s) had not loaded after 10s — they will draw empty",
+            n - answered
+        );
+    } else {
+        tracing::info!("session: {n} take(s) read into buffers");
+    }
 }
 
 /// Boots a saved GuiDef as a self-contained app: an embedded audio server, the

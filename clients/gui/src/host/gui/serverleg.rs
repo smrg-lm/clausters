@@ -25,6 +25,7 @@ impl App {
     /// `(widget_id, bufnum)`.
     pub(super) fn start_buffer_fetches(&mut self, def_id: i32, refs: Vec<(i32, i32)>) {
         for (widget_id, bufnum) in refs {
+            debug!("gui_def {def_id}: widget {widget_id} waits on server buffer {bufnum}");
             if let Some(query) = self.fetches.want(def_id, widget_id, bufnum) {
                 self.send_to_server(query);
             }
