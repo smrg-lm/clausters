@@ -314,6 +314,54 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
 
 - ✅ **S11 — Hop-phase staggering for spectral chains** *(done 2026-07-18)* — de-align the hop blocks of concurrently running `FFT` chains so their transform spikes spread across blocks instead of stacking on one. Today every chain instantiated on the same block hops on the same block: the `bench` spectral section measures 32 aligned 1024-point chains at ~8% average load but ~65% of the block budget on the hop block — the sawtooth worst case. The fix is an initial `since_hop` offset chosen **deterministically per instance** (derived from the node id modulo the hop, quantized to blocks), so RT and NRT stay sample-identical for the same score and a given chain's own analysis is untouched (the hop was always quantized to the processing slice; only *which* block a chain first fires on shifts). Acceptance metric: the peak-block column of `examples/bench.rs` at 32/128 voices approaches `avg + one chain's pair cost`. Document the stagger in `docs/architecture.md` (spectral section) and note the determinism rule next to the NRT sample-identity invariant.
 
+- ⬜ **S12 — A buffer write costs the samples written** *(opened 2026-08-15, on the roadmap's Phase 3 pass; it is the "Found by use" entry below, measured — that entry asked for numbers before a choice, and this is where the choice is taken)*. `/buffer_setRange` lays its runs into a copy that **replaces the buffer whole**, so an editor's write costs the take rather than the edit. It is the substrate half of the sample editor (`clients/gui/PLAN.md`, D1/D2), and it is adjacent to — **but does not answer** — the other write `src/dsp/buffer.rs` names in its own module docs (*"Recording UGens would need a different scheme"*). The two writes are not one problem, and conflating them is the first mistake available here: an **editor** write comes off the NRT thread, covers an arbitrary span, must not tear (a click in the middle of the take you are editing is a defect) and can afford microseconds; a **recorder** write (`RecordBuf`, the one member of that family still missing now that `DiskIn`/`DiskOut` have shipped) comes off the **audio thread**, is sequential and block-sized, must allocate nothing, and tears by design — every server that records into a shared buffer accepts that, scsynth included. Only candidate (A) below serves both; (B) serves the editor alone, because cloning a block on the audio thread is an allocation.
+
+  **What it costs today** (measured 2026-08-15, release build, writes of 1 ms fired back to back and closed by one `/server_sync`, so the queue's own serial rate is what shows):
+
+  ```
+  10 s stereo    3.7 MB     2.26 ms per write     443 writes a second
+  1 min stereo  22.0 MB     6.49 ms per write     154 writes a second
+  5 min stereo 109.9 MB    33.84 ms per write      30 writes a second
+  10 min stereo 219.7 MB   62.88 ms per write      16 writes a second
+  ```
+
+  The cost is linear in the **buffer** (~0.29 ms per MB) and flat in the span: a one-sample write and a 100 ms write cost the same. A draw stroke emitting one intent per 10 ms asks for 100 writes a second, so on a five-minute take the gesture outruns the server by 3× and on a ten-minute one by 6× — and the NRT queue is serial and unbounded, so the picture does not merely lag, it falls further behind with every stroke.
+
+  **Three quarters of that is the allocation, not the memcpy**, which is worth knowing before choosing: a fresh 110 MB copy measures 31.2 ms while the same copy into a destination that already exists measures 8.05 ms (30 min: 182 ms against 44 ms). Today's path allocates a second take per write and drops the old one through the garbage FIFO (2.3 ms), so it pays the page faults every time.
+
+  **What constrains the answer is the reader, and the reader is two readers.** `Buffer::sample(frame, ch)` is random access per sample (`PlayBuf`, `BufRd`, the demand family, `OscN`), and `Buffer::data()` hands out a **contiguous `&[f32]`** — read *per block on the audio thread* by `Osc`, `VOsc`, `Shaper` (`src/dsp/osc.rs`) and `Conv` (`src/dsp/conv.rs`), and off it by `/buffer_gen`, `/buffer_getRange`, `write_wav`, the embed export (`src/embed.rs`) and `faust/synth.rs`. Any representation that cannot produce that slice breaks those callers. **The asymmetry that makes this tractable**: the buffers that want a span write are takes, minutes long, and they are never the ones read through `data()`; the buffers read through `data()` are wavetables and impulse responses, short and written whole. So the representation can be a **property of the buffer** rather than of the type — but that is a decision with a cost at every `data()` call site, and it is the one this milestone must take rather than assume.
+
+  **The four candidates, measured on a five-minute stereo take** (a 1 ms write, except where noted):
+
+  | candidate | cost per write | what it costs elsewhere |
+  |---|---|---|
+  | **today** — whole copy, installed | 33.8 ms | nothing new; O(buffer), and double peak memory |
+  | **(C) whole copy into a reused scratch take** | ~8 ms | one spare take per edited buffer (110 MB); still O(buffer) |
+  | **(B) copy-on-write block table** | 6.3 µs | `data()` cannot answer; **+20%** on an interpolated read |
+  | **(A) in-place write** | 0.01 µs | `data()` cannot answer; **+3%** on an interpolated read; a torn read |
+
+  **(A) In place.** The NRT thread writes the span into the live buffer. Cheapest by five orders of magnitude, and it allocates nothing — no second take, no garbage, no page faults. A reader may see a *half-applied edit*, which is a data race in the model even where the hardware makes the store atomic, so the storage becomes `[AtomicU32]` and every read a relaxed load. **What that costs the reader was the open question and it is now measured**: +3% on a sequential interpolated stereo read (145 → 150 ns per 64 frames), **+0%** on a wavetable-shaped read of a table that is hot in cache (35 → 35 ns), and noisier on a scattered read where the loop is memory-bound anyway. Per-element atomicity means no sample is ever read half-written; what a reader can see is a *mixture* of old and new samples across the span, audible as a click and not as corruption — which is what every server that records into a shared buffer already accepts, scsynth included.
+
+  **(B) The copy-on-write block table.** `Vec<Arc<Block>>`; a write clones the table (one pointer per block — 3.4 KiB for a five-minute take) and copies only the blocks it touches. **6.3 µs**, five thousand times cheaper than today and effectively flat in the take's length (a thirty-minute take costs 15 µs). Every RT invariant survives untouched: the audio thread still holds an `Arc` to an immutable structure, the old table leaves through the garbage FIFO, nothing locks. The block size is a real parameter and it has a floor and a ceiling — at 4 KiB the table clone dominates (181 µs), at 4 MiB the block copy does (138 µs), and the flat bottom is **64–256 KiB**:
+
+  ```
+  4 KiB  28125 blocks  181.09 us      256 KiB    440 blocks    6.44 us
+  16 KiB  7032 blocks   31.12 us     1024 KiB    110 blocks   37.61 us
+  64 KiB  1758 blocks    9.52 us     4096 KiB     28 blocks  138.32 us
+  ```
+
+  Its price is the reader, and it is the higher of the two: an interpolated stereo read of 64 frames goes from 145 ns to 174 ns (**+20%**) sequentially and +30% scattered, because the indirection is real and no arrangement of the data removes it. `data()` has no answer here either.
+
+  **(C) Keep the copy, lose the allocation.** A spare take per edited buffer, copied into and swapped, which is a **4× win for one afternoon and no contract change** — and still O(buffer), so it moves a five-minute take from 30 to 125 writes a second and a thirty-minute one from 5 to 23. It is not the answer; it is what to ship if the answer is deferred, and it is worth stating so that "we measured it" does not become "we did nothing".
+
+  **(D) Do not write the take while the hand is moving.** The document crate already specifies that the working copy leads while the session is open (O8), and D4 already plays a copied block **out of a buffer of its own**. A one-second scratch buffer sustains 443 writes a second — above the gesture rate — so a stroke can be *heard* against a scratch span with no server change at all. **This is the finding that moves the roadmap**: hearing an edit live is not blocked on this milestone, so S12 stops being a prerequisite of D1/D2 and becomes what makes editing the server's own copy of a long take live. What it still gates is confirming an edit into a minutes-long buffer without a visible stall.
+
+  **The recommendation, and what is left open.** Take **(A)**, as a per-buffer **writable** flag rather than as a change to what every buffer is: an ordinary buffer keeps flat `[f32]` storage, today's `data()` and today's speed, and a buffer becomes writable when it is allocated as an edit target or when a recorder attaches to it. **The reader measurement is what decided it**, and it decided it against the recommendation this milestone was opened with. The argument for (B) had been that it keeps every invariant untouched — but both candidates take `data()` away from a writable buffer, so (B) buys nothing on the surface that actually constrains this, while costing the reader seven times more (+20% against +3%), allocating a block and a table per write, and still leaving `RecordBuf` unserved. What (B) alone buys is the absence of a torn read, and that is the whole of the decision: **is a half-applied edit acceptable on a buffer someone is sounding while they edit it?** The system's own answer is already written down and it is yes-with-a-caveat — the working copy leads while the session is open (O8), so what reaches the server is a *confirmed* span, not a stroke in progress, and a mixture across it is the sound of the edit landing.
+
+  **What is left open, and it is a design question rather than a measurement** — which is why the numbers stop here. What the four per-block `data()` readers do when pointed at a writable buffer (decline, fall back to `sample()`, or the promotion is refused while a wavetable UGen holds it); whether the flag is set at `/buffer_alloc` or inferred on first write; and whether an editor's confirmed write is additionally serialized against readers by some cheap means (a per-buffer epoch a reader can check per *block* rather than per sample, which is the seqlock shape the original entry gestured at) or whether the tear is simply accepted and documented. **Acceptance:** a 1 ms write into a five-minute take costs under 100 µs end to end and does not grow with the take (the table above is the before); the audio thread's read cost is measured and stated; `tests/rt_safety.rs` stays green; every `data()` caller is accounted for by name; and a draw stroke at 100 intents a second on a ten-minute take keeps up, checked through the D-track example rather than only in a bench.
+
+  **One thing no candidate above touches, and it is the floor a single stroke actually meets.** A lone `/buffer_setRange` closed by its own barrier takes **~104 ms regardless of the buffer's size** — the network loop blocks in `recv_from` on a 100 ms timeout (`GC_INTERVAL`, `src/osc/server/lifecycle.rs`) and only collects finished NRT results when that wakes it, so a completed job waits up to 100 ms to be reported. Batched writes hide it (one barrier for fifty) and every async buffer command pays it (an `alloc`, a `read`, a def compile). It is a separate fix — wake the loop when a result lands, or shorten the timeout while jobs are in flight — and it is recorded under "Found by use" so it is not swallowed by this milestone.
+
 ## B track — the engine in the browser (wasm)
 
 Section added 2026-07-18. Compile the engine to `wasm32` and run it **in the
@@ -1226,6 +1274,41 @@ no page equivalent by design.
   history. The examples are also the manual-test surface: new
   human-audible/visual behavior is checked by running one.
 
+## Future directions (a design that is not a fix)
+
+Opened 2026-08-15 with its first entry. The counterpart of "Found by use"
+below: what belongs here is a **design** that has not converged into a
+milestone, carrying a checkbox like everything unresolved, and leaving this
+list when a milestone absorbs it (the milestone is then the record, and says
+where it came from).
+
+- ⬜ **Editing a file is not editing a buffer, and the server only has
+  buffers** *(named 2026-08-15, answering what S12 does and does not reach)*.
+  The server's model for sample data is a **RAM-resident pool**: a five-minute
+  stereo take is 110 MB in the pool and a thirty-minute one is 660 MB, per
+  take, on top of the client's working copy and the host's mapped view of the
+  same material. The streaming pair exists and is real — `DiskIn`/`DiskOut`
+  (`src/dsp/disk.rs`) run their own I/O thread and never touch the pool — but
+  `DiskIn` takes one input (`chan`) and a static path, plays front to back at
+  one file frame per server sample, and has **no seek, no rate and no scrub**,
+  so it is a playback primitive and not an editor's read side. That leaves an
+  editor of a multi-minute file with one route today, which is to load the
+  whole file into a buffer, and **S12 makes that route cheaper without
+  answering whether it is the right one**. Three shapes are available and this
+  entry deliberately chooses none of them, because choosing is a track's work
+  and the roadmap has staged no such track: the **client feeds the server what
+  sounds** (a window around the playhead pushed as ordinary buffers — which is
+  what the document crate's working-copy rule already implies, and which
+  re-derives `DiskIn` on the client side); a **file-backed buffer the server
+  maps**, which is what a monolithic editor does and what the GUI host already
+  does read-only, and which puts a **page fault on the audio thread** — so it
+  is an editing *mode* rather than a capability, since a session's tolerance
+  for a stall is not a live server's, and that distinction is the entry's one
+  firm finding; or **`DiskIn` grows a seek** and becomes the read side, which
+  is the smallest of the three and the least general. What would decide it is a
+  number nobody has: what a scrub costs on each, against a file long enough
+  that the pool is not an option.
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what
@@ -1275,3 +1358,33 @@ finished work, where a pending item reads as done.
   specifies (`crates/clausters-document/PLAN.md`, O8: the working buffer leads
   while the session is open), so nothing is blocked; it is the *live* audition
   of a destructive edit that pays.
+
+  **Measured 2026-08-15, and it is now a milestone: S12.** The numbers, the four
+  candidates and the recommendation are there rather than here, because the
+  choice this entry asked for is a milestone's to take. Two things it found that
+  this entry had wrong or missing. The estimate was conservative: a write on a
+  five-minute take costs **33.8 ms** sustained, not the memcpy alone, because
+  three quarters of it is allocating and faulting in a second take. And the last
+  sentence above is **too pessimistic** — the live audition does not have to
+  pay, because a stroke can be heard against a *scratch span* rather than
+  against the take (a one-second buffer sustains 443 writes a second, and D4
+  already plays a copied block out of a buffer of its own). So this never
+  blocked the sample editor's gestures; what it blocks is confirming an edit
+  into a long take without a stall.
+
+- ⬜ **A finished async command waits up to 100 ms to be reported** *(found
+  2026-08-15, measuring the write cost above: every single write round-tripped
+  in ~104 ms whatever its size, which is not a cost any buffer work explains)*.
+  The network loop blocks in `recv_from` under a 100 ms read timeout
+  (`GC_INTERVAL`, `src/osc/server/lifecycle.rs`) and collects NRT and Faust
+  results **after** the recv returns — so with no other traffic a job that
+  finished in 2 ms is reported at the next wakeup, and the `/server_sync` that
+  waits on it answers then. Every async command pays it: a `/buffer_alloc`, a
+  `/buffer_read`, a def compile, and any `wait=True` in the Python client. It
+  hides whenever traffic is flowing (each packet drains the pipes too) and
+  whenever writes are batched behind one barrier, which is why it went unnoticed
+  — a batch of fifty divides the floor by fifty. The timeout is there so garbage
+  is collected without traffic, which is a different need from *promptness on a
+  result*: the fix is a wakeup when a result lands (the NRT thread poking the
+  socket, as the TCP leg already does with a zero-length datagram) or a short
+  timeout while jobs are in flight, not a smaller `GC_INTERVAL` for everyone.

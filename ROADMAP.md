@@ -122,13 +122,21 @@ prerequisite, and because it is the one whose cost is not the client's.*
   editor is a free-standing example beside the arrangement rather than a view of
   it — and it earned its keep early by correcting A2's layer stack.
 
-- ⬜ **A sample write costs the whole buffer, not the samples written**
-  *(root `PLAN.md`, "Found by use")*. `/buffer_setRange` replaces the buffer
-  whole, so a draw stroke on a five-minute take copies ~115 MB per stroke. D1
-  does not strictly block on it — the working copy leads while an edit session
-  is open (O8) — but *hearing* each stroke does, and hearing it is the point of
-  a sample editor. It is a server milestone and it sits here because the two
-  after it are unusable live without it.
+- ⬜ **S12 — A buffer write costs the samples written** *(root `PLAN.md`)*.
+  Opened 2026-08-15 out of the "Found by use" entry it converged from, once that
+  entry's demand for numbers was met. `/buffer_setRange` replaces the buffer
+  whole, which measures **33.8 ms per write on a five-minute take** and grows
+  with the take, against the ~30 a second a draw stroke asks for.
+  **The measurement moved this entry's own argument**: it sat here because "the
+  two after it are unusable live without it", and that is not true — a stroke
+  can be heard against a scratch span rather than against the take, which needs
+  no server change and which D4 already does for a copied block. So it no longer
+  blocks D1 or D2 in any sense, and the order between them is free. It stays
+  first because it is the destination's second half — *correct at real sizes* —
+  and because it is the one entry here whose decision is a substrate decision
+  (what a buffer's storage is, which the write-only UGens S9 deferred want too),
+  so taking it while the D track is still unwritten is what keeps it from being
+  designed around gestures that already shipped.
 
 - ⬜ **D1 — A sample is a grabbable point.** The pending overlay's first real
   drawing, and `peaks::update_range`.
