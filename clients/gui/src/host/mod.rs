@@ -530,6 +530,13 @@ pub struct Host {
     /// holds the tree immutably at that point — and a second implementation at
     /// the two fronts is exactly what the one-gesture-machine rule forbids.
     pub outbox: std::cell::RefCell<ack::Outbox>,
+    /// The document this host owns, when it is its own owner.
+    ///
+    /// `None` is every host driven by a script: a gesture emits and waits, and
+    /// the script answers. `Some` is the **third writer** — a standalone
+    /// editor, which has no script to wait for and must apply its own intents
+    /// (`document::Owner`).
+    pub owner: Option<document::Owner>,
     /// The host's color roles — one look per host, every paint site reads it
     /// (see [`theme`]).
     pub theme: theme::Theme,
@@ -583,6 +590,7 @@ impl Host {
             voices: HashMap::new(),
             voice_counter: 0,
             outbox: Default::default(),
+            owner: None,
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
             msaa: 1,
@@ -1304,6 +1312,62 @@ impl Host {
     ///
     /// Trailing pairs are source generations, which is the only thing that can
     /// say a destructive edit changed material whose identity did not move. A
+    /// Retires everything an acknowledgement covers and lets go of what it was
+    /// drawing — the two halves of *drop every pending at or below the stamp,
+    /// and adopt what arrived*.
+    ///
+    /// It is a method rather than the body of `/gui_ack` because a host that
+    /// **is** its own owner answers itself, and the two paths must retire an
+    /// edit the same way or a standalone editor would keep drawing edits it had
+    /// already applied.
+    ///
+    /// Returns whether anything was retired.
+    pub fn settle(&mut self, acked: ack::Acked) -> bool {
+        let settled = self.outbox.borrow_mut().ack(acked);
+        if settled.is_empty() {
+            return false;
+        }
+        debug!("retired {} pending edit(s)", settled.len());
+        // What the owner pushed is already in the material, so letting go is
+        // what makes the picture the document's again rather than the hand's.
+        for p in &settled {
+            if let Some(w) = self
+                .window_def_mut(p.def_id)
+                .and_then(|t| t.find_mut(p.widget_id))
+            {
+                w.kind.set_pending_edit(None);
+            }
+        }
+        true
+    }
+
+    /// Answers a gesture **itself**, when this host owns what it draws.
+    ///
+    /// Returns whether it did: `false` is every host driven by a script, and
+    /// every payload that is not an edit, both of which go out on the wire as
+    /// they always have. There is deliberately no third outcome — a host that
+    /// owned the document but could not read the payload emits it, so a script
+    /// attached alongside still sees what it always saw.
+    ///
+    /// It takes no window id on purpose: a widget id is unique across this
+    /// host's registry (the node-tree shape the protocol borrowed), so a
+    /// binding needs no second key, and taking one would suggest it did.
+    pub fn answer_own(&mut self, widget_id: i32, seq: i32, args: &[OscType]) -> bool {
+        let Some(owner) = self.owner.as_mut() else {
+            return false;
+        };
+        let Some((intent, label)) = owner.read_event(widget_id, args) else {
+            return false;
+        };
+        let applied = owner.apply(&intent, &clausters_document::Against::default(), label);
+        self.settle(ack::Acked {
+            seq,
+            doc_version: applied.version as i64,
+            ..Default::default()
+        });
+        true
+    }
+
     /// trailing string is a reason, informational and read by nothing in the
     /// mechanism.
     fn on_ack(&mut self, args: &[OscType]) {
@@ -1335,22 +1399,7 @@ impl Host {
                 acked.generations.insert(*source, generation);
             }
         }
-        let settled = self.outbox.borrow_mut().ack(acked);
-        if !settled.is_empty() {
-            debug!("/gui_ack retired {} pending edit(s)", settled.len());
-        }
-        // The other half of *drop every pending at or below the stamp*: the
-        // outbox forgets the edit, and the element stops drawing it. What the
-        // owner pushed is already in the material, so letting go is what makes
-        // the picture the document's again rather than the hand's.
-        for p in &settled {
-            if let Some(w) = self
-                .window_def_mut(p.def_id)
-                .and_then(|t| t.find_mut(p.widget_id))
-            {
-                w.kind.set_pending_edit(None);
-            }
-        }
+        self.settle(acked);
     }
 
     fn on_query(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {

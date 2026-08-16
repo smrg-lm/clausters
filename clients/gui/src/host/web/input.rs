@@ -71,11 +71,19 @@ impl WebApp {
         for effect in effects {
             match effect {
                 GestureEffect::Emit {
+                    def_id,
                     widget_id,
                     seq,
                     args,
-                    ..
                 } => {
+                    // A host that owns what it draws answers itself; every
+                    // other one emits and waits, as it always has. A page
+                    // rarely owns one — but the seam is the same on both
+                    // fronts, and a gesture is implemented once.
+                    if self.host.answer_own(widget_id, seq, &args) {
+                        self.request_redraw(def_id);
+                        continue;
+                    }
                     // The stamp and the version are the second and third
                     // arguments on both fronts, before any tag, so one rule
                     // reads every event whatever its payload. The version says

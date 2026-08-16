@@ -31,6 +31,8 @@
 //! edit is the previous value handed back, which is the crate's decision and
 //! the reason the caller can adopt the outcome unconditionally.
 
+pub mod tree;
+
 use std::collections::HashMap;
 
 use clausters_core::osc::OscType;
@@ -119,6 +121,32 @@ impl Owner {
     pub fn with_quant(mut self, quant: f64) -> Self {
         self.rules = Rules { quant };
         self
+    }
+
+    /// Opens a session file — the format the Python client writes, read by the
+    /// crate and not by a parser of this host's own, which is the whole reason
+    /// the format has one implementation.
+    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
+        let text = std::fs::read_to_string(path.as_ref())
+            .map_err(|e| format!("{}: {e}", path.as_ref().display()))?;
+        let session: Session =
+            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.as_ref().display()))?;
+        Ok(Self::from_session(session))
+    }
+
+    /// Writes the session back, with the document as it now stands.
+    ///
+    /// The sources travel unchanged: what an editing session edits is the
+    /// arrangement and the material, and where the material *lives* is the
+    /// session's own bookkeeping, which this host has no business rewriting.
+    pub fn save(&self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
+        let mut session = self
+            .session
+            .clone()
+            .unwrap_or_else(|| Session::new(self.document.clone()));
+        session.document = self.document.clone();
+        let text = serde_json::to_string_pretty(&session).map_err(|e| e.to_string())?;
+        std::fs::write(path.as_ref(), text).map_err(|e| format!("{}: {e}", path.as_ref().display()))
     }
 
     /// Says which node a widget's gestures address. The tree that built the
@@ -443,6 +471,63 @@ mod tests {
         );
     }
 
+    /// The milestone's own acceptance, in the half a Rust test can run: a
+    /// session is opened, edited by an intent the host translated, undone,
+    /// redone and saved — and what comes back is the document as edited, in the
+    /// format the crate defines and nothing here re-implements.
+    #[test]
+    fn a_session_opens_is_edited_undone_redone_and_saved() {
+        let root = set(
+            1,
+            vec![Member {
+                offset: 0.0,
+                dur: None,
+                node: event(2),
+            }],
+        );
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("clausters_h3_{}.json", std::process::id()));
+        let written = Session::new(Document::new(root));
+        std::fs::write(&path, serde_json::to_string(&written).unwrap()).unwrap();
+
+        let mut owner = Owner::open(&path).expect("the session opens");
+        owner.bind(50, NodeId(2));
+
+        // Edited the way a gesture would edit it: the payload, translated.
+        let (intent, label) = owner
+            .read_event(
+                50,
+                &[
+                    OscType::String("clip".into()),
+                    OscType::Float(4.0),
+                    OscType::Float(0.0),
+                ],
+            )
+            .expect("a clip moved");
+        assert!(owner.apply(&intent, &Against::default(), label).applied);
+
+        // Taken back, and put back.
+        assert_eq!(owner.undo().len(), 1);
+        assert_eq!(owner.redo().len(), 1);
+
+        let out = dir.join(format!("clausters_h3_out_{}.json", std::process::id()));
+        owner.save(&out).expect("it saves");
+        let reopened = Owner::open(&out).expect("and reopens");
+        let Body::Set { members, .. } = &reopened.document.root.body else {
+            panic!("a set")
+        };
+        assert_eq!(
+            members[0].offset, 4.0,
+            "the edit survived the round trip through the file"
+        );
+        assert!(
+            reopened.document.version > 1,
+            "and so did the version the edits moved"
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&out);
+    }
+
     #[test]
     fn a_widget_addresses_the_node_the_tree_bound_it_to() {
         let mut owner = Owner::new(Document::new(event(1)));
@@ -451,5 +536,85 @@ mod tests {
         assert_eq!(owner.node_of(50), Some(NodeId(7)));
         owner.unbind(50);
         assert_eq!(owner.node_of(50), None, "a closed window forgets");
+    }
+}
+
+#[cfg(test)]
+mod wiring_tests {
+    use super::*;
+    use crate::host::Host;
+    use clausters_document::{Body, Grouping, Member, Node, Opaque};
+
+    fn doc() -> Document {
+        Document::new(Node::new(
+            NodeId(1),
+            Body::Set {
+                grouping: Grouping::Concrete,
+                members: vec![Member {
+                    offset: 0.0,
+                    dur: None,
+                    node: Node::new(
+                        NodeId(2),
+                        Body::Event {
+                            config: Opaque::default(),
+                            fires: None,
+                        },
+                    ),
+                }],
+            },
+        ))
+    }
+
+    /// The seam that makes the owner more than a type nobody calls: a host that
+    /// owns what it draws answers its own gesture, and one that does not says
+    /// so, so the event goes out on the wire exactly as it always has.
+    #[test]
+    fn a_host_answers_its_own_gesture_only_when_it_owns_one() {
+        let mut host = Host::new();
+        let args = [
+            crate::host::OscType::String("clip".into()),
+            crate::host::OscType::Float(4.0),
+            crate::host::OscType::Float(0.0),
+        ];
+        assert!(
+            !host.answer_own(50, 1, &args),
+            "with no document there is nobody here to answer"
+        );
+
+        let mut owner = Owner::new(doc());
+        owner.bind(50, NodeId(2));
+        host.owner = Some(owner);
+        let seq = host.outbox.borrow_mut().stamp(1, 50);
+        assert!(host.answer_own(50, seq, &args), "and with one, it does");
+
+        let owner = host.owner.as_ref().expect("still there");
+        let Body::Set { members, .. } = &owner.document.root.body else {
+            panic!("a set")
+        };
+        assert_eq!(members[0].offset, 4.0, "the edit landed in the document");
+        assert!(owner.can_undo(), "through the log, so it can be taken back");
+        assert!(
+            !host.outbox.borrow().is_pending(1, 50),
+            "and the host acknowledged itself, so nothing is still in flight"
+        );
+    }
+
+    /// A payload that is not an edit is not answered: it goes out, so a script
+    /// attached to a host that happens to own a document still sees what it
+    /// always saw.
+    #[test]
+    fn a_payload_that_is_not_an_edit_still_leaves() {
+        let mut host = Host::new();
+        let mut owner = Owner::new(doc());
+        owner.bind(50, NodeId(2));
+        host.owner = Some(owner);
+        assert!(!host.answer_own(
+            50,
+            1,
+            &[
+                crate::host::OscType::String("view".into()),
+                crate::host::OscType::Float(0.0)
+            ]
+        ));
     }
 }

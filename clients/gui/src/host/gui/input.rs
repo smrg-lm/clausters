@@ -76,7 +76,15 @@ impl App {
                     widget_id,
                     seq,
                     args,
-                } => self.emit(def_id, widget_id, seq, args),
+                } => {
+                    // A host that owns what it draws answers itself; every
+                    // other one emits and waits, as it always has.
+                    if !self.host.answer_own(widget_id, seq, &args) {
+                        self.emit(def_id, widget_id, seq, args);
+                    } else {
+                        self.redraw(def_id);
+                    }
+                }
                 GestureEffect::Redraw(def_id) => self.redraw(def_id),
                 GestureEffect::ReleasePointer(def_id) => self.release_pointer(def_id),
                 // A desktop window is not inside a document: there is nothing
