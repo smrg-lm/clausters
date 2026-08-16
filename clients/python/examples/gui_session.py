@@ -146,16 +146,35 @@ def open_in_host(wait: bool = True) -> None:
 
 # %%
 def read_back() -> None:
-    """Prints where every element sits in the session the host wrote."""
+    """Prints where every element sits in the session the host wrote.
+
+    `from_session` hands back **the arrangement and its source table** — what a
+    source *is* (a buffer to allocate, a file to map) being the caller's to
+    decide — so the element is the first of the pair.
+    """
     if not os.path.exists(saved):
         print(f"nothing saved yet: press Ctrl+S in the host to write {saved}")
         return
     with open(saved) as f:
         session = json.load(f)
-    element = from_session(session)
-    print(f"read {saved} back as {type(element).__name__}:")
-    for offset, child in getattr(element, "items", lambda: [])():
-        print(f"  {offset:6.2f}  {type(child).__name__}")
+    element, sources = from_session(session)
+    print(f"read {os.path.basename(saved)} back as {type(element).__name__} "
+          f"({len(sources)} source(s)):")
+    for offset, child, depth in _walk(element):
+        print(f"  {offset:7.3f}  {'  ' * depth}{type(child).__name__}")
+
+
+def _walk(element, base: float = 0.0, depth: int = 0):
+    """Every placed element and where it sits, absolute in beats.
+
+    A composition is a tree, so reading one back is a walk: what the host moved
+    is a placement somewhere inside it, and printing only the top would show
+    nothing changing.
+    """
+    for offset, _dur, child in getattr(element, "members", []):
+        here = base + offset
+        yield here, child, depth
+        yield from _walk(child, here, depth + 1)
 
 
 # %%

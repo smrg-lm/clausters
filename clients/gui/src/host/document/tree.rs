@@ -191,6 +191,15 @@ fn lane_of(
     }
     let label = label_of(&member.node);
     let clips = match &member.node.body {
+        // **A set of events is one clip with a roll in it**, not a lane of
+        // clips: that is what a track *is* in every editor, and drawing each
+        // note as its own clip gives a row of empty rectangles where the music
+        // was. The notes go in the clip's own axis, so their starts are
+        // relative to it.
+        Body::Set { members, .. } if !members.is_empty() && notes_of(members).is_some() => {
+            let notes = notes_of(members).expect("checked");
+            vec![roll_clip(member, here, notes, look, ids, bindings)]
+        }
         Body::Set { members, .. } => members
             .iter()
             .map(|inner| clip_of(inner, here, look, ids, bindings))
@@ -235,6 +244,88 @@ fn clip_of(
         "offset": (base + member.offset) * look.units_per_beat,
         "dur": dur * look.units_per_beat,
         "label": label_of(&member.node),
+    })
+}
+
+/// The `notes` body of a set of events — the flat `start dur pitch velocity
+/// channel` quintuples the roll reads, in **beats** here and scaled by the
+/// caller.
+///
+/// `None` unless *every* member is an event carrying a pitch: a set holding
+/// takes, generators or anything else is a lane of clips and not a roll, and
+/// half a roll would be a picture that leaves material out without saying so.
+fn notes_of(members: &[Member]) -> Option<Vec<(Beats, Beats, f32)>> {
+    let mut out = Vec::with_capacity(members.len());
+    for m in members {
+        let Body::Event { config, .. } = &m.node.body else {
+            return None;
+        };
+        // The configuration is the client's own opaque object: this reads two
+        // keys out of it and understands nothing else, which is the rule the
+        // document is built on — a host does not interpret a leaf's config, it
+        // only draws what it can recognize.
+        let pitch = config
+            .0
+            .get("midinote")
+            .and_then(Value::as_f64)
+            .or_else(|| config.0.get("note").and_then(Value::as_f64))?;
+        // The sounding length: the event's own `dur`, the placement's, or a
+        // beat — a note with no length would be a line.
+        let dur = m
+            .dur
+            .or(m.node.duration)
+            .or_else(|| config.0.get("dur").and_then(Value::as_f64))
+            .filter(|d| *d > 0.0)
+            .unwrap_or(1.0);
+        out.push((m.offset, dur, pitch as f32));
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+/// One clip drawing a set of events as a roll.
+fn roll_clip(
+    member: &Member,
+    base: Beats,
+    notes: Vec<(Beats, Beats, f32)>,
+    look: &Look,
+    ids: &mut Ids,
+    bindings: &mut Vec<Bound>,
+) -> Value {
+    let widget = ids.take();
+    // The clip draws the **set**, so a drag on it moves the track: a note
+    // inside it edits through the roll's own payload, which addresses the note.
+    bindings.push(Bound {
+        widget,
+        node: member.node.id,
+    });
+    let span = notes
+        .iter()
+        .map(|(start, dur, _)| start + dur)
+        .fold(0.0f64, f64::max);
+    let dur = member
+        .dur
+        .or(member.node.duration)
+        .filter(|d| *d > 0.0)
+        .unwrap_or(span.max(1.0));
+    let flat: Vec<Value> = notes
+        .iter()
+        .flat_map(|(start, dur, pitch)| {
+            [
+                json!(start * look.units_per_beat),
+                json!(dur * look.units_per_beat),
+                json!(pitch),
+                json!(100), // the roll's default velocity
+                json!(0),   // and channel
+            ]
+        })
+        .collect();
+    json!({
+        "id": widget,
+        "type": "field",
+        "offset": base * look.units_per_beat,
+        "dur": dur * look.units_per_beat,
+        "label": label_of(&member.node),
+        "notes": flat,
     })
 }
 
@@ -614,5 +705,116 @@ mod depth_tests {
         let drawn = draw(&doc, &look, "piece");
         let clip = &drawn.def["children"][0]["children"][0];
         assert_eq!(clip["offset"], 60.0, "4 + 0 + 2 beats, in units");
+    }
+}
+
+#[cfg(test)]
+mod roll_tests {
+    use super::*;
+    use clausters_document::{Grouping, Member, Opaque};
+
+    fn note(id: u64, midinote: f64, dur: f64) -> Node {
+        Node::new(
+            NodeId(id),
+            Body::Event {
+                config: Opaque(json!({ "midinote": midinote, "dur": dur })),
+                fires: None,
+            },
+        )
+    }
+
+    fn set(id: u64, members: Vec<Member>) -> Node {
+        Node::new(
+            NodeId(id),
+            Body::Set {
+                grouping: Grouping::Concrete,
+                members,
+            },
+        )
+    }
+
+    fn at(offset: Beats, node: Node) -> Member {
+        Member {
+            offset,
+            dur: None,
+            node,
+        }
+    }
+
+    /// **A track is one clip with a roll in it**, which is what a track is in
+    /// every editor — and what a document of events has to become to be read as
+    /// music rather than as a row of empty rectangles.
+    #[test]
+    fn a_set_of_events_is_one_clip_carrying_the_notes() {
+        let doc = Document::new(set(
+            1,
+            vec![at(
+                0.0,
+                set(
+                    2,
+                    vec![at(0.0, note(3, 72.0, 1.0)), at(2.0, note(4, 76.0, 1.0))],
+                ),
+            )],
+        ));
+        let look = Look {
+            units_per_beat: 100.0,
+            ..Look::default()
+        };
+        let drawn = draw(&doc, &look, "t");
+        let lane = &drawn.def["children"][0];
+        let clips = lane["children"].as_array().expect("a lane of clips");
+        assert_eq!(clips.len(), 1, "one clip, not one per note");
+
+        // The notes ride in the clip's **own** axis, so their starts are
+        // relative to it: the second note is two beats in, not two beats from
+        // the window's origin.
+        let notes = clips[0]["notes"].as_array().expect("a roll");
+        assert_eq!(notes.len(), 10, "five numbers a note: {notes:?}");
+        assert_eq!(notes[0], 0.0, "the first note's start");
+        assert_eq!(notes[2], 72.0, "and its pitch");
+        assert_eq!(notes[5], 200.0, "the second note, two beats in");
+        assert_eq!(notes[7], 76.0);
+        assert_eq!(
+            clips[0]["dur"], 300.0,
+            "the clip spans to the last note's end"
+        );
+
+        // The clip draws the **set**, so a drag on it moves the track; a note
+        // inside edits through the roll's own payload.
+        assert_eq!(drawn.bindings.len(), 1);
+        assert_eq!(drawn.bindings[0].node, NodeId(2));
+    }
+
+    /// A set that is **not** all pitched events stays a lane of clips: a roll
+    /// drawn over half a set would leave material out without saying so.
+    #[test]
+    fn a_set_that_is_not_all_notes_stays_a_lane_of_clips() {
+        let doc = Document::new(set(
+            1,
+            vec![at(
+                0.0,
+                set(
+                    2,
+                    vec![
+                        at(0.0, note(3, 72.0, 1.0)),
+                        // A leaf with no pitch: a take, a generator, anything.
+                        at(
+                            2.0,
+                            Node::new(
+                                NodeId(4),
+                                Body::Event {
+                                    config: Opaque::none(),
+                                    fires: None,
+                                },
+                            ),
+                        ),
+                    ],
+                ),
+            )],
+        ));
+        let drawn = draw(&doc, &Look::default(), "t");
+        let clips = drawn.def["children"][0]["children"].as_array().unwrap();
+        assert_eq!(clips.len(), 2, "one clip each, and no roll");
+        assert!(clips[0].get("notes").is_none());
     }
 }

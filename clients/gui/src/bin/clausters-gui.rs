@@ -540,9 +540,19 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
     use clausters_gui::host::document::{Owner, tree};
 
     let mut owner = Owner::open(path)?;
-    let title = Path::new(path)
-        .file_name()
-        .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned());
+    let name = |p: &str| {
+        Path::new(p)
+            .file_name()
+            .map_or_else(|| p.to_string(), |n| n.to_string_lossy().into_owned())
+    };
+    // **The title says where a save goes**, because nothing else on screen can:
+    // a window that edits a file and cannot say which one leaves the reader to
+    // guess, and "read-only" is worth saying outright rather than discovering
+    // by pressing the key and watching nothing happen.
+    let title = match save_to {
+        Some(out) => format!("{} → {}", name(path), name(out)),
+        None => format!("{} (read-only: no --save-to)", name(path)),
+    };
     let def_id = 1;
     let drawn = tree::draw(
         &owner.document,
@@ -582,6 +592,10 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
         drawn.bindings.len(),
         drawn.def["children"].as_array().map_or(0, |c| c.len()) - 1
     );
+    match save_to {
+        Some(out) => tracing::info!("session: Ctrl+S writes {out}"),
+        None => tracing::info!("session: read-only — pass --save-to <file> for Ctrl+S to write"),
+    }
 
     let socket = UdpSocket::bind(("127.0.0.1", port))
         .map_err(|e| format!("failed to bind UDP port {port}: {e}"))?;
