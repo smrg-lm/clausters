@@ -309,6 +309,8 @@ A client does not *have* to enumerate the catalog — naming a kind and letting 
 | `ReplaceOut` | bus, signal | overwrites the bus instead of summing |
 | `PlayBuf` | bufnum, chan, rate, loop | buffer player with linear interpolation; `rate` is frames per output sample (1.0 = the server rate — multiply by `BufRateScale(bufnum)`, i.e. `file_sr / server_sr`, for the file's pitch); starts at frame 0, silent at the end unless looping |
 | `BufRd` | bufnum, chan, phase, loop | reads the buffer at a `phase` signal in frames (linear interpolation); out-of-range phases wrap when looping, clamp otherwise |
+| `BufWr` | bufnum, chan, phase, loop, in | **writes** `in` into the buffer at `phase` (frames, truncated — no interpolation, which on write would store a value the signal never had); wraps when looping, writes nothing out of range otherwise. Passes `in` through as its output, like `OutCtl` |
+| `RecordBuf` | bufnum, chan, in, offset, recLevel, preLevel, run, loop, trigger, doneAction | **records** `in`, advancing one frame per sample — the self-advancing writer, as `PlayBuf` is the self-advancing reader. Each frame becomes `in·recLevel + old·preLevel`, so `(1, 0)` overwrites, `(1, 1)` overdubs and `(1, 0.5)` overdubs with the older layers fading: that pair is what makes it a looper rather than a tape head. `run` at 0 holds the position and writes nothing; a rising `trigger` re-cues to `offset`; without `loop`, reaching the end stops it and fires `doneAction`. Passes `in` through |
 | `BufSampleRate` | bufnum | the buffer's own sample rate (Hz), block-constant |
 | `BufRateScale` | bufnum | `file_sr / server_sr`; feed `PlayBuf`'s `rate` (`rate: BufRateScale(buf) * pitch`) to play at the file's true pitch without the client knowing either rate |
 | `BufFrames` | bufnum | frame count, block-constant |
@@ -586,7 +588,9 @@ The line is **synth-private memory**, allocated when the synth is built and size
 
 These UGens do **not** report an intrinsic latency, on purpose. Their delay is what the user asked for, not an artifact of processing; the latency hook exists for something like the partitioned convolver, and compensating a musical delay would silently undo it.
 
-Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output PlayBuf): the `chan` input picks the channel, and two readers with the same inputs stay sample-locked, so a stereo file is two UGens. Neither has a trigger or done action yet.
+Buffer readers **and writers** are **mono** (one output per UGen, unlike scsynth's multi-output PlayBuf): the `chan` input picks the channel, and two of them with the same inputs stay sample-locked, so a stereo file is two UGens. Neither reader has a trigger or done action yet.
+
+**A buffer's contents are mutable, and only its shape is fixed.** Frames, channels and sample rate are settled at allocation and never change; every sample can be written at any time, by a UGen or by a `/buffer_*` command, while anything else is reading it. That is scsynth's model, and it is why `RecordBuf`, `BufWr` and the `BufDelay*` family exist at all: recording into a buffer another node is playing is the ordinary case. What a reader crossing a writer sees is some old samples and some new, never half of one — per-sample atomicity, no ordering between samples, which is what a looper crossing its own write head has always sounded like. Nothing has to be declared: there is no writable *kind* of buffer, because they all are.
 
 ## Buffers (`/buffer_*`)
 

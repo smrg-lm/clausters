@@ -1413,3 +1413,209 @@ mod osc {
         server_thread.join().unwrap().unwrap();
     }
 }
+
+/// **The milestone's own acceptance**: one synth records into a buffer while
+/// another plays it, and what comes out is what went in — one buffer, two
+/// nodes, no copy between them.
+#[test]
+fn a_synth_records_into_a_buffer_while_another_plays_it() {
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    // 128 frames, mono: two blocks of material, so the recording fills while
+    // the reader is still inside the first pass.
+    let buffer = Arc::new(Buffer::zeroed(BLOCK_SIZE * 2, 1, SR as f64));
+    handle
+        .send(Cmd::SetBuffer {
+            index: 3,
+            buffer: Some(Arc::clone(&buffer)),
+        })
+        .ok()
+        .unwrap();
+
+    // The recorder is added **first**, so it runs first in the block and the
+    // player reads, in the same block, the frames it has just written. That
+    // ordering is the node tree's own (depth-first, earlier nodes first) and is
+    // the whole reason a shared buffer is worth having: no copy passes between
+    // them, only the buffer.
+    handle
+        .send(add_synth(
+            10,
+            spec_synth(json!({
+                "name": "recorder",
+                "ugens": [
+                    {"kind": "Line", "inputs": [
+                        {"const": 1.0}, {"const": 1.0}, {"const": 100.0}, {"const": 0.0}
+                    ]},
+                    {"kind": "RecordBuf", "inputs": [
+                        {"const": 3.0},   // bufnum
+                        {"const": 0.0},   // chan
+                        {"ugen": 0},      // in: a constant 1
+                        {"const": 0.0},   // offset
+                        {"const": 1.0},   // rec_level
+                        {"const": 0.0},   // pre_level: overwrite
+                        {"const": 1.0},   // run
+                        {"const": 0.0},   // loop
+                        {"const": 0.0},   // trigger
+                        {"const": 0.0}    // done_action
+                    ]}
+                ]
+            })),
+        ))
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(11, playbuf_spec(3.0, 0.0, 1.0, 0.0, 1.0)))
+        .ok()
+        .unwrap();
+
+    let heard = render_channel(&mut engine, 3, 1);
+    assert!(
+        buffer
+            .to_vec()
+            .iter()
+            .take(BLOCK_SIZE * 2)
+            .all(|s| *s == 1.0),
+        "the recorder filled the buffer it was given"
+    );
+    // Every frame the player read had been written that same block, so the
+    // whole two passes are the recorded signal and not a single zero.
+    assert!(
+        heard[..BLOCK_SIZE * 2].iter().all(|s| *s == 1.0),
+        "the player read samples the recorder wrote into the same buffer: {:?}",
+        &heard[..4]
+    );
+}
+
+/// `RecordBuf`'s `pre_level` is what makes it a looper rather than a tape head:
+/// a second pass over the same span **adds** to what is there.
+#[test]
+fn recording_twice_over_a_span_overdubs_it() {
+    let recorder = |pre: f32, trigger: f32| {
+        json!({
+            "name": "overdub",
+            "ugens": [
+                {"kind": "RecordBuf", "inputs": [
+                    {"const": 0.0}, {"const": 0.0}, {"const": 0.25},
+                    {"const": 0.0}, {"const": 1.0}, {"const": pre},
+                    {"const": 1.0}, {"const": 1.0}, {"const": trigger},
+                    {"const": 0.0}
+                ]}
+            ]
+        })
+    };
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let buffer = Arc::new(Buffer::zeroed(BLOCK_SIZE, 1, SR as f64));
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::clone(&buffer)),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(20, spec_synth(recorder(1.0, 0.0))))
+        .ok()
+        .unwrap();
+
+    // Two blocks over a one-block buffer, looping: every frame is written
+    // twice, the second time onto the first.
+    render_channel(&mut engine, 2, 0);
+    let held = buffer.to_vec();
+    assert!(
+        held.iter().all(|s| (*s - 0.5).abs() < 1e-6),
+        "two passes of 0.25 added: {:?}",
+        &held[..4]
+    );
+}
+
+/// A non-looping recorder **stops at the end** and reports its done action, so
+/// a one-shot capture frees its own node.
+#[test]
+fn a_recording_that_fills_the_buffer_stops_and_is_done() {
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let buffer = Arc::new(Buffer::zeroed(BLOCK_SIZE / 2, 1, SR as f64));
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::clone(&buffer)),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(
+            30,
+            spec_synth(json!({
+                "name": "oneshot",
+                "ugens": [
+                    {"kind": "RecordBuf", "inputs": [
+                        {"const": 0.0}, {"const": 0.0}, {"const": 1.0},
+                        {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                        {"const": 1.0}, {"const": 0.0}, {"const": 0.0},
+                        {"const": 2.0}
+                    ]}
+                ]
+            })),
+        ))
+        .ok()
+        .unwrap();
+
+    // One block is twice the buffer: it fills, stops, and the done action (2 =
+    // free this synth) takes the node with it.
+    render_channel(&mut engine, 2, 0);
+    let held = buffer.to_vec();
+    assert!(
+        held.iter().all(|s| *s == 1.0),
+        "every frame was written exactly once"
+    );
+    handle.send(Cmd::FreeNode { id: 30 }).ok().unwrap();
+    render_channel(&mut engine, 1, 0);
+    assert!(
+        held.iter().all(|s| *s == 1.0),
+        "and nothing wrote past the end afterwards"
+    );
+}
+
+/// `BufWr` writes where its phase says and passes the signal through, which is
+/// what lets a chain go on using what it just recorded.
+#[test]
+fn bufwr_writes_at_its_phase_and_passes_the_signal_on() {
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let buffer = Arc::new(Buffer::zeroed(8, 1, SR as f64));
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::clone(&buffer)),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(
+            40,
+            spec_synth(json!({
+                "name": "writer",
+                "ugens": [
+                    {"kind": "BufWr", "inputs": [
+                        {"const": 0.0},  // bufnum
+                        {"const": 0.0},  // chan
+                        {"const": 3.0},  // phase: frame 3, held
+                        {"const": 0.0},  // loop
+                        {"const": 0.75}  // in
+                    ]},
+                    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+                ]
+            })),
+        ))
+        .ok()
+        .unwrap();
+
+    let out = render_channel(&mut engine, 1, 0);
+    let held = buffer.to_vec();
+    assert_eq!(held[3], 0.75, "the frame the phase named");
+    assert!(
+        held.iter().enumerate().all(|(i, s)| i == 3 || *s == 0.0),
+        "and no other: {held:?}"
+    );
+    assert!(
+        out.iter().all(|s| (*s - 0.75).abs() < 1e-6),
+        "the signal came out too"
+    );
+}

@@ -148,6 +148,8 @@ export {
     bufFrames,
     bufRateScale,
     bufRd,
+    bufWr,
+    recordBuf,
     bufSampleRate,
     osc,
     oscN,
