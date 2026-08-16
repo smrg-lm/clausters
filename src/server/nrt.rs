@@ -38,6 +38,9 @@ pub enum NrtJob {
         path: String,
         file_start: usize,
         num_frames: i64,
+        /// `/buffer_allocReadChannel`'s channel selection, in the order given;
+        /// empty is every channel, which is what `/buffer_allocRead` sends.
+        channels: Vec<usize>,
     },
     /// `/buffer_read`: overlay file data onto a copy of the current contents,
     /// starting at `buf_start`, keeping the buffer's shape.
@@ -47,6 +50,8 @@ pub enum NrtJob {
         num_frames: i64,
         buf_start: usize,
         current: Arc<Buffer>,
+        /// `/buffer_readChannel`'s selection; empty is every channel.
+        channels: Vec<usize>,
     },
     /// `/buffer_write`: WAV out; `sample_format` is `int16`, `int24` or `float`.
     /// `num_frames <= 0` writes from `buf_start` to the end.
@@ -89,6 +94,16 @@ pub enum NrtJob {
     /// [`NrtJob::Set`]: a batch of edits on one buffer is submitted before any
     /// of them completes, so the runner chains them (see [`NrtChain`]).
     Edit { base: Arc<Buffer>, op: EditOp },
+    /// `/buffer_fill`: runs of one repeated value, addressed flat like
+    /// [`NrtJob::Set`] — `(start, count, value)` each. Kept apart from `Set`
+    /// rather than expanded into one: a fill says how *many* samples it writes
+    /// and materializing them would allocate the run it exists to avoid.
+    ///
+    /// Chained on `base` for the same reason `Set` is.
+    Fill {
+        base: Arc<Buffer>,
+        fills: Vec<(usize, usize, f32)>,
+    },
     /// `/buffer_free`: ordered behind the other jobs (see module docs).
     Free,
 }
@@ -171,6 +186,10 @@ impl NrtChain {
             NrtJob::Edit { base, op } if chained => NrtJob::Edit {
                 base: self.0.get(&index).cloned().unwrap_or(base),
                 op,
+            },
+            NrtJob::Fill { base, fills } if chained => NrtJob::Fill {
+                base: self.0.get(&index).cloned().unwrap_or(base),
+                fills,
             },
             other => other,
         };
@@ -321,8 +340,10 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             path,
             file_start,
             num_frames,
+            channels,
         } => {
             let buffer = read_audio(&path, file_start, num_frames)?;
+            let buffer = select_channels(&buffer, &channels)?;
             Ok(NrtAction::Install(Arc::new(buffer)))
         }
         NrtJob::Read {
@@ -331,8 +352,10 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             num_frames,
             buf_start,
             current,
+            channels,
         } => {
             let file = read_audio(&path, file_start, num_frames)?;
+            let file = select_channels(&file, &channels)?;
             if file.channels() != current.channels() {
                 return Err(format!(
                     "channel count mismatch: buffer has {}, {path} has {}",
@@ -418,8 +441,64 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
                 base.sample_rate(),
             ))))
         }
+        NrtJob::Fill { base, fills } => {
+            let mut data = base.data().to_vec();
+            for (at, count, value) in fills {
+                data[at..at + count].fill(value);
+            }
+            Ok(NrtAction::Install(Arc::new(Buffer::new(
+                data,
+                base.channels(),
+                base.frames(),
+                base.sample_rate(),
+            ))))
+        }
         NrtJob::Free => Ok(NrtAction::Clear),
     }
+}
+
+/// Keeps only `channels` of `buffer`, in the order given — the de-interleave
+/// behind `/buffer_readChannel` and `/buffer_allocReadChannel`.
+///
+/// An empty selection is every channel, unchanged, which is what the two
+/// commands without `Channel` in their name send. A channel the file does not
+/// have fails rather than reading silence: asking for the right channel of a
+/// mono file is a mistake worth hearing about, not a silent track.
+///
+/// The order is honoured and repeats are allowed, so `[1, 0]` swaps a stereo
+/// pair and `[0, 0]` makes a mono file into a two-channel one — both are what
+/// naming channels explicitly is *for*, and neither costs anything to permit.
+fn select_channels(buffer: &Buffer, channels: &[usize]) -> Result<Buffer, String> {
+    if channels.is_empty() {
+        // Nothing to do, but the caller owns the value: rebuild rather than
+        // clone the Arc, since this arm is the one that already read a file.
+        return Ok(Buffer::new(
+            buffer.data().to_vec(),
+            buffer.channels(),
+            buffer.frames(),
+            buffer.sample_rate(),
+        ));
+    }
+    let have = buffer.channels();
+    if let Some(bad) = channels.iter().find(|c| **c >= have) {
+        return Err(format!(
+            "channel {bad} was asked for, but the file has {have}"
+        ));
+    }
+    let frames = buffer.frames();
+    let src = buffer.data();
+    let mut out = Vec::with_capacity(frames * channels.len());
+    for f in 0..frames {
+        for c in channels {
+            out.push(src[f * have + c]);
+        }
+    }
+    Ok(Buffer::new(
+        out,
+        channels.len(),
+        frames,
+        buffer.sample_rate(),
+    ))
 }
 
 /// Reads an audio-file slice into an interleaved buffer. WAV goes through

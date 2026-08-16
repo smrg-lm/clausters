@@ -437,9 +437,20 @@ impl Renderer {
                 }
             }
             "/def_free" => self.translator.d_free(&msg.args),
-            "/buffer_alloc" | "/buffer_allocRead" | "/buffer_read" | "/buffer_write"
-            | "/buffer_zero" | "/buffer_gen" | "/buffer_set" | "/buffer_setRange"
-            | "/buffer_gain" | "/buffer_reverse" | "/buffer_free" => {
+            "/buffer_alloc"
+            | "/buffer_allocRead"
+            | "/buffer_read"
+            | "/buffer_write"
+            | "/buffer_zero"
+            | "/buffer_gen"
+            | "/buffer_set"
+            | "/buffer_setRange"
+            | "/buffer_gain"
+            | "/buffer_reverse"
+            | "/buffer_fill"
+            | "/buffer_readChannel"
+            | "/buffer_allocReadChannel"
+            | "/buffer_free" => {
                 let (index, job) = if msg.addr == "/buffer_gen" {
                     parse_buffer_gen(&msg.args, &self.translator.buffers)?
                 } else {

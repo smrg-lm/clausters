@@ -309,11 +309,19 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_buffer_cmd(addr, m, f);
         Ok(())
     }),
+    ("/buffer_allocReadChannel", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
     ("/buffer_close", |s, _, m, f| {
         s.handle_buffer_close(Args::new(m), f)
     }),
     ("/buffer_export", |s, _, m, f| {
         s.handle_buffer_export(Args::new(m), f)
+    }),
+    ("/buffer_fill", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
     }),
     ("/buffer_free", |s, addr, m, f| {
         s.handle_buffer_cmd(addr, m, f);
@@ -337,6 +345,10 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_buffer_query(Args::new(m), f)
     }),
     ("/buffer_read", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
+    ("/buffer_readChannel", |s, addr, m, f| {
         s.handle_buffer_cmd(addr, m, f);
         Ok(())
     }),

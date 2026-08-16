@@ -142,6 +142,50 @@ export class Buffer {
     }
 
     /**
+     * Loads **selected channels** of a sound file into a freshly allocated
+     * buffer (`/buffer_allocReadChannel`) — how one channel of a stereo file
+     * lands in a mono buffer, which {@link read} cannot do (it takes the file
+     * whole).
+     *
+     * `channels` names the channel indices to keep, in the order given: `[1]`
+     * is the right channel alone, `[1, 0]` swaps a pair, `[0, 0]` makes a mono
+     * file two-channel. A channel the file does not have throws rather than
+     * reading as silence. The shape comes from the file *and* the selection.
+     */
+    static async readChannels(
+        path: string,
+        channels: number[],
+        {
+            fileStart = 0,
+            numFrames = 0,
+            timeout,
+            server: on,
+        }: BufferOptions & { fileStart?: number; numFrames?: number } = {},
+    ): Promise<Buffer> {
+        const server = resolveServer(on);
+        const bufnum = server.buffers.alloc();
+        try {
+            await server.command(
+                "/buffer_allocReadChannel",
+                [
+                    ["i", bufnum],
+                    path,
+                    ["i", fileStart],
+                    ["i", numFrames],
+                    ...channels.map((c): MsgArg => ["i", Math.trunc(c)]),
+                ],
+                timeout,
+            );
+        } catch (error) {
+            server.buffers.free(bufnum);
+            throw error;
+        }
+        const buffer = new Buffer(bufnum, 0, 1, 0.0, server);
+        await buffer.info(timeout);
+        return buffer;
+    }
+
+    /**
      * Loads an audio file at `url` into a freshly allocated buffer: the
      * browser's `/buffer_allocRead`, since a page has no filesystem and the
      * server's path means nothing to it.
@@ -359,6 +403,64 @@ export class Buffer {
             return;
         }
         await this.srv().command(addr, args, timeout);
+    }
+
+    /**
+     * Writes runs of one repeated value (`/buffer_fill`), each a
+     * `[start, count, value]` triple.
+     *
+     * Indices are **flat and interleaved**, like {@link setSamples} and unlike
+     * the editing verbs ({@link gain}, {@link reverse}) whose spans are frames
+     * — this is the writing family's member, not an editor's verb. Several runs
+     * ride in one message, and a run past the end throws rather than being
+     * clamped.
+     */
+    async fill(
+        runs: [number, number, number][],
+        { wait = true, timeout }: { wait?: boolean; timeout?: number } = {},
+    ): Promise<void> {
+        const rest: MsgArg[] = [];
+        for (const [start, count, value] of runs) {
+            rest.push(["i", Math.trunc(start)], ["i", Math.trunc(count)], ["f", value]);
+        }
+        await this.edit("/buffer_fill", rest, wait, timeout);
+    }
+
+    /**
+     * Reads selected channels of a sound file into **this** buffer
+     * (`/buffer_readChannel`), keeping its shape — so the selection must have
+     * as many channels as the buffer does. {@link readChannels} is the form
+     * that allocates for you.
+     */
+    async readChannelsInto(
+        path: string,
+        channels: number[],
+        {
+            fileStart = 0,
+            numFrames = -1,
+            bufStart = 0,
+            wait = true,
+            timeout,
+        }: {
+            fileStart?: number;
+            numFrames?: number;
+            bufStart?: number;
+            wait?: boolean;
+            timeout?: number;
+        } = {},
+    ): Promise<void> {
+        await this.edit(
+            "/buffer_readChannel",
+            [
+                path,
+                ["i", fileStart],
+                ["i", numFrames],
+                ["i", bufStart],
+                ...channels.map((c): MsgArg => ["i", Math.trunc(c)]),
+            ],
+            wait,
+            timeout,
+        );
     }
 
     /**

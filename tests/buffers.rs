@@ -612,6 +612,7 @@ fn wav_write_then_alloc_read_round_trips_float_exactly() {
         path: path.clone(),
         file_start: 0,
         num_frames: 0,
+        channels: Vec::new(),
     }));
     assert_eq!(read.frames(), frames);
     assert_eq!(read.channels(), 2);
@@ -637,6 +638,7 @@ fn alloc_read_slices_the_file() {
         path: path.clone(),
         file_start: 10,
         num_frames: 5,
+        channels: Vec::new(),
     }));
     assert_eq!(read.frames(), 5);
     let expected: Vec<f32> = (10..15).map(|i| i as f32 / 1000.0).collect();
@@ -663,6 +665,7 @@ fn read_overlays_a_file_keeping_the_buffer_shape() {
         num_frames: -1,
         buf_start: 5,
         current: Arc::new(Buffer::zeroed(20, 1, 48_000.0)),
+        channels: Vec::new(),
     }));
     assert_eq!(read.frames(), 20, "/buffer_read keeps the buffer's shape");
     for (i, s) in read.data().iter().enumerate() {
@@ -689,6 +692,7 @@ fn read_rejects_channel_mismatch_and_missing_files() {
         num_frames: -1,
         buf_start: 0,
         current: Arc::new(Buffer::zeroed(10, 1, 48_000.0)),
+        channels: Vec::new(),
     })
     .unwrap_err();
     assert!(err.contains("channel count mismatch"), "{err}");
@@ -698,6 +702,7 @@ fn read_rejects_channel_mismatch_and_missing_files() {
         path: "/nonexistent/clausters.wav".into(),
         file_start: 0,
         num_frames: 0,
+        channels: Vec::new(),
     })
     .unwrap_err();
     assert!(err.contains("/nonexistent/clausters.wav"), "{err}");
@@ -719,6 +724,7 @@ fn int16_write_quantizes_to_the_expected_grid() {
         path: path.clone(),
         file_start: 0,
         num_frames: 0,
+        channels: Vec::new(),
     }));
     // Write scales by 32767, read by 1/32768.
     let expected = [
@@ -780,6 +786,7 @@ fn diskout_records_then_diskin_streams_it_back() {
         path: path.clone(),
         file_start: 0,
         num_frames: frames as i64,
+        channels: Vec::new(),
     }));
     assert_eq!(read.frames(), frames);
     assert_eq!(read.data(), &signal[..], "DiskOut must write the signal");
@@ -854,6 +861,7 @@ fn non_wav_extensions_decode_through_symphonia() {
         path: path.clone(),
         file_start: 0,
         num_frames: 0,
+        channels: Vec::new(),
     }));
     assert_eq!((read.frames(), read.channels()), (frames, 2));
     assert_eq!(read.sample_rate(), 44_100.0);
@@ -868,6 +876,7 @@ fn non_wav_extensions_decode_through_symphonia() {
         path: path.clone(),
         file_start: 10,
         num_frames: 5,
+        channels: Vec::new(),
     }));
     assert_eq!(sliced.frames(), 5);
     assert_eq!(sliced.data(), &original.data()[10 * 2..15 * 2]);

@@ -40,10 +40,22 @@ pub fn parse_buffer_msg(
                 },
             )
         }
-        "/buffer_allocRead" => {
+        "/buffer_allocRead" | "/buffer_allocReadChannel" => {
             let (index, path) = match args {
                 [OscType::Int(index), OscType::String(path), ..] => (*index, path.clone()),
                 _ => return Err("expected: bufnum, path [, fileStart, numFrames]".into()),
+            };
+            // The channel list is the tail, and the positions before it are
+            // therefore required rather than optional: with a variadic tail
+            // there is no telling a `fileStart` from a channel index.
+            let channels = if addr == "/buffer_allocReadChannel" {
+                channel_list(
+                    args,
+                    4,
+                    "bufnum, path, fileStart, numFrames [, channels...]",
+                )?
+            } else {
+                Vec::new()
             };
             (
                 index,
@@ -51,15 +63,25 @@ pub fn parse_buffer_msg(
                     path,
                     file_start: int_arg(args, 2).unwrap_or(0).max(0) as usize,
                     num_frames: int_arg(args, 3).unwrap_or(0) as i64,
+                    channels,
                 },
             )
         }
         // `leaveOpen` is accepted and ignored (no streaming yet). The buffer
         // must already exist; its shape is kept.
-        "/buffer_read" => {
+        "/buffer_read" | "/buffer_readChannel" => {
             let (index, path) = match args {
                 [OscType::Int(index), OscType::String(path), ..] => (*index, path.clone()),
                 _ => return Err("expected: bufnum, path [, fileStart, numFrames, bufStart]".into()),
+            };
+            let channels = if addr == "/buffer_readChannel" {
+                channel_list(
+                    args,
+                    5,
+                    "bufnum, path, fileStart, numFrames, bufStart [, channels...]",
+                )?
+            } else {
+                Vec::new()
             };
             let Some(current) = mirror_buffer(mirror, index) else {
                 return Err(format!("no buffer allocated at {index}"));
@@ -72,6 +94,7 @@ pub fn parse_buffer_msg(
                     num_frames: int_arg(args, 3).unwrap_or(-1) as i64,
                     buf_start: int_arg(args, 4).unwrap_or(0).max(0) as usize,
                     current,
+                    channels,
                 },
             )
         }
@@ -118,6 +141,55 @@ pub fn parse_buffer_msg(
                     frames: current.frames(),
                     channels: current.channels(),
                     sample_rate: current.sample_rate(),
+                },
+            )
+        }
+        // `/buffer_fill bufnum [start count value]...`: runs of one repeated
+        // value, addressed **flat and interleaved** like `/buffer_set` beside
+        // it — not in frames like the edits below, because this is the writing
+        // family's member and not an editor's verb. scsynth's `/b_fill`.
+        "/buffer_fill" => {
+            let Some(OscType::Int(index)) = args.first() else {
+                return Err("expected a buffer index".into());
+            };
+            let Some(current) = mirror_buffer(mirror, *index) else {
+                return Err(format!("no buffer allocated at {index}"));
+            };
+            let rest = &args[1..];
+            if rest.is_empty() || !rest.len().is_multiple_of(3) {
+                return Err("expected (start, count, value) triples".into());
+            }
+            let len = current.data().len();
+            let mut fills = Vec::with_capacity(rest.len() / 3);
+            for triple in rest.chunks_exact(3) {
+                let start = match triple[0] {
+                    OscType::Int(i) if i >= 0 => i as usize,
+                    _ => return Err("a fill's start must be a non-negative int".into()),
+                };
+                let count = match triple[1] {
+                    OscType::Int(i) if i >= 0 => i as usize,
+                    _ => return Err("a fill's count must be a non-negative int".into()),
+                };
+                let Some(value) = float_arg(triple, 2) else {
+                    return Err("a fill's value must be a float or an int".into());
+                };
+                // Past the end fails rather than clamping, like every write
+                // here: a short fill would leave samples the caller believes
+                // it overwrote.
+                if start.saturating_add(count) > len {
+                    return Err(format!(
+                        "sample range {}..{} is past the end of buffer {index} ({len} samples)",
+                        start,
+                        start + count
+                    ));
+                }
+                fills.push((start, count, value));
+            }
+            (
+                *index,
+                NrtJob::Fill {
+                    base: current,
+                    fills,
                 },
             )
         }
@@ -371,6 +443,26 @@ fn parse_set_pairs(args: &[OscType]) -> Result<Vec<(usize, Vec<f32>)>, String> {
             Ok((at, vec![value]))
         })
         .collect()
+}
+
+/// The trailing channel indices of the `*Channel` reads, starting at `from`.
+///
+/// Empty means every channel, which is also what the plain `/buffer_read` and
+/// `/buffer_allocRead` mean — so the pair is one arm with one extra argument
+/// rather than two implementations of reading a file.
+fn channel_list(args: &[OscType], from: usize, usage: &str) -> Result<Vec<usize>, String> {
+    let mut out = Vec::new();
+    for (i, a) in args.iter().enumerate().skip(from) {
+        match a {
+            OscType::Int(c) if *c >= 0 => out.push(*c as usize),
+            _ => {
+                return Err(format!(
+                    "argument {i} is not a channel index; expected {usage}"
+                ));
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// An arg that may be sent as a float or as an int — a client writing `1` for

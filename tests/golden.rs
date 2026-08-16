@@ -36,6 +36,7 @@ fn load_golden(name: &str) -> Vec<f32> {
         path: path.to_str().unwrap().into(),
         file_start: 0,
         num_frames: 0,
+        channels: Vec::new(),
     });
     match outcome {
         Ok(NrtAction::Install(buf)) => buf.data().to_vec(),

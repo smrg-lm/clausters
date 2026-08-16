@@ -181,6 +181,52 @@ class Buffer:
 
     # ---- the commands addressed to this buffer ----
 
+    @classmethod
+    def read_channels(cls, path, channels, *, file_start: int = 0,
+                      num_frames: int = 0, wait: bool = True,
+                      timeout: "float | None" = None, server=None) -> "Buffer":
+        """Load **selected channels** of a soundfile into a fresh buffer
+        (``/buffer_allocReadChannel``) — how one channel of a stereo file lands
+        in a mono buffer, which `read` cannot do (it takes the file whole).
+
+        ``channels`` is the list of channel indices to keep, in the order given:
+        ``[1]`` is the right channel alone, ``[1, 0]`` swaps a pair, ``[0, 0]``
+        makes a mono file two-channel. A channel the file does not have raises
+        rather than reading as silence. The buffer's shape comes from the file
+        *and* the selection."""
+        srv = _resolve(server)
+        bufnum = srv.buffers.alloc()
+        buf = cls(bufnum, server=srv)
+        args = (bufnum, str(path), int(file_start), int(num_frames),
+                *(int(c) for c in channels))
+        if buf._scored() or not wait:
+            srv.send_msg("/buffer_allocReadChannel", *args)
+            return buf
+        addr, rargs = srv.request("/buffer_allocReadChannel", *args, timeout=timeout,
+                                  expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/buffer_allocReadChannel {bufnum} failed: {rargs}")
+        buf.info(timeout)
+        return buf
+
+    def read_channels_into(self, path, channels, *, file_start: int = 0,
+                           num_frames: int = -1, buf_start: int = 0,
+                           wait: bool = True, timeout: "float | None" = None):
+        """Read selected channels of a soundfile into **this** buffer
+        (``/buffer_readChannel``), keeping its shape — so the selection must
+        have as many channels as the buffer does. `read_channels` is the form
+        that allocates for you."""
+        args = (self.bufnum, str(path), int(file_start), int(num_frames),
+                int(buf_start), *(int(c) for c in channels))
+        srv = self._server()
+        if self._scored() or not wait:
+            srv.send_msg("/buffer_readChannel", *args)
+            return
+        addr, rargs = srv.request("/buffer_readChannel", *args, timeout=timeout,
+                                  expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/buffer_readChannel {self.bufnum} failed: {rargs}")
+
     def gen(self, cmd: str, *args, wait: bool = True, timeout: "float | None" = None):
         """Fills this buffer through ``/buffer_gen`` (the wavetable/generator commands:
         ``"env"``, ``"sine1"``/``"sine2"``/``"sine3"``, ``"cheby"``, ``"copy"``,
@@ -240,6 +286,20 @@ class Buffer:
                                   expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/buffer_zero {self.bufnum} failed: {rargs}")
+
+    def fill(self, *runs, wait: bool = True, timeout: "float | None" = None):
+        """Write runs of one repeated value (``/buffer_fill``), each a
+        ``(start, count, value)`` triple.
+
+        Indices are **flat and interleaved**, like `set_samples` and unlike the
+        editing verbs (`gain`, `reverse`), whose spans are frames — this is the
+        writing family's member, not an editor's verb. Several runs ride in one
+        message, and a run past the end raises rather than being clamped."""
+        flat = []
+        for run in runs:
+            start, count, value = run
+            flat += [int(start), int(count), float(value)]
+        self._edit("/buffer_fill", tuple(flat), wait, timeout)
 
     def _edit(self, addr: str, args: tuple, wait: bool, timeout):
         """The shared body of the destructive edits: fire, or block on ``/done``.

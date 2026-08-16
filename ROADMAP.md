@@ -142,15 +142,12 @@ prerequisite, and because it is the one whose cost is not the client's.*
   The half of its acceptance that named a *drawn* edit belongs to D1 and D2,
   there being no pencil yet, and the plan says so rather than claiming it.
 
-- ⬜ **S15 — `/buffer_fill`, `/buffer_readChannel`, `/buffer_allocReadChannel`**
-  *(root `PLAN.md`)*. Three scsynth buffer commands S6 declared shipped and did
-  not ship. **They belong to this chain rather than beside it**, which is a
-  correction to how they were first listed: `/buffer_fill` *is* an editing verb
-  (silencing a span is a fill with 0, and it overlaps S12's `gain` deliberately),
-  and `/buffer_readChannel` is how a single channel of a stereo take is loaded to
-  be edited — which today cannot be done at all, `/buffer_read` failing outright
-  on a channel-count mismatch. Small, and after S12 only so the two spellings of
-  the same verb land together.
+- ✅ **S15 — `/buffer_fill`, `/buffer_readChannel`, `/buffer_allocReadChannel`.**
+  Done 2026-08-16. The set scsynth's is measured against is complete again, and
+  one channel of a stereo take can be loaded on its own — which could not be
+  done at all before, `/buffer_read` failing outright on a channel-count
+  mismatch. The channel reads turned out to be one argument on the arms that
+  already existed, not a second way of reading a file.
 
 - ⬜ **S14 — A pool buffer can be allocated writable** *(root `PLAN.md`)*.
   **Not part of the editing chain** — in the interactive mode a buffer is already
