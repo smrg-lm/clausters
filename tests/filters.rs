@@ -333,6 +333,7 @@ fn an_audio_rate_cutoff_sweep_stays_bounded() {
             buffers: &[],
             offset: 0,
             frames: BLOCK_SIZE,
+            transport: Default::default(),
         };
         synth.process(&mut ctx);
         let out = buses.audio(0);
@@ -434,6 +435,7 @@ fn svf_mix_gains_are_modulable() {
             buffers: &[],
             offset: 0,
             frames: BLOCK_SIZE,
+            transport: Default::default(),
         };
         synth.process(&mut ctx);
         assert_finite(buses.audio(0), "morphing Svf");

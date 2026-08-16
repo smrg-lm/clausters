@@ -280,6 +280,7 @@ pub fn render_def(def_json: &str, run: &Run) -> Vec<Vec<f32>> {
                 buffers: &[],
                 offset,
                 frames,
+                transport: Default::default(),
             };
             synth.process(&mut ctx);
         }

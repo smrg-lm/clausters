@@ -26,6 +26,7 @@ fn ctx<'a>(buses: &'a Buses, buffers: &'a [Option<Arc<Buffer>>]) -> ProcessCtx<'
         buffers,
         offset: 0,
         frames: BLOCK_SIZE,
+        transport: Default::default(),
     }
 }
 

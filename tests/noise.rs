@@ -51,6 +51,7 @@ fn run(ugen: &mut dyn UGen, inputs: &[&[f32]], n: usize) -> Vec<f32> {
             buffers: &[],
             offset: 0,
             frames: chunk.len(),
+            transport: Default::default(),
         };
         ugen.process(&mut ctx, inputs, chunk);
     }
@@ -77,6 +78,7 @@ fn render(ugen: &str, n: usize) -> Vec<f32> {
             buffers: &[],
             offset: 0,
             frames: BLOCK_SIZE,
+            transport: Default::default(),
         };
         synth.process(&mut ctx);
         out.extend_from_slice(buses.audio(0));
@@ -524,6 +526,7 @@ fn run_split(ugen: &mut dyn UGen, inputs: &[&[f32]], n: usize, at: usize) -> Vec
                 buffers: &[],
                 offset,
                 frames: part.len(),
+                transport: Default::default(),
             };
             ugen.process(&mut ctx, inputs, part);
         }

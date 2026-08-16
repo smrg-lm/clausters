@@ -50,6 +50,7 @@ fn render(ugens: &str, n: usize) -> Vec<f32> {
             buffers: &[],
             offset: 0,
             frames: BLOCK_SIZE,
+            transport: Default::default(),
         };
         synth.process(&mut ctx);
         out.extend_from_slice(buses.audio(0));
@@ -781,6 +782,7 @@ fn a_counter_is_unmoved_by_a_block_split() {
                 buffers: &[],
                 offset,
                 frames,
+                transport: Default::default(),
             };
             synth.process(&mut ctx);
             offset += frames;

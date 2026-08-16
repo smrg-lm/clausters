@@ -202,6 +202,189 @@ fn a_transport_that_never_rolled_stays_at_zero() {
 }
 
 #[test]
+fn the_position_advances_with_the_transport_and_holds_when_it_stops() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 4);
+    assert_eq!(
+        handle.current_transport_position(),
+        (BLOCK_SIZE * 4) as u64,
+        "rolling from 0, the piece is where the transport clock is"
+    );
+
+    handle
+        .send(Cmd::TransportRun { rolling: false })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 6);
+    assert_eq!(
+        handle.current_transport_position(),
+        (BLOCK_SIZE * 4) as u64,
+        "stopped, the piece stays where it was"
+    );
+}
+
+/// The distinction the two quantities exist for: a locate moves the piece and
+/// leaves both clocks exactly where they are.
+#[test]
+fn a_locate_moves_the_position_and_neither_clock() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 4);
+    let device = handle.current_samples();
+    let transport = handle.current_transport_samples();
+
+    handle
+        .send(Cmd::TransportLocate { position: 1_000 })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 1);
+
+    assert_eq!(
+        handle.current_transport_position(),
+        1_000 + BLOCK_SIZE as u64,
+        "located, then one block of playing from there"
+    );
+    assert_eq!(
+        handle.current_samples(),
+        device + BLOCK_SIZE as u64,
+        "the device clock only counted the block"
+    );
+    assert_eq!(
+        handle.current_transport_samples(),
+        transport + BLOCK_SIZE as u64,
+        "and so did the transport clock: a locate is not a jump in time"
+    );
+}
+
+/// Locating while stopped is what an editor does before it presses play.
+#[test]
+fn a_locate_while_stopped_holds_until_the_transport_rolls() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::TransportLocate { position: 500 })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 3);
+    assert_eq!(handle.current_transport_position(), 500);
+
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 2);
+    assert_eq!(
+        handle.current_transport_position(),
+        500 + (BLOCK_SIZE * 2) as u64
+    );
+}
+
+/// The wrap is cut to the sample, not to the block: a loop whose length is not
+/// a multiple of the block still lands exactly on its start.
+#[test]
+fn the_position_wraps_inside_a_loop_to_the_sample() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    // 100 samples, deliberately not a multiple of the 64-sample block.
+    handle
+        .send(Cmd::TransportLoop {
+            span: Some(10..110),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportLocate { position: 10 })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+
+    // Four blocks is 256 samples over a 100-sample loop: two whole wraps and
+    // 56 into the third pass.
+    run_blocks(&mut engine, 4);
+    assert_eq!(
+        handle.current_transport_position(),
+        10 + (256 % 100),
+        "the piece is 256 samples into a 100-sample loop starting at 10"
+    );
+}
+
+/// A loop is half-open, so its end sample is never played and its length is
+/// exactly `end - start`: after one full pass the position is back at the
+/// start, not one past it.
+#[test]
+fn a_loop_of_one_block_returns_exactly_to_its_start() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let len = BLOCK_SIZE as u64;
+    handle
+        .send(Cmd::TransportLoop { span: Some(0..len) })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 1);
+    assert_eq!(handle.current_transport_position(), 0);
+    run_blocks(&mut engine, 1);
+    assert_eq!(handle.current_transport_position(), 0);
+}
+
+/// An inverted or empty span is not a loop; taking it would make the wrap
+/// non-terminating, so it is dropped rather than trusted.
+#[test]
+fn an_empty_or_inverted_loop_is_not_a_loop() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::TransportLoop {
+            span: Some(100..100),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 2);
+    assert_eq!(
+        handle.current_transport_position(),
+        (BLOCK_SIZE * 2) as u64,
+        "the position ran on as if nothing had been set"
+    );
+}
+
+/// Turning a loop on does not move the piece: it keeps playing and wraps when
+/// it first reaches the end.
+#[test]
+fn setting_a_loop_does_not_relocate_the_piece() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 1);
+    handle
+        .send(Cmd::TransportLoop {
+            span: Some(0..1_000),
+        })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 1);
+    assert_eq!(
+        handle.current_transport_position(),
+        (BLOCK_SIZE * 2) as u64,
+        "still where it would have been"
+    );
+}
+
+#[test]
 fn frozen_time_is_counted_to_the_sample_not_to_the_block() {
     // A stop and a resume that both land *inside* a block, at different
     // offsets. Crediting a whole block of frozen time whenever the transport
@@ -625,6 +808,42 @@ fn the_segment_publishes_the_transport_clock() {
     assert_eq!(
         segment.clock().load(Ordering::Acquire),
         (BLOCK_SIZE * 8) as u64
+    );
+}
+
+/// The segment carries the position too, and a locate is what separates it
+/// from the clock beside it: same header, same block, different answer.
+#[test]
+fn the_segment_publishes_the_position_a_locate_moved() {
+    let segment = Segment::in_memory();
+    let (mut engine, mut handle) = engine_pair_full(
+        48_000.0,
+        2,
+        0,
+        Some(SegArc::clone(&segment)),
+        NUM_AUDIO_BUSES,
+        NUM_CONTROL_BUSES,
+        Limits::default(),
+    );
+    handle
+        .send(Cmd::TransportLocate { position: 9_000 })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 2);
+
+    assert_eq!(
+        segment.transport_position().load(Ordering::Acquire),
+        9_000 + (BLOCK_SIZE * 2) as u64,
+        "the piece is where it was located, plus what has played since"
+    );
+    assert_eq!(
+        segment.transport_clock().load(Ordering::Acquire),
+        (BLOCK_SIZE * 2) as u64,
+        "the clock beside it counted only the samples that elapsed"
     );
 }
 

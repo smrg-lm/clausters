@@ -30,6 +30,7 @@ fn render_const(json: &str) -> f32 {
         buffers: &[],
         offset: 0,
         frames: BLOCK_SIZE,
+        transport: Default::default(),
     };
     synth.process(&mut ctx);
     let blk = buses.audio(0);

@@ -40,8 +40,11 @@ const MAGIC: u32 = 0x5541_4C43;
 /// space (the transport clock), so every offset below is unchanged. v7 changed
 /// the framing *inside* the command rings (each frame gained a peer tag) and no
 /// field of the header or the data plane this reader maps, so it is again a
-/// number change and nothing else.
-const SUPPORTED_ABI_VERSION: u32 = 7;
+/// number change and nothing else. v8 added the transport **position** in the
+/// last of that same reserved space -- a second quantity beside the clock, not
+/// a redefinition of it (see [`SharedSegment::transport_position`]) -- so no
+/// offset moved here either.
+const SUPPORTED_ABI_VERSION: u32 = 8;
 
 // Byte offsets of the fields we read inside the `#[repr(C)]` Header.
 const OFF_ABI: usize = 4;
@@ -54,6 +57,8 @@ const OFF_TAP_FRAMES: usize = 36;
 const OFF_AUDIO_BUSES: usize = 40;
 /// The transport clock (v6), in what was reserved header space.
 const OFF_TRANSPORT_CLOCK: usize = 48;
+/// The transport position (v8), in the last of it.
+const OFF_TRANSPORT_POSITION: usize = 56;
 /// Size of the fixed Header struct.
 const HEADER_SIZE: usize = 64;
 /// Fixed prefix of each command ring before its `data` array (head/tail/pad).
@@ -220,11 +225,24 @@ impl SharedSegment {
 
     /// Samples elapsed **under the transport**, held while it is stopped (v6).
     ///
-    /// [`Self::sample_clock`] never stops, so a view drawing where the *piece*
-    /// is reads this one and anything pacing on the device reads that one. The
-    /// two only differ while a transport with a governed group is stopped.
+    /// [`Self::sample_clock`] never stops, so anything pacing on the device
+    /// reads that one. This one is monotonic too — it holds, it never jumps —
+    /// which is what a scheduler needs and what a **playhead does not**: for
+    /// where the piece *is*, read [`Self::transport_position`].
     pub fn transport_clock(&self) -> u64 {
         header_u64(self.ptr, OFF_TRANSPORT_CLOCK)
+    }
+
+    /// Where the transport is **in the piece**, in samples of the material
+    /// (v8) — what a playhead draws.
+    ///
+    /// Not a clock: it advances with the transport clock while rolling, holds
+    /// while stopped, jumps to wherever `/transport_locate` puts it and wraps
+    /// at the end of a loop. Reading the clock instead gives a head that
+    /// ignores every seek and every loop, which is a picture of elapsed time
+    /// rather than of the piece.
+    pub fn transport_position(&self) -> u64 {
+        header_u64(self.ptr, OFF_TRANSPORT_POSITION)
     }
 
     /// The device sample rate the server published, or `0.0` before it is known.

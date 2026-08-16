@@ -42,7 +42,7 @@ from .errors import (
     ServerError,
 )
 
-ABI_VERSION = 7
+ABI_VERSION = 8
 
 #: The stride between successive stochastic-UGen seeds within one render —
 #: ``SEED_STRIDE`` in ``clausters_core::rng``. A client needs it to reproduce a
@@ -82,6 +82,12 @@ _OFF_AUDIO_BUSES = 40  # u32: audio-bus count of the bus region (ABI v4)
 # reserved header space, so v6 moved no other offset and did not change the
 # segment size.
 _OFF_TRANSPORT_CLOCK = 48
+# u64: the transport **position** (ABI v8) -- where the transport is in the
+# piece, in samples of the material. Not the clock above: that one is elapsed
+# time and is monotonic, this one jumps wherever `/transport_locate` puts it
+# and wraps at a loop's end. It spends the last of the reserved header space,
+# so v8 moved no offset either; the next field added here will.
+_OFF_TRANSPORT_POSITION = 56
 _RING_CAPACITY = 64 * 1024
 _RING_HEADER = 64  # head u32, tail u32, padding
 # Each frame inside a ring: the payload length and the peer tag, both u32 LE
@@ -221,6 +227,17 @@ class ShmClient:
         stopped.
         """
         return struct.unpack_from("<Q", self.mm, _OFF_TRANSPORT_CLOCK)[0]
+
+    @property
+    def transport_position(self) -> int:
+        """Where the transport is **in the piece**, in samples of the material.
+
+        Not a clock. `transport_clock` counts what has elapsed and only goes
+        forward; this says where the piece is, so it jumps to wherever
+        `/transport_locate` puts it and wraps at the end of a loop. A playhead
+        reads this one.
+        """
+        return struct.unpack_from("<Q", self.mm, _OFF_TRANSPORT_POSITION)[0]
 
     @property
     def sample_rate(self) -> float:

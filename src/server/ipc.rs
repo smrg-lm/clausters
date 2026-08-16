@@ -75,8 +75,11 @@ pub const MAGIC: u32 = 0x5541_4C43;
 /// added the transport clock beside the sample clock, so a local peer reads
 /// the piece's own position with a load. v7 gave ring frames a peer tag, so one
 /// segment carries several independent clients (see the module docs); no field
-/// of the header or the data plane moved, only the framing inside the rings.
-pub const ABI_VERSION: u32 = 7;
+/// of the header or the data plane moved, only the framing inside the rings. v8
+/// added the transport **position** beside the transport clock — two different
+/// quantities, see [`Header::transport_position`] — in the last of the header's
+/// reserved space, so again no offset moved.
+pub const ABI_VERSION: u32 = 8;
 
 /// The peer tag an embedder gets when it never asks for one: the single client
 /// a segment has always had, so a peer built against the old single-client
@@ -124,7 +127,26 @@ struct Header {
     /// (`clients/python/clausters/ipc.py`). Reserved space exists precisely so
     /// a counter can be added without moving anything.
     transport_clock: AtomicU64,
-    _reserved: [u32; 2],
+    /// The transport **position** (ABI v8): the sample of the *piece* the
+    /// engine is playing, in the material's own axis.
+    ///
+    /// It is not the clock above and the difference is the whole reason both
+    /// exist. `transport_clock` counts samples **elapsed** under the transport
+    /// and is monotonic by construction, so a locate cannot move it; the
+    /// scheduler's transport queue needs exactly that, since "due" is only
+    /// meaningful on an axis that does not jump. This one is where the piece
+    /// *is*: it advances with the clock while rolling, holds while stopped,
+    /// **jumps on `/transport_locate`** and wraps at a loop's end. A playhead
+    /// and a buffer reader want this one; a scheduled bundle wants that one.
+    ///
+    /// Non-negative: a locate before the start of the piece clamps to 0, the
+    /// same floor `/transport_set` puts on `originSample`.
+    ///
+    /// This spends the last of the header's reserved space. The next counter
+    /// added here moves offsets, and out-of-process readers pin those by hand
+    /// (`clients/python/clausters/ipc.py`, `clients/gui/src/host/shm.rs`), so
+    /// it costs more than a version bump.
+    transport_position: AtomicU64,
 }
 
 #[repr(C)]
@@ -402,9 +424,16 @@ impl Segment {
     }
 
     /// The transport clock: samples elapsed under the transport, held while it
-    /// is stopped.
+    /// is stopped. Monotonic — see [`Self::transport_position`] for the one
+    /// that moves with a locate.
     pub fn transport_clock(&self) -> &AtomicU64 {
         &self.layout().header.transport_clock
+    }
+
+    /// The transport position: the sample of the *piece* being played. Holds
+    /// while stopped, jumps on a locate, wraps at a loop's end.
+    pub fn transport_position(&self) -> &AtomicU64 {
+        &self.layout().header.transport_position
     }
 
     /// Control buses living inside the segment; hand this to

@@ -384,6 +384,41 @@ pub struct ProcessCtx<'a> {
     pub offset: usize,
     /// Slice length in frames.
     pub frames: usize,
+    /// Where the transport is, for a UGen that follows it.
+    pub transport: TransportCtx,
+}
+
+/// The transport, as a slice sees it: where the piece is, and whether it is
+/// moving.
+///
+/// One struct rather than two fields of [`ProcessCtx`] because they are only
+/// ever read together — a position means something different depending on
+/// whether it is advancing — and because it keeps the cost of the next
+/// transport fact one line at each construction site instead of one per fact.
+/// `Default` is a stopped transport at the start of the piece, which is what
+/// every non-engine caller (an offline render of a graph, a UGen test) wants.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TransportCtx {
+    /// Where the transport is **in the piece** at this slice's first frame, in
+    /// samples of the material (`server::clock_axis::PiecePosition`).
+    ///
+    /// It advances by one per sample across the whole slice — the engine cuts
+    /// its block at a loop's wrap, so no slice ever straddles one. A UGen
+    /// following it therefore ramps and nothing more; the loop points, the
+    /// locate and the freeze are all the engine's.
+    ///
+    /// Not a clock: it jumps where a locate puts it, so nothing schedules on
+    /// it. While the transport is stopped it is still *correct* — it is where
+    /// the piece is standing — it simply does not advance, which is what
+    /// [`rolling`](Self::rolling) says.
+    pub position: u64,
+    /// Whether the transport is rolling.
+    ///
+    /// A **governed** node is frozen and does not run at all while it is not,
+    /// so a node that sees this false is one outside the governed group, or
+    /// one on a server with no group bound. It still has to hold its position
+    /// rather than ramp: the piece is not moving, whoever is asking.
+    pub rolling: bool,
 }
 
 /// What a UGen (via [`UGen::done`]) asks the engine to do when it finishes —

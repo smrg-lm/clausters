@@ -13,6 +13,7 @@
 //! splitting the block at each event's offset. The engine publishes its
 //! sample counter so the network thread can convert NTP timetags.
 
+use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
@@ -23,9 +24,10 @@ use crate::dsp::BusUsage;
 use crate::dsp::buffer::{Buffer, BufferPool, empty_pool_with};
 use crate::dsp::{
     Buses, ControlBuses, Limits, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx, ReplyMsg,
+    TransportCtx,
 };
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
-use crate::server::clock_axis::{DeviceSample, TransportSample};
+use crate::server::clock_axis::{DeviceSample, PiecePosition, PositionAnchor, TransportSample};
 use crate::server::ipc::Segment;
 use crate::server::workers::WorkerPool;
 
@@ -94,6 +96,17 @@ pub enum Cmd {
     /// thaws the group, so no frozen ownerless subtree is left behind.
     TransportGroup {
         id: i32,
+    },
+    /// `/transport_locate`: moves the piece's position, leaving both clocks
+    /// alone. One store of the anchor — see `server::clock_axis`.
+    TransportLocate {
+        position: u64,
+    },
+    /// `/transport_loop`: the span the position wraps inside, `None` to stop
+    /// looping. An empty or inverted span is not a loop and is rejected before
+    /// it reaches here.
+    TransportLoop {
+        span: Option<Range<u64>>,
     },
     /// `/node_before` / `/node_after`.
     MoveNode {
@@ -247,6 +260,8 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         // opinion about which axis the bundle belongs to.
         Cmd::TransportRun { .. }
         | Cmd::TransportGroup { .. }
+        | Cmd::TransportLocate { .. }
+        | Cmd::TransportLoop { .. }
         | Cmd::SetBuffer { .. }
         | Cmd::SetControlBus { .. }
         | Cmd::SetTap { .. }
@@ -415,6 +430,21 @@ pub struct Engine {
     frozen_clock: Arc<AtomicU64>,
     /// The group the transport governs, frozen while the transport is stopped.
     transport_group: Option<i32>,
+    /// Where the piece is, as an anchor onto the transport clock: the position
+    /// a locate put it at, and the transport sample that locate landed on. A
+    /// read is one add, so the position costs the per-sample path nothing.
+    position: PositionAnchor,
+    /// Block-accurate mirror of the piece's position for the network thread
+    /// and the segment.
+    position_clock: Arc<AtomicU64>,
+    /// The span the position wraps inside while looping. Always non-empty:
+    /// an empty or inverted span is refused before it reaches the engine, and
+    /// the wrap below would not terminate over one.
+    transport_loop: Option<Range<u64>>,
+    /// How far into the current block the engine is standing, in samples.
+    /// Zero outside [`Engine::process_block`]'s cut loop; see
+    /// [`Engine::transport_here`] for why anything reads it.
+    cursor: usize,
     /// Pending timed bundles, sorted by time (stable for equal times).
     /// Pre-allocated: insertion and removal never allocate.
     sched: Vec<ScheduledBundle>,
@@ -467,6 +497,9 @@ pub struct EngineHandle {
     /// `current_samples() - current_transport_samples()`, because those are two
     /// separate loads and can straddle a block.
     frozen_clock: Arc<AtomicU64>,
+    /// Block-accurate mirror of the piece's position (`/transport_locate`),
+    /// which is not a clock: it jumps and it wraps. See `server::clock_axis`.
+    position_clock: Arc<AtomicU64>,
     counters: Arc<Counters>,
     /// The IPC segment when one exists — the network thread reads the audio
     /// taps from here (`/bus_tapStream`) without an engine round-trip.
@@ -544,6 +577,7 @@ pub fn engine_pair_full(
     let sample_clock = Arc::new(AtomicU64::new(0));
     let transport_clock = Arc::new(AtomicU64::new(0));
     let frozen_clock = Arc::new(AtomicU64::new(0));
+    let position_clock = Arc::new(AtomicU64::new(0));
     let tap_buses = vec![-1i32; ipc.as_ref().map_or(0, |s| s.taps())];
     let segment = ipc.clone();
     let engine = Engine {
@@ -560,6 +594,10 @@ pub fn engine_pair_full(
         transport_rolling: false,
         frozen_total: 0,
         transport_clock: Arc::clone(&transport_clock),
+        position: PositionAnchor::default(),
+        cursor: 0,
+        position_clock: Arc::clone(&position_clock),
+        transport_loop: None,
         frozen_clock: Arc::clone(&frozen_clock),
         transport_group: None,
         sched: Vec::with_capacity(SCHED_CAPACITY),
@@ -589,6 +627,7 @@ pub fn engine_pair_full(
         control_buses,
         sample_clock,
         transport_clock,
+        position_clock,
         frozen_clock,
         counters,
         segment,
@@ -608,6 +647,38 @@ impl Engine {
     /// The transport clock: samples elapsed under the transport.
     pub fn transport_now(&self) -> TransportSample {
         DeviceSample::new(self.now).to_transport(self.frozen_total)
+    }
+
+    /// The transport clock **at the cursor** — where inside the current block
+    /// the engine is standing, rather than at its first sample.
+    ///
+    /// A locate arrives inside a timed bundle and lands on an exact sample, so
+    /// anchoring it at the block's start would put the piece up to a block
+    /// away from where the client asked. Same reason `frozen_total` is
+    /// credited at the sample the transport flips rather than a block at a
+    /// time. Outside the block-cut loop the cursor is 0 and this is
+    /// [`Self::transport_now`].
+    fn transport_here(&self) -> TransportSample {
+        DeviceSample::new(self.now + self.cursor as u64).to_transport(self.frozen_total)
+    }
+
+    /// Where the piece is at the cursor.
+    fn position_here(&self) -> PiecePosition {
+        self.position.at(self.transport_here())
+    }
+
+    /// The device sample at which the position reaches the loop's end, when a
+    /// loop is on, the transport rolls and the end is still ahead — what the
+    /// block is cut at so a wrap lands on its exact sample.
+    fn loop_wrap_due(&self) -> Option<u64> {
+        if !self.transport_rolling {
+            return None;
+        }
+        let span = self.transport_loop.as_ref()?;
+        let here = self.transport_here();
+        self.position
+            .reaching(PiecePosition::new(span.end), here)
+            .map(|t| t.to_device(self.frozen_total).get())
     }
 
     /// Whether the transport queue holds nothing. A server that never binds a
@@ -767,18 +838,52 @@ impl Engine {
                 // queue over the device axis.
                 (Some(d), Some(t)) => t < d,
             };
-            let due_time = if take_transport {
+            let queue_due = if take_transport {
                 transport_due
             } else {
                 device_due
             };
-            let Some(due_time) = due_time.filter(|t| *t < block_end) else {
+            let queue_due = queue_due.filter(|t| *t < block_end);
+            // A loop's end is the third thing that cuts a block, and it is cut
+            // for the same reason the other two are: the wrap lands on an
+            // exact sample. Cutting there is also what keeps the position
+            // *linear inside every slice*, so a reader following it ramps by
+            // one per sample and never has to know a loop exists.
+            //
+            // `<= block_end`, where a bundle is `<`: a bundle at the boundary
+            // belongs to the next block, but a wrap there belongs to *this*
+            // one, because the position published at the end of a block is
+            // what the next block's first sample plays -- and that sample is
+            // the loop's start. Reading it a block late is a playhead that
+            // overshoots the loop by a block, once per pass.
+            let wrap_due = self.loop_wrap_due().filter(|w| *w <= block_end);
+            // A wrap ties with a bundle by yielding to it: the queues keep the
+            // device-first preference they already had among themselves, and a
+            // wrap that stays due is taken on the next turn of the loop.
+            let take_wrap = match (wrap_due, queue_due) {
+                (None, _) => false,
+                (Some(_), None) => true,
+                (Some(w), Some(q)) => w < q,
+            };
+            let Some(due_time) = (if take_wrap { wrap_due } else { queue_due }) else {
                 break;
             };
             let at = due_time.saturating_sub(block_start) as usize;
             if at > offset {
                 self.process_slice(offset, at - offset);
                 offset = at;
+            }
+            self.cursor = offset;
+            if take_wrap {
+                // Back to the loop's start, re-anchored here so the position
+                // goes on advancing by one per sample from the seam. The span
+                // is half-open, so the end sample is never played and the
+                // first sample after the last one of the loop is its first.
+                let start = self.transport_loop.as_ref().map_or(0, |span| span.start);
+                self.position = self
+                    .position
+                    .wrapped_to(PiecePosition::new(start), self.transport_here());
+                continue;
             }
             // Vec::remove on the pre-allocated queue: memmove, no (de)alloc.
             let mut cmds = if take_transport {
@@ -803,6 +908,7 @@ impl Engine {
                 _ => {}
             }
         }
+        self.cursor = 0;
         self.process_slice(offset, BLOCK_SIZE - offset);
         // The block ends with the transport still stopped: credit the tail.
         if let Some(from) = frozen_from {
@@ -823,6 +929,10 @@ impl Engine {
             .store(self.transport_now().get(), Ordering::Relaxed);
         self.frozen_clock
             .store(self.frozen_total, Ordering::Relaxed);
+        // Published at the block's end like the clocks, and read there too:
+        // the position at `block_end` is where the next block starts playing.
+        self.position_clock
+            .store(self.position_here().get(), Ordering::Relaxed);
         self.sample_clock.store(block_end, Ordering::Relaxed);
         if let Some(segment) = &self.ipc {
             // Audio taps first, then the clock: a reader that sees clock N
@@ -855,6 +965,9 @@ impl Engine {
             segment
                 .transport_clock()
                 .store(self.transport_now().get(), Ordering::Relaxed);
+            segment
+                .transport_position()
+                .store(self.position_here().get(), Ordering::Relaxed);
             segment.clock().store(block_end, Ordering::Release);
         }
         self.counters
@@ -932,6 +1045,18 @@ impl Engine {
             buffers: &self.buffers,
             offset,
             frames,
+            // Where the piece is at this slice's **first** frame. The block is
+            // cut at every loop wrap, so the position advances by exactly one
+            // per sample for the whole slice and a UGen reading it only has to
+            // ramp — no wrap arithmetic, and nothing needs to know the loop
+            // points but the engine.
+            transport: TransportCtx {
+                position: self
+                    .position
+                    .at(DeviceSample::new(self.now + offset as u64).to_transport(self.frozen_total))
+                    .get(),
+                rolling: self.transport_rolling,
+            },
         };
         self.tree.process(&ctx, &self.pool);
     }
@@ -989,6 +1114,25 @@ impl Engine {
                             self.tree.set_paused(id, true);
                         }
                     }
+                }
+                Cmd::TransportLocate { position } => {
+                    // One store, at the sample the locate lands on: the
+                    // position is anchored rather than accumulated, so this
+                    // is the whole of a seek on the audio thread.
+                    self.position = PositionAnchor::located(
+                        PiecePosition::new(position),
+                        self.transport_here(),
+                    );
+                }
+                Cmd::TransportLoop { span } => {
+                    // Re-anchored at this sample, so turning a loop on does
+                    // not move the piece: it keeps playing from where it is
+                    // and wraps when it first reaches the end.
+                    self.position = self.position.wrapped_to(
+                        self.position.at(self.transport_here()),
+                        self.transport_here(),
+                    );
+                    self.transport_loop = span.filter(|s| s.start < s.end);
                 }
                 Cmd::SetBuffer { index, buffer } => {
                     if let Some(slot) = self.buffers.get_mut(index) {
@@ -1272,6 +1416,12 @@ impl EngineHandle {
     /// The transport clock as of the last completed block.
     pub fn current_transport_samples(&self) -> u64 {
         self.transport_clock.load(Ordering::Relaxed)
+    }
+
+    /// Where the piece is, as of the last completed block. Unlike the two
+    /// clocks this one jumps: a locate moves it and a loop wraps it.
+    pub fn current_transport_position(&self) -> u64 {
+        self.position_clock.load(Ordering::Relaxed)
     }
 
     /// Total samples the transport has spent stopped, as of the last completed

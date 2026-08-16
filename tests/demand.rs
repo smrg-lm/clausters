@@ -71,6 +71,7 @@ fn pulls(source: &mut dyn clausters::dsp::UGen, inputs: &[f32], n: usize) -> Vec
         buffers: &[],
         offset: 0,
         frames: BLOCK_SIZE,
+        transport: Default::default(),
     };
     let mut vals = Values(inputs.to_vec());
     (0..n).map(|_| source.demand(&ctx, &mut vals)).collect()
@@ -118,6 +119,7 @@ fn render(json: &str, frames: usize, buffers: &[Option<Arc<Buffer>>]) -> Vec<f32
             buffers,
             offset: 0,
             frames: BLOCK_SIZE,
+            transport: Default::default(),
         };
         synth.process(&mut ctx);
         out.extend_from_slice(buses.audio(0));
@@ -771,6 +773,7 @@ fn a_reset_restarts_every_stream_a_driver_pulls() {
             buffers: &[],
             offset: 0,
             frames: BLOCK_SIZE,
+            transport: Default::default(),
         };
         synth.process(&mut ctx);
     };
@@ -813,6 +816,7 @@ fn a_split_block_renders_the_same_samples() {
                 buffers: &[],
                 offset,
                 frames,
+                transport: Default::default(),
             };
             synth.process(&mut ctx);
         }

@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::thread::{self, JoinHandle};
 
 use crate::dsp::buffer::Buffer;
-use crate::dsp::{Buses, ProcessCtx};
+use crate::dsp::{Buses, ProcessCtx, TransportCtx};
 use crate::node::NodeTree;
 
 const STATE_HOT: u8 = 0;
@@ -57,6 +57,9 @@ struct Job {
     sample_rate: f32,
     offset: usize,
     frames: usize,
+    /// Carried so a worker's `ProcessCtx` is the conductor's: a stage runs in
+    /// the same slice, so it is at the same place in the piece.
+    transport: TransportCtx,
 }
 
 impl Job {
@@ -70,6 +73,10 @@ impl Job {
         sample_rate: 0.0,
         offset: 0,
         frames: 0,
+        transport: TransportCtx {
+            position: 0,
+            rolling: false,
+        },
     };
 }
 
@@ -172,6 +179,7 @@ impl WorkerPool {
                 sample_rate: ctx.sample_rate,
                 offset: ctx.offset,
                 frames: ctx.frames,
+                transport: ctx.transport,
             };
         }
         shared.cursor.store(0, Ordering::Relaxed);
@@ -287,6 +295,7 @@ fn worker_main(shared: &Shared, me: usize) {
             buffers,
             offset: job.offset,
             frames: job.frames,
+            transport: job.transport,
         };
         loop {
             let k = shared.cursor.fetch_add(1, Ordering::AcqRel);

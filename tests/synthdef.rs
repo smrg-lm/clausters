@@ -37,6 +37,7 @@ fn render_with(synths: &mut [UGenSynth], blocks: usize, setup: impl Fn(&ControlB
             buffers: &[],
             offset: 0,
             frames: BLOCK_SIZE,
+            transport: Default::default(),
         };
         for synth in synths.iter_mut() {
             synth.process(&mut ctx);

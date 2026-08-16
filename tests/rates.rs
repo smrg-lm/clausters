@@ -29,6 +29,7 @@ fn render(json: &str, blocks: usize) -> Vec<f32> {
             buffers: &[],
             offset: 0,
             frames: BLOCK_SIZE,
+            transport: Default::default(),
         };
         synth.process(&mut ctx);
         out.extend_from_slice(buses.audio(0));
@@ -56,6 +57,7 @@ fn render_split(json: &str, blocks: usize, split: usize) -> Vec<f32> {
                 buffers: &[],
                 offset,
                 frames,
+                transport: Default::default(),
             };
             synth.process(&mut ctx);
             offset += frames;
