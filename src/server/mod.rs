@@ -8,6 +8,7 @@ pub mod defstore;
 pub mod engine;
 pub mod ipc;
 pub mod nrt;
+pub mod nrtsession;
 pub mod render;
 #[cfg(feature = "rtprio")]
 pub mod rt;

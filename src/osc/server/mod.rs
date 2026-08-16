@@ -318,6 +318,15 @@ impl OscServer {
         self.max_clients = n.max(1);
     }
 
+    /// Restarts the stochastic-UGen seed sequence, so a caller that resolved a
+    /// seed can hand the server the one it will report. The offline renderer
+    /// does this on its own translator (`server::render`); an offline *session*
+    /// (`server::nrtsession`) needs the same door on the server, and for the
+    /// same reason: an operation is only repeatable if its seed is.
+    pub fn set_seed(&mut self, seed: u64) {
+        self.translator.set_seed(seed);
+    }
+
     /// The live-client slots both stream fronts share, created on first use.
     fn client_slots(&mut self) -> std::sync::Arc<crate::osc::ClientSlots> {
         let max = self.max_clients;

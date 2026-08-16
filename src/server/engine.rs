@@ -680,6 +680,25 @@ impl Engine {
         }
     }
 
+    /// Applies what has arrived **without advancing time**: the two steps
+    /// [`Self::process_block`] begins with, and none of the rest.
+    ///
+    /// A pulled driver needs this because a command can only take effect
+    /// through the FIFO — installing a buffer is `Cmd::SetBuffer`, so a
+    /// `/buffer_alloc` that has completed on the NRT side is still not in the
+    /// pool until the engine drains. In real time the next block does that a
+    /// millisecond later and nobody notices; a driver whose clock only moves
+    /// during an operation (`server::nrtsession`) would otherwise have to
+    /// process a block it does not want in order to load a buffer, which is
+    /// exactly the clock it is defined as not having.
+    ///
+    /// Same RT discipline as `process_block`: no allocation, no locking. It
+    /// is safe to call from the audio thread, and nothing there needs to.
+    pub fn drain(&mut self) {
+        self.drain_commands();
+        self.flush_pending_garbage();
+    }
+
     /// Processes one block. `out` is interleaved and its length must be
     /// `BLOCK_SIZE * channels`. Runs on the audio thread: does not allocate.
     ///
