@@ -36,6 +36,8 @@ use clausters_gui::host::ServerLink;
 use clausters_gui::host::bundle;
 #[cfg(feature = "standalone")]
 use clausters_gui::host::embed::EmbedServer;
+#[cfg(all(feature = "standalone", unix))]
+use clausters_gui::host::shm::HeadClock;
 
 const USAGE: &str = "\
 usage:
@@ -465,7 +467,7 @@ fn run(args: &[String]) -> Result<(), String> {
         gui::run(
             host,
             Arc::new(socket),
-            shm,
+            gui::open_shm(shm),
             tcp_port.map(|p| (p, max_frame)),
             ws_port.map(|p| (p, max_frame)),
         )
@@ -559,7 +561,9 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
 
     let mut host = Host::new();
     #[cfg(feature = "standalone")]
-    attach_server(&mut host, &load)?;
+    let bus = attach_server(&mut host, &load)?;
+    #[cfg(not(feature = "standalone"))]
+    let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
     #[cfg(not(feature = "standalone"))]
     if !load.messages.is_empty() {
         tracing::warn!(
@@ -636,7 +640,7 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
 
     let socket = UdpSocket::bind(("127.0.0.1", port))
         .map_err(|e| format!("failed to bind UDP port {port}: {e}"))?;
-    gui::run(host, Arc::new(socket), None, None, None)
+    gui::run(host, Arc::new(socket), bus, None, None)
 }
 
 /// Gives a session host a server, and its material to it.
@@ -650,7 +654,7 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
 fn attach_server(
     host: &mut Host,
     load: &clausters_gui::host::document::sources::Load,
-) -> Result<(), String> {
+) -> Result<Option<Arc<dyn clausters_gui::host::BusSource>>, String> {
     let embed = match EmbedServer::open() {
         Ok(embed) => embed,
         Err(e) => {
@@ -658,13 +662,23 @@ fn attach_server(
                 "session: no audio server ({e}) — the document opens and edits, but takes will \
                  not draw or sound"
             );
-            return Ok(());
+            return Ok(None);
         }
     };
     // The monitor's def goes with the material: a take is data, and what sounds
     // it is an instrument. Sent before the reads so it is loaded well before a
     // hand can press the space bar.
     send_osc(&embed, clausters_gui::host::play::take_def_message())?;
+    // The monitor's own group, bound to the transport: what `/transport_stop`
+    // freezes and `/transport_play` thaws. It is created stopped, so a reader
+    // added to it stands still until a hand asks for sound.
+    for msg in clausters_gui::host::play::take_group_messages() {
+        send_osc(&embed, msg)?;
+    }
+    // Bound, so from here this host is the one that drives the transport — the
+    // sweep places the head, the space bar rolls it, and both are refused in a
+    // host that is a guest on somebody else's server.
+    host.set_owns_transport(true);
     for msg in &load.messages {
         send_osc(&embed, msg.clone())?;
     }
@@ -675,8 +689,20 @@ fn attach_server(
         // that is still empty, once, and draw nothing forever.
         await_reads(&embed, load.messages.len());
     }
+    // **The data plane, before the link takes the server.** The playhead is
+    // drawn from the piece's position, read straight out of the embedded
+    // server's own segment each frame — the in-process twin of mapping a
+    // `--shm` file, and the reason a session needs no message per frame to
+    // move a line.
+    #[cfg(unix)]
+    let bus = embed.bus_source(HeadClock::Piece);
+    #[cfg(not(unix))]
+    let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
+    if bus.is_none() {
+        tracing::warn!("session: no data plane — the playhead will stand still");
+    }
     host.set_server_link(ServerLink::Embed(embed));
-    Ok(())
+    Ok(bus)
 }
 
 /// Waits for `n` buffer reads to answer, reporting each failure by its own

@@ -250,6 +250,7 @@ impl Gestures {
                     nav_start: axis.nav.start,
                     nav_len: axis.nav.len,
                     anchor,
+                    origin_x: cx,
                     value: value.zip(anchor_v),
                 });
                 out.push(GestureEffect::Redraw(def_id));

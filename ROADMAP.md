@@ -229,8 +229,11 @@ SuperCollider has and this server does not.
   **follow** the transport instead of each reader carrying a position someone
   has to keep in step.
 
-- ⬜ **H5 — The session's monitor follows the transport, and the head is drawn
-  from it.** Immediately after T5 and small once it exists: the monitor becomes
+- ✅ **H5 — The session's monitor follows the transport, and the head is drawn
+  from it.** Done 2026-08-16, and small once T5 existed, as predicted — what it
+  cost instead was four passes under a hand, each of which found a gesture
+  asking the wrong question rather than a bug in the wiring (the plan records
+  all four). Originally: the monitor becomes
   a follower of the piece's position, the embedded server's segment gets a
   door, and the sweep the host already draws is pointed at that position. It
   closes this phase rather than adding to it — the third writer can then hear

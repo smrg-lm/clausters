@@ -19,10 +19,12 @@
 
 #![cfg(unix)]
 
+use std::any::Any;
 use std::fs::OpenOptions;
 use std::io;
 use std::os::fd::AsRawFd;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// "CLAU" little-endian (mirrors `server::ipc::MAGIC`).
@@ -68,13 +70,45 @@ const RING_PREFIX: usize = 64;
 /// audio-bus region.
 const TAP_ALIGN: usize = 64;
 
-/// A read-only mapping of the audio server's shared-memory segment. Reading a
+/// Which of the segment's counters a window's **playhead** reads.
+///
+/// The segment publishes several and a widget draws one number, so the choice
+/// is made once, where the source is built, rather than as a prop on every
+/// widget that could carry a head.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum HeadClock {
+    /// The device clock: samples processed since boot, never stopping. What a
+    /// host attached to a live server wants — its meters, scopes and taps are
+    /// all on that axis.
+    #[default]
+    Device,
+    /// The transport's **position in the piece**: it holds while stopped,
+    /// jumps on a locate and wraps in a loop. What an editor wants, because it
+    /// is the time of the material rather than of the machine.
+    Piece,
+}
+
+/// Who owns the memory this reads.
+enum Backing {
+    /// A mapping this made and must unmap.
+    Mapped,
+    /// Somebody else's memory, kept alive by the handle held here — an
+    /// in-process server's own segment, which is not ours to unmap and must
+    /// not outlive its owner. Type-erased because the owner is the server
+    /// crate's, which only a `standalone` build links.
+    Borrowed(#[allow(dead_code)] Arc<dyn Any + Send + Sync>),
+}
+
+/// A read-only view of the audio server's shared-memory segment. Reading a
 /// control bus is a single atomic load; reading an audio-tap window is a
-/// lock-free copy with a cursor double-check. The mapping is dropped
-/// (unmapped) when this is.
+/// lock-free copy with a cursor double-check. A view it mapped itself is
+/// unmapped when this is dropped; a borrowed one only releases its hold on the
+/// owner.
 pub struct SharedSegment {
     ptr: *mut u8,
     len: usize,
+    backing: Backing,
+    head: HeadClock,
     control_count: usize,
     controls_offset: usize,
     /// The audio-bus region (v4): `audio_count` directory words (bus -> tap
@@ -95,15 +129,19 @@ unsafe impl Sync for SharedSegment {}
 
 impl Drop for SharedSegment {
     fn drop(&mut self) {
-        // SAFETY: the exact mapping created in `open`.
-        unsafe { libc::munmap(self.ptr as *mut libc::c_void, self.len) };
+        if let Backing::Mapped = self.backing {
+            // SAFETY: the exact mapping created in `open`.
+            unsafe { libc::munmap(self.ptr as *mut libc::c_void, self.len) };
+        }
     }
 }
 
 impl SharedSegment {
     /// Maps the segment at `path` read-only and validates its header. Fails if
     /// the file is too small, the magic is wrong, the ABI version differs, or the
-    /// file size does not match the layout the header describes.
+    /// file size does not match the layout the header describes. Reads the
+    /// **device** clock, which is what a host attached to a running server
+    /// wants; see [`Self::with_head`].
     pub fn open(path: &Path) -> io::Result<Self> {
         let file = OpenOptions::new().read(true).open(path)?;
         let len = file.metadata()?.len() as usize;
@@ -125,23 +163,62 @@ impl SharedSegment {
             return Err(io::Error::last_os_error());
         }
         let ptr = raw as *mut u8;
+        // Validated from the raw mapping before the owning struct exists, so
+        // its `Drop` (munmap) runs exactly once -- for the segment we return.
+        match Self::derive(ptr, len, Backing::Mapped) {
+            Ok(seg) => Ok(seg),
+            Err(why) => {
+                // SAFETY: the mapping we just made; nothing else aliases it.
+                unsafe { libc::munmap(ptr as *mut libc::c_void, len) };
+                Err(io::Error::other(why))
+            }
+        }
+    }
 
-        // Validate from the raw mapping before building the owning struct, so its
-        // `Drop` (munmap) runs exactly once — for the segment we actually return.
-        let fail = |ptr: *mut u8, msg: String| -> io::Result<Self> {
-            // SAFETY: the mapping we just made; nothing else aliases it yet.
-            unsafe { libc::munmap(ptr as *mut libc::c_void, len) };
-            Err(io::Error::other(msg))
-        };
+    /// A view over a segment **somebody else owns** — an in-process server's
+    /// own, where the host and the engine are one process and there is no file
+    /// to map.
+    ///
+    /// `owner` is the handle that keeps the memory alive; it is held for as
+    /// long as this view is, which is what makes the borrow safe rather than a
+    /// promise. It is type-erased because the owner belongs to the server
+    /// crate, which only a `standalone` build links and this module must not
+    /// name.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` and `len` must describe the segment `owner` keeps alive, and that
+    /// memory must stay valid and unmoved for as long as `owner` is held.
+    pub unsafe fn borrowed(
+        ptr: *const u8,
+        len: usize,
+        owner: Arc<dyn Any + Send + Sync>,
+    ) -> io::Result<Self> {
+        if len < HEADER_SIZE {
+            return Err(io::Error::other("segment too small for a header"));
+        }
+        Self::derive(ptr as *mut u8, len, Backing::Borrowed(owner)).map_err(io::Error::other)
+    }
+
+    /// Reads the piece's position rather than the device clock — the choice an
+    /// editor makes, and the only place it is made (see [`HeadClock`]).
+    pub fn with_head(mut self, head: HeadClock) -> Self {
+        self.head = head;
+        self
+    }
+
+    /// Validates the header at `ptr` and derives every region offset from it.
+    /// Whoever calls this owns the failure path: [`Self::open`] unmaps, a
+    /// borrow simply drops its handle.
+    fn derive(ptr: *mut u8, len: usize, backing: Backing) -> Result<Self, String> {
         if header_u32(ptr, 0) != MAGIC {
-            return fail(ptr, "not a clausters segment (bad magic)".into());
+            return Err("not a clausters segment (bad magic)".into());
         }
         let abi = header_u32(ptr, OFF_ABI);
         if abi != SUPPORTED_ABI_VERSION {
-            return fail(
-                ptr,
-                format!("segment ABI version {abi} != supported {SUPPORTED_ABI_VERSION}"),
-            );
+            return Err(format!(
+                "segment ABI version {abi} != supported {SUPPORTED_ABI_VERSION}"
+            ));
         }
         let ring_capacity = header_u32(ptr, OFF_RING_CAPACITY) as usize;
         let control_count = header_u32(ptr, OFF_CONTROL_BUSES) as usize;
@@ -157,11 +234,13 @@ impl SharedSegment {
         let taps_offset = buses_end.div_ceil(TAP_ALIGN) * TAP_ALIGN;
         let expected = taps_offset + taps * (TAP_ALIGN + tap_frames * size_of::<f32>());
         if len != expected {
-            return fail(ptr, "segment size does not match its header".into());
+            return Err("segment size does not match its header".into());
         }
         Ok(SharedSegment {
             ptr,
             len,
+            backing,
+            head: HeadClock::default(),
             control_count,
             controls_offset,
             audio_count,
@@ -345,7 +424,12 @@ impl super::BusSource for SharedSegment {
     }
 
     fn sample_clock(&self) -> f64 {
-        SharedSegment::sample_clock(self) as f64
+        // The one place the choice of counter is resolved: above here a
+        // playhead reads "the clock" and never asks which.
+        match self.head {
+            HeadClock::Device => SharedSegment::sample_clock(self) as f64,
+            HeadClock::Piece => SharedSegment::transport_position(self) as f64,
+        }
     }
 }
 

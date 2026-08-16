@@ -26,9 +26,13 @@ What it shows, in the order the cells run:
   and `Ctrl+Z` puts the samples back. The take is **stereo** and the channels
   are drawn as stacked lanes: a stroke lands in the lane it was made in and the
   other keeps its shape, because one channel of interleaved material is written
-  as the strided span it is. **Space** plays whatever the cursor is
-  over, and stops it. Both go through the embedded server: the clip and the
-  editor draw the one buffer a stroke writes.
+  as the strided span it is. **Click** on the waveform to place the
+  playhead, **space** to play from it and to pause where it stands (a pause
+  freezes the server's own transport, so playing again continues rather than
+  starting over), and **drag** a span to loop it. All of it goes through the
+  embedded server: the clip and the editor draw the one buffer a stroke writes,
+  and the line you see is the position that server is playing — the host reads
+  it, and never computes it.
 - **Reading it back.** `from_session` on what the host wrote gives an
   arrangement again, and the cell prints where each element ended up — which is
   the whole claim: a file passed between two writers means the same thing to
@@ -207,7 +211,8 @@ def open_in_host(wait: bool = True) -> None:
 
     Drag a clip, then `Ctrl+Z`, `Ctrl+Shift+Z`, `Ctrl+S`, then close it. The
     take's editor pane under the ruler is the other half: zoom in to the
-    samples, Alt+drag to draw over them, Space to hear it.
+    samples, Alt+drag to draw over them, click to place the playhead, Space to
+    play and pause, and drag a span to loop it.
     Saving writes to ``--save-to`` and never over what was opened: overwriting
     the file you were given is a decision, not a default.
     """
@@ -220,7 +225,8 @@ def open_in_host(wait: bool = True) -> None:
     print("running: " + " ".join(cmd))
     print("  drag a clip, then Ctrl+Z, Ctrl+Shift+Z, Ctrl+S")
     print("  and in the take's editor pane: wheel to zoom to the samples, "
-          "Alt+drag to draw, Space to play, then close the window")
+          "Alt+drag to draw, click to place the playhead, Space to play/pause, "
+          "drag a span to loop it, then close the window")
     if wait:
         subprocess.run(cmd, check=False)
 

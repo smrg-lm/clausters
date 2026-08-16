@@ -525,11 +525,18 @@ pub struct Host {
     voices: HashMap<i32, Vec<(i32, i32)>>,
     /// The next voice node-id offset over [`voices::ID_BASE`] (wrapping).
     voice_counter: i32,
-    /// The widget whose material the **take monitor** is playing, and over how
-    /// many channels (see [`play`]). One take at a time, so this is one entry
-    /// and not a list — the channel count is here because stopping has to free
-    /// every reader it started.
-    playing: Option<(i32, usize)>,
+    /// The take the **monitor** is loaded with (see [`play`]). One take at a
+    /// time, so this is one entry and not a list.
+    playing: Option<play::Monitor>,
+    /// Whether this host **drives the server's transport** — whether it is the
+    /// one that bound the governed group (`play::take_group_messages`).
+    ///
+    /// It is what separates a host that owns its playback from one that is a
+    /// guest on somebody else's server: a script owns its own transport, and a
+    /// sweep in a window it happens to be drawing is not a request to seek it.
+    /// Set by whoever gives this host a server to govern; false everywhere
+    /// else, and every `/transport_*` this host would send is read off it.
+    owns_transport: bool,
     /// **What the host has emitted and not heard back about**, plus the stamps
     /// it issues (see [`ack`]). Behind a `RefCell` because stamping happens
     /// where an edit is *produced* — deep inside the gesture machine, which
@@ -595,6 +602,7 @@ impl Host {
             timelines: timeline::TimelineGroups::default(),
             voices: HashMap::new(),
             playing: None,
+            owns_transport: false,
             voice_counter: 0,
             outbox: Default::default(),
             owner: None,
@@ -3261,7 +3269,19 @@ mod write_tests {
     #[test]
     fn the_monitor_plays_a_takes_buffer_and_stops_it() {
         let (mut host, server) = take_host(1, 16);
-        assert!(host.play_material(1, 50), "a take with a buffer plays");
+        assert!(
+            host.play_material(1, 50, 0, None),
+            "a take with a buffer plays"
+        );
+        // The transport is placed before a reader exists, so the readers are
+        // created standing where the piece is rather than racing from wherever
+        // the last take left it.
+        let msg = received(&server).expect("the loop was cleared");
+        assert_eq!(msg.addr, "/transport_loop");
+        assert!(msg.args.is_empty(), "no arguments turns looping off");
+        let msg = received(&server).expect("the piece was located");
+        assert_eq!(msg.addr, "/transport_locateSample");
+        assert_eq!(msg.args[0], OscType::Long(0));
         let msg = received(&server).expect("a synth was started");
         assert_eq!(msg.addr, "/synth_new");
         assert_eq!(msg.args[0], OscType::String(play::TAKE_DEF.into()));
@@ -3277,14 +3297,91 @@ mod write_tests {
             ],
             "playing the buffer the widget draws"
         );
+        // And only then does time move: the reader is a follower, so what
+        // starts the sound is the transport rolling and not the /synth_new.
+        let msg = received(&server).expect("the transport rolled");
+        assert_eq!(msg.addr, "/transport_play");
         assert_eq!(host.playing_material(), Some(50));
 
         assert!(host.stop_material(), "and it stops");
+        let msg = received(&server).expect("the transport stopped");
+        assert_eq!(msg.addr, "/transport_stop");
         let msg = received(&server).expect("the node was freed");
         assert_eq!(msg.addr, "/node_free");
         assert_eq!(msg.args.len(), 1, "one reader, one node");
         assert!(!host.stop_material(), "stopping twice sends nothing");
         assert!(host.playing_material().is_none());
+    }
+
+    /// **The seek and the loop are the transport's, and they go out before a
+    /// reader exists** — so the readers are created standing where the piece
+    /// is rather than sliding into place from wherever the last take left it.
+    #[test]
+    fn playing_a_span_locates_and_loops_before_the_readers_are_made() {
+        let (mut host, server) = take_host(1, 16);
+        assert!(host.play_material(1, 50, 4, Some((4, 12))));
+
+        let msg = received(&server).expect("the loop went first");
+        assert_eq!(msg.addr, "/transport_loop");
+        assert_eq!(
+            msg.args,
+            vec![OscType::Long(4), OscType::Long(12)],
+            "half-open, so the span is the selection's own bounds"
+        );
+        let msg = received(&server).expect("then the locate");
+        assert_eq!(msg.addr, "/transport_locateSample");
+        assert_eq!(msg.args[0], OscType::Long(4));
+        assert_eq!(
+            received(&server).expect("and only then a reader").addr,
+            "/synth_new"
+        );
+        assert_eq!(
+            received(&server).expect("and last, time moves").addr,
+            "/transport_play"
+        );
+    }
+
+    /// **Pausing is not stopping**: the readers stay, so resuming continues the
+    /// sound rather than starting a second copy of it. The freeze is the
+    /// server's — this host sends one command and remembers nothing about where
+    /// the piece was.
+    #[test]
+    fn pausing_keeps_the_readers_and_resuming_continues() {
+        let (mut host, server) = take_host(1, 16);
+        assert!(host.play_material(1, 50, 0, None));
+        for _ in 0..4 {
+            received(&server); // the loop, the locate, the reader, the play
+        }
+
+        assert_eq!(host.pause_material(), Some(false), "rolling -> paused");
+        assert_eq!(
+            received(&server)
+                .expect("one command, and it is the transport's")
+                .addr,
+            "/transport_stop"
+        );
+        assert!(
+            host.monitor().is_some(),
+            "and the take is still loaded: nothing was freed"
+        );
+
+        assert_eq!(host.pause_material(), Some(true), "paused -> rolling again");
+        assert_eq!(
+            received(&server).expect("and it rolls").addr,
+            "/transport_play"
+        );
+        assert_eq!(host.playing_material(), Some(50));
+    }
+
+    /// A host that did not bind the governed group **drives no transport**: it
+    /// is a guest on somebody else's server, and a script owns its own.
+    #[test]
+    fn a_host_that_bound_no_group_owns_no_transport() {
+        let (host, _server) = take_host(1, 16);
+        assert!(
+            !host.owns_transport(),
+            "false until something binds a group"
+        );
     }
 
     /// **A reader per channel**, which is the server's own convention: the
@@ -3294,7 +3391,9 @@ mod write_tests {
     #[test]
     fn a_stereo_take_plays_a_reader_per_channel_and_stops_them_together() {
         let (mut host, server) = take_host(2, 16);
-        assert!(host.play_material(1, 50));
+        assert!(host.play_material(1, 50, 0, None));
+        received(&server).expect("/transport_loop");
+        received(&server).expect("/transport_locateSample");
         for ch in 0..2 {
             let msg = received(&server).expect("a reader per channel");
             assert_eq!(msg.addr, "/synth_new");
@@ -3309,7 +3408,9 @@ mod write_tests {
                 "channel {ch} reads itself and goes out on its own bus"
             );
         }
+        received(&server).expect("/transport_play");
         assert!(host.stop_material());
+        received(&server).expect("/transport_stop");
         let msg = received(&server).expect("both were freed");
         assert_eq!(msg.addr, "/node_free");
         assert_eq!(

@@ -409,6 +409,14 @@ The wire the crate never touches is `docs/gui-protocol.md`: the host produces
 intents from gestures and draws what comes back, and the crate knows no widget.
 What joins them is the intent vocabulary, which both depend on and neither owns.
 
+### Playback time in a session: read, never computed
+
+A standalone host that edits a session sounds its takes through a monitor of its own, and the rule that shapes it is the server's: **the server is the only thing that manages playback time.** The monitor's readers follow the transport's position (`TransportPos` driving a `BufRd`) inside a group the host binds with `/transport_group`, so the three things an editor wants are transport commands rather than properties of a def — seeking is `/transport_locateSample`, looping a selection is `/transport_loop`, and pausing is `/transport_stop`, which freezes the readers with their state intact so playing again *continues*. The host computes no time at all: it sends a locate and reads a position back.
+
+The **playhead** is that position, read each frame with no messages. Natively the host maps the server's shared segment — for an embedded server, its own in-memory one, borrowed rather than mapped (`SharedSegment::borrowed`, holding the owner's handle so the memory cannot go out from under it) — and **which counter a window's head draws is a property of that source, not a prop on a widget**: `HeadClock::Piece` for an editor, whose time is the material's, and `HeadClock::Device` for a host watching a live server, whose meters and taps are all on that axis. The sweep anchor is then simply 0, and everything else falls out: a stopped transport holds the position, so the line holds; a locate moves it, so the line jumps; a loop wraps it in the engine, so the line wraps with no client in the loop.
+
+Which is also why the host **binds a group of its own** rather than the root: the root would freeze every sound the session has. And why the transport gestures are gated on `Host::owns_transport` — the host that bound the group is the one driving it, and a host that is a guest on somebody else's server sends no `/transport_*` at all, because a script owns its own transport.
+
 ## The GUI host: structure, and how to add a widget
 
 The GUI (`clients/gui`) is a **separate process**, not code linked into the audio

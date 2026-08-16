@@ -421,6 +421,18 @@ impl Clausters {
         })
     }
 
+    /// The IPC segment this server publishes into — the same data plane a
+    /// `--shm` server writes to a file, here in memory.
+    ///
+    /// An in-process host reads the clocks, the control buses, the per-bus
+    /// levels and the audio taps straight out of it, exactly as an
+    /// out-of-process peer reads the mapped file, instead of asking for them
+    /// over the ring. Handing out the `Arc` rather than a pointer is what keeps
+    /// the memory alive for as long as a reader holds it.
+    pub fn segment(&self) -> &Arc<Segment> {
+        &self.segment
+    }
+
     /// Delivers one complete OSC packet (message or bundle) through the command
     /// ring. Returns `false` when the ring is momentarily full (backpressure).
     ///

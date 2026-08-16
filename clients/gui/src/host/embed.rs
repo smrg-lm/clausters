@@ -17,8 +17,11 @@
 //! the C ABI; here the dependency is a plain crate link, not an FFI load.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use clausters::embed::Clausters;
+
+use crate::host::BusSource;
 
 /// A live in-process server. Send it OSC, poll its replies; dropping it shuts
 /// the server down (the `Clausters` `Drop` sends `/server_quit` and joins the thread).
@@ -54,5 +57,98 @@ impl EmbedServer {
     /// reply is pending. Replies larger than `buf` are dropped (use 64 KiB).
     pub fn poll_into(&self, buf: &mut [u8]) -> Option<usize> {
         self.inner.poll_into(buf)
+    }
+
+    /// A [`BusSource`] reading this server's own IPC
+    /// segment — the in-process twin of mapping a `--shm` file.
+    ///
+    /// The data plane is the same one an out-of-process peer reads, so the host
+    /// gets the clocks, the control buses, the per-bus levels and the audio
+    /// taps with no messages at all. `head` picks which counter a playhead
+    /// draws from: an editor reads the piece's position, a host watching a live
+    /// server reads the device clock.
+    ///
+    /// `None` when the segment does not validate, which would mean this build's
+    /// reader and the server it links disagree about the ABI — impossible in one
+    /// binary, and reported rather than assumed away.
+    #[cfg(unix)]
+    pub fn bus_source(&self, head: crate::host::shm::HeadClock) -> Option<Arc<dyn BusSource>> {
+        let segment = Arc::clone(self.inner.segment());
+        let (base, size) = (segment.base(), segment.size());
+        // SAFETY: `base`/`size` describe the very segment `segment` keeps
+        // alive, and the `Arc` handed over as the owner is what holds it there
+        // for as long as the view lives.
+        let view = unsafe { crate::host::shm::SharedSegment::borrowed(base, size, segment) };
+        match view {
+            Ok(view) => Some(Arc::new(view.with_head(head))),
+            Err(e) => {
+                tracing::warn!("the embedded server's segment is unreadable: {e}");
+                None
+            }
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use crate::host::shm::HeadClock;
+    use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
+
+    /// The wire-up nothing else covers: an embedded server's own segment, read
+    /// as a `BusSource`, reports **the piece's position** — so a window drawing
+    /// a head from it draws where the material is rather than how long the
+    /// machine has been running.
+    ///
+    /// Skipped where no audio device can be opened, which is what a headless
+    /// runner is: the boot failing is not this test's subject, and a session
+    /// with no server is a case the host already handles out loud.
+    #[test]
+    fn the_embedded_segment_reads_the_pieces_position() {
+        let Ok(embed) = EmbedServer::open() else {
+            eprintln!("no audio device: skipping the embedded-segment read");
+            return;
+        };
+        let bus = embed
+            .bus_source(HeadClock::Piece)
+            .expect("the segment this build wrote is the segment this build reads");
+        let device = embed
+            .bus_source(HeadClock::Device)
+            .expect("the same segment, read on the other axis");
+
+        let send = |addr: &str, args: Vec<OscType>| {
+            let bytes = encode(&OscPacket::Message(OscMessage {
+                addr: addr.into(),
+                args,
+            }))
+            .expect("encodes");
+            assert!(embed.send(&bytes), "the command ring took it");
+        };
+        // A group of its own, governed, so a stop freezes it and nothing else.
+        send(
+            "/group_new",
+            vec![OscType::Int(77), OscType::Int(1), OscType::Int(0)],
+        );
+        send("/transport_group", vec![OscType::Int(77)]);
+        send("/transport_locateSample", vec![OscType::Long(12_345)]);
+
+        // The engine publishes once a block; a few milliseconds is many.
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        assert_eq!(
+            bus.sample_clock(),
+            12_345.0,
+            "located, and stopped: the piece stands exactly where it was put"
+        );
+        assert!(
+            device.sample_clock() > 0.0,
+            "while the device clock, on the same segment, has been running all along"
+        );
+
+        send("/transport_play", vec![]);
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        assert!(
+            bus.sample_clock() > 12_345.0,
+            "and it moves once the transport rolls"
+        );
     }
 }

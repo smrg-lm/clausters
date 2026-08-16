@@ -172,6 +172,11 @@ enum Drag {
         nav_start: f64,
         nav_len: f64,
         anchor: f64,
+        /// Where the press landed, in window pixels — what tells a sweep from a
+        /// **click that trembled**. A hand releasing a button moves it a pixel
+        /// or two, and without this that reads as a selection two samples wide:
+        /// harmless for a copy and audible the moment it is also a loop.
+        origin_x: f64,
         value: Option<(ValueAxis, f64)>,
     },
     /// Dragging one **sample** of a navigable trace vertically — the smallest

@@ -366,6 +366,14 @@ fn take_editors(
         props.insert("h".into(), json!(editor_height(take.channels)));
         props.insert("sample_rate".into(), json!(look.sample_rate));
         props.insert("ruler".into(), json!("samples"));
+        // **The head is anchored at 0, and that is the whole of drawing it.**
+        // A session's clock is the *piece's position* rather than the device's
+        // (`HeadClock::Piece`), so the sweep from an anchor of 0 is the
+        // position itself: it stands still while the transport is stopped,
+        // jumps where a locate puts it and wraps where the engine wraps it.
+        // No `playhead_loop` here for the same reason — the loop is the
+        // transport's, and wrapping an already-wrapped number would double it.
+        props.insert("playhead_at".into(), json!(0.0));
         // The plan, and it is three gestures rather than a mode: a plain drag
         // sweeps a selection (what an editor does by default), Alt draws over
         // the samples and Ctrl grabs one. `draw` refuses out loud below the

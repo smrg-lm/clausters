@@ -231,6 +231,47 @@ pub(super) fn set_selection(
     emit(host, out, def_id, id, args);
 }
 
+/// **Puts the monitor's transport where the hand put the cursor**, and makes
+/// the selection the span it loops inside.
+///
+/// `place` is what separates the two moments a sweep speaks to the transport,
+/// and getting it wrong is audible. The **loop follows the drag live** — a span
+/// can be redrawn while the take repeats inside it, and setting one never moves
+/// the piece, so the sound goes on from where it is and simply wraps somewhere
+/// else. The **head is placed once**, by the press: locating on every frame of
+/// a drag makes it chase the pointer, which a rolling transport hears as a
+/// retrigger per frame rather than as a selection being drawn.
+///
+/// **Two conditions, and neither is "something is playing".** The host must be
+/// the one that bound the governed group (`Host::owns_transport`) — a script
+/// owns its own transport, and a sweep in a window it happens to be drawing is
+/// not a request to seek it. And the view must draw **material**: the
+/// transport's position is in frames of the piece, so a sweep on a lane
+/// measuring beats would send a number that means something else on an axis it
+/// does not belong to.
+///
+/// Notably *not* conditioned on the monitor being loaded, which is where this
+/// started and was wrong by use: the head is drawn from the moment the window
+/// opens, and a cursor you cannot move until you have played once is a cursor
+/// that does not work when you first reach for it.
+pub(super) fn transport_follows_selection(
+    host: &mut Host,
+    def_id: i32,
+    id: i32,
+    start: f64,
+    len: f64,
+    place: bool,
+) {
+    if !host.owns_transport() || host.buffer_of(def_id, id).is_none() {
+        return;
+    }
+    let start = start.max(0.0) as u64;
+    if place {
+        host.locate(start);
+    }
+    host.set_loop((len > 0.0).then(|| (start, start + len as u64)));
+}
+
 /// Locates the transport: the timeline position under the cursor becomes the
 /// group's static cursor (drawn at once on every lane, so the click lands
 /// where you see it) and leaves as `/gui_event <id> "locate" <position>` — the

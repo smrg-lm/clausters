@@ -437,6 +437,30 @@ impl Segment {
         &self.layout().header.transport_position
     }
 
+    /// The segment's base address and its **logical** size in bytes — what an
+    /// in-process reader needs to map the same layout an out-of-process one
+    /// gets from the file.
+    ///
+    /// The size is derived from the header rather than from the allocation: a
+    /// heap-backed segment rounds its allocation up to whole `u128` words, and
+    /// a reader validating `len == expected` would reject the extra bytes.
+    ///
+    /// The pointer is only valid while this `Segment` is alive, which is why
+    /// every caller in the tree keeps the `Arc` beside it.
+    pub fn base(&self) -> *const u8 {
+        self.layout as *const u8
+    }
+
+    /// The size the layout occupies, in bytes. See [`Self::base`].
+    pub fn size(&self) -> usize {
+        let header = &self.layout().header;
+        segment_size(
+            header.control_buses as usize,
+            header.taps as usize,
+            header.tap_frames as usize,
+        )
+    }
+
     /// Control buses living inside the segment; hand this to
     /// `engine_pair_full` so `InCtl` and `/bus_set` operate on shared memory.
     pub fn control_buses(self: &Arc<Self>) -> ControlBuses {

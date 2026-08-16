@@ -88,17 +88,23 @@ pub enum UserEvent {
     ServerOsc { bytes: Vec<u8> },
 }
 
-/// Runs the windowed host: spawn the transport thread(s), map the shared segment
-/// if one was given, then own the winit event loop on this (main) thread until
-/// the process is stopped. `shm_path` is the audio server's `--shm` segment, read
-/// each frame for meters/scopes; `None` leaves those views reading zero. `tcp`
-/// is the script front's TCP carrier — `(port, max_frame)` — bound here because
-/// its reader threads feed the event loop through its proxy (no wake datagram:
-/// the proxy is the wake); `None` leaves the front UDP-only.
+/// Runs the windowed host: spawn the transport thread(s), then own the winit
+/// event loop on this (main) thread until the process is stopped.
+///
+/// `bus` is the shared-memory data plane read each frame for meters, scopes and
+/// the playhead; `None` leaves those views reading zero. It arrives **already
+/// built** rather than as a path because there is more than one way to get one
+/// — [`open_shm`] maps a separate server's `--shm` file, and an embedded server
+/// hands over its own in-memory segment — and because *which counter a playhead
+/// reads* is settled where the source is made, not here.
+///
+/// `tcp` is the script front's TCP carrier — `(port, max_frame)` — bound here
+/// because its reader threads feed the event loop through its proxy (no wake
+/// datagram: the proxy is the wake); `None` leaves the front UDP-only.
 pub fn run(
     host: Host,
     socket: Arc<UdpSocket>,
-    shm_path: Option<String>,
+    bus: Option<Arc<dyn BusSource>>,
     tcp: Option<(u16, usize)>,
     ws: Option<(u16, usize)>,
 ) -> Result<(), String> {
@@ -159,8 +165,7 @@ pub fn run(
             .map_err(|e| e.to_string())?;
     }
 
-    let shm = open_shm(shm_path);
-    let mut app = App::new(host, socket, shm);
+    let mut app = App::new(host, socket, bus);
     event_loop.run_app(&mut app).map_err(|e| e.to_string())
 }
 
@@ -208,7 +213,7 @@ fn server_reply_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>) {
 /// Maps the audio server's shared segment read-only (Unix only), for the
 /// zero-message meters/scopes. A failure is logged and treated as "no segment".
 #[cfg(unix)]
-fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
+pub fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
     let path = path?;
     match super::shm::SharedSegment::open(std::path::Path::new(&path)) {
         Ok(seg) => {
@@ -226,7 +231,7 @@ fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
 }
 
 #[cfg(not(unix))]
-fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
+pub fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
     if path.is_some() {
         warn!("--shm (shared-memory meters) is only supported on Unix");
     }

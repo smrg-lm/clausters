@@ -219,6 +219,7 @@ impl Gestures {
                 nav_start,
                 nav_len,
                 anchor,
+                origin_x,
                 value,
             } => {
                 // Against the group's **current** window (the press-time one is
@@ -227,6 +228,17 @@ impl Gestures {
                 // timeline coordinate.
                 let (start, len) =
                     group_view(host, id).map_or((nav_start, nav_len), |(s, l, _)| (s, l));
+                // A sweep that never left the slop is a **click**, and stays
+                // one: the hand that releases a button moves it a pixel, and
+                // the two-sample selection that leaves is meaningless for a
+                // copy and audible as a loop. The same tolerance every other
+                // gesture allows the hand.
+                let slop = host.metrics_for(def_id).hit_slop as f64;
+                let cx = if (cx - origin_x).abs() <= slop {
+                    origin_x
+                } else {
+                    cx
+                };
                 let cur = interact::sample_at(start, len, body.x as f64, body.w as f64, cx);
                 // The second axis, where the view has one. A sweep that never
                 // left its height names one value twice, which `value_span`
@@ -241,6 +253,12 @@ impl Gestures {
                     (max > min && !axis.is_whole(min, max)).then_some((min, max))
                 });
                 set_selection(host, &mut out, def_id, id, anchor, cur, range);
+                // The span follows the hand; the head does not. A loop set
+                // while the take repeats inside it changes where it wraps and
+                // leaves the piece where it is, which is why this is live and
+                // the locate at the press is not repeated here.
+                let (a, b) = timeline::snap_selection(anchor, cur);
+                transport_follows_selection(host, def_id, id, a, b, false);
             }
             Drag::Sample {
                 id,
@@ -444,6 +462,23 @@ impl Gestures {
             );
             out.push(GestureEffect::Redraw(def_id));
             return out;
+        }
+        // **The head is placed when the button comes up**, not when it goes
+        // down. A press is not yet a gesture — the same movement is a click or
+        // a sweep depending on what happens next — and placing the head at the
+        // press puts it where the hand *started* rather than where the
+        // selection *begins*, which are different the moment a sweep runs
+        // leftwards. On release there is one answer and it is the right one; a
+        // plain click still lands immediately, because a click is a press and a
+        // release with nothing in between.
+        if let Some(Drag::Select { id, .. }) = self.drag {
+            let selection = host
+                .timeline_key(id)
+                .and_then(|key| host.timelines().state(key))
+                .map(|state| (state.sel_start, state.sel_len));
+            if let Some((start, len)) = selection {
+                transport_follows_selection(host, def_id, id, start, len, true);
+            }
         }
         if let Some(Drag::Element { at, grab, .. }) = self.drag.take() {
             // What the drag *delivers*, as against what it showed along the

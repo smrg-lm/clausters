@@ -191,10 +191,17 @@ impl GroupState {
     ///
     /// [`head_at`]: GroupState::head_at
     pub fn swept_at(&self, sample_clock: f64) -> Option<f64> {
-        if self.playhead_at < 0.0 || sample_clock <= 0.0 {
+        if self.playhead_at < 0.0 || sample_clock < 0.0 {
             return None;
         }
-        let swept = sample_clock - self.playhead_at;
+        // Clamped at the start rather than refused there. A clock of exactly 0
+        // used to mean "the engine has not run yet", which is true of a device
+        // clock and **false of a transport position**: 0 is where a piece
+        // sits before anyone has moved it, and a session that opens there
+        // would draw no line at all until something played. A sweep is never
+        // left of the material either way, so the clamp costs the device case
+        // nothing but the block before its clock first ticks.
+        let swept = (sample_clock - self.playhead_at).max(0.0);
         Some(match self.playhead_loop() {
             // `rem_euclid`, not `%`: a loop whose start sits past the anchor
             // makes the first pass negative, and a negative remainder would
@@ -1176,8 +1183,17 @@ mod tests {
         assert_eq!(e.head_at(1500.0), Some(500.0));
         // Past the end it keeps running: a straight pass is unbounded.
         assert_eq!(e.head_at(9000.0), Some(8000.0));
-        // No clock yet, and no static cursor: nothing to draw.
-        assert_eq!(e.head_at(0.0), None);
+        // A clock at 0 draws at the start rather than not at all: 0 is a real
+        // place on a transport position, where it was only ever "not started
+        // yet" on a device clock. Left of the material is what is refused, and
+        // the anchor is what says whether there is a head at all.
+        assert_eq!(e.head_at(0.0), Some(0.0));
+        assert_eq!(e.head_at(-1.0), None, "a clock going backwards is nothing");
+        assert_eq!(
+            head_state(-1.0, -1.0, 0.0, 0.0).head_at(1500.0),
+            None,
+            "no anchor and no cursor: still nothing to draw"
+        );
     }
 
     #[test]

@@ -156,6 +156,12 @@ impl Gestures {
     ///
     /// Returns `None` when there is nothing under the cursor to play, so the
     /// key falls through to whatever else the window does with it.
+    ///
+    /// **Where it starts and whether it repeats are read off the view**, not
+    /// asked for: a selection plays as a loop over exactly the span it covers,
+    /// and with no selection the take plays from its start. The transport is
+    /// what carries both — a locate and a loop span — so nothing here computes
+    /// a time or keeps one in step.
     pub fn play_key(
         &self,
         host: &mut Host,
@@ -163,13 +169,39 @@ impl Gestures {
         cx: f64,
         cy: f64,
     ) -> Option<Vec<GestureEffect>> {
-        // Space is a toggle over one monitor: pressing it again while a take
-        // sounds stops it, wherever the pointer has since moved.
-        if host.stop_material() {
+        // **Space is play/pause, and a loaded monitor is never reloaded.** A
+        // monitor already sounding is paused where it stands; a paused one
+        // resumes and *continues*, because the governed group froze with its
+        // readers' state intact and the position froze with it. Neither needs a
+        // start: where to begin was decided when the take was loaded, and moved
+        // since by whatever swept over it.
+        //
+        // The one thing still addressed by the pointer is *which* take to load:
+        // space over a take the monitor is not holding plays that one instead,
+        // so a window of several takes is driven by pointing at them. Over
+        // nothing at all it is the transport that is meant, and there is one.
+        let over = hit(host, ctx, cx, cy).map(|Hit { id, .. }| id);
+        if let Some(loaded) = host.monitor()
+            && over.is_none_or(|id| id == loaded.widget)
+        {
+            host.pause_material();
             return Some(Vec::new());
         }
-        let Hit { id, .. } = hit(host, ctx, cx, cy)?;
-        host.play_material(ctx.def_id, id).then(Vec::new)
+        let id = over?;
+        let state = host
+            .timeline_key(id)
+            .and_then(|key| host.timelines().state(key))
+            .copied();
+        // **The cursor is where it starts, span or no span.** A click leaves a
+        // selection of zero length, and its start is the cursor — reading only
+        // the *spans*, as this did, sent every play back to frame 0 and made
+        // the click that placed the head look like it had done nothing.
+        let start = state.map_or(0.0, |s| s.sel_start).max(0.0) as u64;
+        let span = state
+            .and_then(|s| s.selection())
+            .map(|(from, len)| (from.max(0.0) as u64, (from + len).max(0.0) as u64));
+        host.play_material(ctx.def_id, id, start, span)
+            .then(Vec::new)
     }
 
     /// **Copy, cut and paste over the selection**, addressed to the view under
