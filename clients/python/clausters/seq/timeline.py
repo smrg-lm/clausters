@@ -365,7 +365,11 @@ class Playhead:
         self._follow = (func, recv if owns_recv else None)
 
         state = server.transport_state()
-        if state is not None:
+        # Gated on the **grid**, not on the state: the state is always there
+        # now, but a playhead runs on beats, and `position` is 0 until a grid
+        # says what a beat is. Applying that would locate to 0 on a server
+        # whose transport is being driven in samples.
+        if state["tempo"] is not None:
             if state["playing"]:
                 self.play(at=state["position"], quant=quant)
             else:

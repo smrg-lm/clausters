@@ -24,11 +24,26 @@ export interface TransportGrid {
     tempo: number;
 }
 
-/** The grid plus the rolling state, as `transportState()` reports it. */
-export interface TransportState extends TransportGrid {
+/**
+ * The rolling state, plus the grid when one is defined, as `transportState()`
+ * reports it.
+ *
+ * `originSample` and `tempo` are `null` until a client has defined a grid —
+ * the transport exists whether or not anyone has, because rolling, stopping
+ * and saying where the piece is need no beats.
+ */
+export interface TransportState {
+    /** Beat 0 of the grid on the sample clock, or `null` with no grid. */
+    originSample: number | null;
+    /** Beats per second, or `null` with no grid. */
+    tempo: number | null;
     /** Whether the transport is rolling. */
     playing: boolean;
-    /** The song-position beat: where play starts, or where a stop left it. */
+    /**
+     * The song-position **beat**: where play starts, or where a stop left it.
+     * 0 while there is no grid, since there is nothing to measure it against —
+     * `positionSample` is the live one either way.
+     */
     position: number;
     /** The governed group, or `null` when nothing is bound. */
     group: number | null;
@@ -96,24 +111,26 @@ export class ServerTransport {
     }
 
     /**
-     * The full shared transport state, or `null` if no grid is defined.
+     * The full shared transport state. **Always answers**: the transport exists
+     * whether or not a grid does, so the grid fields are `null` rather than the
+     * whole state being. Read the grid alone with `transport`, which still
+     * answers `null` when none is set.
      *
      * `group` is the governed group (`transportGroup`) or `null` when nothing
-     * is bound, and `transportSample` is the transport clock. Both are always
-     * reported — every server sends them — so they are read straight.
+     * is bound, and `transportSample` is the transport clock.
      */
-    async transportState(this: Server, timeout?: number): Promise<TransportState | null> {
+    async transportState(this: Server, timeout?: number): Promise<TransportState> {
         const msg = await this.request("/transport_query", [], {
             expect: ["/transport_query.reply"],
             timeout,
         });
-        if (!Number(msg.args[2])) return null;
+        const defined = Boolean(Number(msg.args[2]));
         const group = Number(msg.args[5]);
         const loopStart = Number(msg.args[8]);
         const loopEnd = Number(msg.args[9]);
         return {
-            originSample: Number(msg.args[0]),
-            tempo: Number(msg.args[1]),
+            originSample: defined ? Number(msg.args[0]) : null,
+            tempo: defined ? Number(msg.args[1]) : null,
             playing: Boolean(Number(msg.args[3])),
             position: Number(msg.args[4]),
             group: group < 0 ? null : group,

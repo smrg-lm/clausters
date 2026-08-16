@@ -202,7 +202,7 @@ pub struct OscServer {
     faust_drained: u64,
     pending_syncs: Vec<PendingSync>,
     /// The shared beat grid (`/transport_set`), once a client defines one.
-    transport: Option<Transport>,
+    transport: Transport,
     /// `/server_errorMode` mode: post command failures to the server console. The `/fail`
     /// OSC reply is always sent; this only gates the console logging. On by
     /// default (matches scsynth's default error-posting).
@@ -226,19 +226,32 @@ pub struct OscServer {
     offline: Option<Vec<OfflineRender>>,
 }
 
-/// The shared transport: a beat grid clients read to phase-align on the master
-/// sample clock, plus a DAW-style **rolling state** (play / stop / position).
-/// Beat `b` of the grid maps to sample `origin_sample + b·rate/tempo`; the
-/// `playing` flag and `position` (the song-position beat where playback is or
-/// will start) are the transport control a conductor sets and every client's
-/// playhead obeys. The server only stores and **broadcasts** this (in-memory;
-/// resets on restart) — it never schedules audio from it; each client rolls its
-/// own playhead on the shared grid. See [`OscServer::handle_transport`].
-#[derive(Clone, Copy)]
+/// The shared transport: a DAW-style **rolling state** (play / stop / where the
+/// piece is), plus an optional beat grid clients read to phase-align on the
+/// master sample clock. The server stores and **broadcasts** all of it
+/// (in-memory; resets on restart); with a group bound the engine also enforces
+/// it. See [`OscServer::handle_transport`].
+///
+/// **It always exists**, which is why this is not an `Option` on the server.
+/// Rolling, stopping and saying where the piece is need no beats — an audio
+/// editor addresses frames and has no tempo to declare — so the thing that is
+/// optional is the **grid**, not the transport. `defined` is what says whether
+/// `origin_sample` and `tempo` mean anything, and it is the wire field of the
+/// same name.
+#[derive(Clone, Copy, Default)]
 struct Transport {
+    /// Whether a client has defined the beat grid (`/transport_set`). Until one
+    /// has, the two fields below are 0 and only the commands that speak beats
+    /// refuse.
+    defined: bool,
+    /// Beat `b` maps to sample `origin_sample + b·rate/tempo`. Meaningless
+    /// while `defined` is false.
     origin_sample: i64,
     tempo: f64,
     playing: bool,
+    /// The song position in **beats** — the grid's spelling of the piece's
+    /// position, which the engine keeps in samples. 0 while no grid is defined,
+    /// where the sample spelling is still live.
     position: f64,
     /// The loop the position wraps inside, in **samples of the piece**, or
     /// `None` when looping is off. Held here as well as in the engine so

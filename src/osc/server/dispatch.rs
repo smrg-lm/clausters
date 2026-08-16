@@ -201,10 +201,7 @@ impl OscServer {
     /// which is what a silently mismatched axis would do.
     fn handle_sched_at_transport(&mut self, msg: &OscMessage, from: ClientId) {
         const ADDR: &str = "/sched_atTransport";
-        let Some(t) = self.transport else {
-            return self.fail(from, ADDR, "no transport defined");
-        };
-        let Some(group) = t.group else {
+        let Some(group) = self.transport.group else {
             return self.fail(from, ADDR, "no group bound");
         };
         let target = match msg.args.first() {

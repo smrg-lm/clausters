@@ -1364,11 +1364,25 @@ fn transport_query_and_set() {
 fn transport_play_stop_locate() {
     let server = TestServer::spawn();
 
-    // play/stop/locate before a grid is defined -> /fail.
+    // Only the commands that speak **beats** need a grid. A bare play needs
+    // none -- the transport exists before any tempo does.
     server.send("/transport_play", vec![]);
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/transport_play".into())
+    );
+    server.send("/transport_stop", vec![]);
+    server.recv_until("/done");
+    // A play *from a beat* does, and so does a locate by beat.
+    server.send("/transport_play", vec![OscType::Double(8.0)]);
     assert_eq!(
         server.recv_until("/fail").args[0],
         OscType::String("/transport_play".into())
+    );
+    server.send("/transport_locate", vec![OscType::Double(8.0)]);
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/transport_locate".into())
     );
 
     server.send(
@@ -1451,12 +1465,18 @@ fn transport_pushes_on_change_to_notify_clients() {
 fn transport_locate_sample_moves_the_position_and_its_beat_reading() {
     let mut server = TestServer::spawn();
 
-    // Needs a grid, like every other transport command but /transport_set.
-    server.send("/transport_locateSample", vec![OscType::Long(0)]);
+    // Needs **no** grid: a frame is a frame, and an audio editor has no tempo
+    // to declare. The beat reading stays 0 while there is nothing to read it
+    // against.
+    server.send("/transport_locateSample", vec![OscType::Long(4_800)]);
     assert_eq!(
-        server.recv_until("/fail").args[0],
+        server.recv_until("/done").args[0],
         OscType::String("/transport_locateSample".into())
     );
+    server.send("/transport_query", vec![]);
+    let reply = server.recv_until("/transport_query.reply");
+    assert_eq!(reply.args[2], OscType::Int(0), "still no grid");
+    assert_eq!(reply.args[4], OscType::Double(0.0), "and no beat to report");
 
     // Tempo is in beats per **second** (the grid is `origin + b*rate/tempo`,
     // sclang's TempoClock convention), so 2.0 makes one beat half a second.
@@ -1501,12 +1521,7 @@ fn transport_locate_sample_moves_the_position_and_its_beat_reading() {
 fn transport_loop_sets_and_clears_a_span() {
     let server = TestServer::spawn();
 
-    server.send(
-        "/transport_set",
-        vec![OscType::Long(0), OscType::Double(120.0)],
-    );
-    server.recv_until("/done");
-
+    // No grid: a loop is a span of samples and knows nothing about beats.
     server.send(
         "/transport_loop",
         vec![OscType::Long(1_000), OscType::Long(5_000)],
@@ -1542,6 +1557,58 @@ fn transport_loop_sets_and_clears_a_span() {
     let reply = server.recv_until("/transport_query.reply");
     assert_eq!(reply.args[8], OscType::Long(0));
     assert_eq!(reply.args[9], OscType::Long(0));
+
+    server.quit();
+}
+
+/// The whole editor path with **no beat grid at all**: bind a group, seek by
+/// frame, loop a span, play and stop. An audio editor has no tempo to declare,
+/// and asking it to invent one so the transport will answer was asking it to
+/// write down a number nobody reads.
+#[test]
+fn the_transport_drives_a_piece_in_samples_with_no_grid() {
+    let mut server = TestServer::spawn();
+
+    server.send(
+        "/group_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.wait_for_status(3, 2); // the root group plus this one
+
+    for (addr, args) in [
+        ("/transport_group", vec![OscType::Int(100)]),
+        ("/transport_locateSample", vec![OscType::Long(24_000)]),
+        (
+            "/transport_loop",
+            vec![OscType::Long(0), OscType::Long(96_000)],
+        ),
+        ("/transport_play", vec![]),
+        ("/transport_stop", vec![]),
+    ] {
+        server.send(addr, args);
+        assert_eq!(
+            server.recv_until("/done").args[0],
+            OscType::String(addr.into()),
+            "{addr} should not need a grid"
+        );
+    }
+
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    server.engine.process_block(&mut out);
+    server.send("/transport_query", vec![]);
+    let reply = server.recv_until("/transport_query.reply");
+    assert_eq!(reply.args[2], OscType::Int(0), "no grid was ever defined");
+    assert_eq!(
+        reply.args[5],
+        OscType::Int(100),
+        "and yet a group is governed"
+    );
+    assert_eq!(
+        reply.args[7],
+        OscType::Long(24_000),
+        "and the piece is placed"
+    );
+    assert_eq!(reply.args[9], OscType::Long(96_000), "and looping");
 
     server.quit();
 }
@@ -2683,10 +2750,12 @@ fn a_group_with_a_refused_name_is_not_created() {
 fn transport_group_binds_and_unbinds() {
     let server = TestServer::spawn();
 
-    // A grid must exist first, like the rest of the family.
+    // No grid needed: what a group is governed by is the rolling state, which
+    // has nothing to do with beats. Binding the root group is legal and freezes
+    // everything, which is why nothing else here does it.
     server.send("/transport_group", vec![OscType::Int(0)]);
     assert_eq!(
-        server.recv_until("/fail").args[0],
+        server.recv_until("/done").args[0],
         OscType::String("/transport_group".into())
     );
 

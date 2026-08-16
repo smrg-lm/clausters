@@ -393,7 +393,11 @@ export class Playhead {
             { recv: server.receiver },
         );
         const state = await server.transportState(timeout);
-        if (state !== null) {
+        // Gated on the **grid**, not on the state: the state is always there
+        // now, but a playhead runs on beats, and `position` is 0 until a grid
+        // says what a beat is. Applying that would locate to 0 on a server
+        // whose transport is being driven in samples.
+        if (state.tempo !== null) {
             if (state.playing) this.play({ at: state.position, quant });
             else this.locate(state.position);
         }

@@ -36,11 +36,19 @@ class ServerTransport:
 
     def transport_state(self, timeout: "float | None" = None):
         """The full shared transport state as a dict ``{origin_sample, tempo,
-        playing, position, group, transport_sample, position_sample, loop}``, or
-        ``None`` if no grid is defined. ``playing`` is whether the transport is
-        rolling and ``position`` the song-position beat (where play starts, or
-        where a stopped transport sits). A `clausters.seq.timeline.Playhead`
-        follows this with `follow_transport`. RT only.
+        playing, position, group, transport_sample, position_sample, loop}``.
+
+        **Always a dict**: the transport exists whether or not anyone has
+        defined a beat grid, because rolling, stopping and saying where the
+        piece is need no beats. ``origin_sample`` and ``tempo`` are ``None``
+        while there is no grid, and ``position`` — the song-position *beat* —
+        is 0 there, since there is nothing to measure it against; the sample
+        spelling below is live either way. Read the grid alone with
+        `transport`, which still answers ``None`` when none is set.
+
+        ``playing`` is whether the transport is rolling. A
+        `clausters.seq.timeline.Playhead` follows this with `follow_transport`.
+        RT only.
 
         ``group`` is the governed group (`transport_group`) or ``None`` when
         nothing is bound.
@@ -55,13 +63,12 @@ class ServerTransport:
         last completed block, so a query issued in the same breath as a locate
         may still answer the previous place."""
         _, args = self.request("/transport_query", timeout=timeout, expect=("/transport_query.reply",))
-        if not int(args[2]):
-            return None
+        defined = bool(int(args[2]))
         group = int(args[5])
         loop_start, loop_end = int(args[8]), int(args[9])
         return {
-            "origin_sample": int(args[0]),
-            "tempo": float(args[1]),
+            "origin_sample": int(args[0]) if defined else None,
+            "tempo": float(args[1]) if defined else None,
             "playing": bool(int(args[3])),
             "position": float(args[4]),
             "group": None if group < 0 else group,

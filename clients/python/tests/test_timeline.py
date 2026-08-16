@@ -234,9 +234,11 @@ def test_playhead_follows_transport_broadcast():
     recv = OscReceiver().start()
     # A fake server: follow_transport only needs target.addr() (where /server_notify
     # goes -- a discard port here) and transport_state() for the initial apply.
+    # The state is always a dict; a `tempo` of None is a server with no beat
+    # grid defined, which is what stops the initial apply here.
     server = types.SimpleNamespace(
         target=NetAddr("127.0.0.1", 57199),
-        transport_state=lambda: None,
+        transport_state=lambda: {"tempo": None, "playing": False, "position": 0.0},
     )
     try:
         ph = Playhead(_arp(), TempoClock(1.0), RecordDest())

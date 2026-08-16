@@ -7,9 +7,14 @@
 
 use super::super::*;
 
-/// Every `/transport_*` command but `/transport_set` needs a grid to act on,
-/// and refuses the same way when there is none.
-const NO_TRANSPORT: &str = "no transport defined";
+/// What the two commands that speak **beats** refuse with when no grid has been
+/// defined: `/transport_locate`, and `/transport_play` given a position.
+///
+/// Nothing else here needs one. Rolling, stopping, saying where the piece is
+/// and looping a span of it are all in samples, and an audio editor has no
+/// tempo to declare — asking it to invent one so that `/transport_play` will
+/// answer is asking it to write down a number nobody reads.
+const NO_GRID: &str = "no beat grid defined (/transport_set)";
 
 impl OscServer {
     /// The `/transport_query.reply` payload: the grid plus the rolling state,
@@ -17,17 +22,21 @@ impl OscServer {
     /// position:double)`. The first three fields are the original grid reply
     /// (older clients read just those); `playing`/`position` are appended.
     fn transport_reply_args(&self) -> Vec<OscType> {
-        let (origin, tempo, defined, playing, position) = match self.transport {
-            Some(t) => (t.origin_sample, t.tempo, 1, t.playing as i32, t.position),
-            None => (0, 0.0, 0, 0, 0.0),
-        };
-        let group = self.transport.and_then(|t| t.group).unwrap_or(-1);
+        let t = self.transport;
+        let (origin, tempo, defined, playing, position) = (
+            t.origin_sample,
+            t.tempo,
+            t.defined as i32,
+            t.playing as i32,
+            t.position,
+        );
+        let group = t.group.unwrap_or(-1);
         let transport_sample = self.handle.current_transport_samples() as i64;
         // The position is read from the engine and the loop from here: the
         // first moves every block and only the audio thread knows it, the
         // second only changes when a client sets it.
         let position_sample = self.handle.current_transport_position() as i64;
-        let (loop_start, loop_end) = self.transport.and_then(|t| t.loop_span).unwrap_or((0, 0));
+        let (loop_start, loop_end) = t.loop_span.unwrap_or((0, 0));
         vec![
             OscType::Long(origin),
             OscType::Double(tempo),
@@ -51,8 +60,8 @@ impl OscServer {
     /// `b * rate / tempo`. Keeping the two apart is also what keeps the open
     /// T2 (whose subject is that origin) out of this conversion.
     fn beats_to_piece_samples(&self, beats: f64) -> u64 {
-        let Some(t) = self.transport else { return 0 };
-        if t.tempo <= 0.0 || !beats.is_finite() || beats <= 0.0 {
+        let t = self.transport;
+        if !t.defined || t.tempo <= 0.0 || !beats.is_finite() || beats <= 0.0 {
             return 0;
         }
         (beats * self.info.nominal_sample_rate / t.tempo).round() as u64
@@ -103,26 +112,26 @@ impl OscServer {
         if origin < 0 || tempo.is_nan() || tempo <= 0.0 {
             return Err("originSample must be >= 0 and tempo > 0".into());
         }
-        // Setting the grid (re)defines the transport: stopped, at position 0.
-        // The governed group survives, because it is a binding to the tree, not
-        // part of the grid -- and dropping it here would silently leave a frozen
-        // subtree with nobody owning it.
-        let group = self.transport.and_then(|t| t.group);
-        let loop_span = self.transport.and_then(|t| t.loop_span);
-        self.transport = Some(Transport {
+        // Setting the grid resets the rolling state: stopped, at position 0.
+        self.transport = Transport {
+            defined: true,
             origin_sample: origin,
             tempo,
             playing: false,
             position: 0.0,
-            loop_span,
-            group,
-        });
+            // The loop and the governed group survive: both are bindings to
+            // material and to the tree, not part of the grid, and dropping
+            // either here would leave the engine holding something no client
+            // could see.
+            loop_span: self.transport.loop_span,
+            group: self.transport.group,
+        };
         // Redefining the grid puts the piece back at its start, which is what
         // "stopped at position 0" has always meant -- it just had nowhere to
         // say it before.
         self.locate_engine(0);
         // Redefining the grid stops the transport, so a bound group freezes.
-        if group.is_some() {
+        if self.transport.group.is_some() {
             self.handle.send(Cmd::TransportRun { rolling: false }).ok();
         }
         self.reply(
@@ -138,21 +147,27 @@ impl OscServer {
     /// `position` argument, playback starts from that song-position beat;
     /// without one, from where it last stopped/located. Every client's playhead
     /// obeys the broadcast (starting from `position`, quantized to the shared
-    /// grid). Needs a grid defined first (`/transport_set`).
+    /// grid).
+    ///
+    /// **Only the argument needs a grid.** `position` is a beat, so playing
+    /// *from* one refuses until `/transport_set` has said what a beat is;
+    /// playing from where the transport already stands needs no beats at all,
+    /// which is how an audio editor drives it (with
+    /// [`handle_transport_locate_sample`](Self::handle_transport_locate_sample)
+    /// before it).
     pub(in crate::osc::server) fn handle_transport_play(
         &mut self,
         mut args: Args,
         from: ClientId,
     ) -> Answer {
-        let Some(mut t) = self.transport else {
-            return Err(NO_TRANSPORT.into());
-        };
         let located = args.opt_double()?;
-        if let Some(pos) = located {
-            t.position = pos;
+        if located.is_some() && !self.transport.defined {
+            return Err(NO_GRID.into());
         }
-        t.playing = true;
-        self.transport = Some(t);
+        if let Some(pos) = located {
+            self.transport.position = pos;
+        }
+        self.transport.playing = true;
         // A play *from* a position is a locate and then a roll, in that order:
         // the engine must be standing at the right sample before time starts
         // moving, or the first block plays from wherever it was.
@@ -162,7 +177,7 @@ impl OscServer {
         }
         // With a group bound this is no longer an advisory: it thaws the
         // subtree and restarts the transport clock.
-        if t.group.is_some() {
+        if self.transport.group.is_some() {
             self.handle.send(Cmd::TransportRun { rolling: true }).ok();
         }
         self.reply(
@@ -177,12 +192,8 @@ impl OscServer {
     /// `/transport_stop` — stop the transport. Every client's playhead halts at
     /// its current point; `position` holds for the next play.
     pub(in crate::osc::server) fn handle_transport_stop(&mut self, from: ClientId) {
-        let Some(mut t) = self.transport else {
-            return self.fail(from, "/transport_stop", NO_TRANSPORT);
-        };
-        t.playing = false;
-        self.transport = Some(t);
-        if t.group.is_some() {
+        self.transport.playing = false;
+        if self.transport.group.is_some() {
             self.handle.send(Cmd::TransportRun { rolling: false }).ok();
         }
         self.reply(
@@ -193,20 +204,24 @@ impl OscServer {
         self.broadcast_transport();
     }
 
-    /// `/transport_locate <position:double>` — set the song position (where play
-    /// starts or, while playing, seeks to). Every client's playhead locates to
-    /// it; the `playing` flag is unchanged.
+    /// `/transport_locate <position:double>` — set the song position **in
+    /// beats** (where play starts or, while playing, seeks to). Every client's
+    /// playhead locates to it; the `playing` flag is unchanged.
+    ///
+    /// This is the one locate that needs a grid, because a beat means nothing
+    /// without one. The frame spelling is
+    /// [`handle_transport_locate_sample`](Self::handle_transport_locate_sample)
+    /// and it needs none.
     pub(in crate::osc::server) fn handle_transport_locate(
         &mut self,
         mut args: Args,
         from: ClientId,
     ) -> Answer {
-        let Some(mut t) = self.transport else {
-            return Err(NO_TRANSPORT.into());
-        };
+        if !self.transport.defined {
+            return Err(NO_GRID.into());
+        }
         let beats = args.double()?;
-        t.position = beats;
-        self.transport = Some(t);
+        self.transport.position = beats;
         let sample = self.beats_to_piece_samples(beats);
         self.locate_engine(sample);
         self.reply(
@@ -226,23 +241,25 @@ impl OscServer {
     /// either into the other on the client is how a rounding error gets into
     /// a seek. A negative sample clamps to 0, the same floor the position
     /// itself has.
+    ///
+    /// **It needs no grid**: a frame is a frame. With one defined the beat
+    /// reading follows, so the two spellings of the position never disagree;
+    /// without one it stays 0, where the sample spelling is the whole truth.
     pub(in crate::osc::server) fn handle_transport_locate_sample(
         &mut self,
         mut args: Args,
         from: ClientId,
     ) -> Answer {
-        let Some(mut t) = self.transport else {
-            return Err(NO_TRANSPORT.into());
-        };
         let sample = args.long()?.max(0) as u64;
+        let t = self.transport;
         // The beat-position field follows, so a client reading either one sees
         // the same place: they are two spellings of one position, and letting
         // them disagree is the two-owner problem in miniature.
-        t.position = match t.tempo > 0.0 && self.info.nominal_sample_rate > 0.0 {
-            true => sample as f64 * t.tempo / self.info.nominal_sample_rate,
-            false => 0.0,
-        };
-        self.transport = Some(t);
+        self.transport.position =
+            match t.defined && t.tempo > 0.0 && self.info.nominal_sample_rate > 0.0 {
+                true => sample as f64 * t.tempo / self.info.nominal_sample_rate,
+                false => 0.0,
+            };
         self.locate_engine(sample);
         self.reply(
             from,
@@ -276,9 +293,6 @@ impl OscServer {
         mut args: Args,
         from: ClientId,
     ) -> Answer {
-        let Some(mut t) = self.transport else {
-            return Err(NO_TRANSPORT.into());
-        };
         let span = match args.opt_long()? {
             None => None,
             Some(start) => {
@@ -289,8 +303,7 @@ impl OscServer {
                 Some((start, end))
             }
         };
-        t.loop_span = span;
-        self.transport = Some(t);
+        self.transport.loop_span = span;
         self.handle
             .send(Cmd::TransportLoop {
                 span: span.map(|(s, e)| s as u64..e as u64),
@@ -319,15 +332,11 @@ impl OscServer {
         mut args: Args,
         from: ClientId,
     ) -> Answer {
-        let Some(mut t) = self.transport else {
-            return Err(NO_TRANSPORT.into());
-        };
         let id = args.int()?;
         if id >= 0 && self.translator.mirror.children(id).is_none() {
             return Err(format!("unknown group {id}"));
         }
-        t.group = if id >= 0 { Some(id) } else { None };
-        self.transport = Some(t);
+        self.transport.group = if id >= 0 { Some(id) } else { None };
         if self.handle.send(Cmd::TransportGroup { id }).is_err() {
             return Err("command FIFO full".into());
         }

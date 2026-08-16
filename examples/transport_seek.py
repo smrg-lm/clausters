@@ -103,10 +103,9 @@ def main():
         buf.set_samples(material())
         follower_def().send(server)
 
-        # The transport needs a grid defined before it will roll; this example
-        # addresses the piece in samples and reads nothing from the grid, so
-        # the tempo is arbitrary.
-        server.set_transport(0, 1.0)
+        # No `set_transport` anywhere below: this piece is measured in frames,
+        # and the transport needs a beat grid only for the commands that speak
+        # beats. An editor has no tempo to declare and does not declare one.
 
         # The reader goes in a group of its own, and *that* is what the
         # transport governs. Binding the root group would freeze every sound

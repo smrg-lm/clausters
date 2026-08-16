@@ -55,7 +55,7 @@ impl OscServer {
             faust_submitted: 0,
             faust_drained: 0,
             pending_syncs: Vec::new(),
-            transport: None,
+            transport: Transport::default(),
             post_errors: true,
             max_frame: crate::osc::DEFAULT_MAX_FRAME,
             max_clients: crate::osc::DEFAULT_MAX_CLIENTS,
@@ -114,7 +114,7 @@ impl OscServer {
             faust_submitted: 0,
             faust_drained: 0,
             pending_syncs: Vec::new(),
-            transport: None,
+            transport: Transport::default(),
             post_errors: true,
             max_frame: crate::osc::DEFAULT_MAX_FRAME,
             max_clients: crate::osc::DEFAULT_MAX_CLIENTS,
@@ -324,11 +324,8 @@ impl OscServer {
                     // A governed group that has been freed cannot govern
                     // anything: unbind rather than leave the transport pointing
                     // at a node that no longer exists.
-                    if self.transport.and_then(|t| t.group) == Some(id) {
-                        if let Some(mut t) = self.transport {
-                            t.group = None;
-                            self.transport = Some(t);
-                        }
+                    if self.transport.group == Some(id) {
+                        self.transport.group = None;
                         self.handle.send(Cmd::TransportGroup { id: -1 }).ok();
                         self.broadcast_transport();
                     }
