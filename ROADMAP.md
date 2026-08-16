@@ -122,21 +122,21 @@ prerequisite, and because it is the one whose cost is not the client's.*
   editor is a free-standing example beside the arrangement rather than a view of
   it — and it earned its keep early by correcting A2's layer stack.
 
-- ⬜ **S12 — A buffer write costs the samples written** *(root `PLAN.md`)*.
-  Opened 2026-08-15 out of the "Found by use" entry it converged from, once that
-  entry's demand for numbers was met. `/buffer_setRange` replaces the buffer
-  whole, which measures **33.8 ms per write on a five-minute take** and grows
-  with the take, against the ~30 a second a draw stroke asks for.
-  **The measurement moved this entry's own argument**: it sat here because "the
-  two after it are unusable live without it", and that is not true — a stroke
-  can be heard against a scratch span rather than against the take, which needs
-  no server change and which D4 already does for a copied block. So it no longer
-  blocks D1 or D2 in any sense, and the order between them is free. It stays
-  first because it is the destination's second half — *correct at real sizes* —
-  and because it is the one entry here whose decision is a substrate decision
-  (what a buffer's storage is, which the write-only UGens S9 deferred want too),
-  so taking it while the D track is still unwritten is what keeps it from being
-  designed around gestures that already shipped.
+- ⬜ **S12 — An edit is an NRT job over a file, and a buffer stays replaceable**
+  *(root `PLAN.md`)*. Opened 2026-08-15 out of the "Found by use" entry it
+  converged from, and **rewritten the same day**: it was opened to make a span
+  write cheap, and what it settled instead is that the editor never writes a take
+  through the pool at all. A buffer stays immutable and replaceable, the RT read
+  path is untouched, and the editing verbs become NRT jobs over the working copy
+  — which is also the reading of *one place performs audio processing and it is
+  the server* (`crates/clausters-document/PLAN.md`) that applies here.
+  **Two things this settles for the entries below.** It is not a prerequisite of
+  D1 or D2 in the sense first written — a stroke is heard against a scratch span,
+  which needs no server change and which D4 already does for a copied block — so
+  the order is not forced by an ability. It stays first because D1 and D2 *emit
+  intents that someone applies*, and this is where what applies them is decided;
+  taking it after them would mean designing the answer around gestures that had
+  already shipped.
 
 - ⬜ **D1 — A sample is a grabbable point.** The pending overlay's first real
   drawing, and `peaks::update_range`.
