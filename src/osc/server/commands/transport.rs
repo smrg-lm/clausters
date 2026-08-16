@@ -23,6 +23,11 @@ impl OscServer {
         };
         let group = self.transport.and_then(|t| t.group).unwrap_or(-1);
         let transport_sample = self.handle.current_transport_samples() as i64;
+        // The position is read from the engine and the loop from here: the
+        // first moves every block and only the audio thread knows it, the
+        // second only changes when a client sets it.
+        let position_sample = self.handle.current_transport_position() as i64;
+        let (loop_start, loop_end) = self.transport.and_then(|t| t.loop_span).unwrap_or((0, 0));
         vec![
             OscType::Long(origin),
             OscType::Double(tempo),
@@ -31,7 +36,32 @@ impl OscServer {
             OscType::Double(position),
             OscType::Int(group),
             OscType::Long(transport_sample),
+            OscType::Long(position_sample),
+            OscType::Long(loop_start),
+            OscType::Long(loop_end),
         ]
+    }
+
+    /// Beat `b` of the **piece** as a sample of the piece.
+    ///
+    /// Deliberately **not** through `origin_sample`: that origin anchors the
+    /// beat grid on the *device* axis, which is what lets several clients
+    /// phase-align on one running server. The piece's own axis starts at its
+    /// own 0 by definition, so a song position in beats is just
+    /// `b * rate / tempo`. Keeping the two apart is also what keeps the open
+    /// T2 (whose subject is that origin) out of this conversion.
+    fn beats_to_piece_samples(&self, beats: f64) -> u64 {
+        let Some(t) = self.transport else { return 0 };
+        if t.tempo <= 0.0 || !beats.is_finite() || beats <= 0.0 {
+            return 0;
+        }
+        (beats * self.info.nominal_sample_rate / t.tempo).round() as u64
+    }
+
+    /// Sends the engine a locate, so the piece moves and not only the number
+    /// this server broadcasts.
+    fn locate_engine(&mut self, position: u64) {
+        self.handle.send(Cmd::TransportLocate { position }).ok();
     }
 
     /// Pushes the current transport state to every `/server_notify` client, so a
@@ -78,13 +108,19 @@ impl OscServer {
         // part of the grid -- and dropping it here would silently leave a frozen
         // subtree with nobody owning it.
         let group = self.transport.and_then(|t| t.group);
+        let loop_span = self.transport.and_then(|t| t.loop_span);
         self.transport = Some(Transport {
             origin_sample: origin,
             tempo,
             playing: false,
             position: 0.0,
+            loop_span,
             group,
         });
+        // Redefining the grid puts the piece back at its start, which is what
+        // "stopped at position 0" has always meant -- it just had nowhere to
+        // say it before.
+        self.locate_engine(0);
         // Redefining the grid stops the transport, so a bound group freezes.
         if group.is_some() {
             self.handle.send(Cmd::TransportRun { rolling: false }).ok();
@@ -111,11 +147,19 @@ impl OscServer {
         let Some(mut t) = self.transport else {
             return Err(NO_TRANSPORT.into());
         };
-        if let Some(pos) = args.opt_double()? {
+        let located = args.opt_double()?;
+        if let Some(pos) = located {
             t.position = pos;
         }
         t.playing = true;
         self.transport = Some(t);
+        // A play *from* a position is a locate and then a roll, in that order:
+        // the engine must be standing at the right sample before time starts
+        // moving, or the first block plays from wherever it was.
+        if let Some(pos) = located {
+            let sample = self.beats_to_piece_samples(pos);
+            self.locate_engine(sample);
+        }
         // With a group bound this is no longer an advisory: it thaws the
         // subtree and restarts the transport clock.
         if t.group.is_some() {
@@ -160,12 +204,102 @@ impl OscServer {
         let Some(mut t) = self.transport else {
             return Err(NO_TRANSPORT.into());
         };
-        t.position = args.double()?;
+        let beats = args.double()?;
+        t.position = beats;
         self.transport = Some(t);
+        let sample = self.beats_to_piece_samples(beats);
+        self.locate_engine(sample);
         self.reply(
             from,
             "/done",
             vec![OscType::String("/transport_locate".into())],
+        );
+        self.broadcast_transport();
+        Ok(())
+    }
+
+    /// `/transport_locateSample <sample:int64>` — locate on the piece's own
+    /// **sample** axis, which is what an audio editor addresses.
+    ///
+    /// The sibling of [`Self::handle_transport_locate`] and not a replacement:
+    /// a sequencer locates by beat and an editor by frame, and converting
+    /// either into the other on the client is how a rounding error gets into
+    /// a seek. A negative sample clamps to 0, the same floor the position
+    /// itself has.
+    pub(in crate::osc::server) fn handle_transport_locate_sample(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let Some(mut t) = self.transport else {
+            return Err(NO_TRANSPORT.into());
+        };
+        let sample = args.long()?.max(0) as u64;
+        // The beat-position field follows, so a client reading either one sees
+        // the same place: they are two spellings of one position, and letting
+        // them disagree is the two-owner problem in miniature.
+        t.position = match t.tempo > 0.0 && self.info.nominal_sample_rate > 0.0 {
+            true => sample as f64 * t.tempo / self.info.nominal_sample_rate,
+            false => 0.0,
+        };
+        self.transport = Some(t);
+        self.locate_engine(sample);
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/transport_locateSample".into())],
+        );
+        self.broadcast_transport();
+        Ok(())
+    }
+
+    /// `/transport_loop [<start:int64> <end:int64>]` — the span of the piece
+    /// the position wraps inside, in samples; **no arguments turns looping
+    /// off**.
+    ///
+    /// Two forms rather than a third `enabled` argument: what a loop toggle
+    /// needs to remember is the span it last used, and that is the client's to
+    /// keep — the server holding a disabled span would be a second copy of a
+    /// number the client already has, which is the one thing this protocol
+    /// avoids everywhere else.
+    ///
+    /// The span is **half-open**: the end sample is the first one not played,
+    /// so a loop of `0..n` over an `n`-sample take plays every frame exactly
+    /// once and joins its own start with no repeat. An empty or inverted span
+    /// fails rather than being silently ignored — it is always a mistake, and
+    /// the engine's wrap would not terminate over one.
+    ///
+    /// Turning a loop on does **not** move the piece: it keeps playing from
+    /// where it is and wraps when it first reaches the end.
+    pub(in crate::osc::server) fn handle_transport_loop(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let Some(mut t) = self.transport else {
+            return Err(NO_TRANSPORT.into());
+        };
+        let span = match args.opt_long()? {
+            None => None,
+            Some(start) => {
+                let end = args.long()?;
+                if start < 0 || end <= start {
+                    return Err("a loop needs 0 <= start < end".into());
+                }
+                Some((start, end))
+            }
+        };
+        t.loop_span = span;
+        self.transport = Some(t);
+        self.handle
+            .send(Cmd::TransportLoop {
+                span: span.map(|(s, e)| s as u64..e as u64),
+            })
+            .ok();
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/transport_loop".into())],
         );
         self.broadcast_transport();
         Ok(())

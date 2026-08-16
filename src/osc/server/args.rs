@@ -146,6 +146,15 @@ impl<'a> Args<'a> {
         self.int().map(Some)
     }
 
+    /// An optional trailing 64-bit integer: absent is `Ok(None)`, present but
+    /// of the wrong type is still an error.
+    pub(in crate::osc::server) fn opt_long(&mut self) -> Result<Option<i64>, String> {
+        if self.is_empty() {
+            return Ok(None);
+        }
+        self.long().map(Some)
+    }
+
     /// An optional trailing double: absent is `Ok(None)`, present but of the
     /// wrong type is still an error.
     pub(in crate::osc::server) fn opt_double(&mut self) -> Result<Option<f64>, String> {

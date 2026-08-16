@@ -127,4 +127,15 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Phasor::new()),
     ),
+    desc(
+        "TransportPos",
+        Fixed(1),
+        &[inp("offset", 0.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(TransportPos),
+    ),
 ];

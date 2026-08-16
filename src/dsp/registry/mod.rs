@@ -40,7 +40,7 @@ use crate::dsp::noise::{
 };
 use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
 use crate::dsp::pan::{Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind};
-use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw};
+use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw, TransportPos};
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::{Rand, SampleRate};
 use crate::dsp::sine::Sine;

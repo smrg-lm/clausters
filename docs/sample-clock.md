@@ -44,16 +44,20 @@ The sample clock gives every client a common, drift-free **sample axis**, so two
 `/transport_set` is that grid, hosted on the server so any client can join it. It also carries a DAW-style **rolling state** — whether it is playing and the song position:
 
 ```text
-/transport_query                              →  /transport_query.reply  h <originSample>  d <tempo>  i <defined>  i <playing>  d <position>  i <group>  h <transportSample>
+/transport_query                              →  /transport_query.reply  h <originSample>  d <tempo>  i <defined>  i <playing>  d <position>  i <group>  h <transportSample>  h <positionSample>  h <loopStart>  h <loopEnd>
 /transport_set  h <originSample> d <tempo>    →  /done  "/transport_set"          (set the grid, stopped at 0)
 /transport_play  [d <position>]           →  /done  "/transport_play"     (start rolling)
 /transport_stop                           →  /done  "/transport_stop"
-/transport_locate  d <position>           →  /done  "/transport_locate"   (set the song position)
+/transport_locate  d <position>           →  /done  "/transport_locate"   (set the song position, in beats)
+/transport_locateSample  h <sample>       →  /done  "/transport_locateSample"  (the same, in frames of the piece)
+/transport_loop  [h <start> h <end>]      →  /done  "/transport_loop"     (wrap inside this span; no arguments = off)
 ```
 
 - `/transport_query` **reads** the grid; `defined` is 0 until a client has set one, and `group` is `-1` until one is bound.
 - `/transport_set` **sets** the grid (last writer wins), stopped at position 0. Beat `b` maps to sample `originSample + b·rate/tempo`, so a client joins by reading the grid and quantizing its routine's start onto the next beat boundary. Because the grid lives on the sample axis, the alignment is sample-exact for clients locked to the master.
 - `/transport_play`/`/transport_stop`/`/transport_locate` drive the rolling state (a conductor): play from a song position, stop, or seek. Each needs a grid defined first.
+- **A clock is not a position, and the transport publishes both.** `transportSample` counts samples *elapsed* under the transport: it holds while stopped and never goes backwards, which is exactly what the scheduler's transport queue needs, since "due" only means anything on an axis that cannot jump. `positionSample` is where the transport **is in the piece** — it jumps wherever a locate puts it and wraps at the end of a `/transport_loop` span. A playhead draws the position; anything scheduling reads the clock. Both are in the shared-memory segment, and a graph reads the position through the `TransportPos` UGen, which is how a buffer reader follows the transport instead of keeping a position of its own.
+- **`/transport_locateSample` addresses that position in frames**, where `/transport_locate` addresses it in beats. Both spellings stay in step; which one to use is which one your material is measured in — an editor's is frames, a sequencer's is beats, and converting between them on the client is how a rounding error gets into a seek.
 
 Every change is **pushed** to every `/server_notify` client as a `/transport_query.reply`, so a client with a responder on it re-aligns or rolls its playhead live — no polling. With no group bound the server stores, serves and broadcasts the transport but **schedules no audio from it** — it is shared control, not a sequencer, and each client rolls its own playhead on the shared grid. Binding a group with `/transport_group` is what changes that: the engine then freezes that subtree and the transport clock on a stop, and `transportSample` is the piece's own time. See [`schemas.md`](schemas.md). The grid is in-memory (the sample counter resets on restart, so an origin only means anything within one run) and ownership is last-writer-wins.
 

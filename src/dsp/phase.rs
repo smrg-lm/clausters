@@ -1,6 +1,7 @@
 //! The phase family: everything driven by one accumulating phase — the
 //! band-limited `Saw`/`Pulse`, the deliberately band-*un*limited `LF*` shapes,
-//! and `Phasor`.
+//! and `Phasor` -- plus `TransportPos`, which is a phase the *transport* owns
+//! rather than one this file accumulates.
 //!
 //! **One accumulator, in `f64`.** Every UGen here advances a normalized phase in
 //! `[0, 1)` by `freq / sample_rate` per sample.
@@ -460,6 +461,52 @@ impl UGen for Phasor {
             if range > 0.0 && !(lo..hi).contains(&self.pos) {
                 self.pos -= range * ((self.pos - lo) / range).floor();
             }
+        }
+    }
+}
+
+/// The **transport's position in the piece**, as a signal — what a buffer
+/// reader follows so that seeking, looping and pausing are the transport's
+/// and not each reader's.
+///
+/// One input, `offset` in frames, subtracted from the position: a clip that
+/// starts at sample `offset` of the piece reads its own material from frame 0
+/// when the transport reaches it. That is what the input is *for*, but it is
+/// also what keeps the output precise — see below.
+///
+/// It ramps by one frame per sample while the transport rolls and **holds**
+/// while it is stopped, at whatever rate it runs (one `kr` sample covers a
+/// whole slice, so the step is the slice's length). A node inside the governed
+/// group is frozen and does not run at all while the transport is stopped, so
+/// the holding case is for a reader outside it — or on a server with no group
+/// bound, where nothing freezes.
+///
+/// **Precision.** A signal is `f32`, which represents every integer exactly up
+/// to 2^24 — about 5.8 minutes at 48 kHz — and in steps of 2 for a while after
+/// that. This is the catalog's existing arithmetic (`Phasor` keeps an `f64`
+/// internally and outputs `f32` just the same, and `BufRd` takes its phase as
+/// a signal), and the `offset` input is the answer to it: the subtraction
+/// happens here in `f64`, so a reader positioned at its own material's start
+/// sees small numbers however deep into a long piece it sits. A graph that
+/// subtracts with a `Sub` UGen instead has already lost the precision by the
+/// time it does.
+pub struct TransportPos;
+
+impl UGen for TransportPos {
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let base = ctx.transport.position as f64;
+        // Frames per output sample: 1 at `ar`, the slice length at `kr`, with
+        // no branch on the rate -- the same derivation every timed UGen makes
+        // from its own rate against the engine's.
+        let step = if ctx.sample_rate > 0.0 {
+            (ctx.full_sample_rate / ctx.sample_rate) as f64
+        } else {
+            1.0
+        };
+        let rolling = ctx.transport.rolling;
+        for (i, s) in output.iter_mut().enumerate() {
+            let played = if rolling { i as f64 * step } else { 0.0 };
+            *s = (base + played - at(inputs[0], i) as f64) as f32;
         }
     }
 }

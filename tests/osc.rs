@@ -1288,9 +1288,11 @@ fn transport_query_and_set() {
     let server = TestServer::spawn();
 
     // Unset: defined flag 0, zeros. Reply is (origin, tempo, defined, playing,
-    // position, group, transportSample) -- the grid, the rolling state, and the
-    // governed group with the transport clock. The last two are appended, so a
-    // client reading the first five still works.
+    // position, group, transportSample, positionSample, loopStart, loopEnd) --
+    // the grid, the rolling state, the governed group with the transport
+    // clock, and where the piece is with the loop it wraps in. Everything past
+    // the fifth field is appended, so a client reading the original five still
+    // works.
     server.send("/transport_query", vec![]);
     let reply = server.recv_until("/transport_query.reply");
     assert_eq!(
@@ -1302,6 +1304,9 @@ fn transport_query_and_set() {
             OscType::Int(0),
             OscType::Double(0.0),
             OscType::Int(-1),
+            OscType::Long(0),
+            OscType::Long(0),
+            OscType::Long(0),
             OscType::Long(0),
         ]
     );
@@ -1328,6 +1333,9 @@ fn transport_query_and_set() {
             OscType::Int(0),
             OscType::Double(0.0),
             OscType::Int(-1),
+            OscType::Long(0),
+            OscType::Long(0),
+            OscType::Long(0),
             OscType::Long(0),
         ]
     );
@@ -1422,6 +1430,9 @@ fn transport_pushes_on_change_to_notify_clients() {
             OscType::Double(0.0),
             OscType::Int(-1),
             OscType::Long(0),
+            OscType::Long(0),
+            OscType::Long(0),
+            OscType::Long(0),
         ]
     );
 
@@ -1430,6 +1441,107 @@ fn transport_pushes_on_change_to_notify_clients() {
     let push = server.recv_until("/transport_query.reply");
     assert_eq!(push.args[3], OscType::Int(1));
     assert_eq!(push.args[4], OscType::Double(4.0));
+
+    server.quit();
+}
+
+/// The sample-addressed half of the transport: an editor seeks by frame, and
+/// the beat position follows so the two spellings never disagree.
+#[test]
+fn transport_locate_sample_moves_the_position_and_its_beat_reading() {
+    let mut server = TestServer::spawn();
+
+    // Needs a grid, like every other transport command but /transport_set.
+    server.send("/transport_locateSample", vec![OscType::Long(0)]);
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/transport_locateSample".into())
+    );
+
+    // Tempo is in beats per **second** (the grid is `origin + b*rate/tempo`,
+    // sclang's TempoClock convention), so 2.0 makes one beat half a second.
+    server.send(
+        "/transport_set",
+        vec![OscType::Long(0), OscType::Double(2.0)],
+    );
+    server.recv_until("/done");
+
+    server.send("/transport_locateSample", vec![OscType::Long(24_000)]);
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/transport_locateSample".into())
+    );
+
+    // The position is the engine's, published once a block, so the query
+    // answers it as of the last completed one -- the same rule `/buffer_query`
+    // states for the buffer mirror.
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    server.engine.process_block(&mut out);
+    server.send("/transport_query", vec![]);
+    let reply = server.recv_until("/transport_query.reply");
+    assert_eq!(
+        reply.args[7],
+        OscType::Long(24_000),
+        "the piece is where it was sent, in samples"
+    );
+    let OscType::Double(beats) = reply.args[4] else {
+        panic!("the beat position is a double")
+    };
+    assert!(
+        (beats - 1.0).abs() < 1e-9,
+        "24000 samples at 2 beats/s and 48 kHz is beat 1, got {beats}"
+    );
+
+    server.quit();
+}
+
+/// `/transport_loop`: two arguments set the span, none clears it, and a span
+/// that is not a span fails rather than being ignored.
+#[test]
+fn transport_loop_sets_and_clears_a_span() {
+    let server = TestServer::spawn();
+
+    server.send(
+        "/transport_set",
+        vec![OscType::Long(0), OscType::Double(120.0)],
+    );
+    server.recv_until("/done");
+
+    server.send(
+        "/transport_loop",
+        vec![OscType::Long(1_000), OscType::Long(5_000)],
+    );
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/transport_loop".into())
+    );
+    server.send("/transport_query", vec![]);
+    let reply = server.recv_until("/transport_query.reply");
+    assert_eq!(reply.args[8], OscType::Long(1_000));
+    assert_eq!(reply.args[9], OscType::Long(5_000));
+
+    // An inverted span is always a mistake: it fails, and the live loop stands.
+    server.send(
+        "/transport_loop",
+        vec![OscType::Long(5_000), OscType::Long(1_000)],
+    );
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/transport_loop".into())
+    );
+    server.send("/transport_query", vec![]);
+    assert_eq!(
+        server.recv_until("/transport_query.reply").args[8],
+        OscType::Long(1_000)
+    );
+
+    // No arguments turns looping off.
+    server.send("/transport_loop", vec![]);
+    server.recv_until("/done");
+    server.send("/transport_query", vec![]);
+    let reply = server.recv_until("/transport_query.reply");
+    assert_eq!(reply.args[8], OscType::Long(0));
+    assert_eq!(reply.args[9], OscType::Long(0));
 
     server.quit();
 }

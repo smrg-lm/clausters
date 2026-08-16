@@ -119,6 +119,31 @@ fn add_constant_synth_in_new_group(handle: &mut EngineHandle, group_id: i32, bus
         .unwrap();
 }
 
+/// A synth whose output *is* the transport's position in the piece: the one
+/// thing that proves the position reaches a graph at all.
+#[cfg(feature = "synth")]
+fn position_def() -> Arc<SynthDef> {
+    let json = r#"{
+        "name": "position",
+        "controls": [{"name": "offset", "default": 0.0}],
+        "ugens": [
+            {"kind": "TransportPos", "inputs": [{"control": 0}]},
+            {"kind": "ReplaceOut", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }"#;
+    let spec: SynthDefSpec = serde_json::from_str(json).unwrap();
+    Arc::new(compile(spec).unwrap())
+}
+
+/// Renders one block and hands back bus 0, deinterleaved from the two-channel
+/// output the transport tests render into.
+#[cfg(feature = "synth")]
+fn block_of_bus_0(engine: &mut clausters::server::engine::Engine) -> Vec<f32> {
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    engine.process_block(&mut out);
+    out.chunks_exact(2).map(|f| f[0]).collect()
+}
+
 /// Render `blocks` blocks of silence, to advance both clocks.
 fn run_blocks(engine: &mut clausters::server::engine::Engine, blocks: usize) {
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
@@ -381,6 +406,151 @@ fn setting_a_loop_does_not_relocate_the_piece() {
         handle.current_transport_position(),
         (BLOCK_SIZE * 2) as u64,
         "still where it would have been"
+    );
+}
+
+/// The claim the whole milestone rests on: a graph can read where the piece
+/// is, sample by sample.
+#[test]
+#[cfg(feature = "synth")]
+fn a_graph_reads_the_position_and_it_ramps_one_frame_per_sample() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::AddSynth {
+            id: 100,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(position_def(), 48_000.0, SEED_STRIDE)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportLocate { position: 1_000 })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+
+    let block = block_of_bus_0(&mut engine);
+    let expected: Vec<f32> = (0..BLOCK_SIZE).map(|i| (1_000 + i) as f32).collect();
+    assert_eq!(
+        block, expected,
+        "located at 1000, then one frame per sample"
+    );
+
+    let next = block_of_bus_0(&mut engine);
+    assert_eq!(
+        next[0],
+        (1_000 + BLOCK_SIZE) as f32,
+        "the second block continues where the first ended"
+    );
+}
+
+/// A stopped transport holds the position rather than ramping it — the case a
+/// reader outside the governed group sees, since a governed one is frozen and
+/// never runs at all.
+#[test]
+#[cfg(feature = "synth")]
+fn a_stopped_transport_holds_the_position_a_graph_reads() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::AddSynth {
+            id: 100,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(position_def(), 48_000.0, SEED_STRIDE)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportLocate { position: 7 })
+        .ok()
+        .unwrap();
+
+    let block = block_of_bus_0(&mut engine);
+    assert!(
+        block.iter().all(|s| *s == 7.0),
+        "not rolling: the piece stands still and so does the signal"
+    );
+}
+
+/// The `offset` input is what a clip uses to read its own material from frame
+/// 0, and the subtraction happens inside the UGen in f64.
+#[test]
+#[cfg(feature = "synth")]
+fn the_offset_input_reads_a_clip_from_its_own_first_frame() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::AddSynth {
+            id: 100,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(position_def(), 48_000.0, SEED_STRIDE)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::SetControl {
+            id: 100,
+            index: 0,
+            value: 5_000.0,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportLocate { position: 5_000 })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+
+    let block = block_of_bus_0(&mut engine);
+    assert_eq!(
+        block[0], 0.0,
+        "the piece is at the clip's start, so the clip is at its own frame 0"
+    );
+    assert_eq!(block[BLOCK_SIZE - 1], (BLOCK_SIZE - 1) as f32);
+}
+
+/// A loop's seam, read from inside the graph: the wrap lands on a sample and
+/// not on a block, so the signal steps straight from the loop's last frame to
+/// its first.
+#[test]
+#[cfg(feature = "synth")]
+fn a_graph_sees_the_loop_wrap_on_its_exact_sample() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::AddSynth {
+            id: 100,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(position_def(), 48_000.0, SEED_STRIDE)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    // A 10-sample loop, so the wrap falls well inside the first block.
+    handle
+        .send(Cmd::TransportLoop { span: Some(0..10) })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+
+    let block = block_of_bus_0(&mut engine);
+    let expected: Vec<f32> = (0..BLOCK_SIZE).map(|i| (i % 10) as f32).collect();
+    assert_eq!(
+        block, expected,
+        "the position sawtooths through the loop, one sample at a time"
     );
 }
 

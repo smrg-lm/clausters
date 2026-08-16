@@ -36,19 +36,29 @@ class ServerTransport:
 
     def transport_state(self, timeout: "float | None" = None):
         """The full shared transport state as a dict ``{origin_sample, tempo,
-        playing, position, group, transport_sample}``, or ``None`` if no grid is
-        defined. ``playing`` is whether the transport is rolling and ``position``
-        the song-position beat (where play starts, or where a stopped transport
-        sits). A `clausters.seq.timeline.Playhead` follows this with
-        `follow_transport`. RT only.
+        playing, position, group, transport_sample, position_sample, loop}``, or
+        ``None`` if no grid is defined. ``playing`` is whether the transport is
+        rolling and ``position`` the song-position beat (where play starts, or
+        where a stopped transport sits). A `clausters.seq.timeline.Playhead`
+        follows this with `follow_transport`. RT only.
 
         ``group`` is the governed group (`transport_group`) or ``None`` when
-        nothing is bound, and ``transport_sample`` is the transport clock:
-        samples elapsed under the transport, held while it is stopped."""
+        nothing is bound.
+
+        The last three are the piece's own axis. ``transport_sample`` is the
+        transport **clock** — samples elapsed under the transport, held while it
+        is stopped and monotonic, so a locate does not move it — while
+        ``position_sample`` is where the transport **is in the piece**, which is
+        what a playhead draws: it jumps to wherever a locate puts it and wraps
+        inside ``loop``, a ``(start, end)`` pair of samples or ``None`` when
+        looping is off. ``position_sample`` is read from the engine as of its
+        last completed block, so a query issued in the same breath as a locate
+        may still answer the previous place."""
         _, args = self.request("/transport_query", timeout=timeout, expect=("/transport_query.reply",))
         if not int(args[2]):
             return None
         group = int(args[5])
+        loop_start, loop_end = int(args[8]), int(args[9])
         return {
             "origin_sample": int(args[0]),
             "tempo": float(args[1]),
@@ -56,6 +66,8 @@ class ServerTransport:
             "position": float(args[4]),
             "group": None if group < 0 else group,
             "transport_sample": int(args[6]),
+            "position_sample": int(args[7]),
+            "loop": (loop_start, loop_end) if loop_end > loop_start else None,
         }
 
     def transport_group(self, group, timeout: "float | None" = None):
@@ -116,6 +128,39 @@ class ServerTransport:
         addr, args = self.request("/transport_stop", timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_stop failed: {args}")
+        return self
+
+    def transport_locate_sample(self, sample: int, timeout: "float | None" = None):
+        """Seek on the piece's own **sample** axis (``/transport_locateSample``).
+
+        The sibling of `transport_locate`, which takes a beat: a sequencer
+        locates by beat and an audio editor by frame, and converting either into
+        the other on the client is how a rounding error gets into a seek. The
+        beat position follows, so both readings of `transport_state` agree.
+        Needs a grid defined; a negative sample clamps to 0."""
+        addr, args = self.request("/transport_locateSample", _osclib.Int64(int(sample)),
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/transport_locateSample failed: {args}")
+        return self
+
+    def transport_loop(self, span: "tuple[int, int] | None" = None,
+                       timeout: "float | None" = None):
+        """Set (or clear, with ``None``) the span of the piece the transport
+        loops inside (``/transport_loop``), in samples.
+
+        The span is **half-open**: ``(0, n)`` over an ``n``-sample take plays
+        every frame exactly once and joins its own start with no repeated frame.
+        Turning a loop on does not move the piece — it keeps playing and wraps
+        when it first reaches the end — and the wrap happens in the engine, so
+        nothing has to be sent once a pass completes. An empty or inverted span
+        raises. What a loop toggle remembers is the client's to keep: clearing
+        forgets the span."""
+        args_out = () if span is None else (_osclib.Int64(int(span[0])), _osclib.Int64(int(span[1])))
+        addr, args = self.request("/transport_loop", *args_out,
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/transport_loop failed: {args}")
         return self
 
     def transport_locate(self, position: float, timeout: "float | None" = None):

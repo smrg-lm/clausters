@@ -77,8 +77,8 @@ pub const MAGIC: u32 = 0x5541_4C43;
 /// segment carries several independent clients (see the module docs); no field
 /// of the header or the data plane moved, only the framing inside the rings. v8
 /// added the transport **position** beside the transport clock — two different
-/// quantities, see [`Header::transport_position`] — in the last of the header's
-/// reserved space, so again no offset moved.
+/// quantities, see [`Segment::transport_position`] — in the last of the
+/// header's reserved space, so again no offset moved.
 pub const ABI_VERSION: u32 = 8;
 
 /// The peer tag an embedder gets when it never asks for one: the single client
@@ -118,8 +118,9 @@ struct Header {
     _pad: u32,
     /// The transport clock (ABI v6): samples elapsed *under the transport*,
     /// frozen while it is stopped. The sample clock above never stops, so a
-    /// reader drawing the piece's position wants this one and a reader pacing
-    /// on the device wants that one.
+    /// reader pacing on the device wants that one — but this one is monotonic
+    /// too, which is what a scheduler needs and what a **playhead does not**:
+    /// for where the piece *is*, read `transport_position` below.
     ///
     /// It sits in what was reserved space rather than beside `sample_clock`,
     /// which is where it belongs by meaning: putting it there would shift every

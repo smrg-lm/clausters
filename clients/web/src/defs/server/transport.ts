@@ -35,9 +35,24 @@ export interface TransportState extends TransportGrid {
     /**
      * The transport clock: samples elapsed under the transport, held while it
      * is stopped. The device clock (`/clock_query`, the taps, the streams)
-     * never stops; this one is the time of the *piece*.
+     * never stops, and this one holds — but it is monotonic all the same, so a
+     * locate does not move it. For where the piece *is*, read
+     * `positionSample`.
      */
     transportSample: number;
+    /**
+     * Where the transport is **in the piece**, in samples of the material —
+     * what a playhead draws. Not a clock: it jumps to wherever a locate puts
+     * it and wraps inside `loop`. Read from the engine as of its last
+     * completed block, so a query issued in the same breath as a locate may
+     * still answer the previous place.
+     */
+    positionSample: number;
+    /**
+     * The half-open span of the piece the transport loops inside, or `null`
+     * when looping is off.
+     */
+    loop: [number, number] | null;
 }
 
 /** The shared transport grid. Composed into `Server`; never used alone. */
@@ -94,6 +109,8 @@ export class ServerTransport {
         });
         if (!Number(msg.args[2])) return null;
         const group = Number(msg.args[5]);
+        const loopStart = Number(msg.args[8]);
+        const loopEnd = Number(msg.args[9]);
         return {
             originSample: Number(msg.args[0]),
             tempo: Number(msg.args[1]),
@@ -101,6 +118,8 @@ export class ServerTransport {
             position: Number(msg.args[4]),
             group: group < 0 ? null : group,
             transportSample: Number(msg.args[6]),
+            positionSample: Number(msg.args[7]),
+            loop: loopEnd > loopStart ? [loopStart, loopEnd] : null,
         };
     }
 
@@ -195,6 +214,52 @@ export class ServerTransport {
         timeout?: number,
     ): Promise<Server> {
         await this.command("/transport_locate", [["d", position]], timeout);
+        return this;
+    }
+
+    /**
+     * Seeks on the piece's own **sample** axis (`/transport_locateSample`).
+     *
+     * The sibling of `transportLocate`, which takes a beat: a sequencer locates
+     * by beat and an audio editor by frame, and converting either into the
+     * other on the client is how a rounding error gets into a seek. The beat
+     * position follows, so both readings of `transportState` agree. Needs a
+     * grid defined; a negative sample clamps to 0.
+     */
+    async transportLocateSample(
+        this: Server,
+        sample: number,
+        timeout?: number,
+    ): Promise<Server> {
+        await this.command(
+            "/transport_locateSample",
+            [["h", Math.trunc(sample)]],
+            timeout,
+        );
+        return this;
+    }
+
+    /**
+     * Sets — or clears, with `null` — the span of the piece the transport loops
+     * inside (`/transport_loop`), in samples.
+     *
+     * The span is **half-open**: `[0, n]` over an `n`-sample take plays every
+     * frame exactly once and joins its own start with no repeated frame.
+     * Turning a loop on does not move the piece; it keeps playing and wraps
+     * when it first reaches the end, in the engine, so nothing has to be sent
+     * once a pass completes. An empty or inverted span fails. What a loop
+     * toggle remembers is the caller's to keep: clearing forgets the span.
+     */
+    async transportLoop(
+        this: Server,
+        span: [number, number] | null = null,
+        timeout?: number,
+    ): Promise<Server> {
+        const args: MsgArg[] =
+            span === null
+                ? []
+                : [["h", Math.trunc(span[0])], ["h", Math.trunc(span[1])]];
+        await this.command("/transport_loop", args, timeout);
         return this;
     }
 }

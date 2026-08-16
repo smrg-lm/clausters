@@ -240,6 +240,10 @@ struct Transport {
     tempo: f64,
     playing: bool,
     position: f64,
+    /// The loop the position wraps inside, in **samples of the piece**, or
+    /// `None` when looping is off. Held here as well as in the engine so
+    /// `/transport_query` can report it without asking the audio thread.
+    loop_span: Option<(i64, i64)>,
     /// The group the transport governs, when one is bound (`/transport_group`).
     ///
     /// This is what separates the transport's two intensities. With no group

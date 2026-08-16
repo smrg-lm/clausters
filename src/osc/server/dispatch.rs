@@ -603,6 +603,12 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/transport_locate", |s, _, m, f| {
         s.handle_transport_locate(Args::new(m), f)
     }),
+    ("/transport_locateSample", |s, _, m, f| {
+        s.handle_transport_locate_sample(Args::new(m), f)
+    }),
+    ("/transport_loop", |s, _, m, f| {
+        s.handle_transport_loop(Args::new(m), f)
+    }),
     ("/transport_play", |s, _, m, f| {
         s.handle_transport_play(Args::new(m), f)
     }),
