@@ -172,10 +172,35 @@ prerequisite, and because it is the one whose cost is not the client's.*
   also landed the door D1 named — a mapped source can be told to read itself
   again — which is what lets a pending edit be let go of at all.
 
-- ⬜ **An edit invalidates the measures drawn over it, and nothing says so**
-  *(`clients/gui/PLAN.md`, "Found by use")*. Opens the moment A2 and D1 are both
-  in — a measured layer over material the hand just changed. Recorded here so it
-  is taken deliberately at the end of this phase rather than found in the example.
+- ✅ **An edit invalidates the measures drawn over it, and nothing says so.**
+  Taken 2026-08-16, at the end of the phase as intended and not found in an
+  example. **The answer generalizes past loudness**, which is why it was worth
+  taking here: *a measure's affected span is the edit's span widened by the
+  measure's memory*. `peaks::update_range` is that rule with a memory of zero,
+  which is why peak and RMS already follow an edit exactly and cheaply;
+  momentary and short-term are the same rule with a real one, so they
+  **recompute** over the span plus their window and neither grey nor go stale.
+  The aggregates (integrated, LRA) are gated over all the material, so their
+  memory is the take: they are **numbers, not layers**, and a stale number says
+  so. Drawing a stale figure unmarked is the one outcome ruled out — the failure
+  the entry was written about. Recorded in A5, which is where it will be read.
+
+**Phase 3 is closed.** The sample editor exists end to end: an element opens as
+a signal view, a sample is grabbed or a run is drawn, the intent reaches an
+owner, the material changes, the overview follows it for the span that moved,
+and the hand lets go when the edit is acknowledged. What it needed from the
+server it got as its own three milestones rather than as a patch — an offline
+mode that takes operations, the edit verbs, and the buffer commands that were
+missing — and the two doors an owner needs to correct a picture (`data` for
+inline material, `reload` for mapped) turned up by building the thing rather
+than by planning it.
+
+**S14 rides on**, listed above and deliberately unfinished: it never was part of
+this chain (in the offline mode a buffer is already mutable, there being no
+audio thread), and it is the first thing to take next unless something else
+argues for itself — a pool buffer that can be allocated writable, and with it
+`RecordBuf`, `BufWr` and the `BufDelay*` family, which is a capability
+SuperCollider has and this server does not.
 
 ## Phase 4 — the third writer
 
