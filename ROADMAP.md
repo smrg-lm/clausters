@@ -122,6 +122,17 @@ prerequisite, and because it is the one whose cost is not the client's.*
   editor is a free-standing example beside the arrangement rather than a view of
   it — and it earned its keep early by correcting A2's layer stack.
 
+- ⬜ **S13 — The NRT server takes operations on demand** *(root `PLAN.md`)*.
+  **First of the four, and the reordering is deliberate**: it was written as
+  riding with S12, and it goes before it, because S13 alone is a complete
+  demonstrable thing — load, run an operation, write, using only commands that
+  already exist — while S12's verbs without a mode to run in are three tested
+  functions nobody calls. The batch renderer driven by commands instead of by a
+  score, on the `Renderer`'s own path, with the RT server untouched. It is where
+  "apply this def to this selection" becomes possible at all, which no other part
+  of the system can do, and where a pool buffer is mutable, there being no audio
+  thread.
+
 - ⬜ **S12 — Editing does not go through the pool, and its verbs are three**
   *(root `PLAN.md`)*. Opened 2026-08-15 to make a span write cheap and rewritten
   the same day around what it settled instead: the editor never writes a take
@@ -129,32 +140,28 @@ prerequisite, and because it is the one whose cost is not the client's.*
   verbs are `gain`/`replace`/`reverse` in `clausters-core`, none of them a new
   algorithm. It is **not** a prerequisite of D1 or D2 in the sense first written
   — a stroke is heard against a scratch span, which needs no server change and
-  which D4 already does — but it comes first because those two *emit intents that
-  someone applies*, and this is where what applies them is decided.
-
-- ⬜ **S13 — The NRT server takes operations on demand** *(root `PLAN.md`)*.
-  The mode the verbs run in: the batch renderer driven by commands instead of by
-  a score, on the `Renderer`'s own path, with the RT server untouched. It is
-  where "apply this def to this selection" becomes possible at all, which no
-  other part of the system can do — and where a pool buffer is mutable, there
-  being no audio thread. Rides with S12 rather than after it: a verb with no mode
-  to run in is a function nobody calls.
-
-- ⬜ **S14 — A pool buffer can be allocated writable** *(root `PLAN.md`)*.
-  Independent of the two above and of this whole phase, listed here because the
-  pass that produced them is what found it: in SuperCollider you allocate an
-  empty buffer, zero it and use it for anything, and here you cannot — so
-  `RecordBuf`, `BufWr` and the `BufDelay*` family have nowhere to live. A missing
-  capability rather than a decision, and the completeness the S track exists to
-  reach. Takeable at any point; it blocks nothing in this phase and this phase
-  blocks nothing in it.
+  which D4 already does — but it comes before them because those two *emit
+  intents that someone applies*, and this is where what applies them is decided.
 
 - ⬜ **S15 — `/buffer_fill`, `/buffer_readChannel`, `/buffer_allocReadChannel`**
   *(root `PLAN.md`)*. Three scsynth buffer commands S6 declared shipped and did
-  not ship, found on the same pass and independent of everything above — the
-  fill needs no writable buffer, and today a stereo file's one channel cannot be
-  loaded into a mono buffer at all. Small, and listed here only so it is not
-  rediscovered a third time.
+  not ship. **They belong to this chain rather than beside it**, which is a
+  correction to how they were first listed: `/buffer_fill` *is* an editing verb
+  (silencing a span is a fill with 0, and it overlaps S12's `gain` deliberately),
+  and `/buffer_readChannel` is how a single channel of a stereo take is loaded to
+  be edited — which today cannot be done at all, `/buffer_read` failing outright
+  on a channel-count mismatch. Small, and after S12 only so the two spellings of
+  the same verb land together.
+
+- ⬜ **S14 — A pool buffer can be allocated writable** *(root `PLAN.md`)*.
+  **Not part of the editing chain** — in the interactive mode a buffer is already
+  mutable, there being no audio thread, so this one is the RT server's alone. It
+  is here because the pass that produced the other three is what found it: in
+  SuperCollider you allocate an empty buffer, zero it and use it for anything,
+  and here you cannot, so `RecordBuf`, `BufWr` and the `BufDelay*` family have
+  nowhere to live. A missing capability rather than a decision, and the
+  completeness the S track exists to reach. Takeable at any point; it blocks
+  nothing in this phase and this phase blocks nothing in it.
 
 - ⬜ **D1 — A sample is a grabbable point.** The pending overlay's first real
   drawing, and `peaks::update_range`.
