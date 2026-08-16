@@ -149,6 +149,13 @@ prerequisite, and because it is the one whose cost is not the client's.*
   reach. Takeable at any point; it blocks nothing in this phase and this phase
   blocks nothing in it.
 
+- ⬜ **S15 — `/buffer_fill`, `/buffer_readChannel`, `/buffer_allocReadChannel`**
+  *(root `PLAN.md`)*. Three scsynth buffer commands S6 declared shipped and did
+  not ship, found on the same pass and independent of everything above — the
+  fill needs no writable buffer, and today a stereo file's one channel cannot be
+  loaded into a mono buffer at all. Small, and listed here only so it is not
+  rediscovered a third time.
+
 - ⬜ **D1 — A sample is a grabbable point.** The pending overlay's first real
   drawing, and `peaks::update_range`.
 
