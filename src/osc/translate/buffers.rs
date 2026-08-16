@@ -6,6 +6,7 @@
 //! contents it reads from the network-side pool mirror.
 
 use super::*;
+use crate::server::nrt::EditOp;
 
 /// Parses one `/buffer_*` command (except the synchronous `/buffer_query`) into the
 /// buffer index and the NRT job that performs it. `mirror` is the
@@ -119,6 +120,60 @@ pub fn parse_buffer_msg(
                     sample_rate: current.sample_rate(),
                 },
             )
+        }
+        // The destructive edits: a span of the current contents changed in
+        // place — well, in a copy of it, like every other write here. The span
+        // is in **frames**, not flat samples: a selection is a stretch of time
+        // across every channel, and the arithmetic is `clausters_core::edit`,
+        // shared rather than reimplemented per caller.
+        "/buffer_gain" | "/buffer_reverse" => {
+            let Some(OscType::Int(index)) = args.first() else {
+                return Err("expected a buffer index".into());
+            };
+            let Some(current) = mirror_buffer(mirror, *index) else {
+                return Err(format!("no buffer allocated at {index}"));
+            };
+            let start = int_arg(args, 1).unwrap_or(0);
+            let frames = int_arg(args, 2).unwrap_or(-1);
+            if start < 0 {
+                return Err(format!("start frame must not be negative, got {start}"));
+            }
+            let start = start as usize;
+            // A negative count means "to the end", the reading commands'
+            // convention, so a whole-buffer edit needs no arithmetic client-side.
+            let frames = if frames < 0 {
+                current.frames().saturating_sub(start)
+            } else {
+                frames as usize
+            };
+            let op = if addr == "/buffer_reverse" {
+                EditOp::Reverse { start, frames }
+            } else {
+                let from = float_arg(args, 3)
+                    .ok_or("expected a starting gain (float or int)".to_string())?;
+                // One value is a constant gain: the common case says itself.
+                let to = float_arg(args, 4).unwrap_or(from);
+                EditOp::Gain {
+                    start,
+                    frames,
+                    from,
+                    to,
+                    shape: int_arg(args, 5).unwrap_or(clausters_core::envshape::SHAPE_LINEAR),
+                    curve: float_arg(args, 6).unwrap_or(0.0),
+                }
+            };
+            // Bounds are the core's to judge, but a failure here is a `/fail`
+            // the caller reads rather than a job that quietly did nothing, so
+            // the span is checked at parse time as `/buffer_setRange`'s is.
+            if start.saturating_add(frames) > current.frames() {
+                return Err(format!(
+                    "frame range {}..{} is past the end of buffer {index} ({} frames)",
+                    start,
+                    start + frames,
+                    current.frames()
+                ));
+            }
+            (*index, NrtJob::Edit { base: current, op })
         }
         // The write half of the read pair: `/buffer_set` takes (index, value)
         // pairs, `/buffer_setRange` takes (start, blob) runs — bulk samples ride
@@ -316,6 +371,16 @@ fn parse_set_pairs(args: &[OscType]) -> Result<Vec<(usize, Vec<f32>)>, String> {
             Ok((at, vec![value]))
         })
         .collect()
+}
+
+/// An arg that may be sent as a float or as an int — a client writing `1` for
+/// unity gain means 1.0, and refusing that would be pedantry on the wire.
+fn float_arg(args: &[OscType], n: usize) -> Option<f32> {
+    match args.get(n) {
+        Some(OscType::Float(f)) => Some(*f),
+        Some(OscType::Int(i)) => Some(*i as f32),
+        _ => None,
+    }
 }
 
 /// `/buffer_setRange`'s `(start, blob)...` tail: each run's samples ride as one

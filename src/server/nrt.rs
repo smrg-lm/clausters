@@ -79,8 +79,37 @@ pub enum NrtJob {
         base: Arc<Buffer>,
         writes: Vec<(usize, Vec<f32>)>,
     },
+    /// `/buffer_gain` and `/buffer_reverse`: a destructive edit over a span of
+    /// the current contents, laid into a copy that replaces the buffer, like
+    /// every other write here. The arithmetic itself is
+    /// [`clausters_core::edit`], shared with every other process that edits
+    /// samples rather than reimplemented per caller.
+    ///
+    /// `base` is the parse's snapshot and is only a fallback, exactly as in
+    /// [`NrtJob::Set`]: a batch of edits on one buffer is submitted before any
+    /// of them completes, so the runner chains them (see [`NrtChain`]).
+    Edit { base: Arc<Buffer>, op: EditOp },
     /// `/buffer_free`: ordered behind the other jobs (see module docs).
     Free,
+}
+
+/// One destructive edit, parsed. The span is in **frames** — a selection is a
+/// stretch of time across every channel, which is a different unit from the
+/// flat interleaved index `/buffer_set*` speaks.
+#[derive(Debug, Clone, Copy)]
+pub enum EditOp {
+    /// Scale by a factor sweeping `from` to `to` along an envelope shape:
+    /// constant gain, a fade either way, or silence.
+    Gain {
+        start: usize,
+        frames: usize,
+        from: f32,
+        to: f32,
+        shape: i32,
+        curve: f32,
+    },
+    /// Turn the span's frames around, channels untouched inside each frame.
+    Reverse { start: usize, frames: usize },
 }
 
 pub struct NrtRequest {
@@ -138,6 +167,10 @@ impl NrtChain {
             NrtJob::Set { base, writes } if chained => NrtJob::Set {
                 base: self.0.get(&index).cloned().unwrap_or(base),
                 writes,
+            },
+            NrtJob::Edit { base, op } if chained => NrtJob::Edit {
+                base: self.0.get(&index).cloned().unwrap_or(base),
+                op,
             },
             other => other,
         };
@@ -351,6 +384,38 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
                 current.channels(),
                 current.frames(),
                 current.sample_rate(),
+            ))))
+        }
+        NrtJob::Edit { base, op } => {
+            // Copy-and-swap like every write here; the edit itself is the
+            // core's, so a fade sounds the same wherever it is applied.
+            let mut data = base.data().to_vec();
+            let channels = base.channels();
+            let out = match op {
+                EditOp::Gain {
+                    start,
+                    frames,
+                    from,
+                    to,
+                    shape,
+                    curve,
+                } => clausters_core::edit::gain(
+                    &mut data,
+                    channels,
+                    start,
+                    frames,
+                    clausters_core::edit::Fade::from_to(from, to, shape, curve),
+                ),
+                EditOp::Reverse { start, frames } => {
+                    clausters_core::edit::reverse(&mut data, channels, start, frames)
+                }
+            };
+            out.map_err(|e| e.to_string())?;
+            Ok(NrtAction::Install(Arc::new(Buffer::new(
+                data,
+                channels,
+                base.frames(),
+                base.sample_rate(),
             ))))
         }
         NrtJob::Free => Ok(NrtAction::Clear),

@@ -77,6 +77,7 @@ pub mod bundle;
 pub mod bytes;
 pub mod clocksync;
 pub mod config;
+pub mod edit;
 pub mod envshape;
 pub mod fft;
 pub mod measure;

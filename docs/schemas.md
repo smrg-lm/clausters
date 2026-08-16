@@ -586,6 +586,8 @@ Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output 
 /buffer_write     bufnum path [header="wav"] [format="int16"|"int24"|"float"] [numFrames=-1] [startFrame=0]
 /buffer_zero      bufnum
 /buffer_gen       bufnum cmd flags args...  # fill/generate — see the wavetable section
+/buffer_gain      bufnum [start=0] [frames=-1] gain [to=gain] [shape=1] [curve=0]  # scale a span
+/buffer_reverse   bufnum [start=0] [frames=-1]                # turn a span around
 /buffer_set       bufnum [index value]...   # write single samples
 /buffer_setRange  bufnum [start blob]...    # write runs of samples (f32 LE blob)
 /buffer_free      bufnum
@@ -598,7 +600,17 @@ Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output 
 /buffer_render    bufnum frames             →  /done /buffer_render bufnum   # offline sessions only, see below
 ```
 
-`/buffer_alloc`, `/buffer_allocRead`, `/buffer_read`, `/buffer_write`, `/buffer_zero`, `/buffer_gen`, `/buffer_set`, `/buffer_setRange` and `/buffer_free` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/buffer_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/buffer_write` still emits WAV only, and `leaveOpen` (streaming) is not supported. `/buffer_close bufnum` closes the soundfile a streaming buffer left open — scsynth pairs it with `DiskIn`/`DiskOut`; since Clausters has no streaming buffers yet (every `/buffer_read`/`/buffer_write` reads or writes the whole file and closes it), it validates the buffer is live and replies `/done /buffer_close bufnum`, forward-compatible with the streaming UGens.
+`/buffer_alloc`, `/buffer_allocRead`, `/buffer_read`, `/buffer_write`, `/buffer_zero`, `/buffer_gen`, `/buffer_set`, `/buffer_setRange`, `/buffer_gain`, `/buffer_reverse` and `/buffer_free` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/buffer_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/buffer_write` still emits WAV only, and `leaveOpen` (streaming) is not supported. `/buffer_close bufnum` closes the soundfile a streaming buffer left open — scsynth pairs it with `DiskIn`/`DiskOut`; since Clausters has no streaming buffers yet (every `/buffer_read`/`/buffer_write` reads or writes the whole file and closes it), it validates the buffer is live and replies `/done /buffer_close bufnum`, forward-compatible with the streaming UGens.
+
+### The destructive edits (`/buffer_gain`, `/buffer_reverse`)
+
+The verbs an editor applies to a selection. `/buffer_gain bufnum start frames gain [to] [shape] [curve]` scales a span; `/buffer_reverse bufnum start frames` turns one around, frame by frame, so a stereo pair stays a stereo pair.
+
+**Their span is in frames, not in flat sample indices**, which is the one thing to keep straight against `/buffer_set`/`/buffer_setRange` next to them: a selection is a stretch of time across every channel, and every channel of a frame is scaled alike — a fade cannot tilt a stereo image. `frames` of -1 runs to the end, and a span past the end **fails** rather than being clamped, like the rest of the writing family.
+
+One gain value is a constant factor; a second (`to`) makes it a fade, sweeping along `shape` — the [envelope shape numbers](#envelopes) `EnvGen` and the breakpoint editor already speak, with `curve` read only by the custom-curvature shape (5). So a fade in is `0 1`, a fade out `1 0`, and a silence `0 0`, which lands on exact zeros where a fade only tends to its target (the envelope convention: the last frame has not arrived yet). The arithmetic is `clausters_core::edit`, the same function a client or an offline session calls, so a fade sounds identical wherever it is applied.
+
+Like every write here they are asynchronous and **compose in flight**: a batch of edits on one buffer chains, each building on what the queue last produced rather than each on the contents you started with, so three edits fired back to back give the same result as three awaited one at a time.
 
 ### Rendering into a buffer (`/buffer_render`)
 

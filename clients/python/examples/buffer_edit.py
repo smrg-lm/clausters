@@ -24,6 +24,12 @@ each edit audible against the one before:
   of being clamped the way a *read* past the end is: a short read hands back
   less than you asked for and says so, a short write would drop samples you
   believe you stored.
+- **The edits the server does for you.** Everything above pulls samples to the
+  client and pushes them back. `Buffer.gain`, `Buffer.fade`, `Buffer.silence`
+  and `Buffer.reverse` say what the edit *is* and no samples cross the wire at
+  all — which is the difference between editing a table and editing a
+  five-minute take. Their span is in **frames**, not flat indices, because a
+  selection is a stretch of time across every channel.
 
 Each version plays for a bar through `play_buf` before the next edit, so the
 three are heard in a row. Indices are flat across channels, so a stereo buffer
@@ -74,7 +80,7 @@ scan = SynthDef(
         buf_rd(
             control("bufnum", 0.0, "ir"),
             0.0,
-            phasor(0.0, control("freq", 110.0) * FRAMES / 48000.0, 0.0, FRAMES),
+            phasor(0.0, control("freq", 440.0) * FRAMES / 48000.0, 0.0, FRAMES),
             1.0,
         )
         * control("amp", 0.2),
@@ -117,7 +123,7 @@ faded = [s * (1.0 - i / len(samples)) for i, s in enumerate(samples)]
 
 # %%
 def sequence():
-    voice = Synth("table_scan", {"bufnum": buf.bufnum, "freq": 110.0}, server=server)
+    voice = Synth("table_scan", {"bufnum": buf.bufnum, "freq": 440.0}, server=server)
     yield 1.5                                        # the original table
 
     buf.set_samples(reversed_table)                  # inaudible, and that is the point
@@ -151,14 +157,66 @@ def show_the_refusal():
         print("!! the write should have been refused")
 
 
+# %% [markdown]
+# ## Saying what the edit is, instead of moving the samples
+#
+# The verbs above are the client's: read, change in Python, write back. These
+# are the server's — the same edits named rather than performed here, so a
+# five-minute take costs a message instead of a round trip of itself.
+#
+# The span is in **frames**: `start` and `frames` count time across every
+# channel, unlike `set_samples`' flat interleaved index. And they **compose in
+# flight** — fired with `wait=False` they chain on the server, each building on
+# the last, so the three below are one pass over the table and not three
+# read-modify-writes.
+
+# %%
+def edited_by_the_server():
+    """Fade the table in, reverse it, then halve it — heard one after another."""
+    voice = Synth("table_scan", {"bufnum": buf.bufnum, "freq": 440.0}, server=server)
+    yield 1.5                                        # whatever the table holds now
+
+    # `wait=False` because a routine must never block the clock thread on a
+    # reply -- and because these chain on the server, each building on the last.
+    print("fade in")
+    buf.fade(wait=False)
+    yield 1.5
+
+    print("reversed, so the fade now dies instead")
+    buf.reverse(wait=False)
+    yield 1.5
+
+    print("first quarter silenced, on exact zeros")
+    buf.silence(0, FRAMES // 4, wait=False)
+    yield 1.5
+
+    print("and halved, all of it")
+    buf.gain(0.5, wait=False)
+    yield 1.5
+
+    voice.free()
+    yield 0.5
+
+
 # %%
 def run():
-    """Play the three versions, then show what a write refuses."""
+    """Play the three versions, show what a write refuses, then the server's own edits."""
+    # The clock has to be running for a routine to fire: playing one on a
+    # stopped clock queues it forever, silently.
+    session.start()
     Routine(sequence).play(session.clock)
     # The main thread waits while the clock thread plays -- never inside a
     # routine, which runs *on* that thread.
     time.sleep(6.5)
     show_the_refusal()
+    Routine(edited_by_the_server).play(session.clock)
+    time.sleep(8.0)
+    # Proof the server's own edits landed, read back once the routine is done
+    # (a read is a round trip, so it belongs here and not inside the routine).
+    after = buf.get_samples()
+    head = max(abs(x) for x in after[: FRAMES // 4])
+    peak = max(abs(x) for x in after)
+    print(f"after the server's edits: peak {peak:.3f}, silenced quarter {head:.3f}")
     buf.free()
 
 

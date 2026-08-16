@@ -260,3 +260,24 @@ work, where a pending item reads as done.)*
   *When a clip is shortened over notes that are still in the list, the host keeps them — does the model?* **Yes**, and it is the same rule again, now checked rather than assumed: shortening a four-note placement to two renders two events, the element still holds four, and lengthening it back renders four. Non-destructive and reversible, which is the four-layer table's own rule (an edit never writes a source) read at the level of a placement.
 
   What this leaves genuinely open is nothing — but it does leave a **capability** named: a gesture that *materializes* a generator into its rendered notes would be a real editing verb, and it belongs under "Future directions" as one rather than inside the meaning of a resize.
+
+- ⬜ **Ten examples play routines on a clock nobody started, and nothing says
+  so** *(found 2026-08-15 while adding the server-side edit verbs to
+  `buffer_edit.py`: the new cell printed nothing and changed nothing, and the
+  cause was not the new code)*. `Routine(f).play(session.clock)` **queues
+  forever** on a clock that is not running — `TempoClock.play` schedules and
+  `sched` notifies, but neither starts the driver thread, and `Session.start`
+  (or `run`) is what does. The routine sits in state `init`, no exception is
+  raised and nothing is logged, so the failure looks exactly like silence.
+  Eleven examples were written this way and three of them start the clock
+  (`osc_destination`, `transport_freeze`, `gui_pianoroll`), which is what shows
+  the idiom is right and the rest are wrong; `buffer_edit` is fixed with the
+  work that found it, leaving **ten**: `spectral`, `wavetables`,
+  `spectral_kernel`, `multichannel`, `typed_controls`, `pause_resume`,
+  `convolution`, `graph_maths`, `boxes_library`, `spectral_cross`. Their
+  audible half has never run. Two things to decide rather than one: the ten are
+  a mechanical fix each needing an ear check, and separately **whether playing
+  onto a stopped clock should stay silent at all** — a warning the first time
+  would have caught all eleven the day each was written, and the ambient form
+  (`Routine(f).play()`) starts its clock on first use, so the two doors already
+  disagree about what a caller means.

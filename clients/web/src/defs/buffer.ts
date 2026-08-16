@@ -340,6 +340,157 @@ export class Buffer {
     }
 
     /**
+     * The shared body of the destructive edits: fire, or await `/done`.
+     *
+     * They are async like every other write, and they **compose in flight** —
+     * the server chains a batch of edits on one buffer, so several
+     * `wait: false` edits in a row each build on the last rather than each on
+     * the contents you started with.
+     */
+    private async edit(
+        addr: string,
+        rest: MsgArg[],
+        wait: boolean,
+        timeout?: number,
+    ): Promise<void> {
+        const args: MsgArg[] = [["i", this.bufnum], ...rest];
+        if (!wait) {
+            this.srv().sendMsg(addr, ...args);
+            return;
+        }
+        await this.srv().command(addr, args, timeout);
+    }
+
+    /**
+     * Scales a span of this buffer (`/buffer_gain`) — the destructive edit an
+     * editor applies to a selection.
+     *
+     * `start` and `frames` are **frames**, not flat sample indices: a selection
+     * is a stretch of time across every channel, and every channel of a frame
+     * is scaled alike, so a fade can never tilt a stereo image. `frames` of -1
+     * runs to the end.
+     *
+     * One value is a constant gain; give `to` for a fade, which sweeps
+     * `factor` to `to` along `shape` — the same envelope shape numbers `Env`
+     * and the breakpoint editor speak, `curve` read only by the
+     * custom-curvature shape (5). So a fade in is `gain(0, { to: 1 })`, a fade
+     * out `gain(1, { to: 0 })`, and silence is {@link silence}, which lands on
+     * exact zeros where a fade only tends to one.
+     */
+    async gain(
+        factor: number,
+        {
+            start = 0,
+            frames = -1,
+            to,
+            shape = 1,
+            curve = 0,
+            wait = true,
+            timeout,
+        }: {
+            start?: number;
+            frames?: number;
+            to?: number;
+            shape?: number;
+            curve?: number;
+            wait?: boolean;
+            timeout?: number;
+        } = {},
+    ): Promise<void> {
+        await this.edit(
+            "/buffer_gain",
+            [
+                ["i", start],
+                ["i", frames],
+                ["f", factor],
+                ["f", to ?? factor],
+                ["i", shape],
+                ["f", curve],
+            ],
+            wait,
+            timeout,
+        );
+    }
+
+    /**
+     * A fade in over a span, or out with `out: true` — {@link gain}'s two
+     * common cases, spelled the way they are asked for.
+     */
+    async fade({
+        start = 0,
+        frames = -1,
+        out = false,
+        shape = 1,
+        curve = 0,
+        wait = true,
+        timeout,
+    }: {
+        start?: number;
+        frames?: number;
+        out?: boolean;
+        shape?: number;
+        curve?: number;
+        wait?: boolean;
+        timeout?: number;
+    } = {}): Promise<void> {
+        await this.gain(out ? 1 : 0, {
+            start,
+            frames,
+            to: out ? 0 : 1,
+            shape,
+            curve,
+            wait,
+            timeout,
+        });
+    }
+
+    /**
+     * Silences a span, on exact zeros (`/buffer_gain` with both ends at 0).
+     * {@link zero} is the same thing over the whole buffer.
+     */
+    async silence({
+        start = 0,
+        frames = -1,
+        wait = true,
+        timeout,
+    }: {
+        start?: number;
+        frames?: number;
+        wait?: boolean;
+        timeout?: number;
+    } = {}): Promise<void> {
+        await this.gain(0, { start, frames, to: 0, wait, timeout });
+    }
+
+    /**
+     * Reverses a span of this buffer in place (`/buffer_reverse`).
+     *
+     * Frames are reversed, not samples: a stereo pair stays a stereo pair.
+     * `start` and `frames` are frames, `frames: -1` to the end.
+     */
+    async reverse({
+        start = 0,
+        frames = -1,
+        wait = true,
+        timeout,
+    }: {
+        start?: number;
+        frames?: number;
+        wait?: boolean;
+        timeout?: number;
+    } = {}): Promise<void> {
+        await this.edit(
+            "/buffer_reverse",
+            [
+                ["i", start],
+                ["i", frames],
+            ],
+            wait,
+            timeout,
+        );
+    }
+
+    /**
      * Asks the running server what it holds in this slot (`/buffer_query` →
      * `/buffer_query.reply bufnum frames channels sampleRate`), keeps the record on the
      * handle and returns it.

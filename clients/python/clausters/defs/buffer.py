@@ -241,6 +241,66 @@ class Buffer:
         if addr == "/fail":
             raise CommandError(f"/buffer_zero {self.bufnum} failed: {rargs}")
 
+    def _edit(self, addr: str, args: tuple, wait: bool, timeout):
+        """The shared body of the destructive edits: fire, or block on ``/done``.
+
+        They are async like every other write, and they **compose in flight** —
+        the server chains a batch of edits on one buffer, so several
+        ``wait=False`` edits in a row each build on the last rather than each on
+        the contents you started with."""
+        srv = self._server()
+        if self._scored() or not wait:
+            srv.send_msg(addr, self.bufnum, *args)
+            return
+        raddr, rargs = srv.request(addr, self.bufnum, *args, timeout=timeout,
+                                   expect=("/done", "/fail"))
+        if raddr == "/fail":
+            raise CommandError(f"{addr} {self.bufnum} failed: {rargs}")
+
+    def gain(self, factor: float, start: int = 0, frames: int = -1, *,
+             to: "float | None" = None, shape: int = 1, curve: float = 0.0,
+             wait: bool = True, timeout: "float | None" = None):
+        """Scale a span of this buffer (``/buffer_gain``) — the destructive edit
+        an editor applies to a selection.
+
+        ``start`` and ``frames`` are **frames**, not flat sample indices: a
+        selection is a stretch of time across every channel, and every channel
+        of a frame is scaled alike, so a fade can never tilt a stereo image.
+        ``frames`` of -1 runs to the end.
+
+        One value is a constant gain; give ``to`` for a fade, which sweeps
+        ``factor`` to ``to`` along ``shape`` — the same envelope shape numbers
+        `clausters.defs.Env` and the breakpoint editor speak, ``curve`` read
+        only by the custom-curvature shape (5). So a fade in is
+        ``gain(0.0, to=1.0)``, a fade out ``gain(1.0, to=0.0)``, and silence is
+        `silence`, which lands on exact zeros where a fade only tends to one.
+        """
+        to = factor if to is None else to
+        self._edit("/buffer_gain", (start, frames, float(factor), float(to),
+                                    int(shape), float(curve)), wait, timeout)
+
+    def fade(self, start: int = 0, frames: int = -1, *, out: bool = False,
+             shape: int = 1, curve: float = 0.0, wait: bool = True,
+             timeout: "float | None" = None):
+        """A fade in over a span, or out with ``out=True`` — `gain`'s two
+        common cases, spelled the way they are asked for."""
+        self.gain(1.0 if out else 0.0, start, frames, to=0.0 if out else 1.0,
+                  shape=shape, curve=curve, wait=wait, timeout=timeout)
+
+    def silence(self, start: int = 0, frames: int = -1, *, wait: bool = True,
+                timeout: "float | None" = None):
+        """Silence a span, on exact zeros (``/buffer_gain`` with both ends at
+        0). `zero` is the same thing over the whole buffer."""
+        self.gain(0.0, start, frames, to=0.0, wait=wait, timeout=timeout)
+
+    def reverse(self, start: int = 0, frames: int = -1, *, wait: bool = True,
+                timeout: "float | None" = None):
+        """Reverse a span of this buffer in place (``/buffer_reverse``).
+
+        Frames are reversed, not samples: a stereo pair stays a stereo pair.
+        ``start`` and ``frames`` are frames, ``frames=-1`` to the end."""
+        self._edit("/buffer_reverse", (start, frames), wait, timeout)
+
     def info(self, timeout: "float | None" = None) -> BufferInfo:
         """Ask the running server what it holds in this slot (``/buffer_query`` →
         ``/buffer_query.reply bufnum frames channels sampleRate``), keep the record on the

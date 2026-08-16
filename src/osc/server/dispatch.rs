@@ -319,6 +319,10 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_buffer_cmd(addr, m, f);
         Ok(())
     }),
+    ("/buffer_gain", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
     ("/buffer_gen", |s, _, m, f| {
         s.handle_buffer_gen(m, f);
         Ok(())
@@ -338,6 +342,10 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     }),
     ("/buffer_render", |s, _, m, f| {
         s.handle_buffer_render(Args::new(m), f)
+    }),
+    ("/buffer_reverse", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
     }),
     ("/buffer_set", |s, addr, m, f| {
         s.handle_buffer_cmd(addr, m, f);
@@ -593,3 +601,38 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_ugen_query(Args::new(m), f)
     }),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::COMMANDS;
+
+    /// The table is searched with `binary_search_by_key`, so an entry in the
+    /// wrong place is not a style problem: the command becomes **unreachable**,
+    /// answering `unknown command` while sitting right there in the list. A
+    /// misfiled `/buffer_gain` is what this test was written for, and nothing
+    /// else would have caught it — the row exists, the handler compiles, and
+    /// only the lookup fails.
+    #[test]
+    fn the_command_table_is_sorted() {
+        let addrs: Vec<&str> = COMMANDS.iter().map(|(addr, _)| *addr).collect();
+        for pair in addrs.windows(2) {
+            assert!(
+                pair[0] < pair[1],
+                "{} must come before {} in the command table",
+                pair[1],
+                pair[0]
+            );
+        }
+    }
+
+    /// A duplicate would shadow silently: binary search finds one of the two
+    /// and the other is dead code that still reads as wired up.
+    #[test]
+    fn no_command_is_listed_twice() {
+        let mut addrs: Vec<&str> = COMMANDS.iter().map(|(addr, _)| *addr).collect();
+        let before = addrs.len();
+        addrs.sort_unstable();
+        addrs.dedup();
+        assert_eq!(before, addrs.len(), "a command is listed twice");
+    }
+}

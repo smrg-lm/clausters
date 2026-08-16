@@ -134,15 +134,13 @@ prerequisite, and because it is the one whose cost is not the client's.*
   What it did **not** buy: a client still cannot reach a session, so the
   builders and the example wait for whatever gives one a door.
 
-- ⬜ **S12 — Editing does not go through the pool, and its verbs are three**
-  *(root `PLAN.md`)*. Opened 2026-08-15 to make a span write cheap and rewritten
-  the same day around what it settled instead: the editor never writes a take
-  through the RT pool at all, the buffer stays immutable and replaceable, and the
-  verbs are `gain`/`replace`/`reverse` in `clausters-core`, none of them a new
-  algorithm. It is **not** a prerequisite of D1 or D2 in the sense first written
-  — a stroke is heard against a scratch span, which needs no server change and
-  which D4 already does — but it comes before them because those two *emit
-  intents that someone applies*, and this is where what applies them is decided.
+- ✅ **S12 — Editing does not go through the pool, and its verbs are three.**
+  Done 2026-08-15. `clausters_core::edit` plus `/buffer_gain` and
+  `/buffer_reverse` on the wire, with both clients' builders and the example;
+  `replace` needed no command, being `/buffer_setRange` already. None of the
+  verbs is a new algorithm — `gain` rides the same shape math `EnvGen` plays.
+  The half of its acceptance that named a *drawn* edit belongs to D1 and D2,
+  there being no pencil yet, and the plan says so rather than claiming it.
 
 - ⬜ **S15 — `/buffer_fill`, `/buffer_readChannel`, `/buffer_allocReadChannel`**
   *(root `PLAN.md`)*. Three scsynth buffer commands S6 declared shipped and did
