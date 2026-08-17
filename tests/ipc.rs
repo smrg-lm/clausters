@@ -858,13 +858,18 @@ fn a_session_owns_the_material_and_a_player_attaches_to_it() {
         "a session with no device publishes no time"
     );
 
+    let region = clausters::dsp::region::Region::path_for(&path, 1, 1);
     drop(session);
     assert_eq!(
         player_segment.control_owner(),
         None,
         "a session gives the command plane back on the way out"
     );
-
-    let _ = std::fs::remove_file(&path);
-    let _ = std::fs::remove_file(clausters::dsp::region::Region::path_for(&path, 1, 1));
+    // And it takes its material with it: a session that created the segment
+    // owns it, and one left in /dev/shm after the editor is gone is a leak
+    // with a take in it. The player's mapping above stays valid regardless —
+    // unlinked, not deleted.
+    assert!(!path.exists(), "the segment it created is gone");
+    assert!(!region.exists(), "and so is the region beside it");
+    assert_eq!(played.at(9), 0.25, "what was mapped is still readable");
 }

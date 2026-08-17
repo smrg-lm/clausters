@@ -805,13 +805,34 @@ impl Drop for OwnedPlayer {
 fn spawn_player(segment: &Path) -> Result<(OwnedPlayer, String), String> {
     // The binary beside this one, unless an override says otherwise: an
     // editor and its player ship together.
+    let here = std::env::current_exe().ok();
+    let dir = here.as_ref().and_then(|p| p.parent());
     let exe = std::env::var_os("CLAUSTERS_BIN")
         .map(std::path::PathBuf::from)
+        .or_else(|| dir.map(|d| d.join("clausters")).filter(|p| p.is_file()))
+        // The development checkout: this crate is its own workspace, so its
+        // binaries are under `clients/gui/target/<profile>` while the server's
+        // are under the repo's own. Guessed rather than required, because a
+        // person running from a build tree should not have to set a variable
+        // to hear their session.
         .or_else(|| {
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|d| d.join("clausters")))
-                .filter(|p| p.is_file())
+            dir.and_then(|d| {
+                d.parent()?
+                    .parent()?
+                    .parent()?
+                    .parent()
+                    .map(Path::to_path_buf)
+            })
+            .map(|root| {
+                root.join("target")
+                    .join(if cfg!(debug_assertions) {
+                        "debug"
+                    } else {
+                        "release"
+                    })
+                    .join("clausters")
+            })
+            .filter(|p| p.is_file())
         })
         .unwrap_or_else(|| std::path::PathBuf::from("clausters"));
     // A port of its own, so an editor never collides with a server somebody

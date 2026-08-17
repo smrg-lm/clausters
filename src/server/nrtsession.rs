@@ -93,6 +93,11 @@ pub struct NrtSession {
     /// Kept alive for both peers; the ring lives in it, and it is what a
     /// caller hands a player so the two share one material.
     segment: Arc<Segment>,
+    /// The segment file this session **created**, and therefore has to remove:
+    /// a session's material is the session's, and a segment left behind in
+    /// `/dev/shm` after the editor is gone is a leak with a take in it. `None`
+    /// when the segment is on the heap or was somebody else's already.
+    owned_segment: Option<std::path::PathBuf>,
     channels: usize,
     sample_rate: f64,
     /// The one block the engine renders into, allocated once.
@@ -119,6 +124,9 @@ impl NrtSession {
         // same material stay sample-identical (the rule `render` follows).
         crate::dsp::denormals::flush_to_zero();
 
+        // Set when this session *created* the file, which is what decides
+        // whether it is this session's to remove on the way out.
+        let mut owned_segment: Option<std::path::PathBuf> = None;
         // A path makes the segment a file, which is the whole difference
         // between a session nobody else can see and one whose buffers a peer
         // maps by name.
@@ -128,7 +136,7 @@ impl NrtSession {
                 // never writes one: the process that attaches to this segment
                 // *does* have a device, and its scopes and meters need the
                 // rings to be there.
-                let (segment, _) = Segment::open_or_create_full(
+                let (segment, created) = Segment::open_or_create_full(
                     path,
                     cfg.control_buses,
                     DEFAULT_TAPS,
@@ -149,6 +157,7 @@ impl NrtSession {
                         segment.control_owner().unwrap_or(0),
                     ));
                 }
+                owned_segment = created.then(|| path.clone());
                 segment
             }
             None => Segment::in_memory_with(cfg.control_buses),
@@ -197,6 +206,7 @@ impl NrtSession {
             engine,
             peer: IpcPeer::new(Arc::clone(&segment), Role::Client),
             segment,
+            owned_segment,
             channels: cfg.channels,
             sample_rate: cfg.sample_rate,
             block: vec![0.0; BLOCK_SIZE * cfg.channels],
@@ -353,5 +363,29 @@ impl Drop for NrtSession {
         // on this segment adopts it instead of taking it over from a pid that
         // is gone. On a heap segment this is a no-op: nobody else can see it.
         self.segment.release_control();
+        // And a session that created its segment takes it with it, regions
+        // and all. Unlinking leaves every mapping a player still holds valid
+        // until it drops it — the same property freeing one buffer relies on —
+        // so this ends the material rather than pulling it out from under
+        // somebody.
+        let Some(path) = self.owned_segment.take() else {
+            return;
+        };
+        if let Some(dir) = path.parent()
+            && let Some(prefix) = path.file_name().and_then(|n| n.to_str())
+            && let Ok(entries) = std::fs::read_dir(dir)
+        {
+            let region = format!("{prefix}.buf");
+            for entry in entries.flatten() {
+                if entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|n| n.starts_with(&region))
+                {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+        let _ = std::fs::remove_file(&path);
     }
 }
