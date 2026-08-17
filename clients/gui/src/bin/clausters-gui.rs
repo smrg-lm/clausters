@@ -590,7 +590,9 @@ fn run_session(
 
     let mut host = Host::new();
     #[cfg(feature = "standalone")]
-    let bus = attach_server(&mut host, &load, shm, player)?;
+    // The player is held, not used: it is a process this editor may own, and
+    // dropping it is what stops it when the window closes.
+    let (bus, _player) = attach_server(&mut host, &load, shm, player)?;
     #[cfg(not(feature = "standalone"))]
     let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
     #[cfg(not(feature = "standalone"))]
@@ -698,7 +700,7 @@ fn attach_server(
     load: &clausters_gui::host::document::sources::Load,
     shm: Option<String>,
     player: Option<String>,
-) -> Result<Option<Arc<dyn clausters_gui::host::BusSource>>, String> {
+) -> Result<Attached, String> {
     let path = std::path::PathBuf::from(shm.unwrap_or_else(default_segment_path));
     let session = match EmbedSession::open(&path, 48_000.0, 2) {
         Ok(session) => session,
@@ -707,7 +709,7 @@ fn attach_server(
                 "session: no on-demand server ({e}) — the document opens and edits, but takes \
                  will not draw or sound"
             );
-            return Ok(None);
+            return Ok((None, None));
         }
     };
     tracing::info!(
@@ -749,17 +751,82 @@ fn attach_server(
     }
 
     // **The player**, given one: what sounds, records and moves the transport.
-    match attach_player(host, &path, player, &load.takes.bufnums()) {
-        Ok(true) => host.set_owns_transport(true),
-        Ok(false) => tracing::warn!(
-            "session: no player attached — the document opens, draws and edits, and nothing \
-             sounds. Start one with `clausters --shm {}` and pass --server 127.0.0.1:57110",
-            path.display()
-        ),
-        Err(e) => tracing::warn!("session: the player is not usable ({e}); nothing will sound"),
-    }
+    let owned = match attach_player(host, &path, player, &load.takes.bufnums()) {
+        Ok(owned) => {
+            host.set_owns_transport(true);
+            owned
+        }
+        Err(e) => {
+            tracing::warn!(
+                "session: no player ({e}) — the document opens, draws and edits, and nothing \
+                 sounds. Start one yourself with `clausters --shm {}` and pass --server",
+                path.display()
+            );
+            None
+        }
+    };
     host.set_server_link(ServerLink::Session(session));
-    Ok(bus)
+    Ok((bus, owned))
+}
+
+/// A player process this editor started, killed when the editor goes.
+///
+/// An application starts its own engine — the Python client boots a server
+/// when none answers, and this is the same posture: a person who opens a
+/// session wants to hear it, not to arrange two processes by hand. A player
+/// the user started themselves (`--server`) is not owned and not killed.
+#[cfg(feature = "standalone")]
+struct OwnedPlayer(std::process::Child);
+
+/// What a session's servers hand back: the data plane its windows read, and
+/// the player process it owns, if it started one.
+#[cfg(feature = "standalone")]
+type Attached = (
+    Option<Arc<dyn clausters_gui::host::BusSource>>,
+    Option<OwnedPlayer>,
+);
+
+#[cfg(feature = "standalone")]
+impl Drop for OwnedPlayer {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// Starts a player against `segment` and returns where it is listening.
+///
+/// **The segment exists by now**, which is what fixes the ordering: the
+/// editor's session created it and claimed the command plane, so the player
+/// attaches to what is there instead of truncating it and taking the material
+/// with it. Started the other way round it would be the owner, and the session
+/// would refuse to open.
+#[cfg(feature = "standalone")]
+fn spawn_player(segment: &Path) -> Result<(OwnedPlayer, String), String> {
+    // The binary beside this one, unless an override says otherwise: an
+    // editor and its player ship together.
+    let exe = std::env::var_os("CLAUSTERS_BIN")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.join("clausters")))
+                .filter(|p| p.is_file())
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from("clausters"));
+    // A port of its own, so an editor never collides with a server somebody
+    // else is running on the default one.
+    let port = 57310 + (std::process::id() % 200) as u16;
+    let child = std::process::Command::new(&exe)
+        .arg("--shm")
+        .arg(segment)
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--client-name")
+        .arg("clausters-editor")
+        .spawn()
+        .map_err(|e| format!("cannot start a player ({}): {e}", exe.display()))?;
+    Ok((OwnedPlayer(child), format!("127.0.0.1:{port}")))
 }
 
 /// Attaches the player and hands it what it needs to sound a take: the
@@ -774,12 +841,25 @@ fn attach_player(
     segment: &Path,
     player: Option<String>,
     takes: &[i32],
-) -> Result<bool, String> {
-    let Some(spec) = player else {
-        return Ok(false);
+) -> Result<Option<OwnedPlayer>, String> {
+    // A player the user started is used as it is; with none named, the editor
+    // starts one of its own — it is an application, and an application does
+    // not ask you to arrange its processes by hand.
+    let (owned, spec) = match player {
+        Some(spec) => (None, spec),
+        None => {
+            let (owned, spec) = spawn_player(segment)?;
+            (Some(owned), spec)
+        }
     };
     let target = resolve(&spec)?;
     let leg = ServerLeg::connect(target).map_err(|e| format!("player leg: {e}"))?;
+    // A spawned player takes a moment to bind its socket, and every message
+    // below would land in nothing. Wait for it to answer before saying it is
+    // there — three seconds is a boot, not a hang.
+    if owned.is_some() {
+        await_player(&leg)?;
+    }
     tracing::info!(
         "session: player at {} (it holds the devices; the material stays at {})",
         leg.target(),
@@ -807,7 +887,32 @@ fn attach_player(
         .map_err(|e| e.to_string())?;
     }
     host.set_player_link(ServerLink::Udp(leg));
-    Ok(true)
+    Ok(owned)
+}
+
+/// Waits for a freshly started player to answer, so nothing is sent into a
+/// socket that is not listening yet.
+#[cfg(feature = "standalone")]
+fn await_player(leg: &ServerLeg) -> Result<(), String> {
+    use std::time::{Duration, Instant};
+
+    let socket = leg.socket();
+    socket
+        .set_read_timeout(Some(Duration::from_millis(200)))
+        .map_err(|e| e.to_string())?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut buf = [0u8; 4096];
+    while Instant::now() < deadline {
+        leg.send(OscMessage {
+            addr: "/server_status".into(),
+            args: vec![],
+        })
+        .map_err(|e| e.to_string())?;
+        if socket.recv_from(&mut buf).is_ok() {
+            return Ok(());
+        }
+    }
+    Err("the player did not answer within 3s".into())
 }
 
 /// Where an editor puts its segment when nobody said: a memory filesystem if
