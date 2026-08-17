@@ -1189,7 +1189,16 @@ class Editor:
         anything — the snap, the clamp and the refusal already happened in the
         crate — so this is a projection and not a second implementation of what
         an edit means. It is also the whole of what an undo has to do, since an
-        inverse is an ordinary intent."""
+        inverse is an ordinary intent.
+
+        It also keeps the **drawn record** in step, which the clip route does
+        for itself after a drag (*"keep the registry truthful, or the next edit
+        would measure its move against a stale placement"*). An undo reaches
+        the arrangement through here and nowhere else, so without it the
+        registry still held the position the hand dropped the clip at -- and a
+        correction is read straight out of that registry, so an undo moved the
+        model, told the host to go on drawing the clip exactly where it was,
+        and looked like a dead button."""
         found = self._by_node.get(int(intent.get("node", -1)))
         if found is None:
             return None
@@ -1218,7 +1227,14 @@ class Editor:
                 return None
         else:
             return None
-        return self._widget_of(element, member)
+        wid = self._widget_of(element, member)
+        placed = self._clips.get(wid) if wid is not None else None
+        if placed is not None and member is not None:
+            placed.offset = self.beats_to_units(member.offset + placed.base)
+            length = member.length
+            if length is not None:
+                placed.dur = self.beats_to_units(float(length))
+        return wid
 
     def _set_placements(self, group, members: list) -> bool:
         """A `setmembers` onto a `Group`: the placements as the document states

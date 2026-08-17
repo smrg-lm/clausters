@@ -1232,12 +1232,19 @@ def test_an_undo_tells_the_host_what_to_draw_instead():
     host = _FakeHost()
     ed.open(host)
     roll = clips(lanes(ed.draw())[1])[0]
+    drawn_at = ed._clips[roll["id"]].offset      # where the host drew it
 
     ed.apply(*clip_event(roll["id"], 5 * BEAT, 2 * BEAT))
     host.acks.clear()
     assert ed.undo()
-    corrected = {wid for _seq, sets in host.acks for wid, _props in sets}
-    assert roll["id"] in corrected, "the undo answered with a value, not only a stamp"
+    corrections = {wid: props for _seq, sets in host.acks for wid, props in sets}
+    assert roll["id"] in corrections, "the undo answered with a value, not only a stamp"
+    # **And the value is the restored one.** Asserting only *which* widget was
+    # answered passed for months while the answer said "keep drawing it where
+    # the hand dropped it": a correction is read out of the drawn registry, and
+    # the undo path moved the placement without keeping that registry in step.
+    # Model undone, picture unchanged, and the button read as dead.
+    assert corrections[roll["id"]]["offset"] == pytest.approx(drawn_at)
 
 
 def test_the_windows_undo_shortcut_reaches_the_history():
