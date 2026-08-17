@@ -161,12 +161,28 @@ def _emit_sequence(wrapped, base: float, out: list):
     from ..seq.pattern import Pattern
     from ..seq.timeline import Timeline
 
+    if wrapped is None or isinstance(wrapped, str):
+        # A **frozen** generator: the document named an algorithm and nothing in
+        # this process supplied one, so what came back is the reference itself
+        # (or nothing at all). It is structure — it draws, it contributes its
+        # extent — and it emits no event, exactly as a buffer with no instrument
+        # does. Raising here instead would make a reopened session unplayable
+        # because one lane in it was written by a script that is not running.
+        return
     if isinstance(wrapped, Pattern):
         for beat, item in Timeline.from_pattern(wrapped):
             out.append((base + beat, item))
     elif isinstance(wrapped, Timeline):
         for beat, item in wrapped:
             out.append((base + beat, item))
+    elif hasattr(wrapped, "play"):
+        # Something that plays itself -- an automation curve, and whatever else a
+        # script hands over. The conversion writes every element it has no body
+        # for as a *generator* leaf, so resolving one back on open gives a
+        # `Generator` where the author wrote a bare `Element`; the two must play
+        # the same thing or a reopened piece would sound different from the one
+        # that was saved.
+        out.append((base, wrapped))
     else:
         cursor = base
         for item in wrapped:

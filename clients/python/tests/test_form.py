@@ -246,6 +246,30 @@ def test_a_buffer_without_an_instrument_has_no_sound_of_its_own():
         Buffer(object()).to_event()
 
 
+def test_a_frozen_generator_is_structure_and_emits_nothing():
+    # What a session reopened somewhere the script is not running holds: the
+    # document named an algorithm and nobody could supply one, so the element
+    # carries the reference (or nothing). It draws and contributes its extent
+    # like a buffer with no instrument, and flattening it emits no event --
+    # raising instead would make the whole piece unplayable over one lane.
+    frozen = Group([(0.0, Sequence("<Pbind object>")), (0.0, Generator(None))])
+    assert flatten(frozen) == []
+
+
+def test_a_resolved_leaf_plays_the_same_whichever_element_holds_it():
+    # The conversion writes an element it has no body for as a generator leaf,
+    # so opening one back gives a `Generator` where the author wrote a bare
+    # `Element`. Both flatten to the same thing, or a reopened piece would sound
+    # different from the one that was saved.
+    class _Plays:
+        def play(self, dest):
+            pass
+
+    material = _Plays()
+    assert (flatten(Group([(1.0, Generator(material))]))
+            == flatten(Group([(1.0, Element(material))])))
+
+
 def test_render_bare_abstract_is_an_error():
     with pytest.raises(ValueError):
         Element().render(None, None)

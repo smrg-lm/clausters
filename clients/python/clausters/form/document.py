@@ -297,7 +297,13 @@ def _body(element, ids: _Ids) -> dict:
     # through the document -- an arrangement is free to hold an element kind the
     # conversion predates, and refusing to convert would make the whole
     # composition unde-editable because one leaf in it is unfamiliar.
-    return _with_config({"kind": "generator"}, {"element": _reference(element.wraps)})
+    # Under the **same config key** a `Generator` writes, because this is the
+    # same body kind and the key is what a reader resolves on: writing a second
+    # name for it made a round trip change the leaf's key (`element` on the way
+    # out of a hand-written tree, `generator` on the way out of the one that
+    # came back), so a resolver that recognized the material once stopped
+    # recognizing it on the second open.
+    return _with_config({"kind": "generator"}, {"generator": _reference(element.wraps)})
 
 
 def _preserved(element):
@@ -435,7 +441,10 @@ def _element(node: dict, resolve):
     elif kind == "generator":
         rendered = node.get("rendered")
         built = Generator(
-            _resolved(resolve, "generator", config) or config.get("generator"),
+            _resolved(resolve, "generator", config)
+            # `element` is what this client wrote for a leaf it had no body for
+            # before the two keys became one; a file carrying it still opens.
+            or config.get("generator") or config.get("element"),
             onset=onset,
             duration=duration,
             controls=config.get("controls"),

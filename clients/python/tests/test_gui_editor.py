@@ -318,17 +318,23 @@ def test_a_note_edited_in_a_clip_body_reaches_the_arrangement():
     assert any(isinstance(it, OscEvent) for _b, it in items)
 
 
-def test_a_generator_clip_body_is_read_only():
+def test_a_generator_clip_body_is_read_only_and_the_refusal_says_why():
     from clausters.seq.pattern import Pbind, Pseq
 
     gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
     ed = editor(Group([(0.0, Group([(0.0, gen)], name="bass"))], name="song"))
+    host = _FakeHost()
+    ed.open(host)
     (lane,) = lanes(ed.draw())
     (roll,) = clips(lane)
     # It draws the notes it will play, but there is no timeline to write onto.
     assert roll["notes"]
     assert ed.apply("/gui_event", [roll["id"], SEQ, UNSTATED, "notes", 0.0, BEAT, 65, 100, 0]) is False
     assert ed.dirty is False
+    # The note springs back -- and the answer says why, or a body that refuses
+    # every drag teaches "sometimes it does not work" rather than "not here".
+    _, _, reason = host.answers[-1]
+    assert reason and "generator" in reason
 
 
 def test_a_layered_clip_routes_a_note_edit_to_the_member_that_carries_it():
@@ -596,6 +602,51 @@ def test_a_cut_removes_the_placement_and_undo_puts_it_back():
     assert len(placed.owner.handles) == before, "undo puts the placement back"
 
 
+def test_follow_reschedules_what_is_playing_and_starts_nothing():
+    """`follow` means *what is sounding follows the edit*. Found by dragging a
+    clip in the whole-loop example with the transport stopped: the drag pressed
+    play. An edit is not a transport action, and a stopped piece stays stopped —
+    the edit marks the composition and the next play reads it."""
+    class _Transport:
+        playing = False
+
+    ed = editor(follow=True)
+    ed.transport = _Transport()           # the one thing the guard reads
+    ed._destination = object()            # as the first play would have left it
+    passes = []
+    ed.rerender = lambda **kw: passes.append(kw)
+
+    ed._changed()
+    assert passes == [], "an edit while stopped must not start a pass"
+    assert ed.dirty is True, "but it is remembered, so the next play reads it"
+
+    ed.transport.playing = True
+    ed._changed()
+    assert len(passes) == 1, "what is sounding does follow the edit"
+
+
+def test_a_redo_tells_the_host_where_the_clip_now_is():
+    """Found by hand: redo moved the model and the picture only caught up on the
+    *next* undo — one step behind, which reads as a history that stopped
+    working. A redo adopts the whole document rather than projecting intents, so
+    it has to keep the **drawn record** in step the way the undo path does: a
+    correction is read straight out of that registry."""
+    ed = editor()
+    host = _FakeHost()
+    ed.open(host)
+    wid = clips(lanes(ed.draw())[0])[0]["id"]
+    placed = ed._clips[wid]
+
+    ed.apply("/gui_event", [wid, SEQ, UNSTATED, "clip", 2.0 * BEAT, placed.dur])
+    assert placed.member.offset == pytest.approx(2.0)
+    ed.undo()
+    ed.redo()
+    assert placed.member.offset == pytest.approx(2.0), "the model went forward"
+    (_seq, sets) = host.acks[-1]
+    assert dict(sets)[wid]["offset"] == pytest.approx(2.0 * BEAT), \
+        "and the host was told so"
+
+
 def test_a_cut_across_a_clip_is_refused_with_its_reason():
     """A selection cutting *through* a clip implies a new length for the
     material under it, which is not a placement edit. The refusal says so
@@ -745,6 +796,24 @@ def test_editing_the_curve_in_place_writes_it_back_onto_the_automation():
     # And the redraw shows what was dropped.
     assert clips(lanes(ed.draw())[0])[0]["points"][4:6] == pytest.approx(
         [3 * BEAT, 3000.0])
+
+
+def test_editing_the_curve_refills_the_control_buffer_it_is_played_from():
+    """Found by ear: the drawn curve changed and the sweep sounded the same.
+
+    An `Automation`'s `Env` is its source of truth, but what the lane synth
+    reads is the **control buffer** `prepare` filled once — so rewriting the
+    envelope alone changes what the next render schedules and not what it
+    sounds."""
+    song, auto = automation_song()
+    ed = editor(song)
+    (curve,) = clips(lanes(ed.draw())[0])
+    refills = []
+    auto.refill = lambda **kw: refills.append(kw)
+
+    ed.apply("/gui_event", [curve["id"], SEQ, UNSTATED, "points",
+                            0.0, 200.0, 1, 0.0, 4 * BEAT, 900.0, 1, 0.0])
+    assert refills, "the buffer the curve is played from follows the curve"
 
 
 def test_an_envelope_attached_to_its_event_is_one_clip_that_moves_as_one():

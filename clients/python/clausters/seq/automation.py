@@ -143,6 +143,24 @@ class Automation:
             self.bus = Bus.control(server=server)
         return self
 
+    def refill(self, *, wait: bool = False) -> "Automation":
+        """Re-fill the control buffer from the curve **as it now stands**.
+
+        `prepare` fills it once, at setup; an edit to `env` afterwards changes
+        what the next render *schedules* and not what the lane synth *reads*, so
+        without this the curve you draw is not the curve you hear. Anything that
+        rewrites the envelope of a prepared automation calls it — the multitrack
+        editor does, on every break-point edit.
+
+        Not blocking by default: it is called from a UI loop, and the fill is
+        one command the server applies in the order it arrived, ahead of the
+        synth that reads it. Does nothing before `prepare` — there is no buffer
+        to fill, and the first `prepare` will fill it from the same envelope."""
+        if self.buf is None or self._server is None:
+            return self
+        self.buf.gen("env", *_env_gen_args(self.env), wait=wait)
+        return self
+
     def play(self, destination):
         """Timeline-item hook and interactive trigger: schedule the lane synth,
         ``/node_map`` the targets, and free the synth after the curve's duration.

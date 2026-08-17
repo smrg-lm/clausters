@@ -35,14 +35,14 @@ from .. import _native
 from .handle import WindowHandle
 from ..form.document import FIRST_VERSION, ID_ATTR, to_document
 from ..form.group import CONCRETE, LOGICAL, SIMULTANEOUS, Group
-from ..form.element import Buffer, Element
+from ..form.element import Buffer, Element, Event as FormEvent
 from ..defs.ugens import points_to_env
 from ..form.render import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from ..seq.timeline import MidiEvent, OscEvent, Timeline
-from .guidef import (_flat_notes, clip, patch, pianoroll, scroll, timeruler,
-                     track, waveform, window)
+from .guidef import (_flat_notes, _flat_points, clip, patch, pianoroll,
+                     scroll, timeruler, track, waveform, window)
 from .transport import Transport
 
 __all__ = ["Editor"]
@@ -704,6 +704,24 @@ class Editor:
             # algorithm, so the edit is refused -- and the refusal is the notes
             # as they still are, sent back so the host stops drawing the one the
             # hand moved. This is the case that used to be silent.
+            #
+            # It says **why**, which is the whole of what the reason is for: a
+            # note that springs back with nothing attached teaches "sometimes it
+            # does not work" rather than "not here". (The picture still moves
+            # under the hand and snaps back, because nothing tells the host this
+            # body is read-only *before* the gesture -- a widget capability the
+            # protocol does not carry yet.) Two different things are read-only
+            # here and naming the wrong one is worse than naming none: a
+            # **generator**'s notes are a rendering of an algorithm, while a
+            # single placed **event** has no timeline to write onto at all --
+            # its position is the placement's, so the clip is what moves.
+            self._reason = (
+                "this clip draws what a generator produced; render it to a "
+                "track to edit its notes"
+                if _editable_timeline(element) is None
+                and not isinstance(element, FormEvent)
+                else "this clip is one placed event; drag the clip to move it, "
+                     "a track is what holds editable notes")
             self._correct(int(args[0]), notes=_flat_notes(self._notes(element)))
             return False
         if int(args[0]) in self._patches:
@@ -809,6 +827,15 @@ class Editor:
         placed = self._clips.get(widget_id)
         if placed is not None:
             props.update(offset=placed.offset, dur=placed.dur)
+            auto = _automation(placed.member.element if placed.member is not None
+                               else self.element)
+            if auto is not None:
+                # A curve is as much of "what this widget should be drawing" as
+                # a placement is, and an undone one is the case that needs it:
+                # nothing else would tell the host the break-points moved back.
+                props["points"] = _flat_points(
+                    [(self.beats_to_units(t), v, shape, curve)
+                     for t, v, shape, curve in _quads(auto.to_points())])
         element = self._rolls.get(widget_id)
         if element is not None:
             props["notes"] = _flat_notes(self._notes(element))
@@ -984,14 +1011,22 @@ class Editor:
         element's `clausters.seq.Automation`, with their times converted from
         timeline units to beats. The `Env` is the automation's source of truth, so
         this *is* the edit — the next render plays the curve as drawn."""
-        auto = _automation(placed.member.element if placed.member is not None
-                           else self.element)
+        element = (placed.member.element if placed.member is not None
+                   else self.element)
+        auto = _automation(element)
         if auto is None or not values:
             return False
         flat = []
         for t, v, shape, curve in _quads(list(values)):
             flat += [self.units_to_beats(t), float(v), int(shape), float(curve)]
         auto.env = points_to_env(flat)
+        # The `Env` is the source of truth and the **control buffer is what the
+        # lane synth reads**, filled once by `prepare`. Rewriting the envelope
+        # alone changes what the next render schedules and not what it sounds,
+        # so the curve on screen and the sweep in the air drift apart from the
+        # first edit. Not blocking: this runs in the script's poll loop, and the
+        # fill is one command the server applies before the synth that reads it.
+        auto.refill()
         self._changed()
         return True
 
@@ -1207,13 +1242,8 @@ class Editor:
         if kind == "place" and owner is not None and member is not None:
             owner.move(member, float(intent["offset"]), intent.get("dur"))
         elif kind == "configure":
-            auto = _automation(element)
-            if auto is None:
+            if not self._configure(element, intent.get("config") or {}):
                 return None
-            flat = intent.get("config", {}).get("points")
-            if flat is None:
-                return None
-            auto.env = points_to_env(list(flat))
         elif kind == "setmembers":
             members = intent.get("members", [])
             # Two things carry members and they are not the same thing: a
@@ -1227,6 +1257,33 @@ class Editor:
                 return None
         else:
             return None
+        return self._redrawn(element, member)
+
+    def _configure(self, element, config: dict) -> bool:
+        """Write a leaf's configuration onto what the arrangement holds.
+
+        One curve, one door: the projection of an inverse, the adoption of a
+        redone document and the edit itself all land here, so the envelope the
+        script holds, the buffer it sounds through and the picture cannot
+        disagree about which of the three happened."""
+        auto = _automation(element)
+        flat = config.get("points")
+        if auto is None or flat is None:
+            return False
+        auto.env = points_to_env(list(flat))
+        auto.refill()
+        return True
+
+    def _redrawn(self, element, member) -> "int | None":
+        """Bring the **drawn record** of one placement back in step with the
+        arrangement, and say which widget draws it.
+
+        Every path that moves a placement without a gesture ends here — an
+        inverse projected onto the tree, a whole document adopted after a redo —
+        because a correction is read straight out of this registry
+        (`_resync`). A path that moved the model and left the record behind
+        tells the host to go on drawing the clip exactly where it was, which is
+        indistinguishable from a dead button."""
         wid = self._widget_of(element, member)
         placed = self._clips.get(wid) if wid is not None else None
         if placed is not None and member is not None:
@@ -1365,7 +1422,12 @@ class Editor:
                 if handle is not None and owner is not None:
                     owner.move(handle, float(member.get("offset", 0.0)),
                                member.get("dur"))
-                    wid = self._widget_of(element, handle)
+                    # The drawn record moves with the tree, exactly as it does
+                    # on the undo path: without this a redo moved the model and
+                    # told the host to keep drawing the clip where it was, so
+                    # the picture only caught up on the *next* undo -- one step
+                    # behind, which reads as a history that has stopped working.
+                    wid = self._redrawn(element, handle)
                     if wid is not None:
                         widgets.add(wid)
             for placed in node.get("members", []) or []:
@@ -1395,13 +1457,19 @@ class Editor:
         """Re-schedule after an edit when `follow` is on **and there is
         something to re-schedule**.
 
-        The guard is the whole of it: `rerender` needs a destination and a
-        clock, which only a `render` or a `play` supplies, so a live editor
-        edited before anything was ever played used to raise on the first drag.
-        An edit made before the first play is not lost by doing nothing here --
-        it marked the composition (`dirty`), and the next play re-reads it,
-        because rendering always re-flattens the tree."""
-        if self.follow and self._destination is not None:
+        The guard is the whole of it, and it has two halves. `rerender` needs a
+        destination and a clock, which only a `render` or a `play` supplies, so
+        a live editor edited before anything was ever played used to raise on
+        the first drag. And what `follow` means is *what is sounding follows the
+        edit* -- so it re-schedules a pass in flight and *starts* nothing: an
+        edit made while the transport is stopped (or after a pass ran out) would
+        otherwise have the drag itself press play, which is a window that plays
+        itself by another route.
+
+        An edit not re-scheduled here is not lost: it marked the composition
+        (`dirty`), and the next play re-reads it, because rendering always
+        re-flattens the tree."""
+        if self.follow and self._destination is not None and self.transport.playing:
             self.rerender()
 
     def poll(self, timeout: float = 0.0) -> bool:
