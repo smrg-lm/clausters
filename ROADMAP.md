@@ -97,6 +97,12 @@ running that example, and none of it is guessed at.*
   pass on the fixed example that still loses drawing: the trace says the host
   redraws what it is handed, and says nothing about a tree that is handed less.
 
+**Phase 1 is closed**, and its acceptance was run by hand rather than claimed:
+three save/open cycles over the four-lane piece, every lane keeping its label,
+its body and its material. What it leaves behind is one diagnosis rather than a
+fix — the host was not at fault — and the next rewrite of this file drops the
+phase entirely, since the plans' checkboxes and the history already carry it.
+
 **Not in this phase, and it is the one judgement call here:** *"May one element
 be placed twice, and what does an intent name if it is?"* (document plan, Open
 decisions) with its defect *"Two placements of one element share a node id"*.
