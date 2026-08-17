@@ -45,6 +45,18 @@ An attached server maps every live row at startup, and a buffer the owner alloca
 
 **And the clocks belong to the device.** The header's sample clock and transport counters are written by the process running an audio device; a session with no device never writes them, whether or not it owns the segment. So in an editor's arrangement the owner (the on-demand session) publishes the material and the attached RT server publishes the time, and a playhead reads a counter that means what it says.
 
+### What each layout version changed
+
+`ABI_VERSION` is refused on mismatch rather than negotiated, so what a number means is worth having written down — and **here** rather than beside the constant, where a changelog in a doc comment is a changelog nobody updates.
+
+| v | What changed |
+|---|---|
+| 5 | the **embed C ABI**, not the segment: `clausters_render` grew a `seed` in pointer form (NULL for a fresh take, a seed to repeat one) and out pointers for the score's event count and the seed it actually used |
+| 6 | the **transport clock** beside the sample clock, so a local peer reads what the transport has elapsed with a load. In what was reserved header space, so no offset moved |
+| 7 | a **peer tag** on every ring frame, so one segment carries several independent clients. Nothing in the header or the data plane moved — only the framing inside the rings |
+| 8 | the **transport position** beside the transport clock: a second quantity, not a redefinition (see above). The last of the reserved header space, so again no offset moved |
+| 9 | the **buffer directory** as the segment's tail, and the **control-plane owner** in the word that kept `transport_clock` aligned. A trailing region and a repurposed pad, so nothing before either moved — and the header had no room left for a row count, which is why the count is what remains of the mapped length |
+
 ### One definition, and the readers that follow it
 
 The layout above is **`clausters-core`'s** (`clausters_core::shm`), and every process that touches a segment reads it from there: the server that writes it, the GUI host, and — through the C ABI (`clausters_core_shm_*`, see [`bindings.md`](bindings.md)) — a `ctypes` or N-API client. What each one still does for itself is *getting* the memory: `mmap` of a file, a heap allocation, Python's `mmap`. That is the genuinely platform-shaped part, and it is the only part.
