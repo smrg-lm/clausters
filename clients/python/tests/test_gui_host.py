@@ -73,6 +73,46 @@ def test_open_assigns_missing_widget_ids_in_place():
     assert slider["id"] == 7
 
 
+def test_a_redraw_keeps_named_handlers_and_refreshes_the_handle():
+    """Found by running `gui_daw.py`: pressing *open* left every button in the
+    window dead.
+
+    An editor redrawing its window (`Editor.load`) re-defines the same root.
+    That returns the old subtree's ids to the pool and takes fresh ones, so a
+    callback registered under an old id is orphaned -- and a handle captured
+    before the redraw resolves every name to an id that no longer means it.
+    Both are fixed by the same rule: a callback and a name belong to the
+    *widget*, not to the number it happened to carry.
+    """
+    from clausters.gui import guidef
+
+    host = GuiHost("127.0.0.1", 57997)
+    host._osc = _Recorder()
+    fired = []
+    win = host.open(guidef.window(guidef.button(name="play"),
+                                  guidef.button(name="stop")))
+    win["play"].on_event(lambda value: fired.append(("play", value)))
+    old_play = win["play"].id
+
+    # The same window, drawn again from a fresh tree (no ids of its own).
+    again = host.define(win, guidef.window(guidef.button(name="play"),
+                                           guidef.button(name="stop"),
+                                           guidef.button(name="undo")))
+
+    assert again is win, "one window is one handle"
+    assert win["play"].id != old_play, "the redraw took a fresh id"
+    assert win["undo"], "and the handle resolves what the redraw added"
+
+    # The handler follows the name onto the new id.
+    host.dispatch("/gui_event", [win["play"].id, 1, 0, 1])
+    assert fired == [("play", 1)]
+
+    # And nothing answers for the id the redraw gave back.
+    fired.clear()
+    host.dispatch("/gui_event", [old_play, 2, 0, 1])
+    assert fired == []
+
+
 def test_a_non_integer_widget_id_is_refused():
     from clausters.gui import guidef
 

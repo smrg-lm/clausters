@@ -109,6 +109,11 @@ export class GuiHost {
      */
     private readonly children = new Map<number, number[]>();
     /**
+     * Window id → the handle handed out for it, so a redraw refreshes it
+     * in place instead of orphaning the caller's copy.
+     */
+    private readonly handles = new Map<number, WindowHandle>();
+    /**
      * The stamp of the last `/gui_event` seen — what `ack` answers. The host
      * numbers every edit it emits so an owner's reply can name which one it is
      * about; zero means nothing has arrived yet.
@@ -214,11 +219,37 @@ export class GuiHost {
      * ids return to the pool first, mirroring the host freeing it).
      */
     define(id: number, tree: GuiNode, blobs: readonly Uint8Array[] = []): WindowHandle {
-        if (this.children.has(id)) this.recycleSubtree(id, true);
+        const previous = this.handles.get(id);
+        const inherited = new Map<string, (...args: EventArgs) => void>();
+        const rootHandler = this.onEventHandlers.get(id);
+        if (this.children.has(id)) {
+            if (previous !== undefined) {
+                for (const name of previous.widgetNames()) {
+                    const wid = previous.widget(name).id;
+                    const func = this.onEventHandlers.get(wid);
+                    if (func !== undefined) inherited.set(name, func);
+                }
+            }
+            this.recycleSubtree(id, true);
+        }
         const names = new Map<string, number>();
         this.register(tree, id, names);
+        // A redraw takes fresh ids from the pool, so a handler kept under the
+        // old id would be orphaned -- or fire for whatever widget inherited
+        // that number. A callback belongs to the widget the *name* points at.
+        if (rootHandler !== undefined) this.onEventHandlers.set(id, rootHandler);
+        for (const [name, func] of inherited) {
+            const wid = names.get(name);
+            if (wid !== undefined) this.onEventHandlers.set(wid, func);
+        }
         this.send("/gui_def", ["i", id], toJson(tree), ...blobs);
-        return new WindowHandle(this, id, names);
+        if (previous !== undefined) {
+            previous.refreshNames(names);
+            return previous;
+        }
+        const handle = new WindowHandle(this, id, names);
+        this.handles.set(id, handle);
+        return handle;
     }
 
     /**
@@ -261,6 +292,7 @@ export class GuiHost {
         this.onEventHandlers.delete(id);
         if (keepRoot) return;
         this.onClosedHandlers.delete(id);
+        this.handles.delete(id);
         this.alloc.free(id);
     }
 

@@ -61,7 +61,7 @@ from clausters.defs import (
 )
 from clausters.form import Buffer, Group, Track
 from clausters.form.document import from_session, to_session
-from clausters.gui import Editor, button, panel
+from clausters.gui import Editor, button, label, panel
 from clausters.seq import Timeline
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.pattern import Pbind, Pseq
@@ -102,7 +102,9 @@ folder = Path(tempfile.mkdtemp(prefix="clausters-daw-"))
 # %%
 wav = folder / "take.wav"
 offline = Session.nrt(tempo=TEMPO)
-offline.play(Pbind(midinote=Pseq([36], 1), dur=2.0, legato=1.0, amp=0.3))
+# One octave under the melody rather than three: the take has to be *heard*
+# moving when a clip is dragged, and a low C mostly makes the speaker move.
+offline.play(Pbind(midinote=Pseq([60], 1), dur=2.0, legato=1.0, amp=0.3))
 offline.render(sample_rate=SR, channels=1, path=str(wav))
 buf = ServerBuffer.read(str(wav), server=server)
 print(f"bounced and loaded {wav.name}: buffer {buf.bufnum}")
@@ -157,7 +159,7 @@ def save():
     document = to_session(editor.element, sources=sources,
                           provenance={"script": "gui_daw.py"})
     SESSION_FILE.write_text(json.dumps(document, indent=2))
-    print(f"saved {SESSION_FILE} ({len(SESSION_FILE.read_text())} bytes)")
+    say(f"saved {SESSION_FILE} ({len(SESSION_FILE.read_text())} bytes)")
 
 
 def reopen():
@@ -173,7 +175,7 @@ def reopen():
     refusing).
     """
     if not SESSION_FILE.exists():
-        return print("nothing saved yet — press save first")
+        return say("nothing saved yet — press save first")
     raw = json.loads(SESSION_FILE.read_text())
     table = {int(k): v for k, v in (raw.get("sources") or {}).items()}
 
@@ -186,8 +188,8 @@ def reopen():
 
     element, sources = from_session(raw, resolve=resolve)
     editor.load(element)
-    print(f"opened {SESSION_FILE.name}: {len(element)} lanes, "
-          f"{len(sources)} source(s) resolved — history cleared, node ids kept")
+    say(f"opened {SESSION_FILE.name}: {len(element)} lanes, "
+        f"{len(sources)} source(s) resolved — history cleared, node ids kept")
 
 
 # %% [markdown]
@@ -203,7 +205,21 @@ bar = panel(button(name="play", label="play"),
             button(name="redo", label="redo"),
             button(name="save", label="save"),
             button(name="open", label="open"),
+            label("", name="status", align="left"),
             layout="row", h=34.0)
+
+
+def say(message: str):
+    """Report in the **window**, not only on stdout.
+
+    A GUI example is read where it is looked at: an interactive step whose
+    only feedback is a `print` reports to a terminal the person pressing the
+    button may not have in front of them -- which is exactly how *save* came
+    back as "I don't know what it wrote or where".
+    """
+    print(message)
+    if editor.window is not None:
+        editor.window["status"].set(text=message)
 
 gui = session.gui()
 editor = Editor(song, sample_rate=SR, tempo=TEMPO, quant=QUANT,
@@ -212,7 +228,24 @@ win = editor.open(gui)
 session.start()
 
 press = lambda fn: (lambda value: fn() if value == 1 else None)  # noqa: E731
-win["play"].on_event(press(lambda: editor.play(server, session.clock)))
+
+
+def play():
+    """Play from the top when the last pass ran out.
+
+    The transport **parks at the end** of a pass rather than rewinding
+    (`clausters.gui.transport`), so a bare play from there starts at the end
+    and sounds nothing — which reads as a dead button unless you know to press
+    stop first. A transport bar is not a puzzle, so this rewinds for you; the
+    parking itself is right, and is what lets a pause resume where the music
+    got to.
+    """
+    if editor.transport.extent is not None and editor.transport.at >= editor.transport.extent():
+        editor.locate(0.0)
+    editor.play(server, session.clock)
+
+
+win["play"].on_event(press(play))
 win["stop"].on_event(press(editor.stop))
 win["undo"].on_event(press(editor.undo))
 win["redo"].on_event(press(editor.redo))

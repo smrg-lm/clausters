@@ -15,9 +15,10 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
-import { loadOsc } from "../src/base/osc.ts";
+import type { Connection } from "../src/base/connection.ts";
+import { encodeMessage, loadOsc } from "../src/base/osc.ts";
 import { GuiHost } from "../src/gui/host.ts";
-import { knob, label, panel, slider, waveform, window } from "../src/gui/guidef.ts";
+import { button, knob, label, panel, slider, waveform, window } from "../src/gui/guidef.ts";
 import { BASE_ID } from "../src/gui/ids.ts";
 
 const here = new URL(".", import.meta.url);
@@ -132,8 +133,50 @@ test("GuiHost: a redefine replaces the tree under the same root", {
         assert.equal((await gui.query(oldCutoff)).type, "");
         second.widget("cutoff").set({ value: 1200.0 });
         assert.equal((await second.widget("cutoff").query()).props.value, 1200.0);
+
+        // One window is one handle: the redraw refreshes the map in place, so
+        // the reference taken before it still resolves names to live ids. A
+        // second handle would leave the caller addressing widgets the redraw
+        // returned to the pool -- which is how an editor redrawing its window
+        // silently killed the transport bar beside it (`gui_daw.py`).
+        assert.equal(second, first);
+        assert.equal(first.widget("cutoff").id, second.widget("cutoff").id);
         gui.closeAll();
     });
+});
+
+test("GuiHost: a redraw keeps a named widget's handler", () => {
+    // No live host: what is under test is this client's own bookkeeping. A
+    // redefine takes fresh ids from the pool, so a callback kept under the old
+    // id would be orphaned -- or fire for whatever widget inherited that
+    // number. A callback belongs to the widget the *name* points at.
+    // The carrier is a stub that only remembers the reply listener, so an
+    // event can be delivered exactly as the host would deliver one.
+    let deliver: ((packet: Uint8Array) => void) | undefined;
+    const gui = new GuiHost({
+        send: () => {},
+        addReply: (fn: (packet: Uint8Array) => void) => {
+            deliver = fn;
+        },
+        removeReply: () => {},
+    } as unknown as Connection);
+    const event = (id: number, value: number) =>
+        deliver!(encodeMessage("/gui_event", [["i", id], ["i", 1], ["i", 0], ["i", value]]));
+
+    const fired: unknown[] = [];
+    const win = gui.open(window({}, button({ name: "play" }), button({ name: "stop" })));
+    win.widget("play").onEvent((...args) => fired.push(args[0]));
+    const oldPlay = win.widget("play").id;
+
+    gui.define(win.id, window({}, button({ name: "play" }), button({ name: "stop" })));
+    assert.notEqual(win.widget("play").id, oldPlay);
+
+    event(win.widget("play").id, 1);
+    assert.deepEqual(fired, [1], "the handler followed the name onto the new id");
+
+    fired.length = 0;
+    event(oldPlay, 1);
+    assert.deepEqual(fired, [], "the recycled id answers for nobody");
 });
 
 test("GuiHost: a hand-picked id is kept, and an unknown widget answers empty", {

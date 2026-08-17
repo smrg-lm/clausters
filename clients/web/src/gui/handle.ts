@@ -121,6 +121,19 @@ export class WindowHandle extends WidgetHandle {
         return new WidgetHandle(this.host, id);
     }
 
+    /**
+     * Adopts a redrawn tree's name → id map, in place. Called by
+     * `GuiHost.define` when a window is redefined: one window is one handle,
+     * so every reference the caller kept goes on resolving names correctly
+     * instead of pointing at ids the redraw returned to the pool.
+     *
+     * @internal
+     */
+    refreshNames(names: Map<string, number>): void {
+        this.names.clear();
+        for (const [name, id] of names) this.names.set(name, id);
+    }
+
     /** Whether this window binds `name`. */
     has(name: string): boolean {
         return this.names.has(name);

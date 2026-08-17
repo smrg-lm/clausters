@@ -76,6 +76,9 @@ class GuiHost:
         #: id -> its child ids, for every widget this client defined — the
         #: subtree `free` walks to return the whole branch's ids to the pool.
         self._children: dict[int, list[int]] = {}
+        #: window id -> the handle handed out for it, so a redraw can
+        #: refresh it in place instead of orphaning the caller's copy.
+        self._handles: dict = {}
         #: id -> event handler (a `WidgetHandle.on_event`) and window id ->
         #: closed handler (a `WindowHandle.on_closed`), dispatched by `pump`.
         #: The stamp of the last ``/gui_event`` seen -- what `ack` answers. The
@@ -207,14 +210,46 @@ class GuiHost:
         ``define``/`open` walk the tree once, and ``win["cutoff"]`` resolves to
         that widget's `clausters.gui.handle.WidgetHandle`. Re-defining an
         existing id **redefines** it (the old subtree's ids return to the pool
-        first, mirroring the host freeing the old subtree)."""
+        first, mirroring the host freeing the old subtree).
+
+        **A redraw keeps a named widget's callback, and refreshes the handle you
+        already hold** rather than handing back a second one. Both follow from
+        what a name is for: the redefined tree gets fresh ids from the pool, so
+        a handler kept under the old id would be orphaned (or, worse, fire for
+        whatever widget inherited that number), and a `clausters.gui.handle.
+        WindowHandle` captured before the redraw would resolve every name to an
+        id that no longer means it. A callback belongs to the widget the name
+        points at, not to the id it happened to have -- which is what lets an
+        editor redraw its window (`clausters.gui.Editor.load`) without silently
+        killing the transport bar beside it."""
         id = int(id)
+        previous = self._handles.get(id)
+        inherited: dict = {}
+        root_handler = self._on_event.get(id)
         if id in self._children:
+            if previous is not None:
+                inherited = {name: self._on_event[wid]
+                             for name, wid in previous._names.items()
+                             if wid in self._on_event}
             self._recycle_subtree(id, keep_root=True)
         names: dict = {}
         self._register(tree, id, names)
+        if root_handler is not None:
+            self._on_event[id] = root_handler
+        for name, func in inherited.items():
+            wid = names.get(name)
+            if wid is not None:
+                self._on_event[wid] = func
         self._osc.send_msg(self.target, "/gui_def", id, to_json(tree), *blobs)
-        return WindowHandle(self, id, names)
+        if previous is not None:
+            # Refreshed **in place**: one window is one handle, so every
+            # reference the caller kept goes on resolving names correctly.
+            previous._names.clear()
+            previous._names.update(names)
+            return previous
+        handle = WindowHandle(self, id, names)
+        self._handles[id] = handle
+        return handle
 
     def load(self, name: str):
         """``/gui_load <name>`` — instantiate a **persisted** GuiDef by name, the
@@ -256,6 +291,7 @@ class GuiHost:
         if keep_root:
             return
         self._on_closed.pop(id, None)
+        self._handles.pop(id, None)
         self._alloc.free(id)
 
     def set(self, id: int, **props):
