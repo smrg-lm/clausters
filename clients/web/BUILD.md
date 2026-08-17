@@ -195,9 +195,10 @@ gate the workflow passes through.
 
 ## Regenerating the parity vectors
 
-Four vector files are committed, all generated from the Python client — the
-reference for the wire (the codec), for the def format, for the GuiDef document
-(the builders) and for a written bundle (the writer plus the shared resolver):
+The vector files are committed, and every `tests/gen-*.py` writes one. Most
+are generated from the **Python client**, the reference for the wire (the
+codec), for the def format, for the GuiDef document (the builders) and for a
+written bundle (the writer plus the shared resolver):
 
 ```sh
 cd tests
@@ -206,6 +207,21 @@ python3 gen-def-vectors.py                           # tests/def-vectors.json
 python3 gen-gui-vectors.py                           # tests/gui-vectors.json
 python3 gen-bundle-vectors.py                        # tests/bundle-vectors.json
 ```
+
+**One is generated from the server instead**, because for that one the server
+is the reference and not a peer:
+
+```sh
+python3 gen-ugen-vectors.py                          # tests/ugen-vectors.json
+```
+
+It boots a server, asks `/ugen_query` for the catalog, and freezes every kind
+with its named inputs and their defaults; `tests/ugen-catalog.test.ts`
+contrasts the TypeScript builders against it. **Re-run it whenever a UGen's
+inputs change** — a new kind, a renamed input, a moved default — or the
+contrast will be held to a catalog that no longer exists. Its Python
+counterpart (`clients/python/tests/test_session.py`) needs no vector: it asks
+a live server inside the test.
 
 The three builder generators need the Python client importable (the repo's
 `.venv` has it installed editable); they insert `../../python` on the path
