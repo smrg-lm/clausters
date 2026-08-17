@@ -107,7 +107,12 @@ DEFAULT_PEER = 0
 _OFF_C2S = _HEADER_SIZE  # 64; rings come right after the header
 _OFF_S2C = _OFF_C2S + _RING_HEADER + _RING_CAPACITY  # 65664
 _OFF_CONTROLS = _OFF_S2C + _RING_HEADER + _RING_CAPACITY  # 131264 (trailing)
-_DEFAULT_CONTROL_BUSES = 1024
+#: The server's own default (`dsp::NUM_CONTROL_BUSES`). It said 1024 until
+#: 2026-08-17 -- a drift nothing caught, because a client maps the *file* and
+#: only `SEGMENT_SIZE` below is derived from this. Pinned by a test now, since
+#: the number is documentation and documentation that is wrong is worse than
+#: none.
+_DEFAULT_CONTROL_BUSES = 16384
 _DEFAULT_TAPS = 8
 _DEFAULT_TAP_FRAMES = 16384
 _TAP_ALIGN = 64  # each tap slot: a 64-byte cursor line + the sample ring
@@ -117,6 +122,16 @@ _NUM_AUDIO_BUSES = 128  # the bus region is always sized for the engine's cap
 def _bus_region_offset(control_buses: int) -> int:
     """Byte offset of the audio-bus region: right after the control slots."""
     return _OFF_CONTROLS + 4 * control_buses
+
+
+def _buffer_region_offset(control_buses: int, taps: int, tap_frames: int) -> int:
+    """Byte offset of the **buffer directory** (ABI v9): the tap region's end.
+
+    The directory is the segment's tail, so how many rows it has is what is
+    left of the mapped length rather than a field in the header — the header
+    has no reserved space, and a count there would move the rings.
+    """
+    return _tap_region_offset(control_buses) + taps * (_TAP_ALIGN + 4 * tap_frames)
 
 
 def _tap_region_offset(control_buses: int, audio_buses: int = _NUM_AUDIO_BUSES) -> int:
@@ -199,6 +214,52 @@ class _Ring:
         return out + self.mm[base : base + n - first]
 
 
+class MappedBuffer:
+    """One pool buffer's samples, mapped — the material itself, not a copy.
+
+    ``samples`` is a writable ``memoryview`` of ``f32`` in the buffer's own
+    interleaved order, so reading is a memory read and writing is what the
+    engine plays next block. Per-sample only: a reader crossing a writer sees
+    some old samples and some new, never half of one, which is the rule the
+    whole buffer model states (`docs/ipc.md`).
+
+    Close it when done — or use it as a context manager. The mapping stays
+    valid even after the buffer is freed (the region is unlinked, not deleted),
+    which is what makes freeing a take safe while somebody is drawing it; what
+    tells you it is history is the directory, through `ShmClient.buffer_info`.
+    """
+
+    __slots__ = ("_mm", "generation", "frames", "channels", "sample_rate", "samples")
+
+    def __init__(self, mm, generation: int, frames: int, channels: int, rate: float):
+        self._mm = mm
+        #: Odd, and the number the region file is named with.
+        self.generation = generation
+        self.frames = frames
+        self.channels = channels
+        self.sample_rate = rate
+        #: The samples, interleaved, writable.
+        self.samples = memoryview(mm).cast("f")
+
+    def __enter__(self) -> "MappedBuffer":
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        self.close()
+        return False
+
+    def close(self):
+        """Unmaps. Idempotent."""
+        if self._mm is not None:
+            self.samples.release()
+            self._mm.close()
+            self._mm = None
+
+    def __repr__(self) -> str:
+        return (f"MappedBuffer(generation={self.generation}, frames={self.frames}, "
+                f"channels={self.channels}, sample_rate={self.sample_rate})")
+
+
 class ShmClient:
     """Client of a ``clausters --shm <path>`` server (same machine)."""
 
@@ -222,6 +283,12 @@ class ShmClient:
         #: bus -> tap directory and the level table.
         self.audio_buses = struct.unpack_from("<I", self.mm, _OFF_AUDIO_BUSES)[0]
         self._buses_at = _bus_region_offset(self.control_buses)
+        #: Byte offset and row count of the buffer directory (ABI v9): where
+        #: this server's material is, buffer by buffer.
+        self._buffers_at = _buffer_region_offset(
+            self.control_buses, self.taps, self.tap_frames)
+        self.buffers = max(0, (len(self.mm) - self._buffers_at) // _BUFFER_ROW)
+        self._path = path
         self._c2s = _Ring(self.mm, _OFF_C2S)  # we produce here
         self._s2c = _Ring(self.mm, _OFF_S2C)  # we consume here
 
@@ -286,6 +353,62 @@ class ShmClient:
             raise IndexError(f"audio bus {bus} out of range 0..{self.audio_buses}")
         tap = struct.unpack_from("<i", self.mm, self._buses_at + 4 * bus)[0]
         return tap if tap >= 0 else None
+
+    def buffer_info(self, bufnum: int) -> "tuple[int, int, int, float] | None":
+        """What the directory says buffer `bufnum` is: ``(generation, frames,
+        channels, sample_rate)``, or ``None`` when the slot is empty.
+
+        The **generation** is the number that does three jobs: it is odd while
+        the buffer is live and even when the slot is empty, it names the region
+        file, and it is the seqlock this read is taken under — a row caught
+        mid-write is re-read rather than believed.
+        """
+        if not 0 <= bufnum < self.buffers:
+            return None
+        at = self._buffers_at + _BUFFER_ROW * bufnum
+        for _ in range(8):
+            before = struct.unpack_from("<Q", self.mm, at)[0]
+            if before % 2 == 0:
+                return None
+            frames, channels = struct.unpack_from("<II", self.mm, at + 8)
+            rate = struct.unpack_from("<d", self.mm, at + 16)[0]
+            if struct.unpack_from("<Q", self.mm, at)[0] == before:
+                return before, frames, channels, rate
+        return None
+
+    def map_buffer(self, bufnum: int) -> "MappedBuffer | None":
+        """Maps buffer `bufnum`'s **samples**, or ``None`` when there is no such
+        buffer (or its region cannot be opened, which is what a buffer freed
+        between the two steps looks like).
+
+        This is the data plane's other half: the samples are not messages. What
+        comes back is the server's own memory — writing a sample is what the
+        engine reads on the next block, exactly as a control-bus write is — so
+        `clausters.defs.Buffer.get_samples` is a *fetch* only for a client that
+        cannot map the segment.
+
+        **What may be written here is material, not computation**: samples a
+        caller already holds (a drawn stroke, a pasted block). Every operation
+        over samples — a gain, a fade, a reverse, a render — stays a command,
+        because one place performs audio processing and it is the server.
+        """
+        info = self.buffer_info(bufnum)
+        if info is None:
+            return None
+        generation, frames, channels, rate = info
+        path = f"{self._path}.buf{bufnum}.{generation}"
+        try:
+            handle = open(path, "r+b")
+        except OSError:
+            return None
+        with handle:
+            data = mmap.mmap(handle.fileno(), frames * channels * 4)
+        # A row that moved while the file was being opened describes a buffer
+        # this mapping is not.
+        if (self.buffer_info(bufnum) or (0,))[0] != generation:
+            data.close()
+            return None
+        return MappedBuffer(data, generation, frames, channels, rate)
 
     # -- command plane: OSC packets through the ring --
 
