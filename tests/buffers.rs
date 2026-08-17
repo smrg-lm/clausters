@@ -55,6 +55,21 @@ fn installed(action: Result<NrtAction, String>) -> Arc<Buffer> {
     }
 }
 
+/// A write that lands **in the buffer the engine is reading**: it installs
+/// nothing, because there is nothing to install — the samples went into the
+/// cells the pool already holds. Hands back the mirror's buffer, which is that
+/// very allocation, so a test asserts over what the audio thread now sees.
+fn wrote_in_place(
+    action: Result<NrtAction, String>,
+    mirror: &clausters::dsp::buffer::BufferPool,
+) -> Arc<Buffer> {
+    match action.expect("job must succeed") {
+        NrtAction::None => {}
+        other => panic!("a span write installs nothing, got {other:?}"),
+    }
+    mirror[0].clone().expect("the buffer is still there")
+}
+
 /// `PlayBuf(bufnum, chan, rate, loop)` to the given output bus.
 fn playbuf_spec(bufnum: f32, chan: f32, rate: f32, looping: f32, out_bus: f32) -> UGenSynth {
     spec_synth(json!({
@@ -604,7 +619,7 @@ fn set_error(
 }
 
 #[test]
-fn set_writes_runs_into_a_replacement_keeping_the_shape() {
+fn set_writes_runs_in_place_keeping_the_shape() {
     let mirror = mirror_of(Arc::new(Buffer::zeroed(8, 2, 44_100.0)));
     let job = parse_set(
         "/buffer_setRange",
@@ -620,7 +635,7 @@ fn set_writes_runs_into_a_replacement_keeping_the_shape() {
     )
     .expect("a well-formed setRange parses");
 
-    let written = installed(run_nrt(job));
+    let written = wrote_in_place(run_nrt(job), &mirror);
     assert_eq!(
         (written.frames(), written.channels()),
         (8, 2),
@@ -653,7 +668,7 @@ fn set_writes_single_samples_by_flat_index() {
     )
     .expect("a well-formed set parses");
 
-    let written = installed(run_nrt(job));
+    let written = wrote_in_place(run_nrt(job), &mirror);
     let mut expected = [0.0f32; 8];
     expected[1] = 0.25;
     expected[6] = -0.5;
@@ -687,7 +702,7 @@ fn set_range_channel_writes_one_channel_and_leaves_the_other_alone() {
     )
     .expect("a well-formed setRangeChannel parses");
 
-    let written = installed(run_nrt(job));
+    let written = wrote_in_place(run_nrt(job), &mirror);
     assert_eq!(
         (written.frames(), written.channels()),
         (4, 2),
@@ -718,7 +733,7 @@ fn set_channel_writes_single_frames_of_one_channel() {
     )
     .expect("a well-formed setChannel parses");
 
-    let written = installed(run_nrt(job));
+    let written = wrote_in_place(run_nrt(job), &mirror);
     let mut expected = [0.0f32; 8];
     expected[0] = 0.25; // frame 0, channel 0
     expected[6] = -0.5; // frame 3, channel 0
@@ -1898,5 +1913,65 @@ fn a_buffer_comb_repeats_and_decays() {
     assert!(
         second > 0.0 && second < first,
         "and the second is quieter: {second} vs {first}"
+    );
+}
+
+/// **A write no longer erases what a recorder put there while it was queued.**
+///
+/// This is the defect the in-place write closes, and it only became reachable
+/// when buffers became writable (S14): a `RecordBuf` or a `BufWr` writes the
+/// pool buffer from the audio thread, and a command that laid its samples into
+/// a *copy* and installed it whole discarded everything recorded since the copy
+/// was taken. Nothing warned; the samples were simply gone.
+#[test]
+fn a_write_leaves_what_a_recorder_wrote_while_it_was_queued() {
+    let buffer = Arc::new(Buffer::zeroed(8, 1, SR as f64));
+    let mirror = mirror_of(buffer.clone());
+    // Parsed now: the job takes its view of the buffer here, which is exactly
+    // where the old copy was snapshotted from.
+    let job = parse_set(
+        "/buffer_setRange",
+        vec![OscType::Int(0), OscType::Int(0), blob(&[1.0, 2.0])],
+        &mirror,
+    )
+    .expect("a well-formed setRange parses");
+
+    // ...and the engine records into the far end of the same buffer while the
+    // job sits in the queue, which is what a looper does every block.
+    buffer.set_at(7, 0.75);
+
+    let written = wrote_in_place(run_nrt(job), &mirror);
+    assert_eq!(
+        written.to_vec(),
+        &[1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.75][..],
+        "the command wrote its span and the recording survived it"
+    );
+}
+
+/// The same for the editing verbs, whose span is the whole point: a gain over
+/// two frames leaves the rest of the take alone, including what arrived after
+/// the command was queued.
+#[test]
+fn an_edit_touches_its_span_and_nothing_else() {
+    let buffer = Arc::new(Buffer::new(vec![1.0; 8], 1, 8, SR as f64));
+    let mirror = mirror_of(buffer.clone());
+    let job = NrtJob::Edit {
+        base: buffer.clone(),
+        op: clausters::server::nrt::EditOp::Gain {
+            start: 2,
+            frames: 2,
+            from: 0.5,
+            to: 0.5,
+            shape: 1,
+            curve: 0.0,
+        },
+    };
+    buffer.set_at(7, 0.25);
+
+    let edited = wrote_in_place(run_nrt(job), &mirror);
+    assert_eq!(
+        edited.to_vec(),
+        &[1.0, 1.0, 0.5, 0.5, 1.0, 1.0, 1.0, 0.25][..],
+        "frames 2..4 halved, everything else as it was"
     );
 }

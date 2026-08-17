@@ -473,7 +473,7 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
 
   **Found while checking it by ear:** an `EnvGen` retriggered mid-envelope restarts from its **initial level** rather than gliding from where it was, so a re-cue is a step in two places at once (the reader's jump and the envelope's). `examples/buffer_writing.py` therefore fires grains shorter than the gap between triggers, which puts both steps in silence — the general rule for anything driven by a trigger, and the reason the example says it out loud.
 
-- ⬜ **S18 — A buffer write writes the samples it names** *(opened 2026-08-17 by the user, reading S14 against the write path: "ahora, luego de implementadas las ugens que escriben en buffers, una escritura de muestras no cuesta el buffer entero". The observation is exact, and what it turns up is a **correctness** defect as well as a cost one.)*
+- ✅ **S18 — A buffer write writes the samples it names** *(opened 2026-08-17 by the user, reading S14 against the write path: "ahora, luego de implementadas las ugens que escriben en buffers, una escritura de muestras no cuesta el buffer entero". The observation is exact, and what it turns up is a **correctness** defect as well as a cost one.)*
 
   **The substrate moved and the command set did not.** S12 decided the write path around a premise it stated in one sentence — *"the RT pool buffer stays immutable and replaceable exactly as `src/dsp/buffer.rs` says"* — and S14 rewrote that very module one day later: contents are mutable, every sample is an atomic cell any thread may write, and `set_at` is the door. `BufWr` and `RecordBuf` write through it from the **audio thread** every block. But every OSC write still copies: `NrtJob::Set`, `Fill`, `Edit`, `Gen` and `Read` all do `to_vec()` → lay the run in → `Buffer::new` → install a fresh `Arc` (`src/server/nrt.rs`), justified in a comment by an argument the other module already answered — *"the audio thread therefore never sees a half-written buffer (which a per-sample write could show it)"* — while S14's module doc states the opposite as the intended semantics, scsynth's own: *a reader crossing a writer sees some old samples and some new, never half of one*, and that is what a looper crossing its own write head has always sounded like.
 
@@ -499,6 +499,24 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
   **What must be written down rather than assumed**, because it is the trade being taken: a reader crossing a write now sees old and new samples. That is S14's stated rule and scsynth's, and it is the price of the capability; it belongs in `docs/schemas.md` beside the writing commands, not only in a module doc. The one place it must **not** leak is the golden renders, which are single-threaded and therefore unaffected.
 
   **Acceptance:** the table above, re-measured through the wire (a client's write on a five-minute take costs what a write on a ten-second one costs); a test that a `RecordBuf` recording survives a concurrent `/buffer_setRange` on the same buffer, which fails on today's code; `tests/rt_safety.rs` and the golden renders unchanged; and the chaining tests deleted with the chaining, their property now holding by construction.
+
+  **Done 2026-08-17. Measured through the wire, which is the acceptance as written:**
+
+  ```
+                    size    before      after
+  10 s stereo      3.8 MB   3.94 ms    3.28 ms
+  1 min stereo    23.0 MB   8.18 ms    3.63 ms
+  5 min stereo   115.2 MB  39.75 ms    3.35 ms
+  10 min stereo  230.4 MB  73.15 ms    3.54 ms
+  ```
+
+  The cost is **flat in the material** rather than linear in it, and what is left is not the write: ~3.4 ms is the `/server_sync` round trip these writes are measured behind, identical in all four rows because the write itself is microseconds.
+
+  **What shipped**: `Set`, `Fill` and `Edit` write through the cells and return `NrtAction::None` — nothing is installed, because the samples went into the buffer the engine already holds. The editing verbs keep the core pure (`clausters_core::edit` is `&mut [f32]`), so an edit reads its **span** out, applies, and writes the span back: one allocation the size of the edit, not of the take. Two tests pin the correctness half that only became reachable with S14 — a recorder's samples survive a queued write, and an edit touches its span and nothing else.
+
+  **One thing this milestone got wrong before reading the runner, corrected rather than quietly dropped:** the entry said the chaining machinery goes away with the copies. It does not, and it should not. `NrtChain` re-bases a queued write onto whatever the queue last *installed* for that index, and jobs that install still exist — `/buffer_read` and `/buffer_gen` replace a buffer whole (a read may even change its sample rate, which is shape and cannot be written in place). So the chain stays, doing less: it serves the replacing jobs' successors, and the write jobs it re-bases now mutate rather than copy. Nothing in it was deleted, and the tests that cover it still pass unchanged, which is the evidence that the property it protects was never the copies'.
+
+  **What the replacing commands keep**, said in `docs/schemas.md` beside the rest: a recording crossing a `/buffer_read` or a `/buffer_gen` is replaced along with everything else, because replacing the material is what those commands *are*. The race this milestone closes is the one where a command claimed to touch a span and took the whole buffer with it.
 
 - ⬜ **S19 — The material lives in the shared segment, and a local peer edits it without a message** *(opened 2026-08-17 by the user, naming the target: "que el cliente gui pueda funcionar como una aplicación autónoma con procesamiento NRT a demanda y RT como procesos separados", and then the consequence — "para un server embebido o por shm esto puede incluso ahorrar mensajes de ida y vuelta")*. Depends on **S18**: it is the same write, moved across a process boundary, and doing it while the write path still copies would mean two designs.
 

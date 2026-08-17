@@ -121,7 +121,7 @@ path still copies the take whole and, worse, **silently discards** whatever an
 in-place writer (`RecordBuf`, `BufWr`) put there since the snapshot. Short, and
 it goes before the two editing phases because its decision is their input.*
 
-- ⬜ **S18 — A buffer write writes the samples it names** *(root `PLAN.md`)*.
+- ✅ **S18 — A buffer write writes the samples it names** *(root `PLAN.md`)* — done 2026-08-17, and measured through the wire: 73.1 ms → 3.5 ms on a ten-minute take, flat in the material.
   Measured 2026-08-17, in process, so the wire is not in it: a 1 ms run on a
   ten-minute take costs **65.7 ms by copy and 0.0001 ms in place**, flat in the
   material rather than linear in it; even the whole-buffer case is **3.1x**

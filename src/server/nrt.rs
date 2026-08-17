@@ -172,6 +172,19 @@ pub enum EditOp {
     Reverse { start: usize, frames: usize },
 }
 
+impl EditOp {
+    /// The frames this edit touches, as `(start, frames)` — what an in-place
+    /// write reads out and puts back, so the cost is the edit's rather than the
+    /// material's.
+    pub fn span(&self) -> (usize, usize) {
+        match self {
+            EditOp::Gain { start, frames, .. } | EditOp::Reverse { start, frames } => {
+                (*start, *frames)
+            }
+        }
+    }
+}
+
 pub struct NrtRequest {
     /// Command name for the `/done`/`/fail` reply (e.g. `"/buffer_alloc"`).
     pub cmd: &'static str,
@@ -437,75 +450,67 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             base: current,
             writes,
         } => {
-            // Copy-and-swap, like every other job here: the engine holds a
-            // clone of this very `Arc`, so the samples are laid into a copy
-            // that replaces it whole rather than into the live buffer. The
-            // audio thread therefore never sees a half-written buffer (which
-            // a per-sample write could show it), and no write of any
-            // size needs a lock. The parse already bounded every run against
-            // the buffer's length.
-            let mut data = current.to_vec();
+            // **In place**: the samples go into the cells the engine is reading,
+            // and nothing is installed. The parse already bounded every run
+            // against the buffer's length, so a write cannot fail halfway and
+            // there is nothing to roll back.
             for write in writes {
-                if write.stride == 1 {
-                    data[write.at..write.at + write.values.len()].copy_from_slice(&write.values);
-                    continue;
-                }
-                // A channel of interleaved storage: the parse bounded the run,
-                // so this walks it without checking each step.
                 for (i, v) in write.values.iter().enumerate() {
-                    data[write.at + i * write.stride] = *v;
+                    current.set_at(write.at + i * write.stride, *v);
                 }
             }
-            Ok(NrtAction::Install(Arc::new(Buffer::new(
-                data,
-                current.channels(),
-                current.frames(),
-                current.sample_rate(),
-            ))))
+            Ok(NrtAction::None)
         }
         NrtJob::Edit { base, op } => {
-            // Copy-and-swap like every write here; the edit itself is the
-            // core's, so a fade sounds the same wherever it is applied.
-            let mut data = base.to_vec();
+            // The edit itself is the core's, so a fade sounds the same wherever
+            // it is applied -- and the core is pure over `&mut [f32]`, which is
+            // what decides the shape here: read the span out, apply, write the
+            // span back. What is copied is the **span**, not the buffer, so the
+            // cost is the edit's and a five-minute take is no dearer than a
+            // ten-second one.
             let channels = base.channels();
+            let (span_start, span_frames) = op.span();
+            let start = span_start * channels;
+            let count = span_frames * channels;
+            let mut data: Vec<f32> = (start..(start + count).min(base.len()))
+                .map(|i| base.at(i))
+                .collect();
             let out = match op {
                 EditOp::Gain {
-                    start,
                     frames,
                     from,
                     to,
                     shape,
                     curve,
+                    ..
                 } => clausters_core::edit::gain(
                     &mut data,
                     channels,
-                    start,
-                    frames,
+                    0,
+                    frames.min(span_frames),
                     clausters_core::edit::Fade::from_to(from, to, shape, curve),
                 ),
-                EditOp::Reverse { start, frames } => {
-                    clausters_core::edit::reverse(&mut data, channels, start, frames)
+                EditOp::Reverse { frames, .. } => {
+                    clausters_core::edit::reverse(&mut data, channels, 0, frames.min(span_frames))
                 }
             };
             out.map_err(|e| e.to_string())?;
-            Ok(NrtAction::Install(Arc::new(Buffer::new(
-                data,
-                channels,
-                base.frames(),
-                base.sample_rate(),
-            ))))
+            for (i, v) in data.iter().enumerate() {
+                base.set_at(start + i, *v);
+            }
+            Ok(NrtAction::None)
         }
         NrtJob::Fill { base, fills } => {
-            let mut data = base.to_vec();
+            // In place, like every other write of a span. A fill says how many
+            // samples it writes rather than carrying them, which is why it is
+            // its own job: materializing the run would allocate what it exists
+            // to avoid.
             for (at, count, value) in fills {
-                data[at..at + count].fill(value);
+                for i in at..at + count {
+                    base.set_at(i, value);
+                }
             }
-            Ok(NrtAction::Install(Arc::new(Buffer::new(
-                data,
-                base.channels(),
-                base.frames(),
-                base.sample_rate(),
-            ))))
+            Ok(NrtAction::None)
         }
         NrtJob::Free => Ok(NrtAction::Clear),
     }
