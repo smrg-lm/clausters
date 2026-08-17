@@ -245,6 +245,33 @@ The eight that opened with this file were taken one at a time and are in the sec
 
   **Still open, and it is the other half of the note under O10:** `clausters.form` is a Python object model with a conversion, not accessors over the crate's tree. O12 was the cost argument for closing that, and the cost is gone - so what remains is the *identity* argument (a paste creating nodes the client has no object for, D4) and the *two writers* one (a script editing beside an open editor, which bumps no version). Those are D4's and H2's to force, and they are cheap now that an edit is free.
 
+- ⬜ **O13 - One document, held: the editor stops re-deriving what it already has** *(opened 2026-08-17, the milestone number O12's closing paragraph and three "found by use" entries have all been waiting for; the roadmap named writing it as the step before starting it)*.
+
+  **The measurement, because it is the whole argument.** O12 took one `Place` on a 10240-event composition from 205 ms to 0.008 ms by keeping the tree in the crate behind a handle. The bridge hands it straight back: `Editor._history` calls `to_document(self.element)` and opens a **fresh** `Document` on **every gesture**, so what a drag costs today is
+
+  ```
+                to_document   Document()   apply    per gesture
+    320 events      1.18 ms     16.95 ms   0.013       18.15 ms
+   3200 events     11.81 ms     23.42 ms   0.015       35.24 ms
+  10240 events     35.96 ms     71.41 ms   0.014      107.38 ms
+  ```
+
+  The crate's own edit is 0.014 ms of 107. Everything else is the client re-deriving a document it had a moment ago, and it is O(composition) per gesture — the exact cost O12 exists to have removed.
+
+  **What it is.** The editor opens **one** `Document` when it draws a composition (or loads one) and holds it for that composition's life; every edit applies to that handle and the arrangement is **projected from the outcome**, never the other way round. `_project` already does this for placements; what changes is that nothing rebuilds the document behind it.
+
+  **Three things it forces, and they are why this milestone and "undo works for clips and for nothing inside one" (`clients/python/PLAN.md`) are one piece of work.** Once the document is held, an edit that writes the arrangement *directly* leaves it behind — so the two that do must stop:
+
+  - **A note edit becomes a `SetMembers`.** The intent exists and says exactly this ("the roll's edit: notes added, moved and removed arrive as the resulting list. Members keep their ids"). What it needs is the ids, and they now exist: a timeline item is stamped with its node id on the way out and restored on the way back, so a note is addressable across a conversion and across a save.
+  - **A break-point edit becomes a `Configure`.** That needs the curve's points **in the document**, which they are not today: an automation leaf carries a reference and nothing else, so there is no previous value to invert. A leaf's config is opaque and this is what it is for.
+  - **A script that edits the arrangement behind the editor's back needs a door**, since with a held document it is no longer silently absorbed by the next rebuild. That door is explicit (`Editor.refresh()`), and it is also what finally makes O4's staleness detection do something: today mutating a Python object bumps no version, so the check never fires.
+
+  **What must not change**: `clausters.form`'s public surface for a script that never touches the document; the crate stays the only thing that applies an intent; and the arrangement objects stay ordinary Python objects a script can hold in a variable. This milestone is about **where the authority is and how often it is rebuilt**, not about turning the client into a set of accessors — that maximal reading is a *later* question, and it is not what the cost or the correctness argument asks for.
+
+  **What it does not take on**: a paste creating nodes the client has no object for (D4's identity question) and *"May one element be placed twice"* both become tractable here and are decided on their own, not by accident inside this.
+
+  **Acceptance:** a gesture on the 10240-event composition costs the edit rather than the composition, measured against the table above; a note dragged in a roll and a break-point dragged on a curve are each undoable and redoable, by test and by hand in `gui_composer.py`; a script that mutates the arrangement while an editor is open either sees its change adopted through `refresh()` or has its next gesture refused as stale, rather than silently winning; and `clausters.form`'s surface is unchanged for a script that never opens a document.
+
 ## What stays out of the crate
 
 **The gesture**, in every form - the drag machine, the draw stroke, the lasso, the marquee, hit-testing, the pending overlay's drawing, the visible refusal when a zoom cannot express an edit. Those are the GUI host's and stay in `clients/gui/PLAN.md`'s D and H tracks, which are reformulated as the view halves they always were.

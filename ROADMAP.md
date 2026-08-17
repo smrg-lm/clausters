@@ -158,10 +158,12 @@ edit rewrite the arrangement directly and leave no log entry — and the fix was
 implemented and reverted on 2026-08-17, which is the finding that orders this
 phase.*
 
-- ⬜ **The one-tree refactor** — the only entry here with no title of its own
-  to search for: it is the **closing paragraph of O12**
-  (`crates/clausters-document/PLAN.md`), which begins *"Still open, and it is the
-  other half of the note under O10"*. The editor holds one `Document` handle
+- ⬜ **O13 — One document, held: the editor stops re-deriving what it already
+  has** *(`crates/clausters-document/PLAN.md`)*. Written 2026-08-17 with the
+  measurement that argues it: a gesture on a 10240-event composition costs
+  **107 ms**, of which the crate's own edit is **0.014 ms** — the rest is the
+  client rebuilding a document it had a moment ago, which is exactly the cost
+  O12 exists to have removed. The editor holds one `Document` handle
   for the window's life and `clausters.form` becomes accessors over the crate's
   tree, rather than a parallel Python model that `_history` re-derives the
   document from on every edit. **It needs a milestone number in that plan before
