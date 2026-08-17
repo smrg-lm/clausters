@@ -58,6 +58,15 @@ pub struct SessionConfig {
     pub audio_buses: usize,
     pub control_buses: usize,
     pub limits: Limits,
+    /// Where to put the segment, when this session's material is to be
+    /// **shared**: a path makes it a mapped file, so a second process can read
+    /// the directory and map every buffer this session holds (S19). `None` is
+    /// the ordinary in-process session, whose segment lives on the heap.
+    ///
+    /// It is here rather than assumed because it is a *deployment* choice: an
+    /// on-demand server that renders and edits material an editor draws wants
+    /// it; one answering a script inside one process has nobody to share with.
+    pub shm: Option<std::path::PathBuf>,
 }
 
 impl Default for SessionConfig {
@@ -70,6 +79,7 @@ impl Default for SessionConfig {
             audio_buses: DEFAULT_AUDIO_BUSES,
             control_buses: DEFAULT_CONTROL_BUSES,
             limits: Limits::default(),
+            shm: None,
         }
     }
 }
@@ -108,7 +118,18 @@ impl NrtSession {
         // same material stay sample-identical (the rule `render` follows).
         crate::dsp::denormals::flush_to_zero();
 
-        let segment = Segment::in_memory_with(cfg.control_buses);
+        // A path makes the segment a file, which is the whole difference
+        // between a session nobody else can see and one whose buffers a peer
+        // maps by name.
+        let segment = match &cfg.shm {
+            Some(path) => Segment::create_with(path, cfg.control_buses).map_err(|e| {
+                format!(
+                    "cannot create the shared segment at {}: {e}",
+                    path.display()
+                )
+            })?,
+            None => Segment::in_memory_with(cfg.control_buses),
+        };
         let (engine, handle) = engine_pair_full(
             cfg.sample_rate as f32,
             cfg.channels,
@@ -135,6 +156,12 @@ impl NrtSession {
         server
             .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
             .map_err(|e| e.to_string())?;
+        if let Some(path) = &cfg.shm {
+            // With a segment on disk, every buffer this session installs lives
+            // in a region beside it — which is what lets an editor draw and
+            // write the material of a server that has no audio device at all.
+            server.share_buffers_at(path.clone());
+        }
         Ok(Self {
             server,
             engine,

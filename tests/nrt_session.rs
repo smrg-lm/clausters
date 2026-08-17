@@ -362,3 +362,50 @@ fn settling_between_operations_does_not_advance_time() {
          nothing between commands advances the engine"
     );
 }
+
+/// **A session with no audio device can still own the material a peer edits.**
+///
+/// The on-demand server is what an editor talks to — it renders, it applies the
+/// edit verbs, and it has no clock of its own — so it is the one that most
+/// wants its buffers mapped rather than fetched. Given a path, its segment is a
+/// file and every buffer it installs lives in a region beside it, which is the
+/// whole difference between a session nobody else can see and one an editor
+/// draws from.
+#[test]
+fn a_session_given_a_path_shares_the_buffers_it_holds() {
+    use clausters::server::ipc::Segment;
+
+    let path = std::env::temp_dir().join(format!(
+        "clausters-session-shm-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    let mut cfg = session_cfg();
+    cfg.shm = Some(path.clone());
+    let mut s = NrtSession::open(&cfg).expect("open");
+
+    assert!(
+        s.send_msg(
+            "/buffer_alloc",
+            vec![OscType::Int(1), OscType::Int(32), OscType::Int(2)]
+        )
+        .expect("encode")
+    );
+    s.settle_for(8);
+
+    // The peer's side: another process would open the file; here opening it
+    // again is the same thing, and it is what proves the material is not in
+    // this process's heap.
+    let peer = Segment::open(&path).expect("a peer maps the session's segment");
+    let (_, mapped) = peer.map_buffer(&path, 1).expect("and finds buffer 1");
+    assert_eq!((mapped.frames(), mapped.channels()), (32, 2));
+    mapped.set_at(3, 0.5);
+    assert_eq!(
+        mapped.at(3),
+        0.5,
+        "a server with no audio device, holding material an editor can write"
+    );
+
+    drop(s);
+    let _ = std::fs::remove_file(&path);
+}
