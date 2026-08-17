@@ -79,7 +79,7 @@ running that example, and none of it is guessed at.*
   decimal id when there is no name — so an anonymous node stays reachable. Its
   acceptance is a test comparing the two trees, not an eye pass.
 
-- ⬜ **What a document calls a generator is `repr()`** *(same plan, same list)*.
+- ✅ **What a document calls a generator is `repr()`** *(same plan, same list)* — done 2026-08-17.
   A leaf's reference is an object's `repr` when it has no name, so a saved
   session carries a memory address: the file is not deterministic between runs
   (which O1's acceptance asked for) and the reference is unresolvable by

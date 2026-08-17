@@ -69,10 +69,20 @@ class Element:
             pure container like a `Group`).
         onset: start in beats relative to the context, or ``None``.
         duration: length in beats, or ``None``.
+        name: a label for this element — what a lane is called in the editor,
+            and, for an element wrapping something the document cannot own (a
+            pattern, a routine), the **key a reopened session finds it by**. It
+            is a label and not an identity: nothing addresses an element by
+            name, and two elements may share one, which is what naming *the
+            same algorithm used twice* looks like.
     """
 
-    def __init__(self, wraps=None, onset=None, duration=None, resident=False):
+    def __init__(self, wraps=None, onset=None, duration=None, resident=False,
+                 *, name=None):
         self.wraps = wraps
+        #: A label, and the key an unowned leaf is handed back by. See the class
+        #: docstring; the document carries it as the node's `name`.
+        self.name = name
         self.onset = None if onset is None else float(onset)
         self.duration = None if duration is None else float(duration)
         #: Whether this element's material is produced by a def running **on the
@@ -150,7 +160,7 @@ class Event(Element):
     ``onset`` usually comes from its placement in a `Group`.
     """
 
-    def __init__(self, event, onset=None, duration=None):
+    def __init__(self, event, onset=None, duration=None, *, name=None):
         from ..seq.event import Event as SeqEvent
 
         wrapped = event if isinstance(event, SeqEvent) else SeqEvent(event)
@@ -158,7 +168,8 @@ class Event(Element):
             dur = wrapped.get("dur")
             if dur is not None:
                 duration = float(dur)
-        super().__init__(wraps=wrapped, onset=onset, duration=duration)
+        super().__init__(wraps=wrapped, onset=onset, duration=duration,
+                         name=name)
 
 
 class Sequence(Element):
@@ -170,8 +181,8 @@ class Sequence(Element):
     interpreted by its content.
     """
 
-    def __init__(self, items, onset=None, duration=None):
-        super().__init__(wraps=items, onset=onset, duration=duration)
+    def __init__(self, items, onset=None, duration=None, *, name=None):
+        super().__init__(wraps=items, onset=onset, duration=duration, name=name)
 
 
 class Buffer(Element):
@@ -198,8 +209,8 @@ class Buffer(Element):
     """
 
     def __init__(self, buffer, onset=None, duration=None, *, instrument=None,
-                 controls=None):
-        super().__init__(wraps=buffer, onset=onset, duration=duration)
+                 controls=None, name=None):
+        super().__init__(wraps=buffer, onset=onset, duration=duration, name=name)
         self.instrument = instrument
         self.controls = dict(controls or {})
 
@@ -237,12 +248,13 @@ class Track(Element):
     empty `Timeline` is created when none is given.
     """
 
-    def __init__(self, timeline=None, onset=None, duration=None):
+    def __init__(self, timeline=None, onset=None, duration=None, *, name=None):
         if timeline is None:
             from ..seq.timeline import Timeline
 
             timeline = Timeline()
-        super().__init__(wraps=timeline, onset=onset, duration=duration)
+        super().__init__(wraps=timeline, onset=onset, duration=duration,
+                         name=name)
 
 
 class Generator(Element):
@@ -270,8 +282,9 @@ class Generator(Element):
     """
 
     def __init__(self, generator, onset=None, duration=None, *, controls=None,
-                 maps=None, rendered=None):
-        super().__init__(wraps=generator, onset=onset, duration=duration)
+                 maps=None, rendered=None, name=None):
+        super().__init__(wraps=generator, onset=onset, duration=duration,
+                         name=name)
         self.controls = controls
         self.maps = maps
         #: The last rendered result, or ``None`` before there is one. Read-only

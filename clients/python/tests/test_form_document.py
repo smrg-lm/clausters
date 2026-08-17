@@ -662,3 +662,62 @@ def _kinds(element) -> list:
     for child in getattr(element, "members", []) or []:
         out.append(_kinds(child[2]))
     return out
+
+
+def test_an_unnamed_leaf_is_written_with_no_reference_rather_than_an_address():
+    # It used to write `repr(obj)` -- a memory address, which is unresolvable by
+    # construction and different between two runs of the same script, so it broke
+    # the one property O1's acceptance asked writing to keep.
+    from clausters.seq import Pbind, Pseq
+
+    lane = Sequence(Pbind(midinote=Pseq([48, 55], 2), dur=0.5))
+    node = to_document(Group([(0.0, lane)]))["root"]["members"][0]["node"]
+    assert "0x" not in json.dumps(node), node
+    assert not (node.get("config") or {}).get("sequence")
+
+
+def test_a_named_pattern_lane_is_handed_back_and_plays_again():
+    # The acceptance: what the file names, the script that still holds the
+    # recipe supplies -- so a reopened piece sounds that lane instead of drawing
+    # it frozen.
+    from clausters.seq import Pbind, Pseq
+
+    pattern = Pbind(midinote=Pseq([48, 55], 1), dur=0.5)
+    song = Group([(0.0, Sequence(pattern, name="bassline"))], name="bass")
+
+    written = json.loads(json.dumps(to_session(song)))
+    back, _ = from_session(
+        written,
+        resolve=lambda kind, config: (
+            pattern if (config or {}).get("sequence") == "bassline" else None
+        ),
+    )
+
+    from clausters.form.render import flatten
+
+    assert flatten(back), "a resolved pattern lane emits its events again"
+    # And with no resolver it is frozen rather than broken: drawn, placed, silent.
+    frozen, _ = from_session(written)
+    assert flatten(frozen) == []
+
+
+def test_the_same_script_run_twice_writes_the_same_bytes():
+    # Determinism is what the reference being an address destroyed, and it can
+    # only be seen across processes -- inside one, an address is stable too.
+    import subprocess
+    import sys
+
+    script = (
+        "import json;"
+        "from clausters.form import Group, Sequence;"
+        "from clausters.form.document import to_session;"
+        "from clausters.seq import Pbind, Pseq;"
+        "lane = Sequence(Pbind(midinote=Pseq([48, 55], 2), dur=0.5), name='bassline');"
+        "print(json.dumps(to_session(Group([(0.0, lane)], name='bass')), sort_keys=True))"
+    )
+    runs = {
+        subprocess.run([sys.executable, "-c", script], capture_output=True,
+                       text=True, check=True).stdout
+        for _ in range(2)
+    }
+    assert len(runs) == 1, runs

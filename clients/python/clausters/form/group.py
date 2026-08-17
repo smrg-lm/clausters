@@ -83,11 +83,10 @@ class Group(Element):
 
     def __init__(self, children=None, kind=CONCRETE, *, name=None,
                  buses=None, onset=None, duration=None):
-        super().__init__(wraps=None, onset=onset, duration=duration)
+        super().__init__(wraps=None, onset=onset, duration=duration, name=name)
         if kind not in (CONCRETE, LOGICAL):
             raise ValueError(f"unknown group kind: {kind!r}")
         self.kind = kind
-        self.name = name
         self._bus_specs = [_bus_spec(b) for b in (buses or [])]
         self._members = []
         if children is not None:

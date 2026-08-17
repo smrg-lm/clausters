@@ -174,7 +174,8 @@ melody = Track(Timeline([                                 # a Set of events
     (2.0, SeqEvent(midinote=79, dur=2.0)),
 ]))
 bass = Sequence(Pbind(midinote=Pseq([48, 48, 55, 53], 2),  # a Function (generator)
-                      dur=1.0, amp=0.15))
+                      dur=1.0, amp=0.15),
+                name="bassline")   # the key a reopened session finds it by
 
 # %% [markdown]
 # ## An automation lane
@@ -307,6 +308,8 @@ def reopen():
                     else ServerBuffer.read(str(folder / path), server=server))
         if kind == "generator" and config.get("generator") == sweep.name:
             return sweep
+        if kind == "sequence" and config.get("sequence") == "bassline":
+            return bass.wraps
         frozen[0] += 1
         return None
 

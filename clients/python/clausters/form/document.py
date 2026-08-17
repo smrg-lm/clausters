@@ -320,17 +320,22 @@ def _body(element, ids: _Ids) -> dict:
             }
         # A pattern, or a list of values the client owns: a reference, not a
         # serialization.
-        return _with_config({"kind": "sequence"}, {"sequence": _reference(items)})
+        # A leaf with no name is written with no reference: frozen, and the
+        # same bytes on every run of the same script.
+        return _with_config({"kind": "sequence"},
+                            _named({"sequence": _reference(items, element)}))
     if isinstance(element, Buffer):
         body = {"kind": "buffer", "source": _source(element.wraps)}
         config = {}
         if element.instrument is not None:
-            config["instrument"] = _reference(element.instrument)
+            instrument = _reference(element.instrument)
+            if instrument is not None:
+                config["instrument"] = instrument
         if element.controls:
             config["controls"] = _plain(element.controls)
         return _with_config(body, config or None)
     if isinstance(element, Generator):
-        config = {"generator": _reference(element.wraps)}
+        config = _named({"generator": _reference(element.wraps, element)})
         if element.controls:
             config["controls"] = _plain(element.controls)
         if element.maps:
@@ -355,7 +360,8 @@ def _body(element, ids: _Ids) -> dict:
     # out of a hand-written tree, `generator` on the way out of the one that
     # came back), so a resolver that recognized the material once stopped
     # recognizing it on the second open.
-    return _with_config({"kind": "generator"}, {"generator": _reference(element.wraps)})
+    return _with_config({"kind": "generator"},
+                        _named({"generator": _reference(element.wraps, element)}))
 
 
 def _preserved(element):
@@ -421,19 +427,45 @@ def _source(buffer) -> dict:
     }
 
 
+def _named(config: dict) -> dict:
+    """A config with the keys whose value is `None` dropped — a reference
+    nothing could name is left out rather than written as null, so an unnamed
+    leaf and a leaf named nothing are the same file."""
+    return {k: v for k, v in config.items() if v is not None}
+
+
 def _with_config(body: dict, config) -> dict:
     if config:
         body["config"] = config
     return body
 
 
-def _reference(obj):
-    """What names an object the document does not own: its name when it has
-    one, otherwise its own string form. Never the object."""
+def _reference(obj, element=None):
+    """What names an object the document does not own — or ``None`` when nothing
+    does, which is the honest answer and used to be `repr`.
+
+    A leaf is opaque by decision: the document carries a *reference* to an
+    algorithm and never the algorithm, so reopening hands the reference to a
+    resolver and takes back whatever that resolver has. The reference therefore
+    has to be something a caller **can produce**. Three sources, in order: the
+    object's own name (a def, an `Automation`), the element's `name` (what an
+    author writes for material that has none of its own — a `Pbind` is code and
+    carries no name), and nothing.
+
+    **Nothing is better than `repr`**, which is what this wrote before: a
+    memory address is unresolvable by construction *and* different between two
+    runs of the same script, so it broke the format's determinism to hand a
+    resolver a key that could never match. An unnamed leaf is written with no
+    reference at all and comes back frozen — drawn, placed, silent — which is
+    what a composition means where its language is not running.
+    """
     if isinstance(obj, str):
         return obj
     name = getattr(obj, "name", None)
-    return name if isinstance(name, str) else repr(obj)
+    if isinstance(name, str) and name:
+        return name
+    name = getattr(element, "name", None)
+    return name if isinstance(name, str) and name else None
 
 
 def _plain(value):

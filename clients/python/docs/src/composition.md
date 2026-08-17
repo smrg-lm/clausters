@@ -426,3 +426,31 @@ program.
 `provenance` is a reference to whatever produced something, carried and never
 interpreted. It is what makes re-generating possible without the format knowing
 how, which is the same rule the opaque generator follows one level down.
+
+### Name what the file cannot carry
+
+A document holds a **reference** to an algorithm and never the algorithm — a
+generator is code, in the language of whoever wrote it. So reopening hands each
+reference to a resolver and takes back whatever that resolver has, which means
+the reference must be something you can produce on the way back in. A def and an
+automation carry a name of their own and need nothing; a pattern does not, so
+name the **element**:
+
+```python
+bass = Sequence(Pbind(midinote=Pseq([48, 55], 2), dur=1.0), name="bassline")
+
+song_again, _ = from_session(session, resolve=lambda kind, config: (
+    pattern if config.get("sequence") == "bassline" else None
+))
+```
+
+A name is a label, not an identity: nothing addresses an element by it, and two
+elements may share one — which is what naming *the same algorithm used twice*
+looks like. An **unnamed** leaf is written with no reference at all and comes
+back **frozen**: drawn, placed, silent, contributing its extent and emitting
+nothing. That is not the file being lossy; it is what a composition means
+somewhere its language is not running, and it is what a `standalone` host with
+no interpreter shows for every generator in the piece.
+
+The same name is what a multitrack editor labels a lane with, so naming a lane
+is worth doing before it is worth needing.
