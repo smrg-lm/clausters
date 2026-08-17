@@ -41,7 +41,7 @@
    "title": "$title",
    "w": 320,
    "h": 200,
-   "layout": "col",
+   "flow": "col",
    "children": [
     {
      "type": "knob",
@@ -150,8 +150,8 @@
        "type": "meter"
       }
      ],
+     "flow": "col",
      "h": 200,
-     "layout": "col",
      "title": "FM voice",
      "type": "window",
      "w": 320
@@ -216,8 +216,8 @@
        "type": "meter"
       }
      ],
+     "flow": "col",
      "h": 200,
-     "layout": "col",
      "title": "FM voice",
      "type": "window",
      "w": 320
@@ -285,8 +285,8 @@
        "type": "meter"
       }
      ],
+     "flow": "col",
      "h": 200,
-     "layout": "col",
      "title": "bright voice",
      "type": "window",
      "w": 320
