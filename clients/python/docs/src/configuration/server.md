@@ -29,14 +29,18 @@ newer build stays readable by an older one.
 | `taps` | integer | `8`; `0` disables the tap region | `--taps` | Audio-tap rings in the shared segment — what `/bus_tap` routes an audio bus into, and what an oscilloscope reads |
 | `tap_frames` | integer (samples) | `16384`, rounded up to a power of two | `--tap-frames` | Per-tap ring capacity |
 | `outputs` | integer | the device's own channel count | `--outputs` | Hardware output channels |
-| `inputs` | integer | `0` (no input device) | `--inputs` | Hardware input channels; `> 0` opens the default input device, readable with `In` on buses `outputs..outputs+inputs` |
+| `inputs` | integer | `0` (no input device) | `--inputs` | Hardware input channels; `> 0` opens the input device, readable with `In` on buses `outputs..outputs+inputs` |
+| `host` | string | the platform's | `--host` | The audio host/backend: `jack`, `alsa`, `pipewire`, `coreaudio`, `wasapi` — whatever the build has |
+| `device` | string | the host's default | `--device` | Output device by name (exact, or a substring). Under JACK it is also the client name the ports carry |
+| `input_device` | string | the host's default | `--input-device` | Input device by name. Capture belongs to whoever holds this device |
+| `client_name` | string | cpal's own | `--client-name` | What the server calls itself to the audio graph, so its ports come back under the same name after a restart and a patchbay can reconnect them |
 | `max_nodes` | integer | `8192` | `--max-nodes` | Node slab capacity, the root group included |
 | `max_buffers` | integer | `4096` | `--max-buffers` | Buffer pool size |
 | `max_graph_children` | integer | `512` | `--max-graph-children` | Per-group child capacity |
 | `max_ugen_inputs` | integer | `32` (also the maximum) | `--max-ugen-inputs` | Accepted inputs per UGen when a def is compiled |
 | `persist` | boolean | `true` | `--no-persist` | Reload the def store on boot and write new defs to it |
 | `data_dir` | string (path) | `$CLAUSTERS_DATA_DIR`, else the XDG data dir | `--data-dir` | Where the def store (`defs/`, `midi.json`, `boot.json`) lives |
-| `shm` | string (path) | off | `--shm` | The shared-memory segment local clients map (put it on `/dev/shm`) |
+| `shm` | string (path) | off | `--shm` | The shared-memory segment local clients map (put it on `/dev/shm`). One that already exists is attached to, never truncated: the first server on a segment owns its command plane and its material, a later one plays what the owner published |
 | `tcp` | boolean or port | `true` — on at the base `port`, beside UDP | `--tcp [port]` / `--no-tcp` | Length-prefixed OSC over TCP |
 | `ws` | boolean or port | off; `true` means the base `port` + 10 | `--ws [port]` | OSC over WebSocket, reachable from a browser |
 | `max_frame` | integer (bytes) | `16777216` (16 MiB) | `--max-frame` | Largest OSC frame on the stream transports (TCP and WebSocket) |

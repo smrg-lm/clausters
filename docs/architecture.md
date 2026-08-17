@@ -446,6 +446,26 @@ The **playhead** is that position, read each frame with no messages. Natively th
 
 Which is also why the host **binds a group of its own** rather than the root: the root would freeze every sound the session has. And why the transport gestures are gated on `Host::owns_transport` — the host that bound the group is the one driving it, and a host that is a guest on somebody else's server sends no `/transport_*` at all, because a script owns its own transport.
 
+### The editor's processes: who owns the material, who holds the devices
+
+An editor that owns its material through a real-time server holds an audio device it does not need, cannot be restarted without taking the material with it, and pays the whole real-time surface to run three verbs. So the standalone editor is **three roles**, and the split is by what each one holds:
+
+| Role | Holds | Where it lives |
+|---|---|---|
+| The **editor** | the document, and the gestures on it | `clausters-gui --session` |
+| The **on-demand session** | the **material**: the segment and every take in it | in the editor's process (`ClaustersSession`, an `NrtSession` on its own thread) |
+| The **player** | the machine's **input and output** | another process: `clausters --shm <path>` |
+
+What decides the split is the one thing a segment cannot have twice. Its rings are **SPSC** — one pair, one drainer — so the first server on a segment claims the command plane (a pid in the header) and owns the material; any later one attaches to the data plane, maps what the owner published, and serves its own clients over its own sockets. That claim is why `--shm` **attaches** to a segment that exists instead of truncating it, and a claim whose pid no longer answers is stale and is taken over, so killing a server is recoverable rather than terminal.
+
+Three consequences worth stating before they are discovered:
+
+- **The clocks belong to the device.** The sample clock, the transport counters, the taps and the per-bus levels are published by the process running an audio device; a session has none and publishes none, or a fade applied to a take would jog the playhead the player is drawing.
+- **Capture belongs to whoever holds the input device**, so a session cannot record. The split is not "the player plays and the session works" — it is *the player owns the devices*.
+- **Attaching restores the material and not the routing.** Ports and the connections a person made to them live with the process, so a restart is recovery. It is only cheap if the ports come back under the same name, which is what `--client-name` (and `--device` under JACK) is for.
+
+The editor's own path follows from it: allocation, the editing verbs and `/buffer_render` go to the session that owns the material; playing, sounding a key, the transport and the bus taps go to the player (`Host::server` and `Host::player`). Takes reach the player as **`/buffer_attach`** and never as samples. And with the take mapped, the editor draws it by reading the region and edits it by **storing into the cells** — no `/buffer_query`, no chunked `/buffer_getRange`, no blob out and no reconciliation. What it does send afterwards is `/buffer_touch`: the span, so a Python or web client holding a picture of the same take learns it changed, since the samples themselves said nothing.
+
 ## The GUI host: structure, and how to add a widget
 
 The GUI (`clients/gui`) is a **separate process**, not code linked into the audio

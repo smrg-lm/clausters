@@ -122,6 +122,20 @@ class ServerOptions:
     max_frame: "int | None" = None
     #: Concurrent stream clients, TCP + WebSocket (``--max-clients``).
     max_clients: "int | None" = None
+    #: The audio host/backend by name (``--host``): ``"jack"``, ``"alsa"``,
+    #: ``"pipewire"``, ``"coreaudio"``, ``"wasapi"`` — whatever the build
+    #: has. ``None`` takes the platform's default.
+    host: "str | None" = None
+    #: The output device by name (``--device``), exact or a substring of one.
+    #: Under JACK it is also the client name the ports carry.
+    device: "str | None" = None
+    #: The input device by name (``--input-device``). Capture belongs to
+    #: whoever holds this device.
+    input_device: "str | None" = None
+    #: What the server calls itself to the audio graph (``--client-name``), so
+    #: its ports come back under the same name after a restart and a patchbay
+    #: can reconnect them.
+    client_name: "str | None" = None
     #: CPU affinity list (``--pin``): first CPU for the audio callback, the
     #: rest round-robin over the DSP workers. Experimental, Linux only, and
     #: only accepted by a server built with the ``rtprio`` feature.
@@ -152,6 +166,14 @@ class ServerOptions:
         # int, so the port/number branch must come after.
         if self.workers is not None:
             flags += ["--workers", str(self.workers)]
+        # Devices and the name the audio graph knows this server by: a server
+        # meant to be routed by hand is named, or its ports come back under a
+        # new name every run and the routing is lost with them.
+        for flag, value in (("--host", self.host), ("--device", self.device),
+                            ("--input-device", self.input_device),
+                            ("--client-name", self.client_name)):
+            if value is not None:
+                flags += [flag, str(value)]
         if self.tcp is False:
             flags += ["--no-tcp"]
         elif self.tcp is True:

@@ -5645,3 +5645,64 @@ which is what would let a container be placed twice and edited in one place, and
 a placement's own **arguments**, for a function evaluated twice with different
 parameters. Both need a placement to be a thing with an identity, which is what
 this makes it.
+
+## One segment has one owner, and every other server on it is a guest
+
+**Context.** A segment used to belong to one server for its whole life: `--shm
+<path>` created the file, truncated it and re-initialised the header. That was
+right while the segment was that server's own transport — one process, one
+ring. It stopped being right the moment the segment indexed the **material**,
+because the process most likely to be restarted is the one holding the audio
+device, and it was also the one wiping what everybody else was editing.
+
+**Decision.** `--shm` opens what is there and creates only what is not, and the
+segment carries a **claim**: the pid serving its command plane, in the word that
+already existed to keep `transport_clock` aligned. The first server on a segment
+takes it, serves the rings and owns the material — a directory row and a region
+per buffer it installs. Any later one attaches to the data plane, maps what the
+owner published, publishes nothing of its own, and serves its clients over its
+own sockets. A claim whose pid no longer answers is stale and is taken over.
+
+**Why a claim rather than a convention.** The rings are SPSC and there is one
+pair. Two servers draining the inbound one would each get half the commands, and
+nothing would say so — the failure is silent and intermittent, which is the kind
+a rule in a document does not prevent.
+
+**Consequence.** The arrangement an editor wants becomes expressible: the
+on-demand session creates the segment and owns the takes, and the player — a
+separate process, holding the devices — attaches. Killing the player takes no
+material with it, and the next one adopts what is there. Two things do **not**
+follow from it and are stated where they bite: the clocks belong to whoever runs
+a device (a session publishes none), and attaching restores the material and not
+the routing, since ports and patches live with the process.
+
+## A peer writes material, announces the span, and asks for every operation
+
+**Context.** With a take mapped, an editor stores a stroke into the very cells
+the engine reads: no message, no blob, no reply, no reconciliation. That is the
+point of mapping it, and it takes two things away — the boundary that said what
+a client may do to samples, and the only signal any other client had that they
+changed.
+
+**Decision.** Two rules, both narrow.
+
+*What may be written is **material**, samples the writer already holds*: a drawn
+stroke, a pasted block, a take it loaded. Every **operation** over samples — a
+gain, a fade, a reverse, a render, a resynthesis — stays the server's verb and
+is asked for over the wire, however easy the mapped memory makes the other
+thing. Without that line the mapping quietly re-opens the question S12 refused,
+since a client with write access can compute a fade and store the result, and
+nothing in the memory would stop it. One place performs audio processing, and it
+is the server.
+
+*What was written is **announced**, not carried*: `/buffer_touch bufnum channel
+start frames`, which the server broadcasts as `/buffer_touched` to every
+`/server_notify` client but the one that wrote. Four integers, and whoever holds
+a picture of that take re-reads the span.
+
+**Consequence.** The saving stays the round trip rather than the copy, and the
+clients that cannot map anything keep working: a page is exactly who needs the
+announcement, because a browser cannot map a file and a message is the only way
+it can hear about an edit at all. What a peer may *compute* is unchanged and is
+what it always was — what drawing needs: a peak pyramid, an analysis for a
+picture.
