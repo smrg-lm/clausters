@@ -61,11 +61,42 @@ pub fn empty_pool_with(count: usize) -> BufferPool {
 /// Interleaved sample data plus its shape. See the module docs for what is
 /// fixed (the shape) and what is not (every sample).
 pub struct Buffer {
-    /// Interleaved samples as `f32` bit patterns, one atomic cell each.
-    data: Vec<AtomicU32>,
+    /// Interleaved samples as `f32` bit patterns, one atomic cell each — owned
+    /// here, or in a region a second process can map (see [`Storage`]).
+    data: Storage,
     channels: usize,
     frames: usize,
     sample_rate: f64,
+}
+
+/// Where a buffer's cells live.
+///
+/// **Matched on every read, and that is measured rather than assumed.** An
+/// interpolated random read over a million cells costs 169-278 ns per 64-frame
+/// block on the owned form, 172-281 ns matching this enum once per block and
+/// 171-184 ns matching it per sample: the four measurements are one
+/// measurement, because the load from memory is what costs and a buffer's
+/// storage never changes, so the branch is perfectly predicted. A raw pointer
+/// resolved once measured the same, which is why it is not what this is.
+#[derive(Debug)]
+pub enum Storage {
+    /// The server's own memory: what a buffer is with no segment attached.
+    Owned(Vec<AtomicU32>),
+    /// A region a peer can map by name, for a server that has an IPC segment —
+    /// the material an editor draws and writes without a message
+    /// (`dsp::region`).
+    Shared(std::sync::Arc<crate::dsp::region::Region>),
+}
+
+impl Storage {
+    /// The cells, whichever side they live on.
+    #[inline]
+    pub fn cells(&self) -> &[AtomicU32] {
+        match self {
+            Storage::Owned(v) => v,
+            Storage::Shared(r) => r.cells(),
+        }
+    }
 }
 
 impl std::fmt::Debug for Buffer {
@@ -84,14 +115,38 @@ impl Buffer {
     pub fn new(data: Vec<f32>, channels: usize, frames: usize, sample_rate: f64) -> Self {
         assert_eq!(data.len(), frames * channels);
         Self {
-            data: data
-                .into_iter()
-                .map(|s| AtomicU32::new(s.to_bits()))
-                .collect(),
+            data: Storage::Owned(
+                data.into_iter()
+                    .map(|s| AtomicU32::new(s.to_bits()))
+                    .collect(),
+            ),
             channels,
             frames,
             sample_rate,
         }
+    }
+
+    /// The same shape over storage a peer can map. The region's cells are the
+    /// buffer's cells: nothing is copied here or ever after.
+    pub fn shared(
+        region: std::sync::Arc<crate::dsp::region::Region>,
+        channels: usize,
+        frames: usize,
+        sample_rate: f64,
+    ) -> Self {
+        assert!(region.cells().len() >= frames * channels);
+        Self {
+            data: Storage::Shared(region),
+            channels,
+            frames,
+            sample_rate,
+        }
+    }
+
+    /// Where this buffer's samples live — what a pool consults to hand a peer
+    /// the name of a region, and nothing else.
+    pub fn storage(&self) -> &Storage {
+        &self.data
     }
 
     pub fn zeroed(frames: usize, channels: usize, sample_rate: f64) -> Self {
@@ -116,7 +171,7 @@ impl Buffer {
     /// representation is anybody's business.
     #[inline]
     pub fn cells(&self) -> &[AtomicU32] {
-        &self.data
+        self.data.cells()
     }
 
     /// One cell's value. The single door every read goes through, so the
@@ -131,7 +186,7 @@ impl Buffer {
     /// out of range reads as 0.
     #[inline]
     pub fn at(&self, index: usize) -> f32 {
-        self.data.get(index).map_or(0.0, Self::load)
+        self.cells().get(index).map_or(0.0, Self::load)
     }
 
     /// One sample; out-of-range frames or channels read as 0.
@@ -140,7 +195,7 @@ impl Buffer {
         if frame >= self.frames || channel >= self.channels {
             return 0.0;
         }
-        Self::load(&self.data[frame * self.channels + channel])
+        Self::load(&self.cells()[frame * self.channels + channel])
     }
 
     /// Writes one sample by flat interleaved index; out of range writes
@@ -149,7 +204,7 @@ impl Buffer {
     /// mutability instead.
     #[inline]
     pub fn set_at(&self, index: usize, value: f32) {
-        if let Some(cell) = self.data.get(index) {
+        if let Some(cell) = self.cells().get(index) {
             cell.store(value.to_bits(), Ordering::Relaxed);
         }
     }
@@ -168,18 +223,18 @@ impl Buffer {
     /// for the network and NRT sides that serve, resample or write out a
     /// buffer while the engine may be recording into it.
     pub fn to_vec(&self) -> Vec<f32> {
-        self.data.iter().map(Self::load).collect()
+        self.cells().iter().map(Self::load).collect()
     }
 
     /// The number of samples this holds, `frames * channels`.
     #[inline]
     pub fn len(&self) -> usize {
-        self.data.len()
+        self.cells().len()
     }
 
     /// Whether it holds no samples at all.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+        self.cells().is_empty()
     }
 }

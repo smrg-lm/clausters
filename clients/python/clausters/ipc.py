@@ -42,7 +42,7 @@ from .errors import (
     ServerError,
 )
 
-ABI_VERSION = 8
+ABI_VERSION = 9
 
 #: The stride between successive stochastic-UGen seeds within one render —
 #: ``SEED_STRIDE`` in ``clausters_core::rng``. A client needs it to reproduce a
@@ -86,7 +86,13 @@ _OFF_TRANSPORT_CLOCK = 48
 # piece, in samples of the material. Not the clock above: that one is elapsed
 # time and is monotonic, this one jumps wherever `/transport_locate` puts it
 # and wraps at a loop's end. It spends the last of the reserved header space,
-# so v8 moved no offset either; the next field added here will.
+# so v8 moved no offset either; the next field added here will. ABI v9 appends
+# the **buffer directory** as the segment's tail -- one row per pool buffer,
+# saying what shape it is and which generation it is, so a local peer can map a
+# buffer's samples by name (`server::ipc::BufferRow`). It is a trailing region,
+# so again no offset here moved; what changed is the segment's total size, and
+# the row count is what remains of the mapped length rather than a header field
+# -- the header has no reserved space left.
 _OFF_TRANSPORT_POSITION = 56
 _RING_CAPACITY = 64 * 1024
 _RING_HEADER = 64  # head u32, tail u32, padding
@@ -118,11 +124,20 @@ def _tap_region_offset(control_buses: int, audio_buses: int = _NUM_AUDIO_BUSES) 
     return (buses_end + _TAP_ALIGN - 1) // _TAP_ALIGN * _TAP_ALIGN
 
 
-# Segment size for the default control-bus and tap counts (the actual size is
-# the file's length; the server sizes it from `--control-buses`/`--taps`/
-# `--tap-frames`). Mirrors `src/server/ipc.rs::SEGMENT_SIZE` (660160).
-SEGMENT_SIZE = _tap_region_offset(_DEFAULT_CONTROL_BUSES) + _DEFAULT_TAPS * (
-    _TAP_ALIGN + 4 * _DEFAULT_TAP_FRAMES)
+#: Bytes per **buffer-directory** row (ABI v9): the generation, the frames, the
+#: channels and the sample rate — `server::ipc::BufferRow`.
+_BUFFER_ROW = 24
+#: Default directory rows: the server's default buffer count.
+_DEFAULT_BUFFERS = 4096
+
+# Segment size for the default control-bus, tap and buffer counts (the actual
+# size is the file's length; the server sizes it from `--control-buses`/
+# `--taps`/`--tap-frames`, and the directory is what remains of the length).
+# Mirrors `src/server/ipc.rs::SEGMENT_SIZE`.
+SEGMENT_SIZE = (
+    _tap_region_offset(_DEFAULT_CONTROL_BUSES)
+    + _DEFAULT_TAPS * (_TAP_ALIGN + 4 * _DEFAULT_TAP_FRAMES)
+    + _DEFAULT_BUFFERS * _BUFFER_ROW)
 
 
 class _Ring:

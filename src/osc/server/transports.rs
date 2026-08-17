@@ -95,6 +95,14 @@ impl OscServer {
         Ok(())
     }
 
+    /// Says where the segment's file is, which is what a buffer's **region** is
+    /// named from (`dsp::region`). Without it a server with a segment still
+    /// keeps its buffers in its own memory: the ring is a transport, and
+    /// sharing the material needs a path a peer can open.
+    pub fn share_buffers_at(&mut self, path: std::path::PathBuf) {
+        self.shm_path = Some(path);
+    }
+
     /// handles every packet waiting in the attached ring. Same
     /// validation path as UDP (`decode_packet`); ring bytes are untrusted.
     pub(in crate::osc::server) fn drain_ring(&mut self) -> Flow {

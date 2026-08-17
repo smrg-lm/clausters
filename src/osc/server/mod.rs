@@ -167,6 +167,13 @@ pub struct OscServer {
     clock: TimeSource,
     /// the shared-memory / in-process ring endpoint, when attached.
     ipc: Option<crate::server::ipc::IpcPeer>,
+    /// Where the segment's file is, when it has one: what a buffer's region is
+    /// named from, and the switch that decides whether a pool buffer's samples
+    /// are shareable at all (`share_buffers_at`).
+    shm_path: Option<std::path::PathBuf>,
+    /// Per buffer, the region file backing it — kept so freeing one can unlink
+    /// its name. Sized with the pool.
+    shared_buffers: Vec<Option<std::path::PathBuf>>,
     /// TCP transport, when `listen_tcp` was called: accepts length-prefixed OSC
     /// connections multiplexed into the same loop. See [`crate::osc::tcp`].
     tcp: Option<crate::osc::tcp::TcpHub>,

@@ -78,8 +78,12 @@ pub const MAGIC: u32 = 0x5541_4C43;
 /// of the header or the data plane moved, only the framing inside the rings. v8
 /// added the transport **position** beside the transport clock — two different
 /// quantities, see [`Segment::transport_position`] — in the last of the
-/// header's reserved space, so again no offset moved.
-pub const ABI_VERSION: u32 = 8;
+/// header's reserved space, so again no offset moved. v9 added the **buffer
+/// directory** as the segment's tail (`BufferRow` per pool buffer): a trailing
+/// region, so again nothing before it moved — and the header had no room left
+/// for a count, which is why the row count is what remains of the mapped
+/// length rather than a field.
+pub const ABI_VERSION: u32 = 9;
 
 /// The peer tag an embedder gets when it never asks for one: the single client
 /// a segment has always had, so a peer built against the old single-client
@@ -203,16 +207,68 @@ const fn tap_slot_size(tap_frames: usize) -> usize {
     TAP_ALIGN + tap_frames * size_of::<f32>()
 }
 
-/// Total byte size of a segment carrying `control_buses` control slots, the
-/// fixed audio-bus region, and `taps` audio-tap rings of `tap_frames` samples
-/// each.
-const fn segment_size(control_buses: usize, taps: usize, tap_frames: usize) -> usize {
+/// Byte offset of the **buffer directory** (ABI v9): the tap region's end.
+///
+/// One row per pool buffer, and the directory is the segment's **tail** — its
+/// row count is what is left of the mapped length, not a field in the header.
+/// That is not a shortcut: the header has no reserved space left, so a count
+/// there would move the rings and every offset after them, which out-of-process
+/// readers pin by hand. A trailing region moves nothing, and an older peer
+/// refuses the segment anyway (its own `segment_size` no longer matches the
+/// file), which is the version check doing its job twice.
+const fn buffer_region_offset(control_buses: usize, taps: usize, tap_frames: usize) -> usize {
     tap_region_offset(control_buses) + taps * tap_slot_size(tap_frames)
+}
+
+/// Total byte size of a segment carrying `control_buses` control slots, the
+/// fixed audio-bus region, `taps` audio-tap rings of `tap_frames` samples each,
+/// and a directory of `buffers` rows.
+const fn segment_size(
+    control_buses: usize,
+    taps: usize,
+    tap_frames: usize,
+    buffers: usize,
+) -> usize {
+    buffer_region_offset(control_buses, taps, tap_frames) + buffers * size_of::<BufferRow>()
+}
+
+/// One pool buffer, as a peer finds it: what shape it is, and **which**
+/// buffer it is.
+///
+/// The `generation` does three jobs with one number, which is why it is the
+/// only field that is not a shape. It is **odd while a buffer is live** and
+/// even when the slot is empty (a seqlock's own convention, and what a peer
+/// tests before mapping anything). It **names the region**, so a freed buffer
+/// and its replacement can never share a file name and a stale mapping can
+/// never be aliased onto new material. And it is the **seqlock**: a writer
+/// bumps it before and after the shape, a reader that sees it move re-reads.
+#[repr(C)]
+pub struct BufferRow {
+    generation: AtomicU64,
+    frames: AtomicU32,
+    channels: AtomicU32,
+    sample_rate_bits: AtomicU64,
 }
 
 /// Default segment size (the `--control-buses`/`--taps`/`--tap-frames`
 /// default counts).
-pub const SEGMENT_SIZE: usize = segment_size(NUM_CONTROL_BUSES, DEFAULT_TAPS, DEFAULT_TAP_FRAMES);
+pub const SEGMENT_SIZE: usize = segment_size(
+    NUM_CONTROL_BUSES,
+    DEFAULT_TAPS,
+    DEFAULT_TAP_FRAMES,
+    DEFAULT_BUFFERS,
+);
+
+/// Default buffer-directory rows — scsynth's own default buffer count, so a
+/// segment created with no `--max-buffers` describes every buffer the server
+/// can allocate.
+pub const DEFAULT_BUFFERS: usize = crate::dsp::buffer::NUM_BUFFERS;
+
+/// The next **odd** number past `gen`: a slot goes live on an odd generation
+/// and empty on an even one, and every alloc takes a fresh one.
+fn next_odd(counter: u64) -> u64 {
+    counter.wrapping_add(if counter.is_multiple_of(2) { 1 } else { 2 })
+}
 
 enum Backing {
     // `u128` words keep the heap allocation 16-aligned — `Layout` holds
@@ -240,6 +296,10 @@ impl Drop for Backing {
 /// it alive.
 pub struct Segment {
     layout: *mut Layout,
+    /// The mapped length. The **buffer directory** is the tail, so how many
+    /// rows a segment has is this minus every fixed region — the one size that
+    /// is the file's rather than the header's.
+    len: usize,
     _backing: Backing,
 }
 
@@ -264,11 +324,12 @@ impl Segment {
     /// A heap-backed segment with every region sized explicitly.
     pub fn in_memory_full(control_buses: usize, taps: usize, tap_frames: usize) -> Arc<Self> {
         check_tap_params(taps, tap_frames);
-        let size = segment_size(control_buses, taps, tap_frames);
+        let size = segment_size(control_buses, taps, tap_frames, DEFAULT_BUFFERS);
         let mut words = vec![0u128; size.div_ceil(16)].into_boxed_slice();
         let layout = words.as_mut_ptr() as *mut Layout;
         let seg = Self {
             layout,
+            len: size,
             _backing: Backing::Heap(words),
         };
         seg.init_header(control_buses, taps, tap_frames);
@@ -300,7 +361,7 @@ impl Segment {
         tap_frames: usize,
     ) -> io::Result<Arc<Self>> {
         check_tap_params(taps, tap_frames);
-        let size = segment_size(control_buses, taps, tap_frames);
+        let size = segment_size(control_buses, taps, tap_frames, DEFAULT_BUFFERS);
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -332,14 +393,15 @@ impl Segment {
                 header.abi_version
             )));
         }
-        // The mapped length must match the region sizes the header claims.
-        if len
-            != segment_size(
-                header.control_buses as usize,
-                header.taps as usize,
-                header.tap_frames as usize,
-            )
-        {
+        // The mapped length must match the region sizes the header claims,
+        // plus whole directory rows -- the one region whose count is the
+        // segment's own length rather than a field.
+        let fixed = buffer_region_offset(
+            header.control_buses as usize,
+            header.taps as usize,
+            header.tap_frames as usize,
+        );
+        if len < fixed || !(len - fixed).is_multiple_of(size_of::<BufferRow>()) {
             return Err(io::Error::other("segment size mismatch"));
         }
         Ok(Arc::new(seg))
@@ -364,6 +426,7 @@ impl Segment {
         }
         Ok(Self {
             layout: ptr as *mut Layout,
+            len,
             _backing: Backing::Mapped {
                 ptr: ptr as *mut u8,
                 len,
@@ -453,12 +516,119 @@ impl Segment {
 
     /// The size the layout occupies, in bytes. See [`Self::base`].
     pub fn size(&self) -> usize {
+        self.len
+    }
+
+    /// Byte offset of the buffer directory, and how many rows it has.
+    fn directory(&self) -> (usize, usize) {
         let header = &self.layout().header;
-        segment_size(
+        let at = buffer_region_offset(
             header.control_buses as usize,
             header.taps as usize,
             header.tap_frames as usize,
-        )
+        );
+        (at, self.len.saturating_sub(at) / size_of::<BufferRow>())
+    }
+
+    /// One directory row, or `None` for a buffer number this segment has no
+    /// room for.
+    fn row(&self, bufnum: usize) -> Option<&BufferRow> {
+        let (at, rows) = self.directory();
+        (bufnum < rows).then(|| {
+            // SAFETY: the directory is `rows` rows at `at`, inside the mapping.
+            unsafe { &*(self.base().add(at) as *const BufferRow).add(bufnum) }
+        })
+    }
+
+    /// **Publishes a buffer's shape and takes its generation**: the number the
+    /// region's file is named with, and what tells a peer the slot is live.
+    ///
+    /// Odd while a buffer is live, even when the slot is empty. A writer bumps
+    /// it, writes the shape, and bumps it again — so a reader that sees it move
+    /// between its two loads knows it read a torn row and re-reads.
+    pub fn publish_buffer(
+        &self,
+        bufnum: usize,
+        frames: usize,
+        channels: usize,
+        sample_rate: f64,
+    ) -> Option<u64> {
+        let row = self.row(bufnum)?;
+        let odd = next_odd(row.generation.load(Ordering::Relaxed));
+        row.generation.store(odd.wrapping_sub(1), Ordering::Release);
+        row.frames.store(frames as u32, Ordering::Relaxed);
+        row.channels.store(channels as u32, Ordering::Relaxed);
+        row.sample_rate_bits
+            .store(sample_rate.to_bits(), Ordering::Relaxed);
+        row.generation.store(odd, Ordering::Release);
+        Some(odd)
+    }
+
+    /// Marks a slot empty. The region's file is unlinked by whoever owns it;
+    /// this is what a peer reads to learn that what it holds is history.
+    pub fn retire_buffer(&self, bufnum: usize) {
+        let Some(row) = self.row(bufnum) else { return };
+        let counter = row.generation.load(Ordering::Relaxed);
+        if !counter.is_multiple_of(2) {
+            row.generation
+                .store(counter.wrapping_add(1), Ordering::Release);
+        }
+    }
+
+    /// What a peer needs to map buffer `bufnum`: its generation (which names
+    /// the region) and its shape — or `None` when the slot is empty.
+    ///
+    /// Read under the generation twice, so a row caught mid-write is re-read
+    /// rather than believed.
+    pub fn buffer_info(&self, bufnum: usize) -> Option<(u64, usize, usize, f64)> {
+        let row = self.row(bufnum)?;
+        for _ in 0..8 {
+            let before = row.generation.load(Ordering::Acquire);
+            if before.is_multiple_of(2) {
+                return None; // empty slot
+            }
+            let frames = row.frames.load(Ordering::Relaxed) as usize;
+            let channels = row.channels.load(Ordering::Relaxed) as usize;
+            let rate = f64::from_bits(row.sample_rate_bits.load(Ordering::Relaxed));
+            if row.generation.load(Ordering::Acquire) == before {
+                return Some((before, frames, channels, rate));
+            }
+        }
+        None
+    }
+
+    /// **Maps buffer `bufnum`'s samples** — the peer's door to the material.
+    ///
+    /// `at` is the segment's own path, which is what the region is named from.
+    /// `None` when the slot is empty, when the row is out of range, or when the
+    /// region cannot be opened — which is the ordinary answer for a buffer that
+    /// was freed between reading the directory and opening the file, and is why
+    /// this returns the generation it mapped: a caller that keeps the mapping
+    /// compares it against the row to learn its material is history.
+    #[cfg(unix)]
+    pub fn map_buffer(
+        &self,
+        at: &std::path::Path,
+        bufnum: usize,
+    ) -> Option<(u64, Arc<crate::dsp::buffer::Buffer>)> {
+        let (generation, frames, channels, rate) = self.buffer_info(bufnum)?;
+        let cells = frames.checked_mul(channels)?;
+        let path = crate::dsp::region::Region::path_for(at, bufnum, generation);
+        let region = crate::dsp::region::Region::open(&path, cells).ok()?;
+        // Re-read: a row that moved while the file was being opened describes
+        // a buffer this mapping is not.
+        if self.buffer_info(bufnum)?.0 != generation {
+            return None;
+        }
+        Some((
+            generation,
+            Arc::new(crate::dsp::buffer::Buffer::shared(
+                Arc::new(region),
+                channels,
+                frames,
+                rate,
+            )),
+        ))
     }
 
     /// Control buses living inside the segment; hand this to

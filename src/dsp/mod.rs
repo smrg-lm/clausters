@@ -11,6 +11,7 @@
 // wavetable/generator commands (pure buffer math).
 pub mod buffer;
 pub mod denormals;
+pub mod region;
 pub mod wavetable;
 
 // The UGen library — the SynthDef family (`synth` feature). A Faust-only or

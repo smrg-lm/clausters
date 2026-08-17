@@ -551,6 +551,10 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // attaching would only tighten the run-loop poll for nothing.
     if let (Some(segment), Some(path)) = (segment, shm_path.as_deref()) {
         osc.attach_ipc(IpcPeer::new(segment, Role::Server))?;
+        // With a segment on disk, a pool buffer's samples live in a region
+        // beside it: a local peer maps the material by name and edits it with
+        // no message at all.
+        osc.share_buffers_at(std::path::PathBuf::from(path));
         tracing::info!(
             "shared segment at {path} (ABI v{})",
             clausters::server::ipc::ABI_VERSION

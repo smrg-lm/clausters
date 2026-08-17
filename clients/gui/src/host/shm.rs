@@ -46,7 +46,7 @@ const MAGIC: u32 = 0x5541_4C43;
 /// last of that same reserved space -- a second quantity beside the clock, not
 /// a redefinition of it (see [`SharedSegment::transport_position`]) -- so no
 /// offset moved here either.
-const SUPPORTED_ABI_VERSION: u32 = 8;
+const SUPPORTED_ABI_VERSION: u32 = 9;
 
 // Byte offsets of the fields we read inside the `#[repr(C)]` Header.
 const OFF_ABI: usize = 4;

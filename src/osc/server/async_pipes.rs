@@ -160,10 +160,19 @@ impl OscServer {
             let index = result.index as usize;
             let swap = match action {
                 NrtAction::Install(buffer) => {
+                    // **Where a buffer lives is decided here, once.** With a
+                    // segment attached the material goes into a region a peer
+                    // can map by name, so an editor draws and writes it with no
+                    // message at all; with none it stays the server's own
+                    // memory, exactly as before. The copy is paid at
+                    // *allocation*, which is where the data was being built
+                    // anyway -- never per write.
+                    let buffer = self.share_buffer(index, buffer);
                     self.translator.buffers[index] = Some(Arc::clone(&buffer));
                     Some(Some(buffer))
                 }
                 NrtAction::Clear => {
+                    self.retire_buffer(index);
                     self.translator.buffers[index] = None;
                     Some(None)
                 }
@@ -185,6 +194,78 @@ impl OscServer {
             );
         }
         self.resolve_syncs();
+    }
+
+    /// Moves an installed buffer into a **mapped region** when this server has
+    /// a segment, and publishes its row so a peer can find it.
+    ///
+    /// The region is named from the segment's path, the buffer number and the
+    /// generation the directory hands back — so the file of a freed buffer and
+    /// the file of its replacement can never be the same name, and a peer that
+    /// kept the old mapping is writing into memory nobody reads rather than
+    /// into somebody else's take.
+    fn share_buffer(
+        &mut self,
+        index: usize,
+        buffer: Arc<crate::dsp::buffer::Buffer>,
+    ) -> Arc<crate::dsp::buffer::Buffer> {
+        use crate::dsp::region::Region;
+        let Some(path) = self.shm_path.clone() else {
+            return buffer; // no segment: the server's own memory, as always
+        };
+        let Some(segment) = self.ipc.as_ref().map(|p| Arc::clone(p.segment())) else {
+            return buffer;
+        };
+        if self.shared_buffers.len() < self.translator.buffers.len() {
+            self.shared_buffers
+                .resize_with(self.translator.buffers.len(), || None);
+        }
+        let Some(generation) = segment.publish_buffer(
+            index,
+            buffer.frames(),
+            buffer.channels(),
+            buffer.sample_rate(),
+        ) else {
+            return buffer; // a buffer number the directory has no row for
+        };
+        let region_path = Region::path_for(&path, index, generation);
+        let region = match Region::create(&region_path, buffer.len()) {
+            Ok(region) => Arc::new(region),
+            Err(e) => {
+                tracing::warn!("buffer {index}: cannot share its samples: {e}");
+                segment.retire_buffer(index);
+                return buffer;
+            }
+        };
+        // The one copy: what was just built, into the memory it will live in.
+        let cells = region.cells();
+        for (cell, value) in cells.iter().zip(buffer.cells()) {
+            cell.store(
+                value.load(std::sync::atomic::Ordering::Relaxed),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+        self.shared_buffers[index] = Some(region_path);
+        Arc::new(crate::dsp::buffer::Buffer::shared(
+            region,
+            buffer.channels(),
+            buffer.frames(),
+            buffer.sample_rate(),
+        ))
+    }
+
+    /// Empties a directory row and unlinks the region behind it.
+    ///
+    /// **Unlink, not delete**: every mapping a peer still holds stays valid
+    /// until it drops it, which is what makes freeing a buffer safe while
+    /// somebody is drawing it. What the peer sees is the row going even.
+    fn retire_buffer(&mut self, index: usize) {
+        if let Some(peer) = self.ipc.as_ref() {
+            peer.segment().retire_buffer(index);
+        }
+        if let Some(path) = self.shared_buffers.get_mut(index).and_then(Option::take) {
+            crate::dsp::region::Region::unlink(&path);
+        }
     }
 
     /// Queues a built NRT job, failing back to the client if the thread is gone.

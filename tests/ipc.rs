@@ -121,8 +121,11 @@ fn file_segments_validate_magic_and_version() {
     // travel in the header, so a non-default boot changes the size, never the
     // offsets' derivation. v6 added the transport clock inside the header's
     // reserved space, so the size and every offset are unchanged from v5 --
-    // which is what reserved space is for.
-    assert_eq!(SEGMENT_SIZE, 722_624);
+    // which is what reserved space is for. v9 appends the **buffer directory**
+    // as the tail -- 4096 default rows of 24 bytes -- which is why the size
+    // moved and no offset did: the header had no reserved space left for a row
+    // count, so the count is what remains of the mapped length.
+    assert_eq!(SEGMENT_SIZE, 722_624 + 4096 * 24);
 }
 
 /// The audio-bus region (ABI v4): the bus is the key. A reader names the audio
@@ -509,4 +512,135 @@ fn embed_render_returns_flat_samples() {
     };
     assert!(ptr.is_null());
     assert_ne!(err[0], 0, "error message must be written");
+}
+
+/// **The material a peer maps, and the three things that make it safe.**
+///
+/// A pool buffer's samples live in a region beside the segment (S19), so a
+/// local peer draws and edits them with no message at all. What this pins is
+/// not the speed but the rules: a peer finds the buffer by *number*, writes
+/// cells the server reads back, and a freed buffer's mapping stays valid while
+/// telling the peer it is history.
+#[test]
+fn a_peer_maps_a_buffer_by_number_and_writes_what_the_server_reads() {
+    use clausters::dsp::buffer::Buffer;
+    use clausters::dsp::region::Region;
+    use std::sync::Arc;
+
+    let path = std::env::temp_dir().join(format!(
+        "clausters-region-test-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    let segment = Segment::create(&path).expect("segment");
+
+    // The server's side: publish the row, create the region, install a buffer
+    // whose cells *are* that region.
+    let generation = segment.publish_buffer(3, 4, 2, 48_000.0).expect("a row");
+    assert!(!generation.is_multiple_of(2), "a live slot is odd");
+    let region_path = Region::path_for(&path, 3, generation);
+    let region = Arc::new(Region::create(&region_path, 8).expect("region"));
+    let served = Buffer::shared(Arc::clone(&region), 2, 4, 48_000.0);
+    served.set_at(5, 0.25);
+
+    // The peer's side: the directory says what it is, and the map is the same
+    // memory rather than a copy of it.
+    let (mapped_generation, mapped) = segment.map_buffer(&path, 3).expect("a peer maps it");
+    assert_eq!(mapped_generation, generation);
+    assert_eq!(
+        (mapped.frames(), mapped.channels(), mapped.sample_rate()),
+        (4, 2, 48_000.0)
+    );
+    assert_eq!(mapped.at(5), 0.25, "the server's sample, with nothing sent");
+    mapped.set_at(1, -0.5);
+    assert_eq!(served.at(1), -0.5, "and the peer's, read straight back");
+
+    // Freed: the row goes even, the name is gone, and the mapping the peer is
+    // holding stays valid -- which is what lets a buffer be freed while
+    // somebody is still drawing it.
+    segment.retire_buffer(3);
+    Region::unlink(&region_path);
+    assert!(segment.buffer_info(3).is_none(), "the slot reads empty");
+    assert!(segment.map_buffer(&path, 3).is_none(), "and maps no more");
+    assert_eq!(mapped.at(5), 0.25, "what was mapped is still readable");
+
+    // And the next allocation takes a new generation, so no stale mapping can
+    // ever be aliased onto new material.
+    let next = segment.publish_buffer(3, 4, 2, 48_000.0).expect("a row");
+    assert!(next > generation && !next.is_multiple_of(2));
+    assert_ne!(Region::path_for(&path, 3, next), region_path);
+
+    Region::unlink(&Region::path_for(&path, 3, next));
+    let _ = std::fs::remove_file(&path);
+}
+
+/// **End to end, over a real server**: a `/buffer_alloc` that arrives through
+/// the ring reaches the pool, and a peer with nothing but the segment's path
+/// maps the material by number.
+///
+/// This is the property S19 exists for — the editor's samples stop being
+/// messages — and it is asserted the only way that means anything: the peer
+/// writes a sample, and the server's own buffer reads it back.
+#[test]
+fn a_buffer_the_server_allocated_is_mapped_by_a_peer() {
+    let path = std::env::temp_dir().join(format!(
+        "clausters-shm-alloc-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    let segment = Segment::create(&path).expect("segment");
+    let (mut engine, handle) = engine_pair_full(
+        SR,
+        2,
+        0,
+        Some(Arc::clone(&segment)),
+        128,
+        1024,
+        clausters::dsp::Limits::default(),
+    );
+    let mut server = OscServer::headless(
+        ServerInfo {
+            nominal_sample_rate: SR as f64,
+            actual_sample_rate: SR as f64,
+        },
+        handle,
+        0.0,
+    );
+    server
+        .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
+        .unwrap();
+    server.share_buffers_at(path.clone());
+
+    let client = IpcPeer::new(Arc::clone(&segment), Role::Client);
+    assert!(client.push(
+        0,
+        &encode(
+            "/buffer_alloc",
+            vec![OscType::Int(2), OscType::Int(64), OscType::Int(1)],
+        )
+    ));
+
+    // The allocation is an NRT job, so the loop has to come round again.
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..400 {
+        server.step();
+        engine.process_block(&mut out);
+        if segment.buffer_info(2).is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+
+    let (_, mapped) = segment
+        .map_buffer(&path, 2)
+        .expect("the peer maps what the server allocated");
+    assert_eq!((mapped.frames(), mapped.channels()), (64, 1));
+    mapped.set_at(7, 0.75);
+    assert_eq!(
+        mapped.at(7),
+        0.75,
+        "the peer writes the material, with nothing sent"
+    );
+
+    let _ = std::fs::remove_file(&path);
 }
