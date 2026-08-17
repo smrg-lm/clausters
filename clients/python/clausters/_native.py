@@ -612,6 +612,42 @@ def _bytes(payload) -> tuple:
     return ctypes.cast(buf, u8p), len(data)
 
 
+def _why_refused(document) -> str:
+    """Why the crate would not open ``document``, in the one case worth naming.
+
+    The C ABI's ``clausters_document_open`` answers with a null handle and no
+    message — it has no channel for one, unlike the wasm face, which raises the
+    crate's own string. So the reason a caller sees is generic, and the reason
+    that is *worth* seeing is the one a client can produce by accident: a node
+    id on two different nodes, which the crate refuses because an intent
+    addresses a node by its id. Looked for only once the crate has already
+    refused, so nothing is validated twice on the ordinary path.
+    """
+    generic = "not a valid document for the crate"
+    if not isinstance(document, dict):
+        return generic
+    seen: dict = {}
+    stack = [document.get("root")]
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, dict):
+            continue
+        node_id = node.get("id")
+        if node_id is not None:
+            first = seen.setdefault(node_id, node)
+            if first is not node and first != node:
+                return (
+                    f"{generic}: node id {node_id} names two different nodes, "
+                    f"a {first.get('kind')} and a {node.get('kind')} — ids are "
+                    "unique within a document"
+                )
+        for member in node.get("members") or ():
+            if isinstance(member, dict):
+                stack.append(member.get("node"))
+        stack.append(node.get("rendered"))
+    return generic
+
+
 class Document:
     """One composition, held by the shared crate — the **only** implementation
     of what an edit means.
@@ -645,7 +681,7 @@ class Document:
         ptr, length = _bytes(document) if document is not None else (None, 0)
         self._handle = lib().clausters_document_open(ptr, length)
         if not self._handle:
-            raise ValueError("not a valid document for the crate")
+            raise ValueError(_why_refused(document))
 
     def __enter__(self) -> "Document":
         return self

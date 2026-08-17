@@ -559,3 +559,60 @@ def test_opening_something_that_is_not_a_document_is_an_error_not_an_empty_one()
     with _native.Document() as empty:
         assert empty.version == FIRST_VERSION
         assert empty.snapshot()["root"]["kind"] == "set"
+
+
+def test_an_element_used_in_two_compositions_does_not_carry_a_number_the_second_one_holds():
+    # Ids are stamped on the element object and numbering starts at 1 for every
+    # root, so two arrangements built in one script both hold 1, 2, 3 -- and
+    # material authored in one and used in the other arrived carrying a number a
+    # different element here already had. An intent naming it then reached
+    # whichever node the crate found first while the editor's index kept the
+    # last: one gesture, two destinations.
+    shared = Event(SeqEvent(midinote=60))
+    first = Group([(0.0, shared), (1.0, Event(SeqEvent(midinote=62)))])
+    to_document(first)
+
+    second = Group([(0.0, Event(SeqEvent(midinote=64))), (1.0, Event(SeqEvent(midinote=67)))])
+    to_document(second)
+    second.add(shared, 2.0)
+
+    ids = _ids(to_document(second)["root"])
+    assert len(ids) == len(set(ids)), ids
+    # And a second conversion of the same tree numbers it the same way, which is
+    # what the whole history rests on.
+    assert _ids(to_document(second)["root"]) == ids
+
+
+def test_one_element_placed_twice_is_still_one_node_with_one_id():
+    # Deliberately unchanged: what an id identifies when one element is placed
+    # twice is an open question in the document crate's plan, with three answers.
+    # Renumbering here would pick one of them from inside a check about a
+    # different failure.
+    twice = Event(SeqEvent(midinote=60))
+    ids = _ids(to_document(Group([(0.0, twice), (4.0, twice)]))["root"])
+    assert len(ids) != len(set(ids))
+
+
+def test_a_tree_converted_on_its_own_is_numbered_as_it_always_was():
+    group = Group([(0.0, Event(SeqEvent(midinote=60))), (1.0, Event(SeqEvent(midinote=62)))])
+    assert _ids(to_document(group)["root"]) == [1, 2, 3]
+
+
+def test_the_crate_refuses_a_document_whose_id_names_two_different_nodes():
+    # The other end of the same rule: what this client can no longer produce, a
+    # file or another writer still can, and the crate is the door every writer
+    # passes through. The C ABI has no channel for the crate's message, so the
+    # client names the collision itself once the handle comes back null.
+    pytest.importorskip("clausters._native")
+    from clausters import _native
+
+    try:
+        _native.lib()
+    except OSError as e:
+        pytest.skip(f"clausters-ffi not built: {e}")
+
+    document = to_document(a_group())
+    root = document["root"]
+    root["members"][0]["node"]["id"] = root["members"][1]["node"]["id"]
+    with pytest.raises(ValueError, match="names two different nodes"):
+        _native.Document(document)

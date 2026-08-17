@@ -59,6 +59,8 @@ pub use resolve::{Mapping, Resolved, Unit, resolve, resolve_node};
 pub use selection::{BinRange, Mask, Selection, ValueRange};
 pub use session::{Location, OpenEdit, Session, Source};
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 /// Beats. The document's time unit throughout: the bridge to samples belongs to
@@ -402,6 +404,19 @@ impl Node {
 }
 
 impl Body {
+    /// What this body is called on the wire — its `kind` tag, and what a
+    /// message about a node says it is.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Body::Event { .. } => "event",
+            Body::Sequence { .. } => "sequence",
+            Body::Buffer { .. } => "buffer",
+            Body::Set { .. } => "set",
+            Body::Generator { .. } => "generator",
+            Body::Unknown(_) => "unknown",
+        }
+    }
+
     /// The placed members, empty for the bodies that hold none.
     pub fn members(&self) -> &[Member] {
         match self {
@@ -468,11 +483,37 @@ impl Body {
 /// is a real state that an editor must be able to name, so it cannot share a
 /// number with "I cannot say".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "RawDocument")]
 pub struct Document {
     /// Monotonic, bumped by every applied edit. Never zero.
     pub version: u64,
     /// The composition.
     pub root: Node,
+}
+
+/// What a document looks like on the way in, before [`Document`]'s own rule
+/// about ids is checked. Every door into the crate deserializes a `Document`,
+/// so putting the check here is what makes it one door rather than a call each
+/// caller has to remember.
+#[derive(Deserialize)]
+struct RawDocument {
+    version: u64,
+    root: Node,
+}
+
+impl TryFrom<RawDocument> for Document {
+    type Error = String;
+
+    fn try_from(raw: RawDocument) -> Result<Self, String> {
+        let document = Document {
+            version: raw.version,
+            root: raw.root,
+        };
+        match document.duplicate_id() {
+            Some(message) => Err(message),
+            None => Ok(document),
+        }
+    }
 }
 
 /// The version an unedited document carries. Zero is reserved for *unstated*.
@@ -490,6 +531,68 @@ impl Document {
     /// The node with this id, anywhere in the tree.
     pub fn find(&self, id: NodeId) -> Option<&Node> {
         self.root.find(id)
+    }
+
+    /// The first node id that names two **different** nodes, described so the
+    /// message says which two — or `None`, which is what a document must be.
+    ///
+    /// **An id names one node.** An intent addresses a node by its id, and an
+    /// id that names two different things is applied to whichever the lookup
+    /// reaches first while the client that sent it keeps the other: one
+    /// gesture, two destinations, and on screen the thing the hand moved comes
+    /// back to where it was. Nothing downstream can recover from it, so it is
+    /// refused at the door — checked every time a document is deserialized,
+    /// which is the one place every writer passes through.
+    ///
+    /// **A repeated id whose nodes are identical is carried, not refused**, and
+    /// the line is deliberate. That is one element *placed twice*: the document
+    /// is ambiguous — which placement does an intent name? — but it is
+    /// consistent, and what an id identifies in that case is an open question
+    /// with three answers, one of which is to forbid it. Refusing here would
+    /// pick that answer by accident, from inside a check about something else.
+    /// A repeated id whose nodes **differ** is not ambiguous but incoherent: no
+    /// answer to that question makes it well-formed, because the id names two
+    /// different things.
+    pub fn duplicate_id(&self) -> Option<String> {
+        fn walk<'a>(
+            node: &'a Node,
+            seen: &mut HashMap<NodeId, &'a Node>,
+            clash: &mut Option<String>,
+        ) {
+            if clash.is_some() {
+                return;
+            }
+            match seen.entry(node.id) {
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(node);
+                }
+                std::collections::hash_map::Entry::Occupied(slot) => {
+                    let first = *slot.get();
+                    if first != node {
+                        *clash = Some(format!(
+                            "node id {} names two different nodes, a {} and a {}: \
+                             ids are unique within a document, because an intent \
+                             addresses a node by its id",
+                            node.id.0,
+                            first.body.kind(),
+                            node.body.kind()
+                        ));
+                        return;
+                    }
+                }
+            }
+            for member in node.members() {
+                walk(&member.node, seen, clash);
+            }
+            if let Some(rendered) = node.rendered() {
+                walk(rendered, seen, clash);
+            }
+        }
+
+        let mut seen = HashMap::new();
+        let mut clash = None;
+        walk(&self.root, &mut seen, &mut clash);
+        clash
     }
 
     /// The highest node id in use, so a client can continue allocating past a

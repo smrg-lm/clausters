@@ -380,6 +380,15 @@ reasoning:
   configuration blob it never interprets — never the material and never the
   algorithm. A generator *is code*, in the language of whoever wrote it, so no
   crate in any language can own one.
+- **An id names one node, and the door checks it.** An intent addresses a node
+  by its id, so an id that names two *different* nodes is applied to whichever
+  the lookup reaches first while the sender's own index keeps the other — one
+  gesture, two destinations. `Document::duplicate_id` runs on deserialization,
+  which is the one point every writer passes through. A repeated id whose nodes
+  are **identical** is carried rather than refused: that is one element placed
+  twice, which is ambiguous and consistent, and what an id identifies there is
+  an open question the check must not settle (see [Design
+  decisions](decisions.md)).
 - **An intent is absolute, and applying one happens in exactly one place.** An
   edit states the resulting value, never an increment, which makes it idempotent
   and makes replay unnecessary. `intent::apply` is the only implementation of

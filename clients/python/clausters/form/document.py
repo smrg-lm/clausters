@@ -167,25 +167,61 @@ class _Ids:
 
     Allocating past the maximum already stamped is what keeps a second
     conversion stable — a new element added between two conversions cannot take
-    an id an existing element is still using."""
+    an id an existing element is still using.
+
+    **An id names one element, and this is where that is enforced.** The number
+    is stamped on the element object, and numbering starts at 1 for every root,
+    so two arrangements built in one script both hold 1, 2, 3 — and material
+    authored in one and used in the other arrives carrying a number a different
+    element here already holds. Nothing downstream survives that: an intent
+    naming the id reaches whichever node the crate's lookup finds first while
+    the editor's index keeps the last, so one gesture writes two places. The
+    walk therefore **claims** each id for the object it first meets carrying it,
+    and an object that turns up with an id already claimed by another is
+    renumbered.
+
+    Two things it deliberately does not do. It does not touch the *same* object
+    appearing twice — two placements of one element are one node with one id,
+    which is a question about what an id identifies and is open in the document
+    crate's plan, not something to settle by accident here. And it does not
+    renumber the first claimant, so a tree converted on its own is numbered
+    exactly as it always was.
+
+    The cost of renumbering, stated because it is real: a log entry recorded
+    earlier against the moved element's old number no longer names it. It
+    happens only when material crosses between trees, it stamps a number nothing
+    else in this tree holds, and the editor re-derives its index from the
+    document on every edit — so what is at risk is undo of an edit made before
+    the crossing, not the current one."""
 
     def __init__(self, root):
         self.next = 1
+        self._owner: "dict[int, int]" = {}
+        self._renumber: "set[int]" = set()
         self._scan(root)
 
     def _scan(self, element):
         existing = getattr(element, ID_ATTR, None)
         if existing is not None:
-            self.next = max(self.next, int(existing) + 1)
+            existing = int(existing)
+            owner = self._owner.setdefault(existing, id(element))
+            if owner == id(element):
+                self.next = max(self.next, existing + 1)
+            else:
+                # Another object in this tree claimed the number first, so this
+                # one was numbered against a tree that is not this one.
+                self._renumber.add(id(element))
         for child in _children(element):
             self._scan(child)
 
     def of(self, element) -> int:
         existing = getattr(element, ID_ATTR, None)
-        if existing is not None:
+        if existing is not None and id(element) not in self._renumber:
             return int(existing)
         assigned = self.next
         self.next += 1
+        self._owner[assigned] = id(element)
+        self._renumber.discard(id(element))
         setattr(element, ID_ATTR, assigned)
         return assigned
 

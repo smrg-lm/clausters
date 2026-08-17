@@ -5456,3 +5456,47 @@ A pool buffer used to be immutable: built once, handed to the audio thread throu
 **The cost was measured before the choice, not defended after it.** An interpolated random read of 64 frames (`PlayBuf`, `BufRd`) goes 145 → 150 ns, **+5%** — 12 ns per block per reader, about a thousandth of a percent of a 64-frame block's budget at 48 kHz — and **+0%** on the other three shapes that matter (sequential reads, a wavetable hot in cache, the convolver's kernel), where the loads still vectorise. The atomics buy the *right to write while another thread reads* — without them a concurrent write is a data race and therefore undefined behaviour, whatever the generated code happens to do — and what they cost is optimizer freedom, not an instruction.
 
 **The consequence is a smaller surface, not a bigger one.** No kind, no flag on `/buffer_alloc`, no branch in any reader, no second storage layout to keep working, and no refusal to explain in the reference. One sentence replaces all of it: a buffer's contents are mutable and only its shape is fixed. The one thing genuinely given up is the flat `data() -> &[f32]` accessor, which is why every reader in the tree had to be visited once — and the golden renders say they came back bit-identical.
+
+## An id names one node, and a repeated one is refused only when the two differ
+
+A node id is minted by whoever writes a document and every intent addresses a
+node by it. Two nodes carrying one id is therefore not a cosmetic defect: the
+crate's lookup applies the intent to the first match while the client that sent
+it keeps the last in its own index, so one gesture writes two places and the
+thing the hand moved springs back. It was reachable by ordinary authoring, from
+a direction nobody had looked at — ids are stamped on the element object and
+numbering starts at 1 for every root, so two arrangements built in one script
+both hold 1, 2, 3, and material authored in one and used in the other arrives
+carrying a number a different element there already holds.
+
+**The fix is in two places because the failure has two sources.** The Python
+bridge cannot produce it any more: the conversion **claims** each id for the
+object it first meets carrying it, and an object that turns up with an id
+already claimed by another is renumbered past everything in the tree. The crate
+refuses it at the door — checked on **deserialization**, which is the one point
+every writer passes through, so a client, a host and a file all get the same
+answer without any of them remembering to ask.
+
+**What is deliberately not refused is one element placed twice.** That produces
+a repeated id too, and refusing it would have settled a question that is open
+and is not this one: `Group([(0, take), (4, take)])` is the arrangement's most
+natural sentence for *this take, twice*, and what an id identifies in that case
+has three candidate answers — forbid it, copy it, or have the intent name the
+**placement** rather than the node. One of those three is "forbid", which is
+exactly what a validation that refused every repeated id would have chosen, from
+inside a check about a different failure.
+
+So the line is drawn by **what the two nodes are**, not by the fact that they
+repeat: identical nodes are *ambiguous but consistent* — the document says the
+same thing twice, and which placement an intent means is the open question —
+while different nodes are *incoherent*, since no answer to that question makes a
+document well-formed in which one id names two different things. The message
+says which two it found (`node id 2 names two different nodes, a set and an
+event`), because the id alone does not tell an author where to look.
+
+**One asymmetry, recorded rather than smoothed over.** The C ABI's
+`clausters_document_open` answers with a null handle and has no channel for the
+crate's message, while the wasm face raises it as an ordinary error. So the
+Python client looks for the collision itself once the handle comes back null,
+and only then — nothing is validated twice on the path where the document is
+fine.

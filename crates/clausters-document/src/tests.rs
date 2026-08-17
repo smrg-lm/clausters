@@ -267,3 +267,63 @@ fn the_tree_carries_no_lane_and_no_vertical_position() {
         );
     }
 }
+
+#[test]
+fn an_id_that_names_two_different_nodes_is_refused_at_the_door() {
+    // The failure this rules out: an intent naming node 2 reaches whichever the
+    // lookup finds first while the client that sent it keeps the other, so one
+    // gesture writes two places and the picture springs back.
+    let doc = Document::new(set(
+        1,
+        vec![
+            placed(0.0, None, event(2)),
+            placed(4.0, None, set(2, vec![])),
+        ],
+    ));
+    let message = doc.duplicate_id().expect("a duplicate id");
+    assert!(message.contains("node id 2"), "{message}");
+    assert!(message.contains("event"), "{message}");
+    assert!(message.contains("set"), "{message}");
+
+    // And it is refused on the way in, which is the door every writer passes
+    // through -- a client, a host, a file written by either.
+    let json = serde_json::to_string(&doc).unwrap();
+    let err = serde_json::from_str::<Document>(&json).expect_err("refused");
+    assert!(err.to_string().contains("node id 2"), "{err}");
+}
+
+#[test]
+fn one_element_placed_twice_is_carried_rather_than_refused() {
+    // Ambiguous and consistent: which placement an intent names is an open
+    // question with three answers, and refusing here would pick the one that
+    // forbids it -- from inside a check about something else.
+    let doc = Document::new(set(
+        1,
+        vec![placed(0.0, None, event(2)), placed(4.0, None, event(2))],
+    ));
+    assert_eq!(doc.duplicate_id(), None);
+    let json = serde_json::to_string(&doc).unwrap();
+    assert!(serde_json::from_str::<Document>(&json).is_ok());
+}
+
+#[test]
+fn a_rendering_is_walked_for_ids_like_the_rest_of_the_tree() {
+    // A generator's last rendered result is ordinary tree, so its nodes take
+    // ids like any other and collide like any other.
+    let doc = Document::new(set(
+        1,
+        vec![placed(
+            0.0,
+            None,
+            node(
+                2,
+                Body::Generator {
+                    config: Opaque::none(),
+                    rendered: Some(Box::new(set(3, vec![placed(0.0, None, event(2))]))),
+                },
+            ),
+        )],
+    ));
+    let message = doc.duplicate_id().expect("a duplicate id");
+    assert!(message.contains("node id 2"), "{message}");
+}

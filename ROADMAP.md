@@ -51,8 +51,8 @@ over `gui_composer.py`'s four-lane piece lost the lane labels, both roll bodies,
 and more of the picture on every save/open cycle. Everything here was found by
 running that example, and none of it is guessed at.*
 
-- ⬜ **A document's node ids are minted per conversion and stamped on the
-  object, so two compositions number from 1 and collide**
+- ✅ **A document's node ids are minted per conversion and stamped on the
+  object, so two compositions number from 1 and collide** — done 2026-08-17.
   *(`clients/python/PLAN.md`, found by use)*. **First of everything**, and it
   moved here the day it was measured: this phase's whole acceptance is *the same
   composition by identity*, compared tree against tree, and identity is what is
