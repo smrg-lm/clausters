@@ -983,6 +983,63 @@ fn b_export_dumps_raw_samples_to_a_local_file() {
     server.quit();
 }
 
+/// A peer that edits shared material writes into the cells and sends nothing,
+/// so `/buffer_touch` is how every *other* client learns the span changed.
+#[test]
+fn a_touched_span_reaches_the_other_clients_and_not_the_writer() {
+    let server = TestServer::spawn();
+    server.send("/server_notify", vec![OscType::Int(1)]);
+    server.recv_until("/done");
+    server.send(
+        "/buffer_alloc",
+        vec![OscType::Int(0), OscType::Int(64), OscType::Int(1)],
+    );
+    server.recv_until("/done");
+
+    // Another client -- standing in for a local peer holding the mapping --
+    // says it wrote 16 frames of channel 0 from frame 8.
+    let peer = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+    let touch = encoder::encode(&OscPacket::Message(OscMessage {
+        addr: "/buffer_touch".into(),
+        args: vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int(8),
+            OscType::Int(16),
+        ],
+    }))
+    .unwrap();
+    peer.send_to(&touch, server.addr).unwrap();
+
+    let msg = server.recv_until("/buffer_touched");
+    assert_eq!(
+        msg.args,
+        vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int(8),
+            OscType::Int(16)
+        ]
+    );
+
+    // The writer is not told what it just did: a touch from the registered
+    // client itself comes back as nothing, and the next reply is the one it
+    // asked for.
+    server.send(
+        "/buffer_touch",
+        vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int(4),
+        ],
+    );
+    server.send("/server_status", vec![]);
+    assert_eq!(server.recv().addr, "/server_status.reply");
+
+    server.quit();
+}
+
 #[test]
 fn notify_clients_receive_n_go_and_n_end() {
     let mut server = TestServer::spawn();

@@ -1684,6 +1684,7 @@ impl Host {
         #[cfg(unix)]
         if let Some(take) = self.material.as_ref().and_then(|m| m.map(bufnum as usize)) {
             take.write_channel(channel, start, values);
+            self.announce_write(bufnum, channel, start, values.len());
             if let Some(tree) = self.window_def_mut(def_id) {
                 write_buffer_views(tree, bufnum, channel, start, values);
             }
@@ -2117,6 +2118,39 @@ impl Host {
             }
         }
         self.watched_buses = wanted;
+    }
+
+    /// **Says what was written, since the samples said nothing.**
+    ///
+    /// A stroke into mapped cells reaches no wire — that is what mapping is
+    /// for — so a second client holding a picture of the same take would never
+    /// find out. `/buffer_touch` is the span and not the samples: four
+    /// integers, which the servers broadcast to their `/server_notify` clients
+    /// as `/buffer_touched` for whoever cares to re-read. A page gets it too,
+    /// and a page is exactly who needs it: a browser cannot map a file, so a
+    /// message is the only way it can hear about an edit at all.
+    ///
+    /// Both legs are told when they differ, because each server has its own
+    /// clients and neither knows the other's.
+    #[cfg(unix)]
+    fn announce_write(&self, bufnum: i32, channel: usize, start: u64, frames: usize) {
+        let msg = OscMessage {
+            addr: "/buffer_touch".into(),
+            args: vec![
+                OscType::Int(bufnum),
+                OscType::Int(channel as i32),
+                OscType::Int(start as i32),
+                OscType::Int(frames as i32),
+            ],
+        };
+        for link in [self.server.as_ref(), self.player.as_ref()]
+            .into_iter()
+            .flatten()
+        {
+            if let Err(e) = link.send(msg.clone()) {
+                warn!("cannot announce the write of buffer {bufnum}: {e}");
+            }
+        }
     }
 
     /// Sends one message to the server that **makes sound**: the player.

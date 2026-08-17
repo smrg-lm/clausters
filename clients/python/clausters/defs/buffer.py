@@ -309,6 +309,21 @@ class Buffer:
         if addr == "/fail":
             raise CommandError(f"/buffer_attach {self.bufnum} failed: {rargs}")
 
+    def touch(self, channel: int, start: int, frames: int):
+        """Announce that a span of this buffer was written (``/buffer_touch``).
+
+        For a local peer that edited the material **in place** — through the
+        shared segment, where a write reaches no wire at all. The span, not the
+        samples: the server broadcasts ``/buffer_touched bufnum channel start
+        frames`` to every client registered with ``/server_notify`` except the
+        one that wrote, and whoever holds a picture of this take re-reads that
+        span with `get_range`.
+
+        There is no reply: it is a notification, not a command.
+        """
+        self._server().send_msg("/buffer_touch", self.bufnum, int(channel),
+                                int(start), int(frames))
+
     def fill(self, *runs, wait: bool = True, timeout: "float | None" = None):
         """Write runs of one repeated value (``/buffer_fill``), each a
         ``(start, count, value)`` triple.

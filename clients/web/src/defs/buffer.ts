@@ -409,6 +409,31 @@ export class Buffer {
     }
 
     /**
+     * Announces that a span of this buffer was written (`/buffer_touch`).
+     *
+     * For a local peer that edited the material **in place**, through the
+     * shared segment, where a write reaches no wire at all. The span, not the
+     * samples: the server broadcasts `/buffer_touched bufnum channel start
+     * frames` to every `/server_notify` client but the one that wrote.
+     *
+     * A page never writes that way — a browser cannot map a file — so this is
+     * here as the **listening** end's counterpart: a page holding a picture of
+     * a take that a native editor is editing hears `/buffer_touched` and
+     * re-reads that span with {@link getRange}.
+     *
+     * There is no reply: it is a notification, not a command.
+     */
+    touch(channel: number, start: number, frames: number): void {
+        this.srv().sendMsg(
+            "/buffer_touch",
+            ["i", this.bufnum],
+            ["i", channel],
+            ["i", start],
+            ["i", frames],
+        );
+    }
+
+    /**
      * The shared body of the destructive edits: fire, or await `/done`.
      *
      * They are async like every other write, and they **compose in flight** —

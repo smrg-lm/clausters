@@ -7,12 +7,6 @@
 use super::super::*;
 
 impl OscServer {
-    /// `/buffer_close bufnum`: closes a soundfile a streaming buffer left open
-    /// (scsynth pairs this with `DiskIn`/`DiskOut`). Clausters has no streaming
-    /// buffers yet — every `/buffer_read`/`/buffer_write` reads or writes the whole file
-    /// and closes it — so there is never an open handle: this validates the
-    /// buffer is live and acknowledges, forward-compatible with the future
-    /// streaming UGens.
     /// `/buffer_attach bufnum` — map the shared buffer `bufnum` out of the
     /// segment this server attached to, so its engine plays the owner's very
     /// cells.
@@ -41,6 +35,57 @@ impl OscServer {
         Ok(())
     }
 
+    /// `/buffer_touch bufnum channel start frames` — **a peer says it wrote
+    /// samples**, so every other client learns the span changed.
+    ///
+    /// A local peer edits a shared buffer by storing into the mapped cells, and
+    /// nothing about that reaches the wire: that is the point of mapping it,
+    /// and it is also why a second client holding a picture of the same take
+    /// would never find out. This is the announcement — the span and not the
+    /// samples, four integers whoever cares re-reads with `/buffer_getRange`.
+    ///
+    /// It is a **notification, not a command**: nothing is answered to the
+    /// sender, and the broadcast goes to every `/server_notify` client but the
+    /// one that wrote, which already knows. A page gets it too, which is the
+    /// point — a browser cannot map a file, so a message is the only way it can
+    /// hear about an edit at all.
+    pub(in crate::osc::server) fn handle_buffer_touch(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let index = args.index()?;
+        let channel = args.int()?;
+        let start = args.int()?;
+        let frames = args.int()?;
+        if !self
+            .translator
+            .buffers
+            .get(index)
+            .is_some_and(Option::is_some)
+        {
+            return Err(format!("buffer {index} not allocated"));
+        }
+        let payload = vec![
+            OscType::Int(index as i32),
+            OscType::Int(channel),
+            OscType::Int(start),
+            OscType::Int(frames),
+        ];
+        for client in self.clients.clone() {
+            if client != from {
+                self.reply(client, "/buffer_touched", payload.clone());
+            }
+        }
+        Ok(())
+    }
+
+    /// `/buffer_close bufnum`: closes a soundfile a streaming buffer left open
+    /// (scsynth pairs this with `DiskIn`/`DiskOut`). Clausters has no streaming
+    /// buffers yet — every `/buffer_read`/`/buffer_write` reads or writes the whole file
+    /// and closes it — so there is never an open handle: this validates the
+    /// buffer is live and acknowledges, forward-compatible with the future
+    /// streaming UGens.
     pub(in crate::osc::server) fn handle_buffer_close(
         &mut self,
         mut args: Args,
