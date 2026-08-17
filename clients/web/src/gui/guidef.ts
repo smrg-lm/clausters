@@ -1504,13 +1504,22 @@ export function clip(
         exp?: boolean;
         min?: number;
         max?: number;
+        /**
+         * Whether a hand may edit this clip's **body** (default true). False
+         * where the body draws a *rendering* rather than the thing itself — the
+         * notes of a pattern, a curve this editor cannot write — so the roll or
+         * the curve refuses the press instead of offering a drag it will
+         * unwind. The refusal is visible and consumes the press; the clip's own
+         * move and resize are untouched.
+         */
+        editable?: boolean;
         label?: string;
     },
 ): GuiNode {
     const {
         offset = 0.0, dur, cache, path, buffer, data, blob, channels,
         baseBucket, view, windowSize, hop, dbFloor, dbCeil, freqScale, colormap,
-        notes, points, exp, min, max, label: text, ...rest
+        notes, points, exp, min, max, editable, label: text, ...rest
     } = options;
     return node("field", {
         ...rest,
@@ -1531,6 +1540,7 @@ export function clip(
             ["exp", flag(exp)],
             ["min", min],
             ["max", max],
+            ["editable", flag(editable)],
             ["label", text],
         ]),
     });

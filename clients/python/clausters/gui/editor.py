@@ -1822,9 +1822,18 @@ class Editor:
         notes = self._notes(element)
         if notes:
             pitches = [n[2] for n in notes]
-            return dict(notes=notes,
+            body = dict(notes=notes,
                         min=min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
                         max=max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0]))
+            # **Say it before the hand tries.** These notes are a *rendering* of
+            # a forward-only generator when there is no editable timeline behind
+            # them, so the roll refuses the press instead of offering a drag it
+            # will unwind — which is what "the notes flicker, jump and return"
+            # was. The refusal itself has always been correct; what was missing
+            # is that nothing told the widget in advance.
+            if _editable_timeline(element) is None:
+                body["editable"] = False
+            return body
         # No body: a collapsed group (or an element with nothing to draw) is the
         # labeled rectangle — the summary of the level above it.
         return {}

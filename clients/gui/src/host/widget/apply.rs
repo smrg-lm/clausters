@@ -53,6 +53,19 @@ fn apply_clip_body(widget: &mut Widget, key: &str, v: &Value) -> bool {
                 .clip_body_mut(Notes)
                 .is_some_and(|k| apply_kind(k, key, v))
         }
+        // **Whether a hand may edit this clip's bodies**, live: a lane locked
+        // while it plays, a generator's clip that becomes editable the moment
+        // it is rendered to a track. It reaches *every* body the clip carries,
+        // because it is a statement about the clip and not about one of them.
+        "editable" => {
+            let mut landed = false;
+            for role in [Notes, Curve] {
+                if let Some(kind) = widget.clip_body_mut(role) {
+                    landed |= apply_kind(kind, key, v);
+                }
+            }
+            landed
+        }
         "points" | "exp" => {
             widget.ensure_body(Curve);
             widget

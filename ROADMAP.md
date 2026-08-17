@@ -204,8 +204,10 @@ work. *Small beside Phase 3 and independent of it; taken after because a
 read-only body is a prop on a picture the redefine path must be drawing
 correctly first.*
 
-- ⬜ **A read-only clip body has no way to say so, so every drag on one
-  flickers** *(`clients/gui/PLAN.md`, found by use — a milestone rather than a
+- ✅ **A read-only clip body has no way to say so, so every drag on one
+  flickers** — done 2026-08-17: `editable` is a clip prop, the refusal is the
+  draw mode's (visible, and it consumes the press), and the clip's own drag is
+  untouched. *(`clients/gui/PLAN.md`, found by use — a milestone rather than a
   fix, and the plan says so)*. The refusal is correct and the acknowledgement
   carries a reason since 2026-08-17; what is missing is **earlier than the
   refusal** — nothing in the protocol tells a widget its body is read-only, so
@@ -216,9 +218,10 @@ correctly first.*
   press). It touches the host, `docs/gui-protocol.md`, `docs/gui-props.md` and
   both clients' builders.
 
-- ⬜ **The editing gestures want affordances** *(same list)*. Two gestures that
-  work and that nothing on screen announces — the same decision as the entry
-  above, seen from the other side, which is why they are one phase.
+- ✅ **The editing gestures want affordances** *(same list)* — done 2026-08-17.
+  The clip grip had already chosen the vocabulary (an affordance belongs to what
+  is **held**); what was left was the curve's bendable segment, now lit where a
+  drag would bend it and only where the curve can be edited at all.
 
 - ⬜ **E23 — the rest of the chrome answering on what it draws.** Here rather
   than in the unscheduled list now that two neighbouring entries open the same

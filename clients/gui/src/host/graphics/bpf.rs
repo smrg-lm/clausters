@@ -394,16 +394,40 @@ pub fn discontinuities(points: &[BpfPoint], duration: f64) -> Vec<(f64, f32, f32
 /// Only the curve: the field it sits in and whatever names it are the *view's*,
 /// and a container's body has neither.
 pub fn draw(d: &mut Draw, ax: &Axes, points: &[BpfPoint]) {
+    draw_with(d, ax, points, None)
+}
+
+/// The same, with one **segment lit**: the part a vertical drag would bend.
+///
+/// A curve is one trace of one weight end to end, so nothing distinguished *a
+/// place you can bend* from a place a Ctrl-click adds a point to, or from the
+/// container underneath — the gesture worked and the picture said nothing. The
+/// vocabulary is the clip grip's, applied here: the affordance belongs to what
+/// is **held** rather than to where the pointer is, so a bend in flight keeps
+/// its segment lit even when the pointer has drifted off it.
+pub fn draw_with(d: &mut Draw, ax: &Axes, points: &[BpfPoint], lit: Option<usize>) {
     let (mesh, m, theme) = d.parts();
     if ax.body.w < 1.0 || ax.body.h <= 0.0 || points.is_empty() {
         return;
     }
+    let span = lit.and_then(|i| Some((points.get(i)?.time, points.get(i + 1)?.time)));
     let columns = ax.body.w.max(1.0) as usize;
     let mut prev = [ax.body.x, ax.y(value_at(points, ax.t(ax.body.x as f64)))];
     for c in 1..=columns {
         let x = ax.body.x + c as f32;
         let p = [x, ax.y(value_at(points, ax.t(x as f64)))];
-        mesh.line(prev, p, m.trace_w, theme.trace);
+        // The lit segment is the accent at the weight a handle has, so it reads
+        // as *grabbable* rather than as a second signal drawn over the first.
+        let inside = span.is_some_and(|(a, b)| {
+            let t = ax.t(x as f64);
+            t >= a && t < b
+        });
+        let (w, color) = if inside {
+            (m.trace_w + m.divider_w, theme.accent)
+        } else {
+            (m.trace_w, theme.trace)
+        };
+        mesh.line(prev, p, w, color);
         prev = p;
     }
     for (t, v_lo, v_hi) in discontinuities(points, ax.dom) {

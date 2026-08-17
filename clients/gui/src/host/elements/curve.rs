@@ -22,7 +22,7 @@ use crate::host::graphics::bpf::{self, Axes, BpfPoint};
 use crate::host::graphics::controls;
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{BodyRole, Claim, Ctx, Element, Events, Input};
+use crate::host::widget::element::{BodyRole, Claim, Ctx, Element, Events, Input, Take};
 use crate::host::widget::parse::{label, number, number_f64, set_f, set_f64, set_label, truthy};
 use crate::host::{font, metrics::Metrics};
 
@@ -41,6 +41,10 @@ pub struct Curve {
     /// The grab in flight — the state that used to be two `Drag` variants,
     /// because the widget could not hold it.
     grab: Option<Grab>,
+    /// Whether a hand may edit this curve. See `notes::Notes::editable`: the
+    /// picture must not follow a hand that cannot edit, so the refusal happens
+    /// at the press rather than when an owner declines the edit afterwards.
+    editable: bool,
 }
 
 /// What a held press is moving: a breakpoint, or a segment's curvature.
@@ -82,6 +86,7 @@ pub(crate) fn body(props: &Map<String, Value>) -> Option<Curve> {
         exp: props.get("exp").and_then(truthy).unwrap_or(false),
         label: None,
         grab: None,
+        editable: props.get("editable").and_then(truthy).unwrap_or(true),
     })
 }
 
@@ -95,6 +100,7 @@ pub(crate) fn empty_body() -> Curve {
         exp: false,
         label: None,
         grab: None,
+        editable: true,
     }
 }
 
@@ -114,6 +120,7 @@ fn from_props(props: &Map<String, Value>) -> Curve {
         exp: props.get("exp").and_then(truthy).unwrap_or(false),
         label: label(props),
         grab: None,
+        editable: props.get("editable").and_then(truthy).unwrap_or(true),
     }
 }
 
@@ -160,6 +167,11 @@ impl Curve {
 impl Element for Curve {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         match key {
+            "editable" => {
+                let Some(on) = truthy(v) else { return false };
+                self.editable = on;
+                true
+            }
             // The full breakpoint list replaces in one set — the flat
             // `[t, v, shape, curve, …]` array, or that array as a JSON string
             // (the `/gui_set` scalar carrier).
@@ -201,7 +213,24 @@ impl Element for Curve {
             mesh.rect(ax.body, theme.field);
             mesh.border(ax.body, m.divider_w, theme.accent);
         }
-        bpf::draw(d, &ax, &self.points);
+        // What a bend would take: the segment being held, or the one under the
+        // pointer when nothing is. Only where the curve can be edited at all —
+        // an affordance over a read-only body would announce a gesture that is
+        // about to be refused.
+        let lit = if !self.editable {
+            None
+        } else {
+            match self.grab {
+                Some(Grab::Segment { index, .. }) => Some(index),
+                Some(Grab::Point(_)) => None,
+                None => ctx
+                    .world
+                    .cursor
+                    .filter(|(x, y)| ax.body.contains(*x, *y))
+                    .and_then(|(x, _)| ax.hit_segment(&self.points, x)),
+            }
+        };
+        bpf::draw_with(d, &ax, &self.points, lit);
     }
 
     fn info(&self) -> Vec<(String, Value)> {
@@ -218,6 +247,18 @@ impl Element for Curve {
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
+        if !self.editable {
+            // Consumed and said out loud, like the roll's: a curve drawn from
+            // material this editor cannot write is not a dead widget.
+            return Claim::Take(Take {
+                events: Events::message(vec![
+                    OscType::String("refused".into()),
+                    OscType::String("points".into()),
+                    OscType::String("this curve is read-only here".into()),
+                ]),
+                ..Take::default()
+            });
+        }
         let ax = self.axes(input.rect, input.metrics, input.time);
         let hit = ax.hit_point(&self.points, at.0, at.1, input.metrics);
         // Ctrl+click on a point removes it; elsewhere it adds one at the cursor

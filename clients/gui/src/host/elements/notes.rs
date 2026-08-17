@@ -34,7 +34,7 @@ use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{
-    BodyRole, Claim, Ctx, Element, Events, Input, Key, KeyInput, MidiNote, Needs, TimeSpace,
+    BodyRole, Claim, Ctx, Element, Events, Input, Key, KeyInput, MidiNote, Needs, Take, TimeSpace,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, set_f, set_label, truthy};
 use crate::host::widget::{EditorProps, GestureMap, Ruler};
@@ -71,6 +71,15 @@ pub struct Notes {
     held: Vec<((i32, i32), usize)>,
     /// Where step entry writes the next note when the transport is stopped.
     step: f64,
+    /// Whether a hand may edit what is drawn here.
+    ///
+    /// **The picture must not follow a hand that cannot edit.** A body over
+    /// material that is a *rendering* — the notes of a pattern — is read-only,
+    /// and an owner refusing the edit afterwards is too late: the roll has
+    /// already offered the drag, drawn it for its whole duration and unwound
+    /// it, which reads as a broken editor rather than as material that cannot
+    /// be edited here. So the refusal happens at the press, where it is seen.
+    editable: bool,
 }
 
 /// What a held press on a roll is doing. Each carries the **press-time data**
@@ -151,6 +160,7 @@ fn from_props(props: &Map<String, Value>) -> Notes {
         drag: None,
         held: Vec::new(),
         step: 0.0,
+        editable: props.get("editable").and_then(truthy).unwrap_or(true),
     }
 }
 
@@ -169,6 +179,9 @@ pub(crate) fn body(props: &Map<String, Value>) -> Option<Notes> {
         notes,
         min: number(props, "min", PITCH_MIN),
         max: number(props, "max", PITCH_MAX),
+        // A clip's prop, because a clip is what a script addresses: a body
+        // carries no id of its own.
+        editable: props.get("editable").and_then(truthy).unwrap_or(true),
         ..empty_body()
     })
 }
@@ -190,6 +203,7 @@ pub(crate) fn empty_body() -> Notes {
         drag: None,
         held: Vec::new(),
         step: 0.0,
+        editable: true,
     }
 }
 
@@ -386,6 +400,11 @@ impl Element for Notes {
         match key {
             // Arrays ride a `/gui_set` as their JSON — the scalar carrier a set
             // of a non-scalar always uses.
+            "editable" => {
+                let Some(on) = truthy(v) else { return false };
+                self.editable = on;
+                true
+            }
             "notes" => {
                 self.notes = parse_notes(&parse::as_array_props("notes", v));
                 // The indices would dangle over the new list.
@@ -544,6 +563,23 @@ impl Element for Notes {
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         let h = self.hit(at, input);
+        // **Read-only is answered before the drag, not after it.** The press is
+        // consumed so nothing behind it turns a refused edit into a selection,
+        // and it says why — a refusal with nothing attached teaches *sometimes
+        // it does not work* rather than *not here*.
+        if !self.editable && matches!(h.region, Region::Grid | Region::Velocity) {
+            return Claim::Take(Take {
+                events: Events::message(vec![
+                    OscType::String("refused".into()),
+                    OscType::String("notes".into()),
+                    OscType::String(
+                        "these notes are a rendering of an algorithm: render it to a track to edit them"
+                            .into(),
+                    ),
+                ]),
+                ..Take::default()
+            });
+        }
         // **A body claims its own parts and declines everywhere else.** Inside a
         // clip the rest of the rectangle means the clip's own drag (move it,
         // resize it), so a body grabs a note and hands back anything else.
@@ -1605,6 +1641,44 @@ mod tests {
                 None
             )
             .is_none()
+        );
+    }
+
+    /// **The picture must not follow a hand that cannot edit.** A body over a
+    /// rendering refuses at the press, so nothing is drawn moving and then
+    /// unwound -- which is what read as a broken editor.
+    #[test]
+    fn a_read_only_body_refuses_the_press_instead_of_offering_the_drag() {
+        let m = Metrics::default();
+        let mut b = body(&props(
+            r#"{"notes":[0.0,100.0,60.0,100,0],"editable":false}"#,
+        ))
+        .expect("notes");
+        let mut i = input(&m, rect(), axis(1000.0));
+        i.indent = 0.0; // a body is placed on its clip's rectangle, with no gutter
+        let grid = b.regions(rect(), 0.0, &m).grid;
+        let (lo, hi) = b.pitch_window();
+        let on = (
+            grid.x as f64 + 50.0 / 1000.0 * grid.w as f64,
+            pianoroll::pitch_to_y(60.0, lo, hi, grid) as f64,
+        );
+
+        let Claim::Take(take) = b.press(on, &i) else {
+            panic!("a refusal consumes the press, or a sweep behind it takes over");
+        };
+        let msgs = take.events.into_messages();
+        assert_eq!(msgs.len(), 1, "one refusal, said out loud");
+        assert_eq!(msgs[0][0], OscType::String("refused".into()));
+        assert_eq!(msgs[0][1], OscType::String("notes".into()));
+        assert!(b.drag.is_none(), "and no drag was started");
+
+        // The same body unlocked grabs the note, which is what says the refusal
+        // is the prop and not the geometry -- and it is live over `/gui_set`.
+        assert!(b.set("editable", &Value::Bool(true)));
+        assert!(matches!(b.press(on, &i), Claim::Take(_)));
+        assert!(
+            b.drag.is_some(),
+            "unlocked, it takes the note like any other"
         );
     }
 }

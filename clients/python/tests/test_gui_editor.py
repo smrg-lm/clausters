@@ -1480,3 +1480,38 @@ def test_dragging_the_second_of_two_windows_moves_the_second():
     assert [h.offset for h in lane.handles] == [0.0, 4.0]
     assert ed.redo()
     assert [h.offset for h in lane.handles] == [0.0, 6.0]
+
+
+def test_a_clip_over_a_generator_draws_its_notes_read_only():
+    """The picture must not follow a hand that cannot edit. A `Sequence` over a
+    pattern is forward-only — its notes are a rendering of an algorithm — so the
+    clip says so and the roll refuses the press, instead of offering the drag
+    and unwinding it when the owner declines."""
+    from clausters.seq.pattern import Pbind, Pseq
+
+    lane = Group([(0.0, Sequence(Pbind(midinote=Pseq([60, 64], 1), dur=1.0),
+                                 name="line"))], name="pattern")
+    ed = editor(Group([(0.0, lane)], name="song"))
+    clip = _find(ed.draw(), lambda n: "notes" in n)
+    assert clip is not None, "a pattern lane draws its bounced notes"
+    assert clip.get("editable") == 0, "and says they are read-only"
+
+    # A track's own notes are editable, which is what says the flag is the
+    # material's and not the widget's.
+    track = Group([(0.0, Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))])))],
+                  name="lead")
+    ed2 = editor(Group([(0.0, track)], name="song"))
+    editable = _find(ed2.draw(), lambda n: "notes" in n)
+    assert editable is not None and "editable" not in editable
+
+
+def _find(node, pred):
+    """The first node in a GuiDef tree the predicate holds for."""
+    if isinstance(node, dict):
+        if pred(node):
+            return node
+        for child in node.get("children") or []:
+            found = _find(child, pred)
+            if found is not None:
+                return found
+    return None

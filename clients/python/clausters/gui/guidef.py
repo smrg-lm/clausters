@@ -1342,6 +1342,7 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
          db_ceil: float | None = None, freq_scale: str | None = None,
          colormap: int | None = None, notes=None, points=None,
          exp: bool | None = None, min: float | None = None, max: float | None = None,
+         editable: bool | None = None,
          label: str | None = None, color: str | None = None, id: int | None = None, **props
          ) -> dict:
     """One ``clip`` on a `track`: a placed rectangle spanning ``[offset, offset +
@@ -1396,6 +1397,14 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
       For an audio take placed 1:1, that is the take's frame count.
     - ``min``/``max`` — the waveform value range, or the low/high pitch of a
       piano-roll (default the bipolar ``-1``/``1``).
+    - ``editable`` — whether a hand may edit this clip's **body** (default
+      true). Set it false where the body draws a *rendering* rather than the
+      thing itself — the notes of a pattern, a curve this editor cannot write —
+      and the roll or the curve refuses the press instead of offering a drag it
+      will unwind. The refusal is visible (a ``"refused"`` event carrying the
+      reason) and it consumes the press, so nothing behind it turns a refused
+      edit into a selection. It says nothing about the clip's own drag: a
+      read-only body still moves and resizes as a placement.
 
     Dragging a clip (move) or its edge (resize) flows back as a ``"clip"``
     event carrying the new ``offset``/``dur`` — the edit-back path — so a driver
@@ -1411,6 +1420,8 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
                        min=min, max=max, label=label, color=color)
     if exp is not None:
         extra["exp"] = 1 if exp else 0
+    if editable is not None:
+        extra["editable"] = 1 if editable else 0
     return node("field", id=id, dur=dur, **extra, **props)
 
 
