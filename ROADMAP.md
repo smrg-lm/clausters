@@ -129,14 +129,26 @@ it goes before the two editing phases because its decision is their input.*
   drags the chaining machinery that exists only to stop copies erasing each
   other, which goes with them. Nothing on the wire changes.
 
-- ⬜ **Does the working copy still lead, now that a write costs the span?**
-  *(`crates/clausters-document/PLAN.md`, Open decisions)*. O8's "the working
+- ✅ **Does the working copy still lead, now that a write costs the span?**
+  *(`crates/clausters-document/PLAN.md`, Open decisions)* — taken 2026-08-17:
+  **it leads, and there was never a second copy to make.** The server buffer
+  *is* the working copy (loading a file into one already copied it), so a take
+  is edited where it lies, with no confirmation step — the acknowledgement and
+  the log entry settle a stroke, and the previous samples ride in the log
+  because a destructive caller reads its span before writing. A `Temporary`
+  copy stays mandatory exactly where material is reached **by reference** to
+  the user's file, which is the path S19/H6 open. O8's "the working
   buffer leads while the session is open, and the pool buffer is replaced whole
   once, on confirmation" was derived from the cost that just went away. The
   answer decides whether a session still has a confirmation step and whether a
   take exists twice while it is edited — which is what the next phase would
   otherwise refactor the editor *into* without asking. Taken here, right after
   S18 makes it answerable, and not folded into either milestone.
+
+**Phase 2 is closed.** The write path is the edit's rather than the material's,
+the race that silently ate a recording is gone, and the architecture question it
+existed to answer is answered — which is what the next phase would otherwise
+have refactored the editor into without asking.
 
 ## Phase 3 — one tree, and undo that reaches inside a clip
 

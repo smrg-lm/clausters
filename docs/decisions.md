@@ -5541,3 +5541,41 @@ keeping it out of the model, and it is the same cost the GUI protocol pays for
 `kind`. The alternative — a typed `view` field — buys checking and pays by
 putting a view in the tree, which is the trade this layer decided in the other
 direction on the day it was designed.
+
+## The working copy leads, and it is the buffer the material was loaded into
+
+O8 says the working buffer leads while a session is open and that a take's pool
+buffer is replaced whole once, on confirmation. That was not a preference: it
+was derived from a measurement — a write cost the whole buffer (33.8 ms on a
+five-minute take), so an editor that wrote through per gesture was unusable, and
+a client-side working copy was the honest workaround. S18 removed the
+measurement: a write is now flat in the material.
+
+**The rule survives the measurement that motivated it, and what dies is a
+reading of it.** The server buffer *is* the working copy. Loading material into
+a pool buffer copies it — `/buffer_allocRead` reads a file and never touches it
+again — so an edit that writes that buffer has already not written the source.
+What the four-layer table protects is the user's own file, and the copy that
+loading made is what protects it. There is therefore **no second take** while
+one is edited, and **no confirmation step per edit**: what confirms a stroke is
+the acknowledgement and the log entry, which is what the editor already does.
+
+**Undo never needed the copy either**, and the crate had already said so.
+`inverse_of` returns the *empty* write for `WriteSamples` — the samples are not
+in the document — "which is why a destructive caller reads its own span before
+writing", and the host does exactly that: the previous samples ride in the log
+entry, span by span. A second take would have held the whole material to
+recover what a stroke covers.
+
+**Where a temporary copy stays mandatory** is a property of how material is
+held, not of what a write costs: material reached **by reference to the user's
+file** — mapped rather than loaded, which is the path shared-memory editing
+opens. An edit there would write the user's file, which the four-layer rule
+forbids outright, so it must materialize a `Temporary` copy first, and
+`confirm`/`promote` are what settle it. That is the whole remaining job of the
+`editing` field in the session format, and why it stays: a session that dies
+mid-edit over mapped material must reopen knowing what was undecided.
+
+Stated as one line, because the distinction is easy to lose: **an edit writes
+the copy the system already made, and makes a copy only when it has not made one
+yet.**
