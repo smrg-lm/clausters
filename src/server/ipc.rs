@@ -12,7 +12,7 @@
 //!   calling into the cdylib.
 //!
 //! **The layout itself is not here.** It is
-//! [`clausters_core::shm`](clausters_core::shm), because four processes read
+//! [`clausters_core::shm`], because four processes read
 //! it and a layout mirrored by hand in each of them is a layout that drifts —
 //! which it did, twice, in ways a version number cannot catch. What this module
 //! owns is what is genuinely the *server's*: getting the memory (a mapped file
