@@ -720,6 +720,7 @@ impl Segment {
     /// this returns the generation it mapped: a caller that keeps the mapping
     /// compares it against the row to learn its material is history.
     #[cfg(unix)]
+    #[cfg(unix)]
     pub fn map_buffer(
         &self,
         at: &std::path::Path,

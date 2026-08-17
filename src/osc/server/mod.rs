@@ -181,7 +181,9 @@ pub struct OscServer {
     /// maps what the owner published and keeps its own allocations private.
     owns_material: bool,
     /// Per buffer, the region file backing it — kept so freeing one can unlink
-    /// its name. Sized with the pool.
+    /// its name. Sized with the pool. Off Unix there are no regions and the
+    /// list stays empty, which is why it is written and never read there.
+    #[cfg_attr(not(unix), allow(dead_code))]
     shared_buffers: Vec<Option<std::path::PathBuf>>,
     /// TCP transport, when `listen_tcp` was called: accepts length-prefixed OSC
     /// connections multiplexed into the same loop. See [`crate::osc::tcp`].

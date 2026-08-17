@@ -32,6 +32,9 @@ const NOT_COMMANDS: &[&str] = &[
     "/node_move",
     "/node_off",
     "/node_on",
+    // The broadcast a peer's write becomes: `/buffer_touch` is the command,
+    // this is what every other client is told.
+    "/buffer_touched",
     // `SendReply`'s default outgoing address: the server sends it, at an
     // address the def chooses, and never receives it.
     "/reply",

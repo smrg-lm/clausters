@@ -41,7 +41,9 @@ use crate::osc::server::{OscServer, ServerInfo};
 use crate::server::engine::{
     BLOCK_SIZE, DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES, Engine, engine_pair_full,
 };
-use crate::server::ipc::{DEFAULT_TAP_FRAMES, DEFAULT_TAPS, IpcPeer, Role, Segment};
+#[cfg(unix)]
+use crate::server::ipc::{DEFAULT_TAP_FRAMES, DEFAULT_TAPS};
+use crate::server::ipc::{IpcPeer, Role, Segment};
 
 /// How a session is opened. The defaults match the batch renderer's, so an
 /// operation and a score of the same material start from the same server.
@@ -126,11 +128,23 @@ impl NrtSession {
 
         // Set when this session *created* the file, which is what decides
         // whether it is this session's to remove on the way out.
+        #[cfg_attr(not(unix), allow(unused_mut))]
         let mut owned_segment: Option<std::path::PathBuf> = None;
         // A path makes the segment a file, which is the whole difference
         // between a session nobody else can see and one whose buffers a peer
         // maps by name.
         let segment = match &cfg.shm {
+            #[cfg(not(unix))]
+            Some(path) => {
+                // A shared segment is a mapped file, and off Unix there is
+                // none to map. Refused rather than silently opening a session
+                // whose material nobody else can reach.
+                return Err(format!(
+                    "shared material needs a Unix segment; {} cannot be opened here",
+                    path.display()
+                ));
+            }
+            #[cfg(unix)]
             Some(path) => {
                 // Sized with the ordinary tap region even though a session
                 // never writes one: the process that attaches to this segment

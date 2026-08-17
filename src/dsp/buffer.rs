@@ -85,6 +85,7 @@ pub enum Storage {
     /// A region a peer can map by name, for a server that has an IPC segment —
     /// the material an editor draws and writes without a message
     /// (`dsp::region`).
+    #[cfg(unix)]
     Shared(std::sync::Arc<crate::dsp::region::Region>),
 }
 
@@ -94,6 +95,7 @@ impl Storage {
     pub fn cells(&self) -> &[AtomicU32] {
         match self {
             Storage::Owned(v) => v,
+            #[cfg(unix)]
             Storage::Shared(r) => r.cells(),
         }
     }
@@ -128,6 +130,7 @@ impl Buffer {
 
     /// The same shape over storage a peer can map. The region's cells are the
     /// buffer's cells: nothing is copied here or ever after.
+    #[cfg(unix)]
     pub fn shared(
         region: std::sync::Arc<crate::dsp::region::Region>,
         channels: usize,

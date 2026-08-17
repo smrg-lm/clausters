@@ -204,6 +204,7 @@ impl OscServer {
     /// the file of its replacement can never be the same name, and a peer that
     /// kept the old mapping is writing into memory nobody reads rather than
     /// into somebody else's take.
+    #[cfg(unix)]
     fn share_buffer(
         &mut self,
         index: usize,
@@ -260,6 +261,19 @@ impl OscServer {
         ))
     }
 
+    /// Sharing material needs a mapped region, and a region is a file
+    /// somebody else can open — which off Unix (the wasm engine, above all)
+    /// there is no equivalent of. A buffer stays the server's own memory
+    /// there, exactly as it does with no segment at all.
+    #[cfg(not(unix))]
+    fn share_buffer(
+        &mut self,
+        _index: usize,
+        buffer: Arc<crate::dsp::buffer::Buffer>,
+    ) -> Arc<crate::dsp::buffer::Buffer> {
+        buffer
+    }
+
     /// Empties a directory row and unlinks the region behind it.
     ///
     /// **Unlink, not delete**: every mapping a peer still holds stays valid
@@ -275,6 +289,7 @@ impl OscServer {
         if let Some(segment) = self.segment.as_ref() {
             segment.retire_buffer(index);
         }
+        #[cfg(unix)]
         if let Some(path) = self.shared_buffers.get_mut(index).and_then(Option::take) {
             crate::dsp::region::Region::unlink(&path);
         }

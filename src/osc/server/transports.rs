@@ -130,6 +130,7 @@ impl OscServer {
     /// allocates *later* arrives by `/buffer_attach`, which is the same rule
     /// the whole design follows: samples never travel, but allocation and
     /// lifetime are messages.
+    #[cfg(unix)]
     pub fn attach_material_at(&mut self, path: std::path::PathBuf) -> usize {
         self.shm_path = Some(path);
         self.owns_material = false;
@@ -149,6 +150,7 @@ impl OscServer {
     /// `Err` when there is no shared segment, when the directory row is empty,
     /// or when the region behind it cannot be opened — each said in its own
     /// words, because they are three different situations for whoever asked.
+    #[cfg(unix)]
     pub fn attach_shared_buffer(&mut self, index: usize) -> Result<(), String> {
         let (Some(segment), Some(path)) = (self.segment.clone(), self.shm_path.clone()) else {
             return Err("this server has no shared segment".into());
@@ -160,6 +162,15 @@ impl OscServer {
             .map_buffer(&path, index)
             .ok_or_else(|| format!("no shared buffer {index}"))?;
         self.install_buffer(index, buffer)
+    }
+
+    /// Off Unix the material is unreachable: a region is a file another
+    /// process opens, and there is no equivalent — so a server there says so
+    /// rather than pretending. The wasm engine in a page is the case this is
+    /// really about, and a page keeps `/buffer_getRange`.
+    #[cfg(not(unix))]
+    pub fn attach_shared_buffer(&mut self, _index: usize) -> Result<(), String> {
+        Err("shared material needs a Unix segment".into())
     }
 
     /// handles every packet waiting in the attached ring. Same

@@ -11,6 +11,7 @@
 // wavetable/generator commands (pure buffer math).
 pub mod buffer;
 pub mod denormals;
+#[cfg(unix)]
 pub mod region;
 pub mod wavetable;
 
