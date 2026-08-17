@@ -376,9 +376,15 @@ test("the shared transport is defined, read, rolled and located", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {
-        // Nothing is defined until a conductor sets the grid.
+        // Nothing is defined until a conductor sets the grid -- but the
+        // transport itself is there from boot, so the *state* answers with its
+        // grid fields null while `transport()` (the grid alone) answers null.
         assert.equal(await server.transport(), null);
-        assert.equal(await server.transportState(), null);
+        const bare = await server.transportState();
+        assert.equal(bare.originSample, null);
+        assert.equal(bare.tempo, null);
+        assert.equal(bare.playing, false);
+        assert.equal(bare.group, null);
 
         await server.setTransport(0, 2.0);
         const grid = await server.transport();

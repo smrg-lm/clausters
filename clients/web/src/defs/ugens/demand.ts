@@ -154,10 +154,10 @@ export const dbufrd = (
  * stream. Once the stream ends the last value is held.
  */
 export const demand = (
-    trigger: Channel,
+    trig: Channel,
     reset: Channel,
     source: Channel,
-): Ugen => new Ugen("Demand", [trigger, reset, source]);
+): Ugen => new Ugen("Demand", [trig, reset, source]);
 
 /**
  * Demand driver with a clock of its own: pulls one `level` every `dur`

@@ -76,6 +76,7 @@ export {
     lfSaw,
     lfTri,
     phasor,
+    transportPos,
     pinkNoise,
     pulse,
     saw,

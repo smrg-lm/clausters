@@ -96,3 +96,28 @@ export const phasor = (
     end: Channel = 1.0,
     resetPos: Channel = 0.0,
 ): Ugen => new Ugen("Phasor", [trig, rate, start, end, resetPos]);
+
+/**
+ * The **transport's position in the piece**, in frames, minus `offset`.
+ *
+ * A buffer reader whose phase is this one follows the transport instead of
+ * carrying a position of its own, so seeking (`Server.transportLocateSample`),
+ * looping (`Server.transportLoop`) and pausing (`Server.transportStop` over a
+ * governed group) belong to the transport and not to the def. That is the
+ * shape a multitrack needs — many readers, one time — and it is why a locate
+ * never has to reach into a node.
+ *
+ * It ramps one frame per sample while the transport rolls and holds while it
+ * is stopped. `offset` is where this material starts in the piece, so a clip
+ * reads its own frame 0 when the transport reaches it; the subtraction happens
+ * in double precision inside the UGen, which is what keeps the value exact
+ * deep into a long piece (a signal is 32-bit, and past about six minutes at
+ * 48 kHz it can no longer count single frames — subtracting afterwards with
+ * `sub` has already lost that).
+ *
+ * ```ts
+ * const take = bufRd(buf.bufnum, 0, transportPos());
+ * ```
+ */
+export const transportPos = (offset: Channel = 0.0): Ugen =>
+    new Ugen("TransportPos", [offset]);

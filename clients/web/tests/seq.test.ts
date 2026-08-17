@@ -409,7 +409,11 @@ test("a playhead follows the server's transport broadcasts", async () => {
             },
             remove: (handler: OscHandler) => handlers.delete(handler),
         },
-        transportState: async () => null,
+        // The state is **always** answered now: a transport exists whether or
+        // not a grid does. A `tempo` of null is a server with no beat grid,
+        // which is what stops the initial apply here (the Python fake in
+        // `tests/test_timeline.py` says the same).
+        transportState: async () => ({ tempo: null, playing: false, position: 0 }),
     } as unknown as Server;
     // origin, tempo, defined, playing, position, group, transportSample
     const broadcast = (playing: number, position: number) => {
