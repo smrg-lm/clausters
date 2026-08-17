@@ -61,7 +61,33 @@ fn playbuf_spec(bufnum: f32, chan: f32, rate: f32, looping: f32, out_bus: f32) -
         "name": "player",
         "ugens": [
             {"kind": "PlayBuf", "inputs": [
-                {"const": bufnum}, {"const": chan}, {"const": rate}, {"const": looping}
+                {"const": bufnum}, {"const": chan}, {"const": rate}, {"const": looping},
+                {"const": 0.0}, {"const": 0.0}, {"const": 0.0}
+            ]},
+            {"kind": "Out", "inputs": [{"const": out_bus}, {"ugen": 0}]}
+        ]
+    }))
+}
+
+/// The whole `PlayBuf` signature, for the tests that exercise the cue point
+/// and the done action.
+#[allow(clippy::too_many_arguments)]
+fn playbuf_full(
+    bufnum: f32,
+    rate: f32,
+    looping: f32,
+    trigger: f32,
+    start_pos: f32,
+    done_action: f32,
+    out_bus: f32,
+) -> UGenSynth {
+    spec_synth(json!({
+        "name": "player",
+        "ugens": [
+            {"kind": "PlayBuf", "inputs": [
+                {"const": bufnum}, {"const": 0.0}, {"const": rate},
+                {"const": looping}, {"const": trigger}, {"const": start_pos},
+                {"const": done_action}
             ]},
             {"kind": "Out", "inputs": [{"const": out_bus}, {"ugen": 0}]}
         ]
@@ -189,6 +215,140 @@ fn playbuf_with_no_buffer_is_silent() {
         .unwrap();
     let left = render_channel(&mut engine, 4, 0);
     assert!(left.iter().all(|s| *s == 0.0));
+}
+
+/// The full `PlayBuf` signature: `start_pos` is where a pass begins, so a
+/// player can be cued to a frame without the client sending a phase.
+#[test]
+fn playbuf_starts_at_its_start_pos() {
+    let frames = 100;
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(ramp_buffer(frames)),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(
+            1000,
+            playbuf_full(0.0, 1.0, 0.0, 0.0, 40.0, 0.0, 0.0),
+        ))
+        .ok()
+        .unwrap();
+
+    let left = render_channel(&mut engine, 2, 0);
+    for (i, s) in left.iter().enumerate() {
+        let frame = 40 + i;
+        let expected = if frame < frames {
+            frame as f32 / 1000.0
+        } else {
+            0.0
+        };
+        assert_eq!(*s, expected, "sample {i}: the pass began at frame 40");
+    }
+}
+
+/// A rising `trigger` re-cues a player **mid-pass**, which is what makes one
+/// node a re-usable voice instead of a one-use one.
+#[test]
+fn a_rising_trigger_recues_playbuf_to_its_start_pos() {
+    let frames = 1000;
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(ramp_buffer(frames)),
+        })
+        .ok()
+        .unwrap();
+    // The trigger is a control, so it can be raised between blocks; start_pos
+    // is 10, and the pass is nowhere near the end when the trigger arrives.
+    handle
+        .send(add_synth(
+            1000,
+            spec_synth(json!({
+                "name": "cued",
+                "controls": [{"name": "trig", "default": 0.0}],
+                "ugens": [
+                    {"kind": "PlayBuf", "inputs": [
+                        {"const": 0.0}, {"const": 0.0}, {"const": 1.0},
+                        {"const": 0.0}, {"control": 0}, {"const": 10.0},
+                        {"const": 0.0}
+                    ]},
+                    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+                ]
+            })),
+        ))
+        .ok()
+        .unwrap();
+
+    let first = render_channel(&mut engine, 1, 0);
+    assert_eq!(first[0], 0.010, "the pass began at start_pos");
+    assert_eq!(first[BLOCK_SIZE - 1], (10 + BLOCK_SIZE - 1) as f32 / 1000.0);
+
+    handle
+        .send(Cmd::SetControl {
+            id: 1000,
+            index: 0,
+            value: 1.0,
+        })
+        .ok()
+        .unwrap();
+    let second = render_channel(&mut engine, 1, 0);
+    assert_eq!(
+        second[0], 0.010,
+        "the rising trigger cued the player back to frame 10"
+    );
+}
+
+/// A non-looping player that reaches the end fires its done action, so a
+/// one-shot leaves the tree by itself — and a **looping** one never does.
+#[test]
+fn a_one_shot_player_frees_itself_and_a_looping_one_does_not() {
+    let frames = 32; // half a block: the pass ends inside the first block
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(ramp_buffer(frames)),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(
+            60,
+            playbuf_full(0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0),
+        ))
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(
+            61,
+            playbuf_full(0.0, 1.0, 1.0, 0.0, 0.0, 2.0, 1.0),
+        ))
+        .ok()
+        .unwrap();
+
+    // One block finishes the one-shot; the next observes the published count.
+    render_channel(&mut engine, 2, 0);
+    assert_eq!(
+        handle
+            .counters()
+            .synths
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1,
+        "the one-shot freed itself; the looping player never finishes"
+    );
+
+    // And it kept playing: the looper is still filling its bus after the
+    // one-shot is gone.
+    let looped = render_channel(&mut engine, 1, 1);
+    for (i, s) in looped.iter().enumerate() {
+        // Three blocks have gone by; 192 is a whole number of passes over 32.
+        assert_eq!(*s, (i % frames) as f32 / 1000.0, "sample {i} of the loop");
+    }
 }
 
 #[test]
@@ -863,7 +1023,8 @@ fn diskout_records_then_diskin_streams_it_back() {
         "name": "rec",
         "ugens": [
             {"kind": "PlayBuf", "inputs": [
-                {"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0}
+                {"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                {"const": 0.0}, {"const": 0.0}, {"const": 0.0}
             ]},
             {"kind": "DiskOut", "inputs": [{"ugen": 0}], "path": path, "format": "float"}
         ]
@@ -1083,7 +1244,8 @@ mod osc {
             "name": "player",
             "ugens": [
                 {"kind": "PlayBuf", "inputs": [
-                    {"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 1.0}
+                    {"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 1.0},
+                    {"const": 0.0}, {"const": 0.0}, {"const": 0.0}
                 ]},
                 {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
             ]
@@ -1372,7 +1534,8 @@ mod osc {
             "name": "player",
             "ugens": [
                 {"kind": "PlayBuf", "inputs": [
-                    {"const": 2.0}, {"const": 0.0}, {"const": 1.0}, {"const": 1.0}
+                    {"const": 2.0}, {"const": 0.0}, {"const": 1.0}, {"const": 1.0},
+                    {"const": 0.0}, {"const": 0.0}, {"const": 0.0}
                 ]},
                 {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
             ]

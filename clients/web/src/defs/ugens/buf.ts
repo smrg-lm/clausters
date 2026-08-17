@@ -11,13 +11,23 @@ import type { Channel } from "./graph.ts";
 /**
  * Mono buffer player with linear interpolation; `rate` is frames per output
  * sample (1.0 = server rate).
+ *
+ * Playing starts at `startPos` and a rising `trigger` re-cues there, so one
+ * player is a re-usable voice rather than a one-use node. Without `loop`,
+ * reaching the end stops it and fires `doneAction` (2 frees the synth, so a
+ * one-shot leaves the tree by itself); a looping player never finishes, so the
+ * action never fires.
  */
 export const playBuf = (
     bufnum: Channel,
     chan: Channel = 0.0,
     rate: Channel = 1.0,
     loop: Channel = 0.0,
-): Ugen => new Ugen("PlayBuf", [bufnum, chan, rate, loop]);
+    trigger: Channel = 0.0,
+    startPos: Channel = 0.0,
+    doneAction: Channel = 0,
+): Ugen =>
+    new Ugen("PlayBuf", [bufnum, chan, rate, loop, trigger, startPos, doneAction]);
 
 /** Reads a buffer at a `phase` signal in frames (linear interpolation). */
 export const bufRd = (

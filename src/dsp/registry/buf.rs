@@ -7,14 +7,17 @@ use super::*;
 
 pub(super) static UGENS: &[UGenDescriptor] = &[
     // --- buffer readers and info ---
-    desc(
+    desc_done(desc(
         "PlayBuf",
-        Fixed(4),
+        Fixed(7),
         &[
             inp("bufnum", 0.0),
             inp("chan", 0.0),
             inp("rate", 1.0),
             inp("loop", 0.0),
+            inp("trigger", 0.0),
+            inp("start_pos", 0.0),
+            inp("done_action", 0.0),
         ],
         Ar,
         R_AR,
@@ -22,7 +25,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |_, _| Box::new(PlayBuf::new()),
-    ),
+    )),
     desc(
         "BufRd",
         Fixed(4),

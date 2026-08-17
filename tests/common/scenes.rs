@@ -119,7 +119,8 @@ const PLAYER_DEF: &str = r#"{
   "name": "player",
   "controls": [{"name": "rate", "default": 1.0}],
   "ugens": [
-    {"kind": "PlayBuf", "inputs": [{"const": 0.0}, {"const": 0.0}, {"control": 0}, {"const": 1.0}]},
+    {"kind": "PlayBuf", "inputs": [{"const": 0.0}, {"const": 0.0}, {"control": 0}, {"const": 1.0},
+                                  {"const": 0.0}, {"const": 0.0}, {"const": 0.0}]},
     {"kind": "InCtl",   "inputs": [{"const": 0.0}]},
     {"kind": "Mul",     "inputs": [{"ugen": 0}, {"ugen": 1}]},
     {"kind": "Out",     "inputs": [{"const": 0.0}, {"ugen": 2}]}

@@ -434,7 +434,8 @@ fn a_score_writes_samples_and_plays_them_back() {
         "name": "player",
         "ugens": [
             {"kind": "PlayBuf", "inputs": [
-                {"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0}
+                {"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                {"const": 0.0}, {"const": 0.0}, {"const": 0.0}
             ]},
             {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
         ]

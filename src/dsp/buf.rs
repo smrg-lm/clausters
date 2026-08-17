@@ -7,7 +7,13 @@
 //! UGens with the same inputs stay sample-locked, so a stereo file is two
 //! readers and two writers). This diverges from scsynth's multi-output
 //! PlayBuf/BufRd — documented in `docs/schemas.md`. The two readers interpolate
-//! linearly; neither has a trigger or done action yet.
+//! linearly.
+//!
+//! **A cue point belongs to a reader that carries a position.** `PlayBuf` and
+//! `RecordBuf` advance themselves, so each takes a `trigger`, a frame to cue to
+//! and a `done_action`; `BufRd` and `BufWr` are driven by a phase signal and
+//! have no position of their own to cue — re-cueing one means changing the
+//! signal that drives it.
 //!
 //! **A buffer's contents are mutable** (`dsp::buffer`), so recording into one
 //! while another node plays it is the ordinary case rather than a hazard: what
@@ -40,17 +46,36 @@ fn read_lin(buf: &Buffer, pos: f64, channel: usize, looping: bool) -> f32 {
 /// Self-advancing buffer player. Inputs: 0 buffer index, 1 channel,
 /// 2 rate (frames advanced per output sample, so 1.0 plays at the server
 /// rate; scale by `buffer_sr / server_sr` to honor the file's pitch),
-/// 3 loop flag. Starts at frame 0; without loop it goes silent at the end.
+/// 3 loop flag, 4 `trigger`, 5 `start_pos` (the frame a start or a re-trigger
+/// cues to), 6 `done_action`.
+///
+/// A rising `trigger` re-cues to `start_pos` mid-play, which is what makes one
+/// player a re-usable voice instead of a one-use node. Without `loop`, reaching
+/// the end stops it and fires the done action — `2` frees the synth, so a
+/// one-shot leaves the tree by itself; with `loop`, the reader never finishes
+/// and the action never fires.
+///
+/// The three arrive **after** the original four rather than in scsynth's order
+/// (`rate, trigger, startPos, loop`): inputs are positional, so putting
+/// `start_pos` before `loop` would have re-read every existing `loop` argument
+/// as a cue frame — a change no arity check can catch, since the count is right
+/// either way.
 pub struct PlayBuf {
     phase: f64,
+    started: bool,
     finished: bool,
+    prev_trig: f32,
+    done_action: DoneAction,
 }
 
 impl PlayBuf {
     pub fn new() -> Self {
         Self {
             phase: 0.0,
+            started: false,
             finished: false,
+            prev_trig: 0.0,
+            done_action: DoneAction::None,
         }
     }
 }
@@ -66,12 +91,27 @@ impl UGen for PlayBuf {
         let index = inputs[0][0].max(0.0) as usize;
         let channel = inputs[1][0].max(0.0) as usize;
         let looping = inputs[3][0] != 0.0;
+        // Read like `EnvGen`'s: block-scalar, so a def can pick the action from
+        // a control and a client can change it before the pass ends.
+        self.done_action = DoneAction::from_i32(at(inputs[6], 0) as i32);
+        if !self.started {
+            self.phase = at(inputs[5], 0).max(0.0) as f64;
+            self.started = true;
+        }
         let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
             output.fill(0.0);
             return;
         };
         let frames = buf.frames() as f64;
         for (i, s) in output.iter_mut().enumerate() {
+            // The trigger is read whatever else is happening: re-cueing a
+            // finished player is how one is played again.
+            let t = at(inputs[4], i);
+            if t > 0.0 && self.prev_trig <= 0.0 {
+                self.phase = at(inputs[5], i).max(0.0) as f64;
+                self.finished = false;
+            }
+            self.prev_trig = t;
             // The buffer can shrink under us on a swap: re-clamp, don't trust
             // the phase from previous blocks.
             if self.finished || self.phase >= frames || self.phase < 0.0 {
@@ -86,6 +126,14 @@ impl UGen for PlayBuf {
             }
             *s = read_lin(buf, self.phase, channel, looping);
             self.phase += at(inputs[2], i) as f64;
+        }
+    }
+
+    fn done(&self) -> DoneAction {
+        if self.finished {
+            self.done_action
+        } else {
+            DoneAction::None
         }
     }
 }

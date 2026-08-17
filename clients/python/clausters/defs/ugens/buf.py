@@ -7,10 +7,19 @@ shape into the graph.
 
 from .graph import Ugen
 
-def play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0) -> Ugen:
+def play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0, trigger=0.0,
+             start_pos=0.0, done_action=0) -> Ugen:
     """Mono buffer player with linear interpolation; ``rate`` is frames per
-    output sample (1.0 = server rate)."""
-    return Ugen("PlayBuf", [bufnum, chan, rate, loop])
+    output sample (1.0 = server rate).
+
+    Playing starts at ``start_pos`` and a rising ``trigger`` re-cues there,
+    so one player is a re-usable voice rather than a one-use node. Without
+    ``loop``, reaching the end stops it and fires ``done_action`` (2 frees the
+    synth, so a one-shot leaves the tree by itself); a looping player never
+    finishes, so the action never fires.
+    """
+    return Ugen("PlayBuf",
+                [bufnum, chan, rate, loop, trigger, start_pos, done_action])
 
 
 def buf_rd(bufnum, chan, phase, loop=0.0) -> Ugen:

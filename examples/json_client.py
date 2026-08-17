@@ -375,7 +375,7 @@ def demo_buffer(client: Client):
     # rate, so the file's pitch needs file_sr / server_sr.
     d = SynthDefBuilder("bplayer")
     rate = d.control("rate", 1.0)
-    d.add("Out", 0, d.add("PlayBuf", 10, 0, rate, 1))
+    d.add("Out", 0, d.add("PlayBuf", 10, 0, rate, 1, 0, 0, 0))
     client.send("/def_send", "synth", d.blob())
     client.reply()
 

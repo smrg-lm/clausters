@@ -292,7 +292,7 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `in_ctl(bus=0.0)` | reads a control bus (constant over the block) |
 | Bus output | `out(bus, signal)` | **sums** `signal` into an audio bus |
 | | `replace_out(bus, signal)` | **overwrites** an audio bus instead of summing |
-| Buffers | `play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0)` | mono buffer player, linear interpolation; `rate` in frames per output sample |
+| Buffers | `play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0, trigger=0.0, start_pos=0.0, done_action=0)` | mono buffer player, linear interpolation; `rate` in frames per output sample. A pass begins at `start_pos` and a rising `trigger` re-cues there; without `loop`, the end fires `done_action` (2 frees the synth) |
 | | `buf_rd(bufnum, chan, phase, loop=0.0)` | reads a buffer at a `phase` signal in frames |
 | Buffer info | `buf_sample_rate(bufnum)` / `buf_frames(bufnum)` | the buffer's own sample rate (Hz) / frame count, block-constant (`kr`) |
 | | `buf_rate_scale(bufnum)` | `file_sr / server_sr` — feed `play_buf`'s `rate` to play at the file's true pitch |

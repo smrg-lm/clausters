@@ -117,7 +117,8 @@ fn conv_matches_direct_convolution() {
         "name": "convolve",
         "ugens": [
             {"kind": "PlayBuf",
-             "inputs": [{"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0}]},
+             "inputs": [{"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                        {"const": 0.0}, {"const": 0.0}, {"const": 0.0}]},
             {"kind": "Conv", "inputs": [{"ugen": 0}, {"const": 1.0}],
              "fft_size": 512, "partitions": 4},
             {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}

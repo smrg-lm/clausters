@@ -212,7 +212,8 @@ fn buffer_swaps_do_not_allocate_on_the_audio_thread() {
             "name": "player",
             "ugens": [
                 {"kind": "PlayBuf", "inputs": [
-                    {"const": 0.0}, {"const": 0.0}, {"const": 0.5}, {"const": 1.0}
+                    {"const": 0.0}, {"const": 0.0}, {"const": 0.5}, {"const": 1.0},
+                    {"const": 0.0}, {"const": 0.0}, {"const": 0.0}
                 ]},
                 {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
             ]
