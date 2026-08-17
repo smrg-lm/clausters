@@ -446,6 +446,10 @@ The **playhead** is that position, read each frame with no messages. Natively th
 
 Which is also why the host **binds a group of its own** rather than the root: the root would freeze every sound the session has. And why the transport gestures are gated on `Host::owns_transport` — the host that bound the group is the one driving it, and a host that is a guest on somebody else's server sends no `/transport_*` at all, because a script owns its own transport.
 
+### The segment: one definition, three ways of getting the memory
+
+The shared-memory segment's layout is **`clausters_core::shm`** — the header, the rings, the buffer directory, every offset derived from the header, and a `View` carrying the data plane (clocks, the control-plane claim, buses and levels, the tap rings, the directory's seqlock, the ring framing). The server, the GUI host and the Python client all read *that*, and what each keeps for itself is only how it obtains the memory: `mmap` of a file, a heap allocation, Python's `mmap` plus the `clausters_core_shm_*` C door. `docs/decisions.md` records why (a version number cannot check a layout, and twice it did not), and `docs/ipc.md` is the reader's reference.
+
 ### The editor's processes: who owns the material, who holds the devices
 
 An editor that owns its material through a real-time server holds an audio device it does not need, cannot be restarted without taking the material with it, and pays the whole real-time surface to run three verbs. So the standalone editor is **three roles**, and the split is by what each one holds:

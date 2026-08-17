@@ -5706,3 +5706,47 @@ announcement, because a browser cannot map a file and a message is the only way
 it can hear about an edit at all. What a peer may *compute* is unchanged and is
 what it always was — what drawing needs: a peak pyramid, an analysis for a
 picture.
+
+## The segment's layout lives in the shared core, not in each reader
+
+**Context.** Four processes read the shared-memory segment — the server that
+writes it, the GUI host, the Python client, and any later peer — and three of
+them mirrored its `#[repr(C)]` layout by hand: the same offsets, the same
+constants, a second copy of the buffer directory's seqlock, a second tap-window
+reader, a second implementation of the ring's framing. The only thing tying
+them together was the ABI counter, checked on attach.
+
+That is not a check. A version number says "we agree about which layout this
+is", never "we agree about what that layout is", and the difference showed up
+twice in one week. The GUI host was moved to ABI v9 by its *number* and kept a
+size check that demanded a segment with no buffer directory, so it refused
+every valid segment while compiling perfectly. The Python client declared 1024
+control buses against a server that had had 16 384 for months — wrong, unused
+and invisible, because a client maps the *file's* length and only a
+documentation constant was derived from the number.
+
+**Decision.** `clausters_core::shm` is the definition: the header, the rings,
+the directory row, every offset derived from the header, and a `View` carrying
+the whole data plane — the clocks, the control-plane claim, the buses and
+levels, the tap rings with their tear-free read, the directory with its
+seqlock, the ring framing. It is pure atomics over an address, so it compiles
+for wasm and is unit-tested without a mapping.
+
+What each process keeps is **getting the memory**: `mmap` of a file, a heap
+allocation, Python's `mmap`. That is the genuinely platform-shaped part, and it
+is the only part. A non-Rust peer reaches the rest through
+`clausters_core_shm_*` (the C ABI): the *shape* — every count and offset in one
+call — plus the things that are logic rather than arithmetic.
+
+**Consequence.** `src/server/ipc.rs` lost 700 lines, `host/shm.rs` half of
+itself, and `ipc.py` its whole layout section; what is left in each is that
+process's own concern. Three `const` assertions tie the constants the engine
+also declares (the audio-bus cap, the block size, the pool size) to the ones
+the layout is sized for, so a divergence is a build error. And the tests that
+used to build a segment by hand from a reader's own idea of the layout — a
+mirror checked against itself — build one through the core or through the
+server instead.
+
+**What this does not do.** It does not make the layout versionless: `ABI_VERSION`
+still gates attaching, because two *builds* can still disagree. What it removes
+is the second kind of disagreement, the one a version cannot see.
