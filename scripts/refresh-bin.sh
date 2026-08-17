@@ -52,6 +52,19 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+# The GUI host is built **with `standalone`** here, unlike the wheel's own
+# build, and that is the difference between refreshing for a manual test and
+# packaging one. `standalone` links the server crate into the host so a saved
+# session can be opened with no language client behind it -- which is the whole
+# subject of `gui_session.py` and of every H-track example. Off, the host still
+# runs and still draws, and a take just comes back **empty** with a warning, so
+# the failure is quiet and looks like the example is broken. Since this script
+# is what CLAUDE.md tells everyone to run before any manual test, it must not
+# be what silently removes the mode under test. Override by exporting
+# CLAUSTERS_GUI_FEATURES yourself.
+: "${CLAUSTERS_GUI_FEATURES:=standalone}"
+export CLAUSTERS_GUI_FEATURES
+
 if [ "$refresh" = 1 ]; then
     # shellcheck disable=SC2086  # an empty flag must vanish, not quote to ""
     "$python" "$root/clients/python/build_native.py" $profile_flag
