@@ -106,14 +106,52 @@ def to_session(element, *, sources=None, version: int = FIRST_VERSION,
     Returns:
         The session as plain JSON-able Python.
     """
+    document = to_document(element, version=version)
+    table = {str(k): v for k, v in (sources or {}).items()}
+    missing = sorted(_source_ids(document["root"]) - {int(k) for k in table})
+    if missing:
+        # A session whose table does not cover its own document reopens with
+        # that material unresolved -- the take draws nothing and nothing says
+        # why, which is a defect found the only way it can be: by looking at a
+        # window two saves later. The table is caller data (what a location
+        # *means* is the caller's), but whether it covers the tree is checkable
+        # here, and it is the difference between an error now and a silent hole
+        # later. It bites hardest where the ids move under you: reopening
+        # resolves material into new buffers, so a table built once at startup
+        # stops matching the composition it is saved with.
+        raise ValueError(
+            f"the source table does not cover this document: no entry for "
+            f"{', '.join(str(m) for m in missing)}. Build it from the "
+            f"arrangement being saved (each buffer element's current source), "
+            f"not from the material the script started with."
+        )
     session = {
         "format": SESSION_FORMAT,
-        "document": to_document(element, version=version),
-        "sources": {str(k): v for k, v in (sources or {}).items()},
+        "document": document,
+        "sources": table,
     }
     if provenance is not None:
         session["provenance"] = provenance
     return session
+
+
+def _source_ids(node: dict) -> set:
+    """Every source id the document names, so a session can be checked against
+    its own table before it is written."""
+    found = set()
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if not isinstance(current, dict):
+            continue
+        source = current.get("source")
+        if isinstance(source, dict) and "source" in source:
+            found.add(int(source["source"]))
+        for member in current.get("members") or ():
+            if isinstance(member, dict):
+                stack.append(member.get("node"))
+        stack.append(current.get("rendered"))
+    return found
 
 
 def from_session(session: dict, *, resolve=None):

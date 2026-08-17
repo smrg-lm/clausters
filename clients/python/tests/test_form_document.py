@@ -207,12 +207,21 @@ def test_a_session_saved_mid_edit_reopens_with_the_edit_still_open():
     session = to_session(
         a_group(),
         sources={
+            # The take the composition plays, and the working copy of it that an
+            # unconfirmed edit is writing. Both are in the table because a
+            # session whose table does not cover its own document is one that
+            # reopens with material unresolved.
+            7: {
+                "location": {"at": "file", "path": "takes/vocal.wav"},
+                "lifetime": "external",
+                "generation": 0,
+            },
             8: {
                 "location": {"at": "file", "path": "scratch/edit.wav"},
                 "lifetime": "session",
                 "generation": 3,
                 "editing": {"from": 7, "confirmed": False},
-            }
+            },
         },
     )
     _, sources = from_session(json.loads(json.dumps(session)))
@@ -223,7 +232,8 @@ def test_a_session_saved_mid_edit_reopens_with_the_edit_still_open():
 def test_a_newer_session_format_is_refused_rather_than_half_read():
     from clausters.form.document import SESSION_FORMAT, from_session, to_session
 
-    session = to_session(a_group())
+    session = to_session(a_group(), sources={7: {"location": {"at": "file", "path": "t.wav"},
+                                                 "lifetime": "session", "generation": 0}})
     session["format"] = SESSION_FORMAT + 1
     with pytest.raises(ValueError, match="newer than this build"):
         from_session(session)
@@ -647,13 +657,13 @@ def test_the_song_survives_a_session_round_trip_structurally_identical():
     song.name = "song"
     song.add(Track(Timeline([(0.0, SeqEvent(midinote=67))])), offset=16.0)
 
-    written = to_session(song, sources={1: {"location": {"at": "file", "path": "t.wav"},
+    written = to_session(song, sources={7: {"location": {"at": "file", "path": "t.wav"},
                                             "lifetime": "session", "generation": 0}})
     back, sources = from_session(json.loads(json.dumps(written)))
 
     assert to_document(back) == written["document"]
     assert _kinds(back) == _kinds(song)
-    assert sources[1]["location"]["path"] == "t.wav"
+    assert sources[7]["location"]["path"] == "t.wav"
 
 
 def _kinds(element) -> list:
@@ -721,3 +731,15 @@ def test_the_same_script_run_twice_writes_the_same_bytes():
         for _ in range(2)
     }
     assert len(runs) == 1, runs
+
+
+def test_a_session_whose_table_does_not_cover_its_document_is_refused():
+    # The failure it replaces is invisible until two saves later: reopening
+    # resolves each take into a *new* buffer, so a table built once at startup
+    # stops covering the composition it is saved with, and the reopened piece
+    # draws nothing where the take was -- with nothing said anywhere.
+    with pytest.raises(ValueError, match="does not cover this document"):
+        to_session(a_group(), sources={99: {"location": {"at": "file", "path": "x.wav"},
+                                            "lifetime": "session", "generation": 0}})
+    # A composition with no material needs no table at all.
+    assert to_session(Group([(0.0, Event(SeqEvent(midinote=60)))]))["sources"] == {}

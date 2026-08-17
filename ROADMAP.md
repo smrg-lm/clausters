@@ -88,14 +88,14 @@ running that example, and none of it is guessed at.*
   acceptance is the other half of the same run: the piece plays its pattern lane
   again, and the file is byte-identical between two runs of the same script.
 
-- ⬜ **A reopened session draws less on every redefine, while the model is
-  intact** *(`clients/gui/PLAN.md`, found by use)*. The **host's**, and
-  deliberately after the two above so that the tree it is handed is the right
-  one before anything is traced: the model round-trips (measured over three
-  generations and in-process against a live server), so what degrades is the
-  redefine path — state kept against recycled ids, which is a seam this host has
-  been bitten at twice. It needs the window and a host-side trace; guessing at
-  it from the client is what the two earlier fixes showed costs a day.
+- ✅ **A reopened session draws less on every redefine, while the model is
+  intact** *(`clients/gui/PLAN.md`, found by use)* — diagnosed 2026-08-17, and
+  it was **not** the host: the trace shows every redefine fetching and placing
+  its material. Both symptoms were the client's, each fixed with its own entry
+  (the frozen generator, and a source table built from the material the script
+  started with rather than from the tree being saved). What would reopen it is a
+  pass on the fixed example that still loses drawing: the trace says the host
+  redraws what it is handed, and says nothing about a tree that is handed less.
 
 **Not in this phase, and it is the one judgement call here:** *"May one element
 be placed twice, and what does an intent name if it is?"* (document plan, Open

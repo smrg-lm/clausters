@@ -259,19 +259,49 @@ song = Group([
 SESSION_FILE = folder / "song.claust"
 
 
+def takes_of(element):
+    """Every server buffer the composition currently plays.
+
+    A source table has to describe *this* tree: the buffers a reopened piece
+    holds are not the ones the script read at startup, because resolving a
+    session reads each take again into a buffer of its own.
+    """
+    from clausters.form import Buffer as BufferElement
+
+    found = {}
+    stack = [element]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, BufferElement) and getattr(current.wraps, "bufnum", None) is not None:
+            found[current.wraps.bufnum] = current.wraps
+        stack.extend(child for _, _, child in getattr(current, "members", []) or [])
+    return list(found.values())
+
+
 def save():
-    """Write the composition and where its material is."""
+    """Write the composition and where its material is.
+
+    **The table is built from the composition being saved**, not from the
+    material this script started with, and that distinction is the whole of a
+    defect this example had: reopening resolves each take into a *new* server
+    buffer, so a table naming the buffer read at startup stops covering the tree
+    one save later — and the file it writes reopens with the takes unresolved
+    and nothing drawn. `to_session` refuses such a file now, which is what turned
+    a picture that quietly lost its waveforms into an error at the moment of
+    saving.
+    """
     sources = {
-        buf.bufnum: {
+        take_buffer.bufnum: {
             # Relative to the session file's own folder, which is what makes the
             # pair of files movable together.
             "location": {"at": "file", "path": wav.name},
             "lifetime": "session",
             "generation": 0,
             "channels": 1,
-            "frames": int(buf.frames),
+            "frames": int(take_buffer.frames),
             "sample_rate": SR,
         }
+        for take_buffer in takes_of(editor.element)
     }
     document = to_session(editor.element, sources=sources,
                           provenance={"script": "gui_composer.py"})
