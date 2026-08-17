@@ -395,6 +395,14 @@ reasoning:
   one set kind: a multitrack's track is a set *with the restrictions of a view*,
   and those restrictions ride in the set's opaque `config` — carried, never
   read — rather than becoming a variant of the tree.
+- **One document, held, and both directions of the history are projections.**
+  An editor opens one `Document` for the composition's life and applies every
+  edit to it, so a gesture costs the edit rather than the composition (107 ms →
+  0.020 ms on a 10240-event piece). Undo *and* redo hand back the intents they
+  applied (`undone` / `redone`), so a client projects both the same way and
+  never adopts a whole document to find what moved. The price is that a script
+  editing the arrangement behind an open editor must say so — `Editor.refresh()`
+  — instead of being absorbed by a rebuild that used to happen per gesture.
 - **An intent is absolute, and applying one happens in exactly one place.** An
   edit states the resulting value, never an increment, which makes it idempotent
   and makes replay unnecessary. `intent::apply` is the only implementation of

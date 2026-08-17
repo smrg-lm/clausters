@@ -278,6 +278,12 @@ export interface Undone {
 /** What a redo did, and what it could not. The document changed in place. */
 export interface Redone {
     /**
+     * The intents the redo applied, in order — the same shape an undo answers
+     * with, so a view projects a redo exactly as it projects an undo instead of
+     * adopting the whole document and reconciling it against its own objects.
+     */
+    redone: Intent[];
+    /**
      * The steps from the first one the crate **cannot perform** onward — a
      * deterministic operation kept as its parameters, which you re-run because
      * the crate holds no algorithms. It stops at the first rather than skipping

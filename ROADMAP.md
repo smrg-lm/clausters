@@ -158,8 +158,8 @@ edit rewrite the arrangement directly and leave no log entry — and the fix was
 implemented and reverted on 2026-08-17, which is the finding that orders this
 phase.*
 
-- ⬜ **O13 — One document, held: the editor stops re-deriving what it already
-  has** *(`crates/clausters-document/PLAN.md`)*. Written 2026-08-17 with the
+- ✅ **O13 — One document, held: the editor stops re-deriving what it already
+  has** — done 2026-08-17: 107.38 ms → 0.020 ms per gesture, flat in the composition. *(`crates/clausters-document/PLAN.md`)*. Written 2026-08-17 with the
   measurement that argues it: a gesture on a 10240-event composition costs
   **107 ms**, of which the crate's own edit is **0.014 ms** — the rest is the
   client rebuilding a document it had a moment ago, which is exactly the cost
@@ -173,7 +173,7 @@ phase.*
   no object for; a script editing beside an open editor bumps no version, so
   O4's staleness check never fires.
 
-- ⬜ **Undo works for clips and for nothing inside one**
+- ✅ **Undo works for clips and for nothing inside one** — done 2026-08-17 with O13.
   *(`clients/python/PLAN.md`, found by use)*. The vocabulary is already there —
   the roll's edit is a `SetMembers`, the curve's a `Configure` — and the revert
   says why it waits: routing them through the log took minting ids for notes,

@@ -1371,3 +1371,87 @@ def test_a_poll_feeds_the_arrangement_and_the_windows_own_handlers():
     assert [addr for addr, _ in host.dispatched] == ["/gui_event", "/gui_event"]
     assert host.dispatched[0][1][0] == 9_999, "the strip's button reached its handler"
     assert ed.selection["start"] == pytest.approx(1.0), "and the sweep still landed"
+
+
+# ---- O13: one document, held, and undo that reaches inside a clip ----------
+
+
+def _notes(track) -> list:
+    return [(round(beat, 3), item["midinote"]) for beat, item in track.wraps]
+
+
+def test_a_note_edited_in_a_roll_is_undoable_and_redoable():
+    """The entry this milestone exists for. A note edit used to rewrite the
+    timeline straight onto the arrangement, so it left no entry in the log and
+    could not be stepped back — undo worked for clips and for nothing inside
+    one."""
+    piece = song()
+    track = piece.members[1][2].members[0][2]
+    ed = editor(piece, quant=0.0)
+    ed._history()
+    before = _notes(track)
+
+    moved = []
+    for beat, item in track.wraps:
+        pitch = 72 if item["midinote"] == 64 else item["midinote"]
+        moved += [ed.beats_to_units(beat), ed.beats_to_units(item.get("dur") or 1.0),
+                  pitch, 100, 0]
+    assert ed._apply_notes(track, moved)
+    assert 72 in [p for _, p in _notes(track)]
+
+    assert ed.undo()
+    assert _notes(track) == before, "exactly, not approximately"
+    assert ed.redo()
+    assert 72 in [p for _, p in _notes(track)]
+
+
+def test_a_break_point_edited_on_a_curve_is_undoable_and_redoable():
+    """The other half: a curve's points had to reach the document before an
+    inverse could exist, since a leaf's config named the automation and nothing
+    else."""
+    from clausters.defs import Env
+    from clausters.form import Element
+    from clausters.seq.automation import Automation
+
+    auto = Automation(Env([100.0, 400.0], [2.0]), "freq", name="sweep")
+    lane = Group([(0.0, Element(auto, duration=2.0))], name="sweep")
+    ed = editor(Group([(0.0, lane)], name="song"), quant=0.0)
+    ed._history()
+    before = list(auto.to_points())
+
+    placed = ed._clips.get(next(iter(ed._clips), None)) if ed._clips else None
+    handle = lane.handles[0]
+    assert ed._apply_points(type("Placed", (), {"member": handle})(),
+                            [ed.beats_to_units(0.0), 200.0, 1, 0.0,
+                             ed.beats_to_units(2.0), 300.0, 1, 0.0])
+    assert auto.to_points()[1] == 200.0
+
+    assert ed.undo()
+    assert list(auto.to_points()) == before
+    assert ed.redo()
+    assert auto.to_points()[1] == 200.0
+
+
+def test_the_document_is_held_rather_than_rebuilt_per_gesture():
+    """What the milestone is measured on: the handle survives a gesture, so an
+    edit costs the edit and not the composition."""
+    ed = editor(quant=0.0)
+    _, first = ed._history()
+    node = ed._node_id(ed.element.members[0][2])
+    ed._record({"intent": "place", "node": node, "offset": 1.0}, "move")
+    _, again = ed._history()
+    assert again is first, "the same document, not a fresh one"
+
+
+def test_a_script_editing_behind_the_editor_says_so_with_refresh():
+    """The price of holding it, and the door that pays it. Without `refresh`
+    the next edit would be made against a composition that has moved."""
+    piece = song()
+    ed = editor(piece, quant=0.0)
+    _, first = ed._history()
+
+    piece.add(Event(SeqEvent(midinote=48)), offset=8.0)
+    ed.refresh()
+    _, after = ed._history()
+    assert after is not first, "re-derived, so the new node is nameable"
+    assert ed._node_id(piece.members[-1][2]) is not None

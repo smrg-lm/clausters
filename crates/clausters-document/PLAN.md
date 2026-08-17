@@ -245,7 +245,7 @@ The eight that opened with this file were taken one at a time and are in the sec
 
   **Still open, and it is the other half of the note under O10:** `clausters.form` is a Python object model with a conversion, not accessors over the crate's tree. O12 was the cost argument for closing that, and the cost is gone - so what remains is the *identity* argument (a paste creating nodes the client has no object for, D4) and the *two writers* one (a script editing beside an open editor, which bumps no version). Those are D4's and H2's to force, and they are cheap now that an edit is free.
 
-- ⬜ **O13 - One document, held: the editor stops re-deriving what it already has** *(opened 2026-08-17, the milestone number O12's closing paragraph and three "found by use" entries have all been waiting for; the roadmap named writing it as the step before starting it)*.
+- ✅ **O13 - One document, held: the editor stops re-deriving what it already has** *(opened 2026-08-17, the milestone number O12's closing paragraph and three "found by use" entries have all been waiting for; the roadmap named writing it as the step before starting it)*.
 
   **The measurement, because it is the whole argument.** O12 took one `Place` on a 10240-event composition from 205 ms to 0.008 ms by keeping the tree in the crate behind a handle. The bridge hands it straight back: `Editor._history` calls `to_document(self.element)` and opens a **fresh** `Document` on **every gesture**, so what a drag costs today is
 
@@ -271,6 +271,23 @@ The eight that opened with this file were taken one at a time and are in the sec
   **What it does not take on**: a paste creating nodes the client has no object for (D4's identity question) and *"May one element be placed twice"* both become tractable here and are decided on their own, not by accident inside this.
 
   **Acceptance:** a gesture on the 10240-event composition costs the edit rather than the composition, measured against the table above; a note dragged in a roll and a break-point dragged on a curve are each undoable and redoable, by test and by hand in `gui_composer.py`; a script that mutates the arrangement while an editor is open either sees its change adopted through `refresh()` or has its next gesture refused as stale, rather than silently winning; and `clausters.form`'s surface is unchanged for a script that never opens a document.
+
+  **Done 2026-08-17. The measurement is the report:**
+
+  ```
+                before     after
+    320 events   18.15 ms   0.019 ms
+   3200 events   35.24 ms   0.020 ms
+  10240 events  107.38 ms   0.020 ms
+  ```
+
+  Flat in the composition, which is the acceptance as written and is the same result O12 got one layer down.
+
+  **What it took, and one of the three was not in the plan.** The document is opened once and held (`_rederive` is what says it must be derived again). A note edit is a `SetMembers` whose members keep their ids **positionally** — the roll sends the resulting list and order is the only information there is — with anything extra minted past the arrangement's maximum (`next_node_id`, the conversion's own rule, so a minted id and a converted one cannot collide). A break-point edit is a `Configure` over a config that now **carries the points** (`_points_of`), which also fixed something nobody had filed: an edited curve did not survive a save at all, because reopening resolved the automation by name and took whatever envelope that object happened to hold.
+
+  **The third thing was the redo path, and removing it is the milestone's real prize.** A redo *adopted the whole document* and walked it against the client's objects — O(document) per step, a second implementation of what an edit means, and the asymmetry behind "a redo moved the model and told the host to keep drawing the old position". The log's redo now **reports the intents it applied** (`redone`, beside `remaining`) in both faces, so a redo is the same shape as an undo and takes the same path: `_project`, once per intent. `Editor._adopt` is deleted rather than extended, which is the opposite of what the reverted first attempt at this had to do.
+
+  **What is deliberately still direct**: a patch cord (`_apply_wire`) rewrites two members' controls, which no intent describes yet; it sets `_rederive` and is undoable by nothing, exactly as before. That is the next thing this route wants, and it is not this milestone's.
 
 ## What stays out of the crate
 

@@ -5579,3 +5579,28 @@ mid-edit over mapped material must reopen knowing what was undecided.
 Stated as one line, because the distinction is easy to lose: **an edit writes
 the copy the system already made, and makes a copy only when it has not made one
 yet.**
+
+## A redo reports what it applied, so it is the same shape as an undo
+
+An undo hands back the intents it applied and the caller projects them onto
+whatever it draws. A redo did not: it applied its steps to the document inside
+the crate and answered only with what it *could not* perform, so a client had to
+take the whole document and walk it against its own objects to find what moved.
+
+That asymmetry cost three things, and the third is why it is worth a record.
+It was **O(document) per step**, in a design whose whole point is that an edit
+costs the edit. It was a **second implementation of what an edit means** —
+reconciliation, on the one path that had no reason to need it. And it was the
+cause of a defect that read as a dead button: only one of the two routes kept
+the *drawn record* in step, so a redo moved the model and told the host to go on
+drawing the clip where it had been, and the picture caught up one step late, on
+the next undo.
+
+So the log's redo now returns `redone` beside `remaining`: the intents it
+applied, in order. A client projects them exactly as it projects an undo, and
+the adopt-the-whole-document path is **deleted** rather than extended — which is
+the opposite of what an earlier attempt at undo-inside-a-clip had to do, and the
+reason that attempt was reverted.
+
+`remaining` keeps its own job unchanged: the steps from the first one the crate
+cannot perform onward, for the owner to re-run.

@@ -33,7 +33,8 @@ import itertools
 
 from .. import _native
 from .handle import WindowHandle
-from ..form.document import FIRST_VERSION, ID_ATTR, to_document
+from ..form.document import (FIRST_VERSION, ID_ATTR, leaf_config,
+                             next_node_id, to_document)
 from ..form.group import CONCRETE, LOGICAL, SIMULTANEOUS, Group
 from ..form.element import Buffer, Element, Event as FormEvent
 from ..defs.ugens import points_to_env
@@ -188,6 +189,14 @@ class Editor:
         #: nobody was ever in.
         self._log = None
         self._document = None
+        #: Whether the held document has to be derived from the arrangement
+        #: again before the next edit. Set wherever the tree moves by a route
+        #: that is not an intent — `refresh`, loading another composition, and
+        #: the gestures this editor still applies to the objects directly.
+        self._rederive = False
+        #: The next node id to mint for a node a gesture creates (a note added
+        #: in a roll). Taken from the arrangement when the document is derived.
+        self._next_node = None
         #: node id -> the arrangement object an intent naming it writes to. Built
         #: with the document, since `to_document` is what stamps the ids.
         self._by_node: dict = {}
@@ -348,6 +357,26 @@ class Editor:
         self._announce()
         return self._window
 
+    def refresh(self) -> None:
+        """Tell this editor that the arrangement moved by a route it did not
+        take, so the document it holds has to be derived again.
+
+        **The door a held document needs.** The editor keeps one `Document` for
+        the composition's life, which is what makes a gesture cost the edit
+        rather than the composition. The price is that a script mutating the
+        arrangement while a window is open — adding a clip, rewriting a
+        timeline — is no longer absorbed by a rebuild that used to happen on
+        every gesture: without this the next edit would be made against a
+        composition that has moved, and the crate would refuse it as stale (or,
+        for a node the script removed, not find it at all).
+
+        Cheap and safe to call: `to_document` stamps each element with the id it
+        keeps, so a re-derivation names the same nodes and the history keeps its
+        footing. Call it after editing the tree behind the editor's back; the
+        editor calls it for itself wherever *it* writes the arrangement directly.
+        """
+        self._rederive = True
+
     def load(self, element) -> None:
         """Point this editor at another composition, redrawing the window it
         already has.
@@ -373,6 +402,7 @@ class Editor:
         if self._document is not None:
             self._document.close()
             self._document = None
+        self._rederive = False
         self._by_node = {}
         self._version = FIRST_VERSION
         self.dirty = True
@@ -1019,16 +1049,28 @@ class Editor:
         flat = []
         for t, v, shape, curve in _quads(list(values)):
             flat += [self.units_to_beats(t), float(v), int(shape), float(curve)]
-        auto.env = points_to_env(flat)
-        # The `Env` is the source of truth and the **control buffer is what the
-        # lane synth reads**, filled once by `prepare`. Rewriting the envelope
-        # alone changes what the next render schedules and not what it sounds,
-        # so the curve on screen and the sweep in the air drift apart from the
-        # first edit. Not blocking: this runs in the script's poll loop, and the
-        # fill is one command the server applies before the synth that reads it.
-        auto.refill()
-        self._changed()
-        return True
+        node = self._node_id(element)
+        if node is None:
+            return False
+        # **Through the log, like every other edit.** A curve's break-points are
+        # a leaf's configuration, so the intent is a `Configure` — and it
+        # replaces the configuration whole, which is why it starts from what the
+        # leaf already carries rather than from the points alone. Writing the
+        # `Env` here instead is what made undo work for clips and for nothing
+        # inside one: the edit landed on the object and left no entry behind.
+        config = leaf_config(element)
+        config["points"] = flat
+        outcome = self._record({"intent": "configure", "node": node,
+                                "config": config}, "edit the curve")
+        if outcome is None:
+            return False
+        # The effective value is the crate's, and `_configure` is the one door
+        # that writes it onto the automation *and* refills the control buffer
+        # the lane synth reads — so the envelope, the sound and the picture
+        # cannot disagree about which of the three happened.
+        self._project(outcome.get("intent") or {"intent": "configure",
+                                                "node": node, "config": config})
+        return self._changed()
 
     def _apply_notes(self, element, values) -> bool:
         """Notes edited in a roll — a clip's body or the dedicated piano-roll
@@ -1040,6 +1082,9 @@ class Editor:
         timeline = _editable_timeline(element)
         if timeline is None:
             return False
+        node = self._node_id(element)
+        if node is None:
+            return False
         new = []
         for start, dur, pitch, vel, channel in _quintuples(list(values)):
             params = dict(midinote=int(pitch), dur=self.units_to_beats(dur),
@@ -1048,10 +1093,40 @@ class Editor:
             if int(channel):
                 params["channel"] = int(channel)
             new.append((self.units_to_beats(start), SeqEvent(params)))
-        # Replace the notes, keep the OSC/MIDI events (they share the timeline).
-        _rewrite_timeline(timeline, lambda it: _pitch(it) is None, new)
-        self._changed()
-        return True
+        # **Through the log**: the roll's edit is a `SetMembers`, which is what
+        # that intent was written for — "notes added, moved and removed arrive
+        # as the resulting list. Members keep their ids".
+        #
+        # Keeping them is the whole difficulty, because the payload carries no
+        # ids: a roll sends the resulting notes in order, so **order is the only
+        # information there is**. The i-th note therefore inherits the i-th
+        # note's id and the extras are minted past everything the arrangement
+        # holds — which is what makes a note the same node across an edit, to
+        # the log and to a view.
+        kept = [getattr(item, ID_ATTR, None) for _, item in timeline
+                if _pitch(item) is not None]
+        members = []
+        for i, (beat, event) in enumerate(new):
+            nid = kept[i] if i < len(kept) and kept[i] is not None else self._mint_id()
+            members.append({"offset": float(beat),
+                            "node": {"id": int(nid), "kind": "event",
+                                     "config": dict(event)}})
+        outcome = self._record({"intent": "setmembers", "node": node,
+                                "members": members}, "edit the notes")
+        if outcome is None:
+            return False
+        self._project(outcome.get("intent") or {"intent": "setmembers",
+                                                "node": node, "members": members})
+        return self._changed()
+
+    def _mint_id(self) -> int:
+        """A node id nothing in this arrangement holds, for a note a gesture
+        added. Follows the conversion's own rule, so a minted id and a converted
+        one cannot collide."""
+        if self._next_node is None:
+            self._next_node = next_node_id(self.element)
+        nid, self._next_node = self._next_node, self._next_node + 1
+        return nid
 
     def _apply_patch(self, wid: int, tag, values) -> bool:
         """One edit on a logical group's directed patch. A ``"wire"`` (``src_box
@@ -1088,6 +1163,10 @@ class Editor:
         src_ctls[outlet], dst_ctls[inlet] = bus, bus
         src.controls, dst.controls = src_ctls, dst_ctls
         group.declare_bus(bus, rate=rate)
+        # The one gesture left that writes the arrangement *directly*: a cord is
+        # a pair of controls naming a bus, which no intent describes yet. The
+        # held document is behind after it, and says so.
+        self._rederive = True
         self._changed()
         return True
 
@@ -1149,25 +1228,31 @@ class Editor:
     # ---- the history: the crate's log, over the crate's document -----------
 
     def _history(self):
-        """The log and the document, built on first use and kept in step.
+        """The log and the document — **one of each, held** for as long as this
+        editor is drawing this composition.
 
-        The document is rebuilt from the arrangement rather than carried,
-        because `to_document` stamps each element with the id it keeps
-        (`ID_ATTR`) — so a second conversion gives the same node the same
-        number, and an entry recorded against one conversion still names the
-        right thing in the next. That is what lets a redraw, or a script editing
-        the tree, happen without the history losing its footing."""
+        It used to be rebuilt on every gesture, and that handed back the whole
+        of what holding the tree in the crate had won: converting the
+        arrangement and opening a fresh handle cost 36 ms and 71 ms on a
+        10240-event composition, against 0.014 ms for the edit itself. Held, a
+        drag costs the edit.
+
+        What a rebuild was quietly doing is now explicit. `to_document` stamps
+        each element with the id it keeps (`ID_ATTR`), so a re-derivation names
+        the same nodes and the history keeps its footing — that is what makes
+        `refresh` cheap and safe, and it is called wherever the arrangement
+        moves by a route no intent took (a script's edit, a new composition, a
+        gesture the editor still applies directly)."""
         if self._log is None:
             self._log = _native.Log()
-        document = to_document(self.element, version=self._version)
-        if self._document is None:
+        if self._document is None or self._rederive:
+            document = to_document(self.element, version=self._version)
+            if self._document is not None:
+                self._document.close()
             self._document = _native.Document(document)
-        else:
-            # Replace the held tree: the arrangement is this editor's own
-            # authority and may have moved by a route no intent took.
-            self._document.close()
-            self._document = _native.Document(document)
-        self._index(self.element)
+            self._index(self.element)
+            self._next_node = next_node_id(self.element)
+            self._rederive = False
         return self._log, self._document
 
     def _index(self, element, owner=None, member=None):
@@ -1395,10 +1480,17 @@ class Editor:
                 if wid is not None:
                     widgets.add(wid)
         else:
-            # A redo applied its ordinary edits to the document already, so what
-            # the arrangement needs is the document as it now stands rather than
-            # a list of intents to replay.
-            self._adopt(document.snapshot(), widgets)
+            # A redo now reports the intents it applied, so it is the *same
+            # shape* as an undo and takes the same path. It used to adopt the
+            # whole document instead, which cost O(document) per step and was a
+            # second implementation of what an edit means -- and it is what made
+            # a redo move the model while telling the host to keep drawing the
+            # old position, because only one of the two routes kept the drawn
+            # record.
+            for intent in step.get("redone") or []:
+                wid = self._project(intent)
+                if wid is not None:
+                    widgets.add(wid)
         self._version = document.version
         self.dirty = True
         self._follow_render()
@@ -1408,35 +1500,6 @@ class Editor:
         self._acknowledge(0)
         self._corrections = []
         return True
-
-    def _adopt(self, snapshot: dict, widgets: set):
-        """Write a whole document back onto the arrangement — the redo path,
-        where the crate applied the steps itself rather than handing them over.
-
-        It walks placements only, which is what a redo of this editor's own
-        gestures can have changed; anything else is left to the redraw."""
-        def walk(node, owner=None, member=None):
-            found = self._by_node.get(int(node.get("id", -1)))
-            if found is not None and member is not None:
-                _, handle, element = found
-                if handle is not None and owner is not None:
-                    owner.move(handle, float(member.get("offset", 0.0)),
-                               member.get("dur"))
-                    # The drawn record moves with the tree, exactly as it does
-                    # on the undo path: without this a redo moved the model and
-                    # told the host to keep drawing the clip where it was, so
-                    # the picture only caught up on the *next* undo -- one step
-                    # behind, which reads as a history that has stopped working.
-                    wid = self._redrawn(element, handle)
-                    if wid is not None:
-                        widgets.add(wid)
-            for placed in node.get("members", []) or []:
-                child = placed.get("node")
-                if child is None:
-                    continue
-                parent = self._by_node.get(int(node.get("id", -1)))
-                walk(child, parent[2] if parent else None, placed)
-        walk(snapshot["root"])
 
     @property
     def can_undo(self) -> bool:

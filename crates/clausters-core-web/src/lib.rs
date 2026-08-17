@@ -1304,6 +1304,7 @@ impl JsLog {
             return Ok(None);
         };
         let mut remaining = Vec::new();
+        let mut redone = Vec::new();
         let mut stopped = false;
         for step in steps {
             match (&step, stopped) {
@@ -1314,6 +1315,9 @@ impl JsLog {
                         &clausters_document::Against::unstated(),
                         &clausters_document::Rules::default(),
                     );
+                    // Reported as well as applied: a redo is the same shape as
+                    // an undo, a list of intents the caller projects.
+                    redone.push(intent.clone());
                 }
                 _ => {
                     stopped = true;
@@ -1321,7 +1325,7 @@ impl JsLog {
                 }
             }
         }
-        serde_json::to_string(&serde_json::json!({ "remaining": remaining }))
+        serde_json::to_string(&serde_json::json!({ "redone": redone, "remaining": remaining }))
             .map(Some)
             .map_err(|e| JsError::new(&e.to_string()))
     }

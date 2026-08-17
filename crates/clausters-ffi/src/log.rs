@@ -394,6 +394,7 @@ pub unsafe extern "C" fn clausters_log_redo(
             None => serde_json::json!({}),
             Some(steps) => {
                 let mut remaining = Vec::new();
+                let mut redone = Vec::new();
                 let mut stopped = false;
                 for step in steps {
                     match (&step, stopped) {
@@ -404,6 +405,14 @@ pub unsafe extern "C" fn clausters_log_redo(
                                 &Against::unstated(),
                                 &Rules::default(),
                             );
+                            // Reported as well as applied, so a redo is the
+                            // same shape as an undo: a list of intents the
+                            // caller projects onto whatever it draws. Without
+                            // it a client has to adopt the whole document and
+                            // reconcile it against its own objects -- which is
+                            // both O(document) and a second implementation of
+                            // what an edit means.
+                            redone.push(intent.clone());
                         }
                         _ => {
                             stopped = true;
@@ -411,7 +420,7 @@ pub unsafe extern "C" fn clausters_log_redo(
                         }
                     }
                 }
-                serde_json::json!({ "remaining": remaining })
+                serde_json::json!({ "redone": redone, "remaining": remaining })
             }
         };
         // SAFETY: forwarded from this function's own contract.

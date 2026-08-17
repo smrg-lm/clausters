@@ -399,7 +399,8 @@ def _body(element, ids: _Ids) -> dict:
     # came back), so a resolver that recognized the material once stopped
     # recognizing it on the second open.
     return _with_config({"kind": "generator"},
-                        _named({"generator": _reference(element.wraps, element)}))
+                        _named({"generator": _reference(element.wraps, element),
+                                "points": _points_of(element.wraps)}))
 
 
 def _preserved(element):
@@ -463,6 +464,53 @@ def _source(buffer) -> dict:
         "lifetime": getattr(buffer, "lifetime", "session"),
         "generation": int(getattr(buffer, "generation", 0)),
     }
+
+
+def leaf_config(element) -> dict:
+    """The configuration a leaf's node carries, exactly as `to_document` writes
+    it.
+
+    Public because an **editor** needs it: a `Configure` intent replaces a
+    leaf's configuration *whole*, so an editor that wants to change one field of
+    it has to start from the rest — and re-deriving that here rather than in the
+    editor is what keeps one description of what a leaf's config is.
+    """
+    return dict((_body(element, _Ids(element)).get("config") or {}))
+
+
+def next_node_id(element) -> int:
+    """The first node id no element in this arrangement holds.
+
+    What an editor mints from when it has to name a node the conversion has not
+    seen yet — a note added by a gesture. It follows the conversion's own rule
+    (past the maximum already stamped), so a minted id and a converted one
+    cannot collide.
+    """
+    return _Ids(element).next
+
+
+def _points_of(wrapped):
+    """A curve's break-points, when the leaf is one — or ``None``.
+
+    **The document has to carry these, and not only draw them.** A curve is a
+    leaf like any other and its configuration is opaque, but an edit to it is a
+    `Configure` intent, and an intent's inverse is *the previous value read out
+    of the document*: with nothing there, a dragged break-point had nothing to
+    invert and could not be undone. Carrying them also makes an edited curve
+    survive a save, which it did not — reopening resolved the automation by name
+    and took whatever envelope that object happened to hold.
+    """
+    to_points = getattr(wrapped, "to_points", None)
+    if not callable(to_points):
+        return None
+    try:
+        points = [float(v) for v in to_points()]
+    except (AttributeError, TypeError, ValueError):
+        # A leaf is opaque, and reading one must never be able to take a save
+        # down: an object that answers to the name and not to the shape is
+        # carried by reference like any other, with no points.
+        return None
+    return points or None
 
 
 def _named(config: dict) -> dict:
@@ -583,8 +631,10 @@ def _element(node: dict, resolve):
         )
     elif kind == "generator":
         rendered = node.get("rendered")
+        resolved = _resolved(resolve, "generator", config)
+        _apply_points(resolved, config.get("points"))
         built = Generator(
-            _resolved(resolve, "generator", config)
+            resolved
             # `element` is what this client wrote for a leaf it had no body for
             # before the two keys became one; a file carrying it still opens.
             or config.get("generator") or config.get("element"),
@@ -617,6 +667,21 @@ def _element(node: dict, resolve):
     if "id" in node:
         setattr(built, ID_ATTR, int(node["id"]))
     return built
+
+
+def _apply_points(resolved, points):
+    """Put a carried curve back onto the material that was handed to us.
+
+    The document is the authority for what it holds: a resolver returns the
+    `clausters.seq.Automation` this process has, and the envelope *in the file*
+    is the one that was saved — without this, reopening a session showed the
+    curve the script last built rather than the curve the piece was left with.
+    """
+    if not points or resolved is None or not hasattr(resolved, "env"):
+        return
+    from ..defs.ugens.env import points_to_env
+
+    resolved.env = points_to_env(list(points))
 
 
 def _resolved(resolve, kind, config):
