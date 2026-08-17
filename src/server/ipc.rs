@@ -118,8 +118,19 @@ struct Header {
     /// Audio-bus count (ABI v4): the length of the per-bus directory and level
     /// table that sit between the control slots and the tap region.
     audio_buses: u32,
-    /// Kept for 8-byte alignment of `transport_clock` below.
-    _pad: u32,
+    /// **Who serves the command plane** — the pid that claimed the rings, or
+    /// 0 while they are free. It occupies the word that kept `transport_clock`
+    /// 8-byte aligned, so it is a meaning given to space that was already
+    /// there rather than a field anything had to move for.
+    ///
+    /// A segment has **one** ring pair and it is SPSC, so exactly one process
+    /// may drain the inbound one: a second server that also popped it would
+    /// steal half the commands, silently. The claim is what makes attaching
+    /// safe — the first server in owns the rings, and any later one attaches
+    /// to the **data plane only** (the material, the buses, the taps) and
+    /// takes its commands over its own sockets. See
+    /// [`Segment::claim_control`].
+    control_owner: AtomicU32,
     /// The transport clock (ABI v6): samples elapsed *under the transport*,
     /// frozen while it is stopped. The sample clock above never stops, so a
     /// reader pacing on the device wants that one — but this one is monotonic
@@ -266,6 +277,25 @@ pub const DEFAULT_BUFFERS: usize = crate::dsp::buffer::NUM_BUFFERS;
 
 /// The next **odd** number past `gen`: a slot goes live on an odd generation
 /// and empty on an even one, and every alloc takes a fresh one.
+/// Whether `pid` is a process that still exists — what tells a stale
+/// control-plane claim from a live one. Signal 0 checks for the process
+/// without touching it; `EPERM` means it is there and not ours, which is still
+/// "alive". Off Unix nothing can be asked, so a claim is believed.
+fn process_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        // SAFETY: `kill` with signal 0 sends nothing; it only reports whether
+        // the pid exists.
+        let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        true
+    }
+}
+
 fn next_odd(counter: u64) -> u64 {
     counter.wrapping_add(if counter.is_multiple_of(2) { 1 } else { 2 })
 }
@@ -374,6 +404,86 @@ impl Segment {
         Ok(Arc::new(seg))
     }
 
+    /// **Attaches to the segment at `path`, creating one only when there is
+    /// none.** The door a server takes.
+    ///
+    /// [`create_full`](Self::create_full) truncates, which was right while a
+    /// segment was one server's own transport and is wrong now that it indexes
+    /// the **material**: the process most likely to be restarted — the one
+    /// holding the audio device — would wipe what everybody else is editing.
+    /// So a server opens what is there and creates only what is not, and the
+    /// sizes it was asked for apply **to a segment it creates**: an existing
+    /// one is described by its own header, and disagreeing with it is not a
+    /// reason to destroy it.
+    ///
+    /// A file that exists and is *not* a valid segment is an error rather than
+    /// something to overwrite. Racing creators are not arbitrated here: two
+    /// servers started at the same instant against a path with nothing on it
+    /// may both create, and the loser's material would be the one that
+    /// vanishes — the arrangement this exists for starts the owner first (see
+    /// `docs/ipc.md`).
+    #[cfg(unix)]
+    pub fn open_or_create_full(
+        path: &Path,
+        control_buses: usize,
+        taps: usize,
+        tap_frames: usize,
+    ) -> io::Result<(Arc<Self>, bool)> {
+        match Self::open(path) {
+            Ok(seg) => Ok((seg, false)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                Self::create_full(path, control_buses, taps, tap_frames).map(|seg| (seg, true))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Claims the command plane for this process, returning whether it got it.
+    ///
+    /// The rings are SPSC and there is one pair, so a server that did **not**
+    /// get the claim must not attach an [`IpcPeer`] as [`Role::Server`]: it
+    /// reads and writes the data plane and serves its clients over sockets.
+    /// An owner that died without releasing does not hold the segment hostage
+    /// — a pid nothing answers to is stale and is taken over, which is what
+    /// makes killing the RT server a recoverable event rather than a reboot.
+    pub fn claim_control(&self) -> bool {
+        let me = std::process::id();
+        let owner = &self.layout().header.control_owner;
+        loop {
+            let held = owner.load(Ordering::Acquire);
+            // A **live** holder refuses, this process included: two servers in
+            // one process draining one SPSC ring lose commands to each other
+            // exactly as two processes would, so "it is already claimed" is
+            // the answer whoever asks second gets.
+            if held != 0 && process_alive(held) {
+                return false;
+            }
+            match owner.compare_exchange(held, me, Ordering::AcqRel, Ordering::Acquire) {
+                Ok(_) => return true,
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Gives the command plane back, if this process holds it.
+    pub fn release_control(&self) {
+        let me = std::process::id();
+        let _ = self.layout().header.control_owner.compare_exchange(
+            me,
+            0,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+
+    /// The pid serving the command plane, or `None` while it is free.
+    pub fn control_owner(&self) -> Option<u32> {
+        match self.layout().header.control_owner.load(Ordering::Acquire) {
+            0 => None,
+            pid => Some(pid),
+        }
+    }
+
     /// Maps an existing segment (the client side) and validates the header.
     #[cfg(unix)]
     pub fn open(path: &Path) -> io::Result<Arc<Self>> {
@@ -443,6 +553,10 @@ impl Segment {
         header.taps = taps as u32;
         header.tap_frames = tap_frames as u32;
         header.audio_buses = NUM_AUDIO_BUSES as u32;
+        // Nobody serves the rings yet: creating a segment is not claiming it,
+        // because the process that creates one is not always the one that
+        // serves it (an editor creates, its session serves).
+        *header.control_owner.get_mut() = 0;
         // A zeroed directory would read as "every bus is recorded by tap 0";
         // `-1` is the absent marker, the same one `/bus_tap` uses. The levels are
         // fine zeroed: those bits are `0.0`, which is silence.
@@ -633,6 +747,14 @@ impl Segment {
 
     /// Control buses living inside the segment; hand this to
     /// `engine_pair_full` so `InCtl` and `/bus_set` operate on shared memory.
+    /// How many control buses this segment carries — the header's own count,
+    /// which is what a server attaching to somebody else's segment must run
+    /// with whatever its own command line asked for. The shape of a segment
+    /// belongs to the process that created it.
+    pub fn control_bus_count(&self) -> usize {
+        self.layout().header.control_buses as usize
+    }
+
     pub fn control_buses(self: &Arc<Self>) -> ControlBuses {
         let count = self.layout().header.control_buses as usize;
         let ptr = self.controls_ptr();

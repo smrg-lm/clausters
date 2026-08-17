@@ -91,16 +91,75 @@ impl OscServer {
         if let Some(socket) = &self.socket {
             socket.set_read_timeout(Some(Duration::from_millis(2)))?;
         }
+        self.segment = Some(std::sync::Arc::clone(peer.segment()));
         self.ipc = Some(peer);
         Ok(())
     }
 
+    /// Attaches a segment this server does **not** serve the rings of: it
+    /// reads the clocks and the buses out of it and maps the material the
+    /// owner publishes, while its clients reach it over its own sockets.
+    ///
+    /// This is what the RT server does in the editor's arrangement — it holds
+    /// the devices and plays material somebody else owns, so killing it takes
+    /// no take with it.
+    pub fn attach_segment(&mut self, segment: std::sync::Arc<crate::server::ipc::Segment>) {
+        self.segment = Some(segment);
+    }
+
     /// Says where the segment's file is, which is what a buffer's **region** is
-    /// named from (`dsp::region`). Without it a server with a segment still
-    /// keeps its buffers in its own memory: the ring is a transport, and
-    /// sharing the material needs a path a peer can open.
+    /// named from (`dsp::region`), and makes this server the **owner** of the
+    /// material: every buffer it installs gets a directory row and a region
+    /// beside the segment. Without it a server with a segment still keeps its
+    /// buffers in its own memory: the ring is a transport, and sharing the
+    /// material needs a path a peer can open.
+    ///
+    /// Exactly one process may own the material, because there is one
+    /// directory and the buffer numbers in it are one space; the caller is the
+    /// one that took [`Segment::claim_control`](crate::server::ipc::Segment::claim_control).
     pub fn share_buffers_at(&mut self, path: std::path::PathBuf) {
         self.shm_path = Some(path);
+        self.owns_material = true;
+    }
+
+    /// The reader's half of [`Self::share_buffers_at`]: this server maps the
+    /// material the owner published, and publishes none of its own.
+    ///
+    /// Every live row is mapped now — a server started against a segment that
+    /// already holds a session's takes has them all — and a buffer the owner
+    /// allocates *later* arrives by `/buffer_attach`, which is the same rule
+    /// the whole design follows: samples never travel, but allocation and
+    /// lifetime are messages.
+    pub fn attach_material_at(&mut self, path: std::path::PathBuf) -> usize {
+        self.shm_path = Some(path);
+        self.owns_material = false;
+        let mut found = 0;
+        let buffers = self.translator.buffers.len();
+        for index in 0..buffers {
+            if self.attach_shared_buffer(index).is_ok() {
+                found += 1;
+            }
+        }
+        found
+    }
+
+    /// Maps the owner's buffer `index` into this server's pool, so its engine
+    /// plays **the very cells** the owner is editing.
+    ///
+    /// `Err` when there is no shared segment, when the directory row is empty,
+    /// or when the region behind it cannot be opened — each said in its own
+    /// words, because they are three different situations for whoever asked.
+    pub fn attach_shared_buffer(&mut self, index: usize) -> Result<(), String> {
+        let (Some(segment), Some(path)) = (self.segment.clone(), self.shm_path.clone()) else {
+            return Err("this server has no shared segment".into());
+        };
+        if self.owns_material {
+            return Err("this server owns the material; it has nothing to map".into());
+        }
+        let (_, buffer) = segment
+            .map_buffer(&path, index)
+            .ok_or_else(|| format!("no shared buffer {index}"))?;
+        self.install_buffer(index, buffer)
     }
 
     /// handles every packet waiting in the attached ring. Same

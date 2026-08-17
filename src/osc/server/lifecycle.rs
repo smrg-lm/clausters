@@ -40,7 +40,9 @@ impl OscServer {
                 epoch: Instant::now(),
             },
             ipc: None,
+            segment: None,
             shm_path: None,
+            owns_material: false,
             shared_buffers: Vec::new(),
             tcp: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -101,7 +103,9 @@ impl OscServer {
             tap_buf: Vec::new(),
             clock: TimeSource::Sample { unix_epoch },
             ipc: None,
+            segment: None,
             shm_path: None,
+            owns_material: false,
             shared_buffers: Vec::new(),
             tcp: None,
             #[cfg(not(target_arch = "wasm32"))]

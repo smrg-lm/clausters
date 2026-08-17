@@ -384,6 +384,31 @@ export class Buffer {
     }
 
     /**
+     * Maps this buffer out of the shared segment (`/buffer_attach`).
+     *
+     * Only meaningful against a server that **attached** to a segment somebody
+     * else owns — the RT server of an editor's arrangement, which holds the
+     * devices and plays material the on-demand session owns. It maps every
+     * buffer the owner had published when it started, so this is for one
+     * published since.
+     *
+     * A page never owns shared material itself (a browser cannot map a file),
+     * so this is a command a page **sends** to a native server, not a door
+     * into one: the samples still reach a page through `/buffer_getRange`.
+     */
+    async attach({
+        wait = true,
+        timeout,
+    }: { wait?: boolean; timeout?: number } = {}): Promise<void> {
+        const args: MsgArg[] = [["i", this.bufnum]];
+        if (!wait) {
+            this.srv().sendMsg("/buffer_attach", ...args);
+            return;
+        }
+        await this.srv().command("/buffer_attach", args, timeout);
+    }
+
+    /**
      * The shared body of the destructive edits: fire, or await `/done`.
      *
      * They are async like every other write, and they **compose in flight** —

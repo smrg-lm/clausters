@@ -210,10 +210,16 @@ impl OscServer {
         buffer: Arc<crate::dsp::buffer::Buffer>,
     ) -> Arc<crate::dsp::buffer::Buffer> {
         use crate::dsp::region::Region;
+        if !self.owns_material {
+            // Somebody else's directory: this server's own allocations stay in
+            // its own memory rather than taking a row and a buffer number that
+            // are the owner's to hand out.
+            return buffer;
+        }
         let Some(path) = self.shm_path.clone() else {
             return buffer; // no segment: the server's own memory, as always
         };
-        let Some(segment) = self.ipc.as_ref().map(|p| Arc::clone(p.segment())) else {
+        let Some(segment) = self.segment.clone() else {
             return buffer;
         };
         if self.shared_buffers.len() < self.translator.buffers.len() {
@@ -260,8 +266,14 @@ impl OscServer {
     /// until it drops it, which is what makes freeing a buffer safe while
     /// somebody is drawing it. What the peer sees is the row going even.
     fn retire_buffer(&mut self, index: usize) {
-        if let Some(peer) = self.ipc.as_ref() {
-            peer.segment().retire_buffer(index);
+        if !self.owns_material {
+            // Freeing a buffer here frees this server's *mapping* of it. The
+            // row and the region are the owner's, and a player retiring them
+            // would free material out from under whoever is editing it.
+            return;
+        }
+        if let Some(segment) = self.segment.as_ref() {
+            segment.retire_buffer(index);
         }
         if let Some(path) = self.shared_buffers.get_mut(index).and_then(Option::take) {
             crate::dsp::region::Region::unlink(&path);

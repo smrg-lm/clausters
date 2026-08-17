@@ -167,10 +167,19 @@ pub struct OscServer {
     clock: TimeSource,
     /// the shared-memory / in-process ring endpoint, when attached.
     ipc: Option<crate::server::ipc::IpcPeer>,
+    /// The segment itself, whether or not this server serves its rings. A
+    /// server that attached to somebody else's segment reads the material out
+    /// of it and has no ring at all, so the two cannot be one field.
+    segment: Option<std::sync::Arc<crate::server::ipc::Segment>>,
     /// Where the segment's file is, when it has one: what a buffer's region is
-    /// named from, and the switch that decides whether a pool buffer's samples
-    /// are shareable at all (`share_buffers_at`).
+    /// named from — on both sides, the server that writes the regions and the
+    /// one that maps them.
     shm_path: Option<std::path::PathBuf>,
+    /// Whether this server **owns** the material: publishes a directory row
+    /// and a region for every buffer it installs. Exactly one process may, so
+    /// it follows the control-plane claim; a server that attached without it
+    /// maps what the owner published and keeps its own allocations private.
+    owns_material: bool,
     /// Per buffer, the region file backing it — kept so freeing one can unlink
     /// its name. Sized with the pool.
     shared_buffers: Vec<Option<std::path::PathBuf>>,

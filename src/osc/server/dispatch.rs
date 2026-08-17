@@ -310,6 +310,9 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_buffer_cmd(addr, m, f);
         Ok(())
     }),
+    ("/buffer_attach", |s, _, m, f| {
+        s.handle_buffer_attach(Args::new(m), f)
+    }),
     ("/buffer_close", |s, _, m, f| {
         s.handle_buffer_close(Args::new(m), f)
     }),

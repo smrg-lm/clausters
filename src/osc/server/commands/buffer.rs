@@ -13,6 +13,34 @@ impl OscServer {
     /// and closes it — so there is never an open handle: this validates the
     /// buffer is live and acknowledges, forward-compatible with the future
     /// streaming UGens.
+    /// `/buffer_attach bufnum` — map the shared buffer `bufnum` out of the
+    /// segment this server attached to, so its engine plays the owner's very
+    /// cells.
+    ///
+    /// The command exists because **samples never travel and allocation
+    /// always does**: a peer editing a take writes into memory this server
+    /// already reads, but a take that did not exist when this server started
+    /// has to be pointed at. It is the RT server's half of the editor's
+    /// arrangement — the editor allocates through the session that owns the
+    /// material, then tells the player where it is.
+    pub(in crate::osc::server) fn handle_buffer_attach(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let index = args.index()?;
+        self.attach_shared_buffer(index)?;
+        self.reply(
+            from,
+            "/done",
+            vec![
+                OscType::String("/buffer_attach".into()),
+                OscType::Int(index as i32),
+            ],
+        );
+        Ok(())
+    }
+
     pub(in crate::osc::server) fn handle_buffer_close(
         &mut self,
         mut args: Args,

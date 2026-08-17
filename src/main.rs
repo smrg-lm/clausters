@@ -57,7 +57,11 @@ usage:
                            of the human summary (for a client driving --nrt)
       --workers <n>        DSP threads for /group_parallel groups (default 0)
       --shm <path>         shared-memory segment for local clients (RT only;
-                           put it on /dev/shm — see docs/ipc.md)
+                           put it on /dev/shm — see docs/ipc.md). One that
+                           already exists is attached to, never truncated: the
+                           first server on a segment owns its command plane and
+                           its material, a later one plays what the owner
+                           published
       --data-dir <dir>     where defs are persisted/reloaded (RT only;
                            default $CLAUSTERS_DATA_DIR or the XDG data dir)
       --no-persist         disable def persistence for this run (RT only)
@@ -474,13 +478,37 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // server without `--shm` but with taps gets an in-memory segment so
     // `/bus_tapStream` still works (nothing else changes: the control buses just
     // live inside it, exactly as in the embed case).
+    // The segment kept past the wiring below, so the control-plane claim can be
+    // given back on the way out.
+    let mut shared: Option<std::sync::Arc<Segment>> = None;
+    // `--shm` **attaches** to a segment that is already there and creates one
+    // only when it is not: the segment indexes the material now, so a server
+    // that truncated it on the way in would take somebody's take with it.
+    let mut segment_created = false;
     let segment = match &shm_path {
-        Some(path) => Some(Segment::create_full(
-            std::path::Path::new(path),
-            control_buses,
-            taps,
-            tap_frames,
-        )?),
+        Some(path) => {
+            let (seg, created) = Segment::open_or_create_full(
+                std::path::Path::new(path),
+                control_buses,
+                taps,
+                tap_frames,
+            )?;
+            if !created {
+                // The shape of a segment belongs to whoever created it: a
+                // server that attaches adopts the header's counts rather than
+                // running the engine against sizes the memory does not have.
+                let (adopted, was) = (seg.control_bus_count(), control_buses);
+                if adopted != was {
+                    tracing::info!(
+                        "attached segment carries {adopted} control bus(es), not {was}: using the \
+                         segment's"
+                    );
+                }
+                control_buses = adopted;
+            }
+            segment_created = created;
+            Some(seg)
+        }
         None if taps > 0 => Some(Segment::in_memory_full(control_buses, taps, tap_frames)),
         None => None,
     };
@@ -550,15 +578,32 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // client can reach it); the in-memory tap fallback has no ring client, so
     // attaching would only tighten the run-loop poll for nothing.
     if let (Some(segment), Some(path)) = (segment, shm_path.as_deref()) {
-        osc.attach_ipc(IpcPeer::new(segment, Role::Server))?;
-        // With a segment on disk, a pool buffer's samples live in a region
-        // beside it: a local peer maps the material by name and edits it with
-        // no message at all.
-        osc.share_buffers_at(std::path::PathBuf::from(path));
-        tracing::info!(
-            "shared segment at {path} (ABI v{})",
-            clausters::server::ipc::ABI_VERSION
-        );
+        let abi = clausters::server::ipc::ABI_VERSION;
+        // **Two roles, and the claim decides which one this server has.** The
+        // rings are SPSC and there is one pair, so the first server on a
+        // segment serves the command plane and owns the material; a second one
+        // — the RT server in the editor's arrangement — attaches to the data
+        // plane, maps what the owner published, and serves its own clients
+        // over its sockets.
+        if segment.claim_control() {
+            osc.attach_ipc(IpcPeer::new(std::sync::Arc::clone(&segment), Role::Server))?;
+            osc.share_buffers_at(std::path::PathBuf::from(path));
+            let verb = if segment_created {
+                "created"
+            } else {
+                "adopted"
+            };
+            tracing::info!("shared segment {verb} at {path} (ABI v{abi}); this server owns it");
+        } else {
+            osc.attach_segment(std::sync::Arc::clone(&segment));
+            let found = osc.attach_material_at(std::path::PathBuf::from(path));
+            tracing::info!(
+                "attached to the shared segment at {path} (ABI v{abi}); pid {} owns it, {found} \
+                 buffer(s) mapped — commands over the sockets, /buffer_attach for later ones",
+                segment.control_owner().unwrap_or(0),
+            );
+        }
+        shared = Some(segment);
     }
     if let Some(port) = tcp_port {
         let bound = osc.listen_tcp(("0.0.0.0", port))?;
@@ -595,6 +640,13 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // callback thread until `backend` is dropped.
     osc.run()?;
     tracing::info!("received /server_quit, shutting down");
+    // Give the command plane back, so the next server on this segment adopts
+    // it rather than taking it over from a pid that is gone. An unclean exit
+    // is covered too — a claim nothing answers to is stale — but a clean one
+    // should not need that path.
+    if let Some(segment) = &shared {
+        segment.release_control();
+    }
     Ok(())
 }
 

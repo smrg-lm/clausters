@@ -75,7 +75,7 @@ allocators from these, so a server launched with other numbers is worth
 
 | Flag | Value | Default | What it does |
 | --- | --- | --- | --- |
-| `--shm` | path | off | The shared-memory segment local clients map — put it on `/dev/shm`. See [Local transports & embedding](ipc.md). |
+| `--shm` | path | off | The shared-memory segment local clients map — put it on `/dev/shm`. A segment that already exists is **attached to**, not truncated: the first server on it owns the command plane and the material, and any later one plays what the owner published. See [Local transports & embedding](ipc.md). |
 | `--data-dir` | dir | the XDG data dir | Where defs are persisted and reloaded. Several servers may share one. |
 | `--no-persist` | — | — | Disables def persistence for this run. |
 | `--midi` | name (optional) | `clausters` | Opens a virtual MIDI input port. A server off the default OSC port carries the port in the default name (`clausters:57130`), so two on one machine stay distinguishable. |

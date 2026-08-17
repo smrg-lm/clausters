@@ -30,6 +30,21 @@ A single memory region (ABI v9; 820 928 bytes with the default 16 384 control bu
 
   What the directory does **not** give is ordering: a peer's stores are not sequenced against commands in the ring, and anything that needs them to be sends `/server_sync`. The only guarantee is the one the whole buffer model already makes — per-sample atomicity, no ordering between samples, a reader crossing a writer seeing some old and some new. The row count is what remains of the mapped length rather than a header field, because the header has no reserved space left and a count there would move every offset after it.
 
+### Who owns a segment, and who attaches to one
+
+A segment used to belong to one server for its whole life: `--shm <path>` created the file and truncated it, which was right while the segment was that server's own transport. It indexes the **material** now, so truncating it on the way in would take somebody's take with it — and the process most likely to be restarted is the one holding the audio device. So `--shm` **opens what is there and creates only what is not**, and two roles follow from the one thing a segment cannot have twice:
+
+- **The owner** — the first server on the segment. It claims the **command plane** (a pid in the header, `0` while free), serves the rings, and **publishes the material**: every buffer it installs gets a directory row and a region beside the segment.
+- **An attached server** — any later one. It reads the same data plane, **maps** the material the owner published, and serves its clients over its own sockets. It publishes nothing: the directory is one buffer-number space, and two writers of it would hand out the same number twice. Freeing a buffer through it frees its own mapping and leaves the row alone.
+
+The claim exists because the rings are **SPSC**: one pair, one drainer. Two servers popping the inbound ring would each get half the commands, silently. A claim whose pid no longer answers is **stale and is taken over**, which is what makes killing a server a recoverable event — and a server that exits cleanly gives the claim back.
+
+An attached server maps every live row at startup, and a buffer the owner allocates *afterwards* arrives by **`/buffer_attach bufnum`** (see [`schemas.md`](schemas.md)). That is the same line the design draws everywhere: samples never travel, allocation and lifetime always do.
+
+**What attaching does not restore is the routing.** A server that attaches gets the material back and gets no port, no client name and no patch: under JACK or PipeWire the ports and the connections a person made to them live with the *process*. Restarting one is recovery, not a routine — see [`cli.md`](cli.md) for the naming that makes a recovery cheap.
+
+**And the clocks belong to the device.** The header's sample clock and transport counters are written by the process running an audio device; a session with no device never writes them, whether or not it owns the segment. So in an editor's arrangement the owner (the on-demand session) publishes the material and the attached RT server publishes the time, and a playhead reads a counter that means what it says.
+
 For two processes, put the segment on a memory filesystem (`/dev/shm/...`). The server polls the ring on a 2 ms tick instead of a cross-process semaphore — command latency is bounded by that tick; the data plane has no latency at all. (Semaphore wakeups and Windows named mappings are explicitly future work.)
 
 ### Several clients on one segment

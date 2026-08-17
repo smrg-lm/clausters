@@ -644,3 +644,142 @@ fn a_buffer_the_server_allocated_is_mapped_by_a_peer() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+/// **The arrangement's own test**: a second server attaches to a segment that
+/// already holds material, plays the owner's very cells, and takes none of it
+/// with it when it goes.
+///
+/// This is what makes "separate processes" a claim rather than a diagram. Both
+/// servers are built here in one process — what is under test is the
+/// *ownership* rules, not the process boundary, and running them apart is the
+/// example's job (`examples/editor_processes.sh`).
+#[test]
+fn a_second_server_attaches_to_the_material_and_owns_none_of_it() {
+    let path = std::env::temp_dir().join(format!(
+        "clausters-shm-attach-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    let _ = std::fs::remove_file(&path);
+
+    // The owner: it creates the segment, claims the command plane, and puts
+    // every buffer it installs into a region beside it.
+    let (owner_segment, created) = Segment::open_or_create_full(&path, 1024, 2, 1024).unwrap();
+    assert!(created, "nothing was there, so it was created");
+    assert!(owner_segment.claim_control(), "the first server in owns it");
+    let owner = shared_server(&owner_segment, Some(path.clone()));
+    let (mut owner_server, mut owner_engine) = owner;
+
+    let client = IpcPeer::new(Arc::clone(&owner_segment), Role::Client);
+    assert!(client.push(
+        0,
+        &encode(
+            "/buffer_alloc",
+            vec![OscType::Int(3), OscType::Int(32), OscType::Int(1)],
+        )
+    ));
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..400 {
+        owner_server.step();
+        owner_engine.process_block(&mut out);
+        if owner_segment.buffer_info(3).is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(owner_segment.buffer_info(3).is_some(), "the take exists");
+
+    // The player: it attaches to what is there. **It gets no claim**, because
+    // the rings are SPSC and draining them from two processes would lose half
+    // the commands to whichever popped first.
+    let (player_segment, created) = Segment::open_or_create_full(&path, 1024, 2, 1024).unwrap();
+    assert!(
+        !created,
+        "a segment that exists is adopted, never truncated"
+    );
+    assert!(
+        !player_segment.claim_control(),
+        "the command plane is taken, and a second server must find that out"
+    );
+    let (mut player_server, _player_engine) = shared_server(&player_segment, None);
+    player_server.attach_segment(Arc::clone(&player_segment));
+    let found = player_server.attach_material_at(path.clone());
+    assert_eq!(found, 1, "it maps the take that was already there");
+
+    // One material, two servers: the owner's write is what the player reads.
+    let (_, owners_view) = owner_segment.map_buffer(&path, 3).unwrap();
+    let (_, players_view) = player_segment.map_buffer(&path, 3).unwrap();
+    owners_view.set_at(5, -0.5);
+    assert_eq!(
+        players_view.at(5),
+        -0.5,
+        "the player plays the very cells the owner edits"
+    );
+
+    // And the player owns none of it: freeing a buffer through it retires
+    // nothing, because the row and the region are the owner's.
+    drop(player_server);
+    assert!(
+        owner_segment.buffer_info(3).is_some(),
+        "the material outlives the player, which is the whole point of separating them"
+    );
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(clausters::dsp::region::Region::path_for(&path, 3, 1));
+}
+
+/// A claim whose owner is gone is stale, not a lock: killing the RT server
+/// must leave a segment the next one can serve, or "killable" would mean
+/// "restart the machine".
+#[test]
+fn a_dead_owners_claim_is_taken_over() {
+    let path = std::env::temp_dir().join(format!(
+        "clausters-shm-claim-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let (segment, _) = Segment::open_or_create_full(&path, 64, 0, 1024).unwrap();
+    assert!(segment.claim_control());
+    assert_eq!(segment.control_owner(), Some(std::process::id()));
+    // A live holder refuses whoever asks second, this process included: one
+    // ring pair, one drainer.
+    let (twin, _) = Segment::open_or_create_full(&path, 64, 0, 1024).unwrap();
+    assert!(!twin.claim_control());
+    segment.release_control();
+    assert_eq!(segment.control_owner(), None);
+    assert!(segment.claim_control(), "a free segment is claimable again");
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Builds a headless server + engine over `segment`, owning the material when
+/// a path is given. The two tests above differ only in that.
+fn shared_server(
+    segment: &Arc<Segment>,
+    own_material_at: Option<std::path::PathBuf>,
+) -> (OscServer, clausters::server::engine::Engine) {
+    let (engine, handle) = engine_pair_full(
+        SR,
+        2,
+        0,
+        Some(Arc::clone(segment)),
+        128,
+        segment.control_bus_count(),
+        clausters::dsp::Limits::default(),
+    );
+    let mut server = OscServer::headless(
+        ServerInfo {
+            nominal_sample_rate: SR as f64,
+            actual_sample_rate: SR as f64,
+        },
+        handle,
+        0.0,
+    );
+    if let Some(path) = own_material_at {
+        server
+            .attach_ipc(IpcPeer::new(Arc::clone(segment), Role::Server))
+            .unwrap();
+        server.share_buffers_at(path);
+    }
+    (server, engine)
+}

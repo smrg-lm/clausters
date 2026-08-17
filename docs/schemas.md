@@ -621,6 +621,7 @@ Buffer readers **and writers** are **mono** (one output per UGen, unlike scsynth
 /buffer_setChannel      bufnum channel [frame value]...  # one channel, positions in frames
 /buffer_setRangeChannel bufnum channel [frame blob]...   # one channel, runs of frames
 /buffer_free      bufnum
+/buffer_attach    bufnum                    →  /done /buffer_attach bufnum   # map a shared buffer, see below
 /buffer_close     bufnum                    →  /done /buffer_close bufnum   # see note
 /buffer_query     bufnum...                 →  /buffer_query.reply  bufnum frames channels sampleRate ...  (frames -1: empty slot)
 /buffer_query     (no argument)              →  /buffer_query.reply  every allocated buffer, same shape
@@ -631,6 +632,8 @@ Buffer readers **and writers** are **mono** (one output per UGen, unlike scsynth
 ```
 
 `/buffer_alloc`, `/buffer_allocRead`, `/buffer_read`, `/buffer_write`, `/buffer_zero`, `/buffer_gen`, `/buffer_set`, `/buffer_setRange`, `/buffer_setChannel`, `/buffer_setRangeChannel`, `/buffer_fill`, `/buffer_gain`, `/buffer_reverse`, `/buffer_readChannel`, `/buffer_allocReadChannel` and `/buffer_free` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/buffer_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/buffer_write` still emits WAV only, and `leaveOpen` (streaming) is not supported. `/buffer_close bufnum` closes the soundfile a streaming buffer left open — scsynth pairs it with `DiskIn`/`DiskOut`; since Clausters has no streaming buffers yet (every `/buffer_read`/`/buffer_write` reads or writes the whole file and closes it), it validates the buffer is live and replies `/done /buffer_close bufnum`, forward-compatible with the streaming UGens.
+
+`/buffer_attach bufnum` is the one command that exists only for a server sharing a segment with another one. A server that **attached** to somebody else's segment (see [`ipc.md`](ipc.md)) maps every buffer the owner had published when it started; this points it at one published since. It is synchronous, replies `/done /buffer_attach bufnum`, and fails when this server owns the material, when it has no shared segment, or when the directory has no live buffer under that number. Nothing about the samples travels: the reply means this server's engine now plays the very cells the owner writes.
 
 ### Filling and channel-selective reads (`/buffer_fill`, `/buffer_readChannel`, `/buffer_allocReadChannel`)
 

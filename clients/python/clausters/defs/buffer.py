@@ -287,6 +287,28 @@ class Buffer:
         if addr == "/fail":
             raise CommandError(f"/buffer_zero {self.bufnum} failed: {rargs}")
 
+    def attach(self, *, wait: bool = True, timeout: "float | None" = None):
+        """Map this buffer out of the shared segment (``/buffer_attach``).
+
+        Only meaningful against a server that **attached** to a segment
+        somebody else owns — the RT server of an editor's arrangement, which
+        holds the devices and plays material the on-demand session owns. It
+        maps every buffer the owner had published when it started, so this is
+        for one published since: after it, that server's engine plays the very
+        cells the owner writes, and nothing about the samples travelled.
+
+        Raises `CommandError` when this server owns the material, has no shared
+        segment, or finds no live buffer under this number.
+        """
+        srv = self._server()
+        if self._scored() or not wait:
+            srv.send_msg("/buffer_attach", self.bufnum)
+            return
+        addr, rargs = srv.request("/buffer_attach", self.bufnum, timeout=timeout,
+                                  expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/buffer_attach {self.bufnum} failed: {rargs}")
+
     def fill(self, *runs, wait: bool = True, timeout: "float | None" = None):
         """Write runs of one repeated value (``/buffer_fill``), each a
         ``(start, count, value)`` triple.
