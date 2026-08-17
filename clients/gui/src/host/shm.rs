@@ -1,20 +1,22 @@
 //! Reading the audio server's shared-memory segment: the zero-message path for
-//! meters and scopes.
+//! meters, scopes and the playhead.
 //!
 //! The audio server, started with `--shm <path>`, maps a memory-backed file
 //! whose control-bus region is a flat array of atomics the engine reads and
-//! writes directly. A GUI `meter`/`scope` widget reads those very atomics **each
-//! frame**, so a live bus animates with no OSC traffic at all (the third leg of
-//! the topology made cheap: the host is a client that reads the server's memory).
+//! writes directly. A GUI `meter`/`scope` widget reads those very atomics
+//! **each frame**, so a live bus animates with no OSC traffic at all — the
+//! third leg of the topology made cheap: the host is a client that reads the
+//! server's memory.
 //!
-//! This is a **read-only** view of a **versioned binary ABI**. Rather than depend
-//! on the server crate (which would pull the engine, cpal and the rest into this
-//! independent GUI crate), the reader mirrors the segment's `#[repr(C)]` layout
-//! — the same role any independent peer plays against this boundary (the Python
-//! `ctypes` client, the web one over wasm). The contract is the canonical definition in
-//! the server's `server::ipc`; the safety net against drift is the version field:
-//! [`SharedSegment::open`] rejects a segment whose magic or ABI version does not
-//! match, so a layout change fails loudly here instead of reading stale memory.
+//! **The layout is not mirrored here any more.** It is
+//! [`clausters_core::shm`], the one definition every process links, and this
+//! module is what is genuinely the *host's*: getting the memory (a mapped file,
+//! or a borrow of an in-process server's own segment), and choosing which
+//! counter a window's playhead draws. That split is not tidiness — a mirror of
+//! the layout written by hand here refused every valid v9 segment for a week,
+//! because it agreed with the server on the version number and not on the size
+//! check, which is exactly the failure a shared definition cannot have.
+//!
 //! Unix-only, as the server's segment is.
 
 #![cfg(unix)]
@@ -25,55 +27,9 @@ use std::io;
 use std::os::fd::AsRawFd;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 
-/// "CLAU" little-endian (mirrors `server::ipc::MAGIC`).
-const MAGIC: u32 = 0x5541_4C43;
-/// The segment ABI version this reader understands (mirrors
-/// `server::ipc::ABI_VERSION`). Bumped in lockstep with the server; a mismatch
-/// is rejected on [`SharedSegment::open`].
-///
-/// That one counter governs **two** boundaries — the segment layout and the
-/// embed C ABI — so it moves for changes this reader cannot see: v5 came from
-/// `clausters_render` growing arguments, with the layout untouched. Following
-/// it is still the rule (there is no separate segment counter to follow), so a
-/// bump lands here as a number change and nothing else whenever the layout
-/// stayed put. v6 did touch the layout, but only inside the header's reserved
-/// space (the transport clock), so every offset below is unchanged. v7 changed
-/// the framing *inside* the command rings (each frame gained a peer tag) and no
-/// field of the header or the data plane this reader maps, so it is again a
-/// number change and nothing else. v8 added the transport **position** in the
-/// last of that same reserved space -- a second quantity beside the clock, not
-/// a redefinition of it (see [`SharedSegment::transport_position`]) -- so no
-/// offset moved here either. v9 grew a **trailing** region this reader does
-/// map: the buffer directory (see [`SharedSegment::buffer_info`]).
-const SUPPORTED_ABI_VERSION: u32 = 9;
-/// Bytes of one buffer-directory row: a `u64` generation, a `u32` frame count,
-/// a `u32` channel count and a `u64` sample rate. Mirrors
-/// `server::ipc::BufferRow`.
-const BUFFER_ROW_SIZE: usize = 24;
-
-// Byte offsets of the fields we read inside the `#[repr(C)]` Header.
-const OFF_ABI: usize = 4;
-const OFF_SAMPLE_RATE: usize = 8;
-const OFF_SAMPLE_CLOCK: usize = 16;
-const OFF_RING_CAPACITY: usize = 24;
-const OFF_CONTROL_BUSES: usize = 28;
-const OFF_TAPS: usize = 32;
-const OFF_TAP_FRAMES: usize = 36;
-const OFF_AUDIO_BUSES: usize = 40;
-/// The transport clock (v6), in what was reserved header space.
-const OFF_TRANSPORT_CLOCK: usize = 48;
-/// The transport position (v8), in the last of it.
-const OFF_TRANSPORT_POSITION: usize = 56;
-/// Size of the fixed Header struct.
-const HEADER_SIZE: usize = 64;
-/// Fixed prefix of each command ring before its `data` array (head/tail/pad).
-const RING_PREFIX: usize = 64;
-/// Tap-slot alignment (v3): each slot is a 64-byte cursor line followed by the
-/// sample ring; the whole region starts on the next 64-byte boundary after the
-/// audio-bus region.
-const TAP_ALIGN: usize = 64;
+use clausters_core::shm::View;
 
 /// Which of the segment's counters a window's **playhead** reads.
 ///
@@ -96,7 +52,7 @@ pub enum HeadClock {
 /// Who owns the memory this reads.
 enum Backing {
     /// A mapping this made and must unmap.
-    Mapped,
+    Mapped { ptr: *mut u8, len: usize },
     /// Somebody else's memory, kept alive by the handle held here — an
     /// in-process server's own segment, which is not ours to unmap and must
     /// not outlive its owner. Type-erased because the owner is the server
@@ -104,67 +60,54 @@ enum Backing {
     Borrowed(#[allow(dead_code)] Arc<dyn Any + Send + Sync>),
 }
 
-/// A read-only view of the audio server's shared-memory segment. Reading a
-/// control bus is a single atomic load; reading an audio-tap window is a
-/// lock-free copy with a cursor double-check. A view it mapped itself is
-/// unmapped when this is dropped; a borrowed one only releases its hold on the
-/// owner.
+/// A view of the audio server's shared-memory segment. Reading a control bus is
+/// a single atomic load; reading an audio-tap window is a lock-free copy with a
+/// cursor double-check. A view it mapped itself is unmapped when this is
+/// dropped; a borrowed one only releases its hold on the owner.
 pub struct SharedSegment {
-    ptr: *mut u8,
-    len: usize,
+    view: View,
     backing: Backing,
     head: HeadClock,
-    control_count: usize,
-    controls_offset: usize,
-    /// The audio-bus region (v4): `audio_count` directory words (bus -> tap
-    /// ring, `-1` for none) followed by as many level words (`f32` bits, the
-    /// peak of the engine's last block). Keyed by the bus, which is why
-    /// nothing above this reader ever names a ring.
-    audio_count: usize,
-    buses_offset: usize,
-    taps: usize,
-    tap_frames: usize,
-    taps_offset: usize,
-    /// The buffer directory (v9), the segment's tail: one row per pool buffer
-    /// saying what shape it is and which generation of it this is. It does not
-    /// hold the samples — those are a file beside the segment, which is what
-    /// [`crate::host::material`] opens.
-    buffer_rows: usize,
-    buffers_offset: usize,
 }
 
-// SAFETY: the segment is only ever read here, through atomic loads of fields the
-// server writes atomically; the mapping stays valid until `Drop`.
+// SAFETY: every access goes through the shared reader's atomics, and the
+// mapping stays valid until `Drop`.
 unsafe impl Send for SharedSegment {}
 unsafe impl Sync for SharedSegment {}
 
 impl Drop for SharedSegment {
     fn drop(&mut self) {
-        if let Backing::Mapped = self.backing {
+        if let Backing::Mapped { ptr, len } = self.backing {
             // SAFETY: the exact mapping created in `open`.
-            unsafe { libc::munmap(self.ptr as *mut libc::c_void, self.len) };
+            unsafe { libc::munmap(ptr as *mut libc::c_void, len) };
         }
     }
 }
 
 impl SharedSegment {
-    /// Maps the segment at `path` read-only and validates its header. Fails if
-    /// the file is too small, the magic is wrong, the ABI version differs, or the
-    /// file size does not match the layout the header describes. Reads the
+    /// Maps the segment at `path` and validates its header. Fails if the file
+    /// is too small, the magic is wrong, the ABI version differs, or the file
+    /// size does not match the layout the header describes. Reads the
     /// **device** clock, which is what a host attached to a running server
     /// wants; see [`Self::with_head`].
+    ///
+    /// Mapped read/write, though the host only reads the segment itself: the
+    /// shared reader is one type with one set of accessors, and a read-only
+    /// mapping would turn a later zero-message write into a fault rather than
+    /// a compile error. The file is the server's, and opening it read/write is
+    /// the same permission a peer needs to edit the material beside it.
     pub fn open(path: &Path) -> io::Result<Self> {
-        let file = OpenOptions::new().read(true).open(path)?;
+        let file = OpenOptions::new().read(true).write(true).open(path)?;
         let len = file.metadata()?.len() as usize;
-        if len < HEADER_SIZE {
-            return Err(io::Error::other("segment too small for a header"));
+        if len == 0 {
+            return Err(io::Error::other("segment is empty"));
         }
-        // SAFETY: a shared read-only mapping of a file we just sized.
+        // SAFETY: a shared mapping of a file we just sized.
         let raw = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
                 len,
-                libc::PROT_READ,
+                libc::PROT_READ | libc::PROT_WRITE,
                 libc::MAP_SHARED,
                 file.as_raw_fd(),
                 0,
@@ -175,9 +118,14 @@ impl SharedSegment {
         }
         let ptr = raw as *mut u8;
         // Validated from the raw mapping before the owning struct exists, so
-        // its `Drop` (munmap) runs exactly once -- for the segment we return.
-        match Self::derive(ptr, len, Backing::Mapped) {
-            Ok(seg) => Ok(seg),
+        // its `Drop` (munmap) runs exactly once — for the segment we return.
+        // SAFETY: the mapping we just made, of `len` bytes.
+        match unsafe { View::attach(ptr, len) } {
+            Ok(view) => Ok(SharedSegment {
+                view,
+                backing: Backing::Mapped { ptr, len },
+                head: HeadClock::default(),
+            }),
             Err(why) => {
                 // SAFETY: the mapping we just made; nothing else aliases it.
                 unsafe { libc::munmap(ptr as *mut libc::c_void, len) };
@@ -205,10 +153,13 @@ impl SharedSegment {
         len: usize,
         owner: Arc<dyn Any + Send + Sync>,
     ) -> io::Result<Self> {
-        if len < HEADER_SIZE {
-            return Err(io::Error::other("segment too small for a header"));
-        }
-        Self::derive(ptr as *mut u8, len, Backing::Borrowed(owner)).map_err(io::Error::other)
+        // SAFETY: the caller's contract is exactly what `attach` asks for.
+        let view = unsafe { View::attach(ptr as *mut u8, len) }.map_err(io::Error::other)?;
+        Ok(SharedSegment {
+            view,
+            backing: Backing::Borrowed(owner),
+            head: HeadClock::default(),
+        })
     }
 
     /// Reads the piece's position rather than the device clock — the choice an
@@ -218,122 +169,46 @@ impl SharedSegment {
         self
     }
 
-    /// Validates the header at `ptr` and derives every region offset from it.
-    /// Whoever calls this owns the failure path: [`Self::open`] unmaps, a
-    /// borrow simply drops its handle.
-    fn derive(ptr: *mut u8, len: usize, backing: Backing) -> Result<Self, String> {
-        if header_u32(ptr, 0) != MAGIC {
-            return Err("not a clausters segment (bad magic)".into());
-        }
-        let abi = header_u32(ptr, OFF_ABI);
-        if abi != SUPPORTED_ABI_VERSION {
-            return Err(format!(
-                "segment ABI version {abi} != supported {SUPPORTED_ABI_VERSION}"
-            ));
-        }
-        let ring_capacity = header_u32(ptr, OFF_RING_CAPACITY) as usize;
-        let control_count = header_u32(ptr, OFF_CONTROL_BUSES) as usize;
-        let taps = header_u32(ptr, OFF_TAPS) as usize;
-        let tap_frames = header_u32(ptr, OFF_TAP_FRAMES) as usize;
-        let audio_count = header_u32(ptr, OFF_AUDIO_BUSES) as usize;
-        // The control region follows the header and the two command rings, the
-        // audio-bus region follows the controls, and the tap region follows
-        // that, 64-byte aligned.
-        let controls_offset = HEADER_SIZE + 2 * (RING_PREFIX + ring_capacity);
-        let buses_offset = controls_offset + control_count * size_of::<u32>();
-        let buses_end = buses_offset + 2 * audio_count * size_of::<u32>();
-        let taps_offset = buses_end.div_ceil(TAP_ALIGN) * TAP_ALIGN;
-        let buffers_offset = taps_offset + taps * (TAP_ALIGN + tap_frames * size_of::<f32>());
-        // The buffer directory is the segment's **tail**, and how many rows it
-        // has is what remains of the mapped length rather than a header field
-        // (the header had no room left for a count). So the size check is a
-        // floor plus whole rows, not an equality — which is what it was, and
-        // is why a reader pinned to v9 by its number alone refuses every real
-        // v9 segment.
-        if len < buffers_offset || !(len - buffers_offset).is_multiple_of(BUFFER_ROW_SIZE) {
-            return Err("segment size does not match its header".into());
-        }
-        let buffer_rows = (len - buffers_offset) / BUFFER_ROW_SIZE;
-        Ok(SharedSegment {
-            ptr,
-            len,
-            backing,
-            head: HeadClock::default(),
-            control_count,
-            controls_offset,
-            audio_count,
-            buses_offset,
-            taps,
-            tap_frames,
-            taps_offset,
-            buffer_rows,
-            buffers_offset,
-        })
-    }
-
     /// Number of control buses this segment carries.
     pub fn control_buses(&self) -> usize {
-        self.control_count
+        self.view.control_bus_count()
     }
 
-    /// The current value of control bus `index` (`0.0` for an out-of-range bus).
-    /// A single atomic load of the same word the engine reads and writes.
+    /// The current value of control bus `index` (`0.0` for an out-of-range
+    /// bus): one atomic load of the same word the engine reads and writes.
     pub fn control(&self, index: usize) -> f32 {
-        if index >= self.control_count {
-            return 0.0;
-        }
-        let off = self.controls_offset + index * size_of::<u32>();
-        // SAFETY: in-range offset into the control region; the word is an
-        // `AtomicU32` the server keeps live.
-        let bits = unsafe { (*(self.ptr.add(off) as *const AtomicU32)).load(Ordering::Relaxed) };
-        f32::from_bits(bits)
+        self.view.control(index)
     }
 
-    /// Audio bus `bus`'s level: the peak magnitude of the engine's last block
-    /// (`0.0` for an out-of-range bus). One atomic load — what a meter reads,
-    /// and why a meter costs no tap ring.
+    /// Audio bus `bus`'s level: the peak magnitude of the engine's last block.
+    /// One atomic load — what a meter reads, and why a meter costs no tap ring.
     pub fn level(&self, bus: usize) -> f32 {
-        if bus >= self.audio_count {
-            return 0.0;
-        }
-        let off = self.buses_offset + (self.audio_count + bus) * size_of::<u32>();
-        // SAFETY: in-range offset into the level array of the bus region.
-        let bits = unsafe { (*(self.ptr.add(off) as *const AtomicU32)).load(Ordering::Relaxed) };
-        f32::from_bits(bits)
+        self.view.level(bus)
     }
 
     /// Which tap ring is recording audio bus `bus`, or `None`. The server owns
     /// the assignment and publishes it here, so a caller asks by bus.
     pub fn tap_of_bus(&self, bus: usize) -> Option<usize> {
-        if bus >= self.audio_count {
-            return None;
-        }
-        let off = self.buses_offset + bus * size_of::<u32>();
-        // SAFETY: in-range offset into the directory array of the bus region.
-        let tap = unsafe { (*(self.ptr.add(off) as *const AtomicU32)).load(Ordering::Acquire) };
-        match tap as i32 {
-            i if i >= 0 => Some(i as usize),
-            _ => None,
-        }
+        self.view.tap_of_bus(bus)
     }
 
     /// The engine's block-accurate sample clock (samples processed since boot).
     pub fn sample_clock(&self) -> u64 {
-        header_u64(self.ptr, OFF_SAMPLE_CLOCK)
+        self.view.clock().load(Ordering::Relaxed)
     }
 
-    /// Samples elapsed **under the transport**, held while it is stopped (v6).
+    /// Samples elapsed **under the transport**, held while it is stopped.
     ///
     /// [`Self::sample_clock`] never stops, so anything pacing on the device
     /// reads that one. This one is monotonic too — it holds, it never jumps —
     /// which is what a scheduler needs and what a **playhead does not**: for
     /// where the piece *is*, read [`Self::transport_position`].
     pub fn transport_clock(&self) -> u64 {
-        header_u64(self.ptr, OFF_TRANSPORT_CLOCK)
+        self.view.transport_clock().load(Ordering::Relaxed)
     }
 
-    /// Where the transport is **in the piece**, in samples of the material
-    /// (v8) — what a playhead draws.
+    /// Where the transport is **in the piece**, in samples of the material —
+    /// what a playhead draws.
     ///
     /// Not a clock: it advances with the transport clock while rolling, holds
     /// while stopped, jumps to wherever `/transport_locate` puts it and wraps
@@ -341,117 +216,46 @@ impl SharedSegment {
     /// ignores every seek and every loop, which is a picture of elapsed time
     /// rather than of the piece.
     pub fn transport_position(&self) -> u64 {
-        header_u64(self.ptr, OFF_TRANSPORT_POSITION)
+        self.view.transport_position().load(Ordering::Relaxed)
     }
 
-    /// The device sample rate the server published, or `0.0` before it is known.
+    /// The device sample rate the server published, or `0.0` before it is
+    /// known.
     pub fn sample_rate(&self) -> f64 {
-        f64::from_bits(header_u64(self.ptr, OFF_SAMPLE_RATE))
+        self.view.sample_rate()
     }
 
-    /// Number of audio-tap rings in the segment (v3).
+    /// Number of audio-tap rings in the segment.
     pub fn taps(&self) -> usize {
-        self.taps
+        self.view.taps()
     }
 
     /// Per-tap ring capacity in samples (a power of two).
     pub fn tap_frames(&self) -> usize {
-        self.tap_frames
+        self.view.tap_frames()
     }
 
-    /// Tap `i`'s cursor: total samples the engine ever wrote to it.
-    fn tap_cursor(&self, i: usize) -> &AtomicU64 {
-        let off = self.taps_offset + i * (TAP_ALIGN + self.tap_frames * size_of::<f32>());
-        // SAFETY: in-range (i < taps was checked by the caller), 64-aligned.
-        unsafe { &*(self.ptr.add(off) as *const AtomicU64) }
-    }
-
-    fn tap_data_ptr(&self, i: usize) -> *const f32 {
-        let off =
-            self.taps_offset + i * (TAP_ALIGN + self.tap_frames * size_of::<f32>()) + TAP_ALIGN;
-        // SAFETY: the ring starts one alignment line into the slot.
-        unsafe { self.ptr.add(off) as *const f32 }
-    }
-
-    /// Copies the **newest** `out.len()` samples of tap `i` into `out`,
-    /// returning the stream position at the window's end — `None` when the tap
-    /// index is out of range, the window is empty or larger than half the
-    /// ring, or the tap has not yet written a full window. Mirrors the
-    /// server's reader: the half-ring cap plus a cursor double-check make a
-    /// torn window a checked retry instead of silent garbage.
     /// **What the directory says about pool buffer `bufnum`**: its generation,
-    /// frame count, channel count and sample rate, or `None` when that slot
-    /// holds nothing.
+    /// its shape and its sample rate, or `None` when that slot holds nothing.
     ///
-    /// The generation does three jobs with one number, and this reads all
-    /// three: it is *odd while the buffer is live*, it *names the region file*
-    /// beside the segment (which is where the samples actually are), and it is
-    /// a *seqlock* — a row that moved while it was being read describes a
-    /// buffer this is not, so the read is retried.
-    pub fn buffer_info(&self, bufnum: usize) -> Option<(u64, usize, usize, f64)> {
-        if bufnum >= self.buffer_rows {
-            return None;
-        }
-        let row = self.buffers_offset + bufnum * BUFFER_ROW_SIZE;
-        for _ in 0..8 {
-            // SAFETY: in-range offsets into the directory region, all written
-            // by the server as atomics.
-            let before =
-                unsafe { (*(self.ptr.add(row) as *const AtomicU64)).load(Ordering::Acquire) };
-            if before.is_multiple_of(2) {
-                return None; // an empty slot
-            }
-            let (frames, channels, rate) = unsafe {
-                (
-                    (*(self.ptr.add(row + 8) as *const AtomicU32)).load(Ordering::Relaxed) as usize,
-                    (*(self.ptr.add(row + 12) as *const AtomicU32)).load(Ordering::Relaxed)
-                        as usize,
-                    f64::from_bits(
-                        (*(self.ptr.add(row + 16) as *const AtomicU64)).load(Ordering::Relaxed),
-                    ),
-                )
-            };
-            let after =
-                unsafe { (*(self.ptr.add(row) as *const AtomicU64)).load(Ordering::Acquire) };
-            if after == before {
-                return Some((before, frames, channels, rate));
-            }
-        }
-        None
+    /// The generation does three jobs with one number: it is *odd while the
+    /// buffer is live*, it *names the region file* beside the segment (which is
+    /// where the samples actually are — see [`crate::host::material`]), and it
+    /// is a *seqlock* the shared reader retries under.
+    pub fn buffer_info(&self, bufnum: usize) -> Option<clausters_core::shm::BufferShape> {
+        self.view.buffer_info(bufnum)
     }
 
     /// How many buffers the directory can describe — the pool's size, as the
     /// segment's own length reports it.
     pub fn buffer_rows(&self) -> usize {
-        self.buffer_rows
+        self.view.buffer_rows()
     }
 
+    /// Copies the **newest** `out.len()` samples of tap `i` into `out`,
+    /// returning the stream position at the window's end.
     pub fn tap_read_latest(&self, i: usize, out: &mut [f32]) -> Option<u64> {
-        let frames = self.tap_frames;
-        let want = out.len();
-        if i >= self.taps || want == 0 || frames == 0 || want > frames / 2 {
-            return None;
-        }
-        loop {
-            let end = self.tap_cursor(i).load(Ordering::Acquire);
-            if (end as usize) < want {
-                return None;
-            }
-            let start = end - want as u64;
-            let s = (start as usize) % frames;
-            let first = want.min(frames - s);
-            let data = self.tap_data_ptr(i);
-            // SAFETY: both copies stay inside the ring; concurrent writer
-            // overlap is detected by the cursor re-check below.
-            unsafe {
-                std::ptr::copy_nonoverlapping(data.add(s), out.as_mut_ptr(), first);
-                std::ptr::copy_nonoverlapping(data, out.as_mut_ptr().add(first), want - first);
-            }
-            let end_after = self.tap_cursor(i).load(Ordering::Acquire);
-            if end_after - start <= frames as u64 {
-                return Some(end);
-            }
-        }
+        self.view.tap_read_latest(i, out)
     }
 }
 
@@ -497,155 +301,5 @@ impl super::BusSource for SharedSegment {
             HeadClock::Device => SharedSegment::sample_clock(self) as f64,
             HeadClock::Piece => SharedSegment::transport_position(self) as f64,
         }
-    }
-}
-
-/// A constant header `u32` field (written once at creation, before any client
-/// maps), read at byte offset `off`.
-fn header_u32(ptr: *mut u8, off: usize) -> u32 {
-    // SAFETY: `off + 4 <= HEADER_SIZE <= len`; the mmap base is page-aligned and
-    // `off` is a multiple of 4, so the read is aligned and in range.
-    unsafe { (ptr.add(off) as *const u32).read() }
-}
-
-/// A live header `u64` field (the server stores it atomically), read at `off`.
-fn header_u64(ptr: *mut u8, off: usize) -> u64 {
-    // SAFETY: aligned, in-range; the field is an `AtomicU64` in the layout.
-    unsafe { (*(ptr.add(off) as *const AtomicU64)).load(Ordering::Relaxed) }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-
-    /// Writes a segment file matching the documented `#[repr(C)]` layout (v3:
-    /// controls plus a tap region), with a small ring capacity (the reader
-    /// derives every offset from the header fields, so the real 64 KiB rings
-    /// need not be present). `taps` are per-tap `(cursor, ring samples)`
-    /// pairs. Returns the path.
-    fn fake_segment(
-        name: &str,
-        abi: u32,
-        magic: u32,
-        controls: &[f32],
-        tap_frames: usize,
-        taps: &[(u64, Vec<f32>)],
-    ) -> std::path::PathBuf {
-        let ring_capacity: u32 = 16;
-        let controls_offset = HEADER_SIZE + 2 * (RING_PREFIX + ring_capacity as usize);
-        let controls_end = controls_offset + controls.len() * 4;
-        let taps_offset = controls_end.div_ceil(TAP_ALIGN) * TAP_ALIGN;
-        let len = taps_offset + taps.len() * (TAP_ALIGN + tap_frames * 4);
-        let mut bytes = vec![0u8; len];
-        bytes[0..4].copy_from_slice(&magic.to_le_bytes());
-        bytes[OFF_ABI..OFF_ABI + 4].copy_from_slice(&abi.to_le_bytes());
-        bytes[OFF_SAMPLE_RATE..OFF_SAMPLE_RATE + 8]
-            .copy_from_slice(&48_000.0f64.to_bits().to_le_bytes());
-        bytes[OFF_SAMPLE_CLOCK..OFF_SAMPLE_CLOCK + 8].copy_from_slice(&12_345u64.to_le_bytes());
-        bytes[OFF_RING_CAPACITY..OFF_RING_CAPACITY + 4]
-            .copy_from_slice(&ring_capacity.to_le_bytes());
-        bytes[OFF_CONTROL_BUSES..OFF_CONTROL_BUSES + 4]
-            .copy_from_slice(&(controls.len() as u32).to_le_bytes());
-        bytes[OFF_TAPS..OFF_TAPS + 4].copy_from_slice(&(taps.len() as u32).to_le_bytes());
-        bytes[OFF_TAP_FRAMES..OFF_TAP_FRAMES + 4]
-            .copy_from_slice(&(tap_frames as u32).to_le_bytes());
-        for (i, v) in controls.iter().enumerate() {
-            let at = controls_offset + i * 4;
-            bytes[at..at + 4].copy_from_slice(&v.to_bits().to_le_bytes());
-        }
-        for (i, (cursor, ring)) in taps.iter().enumerate() {
-            let slot = taps_offset + i * (TAP_ALIGN + tap_frames * 4);
-            bytes[slot..slot + 8].copy_from_slice(&cursor.to_le_bytes());
-            for (k, v) in ring.iter().enumerate() {
-                let at = slot + TAP_ALIGN + k * 4;
-                bytes[at..at + 4].copy_from_slice(&v.to_bits().to_le_bytes());
-            }
-        }
-        let path = std::env::temp_dir().join(format!(
-            "clausters_gui_shm_{name}_{}.seg",
-            std::process::id()
-        ));
-        let mut f = std::fs::File::create(&path).unwrap();
-        f.write_all(&bytes).unwrap();
-        path
-    }
-
-    #[test]
-    fn reads_control_buses_and_header() {
-        let path = fake_segment(
-            "ok",
-            SUPPORTED_ABI_VERSION,
-            MAGIC,
-            &[0.0, 0.5, -0.25, 1.0],
-            256,
-            &[],
-        );
-        let seg = SharedSegment::open(&path).unwrap();
-        assert_eq!(seg.control_buses(), 4);
-        assert_eq!(seg.control(0), 0.0);
-        assert_eq!(seg.control(1), 0.5);
-        assert_eq!(seg.control(2), -0.25);
-        assert_eq!(seg.control(3), 1.0);
-        assert_eq!(seg.control(99), 0.0, "out-of-range bus reads as 0");
-        assert_eq!(seg.sample_rate(), 48_000.0);
-        assert_eq!(seg.sample_clock(), 12_345);
-        assert_eq!(seg.taps(), 0, "no tap region in this fake");
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn reads_tap_windows() {
-        // Tap 0: 320 samples ever written into a 256 ring — the ring holds
-        // samples 64..320, stored at (index % 256): 256..320 sit at 0..64.
-        let frames = 256usize;
-        let mut ring = vec![0.0f32; frames];
-        for s in 64..320usize {
-            ring[s % frames] = s as f32;
-        }
-        let path = fake_segment(
-            "taps",
-            SUPPORTED_ABI_VERSION,
-            MAGIC,
-            &[0.0],
-            frames,
-            &[(320, ring), (0, vec![0.0; frames])],
-        );
-        let seg = SharedSegment::open(&path).unwrap();
-        assert_eq!(seg.taps(), 2);
-        assert_eq!(seg.tap_frames(), frames);
-
-        // The newest 128 samples are 192..320, straddling the wrap point.
-        let mut out = vec![0.0f32; 128];
-        let end = seg.tap_read_latest(0, &mut out).expect("window ready");
-        assert_eq!(end, 320);
-        for (i, s) in out.iter().enumerate() {
-            assert_eq!(*s, (192 + i) as f32, "sample {i}");
-        }
-
-        // Refusals: over half the ring, bad index, tap that never wrote.
-        let mut too_big = vec![0.0f32; 129];
-        assert_eq!(seg.tap_read_latest(0, &mut too_big), None);
-        assert_eq!(seg.tap_read_latest(2, &mut out), None);
-        assert_eq!(seg.tap_read_latest(1, &mut out), None);
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn rejects_bad_magic_and_abi() {
-        let bad_magic = fake_segment(
-            "magic",
-            SUPPORTED_ABI_VERSION,
-            0xDEAD_BEEF,
-            &[0.0],
-            256,
-            &[],
-        );
-        assert!(SharedSegment::open(&bad_magic).is_err());
-        let _ = std::fs::remove_file(&bad_magic);
-
-        let bad_abi = fake_segment("abi", SUPPORTED_ABI_VERSION + 1, MAGIC, &[0.0], 256, &[]);
-        assert!(SharedSegment::open(&bad_abi).is_err());
-        let _ = std::fs::remove_file(&bad_abi);
     }
 }

@@ -69,11 +69,18 @@ impl SharedMaterial {
     /// meanwhile describes a buffer this mapping is not, and mapping a take
     /// that was freed under us is exactly the case the generation exists for.
     pub fn map(&self, bufnum: usize) -> Option<MappedTake> {
-        let (generation, frames, channels, sample_rate) = self.segment.buffer_info(bufnum)?;
-        let cells = frames.checked_mul(channels)?;
-        let path = region_path(&self.path, bufnum, generation);
-        let take = MappedTake::open(&path, cells, channels, frames, sample_rate).ok()?;
-        if self.segment.buffer_info(bufnum)?.0 != generation {
+        let shape = self.segment.buffer_info(bufnum)?;
+        let cells = shape.frames.checked_mul(shape.channels)?;
+        let path = region_path(&self.path, bufnum, shape.generation);
+        let take = MappedTake::open(
+            &path,
+            cells,
+            shape.channels,
+            shape.frames,
+            shape.sample_rate,
+        )
+        .ok()?;
+        if self.segment.buffer_info(bufnum)?.generation != shape.generation {
             return None;
         }
         Some(take)
@@ -86,12 +93,13 @@ impl SharedMaterial {
     }
 }
 
-/// The name a buffer's region has (mirrors `dsp::region::Region::path_for`):
-/// the segment's path, the buffer number and the generation, so a freed
-/// buffer's file and its replacement can never share a name.
+/// The name a buffer's region has: the segment's path plus the suffix the
+/// **shared core** builds from the buffer number and the generation, so a
+/// freed buffer's file and its replacement can never share a name — and so
+/// this process and the server never disagree about which file that is.
 fn region_path(segment: &Path, bufnum: usize, generation: u64) -> PathBuf {
     let mut name = segment.as_os_str().to_os_string();
-    name.push(format!(".buf{bufnum}.{generation}"));
+    name.push(clausters_core::shm::region_suffix(bufnum, generation));
     PathBuf::from(name)
 }
 
