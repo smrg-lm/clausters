@@ -1078,7 +1078,7 @@ impl JsDocument {
                 clausters_document::Body::Set {
                     grouping: clausters_document::Grouping::Concrete,
                     members: Vec::new(),
-                    config: Opaque::none(),
+                    config: clausters_document::Opaque::none(),
                 },
             )),
         };
