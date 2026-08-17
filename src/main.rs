@@ -20,8 +20,22 @@ usage:
       --outputs <n>        hardware output channels (default: the device's);
                            audio buses 0..outputs are the hardware outs
       --inputs <n>         hardware input channels (default 0 = no input); opens
-                           the default input device, readable via In on audio
+                           the input device, readable via In on audio
                            buses outputs..outputs+inputs
+      --host <name>        audio host/backend to use (jack, alsa, pipewire,
+                           coreaudio, wasapi -- whatever this build has);
+                           default: the platform's
+      --device <name>      output device by name (exact, or a substring of one);
+                           default: the host's default. Under JACK this is also
+                           the client name its ports carry
+      --input-device <n>   input device by name; default: the host's default.
+                           Capture belongs to whoever holds this device
+      --client-name <name> what this server calls itself to the audio graph, so
+                           its ports come back under the same name after a
+                           restart and a patchbay can reconnect them (PipeWire;
+                           under JACK use --device)
+      --list-devices       print every host and device this build can see, with
+                           the names the three flags above take, and exit
       --max-nodes <n>          node slab capacity, root included (default 8192)
       --max-buffers <n>        buffer pool size (default 4096)
       --max-graph-children <n> per-group child capacity (default 512)
@@ -271,6 +285,16 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // the device default; `inputs = 0` opens no input device.
     let mut outputs: Option<usize> = cfg.outputs;
     let mut inputs: usize = cfg.inputs.unwrap_or(0);
+    // **Which devices this server holds and what it calls itself.** An audio
+    // application is routed by hand and expected to come back under the same
+    // name; see `backend::Devices`.
+    let mut devices = clausters::server::backend::Devices {
+        host: cfg.host.clone(),
+        output: cfg.device.clone(),
+        input: cfg.input_device.clone(),
+        client_name: cfg.client_name.clone(),
+    };
+    let mut list_devices = false;
     // `--pin`: CPU affinity list — first CPU for the audio callback thread,
     // the rest round-robin over the DSP workers. Experimental, Linux only,
     // and only in `rtprio` builds (see `server::rt`).
@@ -404,6 +428,35 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or(format!("--tap-frames needs a value\n{USAGE}"))?;
                 tap_frames = value.parse().map_err(|e| format!("--tap-frames: {e}"))?;
             }
+            "--host" => {
+                devices.host = Some(
+                    it.next()
+                        .ok_or(format!("--host needs a name\n{USAGE}"))?
+                        .clone(),
+                );
+            }
+            "--device" => {
+                devices.output = Some(
+                    it.next()
+                        .ok_or(format!("--device needs a name\n{USAGE}"))?
+                        .clone(),
+                );
+            }
+            "--input-device" => {
+                devices.input = Some(
+                    it.next()
+                        .ok_or(format!("--input-device needs a name\n{USAGE}"))?
+                        .clone(),
+                );
+            }
+            "--client-name" => {
+                devices.client_name = Some(
+                    it.next()
+                        .ok_or(format!("--client-name needs a name\n{USAGE}"))?
+                        .clone(),
+                );
+            }
+            "--list-devices" => list_devices = true,
             "--outputs" => {
                 let value = it
                     .next()
@@ -471,6 +524,15 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .resolve(base_port.saturating_add(WS_PORT_OFFSET));
     let midi_port = midi_setting.and_then(|m| m.resolve(&default_midi_name(udp_port)));
 
+    // `--list-devices` answers and stops: it is a question about the machine,
+    // not a way to start a server.
+    if list_devices {
+        devices.arm();
+        for line in clausters::server::backend::Devices::list() {
+            println!("{line}");
+        }
+        return Ok(());
+    }
     // The ring must be a power of two of at least one block; round up quietly.
     let tap_frames = tap_frames.max(clausters::server::engine::BLOCK_SIZE);
     let tap_frames = tap_frames.next_power_of_two();
@@ -534,6 +596,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         limits,
         outputs,
         inputs,
+        &devices,
     )?;
     // The workers exist now (spawned by the engine); pin them to the CPUs
     // after the audio thread's, and log the scheduling the callback actually

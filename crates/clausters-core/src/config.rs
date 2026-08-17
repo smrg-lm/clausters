@@ -64,6 +64,18 @@ pub struct ServerConfig {
     pub outputs: Option<usize>,
     /// Hardware input channels (`--inputs`); unset/0 opens no input device.
     pub inputs: Option<usize>,
+    /// The audio host to use (`--host`): `jack`, `alsa`, `pipewire`,
+    /// `coreaudio`, `wasapi` — whatever this build has. Unset takes the
+    /// platform default.
+    pub host: Option<String>,
+    /// The output device by name (`--device`); unset takes the default.
+    pub device: Option<String>,
+    /// The input device by name (`--input-device`); unset takes the default.
+    pub input_device: Option<String>,
+    /// What this server calls itself to the audio graph (`--client-name`), so
+    /// its ports come back under the same name after a restart and a patchbay
+    /// can reconnect them.
+    pub client_name: Option<String>,
     /// Node slab capacity, root included (`--max-nodes`).
     pub max_nodes: Option<usize>,
     /// Buffer pool size (`--max-buffers`).
@@ -362,6 +374,10 @@ impl ServerConfig {
             tap_frames: pick(self.tap_frames, h.tap_frames),
             outputs: pick(self.outputs, h.outputs),
             inputs: pick(self.inputs, h.inputs),
+            host: pick(self.host, h.host),
+            device: pick(self.device, h.device),
+            input_device: pick(self.input_device, h.input_device),
+            client_name: pick(self.client_name, h.client_name),
             max_nodes: pick(self.max_nodes, h.max_nodes),
             max_buffers: pick(self.max_buffers, h.max_buffers),
             max_graph_children: pick(self.max_graph_children, h.max_graph_children),

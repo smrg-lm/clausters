@@ -331,9 +331,10 @@ impl ClaustersHeadless {
 /// An in-process **on-demand session**: engine, network loop and material,
 /// with **no audio device** — the mode an editor works in.
 ///
-/// [`Clausters`] below is the other door and the difference is the whole
-/// point: that one is a full real-time server, holding the machine's input and
-/// output. This one holds nothing but computation. It performs the editing
+/// `Clausters` below is the other door and the difference is the whole point:
+/// that one is a full real-time server, holding the machine's input and
+/// output. (Named rather than linked: it is behind the `realtime` feature, and
+/// a link would resolve only in the builds that compile it in.) This one holds nothing but computation. It performs the editing
 /// verbs, renders on demand ([`/buffer_render`](crate::server::nrtsession)),
 /// and — given a `shm` path — **owns the material**: every buffer it installs
 /// lives in a region beside the segment, where a peer draws it, a peer edits
@@ -343,9 +344,9 @@ impl ClaustersHeadless {
 /// window on a server: the editor and its material outlive the process that
 /// happens to be making sound, and killing the player takes no take with it.
 ///
-/// It is driven exactly like [`Clausters`] — [`send`](Self::send) an OSC
-/// packet, [`poll_into`](Self::poll_into) a reply — so a caller swaps one for
-/// the other without learning a second protocol. The session runs on its own
+/// It is driven exactly like `Clausters` — [`send`](Self::send) an OSC packet,
+/// [`poll_into`](Self::poll_into) a reply — so a caller swaps one for the
+/// other without learning a second protocol. The session runs on its own
 /// thread, serving the ring and performing what arrives; dropping this stops
 /// it.
 pub struct ClaustersSession {
@@ -476,6 +477,11 @@ impl Clausters {
             crate::dsp::Limits::default(),
             None,
             0,
+            // An embedded server takes the machine's default devices under
+            // whatever name the audio graph gives it: naming ports is a
+            // deployment choice, and this one is inside somebody else's
+            // process.
+            &crate::server::backend::Devices::default(),
         )
         .map_err(|e| e.to_string())?;
         let info = ServerInfo {

@@ -17,6 +17,156 @@ use crate::server::engine::{BLOCK_SIZE, Engine, EngineHandle, engine_pair_full};
 /// buffer-size mismatch between the two streams.
 const INPUT_RING_BLOCKS: usize = 8;
 
+/// **Which devices this server holds, and under what name.**
+///
+/// An audio application is expected to say where its sound comes from and
+/// where it goes, and to come back under the same name when it is restarted —
+/// a patchbay reconnects by name, and a server whose ports are called
+/// something new every run drops the user's routing every time. This is that
+/// surface: `--host`, `--device`, `--input-device` and `--client-name`.
+///
+/// Every field is a *preference*: a name nothing matches is a warning and the
+/// default device, never a refusal to start. Losing a device should not cost
+/// the session.
+#[derive(Debug, Default, Clone)]
+pub struct Devices {
+    /// The audio host (backend) to use, by name — `jack`, `alsa`, `pipewire`,
+    /// `coreaudio`, `wasapi`, whatever this build has. `None` takes cpal's
+    /// default, which prefers PipeWire on Linux where it is compiled in.
+    pub host: Option<String>,
+    /// The output device, by name as [`Self::list`] prints it.
+    pub output: Option<String>,
+    /// The input device, by name. Only opened when `--inputs` asks for
+    /// channels: capture belongs to whoever holds the input device, and this
+    /// is the process that does.
+    pub input: Option<String>,
+    /// What this server calls itself to the audio graph.
+    ///
+    /// PipeWire reads its properties from the environment, which is the only
+    /// door cpal leaves open — without one its nodes are named
+    /// `cpal-playback-<pid>`, so a restarted server never gets its ports back
+    /// and every connection a person made is lost. Under JACK the client name
+    /// comes from the *device* instead, so `--device` is what names it there.
+    pub client_name: Option<String>,
+}
+
+impl Devices {
+    /// Applies what has to be in place **before** the host is created: the
+    /// PipeWire node name, which is read from the environment at connect time.
+    ///
+    /// An environment that already names the application is left alone — the
+    /// person who set `PIPEWIRE_PROPS` meant it.
+    pub fn arm(&self) {
+        let Some(name) = &self.client_name else {
+            return;
+        };
+        if std::env::var_os("PIPEWIRE_PROPS").is_some() {
+            return;
+        }
+        // SAFETY: called before any audio host exists and before any thread
+        // that could be reading the environment is spawned.
+        unsafe {
+            std::env::set_var(
+                "PIPEWIRE_PROPS",
+                format!("{{ application.name = {name} node.name = {name} }}"),
+            );
+        }
+    }
+
+    /// Every host and device this build can see, as lines to print — what
+    /// `--list-devices` answers, and where the names the other flags take come
+    /// from.
+    pub fn list() -> Vec<String> {
+        let mut out = Vec::new();
+        for id in cpal::available_hosts() {
+            let Ok(host) = cpal::host_from_id(id) else {
+                out.push(format!("{} (unavailable)", id.name()));
+                continue;
+            };
+            out.push(format!("{}:", id.name()));
+            let default_out = host
+                .default_output_device()
+                .and_then(|d| d.description().ok().map(|d| d.name().to_string()));
+            let default_in = host
+                .default_input_device()
+                .and_then(|d| d.description().ok().map(|d| d.name().to_string()));
+            if let Ok(devices) = host.output_devices() {
+                for name in
+                    devices.filter_map(|d| d.description().ok().map(|d| d.name().to_string()))
+                {
+                    let mark = if Some(&name) == default_out.as_ref() {
+                        " (default)"
+                    } else {
+                        ""
+                    };
+                    out.push(format!("  out  {name}{mark}"));
+                }
+            }
+            if let Ok(devices) = host.input_devices() {
+                for name in
+                    devices.filter_map(|d| d.description().ok().map(|d| d.name().to_string()))
+                {
+                    let mark = if Some(&name) == default_in.as_ref() {
+                        " (default)"
+                    } else {
+                        ""
+                    };
+                    out.push(format!("  in   {name}{mark}"));
+                }
+            }
+        }
+        out
+    }
+}
+
+/// Picks the host `want` names, or cpal's default when it names nothing this
+/// build has.
+fn pick_host(want: Option<&String>) -> cpal::Host {
+    let Some(want) = want else {
+        return cpal::default_host();
+    };
+    for id in cpal::available_hosts() {
+        if id.name().eq_ignore_ascii_case(want)
+            && let Ok(host) = cpal::host_from_id(id)
+        {
+            return host;
+        }
+    }
+    tracing::warn!("no audio host called {want:?} in this build; using the default");
+    cpal::default_host()
+}
+
+/// Finds a device by name among `devices`, exactly first and then by a
+/// case-insensitive substring — device names are long and a person types the
+/// part that identifies theirs.
+fn pick_device(
+    devices: impl Iterator<Item = cpal::Device>,
+    want: &str,
+    role: &str,
+) -> Option<cpal::Device> {
+    let mut candidates: Vec<(String, cpal::Device)> = devices
+        .filter_map(|d| {
+            d.description()
+                .ok()
+                .map(|desc| (desc.name().to_string(), d))
+        })
+        .collect();
+    if let Some(i) = candidates.iter().position(|(n, _)| n == want) {
+        return Some(candidates.swap_remove(i).1);
+    }
+    let lower = want.to_lowercase();
+    if let Some(i) = candidates
+        .iter()
+        .position(|(n, _)| n.to_lowercase().contains(&lower))
+    {
+        let (name, device) = candidates.swap_remove(i);
+        tracing::info!("{role} device {want:?} matched {name:?}");
+        return Some(device);
+    }
+    tracing::warn!("no {role} device matching {want:?}; using the default");
+    None
+}
+
 pub struct AudioBackend {
     pub sample_rate: f32,
     pub channels: usize,
@@ -84,10 +234,19 @@ pub fn start(
     limits: Limits,
     outputs: Option<usize>,
     inputs: usize,
+    devices: &Devices,
 ) -> Result<(AudioBackend, EngineHandle), Box<dyn std::error::Error>> {
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
+    devices.arm();
+    let host = pick_host(devices.host.as_ref());
+    let device = devices
+        .output
+        .as_deref()
+        .and_then(|want| {
+            host.output_devices()
+                .ok()
+                .and_then(|d| pick_device(d, want, "output"))
+        })
+        .or_else(|| host.default_output_device())
         .ok_or("no output device available")?;
     let default = device.default_output_config()?;
     let format = default.sample_format();
@@ -154,17 +313,19 @@ pub fn start(
                     // Now open the matching input stream. If it fails, the
                     // server runs output-only (the engine reads silence).
                     let input_stream = match input_producer {
-                        Some(tx) => match open_input(&host, inputs, rate, tx) {
-                            Ok(s) => {
-                                handle.input_channels = inputs;
-                                Some(s)
+                        Some(tx) => {
+                            match open_input(&host, inputs, rate, tx, devices.input.as_deref()) {
+                                Ok(s) => {
+                                    handle.input_channels = inputs;
+                                    Some(s)
+                                }
+                                Err(e) => {
+                                    tracing::warn!("no audio input ({inputs} ch): {e}");
+                                    handle.input_channels = 0;
+                                    None
+                                }
                             }
-                            Err(e) => {
-                                tracing::warn!("no audio input ({inputs} ch): {e}");
-                                handle.input_channels = 0;
-                                None
-                            }
-                        },
+                        }
                         None => None,
                     };
                     return Ok((
@@ -197,9 +358,15 @@ fn open_input(
     channels: usize,
     rate: cpal::SampleRate,
     tx: Producer<f32>,
+    want: Option<&str>,
 ) -> Result<cpal::Stream, Box<dyn std::error::Error>> {
-    let device = host
-        .default_input_device()
+    let device = want
+        .and_then(|want| {
+            host.input_devices()
+                .ok()
+                .and_then(|d| pick_device(d, want, "input"))
+        })
+        .or_else(|| host.default_input_device())
         .ok_or("no input device available")?;
     let format = device.default_input_config()?.sample_format();
     let cfg = cpal::StreamConfig {

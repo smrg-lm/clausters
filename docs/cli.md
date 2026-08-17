@@ -50,7 +50,12 @@ lets several run side by side on one machine — see
 | --- | --- | --- | --- |
 | `--sample-rate` | Hz | `48000` | The output rate the server imposes on the backend; `0` follows the device. |
 | `--outputs` | count | the device's | Hardware output channels. Audio buses `0..outputs` are the hardware outs. |
-| `--inputs` | count | `0` | Hardware input channels; above zero it opens the default input device, readable with `In` on buses `outputs..outputs+inputs`. |
+| `--inputs` | count | `0` | Hardware input channels; above zero it opens the input device, readable with `In` on buses `outputs..outputs+inputs`. |
+| `--host` | name | the platform's | The audio host to use — `jack`, `alsa`, `pipewire`, `coreaudio`, `wasapi`, whatever this build has. |
+| `--device` | name | the host's default | Output device, by exact name or a substring of one. Under JACK it is also the client name the ports carry. |
+| `--input-device` | name | the host's default | Input device, by name. Capture belongs to whoever holds this device — an on-demand session cannot record. |
+| `--client-name` | name | cpal's own | What the server calls itself to the audio graph, so its ports come back under the same name after a restart and a patchbay can reconnect them. PipeWire reads it from the environment (the only door cpal leaves open); under JACK use `--device`. |
+| `--list-devices` | flag | off | Print every host and device this build can see — the names the three flags above take — and exit. |
 | `--workers` | count | `0` | DSP worker threads for [parallel groups](parallel.md); `0` lets the server choose. Also accepted by `--nrt`. |
 | `--pin` | cpu[,cpu…] | off | CPU affinity: the first for the audio callback thread, the rest round-robin over the workers. Linux, experimental, and only in a build with the `rtprio` feature. |
 
