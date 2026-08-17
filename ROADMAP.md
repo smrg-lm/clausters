@@ -205,9 +205,12 @@ read-only body is a prop on a picture the redefine path must be drawing
 correctly first.*
 
 - ✅ **A read-only clip body has no way to say so, so every drag on one
-  flickers** — done 2026-08-17: `editable` is a clip prop, the refusal is the
-  draw mode's (visible, and it consumes the press), and the clip's own drag is
-  untouched. *(`clients/gui/PLAN.md`, found by use — a milestone rather than a
+  flickers** — done 2026-08-17: `editable` is a clip prop and the refusal is the
+  draw mode's (visible, and it consumes the press). **What it does not yet
+  separate** is the clip's own drag: a locked body consumes every press over it,
+  so a locked clip cannot be moved either. Three attempts at that separation
+  were written and reverted the same day — see the phase below, which is what
+  they were missing. *(`clients/gui/PLAN.md`, found by use — a milestone rather than a
   fix, and the plan says so)*. The refusal is correct and the acknowledgement
   carries a reason since 2026-08-17; what is missing is **earlier than the
   refusal** — nothing in the protocol tells a widget its body is read-only, so
@@ -220,12 +223,18 @@ correctly first.*
 
 - ✅ **The editing gestures want affordances** *(same list)* — done 2026-08-17.
   The clip grip had already chosen the vocabulary (an affordance belongs to what
-  is **held**); what was left was the curve's bendable segment, now lit where a
-  drag would bend it and only where the curve can be edited at all.
+  is **held**); what was left was the curve's bendable segment, which is lit
+  now. **With a defect left standing**: it is lit inside a clip too, where
+  bending is a gesture the body does not offer — so there the affordance
+  promises a drag that moves the clip. The guard for it was written and reverted
+  with the rest of that pass; it belongs to the phase below.
 
-- ⬜ **E23 — the rest of the chrome answering on what it draws.** Here rather
-  than in the unscheduled list now that two neighbouring entries open the same
-  surface; it rides with them or it stays out, on the day.
+**Phase 4 is closed as far as it can be alone.** A body says whether it can be
+edited and the curve's grabbable part is drawn — and both left something the
+next phase has to decide rather than patch: a locked body still consumes the
+clip's own drag, and the lit segment promises a bend a clip body does not offer.
+Both are entries of the interaction-rules phase below, with E23, which moved
+there for the same reason: it is a pass to be checked by eye.
 
 ## Phase 5 — the autonomous editor: one copy of the material, three processes
 
@@ -264,7 +273,51 @@ product goal rather than a defect.*
   operation is exactly that floor — an allocation, a render, a file read — and it stops hiding behind
   batched writes. Named here so pulling it forward reads as a decision.
 
-## Phase 6 — the second half of the destination: real sizes
+## Phase 6 — a clip's interaction rules, defined before more of them are built
+
+*What it buys: the thing three reverted attempts on 2026-08-17 turned out to
+need. A clip is two levels — the **rectangle** (where it sits, how long it is)
+and its **internal elements** (notes, break-points, samples) — and four
+claimants race over the same pixels: the rectangle's move, the grip's resize,
+the roll's notes, the BPF's points and segments. There is no rule saying which
+one a press belongs to, and every attempt to add one changed what the clip
+itself does.*
+
+- ⬜ **A clip has two levels of editing and no interaction rules between them**
+  *(`clients/gui/PLAN.md`, Found by use)*. The entry carries the context the
+  rules follow from, in the user's own terms: a clip is a **window onto a
+  segment of data** (audio or MIDI) that can be trimmed and cut into pieces;
+  **time-stretch is a separate story and is not implemented** (an audio clip
+  stretches its *drawing* today and plays the original buffer's length), so what
+  an edge drag *means* is itself undecided; a clip may carry **automations that
+  act on its own content only**; and a MIDI clip is usually edited in a
+  **dedicated window** a DAW opens, which does not exist here — editing notes in
+  the multitrack is a good option to keep, but it is an option and not the given.
+
+  **It is a design pass with the drawing in front of it, not a defect to patch.**
+  What it must define: what a press means on each part of a clip, in which mode;
+  whether "not editable" is one statement or two (the contents, and the
+  rectangle); what an edge drag is; and how a dedicated editor changes all of it.
+  Scheduled here rather than sooner because it is the kind of decision that has
+  to be looked at, and because everything before it is either measurable or
+  already run by hand.
+
+- ⬜ **E23 — the rest of the chrome answering on what it draws**
+  *(`clients/gui/PLAN.md`, the E track)*. Moved here from the editor phase on
+  2026-08-17, because it is the same work: every remaining light widget states
+  its drawn shape through `hit_area` and **each one is checked by eye on the
+  example that shows it** — which is exactly the kind of pass that went wrong
+  three times when it was not. And one of the two questions it carries is an
+  interaction rule the entry above has to settle anyway: whether **hover and the
+  wheel** read the same shape as the press, which today they do not.
+
+- ⬜ **The lit segment inside a clip** — the defect Phase 4 left standing: a
+  curve's segment is lit where a bend is not available, so the affordance
+  promises a drag that moves the clip. The one-line guard is known; it waits
+  here so that what a press means on each part of a clip is decided once rather
+  than three times.
+
+## Phase 7 — the second half of the destination: real sizes
 
 *What it buys: "usable and correct at real sizes". Entries rather than
 milestones, in the root plan's **Found by use** list except where marked, none of
@@ -289,7 +342,7 @@ phase rather than a list.*
   mechanical fix each, plus one decision about whether playing onto a stopped
   clock should stay silent at all.
 
-## Phase 7 — the packages move together: the arrangement reaches the web client
+## Phase 8 — the packages move together: the arrangement reaches the web client
 
 *What it buys: the rule the project already states, applied to the largest
 outstanding violation. `form/`, `gui/editor.py`, `gui/transport.py` and
@@ -308,7 +361,7 @@ stopped moving, which is what phases 1–4 do to it.*
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.
 
-## Phase 8 — the spectral editor
+## Phase 9 — the spectral editor
 
 *Everything here is genuinely later: it needs the A track's descriptors, it is
 partly experimental, and none of it is on the path to the complete example.*
