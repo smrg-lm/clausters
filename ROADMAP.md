@@ -68,8 +68,8 @@ running that example, and none of it is guessed at.*
   cheap enforcement (unique within a document, a duplicate refused by name) does
   not wait for it.
 
-- ⬜ **A session does not round-trip: a group loses its name, and a `Track`
-  comes back as a `Group`** *(`crates/clausters-document/PLAN.md`, found by
+- ✅ **A session does not round-trip: a group loses its name, and a `Track`
+  comes back as a `Group`** — done 2026-08-17. *(`crates/clausters-document/PLAN.md`, found by
   use)*. The format's: a node has no name and nothing says what a set *is* to a
   view, so the fix is the schema, the crate and both clients — and the entry
   after it is read against the same format pass. Half of it is already answered

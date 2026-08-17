@@ -449,6 +449,7 @@ mod tests {
             Body::Set {
                 grouping: Grouping::Concrete,
                 members,
+                config: Opaque::none(),
             },
         )
     }
@@ -698,6 +699,7 @@ mod wiring_tests {
                         },
                     ),
                 }],
+                config: Opaque::none(),
             },
         ))
     }
@@ -780,6 +782,7 @@ mod window_verb_tests {
                         },
                     ),
                 }],
+                config: Opaque::none(),
             },
         )))
         .with_units_per_beat(1.0);
@@ -850,6 +853,7 @@ mod window_verb_tests {
                         },
                     ),
                 }],
+                config: Opaque::none(),
             },
         ));
         // Drawn as the session mode draws it, so the widget ids are real.

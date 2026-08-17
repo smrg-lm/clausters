@@ -32,6 +32,7 @@ fn set(members: Vec<Member>) -> Node {
         Body::Set {
             grouping: Grouping::Concrete,
             members,
+            config: Opaque::none(),
         },
     )
 }
@@ -167,6 +168,7 @@ fn nested() -> Document {
                 placed(0.0, Some(2.0), take(11, 100, None)),
                 placed(2.0, Some(2.0), take(12, 101, None)),
             ],
+            config: Opaque::none(),
         },
     );
     Document::new(set(vec![placed(10.0, None, inner)]))

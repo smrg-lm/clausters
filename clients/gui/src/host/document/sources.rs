@@ -182,7 +182,7 @@ fn referenced(session: &Session) -> Vec<SourceId> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clausters_document::{Document, Lifetime, Member, Node, NodeId, SourceRef};
+    use clausters_document::{Document, Lifetime, Member, Node, NodeId, Opaque, SourceRef};
 
     fn take_node(id: u64, source: u64) -> Node {
         Node::new(
@@ -205,6 +205,7 @@ mod tests {
             Body::Set {
                 grouping: clausters_document::Grouping::Concrete,
                 members,
+                config: Opaque::none(),
             },
         )
     }

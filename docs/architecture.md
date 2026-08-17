@@ -389,6 +389,12 @@ reasoning:
   twice, which is ambiguous and consistent, and what an id identifies there is
   an open question the check must not settle (see [Design
   decisions](decisions.md)).
+- **A node has a name, and a set carries its writer's restrictions.** The name
+  is a referenceable label and not a second identity (the server's own rule for
+  a group's name), so a reopened piece can still label its lanes. And there is
+  one set kind: a multitrack's track is a set *with the restrictions of a view*,
+  and those restrictions ride in the set's opaque `config` — carried, never
+  read — rather than becoming a variant of the tree.
 - **An intent is absolute, and applying one happens in exactly one place.** An
   edit states the resulting value, never an increment, which makes it idempotent
   and makes replay unnecessary. `intent::apply` is the only implementation of

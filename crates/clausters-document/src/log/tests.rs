@@ -30,6 +30,7 @@ fn doc() -> Document {
         Body::Set {
             grouping: Grouping::Concrete,
             members: vec![placed(0.0, event(2)), placed(4.0, event(3))],
+            config: Opaque::none(),
         },
     ))
 }

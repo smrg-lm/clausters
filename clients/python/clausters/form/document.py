@@ -251,6 +251,12 @@ def _node(element, ids: _Ids) -> dict:
     """One element as a document node: the temporal metadata every node has,
     plus the body that says what it is."""
     node = {"id": ids.of(element)}
+    name = getattr(element, "name", None)
+    if isinstance(name, str) and name:
+        # A referenceable label, never a second identity -- the server's own
+        # rule for a group's name, and the reason a reopened piece can still
+        # label its lanes the way it was authored.
+        node["name"] = name
     if element.onset is not None:
         node["onset"] = float(element.onset)
     if element.duration is not None:
@@ -262,7 +268,15 @@ def _node(element, ids: _Ids) -> dict:
 
 
 #: The keys `_node` writes itself; a preserved body must not restate them.
-_TEMPORAL = ("id", "onset", "duration", "resident")
+_TEMPORAL = ("id", "name", "onset", "duration", "resident")
+
+#: What a `Track` is, in the set body's opaque config. The document has one set
+#: kind and goes on having one -- a track is *a set with the restrictions of a
+#: multitrack view*, and the tree deliberately carries no view. But a writer
+#: that has such a set must get it back, or a round trip turns every track into
+#: a plain set and the piece reopens with a level of nesting nobody wrote. So
+#: the restriction travels the way a leaf's code does: carried, uninterpreted.
+FORM_TRACK = "track"
 
 
 def _body(element, ids: _Ids) -> dict:
@@ -282,15 +296,17 @@ def _body(element, ids: _Ids) -> dict:
     if isinstance(element, Track):
         # A Set with the restrictions of a multitrack view, and its items are
         # placed elements like any others -- which is what makes a note in a
-        # roll addressable, and therefore editable and undoable.
-        return {
+        # roll addressable, and therefore editable and undoable. Which
+        # restrictions those are is the client's own business, so it rides in
+        # the body's opaque config and the document never reads it.
+        return _with_config({
             "kind": "set",
             "grouping": CONCRETE,
             "members": [
                 _timeline_member(beat, item, ids)
                 for beat, item in _timeline_items(element.wraps)
             ],
-        }
+        }, {"form": FORM_TRACK})
     if isinstance(element, Event):
         return _with_config({"kind": "event"}, _plain(element.wraps))
     if isinstance(element, Sequence):
@@ -441,7 +457,28 @@ def _element(node: dict, resolve):
     onset = node.get("onset")
     duration = node.get("duration")
 
-    if kind == "set":
+    if kind == "set" and config.get("form") == FORM_TRACK:
+        # A set the author wrote as a `Track`, said by the body's own config.
+        # Rebuilding it as a `Group` is what made a reopened piece grow a level
+        # of nesting nobody wrote, and left the editor drawing a lane of clips
+        # where there had been a roll.
+        from ..seq.timeline import Timeline
+
+        timeline = Timeline()
+        for member in node.get("members", []):
+            child = member["node"]
+            item = _element(child, resolve)
+            # A timeline holds the client's own sequencing items, not elements:
+            # what went out as a placed event comes back as the event itself.
+            item = getattr(item, "wraps", item)
+            if "id" in child:
+                # The id belongs to the item, which is what the conversion
+                # stamped on the way out -- so a note keeps its number across a
+                # save, and an intent recorded against it still names it.
+                setattr(item, ID_ATTR, int(child["id"]))
+            timeline.add(member.get("offset", 0.0), item)
+        built = Track(timeline, onset=onset, duration=duration)
+    elif kind == "set":
         group = Group(
             kind=LOGICAL if node.get("grouping") == LOGICAL else CONCRETE,
             onset=onset,
@@ -501,6 +538,12 @@ def _element(node: dict, resolve):
     built.duration = None if duration is None else float(duration)
     if node.get("resident"):
         built.resident = True
+    name = node.get("name")
+    if isinstance(name, str) and name:
+        # A label, not an identity: it says what the node is and nothing
+        # addresses by it, so restoring it is what lets a reopened piece label
+        # its lanes the way it was authored.
+        built.name = name
     if "id" in node:
         setattr(built, ID_ATTR, int(node["id"]))
     return built

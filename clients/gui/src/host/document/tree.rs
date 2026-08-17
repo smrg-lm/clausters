@@ -521,6 +521,7 @@ mod tests {
             Body::Set {
                 grouping: Grouping::Concrete,
                 members,
+                config: Opaque::none(),
             },
         )
     }
@@ -640,7 +641,7 @@ mod take_tests {
     use super::*;
     use crate::host::document::sources;
     use clausters_document::session::{Session, Source};
-    use clausters_document::{Grouping, Lifetime, SourceId, SourceRef};
+    use clausters_document::{Grouping, Lifetime, Opaque, SourceId, SourceRef};
 
     fn take(id: u64, source: u64) -> Node {
         Node::new(
@@ -667,6 +668,7 @@ mod take_tests {
                     dur: None,
                     node: take(2, source),
                 }],
+                config: Opaque::none(),
             },
         ))
     }
@@ -823,9 +825,11 @@ mod registry_tests {
                                     node: event(4),
                                 },
                             ],
+                            config: Opaque::none(),
                         },
                     ),
                 }],
+                config: Opaque::none(),
             },
         ))
     }
@@ -929,6 +933,7 @@ mod depth_tests {
             Body::Set {
                 grouping: Grouping::Concrete,
                 members,
+                config: Opaque::none(),
             },
         )
     }
@@ -1020,6 +1025,7 @@ mod roll_tests {
             Body::Set {
                 grouping: Grouping::Concrete,
                 members,
+                config: Opaque::none(),
             },
         )
     }

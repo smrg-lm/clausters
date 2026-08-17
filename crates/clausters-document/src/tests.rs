@@ -31,6 +31,7 @@ fn set(id: u64, members: Vec<Member>) -> Node {
         Body::Set {
             grouping: Grouping::Concrete,
             members,
+            config: Opaque::none(),
         },
     )
 }
@@ -326,4 +327,41 @@ fn a_rendering_is_walked_for_ids_like_the_rest_of_the_tree() {
     ));
     let message = doc.duplicate_id().expect("a duplicate id");
     assert!(message.contains("node id 2"), "{message}");
+}
+
+#[test]
+fn a_name_is_a_label_that_survives_a_round_trip_and_addresses_nothing() {
+    // The server's own rule for a group's name, taken rather than invented: the
+    // id stays what an intent addresses, and the name says what the node is.
+    let doc = Document::new(set(1, vec![placed(0.0, None, event(2).named("kick"))]).named("drums"));
+    let back: Document = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
+    assert_eq!(back.root.name.as_deref(), Some("drums"));
+    assert_eq!(back.find(NodeId(2)).unwrap().name.as_deref(), Some("kick"));
+    // Nothing addresses by name, so an anonymous node is reachable exactly as
+    // before -- and an anonymous one writes no key at all.
+    let anonymous = Document::new(set(1, vec![]));
+    assert!(!serde_json::to_string(&anonymous).unwrap().contains("name"));
+}
+
+#[test]
+fn a_sets_own_restrictions_are_carried_and_never_read() {
+    // One set kind, and a view's restrictions are the writer's business: a
+    // multitrack's track is a set with restrictions, and this is how it gets
+    // back to the writer that had it without the tree growing track-ness.
+    let node = Node::new(
+        NodeId(1),
+        Body::Set {
+            grouping: Grouping::Concrete,
+            members: vec![placed(0.0, None, event(2))],
+            config: Opaque(serde_json::json!({"form": "track"})),
+        },
+    );
+    let doc = Document::new(node);
+    let json = serde_json::to_string(&doc).unwrap();
+    let back: Document = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, doc, "carried whole, byte for byte");
+    // And it is carried, not read: the typed tree still says only what a set
+    // is, and the relation is derived from the placements as it always was.
+    assert_eq!(back.root.body.members().len(), 1);
+    assert!(matches!(back.root.body, Body::Set { .. }));
 }

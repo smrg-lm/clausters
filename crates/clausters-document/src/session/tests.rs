@@ -40,6 +40,7 @@ fn take(id: u64, source: u64) -> Node {
 fn composition() -> Document {
     let rendered = Node {
         id: NodeId(20),
+        name: None,
         onset: None,
         duration: Some(4.0),
         resident: false,
@@ -90,6 +91,7 @@ fn composition() -> Document {
                     ),
                 ),
             ],
+            config: Opaque::none(),
         },
     ))
 }

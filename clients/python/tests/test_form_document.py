@@ -10,7 +10,8 @@ import json
 import pytest
 
 from clausters.form import Buffer, Event, Generator, Group, Sequence, Track
-from clausters.form.document import FIRST_VERSION, ID_ATTR, from_document, to_document
+from clausters.form.document import (FIRST_VERSION, ID_ATTR, from_document, from_session,
+                                      to_document, to_session)
 from clausters.seq import Event as SeqEvent
 from clausters.seq import Timeline
 
@@ -616,3 +617,48 @@ def test_the_crate_refuses_a_document_whose_id_names_two_different_nodes():
     root["members"][0]["node"]["id"] = root["members"][1]["node"]["id"]
     with pytest.raises(ValueError, match="names two different nodes"):
         _native.Document(document)
+
+
+def test_a_group_keeps_its_name_through_the_document():
+    # The multitrack labels its lanes from the name, so a piece that loses it
+    # reopens anonymous -- and the document had no field for one at all.
+    song = Group([(0.0, Event(SeqEvent(midinote=60)))], name="melody")
+    back = from_document(to_document(song))
+    assert back.name == "melody"
+
+
+def test_a_track_comes_back_a_track_and_not_a_group_of_events():
+    # It went out as a set because there is one set kind; what says it was a
+    # track is the body's own config, which the document carries and never
+    # reads. Rebuilding it as a group is what grew a level of nesting nobody
+    # wrote, and left the editor drawing clips where there had been a roll.
+    track = Track(Timeline([(0.0, SeqEvent(midinote=60)), (1.0, SeqEvent(midinote=64))]))
+    back = from_document(to_document(Group([(0.0, track)])))
+    inner = back.members[0][2]
+    assert isinstance(inner, Track)
+    assert [beat for beat, _ in inner.wraps] == [0.0, 1.0]
+
+
+def test_the_song_survives_a_session_round_trip_structurally_identical():
+    # The acceptance, and the thing the example's "open it again" step was
+    # really testing: the same composition by identity -- same kinds, same
+    # nesting, same names -- compared tree against tree rather than by eye.
+    song = a_group()
+    song.name = "song"
+    song.add(Track(Timeline([(0.0, SeqEvent(midinote=67))])), offset=16.0)
+
+    written = to_session(song, sources={1: {"location": {"at": "file", "path": "t.wav"},
+                                            "lifetime": "session", "generation": 0}})
+    back, sources = from_session(json.loads(json.dumps(written)))
+
+    assert to_document(back) == written["document"]
+    assert _kinds(back) == _kinds(song)
+    assert sources[1]["location"]["path"] == "t.wav"
+
+
+def _kinds(element) -> list:
+    """The shape of a tree as class names, nesting included."""
+    out = [type(element).__name__]
+    for child in getattr(element, "members", []) or []:
+        out.append(_kinds(child[2]))
+    return out

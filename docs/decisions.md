@@ -5500,3 +5500,44 @@ crate's message, while the wasm face raises it as an ordinary error. So the
 Python client looks for the collision itself once the handle comes back null,
 and only then — nothing is validated twice on the path where the document is
 fine.
+
+## A node carries a name, and a set carries the restrictions its writer put on it
+
+A session did not round-trip. A piece authored with named lanes and a track in
+each reopened anonymous, with a level of nesting nobody wrote and the rolls gone
+— and both halves were the format's rather than any client's, because what was
+missing was somewhere to put them.
+
+**The name is the server's rule, taken rather than invented.** A node gets an
+optional `name`, and it is a *referenceable label, never a second identity* —
+which is exactly what `/group_new`'s name already is on the wire: the id remains
+what every intent addresses and every outcome reports, and the name is a second
+way to refer to the same thing. A node is born named or stays anonymous, nothing
+addresses by name, so an anonymous one is reachable exactly as before. The
+alternative — keeping the label in each client — is what had been happening, and
+it means a piece labelled in one writer opens unlabelled in the next.
+
+**The track is the harder half, and the answer is that there is still one set
+kind.** A multitrack's track is *a set with the restrictions of a view*, and the
+layer's own rule says the tree stays general — no lane, no vertical position, no
+type per container — because a view is a projection and may decline what its
+shape does not admit. But a writer that has such a set has to get it back, or
+the format silently promotes every track to a plain set. So the **restriction
+travels as opaque configuration**, through the same door a generator's code goes
+through: `Body::Set` gains a `config` the document carries and never reads, the
+Python client writes `{"form": "track"}` into it, and the crate is not one line
+wiser about what a track is.
+
+That line is worth stating because it looks like a loophole and is not. Carrying
+a payload is what this format already does with everything it cannot own; what
+the rule forbids is the tree *acting* on view-ness — sorting by it, validating
+against it, giving it a variant of its own. A reader that does not know the key
+lays the set out as a set, which is precisely the behaviour an unknown widget
+gets in the GUI protocol.
+
+**What it does not fix**, said so the next reader does not assume it: the two
+clients now have to agree on a string that no schema checks. That is the cost of
+keeping it out of the model, and it is the same cost the GUI protocol pays for
+`kind`. The alternative — a typed `view` field — buys checking and pays by
+putting a view in the tree, which is the trade this layer decided in the other
+direction on the day it was designed.

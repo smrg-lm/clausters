@@ -29,6 +29,7 @@ fn doc() -> Document {
         Body::Set {
             grouping: Grouping::Concrete,
             members: vec![placed(0.0, event(2)), placed(4.0, event(3))],
+            config: Opaque::none(),
         },
     ))
 }
@@ -394,9 +395,11 @@ fn a_nested_node_is_reached_wherever_it_sits() {
                     Body::Set {
                         grouping: Grouping::Concrete,
                         members: vec![placed(0.0, event(3))],
+                        config: Opaque::none(),
                     },
                 ),
             )],
+            config: Opaque::none(),
         },
     ));
     let outcome = apply(

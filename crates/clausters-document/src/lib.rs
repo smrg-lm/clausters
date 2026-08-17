@@ -256,6 +256,21 @@ pub enum Body {
         /// The placed members.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         members: Vec<Member>,
+        /// The writer's own restrictions on this set, carried and **never
+        /// interpreted** — the same door a generator's code goes through.
+        ///
+        /// There is one set kind here and there will go on being one: a
+        /// multitrack's track is *a set with the restrictions of a view*, and
+        /// putting those restrictions in the tree is what the layer's own rule
+        /// refuses ("the tree stays general; a view carries its own
+        /// restrictions"). But a writer that has such a set must be able to get
+        /// it back, or a round trip through this format silently promotes a
+        /// track to a plain set and the piece reopens with a level of nesting
+        /// nobody wrote. So the *restriction* travels as opaque configuration,
+        /// exactly as a leaf's code does: the document knows something is
+        /// there, and not what it means.
+        #[serde(default, skip_serializing_if = "Opaque::is_empty")]
+        config: Opaque,
     },
     /// A program that produces elements.
     Generator {
@@ -316,6 +331,21 @@ pub enum Character {
 pub struct Node {
     /// Stable identity within the document.
     pub id: NodeId,
+    /// A referenceable label, and **not** a second identity.
+    ///
+    /// The rule is the server's own, taken verbatim rather than invented here
+    /// (`docs/schemas.md`, on `/group_new`'s name): the id remains what every
+    /// intent addresses and every outcome reports, and the name is a second way
+    /// to *refer* to the same node — one the author chooses, that says what the
+    /// node is, and that survives being read back. A node is born named or
+    /// stays anonymous; an anonymous one is reachable exactly as before,
+    /// because nothing addresses by name.
+    ///
+    /// It is here rather than in a client because a name is what a **view**
+    /// labels a lane with, and losing it on a round trip is what makes a
+    /// reopened piece anonymous in every writer at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// Start in beats relative to its context, when the element itself carries
     /// one. A placed element usually takes its onset from its [`Member`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -335,15 +365,23 @@ pub struct Node {
 }
 
 impl Node {
-    /// A node with neither onset nor duration.
+    /// A node with neither onset nor duration, and anonymous.
     pub fn new(id: NodeId, body: Body) -> Self {
         Self {
             id,
+            name: None,
             onset: None,
             duration: None,
             resident: false,
             body,
         }
+    }
+
+    /// The same node, labelled. A name says what the node is; it never says
+    /// which node it is (see [`Node::name`]).
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 
     /// The temporal character, derived from which of onset and duration are

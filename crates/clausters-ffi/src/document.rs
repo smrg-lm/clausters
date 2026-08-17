@@ -49,8 +49,8 @@
 use std::sync::Mutex;
 
 use clausters_document::{
-    Against, Body, Document, Grouping, Intent, Mapping, Node, NodeId, Rules, Selection, Unit,
-    apply as apply_intent,
+    Against, Body, Document, Grouping, Intent, Mapping, Node, NodeId, Opaque, Rules, Selection,
+    Unit, apply as apply_intent,
 };
 
 /// A document handle safe to share across the binding's threads.
@@ -147,6 +147,7 @@ pub unsafe extern "C" fn clausters_document_open(json: *const u8, len: usize) ->
             Body::Set {
                 grouping: Grouping::Concrete,
                 members: Vec::new(),
+                config: Opaque::none(),
             },
         )),
     };
