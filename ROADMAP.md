@@ -60,7 +60,10 @@ invertible, the model is the crate's, and an edit costs the edit.*
 
 - ✅ **The whole-loop example.** Done 2026-08-14 as
   `clients/python/examples/gui_daw.py` — build, draw, edit, hear, undo, redo,
-  save the session, reopen it. It is the first thing that exercises O8's format,
+  save the session, reopen it. *(Merged into
+  `clients/python/examples/gui_composer.py` on 2026-08-17: the two were one
+  example with two compositions, and the loop belongs on the piece that shows
+  what a composition is made of.)* It is the first thing that exercises O8's format,
   O5's log and the acknowledgement in one run, and being the manual test is what
   it was for: it found three defects nothing else would have (`follow=True`
   raising before the first play, a reopened session having no drawable material

@@ -240,7 +240,7 @@ def is; it needs no audio server.
 
 `clients/python/examples/gui_composer.py` is the whole loop in one script: a take
 bounced offline and loaded from disk, a melody, a pattern, all three composed,
-edited on screen and heard. And to *work through* everything this chapter
+edited on screen, heard, undone, saved as a session and opened again. And to *work through* everything this chapter
 argues — interactively, one block at a time, building that same piece — see
 [Composing a piece, step by step](composing.md).
 

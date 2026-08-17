@@ -12,8 +12,8 @@ the crate's own log and saves it back. No Python anywhere in that loop.
 What it shows, in the order the cells run:
 
 - **Writing one.** An arrangement built the ordinary way (`Group`, `Track`,
-  `Timeline`) becomes a session with `to_session` — the same call `gui_daw.py`
-  makes when it saves.
+  `Timeline`) becomes a session with `to_session` — the same call
+  `gui_composer.py` makes when it saves.
 - **Handing it over.** The command to open it in the standalone host is printed
   for you to run. Drag a clip, `Ctrl+Z` to take it back, `Ctrl+Shift+Z` to put
   it back, `Ctrl+S` to save. The host is the owner while that window is open:

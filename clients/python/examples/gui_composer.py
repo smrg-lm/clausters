@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Compose the arrangement, edit it on screen, hear the edit — the whole loop.
+"""The whole loop: compose the arrangement, edit it on screen, hear it, undo it,
+save it, open it again.
 
 The multitrack **editor**: `clausters.gui.Editor` is the bridge between the
 arrangement (`clausters.form` — elements placed recursively by offset) and the
@@ -22,21 +23,51 @@ resolves.
 The axis is navigable: the wheel zooms and Shift+drag pans, and every lane moves
 with it (they share one axis).
 
-Drag a clip (move) or its edge (resize) and, with ``follow=True``, the
-composition is re-scheduled from the playhead — you hear it where you dropped it.
-**undo** and **redo** walk that back and forward — the two buttons, or
-**Ctrl+Z** / **Ctrl+Shift+Z** over the window. The history is the shared
-crate's, beside the document it inverts, so it is one history however many
-surfaces edit the piece.
-The lanes' playhead sweeps the clips with the engine clock, and the drag snaps to
-the musical ``quant`` grid, which is the same grid the arrangement re-schedules on.
+The loop, and why each step needs the one before it:
 
-Run it as a script (``python gui_composer.py``) or cell by cell (``# %%``).
-Needs a display and a GPU adapter; the install bundles the GUI binary (see
-``gui_editor.py`` for the setup notes).
+1. **Edit.** Drag a clip (move) or its edge (resize). The gesture leaves the host
+   as an *intent* — where the hand put it, absolute — and the **shared crate**
+   decides what it becomes: the musical ``quant`` grid snaps it there, not here.
+   What comes back is the value that actually holds, and the window adopts it. So
+   the clip lands on the grid even though nothing on this side snapped anything.
+2. **Hear it.** With ``follow=True`` the composition is re-scheduled from the
+   playhead on every edit, so you hear the clip where you dropped it. The lanes'
+   playhead sweeps the clips with the engine clock.
+3. **Undo it** — the buttons, or **Ctrl+Z** / **Ctrl+Shift+Z** over the window.
+   The history is **not this editor's**: it lives with the document, in the same
+   crate. A log a view keeps sees only the gestures *that view* made, so a script
+   editing the arrangement, or a second window on the same piece, would leave it
+   describing a composition that has moved on — and undoing would then write a
+   state nobody was ever in.
+4. **Save it.** A *session* is the document plus the one half a document
+   deliberately lacks: the table saying where its material lives. Written here
+   beside the WAV it references, with the **provenance** of the script that made
+   it — carried opaquely, which is what makes re-generating possible without the
+   format knowing how.
+5. **Open it again.** The file rebuilds the arrangement and the node ids survive
+   it, so the reopened piece is the same composition by *identity*. What it can
+   **play** depends on who is there to supply it: the take resolves through the
+   source table, the curve through the recipe this script still holds, and the
+   pattern lane comes back **frozen** — a generator is code, the document carries
+   a reference to it and never the algorithm, so a lane whose recipe nobody
+   supplies is structure that draws and does not sound.
+
+**One thing to try that is not a button**, because it is the rule the whole
+placement model rests on: shorten a clip over its own notes. You hear fewer
+notes and the element keeps all of them — lengthen it again and they come back.
+A placement is a **window onto** an element, never a rewrite of it, which is why
+this is reversible and why a resize is not the same act as *rendering* the
+element down to what it produced.
+
+Needs an audio device, a display and a GPU adapter; the install bundles the GUI
+binary (see ``gui_editor.py`` for the setup notes). Run it as a script
+(``python gui_composer.py``) or cell by cell (``# %%``): the window stays up
+between cells.
 """
 
 # %%
+import json
+import sys
 import tempfile
 from pathlib import Path
 
@@ -53,8 +84,9 @@ from clausters.defs import (
     play_buf,
     sine,
 )
-from clausters.gui import Editor, button, panel
+from clausters.gui import Editor, button, label, panel
 from clausters.form import Buffer, Element, Event, Group, Sequence, Track
+from clausters.form.document import from_session, to_session
 from clausters.seq import Automation, Timeline
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.pattern import Pbind, Pseq
@@ -93,10 +125,15 @@ sampler().send(server)
 # never push-filled). The GUI then draws it from the buffer itself — the host
 # fetches the take and decimates it through its peak pyramid, so its length costs
 # nothing on the wire.
+#
+# The folder holding the WAV is where the session will be saved too, which is what
+# makes the saved file's source table point at something that is still there —
+# and lets it name it by a **relative** path, so the pair of files moves together.
 
 # %%
 SR = float(server.options.sample_rate)
 BEAT = SR / TEMPO
+folder = Path(tempfile.mkdtemp(prefix="clausters-"))
 
 
 def bounce_take(path: str, beats: float = 2.0) -> str:
@@ -104,14 +141,17 @@ def bounce_take(path: str, beats: float = 2.0) -> str:
     composition loads from disk. (The event closes the score: it schedules the
     ``/node_free`` that ends it.)"""
     offline = Session.nrt(tempo=TEMPO)
-    offline.play(Pbind(midinote=Pseq([36], 1), dur=beats, legato=1.0, amp=0.3))
+    # One octave under the melody rather than three: the take has to be *heard*
+    # moving when a clip is dragged, and a low C mostly makes the speaker move.
+    offline.play(Pbind(midinote=Pseq([60], 1), dur=beats, legato=1.0, amp=0.3))
     stats = offline.render(sample_rate=SR, channels=1, path=path)
     print(f"bounced {stats.frames} frames of take -> {path}")
     return path
 
 
-wav = bounce_take(str(Path(tempfile.mkdtemp(prefix="clausters-")) / "take.wav"))
-buf = ServerBuffer.read(wav, server=server)    # on the server, shape known
+wav = folder / "take.wav"
+bounce_take(str(wav))
+buf = ServerBuffer.read(str(wav), server=server)    # on the server, shape known
 
 # %% [markdown]
 # ## The material
@@ -203,13 +243,88 @@ song = Group([
 ], name="song")
 
 # %% [markdown]
+# ## Saving, and opening again
+# A **session** is the document plus the table saying where its material lives.
+# The document says *what plays when* and deliberately not where a source is —
+# inside a running system a source is a server buffer, a mapped file or a
+# rendered result, and the tree has no business knowing which — so the table is
+# the half that lets the thing be closed and opened.
+#
+# `Editor.load` points the open window at the reopened tree. The node ids survive
+# the file, so it is the same composition by identity; the **history is dropped**,
+# because its inverses describe a session that is over.
+
+# %%
+SESSION_FILE = folder / "song.claust"
+
+
+def save():
+    """Write the composition and where its material is."""
+    sources = {
+        buf.bufnum: {
+            # Relative to the session file's own folder, which is what makes the
+            # pair of files movable together.
+            "location": {"at": "file", "path": wav.name},
+            "lifetime": "session",
+            "generation": 0,
+            "channels": 1,
+            "frames": int(buf.frames),
+            "sample_rate": SR,
+        }
+    }
+    document = to_session(editor.element, sources=sources,
+                          provenance={"script": "gui_composer.py"})
+    SESSION_FILE.write_text(json.dumps(document, indent=2))
+    say(f"saved {SESSION_FILE} ({len(SESSION_FILE.read_text())} bytes)")
+
+
+def reopen():
+    """Read it back and show it — the same piece, from the file this time.
+
+    **What the file names, this side supplies**, and that is the point of the
+    resolver rather than a limitation of it: a document carries a *reference* to
+    material and to algorithms, never the material and never the algorithm, so
+    what a leaf becomes depends on who is there to answer for it. The take is a
+    source id the table locates and this process reads back onto the server; the
+    curve is named, so the recipe this script still holds is handed back and the
+    lane plays again. The pattern lane is neither — it is code, and the reference
+    the document kept is not something a name can find — so it comes back
+    **frozen**: drawn, placed, silent. That is not the file being lossy; it is
+    what a composition means somewhere its language is not running.
+    """
+    if not SESSION_FILE.exists():
+        return say("nothing saved yet — press save first")
+    raw = json.loads(SESSION_FILE.read_text())
+    table = {int(k): v for k, v in (raw.get("sources") or {}).items()}
+    frozen = [0]
+
+    def resolve(kind, config):
+        config = config or {}
+        if kind == "buffer":
+            entry = table.get(int(config.get("source", -1)))
+            path = ((entry or {}).get("location") or {}).get("path")
+            return (None if path is None
+                    else ServerBuffer.read(str(folder / path), server=server))
+        if kind == "generator" and config.get("generator") == sweep.name:
+            return sweep
+        frozen[0] += 1
+        return None
+
+    element, sources = from_session(raw, resolve=resolve)
+    editor.load(element)
+    say(f"opened {SESSION_FILE.name}: {len(element)} lanes, "
+        f"{len(sources)} source(s) resolved, {frozen[0]} leaf/leaves frozen "
+        f"— history cleared, node ids kept")
+
+
+# %% [markdown]
 # ## Open the editor, with a transport
 # The model tree becomes a multitrack window: a lane per member, its materials as
 # clips on one shared axis. ``extra`` places widgets of the script's own under the
-# lanes — here the transport, whose buttons are *named*. `Editor.open` hands back
-# a window handle (like `GuiHost.open`), so the script resolves each button with
-# ``win["play"]`` and never picks an id; their events are the script's too
-# (`Editor.apply` ignores them).
+# lanes — here the transport, the history and the file, whose buttons are *named*.
+# `Editor.open` hands back a window handle (like `GuiHost.open`), so the script
+# resolves each button with ``win["play"]`` and never picks an id; their events
+# are the script's too (`Editor.apply` ignores them).
 #
 # The transport is **chrome**, so it takes a fixed `h` and the lanes take the rest:
 # a container's size on the main axis is `h`/`w` or a `weight`, and a strip left
@@ -217,17 +332,34 @@ song = Group([
 # size of their own — a button knows how tall it wants to be.
 
 # %%
-transport = panel(button(name="play", label="play"),
-                  button(name="pause", label="pause"),
-                  button(name="stop", label="stop"),
-                  button(name="rewind", label="rewind"),
-                  button(name="undo", label="undo"),
-                  button(name="redo", label="redo"),
-                  layout="row", h=34.0)
+bar = panel(button(name="play", label="play"),
+            button(name="pause", label="pause"),
+            button(name="stop", label="stop"),
+            button(name="rewind", label="rewind"),
+            button(name="undo", label="undo"),
+            button(name="redo", label="redo"),
+            button(name="save", label="save"),
+            button(name="open", label="open"),
+            label("", name="status", align="left"),
+            layout="row", h=34.0)
+
+
+def say(message: str):
+    """Report in the **window**, not only on stdout.
+
+    A GUI example is read where it is looked at: an interactive step whose
+    only feedback is a `print` reports to a terminal the person pressing the
+    button may not have in front of them -- which is exactly how *save* came
+    back as "I don't know what it wrote or where".
+    """
+    print(message)
+    if editor.window is not None:
+        editor.window["status"].set(text=message)
+
 
 gui = session.gui()
 editor = Editor(song, sample_rate=SR, tempo=TEMPO, quant=QUANT,
-                extra=[transport], title="Composer")
+                follow=True, extra=[bar], title="Composer")
 win = editor.open(gui)
 print(f"opened window {win} — drag a clip to move it, an edge to resize it")
 
@@ -249,7 +381,24 @@ session.start()                       # the clock runs the routines
 # you press play is a window that plays itself). Each button acts on its press
 # (1), ignoring the release, and is wired by name onto the editor's transport.
 press = lambda fn: (lambda value: fn() if value == 1 else None)  # noqa: E731
-win["play"].on_event(press(lambda: editor.play(server, session.clock)))
+
+
+def play():
+    """Play from the top when the last pass ran out.
+
+    The transport **parks at the end** of a pass rather than rewinding
+    (`clausters.gui.transport`), so a bare play from there starts at the end
+    and sounds nothing — which reads as a dead button unless you know to press
+    stop first. A transport bar is not a puzzle, so this rewinds for you; the
+    parking itself is right, and is what lets a pause resume where the music
+    got to.
+    """
+    if editor.transport.extent is not None and editor.transport.at >= editor.transport.extent():
+        editor.locate(0.0)
+    editor.play(server, session.clock)
+
+
+win["play"].on_event(press(play))
 win["pause"].on_event(press(editor.pause))
 win["stop"].on_event(press(editor.stop))
 win["rewind"].on_event(press(lambda: editor.locate(0.0)))
@@ -260,11 +409,14 @@ win["rewind"].on_event(press(lambda: editor.locate(0.0)))
 # it was and the window is told so without being redefined.
 win["undo"].on_event(press(editor.undo))
 win["redo"].on_event(press(editor.redo))
+win["save"].on_event(press(save))
+win["open"].on_event(press(reopen))
 # The keyboard reaches the same history without either button: the host sends
 # Ctrl+Z as an ``"undo"`` addressed to the *window* -- undo is aimed at no
 # place under the cursor -- and `Editor.apply` answers it in the loop below.
 editor.locate(0.0)                              # the cursor waits at the top
 print("press play — click a lane's ruler (or its empty space) to move the cursor")
+print("undo/redo: the buttons, or Ctrl+Z / Ctrl+Shift+Z over the window")
 
 
 # %% [markdown]
@@ -272,48 +424,38 @@ print("press play — click a lane's ruler (or its empty space) to move the curs
 # `Editor.apply` takes the host's events into the **model**: a dragged clip becomes
 # a placement — its **offset** *and* its **length**, and the length trims what the
 # material plays — and a dragged break-point becomes the automation's new curve.
-# Anything it does not recognize is the script's: here, the transport buttons.
+# Anything it does not recognize is the script's: here, the buttons above.
+# `Editor.poll` drains the window's whole stream into it, so one call is the loop.
 #
-# An edit does not interrupt what is sounding. It marks the composition
-# (`Editor.dirty`), and the next transport action re-reads it: rendering always
-# re-flattens the tree, so play, a resume after pause and a rewind all play the
-# composition *as it now stands*.
+# With ``follow=True`` an edit re-schedules the composition from the playhead, so
+# what you dropped is what you hear; rendering always re-flattens the tree, so a
+# play, a resume after pause and a rewind all play the composition *as it now
+# stands*.
 
 # %%
-if __name__ == "__main__":
+def run():
+    """Hold until the window is closed — a by-eye and by-ear test ends when the
+    person looking at it says so, not on a timer."""
+    while editor.window is not None:
+        # The playhead reports the end of its own scan, so the piece ends by
+        # itself: the cursor parks at the composition's `extent` -- read from
+        # the arrangement, so a clip dragged out lengthens the piece -- rather
+        # than sweeping past it (rewind goes back to the top).
+        editor.transport.update()
+        editor.poll(0.05)
+
+
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        while editor.window is not None:
-            # The playhead reports the end of its own scan, so the piece ends by
-            # itself: the cursor parks at the composition's `extent` -- read from
-            # the arrangement, so a clip dragged out lengthens the piece -- rather
-            # than sweeping past it (rewind goes back to the top).
-            editor.transport.update()
-            msg = gui.poll(0.05)
-            if msg is None:
-                continue
-            addr, args = msg
-            # The transport buttons are handles: `dispatch` routes their press/
-            # release to the `on_event` callbacks above (the `press` guard drops
-            # the release). A `/gui_closed` has no handler, so it falls through to
-            # `editor.apply`, which nulls the window and stops the loop.
-            if gui.dispatch(addr, args):
-                continue
-            # A clip edit-back onto the arrangement (a move/resize, or a note or
-            # break-point dragged in a clip body). Anything the editor does not
-            # recognize falls through untouched.
-            if editor.apply(addr, args):
-                # An edit does not interrupt what is sounding: it changes the
-                # *model*, and the next play (or a resume, or a rewind) plays it —
-                # `render` always re-flattens the composition, so it picks up the
-                # new placements and lengths.
-                print("  edited — press play to hear it"
-                      if not editor.playhead or not editor.playhead.playing
-                      else "  edited — press play to re-read the composition")
+        run()
     finally:
         # No `sys.exit` here: it would replace an exception raised in the loop
         # and the window would just vanish with no word of why. Nothing to
         # silence, either: every voice in the composition ends with its clip.
         session.close()
+else:
+    print("up — run() to hold the window, session.close() to end")
 
 # %% [markdown]
 # ## Bounce it
@@ -324,7 +466,7 @@ if __name__ == "__main__":
 # ```python
 # offline = Session.nrt(tempo=TEMPO)
 # sampler().send(offline.server)
-# ServerBuffer.read(wav, server=offline.server)    # the take, on the offline server
+# ServerBuffer.read(str(wav), server=offline.server)   # the take, on the offline server
 # song.render(offline.server, offline.clock)
 # samples = offline.render()
 # ```
