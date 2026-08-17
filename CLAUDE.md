@@ -14,7 +14,15 @@ written in Rust and controlled over OSC (UDP, default port 57110).
     that one first, naming each by its own label. A milestone's content, its
     decisions and its acceptance are only ever in its plan; when the two
     disagree, the plan wins. Never move content into `ROADMAP.md` — a milestone
-    that grows a decision grows it in its plan.
+    that grows a decision grows it in its plan. It also orders work that is not
+    a milestone: an entry of a plan's "Found by use" or "Future directions"
+    list, named by its own title and by the plan that holds it.
+  - **`ROADMAP.md` is a temporary file and is a record of nothing.** It holds
+    one working sequence over what is still pending, gathered from the several
+    plans it is distributed across — so **rewriting it erases what has been
+    done** and reorganizes only what is left. A closed phase leaves no line
+    there: the plan's checkbox and the git history already say it shipped. When
+    the sequence runs out, the file goes away.
   - **Anything unresolved goes at the end of its plan, and carries a checkbox.**
     A gap found by use — an eye pass over an example, a path read while doing
     something else, a behavior that is correct and unclear — is written down the

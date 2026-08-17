@@ -473,6 +473,49 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
 
   **Found while checking it by ear:** an `EnvGen` retriggered mid-envelope restarts from its **initial level** rather than gliding from where it was, so a re-cue is a step in two places at once (the reader's jump and the envelope's). `examples/buffer_writing.py` therefore fires grains shorter than the gap between triggers, which puts both steps in silence — the general rule for anything driven by a trigger, and the reason the example says it out loud.
 
+- ⬜ **S18 — A buffer write writes the samples it names** *(opened 2026-08-17 by the user, reading S14 against the write path: "ahora, luego de implementadas las ugens que escriben en buffers, una escritura de muestras no cuesta el buffer entero". The observation is exact, and what it turns up is a **correctness** defect as well as a cost one.)*
+
+  **The substrate moved and the command set did not.** S12 decided the write path around a premise it stated in one sentence — *"the RT pool buffer stays immutable and replaceable exactly as `src/dsp/buffer.rs` says"* — and S14 rewrote that very module one day later: contents are mutable, every sample is an atomic cell any thread may write, and `set_at` is the door. `BufWr` and `RecordBuf` write through it from the **audio thread** every block. But every OSC write still copies: `NrtJob::Set`, `Fill`, `Edit`, `Gen` and `Read` all do `to_vec()` → lay the run in → `Buffer::new` → install a fresh `Arc` (`src/server/nrt.rs`), justified in a comment by an argument the other module already answered — *"the audio thread therefore never sees a half-written buffer (which a per-sample write could show it)"* — while S14's module doc states the opposite as the intended semantics, scsynth's own: *a reader crossing a writer sees some old samples and some new, never half of one*, and that is what a looper crossing its own write head has always sounded like.
+
+  **What it costs, measured 2026-08-17** (release, in-process, so the wire is not in it; a 1 ms stereo run written into the middle of the take, and the same op over the whole buffer):
+
+  ```
+                    size     copy-and-swap    in place     1 ms run
+  10 s stereo     3.8 MB          0.31 ms     0.0001 ms      x5,800
+  1 min stereo   23.0 MB          2.45 ms     0.0001 ms     x60,000
+  5 min stereo  115.2 MB         32.9  ms     0.0001 ms    x570,000
+  10 min stereo 230.4 MB         65.7  ms     0.0001 ms  x1,100,000
+
+  whole-buffer gain:   10 s 0.30 -> 0.44 ms (x0.7)   1 min 2.95 -> 2.63 ms (x1.1)
+                      5 min 41.4 -> 13.5 ms (x3.1)  10 min 82.3 -> 26.9 ms (x3.1)
+  ```
+
+  Two readings, and the second is the one that settles the shape. The span write is **flat in the buffer** rather than linear in it — the cost stops being a property of the material and becomes a property of the edit, which is what the whole entry at the foot of this file was asking for. And the *whole-buffer* op, the case where a copy should win, is **3.1x faster in place** at real sizes because it allocates nothing and touches the data once instead of twice; it loses only at 10 s, where the copy is cache-resident. So there is no size at which the copy is the right trade beyond about a minute, and the reproduction of S12's own table (32.9 ms against its 33.84 ms) says the measurement is the same one.
+
+  **The correctness half, which is new since S14 and is why this is not a tidy-up.** A copy-and-swap write **silently discards** whatever an in-place writer put there in the meantime: the job snapshots the buffer at parse (or at chain time), and installing its copy replaces everything a `RecordBuf` recorded between the two. That is now an ordinary pairing rather than a contrived one — a looper being overdubbed while the editor writes a fade, a take being recorded while a client sets a range. Nothing warns; the samples are simply gone.
+
+  **What the milestone does.** The write jobs write **in place** through the cells: `Set`, `Fill` and `Edit` become span writes with no allocation and no swap, `Gen` and `Read` keep the shape and fill in place (only `AllocRead`, which *changes* the shape, still builds a new buffer — correctly, since that is a different buffer). The chaining machinery (`NrtChain`, the `base` fallback on `Set`/`Fill`/`Edit`) exists **only** because a copy starting from a stale snapshot erases its predecessors, so it goes with the copies: in-place writes compose by construction. Bounds are already checked at parse, so a write cannot fail halfway and there is nothing to roll back. Nothing on the wire changes — no command, no argument, no reply — which is what makes this an implementation and a *documented semantics* change rather than a protocol one.
+
+  **What must be written down rather than assumed**, because it is the trade being taken: a reader crossing a write now sees old and new samples. That is S14's stated rule and scsynth's, and it is the price of the capability; it belongs in `docs/schemas.md` beside the writing commands, not only in a module doc. The one place it must **not** leak is the golden renders, which are single-threaded and therefore unaffected.
+
+  **Acceptance:** the table above, re-measured through the wire (a client's write on a five-minute take costs what a write on a ten-second one costs); a test that a `RecordBuf` recording survives a concurrent `/buffer_setRange` on the same buffer, which fails on today's code; `tests/rt_safety.rs` and the golden renders unchanged; and the chaining tests deleted with the chaining, their property now holding by construction.
+
+- ⬜ **S19 — The material lives in the shared segment, and a local peer edits it without a message** *(opened 2026-08-17 by the user, naming the target: "que el cliente gui pueda funcionar como una aplicación autónoma con procesamiento NRT a demanda y RT como procesos separados", and then the consequence — "para un server embebido o por shm esto puede incluso ahorrar mensajes de ida y vuelta")*. Depends on **S18**: it is the same write, moved across a process boundary, and doing it while the write path still copies would mean two designs.
+
+  **What the segment carries today and what it does not** (`src/server/ipc.rs`): the versioned header, the sample clock, the transport clock and position, the 1024 control buses **as the very words the engine reads** (a peer's write is live on the next block, no command involved), the audio taps, the audio-bus region, and the two OSC rings. **Buffers are not in it.** So the one kind of data an editor is made of is the one kind that still crosses as messages: a take reaches the host as `/buffer_get` replies or as a mapped *file*, and an edit goes back as a `/buffer_setRange` blob.
+
+  **The saving is not the copy, it is the round trip.** A stroke today, in the embedded or `--shm` host that H3/H4 built: the host sends `/buffer_setRange` with the span as a blob, the server queues an NRT job, copies the take whole, installs it, and answers — and the host, holding its own picture of the material, must then reconcile the two. With the samples in the segment the host **stores into the cells** and there is no message, no blob, no job, no reply and no second copy to reconcile; the engine reads those cells on the next block. That is not a new contract, it is the one the **control buses already have**, quoted from the module's own docs, and S14 already paid its conceptual price: per-cell atomicity, no ordering between cells, a reader seeing old and new. A cross-process writer is the same contract as the cross-thread one.
+
+  **What stays a message, and this is the line the milestone draws:** everything with semantics beyond the samples — `/buffer_alloc` and `/buffer_free` (shape and lifetime), `/buffer_render` (S13: a graph, a timeline), `/buffer_read`/`/buffer_write` (the disk), and anything the server must order against other commands. What stops being a message is the sample traffic in both directions, including the **reads**: a peak pyramid is built over the mapped region rather than over a fetched copy, which deletes the largest data path the editor has.
+
+  **What has to be decided, and none of it is decided here.** *The backing*: `Buffer` owns a `Vec<AtomicU32>`, so a shared one needs a second backing (a mapped region) behind the same cell API — the shape stays immutable, which keeps the directory simple. *The allocation*: an arena inside the segment, or a region per buffer, plus a `bufnum -> region` directory a peer resolves. *The lifetime*: a buffer freed while a peer has it mapped, which the control buses never had to answer because they are fixed and eternal. *The ordering*: with no message there is no `/done` and no `/server_sync` to sequence a write against a command that depends on it (write, then `/buffer_write` to disk), so either a per-buffer generation counter in the segment or a stated client-side rule. *Who may write*: the direct path is available exactly when the writer **is** the owner of the material — the standalone host is (H3), a Python client editing beside another owner is not, and the acknowledgement machinery (O3, D1/D2) exists for that second case and stays.
+
+  **The remote clients are untouched.** This is a *local* data plane, exactly as the buses and taps are: a UDP client goes on using `/buffer_get` and `/buffer_setRange`, which is why S18 comes first — it is what makes that path fast for everyone rather than only for the peers that can map.
+
+  **Cost to the ABI:** the segment layout grows, so `ABI_VERSION` moves and the `release-versioning` rules apply. The `embed` and `--shm` legs are the same change, being one layout.
+
+  **Acceptance:** the standalone host opens a five-minute take with no samples crossing the ring, draws it from the mapped region, writes a stroke with no message sent, and the RT server — a **separate process** — plays the edit on the next block; a peer that maps a freed buffer is refused rather than reading released memory; and `docs/ipc.md` states the buffer region beside the bus one, with the reader-crossing-a-writer rule stated once for both.
+
 ## B track — the engine in the browser (wasm)
 
 Section added 2026-07-18. Compile the engine to `wasm32` and run it **in the
@@ -1513,6 +1556,21 @@ finished work, where a pending item reads as done.
   that means. The lasting finding is the opposite of the one recorded here — a
   buffer stays immutable and replaceable, and editing never goes through the
   pool at all.
+
+  **Reopened 2026-08-17 by the user, and this time the entry's original title is
+  the right one after all.** *"A buffer stays immutable"* was true when S12 wrote
+  it and false the next day: **S14** made every sample an atomic cell any thread
+  may write, and `BufWr`/`RecordBuf` write in place from the audio thread. So the
+  answer above rests on a premise that no longer holds, and what was a cost
+  argument is now also a correctness one — a copy-and-swap write silently
+  discards whatever an in-place writer put there since the snapshot. Measured
+  again (the table is in **S18**, which is where the fix lives): a 1 ms run costs
+  0.0001 ms in place against 65.7 ms by copy on a ten-minute take, and even the
+  whole-buffer case is 3.1x faster in place. The lasting finding recorded above —
+  *editing never goes through the pool* — is a statement about the **editor's**
+  architecture and survives untouched; what does not survive is the reason the
+  write path copies. **S19** is the other half the user named the same day: with
+  the samples in the shared segment a local peer's edit costs no message at all.
 
 - ⬜ **A finished async command waits up to 100 ms to be reported** *(found
   2026-08-15, measuring the write cost above: every single write round-tripped

@@ -1,264 +1,287 @@
-# Roadmap — the order the open milestones are taken in
+# Roadmap — the order the open work is taken in
 
-*Opened 2026-08-14, after closing the document crate's O1–O11. Its one job is
-**ordering**: which of the milestones already written in the `PLAN.md` set is
-taken next, and why that one before the others.*
+*Rewritten 2026-08-17 against the plans and the last month of history. A rewrite
+**drops what is done** and reorganizes what is left: this file is not a record
+of anything, and the record of what shipped is the git history and each plan's
+own checkbox.*
 
-**This file defines nothing.** Every entry below is a milestone that already
-lives in a plan, named by its own label, and the plan is where its content,
-its decisions and its acceptance are read. A roadmap entry says only *when*
-and *because of what*. If the two ever disagree, the plan wins and this file
-is stale — which is the normal way for it to be wrong, and the reason nothing
-here is ever the only place something is written down.
+**This file is temporary, and it defines nothing.** It is a working sequence
+over pending work that lives, already written, across several `PLAN.md` files —
+milestones with their own labels, and entries in a plan's "Found by use" or
+"Future directions" lists. A roadmap line says only *when* and *because of
+what*; the content, the decisions and the acceptance are read in the plan that
+owns it, and if the two disagree the plan wins and this file is stale, which is
+the normal way for it to be wrong. When the sequence it holds is exhausted the
+file goes away; nothing is ever written here first.
 
-**The destination this order serves**, stated so an entry can be judged
-against it rather than against taste: **a functionally complete example of the
+**The destination this order serves**, stated so an entry can be judged against
+it rather than against taste: **a functionally complete example of the
 arrangement, the document and the GUI together** — a composition built in
 Python, drawn as a multitrack editor, edited by hand, heard, undone, redone,
 saved and reopened — on a model that is **usable and correct at real sizes**,
-not only at an example's. The second half is why the efficiency work sits
-where it does rather than at the end.
+not only at an example's. Both halves are load-bearing: today the loop runs and
+the *reopening* half of it does not survive contact with a real piece.
 
-Where the milestones live:
+Where the work lives:
 
 | Track | File | What it is |
 |---|---|---|
 | `Ox` | `crates/clausters-document/PLAN.md` | the document: tree, intents, log, session, bindings |
-| `Dx`, `Hx`, `Ax`, `Kx`, `Ex` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API |
+| `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API |
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
 | `Mx`, `Sx`, `Tx`, `Rx` | `PLAN.md` (root) | the server |
 
+Entries below that carry no label are **plan entries, not milestones** — they
+are named by their own title and by the plan that holds them, and a phase that
+takes one may well turn it into a milestone there first. **A pointer names the
+plan and the section, and quotes the entry's title verbatim**, so it is found by
+searching for the title rather than by reading the plan through; the sections
+are "Found by use", "Future directions" and, in the document crate, "Open
+decisions". If a search comes up empty, this file is stale and the plan is
+right — that is the normal failure, not a sign the work vanished.
+
 ---
 
-## Phase 1 — the edit loop closes
+## Phase 1 — a saved piece comes back as the piece that was saved
 
-*What it buys: the example's loop stops being one-way. Today a gesture reaches
-the arrangement and the composition re-renders; after this phase the gesture is
-invertible, the model is the crate's, and an edit costs the edit.*
+*What it buys: the last step of the destination's loop. The whole-loop example
+runs end to end and **reopening is where it fails** — an eye pass on 2026-08-17
+over `gui_composer.py`'s four-lane piece lost the lane labels, both roll bodies,
+and more of the picture on every save/open cycle. Everything here was found by
+running that example, and none of it is guessed at.*
 
-- ✅ **H1 — The last relative payload becomes absolute.** Done 2026-08-14.
-  Opened as "every payload gains its previous value" and rewritten on starting
-  it: O5 already reads the inverse out of the document, so the host's previous
-  value was redundant. What was left is what nothing else can do — converting
-  `"transpose"` on an engraved page from a displacement to the staff position
-  it reaches.
+- ⬜ **A document's node ids are minted per conversion and stamped on the
+  object, so two compositions number from 1 and collide**
+  *(`clients/python/PLAN.md`, found by use)*. **First of everything**, and it
+  moved here the day it was measured: this phase's whole acceptance is *the same
+  composition by identity*, compared tree against tree, and identity is what is
+  broken. Two arrangements built in one script both hold ids 1, 2, 3, so
+  material reused across them carries a number another element already holds —
+  no object shared, no authoring discipline that avoids it — and nothing catches
+  it: conversion reads only the maximum, the crate resolves an intent to the
+  first match and the editor's index keeps the last. Every test written for the
+  three entries below is written over documents whose ids are assumed unique, so
+  it is cheaper than any of them and it is what makes them assertable. Its
+  *decision* half — who owns uniqueness, the bridge or the crate — is written in
+  the document plan's Open decisions beside the placed-twice question, and the
+  cheap enforcement (unique within a document, a duplicate refused by name) does
+  not wait for it.
 
-- ✅ **O12 — An edit costs the edit, not the document.** Done 2026-08-14, and
-  the ordering argument held: H2 now has a door it will keep. One `Place` over
-  a 10240-event composition went from **205 ms to 0.008 ms**, and the cost no
-  longer depends on the composition at all — the tree stays behind a handle,
-  and an edit runs in place, rolled back by its own inverse rather than
-  protected by a copy of the tree.
+- ⬜ **A session does not round-trip: a group loses its name, and a `Track`
+  comes back as a `Group`** *(`crates/clausters-document/PLAN.md`, found by
+  use)*. The format's: a node has no name and nothing says what a set *is* to a
+  view, so the fix is the schema, the crate and both clients — and the entry
+  after it is read against the same format pass. Half of it is already answered
+  elsewhere and should be copied rather than invented: the **server's group
+  label** is a referenceable name that is not an identity, born with the group,
+  renameable, clearable, and contributing a path segment that falls back to the
+  decimal id when there is no name — so an anonymous node stays reachable. Its
+  acceptance is a test comparing the two trees, not an eye pass.
 
-- ✅ **H2 — Undo and redo from the hand.** Done 2026-08-14. The `Editor` drives
-  the crate's log over a `Document` held in step with the arrangement, and the
-  grid moved into the crate with it — the editor states where the hand put a
-  clip and `Rules { quant }` decides. Reached from a button or from Ctrl+Z,
-  which the host addresses to the **window**: a gesture-plan step consumes a
-  press somewhere, and undo is aimed at no place at all.
+- ⬜ **What a document calls a generator is `repr()`** *(same plan, same list)*.
+  A leaf's reference is an object's `repr` when it has no name, so a saved
+  session carries a memory address: the file is not deterministic between runs
+  (which O1's acceptance asked for) and the reference is unresolvable by
+  construction, which is why a pattern lane comes back frozen. Rides with the
+  entry above — one pass over what the format carries about a leaf — and its
+  acceptance is the other half of the same run: the piece plays its pattern lane
+  again, and the file is byte-identical between two runs of the same script.
 
-- ✅ **The whole-loop example.** Done 2026-08-14 as
-  `clients/python/examples/gui_daw.py` — build, draw, edit, hear, undo, redo,
-  save the session, reopen it. *(Merged into
-  `clients/python/examples/gui_composer.py` on 2026-08-17: the two were one
-  example with two compositions, and the loop belongs on the piece that shows
-  what a composition is made of.)* It is the first thing that exercises O8's format,
-  O5's log and the acknowledgement in one run, and being the manual test is what
-  it was for: it found three defects nothing else would have (`follow=True`
-  raising before the first play, a reopened session having no drawable material
-  until its sources are resolved, and two placements of one object sharing a
-  node id).
+- ⬜ **A reopened session draws less on every redefine, while the model is
+  intact** *(`clients/gui/PLAN.md`, found by use)*. The **host's**, and
+  deliberately after the two above so that the tree it is handed is the right
+  one before anything is traced: the model round-trips (measured over three
+  generations and in-process against a live server), so what degrades is the
+  redefine path — state kept against recycled ids, which is a seam this host has
+  been bitten at twice. It needs the window and a host-side trace; guessing at
+  it from the client is what the two earlier fixes showed costs a day.
 
-- ✅ **What a clip's edge means for an element that has not been rendered.**
-  Settled 2026-08-14, and the answer was already decided — by O8, C31 and the
-  four-layer table, which nobody had read together. **A placement is a window
-  onto an element, never a rewrite of it**: an edit to a bounced note is
-  refused, a resize trims what is heard, and shortening a clip over its own
-  notes keeps them (checked, and reversible).
+**Not in this phase, and it is the one judgement call here:** *"May one element
+be placed twice, and what does an intent name if it is?"* (document plan, Open
+decisions) with its defect *"Two placements of one element share a node id"*.
+Both examples now give each placement its own element, so nothing is blocked;
+and the faithful answer — an intent naming a **member handle** rather than a
+node — is a one-tree question. It goes with the one-tree phase below, where
+the other two id questions are.
 
-**Phase 1 is closed.** What it opened rather than answered is in the plans'
-"Found by use" lists — chiefly whether the model should let one element be
-placed twice at all, which the example turned from a puzzle into a decision
-with three named answers.
+## Phase 2 — a write costs the samples it writes
 
-## Phase 2 — the DAW's editing vocabulary
+*What it buys: the premise the whole editing architecture was built on, corrected
+before anything is refactored onto it. S12 decided how an editor writes from a
+measurement — a write cost the buffer — and S14 removed the reason one day later
+by making every sample an atomic cell. Nothing followed it, so today the write
+path still copies the take whole and, worse, **silently discards** whatever an
+in-place writer (`RecordBuf`, `BufWr`) put there since the snapshot. Short, and
+it goes before the two editing phases because its decision is their input.*
 
-*What it buys: a selection is a thing you can hold, hand to an algorithm and
-paste. The crate already has all of it (O6, O7, O9) and nothing calls any of it.*
+- ⬜ **S18 — A buffer write writes the samples it names** *(root `PLAN.md`)*.
+  Measured 2026-08-17, in process, so the wire is not in it: a 1 ms run on a
+  ten-minute take costs **65.7 ms by copy and 0.0001 ms in place**, flat in the
+  material rather than linear in it; even the whole-buffer case is **3.1x**
+  faster in place, allocating nothing and touching the data once. The copy also
+  drags the chaining machinery that exists only to stop copies erasing each
+  other, which goes with them. Nothing on the wire changes.
 
-- ✅ **D3 — The selection gesture grows a second axis.** Feeds the typed
-  `Selection` (O6). First of the phase because D4 has nothing to copy without it.
+- ⬜ **Does the working copy still lead, now that a write costs the span?**
+  *(`crates/clausters-document/PLAN.md`, Open decisions)*. O8's "the working
+  buffer leads while the session is open, and the pool buffer is replaced whole
+  once, on confirmation" was derived from the cost that just went away. The
+  answer decides whether a session still has a confirmation step and whether a
+  take exists twice while it is edited — which is what the next phase would
+  otherwise refactor the editor *into* without asking. Taken here, right after
+  S18 makes it answerable, and not folded into either milestone.
 
-- ✅ **D4 — Copy, cut and paste as gestures.** Against the typed clipboard (O7).
-  This is the milestone that forced O12's *one tree* question — a paste creates
-  nodes on the crate's side — so it lands after O12 by construction rather than
-  by preference.
+## Phase 3 — one tree, and undo that reaches inside a clip
 
-**Phase 2 is closed.** It carried a third entry — *A7's client half, narrowed:
-the `Editor` opens an element with a stack* — under the condition "only if Phase
-3 has landed A1/A2". It was a bet that the A track would arrive first, and the
-answer is to take the bet rather than to cancel it: A1/A2 open Phase 3, and the
-entry becomes **D8** there, after them, with a stack it can actually show.
+*What it buys: the destination's "undone, redone" at the size a user means it.
+Undo works for clips and for nothing inside one — a note edit and a break-point
+edit rewrite the arrangement directly and leave no log entry — and the fix was
+implemented and reverted on 2026-08-17, which is the finding that orders this
+phase.*
 
-## Phase 3 — the sample editor
+- ⬜ **The one-tree refactor** — the only entry here with no title of its own
+  to search for: it is the **closing paragraph of O12**
+  (`crates/clausters-document/PLAN.md`), which begins *"Still open, and it is the
+  other half of the note under O10"*. The editor holds one `Document` handle
+  for the window's life and `clausters.form` becomes accessors over the crate's
+  tree, rather than a parallel Python model that `_history` re-derives the
+  document from on every edit. **It needs a milestone number in that plan before
+  it is started**, being the largest open thing in the project and currently a
+  paragraph. What already argues for it, and none of it is new: O12 removed the
+  cost objection (an edit is 0.008 ms); D4's paste creates nodes the client has
+  no object for; a script editing beside an open editor bumps no version, so
+  O4's staleness check never fires.
 
-*What it buys: the second editor the four-layer model was designed for. Ordered
-last of the three editing phases because it is the only one with a **server**
-prerequisite, and because it is the one whose cost is not the client's.*
+- ⬜ **Undo works for clips and for nothing inside one**
+  *(`clients/python/PLAN.md`, found by use)*. The vocabulary is already there —
+  the roll's edit is a `SetMembers`, the curve's a `Configure` — and the revert
+  says why it waits: routing them through the log took minting ids for notes,
+  putting break-points into the document, and teaching `_adopt` to read both
+  back out, all three of which are **reconciliation between two trees**. After
+  the refactor it is the ordinary case rather than a fourth reconciliation path.
+  This is what should force the refactor, and it is its acceptance by hand.
 
-- ✅ **A1 — Mean square in the pyramid.** Done 2026-08-14. **First of the phase**, and it was the
-  one entry here that waits on nothing at all — not the document, not the
-  server, not the editor. Before D1 the reason is mechanical: A1 takes the peak
-  cache from CLPK v2 to v3 and bumps `CORE_ABI_VERSION`, while D1 lands
-  `peaks::update_range` over that same cache. In this order `update_range` is
-  written once, over all three statistics. In the other order it is written
-  twice.
+- ⬜ **May one element be placed twice, and what does an intent name if it is?**
+  *(document plan, Open decisions)*, with the defect it explains. Three answers
+  — forbid, copy, or **name the placement** — and the last is the faithful one
+  and the expensive one, because a member has no stable identity in the document
+  today. That is a property of where the tree is kept, so the decision is taken
+  with the refactor and not before it. The id entry that opens this file leaves
+it **wider than it was**:
+  two different elements can also collide, so the decision now has to say who
+  owns uniqueness within a document — and answering that in the crate is the
+  cheaper half of "name the placement" rather than a separate build.
 
-- ✅ **A2 — The RMS layer, and the `measure` prop.** Done 2026-08-14. Rode with
-  A1 (they are G20e's two halves) and is what proves the pyramid change by eye.
+## Phase 4 — the editor answers for what it will not let you do
 
-- ✅ **D8 — The editor opens an element as a signal view.** Done 2026-08-15.
-  Phase 2's condition, met: `Editor.open_signal` is `open_pianoroll`'s sibling,
-  and after A2 it opens an element showing both measures rather than a bare
-  trace. It sat before the two editing milestones because without it a sample
-  editor is a free-standing example beside the arrangement rather than a view of
-  it — and it earned its keep early by correcting A2's layer stack.
+*What it buys: the "edited by hand" half stops teaching* sometimes it does not
+work. *Small beside Phase 3 and independent of it; taken after because a
+read-only body is a prop on a picture the redefine path must be drawing
+correctly first.*
 
-- ✅ **S13 — The NRT server takes operations on demand.** Done 2026-08-15, and
-  the reordering held: taken before S12 because it alone is a complete
-  demonstrable thing, and it was — `/buffer_render` runs the graph into a buffer
-  and the samples match the batch render of the same material, sample for
-  sample. Two things it settled that the entry had wrong: the front is the
-  **embedded server's**, not the `Renderer`'s (which has the synchronous
-  execution and none of the transport), and *no scheduling surface* was never a
-  property to want — a timetag is meaningful inside an operation, because an
-  operation is a score; what the mode lacks is a clock that moves on its own.
-  What it did **not** buy: a client still cannot reach a session, so the
-  builders and the example wait for whatever gives one a door.
+- ⬜ **A read-only clip body has no way to say so, so every drag on one
+  flickers** *(`clients/gui/PLAN.md`, found by use — a milestone rather than a
+  fix, and the plan says so)*. The refusal is correct and the acknowledgement
+  carries a reason since 2026-08-17; what is missing is **earlier than the
+  refusal** — nothing in the protocol tells a widget its body is read-only, so
+  the roll offers the drag, draws it for its whole duration and unwinds it. The
+  user's own acceptance: *if refusing is correct, the rectangles must not move*.
+  The vocabulary exists (`signal` already carries `editable`) and the D2 draw
+  mode landed the other half (a refusal that is visible *and* consumes the
+  press). It touches the host, `docs/gui-protocol.md`, `docs/gui-props.md` and
+  both clients' builders.
 
-- ✅ **S12 — Editing does not go through the pool, and its verbs are three.**
-  Done 2026-08-15. `clausters_core::edit` plus `/buffer_gain` and
-  `/buffer_reverse` on the wire, with both clients' builders and the example;
-  `replace` needed no command, being `/buffer_setRange` already. None of the
-  verbs is a new algorithm — `gain` rides the same shape math `EnvGen` plays.
-  The half of its acceptance that named a *drawn* edit belongs to D1 and D2,
-  there being no pencil yet, and the plan says so rather than claiming it.
+- ⬜ **The editing gestures want affordances** *(same list)*. Two gestures that
+  work and that nothing on screen announces — the same decision as the entry
+  above, seen from the other side, which is why they are one phase.
 
-- ✅ **S15 — `/buffer_fill`, `/buffer_readChannel`, `/buffer_allocReadChannel`.**
-  Done 2026-08-16. The set scsynth's is measured against is complete again, and
-  one channel of a stereo take can be loaded on its own — which could not be
-  done at all before, `/buffer_read` failing outright on a channel-count
-  mismatch. The channel reads turned out to be one argument on the arms that
-  already existed, not a second way of reading a file.
+- ⬜ **E23 — the rest of the chrome answering on what it draws.** Here rather
+  than in the unscheduled list now that two neighbouring entries open the same
+  surface; it rides with them or it stays out, on the day.
 
-- ✅ **S14 + S17 — Every pool buffer is writable, and `PlayBuf` completes its
-  set** *(root `PLAN.md`)*. Done 2026-08-16, taken together as the plans said
-  they would be: one pass over `src/dsp/buf.rs`, one measurement of the read
-  path. **Not part of the editing chain** — in the interactive mode a buffer is
-  already mutable, there being no audio thread, so this was the RT server's
-  alone. It was here because the pass that produced the other three found it: in
-  SuperCollider you allocate an empty buffer and use it for anything, and here
-  you could not, so `RecordBuf`, `BufWr` and the `BufDelay*` family had nowhere
-  to live. The shape changed on the way in — no writable *kind*, no declaration
-  and no refusal, since a `bufnum` is a runtime control and a build-time refusal
-  was never available; the reference now says only that contents are mutable and
-  the shape is fixed.
+## Phase 5 — the autonomous editor: one copy of the material, three processes
 
-- ✅ **D1 — A sample is a grabbable point.** Done 2026-08-16: the gesture, the
-  pending overlay's first real drawing, and `peaks::update_range` in both
-  pyramids, asserted identical to a rebuild. It turned up a hole the milestone
-  had not named — an owner had no way to say *the material is now this* — so
-  `data` became settable on an inline source; the same door for a **mapped**
-  one is still missing and D2 needs it.
+*What it buys: the GUI client as an application rather than as a window driven by
+a script — the material in shared memory, NRT rendering on demand, and the RT
+server as a **separate process** attached to the same segment. It is here rather
+than earlier because it needs Phase 2 landed (the same write, moved across a
+process boundary; doing it while the write path still copies would mean two
+designs) and Phase 4's picture to be correct before the fetch under it is
+deleted. It is the biggest thing on this list and the only one that is a
+product goal rather than a defect.*
 
-- ✅ **D2 — The draw mode.** Done 2026-08-16: a step in the plan table, one
-  intent per stroke with the runs as blobs, the samples between two motion
-  events filled in, and a refusal that is visible *and* consumes the press. It
-  also landed the door D1 named — a mapped source can be told to read itself
-  again — which is what lets a pending edit be let go of at all.
+- ⬜ **S19 — The material lives in the shared segment, and a local peer edits it
+  without a message** *(root `PLAN.md`)*. The segment already carries the control
+  buses **as the very words the engine reads** — a peer's write is live on the
+  next block, no command involved — and buffers are the one kind of data still
+  crossing as messages. So the saving is not the copy, it is the **round trip**:
+  a stroke today is a blob out, an NRT job, a whole-buffer copy, a reply and a
+  reconciliation; with the samples mapped it is a store. Reads go the same way —
+  a peak pyramid built over the mapped region deletes the editor's largest data
+  path. What stays a message is what has semantics beyond the samples:
+  allocation, lifetime, `/buffer_render`, the disk, the transport. Remote clients
+  are untouched, which is why S18 comes first.
 
-- ✅ **An edit invalidates the measures drawn over it, and nothing says so.**
-  Taken 2026-08-16, at the end of the phase as intended and not found in an
-  example. **The answer generalizes past loudness**, which is why it was worth
-  taking here: *a measure's affected span is the edit's span widened by the
-  measure's memory*. `peaks::update_range` is that rule with a memory of zero,
-  which is why peak and RMS already follow an edit exactly and cheaply;
-  momentary and short-term are the same rule with a real one, so they
-  **recompute** over the span plus their window and neither grey nor go stale.
-  The aggregates (integrated, LRA) are gated over all the material, so their
-  memory is the take: they are **numbers, not layers**, and a stale number says
-  so. Drawing a stale figure unmarked is the one outcome ruled out — the failure
-  the entry was written about. Recorded in A5, which is where it will be read.
+- ⬜ **H6 — The standalone editor maps what it edits, and the RT server is a
+  separate process** *(`clients/gui/PLAN.md`)*. S19's other end: the host maps
+  the take, draws from the mapped region, stores a stroke into the cells, and the
+  engine reads those cells whether it is in this process (embed) or in another
+  one on the same `--shm` path. Its acceptance is what makes "separate" a claim
+  rather than a diagram: kill the RT server, start another against the same
+  segment, and the editor is still drawing and editing the same material.
 
-**Phase 3 is closed.** The sample editor exists end to end: an element opens as
-a signal view, a sample is grabbed or a run is drawn, the intent reaches an
-owner, the material changes, the overview follows it for the span that moved,
-and the hand lets go when the edit is acknowledged. What it needed from the
-server it got as its own three milestones rather than as a patch — an offline
-mode that takes operations, the edit verbs, and the buffer commands that were
-missing — and the two doors an owner needs to correct a picture (`data` for
-inline material, `reload` for mapped) turned up by building the thing rather
-than by planning it.
+- ⬜ **"A finished async command waits up to 100 ms to be reported"** *(root
+  `PLAN.md`, Found by use)* **comes forward from the real-sizes phase with
+  this.** Once the sample traffic is gone, what a standalone app pays per
+  operation is exactly that floor — an allocation, a render, a file read — and it stops hiding behind
+  batched writes. Named here so pulling it forward reads as a decision.
 
-**S14 rides on**, listed above and deliberately unfinished: it never was part of
-this chain (in the offline mode a buffer is already mutable, there being no
-audio thread), and it is the first thing to take next unless something else
-argues for itself — a pool buffer that can be allocated writable, and with it
-`RecordBuf`, `BufWr` and the `BufDelay*` family, which is a capability
-SuperCollider has and this server does not.
+## Phase 6 — the second half of the destination: real sizes
 
-## Phase 4 — the third writer
+*What it buys: "usable and correct at real sizes". Entries rather than
+milestones, in the root plan's **Found by use** list except where marked, none of
+them blocking, each of them a tax paid by every session — which is why they are a
+phase rather than a list.*
 
-- ✅ **H3 — The standalone editor is its own owner.** Done 2026-08-16. The host
-  links the crate, holds a document, applies its own inverses. It is what makes
-  O8's acceptance true as written ("a session written by the Python client opens
-  in a standalone host and vice versa") — the third writer now exists, and the
-  round trip was run by hand through `gui_session.py`. It was also the forcing
-  case O10 named for the host taking the intent vocabulary, which it now does.
+- ⬜ **A finished async command waits up to 100 ms to be reported.** Every
+  async command pays it — a `/buffer_alloc`, a `/buffer_read`, a def compile,
+  any `wait=True`. **First of the phase**: it is the cheapest and the most
+  widely felt, and the fix is a wakeup when a result lands rather than a smaller
+  `GC_INTERVAL` for everyone.
+- ⬜ **A persisted def that no longer compiles warns on every boot, forever.**
+  Seven of them on the author's machine since S17 changed `PlayBuf`'s arity.
+- ⬜ **A UGen's trailing inputs could be declared optional, so a def survives
+  one growing** *(root `PLAN.md`, **Future directions**)*. The cause behind the
+  entry above, and the one that deletes the class rather than the noise.
+- ⬜ **`transport_group` takes an id where the rest of the Python client takes a
+  node** *(root `PLAN.md`, Found by use, though the fix is the Python
+  client's)*. A couple of lines; the TS client's `nodeId(...)` is the shape.
+- ⬜ **Ten examples play routines on a clock nobody started, and nothing says
+  so** *(`clients/python/PLAN.md`, Found by use)*. Their audible half has never run — a
+  mechanical fix each, plus one decision about whether playing onto a stopped
+  clock should stay silent at all.
 
-- ✅ **H4 — The standalone editor sounds what it edits.** Done 2026-08-16. The
-  session mode boots the embedded server, reads its takes into buffers, draws
-  each one twice (a clip in its lane, an editor under the tracks), writes a
-  stroke through to the buffer and every picture of it, undoes it, and plays it.
-  It is what finally put S12's editing verbs and S13's interactive session under
-  a hand instead of under a test — which is how it found the two bugs and the
-  one missing command now recorded as **S16** (a buffer write that addresses one
-  channel, without which a stereo take is drawable and not editable).
+## Phase 7 — the packages move together: the arrangement reaches the web client
 
-- ✅ **T5 — The transport has a position, and the engine owns it.** Done
-  2026-08-16. It was the server's before it was the window's: H4 left the
-  third writer able to play a take and unable to say where it is, and the
-  reason was not the host — the transport's position never reached the engine,
-  so `/transport_locate` moved a number nothing played from. A graph can now
-  read where the piece is (`TransportPos`), which is what lets a reader
-  **follow** the transport instead of each reader carrying a position someone
-  has to keep in step.
+*What it buys: the rule the project already states, applied to the largest
+outstanding violation. `form/`, `gui/editor.py`, `gui/transport.py` and
+`gui/notation.py` have **no TypeScript counterpart at all** — the whole
+arrangement, document and editor layer exists in one client. Last of the phases
+on the path because it is a port, and porting is cheapest once the layer has
+stopped moving, which is what phases 1–4 do to it.*
 
-- ✅ **H5 — The session's monitor follows the transport, and the head is drawn
-  from it.** Done 2026-08-16, and small once T5 existed, as predicted — what it
-  cost instead was four passes under a hand, each of which found a gesture
-  asking the wrong question rather than a bug in the wiring (the plan records
-  all four). Originally: the monitor becomes
-  a follower of the piece's position, the embedded server's segment gets a
-  door, and the sweep the host already draws is pointed at that position. It
-  closes this phase rather than adding to it — the third writer can then hear
-  *and see* what it edits.
+- ⬜ **W16 — Example parity with the Python client**, and its named track: the
+  arrangement layer and the editor. The shape `gui/notation.py`'s port follows
+  was decided on the Python side and is written in the web plan rather than
+  re-derived.
+- ⬜ **W24 — The completeness pass**, and the parity gaps that plan already
+  carries with reasons (the record formatters, `defs/patch.ts`, `connectGui`,
+  the two leftover names).
+- ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
+  unported features, each owned, none on the path to the complete example.
 
-*(This phase read, until 2026-08-16, that there was no H5. There is, and
-writing it turned up the server milestone above, which is why the order here is
-T5 first. The other thing H4 named on its way out, **S16**, shipped the same
-day.)*
-
-**Taken beside this phase rather than in it:** **S14** and **S17** — writable
-pool buffers with the write-side UGens, and `PlayBuf`'s missing
-`trigger`/`startPos`/`doneAction` — went **together**, in one pass over the
-buffer-UGen surface they share, and both closed 2026-08-16. Neither was a
-dependency of T5 or H5: T5's readers follow the transport, which is the DAW
-shape, while S17 is the other one, where a reader carries its own position.
-Both shapes are wanted eventually; only the first was on the path here.
-
-## Phase 5 — the spectral editor
+## Phase 8 — the spectral editor
 
 *Everything here is genuinely later: it needs the A track's descriptors, it is
 partly experimental, and none of it is on the path to the complete example.*
@@ -268,7 +291,7 @@ partly experimental, and none of it is on the path to the complete example.*
 - ⬜ **A5 — The loudness layer and its read-out.**
 - ⬜ **A6 — The layer stack becomes explicit.**
 - ⬜ **A7 — The layer stack's rules from the clients, and the books.** What is
-  left of it once D8 has taken the client half: it rides with A6, whose rules it
+  left of it once D8 took the client half: it rides with A6, whose rules it
   publishes.
 - ⬜ **D5 — Spectral selection.**
 - ⬜ **D6 — The lasso.**
@@ -286,26 +309,34 @@ example, and none blocks anything that is.
 - **The GUI host's own documentation** — `K16`/`K16a`/`K16b`/`K16c`. Waits on
   nothing; costs a decision about a fourth mdBook that the project's three-book
   rule does not currently allow.
-- **`E23`** — the rest of the chrome answering on what it draws.
 - **`G31g`** — engraving refinements (tuplets, full polyphony, spelling).
 - **The K track's group-aware port** — `keys`, `notes`, `patch` (item 3 of K7).
 - **Server transport items** `T2`–`T4`, and `R12` (a release verifies
-  something). `T2` may stop being optional: `T5` puts a position in samples on
-  the engine, which crosses exactly the beats↔samples conversion `T2` says is
-  still anchored on the wrong axis — whether it is settled inside `T5` or
-  closed before it is decided when `T5` starts.
-- **The web client's carried parity gaps** — the record formatters, and whatever
-  each phase above leaves it, since the packages move together and a port that
-  is not in the same commit is a port that drifts.
+  something). `T2` did not stop being optional when `T5` landed, and the
+  question it was flagged with still stands: `T5` put a position in samples on
+  the engine, which crosses the beats↔samples conversion `T2` says is anchored
+  on the wrong axis.
+- **The builders could be generated from the catalog instead of contrasted
+  against it** *(root `PLAN.md`, Future directions)* — the contrast tests caught
+  eleven drifted builders, which is strictly weaker than not hand-writing the mirrors.
+- **The level body's fade is a guess**; **a take is drawn in amplitude
+  and heard in decibels**; **an element's look does not answer for the space it
+  is given**; **the other text over pictures has no plate yet**; **persistence
+  saves the document, not what the user did to it** — `clients/gui/PLAN.md`,
+  Found by use, each with its record of what was seen; **many channels are drawn
+  and not yet readable, and a take cannot be created empty** is in that plan's
+  Future directions instead, being a design rather than a fix.
 - **The larger "Future directions"** in each plan — the free arrangement plane,
   the in-page shared-memory path, an interpreter inside a standalone host,
-  per-node staleness, more than one owner of one document, a Tauri wrapper.
+  per-node staleness, more than one owner of one document, IME text, a Tauri
+  wrapper, the heavy families as features, a steady goniometer.
 
 ## Revising this file
 
 Reordering is expected and is the point: an entry moves when a dependency turns
 out to run the other way, or when something found by use has to go first. What
 must not happen is content migrating here — a milestone that grows a decision
-grows it **in its plan**, and this file keeps naming it. When a phase closes,
-its entries are ticked here and the record of what shipped stays where it
-always is: the git history and the plan's own checkbox.
+grows it **in its plan**, and this file keeps naming it. **A rewrite erases what
+has been done**: a closed phase leaves no line here, because the plan's checkbox
+and the git history already say it shipped, and the only thing this file is for
+is what is still ahead.

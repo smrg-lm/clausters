@@ -237,6 +237,22 @@ what was wrong. Anything unresolved lives here, at the **end** of the plan —
 never inside the milestone that happened to be open, and never among finished
 work, where a pending item reads as done.)*
 
+- ⬜ **A document's node ids are minted per conversion and stamped on the object, so two compositions number from 1 and collide** *(found 2026-08-17, checking the user's report that "en los ejemplos hay un problema recurrente con los ids"; the report was right and the cause is not the examples)*. `_Ids` (`clients/python/clausters/form/document.py`) numbers one conversion: it walks the root, takes `next` past the **maximum** id already stamped, and writes each assignment onto the element object as `_doc_id` (`ID_ATTR`). Two properties follow and only the first is intended. A second conversion of the same tree gives every node the same number, which is what the history rests on — an entry recorded against one conversion still names the right thing in the next. But numbering starts at **1 for every root**, so two arrangements built in one script both hold ids 1, 2, 3, and an element authored in one and used in the other carries a number a *different* element already holds. Measured, with no object shared between the two trees:
+
+  ```
+  t1 = Group([(0.0, a), (1.0, b)])  ->  ids 1, 2, 3   (a = 2)
+  t2 = Group([(0.0, c), (1.0, d)])  ->  ids 1, 2, 3   (c = 2)
+  t2.add(a, 2.0); to_document(t2)   ->  ids 1, 2, 3, 2
+  ```
+
+  **Nothing below catches it**, which is why it surfaces as a gesture that misfires rather than as an error: `_scan` reads the maximum and never notices an id it has already seen, so a duplicate passes conversion in silence; the crate resolves an intent to the **first** member whose id matches (`intent::find_member_mut`) while `Editor._index` keys `node id -> (owner, handle, element)` and keeps the **last**. Two writes, two different destinations, and on screen the clip the hand moved returns to where it was.
+
+  **Distinct from the crate-side entry it looks like** — *"Two placements of one element share a node id"* (`crates/clausters-document/PLAN.md`) is one object appearing twice, and giving each placement its own element fixes it. This one is two *different* objects colliding, reached by ordinary authoring (material reused between compositions, two trees converted in one script, a library of takes), and no authoring discipline avoids it.
+
+  **What the fix has to decide, and it is why this is recorded rather than patched:** ids are unique *within a document*, and today nothing owns that property. Enforcing it at conversion is cheap (a registry per document, a collision renumbered or refused) and is the Python bridge's alone; making the **crate** mint and validate them is the one that holds for every writer, including the host and a future web client, and it is the same question as "May one element be placed twice, and what does an intent name if it is?" (that plan's Open decisions). Whichever wins, uniqueness stops being an accident of the order things were converted in.
+
+  **Acceptance:** the conversion of any tree yields ids that are unique in it, asserted over the collision above; and a document that carries a duplicate is refused with a message naming both nodes, rather than applied to whichever comes first.
+
 - ⬜ Acceptable equivalence level for higher math vs Faust (a concrete tolerance).
 - ⬜ Whether a separate `cdylib` for `clausters-ffi` is preferable, or exposing its C-ABI from the same `libclausters` (initial preference: separate, so as not to couple client and server embed).
 - ⬜ The FFI-overhead threshold at which the scalar builtin uses a pure-language fallback instead of crossing the boundary.
