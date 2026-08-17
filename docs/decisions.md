@@ -5604,3 +5604,44 @@ reason that attempt was reverted.
 
 `remaining` keeps its own job unchanged: the steps from the first one the crate
 cannot perform onward, for the owner to re-run.
+
+## A node id names the placement, and what may be placed twice is what a node references
+
+`Group([(0, take), (4, take)])` is the arrangement's most natural way to write
+*this take, twice*, and it silently mis-addressed every edit: the conversion
+stamped the node id on the **element object**, so both placements wrote members
+carrying one number, the crate applied an intent to the first match and the
+editor's index kept the last. Two writes, two destinations, and the clip the
+hand moved came back to where it was.
+
+Three answers were on the table for months — forbid it, copy it, or have the
+intent name the **placement** — with the third recorded as the faithful one and
+the most expensive, "because a member has no stable identity in the document".
+Read against what a multitrack *is*, the first two are not options: a clip is a
+**window onto material** and the identity is the material, so forbidding the
+sentence outlaws non-destructive editing's basic move, and copying quietly forks
+what the author wrote as one thing.
+
+**The third turned out to cost nothing, and that is the finding.** A `Place`
+already names a node, and a node is already what a `Member` holds — the format
+has been able to express two windows all along. What collapsed them was the
+bridge. Moving the stamp to the **member handle**, which `Group.add` has always
+returned and whose docstring already called it "the stable identity `remove` and
+`move` take", makes each placement its own node with no change to the crate, the
+wire, or the intent vocabulary. It was expensive against a model where a member
+has no identity; that stopped being true the day the handle existed.
+
+**What that leaves is the real question, and it is about material rather than
+addressing.** Two windows share material only when the node *references* it. So
+a **buffer** (two nodes, one source), a **generator** and a pattern-backed
+**sequence** may be placed twice — two views of one take, two evaluations of one
+function, which is the instance/function distinction the user's own exposition
+named. An **event**, a **track** or a **group** carries its material *inside* the
+node, so a second placement is a second copy that diverges on the first edit;
+that is refused with the distinction rather than made in silence.
+
+What stays open is the **alias** — a node that says "my material is that node" —
+which is what would let a container be placed twice and edited in one place, and
+a placement's own **arguments**, for a function evaluated twice with different
+parameters. Both need a placement to be a thing with an identity, which is what
+this makes it.

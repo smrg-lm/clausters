@@ -1455,3 +1455,28 @@ def test_a_script_editing_behind_the_editor_says_so_with_refresh():
     _, after = ed._history()
     assert after is not first, "re-derived, so the new node is nameable"
     assert ed._node_id(piece.members[-1][2]) is not None
+
+
+def test_dragging_the_second_of_two_windows_moves_the_second():
+    """O14's acceptance, and the defect it closes: one take placed twice used to
+    write two members carrying one id, so the crate applied the edit to the
+    first match while the editor's index kept the last — two writes, two
+    destinations, and the clip the hand moved came back to where it was."""
+    take = Buffer(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
+                               sample_rate=SR), duration=4.0)
+    lane = Group([(0.0, take), (4.0, take)], name="drums")
+    ed = editor(Group([(0.0, lane)], name="song"), quant=0.0)
+    ed._history()
+
+    first, second = lane.handles
+    assert ed._node_id(take, first) != ed._node_id(take, second), "two windows, two names"
+
+    outcome = ed._record({"intent": "place", "node": ed._node_id(take, second),
+                          "offset": 6.0}, "move the clip")
+    ed._project(outcome["effective"])
+    assert [h.offset for h in lane.handles] == [0.0, 6.0], "the second one moved"
+
+    assert ed.undo()
+    assert [h.offset for h in lane.handles] == [0.0, 4.0]
+    assert ed.redo()
+    assert [h.offset for h in lane.handles] == [0.0, 6.0]

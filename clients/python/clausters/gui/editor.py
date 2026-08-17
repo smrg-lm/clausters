@@ -783,7 +783,7 @@ class Editor:
         asked_offset = (self.units_to_beats(offset) - placed.base if moved
                         else member.offset)
         asked_dur = self.units_to_beats(dur) if resized else member.dur
-        node = self._node_id(member.element)
+        node = self._node_id(member.element, member)
         if node is None:
             return False
         intent = {"intent": "place", "node": node, "offset": float(asked_offset)}
@@ -1068,8 +1068,7 @@ class Editor:
         # that writes it onto the automation *and* refills the control buffer
         # the lane synth reads — so the envelope, the sound and the picture
         # cannot disagree about which of the three happened.
-        self._project(outcome.get("intent") or {"intent": "configure",
-                                                "node": node, "config": config})
+        self._project(outcome["effective"])
         return self._changed()
 
     def _apply_notes(self, element, values) -> bool:
@@ -1115,8 +1114,7 @@ class Editor:
                                 "members": members}, "edit the notes")
         if outcome is None:
             return False
-        self._project(outcome.get("intent") or {"intent": "setmembers",
-                                                "node": node, "members": members})
+        self._project(outcome["effective"])
         return self._changed()
 
     def _mint_id(self) -> int:
@@ -1262,25 +1260,42 @@ class Editor:
         the group's, not the element's); everything else needs the element. The
         walk mirrors `clausters.form.document`'s own, which is what keeps the
         two agreeing about what has an id."""
-        node = getattr(element, ID_ATTR, None)
+        # The id belongs to the **placement** when there is one: a clip is a
+        # window onto material, so what an intent names is the window.
+        node = getattr(member if member is not None else element, ID_ATTR, None)
         if node is not None:
             self._by_node[int(node)] = (owner, member, element)
         if isinstance(element, Group):
             for handle in element.handles:
                 self._index(handle.element, element, handle)
 
-    def _node_id(self, element) -> "int | None":
+    def _node_id(self, element, member=None) -> "int | None":
         """The document id of an arrangement element, building the document if
         that is what it takes.
 
         `to_document` is what *stamps* the id, so asking for one before the
         first conversion has to trigger it — otherwise the first gesture of a
-        session names a node nobody has numbered."""
+        session names a node nobody has numbered.
+
+        **The id is the placement's**, so a caller holding the member handle
+        passes it and gets that window's node. Without one the element is looked
+        up in the index, which answers when it is placed **once** and declines
+        when it is placed twice — there being no way to tell from an element
+        alone which of its windows an edit meant."""
+        if member is not None:
+            node = getattr(member, ID_ATTR, None)
+            if node is None:
+                self._history()
+                node = getattr(member, ID_ATTR, None)
+            return None if node is None else int(node)
         node = getattr(element, ID_ATTR, None)
         if node is None:
             self._history()
             node = getattr(element, ID_ATTR, None)
-        return None if node is None else int(node)
+        if node is not None:
+            return int(node)
+        found = [nid for nid, (_, _, held) in self._by_node.items() if held is element]
+        return int(found[0]) if len(found) == 1 else None
 
     def _record(self, intent: dict, label: str) -> "dict | None":
         """Apply one edit **through the crate**, recording its inverse.
@@ -1392,7 +1407,7 @@ class Editor:
         keep = {int(m["node"]["id"]) for m in members if "id" in (m.get("node") or {})}
         by_id = {}
         for handle in list(group.handles):
-            node = getattr(handle.element, ID_ATTR, None)
+            node = getattr(handle, ID_ATTR, None)
             if node is None:
                 continue
             by_id[int(node)] = handle

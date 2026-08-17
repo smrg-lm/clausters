@@ -182,22 +182,20 @@ phase.*
   the refactor it is the ordinary case rather than a fourth reconciliation path.
   This is what should force the refactor, and it is its acceptance by hand.
 
-- ⬜ **May one element be placed twice, and what does an intent name if it is?**
-  *(document plan, Open decisions)*, with the defect it explains. Three answers
-  — forbid, copy, or **name the placement** — and the last is the faithful one
-  and the expensive one, because a member has no stable identity in the document
-  today. That is a property of where the tree is kept, so it is taken with the
-  refactor and not before it. **Which of the three is right stopped being open on
-  2026-08-17**: a clip is a window onto material and the identity is the
-  material, so *forbid* and *copy* are both wrong, and the plan now carries the
-  argument plus the axis it turned up — material is an **instance** (a file, a
-  curve, a sequence: copies diverge) or a **function** (a pattern, a def: a
-  placement is an evaluation, possibly with its own arguments), which the format
-  cannot say today. What is scheduled here is the shape, not the choice. The id entry that opens this file leaves
-it **wider than it was**:
-  two different elements can also collide, so the decision now has to say who
-  owns uniqueness within a document — and answering that in the crate is the
-  cheaper half of "name the placement" rather than a separate build.
+- ✅ **May one element be placed twice, and what does an intent name if it is?**
+  *(document plan, Open decisions)* — settled 2026-08-17 as **O14**, and the
+  crate did not change: the node id belongs to the **member handle**, so each
+  placement is its own node and an intent naming one is unambiguous. What may be
+  placed twice is what the node *references* (a buffer, a generator, a pattern);
+  an element carrying its material inside the node is refused, because two of
+  those are two copies that diverge. It had been costed as the most expensive of
+  the three answers — expensive against a model where a member has no identity,
+  which stopped being true the day `Group.add` returned a handle. The argument
+  that picked it, and the instance/function axis it turned up, are in the plan.
+
+**Phase 3 is closed.** One held document, undo that reaches inside a clip, and
+a placement that can be named — with the last of the three costing no format
+change at all.
 
 ## Phase 4 — the editor answers for what it will not let you do
 

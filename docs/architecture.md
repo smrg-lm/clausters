@@ -380,6 +380,12 @@ reasoning:
   configuration blob it never interprets — never the material and never the
   algorithm. A generator *is code*, in the language of whoever wrote it, so no
   crate in any language can own one.
+- **A node id names a *placement*.** A clip is a window onto material, so what
+  an intent addresses is the window: the client stamps the id on the member
+  handle, and one element placed twice is two nodes naming one source. What may
+  be placed twice is what the node *references* (a buffer, a generator, a
+  pattern); an element carrying its material inside the node is refused, because
+  two of those are two copies that diverge.
 - **An id names one node, and the door checks it.** An intent addresses a node
   by its id, so an id that names two *different* nodes is applied to whichever
   the lookup reaches first while the sender's own index keeps the other — one

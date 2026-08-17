@@ -151,9 +151,12 @@ def test_the_temporal_metadata_crosses_both_ways():
     node = doc["root"]["members"][0]["node"]
     assert node["onset"] == 2.0 and node["duration"] == 0.5 and node["resident"] is True
 
-    back = from_document(doc).handles[0].element
+    handle = from_document(doc).handles[0]
+    back = handle.element
     assert back.onset == 2.0 and back.duration == 0.5 and back.resident is True
-    assert getattr(back, ID_ATTR) == node["id"]
+    # The id is the **placement's**: a clip is a window onto material, so the
+    # handle is what carries the number an intent names.
+    assert getattr(handle, ID_ATTR) == node["id"]
 
 
 def test_a_sequence_of_elements_is_members_and_a_pattern_is_a_reference():
@@ -594,14 +597,25 @@ def test_an_element_used_in_two_compositions_does_not_carry_a_number_the_second_
     assert _ids(to_document(second)["root"]) == ids
 
 
-def test_one_element_placed_twice_is_still_one_node_with_one_id():
-    # Deliberately unchanged: what an id identifies when one element is placed
-    # twice is an open question in the document crate's plan, with three answers.
-    # Renumbering here would pick one of them from inside a check about a
-    # different failure.
+def test_a_leaf_that_references_its_material_may_be_placed_twice():
+    # O14: a clip is a window onto material and the identity is the material, so
+    # two placements are two nodes naming one source -- which is the multitrack's
+    # own semantics and what the defect at the foot of the crate's plan was about.
+    take = Buffer(FakeBuffer(7))
+    doc = to_document(Group([(0.0, take), (4.0, take)]))
+    windows = [m["node"] for m in doc["root"]["members"]]
+    assert windows[0]["id"] != windows[1]["id"], "two windows, two names"
+    assert windows[0]["source"] == windows[1]["source"], "one material behind them"
+
+
+def test_an_element_whose_material_is_in_the_node_is_not_placed_twice():
+    # The other half of the rule: an event carries its material *inside* the
+    # node, so two placements would be two copies that diverge on the first
+    # edit -- which is the answer the decision rejected, so it is refused rather
+    # than made silently.
     twice = Event(SeqEvent(midinote=60))
-    ids = _ids(to_document(Group([(0.0, twice), (4.0, twice)]))["root"])
-    assert len(ids) != len(set(ids))
+    with pytest.raises(ValueError, match="placed more than once"):
+        to_document(Group([(0.0, twice), (4.0, twice)]))
 
 
 def test_a_tree_converted_on_its_own_is_numbered_as_it_always_was():

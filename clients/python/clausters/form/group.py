@@ -41,9 +41,15 @@ class _Member:
     ``offset`` is the member's start in beats relative to the group's context;
     ``dur`` is an explicit placement length that overrides the element's own
     ``duration`` when set.
+
+    **A handle is what carries the node id**, which is what makes one element
+    placeable twice: a clip is a window onto material, so the thing an edit
+    names is the window and not the material behind it. The conversion stamps
+    it here (`clausters.form.document`), which is why this class has a slot for
+    something no caller sets.
     """
 
-    __slots__ = ("offset", "dur", "element")
+    __slots__ = ("offset", "dur", "element", "_doc_id")
 
     def __init__(self, offset, dur, element):
         self.offset = float(offset)

@@ -236,31 +236,47 @@ class _Ids:
         self.next = 1
         self._owner: "dict[int, int]" = {}
         self._renumber: "set[int]" = set()
+        #: Elements already met as a placement, so a second one is checked
+        #: against what may be placed twice at all.
+        self.placed: "set[int]" = set()
         self._scan(root)
 
-    def _scan(self, element):
-        existing = getattr(element, ID_ATTR, None)
+    def _scan(self, element, member=None):
+        holder = element if member is None else member
+        existing = getattr(holder, ID_ATTR, None)
         if existing is not None:
             existing = int(existing)
-            owner = self._owner.setdefault(existing, id(element))
-            if owner == id(element):
+            owner = self._owner.setdefault(existing, id(holder))
+            if owner == id(holder):
                 self.next = max(self.next, existing + 1)
             else:
                 # Another object in this tree claimed the number first, so this
                 # one was numbered against a tree that is not this one.
-                self._renumber.add(id(element))
+                self._renumber.add(id(holder))
+        if isinstance(element, Group):
+            for handle in element.handles:
+                self._scan(handle.element, handle)
+            return
         for child in _children(element):
             self._scan(child)
 
-    def of(self, element) -> int:
-        existing = getattr(element, ID_ATTR, None)
-        if existing is not None and id(element) not in self._renumber:
+    def of(self, element, member=None) -> int:
+        """The id of the node this element occupies — **the placement's** when
+        it is placed, since a clip is a window onto material and what an edit
+        names is the window.
+
+        An element reached any other way (the root, a rendered subtree, an item
+        of a sequence) carries its own, which is the same rule read where there
+        is no placement to name."""
+        holder = element if member is None else member
+        existing = getattr(holder, ID_ATTR, None)
+        if existing is not None and id(holder) not in self._renumber:
             return int(existing)
         assigned = self.next
         self.next += 1
-        self._owner[assigned] = id(element)
-        self._renumber.discard(id(element))
-        setattr(element, ID_ATTR, assigned)
+        self._owner[assigned] = id(holder)
+        self._renumber.discard(id(holder))
+        setattr(holder, ID_ATTR, assigned)
         return assigned
 
 
@@ -285,10 +301,10 @@ def _children(element) -> list:
     return []
 
 
-def _node(element, ids: _Ids) -> dict:
+def _node(element, ids: _Ids, member=None) -> dict:
     """One element as a document node: the temporal metadata every node has,
     plus the body that says what it is."""
-    node = {"id": ids.of(element)}
+    node = {"id": ids.of(element, member)}
     name = getattr(element, "name", None)
     if isinstance(name, str) and name:
         # A referenceable label, never a second identity -- the server's own
@@ -326,10 +342,7 @@ def _body(element, ids: _Ids) -> dict:
         return {
             "kind": "set",
             "grouping": LOGICAL if element.kind == LOGICAL else CONCRETE,
-            "members": [
-                _member(offset, dur, child, ids)
-                for offset, dur, child in element.members
-            ],
+            "members": [_member(handle, ids) for handle in element.handles],
         }
     if isinstance(element, Track):
         # A Set with the restrictions of a multitrack view, and its items are
@@ -354,7 +367,9 @@ def _body(element, ids: _Ids) -> dict:
         ):
             return {
                 "kind": "sequence",
-                "members": [_member(0.0, None, i, ids) for i in items],
+                # A sequence's items are *elements in order*, not placements —
+                # there is no handle to name, so each node's id is its own.
+                "members": [{"offset": 0.0, "node": _node(i, ids)} for i in items],
             }
         # A pattern, or a list of values the client owns: a reference, not a
         # serialization.
@@ -411,11 +426,41 @@ def _preserved(element):
     return None
 
 
-def _member(offset, dur, element, ids: _Ids) -> dict:
-    member = {"offset": float(offset), "node": _node(element, ids)}
-    if dur is not None:
-        member["dur"] = float(dur)
+def _member(handle, ids: _Ids) -> dict:
+    """One placement: where it sits, and the node it holds — whose id is the
+    **handle's**, so one element placed twice is two windows and not one
+    ambiguous name."""
+    _placeable_twice(handle, ids)
+    member = {"offset": float(handle.offset), "node": _node(handle.element, ids, handle)}
+    if handle.dur is not None:
+        member["dur"] = float(handle.dur)
     return member
+
+
+def _placeable_twice(handle, ids: _Ids):
+    """Refuse a *second* placement of an element whose material is in the node.
+
+    Two windows share material only when the node **references** it — a buffer
+    names a source, a generator names a recipe, and both placements point at the
+    one thing. An event, a track or a group carries its material *inside* the
+    node, so a second placement is a second **copy**: they diverge on the first
+    edit, which is the answer the open decision rejected. Refused with the
+    distinction rather than copied in silence.
+    """
+    element = handle.element
+    if id(element) not in ids.placed:
+        ids.placed.add(id(element))
+        return
+    if isinstance(element, (Buffer, Generator)) or (
+            isinstance(element, Sequence) and not isinstance(element.wraps, (list, tuple))):
+        return  # a window onto material the node only names
+    raise ValueError(
+        f"{type(element).__name__} is placed more than once, and its material is "
+        "in the node rather than named by it — two placements would be two "
+        "copies that diverge on the first edit. Place a leaf that *references* "
+        "its material (a Buffer over one server buffer, a Generator over one "
+        "recipe), or give each placement its own element."
+    )
 
 
 def _timeline_member(beat, item, ids: _Ids) -> dict:
@@ -569,7 +614,7 @@ def _plain(value):
 # ---- document -> arrangement ----
 
 
-def _element(node: dict, resolve):
+def _element(node: dict, resolve, *, placed: bool = False):
     kind = node.get("kind")
     config = node.get("config") or {}
     onset = node.get("onset")
@@ -603,11 +648,16 @@ def _element(node: dict, resolve):
             duration=duration,
         )
         for member in node.get("members", []):
-            group.add(
-                _element(member["node"], resolve),
+            child = member["node"]
+            handle = group.add(
+                _element(child, resolve, placed=True),
                 offset=member.get("offset", 0.0),
                 dur=member.get("dur"),
             )
+            if "id" in child:
+                # The placement's id, on the placement: a second window onto the
+                # same material is a second handle with a number of its own.
+                setattr(handle, ID_ATTR, int(child["id"]))
         built = group
     elif kind == "event":
         from ..seq import Event as SeqEvent
@@ -664,7 +714,9 @@ def _element(node: dict, resolve):
         # addresses by it, so restoring it is what lets a reopened piece label
         # its lanes the way it was authored.
         built.name = name
-    if "id" in node:
+    if "id" in node and not placed:
+        # An element reached as a placement takes no id of its own: the number
+        # is the window's, and its handle is what carries it.
         setattr(built, ID_ATTR, int(node["id"]))
     return built
 

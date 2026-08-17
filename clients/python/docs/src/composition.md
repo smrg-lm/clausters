@@ -74,6 +74,16 @@ song = Group([
 ], name="song")
 ```
 
+The `take` above is placed **twice**, which is the ordinary thing to write and
+means what it says: two clips, one take. A placement is a **window onto
+material** — editing the samples through either window edits the one take, and
+moving one clip moves that clip. What can be placed twice is material the
+element only *names*: a `Buffer` over a server buffer, a `Generator` over a
+pattern or a def. An element that carries its material *inside* it — an `Event`,
+a `Track`, a `Group` — is refused, because two placements of one of those would
+be two copies that diverge the moment you edit one; write two of them, or one
+element the two clips share.
+
 From how its members sit in time, a group *derives* its temporal **relation**:
 `successive` when they tile contiguously, `simultaneous` when they start and end
 together, `mixed` otherwise. You do not set it; it is read from the placements.
