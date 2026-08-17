@@ -149,15 +149,18 @@ prerequisite, and because it is the one whose cost is not the client's.*
   mismatch. The channel reads turned out to be one argument on the arms that
   already existed, not a second way of reading a file.
 
-- ⬜ **S14 — A pool buffer can be allocated writable** *(root `PLAN.md`)*.
-  **Not part of the editing chain** — in the interactive mode a buffer is already
-  mutable, there being no audio thread, so this one is the RT server's alone. It
-  is here because the pass that produced the other three is what found it: in
-  SuperCollider you allocate an empty buffer, zero it and use it for anything,
-  and here you cannot, so `RecordBuf`, `BufWr` and the `BufDelay*` family have
-  nowhere to live. A missing capability rather than a decision, and the
-  completeness the S track exists to reach. Takeable at any point; it blocks
-  nothing in this phase and this phase blocks nothing in it.
+- ✅ **S14 + S17 — Every pool buffer is writable, and `PlayBuf` completes its
+  set** *(root `PLAN.md`)*. Done 2026-08-16, taken together as the plans said
+  they would be: one pass over `src/dsp/buf.rs`, one measurement of the read
+  path. **Not part of the editing chain** — in the interactive mode a buffer is
+  already mutable, there being no audio thread, so this was the RT server's
+  alone. It was here because the pass that produced the other three found it: in
+  SuperCollider you allocate an empty buffer and use it for anything, and here
+  you could not, so `RecordBuf`, `BufWr` and the `BufDelay*` family had nowhere
+  to live. The shape changed on the way in — no writable *kind*, no declaration
+  and no refusal, since a `bufnum` is a runtime control and a build-time refusal
+  was never available; the reference now says only that contents are mutable and
+  the shape is fixed.
 
 - ✅ **D1 — A sample is a grabbable point.** Done 2026-08-16: the gesture, the
   pending overlay's first real drawing, and `peaks::update_range` in both
@@ -244,13 +247,13 @@ writing it turned up the server milestone above, which is why the order here is
 T5 first. The other thing H4 named on its way out, **S16**, shipped the same
 day.)*
 
-**Not in this phase, and not blocking it:** **S14** and **S17** — writable pool
-buffers with the write-side UGens, and `PlayBuf`'s missing
-`trigger`/`startPos`/`doneAction` — are taken **together**, in one pass over
-the buffer-UGen surface they share. Neither is a dependency of T5 or H5: T5's
-readers follow the transport, which is the DAW shape, while S17 is the other
-one, where a reader carries its own position. Both shapes are wanted
-eventually; only the first is on the path here.
+**Taken beside this phase rather than in it:** **S14** and **S17** — writable
+pool buffers with the write-side UGens, and `PlayBuf`'s missing
+`trigger`/`startPos`/`doneAction` — went **together**, in one pass over the
+buffer-UGen surface they share, and both closed 2026-08-16. Neither was a
+dependency of T5 or H5: T5's readers follow the transport, which is the DAW
+shape, while S17 is the other one, where a reader carries its own position.
+Both shapes are wanted eventually; only the first was on the path here.
 
 ## Phase 5 — the spectral editor
 

@@ -12,9 +12,11 @@
 //! `/buffer_free` right after a `/buffer_alloc` cannot overtake it), which is why even
 //! `/buffer_free` — no I/O at all — travels through here.
 //!
-//! Buffers are immutable (see [`crate::dsp::buffer`]), so `/buffer_read` into an
-//! existing buffer and `/buffer_zero` build a *replacement* from the current
-//! contents instead of mutating shared memory.
+//! Every job here **replaces** a buffer rather than writing into one: `/buffer_read`
+//! into an existing buffer and `/buffer_zero` build a replacement from the current
+//! contents, and the engine swaps it in. A buffer's contents *are* writable
+//! (see [`crate::dsp::buffer`]) — this is a property of these commands, which
+//! change a buffer wholesale and off the audio thread, and not of the buffer.
 
 use crate::osc::ClientId;
 use std::sync::Arc;
@@ -435,10 +437,11 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             base: current,
             writes,
         } => {
-            // Copy-and-swap, like every other job here: buffers are immutable
-            // and the engine holds a clone of this very `Arc`, so the samples
-            // are laid into a copy that replaces it whole. The audio thread
-            // therefore never sees a half-written buffer, and no write of any
+            // Copy-and-swap, like every other job here: the engine holds a
+            // clone of this very `Arc`, so the samples are laid into a copy
+            // that replaces it whole rather than into the live buffer. The
+            // audio thread therefore never sees a half-written buffer (which
+            // a per-sample write could show it), and no write of any
             // size needs a lock. The parse already bounded every run against
             // the buffer's length.
             let mut data = current.to_vec();

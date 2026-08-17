@@ -553,13 +553,16 @@ with `/node_ugenCmd <nodeID> <ugenIndex> window <wintype>` (`-1` rectangular, `0
 per-UGen command surface.
 
 **Where the frame lives (deviation from scsynth).** scsynth threads the frame
-through a client-allocated buffer whose bins the audio thread mutates in place,
-which would break Clausters' rule that a pool buffer is immutable once built. So
-the frame lives in **synth-private scratch** allocated when the synth is
+through a client-allocated buffer whose bins the audio thread mutates in place.
+Here the frame lives in **synth-private scratch** allocated when the synth is
 instantiated (like the `LocalIn`/`LocalOut` feedback buffer, and the moral
-equivalent of SuperCollider's `LocalBuf`), freed with the synth — **no `/buffer_alloc`
-is required** and the sample-buffer pool stays fully immutable. A future
-extension may add copying the frame into a buffer for inspection/sharing.
+equivalent of SuperCollider's `LocalBuf`), freed with the synth — **no
+`/buffer_alloc` is required**. A pool buffer would now be able to hold it (its
+contents are writable), so the reason is no longer the pool's: a frame is
+scratch belonging to one synth, and it is a **spectrum in an internal layout**
+rather than samples, which is not something to leave where `/buffer_write` and
+the readers can reach it. A future extension may add copying the frame into a
+buffer for inspection/sharing.
 
 **Feedback (`LocalIn`/`LocalOut`).** The graph is a DAG — UGens cannot be wired in a cycle. To feed a signal back, write it with `LocalOut` and read it with `LocalIn`: they share a per-synth buffer that persists across blocks, so the value read is what was written **one control block (64 samples) earlier**. `LocalIn` for a channel must appear *before* its `LocalOut` (the compiler enforces this; it is what makes the delay exactly one block), and the channel index must be a constant. Use any number of channels (mono each, like buses). This is **block-rate** feedback — good for feedback delays, block feedback-FM, resonant combs (a one-channel loop resonates at `sampleRate / 64`). Sample-accurate (sub-block) feedback is not possible across composed UGens; fuse the loop into one node — a recursive UGen or a Faust def (`/def_send faust` with `~`).
 
@@ -585,7 +588,9 @@ Resonance travels as **`rq`**, the reciprocal of Q, as in scsynth. That is not a
 
 **The delay family is one line (deviation from scsynth).** `DelayN/L/C`, `CombN/L/C` and `AllpassN/L/C` are the same circular buffer with two independent parameters: how a fractional tap is interpolated, and what is fed back. Measured through a half-sample delay at 9 kHz, `L` loses about 1.6 dB and `C` about 0.36 dB — four-point interpolation is not a brick wall, but that is the gap that justifies paying for `C` on a modulated delay.
 
-The line is **synth-private memory**, allocated when the synth is built and sized from the static `max_delay` field (in seconds) and the server's sample rate. It is not a pool buffer, because a pool buffer is immutable once built — the same invariant that puts the spectral frame in private scratch — and a delay line is written every sample. That is also why there is no `BufDelay*` family. Unlike scsynth, `max_delay` is **static configuration and not an input**: it sizes an allocation, so it belongs with `fft_size` and `partitions` rather than among the signals, and it defaults to 0.2 s if the def omits it. A `delaytime` past it is clamped, never wrapped.
+The line is **synth-private memory**, allocated when the synth is built and sized from the static `max_delay` field (in seconds) and the server's sample rate — memory no other node can reach, which is what a per-voice delay wants. Unlike scsynth, `max_delay` is **static configuration and not an input**: it sizes an allocation, so it belongs with `fft_size` and `partitions` rather than among the signals, and it defaults to 0.2 s if the def omits it. A `delaytime` past it is clamped, never wrapped.
+
+**The `BufDelay*` family is the same nine over a pool buffer** (the rows above), for the case the private line cannot serve: a line whose contents are addressable — recorded into, read by another node, resampled, saved. One implementation serves both, parameterised by where the samples live, so the two families cannot drift apart in their arithmetic. Which to reach for is a question about the *line*, not about the sound: private if nothing else needs to see it, a buffer if something does.
 
 These UGens do **not** report an intrinsic latency, on purpose. Their delay is what the user asked for, not an artifact of processing; the latency hook exists for something like the partitioned convolver, and compensating a musical delay would silently undo it.
 
