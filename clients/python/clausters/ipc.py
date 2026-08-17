@@ -1,4 +1,4 @@
-"""Clausters Python bindings. Standard library only, by design.
+"""Clausters Python bindings: the standard library, plus the shared core.
 
 Two ways in, both speaking ordinary OSC bytes (build them however you like;
 ``examples/json_client.py`` has stdlib helpers):

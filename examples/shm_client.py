@@ -9,10 +9,12 @@ then:
 
     python3 examples/shm_client.py
 
-Everything below talks to the server through mapped memory only (pure
-stdlib `mmap`): commands and replies travel a byte ring, and the **data
-plane** — the sample clock and the 1024 control buses — is read and written
-directly, no command and no round trip at all. The audible part: a synth
+Everything below talks to the server through mapped memory only: no socket
+anywhere. Commands and replies travel a byte ring inside the segment, and the
+**data plane** — the sample clock and the control buses — is read and written
+directly, with no command and no round trip at all. The mapping is Python's
+own `mmap`; where everything *is* inside it comes from the shared core, which
+is the one place the layout is written down. The audible part: a synth
 whose amplitude comes from control bus 7 via `InCtl`, faded by writing that
 bus straight into shared memory while it plays.
 """
